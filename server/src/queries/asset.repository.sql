@@ -138,20 +138,30 @@ with
         where
           (asset."localDateTime" at time zone 'UTC')::date = today.date
           and "asset"."ownerId" = any ($4::uuid[])
-          and "asset"."visibility" = $5
+          and (
+            "asset"."visibility" = 'timeline'
+            and not exists (
+              select
+                1
+              from
+                asset_lock
+              where
+                asset_lock."assetId" = "asset"."id"
+            )
+          )
           and exists (
             select
             from
               "asset_file"
             where
               "assetId" = "asset"."id"
-              and "asset_file"."type" = $6
+              and "asset_file"."type" = $5
           )
           and "asset"."deletedAt" is null
         order by
           (asset."localDateTime" at time zone 'UTC')::date desc
         limit
-          $7
+          $6
       ) as "a" on true
   )
 select
@@ -169,7 +179,15 @@ order by
 
 -- AssetRepository.getByIds
 select
-  "asset".*
+  "asset".*,
+  exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
+  ) as "isLocked"
 from
   "asset"
 where
@@ -178,6 +196,14 @@ where
 -- AssetRepository.getByIdsWithAllRelationsButStacks
 select
   "asset".*,
+  exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
+  ) as "isLocked",
   (
     select
       coalesce(json_agg(agg), '[]')
@@ -232,6 +258,18 @@ where
 -- AssetRepository.deleteAll
 begin
 SELECT
+  stack.id
+FROM
+  public.stack stack
+  LEFT JOIN public.asset primary_asset ON primary_asset.id = stack."primaryAssetId"
+WHERE
+  stack."ownerId" = $1::uuid
+  OR primary_asset."ownerId" = $2::uuid
+ORDER BY
+  stack.id
+FOR UPDATE OF
+  stack
+SELECT
   asset.id,
   coalesce(
     mapping."upstreamPath",
@@ -249,7 +287,16 @@ WHERE
   asset."ownerId" = $1::uuid
 FOR UPDATE OF
   asset
-rollback
+delete from "stack"
+where
+  (
+    "ownerId" = $1::uuid
+    or "primaryAssetId" = any ($2::uuid[])
+  )
+delete from "asset"
+where
+  "ownerId" = $1
+commit
 
 -- AssetRepository.getByLibraryIdAndOriginalPath
 select
@@ -311,7 +358,15 @@ limit
 
 -- AssetRepository.getById
 select
-  "asset".*
+  "asset".*,
+  exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
+  ) as "isLocked"
 from
   "asset"
 where
@@ -347,6 +402,14 @@ from
 where
   "ownerId" = $1::uuid
   and "checksum" in ($2)
+  and not exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
+  )
   and not (
     case
       when "asset"."id" is null then false
@@ -398,6 +461,14 @@ where
   "ownerId" = $1::uuid
   and "checksum" = $2
   and "libraryId" is null
+  and not exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
+  )
   and not (
     case
       when "asset"."id" is null then false
@@ -453,6 +524,14 @@ where
   and "createdAt" >= $2
   and "createdAt" < $3
   and "deletedAt" is null
+  and not exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
+  )
 group by
   date_trunc('DAY', "asset"."createdAt" AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'
 order by
@@ -467,7 +546,17 @@ with
       "asset"
     where
       "asset"."deletedAt" is null
-      and "asset"."visibility" in ('archive', 'timeline')
+      and (
+        "asset"."visibility" in ('archive', 'timeline')
+        and not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "asset"."id"
+        )
+      )
   )
 select
   ("timeBucket" AT TIME ZONE 'UTC')::date::text as "timeBucket",
@@ -479,17 +568,161 @@ group by
 order by
   "timeBucket" desc
 
+-- AssetRepository.getTimelineHighlights
+SELECT
+  to_regclass('immich_fork.state')::text AS "stateTable"
+SELECT
+  phase
+FROM
+  immich_fork.state
+WHERE
+  id = 1
+with
+  asset as (
+    (
+      select
+        date_trunc('MONTH', "localDateTime" AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' as "timeBucket",
+        "asset"."id",
+        "asset"."ownerId",
+        asset."localDateTime" as "sortDate"
+      from
+        "asset"
+      where
+        "asset"."deletedAt" is null
+        and (
+          "asset"."visibility" in ('archive', 'timeline')
+          and not exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "asset"."id"
+          )
+        )
+    )
+  ),
+  ranked as (
+    select
+      a.id,
+      a."timeBucket",
+      a."sortDate",
+      row_number() over (
+        partition by
+          a."timeBucket"
+        order by
+          s.score desc nulls last,
+          nullif(greatest(e.rating, 0), 0) desc nulls last,
+          a."sortDate" desc,
+          a.id asc
+      ) as rank
+    from
+      asset a
+      left join asset_exif e on e."assetId" = a.id
+      left join "public"."asset_best_photo_score" s on s."assetId" = a.id
+  ),
+  places as (
+    select
+      a."timeBucket",
+      coalesce(
+        nullif(trim(e.city), ''),
+        nullif(trim(e.state), ''),
+        nullif(trim(e.country), '')
+      ) as place,
+      row_number() over (
+        partition by
+          a."timeBucket"
+        order by
+          count(*) desc,
+          coalesce(
+            nullif(trim(e.city), ''),
+            nullif(trim(e.state), ''),
+            nullif(trim(e.country), '')
+          ) asc
+      ) as rank
+    from
+      asset a
+      inner join asset_exif e on e."assetId" = a.id
+    where
+      true
+      and true
+      and coalesce(
+        nullif(trim(e.city), ''),
+        nullif(trim(e.state), ''),
+        nullif(trim(e.country), '')
+      ) is not null
+    group by
+      a."timeBucket",
+      coalesce(
+        nullif(trim(e.city), ''),
+        nullif(trim(e.state), ''),
+        nullif(trim(e.country), '')
+      )
+  )
+select
+  (r."timeBucket" at time zone 'UTC')::date::text as "timeBucket",
+  count(*) as count,
+  (
+    array_agg(r.id::text) filter (
+      where
+        r.rank = 1
+    )
+  ) [1] as "keyAssetId",
+  array_agg(
+    r.id::text
+    order by
+      r."sortDate" desc,
+      r.id
+  ) filter (
+    where
+      r.rank > 1
+      and r.rank <= $1
+  ) as "highlightAssetIds",
+  (
+    select
+      array_agg(
+        p.place
+        order by
+          p.rank
+      )
+    from
+      places p
+    where
+      p."timeBucket" = r."timeBucket"
+      and p.rank <= $2
+  ) as places
+from
+  ranked r
+group by
+  r."timeBucket"
+order by
+  r."timeBucket" desc
+
 -- AssetRepository.getTimeBucket
 with
   "cte" as (
     select
       "asset"."duration",
       "asset"."id",
-      "asset"."visibility",
+      (
+        case
+          when "asset"."visibility" = 'hidden' then "asset"."visibility"
+          when exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "asset"."id"
+          ) then 'locked'::asset_visibility_enum
+          else "asset"."visibility"
+        end
+      ) as "visibility",
       asset."isFavorite"
       and asset."ownerId" = $1 as "isFavorite",
       asset.type = 'IMAGE' as "isImage",
       asset."deletedAt" is not null as "isTrashed",
+      "asset"."isOffline",
       "asset"."livePhotoVideoId",
       extract(
         epoch
@@ -515,6 +748,11 @@ with
         end,
         1
       ) as "ratio",
+      "asset_exif"."rating",
+      "asset"."originalFileName",
+      "asset"."width",
+      "asset"."height",
+      "asset_exif"."fileSizeInByte",
       "asset_exif"."city",
       "asset_exif"."country",
       "stack"
@@ -530,12 +768,37 @@ with
           "stacked"."stackId" = "asset"."stackId"
           and "stacked"."deletedAt" is null
           and "stacked"."visibility" = $2
+          and exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "stacked"."id"
+          ) = exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "asset"."id"
+          )
         group by
           "stacked"."stackId"
       ) as "stacked_assets" on true
     where
       "asset"."deletedAt" is null
-      and "asset"."visibility" in ('archive', 'timeline')
+      and (
+        "asset"."visibility" in ('archive', 'timeline')
+        and not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "asset"."id"
+        )
+      )
       and date_trunc('MONTH', "localDateTime" AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' = $3
       and not exists (
         select
@@ -558,6 +821,7 @@ with
       coalesce(array_agg("isFavorite"), '{}') as "isFavorite",
       coalesce(array_agg("isImage"), '{}') as "isImage",
       coalesce(array_agg("isTrashed"), '{}') as "isTrashed",
+      coalesce(array_agg("isOffline"), '{}') as "isOffline",
       coalesce(array_agg("livePhotoVideoId"), '{}') as "livePhotoVideoId",
       coalesce(array_agg("fileCreatedAt"), '{}') as "fileCreatedAt",
       coalesce(array_agg("createdAt"), '{}') as "createdAt",
@@ -569,6 +833,163 @@ with
       coalesce(array_agg("thumbhash"), '{}') as "thumbhash",
       coalesce(array_agg("city"), '{}') as "city",
       coalesce(array_agg("country"), '{}') as "country",
+      coalesce(array_agg("rating"), '{}') as "rating",
+      coalesce(array_agg("originalFileName"), '{}') as "originalFileName",
+      coalesce(array_agg("width"), '{}') as "width",
+      coalesce(array_agg("height"), '{}') as "height",
+      coalesce(array_agg("fileSizeInByte"), '{}') as "fileSizeInByte",
+      coalesce(json_agg("stack"), '[]') as "stack"
+    from
+      "cte"
+  )
+select
+  to_json(agg)::text as "assets"
+from
+  "agg"
+
+-- AssetRepository.getTimelineOrdered
+with
+  "cte" as (
+    select
+      "asset"."duration",
+      "asset"."id",
+      (
+        case
+          when "asset"."visibility" = 'hidden' then "asset"."visibility"
+          when exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "asset"."id"
+          ) then 'locked'::asset_visibility_enum
+          else "asset"."visibility"
+        end
+      ) as "visibility",
+      asset."isFavorite"
+      and asset."ownerId" = $1 as "isFavorite",
+      asset.type = 'IMAGE' as "isImage",
+      asset."deletedAt" is not null as "isTrashed",
+      "asset"."isOffline",
+      "asset"."livePhotoVideoId",
+      extract(
+        epoch
+        from
+          (
+            asset."localDateTime" AT TIME ZONE 'UTC' - asset."fileCreatedAt" at time zone 'UTC'
+          )
+      )::real / 3600 as "localOffsetHours",
+      "asset"."ownerId",
+      "asset"."status",
+      asset."fileCreatedAt" at time zone 'utc' as "fileCreatedAt",
+      asset."createdAt" at time zone 'utc' as "createdAt",
+      encode("asset"."thumbhash", 'base64') as "thumbhash",
+      "asset_exif"."projectionType",
+      coalesce(
+        case
+          when asset."height" = 0
+          or asset."width" = 0 then 1
+          else round(
+            asset."width"::numeric / asset."height"::numeric,
+            3
+          )
+        end,
+        1
+      ) as "ratio",
+      "asset_exif"."rating",
+      "asset"."originalFileName",
+      "asset"."width",
+      "asset"."height",
+      "asset_exif"."fileSizeInByte",
+      "asset_exif"."city",
+      "asset_exif"."country",
+      "stack"
+    from
+      "asset"
+      inner join "asset_exif" on "asset"."id" = "asset_exif"."assetId"
+      left join lateral (
+        select
+          array[stacked."stackId"::text, count('stacked')::text] as "stack"
+        from
+          "asset" as "stacked"
+        where
+          "stacked"."stackId" = "asset"."stackId"
+          and "stacked"."deletedAt" is null
+          and "stacked"."visibility" = $2
+          and exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "stacked"."id"
+          ) = exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "asset"."id"
+          )
+        group by
+          "stacked"."stackId"
+      ) as "stacked_assets" on true
+    where
+      "asset"."deletedAt" is null
+      and (
+        "asset"."visibility" in ('archive', 'timeline')
+        and not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "asset"."id"
+        )
+      )
+      and not exists (
+        select
+        from
+          "stack"
+        where
+          "stack"."id" = "asset"."stackId"
+          and "stack"."primaryAssetId" != "asset"."id"
+      )
+    order by
+      asset."originalFileName" collate "und-x-icu" asc,
+      "asset"."fileCreatedAt" desc,
+      "asset"."id" asc
+    limit
+      $3
+    offset
+      $4
+  ),
+  "agg" as (
+    select
+      coalesce(array_agg("duration"), '{}') as "duration",
+      coalesce(array_agg("id"), '{}') as "id",
+      coalesce(array_agg("visibility"), '{}') as "visibility",
+      coalesce(array_agg("isFavorite"), '{}') as "isFavorite",
+      coalesce(array_agg("isImage"), '{}') as "isImage",
+      coalesce(array_agg("isTrashed"), '{}') as "isTrashed",
+      coalesce(array_agg("isOffline"), '{}') as "isOffline",
+      coalesce(array_agg("livePhotoVideoId"), '{}') as "livePhotoVideoId",
+      coalesce(array_agg("fileCreatedAt"), '{}') as "fileCreatedAt",
+      coalesce(array_agg("createdAt"), '{}') as "createdAt",
+      coalesce(array_agg("localOffsetHours"), '{}') as "localOffsetHours",
+      coalesce(array_agg("ownerId"), '{}') as "ownerId",
+      coalesce(array_agg("projectionType"), '{}') as "projectionType",
+      coalesce(array_agg("ratio"), '{}') as "ratio",
+      coalesce(array_agg("status"), '{}') as "status",
+      coalesce(array_agg("thumbhash"), '{}') as "thumbhash",
+      coalesce(array_agg("city"), '{}') as "city",
+      coalesce(array_agg("country"), '{}') as "country",
+      coalesce(array_agg("rating"), '{}') as "rating",
+      coalesce(array_agg("originalFileName"), '{}') as "originalFileName",
+      coalesce(array_agg("width"), '{}') as "width",
+      coalesce(array_agg("height"), '{}') as "height",
+      coalesce(array_agg("fileSizeInByte"), '{}') as "fileSizeInByte",
       coalesce(json_agg("stack"), '[]') as "stack"
     from
       "cte"
@@ -601,11 +1022,21 @@ from
   inner join "cities" on "asset_exif"."city" = "cities"."city"
 where
   "ownerId" = $2::uuid
-  and "visibility" = $3
-  and "type" = $4
+  and (
+    "asset"."visibility" = 'timeline'
+    and not exists (
+      select
+        1
+      from
+        asset_lock
+      where
+        asset_lock."assetId" = "asset"."id"
+    )
+  )
+  and "type" = $3
   and "deletedAt" is null
 limit
-  $5
+  $4
 
 -- AssetRepository.getRecentlyCreatedAssetIds
 select
@@ -615,13 +1046,23 @@ from
   "asset"
 where
   "ownerId" = $1::uuid
-  and "asset"."visibility" = $2
-  and "type" = $3
+  and (
+    "asset"."visibility" = 'timeline'
+    and not exists (
+      select
+        1
+      from
+        asset_lock
+      where
+        asset_lock."assetId" = "asset"."id"
+    )
+  )
+  and "type" = $2
   and "deletedAt" is null
 order by
   "value" desc
 limit
-  $4
+  $3
 
 -- AssetRepository.getNsfwAssetIds
 select
@@ -704,6 +1145,7 @@ where
 -- AssetRepository.getForOriginal
 select
   "asset"."id",
+  "asset"."ownerId",
   "originalFileName",
   "asset_file"."path" as "editedPath",
   "originalPath"
@@ -718,6 +1160,7 @@ where
 -- AssetRepository.getForOriginals
 select
   "asset"."id",
+  "asset"."ownerId",
   "originalFileName",
   "asset_file"."path" as "editedPath",
   "originalPath"
@@ -731,6 +1174,7 @@ where
 
 -- AssetRepository.getForThumbnail
 select
+  "asset"."ownerId",
   "asset"."originalPath",
   "asset"."originalFileName",
   "asset_file"."path" as "path"
@@ -746,6 +1190,7 @@ order by
 -- AssetRepository.getForVideo
 select
   "asset"."originalPath",
+  "asset"."ownerId",
   (
     select
       "asset_file"."path"
@@ -890,7 +1335,6 @@ from
 where
   "asset"."type" = 'IMAGE'
   and "asset"."deletedAt" is null
-  and "asset"."visibility" != 'hidden'
   and "asset"."visibility" in ('archive', 'timeline')
   and exists (
     select

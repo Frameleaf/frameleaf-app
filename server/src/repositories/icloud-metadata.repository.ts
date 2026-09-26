@@ -3,7 +3,7 @@ import { Kysely, sql } from 'kysely';
 import { DateTime } from 'luxon';
 import { InjectKysely } from 'nestjs-kysely';
 import type { ForkSchemaPhase } from 'src/repositories/fork-schema.repository.js';
-import { AssetVisibility } from 'src/enum.js';
+import { AssetLockReason, AssetVisibility } from 'src/enum.js';
 import { isForkWriteEnabled } from 'src/fork-schema/authority.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -50,8 +50,11 @@ export class ICloudMetadataRepository {
       .then(({ rows }) => rows[0]);
   }
 
-  /** One destination asset per transaction; at most 100 source descriptors are inspected. */
-  async reconcile(connectionId: string, ownerId: string, assetId?: string): Promise<boolean> {
+  /**
+   * One destination asset per transaction; at most 100 source descriptors are inspected. The ids of
+   * any assets it locks (FL-34) are added to `locked`, for the caller's follow-up once it commits.
+   */
+  async reconcile(connectionId: string, ownerId: string, assetId?: string, locked: string[] = []): Promise<boolean> {
     return this.db.transaction().execute(async (db) => {
       const phase = await sql<{ phase: ForkSchemaPhase }>`SELECT phase FROM immich_fork.state WHERE id=1 FOR SHARE`
         .execute(db)
@@ -135,19 +138,16 @@ export class ICloudMetadataRepository {
           }
         }
         // Apple Hidden is private. Immich Hidden is reserved for motion companions;
-        // tighten to Locked and never automatically remove a destination privacy choice.
+        // tighten to Locked (FL-34: a lock record, never a stored visibility) and never
+        // automatically remove a destination privacy choice.
         if (
           state.source.isHidden === true &&
           target.visibility === AssetVisibility.Timeline &&
           !state.overridden.includes('isHidden')
         ) {
           if (candidate.previous?.applied.visibility === undefined) {
-            await db
-              .updateTable('asset')
-              .set({ visibility: AssetVisibility.Locked })
-              .where('id', '=', candidate.assetId)
-              .where('ownerId', '=', ownerId)
-              .execute();
+            // the lock also releases every cover, featured photo and face thumbnail it was (FL-53)
+            locked.push(...(await new AssetRepository(db).lock([candidate.assetId], AssetLockReason.Marked, null)));
             state.applied.visibility = AssetVisibility.Locked;
           } else {
             state.overridden.push('isHidden');
@@ -192,14 +192,17 @@ export class ICloudMetadataRepository {
     });
   }
 
-  async afterExtraction(assetId: string, ownerId: string): Promise<void> {
+  /** Returns the ids of the assets it locked (FL-34). */
+  async afterExtraction(assetId: string, ownerId: string): Promise<string[]> {
+    const locked: string[] = [];
     const { rows } = await sql<{
       connectionId: string;
     }>`SELECT DISTINCT r."connectionId" FROM immich_fork.icloud_resource r
       JOIN immich_fork.icloud_connection c ON c.id=r."connectionId" WHERE r."assetId"=${assetId}::uuid AND r."ownerId"=${ownerId}::uuid
       AND c."ownerId"=${ownerId}::uuid AND c.state='connected' AND r.role<>'motion' LIMIT 100`.execute(this.db);
     for (const { connectionId } of rows) {
-      await this.reconcile(connectionId, ownerId, assetId);
+      await this.reconcile(connectionId, ownerId, assetId, locked);
     }
+    return locked;
   }
 }

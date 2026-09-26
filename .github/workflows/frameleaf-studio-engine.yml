@@ -1,0 +1,82 @@
+name: Frameleaf Studio engine
+'on':
+  pull_request:
+    branches: [fork/main]
+    paths:
+      - studio/**
+      - web/src/lib/frameleaf/studio/**
+      - scripts/frameleaf-studio-contracts.mjs
+      - .github/workflows/frameleaf-studio-engine.yml
+  push:
+    branches: [fork/main]
+    paths:
+      - studio/**
+      - web/src/lib/frameleaf/studio/**
+      - scripts/frameleaf-studio-contracts.mjs
+      - .github/workflows/frameleaf-studio-engine.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  engine:
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 24.21.0
+      - name: Pin the isolated engine package manager
+        run: npm install --global npm@11.8.0 --ignore-scripts --no-audit --no-fund
+      - name: Verify recovery safeguards
+        run: node --test studio/tools/engine.test.mjs
+      - name: Recover and verify immutable source, then prepare adapted workspace
+        run: node studio/tools/engine.mjs prepare
+      - name: Install locked dependencies without lifecycle scripts
+        run: npm --prefix studio/engine ci --ignore-scripts --no-audit --no-fund
+      - name: Upstream unit and Node headless contracts
+        run: |
+          npm --prefix studio/engine run test:run
+          npm --prefix studio/engine run headless:test:node
+      - name: Build and attest the isolated engine
+        run: |
+          npm --prefix studio/engine run build
+          node studio/tools/engine.mjs attest
+          cp studio/engine/frameleaf-build.json "$RUNNER_TEMP/frameleaf-build-first.json"
+      - name: Frameleaf adapter tests and editor build (FL-88, FL-92)
+        run: |
+          # The adapter compiles host modules from web/src, whose tsconfig extends the SvelteKit
+          # config that `svelte-kit sync` generates. This job has no web workspace, so stand in for it.
+          mkdir -p web/.svelte-kit
+          test -f web/.svelte-kit/tsconfig.json || echo '{}' > web/.svelte-kit/tsconfig.json
+          node studio/tools/adapter.mjs test
+          node studio/tools/adapter.mjs build
+          test -f web/static/studio-engine/manifest.json
+          test -f web/static/studio-engine/notices/freecut.txt
+      - name: Reproduce from a fresh generated workspace
+        run: |
+          rm -rf studio/engine
+          node studio/tools/engine.mjs prepare
+          npm --prefix studio/engine ci --ignore-scripts --no-audit --no-fund
+          npm --prefix studio/engine run build
+          node studio/tools/engine.mjs attest
+          node --input-type=module -e 'import fs from "node:fs"; import assert from "node:assert/strict"; const first = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + "/frameleaf-build-first.json")); const second = JSON.parse(fs.readFileSync("studio/engine/frameleaf-build.json")); assert.deepEqual(second.artifacts, first.artifacts); assert.equal(second.artifactSha256, first.artifactSha256); assert.equal(second.sourceSha256, first.sourceSha256); console.log("Reproduced", second.artifactSha256);'
+          node studio/tools/feature-manifest.mjs --check
+      - name: Retain source, artifact and license evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: frameleaf-studio-engine-provenance
+          path: |
+            ${{ runner.temp }}/frameleaf-build-first.json
+            studio/engine/frameleaf-source.json
+            studio/engine/frameleaf-build.json
+          if-no-files-found: error

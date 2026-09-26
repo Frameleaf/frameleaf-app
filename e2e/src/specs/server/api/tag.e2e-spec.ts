@@ -142,6 +142,53 @@ describe('/tags', () => {
     });
   });
 
+  describe('GET /tags/statistics', () => {
+    it('should require authentication', async () => {
+      const { status } = await request(app).get('/tags/statistics');
+      expect(status).toBe(401);
+    });
+
+    it('should count items per tag, including subtags, and never an archived or trashed one (FL-46)', async () => {
+      const [rockies] = await upsert(user.accessToken, ['trips/rockies']);
+      const [trips] = await upsert(user.accessToken, ['trips']);
+      await upsert(user.accessToken, ['empty']);
+      const visible = await utils.createAsset(user.accessToken);
+      const tripsOnly = await utils.createAsset(user.accessToken);
+      // a hidden descendant item: tagged with the subtag, but archived, so never counted
+      const archived = await utils.createAsset(user.accessToken);
+      const trashed = await utils.createAsset(user.accessToken);
+      await utils.archiveAssets(user.accessToken, [archived.id]);
+      await utils.deleteAssets(user.accessToken, [trashed.id]);
+      await utils.tagAssets(user.accessToken, rockies.id, [visible.id, archived.id, trashed.id]);
+      await utils.tagAssets(user.accessToken, trips.id, [tripsOnly.id]);
+
+      const { status, body } = await request(app)
+        .get('/tags/statistics')
+        .set('Authorization', `Bearer ${user.accessToken}`);
+
+      expect(status).toBe(200);
+      expect(body).toHaveLength(2);
+      expect(body).toEqual(
+        expect.arrayContaining([
+          { id: trips.id, count: 1, total: 2 },
+          { id: rockies.id, count: 1, total: 1 },
+        ]),
+      );
+    });
+
+    it("should not count another user's tags", async () => {
+      const [tag] = await upsert(user.accessToken, ['mine']);
+      await utils.tagAssets(user.accessToken, tag.id, [userAsset.id]);
+
+      const { status, body } = await request(app)
+        .get('/tags/statistics')
+        .set('Authorization', `Bearer ${admin.accessToken}`);
+
+      expect(status).toBe(200);
+      expect(body).toEqual([]);
+    });
+  });
+
   describe('PUT /tags', () => {
     it('should upsert tags', async () => {
       const { status, body } = await request(app)
@@ -280,6 +327,37 @@ describe('/tags', () => {
       expect(status).toBe(200);
       expect(body).toEqual(expect.objectContaining({ color: `#000000` }));
     });
+
+    it('should move a nested tag and its children to the top level', async () => {
+      const tagA = await create(user.accessToken, { name: 'TagA' });
+      const tagB = await create(user.accessToken, { name: 'TagB', parentId: tagA.id });
+      const tagC = await create(user.accessToken, { name: 'TagC', parentId: tagB.id });
+      const { status, body } = await request(app)
+        .put(`/tags/${tagB.id}`)
+        .send({ parentId: null })
+        .set('Authorization', `Bearer ${user.accessToken}`);
+      expect(status).toBe(200);
+      expect(body).toEqual(expect.objectContaining({ id: tagB.id, value: 'TagB' }));
+      expect(body.parentId).toBeUndefined();
+      const tags = await getAllTags({ headers: asBearerAuth(user.accessToken) });
+      expect(tags).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: tagA.id, value: 'TagA' }),
+          expect.objectContaining({ id: tagC.id, value: 'TagB/TagC', parentId: tagB.id }),
+        ]),
+      );
+    });
+
+    it('should not move a tag under its own child', async () => {
+      const tagA = await create(user.accessToken, { name: 'TagA' });
+      const tagB = await create(user.accessToken, { name: 'TagB', parentId: tagA.id });
+      const { status, body } = await request(app)
+        .put(`/tags/${tagA.id}`)
+        .send({ parentId: tagB.id })
+        .set('Authorization', `Bearer ${user.accessToken}`);
+      expect(status).toBe(400);
+      expect(body).toEqual(errorDto.badRequest('A tag cannot be moved under itself or one of its descendants'));
+    });
   });
 
   describe('DELETE /tags/:id', () => {
@@ -334,8 +412,29 @@ describe('/tags', () => {
         .set('Authorization', `Bearer ${user.accessToken}`)
         .send({ ids: [userAsset.id] });
 
-      expect(status).toBe(400);
-      expect(body).toEqual(errorDto.badRequest('Not found or no tag.asset access'));
+      expect(status).toBe(404);
+      expect(body).toEqual(errorDto.notFound('Tag not found'));
+    });
+
+    // FL-36: a bulk tag reports each item of a mixed or stale selection instead of failing the batch.
+    it('reports each item of a mixed selection', async () => {
+      const tagA = await create(user.accessToken, { name: 'TagMixed' });
+      const [ownAsset, otherAsset] = await Promise.all([
+        utils.createAsset(user.accessToken),
+        utils.createAsset(admin.accessToken),
+      ]);
+      const staleId = '00000000-0000-4000-8000-000000000000';
+      const { status, body } = await request(app)
+        .put(`/tags/${tagA.id}/assets`)
+        .set('Authorization', `Bearer ${user.accessToken}`)
+        .send({ ids: [ownAsset.id, otherAsset.id, staleId] });
+
+      expect(status).toBe(200);
+      expect(body).toEqual([
+        expect.objectContaining({ id: ownAsset.id, success: true }),
+        expect.objectContaining({ id: otherAsset.id, success: false, error: 'no_permission' }),
+        expect.objectContaining({ id: staleId, success: false, error: 'no_permission' }),
+      ]);
     });
 
     it('should add duplicate assets only once', async () => {

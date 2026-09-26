@@ -1,10 +1,12 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Put } from '@nestjs/common';
+import { Controller, Get, HttpCode, HttpStatus, Post, Req } from '@nestjs/common';
 import { ApiNotFoundResponse, ApiTags } from '@nestjs/swagger';
+import type { Request } from 'express';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
-import { LicenseKeyDto, LicenseResponseDto } from 'src/dtos/license.dto.js';
 import {
+  ReleaseEventV1,
   ServerAboutResponseDto,
   ServerApkLinksDto,
+  ServerAppReleasesResponseDto,
   ServerConfigDto,
   ServerFeaturesDto,
   ServerMediaTypesResponseDto,
@@ -17,6 +19,7 @@ import {
 import { VersionCheckStateResponseDto } from 'src/dtos/system-metadata.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
 import { Authenticated } from 'src/middleware/auth.guard.js';
+import { requestVia } from 'src/middleware/frameleaf-via.middleware.js';
 import { ServerService } from 'src/services/server.service.js';
 import { SystemMetadataService } from 'src/services/system-metadata.service.js';
 import { VersionService } from 'src/services/version.service.js';
@@ -43,13 +46,27 @@ export class ServerController {
 
   @Get('apk-links')
   @Authenticated({ permission: Permission.ServerApkLinks })
+  @ApiNotFoundResponse({ description: 'No signed Android release is configured for this server' })
   @Endpoint({
     summary: 'Get APK links',
-    description: 'Retrieve links to the APKs for the current server version.',
+    description:
+      'Retrieve links to the signed APKs for the current server version, from the release destination configured for this server.',
     history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
   })
   getApkLinks(): ServerApkLinksDto {
     return this.service.getApkLinks();
+  }
+
+  @Get('app-releases')
+  @Authenticated({ permission: Permission.ServerAbout })
+  @Endpoint({
+    summary: 'Get app releases',
+    description:
+      'Retrieve the signed release destinations of the mobile apps for this server, or that none is configured.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  getAppReleases(): ServerAppReleasesResponseDto {
+    return this.service.getAppReleases();
   }
 
   @Get('storage')
@@ -122,15 +139,15 @@ export class ServerController {
       .stable('v2')
       .deprecated('v3.2.0', { replacementId: 'getPublicConfig' }),
   })
-  getServerConfig(): Promise<ServerConfigDto> {
-    return this.service.getSystemConfig();
+  getServerConfig(@Req() request: Request): Promise<ServerConfigDto> {
+    return this.service.getSystemConfig(requestVia(request));
   }
 
   @Get('statistics')
   @Authenticated({ permission: Permission.ServerStatistics, admin: true })
   @Endpoint({
     summary: 'Get statistics',
-    description: 'Retrieve statistics about the entire Immich instance such as asset counts.',
+    description: 'Retrieve statistics about the entire Frameleaf instance such as asset counts.',
     history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
   })
   getServerStatistics(): Promise<ServerStatsResponseDto> {
@@ -148,41 +165,6 @@ export class ServerController {
     return this.service.getSupportedMediaTypes();
   }
 
-  @Get('license')
-  @Authenticated({ permission: Permission.ServerLicenseRead, admin: true })
-  @ApiNotFoundResponse()
-  @Endpoint({
-    summary: 'Get product key',
-    description: 'Retrieve information about whether the server currently has a product key registered.',
-    history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
-  })
-  getServerLicense(): Promise<LicenseResponseDto> {
-    return this.service.getLicense();
-  }
-
-  @Put('license')
-  @Authenticated({ permission: Permission.ServerLicenseUpdate, admin: true })
-  @Endpoint({
-    summary: 'Set server product key',
-    description: 'Validate and set the server product key if successful.',
-    history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
-  })
-  setServerLicense(@Body() license: LicenseKeyDto): Promise<LicenseResponseDto> {
-    return this.service.setLicense(license);
-  }
-
-  @Delete('license')
-  @Authenticated({ permission: Permission.ServerLicenseDelete, admin: true })
-  @HttpCode(HttpStatus.NO_CONTENT)
-  @Endpoint({
-    summary: 'Delete server product key',
-    description: 'Delete the currently set server product key.',
-    history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
-  })
-  deleteServerLicense(): Promise<void> {
-    return this.service.deleteLicense();
-  }
-
   @Get('version-check')
   @Authenticated({ permission: Permission.ServerVersionCheck })
   @Endpoint({
@@ -192,5 +174,18 @@ export class ServerController {
   })
   getVersionCheck(): Promise<VersionCheckStateResponseDto> {
     return this.systemMetadataService.getVersionCheckState();
+  }
+
+  @Post('version-check')
+  @HttpCode(HttpStatus.OK)
+  @Authenticated({ permission: Permission.ServerVersionCheck, admin: true })
+  @Endpoint({
+    summary: 'Check for updates now',
+    description:
+      "Ask Frameleaf's release feed for the newest version now, whether or not automatic checks are on (About → Check for updates). No other service is contacted.",
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  checkVersionNow(): Promise<ReleaseEventV1> {
+    return this.versionService.checkNow();
   }
 }

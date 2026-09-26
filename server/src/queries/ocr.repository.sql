@@ -70,6 +70,13 @@ select
 
 -- OcrRepository.updateOcrVisibilities
 begin
+select
+  "asset_ocr"."text"
+from
+  "asset_ocr"
+where
+  "asset_ocr"."assetId" = $1
+  and "asset_ocr"."isVisible" = $2
 update "ocr_search"
 set
   "text" = $1

@@ -1,9 +1,49 @@
 import { Injectable } from '@nestjs/common';
-import { Duration } from 'luxon';
-import { readFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { openAsBlob } from 'node:fs';
+import { open, readFile, rm, stat } from 'node:fs/promises';
+import { basename, resolve } from 'node:path';
+import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
+import z from 'zod';
+import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
+import type { CloudProbeFacts } from 'src/utils/frameleaf-cloud.js';
+import type { MlContainerReport } from 'src/utils/hardware-check.js';
 import { MachineLearningConfig } from 'src/dtos/config.dto.js';
-import { MachineLearningHardwareAcceleration } from 'src/enum.js';
+import {
+  RESTORATION_MAX_OUTPUT_EDGE,
+  RESTORATION_PROTOCOL,
+  RESTORATION_RESULT_HEADER,
+  RestorationCapabilityReport,
+  RestorationCapabilityReportSchema,
+  RestorationModelState,
+  RestorationWorkerErrorCode,
+  RestorationWorkerErrorSchema,
+  RestorationWorkerRequest,
+  RestorationWorkerRequestSchema,
+  RestorationWorkerResult,
+  RestorationWorkerResultSchema,
+} from 'src/dtos/restoration-inference.dto.js';
+import { MachineLearningHardwareResponseDto } from 'src/dtos/system-config.dto.js';
+import {
+  CLOUD_ML_DESTINATION_KINDS,
+  LIBRARY_ML_WORKLOADS,
+  MachineLearningHardwareAcceleration,
+  MlDestinationKind,
+  MlWorkload,
+} from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+// Restoration's selection registry and inference types live with the rest of restoration's
+// rules; that module only needs this one's types, so the import cycle is inert at load time.
+import {
+  RestorationInference,
+  RestorationInferenceInput,
+  RestorationInferenceOptions,
+  RestorationInferenceResult,
+  RestorationSelection,
+  restorationAdmissionOf,
+  workloadForMode,
+} from 'src/utils/restoration.js';
 
 export interface BoundingBox {
   x1: number;
@@ -79,6 +119,12 @@ export type NsfwDetectionResult = {
 
 export type ImageDescriptionResult = {
   description: string;
+  /**
+   * FL-36: the model's confidence in the description, 0 to 1, when the destination reports one.
+   * The bundled service does not (its people and safety signals carry only low/medium/high labels,
+   * which are never turned into a number); stored only when present, null otherwise.
+   */
+  confidence?: number | null;
   people: Array<{
     count: number;
     apparent_age_group: string;
@@ -138,6 +184,7 @@ export interface Face {
 }
 
 export type FacialRecognitionResponse = { [ModelTask.FACIAL_RECOGNITION]: Face[] } & VisualResponse;
+
 export type MachineLearningRequest =
   | ClipVisualRequest
   | ClipTextualRequest
@@ -155,7 +202,7 @@ export type MachineLearningHardwareResponse = {
   preferredAcceleration: MachineLearningHardwareAcceleration;
 };
 
-const defaultMachineLearningHardware: MachineLearningHardwareResponse = {
+export const defaultMachineLearningHardware: MachineLearningHardwareResponse = {
   providers: [],
   openvinoDeviceIds: [],
   torchCudaAvailable: false,
@@ -168,15 +215,167 @@ const isFlorenceImageDescriptionModel = (modelName: string) => {
   return cleanModelName.startsWith('florence-2-');
 };
 
-type ManagedUrlEntry = { url: string; authToken?: string };
+/**
+ * A resolved place to send one request: the URL and, for authenticated workers, the bearer. The
+ * Frameleaf Cloud destination resolves to `FRAMELEAF_CLOUD_ENDPOINT` (`cloud: true`): it has no URL
+ * of its own, so a check of it is delegated to the cloud processing service (FL-159).
+ */
+export type MlEndpoint = { url: string; authToken?: string; cloud?: true };
+
+/** The sentinel the Frameleaf Cloud destination resolves to; never fetched as a URL. */
+export const FRAMELEAF_CLOUD_ENDPOINT: MlEndpoint = Object.freeze({ url: 'frameleaf-cloud:gateway', cloud: true });
+
+/** Checks Frameleaf Cloud for the destination (registered by `CloudMlService`). */
+export type CloudMlProber = (options: { maxAgeMs: number }) => Promise<MlEndpointProbe>;
+
+/**
+ * FL-159: Frameleaf Cloud runs work as cloud jobs (estimate, confirm, upload, result), never through
+ * the `/predict` or restoration protocols of local and LAN workers. Until cloud jobs are submitted
+ * (CLD-202, CLD-203) a request bound to it fails in place with this error: it is never sent to
+ * another destination.
+ */
+export class CloudJobsUnavailableError extends Error {
+  constructor(what: string) {
+    super(`Frameleaf Cloud runs ${what} as a cloud job, which this server does not submit yet; nothing was sent`);
+    this.name = 'CloudJobsUnavailableError';
+  }
+}
+
+/** What one request cost, recorded per destination for FL-115's accounting. */
+export type MlUsage = {
+  bytesSent: number;
+  bytesReceived: number;
+  durationMs: number;
+  outcome: 'success' | 'failure';
+};
+
+/**
+ * The result of an explicit, admitted selection (FL-110). Every inference call takes one of
+ * these as its first argument: there is no "current URL" inside the repository any more,
+ * so a call cannot reach a destination the caller did not name. `record` is the accounting
+ * hook the selection owner installs; the repository calls it exactly once per request.
+ */
+export type MlSelection = {
+  destinationId: string;
+  kind: MlDestinationKind;
+  workload: MlWorkload;
+  endpoint: MlEndpoint;
+  /**
+   * FL-146, FL-183: the catalogue model SKU a Frameleaf Cloud job names (the routed choice, else the
+   * catalogue's default for its group); null for this server and home-network workers, which use
+   * the local settings.
+   */
+  cloudModelId?: string | null;
+  record: (usage: MlUsage) => void;
+};
+
+/**
+ * What a probe learned about one endpoint. `workloads` is what the worker itself claims to
+ * serve (`GET /capabilities`). A worker that answers `/ping` but has no capabilities route
+ * is a predict container from before that route existed; it is credited with the library
+ * workloads and nothing else, so it can never be admitted for restoration or Studio work.
+ */
+export type MlEndpointProbe = {
+  reachable: boolean;
+  workloads: MlWorkload[];
+  hardware: MachineLearningHardwareResponse | null;
+  latencyMs: number;
+  probedAt: Date;
+  error: string | null;
+  /** FL-159: what a Frameleaf Cloud check learned; absent for local and LAN workers. */
+  cloud?: CloudProbeFacts | null;
+};
+
+type CapabilitiesResponse = { workloads?: unknown };
+
+const renderNodeSchema = z.object({
+  node: z.string().max(40),
+  vendor: z.string().max(40).nullable(),
+  accessible: z.boolean(),
+  memoryTotalBytes: z.number().int().min(0).nullable(),
+});
+
+/** FL-159: what the container reached for AI work (`machine-learning/immich_ml/hardware_report.py`). */
+const mlContainerSchema = z.object({
+  image: z.string().max(40),
+  backend: z.string().max(40),
+  gpus: z
+    .array(
+      z.object({
+        name: z.string().max(200),
+        vendor: z.string().max(40).nullable(),
+        memoryTotalBytes: z.number().int().min(0).nullable(),
+      }),
+    )
+    .max(16),
+  driver: z.string().max(300).nullable(),
+  nvidiaError: z.string().max(300).nullable().default(null),
+  devices: z.object({
+    renderNodes: z.array(renderNodeSchema).max(16),
+    kfd: z.boolean(),
+    kfdAccessible: z.boolean(),
+    nvidia: z.boolean(),
+    nvidiaRequested: z.boolean(),
+  }),
+});
+
+const diagnosticHardwareSchema = MachineLearningHardwareResponseDto.schema.extend({
+  providers: z.array(z.string().max(100)).max(32),
+  openvinoDeviceIds: z.array(z.string().max(100)).max(32),
+  cudaDeviceCount: z.int().min(0).max(1024),
+});
+
+/**
+ * FL-159: the container report of `GET /hardware`, or null for a worker that does not send one (an
+ * older image) or sends one this server cannot read.
+ */
+export const parseMlContainerReport = (body: unknown): MlContainerReport | null => {
+  const container = (body as { container?: unknown } | null)?.container;
+  const parsed = mlContainerSchema.safeParse(container);
+  return parsed.success ? parsed.data : null;
+};
+
+const RESTORATION_WORKLOAD_SET: ReadonlySet<MlWorkload> = new Set([
+  MlWorkload.RestorationFaithful,
+  MlWorkload.RestorationCreative,
+]);
+
+const isMlWorkload = (value: unknown): value is MlWorkload =>
+  typeof value === 'string' && (Object.values(MlWorkload) as string[]).includes(value);
+
+/** How long an admission probe stays fresh before the next request re-probes the endpoint. */
+export const ML_PROBE_FRESHNESS_MS = 10_000;
+
+/** Longest a single restoration request may take, whatever signal the caller passes. */
+export const RESTORATION_REQUEST_TIMEOUT_MS = 6 * 60 * 60 * 1000;
+
+/**
+ * A restoration worker refused or failed an inference. `code` is the worker's own code,
+ * `unreachable` when the request never got an answer, or `protocol-error` when the answer
+ * could not be trusted (missing or mismatched result, or a file that failed its hash).
+ */
+export class RestorationWorkerError extends Error {
+  constructor(
+    readonly code: RestorationWorkerErrorCode | 'unreachable' | 'protocol-error',
+    readonly status: number | null,
+    message: string,
+    readonly modelId: string | null = null,
+  ) {
+    super(message);
+    this.name = 'RestorationWorkerError';
+  }
+}
+
+/** The same URL and credentials; endpoints are compared by value, never by object identity. */
+export const sameEndpoint = (a: MlEndpoint | null, b: MlEndpoint | null) =>
+  !!a && !!b && a.url === b.url && (a.authToken ?? null) === (b.authToken ?? null);
 
 @Injectable()
-export class MachineLearningRepository {
-  private healthyMap: Record<string, boolean> = {};
-  private interval?: ReturnType<typeof setInterval>;
+export class MachineLearningRepository implements RestorationInference {
   private _config?: MachineLearningConfig;
-  // Held on the instance — NOT on _config — so ConfigUpdate's rebuild of _config doesn't wipe it.
-  private managed: ManagedUrlEntry | null = null;
+  /** FL-159: the Frameleaf Cloud check, registered by the cloud processing service. */
+  private cloudProber: CloudMlProber | null = null;
+  private probeCache = new Map<string, { authToken?: string; probe: MlEndpointProbe }>();
 
   private get config(): MachineLearningConfig {
     if (!this._config) {
@@ -190,165 +389,181 @@ export class MachineLearningRepository {
     this.logger.setContext(MachineLearningRepository.name);
   }
 
-  setManagedUrl(url: string, authToken?: string) {
-    this.managed = { url, authToken };
-    this.logger.log(`Managed ML URL set (auth=${authToken ? 'yes' : 'no'}): ${url}`);
-  }
-
-  clearManagedUrl() {
-    if (this.managed) {
-      delete this.healthyMap[this.managed.url];
-      this.logger.log(`Managed ML URL cleared: ${this.managed.url}`);
-    }
-    this.managed = null;
-  }
-
-  getManagedUrl(): string | null {
-    return this.managed?.url ?? null;
-  }
-
-  /** Ordered list of (url, optional auth header) to try for ML requests.
-   *
-   * Iteration order:
-   *   1. The managed (RunPod) URL, if set. Its priority comes from the RunPod
-   *      state machine — when RunPodService publishes it, RunPod is "ready",
-   *      and the /ping probe must NOT veto it. A cold-starting serverless
-   *      worker that takes 60 s to come up would otherwise get marked
-   *      unhealthy and silently demoted below local URLs.
-   *   2. Configured URLs, sorted healthy-first. Inside the configured list we
-   *      DO honor /ping results: if you have two local ML boxes and one is
-   *      offline, the live one moves to the front of the line so jobs aren't
-   *      blocked waiting for a TCP connect to the dead box. Unknown-health
-   *      URLs (never probed) are treated as healthy so first-tick behavior
-   *      matches the configured order.
-   */
-  private getOrderedUrls(): ManagedUrlEntry[] {
-    const fromConfig: ManagedUrlEntry[] = this.config.urls.map((url) => ({ url }));
-    const sortedConfig = [...fromConfig].sort((a, b) => {
-      const healthyA = this.healthyMap[a.url] ? 1 : 0;
-      const healthyB = this.healthyMap[b.url] ? 1 : 0;
-      return healthyB - healthyA;
-    });
-    const managed = this.managed;
-    if (!managed) {
-      return sortedConfig;
-    }
-    // Don't double up if a user typed the managed URL into the editable list.
-    return [managed, ...sortedConfig.filter((entry) => entry.url !== managed.url)];
-  }
-
-  private authHeaders(entry: ManagedUrlEntry): Record<string, string> {
-    return entry.authToken ? { Authorization: `Bearer ${entry.authToken}` } : {};
-  }
-
   setup(config: MachineLearningConfig) {
     this._config = config;
-    this.teardown();
+    this.probeCache.clear();
+  }
 
-    // delete entries for URLs that are neither in the config nor the managed slot.
-    const known = new Set(config.urls);
-    if (this.managed) {
-      known.add(this.managed.url);
-    }
-    for (const url of Object.keys(this.healthyMap)) {
-      if (!known.has(url)) {
-        delete this.healthyMap[url];
+  /** The deployment's own ML URLs from the admin configuration; these back `local` destinations. */
+  getLocalUrls(): string[] {
+    return [...this.config.urls];
+  }
+
+  /** FL-159: register the Frameleaf Cloud check that `probe` delegates to for the cloud destination. */
+  setCloudProber(prober: CloudMlProber | null) {
+    this.cloudProber = prober;
+  }
+
+  private authHeaders(endpoint: MlEndpoint): Record<string, string> {
+    return endpoint.authToken ? { Authorization: `Bearer ${endpoint.authToken}` } : {};
+  }
+
+  private timeout(): number {
+    return this.config.availabilityChecks.timeout;
+  }
+
+  /**
+   * Check one endpoint: `/ping` for reachability, `/capabilities` for the workloads it
+   * serves and `/hardware` for its acceleration. A result younger than `maxAgeMs` is
+   * reused so a burst of jobs does not turn into a burst of probes.
+   */
+  async probe(endpoint: MlEndpoint, { maxAgeMs = 0 }: { maxAgeMs?: number } = {}): Promise<MlEndpointProbe> {
+    if (endpoint.cloud) {
+      if (!this.cloudProber) {
+        return {
+          reachable: false,
+          workloads: [],
+          hardware: null,
+          latencyMs: 0,
+          probedAt: new Date(),
+          error: 'Frameleaf Cloud processing is not available on this server',
+          cloud: null,
+        };
       }
+      return this.cloudProber({ maxAgeMs });
     }
 
-    if (!config.enabled || !config.availabilityChecks.enabled) {
-      return;
+    const cached = this.probeCache.get(endpoint.url);
+    if (
+      cached &&
+      cached.authToken === endpoint.authToken &&
+      maxAgeMs > 0 &&
+      Date.now() - cached.probe.probedAt.getTime() < maxAgeMs
+    ) {
+      return cached.probe;
     }
 
-    this.tick();
-    this.interval = setInterval(
-      () => this.tick(),
-      Duration.fromObject({ milliseconds: config.availabilityChecks.interval }).as('milliseconds'),
-    );
-  }
+    const timeout = Math.min(5000, Math.max(250, this.timeout()));
+    const started = Date.now();
+    const probedAt = new Date(started);
+    const finish = (probe: Omit<MlEndpointProbe, 'latencyMs' | 'probedAt'>): MlEndpointProbe => {
+      const result = { ...probe, latencyMs: Date.now() - started, probedAt };
+      this.probeCache.set(endpoint.url, { authToken: endpoint.authToken, probe: result });
+      return result;
+    };
+    const describe = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
-  teardown() {
-    if (this.interval) {
-      clearInterval(this.interval);
-    }
-  }
-
-  private tick() {
-    for (const entry of this.getOrderedUrls()) {
-      void this.check(entry);
-    }
-  }
-
-  private async check(entry: ManagedUrlEntry) {
-    let healthy = false;
     try {
-      // /ping is intentionally unauthenticated on the ML container so RunPod's proxy probes work;
-      // we still send the auth header for managed URLs in case a sidecar enforces it.
-      const response = await fetch(new URL('ping', entry.url), {
-        headers: this.authHeaders(entry),
-        signal: AbortSignal.timeout(this.config.availabilityChecks.timeout),
+      const ping = await fetch(new URL('ping', endpoint.url), {
+        headers: this.authHeaders(endpoint),
+        signal: AbortSignal.timeout(timeout),
+        redirect: 'error',
+      });
+      await ping.body?.cancel();
+      if (!ping.ok) {
+        return finish({ reachable: false, workloads: [], hardware: null, error: `ping returned ${ping.status}` });
+      }
+    } catch (error) {
+      return finish({ reachable: false, workloads: [], hardware: null, error: describe(error) });
+    }
+
+    let workloads: MlWorkload[];
+    try {
+      const response = await fetch(new URL('capabilities', endpoint.url), {
+        headers: this.authHeaders(endpoint),
+        signal: AbortSignal.timeout(timeout),
+        redirect: 'error',
       });
       if (response.ok) {
-        healthy = true;
+        const body = (await this.readDiagnosticJson(response)) as CapabilitiesResponse;
+        workloads = Array.isArray(body.workloads) ? body.workloads.filter(isMlWorkload) : [];
+      } else if (response.status === 404) {
+        await response.body?.cancel();
+        workloads = [...LIBRARY_ML_WORKLOADS];
+      } else {
+        await response.body?.cancel();
+        return finish({
+          reachable: true,
+          workloads: [],
+          hardware: null,
+          error: `capabilities returned ${response.status}`,
+        });
+      }
+    } catch (error) {
+      return finish({ reachable: true, workloads: [], hardware: null, error: describe(error) });
+    }
+
+    let hardware: MachineLearningHardwareResponse | null = null;
+    try {
+      const response = await fetch(new URL('hardware', endpoint.url), {
+        headers: this.authHeaders(endpoint),
+        signal: AbortSignal.timeout(timeout),
+        redirect: 'error',
+      });
+      if (response.ok) {
+        hardware = diagnosticHardwareSchema.parse(await this.readDiagnosticJson(response));
+      } else {
+        await response.body?.cancel();
       }
     } catch {
-      // nothing to do here
+      // Hardware is informational; a worker without the route is still admissible.
     }
 
-    this.setHealthy(entry.url, healthy);
-  }
-
-  private setHealthy(url: string, healthy: boolean) {
-    if (this.healthyMap[url] !== healthy) {
-      this.logger.log(`Machine learning server became ${healthy ? 'healthy' : 'unhealthy'} (${url}).`);
+    // FL-42: a worker's own `/capabilities` list is a diagnostic claim, not admission proof. A
+    // restoration workload counts only when the worker's model report backs it with a model that is
+    // available, has verified weights (a fingerprint) and a qualification record. Otherwise the claim
+    // is dropped and admission refuses the workload as not served.
+    if (workloads.some((workload) => RESTORATION_WORKLOAD_SET.has(workload))) {
+      const verified = await this.verifiedRestorationWorkloads(endpoint);
+      workloads = workloads.filter((workload) => !RESTORATION_WORKLOAD_SET.has(workload) || verified.has(workload));
     }
 
-    this.healthyMap[url] = healthy;
+    return finish({ reachable: true, workloads, hardware, error: null });
   }
 
-  private isHealthy(url: string) {
-    if (!this.config.availabilityChecks.enabled) {
-      return true;
+  /** Restoration workloads backed by an available, weight-verified and qualified model (FL-42). */
+  private async verifiedRestorationWorkloads(endpoint: MlEndpoint): Promise<Set<MlWorkload>> {
+    try {
+      const report = await this.getRestorationModels(endpoint);
+      return new Set(
+        report.models
+          .filter(
+            (model) =>
+              model.state === RestorationModelState.Available && !!model.fingerprint && !!model.qualificationId,
+          )
+          .map((model) => workloadForMode(model.mode)),
+      );
+    } catch {
+      return new Set();
     }
-
-    return this.healthyMap[url];
   }
 
-  private async predict<T>(payload: ModelPayload, config: MachineLearningRequest): Promise<T> {
-    const formData = await this.getFormData(payload, config);
-    // Iteration order is set by getOrderedUrls():
-    //   1. The managed (RunPod) URL goes first regardless of /ping status.
-    //      RunPod's own state machine is the authoritative "is RunPod
-    //      active" signal; a cold-starting serverless worker would
-    //      otherwise be demoted below local URLs while it's booting up.
-    //   2. Configured URLs are sorted healthy-first by the /ping probe.
-    //      With a dead local URL and a healthy secondary, this avoids
-    //      sitting on a TCP connect timeout to the dead box before
-    //      falling through.
-    const entries = this.getOrderedUrls();
-
-    for (const entry of entries) {
-      try {
-        const response = await fetch(new URL('predict', entry.url), {
-          method: 'POST',
-          headers: this.authHeaders(entry),
-          body: formData,
-        });
-        if (response.ok) {
-          this.setHealthy(entry.url, true);
-          return response.json();
+  private async readDiagnosticJson(response: Response): Promise<unknown> {
+    const reader = response.body?.getReader();
+    if (!reader) {
+      throw new Error('Missing diagnostic response');
+    }
+    const chunks: Uint8Array[] = [];
+    let size = 0;
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+          break;
         }
-
-        this.logger.warn(
-          `Machine learning request to "${entry.url}" failed with status ${response.status}: ${response.statusText}`,
-        );
-      } catch (error: Error | unknown) {
-        this.logger.warn(`Machine learning request to "${entry.url}" failed`, error);
+        size += value.byteLength;
+        if (size > 32 * 1024) {
+          throw new Error('Diagnostic response exceeds 32 KiB');
+        }
+        chunks.push(value);
       }
-
-      this.setHealthy(entry.url, false);
+    } finally {
+      await reader.cancel();
     }
+    return JSON.parse(Buffer.concat(chunks).toString('utf8'));
+  }
 
+  private redact(config: MachineLearningRequest): string {
     // Redact assembled prompt text to avoid leaking identity hints and admin-configured
     // vocabulary into logs, while preserving model name and acceleration for debugging.
     const sanitizedConfig = JSON.parse(JSON.stringify(config));
@@ -359,17 +574,74 @@ export class MachineLearningRepository {
         }
       }
     }
-    throw new Error(`Machine learning request '${JSON.stringify(sanitizedConfig)}' failed for all URLs`);
+    return JSON.stringify(sanitizedConfig);
   }
 
-  async detectFaces(imagePath: string, { modelName, minScore }: FaceDetectionOptions) {
+  /**
+   * Send one request to the selected endpoint and nothing else. A failure is reported to
+   * the caller naming the destination; it is never retried against another URL, because
+   * the destination was the caller's explicit choice and moving the media elsewhere would
+   * silently change where it goes.
+   */
+  private async predict<T>(selection: MlSelection, payload: ModelPayload, config: MachineLearningRequest): Promise<T> {
+    if (selection.endpoint.cloud) {
+      throw new CloudJobsUnavailableError(selection.workload);
+    }
+    const formData = await this.getFormData(payload, config);
+    const bytesSent = await this.measure(payload);
+    const started = Date.now();
+    const usage = (outcome: MlUsage['outcome'], bytesReceived: number): MlUsage => ({
+      bytesSent,
+      bytesReceived,
+      durationMs: Date.now() - started,
+      outcome,
+    });
+    const target = `${selection.kind} destination ${selection.destinationId}`;
+
+    let response: Response;
+    try {
+      response = await fetch(new URL('predict', selection.endpoint.url), {
+        method: 'POST',
+        headers: this.authHeaders(selection.endpoint),
+        body: formData,
+      });
+    } catch (error: Error | unknown) {
+      this.probeCache.delete(selection.endpoint.url);
+      selection.record(usage('failure', 0));
+      throw new Error(
+        `Machine learning request '${this.redact(config)}' to ${target} failed: ${error instanceof Error ? error.message : String(error)}`,
+        { cause: error },
+      );
+    }
+
+    const body = await response.text();
+    if (!response.ok) {
+      selection.record(usage('failure', body.length));
+      throw new Error(
+        `Machine learning request '${this.redact(config)}' to ${target} failed with status ${response.status}: ${response.statusText}`,
+      );
+    }
+
+    selection.record(usage('success', body.length));
+    return JSON.parse(body) as T;
+  }
+
+  private async measure(payload: ModelPayload): Promise<number> {
+    if ('imagePath' in payload) {
+      const { size } = await stat(payload.imagePath);
+      return size;
+    }
+    return Buffer.byteLength(payload.text);
+  }
+
+  async detectFaces(selection: MlSelection, imagePath: string, { modelName, minScore }: FaceDetectionOptions) {
     const request = {
       [ModelTask.FACIAL_RECOGNITION]: {
         [ModelType.DETECTION]: { modelName, options: { minScore } },
         [ModelType.RECOGNITION]: { modelName },
       },
     };
-    const response = await this.predict<FacialRecognitionResponse>({ imagePath }, request);
+    const response = await this.predict<FacialRecognitionResponse>(selection, { imagePath }, request);
     return {
       imageHeight: response.imageHeight,
       imageWidth: response.imageWidth,
@@ -377,30 +649,35 @@ export class MachineLearningRepository {
     };
   }
 
-  async encodeImage(imagePath: string, { modelName }: MachineLearningConfig['clip']) {
+  async encodeImage(selection: MlSelection, imagePath: string, { modelName }: MachineLearningConfig['clip']) {
     const request = { [ModelTask.SEARCH]: { [ModelType.VISUAL]: { modelName } } };
-    const response = await this.predict<ClipVisualResponse>({ imagePath }, request);
+    const response = await this.predict<ClipVisualResponse>(selection, { imagePath }, request);
     return response[ModelTask.SEARCH];
   }
 
-  async encodeText(text: string, { language, modelName }: TextEncodingOptions) {
+  async encodeText(selection: MlSelection, text: string, { language, modelName }: TextEncodingOptions) {
     const request = { [ModelTask.SEARCH]: { [ModelType.TEXTUAL]: { modelName, options: { language } } } };
-    const response = await this.predict<ClipTextualResponse>({ text }, request);
+    const response = await this.predict<ClipTextualResponse>(selection, { text }, request);
     return response[ModelTask.SEARCH];
   }
 
-  async ocr(imagePath: string, { modelName, minDetectionScore, minRecognitionScore, maxResolution }: OcrOptions) {
+  async ocr(
+    selection: MlSelection,
+    imagePath: string,
+    { modelName, minDetectionScore, minRecognitionScore, maxResolution }: OcrOptions,
+  ) {
     const request = {
       [ModelTask.OCR]: {
         [ModelType.DETECTION]: { modelName, options: { minScore: minDetectionScore, maxResolution } },
         [ModelType.RECOGNITION]: { modelName, options: { minScore: minRecognitionScore } },
       },
     };
-    const response = await this.predict<OcrResponse>({ imagePath }, request);
+    const response = await this.predict<OcrResponse>(selection, { imagePath }, request);
     return response[ModelTask.OCR];
   }
 
   async describeImage(
+    selection: MlSelection,
     imagePath: string,
     { modelName, acceleration, fallbackModelName, device }: ImageDescriptionOptions,
     nsfw?: NsfwDetectionResult,
@@ -415,128 +692,367 @@ export class MachineLearningRepository {
       },
     });
 
-    // The fallback model is intentionally NOT tried on the managed (RunPod) URL.
-    // Two reasons:
-    //   1. The admin picks a single primary model in the dropdown; silently
-    //      switching to Florence on RunPod muddies that contract.
-    //   2. Florence's HF modeling code requires transformers 4.x and isn't
-    //      loadable on the cuda-runpod image's transformers 5.x pin, so the
-    //      fallback would always 500 anyway — wasting a round trip + cold-start.
-    // Local (configured) URLs still get the fallback retry: they may be running
-    // an older ML image where Florence works fine, and Florence is the only
-    // small-footprint option on CPU/laptop deploys.
-    const managedUrl = this.getManagedUrl();
-    const orderedUrls = this.getOrderedUrls();
-
+    // The fallback model is retried on the same destination only, and never on a cloud
+    // destination: the admin picked one primary model for cloud work. Local and LAN workers may
+    // be running an older image where Florence is the only small-footprint option.
     const florenceUnavailable =
       acceleration !== MachineLearningHardwareAcceleration.Cuda &&
       !!fallbackModelName &&
       isFlorenceImageDescriptionModel(fallbackModelName);
-
-    let lastError: unknown = new Error('Machine learning has no configured URLs');
-    for (const entry of orderedUrls) {
-      const isManaged = entry.url === managedUrl;
-      const candidateModels: string[] = [modelName];
-      if (!isManaged && fallbackModelName && fallbackModelName !== modelName && !florenceUnavailable) {
-        candidateModels.push(fallbackModelName);
+    // A Frameleaf Cloud job names only the cloud model admission resolved (the routed SKU or the
+    // catalogue's default, FL-183), never the local description setting (FL-146) or a model name.
+    if (selection.kind === MlDestinationKind.FrameleafCloud) {
+      if (!selection.cloudModelId) {
+        throw new CloudJobsUnavailableError(selection.workload);
       }
+      const body = await this.predict<ImageDescriptionResponse>(
+        selection,
+        { imagePath },
+        buildRequest(selection.cloudModelId),
+      );
+      return body[ModelTask.IMAGE_DESCRIPTION];
+    }
+    const candidateModels: string[] = [modelName];
+    if (fallbackModelName && fallbackModelName !== modelName && !florenceUnavailable) {
+      candidateModels.push(fallbackModelName);
+    }
 
-      let urlReachable = false;
-      for (const candidateModel of candidateModels) {
-        try {
-          const formData = await this.getFormData({ imagePath }, buildRequest(candidateModel));
-          const response = await fetch(new URL('predict', entry.url), {
-            method: 'POST',
-            headers: this.authHeaders(entry),
-            body: formData,
-          });
-          if (response.ok) {
-            this.setHealthy(entry.url, true);
-            const body = (await response.json()) as ImageDescriptionResponse;
-            if (candidateModel !== modelName) {
-              this.logger.warn(
-                `Image description model '${modelName}' failed on "${entry.url}"; succeeded with fallback model '${candidateModel}'`,
-              );
-            }
-            return body[ModelTask.IMAGE_DESCRIPTION];
-          }
-          urlReachable = true;
-          lastError = new Error(`HTTP ${response.status} ${response.statusText}`);
+    let lastError: unknown;
+    for (const candidateModel of candidateModels) {
+      try {
+        const body = await this.predict<ImageDescriptionResponse>(
+          selection,
+          { imagePath },
+          buildRequest(candidateModel),
+        );
+        if (candidateModel !== modelName) {
           this.logger.warn(
-            `Image description request to "${entry.url}" (model='${candidateModel}') failed with status ${response.status}: ${response.statusText}`,
-          );
-        } catch (error) {
-          lastError = error;
-          this.logger.warn(
-            `Image description request to "${entry.url}" (model='${candidateModel}') failed: ${error instanceof Error ? error.message : error}`,
+            `Image description model '${modelName}' failed on destination ${selection.destinationId}; succeeded with fallback model '${candidateModel}'`,
           );
         }
-      }
-
-      // Mark unhealthy only on transport-level failure; HTTP-level errors mean
-      // the server was reachable but the model load/inference failed, which the
-      // /ping probe will pick up independently.
-      this.setHealthy(entry.url, urlReachable);
-
-      if (isManaged && managedUrl && fallbackModelName && fallbackModelName !== modelName && !florenceUnavailable) {
-        // Audit log so admins can see the fallback was skipped because RunPod was the candidate.
-        this.logger.debug(
-          `Image description fallback model '${fallbackModelName}' not attempted on managed URL "${entry.url}".`,
+        return body[ModelTask.IMAGE_DESCRIPTION];
+      } catch (error) {
+        lastError = error;
+        this.logger.warn(
+          `Image description request to destination ${selection.destinationId} (model='${candidateModel}') failed: ${error instanceof Error ? error.message : error}`,
         );
       }
     }
 
-    const sanitizedConfig = JSON.parse(JSON.stringify(buildRequest(modelName)));
-    for (const task of Object.values<any>(sanitizedConfig)) {
-      for (const entry of Object.values<any>(task ?? {})) {
-        if (entry?.options?.external_prompt !== undefined) {
-          entry.options.external_prompt = '[redacted]';
-        }
-      }
-    }
-    throw new Error(
-      `Machine learning request '${JSON.stringify(sanitizedConfig)}' failed for all URLs (last error: ${lastError instanceof Error ? lastError.message : String(lastError)})`,
-    );
+    throw lastError instanceof Error ? lastError : new Error(String(lastError));
   }
 
-  async detectNsfw(imagePath: string, { modelName, threshold, device }: NsfwDetectionOptions) {
+  async detectNsfw(selection: MlSelection, imagePath: string, { modelName, threshold, device }: NsfwDetectionOptions) {
     const request = {
       [ModelTask.NSFW_DETECTION]: {
         [ModelType.CLASSIFICATION]: { modelName, options: { threshold, device } },
       },
     };
-    const response = await this.predict<NsfwDetectionResponse>({ imagePath }, request);
+    const response = await this.predict<NsfwDetectionResponse>(selection, { imagePath }, request);
     return response[ModelTask.NSFW_DETECTION];
   }
 
-  async getHardware(): Promise<MachineLearningHardwareResponse> {
-    // Same managed-first ordering as predict(); don't let the 2s health probe
-    // shadow a cold-starting RunPod worker. See predict() for the rationale.
-    const entries = this.getOrderedUrls();
-    for (const entry of entries) {
-      try {
-        const response = await fetch(new URL('/hardware', entry.url), {
-          headers: this.authHeaders(entry),
-          signal: AbortSignal.timeout(this.config.availabilityChecks.timeout),
-        });
-        if (response.ok) {
-          this.setHealthy(entry.url, true);
-          return response.json();
-        }
+  /**
+   * What a restoration worker reports about its models (FL-114): each model's state, every
+   * reason it is unavailable and the throughput its qualification measured. Metadata only; no
+   * media is sent. Workload names the server does not know are dropped.
+   */
+  async getRestorationModels(endpoint: MlEndpoint): Promise<RestorationCapabilityReport> {
+    if (endpoint.cloud) {
+      throw new Error('Frameleaf Cloud models come from its catalogue, not a restoration worker');
+    }
+    const response = await fetch(new URL('restoration/models', endpoint.url), {
+      headers: this.authHeaders(endpoint),
+      signal: AbortSignal.timeout(this.timeout()),
+    });
+    if (response.status === 404) {
+      throw new Error('the destination does not run the restoration worker');
+    }
+    if (!response.ok) {
+      throw new Error(`restoration models returned ${response.status}`);
+    }
+    const report = RestorationCapabilityReportSchema.parse(await response.json());
+    return { ...report, workloads: report.workloads.filter(isMlWorkload) };
+  }
 
-        this.logger.warn(
-          `Machine learning hardware request to "${entry.url}" failed with status ${response.status}: ${response.statusText}`,
-        );
-      } catch (error: unknown) {
-        this.logger.warn(
-          `Machine learning hardware request to "${entry.url}" failed: ${error instanceof Error ? error.message : error}`,
+  /**
+   * Run one restoration inference on the selected destination (FL-114). This is the
+   * `RestorationInference` FL-115's restoration worker calls for every still, preview clip and
+   * video chunk.
+   *
+   * The selection must come from `selectRestorationDestination` (`src/utils/restoration.ts`):
+   * anything else is refused, and a cloud destination is refused unless the person confirmed
+   * it for this request. The source is only read, and FL-115 uploads only the crop, clip or
+   * chunk the job needs. The restored file is a new file: `outputPath` is created exclusively,
+   * so an existing file (the original included) can never be replaced, and it is kept only
+   * when its size and sha256 match the worker's result. A failure names the destination and is
+   * never retried anywhere else.
+   */
+  async restore(
+    selection: RestorationSelection,
+    input: RestorationInferenceInput,
+    options: RestorationInferenceOptions,
+  ): Promise<RestorationInferenceResult> {
+    const admission = restorationAdmissionOf(selection);
+    if (!admission) {
+      throw new Error('A restoration runs only on a destination admitted by selectRestorationDestination');
+    }
+    const expected = workloadForMode(options.mode);
+    if (selection.workload !== expected) {
+      throw new Error(`A ${options.mode} restoration needs a ${expected} selection, not ${selection.workload}`);
+    }
+    if (selection.endpoint.cloud) {
+      throw new CloudJobsUnavailableError(selection.workload);
+    }
+    if (CLOUD_ML_DESTINATION_KINDS.has(selection.kind) && !admission.cloudUploadConfirmed) {
+      throw new Error(`Restoration on ${selection.kind} needs the person's confirmation that media leaves the network`);
+    }
+
+    const sourcePath = input.path;
+    const outputPath = options.outputPath;
+    if (resolve(sourcePath) === resolve(outputPath)) {
+      throw new Error('A restoration never writes over its source');
+    }
+
+    const payload = RestorationWorkerRequestSchema.parse({
+      protocol: RESTORATION_PROTOCOL,
+      requestId: `${options.jobId}:${basename(outputPath)}`.slice(0, 200),
+      mode: options.mode,
+      kind: input.kind,
+      scale: options.upscale,
+      maxWidth: Math.min(options.maxWidth, RESTORATION_MAX_OUTPUT_EDGE),
+      maxHeight: Math.min(options.maxHeight, RESTORATION_MAX_OUTPUT_EDGE),
+      keepGrain: options.keepGrain,
+      seed: 0,
+      source: {
+        width: input.width,
+        height: input.height,
+        durationMs: input.kind === 'video' ? Math.max(1, Math.round(input.durationSeconds * 1000)) : null,
+      },
+    });
+
+    // Exclusive create: fails when anything already exists at the path.
+    const output = await open(outputPath, 'wx');
+    const target = `${selection.kind} destination ${selection.destinationId}`;
+    const body = JSON.stringify(payload);
+    const signal = AbortSignal.any([options.signal, AbortSignal.timeout(RESTORATION_REQUEST_TIMEOUT_MS)]);
+    const started = Date.now();
+    let attempted = false;
+    let keep = false;
+    let bytesSent = 0;
+    let bytesReceived = 0;
+    let response: Response | undefined;
+
+    try {
+      // A file-backed Blob streams the source instead of reading a whole video into memory.
+      // At runtime it is the global Blob; the cast only bridges the node and DOM typings.
+      const media = await openAsBlob(sourcePath);
+      bytesSent = media.size + Buffer.byteLength(body);
+      const form = new FormData();
+      form.append('request', body);
+      form.append('media', media as unknown as Blob, basename(sourcePath));
+
+      attempted = true;
+      try {
+        response = await fetch(new URL('restoration/restore', selection.endpoint.url), {
+          method: 'POST',
+          headers: this.authHeaders(selection.endpoint),
+          body: form,
+          signal,
+        });
+      } catch (error) {
+        this.probeCache.delete(selection.endpoint.url);
+        throw new RestorationWorkerError(
+          'unreachable',
+          null,
+          `Restoration ${payload.requestId} to ${target} failed: ${error instanceof Error ? error.message : String(error)}`,
         );
       }
 
-      this.setHealthy(entry.url, false);
+      if (!response.ok) {
+        const text = await response.text();
+        bytesReceived = Buffer.byteLength(text);
+        const refusal = RestorationWorkerErrorSchema.safeParse(this.parseJson(text));
+        if (refusal.success) {
+          throw new RestorationWorkerError(
+            refusal.data.code,
+            response.status,
+            `Restoration ${payload.requestId} on ${target} was refused (${refusal.data.code}): ${refusal.data.message}`,
+            refusal.data.modelId ?? null,
+          );
+        }
+        throw new RestorationWorkerError(
+          'protocol-error',
+          response.status,
+          `Restoration ${payload.requestId} on ${target} failed with status ${response.status}`,
+        );
+      }
+
+      const result = this.parseRestorationResult(response, payload, target);
+      if (!response.body) {
+        throw new RestorationWorkerError('protocol-error', response.status, `Restoration ${target} sent no file`);
+      }
+
+      const hash = createHash('sha256');
+      await pipeline(
+        Readable.fromWeb(response.body as unknown as NodeReadableStream<Uint8Array>),
+        async function* (chunks: AsyncIterable<Uint8Array>) {
+          for await (const chunk of chunks) {
+            hash.update(chunk);
+            bytesReceived += chunk.length;
+            yield chunk;
+          }
+        },
+        // The stream closes the handle when it finishes or fails. With `autoClose: false` the
+        // `close()` in `finally` never settled after a completed write, and the restoration hung.
+        output.createWriteStream(),
+      );
+
+      const sha256 = hash.digest('hex');
+      if (bytesReceived !== result.output.bytes || sha256 !== result.output.sha256) {
+        throw new RestorationWorkerError(
+          'protocol-error',
+          response.status,
+          `Restoration ${payload.requestId} from ${target} failed verification: received ${bytesReceived} bytes ` +
+            `hashing to ${sha256}; the worker reported ${result.output.bytes} bytes hashing to ${result.output.sha256}`,
+          result.model.id,
+        );
+      }
+
+      keep = true;
+      selection.record({ bytesSent, bytesReceived, durationMs: Date.now() - started, outcome: 'success' });
+      return {
+        outputPath,
+        width: result.output.width,
+        height: result.output.height,
+        modelName: result.model.id,
+        // The pinned revision plus the start of the fingerprint over it and every weight hash.
+        modelVersion: `${result.model.revision.slice(0, 12)}+${result.model.fingerprint.slice(0, 12)}`,
+      };
+    } catch (error) {
+      if (response?.body && !response.bodyUsed) {
+        await response.body.cancel().catch(() => {});
+      }
+      if (attempted) {
+        selection.record({ bytesSent, bytesReceived, durationMs: Date.now() - started, outcome: 'failure' });
+      }
+      throw error;
+    } finally {
+      await output.close().catch((error: unknown) => {
+        this.logger.warn(`Could not close restoration output ${outputPath}: ${error}`);
+      });
+      if (!keep) {
+        // Only ever the file this call created exclusively above.
+        await rm(outputPath, { force: true });
+      }
+    }
+  }
+
+  private parseJson(text: string): unknown {
+    try {
+      return JSON.parse(text);
+    } catch {
+      return null;
+    }
+  }
+
+  private parseRestorationResult(
+    response: Response,
+    payload: RestorationWorkerRequest,
+    target: string,
+  ): RestorationWorkerResult {
+    const header = response.headers.get(RESTORATION_RESULT_HEADER);
+    if (!header) {
+      throw new RestorationWorkerError(
+        'protocol-error',
+        response.status,
+        `Restoration ${payload.requestId} on ${target} answered without a result`,
+      );
+    }
+
+    const parsed = RestorationWorkerResultSchema.safeParse(
+      this.parseJson(Buffer.from(header, 'base64url').toString('utf8')),
+    );
+    if (!parsed.success) {
+      throw new RestorationWorkerError(
+        'protocol-error',
+        response.status,
+        `Restoration ${payload.requestId} on ${target} answered with an unreadable result: ${parsed.error.message}`,
+      );
+    }
+
+    const result = parsed.data;
+    const pinnedFingerprint = payload.modelFingerprint ?? null;
+    const namedModel = payload.modelId ?? null;
+    if (
+      result.requestId !== payload.requestId ||
+      result.mode !== payload.mode ||
+      result.model.mode !== payload.mode ||
+      (pinnedFingerprint !== null && result.model.fingerprint !== pinnedFingerprint) ||
+      (namedModel !== null && result.model.id !== namedModel)
+    ) {
+      throw new RestorationWorkerError(
+        'protocol-error',
+        response.status,
+        `Restoration ${payload.requestId} on ${target} answered for a different request or model`,
+        result.model.id,
+      );
+    }
+    return result;
+  }
+
+  /** Hardware of one explicit endpoint; the defaults when it does not answer. */
+  async getHardware(endpoint: MlEndpoint): Promise<MachineLearningHardwareResponse> {
+    if (endpoint.cloud) {
+      return defaultMachineLearningHardware;
+    }
+    try {
+      const response = await fetch(new URL('hardware', endpoint.url), {
+        headers: this.authHeaders(endpoint),
+        signal: AbortSignal.timeout(Math.min(5000, Math.max(250, this.timeout()))),
+        redirect: 'error',
+      });
+      if (response.ok) {
+        return diagnosticHardwareSchema.parse(await this.readDiagnosticJson(response));
+      }
+
+      await response.body?.cancel();
+      this.logger.warn(
+        `Machine learning hardware request to "${endpoint.url}" failed with status ${response.status}: ${response.statusText}`,
+      );
+    } catch (error: unknown) {
+      this.logger.warn(
+        `Machine learning hardware request to "${endpoint.url}" failed: ${error instanceof Error ? error.message : error}`,
+      );
     }
 
     return defaultMachineLearningHardware;
+  }
+  /**
+   * FL-159: the container report of a worker's `GET /hardware`, for Hardware & GPU. Null when the
+   * worker does not answer or sends no report.
+   */
+  async getContainerHardware(endpoint: MlEndpoint): Promise<MlContainerReport | null> {
+    if (endpoint.cloud) {
+      return null;
+    }
+    try {
+      const response = await fetch(new URL('hardware', endpoint.url), {
+        headers: this.authHeaders(endpoint),
+        signal: AbortSignal.timeout(Math.min(10_000, Math.max(250, this.timeout()))),
+        redirect: 'error',
+      });
+      if (!response.ok) {
+        await response.body?.cancel();
+        return null;
+      }
+      return parseMlContainerReport(await this.readDiagnosticJson(response));
+    } catch (error: unknown) {
+      this.logger.warn(
+        `Machine learning hardware request to "${endpoint.url}" failed: ${error instanceof Error ? error.message : error}`,
+      );
+      return null;
+    }
   }
 
   private async getFormData(payload: ModelPayload, config: MachineLearningRequest): Promise<FormData> {

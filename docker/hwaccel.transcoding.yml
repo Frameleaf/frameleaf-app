@@ -4,7 +4,7 @@
 # you can inline the config for a backend by copying its contents
 # into the immich-server service in the docker-compose.yml file.
 
-# See https://docs.immich.app/features/hardware-transcoding for more info on using hardware transcoding.
+# See https://help.frameleaf.ai/features/hardware-transcoding for more info on using hardware transcoding.
 
 services:
   cpu: {}
@@ -45,7 +45,7 @@ services:
     devices:
       - /dev/dri:/dev/dri
 
-  vaapi-wsl: # use this for VAAPI if you're running Immich in WSL2
+  vaapi-wsl: # use this for VAAPI if you're running Frameleaf in WSL2
     devices:
       - /dev/dri:/dev/dri
       - /dev/dxg:/dev/dxg

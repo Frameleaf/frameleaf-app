@@ -1,43 +1,43 @@
 {
   "approvedReferences": [
     {
-      "bytes": 4380,
+      "bytes": 6159,
       "id": "reference:design/frameleaf/README.md",
       "path": "design/frameleaf/README.md",
       "role": "approved-design-handoff",
-      "sha256": "9c793aa8d72cd40b68e3a2979b47173279ab48744ab1e94eb8f496e180a03a30",
+      "sha256": "a315630a75974a8e28e7c401482f73b1bbef46accbb42457030020d1c2024a49",
       "status": "reference-not-production-qualification"
     },
     {
-      "bytes": 7574,
+      "bytes": 22692,
       "id": "reference:design/frameleaf/INTERACTION-REQUIREMENTS.md",
       "path": "design/frameleaf/INTERACTION-REQUIREMENTS.md",
       "role": "approved-interaction-contract",
-      "sha256": "8a821b6b1b84016ccc74a824a55ee16947df96add2d1e5aad007fea046145574",
+      "sha256": "19bcad4422b087fcd6a227853e85a58821078f8d8103cd87adc6cce8882b97a5",
       "status": "reference-not-production-qualification"
     },
     {
-      "bytes": 750,
+      "bytes": 1615,
       "id": "reference:design/frameleaf/tokens.json",
       "path": "design/frameleaf/tokens.json",
       "role": "approved-token-reference",
-      "sha256": "a96c48c2c279fd99cf20a49276f647dae5f95eb523f45171cc8d45155aca71aa",
+      "sha256": "818fce6202ca27e7a8a1a4e888e5e55fab51e5964c14bf98932b0a8cd9f49961",
       "status": "reference-not-production-qualification"
     },
     {
-      "bytes": 3782,
+      "bytes": 6705,
       "id": "reference:design/frameleaf/template/README.md",
       "path": "design/frameleaf/template/README.md",
       "role": "approved-prototype-usage-contract",
-      "sha256": "1f132c8c586ed22c48a914c785e4bcc2d1a86119b0e17e5dd6eea790c7e63b3c",
+      "sha256": "058d2576387c41855fe43b41a7944d319d9ae2b6395a40360a05a4e86353d05c",
       "status": "reference-not-production-qualification"
     },
     {
-      "bytes": 1547,
+      "bytes": 1805,
       "id": "reference:design/frameleaf/references/README.md",
       "path": "design/frameleaf/references/README.md",
       "role": "approved-visual-reference-contract",
-      "sha256": "d8fb86f6284408e6a843f41a7ba8047e1c68f55e8cc8eb0006c198b2ed988744",
+      "sha256": "423eb8fe70df78929c926fb83011a3a55c00f760b8807ed951f3c8f776882488",
       "status": "reference-not-production-qualification"
     },
     {
@@ -105,7 +105,7 @@
     "suppliedVectors": 7
   },
   "digests": {
-    "approvedReferenceLedgerSha256": "984d7a2b33895202167d50da17d7490820be067e3e27ae0a2184270f0d084247",
+    "approvedReferenceLedgerSha256": "ec604e7f112969b1b44bd29689acd1c4c90519458af47ae99b84eee46cf0eee5",
     "suppliedSourceLedgerSha256": "a317886619c3d450f81d91fb065ed698d3715e1bc537b95d2751becf59d6f488"
   },
   "expectedDuplicateContent": [

@@ -1,4 +1,4 @@
-import { UnauthorizedException } from '@nestjs/common';
+import { ConflictException, UnauthorizedException } from '@nestjs/common';
 import { SignJWT } from 'jose';
 import { MaintenanceAction, SystemMetadataKey } from 'src/enum.js';
 import { MaintenanceHealthRepository } from 'src/maintenance/maintenance-health.repository.js';
@@ -74,7 +74,80 @@ describe(MaintenanceWorkerService.name, () => {
     });
   });
 
-  describe.skip('ssr');
+  describe('ssr', () => {
+    it('sends a page request to maintenance and keeps its query for the way back', () => {
+      const redirect = vi.fn();
+      const url = '/user-settings?area=maintenance&section=backups';
+      sut.ssr([])(
+        { url, originalUrl: url, path: '/user-settings', method: 'GET' } as never,
+        { redirect } as never,
+        vi.fn(),
+      );
+
+      expect(redirect).toHaveBeenCalledWith(
+        `/maintenance?${new URLSearchParams({ continue: '/user-settings?area=maintenance&section=backups' })}`,
+      );
+    });
+
+    it('keeps only the path of an auth page, never its callback code', () => {
+      const redirect = vi.fn();
+      const url = '/auth/login?code=secret&state=abc';
+      sut.ssr([])(
+        { url, originalUrl: url, path: '/auth/login', method: 'GET' } as never,
+        { redirect } as never,
+        vi.fn(),
+      );
+
+      expect(redirect).toHaveBeenCalledWith(`/maintenance?${new URLSearchParams({ continue: '/auth/login' })}`);
+    });
+
+    it('keeps a hostile address inside the encoded continue value', () => {
+      const redirect = vi.fn();
+      const url = '//evil.example/x?a=%0d%0a';
+      sut.ssr([])(
+        { url, originalUrl: url, path: '//evil.example/x', method: 'GET' } as never,
+        { redirect } as never,
+        vi.fn(),
+      );
+
+      const [location] = redirect.mock.calls[0];
+      expect(location).toMatch(/^\/maintenance\?continue=/);
+      expect(new URLSearchParams(location.split('?', 2)[1]).get('continue')).toBe(url);
+    });
+
+    it('serves the maintenance page itself, and passes API and non-GET requests on', () => {
+      const send = vi.fn();
+      const res = { redirect: vi.fn(), status: () => res, type: () => res, header: () => res, send };
+      const next = vi.fn();
+      const handler = sut.ssr([]);
+
+      handler(
+        {
+          url: '/maintenance?token=x',
+          originalUrl: '/maintenance?token=x',
+          path: '/maintenance',
+          method: 'GET',
+        } as never,
+        res as never,
+        next,
+      );
+      handler(
+        {
+          url: '/api/server/config',
+          originalUrl: '/api/server/config',
+          path: '/api/server/config',
+          method: 'GET',
+        } as never,
+        res as never,
+        next,
+      );
+      handler({ url: '/photos', originalUrl: '/photos', path: '/photos', method: 'POST' } as never, res as never, next);
+
+      expect(send).toHaveBeenCalledTimes(1);
+      expect(next).toHaveBeenCalledTimes(2);
+      expect(res.redirect).not.toHaveBeenCalled();
+    });
+  });
   describe.skip('detectMediaLocation');
 
   describe('setStatus', () => {
@@ -103,8 +176,59 @@ describe(MaintenanceWorkerService.name, () => {
     });
   });
 
+  describe('reason (FL-81)', () => {
+    it('reports the reason from setAction on the public and private status', async () => {
+      await sut.setAction({ action: MaintenanceAction.Start, reason: 'Upgrading storage' });
+
+      await expect(sut.status()).resolves.toEqual(expect.objectContaining({ reason: 'Upgrading storage' }));
+      expect(maintenanceWebsocketRepositoryMock.clientSend).toHaveBeenCalledWith(
+        'MaintenanceStatusV1',
+        'public',
+        expect.objectContaining({ reason: 'Upgrading storage' }),
+      );
+    });
+
+    it('keeps the reason when a later action does not send one', async () => {
+      await sut.setAction({ action: MaintenanceAction.Start, reason: 'Upgrading storage' });
+      sut.setStatus({ active: true, action: MaintenanceAction.Start, task: 'abc' });
+
+      await expect(sut.status()).resolves.toEqual(
+        expect.objectContaining({ task: 'abc', reason: 'Upgrading storage' }),
+      );
+    });
+
+    it('clears the reason with null and stores the change', async () => {
+      await sut.setAction({ action: MaintenanceAction.Start, reason: 'Upgrading storage' });
+      expect(mocks.systemMetadata.set).toHaveBeenLastCalledWith(SystemMetadataKey.MaintenanceMode, {
+        isMaintenanceMode: true,
+        secret: 'secret',
+        action: { action: MaintenanceAction.Start, reason: 'Upgrading storage' },
+      });
+
+      await sut.setAction({ action: MaintenanceAction.Start, reason: null });
+
+      await expect(sut.status()).resolves.not.toHaveProperty('reason');
+      expect(mocks.systemMetadata.set).toHaveBeenLastCalledWith(SystemMetadataKey.MaintenanceMode, {
+        isMaintenanceMode: true,
+        secret: 'secret',
+        action: { action: MaintenanceAction.Start, reason: undefined },
+      });
+    });
+
+    it('restores the stored reason on init', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({
+        isMaintenanceMode: true,
+        secret: 'secret',
+        action: { action: MaintenanceAction.Start, reason: 'Moving house' },
+      });
+      await sut.init();
+
+      await expect(sut.status()).resolves.toEqual(expect.objectContaining({ reason: 'Moving house' }));
+    });
+  });
+
   describe('logSecret', () => {
-    const RE_LOGIN_URL = /https:\/\/my.immich.app\/maintenance\?token=([A-Za-z0-9-_]*\.[A-Za-z0-9-_]*\.[A-Za-z0-9-_]*)/;
+    const RE_LOGIN_URL = /(?:^|\s)\/maintenance\?token=([A-Za-z0-9-_]*\.[A-Za-z0-9-_]*\.[A-Za-z0-9-_]*)/;
 
     it('should log a valid login URL', async () => {
       mocks.systemMetadata.get.mockResolvedValue({
@@ -119,6 +243,9 @@ describe(MaintenanceWorkerService.name, () => {
       expect(mocks.logger.log).toHaveBeenCalledWith(expect.stringMatching(RE_LOGIN_URL));
 
       const [url] = mocks.logger.log.mock.lastCall!;
+      // FL-190: without a public address the log gives a path on this server, never another host.
+      expect(url).toContain('Log in by opening this path on your server');
+      expect(url).not.toMatch(/https?:\/\//);
       const token = RE_LOGIN_URL.exec(url)![1];
 
       await expect(sut.login(token)).resolves.toEqual(
@@ -228,6 +355,12 @@ describe(MaintenanceWorkerService.name, () => {
               "readable": true,
               "writable": false,
             },
+            {
+              "files": 2,
+              "folder": "exports",
+              "readable": true,
+              "writable": false,
+            },
           ],
         }
       `);
@@ -281,6 +414,86 @@ describe(MaintenanceWorkerService.name, () => {
   });
 
   describe.skip('setAction'); // just calls setStatus+runAction
+
+  describe('claimAction (FL-81)', () => {
+    it('refuses every other action while a restore is running', async () => {
+      let finishRestore: () => void = () => {};
+      databaseBackupServiceMock.restoreDatabaseBackup.mockReturnValue(
+        new Promise<void>((resolve) => (finishRestore = resolve)),
+      );
+      mocks.database.tryLock.mockResolvedValueOnce(true);
+
+      const restore = { action: MaintenanceAction.RestoreDatabase, restoreBackupFilename: 'development-filename.sql' };
+      sut.claimAction(restore);
+      const running = sut.setAction(restore);
+
+      for (const action of [
+        restore,
+        { action: MaintenanceAction.End },
+        { action: MaintenanceAction.Start },
+        { action: MaintenanceAction.SelectDatabaseRestore },
+      ]) {
+        expect(() => sut.claimAction(action)).toThrowError(ConflictException);
+      }
+
+      finishRestore();
+      await running;
+    });
+
+    it('allows End and another restore after a restore failed', async () => {
+      databaseBackupServiceMock.restoreDatabaseBackup.mockRejectedValue(new Error('Migration failed'));
+      mocks.database.tryLock.mockResolvedValueOnce(true);
+
+      const restore = { action: MaintenanceAction.RestoreDatabase, restoreBackupFilename: 'development-filename.sql' };
+      sut.claimAction(restore);
+      await sut.setAction(restore);
+
+      expect(() => sut.claimAction({ action: MaintenanceAction.End })).not.toThrow();
+      expect(() => sut.claimAction(restore)).not.toThrow();
+    });
+
+    it('does not restore when another process holds the maintenance lock, and keeps refusing meanwhile', async () => {
+      mocks.database.tryLock.mockResolvedValueOnce(false);
+
+      const restore = { action: MaintenanceAction.RestoreDatabase, restoreBackupFilename: 'development-filename.sql' };
+      sut.claimAction(restore);
+      await sut.setAction(restore);
+
+      expect(databaseBackupServiceMock.restoreDatabaseBackup).not.toHaveBeenCalled();
+      // the other process's restore is still running until its status says otherwise
+      expect(() => sut.claimAction({ action: MaintenanceAction.End })).toThrowError(ConflictException);
+    });
+
+    it('refuses actions while a restore resumed on start is running', async () => {
+      let finishRestore: () => void = () => {};
+      databaseBackupServiceMock.restoreDatabaseBackup.mockReturnValue(
+        new Promise<void>((resolve) => (finishRestore = resolve)),
+      );
+      mocks.database.tryLock.mockResolvedValueOnce(true);
+
+      const running = sut.runAction({
+        action: MaintenanceAction.RestoreDatabase,
+        restoreBackupFilename: 'development-filename.sql',
+      });
+      expect(() => sut.claimAction({ action: MaintenanceAction.End })).toThrowError(ConflictException);
+
+      finishRestore();
+      await running;
+    });
+
+    it('refuses actions while another server reports a restore without an error', () => {
+      sut.mock({ active: true, action: MaintenanceAction.RestoreDatabase, task: 'restore', progress: 0.4 });
+      expect(() => sut.claimAction({ action: MaintenanceAction.End })).toThrowError(ConflictException);
+
+      sut.mock({ active: true, action: MaintenanceAction.RestoreDatabase, task: 'error', error: 'failed' });
+      expect(() => sut.claimAction({ action: MaintenanceAction.End })).not.toThrow();
+    });
+
+    it('lets actions through when no restore is running', () => {
+      expect(() => sut.claimAction({ action: MaintenanceAction.Start })).not.toThrow();
+      expect(() => sut.claimAction({ action: MaintenanceAction.End })).not.toThrow();
+    });
+  });
 
   /**
    * Actions
@@ -364,6 +577,30 @@ describe(MaintenanceWorkerService.name, () => {
           active: true,
           action: 'end',
         },
+      );
+    });
+
+    it('keeps the safety backup unless the request says not to', async () => {
+      await sut.runAction({
+        action: MaintenanceAction.RestoreDatabase,
+        restoreBackupFilename: 'development-filename.sql',
+      });
+      expect(databaseBackupServiceMock.restoreDatabaseBackup).toHaveBeenLastCalledWith(
+        'development-filename.sql',
+        expect.any(Function),
+        { keepSafetyBackup: true },
+      );
+
+      mocks.database.tryLock.mockResolvedValueOnce(true);
+      await sut.runAction({
+        action: MaintenanceAction.RestoreDatabase,
+        restoreBackupFilename: 'development-filename.sql',
+        keepSafetyBackup: false,
+      });
+      expect(databaseBackupServiceMock.restoreDatabaseBackup).toHaveBeenLastCalledWith(
+        'development-filename.sql',
+        expect.any(Function),
+        { keepSafetyBackup: false },
       );
     });
 

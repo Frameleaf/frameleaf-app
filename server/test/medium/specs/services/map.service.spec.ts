@@ -1,5 +1,5 @@
 import { Kysely } from 'kysely';
-import { AssetMetadataKey } from 'src/enum.js';
+import { AssetMetadataKey, AssetType } from 'src/enum.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -139,6 +139,60 @@ describe(MapService.name, () => {
       expect(elevatedMarkers.map(({ id }) => id)).toEqual(
         expect.arrayContaining([partnerVisible.id, partnerNsfw.id, albumVisible.id, albumNsfw.id]),
       );
+    });
+  });
+
+  it('returns the file name, capture dates and media type on each marker (FL-51)', async () => {
+    const { sut, ctx } = setup();
+    const { user } = await ctx.newUser();
+    const { asset } = await ctx.newAsset({
+      ownerId: user.id,
+      originalFileName: 'IMG_0042.HEIC',
+      type: AssetType.Video,
+      fileCreatedAt: new Date('2024-05-06T07:08:09.123Z'),
+      localDateTime: new Date('2024-05-06T09:08:09.123Z'),
+    });
+    await addExif(ctx, [asset]);
+
+    const markers = await sut.getMapMarkers(factory.auth({ user }), {});
+    expect(markers).toEqual([
+      expect.objectContaining({
+        id: asset.id,
+        originalFileName: 'IMG_0042.HEIC',
+        type: AssetType.Video,
+        fileCreatedAt: '2024-05-06T07:08:09.123Z',
+        localDateTime: '2024-05-06T09:08:09.123Z',
+      }),
+    ]);
+  });
+
+  describe('partner location (FL-54)', () => {
+    it("keeps a hiding owner's shared-album items off the viewer's map and the album map", async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const { user: hiding } = await ctx.newUser();
+      const auth = factory.auth({ user });
+      await ctx.newPartner({ sharedById: hiding.id, sharedWithId: user.id });
+      await defaultDatabase
+        .updateTable('partner')
+        .set({ shareLocation: false })
+        .where('sharedById', '=', hiding.id)
+        .where('sharedWithId', '=', user.id)
+        .execute();
+
+      const { asset: mine } = await ctx.newAsset({ ownerId: user.id });
+      const { asset: theirs } = await ctx.newAsset({ ownerId: hiding.id });
+      await addExif(ctx, [mine, theirs]);
+      const { album } = await ctx.newAlbum({ ownerId: hiding.id }, [mine.id, theirs.id]);
+      await ctx.newAlbumUser({ albumId: album.id, userId: user.id });
+
+      const markers = await sut.getMapMarkers(auth, { withSharedAlbums: true });
+      expect(markers.map(({ id }) => id)).toEqual([mine.id]);
+
+      const albumMarkers = await ctx
+        .get(MapRepository)
+        .getAlbumMapMarkers(album.id, { locationHiddenOwnerIds: [hiding.id] });
+      expect(albumMarkers.map(({ id }) => id)).toEqual([mine.id]);
     });
   });
 });

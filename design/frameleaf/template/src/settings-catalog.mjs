@@ -1,8 +1,9 @@
 // Prototype configuration, not deployed server defaults or a production API schema.
 import { settingsExtensions } from "./settings-advanced.mjs";
 import { utilityTools } from "./utilities-data.mjs";
+import { settingsSearchAliases } from "./settings-search-aliases.mjs";
 
-const toggle = (id, label, value, help, impact = "New operations") => ({
+const toggle = (id, label, value, help, impact = "From now on") => ({
   id,
   label,
   value,
@@ -16,7 +17,7 @@ const select = (
   value,
   options,
   help,
-  impact = "New operations",
+  impact = "From now on",
 ) => ({ id, label, value, options, help, impact, type: "select" });
 const number = (
   id,
@@ -26,7 +27,7 @@ const number = (
   min,
   max,
   help,
-  impact = "New operations",
+  impact = "From now on",
 ) => ({
   id,
   label,
@@ -44,7 +45,7 @@ const text = (
   label,
   value,
   help,
-  impact = "New operations",
+  impact = "From now on",
   type = "text",
 ) => ({ id, label, value, help, impact, type });
 const section = (id, title, description, fields, extra = {}) => ({
@@ -61,35 +62,35 @@ export const settingsAreas = [
     title: "Overview",
     icon: "mdiViewDashboardOutline",
     group: "Command center",
-    description: "A clear view of your home for photos.",
+    description: "How your library is doing and anything that needs you.",
   },
   {
     id: "analytics",
     title: "Library analytics",
     icon: "mdiChartTimelineVariant",
     group: "Command center",
-    description: "The story of your collection, in numbers.",
+    description: "How your library grows and gets used over time.",
   },
   {
     id: "storage",
     title: "Storage & originals",
     icon: "mdiHarddisk",
     group: "Your library",
-    description: "Know where everything lives. Keep originals intact.",
+    description: "Where your photos are kept and how long deleted ones stay.",
   },
   {
     id: "backup",
     title: "Import & protection",
     icon: "mdiBackupRestore",
     group: "Your library",
-    description: "Bring memories in, and make sure you can get them back.",
+    description: "Bring photos in and keep safe copies of everything.",
   },
   {
     id: "intelligence",
     title: "Search & intelligence",
     icon: "mdiImageSearchOutline",
     group: "Your library",
-    description: "Teach your library how to understand photos and videos.",
+    description: "Find photos by what's in them, who's in them and what they say.",
   },
   {
     id: "editing",
@@ -97,21 +98,21 @@ export const settingsAreas = [
     icon: "mdiMovieOpenOutline",
     group: "Your library",
     description:
-      "Separate original quality, edited masters, and fast playback.",
+      "How photos look, videos play and edits are saved.",
   },
   {
     id: "sharing",
     title: "People & sharing",
     icon: "mdiAccountMultipleOutline",
     group: "Your library",
-    description: "A shared library with clear ownership and boundaries.",
+    description: "Share with family and friends, and control what they see.",
   },
   {
     id: "care",
-    title: "Library Care",
+    title: "Library care",
     icon: "mdiShieldCheckOutline",
     group: "Your library",
-    description: "Repair, reconcile, and verify with evidence.",
+    description: "Keep your library complete, healthy and free of duplicates.",
   },
   {
     id: "processing",
@@ -119,56 +120,71 @@ export const settingsAreas = [
     icon: "mdiDesktopTowerMonitor",
     group: "Your server",
     description:
-      "Choose endpoints and inspect the requirements of each workload.",
+      "Which computers do the heavy work, and when.",
+  },
+  {
+    id: "cloud",
+    title: "Frameleaf Cloud",
+    icon: "mdiCloudOutline",
+    group: "Your server",
+    description:
+      "Optional extras: reach your photos from anywhere, back them up and use cloud AI.",
   },
   {
     id: "security",
     title: "Access & security",
     icon: "mdiShieldLockOutline",
     group: "Your server",
-    description: "Manage accounts, sign-in, devices, and private media.",
+    description: "Who can sign in, and what stays private.",
   },
   {
     id: "notifications",
     title: "Notifications",
     icon: "mdiBellOutline",
     group: "Your server",
-    description: "Useful signals when something needs you.",
+    description: "What you're told about, and how emails are sent.",
   },
   {
     id: "server",
     title: "Server & updates",
     icon: "mdiServerOutline",
     group: "Your server",
-    description: "Identity, connectivity, diagnostics, and compatibility.",
+    description: "Your server's name, updates, maps and look.",
+  },
+  {
+    id: "maintenance",
+    title: "Maintenance",
+    icon: "mdiWrenchOutline",
+    group: "Your server",
+    description: "Pause access, back up and check your library for problems.",
   },
   {
     id: "preferences",
     title: "Your preferences",
     icon: "mdiAccountOutline",
     group: "Personal",
-    description: "Make Frameleaf feel right on your devices.",
+    description: "How Frameleaf looks and behaves for you.",
   },
   {
     id: "users",
     title: "Users",
     icon: "mdiAccountMultipleOutline",
     group: "Your server",
-    description: "Manage accounts, roles, quotas, and access.",
+    description: "Who has an account and how much space they get.",
   },
   {
     id: "libraries",
     title: "Libraries",
     icon: "mdiFolderOutline",
     group: "Your library",
-    description: "Manage library ownership, folders, exclusions, and scans.",
+    description: "Folders on your disk that Frameleaf keeps in your library.",
   },
   {
     id: "utilities",
     title: "Utilities",
     icon: "mdiTools",
     group: "Your library",
-    description: "Import, review, repair, and organize your collection.",
+    description: "Tools to review, fix and tidy your photos.",
   },
   {
     id: "trash",
@@ -183,7 +199,7 @@ export const settingsAreas = [
     title: "Change history",
     icon: "mdiHistory",
     group: "Personal",
-    description: "See exactly what you changed, and when.",
+    description: "Every settings change saved here, with when and what changed.",
   },
 ];
 
@@ -192,13 +208,13 @@ export const settingsSections = {
     section(
       "volumes",
       "Library storage",
-      "Disk capacity and media usage measure different things. External libraries can live on other filesystems.",
+      "See how much space your photos use and where they live.",
       [
         text(
           "libraryLabel",
           "Storage label",
           "Photo archive",
-          "A friendly name for this library volume.",
+          "A name that helps you recognise this drive.",
           "Display only",
         ),
         number(
@@ -208,7 +224,7 @@ export const settingsSections = {
           "%",
           50,
           99,
-          "Capacity includes non-Frameleaf files on the same filesystem.",
+          "Counts everything on the drive, not only your photos.",
         ),
       ],
       { panel: "volumes" },
@@ -216,20 +232,20 @@ export const settingsSections = {
     section(
       "organization",
       "Originals & folder structure",
-      "Albums organize references. They do not need to move your original files.",
+      "Choose how your original files are named and sorted into folders.",
       [
         toggle(
           "storageTemplate",
-          "Organize uploads with a storage template",
+          "Sort new uploads into folders",
           false,
-          "Existing originals only move after a separately reviewed migration.",
-          "New uploads; migration separate",
+          "Files you already have stay put until you choose to move them.",
+          "New uploads; existing files stay put",
         ),
         text(
           "template",
           "Folder template",
           "{{y}}/{{MM}}/{{filename}}",
-          "Preview the new path before applying a storage migration.",
+          "See where a file would go before anything moves.",
           "New uploads",
         ),
         select(
@@ -241,61 +257,61 @@ export const settingsSections = {
             "Highest resolution original",
             "Review each group",
           ],
-          "Keep RAW provenance, sidecars, and paired previews together.",
+          "When a RAW and a JPEG are the same shot, keep them together and choose which leads.",
         ),
       ],
     ),
     section(
       "deduplication",
       "Physical deduplication",
-      "One physical file may back multiple owned assets. Ownership and access remain separate.",
+      "Store identical files once while everyone keeps their own copy in their library.",
       [
         toggle(
           "physicalDedup",
-          "Reuse identical original files",
+          "Store identical files once",
           true,
-          "Content checksums identify exact matches; visual similarity alone is insufficient.",
+          "Only exact copies are merged; photos that merely look alike are never merged.",
           "New uploads",
         ),
         toggle(
           "dedupVerify",
-          "Verify references before cleanup",
+          "Double-check before freeing space",
           true,
-          "The last valid owner or reference must never lose its original.",
+          "Nobody loses a photo when a shared copy is cleaned up.",
         ),
       ],
     ),
     section(
       "retention",
       "Trash & retention",
-      "Make the recovery window visible before anything becomes permanent.",
+      "How long you can get deleted photos back.",
       [
         number(
           "trashDays",
-          "Keep trashed assets for",
+          "Keep deleted items for",
           30,
           "days",
           1,
           365,
-          "A shorter period can make existing trashed assets eligible for removal.",
-          "Existing trash eligibility",
+          "Shortening this can permanently remove items already in Trash.",
+          "Items already in Trash",
         ),
         number(
           "deleteDelay",
-          "Deleted-account recovery window",
+          "Keep deleted accounts for",
           7,
           "days",
           1,
           365,
-          "Applies to pending account deletion.",
-          "Existing account deletions",
+          "Time to change your mind before an account and its photos are removed.",
+          "Accounts being deleted",
         ),
       ],
     ),
     section(
       "migration",
       "Move or export your library",
-      "Migration, preservation exports, and official-server handoff are different operations.",
+      "Move your library to new storage or export a complete copy.",
       [],
       { action: "Prepare migration checklist", actionKind: "migration" },
     ),
@@ -304,26 +320,26 @@ export const settingsSections = {
     section(
       "sources",
       "External libraries",
-      "Register folders, exclusions, scan schedules, and ownership in one place.",
+      "Folders on your disk that Frameleaf keeps in your library.",
       [
         toggle(
           "libraryWatch",
-          "Watch for filesystem changes",
+          "Notice new files right away",
           false,
-          "Network mounts may require scheduled scanning instead.",
+          "Network drives may need scheduled scans instead.",
         ),
         select(
           "libraryScan",
-          "Rescan external libraries",
+          "Look for changes",
           "Every night",
           ["Every night", "Weekly", "Manually"],
-          "Rescanning discovers changes; it does not create a backup.",
+          "Finds new, changed and removed files; this isn't a backup.",
         ),
         text(
           "exclusions",
-          "Excluded file patterns",
+          "Files to skip",
           "**/.DS_Store, **/@eaDir/**",
-          "Comma-separated patterns; review matches before a real scan.",
+          "Patterns separated by commas, such as **/@eaDir/**.",
         ),
       ],
       { panel: "libraries" },
@@ -331,19 +347,19 @@ export const settingsSections = {
     section(
       "takeout",
       "Google Photos & server imports",
-      "Stage → scan → review → import → reconcile. Existing assets retain recovered album membership.",
+      "Bring in a Google Photos export or another server, check it, then import.",
       [
         toggle(
           "takeoutAlbums",
-          "Recreate album memberships",
+          "Keep album memberships",
           true,
-          "Matching an existing original must still restore its memberships.",
+          "Photos you already have still join the albums they were in.",
         ),
         toggle(
           "sidecarReview",
-          "Review ambiguous sidecars",
+          "Check unclear details before import",
           true,
-          "Keep localized names, split archives, and Live Photo pairing inspectable.",
+          "Lets you check translated album names, split downloads and Live Photo pairs.",
         ),
       ],
       { action: "Preview import workflow", actionKind: "import" },
@@ -351,20 +367,20 @@ export const settingsSections = {
     section(
       "database-backup",
       "Database backups",
-      "A database backup contains metadata. Originals need their own protected copy.",
+      "Back up your albums, people and edits; your original files need a separate backup.",
       [
         toggle(
           "databaseBackup",
           "Schedule database backups",
           true,
-          "The destination must be monitored independently of the library disk.",
+          "Keep backups on a different drive so one failure can't take both.",
         ),
         select(
           "backupSchedule",
           "Backup schedule",
           "Daily at 02:00",
           ["Daily at 02:00", "Daily at 04:00", "Weekly on Sunday"],
-          "Schedule uses the server timezone.",
+          "Times are in the server's time zone.",
         ),
         number(
           "backupRetention",
@@ -373,7 +389,7 @@ export const settingsSections = {
           "copies",
           1,
           90,
-          "Retention applies after successful backup creation.",
+          "Older backups are removed only after a new one succeeds.",
         ),
       ],
       { action: "Review recovery readiness", actionKind: "recovery" },
@@ -381,19 +397,19 @@ export const settingsSections = {
     section(
       "preservation",
       "Originals & preservation",
-      "Checksums, metadata sidecars, albums, edit recipes, and provenance travel together.",
+      "Export your originals with their albums, edits and history.",
       [
         toggle(
           "exportSidecars",
-          "Include metadata and edit recipes",
+          "Include details and edits",
           true,
-          "Generated descriptions remain distinguishable from manual metadata.",
+          "Descriptions you wrote stay separate from ones Frameleaf generated.",
         ),
         toggle(
           "exportChecksums",
-          "Include checksums and a manifest",
+          "Include a verification list",
           true,
-          "Verify the exported files and rehearse a restore.",
+          "Lets you confirm every file copied correctly and practise a restore.",
         ),
       ],
       { action: "Preview preservation manifest", actionKind: "preservation" },
@@ -401,13 +417,13 @@ export const settingsSections = {
     section(
       "devices-backup",
       "Mobile backup & migration",
-      "Permissions and backup sources belong to each device.",
+      "Set up phone backup and move from another app.",
       [
         toggle(
           "uploaderReminder",
-          "Show duplicate-uploader guidance",
+          "Warn about two backup apps",
           true,
-          "Help migrating users avoid running both Immich and Frameleaf backup clients.",
+          "Reminds people moving from another app not to back up with both at once.",
         ),
       ],
       { panel: "devices" },
@@ -417,47 +433,47 @@ export const settingsSections = {
     section(
       "smart-search",
       "Visual search",
-      "Find images by meaning, with explicit text, OCR, and filename search alongside it.",
+      "Find photos by describing what's in them, as well as by text and file name.",
       [
         toggle(
           "smartSearch",
-          "Enable semantic search",
+          "Search by description",
           true,
-          "Model changes require rebuilding the affected embeddings.",
-          "Reindex required",
+          "Find photos by typing things like “dog on a beach”; changing the model re-reads your whole library.",
+          "Re-reads your library",
         ),
         text(
           "clipModel",
-          "Embedding model",
+          "Search model",
           "ViT-B-32__openai",
-          "Preview search results before scheduling a library-wide rebuild.",
-          "Reindex required",
+          "Try a few searches before re-reading the whole library with a new model.",
+          "Re-reads your library",
         ),
       ],
     ),
     section(
       "descriptions",
       "Descriptions & tags",
-      "Keep visible descriptions, search embeddings, and identity-aware names in sync.",
+      "Automatic captions and tags that make photos easier to find.",
       [
         toggle(
           "descriptions",
-          "Generate image descriptions",
+          "Write captions for photos",
           true,
-          "Preserve manual metadata during reprocessing.",
+          "Captions and tags you wrote yourself are never replaced.",
         ),
         text(
           "descriptionModel",
           "Description model",
           "Configured endpoint model",
-          "Available models depend on the selected endpoint.",
+          "Which models you can pick depends on the computer doing the work.",
         ),
         text(
           "descriptionPrompt",
-          "Image description prompt",
+          "Caption instructions",
           "Describe the visible scene, people, activity, and meaningful details. Use confirmed names only.",
-          "Preview a description before reprocessing existing ones.",
-          "Regeneration optional",
+          "Try the instructions on one photo before re-captioning the library.",
+          "Existing copies when regenerated",
           "textarea",
         ),
         toggle(
@@ -481,130 +497,130 @@ export const settingsSections = {
     section(
       "faces",
       "Faces & identity",
-      "Recognition suggests. Your confirmed corrections remain authoritative.",
+      "Recognise the people in your photos; your own corrections always win.",
       [
         toggle(
           "faceRecognition",
-          "Detect and group faces",
+          "Recognise faces",
           true,
-          "Group matching faces while preserving names and manual corrections.",
+          "Groups photos of the same person; names and fixes you made are kept.",
         ),
         number(
           "faceDistance",
-          "Maximum recognition distance",
+          "How alike faces must be",
           0.5,
           "",
           0.1,
           1,
-          "Lower values are stricter; review near misses before changing an entire library.",
-          "Reprocess affected faces",
+          "Lower is stricter and makes fewer wrong matches; check a few people before applying it everywhere.",
+          "Re-checks affected faces",
         ),
         toggle(
           "durableVerdicts",
-          "Preserve manual face verdicts",
+          "Keep my face corrections",
           true,
-          "Same person / Different person decisions survive reprocessing.",
+          "Your “same person” and “different person” choices are kept when faces are re-checked.",
         ),
       ],
     ),
     section(
       "pets",
       "Individual pets",
-      "Named cat and dog identities survive replaceable model output.",
+      "Recognize and name your cats and dogs.",
       [
         toggle(
           "petRecognition",
           "Recognize individual pets",
           false,
-          "Enable only after a compatible recognition model is qualified.",
+          "Tells your pets apart so you can name each one.",
         ),
         toggle(
           "petReview",
-          "Review uncertain rematches",
+          "Ask before renaming pets",
           true,
-          "Never silently discard a named pet after a model update.",
+          "If a pet is recognised differently later, you decide what happens.",
         ),
       ],
     ),
     section(
       "documents",
       "Text, documents & receipts",
-      "Ground searchable text and extracted fields in visible source regions.",
+      "Find text in photos, documents and receipts.",
       [
         toggle(
           "ocr",
-          "Extract text from photos",
+          "Read text in photos",
           true,
-          "OCR is independent from generated descriptions.",
+          "Makes signs, receipts and documents searchable by the words in them.",
         ),
         number(
           "ocrConfidence",
-          "Minimum OCR confidence",
+          "Text certainty",
           0.7,
           "",
           0,
           1,
-          "Lower confidence may help faded documents but adds noise.",
+          "Lower finds more faded text but also more mistakes.",
         ),
         toggle(
           "documentFields",
-          "Suggest receipt and document fields",
+          "Suggest receipt details",
           false,
-          "Inferred values stay editable and linked to image evidence.",
+          "Suggestions stay editable and point to where they were read.",
         ),
       ],
     ),
     section(
       "classification",
       "Categories & smart albums",
-      "Rules contribute metadata without overwriting your manual decisions.",
+      "Sort photos into categories without overriding your own choices.",
       [
         toggle(
           "smartAlbums",
-          "Build curated smart albums",
+          "Build smart albums",
           true,
-          "Includes Pets, Documents & Receipts, Best Photos, and saved structured queries.",
+          "Albums like Pets, Documents and Best photos that fill themselves.",
         ),
         toggle(
           "classification",
-          "Suggest custom visual categories",
+          "Suggest my own categories",
           true,
-          "Preview matches and adjust thresholds before enabling actions.",
+          "See which photos match before anything is tagged.",
         ),
         select(
           "classificationAction",
-          "Default rule action",
+          "What a category does",
           "Suggest for review",
           ["Suggest for review", "Add rule-owned tags"],
-          "Automatic archiving must be an explicitly selected rule action.",
+          "Nothing is archived unless you choose that for a rule.",
         ),
         toggle(
           "bestPhotos",
-          "Score best photos & video frames",
+          "Pick out your best shots",
           true,
-          "Use scoring to assist culling, covers, and memories.",
+          "Helps choose album covers, memories and which photos to keep.",
         ),
       ],
     ),
     section(
       "sensitive-detection",
       "Locked-content detection",
-      "Private flags protect access. Searchable tags are not a security boundary.",
+      "Spot private photos that may belong in Locked.",
       [
         toggle(
           "sensitiveDetect",
-          "Detect content to keep Locked",
+          "Suggest photos to lock",
           true,
-          "Access behavior is configured under Access & security.",
+          "What Locked hides is set in Access & security.",
         ),
         number(
           "sensitiveThreshold",
-          "Detection threshold",
+          "How sure to be",
           0.8,
           "",
           0,
           1,
-          "Review uncertain results before a full-library run.",
+          "Check a few results before scanning the whole library.",
         ),
       ],
     ),
@@ -613,32 +629,32 @@ export const settingsSections = {
     section(
       "previews",
       "Photo previews",
-      "Fast library browsing with predictable cache costs.",
+      "Smaller copies that make browsing fast.",
       [
         number(
           "thumbnailSize",
-          "Thumbnail resolution",
+          "Thumbnail size",
           250,
           "px",
           100,
           1000,
-          "A new setting applies when thumbnails are regenerated.",
+          "Applies to new thumbnails; existing ones change when you regenerate them.",
         ),
         number(
           "previewSize",
-          "Photo preview resolution",
+          "Preview size",
           1440,
           "px",
           720,
           4096,
-          "Originals are untouched.",
+          "Larger previews look sharper but use more space; originals are untouched.",
         ),
         select(
           "previewFormat",
           "Preview format",
           "WebP",
           ["WebP", "JPEG"],
-          "Choose compatibility and storage size for derived previews.",
+          "JPEG works everywhere; WebP takes less space.",
         ),
         number(
           "previewQuality",
@@ -647,18 +663,18 @@ export const settingsSections = {
           "%",
           1,
           100,
-          "Higher quality creates larger previews.",
+          "Higher looks better and uses more space.",
         ),
       ],
     ),
     section(
       "playback",
-      "Video playback proxies",
-      "Compatibility copies for browsing and streaming. These are not edited masters.",
+      "Video playback copies",
+      "Copies of your videos that play smoothly on every device.",
       [
         select(
           "transcodePolicy",
-          "Create playback copies",
+          "Make playback copies",
           "When required",
           [
             "When required",
@@ -666,118 +682,118 @@ export const settingsSections = {
             "All videos",
             "Disabled",
           ],
-          "The source remains available.",
+          "Your original video is always kept.",
         ),
         select(
           "playbackResolution",
-          "Playback resolution limit",
+          "Playback copy size",
           "1080p",
           ["720p", "1080p", "1440p", "2160p"],
-          "Only playback proxies inherit this limit.",
+          "Only affects playback copies, never your originals.",
         ),
         select(
           "playbackCodec",
-          "Playback video codec",
+          "Playback format",
           "H.264",
           ["H.264", "HEVC", "VP9", "AV1"],
-          "Check browser and worker codec compatibility.",
+          "H.264 plays almost everywhere; newer formats are smaller but not supported on every device.",
         ),
         number(
           "playbackCrf",
-          "Constant quality (CRF)",
+          "Playback quality",
           23,
           "",
           0,
           51,
-          "Lower values increase quality and file size.",
+          "Lower numbers look better and use more space.",
         ),
         select(
           "playbackPreset",
-          "Encoder speed",
+          "Conversion speed",
           "Medium",
           ["Fast", "Medium", "Slow"],
-          "Slower encoding can improve compression efficiency.",
+          "Slower makes smaller files but takes longer.",
         ),
         select(
           "acceleration",
           "Hardware acceleration",
           "Auto when qualified",
           ["Auto when qualified", "Software", "NVENC", "QSV", "VAAPI"],
-          "An unsupported accelerator needs an actionable failure state.",
+          "Use your graphics card to convert videos faster; check Hardware & GPU if it fails.",
         ),
         select(
           "audioCodec",
-          "Proxy audio codec",
+          "Playback audio format",
           "AAC",
           ["AAC", "Opus", "MP3"],
-          "Master audio policy is separate.",
+          "Only affects playback copies.",
         ),
       ],
     ),
     section(
       "masters",
       "Edited masters",
-      "Always render from the original plus its edit recipe.",
+      "How your edited photos and videos are saved.",
       [
         select(
           "masterResolution",
           "Resolution",
           "Preserve source",
           ["Preserve source", "Explicit export dimensions"],
-          "Rotation must preserve source dimensions after orientation changes.",
+          "Edits keep the original size.",
         ),
         select(
           "masterColor",
           "Color handling",
           "Preserve source color",
           ["Preserve source color", "Explicit SDR derivative"],
-          "Unsupported HDR combinations must be rejected before rendering.",
+          "Edits keep the original colours, including HDR.",
         ),
         select(
           "masterAudio",
           "Audio handling",
           "Preserve channels & timing",
           ["Preserve channels & timing", "Explicit stereo downmix"],
-          "No implicit stereo or sample-rate conversion.",
+          "Edits keep every audio channel as recorded.",
         ),
         select(
           "trimMode",
-          "Default trim mode",
+          "How trims are cut",
           "Precise",
           ["Precise", "Fast · keyframe aligned"],
-          "Fast trim previews its actual boundaries.",
+          "Precise cuts exactly where you choose; Fast saves quicker but may start slightly earlier.",
         ),
       ],
     ),
     section(
       "restoration",
       "AI restoration",
-      "Preview five seconds of motion before a full render.",
+      "Clean up and sharpen old videos, with a 5-second preview first.",
       [
         select(
           "restorationMode",
-          "Default restoration mode",
+          "Restoration style",
           "Faithful",
           ["Faithful", "Creative"],
-          "Both modes preserve the original and label AI output.",
+          "Faithful removes noise without inventing detail; Creative rebuilds detail. Your original is always kept.",
         ),
         select(
           "upscale",
-          "Enlargement",
+          "Enlarge by",
           "2×",
           ["2×"],
-          "Requires a compatible, validated model and enough GPU memory.",
+          "Needs a model that fits your GPU, or Frameleaf Cloud.",
         ),
         select(
           "upscaleCap",
-          "Default output cap",
+          "Largest output size",
           "4K",
           ["4K", "Source dependent"],
-          "SDR-only models must not silently process HDR masters.",
+          "Caps the size of restored videos.",
         ),
         toggle(
           "interpolation",
-          "Offer frame interpolation separately",
+          "Offer Smooth motion",
           true,
           "RIFE changes motion timing; it is not part of ordinary upscaling.",
         ),
@@ -786,14 +802,14 @@ export const settingsSections = {
     section(
       "studio",
       "Studio & Dolby Vision",
-      "Check rendering support separately from library analysis.",
+      "Video projects and Dolby Vision.",
       [
         toggle(
           "studioPreview",
-          "Show development Studio",
+          "Show Studio",
           false,
-          "Full Studio remains unavailable until parity and media-quality qualification pass.",
-          "Development interface only",
+          "Turns on the Studio video editor, which is still being finished.",
+          "Studio only",
         ),
       ],
       { panel: "qualification" },
@@ -803,26 +819,26 @@ export const settingsSections = {
     section(
       "spaces",
       "Shared Spaces",
-      "Contributors keep their originals. Removing a membership does not delete an asset.",
+      "Shared libraries everyone in your household can add to.",
       [
         select(
           "spaceRole",
           "Default invited role",
           "Viewer",
           ["Viewer", "Editor"],
-          "Owners can change individual roles explicitly.",
+          "Viewers can look; editors can also add and organise. You can change each person later.",
         ),
         toggle(
           "recipientPreview",
-          "Preview recipient visibility",
+          "Show what people will see",
           true,
-          "Review the exact sources and Locked-content restrictions before sharing.",
+          "Before sharing, see exactly which photos others will see; Locked photos stay hidden.",
         ),
         toggle(
           "spaceActivity",
           "Show new since last visit",
           true,
-          "Activity is scoped to content the visitor can currently access.",
+          "Highlights what's new since each person last visited, only from photos they can see.",
         ),
       ],
       { panel: "spaces" },
@@ -830,7 +846,7 @@ export const settingsSections = {
     section(
       "links",
       "Public links",
-      "Expiration, downloads, and location exposure should be visible when a link is created.",
+      "Defaults for links anyone can open.",
       [
         number(
           "shareExpiry",
@@ -839,13 +855,13 @@ export const settingsSections = {
           "days",
           1,
           365,
-          "Existing links keep their explicitly assigned expiration.",
+          "Links you already made keep their own end date.",
         ),
         toggle(
           "shareDownload",
           "Allow downloads by default",
           false,
-          "Review original-file exposure separately from preview access.",
+          "Lets people save full-quality originals, not just view them.",
         ),
         toggle(
           "shareLocation",
@@ -858,39 +874,39 @@ export const settingsSections = {
     section(
       "partner",
       "Partners & recipient groups",
-      "Recipient groups are shortcuts, not hidden permission rules.",
+      "Partners who see your library, and groups you often share with.",
       [
         toggle(
           "partnerTimeline",
-          "Include partner photos in my timeline",
+          "Partner photos in my timeline",
           true,
-          "Only accessible media appears.",
+          "Shows partners' photos in your timeline; Locked photos stay hidden.",
         ),
         toggle(
           "groupReview",
-          "Review recipients when using a group",
+          "Review group recipients",
           true,
-          "Changing a group never silently changes existing access.",
+          "Changing a group later doesn't change what people already have.",
         ),
       ],
     ),
     section(
       "shared-identities",
       "People across libraries",
-      "Link identities reversibly while keeping private names private.",
+      "Recognise the same person in libraries shared with you.",
       [
         toggle(
           "sharedPeople",
-          "Suggest identity links in Spaces",
+          "Suggest matching people in Spaces",
           false,
-          "Use only accessible evidence and retain manual correction history.",
+          "Uses only photos you can see and keeps your corrections.",
         ),
         select(
           "albumSort",
           "Default album viewing order",
           "Newest first",
           ["Newest first", "Oldest first", "Shared album order"],
-          "Personal viewing order is separate from explicitly edited shared order.",
+          "How albums sort for you; a shared album's own order isn't changed.",
         ),
       ],
     ),
@@ -899,71 +915,71 @@ export const settingsSections = {
     section(
       "health",
       "Media health & integrity",
-      "Track scan evidence and recovery history instead of a single green check.",
+      "Check that every photo and video is present and undamaged.",
       [
         toggle(
           "healthScan",
-          "Schedule incremental health scans",
+          "Check library health regularly",
           true,
-          "Resume from recorded checkpoints after interruption.",
+          "Checks a little at a time and picks up where it left off.",
         ),
         toggle(
           "checksumScan",
-          "Verify original checksums",
+          "Check files for damage",
           true,
-          "Checksums help prove preservation; existence alone does not.",
+          "Finds files that exist but have been silently damaged.",
         ),
         toggle(
           "integrityAudit",
-          "Audit database and file references",
+          "Match library to files",
           true,
-          "Include physical-deduplication owners and references.",
+          "Finds photos listed in the library with no file, and files with no photo.",
         ),
       ],
       { action: "Preview health findings", actionKind: "health" },
     ),
     section(
       "repair",
-      "Repair queues",
-      "Review missing media, Live Photo links, duplicate keepers, and RAW recovery together.",
+      "Things to fix",
+      "Everything waiting to be fixed, in one place.",
       [
         toggle(
           "livePhotoRepair",
           "Suggest Live Photo relinking",
           true,
-          "Ambiguous pairs remain in review.",
+          "Reconnects Live Photos with their motion; unclear pairs wait for you.",
         ),
         toggle(
           "rawRecovery",
-          "Suggest recoverable RAW sources",
+          "Suggest missing RAW files",
           true,
-          "Prefer original provenance and verified dimensions.",
+          "Finds RAW originals that belong with a JPEG you already have.",
         ),
         toggle(
           "duplicateReview",
           "Group near-duplicates for review",
           true,
-          "Keeper suggestions use quality, resolution, and format; deletion stays explicit.",
+          "Suggests which copy to keep; nothing is deleted until you choose.",
         ),
       ],
       { panel: "repairs" },
     ),
     section(
       "enrichment-care",
-      "Enrichment completeness",
-      "Faces, video frames, descriptions, embeddings, and rules form a dependency graph.",
+      "Search and recognition progress",
+      "See which photos still need faces, captions or search.",
       [
         toggle(
           "incrementalEnrichment",
-          "Reprocess only affected outputs",
+          "Redo only what changed",
           true,
-          "Changing an identity should not rerun unrelated media jobs.",
+          "Renaming someone updates their photos without re-checking the rest.",
         ),
         toggle(
           "manualMetadata",
-          "Preserve manual metadata on rerun",
+          "Keep what I edited",
           true,
-          "Rule provenance and model versions identify replaceable generated output.",
+          "Re-checking only replaces what Frameleaf generated, never what you entered.",
         ),
       ],
     ),
@@ -971,66 +987,77 @@ export const settingsSections = {
   processing: [
     section(
       "workers",
-      "Workers & endpoints",
-      "Discover capabilities per endpoint, including machines on your home network.",
+      "Computers doing the work",
+      "This server and other computers at home that help process your photos.",
       [],
       { panel: "workers" },
     ),
     section(
+      "hardware",
+      "Hardware & GPU",
+      "Check that your graphics card is used, fix set-up problems and measure speed.",
+      [],
+      {
+        icon: "mdiExpansionCard",
+        keywords:
+          "gpu graphics card nvidia cuda amd rocm intel arc openvino vram driver docker compose container toolkit dev dri render group benchmark hardware acceleration transcoding",
+      },
+    ),
+    section(
       "routing",
-      "Workload destinations",
-      "A destination stays attached to a job, including during retry and recovery.",
+      "Where each job runs",
+      "Choose whether each kind of work runs at home, on Frameleaf Cloud, or either.",
       [
         select(
           "destination",
-          "Default destination for new jobs",
+          "Suggested place for work",
           "local",
           [
             {
               value: "local",
-              label: "Compatible local or home-network worker",
+              label: "This server or another computer at home",
             },
-            { value: "runpod", label: "RunPod · explicit cloud processing" },
+            { value: "cloud", label: "Frameleaf Cloud" },
           ],
-          "Existing jobs keep their saved destination.",
+          "Applies to kinds of work set to Both. Each job can still switch before it starts, and existing jobs keep their destination.",
         ),
         select(
           "localUnavailable",
-          "When a local worker is unavailable",
+          "Home computer unavailable",
           "Wait and notify",
-          ["Wait and notify", "Fail with retry instructions"],
-          "Switching to RunPod requires an explicit choice.",
+          ["Wait and notify", "Stop and tell me how to retry"],
+          "Switching to Frameleaf Cloud requires an explicit choice.",
         ),
         toggle(
           "endpointHealth",
-          "Check endpoint availability",
+          "Check helper computers",
           true,
-          "Reachability, model support, and render qualification are separate states.",
+          "Shows whether each computer answers and what it can run.",
         ),
       ],
     ),
     section(
       "queues",
       "Queues & concurrency",
-      "Balance indexing with interactive browsing.",
+      "See what's running and how much runs at once, so browsing stays fast.",
       [
         number(
           "thumbnailJobs",
-          "Thumbnail workers",
+          "Thumbnails at once",
           3,
           "jobs",
           1,
           32,
-          "Limit concurrent thumbnail generation.",
+          "More finishes new uploads sooner but can slow browsing.",
         ),
         number(
           "videoJobs",
-          "Playback transcodes",
+          "Video copies at once",
           1,
           "jobs",
           1,
           16,
-          "Heavy encodes compete for memory and GPU time.",
+          "Video conversion is heavy; more at once can slow everything else.",
         ),
         number(
           "mlJobs",
@@ -1054,58 +1081,20 @@ export const settingsSections = {
       { panel: "queues" },
     ),
     section(
-      "runpod",
-      "RunPod lifecycle",
-      "Keep cloud starts, usage, and shutdown behavior explicit.",
-      [
-        toggle(
-          "runpodEnabled",
-          "Make RunPod available",
-          false,
-          "Cloud processing requires credentials, a compatible worker, and consent to transfer media.",
-        ),
-        select(
-          "runpodProfile",
-          "Workload profile",
-          "Video jobs · durable",
-          ["Video jobs · durable", "Interactive ML"],
-          "Long video jobs cannot depend on a synchronous request lifetime.",
-        ),
-        number(
-          "runpodIdle",
-          "Stop after idle",
-          10,
-          "minutes",
-          1,
-          120,
-          "Active jobs count as activity; check their checkpoint before shutdown.",
-        ),
-        number(
-          "costAlert",
-          "Notify at estimated monthly spend",
-          25,
-          "USD",
-          0,
-          1000,
-          "Estimates are not invoices or enforceable billing caps.",
-        ),
-      ],
-    ),
-    section(
       "schedules",
       "Nightly work & model cache",
-      "Schedule heavier tasks around the way your household uses the library.",
+      "Run heavy work when nobody's using the library, like overnight.",
       [
         select(
           "nightlyWindow",
-          "Maintenance window",
+          "Quiet hours for heavy work",
           "01:00–06:00",
           ["01:00–06:00", "23:00–07:00", "No restricted window"],
-          "Use server time and show skipped or interrupted jobs.",
+          "Heavy work runs during these hours in the server's time zone.",
         ),
         number(
           "modelTtl",
-          "Unload idle models after",
+          "Free memory after",
           300,
           "seconds",
           30,
@@ -1114,9 +1103,9 @@ export const settingsSections = {
         ),
         toggle(
           "nightlyDuplicates",
-          "Review duplicate candidates overnight",
+          "Find duplicates overnight",
           true,
-          "Only discovery runs automatically; deletion remains a reviewed action.",
+          "Only finds them; nothing is deleted until you review.",
         ),
       ],
     ),
@@ -1125,7 +1114,7 @@ export const settingsSections = {
     section(
       "accounts",
       "People with server access",
-      "Server roles, storage quotas, and Space roles have different scopes.",
+      "Accounts, administrators and how much space each person gets.",
       [
         number(
           "defaultQuota",
@@ -1134,7 +1123,7 @@ export const settingsSections = {
           "GB",
           1,
           100000,
-          "Logical account usage can differ from physically stored bytes.",
+          "Shared identical files count for each person even though they're stored once.",
         ),
       ],
       { panel: "users" },
@@ -1142,27 +1131,27 @@ export const settingsSections = {
     section(
       "signin",
       "Sign-in methods",
-      "Preserve a tested recovery path when changing authentication.",
+      "How people sign in, and how to get back in.",
       [
         toggle(
           "passwordLogin",
           "Password sign-in",
           true,
-          "Do not disable until an administrator can successfully use the alternative.",
+          "Don't turn this off until an administrator has signed in another way.",
           "All sign-ins",
         ),
         toggle(
           "oauthEnabled",
-          "OpenID Connect / OAuth",
+          "Sign in with another account",
           false,
-          "Keep Immich and Frameleaf callback routes compatible.",
+          "Let people sign in with an account they already have, such as Google or your own identity provider (OpenID Connect).",
           "All sign-ins",
         ),
         text(
           "oauthIssuer",
           "Issuer URL",
           "https://identity.example.invalid",
-          "Enter the issuer published by your identity provider.",
+          "The address your sign-in provider gives you.",
           "All sign-ins",
           "url",
         ),
@@ -1170,37 +1159,37 @@ export const settingsSections = {
           "oauthClient",
           "Client ID",
           "frameleaf",
-          "Credentials are managed separately and excluded from settings exports.",
+          "From your sign-in provider; the secret is stored separately and never exported.",
           "All sign-ins",
         ),
         toggle(
           "oauthAutoRegister",
-          "Create accounts from approved sign-ins",
+          "Create accounts automatically",
           false,
-          "Apply domain and quota policy before provisioning.",
+          "The first sign-in from an approved address creates an account with the default space limit.",
         ),
       ],
     ),
     section(
       "privacy",
       "Locked content",
-      "Apply access rules across search, thumbnails, downloads, public links, and sync.",
+      "Keep private photos out of search, sharing and downloads.",
       [
         toggle(
           "hideSensitive",
-          "Keep detected content Locked until unlocked",
+          "Keep suggested private photos Locked",
           true,
-          "The private detection flag is authoritative; tags cannot unlock content.",
-          "All access checks",
+          "They stay hidden until you unlock with your PIN; removing a tag doesn't unlock them.",
+          "Everyone's access",
         ),
         number(
           "unlockTimeout",
-          "Lock elevated sessions after",
+          "Lock again after",
           15,
           "minutes",
           1,
           240,
-          "PIN enrollment and credentials require a real authenticated server.",
+          "After unlocking with your PIN, Locked photos hide again after this long.",
         ),
         toggle(
           "locationPrivacy",
@@ -1213,7 +1202,7 @@ export const settingsSections = {
     section(
       "credentials",
       "Devices & API access",
-      "Know which clients can reach the library.",
+      "Phones, computers and apps that can reach your library.",
       [],
       { panel: "sessions" },
     ),
@@ -1222,25 +1211,25 @@ export const settingsSections = {
     section(
       "signals",
       "What needs my attention",
-      "Notify on actionable changes, not every routine heartbeat.",
+      "Choose what you want to hear about.",
       [
         toggle(
           "notifyCapacity",
           "Storage capacity warnings",
           true,
-          "Include the filesystem and a link to its storage view.",
+          "Tells you before a drive fills up.",
         ),
         toggle(
           "notifyJobs",
           "Failed or interrupted jobs",
           true,
-          "Group repeated failures and link to recovery.",
+          "Tells you when work stops, with a link to fix it.",
         ),
         toggle(
           "notifyBackup",
-          "Missed backups or verification",
+          "Missed backups",
           true,
-          "A database backup alone does not protect original media.",
+          "Tells you when a backup doesn't run or can't be checked.",
         ),
         toggle(
           "notifyUpdates",
@@ -1253,35 +1242,35 @@ export const settingsSections = {
           "Routine activity digest",
           "Weekly",
           ["Off", "Daily", "Weekly"],
-          "Messages about imports, sharing, and completed processing.",
+          "A summary of imports, sharing and finished work.",
         ),
       ],
     ),
     section(
       "email",
       "Email delivery",
-      "A dedicated delivery setup with a preview before sending.",
+      "Send email through your own mail account.",
       [
         toggle(
           "smtpEnabled",
-          "Enable SMTP delivery",
+          "Send email",
           false,
-          "This preview does not send mail or store credentials.",
+          "Send invitations and alerts through your mail server (SMTP).",
         ),
         text(
           "smtpHost",
-          "SMTP host",
+          "Mail server",
           "smtp.example.invalid",
-          "Use your mail provider’s hostname.",
+          "From your email provider, such as smtp.example.com.",
         ),
         number(
           "smtpPort",
-          "SMTP port",
+          "Mail server port",
           587,
           "",
           1,
           65535,
-          "Typical submission ports are 587 or 465.",
+          "Usually 587 or 465.",
         ),
         select(
           "smtpSecurity",
@@ -1294,7 +1283,7 @@ export const settingsSections = {
           "emailFrom",
           "Sender address",
           "photos@example.invalid",
-          "Keep sender identity distinct from the administrator login.",
+          "The address people see emails come from.",
           "New messages",
           "email",
         ),
@@ -1304,19 +1293,19 @@ export const settingsSections = {
     section(
       "templates",
       "Message templates",
-      "Brand account invitations, shared albums, and recovery emails consistently.",
+      "How invitation, album and recovery emails look.",
       [
         text(
           "mailGreeting",
           "Invitation greeting",
           "Your memories have a new home.",
-          "Built on Immich attribution remains in About and the README.",
+          "The first line of an invitation email.",
         ),
         toggle(
           "emailBrand",
           "Use Frameleaf identity",
           true,
-          "Apply light and dark-compatible brand assets.",
+          "Emails show the Frameleaf name and logo.",
         ),
       ],
     ),
@@ -1324,35 +1313,28 @@ export const settingsSections = {
   server: [
     section(
       "identity",
-      "Server identity & network",
-      "Keep a friendly name separate from compatibility-sensitive internal identifiers.",
+      "Server identity",
+      "Your server's name, timezone and welcome message.",
       [
         text(
           "serverName",
           "Server name",
           "Home archive",
-          "Shown in the command center and connection picker.",
+          "Shown in Settings and when people choose a server in the app.",
           "Display only",
-        ),
-        text(
-          "externalUrl",
-          "Public server URL",
-          "https://photos.example.invalid",
-          "Used for links and identity callbacks.",
-          "New links",
         ),
         select(
           "serverTimezone",
           "Server timezone",
           "America/Edmonton",
           ["America/Edmonton", "America/New_York", "Europe/London", "UTC"],
-          "Maintenance schedules use this timezone.",
+          "Used for schedules like backups and quiet hours.",
         ),
         text(
           "welcomeMessage",
           "Welcome message",
           "A home for all our memories.",
-          "Shown on the sign-in screen.",
+          "A short note people see before signing in.",
           "Sign-in screen",
         ),
       ],
@@ -1391,7 +1373,7 @@ export const settingsSections = {
             { value: "beta", label: "Beta" },
             { value: "development", label: "Development" },
           ],
-          "Stable releases are intended for everyday use. Beta and development releases can change more often and may be less reliable.",
+          "Stable is for everyday use; Beta and Development get changes sooner but may be less reliable.",
           "Update checks",
         ),
         {
@@ -1399,8 +1381,8 @@ export const settingsSections = {
             "externalVersionChecks",
             "Third-party release checks",
             false,
-            "Update checks use Frameleaf services only. Other release services are never contacted.",
-            "Required privacy boundary",
+            "Only Frameleaf is asked about updates; no other service is contacted.",
+            "Privacy, always on",
           ),
           locked: true,
           policy: "External release services prohibited",
@@ -1408,11 +1390,11 @@ export const settingsSections = {
         {
           ...select(
             "installedBuildChannel",
-            "Installed build channel",
+            "Installed version type",
             "Development",
             ["Development"],
-            "The installed build stays on this channel until you install a different release.",
-            "Read-only build information",
+            "Changes only when you install a different version.",
+            "Information only",
           ),
           locked: true,
         },
@@ -1422,31 +1404,31 @@ export const settingsSections = {
     section(
       "diagnostics",
       "Logs & diagnostics",
-      "Enough evidence to debug without unnecessarily exposing private media.",
+      "Records that help fix problems, without exposing your photos.",
       [
         select(
           "logLevel",
-          "Log level",
+          "How much to record",
           "Info",
           ["Error", "Warn", "Info", "Debug", "Verbose"],
-          "Verbose logs may contain private paths or metadata.",
+          "More detail helps with problems but can include file names and photo details.",
           "New logs",
         ),
         {
           ...toggle(
             "metrics",
-            "External telemetry",
+            "Sharing usage with others",
             false,
-            "External telemetry is prohibited. Local metrics and analytics are permitted without sending data to third-party reporting services.",
+            "Frameleaf never sends usage data to outside services.",
           ),
           locked: true,
           policy: "External telemetry prohibited",
         },
         toggle(
           "localMetrics",
-          "Collect local metrics",
+          "Keep usage statistics",
           false,
-          "Keep performance and usage history on your server without sending it to external reporting services.",
+          "Powers Library analytics; the history stays on your server.",
           "Local analytics",
         ),
         select(
@@ -1454,7 +1436,7 @@ export const settingsSections = {
           "Keep analytics history for",
           "12 months",
           ["90 days", "12 months", "24 months"],
-          "Older local history is removed after this period. A longer history uses more storage.",
+          "Older statistics are removed; keeping more uses a little more space.",
           "Local analytics",
         ),
       ],
@@ -1463,44 +1445,44 @@ export const settingsSections = {
     section(
       "maps",
       "Maps & geography",
-      "Use configurable tiles and reverse geocoding without breaking location privacy.",
+      "Show photos on a map and name the places they were taken.",
       [
         toggle(
           "mapsEnabled",
           "Enable maps",
           true,
-          "Map access inherits library and Locked-content permissions.",
+          "People only see places for photos they can see.",
         ),
         toggle(
           "reverseGeocoding",
-          "Look up place names from GPS",
+          "Name places from location",
           true,
-          "Existing location metadata remains editable.",
+          "Turns coordinates into names like “Banff”; you can still edit them.",
         ),
         text(
           "mapStyle",
-          "Custom map style URL",
+          "Map style address",
           "",
-          "Leave empty for the configured built-in style.",
+          "Leave empty for the standard map.",
         ),
       ],
     ),
     section(
       "branding",
-      "Branding & client compatibility",
-      "Customize your workspace while preserving client compatibility and library access.",
+      "Look & feel",
+      "Custom styling for how Frameleaf looks.",
       [
         toggle(
           "customTheme",
-          "Allow custom theme CSS",
+          "Use custom styling",
           false,
-          "Scope custom rules and retain visible focus and contrast.",
+          "Apply your own CSS; keep text readable and focus outlines visible.",
         ),
         text(
           "customCss",
-          "Custom theme CSS",
+          "Custom styling (CSS)",
           "",
-          "Customize the appearance with CSS. Check both themes and keep a recovery copy before changing styles.",
+          "Check light and dark themes, and keep a copy in case you need to undo.",
           "User interface",
           "textarea",
         ),
@@ -1512,20 +1494,20 @@ export const settingsSections = {
     section(
       "profile",
       "Your profile",
-      "Personal settings follow you; device layout remains local.",
+      "Your name, photo and email.",
       [
         text(
           "displayName",
           "Display name",
           "Taylor",
-          "Your private person names remain independently maintained.",
+          "How your name appears to others; names you give people in photos stay private.",
           "Your account",
         ),
         text(
           "accountEmail",
           "Email",
           "taylor@example.invalid",
-          "Changing your email may require verification.",
+          "Used to sign in and for emails; you may need to confirm a change.",
           "Your account",
           "email",
         ),
@@ -1534,14 +1516,14 @@ export const settingsSections = {
     section(
       "appearance",
       "Appearance & browsing",
-      "Timeline, Browse and Work remember the same library session.",
+      "Theme, layout and how the library looks on this device.",
       [
         select(
           "themePreference",
           "Color theme",
           "Dark",
           ["Dark", "Light"],
-          "Applies to this device when you save.",
+          "Changes how Frameleaf looks on this device.",
           "This device",
         ),
         select(
@@ -1549,87 +1531,87 @@ export const settingsSections = {
           "Language",
           "English",
           ["English", "Français", "Deutsch", "Español"],
-          "Choose the language used by the interface.",
+          "The language Frameleaf uses.",
           "Your account",
         ),
         select(
           "defaultLayout",
-          "Preferred library layout",
+          "Library view",
           "Work",
           ["Timeline", "Browse", "Work"],
-          "Layout switching preserves selection, filters, and draft history.",
+          "The view you start in; switching keeps your selection and filters.",
           "This device",
         ),
         toggle(
           "motion",
           "Reduce decorative motion",
           true,
-          "Operating-system reduced-motion preference is always respected.",
+          "Fewer animations; your device's reduce-motion setting is always followed.",
           "This device",
         ),
         toggle(
           "showFilename",
           "Show filenames in Work view",
           true,
-          "Favorites, ratings, and AI suggestions remain separate.",
+          "Shows each file name under its thumbnail in Work view.",
         ),
       ],
     ),
     section(
       "rediscovery",
       "Memories & discovery",
-      "Give you control over what comes back.",
+      "What Memories brings back, and when.",
       [
         toggle(
           "memories",
           "Show memories",
           true,
-          "Sharing a memory always remains an explicit action.",
+          "Photos from this day in past years; nothing is shared unless you share it.",
         ),
         toggle(
           "birthdayMemories",
           "Include birthday memories",
           true,
-          "Use explicit birthday data and the viewer timezone.",
+          "Remembers birthdays of people you've added a birthday for.",
         ),
         toggle(
           "videoMoments",
           "Include video moments",
           true,
-          "Jump to timestamped results without flattening them into whole videos.",
+          "Memories can include short moments from videos.",
         ),
       ],
     ),
     section(
       "downloads",
       "Downloads & local behavior",
-      "Native permissions and backup sources are set on the device itself.",
+      "What you get when you download photos.",
       [
         select(
           "downloadFormat",
           "Preferred download",
           "Original",
           ["Original", "Edited version when available"],
-          "Keep provenance visible when exporting an edited or AI derivative.",
+          "Get the original, or your edited version when there is one.",
         ),
         toggle(
           "downloadMetadata",
-          "Include metadata sidecars",
+          "Include photo details files",
           true,
-          "Sidecars preserve metadata without modifying an original.",
+          "Adds a small file with dates, places and tags next to each photo, leaving the photo unchanged.",
         ),
         toggle(
           "archiveTimeline",
           "Show archived media in search",
           false,
-          "Archiving is organization, not access protection.",
+          "Archived photos still appear in search; use Locked to keep them private.",
         ),
       ],
     ),
     section(
       "suppression",
       "Hidden memories",
-      "Memory preferences change rediscovery. Locked content is managed under Access & security.",
+      "People, places and dates you'd rather Memories skipped.",
       [],
       { action: "Review hidden memory rules", actionKind: "suppression" },
     ),
@@ -1671,7 +1653,7 @@ settingsSections.preferences.push(
   section(
     "account-security",
     "Account access",
-    "Manage sign-in, application access, and connected devices.",
+    "Your password, PIN, signed-in devices and app access.",
     [],
     { scope: "account", module: "PersonalAccess" },
   ),
@@ -1679,10 +1661,169 @@ settingsSections.preferences.push(
 settingsSections.server.push(
   section(
     "configuration",
-    "Configuration transfer",
-    "Review, copy, import, or export your saved settings.",
+    "Copy settings",
+    "Save your settings to a file or load them from one.",
     [],
     { scope: "server", module: "ConfigurationTransfer" },
+  ),
+);
+
+settingsSections.maintenance = [
+  section(
+    "mode",
+    "Maintenance mode",
+    "Pause access for everyone except administrators while you work on the server.",
+    [],
+    {
+      scope: "server",
+      module: "Maintenance",
+      icon: "mdiWrenchOutline",
+      keywords: "maintenance page downtime read-only offline start end",
+    },
+  ),
+  section(
+    "backups",
+    "Database backups",
+    "Create, download, restore and remove database backups.",
+    [],
+    {
+      scope: "server",
+      module: "Maintenance",
+      icon: "mdiDatabaseOutline",
+      keywords: "backup restore snapshot download delete migrations recovery",
+    },
+  ),
+  section(
+    "integrity",
+    "Integrity checks",
+    "Look for damaged, missing and stray files, then review what was found.",
+    [],
+    {
+      scope: "server",
+      module: "Maintenance",
+      icon: "mdiShieldCheckOutline",
+      keywords:
+        "integrity check checksum orphan orphaned missing thumbnail sidecar report csv verify",
+    },
+  ),
+];
+
+// Frameleaf Cloud is optional: every section here explains what stays local and
+// is rendered by FrameleafCloud.jsx rather than as a list of draft fields.
+settingsSections.cloud = [
+  section(
+    "cloud-account",
+    "Account & link",
+    "Link this server to a Frameleaf account to turn on optional cloud features.",
+    [],
+    {
+      scope: "server",
+      module: "FrameleafCloud",
+      icon: "mdiLinkVariant",
+      keywords:
+        "frameleaf account link unlink device code pair connect instance fingerprint headless token permissions",
+    },
+  ),
+  section(
+    "cloud-plan",
+    "Plan",
+    "Your Frameleaf Cloud subscription for remote access and cloud backup.",
+    [],
+    {
+      scope: "server",
+      module: "FrameleafCloud",
+      icon: "mdiCreditCardOutline",
+      keywords:
+        "plan subscription monthly yearly renew grace billing checkout frameleaf cloud price discount",
+    },
+  ),
+  section(
+    "cloud-license",
+    "Licence",
+    "Activate a licence key or install a licence file for an offline server.",
+    [],
+    {
+      scope: "server",
+      module: "FrameleafCloud",
+      icon: "mdiCertificateOutline",
+      keywords:
+        "licence license supporter product key activation offline certificate file badge discount licensed server",
+    },
+  ),
+  section(
+    "cloud-remote",
+    "Remote access",
+    "Reach this server away from home through the Frameleaf relay or a direct connection.",
+    [
+      text(
+        "externalUrl",
+        "Public server URL",
+        "https://photos.example.invalid",
+        "The address people use to reach your photos from outside your home, used in shared links and emails.",
+        "New links",
+      ),
+    ],
+    {
+      scope: "server",
+      module: "FrameleafCloud",
+      icon: "mdiEarth",
+      keywords:
+        "remote access relay direct connect upnp nat-pmp port forwarding public url server url hostname custom domain cname dns certificate cgnat away from home",
+    },
+  ),
+  section(
+    "cloud-processing",
+    "Cloud processing",
+    "Use powerful cloud AI for the jobs you choose, paid per job from your AI credit.",
+    [],
+    {
+      scope: "server",
+      module: "FrameleafCloud",
+      icon: "mdiCloudSyncOutline",
+      keywords:
+        "cloud processing gpu ai wallet credit consent models describe upscale enhance restore transcribe budget cost",
+    },
+  ),
+  section(
+    "cloud-backup",
+    "Cloud backup",
+    "Keep an encrypted copy of your photos and library off-site.",
+    [],
+    {
+      scope: "server",
+      module: "FrameleafCloud",
+      icon: "mdiCloudUploadOutline",
+      keywords:
+        "cloud backup offsite bucket wasabi s3 encryption key recovery kit restore verify retention schedule",
+    },
+  ),
+];
+settingsSections.security.push(
+  section(
+    "frameleaf-signin",
+    "Sign in with Frameleaf",
+    "Let people sign in with their Frameleaf account, which remote access needs.",
+    [],
+    {
+      scope: "server",
+      module: "FrameleafCloud",
+      icon: "mdiShieldAccountOutline",
+      keywords: "frameleaf account sign in login openid provider remote visitors",
+    },
+  ),
+);
+settingsSections.preferences.push(
+  section(
+    "frameleaf-account",
+    "Frameleaf account",
+    "Link your own Frameleaf account so you can sign in when you are away from home.",
+    [],
+    {
+      scope: "account",
+      module: "PersonalAccess",
+      icon: "mdiCloudOutline",
+      keywords: "frameleaf account link unlink remote sign in away from home",
+    },
   ),
 );
 
@@ -1709,9 +1850,9 @@ findSection("editing", "previews").page = "Images";
 findSection("editing", "advanced-image-output").fields.push(
   toggle(
     "imageEnhancedRaw",
-    "Enhanced RAW rendering",
+    "Better RAW previews",
     true,
-    "Use embedded previews first and render difficult RAW files when needed.",
+    "Uses the camera's preview first, and processes tricky RAW files when needed.",
   ),
 );
 findSection("libraries", "sources").fields.push(
@@ -1719,13 +1860,13 @@ findSection("libraries", "sources").fields.push(
     "libraryScheduledScan",
     "Enable scheduled scans",
     true,
-    "Scan import folders on a schedule.",
+    "Look for changes on a schedule.",
   ),
   text(
     "libraryScanCron",
     "Custom scan schedule",
     "0 0 * * *",
-    "Use a cron expression in server time.",
+    "A cron expression in the server's time zone, such as 0 3 * * * for 3 am.",
   ),
 );
 findSection("backup", "database-backup").fields.push(
@@ -1733,7 +1874,7 @@ findSection("backup", "database-backup").fields.push(
     "backupCron",
     "Custom backup schedule",
     "0 2 * * *",
-    "Use a cron expression in server time.",
+    "A cron expression in the server's time zone, such as 0 3 * * * for 3 am.",
   ),
 );
 
@@ -1745,24 +1886,24 @@ queues.fields = queues.fields.filter(
   (field) => !["mlJobs", "importJobs"].includes(field.id),
 );
 for (const [id, label, value] of [
-  ["metadataExtraction", "Metadata extraction", 5],
-  ["faceDetection", "Face detection", 2],
-  ["smartSearch", "Smart search", 2],
-  ["videoDuplicateDetection", "Video duplicate detection", 1],
+  ["metadataExtraction", "Reading photo details", 5],
+  ["faceDetection", "Finding faces", 2],
+  ["smartSearch", "Preparing photos for search", 2],
+  ["videoDuplicateDetection", "Finding duplicate videos", 1],
   ["backgroundTask", "Background tasks", 5],
-  ["migration", "Library migration", 5],
-  ["search", "Search indexing", 5],
-  ["sidecar", "Metadata sidecars", 5],
+  ["migration", "Moving files", 5],
+  ["search", "Updating search", 5],
+  ["sidecar", "Photo detail files", 5],
   ["library", "Library scans", 5],
-  ["notifications", "Notification delivery", 5],
-  ["ocr", "Text recognition", 1],
-  ["imageEnrichment", "Image enrichment", 2],
-  ["imageDescription", "Image descriptions", 2],
-  ["nsfwDetection", "Locked-content detection", 2],
-  ["mediaHealth", "Media health", 2],
+  ["notifications", "Sending notifications", 5],
+  ["ocr", "Reading text in photos", 1],
+  ["imageEnrichment", "Search and recognition", 2],
+  ["imageDescription", "Writing captions", 2],
+  ["nsfwDetection", "Suggesting private photos", 2],
+  ["mediaHealth", "Health checks", 2],
   ["workflow", "Workflows", 5],
-  ["editor", "Editor operations", 2],
-  ["integrityCheck", "Integrity checks", 1],
+  ["editor", "Saving edits", 2],
+  ["integrityCheck", "Checking for damaged files", 1],
 ])
   queues.fields.push(
     number(
@@ -1772,16 +1913,11 @@ for (const [id, label, value] of [
       "jobs",
       1,
       1000,
-      "Maximum jobs that run at the same time.",
+      "How many run at once; more is faster but can slow browsing.",
     ),
   );
 
-findSection("processing", "advanced-runpod-ordinary").credentials = [
-  {
-    id: "runpod-api-key",
-    label: "RunPod API key",
-    help: "Replace the key used to manage cloud workers.",
-  },
+findSection("processing", "advanced-ml-endpoints").credentials = [
   {
     id: "huggingface-token",
     label: "Hugging Face token",
@@ -1853,17 +1989,17 @@ const policyOverrides = {
   },
   videoDescriptions: {
     value: false,
-    help: "Choose moment captions when running Enrichment and review the affected videos first.",
+    help: "Adds captions to key moments in videos; check a few videos first.",
   },
   videoInterval: {
-    label: "Reusable frames per video",
+    label: "Frames looked at per video",
     value: 6,
     unit: "frames",
     min: 6,
     max: 6,
     locked: true,
     policy: "Current sampling policy",
-    help: "Six evenly spaced frames provide a consistent overview of each video.",
+    help: "More frames catch more moments but take longer.",
   },
   masterResolution: {
     value: "Preserve source",
@@ -1887,33 +2023,26 @@ const policyOverrides = {
     value: false,
     locked: true,
     policy: "Not yet qualified",
-    help: "Frame interpolation is not available until its model and motion quality are validated.",
+    help: "Adds in-between frames for smoother video; offered as its own step with a preview.",
   },
   modelTtl: {
     locked: true,
     policy: "Worker environment",
-    help: "Your ML worker controls how long idle models remain in memory.",
+    help: "Unused AI models leave memory after this long; the next job starts a little slower.",
   },
   faceDistance: { max: 2 },
   sensitiveThreshold: { min: 0.01 },
   localUnavailable: {
-    help: "Choose whether a local job should wait or stop when its worker is unavailable. Switching to cloud processing requires a separate choice.",
+    help: "Wait until it's back, or stop and tell you; work never moves to the cloud on its own.",
   },
   destination: {
-    help: "Choose a preferred destination for new jobs. Video restoration retains its destination until you explicitly change it.",
-  },
-  runpodIdle: {
-    label: "Managed ML pod idle timeout",
-    help: "Stop idle library analysis workers. Video workers need to finish or checkpoint their active jobs before stopping.",
-  },
-  runpodProfile: {
-    help: "Library analysis and long video jobs use separate workers.",
+    help: "Each job still asks before using Frameleaf Cloud, and needs a linked account.",
   },
   shareLocation: {
-    help: "Review location details before sharing. Downloaded originals may contain embedded GPS metadata.",
+    help: "Shows where photos were taken; downloaded originals may still contain the location.",
   },
   locationPrivacy: {
-    help: "Keep location details out of public previews. Review original downloads separately for embedded GPS metadata.",
+    help: "Hides where photos were taken on public links; downloaded originals may still include it.",
   },
 };
 // Preserve full source choices and validation, while retaining stable UI IDs.
@@ -1933,7 +2062,7 @@ const sourceControlOverrides = {
   advancedSuppressionScope: {
     locked: true,
     policy: "Managed with Locked rules",
-    help: "Unlock to change the scope together with its selected Locked tags and people.",
+    help: "Just your photos, or every photo you can see.",
   },
   albumSort: {
     value: "desc",
@@ -2048,8 +2177,8 @@ const sourceControlOverrides = {
   smtpSecurity: {
     type: "toggle",
     value: false,
-    label: "Use TLS from connection start",
-    help: "Use TLS from the start of the connection when required by your mail server. Otherwise use its negotiated transport.",
+    label: "Encrypt from the start",
+    help: "Turn on if your provider says to use port 465 or TLS.",
   },
   smtpPort: { min: 0, max: 65535 },
   trashDays: { min: 0 },
@@ -2057,7 +2186,6 @@ const sourceControlOverrides = {
   videoJobs: { min: 1, max: 1000, integer: true },
   advancedDescriptionInstructions: { maxLength: 2000 },
   advancedMlUrls: { list: { type: "url", minItems: 1 } },
-  advancedServerlessGpuPools: { list: { type: "text", minItems: 1 } },
   advancedAcceptedVideo: {
     list: { type: "text", values: ["h264", "hevc", "vp9", "av1"] },
   },
@@ -2136,6 +2264,141 @@ for (const section of Object.values(settingsSections).flat()) {
   }
 }
 
+/**
+ * Directory icons for every settings section (mdi names from @mdi/js),
+ * distinct within each area. Sections that set their own icon keep it.
+ */
+export const sectionIcons = Object.freeze({
+  storage: {
+    volumes: "mdiHarddisk",
+    organization: "mdiFolderMultipleOutline",
+    deduplication: "mdiContentDuplicate",
+    retention: "mdiDeleteClockOutline",
+    migration: "mdiFolderMoveOutline",
+    "advanced-dedup-owner": "mdiAccountKeyOutline",
+    "retention-policy": "mdiTimerSandComplete",
+  },
+  backup: {
+    takeout: "mdiImport",
+    "database-backup": "mdiDatabaseExportOutline",
+    preservation: "mdiShieldStarOutline",
+    "devices-backup": "mdiCellphoneArrowDown",
+    "advanced-icloud": "mdiApple",
+  },
+  intelligence: {
+    "smart-search": "mdiImageSearchOutline",
+    descriptions: "mdiTextBoxOutline",
+    faces: "mdiFaceRecognition",
+    pets: "mdiPawOutline",
+    documents: "mdiReceiptTextOutline",
+    classification: "mdiShapeOutline",
+    "sensitive-detection": "mdiEyeOffOutline",
+    "advanced-search-labels": "mdiTagSearchOutline",
+    "advanced-description-runtime": "mdiRobotOutline",
+    "advanced-description-prompt": "mdiCommentTextOutline",
+    "advanced-description-identity": "mdiCardAccountDetailsOutline",
+    "advanced-recognition-models": "mdiTextRecognition",
+    "advanced-travel-album": "mdiAirplane",
+    "smart-album-documents": "mdiFileDocumentOutline",
+    "smart-album-food": "mdiFoodForkDrink",
+    "smart-album-nature": "mdiPineTree",
+    "smart-album-pets": "mdiDog",
+    "smart-album-screenshots": "mdiCellphoneScreenshot",
+  },
+  editing: {
+    previews: "mdiImageOutline",
+    playback: "mdiPlayCircleOutline",
+    masters: "mdiImageEditOutline",
+    restoration: "mdiAutoFix",
+    studio: "mdiMovieEditOutline",
+    "advanced-image-output": "mdiPaletteOutline",
+    "advanced-playback-compatibility": "mdiVideoOutline",
+    "advanced-hls": "mdiSignalVariant",
+    "image-thumbnails": "mdiViewGridOutline",
+    "image-fullsize": "mdiFullscreen",
+    "video-encoder-tuning": "mdiTuneVertical",
+  },
+  sharing: {
+    spaces: "mdiAccountGroupOutline",
+    links: "mdiLinkVariant",
+    partner: "mdiAccountHeartOutline",
+    "shared-identities": "mdiAccountSwitchOutline",
+    "advanced-sharing-boundaries": "mdiShieldLockOutline",
+  },
+  care: {
+    health: "mdiHeartPulse",
+    repair: "mdiHammerWrench",
+    "enrichment-care": "mdiProgressCheck",
+    "advanced-duplicate-matching": "mdiImageMultipleOutline",
+    "advanced-integrity-budget": "mdiSpeedometer",
+    "integrity-schedules": "mdiCalendarClock",
+  },
+  processing: {
+    workers: "mdiServerNetwork",
+    hardware: "mdiExpansionCard",
+    routing: "mdiTransitConnectionVariant",
+    queues: "mdiTrayFull",
+    schedules: "mdiWeatherNight",
+    "advanced-ml-endpoints": "mdiApi",
+    "advanced-video-profile": "mdiVideoOutline",
+    "nightly-tasks": "mdiBroom",
+  },
+  security: {
+    signin: "mdiLoginVariant",
+    privacy: "mdiLockOutline",
+    credentials: "mdiKeyOutline",
+    "advanced-protected-suppression": "mdiEyeLockOutline",
+    "advanced-native-oauth": "mdiCellphoneKey",
+    "oauth-advanced": "mdiShieldKeyOutline",
+  },
+  notifications: {
+    signals: "mdiBellBadgeOutline",
+    email: "mdiEmailOutline",
+    templates: "mdiFileDocumentEditOutline",
+    "advanced-mail-reply": "mdiEmailArrowLeftOutline",
+    "email-delivery-advanced": "mdiEmailFastOutline",
+    "email-templates": "mdiEmailEditOutline",
+  },
+  server: {
+    identity: "mdiServer",
+    updates: "mdiUpdate",
+    diagnostics: "mdiBugOutline",
+    maps: "mdiMapOutline",
+    branding: "mdiPaletteSwatchOutline",
+    "advanced-metadata-maps": "mdiMapMarkerMultipleOutline",
+    "instance-options": "mdiCogOutline",
+    configuration: "mdiFileSwapOutline",
+  },
+  preferences: {
+    profile: "mdiAccountCircleOutline",
+    appearance: "mdiPaletteOutline",
+    rediscovery: "mdiStarShootingOutline",
+    downloads: "mdiDownloadOutline",
+    suppression: "mdiEyeOffOutline",
+    "advanced-download-packaging": "mdiPackageVariant",
+    "device-playback": "mdiMonitor",
+    "library-features": "mdiViewDashboardOutline",
+    "email-preferences": "mdiEmailOutline",
+    "supporter-preference": "mdiHandHeartOutline",
+    "account-security": "mdiShieldAccountOutline",
+  },
+  users: {
+    accounts: "mdiAccountMultipleOutline",
+  },
+  libraries: {
+    sources: "mdiFolderNetworkOutline",
+  },
+  trash: {
+    contents: "mdiDeleteOutline",
+  },
+});
+for (const [area, sections] of Object.entries(settingsSections))
+  for (const section of sections) {
+    section.icon ??= sectionIcons[area]?.[section.id];
+    const aliases = settingsSearchAliases[`${area}/${section.id}`];
+    if (aliases) section.keywords = [section.keywords, aliases].filter(Boolean).join(" ");
+  }
+
 export const allSettings = Object.entries(settingsSections).flatMap(
   ([area, sections]) =>
     sections.flatMap((section) =>
@@ -2160,7 +2423,7 @@ export const settingsIndex = settingsAreas
       title: section.title,
       description: section.description,
       search:
-        `${area.title} ${section.title} ${section.description} ${section.fields.map((f) => `${f.label} ${f.help}`).join(" ")}`.toLowerCase(),
+        `${area.title} ${section.title} ${section.description} ${section.keywords || ""} ${section.fields.map((f) => `${f.label} ${f.help}`).join(" ")}`.toLowerCase(),
     })),
   );
 export function findSettings(query) {
@@ -2265,7 +2528,7 @@ export function getSettingAvailability(field, values) {
   if (format && String(values[format]).toLowerCase() !== "jpeg")
     return {
       disabled: true,
-      reason: "Progressive loading is available for JPEG only.",
+      reason: "Thumbnails sharpen as they load; JPEG only.",
     };
   return { disabled: false, reason: "" };
 }
@@ -2332,11 +2595,6 @@ export function validateSettingsDraft(values) {
     if (!field.locked && error) errors[field.id] = error;
   }
   if (
-    Number(values.advancedServerlessMin) > Number(values.advancedServerlessMax)
-  )
-    errors.advancedServerlessMax =
-      "Maximum workers cannot be lower than minimum workers.";
-  if (
     Number(values.advancedVideoMatchingFrames) >
     Number(values.advancedVideoDuplicateFrames)
   )
@@ -2354,7 +2612,7 @@ export function validateSettingsDraft(values) {
     ["imageFullsizeProgressive", "imageFullsizeFormat"],
   ]) {
     if (values[id] && String(values[format]).toLowerCase() === "webp")
-      errors[id] = "Progressive loading is available for JPEG only.";
+      errors[id] = "Thumbnails sharpen as they load; JPEG only.";
   }
   return errors;
 }

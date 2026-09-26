@@ -38,13 +38,9 @@ export const envData: EnvData = {
     config: {},
   },
 
-  licensePublicKey: {
-    client: 'client-public-key',
-    server: 'server-public-key',
-  },
-
   versionCheck: {
-    url: 'https://version.immich.cloud/version',
+    url: 'https://api.frameleaf.cloud/v1/releases/latest',
+    fallbackUrl: 'https://api.github.com/repos/Frameleaf/frameleaf-app/releases',
   },
 
   network: {
@@ -79,6 +75,7 @@ export const envData: EnvData = {
 
   storage: {
     ignoreMountCheckErrors: false,
+    importRoots: [],
   },
 
   telemetry: {
@@ -94,6 +91,16 @@ export const envData: EnvData = {
       allow: true,
       installFolder: '/app/data/plugins',
     },
+  },
+
+  appReleases: {},
+  frameleafCloud: {
+    url: null,
+    identityDir: null,
+    linkToken: null,
+    edge: { port: 2443, bind: '0.0.0.0', secret: null },
+    localUrl: null,
+    trustedLanCidrs: [],
   },
 
   noColor: false,

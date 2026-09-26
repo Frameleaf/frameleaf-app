@@ -1,0 +1,139 @@
+{
+  "generator": "scripts/frameleaf-logo-exports.mjs",
+  "renderer": "sharp 0.35.3, libvips 8.18.3",
+  "exports": [
+    {
+      "path": "web/src/lib/assets/frameleaf/frameleaf-symbol.svg",
+      "source": "design/frameleaf/brand-kit/frameleaf-symbol.svg",
+      "sourceSha256": "beaa5788267b8eb34167dc89c13df024b33f8c02bc4914f9ac5453f10393e7b2",
+      "note": "byte-for-byte copy",
+      "sha256": "beaa5788267b8eb34167dc89c13df024b33f8c02bc4914f9ac5453f10393e7b2"
+    },
+    {
+      "path": "web/src/lib/assets/frameleaf/frameleaf-logo-dark.svg",
+      "source": "design/frameleaf/brand-kit/frameleaf-logo-dark.svg",
+      "sourceSha256": "f99cfa4ef5c10da51cfa54627f12ad6e7eba4decb59fe0829f06f0e0978a609b",
+      "note": "byte-for-byte copy",
+      "sha256": "f99cfa4ef5c10da51cfa54627f12ad6e7eba4decb59fe0829f06f0e0978a609b"
+    },
+    {
+      "path": "web/src/lib/assets/frameleaf/frameleaf-logo-white.svg",
+      "source": "design/frameleaf/brand-kit/frameleaf-logo-white.svg",
+      "sourceSha256": "1ab00db27ed39ea9e3de7374bf324c88a097fc684b25ecfeb7695a504b92be45",
+      "note": "byte-for-byte copy",
+      "sha256": "1ab00db27ed39ea9e3de7374bf324c88a097fc684b25ecfeb7695a504b92be45"
+    },
+    {
+      "path": "web/static/favicon.svg",
+      "source": "design/frameleaf/brand-kit/frameleaf-symbol.svg",
+      "sourceSha256": "beaa5788267b8eb34167dc89c13df024b33f8c02bc4914f9ac5453f10393e7b2",
+      "note": "byte-for-byte copy",
+      "sha256": "beaa5788267b8eb34167dc89c13df024b33f8c02bc4914f9ac5453f10393e7b2"
+    },
+    {
+      "path": "web/static/frameleaf/frameleaf-logo-light.png",
+      "source": "design/frameleaf/derivatives/frameleaf-logo-light.svg",
+      "sourceSha256": "6f20367286b92d9603cce849bade81bb82a18ed73bf8b366492e931746f5d2ee",
+      "note": "540x132",
+      "sha256": "964f74fee8eb1b7a03764202b929b72843f169fa77bc7e68e95d8374dd6cc75f"
+    },
+    {
+      "path": "web/static/favicon-16.png",
+      "source": "design/frameleaf/brand-kit/frameleaf-symbol.svg",
+      "sourceSha256": "beaa5788267b8eb34167dc89c13df024b33f8c02bc4914f9ac5453f10393e7b2",
+      "note": "16x16",
+      "sha256": "9df971b7102f8a4e2944c2db1115ab9e69cc72494c38b9544e0940ff2bacb7c4"
+    },
+    {
+      "path": "web/static/favicon-32.png",
+      "source": "design/frameleaf/brand-kit/frameleaf-symbol.svg",
+      "sourceSha256": "beaa5788267b8eb34167dc89c13df024b33f8c02bc4914f9ac5453f10393e7b2",
+      "note": "32x32",
+      "sha256": "dd237fdb22fdb4a5fbc2908740e681ffcc6b030e66254caaba5d790045ded0fe"
+    },
+    {
+      "path": "web/static/favicon-48.png",
+      "source": "design/frameleaf/brand-kit/frameleaf-symbol.svg",
+      "sourceSha256": "beaa5788267b8eb34167dc89c13df024b33f8c02bc4914f9ac5453f10393e7b2",
+      "note": "48x48",
+      "sha256": "9a29ef31c8f2148632ed504fc95086e00bc72cb25eea3ff9660b995451817a54"
+    },
+    {
+      "path": "web/static/favicon-96.png",
+      "source": "design/frameleaf/brand-kit/frameleaf-symbol.svg",
+      "sourceSha256": "beaa5788267b8eb34167dc89c13df024b33f8c02bc4914f9ac5453f10393e7b2",
+      "note": "96x96",
+      "sha256": "a6230b877d8ea6ed2986ebd1a0d9a6f72fed334fdd61b265e0c070f02495e091"
+    },
+    {
+      "path": "web/static/favicon-144.png",
+      "source": "design/frameleaf/brand-kit/frameleaf-symbol.svg",
+      "sourceSha256": "beaa5788267b8eb34167dc89c13df024b33f8c02bc4914f9ac5453f10393e7b2",
+      "note": "144x144",
+      "sha256": "a008411a3b5aeaa3698bd30aa2c3d5ed3e941aca55c61a47ab3c2b57dc97bd11"
+    },
+    {
+      "path": "web/static/favicon.png",
+      "source": "design/frameleaf/brand-kit/frameleaf-symbol.svg",
+      "sourceSha256": "beaa5788267b8eb34167dc89c13df024b33f8c02bc4914f9ac5453f10393e7b2",
+      "note": "512x512",
+      "sha256": "7c5d59d32499f8800cb515c638954af53c37956781a685cb94e39f14fafc6dda"
+    },
+    {
+      "path": "web/static/favicon.ico",
+      "source": "design/frameleaf/brand-kit/frameleaf-symbol.svg",
+      "sourceSha256": "beaa5788267b8eb34167dc89c13df024b33f8c02bc4914f9ac5453f10393e7b2",
+      "note": "ICO with 16/32/48 PNG payloads",
+      "sha256": "64a2202de8d255a1f3bc6654b9e51f9af18d4d4ed388a7bc7ba17899b4aab703"
+    },
+    {
+      "path": "docs/static/img/favicon.ico",
+      "source": "design/frameleaf/brand-kit/frameleaf-symbol.svg",
+      "sourceSha256": "beaa5788267b8eb34167dc89c13df024b33f8c02bc4914f9ac5453f10393e7b2",
+      "note": "ICO with 16/32/48 PNG payloads",
+      "sha256": "64a2202de8d255a1f3bc6654b9e51f9af18d4d4ed388a7bc7ba17899b4aab703"
+    },
+    {
+      "path": "web/static/apple-icon-180.png",
+      "source": "design/frameleaf/brand-kit/frameleaf-app-icon.svg",
+      "sourceSha256": "1f871ae45f6702e775fcd75fa67c8c38b53f328b13a672af98ecf23a12abfc94",
+      "note": "180x180; square full-bleed tile",
+      "sha256": "a4bfe1aa56df3b7e2f01a6b148b1029b37fcaa12b74486b2f03e3d023e5c0e9a"
+    },
+    {
+      "path": "web/static/manifest-icon-192.maskable.png",
+      "source": "design/frameleaf/brand-kit/frameleaf-app-icon.svg",
+      "sourceSha256": "1f871ae45f6702e775fcd75fa67c8c38b53f328b13a672af98ecf23a12abfc94",
+      "note": "192x192; full-bleed tile, symbol in maskable safe zone",
+      "sha256": "a61c001e8de350ec087518ba7ce5ec5807ec5b72f906d1e50c384a2b7bb67fee"
+    },
+    {
+      "path": "web/static/manifest-icon-512.maskable.png",
+      "source": "design/frameleaf/brand-kit/frameleaf-app-icon.svg",
+      "sourceSha256": "1f871ae45f6702e775fcd75fa67c8c38b53f328b13a672af98ecf23a12abfc94",
+      "note": "512x512; full-bleed tile, symbol in maskable safe zone",
+      "sha256": "041cb91671a0b85b6eb08759df6986ef9ed97cee9b55c5c39e46b234021c1fb6"
+    },
+    {
+      "path": "docs/static/img/favicon.png",
+      "source": "design/frameleaf/brand-kit/frameleaf-symbol.svg",
+      "sourceSha256": "beaa5788267b8eb34167dc89c13df024b33f8c02bc4914f9ac5453f10393e7b2",
+      "note": "180x180",
+      "sha256": "530b0b651314e94091a25a230f2b15f5ea8ac2558644c81eec4971a990148dc5"
+    },
+    {
+      "path": "docs/static/img/frameleaf-logo-inline-light.svg",
+      "source": "design/frameleaf/derivatives/frameleaf-logo-light.svg",
+      "sourceSha256": "6f20367286b92d9603cce849bade81bb82a18ed73bf8b366492e931746f5d2ee",
+      "note": "byte-for-byte copy",
+      "sha256": "6f20367286b92d9603cce849bade81bb82a18ed73bf8b366492e931746f5d2ee"
+    },
+    {
+      "path": "docs/static/img/frameleaf-logo-inline-dark.svg",
+      "source": "design/frameleaf/brand-kit/frameleaf-logo-dark.svg",
+      "sourceSha256": "f99cfa4ef5c10da51cfa54627f12ad6e7eba4decb59fe0829f06f0e0978a609b",
+      "note": "byte-for-byte copy",
+      "sha256": "f99cfa4ef5c10da51cfa54627f12ad6e7eba4decb59fe0829f06f0e0978a609b"
+    }
+  ]
+}

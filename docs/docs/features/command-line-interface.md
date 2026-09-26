@@ -1,16 +1,16 @@
-# The Immich CLI
+# The Frameleaf CLI
 
-Immich has a command line interface (CLI) that allows you to perform certain actions from the command line.
+Frameleaf has a command line interface (CLI) that allows you to perform certain actions from the command line.
 
 ## Features
 
-- Upload photos and videos to Immich
+- Upload photos and videos to Frameleaf
 - Check server version
 
 More features are planned for the future.
 
 :::tip Google Photos Takeout
-If you are looking to import your Google Photos takeout, we recommend this community maintained tool [immich-go](https://github.com/simulot/immich-go)
+To import a Google Photos Takeout export, use [Import Google Photos](/features/google-photos-import) in Frameleaf.
 :::
 
 ## Requirements
@@ -37,7 +37,7 @@ npm uninstall -g immich
 If npm is not available on your system you can try the Docker version
 
 ```bash
-docker run -it -v "$(pwd)":/import:ro -e IMMICH_INSTANCE_URL=https://your-immich-instance/api -e IMMICH_API_KEY=your-api-key ghcr.io/immich-app/immich-cli:latest
+docker run -it -v "$(pwd)":/import:ro -e IMMICH_INSTANCE_URL=https://your-immich-instance/api -e IMMICH_API_KEY=your-api-key ghcr.io/frameleaf/frameleaf-cli:latest
 ```
 
 Please modify the `IMMICH_INSTANCE_URL` and `IMMICH_API_KEY` environment variables as suitable. You can also use a Docker env file to store your sensitive API key.
@@ -45,7 +45,7 @@ Please modify the `IMMICH_INSTANCE_URL` and `IMMICH_API_KEY` environment variabl
 This `docker run` command will directly run the command `immich` inside the container. You can directly append the desired parameters (see under "usage") to the commandline like this:
 
 ```bash
-docker run -it -v "$(pwd)":/import:ro -e IMMICH_INSTANCE_URL=https://your-immich-instance/api -e IMMICH_API_KEY=your-api-key ghcr.io/immich-app/immich-cli:latest upload -a -c 5 --recursive directory/
+docker run -it -v "$(pwd)":/import:ro -e IMMICH_INSTANCE_URL=https://your-immich-instance/api -e IMMICH_API_KEY=your-api-key ghcr.io/frameleaf/frameleaf-cli:latest upload -a -c 5 --recursive directory/
 ```
 
 ## Usage
@@ -57,14 +57,14 @@ docker run -it -v "$(pwd)":/import:ro -e IMMICH_INSTANCE_URL=https://your-immich
 $ immich
 Usage: immich [options] [command]
 
-Command line interface for Immich
+Command line interface for Frameleaf
 
 Options:
   -V, --version                       output the version number
   -d, --config-directory <directory>  Configuration directory where auth.yml will be stored (default: "~/.config/immich/", env:
                                       IMMICH_CONFIG_DIR)
-  -u, --url [url]                     Immich server URL (env: IMMICH_INSTANCE_URL)
-  -k, --key [key]                     Immich API key (env: IMMICH_API_KEY)
+  -u, --url [url]                     Frameleaf server URL (env: IMMICH_INSTANCE_URL)
+  -k, --key [key]                     Frameleaf API key (env: IMMICH_API_KEY)
   -h, --help                          display help for command
 
 Commands:
@@ -116,7 +116,7 @@ Note that the above options can read from environment variables as well.
 
 ## Quick Start
 
-You begin by authenticating to your Immich server. For instance:
+You begin by authenticating to your Frameleaf server. For instance:
 
 ```bash
 # immich login [url] [key]
@@ -125,7 +125,7 @@ immich login http://192.168.1.216:2283/api HFEJ38DNSDUEG
 
 This will store your credentials in a `auth.yml` file in the configuration directory which defaults to `~/.config/immich/`. The directory can be set with the `-d` option or the environment variable `IMMICH_CONFIG_DIR`. Please keep the file secure, either by performing the logout command after you are done, or deleting it manually.
 
-Once you are authenticated, you can upload assets to your Immich server.
+Once you are authenticated, you can upload assets to your Frameleaf server.
 
 ```bash
 immich upload file1.jpg file2.jpg
@@ -143,7 +143,7 @@ If you are unsure what will happen, you can use the `--dry-run` option to see wh
 immich upload --dry-run --recursive directory/
 ```
 
-By default, the upload command will hash the files before uploading them. This is to avoid uploading the same file multiple times. If you are sure that the files are unique, you can skip this step by passing the `--skip-hash` option. Note that Immich always performs its own deduplication through hashing, so this is merely a performance consideration. If you have good bandwidth it might be faster to skip hashing.
+By default, the upload command will hash the files before uploading them. This is to avoid uploading the same file multiple times. If you are sure that the files are unique, you can skip this step by passing the `--skip-hash` option. Note that Frameleaf always performs its own deduplication through hashing, so this is merely a performance consideration. If you have good bandwidth it might be faster to skip hashing.
 
 ```bash
 immich upload --skip-hash --recursive directory/
@@ -195,8 +195,10 @@ immich upload --dry-run --json-output . | tail -n +6 | jq .newFiles[]
 
 ### Obtain the API Key
 
-The API key can be obtained in the user setting panel on the web interface. You can also specify permissions for the key to limit its access.
+The API key can be created in your account settings on the web interface. You can also specify permissions for the key to limit its access.
 
-![Obtain Api Key](./img/obtain-api-key.webp)
-
-![Specify permissions for the key](./img/obtain-api-key-2.webp)
+1. Select your avatar in the top right corner and choose **Account settings**.
+2. In **Your preferences**, open **Account access**.
+3. Under **API keys**, select **Create API key**.
+4. Give the key a name and choose only the permissions the CLI needs, or full access.
+5. Create the key and copy it. The key is shown only once.

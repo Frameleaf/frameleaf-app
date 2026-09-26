@@ -1,19 +1,20 @@
 <script lang="ts">
-  import SettingButtonsRow from '$lib/components/shared-components/settings/SystemConfigButtonRow.svelte';
-  import SettingInputField from '$lib/components/shared-components/settings/SettingInputField.svelte';
-  import SettingSelect from './SettingSelect.svelte';
-  import SettingSwitch from '$lib/components/shared-components/settings/SettingSwitch.svelte';
+  import SettingActions from '$lib/components/frameleaf/settings/SettingActions.svelte';
+  import SettingField from '$lib/components/frameleaf/settings/SettingField.svelte';
+  import SettingSelect from '$lib/components/frameleaf/settings/SettingSelect.svelte';
+  import SettingToggle from '$lib/components/frameleaf/settings/SettingToggle.svelte';
   import { SettingInputFieldType } from '$lib/constants';
   import FormatMessage from '$lib/elements/FormatMessage.svelte';
+  import { requireSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
-  import { systemConfigManager } from '$lib/managers/system-config-manager.svelte';
   import { Link } from '@immich/ui';
   import { t } from 'svelte-i18n';
   import { fade } from 'svelte/transition';
 
   const disabled = $derived(featureFlagsManager.value.configFile);
-  const config = $derived(systemConfigManager.value);
-  let configToEdit = $state(systemConfigManager.cloneValue());
+  const settingsDraft = requireSystemConfigDraft();
+  const configToEdit = $derived(settingsDraft.draft);
+  const config = $derived(settingsDraft.baseline);
 
   let cronExpressionOptions = $derived([
     { text: $t('interval.night_at_midnight'), value: '0 0 * * *' },
@@ -26,8 +27,8 @@
 <div>
   <div in:fade={{ duration: 500 }}>
     <form autocomplete="off" onsubmit={(event) => event.preventDefault()}>
-      <div class="ms-4 mt-4 flex flex-col gap-4">
-        <SettingSwitch
+      <div class="flex flex-col gap-4">
+        <SettingToggle
           title={$t('admin.backup_database_enable_description')}
           {disabled}
           bind:checked={configToEdit.backup.database.enabled}
@@ -41,7 +42,7 @@
           bind:value={configToEdit.backup.database.cronExpression}
         />
 
-        <SettingInputField
+        <SettingField
           inputType={SettingInputFieldType.TEXT}
           required={true}
           disabled={disabled || !configToEdit.backup.database.enabled}
@@ -61,9 +62,9 @@
               </FormatMessage>
             </p>
           {/snippet}
-        </SettingInputField>
+        </SettingField>
 
-        <SettingInputField
+        <SettingField
           inputType={SettingInputFieldType.NUMBER}
           required={true}
           label={$t('admin.backup_keep_last_amount')}
@@ -72,7 +73,7 @@
           isEdited={configToEdit.backup.database.keepLastAmount !== config.backup.database.keepLastAmount}
         />
 
-        <SettingButtonsRow {disabled} bind:configToEdit keys={['backup']} />
+        <SettingActions {disabled} keys={['backup']} />
       </div>
     </form>
   </div>

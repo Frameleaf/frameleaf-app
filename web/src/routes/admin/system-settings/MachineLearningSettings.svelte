@@ -1,10 +1,10 @@
 <script lang="ts">
-  import SettingButtonsRow from '$lib/components/shared-components/settings/SystemConfigButtonRow.svelte';
+  import SettingActions from '$lib/components/frameleaf/settings/SettingActions.svelte';
+  import { requireSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
-  import { systemConfigManager } from '$lib/managers/system-config-manager.svelte';
   import { getMachineLearningHardware, MachineLearningHardwareAcceleration } from '@immich/sdk';
   import { isEqual } from 'lodash-es';
-  import { onDestroy, onMount } from 'svelte';
+  import { onMount } from 'svelte';
   import { fade } from 'svelte/transition';
   import AvailabilityChecksSection from './machine-learning/AvailabilityChecksSection.svelte';
   import DuplicateDetectionSection from './machine-learning/DuplicateDetectionSection.svelte';
@@ -18,20 +18,13 @@
   import MlUrlsSection from './machine-learning/MlUrlsSection.svelte';
   import NsfwDetectionSection from './machine-learning/NsfwDetectionSection.svelte';
   import OcrSection from './machine-learning/OcrSection.svelte';
-  import RunPodSection from './machine-learning/RunPodSection.svelte';
+  import SearchLabelsSection from './machine-learning/SearchLabelsSection.svelte';
   import SmartSearchSection from './machine-learning/SmartSearchSection.svelte';
 
   const disabled = $derived(featureFlagsManager.value.configFile);
-  const config = $derived(systemConfigManager.value);
-  let configToEdit = $state(systemConfigManager.cloneValue());
-  // Optional-with-default zod fields land in the generated DTO as
-  // `string | undefined`. The server always materialises them, but the
-  // password bindings below need a plain string. Backfill on load so the
-  // bind targets are never undefined.
-  if (configToEdit.machineLearning.runpod) {
-    configToEdit.machineLearning.runpod.hfToken ??= '';
-  }
-
+  const settingsDraft = requireSystemConfigDraft();
+  const configToEdit = $derived(settingsDraft.draft);
+  const config = $derived(settingsDraft.baseline);
   // Detected hardware preference, used to seed the "Auto" hardware
   // dropdown and apply matching preset model names.
   let detectedAcceleration = $state<MachineLearningHardwareAcceleration>();
@@ -44,49 +37,11 @@
   const savedImageDescription = $derived(config.machineLearning.imageDescription!);
   const nsfwDetection = $derived(configToEdit.machineLearning.nsfwDetection!);
   const savedNsfwDetection = $derived(config.machineLearning.nsfwDetection!);
-  const runpod = $derived(configToEdit.machineLearning.runpod!);
-  const savedRunpod = $derived(config.machineLearning.runpod!);
-  const runpodServerless = $derived(runpod.serverless!);
-  const savedRunpodServerless = $derived(savedRunpod.serverless!);
-
-  // Clamp minMatchingFrames to frameCount at save time, NOT in a $effect.
-  // The previous `$effect` reactively clamped on every keystroke, so typing
-  // a two-digit number in `frameCount` clobbered `minMatchingFrames` between
-  // digits. The SettingInputField `max={frameCount}` already gives a visible
-  // UI bound; this `onBeforeSave` hook just enforces it once at submit.
-  // Marked async to satisfy SystemConfigButtonRow's onBeforeSave: () => Promise<boolean>.
-  const validateBeforeSave = (): Promise<boolean> => {
-    const enhancedVideo = configToEdit.machineLearning.duplicateDetection.enhancedVideo;
-    if (enhancedVideo.minMatchingFrames > enhancedVideo.frameCount) {
-      enhancedVideo.minMatchingFrames = enhancedVideo.frameCount;
-    }
-    return Promise.resolve(true);
-  };
-
-  // Managed RunPod URL polling. Surfaces "Pod state: <URL>" chip when the
-  // admin has launched a pod via the Quick Actions panel.
-  let managedRunPodUrl = $state<string>('');
-  let managedUrlTimer: ReturnType<typeof setInterval> | undefined;
-
-  const refreshManagedUrl = async () => {
-    try {
-      const response = await fetch('/api/runpod/pods/current', { credentials: 'include' });
-      if (!response.ok) {
-        // Pod state endpoint failed — assume nothing is managed rather than
-        // leaving a stale URL in the chip.
-        managedRunPodUrl = '';
-        return;
-      }
-      const state = (await response.json()) as { status?: string; mlUrl?: string };
-      managedRunPodUrl = state.status === 'running' && state.mlUrl ? state.mlUrl : '';
-    } catch {
-      managedRunPodUrl = '';
-    }
-  };
 
   const detectMachineLearningHardware = async () => {
     try {
-      const hardware = await getMachineLearningHardware();
+      // No destinationId: the server probes the first enabled local destination, never a cloud one.
+      const hardware = await getMachineLearningHardware({});
       const preferredAcceleration = hardware.preferredAcceleration;
 
       if (isImageEnrichmentHardwareAcceleration(preferredAcceleration)) {
@@ -116,14 +71,6 @@
 
   onMount(() => {
     void detectMachineLearningHardware();
-    void refreshManagedUrl();
-    managedUrlTimer = setInterval(() => void refreshManagedUrl(), 10_000);
-  });
-
-  onDestroy(() => {
-    if (managedUrlTimer) {
-      clearInterval(managedUrlTimer);
-    }
   });
 
   // Track whether the ML config has unsaved edits — used by the "auto"
@@ -138,16 +85,6 @@
         bind:workingConfig={configToEdit.machineLearning}
         savedConfig={config.machineLearning}
         {disabled}
-        {managedRunPodUrl}
-      />
-
-      <RunPodSection
-        workingConfig={configToEdit.machineLearning}
-        {runpod}
-        {savedRunpod}
-        {runpodServerless}
-        {savedRunpodServerless}
-        {disabled}
       />
 
       <AvailabilityChecksSection
@@ -157,6 +94,12 @@
       />
 
       <SmartSearchSection
+        workingConfig={configToEdit.machineLearning}
+        savedConfig={config.machineLearning}
+        {disabled}
+      />
+
+      <SearchLabelsSection
         workingConfig={configToEdit.machineLearning}
         savedConfig={config.machineLearning}
         {disabled}
@@ -181,7 +124,6 @@
         {imageDescription}
         {savedImageDescription}
         {nsfwDetection}
-        {runpodServerless}
         {detectedAcceleration}
         {isMachineLearningConfigEdited}
         {disabled}
@@ -194,7 +136,7 @@
         {disabled}
       />
 
-      <SettingButtonsRow bind:configToEdit keys={['machineLearning']} {disabled} onBeforeSave={validateBeforeSave} />
+      <SettingActions keys={['machineLearning', 'localFeatures']} {disabled} />
     </form>
   </div>
 </div>

@@ -1,0 +1,27 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://id.frameleaf.cloud/token",
+    "headers": {
+      "Content-Type": "application/x-www-form-urlencoded",
+      "DPoP": "<compact JWS: header and payload below, signed by the instance key>"
+    },
+    "form": {
+      "grant_type": "client_credentials",
+      "client_id": "0192f1b0-1a2b-7c3d-8e4f-5a6b7c8d9e0f",
+      "client_assertion_type": "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+      "client_assertion": "<compact JWS by the instance key, header kid>",
+      "resource": "https://api.frameleaf.cloud",
+      "scope": "instance"
+    },
+    "note": "a replayed jti, an iat more than 60 s off, a proof not by the instance key, or no proof while bearer compatibility is off"
+  },
+  "status": 400,
+  "headers": {
+    "Cache-Control": "no-store"
+  },
+  "body": {
+    "error": "invalid_dpop_proof",
+    "error_description": "DPoP proof refused (replayed)"
+  }
+}

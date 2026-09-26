@@ -5,7 +5,7 @@ sidebar_position: 3
 
 # Development with Dev Containers
 
-Dev Containers provide a consistent, reproducible development environment using Docker containers. With a single click, you can get started with an Immich development environment on Mac, Linux, Windows, or in the cloud using GitHub Codespaces.
+Dev Containers provide a consistent, reproducible development environment using Docker containers. With a single click, you can get started with a Frameleaf development environment on Mac, Linux, Windows, or in the cloud using GitHub Codespaces.
 
 Get started fast!
 
@@ -56,20 +56,20 @@ The Dev Container environment consists of the following services:
 | Server & Web     | `immich-server`           | Runs both API server and web frontend in development mode | 2283 (API)<br/>3000 (Web)<br/>9230 (Workers Debug)<br/>9231 (API Debug) |
 | Database         | `database`                | PostgreSQL database                                       | 5432                                                                    |
 | Cache            | `redis`                   | Valkey cache server                                       | 6379                                                                    |
-| Machine Learning | `immich-machine-learning` | Immich ML model inference server                          | 3003                                                                    |
+| Machine Learning | `immich-machine-learning` | Frameleaf ML model inference server                       | 3003                                                                    |
 
 ## Getting Started
 
 ### Step 1: Clone the Repository
 
 ```bash
-git clone https://github.com/immich-app/immich.git
-cd immich
+git clone https://github.com/Frameleaf/frameleaf-app.git
+cd frameleaf-app
 ```
 
 ### Step 2: Configure Environment Variables
 
-The immich dev containers read environment variables from your shell environment, not from `.env` files. This allows them to work in cloud environments without pre-configuration.
+The dev containers read environment variables from your shell environment, not from `.env` files. This allows them to work in cloud environments without pre-configuration.
 
 :::important Configuration
 When running locally, and if you want to create (or use an existing) DB and/or photo storage folder, you must set the `UPLOAD_LOCATION` variable in your shell environment before launching the Dev Container. This determines where uploaded files are stored and also where the DB stores it data.
@@ -89,7 +89,7 @@ source ~/.bashrc
 ### Step 3: Launch the Dev Container
 
 :::tip
-Immich development makes extensive use of specialized [base images](https://github.com/immich-app/base-images) for its docker-compose based development. For this reason, you won't be able to use VSCode's **_Clone Repository in a Container Volume_** command.
+Frameleaf development builds its own server base, including the media libraries, from `server/Dockerfile.dev` and the sources in `server/base-image` for its docker-compose based development. For this reason, you won't be able to use VSCode's **_Clone Repository in a Container Volume_** command.
 :::
 
 #### Using VS Code UI:
@@ -97,7 +97,7 @@ Immich development makes extensive use of specialized [base images](https://gith
 1. Open the cloned repository in VS Code
 2. Press `F1` or `Ctrl/Cmd+Shift+P` to open the command palette
 3. Type and select "Dev Containers: Rebuild and Reopen in Container"
-4. Select "Immich - Backend, Frontend and ML" from the list
+4. Select the "Backend, Frontend and ML" dev container from the list
 5. Wait for the container to build and start (this may take several minutes on first run)
 
 #### Using VS Code Quick Actions:
@@ -117,7 +117,7 @@ devcontainer up --workspace-folder .
 
 ### How Dev Containers Handle Environment Variables
 
-Unlike the Immich developer setup based on Docker Compose which uses `.env` files, Immich Dev Containers read environment variables from your shell environment. This is configured in `.devcontainer/devcontainer.json`:
+Unlike the Frameleaf developer setup based on Docker Compose which uses `.env` files, Frameleaf Dev Containers read environment variables from your shell environment. This is configured in `.devcontainer/devcontainer.json`:
 
 ```json
 "remoteEnv": {
@@ -208,8 +208,8 @@ When the Dev Container starts, it automatically:
    - Builds TypeScript SDK: `pnpm --filter @immich/sdk build`
 
 2. **Starts development servers** via VS Code tasks:
-   - `Immich API Server (Nest)` - API server with hot-reloading on port 2283
-   - `Immich Web Server (Vite)` - Web frontend with hot-reloading on port 3000
+   - The `API Server (Nest)` task - API server with hot-reloading on port 2283
+   - The `Web Server (Vite)` task - Web frontend with hot-reloading on port 3000
    - Both servers watch for file changes and recompile automatically
 
 3. **Configures port forwarding**:
@@ -356,7 +356,7 @@ If you encounter issues:
 1. Check container logs: View → Output → Select "Dev Containers"
 2. Rebuild without cache: "Dev Containers: Rebuild Container Without Cache"
 3. Review [common Docker issues](https://docs.docker.com/desktop/troubleshoot/)
-4. Ask in [Discord](https://discord.immich.app) `#contributing` channel
+4. Ask in [GitHub Discussions](https://github.com/Frameleaf/frameleaf-app/discussions)
 
 ### Quick-start guide for DevPod with docker
 
@@ -364,8 +364,8 @@ You will need DevPod CLI (check [DevPod CLI installation guide](https://devpod.s
 
 ```sh
 # Step 1: Clone the Repository
-git clone https://github.com/immich-app/immich.git
-cd immich
+git clone https://github.com/Frameleaf/frameleaf-app.git
+cd frameleaf-app
 
 # Step 2: Prepare DevPod (if you haven't already)
 devpod provider add docker
@@ -445,5 +445,5 @@ Recommended minimums:
 
 - Read the [architecture overview](/developer/architecture)
 - Learn about [database migrations](/developer/database-migrations)
-- Explore [API documentation](https://api.immich.app/)
-- Join `#immich` on [Discord](https://discord.immich.app)
+- Explore the [API documentation](/api.md)
+- Ask questions in [GitHub Discussions](https://github.com/Frameleaf/frameleaf-app/discussions)

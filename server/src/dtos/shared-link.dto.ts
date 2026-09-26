@@ -74,11 +74,26 @@ const SharedLinkLoginSchema = z
   })
   .meta({ id: 'SharedLinkLoginDto' });
 
+/**
+ * What a shared link's viewers learn about the person who shared it: the display name and nothing
+ * else (FL-83, prototype "Shared by …"). No email, no user id beyond the link's existing `userId`, and
+ * no profile image, which an anonymous viewer could not fetch anyway.
+ */
+const SharedLinkOwnerResponseSchema = z
+  .object({
+    name: z.string().describe('Display name of the user who created the link'),
+  })
+  .describe('Public details of the shared link owner')
+  .meta({ id: 'SharedLinkOwnerResponseDto' });
+
 const SharedLinkResponseSchema = z
   .object({
     id: z.uuidv4().describe('Shared link ID'),
     description: z.string().nullable().describe('Link description'),
-    password: z.string().nullable().describe('Has password'),
+    password: z
+      .string()
+      .nullable()
+      .describe('Has password: a fixed mask when the link has one, never the password itself'),
     userId: z.uuidv4().describe('Owner user ID'),
     key: z.string().describe('Encryption key (base64url)'),
     type: SharedLinkTypeSchema,
@@ -90,6 +105,9 @@ const SharedLinkResponseSchema = z
     allowDownload: z.boolean().describe('Allow downloads'),
     showMetadata: z.boolean().describe('Show metadata'),
     slug: z.string().nullable().describe('Custom URL slug'),
+    owner: SharedLinkOwnerResponseSchema.optional().describe(
+      'Display name of the user who created the link, for "Shared by" on the public page',
+    ),
   })
   .describe('Shared link response')
   .meta({ id: 'SharedLinkResponseDto' });
@@ -100,13 +118,19 @@ export class SharedLinkEditDto extends createZodDto(SharedLinkEditSchema) {}
 export class SharedLinkLoginDto extends createZodDto(SharedLinkLoginSchema) {}
 export class SharedLinkResponseDto extends createZodDto(SharedLinkResponseSchema) {}
 
+/**
+ * FL-161: what a response carries in place of a shared link's password. Passwords are stored hashed,
+ * so there is nothing to show; an edit that sends this value back leaves the password unchanged.
+ */
+export const SHARED_LINK_PASSWORD_MASK = '********';
+
 export function mapSharedLink(sharedLink: SharedLink, options: { stripAssetMetadata: boolean }): SharedLinkResponseDto {
   const assets = sharedLink.assets || [];
 
   const response = {
     id: sharedLink.id,
     description: sharedLink.description,
-    password: sharedLink.password,
+    password: sharedLink.password ? SHARED_LINK_PASSWORD_MASK : null,
     userId: sharedLink.userId,
     key: sharedLink.key.toString('base64url'),
     type: sharedLink.type,
@@ -118,6 +142,8 @@ export function mapSharedLink(sharedLink: SharedLink, options: { stripAssetMetad
     allowDownload: sharedLink.allowDownload,
     showMetadata: sharedLink.showExif,
     slug: sharedLink.slug,
+    // pick the name explicitly so nothing else about the owner can ride along
+    owner: sharedLink.owner ? { name: sharedLink.owner.name } : undefined,
   };
 
   // unless we select sharedLink.album.sharedLinks this will be wrong

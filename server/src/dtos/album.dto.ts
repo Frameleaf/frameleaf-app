@@ -1,29 +1,33 @@
 import { ShallowDehydrateObject } from 'kysely';
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
-import { ALBUM_ICON_KEYS } from 'src/constants/album-icons.js';
+import { isValidAlbumIcon } from 'src/constants/album-icons.js';
 import { AlbumUser, AuthSharedLink } from 'src/database.js';
 import { HistoryBuilder } from 'src/decorators.js';
 import { BulkIdErrorReasonSchema } from 'src/dtos/asset-ids.response.dto.js';
 import { MapAsset } from 'src/dtos/asset-response.dto.js';
 import { UserResponseSchema, mapUser } from 'src/dtos/user.dto.js';
-import { AlbumUserRole, AlbumUserRoleSchema, AssetOrder, AssetOrderSchema } from 'src/enum.js';
+import {
+  AlbumKind,
+  AlbumKindSchema,
+  AlbumUserRole,
+  AlbumUserRoleSchema,
+  AssetOrder,
+  AssetOrderSchema,
+} from 'src/enum.js';
 import { MaybeDehydrated } from 'src/types.js';
 import { asDateTimeString } from 'src/utils/date.js';
 import { stringToBool } from 'src/validation.js';
 
-// Constrain icon to the finite catalog of valid keys (kept in sync with
-// web/src/lib/utils/album-icons.ts). Unknown values are rejected at the API
-// boundary instead of being stored and echoed back verbatim.
-//
-// Enforced at runtime via refine (not z.enum) so the generated OpenAPI/SDK/Dart
-// wire type stays `string`: a nominal enum would force a coordinated codegen
-// bump across every client. Runtime validation still rejects invalid keys,
-// which is the data-integrity goal of the constraint.
-const ALBUM_ICON_KEY_SET: ReadonlySet<string> = new Set(ALBUM_ICON_KEYS);
-const AlbumIconKeySchema = z
+// Icons are validated against the Material Design Icons catalogue the server
+// owns as data (src/constants/album-icons.ts); the 31 legacy kebab-case keys stay
+// valid so older rows are never rejected. Enforced via refine (not z.enum) so the
+// wire type stays `string` and no client needs a codegen bump when the
+// catalogue version moves.
+export const AlbumIconSchema = z
   .string()
-  .refine((value) => ALBUM_ICON_KEY_SET.has(value), { message: 'Invalid album icon key' });
+  .max(80)
+  .refine((value) => isValidAlbumIcon(value), { message: 'Invalid album icon: expected a Material Design Icons name' });
 
 const AlbumUserAddSchema = z
   .object({
@@ -66,8 +70,16 @@ const CreateAlbumSchema = z
       }),
     albumUsers: z.array(AlbumUserCreateSchema).optional().describe('Album users'),
     assetIds: z.array(z.uuidv4()).optional().describe('Initial asset IDs'),
-    parentId: z.uuidv4().optional().describe('Parent album ID for nesting (omit for top-level)'),
-    icon: AlbumIconKeySchema.optional().describe('Optional icon key (see album-icons.ts)'),
+    parentId: z
+      .uuidv4()
+      .optional()
+      .describe(
+        'Collection to create the album inside (omit for top-level). Only albums nest, and only inside a collection.',
+      ),
+    icon: AlbumIconSchema.optional().describe('Optional icon: any Material Design Icons name (see GET /albums/icons)'),
+    kind: AlbumKindSchema.default(AlbumKind.Album)
+      .optional()
+      .describe('What to create: an album (default), a collection of albums or a shared space'),
   })
   .meta({ id: 'CreateAlbumDto' });
 
@@ -111,8 +123,10 @@ const UpdateAlbumSchema = z
       .uuidv4()
       .nullable()
       .optional()
-      .describe('Parent album ID for nesting (null = move to top-level, omit = no change)'),
-    icon: AlbumIconKeySchema.nullable().optional().describe('Icon key (null = clear / use default folder icon)'),
+      .describe('Collection to move the album into (null = move to top-level, omit = no change)'),
+    icon: AlbumIconSchema.nullable()
+      .optional()
+      .describe('Icon: any Material Design Icons name (null = clear / use default icon)'),
     sortOrder: z
       .number()
       .meta({ format: 'double' })
@@ -213,11 +227,23 @@ export const AlbumResponseSchema = z
     isActivityEnabled: z.boolean().describe('Activity feed enabled'),
     order: AssetOrderSchema.optional(),
     contributorCounts: z.array(ContributorCountResponseSchema).optional(),
-    parentId: z.string().nullable().describe('Parent album ID for nesting (null = top-level)'),
-    // Deliberately tolerant on read: a value stored before the enum was enforced
+    parentId: z.string().nullable().describe('Collection this album belongs to (null = top-level)'),
+    // Deliberately tolerant on read: a value stored before validation existed
     // (or written directly to the DB) must not break album reads. Writes are
-    // constrained via AlbumIconKeySchema on create/update.
-    icon: z.string().nullable().describe('Icon key (null = default folder icon)'),
+    // constrained via AlbumIconSchema on create/update.
+    icon: z.string().nullable().describe('Icon: a Material Design Icons name or legacy key (null = default icon)'),
+    kind: AlbumKindSchema,
+    isSmart: z
+      .boolean()
+      .optional()
+      .describe(
+        'True when the album is filled by smart album rules. Populated by GET /albums/tree and GET /albums/{id}.',
+      ),
+    smartRuleId: z
+      .string()
+      .nullable()
+      .optional()
+      .describe('Your classification rule behind this smart album, when it is one of yours'),
     sortOrder: z
       .number()
       .meta({ format: 'double' })
@@ -225,6 +251,79 @@ export const AlbumResponseSchema = z
       .describe('Sibling display position. Lower values appear first.'),
   })
   .meta({ id: 'AlbumResponseDto' });
+
+const MoveAlbumSchema = z
+  .object({
+    collectionId: z
+      .uuidv4()
+      .nullable()
+      .describe('Collection to move the album into, or null to take it out so it stands on its own'),
+    expectedParentId: z
+      .uuidv4()
+      .nullable()
+      .optional()
+      .describe(
+        'Where the client last saw the album (its collection, or null for on its own). When given and the album has been moved since, the move is refused with 409 instead of undoing the other change.',
+      ),
+  })
+  .meta({ id: 'MoveAlbumDto' });
+
+const AlbumOrderSchema = z
+  .object({
+    parentId: z
+      .uuidv4()
+      .nullable()
+      .describe(
+        'Collection whose albums are ordered, or null for a top-level group (collections, albums on their own, or shared spaces)',
+      ),
+    albumIds: z
+      .array(z.uuidv4())
+      .min(1)
+      .max(5000)
+      .describe(
+        'Every item of the group, in the order to show them. Must be exactly the group as it is now; a group that changed since the client loaded it is refused with 409.',
+      ),
+  })
+  .meta({ id: 'AlbumOrderDto' });
+
+const AlbumCollectionResponseSchema = z
+  .object({
+    collection: AlbumResponseSchema,
+    albums: z.array(AlbumResponseSchema).describe('Albums inside the collection, in display order'),
+    albumCount: z.int().min(0).describe('Number of albums inside the collection'),
+    assetCount: z.int().min(0).describe('Items in the collection and its albums (sum, not deduplicated)'),
+  })
+  .meta({ id: 'AlbumCollectionResponseDto' });
+
+const AlbumTreeResponseSchema = z
+  .object({
+    collections: z.array(AlbumCollectionResponseSchema).describe('Collections visible to the user with their albums'),
+    albums: z.array(AlbumResponseSchema).describe('Albums that stand on their own (not inside a visible collection)'),
+    spaces: z.array(AlbumResponseSchema).describe('Shared spaces, always top level'),
+  })
+  .meta({ id: 'AlbumTreeResponseDto' });
+
+const AlbumIconSuggestionResponseSchema = z
+  .object({
+    name: z.string().describe('Material Design Icons name, e.g. mdiCameraOutline'),
+    label: z.string().describe('Human label for search and accessibility'),
+  })
+  .meta({ id: 'AlbumIconSuggestionResponseDto' });
+
+const AlbumIconGroupResponseSchema = z
+  .object({
+    label: z.string().describe('Category label'),
+    icons: z.array(AlbumIconSuggestionResponseSchema).describe('Suggested icons in this category'),
+  })
+  .meta({ id: 'AlbumIconGroupResponseDto' });
+
+const AlbumIconCatalogueResponseSchema = z
+  .object({
+    version: z.string().describe('Material Design Icons catalogue version the names come from'),
+    names: z.array(z.string()).describe('Every valid icon name, sorted'),
+    suggested: z.array(AlbumIconGroupResponseSchema).describe('Categorised suggested set offered first'),
+  })
+  .meta({ id: 'AlbumIconCatalogueResponseDto' });
 
 const AlbumDescendantCountResponseSchema = z
   .object({
@@ -257,6 +356,11 @@ export class AlbumStatisticsResponseDto extends createZodDto(AlbumStatisticsResp
 export class UpdateAlbumUserDto extends createZodDto(UpdateAlbumUserSchema) {}
 export class AlbumResponseDto extends createZodDto(AlbumResponseSchema) {}
 export class AlbumDescendantCountResponseDto extends createZodDto(AlbumDescendantCountResponseSchema) {}
+export class MoveAlbumDto extends createZodDto(MoveAlbumSchema) {}
+export class AlbumOrderDto extends createZodDto(AlbumOrderSchema) {}
+export class AlbumCollectionResponseDto extends createZodDto(AlbumCollectionResponseSchema) {}
+export class AlbumTreeResponseDto extends createZodDto(AlbumTreeResponseSchema) {}
+export class AlbumIconCatalogueResponseDto extends createZodDto(AlbumIconCatalogueResponseSchema) {}
 class AlbumUserResponseDto extends createZodDto(AlbumUserResponseSchema) {}
 
 export type MapAlbumDto = {
@@ -274,7 +378,13 @@ export type MapAlbumDto = {
   parentId: string | null;
   icon: string | null;
   sortOrder: number | null;
+  kind: AlbumKind | string;
 };
+
+const ALBUM_KINDS: ReadonlySet<string> = new Set(Object.values(AlbumKind));
+/** Rows written before the kind column existed read as plain albums. */
+export const asAlbumKind = (value: string | null | undefined): AlbumKind =>
+  value && ALBUM_KINDS.has(value) ? (value as AlbumKind) : AlbumKind.Album;
 
 export const mapAlbum = (entity: MaybeDehydrated<MapAlbumDto>): AlbumResponseDto => {
   const albumUsers: AlbumUserResponseDto[] = [];
@@ -320,5 +430,6 @@ export const mapAlbum = (entity: MaybeDehydrated<MapAlbumDto>): AlbumResponseDto
     parentId: entity.parentId,
     icon: entity.icon,
     sortOrder: entity.sortOrder,
+    kind: asAlbumKind(entity.kind),
   };
 };

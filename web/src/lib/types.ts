@@ -33,11 +33,6 @@ export type UploadAsset = {
   message?: string;
 };
 
-export enum OnboardingRole {
-  SERVER = 'server',
-  USER = 'user',
-}
-
 export type SearchCameraFilter = {
   make?: string;
   model?: string;
@@ -76,27 +71,3 @@ export type SearchFilter = {
   rating?: number | null;
   imageEnrichment?: ImageEnrichmentFilter | '';
 };
-
-export type JSONSchemaType = 'string' | 'number' | 'integer' | 'boolean' | 'object';
-
-export type JSONSchemaProperty = {
-  type: JSONSchemaType;
-  title?: string;
-  description?: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  default?: any;
-  enum?: string[];
-  minimum?: number;
-  maximum?: number;
-  precision?: number;
-  array?: boolean;
-  properties?: Record<string, JSONSchemaProperty>;
-  required?: string[];
-  uiHint?: {
-    type?: 'AlbumId' | 'AssetId' | 'PersonId' | 'TagId';
-    order?: number;
-  };
-};
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type SchemaConfig = any;

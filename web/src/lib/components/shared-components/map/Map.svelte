@@ -10,18 +10,12 @@
 
 <script lang="ts">
   import { afterNavigate } from '$app/navigation';
-  import OnEvents from '$lib/components/OnEvents.svelte';
-  import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { serverConfigManager } from '$lib/managers/server-config-manager.svelte';
-  import MapSettingsModal from '$lib/modals/MapSettingsModal.svelte';
-  import { mapSettings } from '$lib/stores/preferences.store';
   import { getAssetMediaUrl, handlePromiseError } from '$lib/utils';
-  import { getMapMarkers, type MapMarkerResponseDto } from '@immich/sdk';
-  import { Alert, Container, Icon, modalManager, Text, Theme, themeManager } from '@immich/ui';
-  import { mdiCog, mdiImageMultiple, mdiMap, mdiMapMarker } from '@mdi/js';
+  import { type MapMarkerResponseDto } from '@immich/sdk';
+  import { Alert, Container, Icon, Text, Theme, themeManager } from '@immich/ui';
+  import { mdiMap, mdiMapMarker } from '@mdi/js';
   import type { Feature, GeoJsonProperties, Geometry, Point } from 'geojson';
-  import { isEqual, omit } from 'lodash-es';
-  import { DateTime, Duration } from 'luxon';
   import {
     GlobeControl,
     LngLat,
@@ -32,7 +26,7 @@
     type Map,
     type MapMouseEvent,
   } from 'maplibre-gl';
-  import { onDestroy, onMount, tick, untrack } from 'svelte';
+  import { untrack } from 'svelte';
   import { t } from 'svelte-i18n';
   import {
     AttributionControl,
@@ -47,23 +41,20 @@
     Popup,
     ScaleControl,
   } from 'svelte-maplibre';
-  import type { SelectionBBox } from './types';
 
+  /**
+   * The small embedded map (asset detail, location pickers, a shared space's places, an album's
+   * public map). It always draws the markers it is given; the Map screen is `MapScreen`.
+   */
   interface Props {
     mapMarkers?: MapMarkerResponseDto[];
-    showSettings?: boolean;
     zoom?: number | undefined;
     center?: LngLatLike | undefined;
-    hash?: boolean;
     simplified?: boolean;
     clickable?: boolean;
     useLocationPin?: boolean;
     onOpenInMapView?: (() => Promise<void> | void) | undefined;
     onSelect?: (assetIds: string[]) => void;
-    onClusterSelect?: (assetIds: string[], bbox: SelectionBBox) => void;
-    onViewportClose?: () => void;
-    viewportGridActive?: boolean;
-    autoOpenPanel?: boolean;
     onClickPoint?: ({ lat, lng }: { lat: number; lng: number }) => void;
     popup?: import('svelte').Snippet<[{ marker: MapMarkerResponseDto }]>;
     rounded?: boolean;
@@ -72,20 +63,14 @@
   }
 
   let {
-    mapMarkers = $bindable(),
-    showSettings = true,
+    mapMarkers = [],
     zoom = undefined,
     center = $bindable(undefined),
-    hash = false,
     simplified = false,
     clickable = false,
     useLocationPin = false,
     onOpenInMapView = undefined,
     onSelect = () => {},
-    onClusterSelect,
-    onViewportClose,
-    viewportGridActive = false,
-    autoOpenPanel = false,
     onClickPoint = () => {},
     popup,
     rounded = false,
@@ -95,7 +80,7 @@
 
   // Calculate initial bounds from markers once during initialization
   const initialBounds = (() => {
-    if (!autoFitBounds || center || zoom !== undefined || !mapMarkers || mapMarkers.length === 0) {
+    if (!autoFitBounds || center || zoom !== undefined || mapMarkers.length === 0) {
       return undefined;
     }
 
@@ -108,9 +93,7 @@
 
   let map: Map | undefined = $state();
   let marker: Marker | null = null;
-  let abortController: AbortController;
-
-  const mapTheme = $derived($mapSettings.allowDarkMode ? themeManager.value : Theme.Light);
+  const mapTheme = $derived(themeManager.value);
   const styleUrl = $derived(
     mapTheme === Theme.Dark ? serverConfigManager.value.mapDarkStyleUrl : serverConfigManager.value.mapLightStyleUrl,
   );
@@ -143,27 +126,6 @@
     const mapSource = map.getSource('geojson') as GeoJSONSource;
     const leaves = await mapSource.getClusterLeaves(clusterId, 10_000, 0);
     const ids = leaves.map((leaf) => leaf.properties?.id as string);
-
-    if (onClusterSelect && ids.length > 1) {
-      const [firstLongitude, firstLatitude] = (leaves[0].geometry as Point).coordinates;
-      let west = firstLongitude;
-      let south = firstLatitude;
-      let east = firstLongitude;
-      let north = firstLatitude;
-
-      for (const leaf of leaves.slice(1)) {
-        const [longitude, latitude] = (leaf.geometry as Point).coordinates;
-        west = Math.min(west, longitude);
-        south = Math.min(south, latitude);
-        east = Math.max(east, longitude);
-        north = Math.max(north, latitude);
-      }
-
-      const bbox = { west, south, east, north };
-      onClusterSelect(ids, bbox);
-      return;
-    }
-
     onSelect(ids);
   }
 
@@ -212,90 +174,12 @@
     };
   };
 
-  function getFileCreatedDates() {
-    const { relativeDate, dateAfter, dateBefore } = $mapSettings;
-
-    if (relativeDate) {
-      const duration = Duration.fromISO(relativeDate);
-      return {
-        fileCreatedAfter: duration.isValid ? DateTime.now().minus(duration).toUTC().toISO() : undefined,
-      };
-    }
-
-    return {
-      // $mapSettings stores no value as an empty string
-      fileCreatedAfter: dateAfter || undefined,
-      fileCreatedBefore: dateBefore || undefined,
-    };
-  }
-
-  async function loadMapMarkers() {
-    if (abortController) {
-      abortController.abort();
-    }
-    abortController = new AbortController();
-
-    const { includeArchived, onlyFavorites, withPartners, withSharedAlbums } = $mapSettings;
-    const { fileCreatedAfter, fileCreatedBefore } = getFileCreatedDates();
-
-    return await getMapMarkers(
-      {
-        isArchived: includeArchived || undefined,
-        isFavorite: onlyFavorites || undefined,
-        fileCreatedAfter,
-        fileCreatedBefore,
-        withPartners: withPartners || undefined,
-        withSharedAlbums: withSharedAlbums || undefined,
-      },
-      {
-        signal: abortController.signal,
-      },
-    );
-  }
-
-  const handleSettingsClick = async () => {
-    const settings = await modalManager.show(MapSettingsModal);
-    if (settings) {
-      const shouldUpdate = !isEqual(omit(settings, 'allowDarkMode'), omit($mapSettings, 'allowDarkMode'));
-      $mapSettings = settings;
-
-      if (shouldUpdate) {
-        mapMarkers = await loadMapMarkers();
-      }
-    }
-  };
-
   afterNavigate(() => {
     if (!map) {
       return;
     }
 
     map.resize();
-
-    if (location.hash) {
-      const hashChangeEvent = new HashChangeEvent('hashchange');
-      // eslint-disable-next-line unicorn/no-unnecessary-global-this
-      globalThis.dispatchEvent(hashChangeEvent);
-    }
-  });
-
-  onMount(async () => {
-    if (!mapMarkers) {
-      mapMarkers = await loadMapMarkers();
-    }
-    if (autoOpenPanel) {
-      // Wait for the map to finish rendering before opening the panel
-      await tick();
-      if (map) {
-        map.resize();
-        await map.once('idle');
-        handleViewportSelect();
-      }
-    }
-  });
-
-  onDestroy(() => {
-    abortController?.abort();
   });
 
   $effect(() => {
@@ -332,46 +216,11 @@
 
     untrack(() => map?.jumpTo({ center, zoom }));
   });
-
-  const handleViewportSelect = () => {
-    if (!map || !onClusterSelect || !mapMarkers) {
-      return;
-    }
-    const bounds = map.getBounds();
-    const west = bounds.getWest();
-    const east = bounds.getEast();
-
-    // When zoomed out enough to see the whole world, show all markers
-    const showAll = east - west >= 360;
-    const visibleIds = showAll
-      ? mapMarkers.map(({ id }) => id)
-      : mapMarkers.filter(({ lon, lat }) => bounds.contains([lon, lat])).map(({ id }) => id);
-
-    const bbox: SelectionBBox = {
-      west: showAll ? -180 : west,
-      south: showAll ? -90 : bounds.getSouth(),
-      east: showAll ? 180 : east,
-      north: showAll ? 90 : bounds.getNorth(),
-    };
-    onClusterSelect(visibleIds, bbox);
-  };
-
-  const handleMoveEnd = () => {
-    if (viewportGridActive && !assetViewerManager.isViewing) {
-      handleViewportSelect();
-    }
-  };
-
-  const onAssetsChanged = async () => {
-    mapMarkers = await loadMapMarkers();
-  };
 </script>
 
-<OnEvents onAssetsDelete={onAssetsChanged} onAssetsArchive={onAssetsChanged} onAssetsUnarchive={onAssetsChanged} />
 <svelte:boundary>
   <!--  We handle style loading ourselves so we set style blank here -->
   <MapLibre
-    {hash}
     style=""
     class="h-full {rounded ? 'rounded-2xl' : 'rounded-none'}"
     {zoom}
@@ -383,7 +232,6 @@
     onload={(event: Map) => {
       event.setMaxZoom(18);
       event.on('click', handleMapClick);
-      event.on('moveend', handleMoveEnd);
       if (!simplified) {
         event.addControl(new GlobeControl(), 'top-left');
       }
@@ -396,28 +244,9 @@
 
         {#if !simplified}
           <GeolocateControl position="top-left" />
-          {#if onClusterSelect}
-            <Control position="top-left">
-              <ControlGroup>
-                <ControlButton onclick={() => (viewportGridActive ? onViewportClose?.() : handleViewportSelect())}>
-                  <Icon title={$t('show_photos_in_area')} icon={mdiImageMultiple} size="70%" class="text-black/80" />
-                </ControlButton>
-              </ControlGroup>
-            </Control>
-          {/if}
           <ScaleControl />
           <AttributionControl compact={false} />
         {/if}
-      {/if}
-
-      {#if showSettings}
-        <Control>
-          <ControlGroup>
-            <ControlButton onclick={handleSettingsClick}>
-              <Icon icon={mdiCog} size="70%" class="text-black/80" />
-            </ControlButton>
-          </ControlGroup>
-        </Control>
       {/if}
 
       {#if onOpenInMapView && showSimpleControls}
@@ -433,7 +262,7 @@
       <GeoJSON
         data={{
           type: 'FeatureCollection',
-          features: mapMarkers?.map((marker) => asFeature(marker)) ?? [],
+          features: mapMarkers.map((marker) => asFeature(marker)),
         }}
         id="geojson"
         cluster={{ radius: 35, maxZoom: 18 }}

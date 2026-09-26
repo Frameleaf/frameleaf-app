@@ -6,22 +6,46 @@ import { createReadStream, existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import readLine from 'node:readline';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { citiesFile, reverseGeocodeMaxDistance } from 'src/constants.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
-import { AssetVisibility, SystemMetadataKey } from 'src/enum.js';
+import { AlbumUserRole, AssetVisibility, SystemMetadataKey } from 'src/enum.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { DB } from 'src/schema/index.js';
 import { GeodataPlacesTable } from 'src/schema/tables/geodata-places.table.js';
 import { NaturalEarthCountriesTable } from 'src/schema/tables/natural-earth-countries.table.js';
-import { withHiddenContentFilter } from 'src/utils/database.js';
+import { withAlbumVisibility, withHiddenContentFilter } from 'src/utils/database.js';
+import { isTimelineVisible, visibilityIs } from 'src/utils/locked.js';
 
 export interface MapMarkerSearchOptions extends HiddenContentQueryOptions {
   isArchived?: boolean;
   isFavorite?: boolean;
   fileCreatedBefore?: Date;
   fileCreatedAfter?: Date;
+  /** FL-54: owners who hide their locations from the viewer; their assets contribute no markers */
+  locationHiddenOwnerIds?: string[];
+}
+
+/** A timestamptz column as an ISO-8601 UTC string, the shape the JSON API returns for dates. */
+const isoTimestamp = (column: 'asset.fileCreatedAt' | 'asset.localDateTime') =>
+  sql<string>`to_char(${sql.ref(column)} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`;
+
+/**
+ * The settings sheet's filters for an album map (FL-51). Each narrows the album's own markers; favorites
+ * are matched only among `favoriteOwnerId`'s own items, because a favorite is private to its owner.
+ */
+export interface AlbumMapMarkerSearchOptions {
+  isArchived?: boolean;
+  isFavorite?: boolean;
+  fileCreatedBefore?: Date;
+  fileCreatedAfter?: Date;
+  favoriteOwnerId?: string;
+  /** Keep only album items this user owns (the sheet's "Partner items" switched off). Only ever narrows the album. */
+  onlyOwnerId?: string;
+  /** FL-54: owners who hide their locations from the viewer (for a shared link, its creator) */
+  locationHiddenOwnerIds?: string[];
 }
 
 export interface GeoPoint {
@@ -72,34 +96,61 @@ export class MapRepository {
     this.logger.log('Geodata import completed');
   }
 
+  /** Markers for an album: the same media the album itself shows this viewer (see `withAlbumVisibility`). */
   @GenerateSql({ params: [DummyValue.UUID] })
-  getAlbumMapMarkers(albumId: string, options: HiddenContentQueryOptions = {}) {
-    return this.mapMarkersQuery()
-      .innerJoin('album_asset', 'asset.id', 'album_asset.assetId')
-      .where('album_asset.albumId', '=', albumId)
-      .$call((qb) => withHiddenContentFilter(qb, options))
-      .execute();
+  getAlbumMapMarkers(
+    albumId: string,
+    options: HiddenContentQueryOptions & LockedVisibilityOptions & AlbumMapMarkerSearchOptions = {},
+  ) {
+    const {
+      isArchived,
+      isFavorite,
+      fileCreatedAfter,
+      fileCreatedBefore,
+      favoriteOwnerId,
+      onlyOwnerId,
+      locationHiddenOwnerIds,
+    } = options;
+    return (
+      this.mapMarkersQuery()
+        .innerJoin('album_asset', 'asset.id', 'album_asset.assetId')
+        .where('album_asset.albumId', '=', albumId)
+        .$call((qb) => withAlbumVisibility(qb, options.lockedOwnerId))
+        .$call((qb) => withHiddenContentFilter(qb, options))
+        // an album shows archived items, so only an explicit `false` leaves them out
+        .$if(isArchived === false, (qb) => qb.where('asset.visibility', '!=', sql.lit(AssetVisibility.Archive)))
+        .$if(isFavorite !== undefined && !!favoriteOwnerId, (qb) =>
+          qb.where((eb) => {
+            const ownFavorite = eb.and([eb('asset.isFavorite', '=', true), eb('asset.ownerId', '=', favoriteOwnerId!)]);
+            return isFavorite ? ownFavorite : eb.not(ownFavorite);
+          }),
+        )
+        .$if(fileCreatedAfter !== undefined, (qb) => qb.where('asset.fileCreatedAt', '>=', fileCreatedAfter!))
+        .$if(fileCreatedBefore !== undefined, (qb) => qb.where('asset.fileCreatedAt', '<=', fileCreatedBefore!))
+        .$if(!!onlyOwnerId, (qb) => qb.where('asset.ownerId', '=', onlyOwnerId!))
+        .$if(!!locationHiddenOwnerIds?.length, (qb) => qb.where('asset.ownerId', 'not in', locationHiddenOwnerIds!))
+        .execute()
+    );
   }
 
   @GenerateSql({ params: [DummyValue.UUID, [DummyValue.UUID], [DummyValue.UUID]] })
   getMapMarkers(authUserId: string, ownerIds: string[], albumIds: string[], options: MapMarkerSearchOptions = {}) {
-    const { isArchived, isFavorite, fileCreatedAfter, fileCreatedBefore } = options;
+    const { isArchived, isFavorite, fileCreatedAfter, fileCreatedBefore, locationHiddenOwnerIds } = options;
     return this.mapMarkersQuery()
       .$call((qb) => withHiddenContentFilter(qb, options))
       .$if(isArchived === true, (qb) =>
         qb.where((eb) =>
           eb.or([
-            eb('asset.visibility', '=', AssetVisibility.Timeline),
-            eb.and([eb('asset.ownerId', '=', authUserId), eb('asset.visibility', '=', AssetVisibility.Archive)]),
+            isTimelineVisible('asset'),
+            eb.and([eb('asset.ownerId', '=', authUserId), visibilityIs(AssetVisibility.Archive, 'asset')]),
           ]),
         ),
       )
-      .$if(isArchived === false || isArchived === undefined, (qb) =>
-        qb.where('asset.visibility', '=', AssetVisibility.Timeline),
-      )
+      .$if(isArchived === false || isArchived === undefined, (qb) => qb.where(isTimelineVisible('asset')))
       .$if(isFavorite !== undefined, (q) => q.where('isFavorite', '=', isFavorite!))
       .$if(fileCreatedAfter !== undefined, (q) => q.where('fileCreatedAt', '>=', fileCreatedAfter!))
       .$if(fileCreatedBefore !== undefined, (q) => q.where('fileCreatedAt', '<=', fileCreatedBefore!))
+      .$if(!!locationHiddenOwnerIds?.length, (qb) => qb.where('asset.ownerId', 'not in', locationHiddenOwnerIds!))
       .where((eb) => {
         const expression: Expression<SqlBool>[] = [];
 
@@ -112,8 +163,27 @@ export class MapRepository {
             eb.exists((eb) =>
               eb
                 .selectFrom('album_asset')
+                .innerJoin('album_user as album_owner', (join) =>
+                  join
+                    .onRef('album_owner.albumId', '=', 'album_asset.albumId')
+                    .on('album_owner.role', '=', sql.lit(AlbumUserRole.Owner)),
+                )
                 .whereRef('asset.id', '=', 'album_asset.assetId')
-                .where('album_asset.albumId', 'in', albumIds),
+                .where('album_asset.albumId', 'in', albumIds)
+                // FL-54 owner default: an item whose owner hides locations from the album's owner puts no
+                // marker on the map through that album
+                .where((eb) =>
+                  eb.not(
+                    eb.exists(
+                      eb
+                        .selectFrom('partner')
+                        .whereRef('partner.sharedById', '=', 'asset.ownerId')
+                        .whereRef('partner.sharedWithId', '=', 'album_owner.userId')
+                        .whereRef('partner.sharedById', '!=', 'partner.sharedWithId')
+                        .where('partner.shareLocation', '=', false),
+                    ),
+                  ),
+                ),
             ),
           );
         }
@@ -121,6 +191,59 @@ export class MapRepository {
         return eb.or(expression);
       })
       .execute();
+  }
+
+  /**
+   * FL-51: counts for the map settings sheet under its date and favorite filters: the owner's
+   * located archived items, partners' located timeline items, and the owner's timeline items with no
+   * location. Hidden content follows the session.
+   */
+  async getMapStatistics(
+    authUserId: string,
+    partnerIds: string[],
+    options: MapMarkerSearchOptions = {},
+  ): Promise<{ archived: number; partner: number; unlocated: number }> {
+    const { isFavorite, fileCreatedAfter, fileCreatedBefore } = options;
+    const base = () =>
+      this.db
+        .selectFrom('asset')
+        .leftJoin('asset_exif', 'asset.id', 'asset_exif.assetId')
+        .where('asset.deletedAt', 'is', null)
+        .$call((qb) => withHiddenContentFilter(qb, options))
+        .$if(isFavorite !== undefined, (qb) => qb.where('asset.isFavorite', '=', isFavorite!))
+        .$if(fileCreatedAfter !== undefined, (qb) => qb.where('asset.fileCreatedAt', '>=', fileCreatedAfter!))
+        .$if(fileCreatedBefore !== undefined, (qb) => qb.where('asset.fileCreatedAt', '<=', fileCreatedBefore!));
+
+    const [archived, partner, unlocated] = await Promise.all([
+      base()
+        .select((eb) => eb.fn.countAll<number>().as('count'))
+        .where('asset.ownerId', '=', authUserId)
+        .where(visibilityIs(AssetVisibility.Archive, 'asset'))
+        .where('asset_exif.latitude', 'is not', null)
+        .where('asset_exif.longitude', 'is not', null)
+        .executeTakeFirst(),
+      partnerIds.length > 0
+        ? base()
+            .select((eb) => eb.fn.countAll<number>().as('count'))
+            .where('asset.ownerId', 'in', partnerIds)
+            .where(isTimelineVisible('asset'))
+            .where('asset_exif.latitude', 'is not', null)
+            .where('asset_exif.longitude', 'is not', null)
+            .executeTakeFirst()
+        : Promise.resolve({ count: 0 }),
+      base()
+        .select((eb) => eb.fn.countAll<number>().as('count'))
+        .where('asset.ownerId', '=', authUserId)
+        .where(isTimelineVisible('asset'))
+        .where((eb) => eb.or([eb('asset_exif.latitude', 'is', null), eb('asset_exif.longitude', 'is', null)]))
+        .executeTakeFirst(),
+    ]);
+
+    return {
+      archived: Number(archived?.count ?? 0),
+      partner: Number(partner?.count ?? 0),
+      unlocated: Number(unlocated?.count ?? 0),
+    };
   }
 
   private mapMarkersQuery() {
@@ -133,7 +256,7 @@ export class MapRepository {
           .on('asset_exif.longitude', 'is not', null),
       )
       .where('asset.deletedAt', 'is', null)
-      .orderBy('fileCreatedAt', 'desc')
+      .orderBy('asset.fileCreatedAt', 'desc')
       .select([
         'id',
         'asset_exif.latitude as lat',
@@ -141,6 +264,10 @@ export class MapRepository {
         'asset_exif.city',
         'asset_exif.state',
         'asset_exif.country',
+        'asset.originalFileName',
+        'asset.type',
+        isoTimestamp('asset.fileCreatedAt').as('fileCreatedAt'),
+        isoTimestamp('asset.localDateTime').as('localDateTime'),
       ])
       .$narrowType<{ lat: NotNull; lon: NotNull }>();
   }

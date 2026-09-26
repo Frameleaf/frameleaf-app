@@ -15,18 +15,18 @@ import { uploadManager } from '$lib/managers/upload-manager.svelte';
 import { addAssetsToAlbums } from '$lib/services/album.service';
 import { uploadAssetsStore } from '$lib/stores/upload';
 import { UploadState } from '$lib/types';
-import { uploadRequest } from '$lib/utils';
+import { cancelUploadRequests, uploadRequest } from '$lib/utils';
 import { ExecutorQueue } from '$lib/utils/executor-queue';
 import { asQueryString } from '$lib/utils/shared-links';
 import { handleError } from './handle-error';
 
 export const uploadExecutionQueue = new ExecutorQueue({ concurrency: 2 });
 
-type FilePickerParam = { multiple?: boolean; extensions?: string[] };
-type FileUploadParam = { multiple?: boolean; albumId?: string };
+type FilePickerParam = { multiple?: boolean; extensions?: string[]; directory?: boolean };
+type FileUploadParam = { multiple?: boolean; albumId?: string; directory?: boolean; isLockedAssets?: boolean };
 
 export const openFilePicker = async (options: FilePickerParam = {}) => {
-  const { multiple = true, extensions } = options;
+  const { multiple = true, extensions, directory = false } = options;
 
   return new Promise<File[]>((resolve, reject) => {
     try {
@@ -37,6 +37,15 @@ export const openFilePicker = async (options: FilePickerParam = {}) => {
 
       if (extensions) {
         fileSelector.accept = extensions.join(',');
+      }
+
+      if (directory) {
+        // Non-standard attributes with broad browser support for picking a whole folder;
+        // both spellings are set for maximum compatibility (Chromium prefers the property,
+        // older Firefox needed the attribute). The folder's own file-type restrictions
+        // still apply through fileUploadHandler, which skips unsupported extensions.
+        fileSelector.setAttribute('webkitdirectory', '');
+        fileSelector.setAttribute('directory', '');
       }
 
       fileSelector.addEventListener(
@@ -69,14 +78,17 @@ export const openFilePicker = async (options: FilePickerParam = {}) => {
 };
 
 export const openFileUploadDialog = async (options: FileUploadParam = {}) => {
-  const { albumId, multiple = true } = options;
+  const { albumId, multiple = true, directory = false, isLockedAssets } = options;
   const extensions = uploadManager.getExtensions();
   const files = await openFilePicker({
     multiple,
-    extensions,
+    // A directory picker ignores `accept`; fileUploadHandler still filters unsupported
+    // files out of whatever the folder contains, so nothing unsupported gets uploaded.
+    extensions: directory ? undefined : extensions,
+    directory,
   });
 
-  return fileUploadHandler({ files, albumId });
+  return fileUploadHandler({ files, albumId, isLockedAssets });
 };
 
 type FileUploadHandlerParams = Omit<FileUploaderParams, 'deviceAssetId' | 'assetFile'> & {
@@ -105,8 +117,36 @@ export const fileUploadHandler = async ({
     }
   }
 
-  const results = await Promise.all(promises);
+  // fileUploader() already catches its own failures and resolves with undefined; the extra
+  // catch here only guards the path a task takes when cancelRemainingUploads() rejects it
+  // out of the queue before it starts, so one cancelled file never fails the whole batch.
+  const results = await Promise.all(promises.map((promise) => promise.catch(() => undefined)));
   return results.filter((result): result is string => !!result);
+};
+
+/**
+ * Stops the uploads the panel calls "remaining": in-flight requests are aborted (they
+ * settle through fileUploader's own error handling, same as any other failed upload), and
+ * anything still waiting for a queue slot is dropped from the executor queue and marked
+ * failed, since this architecture has no way to pause or resume a request once it starts.
+ * Uploads already finished, duplicated or failed are untouched.
+ */
+export const cancelRemainingUploads = () => {
+  cancelUploadRequests();
+  uploadExecutionQueue.clear();
+
+  const $t = get(t);
+  for (const asset of get(uploadAssetsStore)) {
+    if (asset.state !== UploadState.PENDING) {
+      continue;
+    }
+
+    uploadAssetsStore.track('error');
+    uploadAssetsStore.updateItem(asset.id, {
+      state: UploadState.ERROR,
+      error: $t('frameleaf_transfer_upload_cancelled'),
+    });
+  }
 };
 
 function getDeviceAssetId(asset: File) {
@@ -221,7 +261,17 @@ async function fileUploader({
 
     if (albumId && !authManager.isSharedLink && responseData.id) {
       uploadAssetsStore.updateItem(deviceAssetId, { message: $t('asset_adding_to_album') });
-      await addAssetsToAlbums([albumId], [responseData.id], { notify: false });
+      const added = await addAssetsToAlbums([albumId], [responseData.id], { notify: false });
+      if (!added) {
+        // FL-53: the file is safely in the library, but it is not in the album. Say exactly that,
+        // rather than "added to album"; retrying finds the uploaded original and only adds it.
+        uploadAssetsStore.updateItem(deviceAssetId, {
+          state: UploadState.ERROR,
+          assetId: responseData.id,
+          error: $t('frameleaf_upload_album_add_failed'),
+        });
+        return responseData.id;
+      }
       uploadAssetsStore.updateItem(deviceAssetId, { message: $t('asset_added_to_album') });
     }
 

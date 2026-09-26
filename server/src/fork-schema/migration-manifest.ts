@@ -49,6 +49,51 @@ export const LEGACY_FORK_MIGRATIONS: ReadonlySet<string> = new Set([
   '2100000000050-AddMediaHealthRunOwner',
   '2100000000060-FixMediaHealthUpdatedAtTriggers',
   '2100000000070-ReconcileMediaHealthSchema',
+  '2100000000080-AddAlbumKind',
+  '2100000000090-AddPartnerShareLocation',
+  '2100000000100-AddAssetFaceCorrectedAt',
+  '2100000000110-AddMemoryExport',
+  '2100000000130-AddAssetAudioChannelLayout',
+  '2100000000140-CreateMlDestinations',
+  '2100000000150-AddPetIdentities',
+  '2100000000160-AddMediaOperationTables',
+  '2100000000170-AddRenderWorkers',
+  '2100000000180-AddStudioPreviewFrames',
+  '2100000000190-AddSharedSpaceInvite',
+  '2100000000200-AddSharedSpacePanels',
+  '2100000000210-AddMediaOperationBulkResult',
+  '2100000000220-AddStudioProjectTables',
+  '2100000000240-AddAssetRestorationTable',
+  '2100000000250-AddStudioProjectLifecycle',
+  '2100000000260-AddSharedSpaceCollaboration',
+  '2100000000270-AddMediaOperationAutoRetry',
+  '2100000000280-AddSharedSpaceCommentThread',
+  '2100000000290-ClearLockedAlbumCovers',
+  '2100000000300-ClearLockedCoverReferences',
+  '2100000000310-LockWholeStacksAndRecordProfileImageSource',
+  '2100000000320-AddAssetLock',
+  '2100000000340-AddMediaOperationPause',
+  '2100000000380-AddVideoMomentIndex',
+  '2100000000390-AddDuplicateDecision',
+  '2100000000400-AddAssetDocumentEdit',
+  '2100000000450-AddAdminAuditEvent',
+  '2100000000460-AddTakeoutImport',
+  '2100000000490-SeparateRestorationWorkers',
+  '2100000000500-AddVideoMomentFrameVectorIndex',
+  '2100000000510-AddPreservationPackages',
+  '2100000000530-ReconcileFrameleafSchemaSnapshots',
+  '2100000000540-AddPhotoToolsPresetsAndExports',
+  '2100000000560-AddOperationalMetricSample',
+  '2100000000570-AddWorkflowDefinitions',
+  '2100000000580-AddStudioExportVersions',
+  '2100000000590-HardenMediaOperationRetryAndCheckpoints',
+  '2100000000610-AddClassificationRule',
+  '2100000000620-FrameleafCloudMlDestination',
+  '2100000000630-AddWorkflowRunStep',
+  '2100000000640-AddAssetFilePathIndex',
+  '2100000000650-AddMlCloudModelChoice',
+  '2100000000660-HashSharedLinkPasswords',
+  '2100000000670-AddCloudBackupTables',
 ]);
 
 export const GENERIC_LEGACY_FORK_MIGRATIONS: ReadonlySet<string> = new Set(
@@ -69,7 +114,7 @@ export function classifyMigration(name: string): 'upstream' | 'legacy-fork' | 'u
 
 export function assertSupportedUpstream(version: string): void {
   if (supportedVersions.ranges.every((range) => !semver.satisfies(version, range))) {
-    throw new Error(`Unsupported official Immich database version: ${version}`);
+    throw new Error(`Unsupported official upstream database version: ${version}`);
   }
 }
 

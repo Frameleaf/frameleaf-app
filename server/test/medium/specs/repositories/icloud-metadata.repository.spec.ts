@@ -4,12 +4,15 @@ import * as migration from 'src/fork-schema/migrations/0000000000090-ICloudSync.
 import { ICloudMetadataRepository } from 'src/repositories/icloud-metadata.repository.js';
 import { DB } from 'src/schema/index.js';
 import { ICloudMetadataService } from 'src/services/icloud-metadata.service.js';
+import { releaseLockedCoverReferences } from 'src/utils/cover-references.js';
 import { getKyselyDB } from 'test/utils.js';
 
 describe('iCloud source metadata reconciliation (PostgreSQL)', () => {
   let db: Kysely<DB>;
   let repository: ICloudMetadataRepository;
   let service: ICloudMetadataService;
+  // the lock follow-up (FL-34) runs in AssetService on this event
+  const events = { emit: vi.fn() };
   beforeAll(async () => {
     db = await getKyselyDB();
     await sql`DROP SCHEMA public CASCADE`.execute(db);
@@ -24,12 +27,34 @@ describe('iCloud source metadata reconciliation (PostgreSQL)', () => {
       `CREATE TABLE asset(id uuid PRIMARY KEY,"ownerId" uuid,"isFavorite" boolean DEFAULT false,visibility text DEFAULT 'timeline',"fileCreatedAt" timestamptz DEFAULT '2000-01-01Z',"localDateTime" timestamptz DEFAULT '2000-01-01Z',"deletedAt" timestamptz)`,
       `CREATE TABLE asset_exif("assetId" uuid PRIMARY KEY REFERENCES asset,"dateTimeOriginal" timestamptz,"timeZone" text,"lockedProperties" text[] DEFAULT '{}',description text DEFAULT '',latitude double precision,longitude double precision)`,
       'CREATE TABLE asset_job_status("assetId" uuid PRIMARY KEY REFERENCES asset,"metadataExtractedAt" timestamptz)',
+      'CREATE TABLE album(id uuid PRIMARY KEY,"albumThumbnailAssetId" uuid REFERENCES asset)',
+      'CREATE TABLE album_asset("albumId" uuid REFERENCES album,"assetId" uuid REFERENCES asset,PRIMARY KEY("albumId","assetId"))',
+      // the other covers a Locked photo releases (FL-53), and what choosing their replacements reads
+      'ALTER TABLE asset ADD COLUMN is_nsfw boolean NOT NULL DEFAULT false',
+      'CREATE TABLE immich_fork.asset_privacy("assetId" uuid PRIMARY KEY,"isNsfw" boolean NOT NULL)',
+      `CREATE TABLE asset_face(id uuid PRIMARY KEY,"assetId" uuid REFERENCES asset,"personGroupId" uuid,"deletedAt" timestamptz,"isVisible" boolean DEFAULT true)`,
+      `CREATE TABLE person("ownerId" uuid,"personGroupId" uuid,"faceAssetId" uuid REFERENCES asset_face,"thumbnailPath" text DEFAULT '',PRIMARY KEY("ownerId","personGroupId"))`,
+      'CREATE TABLE shared_space_person(id uuid PRIMARY KEY,"albumId" uuid REFERENCES album,"personGroupId" uuid,"coverAssetId" uuid REFERENCES asset)',
+      'CREATE TABLE pet(id uuid PRIMARY KEY,"featuredAssetId" uuid REFERENCES asset,"updatedAt" timestamptz)',
+      // whole stacks move into the Locked folder, and what choosing a replacement reads besides (FL-53)
+      'ALTER TABLE asset ADD COLUMN "stackId" uuid',
+      `ALTER TABLE album ADD COLUMN kind text NOT NULL DEFAULT 'album'`,
+      'CREATE TABLE album_user("albumId" uuid REFERENCES album,"userId" uuid,role text)',
+      'CREATE TABLE shared_space_album("albumId" uuid REFERENCES album,"linkedAlbumId" uuid REFERENCES album)',
+      'CREATE TABLE shared_link(id uuid PRIMARY KEY,"albumId" uuid REFERENCES album)',
+      'CREATE TABLE immich_fork.asset_best_photo_score("assetId" uuid PRIMARY KEY REFERENCES asset,score double precision)',
+      'ALTER TABLE pet ADD COLUMN "ownerId" uuid',
+      `CREATE TABLE pet_observation(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),"petId" uuid REFERENCES pet,"assetId" uuid REFERENCES asset,state text NOT NULL DEFAULT 'confirmed')`,
+      // Locked is a lock record (FL-34); locking touches the asset and takes live-photo parts along
+      `CREATE TABLE asset_lock("assetId" uuid PRIMARY KEY REFERENCES asset ON DELETE CASCADE,reason text NOT NULL,"lockedAt" timestamptz NOT NULL DEFAULT now(),"lockedBy" uuid,"previousVisibility" text)`,
+      'ALTER TABLE asset ADD COLUMN "livePhotoVideoId" uuid',
+      'ALTER TABLE asset ADD COLUMN "updatedAt" timestamptz',
     ]) {
       await sql.raw(statement).execute(db);
     }
     await migration.up(db);
     repository = new ICloudMetadataRepository(db);
-    service = new ICloudMetadataService(repository);
+    service = new ICloudMetadataService(repository, events as never);
   });
   afterAll(async () => {
     await db?.destroy();
@@ -61,7 +86,9 @@ describe('iCloud source metadata reconciliation (PostgreSQL)', () => {
         isFavorite: boolean;
         visibility: string;
         fileCreatedAt: Date;
-      }>`SELECT "isFavorite",visibility,"fileCreatedAt" FROM asset WHERE id=${assetId}::uuid`,
+      }>`SELECT "isFavorite",
+        CASE WHEN EXISTS (SELECT 1 FROM asset_lock l WHERE l."assetId"=asset.id) THEN 'locked' ELSE visibility END AS visibility,
+        "fileCreatedAt" FROM asset WHERE id=${assetId}::uuid`,
     );
   const baseline = (id: string) =>
     first(
@@ -83,6 +110,8 @@ describe('iCloud source metadata reconciliation (PostgreSQL)', () => {
       visibility: 'locked',
       fileCreatedAt: new Date('2020-03-04T12:34:56Z'),
     });
+    // the lock's follow-up (new face thumbnails, replaced profile pictures) runs once it commits (FL-34)
+    expect(events.emit).toHaveBeenCalledWith('AssetLockAll', { assetIds: [ctx.assetId], userId: ctx.ownerId });
     expect(
       await first(
         sql`SELECT "dateTimeOriginal","lockedProperties",description,latitude,longitude,"timeZone" FROM asset_exif WHERE "assetId"=${ctx.assetId}::uuid`,
@@ -102,13 +131,136 @@ describe('iCloud source metadata reconciliation (PostgreSQL)', () => {
     expect(await service.reconcile(ctx.connectionId, ctx.ownerId)).toBe(true);
   });
 
+  it('removes a photo it moves into the Locked folder as the cover of every album (FL-53)', async () => {
+    const ctx = await setup();
+    const otherAssetId = randomUUID();
+    const [ownAlbumId, otherAlbumId] = [randomUUID(), randomUUID()];
+    await sql`INSERT INTO asset(id,"ownerId") VALUES(${otherAssetId}::uuid,${ctx.ownerId}::uuid)`.execute(db);
+    await sql`INSERT INTO album VALUES(${ownAlbumId}::uuid,${ctx.assetId}::uuid),(${otherAlbumId}::uuid,${ctx.assetId}::uuid)`.execute(
+      db,
+    );
+    await sql`INSERT INTO album_asset VALUES(${ownAlbumId}::uuid,${ctx.assetId}::uuid),(${ownAlbumId}::uuid,${otherAssetId}::uuid),(${otherAlbumId}::uuid,${ctx.assetId}::uuid)`.execute(
+      db,
+    );
+
+    expect(await service.reconcile(ctx.connectionId, ctx.ownerId)).toBe(true);
+
+    expect(await target(ctx.assetId)).toMatchObject({ visibility: 'locked' });
+    const covers = await sql<{ id: string; albumThumbnailAssetId: string | null }>`
+      SELECT id,"albumThumbnailAssetId" FROM album WHERE id IN (${ownAlbumId}::uuid,${otherAlbumId}::uuid)`.execute(db);
+    expect(Object.fromEntries(covers.rows.map((row) => [row.id, row.albumThumbnailAssetId]))).toEqual({
+      [ownAlbumId]: otherAssetId,
+      [otherAlbumId]: null,
+    });
+  });
+
+  it('releases every other cover, featured photo and face thumbnail the photo it locks was (FL-53)', async () => {
+    const ctx = await setup();
+    const otherAssetId = randomUUID();
+    const [spaceId, personGroupId, lockedFaceId, otherFaceId, linkId, petId] = Array.from({ length: 6 }, () =>
+      randomUUID(),
+    );
+    await sql`INSERT INTO asset(id,"ownerId") VALUES(${otherAssetId}::uuid,${ctx.ownerId}::uuid)`.execute(db);
+    // the fork phase is active, so an asset counts as not sensitive only with a privacy row saying so
+    await sql`INSERT INTO immich_fork.asset_privacy VALUES(${ctx.assetId}::uuid,false),(${otherAssetId}::uuid,false)`.execute(
+      db,
+    );
+    await sql`INSERT INTO album VALUES(${spaceId}::uuid,NULL)`.execute(db);
+    await sql`INSERT INTO album_asset VALUES(${spaceId}::uuid,${ctx.assetId}::uuid),(${spaceId}::uuid,${otherAssetId}::uuid)`.execute(
+      db,
+    );
+    await sql`INSERT INTO asset_face(id,"assetId","personGroupId") VALUES(${lockedFaceId}::uuid,${ctx.assetId}::uuid,${personGroupId}::uuid),(${otherFaceId}::uuid,${otherAssetId}::uuid,${personGroupId}::uuid)`.execute(
+      db,
+    );
+    await sql`INSERT INTO person VALUES(${ctx.ownerId}::uuid,${personGroupId}::uuid,${lockedFaceId}::uuid,'/thumbs/person.jpeg')`.execute(
+      db,
+    );
+    await sql`INSERT INTO shared_space_person VALUES(${linkId}::uuid,${spaceId}::uuid,${personGroupId}::uuid,${ctx.assetId}::uuid)`.execute(
+      db,
+    );
+    await sql`INSERT INTO pet VALUES(${petId}::uuid,${ctx.assetId}::uuid,now())`.execute(db);
+
+    expect(await service.reconcile(ctx.connectionId, ctx.ownerId)).toBe(true);
+
+    expect(await target(ctx.assetId)).toMatchObject({ visibility: 'locked' });
+    expect(
+      await first(sql`SELECT "faceAssetId","thumbnailPath" FROM person WHERE "personGroupId"=${personGroupId}::uuid`),
+    ).toEqual({ faceAssetId: otherFaceId, thumbnailPath: '' });
+    expect(await first(sql`SELECT "coverAssetId" FROM shared_space_person WHERE id=${linkId}::uuid`)).toEqual({
+      coverAssetId: otherAssetId,
+    });
+    expect(await first(sql`SELECT "featuredAssetId" FROM pet WHERE id=${petId}::uuid`)).toEqual({
+      featuredAssetId: null,
+    });
+  });
+
+  it('locks the rest of the stack of a photo it locks and releases their covers too (FL-53)', async () => {
+    const ctx = await setup();
+    const [siblingId, otherAssetId, stackId, albumId] = Array.from({ length: 4 }, () => randomUUID());
+    await sql`INSERT INTO asset(id,"ownerId","stackId") VALUES(${siblingId}::uuid,${ctx.ownerId}::uuid,${stackId}::uuid),(${otherAssetId}::uuid,${ctx.ownerId}::uuid,NULL)`.execute(
+      db,
+    );
+    await sql`UPDATE asset SET "stackId"=${stackId}::uuid WHERE id=${ctx.assetId}::uuid`.execute(db);
+    await sql`INSERT INTO album VALUES(${albumId}::uuid,${siblingId}::uuid)`.execute(db);
+    await sql`INSERT INTO album_asset VALUES(${albumId}::uuid,${siblingId}::uuid),(${albumId}::uuid,${otherAssetId}::uuid)`.execute(
+      db,
+    );
+
+    expect(await service.reconcile(ctx.connectionId, ctx.ownerId)).toBe(true);
+
+    expect(await target(ctx.assetId)).toMatchObject({ visibility: 'locked' });
+    expect(await target(siblingId)).toMatchObject({ visibility: 'locked' });
+    expect(await target(otherAssetId)).toMatchObject({ visibility: 'timeline' });
+    expect(await first(sql`SELECT "albumThumbnailAssetId" FROM album WHERE id=${albumId}::uuid`)).toEqual({
+      albumThumbnailAssetId: otherAssetId,
+    });
+  });
+
+  it('gives a pet the photo of another confirmed observation, a Best Photo first (FL-53)', async () => {
+    const ctx = await setup();
+    const [newerId, bestId, rejectedId, petId] = Array.from({ length: 4 }, () => randomUUID());
+    await sql`INSERT INTO asset(id,"ownerId","fileCreatedAt") VALUES
+      (${newerId}::uuid,${ctx.ownerId}::uuid,'2024-06-01Z'),
+      (${bestId}::uuid,${ctx.ownerId}::uuid,'2020-01-01Z'),
+      (${rejectedId}::uuid,${ctx.ownerId}::uuid,'2025-01-01Z')`.execute(db);
+    // active phase: a photo counts as not sensitive only with a privacy row saying so
+    await sql`INSERT INTO immich_fork.asset_privacy VALUES(${newerId}::uuid,false),(${bestId}::uuid,false),(${rejectedId}::uuid,false)`.execute(
+      db,
+    );
+    await sql`INSERT INTO immich_fork.asset_best_photo_score VALUES(${bestId}::uuid,0.95)`.execute(db);
+    await sql`INSERT INTO pet(id,"featuredAssetId","updatedAt","ownerId") VALUES(${petId}::uuid,${ctx.assetId}::uuid,now(),${ctx.ownerId}::uuid)`.execute(
+      db,
+    );
+    await sql`INSERT INTO pet_observation("petId","assetId",state) VALUES
+      (${petId}::uuid,${ctx.assetId}::uuid,'confirmed'),
+      (${petId}::uuid,${newerId}::uuid,'confirmed'),
+      (${petId}::uuid,${bestId}::uuid,'confirmed'),
+      (${petId}::uuid,${rejectedId}::uuid,'rejected')`.execute(db);
+
+    expect(await service.reconcile(ctx.connectionId, ctx.ownerId)).toBe(true);
+
+    expect(await first(sql`SELECT "featuredAssetId" FROM pet WHERE id=${petId}::uuid`)).toEqual({
+      featuredAssetId: bestId,
+    });
+
+    // without a Best Photo, the newest confirmed photo
+    await sql`DELETE FROM immich_fork.asset_best_photo_score WHERE "assetId"=${bestId}::uuid`.execute(db);
+    await sql`UPDATE pet SET "featuredAssetId"=${ctx.assetId}::uuid WHERE id=${petId}::uuid`.execute(db);
+    await releaseLockedCoverReferences(db, [ctx.assetId]);
+    expect(await first(sql`SELECT "featuredAssetId" FROM pet WHERE id=${petId}::uuid`)).toEqual({
+      featuredAssetId: newerId,
+    });
+  });
+
   it('uses source baselines for favorite changes and preserves local edits and all privacy choices', async () => {
     const ctx = await setup();
     await service.reconcile(ctx.connectionId, ctx.ownerId);
     await sourceUpdate(ctx.resourceId, { isFavorite: false, isHidden: false });
     await service.reconcile(ctx.connectionId, ctx.ownerId);
     expect(await target(ctx.assetId)).toMatchObject({ isFavorite: false, visibility: 'locked' });
+    // the owner unlocked it into the archive (FL-34: the lock record goes, the visibility is stored)
     await sql`UPDATE asset SET "isFavorite"=true,visibility='archive' WHERE id=${ctx.assetId}::uuid`.execute(db);
+    await sql`DELETE FROM asset_lock WHERE "assetId"=${ctx.assetId}::uuid`.execute(db);
     await sourceUpdate(ctx.resourceId, { isHidden: true });
     await service.reconcile(ctx.connectionId, ctx.ownerId);
     expect(await target(ctx.assetId)).toMatchObject({ isFavorite: true, visibility: 'archive' });

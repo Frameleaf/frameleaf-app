@@ -1,0 +1,7 @@
+{
+  "code": "capacity",
+  "message": "Frameleaf Cloud isn't taking new AI jobs in this region right now. Try again later.",
+  "retryable": true,
+  "refusal": "destination-unhealthy",
+  "requestId": "req_01J8ZK3M4N5P6Q7Y"
+}

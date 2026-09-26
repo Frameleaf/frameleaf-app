@@ -89,10 +89,36 @@ describe('catalog manifests', () => {
     expect(getCatalogTableLocks(originalOfficial)).toEqual(
       [...official.tables, ...forkTables].map(({ identity }) => identity).toSorted(),
     );
-    // 97 public (v3.1.0 + cluster_group, cluster_group_request, person_group,
-    // person_group_audit, workflow_log from the post-certified residue) + fork tables, including seven iCloud tables
-    expect(getCatalogTableLocks(fork)).toHaveLength(114);
-    expect(getCatalogTableLocks(originalOfficial)).toHaveLength(98);
+    // 142 public tables (among them the workflow run steps, FL-179, the Frameleaf Cloud model choices,
+    // FL-186, and the cloud backup index, manifests and manifest entries, FL-160) and the fork tables,
+    // among them the supporter keys (FL-156), Frameleaf account links and Sign in with Frameleaf
+    // sessions (FL-158), in the integrated catalog.
+    expect(getCatalogTableLocks(fork)).toHaveLength(194);
+    expect(getCatalogTableLocks(fork)).toEqual(
+      expect.arrayContaining([
+        'immich_fork.video_edit_version',
+        'immich_fork.video_edit_selection',
+        'immich_fork.archive_operation',
+        'immich_fork.archive_operation_item',
+        'immich_fork.person_merge_verdict',
+        'immich_fork.album_position',
+        'immich_fork.recipient_group',
+        'immich_fork.user_preference_history',
+        'immich_fork.face_correction',
+        'immich_fork.pet_recognition_run',
+        'immich_fork.memory_curation',
+        'immich_fork.memory_show_less',
+        'immich_fork.render_worker_session_capability',
+        'immich_fork.studio_workspace_layout',
+        'immich_fork.utility_activity',
+        'immich_fork.frameleaf_consent',
+        'immich_fork.frameleaf_user_license',
+        'immich_fork.frameleaf_account_link',
+        'immich_fork.frameleaf_session',
+      ]),
+    );
+    // 66 v3.1.0 public + every fork table
+    expect(getCatalogTableLocks(originalOfficial)).toHaveLength(118);
   });
 
   it('records the steady-state geodata primary index rebuilt by the runtime importer', () => {

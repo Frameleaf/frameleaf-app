@@ -6,7 +6,6 @@ config_roots = [
   "server",
   "packages/cli",
   "deployment",
-  "mobile",
   "e2e",
   "web",
   "docs",
@@ -79,7 +78,6 @@ run = [
   { task = "//server:build" },
   { task = "//server:sync-open-api" },
   { task = ":open-api-typescript" },
-  { task = ":open-api-dart" },
 ]
 
 [tasks.sql]

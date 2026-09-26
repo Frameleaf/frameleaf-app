@@ -24,6 +24,18 @@ import { DateTime } from 'luxon';
 import { init, register, t } from 'svelte-i18n';
 import { derived, get } from 'svelte/store';
 import { defaultLang, locales } from '$lib/constants';
+import { recordOAuthRequest } from '$lib/frameleaf/auth-session-preference';
+import {
+  eventStoryPlace,
+  formatLocalDateRange,
+  memoryHeadline as headlineOf,
+  isBirthday,
+  isEventStory,
+  isPetStory,
+  isPersonRecap,
+  isYearInReview,
+} from '$lib/frameleaf/memory-stories';
+import { playbackCacheKey } from '$lib/frameleaf/playback-revision.svelte';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { alwaysLoadOriginalFile, lang, locale } from '$lib/stores/preferences.store';
 import { isWebCompatibleImage } from '$lib/utils/asset-utils';
@@ -202,7 +214,8 @@ export const getAssetUrl = ({
     return;
   }
   const id = asset.id;
-  const cacheKey = asset.thumbhash;
+  // FL-115: the preview and full-size files follow the owner's playback choice, so their cache key does too.
+  const cacheKey = playbackCacheKey(asset);
   if (sharedLink && (!sharedLink.allowDownload || !sharedLink.showMetadata)) {
     return getAssetMediaUrl({ id, size: AssetMediaSize.Preview, cacheKey });
   }
@@ -239,8 +252,13 @@ export const getAssetMediaUrl = (options: AssetUrlOptions) => {
 };
 
 export const getAssetPlaybackUrl = (options: AssetUrlOptions) => {
-  const { id, cacheKey: c } = options;
-  return createUrl(getAssetPlaybackPath(id), { ...authManager.params, c });
+  const { id, cacheKey: c, edited } = options;
+  // `edited: false` asks for the unedited clip; the server honours it for the owner only (FL-113).
+  return createUrl(getAssetPlaybackPath(id), {
+    ...authManager.params,
+    c,
+    edited: edited === false ? false : undefined,
+  });
 };
 
 export const getAssetHlsUrl = (id: string) => {
@@ -290,7 +308,11 @@ export const downloadUrl = (url: string, filename: string) => {
   anchor.click();
   anchor.remove();
 
-  URL.revokeObjectURL(url);
+  // Safari starts reading the file after the click returns, so the object URL outlives it for a
+  // moment, as the prototype does (UploadPanel.jsx:503).
+  if (url.startsWith('blob:')) {
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
 };
 
 export const downloadUrlPost = (url: string, assetIds: string[], archiveName: string) => {
@@ -350,6 +372,8 @@ export const oauth = {
     try {
       const redirectUri = location.href.split('?', 1)[0];
       const { url } = await startOAuth({ oAuthConfigDto: { redirectUri } });
+      // FL-80: the callback may arrive in another tab; keep this sign-in's choices for it
+      recordOAuthRequest(url);
       globalThis.location.assign(url);
       return true;
     } catch (error) {
@@ -357,8 +381,8 @@ export const oauth = {
       return false;
     }
   },
-  login: (location: Location) => {
-    return finishOAuth({ oAuthCallbackDto: { url: location.href } });
+  login: (location: Location, rememberMe = true) => {
+    return finishOAuth({ oAuthCallbackDto: { url: location.href, rememberMe } });
   },
   link: (location: Location) => {
     return linkOAuthAccount({ oAuthCallbackDto: { url: location.href } });
@@ -386,8 +410,22 @@ export const handlePromiseError = <T>(promise: Promise<T>): void => {
   promise.catch((error) => console.error(`[utils.ts]:handlePromiseError ${error}`, error));
 };
 
+/**
+ * FL-62: a memory's title and the line under it as the Memories index and player show them
+ * (Memories.jsx), with the owner's own title first. See `memoryHeadline` in memory-stories.
+ */
+export const memoryHeadline = derived([t, locale], ([$t, $locale]) => {
+  return (memory: MemoryResponseDto) =>
+    headlineOf(memory, { t: $t as Parameters<typeof headlineOf>[1]['t'], locale: $locale ?? undefined });
+});
+
 export const memoryLaneTitle = derived(t, ($t) => {
   return (memory: MemoryResponseDto) => {
+    // FL-62: the owner's own title wins everywhere a memory is named.
+    if (memory.title) {
+      return memory.title;
+    }
+
     if (memory.type === MemoryType.OnThisDay) {
       const now = DateTime.now();
       const memoryDate = DateTime.fromISO(memory.memoryAt, { zone: 'utc' });
@@ -395,6 +433,21 @@ export const memoryLaneTitle = derived(t, ($t) => {
       return memoryDate.day === now.day && memoryDate.month === now.month
         ? $t('years_ago', { values: { years: now.year - memory.data.year } })
         : memoryDate.toLocaleString(DateTime.DATE_MED, { locale: get(locale) });
+    }
+
+    // FL-62: event stories and year-in-review recaps. An event story names its place when
+    // it has one and otherwise reads as its local day range; the range comes from the
+    // server's `yyyy-MM-dd` local days, so it is not re-zoned here.
+    if (isEventStory(memory)) {
+      return eventStoryPlace(memory) ?? formatLocalDateRange(memory.data.startDate, memory.data.endDate, get(locale));
+    }
+
+    if (isYearInReview(memory)) {
+      return $t('frameleaf_memories_year_in_review_title', { values: { year: memory.data.year } });
+    }
+
+    if (isPetStory(memory) || isBirthday(memory) || isPersonRecap(memory)) {
+      return get(memoryHeadline)(memory).title;
     }
 
     return $t('unknown');
@@ -445,8 +498,12 @@ export function createDateFormatter(localeCode: string | undefined): DateFormatt
   };
 }
 
-export const semverToName = ({ major, minor, patch, prerelease }: ServerVersionResponseDto) =>
-  `v${major}.${minor}.${patch}${prerelease === null ? '' : `-rc.${prerelease}`}`;
+// FL-80: the server's full pre-release identifier (beta.2, rc.1) when it sends one; older servers only
+// send the number, which was always a release candidate.
+export const semverToName = ({ major, minor, patch, prerelease, prereleaseName }: ServerVersionResponseDto) => {
+  const suffix = prereleaseName ? `-${prereleaseName}` : prerelease === null ? '' : `-rc.${prerelease}`;
+  return `v${major}.${minor}.${patch}${suffix}`;
+};
 
 export const withoutIcons = (actions: ActionItem[]): ActionItem[] =>
   actions.map((action) => ({ ...action, icon: undefined }));

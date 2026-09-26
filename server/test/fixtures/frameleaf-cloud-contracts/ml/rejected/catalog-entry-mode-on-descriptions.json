@@ -1,0 +1,25 @@
+{
+  "sku": "ms_K6WT70CS",
+  "workload": "descriptions",
+  "rank": 2,
+  "label": "Descriptions · Standard",
+  "display": {
+    "model": "Qwen3.5-9B",
+    "gpu": "L40S-class, 48 GB"
+  },
+  "computeSku": "cs_KGECTVQ0",
+  "rate": {
+    "perSecondUsd": 0.0013,
+    "startFeeUsd": 0.02
+  },
+  "eta": {
+    "p50Sec": 45,
+    "p90Sec": 70
+  },
+  "limits": {
+    "maxInputs": 1000,
+    "maxInputBytes": 52428800
+  },
+  "rev": "mr_B2H147RBJBQ0",
+  "mode": "faithful"
+}

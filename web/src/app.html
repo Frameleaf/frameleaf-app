@@ -5,7 +5,15 @@
     <!-- metadata:tags -->
 
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
+    <!--
+      FL-135: favicon.svg is a verbatim copy of design/frameleaf/brand-kit/frameleaf-symbol.svg
+      (sha256 beaa5788267b8eb34167dc89c13df024b33f8c02bc4914f9ac5453f10393e7b2, matching the brand
+      kit manifest). It comes first so SVG-capable browsers use the authorized Frameleaf mark. The
+      .ico/.png fallbacks below are rendered from the same brand kit (never hand-redrawn) by
+      scripts/frameleaf-logo-exports.mjs, with provenance in design/frameleaf/derivatives/exports.json.
+    -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="shortcut icon" type="image/x-icon" href="/favicon.ico" />
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png" />
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
@@ -16,6 +24,12 @@
     <link rel="preload" as="font" type="font/ttf" href="%app.font%" crossorigin="anonymous" />
     <link rel="preload" as="font" type="font/ttf" href="%app.monofont%" crossorigin="anonymous" />
 
+    <!--
+      The browser chrome colour: the dark canvas by default (template index.html:9), switched to the
+      light canvas below before first paint, and kept in step with the app theme by
+      $lib/frameleaf/theme-color.ts afterwards.
+    -->
+    <meta name="theme-color" content="#101416" />
     <script>
       try {
         const preference = JSON.parse(localStorage.getItem('immich-ui-theme'));
@@ -23,6 +37,7 @@
         if (preference === 'light' || (preference !== 'dark' && !prefersDark)) {
           document.documentElement.classList.remove('dark');
           document.documentElement.classList.add('light');
+          document.querySelector('meta[name="theme-color"]:not([media])')?.setAttribute('content', '#f4f6f7');
         }
       } catch {
         // noop
@@ -85,61 +100,64 @@
   </head>
 
   <noscript style="position: absolute; top: 0px; z-index: 1000; color: black; background-color: white">
-    To use Immich, you must enable JavaScript or use a JavaScript compatible browser.
+    To use Frameleaf, you must enable JavaScript or use a JavaScript compatible browser.
   </noscript>
 
   <body class="bg-light text-dark">
+    <!--
+      FL-135: the loading mark is design/frameleaf/brand-kit/frameleaf-symbol.svg, inlined verbatim
+      (sha256 beaa5788267b8eb34167dc89c13df024b33f8c02bc4914f9ac5453f10393e7b2) so it can spin with
+      the existing #stencil keyframes without an extra network request. It replaces the original
+      Immich loading mark; the artwork itself is untouched, only embedded.
+    -->
     <div id="stencil">
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 792 792">
-        <style type="text/css">
-          .st0 {
-            fill: #fa2921;
-          }
-          .st1 {
-            fill: #ed79b5;
-          }
-          .st2 {
-            fill: #ffb400;
-          }
-          .st3 {
-            fill: #1e83f7;
-          }
-          .st4 {
-            fill: #18c249;
-          }
-        </style>
-        <g>
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        xmlns:xlink="http://www.w3.org/1999/xlink"
+        width="256"
+        height="256"
+        viewBox="0 0 256 256"
+        role="img"
+        aria-labelledby="stencil-title stencil-desc"
+      >
+        <title id="stencil-title">Frameleaf — gradient symbol</title>
+        <desc id="stencil-desc">
+          Native vector artwork: paths, shapes and gradients only. Lettering is outlined. No embedded images, font
+          files, scripts or external resources.
+        </desc>
+        <defs>
+          <linearGradient id="stencil-frame-gradient" gradientUnits="userSpaceOnUse" x1="15" y1="8" x2="226" y2="237">
+            <stop offset="0" stop-color="#86f345" />
+            <stop offset="0.25" stop-color="#36ec72" />
+            <stop offset="0.57" stop-color="#00c4d6" />
+            <stop offset="0.76" stop-color="#00c7b0" />
+            <stop offset="1" stop-color="#00d874" />
+          </linearGradient>
+          <linearGradient id="stencil-leaf-gradient" gradientUnits="userSpaceOnUse" x1="103" y1="101" x2="136" y2="240">
+            <stop offset="0" stop-color="#56f260" />
+            <stop offset="0.5" stop-color="#21de73" />
+            <stop offset="1" stop-color="#00bc9e" />
+          </linearGradient>
+          <linearGradient id="stencil-dot-gradient" x1="0.3" y1="0" x2="0.65" y2="1">
+            <stop offset="0" stop-color="#57f482" />
+            <stop offset="0.6" stop-color="#09dfa5" />
+            <stop offset="1" stop-color="#00bedc" />
+          </linearGradient>
           <path
-            class="st0"
-            d="M375.48,267.63c38.64,34.21,69.78,70.87,89.82,105.42c34.42-61.56,57.42-134.71,57.71-181.3
-		c0-0.33,0-0.63,0-0.91c0-68.94-68.77-95.77-128.01-95.77s-128.01,26.83-128.01,95.77c0,0.94,0,2.2,0,3.72
-		C300.01,209.24,339.15,235.47,375.48,267.63z"
+            id="stencil-frame-path"
+            d="M 67 2 H 171 C 207 2 236 31 236 67 V 172 C 236 208 207 237 171 237 H 130 C 145 230 158 219 169 205 C 190 202 205 189 205 168 V 71 C 205 50 188 34 167 34 H 72 C 51 34 34 51 34 72 V 166 C 34 182 37 192 47 200 L 48 235 C 21 228 2 203 2 171 V 68 C 2 31 30 2 67 2 Z"
           />
           <path
-            class="st1"
-            d="M164.7,455.63c24.15-26.87,61.2-55.99,103.01-80.61c44.48-26.18,88.97-44.47,128.02-52.84
-		c-47.91-51.76-110.37-96.24-154.6-110.91c-0.31-0.1-0.6-0.19-0.86-0.28c-65.57-21.3-112.34,35.81-130.64,92.15
-		c-18.3,56.34-14.04,130.04,51.53,151.34C162.05,454.77,163.25,455.16,164.7,455.63z"
+            id="stencil-leaf-path"
+            d="M 174 102 C 147 102 128 101 112 106 C 89 112 72 124 61 140 C 49 157 45 177 46 200 L 48 235 C 60 201 83 172 119 147 C 94 173 77 202 66 239 C 101 239 128 229 149 208 C 169 188 175 159 174 129 Z"
           />
-          <path
-            class="st2"
-            d="M681.07,302.19c-18.3-56.34-65.07-113.45-130.64-92.15c-0.9,0.29-2.1,0.68-3.54,1.15
-		c-3.75,35.93-16.6,81.27-35.96,125.76c-20.59,47.32-45.84,88.27-72.51,118c69.18,13.72,145.86,12.98,190.26-1.14
-		c0.31-0.1,0.6-0.2,0.86-0.28C695.11,432.22,699.37,358.52,681.07,302.19z"
-          />
-          <path
-            class="st3"
-            d="M336.54,510.71c-11.15-50.39-14.8-98.36-10.7-138.08c-64.03,29.57-125.63,75.23-153.26,112.76
-		c-0.19,0.26-0.37,0.51-0.53,0.73c-40.52,55.78-0.66,117.91,47.27,152.72c47.92,34.82,119.33,53.54,159.86-2.24
-		c0.56-0.76,1.3-1.78,2.19-3.01C363.28,602.32,347.02,558.08,336.54,510.71z"
-          />
-          <path
-            class="st4"
-            d="M617.57,482.52c-35.33,7.54-82.42,9.33-130.72,4.66c-51.37-4.96-98.11-16.32-134.63-32.5
-		c8.33,70.03,32.73,142.73,59.88,180.6c0.19,0.26,0.37,0.51,0.53,0.73c40.52,55.78,111.93,37.06,159.86,2.24
-		c47.92-34.82,87.79-96.95,47.27-152.72C619.2,484.77,618.46,483.75,617.57,482.52z"
-          />
-        </g>
+          <g id="stencil-symbol-color" aria-label="Frameleaf symbol">
+            <use xlink:href="#stencil-frame-path" fill="url(#stencil-frame-gradient)" />
+            <use xlink:href="#stencil-leaf-path" fill="url(#stencil-leaf-gradient)" />
+            <circle cx="172.5" cy="66.5" r="16.5" fill="url(#stencil-dot-gradient)" />
+          </g>
+        </defs>
+        <use xlink:href="#stencil-symbol-color" transform="translate(8 8) scale(1)" />
       </svg>
     </div>
     <div>%sveltekit.body%</div>

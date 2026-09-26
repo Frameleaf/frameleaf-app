@@ -170,6 +170,9 @@ export const toTimelineAsset = (unknownAsset: AssetResponseDto | TimelineAsset):
     people,
     latitude: assetResponse.exifInfo?.latitude || null,
     longitude: assetResponse.exifInfo?.longitude || null,
+    rating: assetResponse.exifInfo?.rating ?? null,
+    isOffline: assetResponse.isOffline,
+    originalFileName: assetResponse.originalFileName ?? null,
   };
 };
 

@@ -25,7 +25,17 @@ where
         inner join "asset" on "asset"."id" = "memory_asset"."assetId"
       where
         "memory_asset"."memoriesId" = "memory"."id"
-        and "asset"."visibility" = 'timeline'
+        and (
+          "asset"."visibility" = 'timeline'
+          and not exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "asset"."id"
+          )
+        )
         and "asset"."deletedAt" is null
         and not (
           case
@@ -104,7 +114,17 @@ where
         inner join "asset" on "asset"."id" = "memory_asset"."assetId"
       where
         "memory_asset"."memoriesId" = "memory"."id"
-        and "asset"."visibility" = 'timeline'
+        and (
+          "asset"."visibility" = 'timeline'
+          and not exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "asset"."id"
+          )
+        )
         and "asset"."deletedAt" is null
         and not (
           case
@@ -164,7 +184,17 @@ select
           inner join "memory_asset" on "asset"."id" = "memory_asset"."assetId"
         where
           "memory_asset"."memoriesId" = "memory"."id"
-          and "asset"."visibility" = 'timeline'
+          and (
+            "asset"."visibility" = 'timeline'
+            and not exists (
+              select
+                1
+              from
+                asset_lock
+              where
+                asset_lock."assetId" = "asset"."id"
+            )
+          )
           and "asset"."deletedAt" is null
           and not (
             case
@@ -218,6 +248,18 @@ select
               "asset_face"."assetId" = "asset"."id"
               and "person"."isHidden" = $2
           )
+          and not exists (
+            select
+              "pet_observation"."assetId"
+            from
+              "pet_observation"
+              inner join "pet" on "pet"."id" = "pet_observation"."petId"
+              and "pet"."ownerId" = "asset"."ownerId"
+            where
+              "pet_observation"."assetId" = "asset"."id"
+              and "pet_observation"."state" = 'confirmed'
+              and "pet"."isHidden" is true
+          )
         order by
           "asset"."fileCreatedAt" asc
       ) as agg
@@ -245,7 +287,17 @@ where
         inner join "asset" on "asset"."id" = "memory_asset"."assetId"
       where
         "memory_asset"."memoriesId" = "memory"."id"
-        and "asset"."visibility" = 'timeline'
+        and (
+          "asset"."visibility" = 'timeline'
+          and not exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "asset"."id"
+          )
+        )
         and "asset"."deletedAt" is null
         and not (
           case
@@ -308,7 +360,17 @@ select
           inner join "memory_asset" on "asset"."id" = "memory_asset"."assetId"
         where
           "memory_asset"."memoriesId" = "memory"."id"
-          and "asset"."visibility" = 'timeline'
+          and (
+            "asset"."visibility" = 'timeline'
+            and not exists (
+              select
+                1
+              from
+                asset_lock
+              where
+                asset_lock."assetId" = "asset"."id"
+            )
+          )
           and "asset"."deletedAt" is null
           and not (
             case
@@ -362,6 +424,18 @@ select
               "asset_face"."assetId" = "asset"."id"
               and "person"."isHidden" = $2
           )
+          and not exists (
+            select
+              "pet_observation"."assetId"
+            from
+              "pet_observation"
+              inner join "pet" on "pet"."id" = "pet_observation"."petId"
+              and "pet"."ownerId" = "asset"."ownerId"
+            where
+              "pet_observation"."assetId" = "asset"."id"
+              and "pet_observation"."state" = 'confirmed'
+              and "pet"."isHidden" is true
+          )
         order by
           "asset"."fileCreatedAt" asc
       ) as agg
@@ -397,7 +471,17 @@ where
         inner join "asset" on "asset"."id" = "memory_asset"."assetId"
       where
         "memory_asset"."memoriesId" = "memory"."id"
-        and "asset"."visibility" = 'timeline'
+        and (
+          "asset"."visibility" = 'timeline'
+          and not exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "asset"."id"
+          )
+        )
         and "asset"."deletedAt" is null
         and not (
           case
@@ -460,7 +544,17 @@ select
           inner join "memory_asset" on "asset"."id" = "memory_asset"."assetId"
         where
           "memory_asset"."memoriesId" = "memory"."id"
-          and "asset"."visibility" = 'timeline'
+          and (
+            "asset"."visibility" = 'timeline'
+            and not exists (
+              select
+                1
+              from
+                asset_lock
+              where
+                asset_lock."assetId" = "asset"."id"
+            )
+          )
           and "asset"."deletedAt" is null
           and not (
             case
@@ -514,6 +608,18 @@ select
               "asset_face"."assetId" = "asset"."id"
               and "person"."isHidden" = $2
           )
+          and not exists (
+            select
+              "pet_observation"."assetId"
+            from
+              "pet_observation"
+              inner join "pet" on "pet"."id" = "pet_observation"."petId"
+              and "pet"."ownerId" = "asset"."ownerId"
+            where
+              "pet_observation"."assetId" = "asset"."id"
+              and "pet_observation"."state" = 'confirmed'
+              and "pet"."isHidden" is true
+          )
         order by
           "asset"."fileCreatedAt" asc
       ) as agg
@@ -542,7 +648,17 @@ where
         inner join "asset" on "asset"."id" = "memory_asset"."assetId"
       where
         "memory_asset"."memoriesId" = "memory"."id"
-        and "asset"."visibility" = 'timeline'
+        and (
+          "asset"."visibility" = 'timeline'
+          and not exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "asset"."id"
+          )
+        )
         and "asset"."deletedAt" is null
         and not (
           case
@@ -605,7 +721,17 @@ select
           inner join "memory_asset" on "asset"."id" = "memory_asset"."assetId"
         where
           "memory_asset"."memoriesId" = "memory"."id"
-          and "asset"."visibility" = 'timeline'
+          and (
+            "asset"."visibility" = 'timeline'
+            and not exists (
+              select
+                1
+              from
+                asset_lock
+              where
+                asset_lock."assetId" = "asset"."id"
+            )
+          )
           and "asset"."deletedAt" is null
           and not (
             case
@@ -659,6 +785,18 @@ select
               "asset_face"."assetId" = "asset"."id"
               and "person"."isHidden" = $2
           )
+          and not exists (
+            select
+              "pet_observation"."assetId"
+            from
+              "pet_observation"
+              inner join "pet" on "pet"."id" = "pet_observation"."petId"
+              and "pet"."ownerId" = "asset"."ownerId"
+            where
+              "pet_observation"."assetId" = "asset"."id"
+              and "pet_observation"."state" = 'confirmed'
+              and "pet"."isHidden" is true
+          )
         order by
           "asset"."fileCreatedAt" asc
       ) as agg
@@ -690,7 +828,17 @@ where
         inner join "asset" on "asset"."id" = "memory_asset"."assetId"
       where
         "memory_asset"."memoriesId" = "memory"."id"
-        and "asset"."visibility" = 'timeline'
+        and (
+          "asset"."visibility" = 'timeline'
+          and not exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "asset"."id"
+          )
+        )
         and "asset"."deletedAt" is null
         and not (
           case
@@ -754,7 +902,17 @@ select
           inner join "memory_asset" on "asset"."id" = "memory_asset"."assetId"
         where
           "memory_asset"."memoriesId" = "memory"."id"
-          and "asset"."visibility" = 'timeline'
+          and (
+            "asset"."visibility" = 'timeline'
+            and not exists (
+              select
+                1
+              from
+                asset_lock
+              where
+                asset_lock."assetId" = "asset"."id"
+            )
+          )
           and "asset"."deletedAt" is null
           and not (
             case
@@ -797,6 +955,29 @@ select
               else false
             end
           )
+          and not exists (
+            select
+              $1 as "one"
+            from
+              "asset_face"
+              inner join "person" on "person"."personGroupId" = "asset_face"."personGroupId"
+              and "person"."ownerId" = "asset"."ownerId"
+            where
+              "asset_face"."assetId" = "asset"."id"
+              and "person"."isHidden" = $2
+          )
+          and not exists (
+            select
+              "pet_observation"."assetId"
+            from
+              "pet_observation"
+              inner join "pet" on "pet"."id" = "pet_observation"."petId"
+              and "pet"."ownerId" = "asset"."ownerId"
+            where
+              "pet_observation"."assetId" = "asset"."id"
+              and "pet_observation"."state" = 'confirmed'
+              and "pet"."isHidden" is true
+          )
         order by
           "asset"."fileCreatedAt" asc
       ) as agg
@@ -804,7 +985,7 @@ select
 from
   "memory"
 where
-  "id" = $1
+  "id" = $3
   and "deletedAt" is null
   and (
     not exists (
@@ -823,7 +1004,17 @@ where
         inner join "asset" on "asset"."id" = "memory_asset"."assetId"
       where
         "memory_asset"."memoriesId" = "memory"."id"
-        and "asset"."visibility" = 'timeline'
+        and (
+          "asset"."visibility" = 'timeline'
+          and not exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "asset"."id"
+          )
+        )
         and "asset"."deletedAt" is null
         and not (
           case
@@ -890,7 +1081,17 @@ select
           inner join "memory_asset" on "asset"."id" = "memory_asset"."assetId"
         where
           "memory_asset"."memoriesId" = "memory"."id"
-          and "asset"."visibility" = 'timeline'
+          and (
+            "asset"."visibility" = 'timeline'
+            and not exists (
+              select
+                1
+              from
+                asset_lock
+              where
+                asset_lock."assetId" = "asset"."id"
+            )
+          )
           and "asset"."deletedAt" is null
           and not (
             case
@@ -933,6 +1134,29 @@ select
               else false
             end
           )
+          and not exists (
+            select
+              $1 as "one"
+            from
+              "asset_face"
+              inner join "person" on "person"."personGroupId" = "asset_face"."personGroupId"
+              and "person"."ownerId" = "asset"."ownerId"
+            where
+              "asset_face"."assetId" = "asset"."id"
+              and "person"."isHidden" = $2
+          )
+          and not exists (
+            select
+              "pet_observation"."assetId"
+            from
+              "pet_observation"
+              inner join "pet" on "pet"."id" = "pet_observation"."petId"
+              and "pet"."ownerId" = "asset"."ownerId"
+            where
+              "pet_observation"."assetId" = "asset"."id"
+              and "pet_observation"."state" = 'confirmed'
+              and "pet"."isHidden" is true
+          )
         order by
           "asset"."fileCreatedAt" asc
       ) as agg
@@ -940,7 +1164,7 @@ select
 from
   "memory"
 where
-  "id" = $1
+  "id" = $3
   and "deletedAt" is null
   and (
     not exists (
@@ -959,7 +1183,17 @@ where
         inner join "asset" on "asset"."id" = "memory_asset"."assetId"
       where
         "memory_asset"."memoriesId" = "memory"."id"
-        and "asset"."visibility" = 'timeline'
+        and (
+          "asset"."visibility" = 'timeline'
+          and not exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "asset"."id"
+          )
+        )
         and "asset"."deletedAt" is null
         and not (
           case

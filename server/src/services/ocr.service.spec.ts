@@ -93,6 +93,7 @@ describe(OcrService.name, () => {
       expect(await sut.handleOcr({ id: asset.id })).toEqual(JobStatus.Success);
 
       expect(mocks.machineLearning.ocr).toHaveBeenCalledWith(
+        expect.objectContaining({ destinationId: expect.any(String), workload: expect.any(String) }),
         '/uploads/user-id/thumbs/path.jpg',
         expect.objectContaining({
           modelName: 'PP-OCRv5_mobile',
@@ -137,6 +138,33 @@ describe(OcrService.name, () => {
       );
     });
 
+    it('keeps text a crop removed hidden and out of search when the photo is read again', async () => {
+      const asset = AssetFactory.create();
+      mocks.asset.getForOcr.mockResolvedValue({
+        edits: [{ action: 'crop', parameters: { x: 0, y: 0, width: 100, height: 100 } }],
+        exifImageWidth: 200,
+        exifImageHeight: 200,
+        orientation: null,
+      } as never);
+      mocks.machineLearning.ocr.mockResolvedValue({
+        box: [0.05, 0.05, 0.4, 0.05, 0.4, 0.1, 0.05, 0.1, 0.6, 0.8, 0.9, 0.8, 0.9, 0.85, 0.6, 0.85],
+        boxScore: [0.9, 0.9],
+        text: ['Kept', 'Cropped'],
+        textScore: [0.9, 0.9],
+      });
+
+      expect(await sut.handleOcr({ id: asset.id })).toEqual(JobStatus.Success);
+
+      expect(mocks.ocr.upsert).toHaveBeenCalledWith(
+        asset.id,
+        [
+          expect.objectContaining({ text: 'Kept', isVisible: true }),
+          expect.objectContaining({ text: 'Cropped', isVisible: false }),
+        ],
+        'Kept',
+      );
+    });
+
     it('should apply config settings', async () => {
       const asset = AssetFactory.create();
       mocks.systemMetadata.get.mockResolvedValue({
@@ -156,6 +184,7 @@ describe(OcrService.name, () => {
       expect(await sut.handleOcr({ id: asset.id })).toEqual(JobStatus.Success);
 
       expect(mocks.machineLearning.ocr).toHaveBeenCalledWith(
+        expect.objectContaining({ destinationId: expect.any(String), workload: expect.any(String) }),
         '/uploads/user-id/thumbs/path.jpg',
         expect.objectContaining({
           modelName: 'PP-OCRv5_server',

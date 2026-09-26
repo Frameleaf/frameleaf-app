@@ -22,20 +22,26 @@ test.describe.skip('Integrity', () => {
 
     await utils.waitForQueueFinish(admin.accessToken, QueueName.IntegrityCheck);
 
-    await page.goto('/admin/maintenance');
+    // FL-71: integrity checks are the Command Center's Maintenance → Integrity checks section.
+    await page.goto('/user-settings?area=maintenance&section=integrity');
 
-    const count = page.getByText('Untracked Files').locator('..').locator('..').locator('div').nth(1);
+    // FL-81: each check is the prototype's card (`Maintenance.jsx:449-491`): "Last run … · n findings".
+    const count = page.getByRole('article', { name: 'Untracked Files' }).getByText(/Last run .* · \d+ findings?/);
+    const findings = async () => {
+      const text = await count.textContent();
+      return Number(text?.match(/(\d+) findings?/)?.[1]);
+    };
 
-    const previousCount = Number.parseInt((await count.textContent()) ?? '');
+    const previousCount = await findings();
 
     await utils.mkFolder(`/data/upload/${admin.userId}`);
     await utils.putTextFile('untracked', `/data/upload/${admin.userId}/untracked1.png`);
 
-    const checkButton = page.getByText('Integrity Report').locator('..').getByRole('button', { name: 'Check All' });
+    const checkButton = page.getByRole('button', { name: 'Run all checks' });
 
     await checkButton.click();
     await expect(checkButton).toBeEnabled();
 
-    await expect(count).toContainText((previousCount + 1).toString());
+    await expect.poll(findings).toBe(previousCount + 1);
   });
 });

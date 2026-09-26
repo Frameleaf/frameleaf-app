@@ -6,7 +6,7 @@ This is the reusable design handoff for implementation agents: the selected thre
 | --- | --- |
 | [Interaction requirements](INTERACTION-REQUIREMENTS.md) | Durable user decisions, including later corrections to the original studies |
 | [Runnable template](template/README.md) | Library, timeline, people, search/filtering, viewer, quick editor, Studio layout and settings command center |
-| [Theme tokens](tokens.json) | Neutral surfaces, green selection, typography, modest radii and native touch targets |
+| [Theme tokens](tokens.json) | Neutral surfaces, green selection, SF Pro typography, continuous corners, materials, motion and native touch targets |
 | [Original SVG kit](brand-kit/manifest.json) | Authoritative source artwork with file hashes and intended uses |
 | [Reference gallery](references/README.md) | Approved visual studies and selected historical implementation captures |
 | [Source manifest](source-manifest.json) | Original paths, captured source hashes, packaged hashes and portability changes |
@@ -23,9 +23,28 @@ The original source was an uncommitted working-tree design, captured on Septembe
 
 Use the supplied `brand-kit/` SVGs for production branding. The generated `mark.png` and template `public/media/brand.png` remain historical visual assets used by the existing prototype, not replacements for the supplied vectors. The kit has no dark-ink wordmark for a white surface: use the gradient symbol, a deliberate dark brand surface, or an explicitly reviewed derivative. Retain original paths, gradients and notices. The brand styleboard is not an application background.
 
-The design is dark-first with charcoal surfaces, fine separators, compact typography, limited radii and photography as its dominant content. Light mode receives equal care. Green, teal and blue convey identity, selection, focus or status. Preserve viewport fill, responsive panes, focus visibility and keyboard/touch alternatives.
+The design is dark-first with charcoal surfaces, fine separators, compact SF Pro typography, continuous (squircle) corners, restrained frosted materials, spring motion and photography as its dominant content. Light mode receives equal care. Green, teal and blue convey identity, selection, focus or status. Preserve viewport fill, responsive panes, focus visibility and keyboard/touch alternatives.
 
 Sample media, names, quantities, hardware and job states are fictional. Search resolves curated sample data; the Studio/restoration preview does not render edited outputs or run AI. Account/PIN/sharing controls do not provide production authorization. A responsive tablet web page is not native Flutter Studio. The template is not complete feature parity, a migration baseline for the rest of the application, or release qualification.
+
+## September 22, 2026 template revision
+
+The template was revised in place to carry the full feature set the parity audit found missing and the polish directions from the product review: a media-aware full-screen editor with a develop module, a working Studio timeline, the complete viewer action set with in-place information editing, justified timeline and selection bar, an Albums page that groups albums into collections, shared links and a public viewer, people management, map, places, tags, folders and memories, authentication and system screens, upload and download panels, a command palette, and a Maintenance settings area. `template/README.md` lists the new source map and the revised interaction requirements record the decisions. The React source remains design evidence for the Svelte and Flutter ports, and the same production boundaries apply.
+
+## September 24, 2026 refinements
+
+The template then took an Apple Photos–style pass and a polish pass. They cover:
+
+- SF Pro, continuous corners, frosted materials and spring motion
+- a dense Browse grid and a Work grid that always shows ratings
+- a Spotlight-style search palette with an Advanced view of graphical filters
+- a zoom into a black viewer with a floating information card and AI provenance marks
+- Ken Burns and Memories slideshows
+- a folding navigation rail with Explore above Albums
+- grouped System Settings–style settings pages
+- a Library analytics dashboard.
+
+The "Apple-style refinements" sections of the interaction requirements record each decision. [Prototype to production](../../docs/docs/developer/frameleaf-plan/09-prototype-to-production.md) maps each one to its production owner.
 
 ## Production handoff
 

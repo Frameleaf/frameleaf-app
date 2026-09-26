@@ -1,0 +1,1933 @@
+{
+  "capabilities": [
+    "analysisWorker",
+    "generationWorker",
+    "gpuWorker",
+    "renderWorker",
+    "restorationWorker",
+    "transcriptionWorker"
+  ],
+  "commands": [
+    {
+      "capability": "transcriptionWorker",
+      "deliveryPlanIds": ["AI-104"],
+      "description": "Replace the sequence caption list with a validated, time-ordered set.",
+      "id": "captions.set",
+      "manifestIds": ["readme.local-ai-analysis.1"],
+      "mutatesGraph": true,
+      "owner": "FL-94",
+      "payload": {
+        "captions": "object[]"
+      },
+      "prototypeFunctions": ["setCaptions"],
+      "prototypeSource": "setCaptions",
+      "scope": "sequence",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "deliveryPlanIds": ["STU-205", "STU-301"],
+      "description": "Place library media on a track at a time, linking its camera audio.",
+      "id": "clip.add",
+      "manifestIds": ["command.addItem", "readme.timeline-editing.1"],
+      "mutatesGraph": true,
+      "owner": "FL-94",
+      "payload": {
+        "assetId": "string",
+        "at": "time",
+        "duration": "duration?",
+        "kind": "string?",
+        "trackId": "string"
+      },
+      "prototypeFunctions": ["addClip"],
+      "prototypeSource": "addClip",
+      "scope": "clip",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "deliveryPlanIds": ["STU-205", "STU-301"],
+      "description": "Remove one clip or a selection with its linked clips, optionally closing the gap.",
+      "id": "clip.delete",
+      "manifestIds": ["command.removeItems", "readme.timeline-editing.5"],
+      "mutatesGraph": true,
+      "owner": "FL-94",
+      "payload": {
+        "clipId": "string?",
+        "clipIds": "string[]?",
+        "ripple": "boolean?"
+      },
+      "prototypeFunctions": ["deleteClip"],
+      "prototypeSource": "deleteClip",
+      "scope": "clip",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "deliveryPlanIds": ["STU-304"],
+      "description": "Group selected clips so transforms and keyframes apply to them together.",
+      "id": "clip.group",
+      "manifestIds": ["extra.compose"],
+      "mutatesGraph": true,
+      "owner": "FL-100",
+      "payload": {
+        "clipIds": "string[]",
+        "name": "string?"
+      },
+      "prototypeFunctions": [],
+      "prototypeSource": "beyond the prototype: Freecut groups and null controllers",
+      "scope": "clip",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "deliveryPlanIds": ["AI-104", "STU-301"],
+      "description": "Insert a marked source range at the playhead, rippling later clips right.",
+      "id": "clip.insert",
+      "manifestIds": ["readme.local-ai-analysis.4", "readme.timeline-editing.7"],
+      "mutatesGraph": true,
+      "owner": "FL-94",
+      "payload": {
+        "assetId": "string",
+        "at": "time",
+        "sourceIn": "time",
+        "sourceOut": "time",
+        "trackId": "string"
+      },
+      "prototypeFunctions": ["addClip"],
+      "prototypeSource": "addClip (source monitor insert edit)",
+      "scope": "clip",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "deliveryPlanIds": ["STU-205"],
+      "description": "Move a clip and its linked clips to another time, and optionally another track.",
+      "id": "clip.move",
+      "manifestIds": ["command.moveItem"],
+      "mutatesGraph": true,
+      "owner": "FL-94",
+      "payload": {
+        "clipId": "string",
+        "start": "time",
+        "trackId": "string?"
+      },
+      "prototypeFunctions": ["moveClip"],
+      "prototypeSource": "moveClip",
+      "scope": "clip",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "deliveryPlanIds": ["STU-301"],
+      "description": "Overwrite the track at the playhead with a marked source range.",
+      "id": "clip.overwrite",
+      "manifestIds": ["readme.timeline-editing.7"],
+      "mutatesGraph": true,
+      "owner": "FL-94",
+      "payload": {
+        "assetId": "string",
+        "at": "time",
+        "sourceIn": "time",
+        "sourceOut": "time",
+        "trackId": "string"
+      },
+      "prototypeFunctions": ["addClip"],
+      "prototypeSource": "addClip (source monitor overwrite edit)",
+      "scope": "clip",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "deliveryPlanIds": ["STU-301"],
+      "description": "Move a clip to another index on its track; the track re-flows contiguously.",
+      "id": "clip.reorder",
+      "manifestIds": ["readme.timeline-editing.5"],
+      "mutatesGraph": true,
+      "owner": "FL-94",
+      "payload": {
+        "clipId": "string",
+        "index": "number",
+        "trackId": "string"
+      },
+      "prototypeFunctions": ["reorder"],
+      "prototypeSource": "reorder",
+      "scope": "clip",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "deliveryPlanIds": ["STU-301", "STU-302"],
+      "description": "Move the cut between two adjacent clips without changing the sequence length.",
+      "id": "clip.roll",
+      "manifestIds": ["readme.preview-playback.4", "readme.timeline-editing.3"],
+      "mutatesGraph": true,
+      "owner": "FL-94",
+      "payload": {
+        "at": "time",
+        "clipId": "string"
+      },
+      "prototypeFunctions": ["trimClipEnd", "trimClipStart"],
+      "prototypeSource": "trimClipEnd with trimClipStart (rolling edit)",
+      "scope": "clip",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "deliveryPlanIds": ["STU-305"],
+      "description": "Set clip volume, mute, fades, pitch shift and the clip EQ stage.",
+      "id": "clip.setAudio",
+      "manifestIds": ["readme.audio.1", "readme.audio.2", "readme.audio.3"],
+      "mutatesGraph": true,
+      "owner": "FL-103",
+      "payload": {
+        "clipId": "string",
+        "eq": "object?",
+        "fadeIn": "duration?",
+        "fadeOut": "duration?",
+        "muted": "boolean?",
+        "pitchCents": "number?",
+        "pitchSemitones": "number?",
+        "volume": "number?"
+      },
+      "prototypeFunctions": ["updateClip"],
+      "prototypeSource": "updateClip (volume and mute)",
+      "scope": "clip",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "deliveryPlanIds": ["STU-303"],
+      "description": "Set the clip blend mode and compositing opacity.",
+      "id": "clip.setBlendMode",
+      "manifestIds": [
+        "blend.color",
+        "blend.color-burn",
+        "blend.color-dodge",
+        "blend.darken",
+        "blend.difference",
+        "blend.dissolve",
+        "blend.divide",
+        "blend.exclusion",
+        "blend.hard-light",
+        "blend.hard-mix",
+        "blend.hue",
+        "blend.lighten",
+        "blend.linear-burn",
+        "blend.linear-dodge",
+        "blend.linear-light",
+        "blend.luminosity",
+        "blend.multiply",
+        "blend.normal",
+        "blend.overlay",
+        "blend.pin-light",
+        "blend.saturation",
+        "blend.screen",
+        "blend.soft-light",
+        "blend.subtract",
+        "blend.vivid-light",
+        "readme.effects-masks-compositing.6"
+      ],
+      "mutatesGraph": true,
+      "owner": "FL-99",
+      "payload": {
+        "blendMode": "string",
+        "clipId": "string",
+        "opacity": "number?"
+      },
+      "prototypeFunctions": [],
+      "prototypeSource": "beyond the prototype: Freecut BlendMode union",
+      "scope": "clip",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "deliveryPlanIds": ["STU-302"],
+      "description": "Set the crop rectangle and corner-pin quad edited with the preview gizmos.",
+      "id": "clip.setCrop",
+      "manifestIds": ["readme.preview-playback.1"],
+      "mutatesGraph": true,
+      "owner": "FL-98",
+      "payload": {
+        "clipId": "string",
+        "cornerPin": "object?",
+        "crop": "object?"
+      },
+      "prototypeFunctions": [],
+      "prototypeSource": "beyond the prototype: Freecut crop and corner-pin gizmos",
+      "scope": "clip",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "deliveryPlanIds": ["STU-302"],
+      "description": "Set the colour grade: look, intensity, primaries and the three colour wheels.",
+      "id": "clip.setGrade",
+      "manifestIds": ["extra.color-workspace"],
+      "mutatesGraph": true,
+      "owner": "FL-98",
+      "payload": {
+        "clipId": "string",
+        "grade": "object?"
+      },
+      "prototypeFunctions": ["updateClip"],
+      "prototypeSource": "normalizeGrade via updateClip",
+      "scope": "clip",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "deliveryPlanIds": ["STU-304"],
+      "description": "Set the from and to rectangles of a still clip, or clear the move.",
+      "id": "clip.setKenBurns",
+      "manifestIds": ["readme.keyframe-animation.6"],
+      "mutatesGraph": true,
+      "owner": "FL-94",
+      "payload": {
+        "clipId": "string",
+        "kenBurns": "object?"
+      },
+      "prototypeFunctions": ["setKenBurns"],
+      "prototypeSource": "setKenBurns",
+      "scope": "clip",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "deliveryPlanIds": ["STU-301"],
+      "description": "Link or unlink audio and video clips so later edits move them together.",
+      "id": "clip.setLink",
+      "manifestIds": ["readme.timeline-editing.3"],
+      "mutatesGraph": true,
+      "owner": "FL-94",
+      "payload": {
+        "clipIds": "string[]",
+        "linked": "boolean"
+      },
+      "prototypeFunctions": [],
+      "prototypeSource": "beyond the prototype: linkId groups in the prototype clip model",
+      "scope": "clip",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "deliveryPlanIds": ["STU-303"],
+      "description": "Set or clear the clip mask, including pen path geometry.",
+      "id": "clip.setMask",
+      "manifestIds": ["readme.effects-masks-compositing.7"],
+      "mutatesGraph": true,
+      "owner": "FL-99",
+      "payload": {
+        "clipId": "string",
+        "mask": "object?"
+      },
+      "prototypeFunctions": [],
+      "prototypeSource": "beyond the prototype: Freecut clip masks and pen paths",
+      "scope": "clip",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "deliveryPlanIds": ["STU-301"],
+      "description": "Rate-stretch a bounded clip and its linked clips to a new speed.",
+      "id": "clip.setSpeed",
+      "manifestIds": ["readme.timeline-editing.3"],
+      "mutatesGraph": true,
+      "owner": "FL-94",
+      "payload": {
+        "clipId": "string",
+        "speed": "rate"
+      },
+      "prototypeFunctions": ["setSpeed"],
+      "prototypeSource": "setSpeed",
+      "scope": "clip",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "deliveryPlanIds": ["STU-205", "STU-302"],
+      "description": "Set position, scale, rotation and opacity for a clip.",
+      "id": "clip.setTransform",
+      "manifestIds": ["command.setTransform", "readme.preview-playback.1"],
+      "mutatesGraph": true,
+      "owner": "FL-94",
+      "payload": {
+        "clipId": "string",
+        "transform": "object"
+      },
+      "prototypeFunctions": ["updateClip"],
+      "prototypeSource": "updateClip (transform patch)",
+      "scope": "clip",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "deliveryPlanIds": ["STU-205", "STU-304"],
+      "description": "Parent a clip transform to another clip, or clear the pick-whip link.",
+      "id": "clip.setTransformParent",
+      "manifestIds": ["command.setTransformParent", "extra.parenting"],
+      "mutatesGraph": true,
+      "owner": "FL-100",
+      "payload": {
+        "clipId": "string",
+        "parentId": "string?"
+      },
+      "prototypeFunctions": [],
+      "prototypeSource": "beyond the prototype: Freecut transform parenting",
+      "scope": "clip",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "deliveryPlanIds": ["STU-205", "STU-301", "STU-303"],
+      "description": "Add, retime, realign or remove the transition at the cut before a clip.",
+      "id": "clip.setTransition",
+      "manifestIds": [
+        "command.addTransition",
+        "command.removeTransition",
+        "command.updateTransition",
+        "readme.timeline-editing.4",
+        "readme.transitions.1",
+        "readme.transitions.2",
+        "readme.transitions.3",
+        "transition.additiveDissolve",
+        "transition.blurDissolve",
+        "transition.chromatic",
+        "transition.clockWipe",
+        "transition.dipToColorDissolve",
+        "transition.dissolve",
+        "transition.fade",
+        "transition.filmGateSlip",
+        "transition.flip",
+        "transition.glitch",
+        "transition.iris",
+        "transition.lensWarpZoom",
+        "transition.lightLeakBurn",
+        "transition.liquidDistort",
+        "transition.nonAdditiveDissolve",
+        "transition.pixelate",
+        "transition.radialBlur",
+        "transition.slide",
+        "transition.smoothCut",
+        "transition.sparkles",
+        "transition.wipe"
+      ],
+      "mutatesGraph": true,
+      "owner": "FL-94",
+      "payload": {
+        "clipId": "string",
+        "transition": "object?"
+      },
+      "prototypeFunctions": ["setTransition"],
+      "prototypeSource": "setTransition",
+      "scope": "clip",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "deliveryPlanIds": ["STU-301", "STU-302"],
+      "description": "Slide a clip along the track, trimming its neighbours instead of rippling.",
+      "id": "clip.slide",
+      "manifestIds": ["readme.preview-playback.4", "readme.timeline-editing.3"],
+      "mutatesGraph": true,
+      "owner": "FL-94",
+      "payload": {
+        "clipId": "string",
+        "delta": "duration"
+      },
+      "prototypeFunctions": ["moveClip"],
+      "prototypeSource": "moveClip (slide edit)",
+      "scope": "clip",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "deliveryPlanIds": ["STU-301", "STU-302"],
+      "description": "Slip the source range inside a clip without moving the clip.",
+      "id": "clip.slip",
+      "manifestIds": ["readme.preview-playback.4", "readme.timeline-editing.3"],
+      "mutatesGraph": true,
+      "owner": "FL-94",
+      "payload": {
+        "clipId": "string",
+        "delta": "duration"
+      },
+      "prototypeFunctions": ["updateClip"],
+      "prototypeSource": "updateClip (slip edit on the source in and out points)",
+      "scope": "clip",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "deliveryPlanIds": ["STU-205"],
+      "description": "Split clips at a time, carrying linked clips and Ken Burns geometry across.",
+      "id": "clip.split",
+      "manifestIds": ["command.split"],
+      "mutatesGraph": true,
+      "owner": "FL-94",
+      "payload": {
+        "at": "time",
+        "clipIds": "string[]?"
+      },
+      "prototypeFunctions": ["splitClipAt"],
+      "prototypeSource": "splitClipAt",
+      "scope": "clip",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "deliveryPlanIds": ["STU-205"],
+      "description": "Trim a clip out point, optionally rippling the rest of the track.",
+      "id": "clip.trimEnd",
+      "manifestIds": ["command.trimEnd"],
+      "mutatesGraph": true,
+      "owner": "FL-94",
+      "payload": {
+        "clipId": "string",
+        "end": "time",
+        "ripple": "boolean?"
+      },
+      "prototypeFunctions": ["trimClipEnd"],
+      "prototypeSource": "trimClipEnd",
+      "scope": "clip",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "deliveryPlanIds": ["STU-205"],
+      "description": "Trim a clip in point, optionally rippling the rest of the track.",
+      "id": "clip.trimStart",
+      "manifestIds": ["command.trimStart"],
+      "mutatesGraph": true,
+      "owner": "FL-94",
+      "payload": {
+        "clipId": "string",
+        "ripple": "boolean?",
+        "start": "time"
+      },
+      "prototypeFunctions": ["trimClipStart"],
+      "prototypeSource": "trimClipStart",
+      "scope": "clip",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "deliveryPlanIds": [],
+      "description": "Dissolve a group, leaving its clips in place.",
+      "id": "clip.ungroup",
+      "manifestIds": [],
+      "mutatesGraph": true,
+      "owner": "FL-100",
+      "payload": {
+        "groupId": "string"
+      },
+      "prototypeFunctions": [],
+      "prototypeSource": "beyond the prototype: Freecut groups and null controllers",
+      "scope": "clip",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "deliveryPlanIds": ["STU-205"],
+      "description": "Patch clip fields the narrower commands do not own: name, text, style, position.",
+      "id": "clip.update",
+      "manifestIds": ["command.updateItem"],
+      "mutatesGraph": true,
+      "owner": "FL-94",
+      "payload": {
+        "clipId": "string",
+        "patch": "object"
+      },
+      "prototypeFunctions": ["updateClip"],
+      "prototypeSource": "updateClip",
+      "scope": "clip",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "deliveryPlanIds": ["STU-205", "STU-301", "STU-304"],
+      "description": "Create a compound clip from a selection and place it, openable as its own sequence.",
+      "id": "composition.add",
+      "manifestIds": [
+        "command.addClip",
+        "extra.compose",
+        "readme.timeline-editing.1",
+        "readme.timeline-editing.2"
+      ],
+      "mutatesGraph": true,
+      "owner": "FL-100",
+      "payload": {
+        "at": "time?",
+        "clipIds": "string[]?",
+        "name": "string",
+        "trackId": "string?"
+      },
+      "prototypeFunctions": [],
+      "prototypeSource": "beyond the prototype: Freecut compound clips and nested compositions",
+      "scope": "composition",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "deliveryPlanIds": [],
+      "description": "Override published control values on one instance of a composition.",
+      "id": "composition.setControlOverrides",
+      "manifestIds": [],
+      "mutatesGraph": true,
+      "owner": "FL-100",
+      "payload": {
+        "compositionClipId": "string",
+        "overrides": "object"
+      },
+      "prototypeFunctions": [],
+      "prototypeSource": "beyond the prototype: Freecut composition instance overrides",
+      "scope": "composition",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "deliveryPlanIds": ["STU-304"],
+      "description": "Publish the controls a composition exposes to its instances.",
+      "id": "composition.setPublishedControls",
+      "manifestIds": ["extra.published-controls"],
+      "mutatesGraph": true,
+      "owner": "FL-100",
+      "payload": {
+        "compositionId": "string",
+        "controls": "object[]"
+      },
+      "prototypeFunctions": [],
+      "prototypeSource": "beyond the prototype: Freecut published composition controls",
+      "scope": "composition",
+      "undoable": true
+    },
+    {
+      "capability": "gpuWorker",
+      "deliveryPlanIds": ["STU-205", "STU-303"],
+      "description": "Add a GPU effect to a clip effect stack at an index.",
+      "id": "effect.add",
+      "manifestIds": [
+        "command.addEffect",
+        "readme.effects-masks-compositing.1",
+        "readme.effects-masks-compositing.2",
+        "readme.effects-masks-compositing.3",
+        "readme.effects-masks-compositing.4",
+        "readme.effects-masks-compositing.5"
+      ],
+      "mutatesGraph": true,
+      "owner": "FL-99",
+      "payload": {
+        "clipId": "string",
+        "effect": "string",
+        "index": "number?",
+        "params": "object?"
+      },
+      "prototypeFunctions": [],
+      "prototypeSource": "beyond the prototype: Freecut GPU effect catalogue",
+      "scope": "effect",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "deliveryPlanIds": ["STU-205"],
+      "description": "Remove one effect from a clip effect stack.",
+      "id": "effect.remove",
+      "manifestIds": ["command.removeEffect"],
+      "mutatesGraph": true,
+      "owner": "FL-99",
+      "payload": {
+        "clipId": "string",
+        "effectId": "string"
+      },
+      "prototypeFunctions": [],
+      "prototypeSource": "beyond the prototype: Freecut GPU effect catalogue",
+      "scope": "effect",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "deliveryPlanIds": [],
+      "description": "Reorder the effect stack, which changes the rendered result.",
+      "id": "effect.reorder",
+      "manifestIds": [],
+      "mutatesGraph": true,
+      "owner": "FL-99",
+      "payload": {
+        "clipId": "string",
+        "effectId": "string",
+        "index": "number"
+      },
+      "prototypeFunctions": [],
+      "prototypeSource": "beyond the prototype: Freecut effect stack order",
+      "scope": "effect",
+      "undoable": true
+    },
+    {
+      "capability": "gpuWorker",
+      "deliveryPlanIds": ["STU-303"],
+      "description": "Set the parameters of one effect instance, including LUT and key controls.",
+      "id": "effect.update",
+      "manifestIds": [
+        "effect.gpu-ascii",
+        "effect.gpu-block-glitch",
+        "effect.gpu-blocks",
+        "effect.gpu-box-blur",
+        "effect.gpu-brightness",
+        "effect.gpu-bulge",
+        "effect.gpu-chroma-key",
+        "effect.gpu-color-glitch",
+        "effect.gpu-color-wheels",
+        "effect.gpu-contrast",
+        "effect.gpu-crt",
+        "effect.gpu-curves",
+        "effect.gpu-dither",
+        "effect.gpu-droste",
+        "effect.gpu-edge-detect",
+        "effect.gpu-exposure",
+        "effect.gpu-fluted-glass",
+        "effect.gpu-gaussian-blur",
+        "effect.gpu-glass-mosaic",
+        "effect.gpu-glow",
+        "effect.gpu-gradient-map",
+        "effect.gpu-grain",
+        "effect.gpu-grayscale",
+        "effect.gpu-halftone",
+        "effect.gpu-hue-shift",
+        "effect.gpu-ink",
+        "effect.gpu-invert",
+        "effect.gpu-kaleidoscope",
+        "effect.gpu-levels",
+        "effect.gpu-lut",
+        "effect.gpu-mirror",
+        "effect.gpu-motion-blur",
+        "effect.gpu-pixel-sort",
+        "effect.gpu-pixel-sort-hq",
+        "effect.gpu-pixelate",
+        "effect.gpu-posterize",
+        "effect.gpu-power-window",
+        "effect.gpu-radial-blur",
+        "effect.gpu-rgb-split",
+        "effect.gpu-ripple-glass",
+        "effect.gpu-saturation",
+        "effect.gpu-scanlines",
+        "effect.gpu-secondary-qualifier",
+        "effect.gpu-sepia",
+        "effect.gpu-sharpen",
+        "effect.gpu-temperature",
+        "effect.gpu-threshold",
+        "effect.gpu-trigger-wave",
+        "effect.gpu-twirl",
+        "effect.gpu-vhs",
+        "effect.gpu-vibrance",
+        "effect.gpu-vignette",
+        "effect.gpu-wave",
+        "effect.gpu-zoom-blur"
+      ],
+      "mutatesGraph": true,
+      "owner": "FL-99",
+      "payload": {
+        "clipId": "string",
+        "effectId": "string",
+        "params": "object"
+      },
+      "prototypeFunctions": [],
+      "prototypeSource": "beyond the prototype: Freecut GPU effect parameters",
+      "scope": "effect",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "deliveryPlanIds": [],
+      "description": "Redo the last undone revision, as a server-side revision move.",
+      "id": "history.redo",
+      "manifestIds": [],
+      "mutatesGraph": true,
+      "owner": "FL-94",
+      "payload": {
+        "toRevision": "number?"
+      },
+      "prototypeFunctions": ["redo"],
+      "prototypeSource": "redo",
+      "scope": "history",
+      "undoable": false
+    },
+    {
+      "capability": null,
+      "deliveryPlanIds": ["STU-301"],
+      "description": "Undo the last undoable revision; the stack lives with the stored project.",
+      "id": "history.undo",
+      "manifestIds": ["readme.timeline-editing.6"],
+      "mutatesGraph": true,
+      "owner": "FL-94",
+      "payload": {
+        "toRevision": "number?"
+      },
+      "prototypeFunctions": ["commit", "undo"],
+      "prototypeSource": "undo (over the commit history)",
+      "scope": "history",
+      "undoable": false
+    },
+    {
+      "capability": null,
+      "deliveryPlanIds": ["STU-403"],
+      "description": "Ask the durable job model to cancel a queued or running job.",
+      "id": "job.cancel",
+      "manifestIds": ["extra.render-queue"],
+      "mutatesGraph": false,
+      "owner": "FL-104",
+      "payload": {
+        "jobId": "string"
+      },
+      "prototypeFunctions": [],
+      "prototypeSource": "beyond the prototype: durable job cancellation",
+      "scope": "job",
+      "undoable": false
+    },
+    {
+      "capability": "analysisWorker",
+      "deliveryPlanIds": ["AI-104"],
+      "description": "Queue AI captioning of media with an explicit destination.",
+      "id": "job.enqueueCaptioning",
+      "manifestIds": ["readme.local-ai-analysis.2"],
+      "mutatesGraph": false,
+      "owner": "FL-111",
+      "payload": {
+        "clipIds": "string[]?",
+        "destinationId": "string",
+        "sampleCadence": "duration?",
+        "sequenceId": "string"
+      },
+      "prototypeFunctions": [],
+      "prototypeSource": "beyond the prototype: local vision-language captioning",
+      "scope": "job",
+      "undoable": false
+    },
+    {
+      "capability": "renderWorker",
+      "deliveryPlanIds": ["STU-306"],
+      "description": "Queue a render of any sequence to an explicit destination.",
+      "id": "job.enqueueExport",
+      "manifestIds": [
+        "readme.export.1",
+        "readme.export.2",
+        "readme.export.3",
+        "readme.export.4",
+        "readme.export.5",
+        "readme.export.6",
+        "readme.export.7"
+      ],
+      "mutatesGraph": false,
+      "owner": "FL-104",
+      "payload": {
+        "audioFormat": "string?",
+        "colour": "string",
+        "container": "string?",
+        "destinationId": "string",
+        "format": "string",
+        "quality": "string?",
+        "resolution": "string",
+        "sequenceId": "string",
+        "subtitles": "string?",
+        "videoCodec": "string?"
+      },
+      "prototypeFunctions": ["estimateRender"],
+      "prototypeSource": "estimateRender via ExportDialog",
+      "scope": "job",
+      "undoable": false
+    },
+    {
+      "capability": "analysisWorker",
+      "deliveryPlanIds": ["STU-305"],
+      "description": "Queue filler-word detection; the edit itself is applied after review.",
+      "id": "job.enqueueFillerRemoval",
+      "manifestIds": ["extra.filler-removal"],
+      "mutatesGraph": false,
+      "owner": "FL-103",
+      "payload": {
+        "clipIds": "string[]?",
+        "destinationId": "string",
+        "sequenceId": "string"
+      },
+      "prototypeFunctions": [],
+      "prototypeSource": "beyond the prototype: filler-word removal with review",
+      "scope": "job",
+      "undoable": false
+    },
+    {
+      "capability": "restorationWorker",
+      "deliveryPlanIds": ["AI-104"],
+      "description": "Queue frame interpolation for a clip to an explicit destination.",
+      "id": "job.enqueueInterpolation",
+      "manifestIds": ["extra.interpolation-rife"],
+      "mutatesGraph": false,
+      "owner": "FL-111",
+      "payload": {
+        "clipId": "string",
+        "destinationId": "string",
+        "targetFps": "rate"
+      },
+      "prototypeFunctions": [],
+      "prototypeSource": "beyond the prototype: RIFE frame interpolation",
+      "scope": "job",
+      "undoable": false
+    },
+    {
+      "capability": "generationWorker",
+      "deliveryPlanIds": ["AI-104"],
+      "description": "Queue local music generation; the result arrives as an importable asset.",
+      "id": "job.enqueueMusicGeneration",
+      "manifestIds": ["extra.musicgen", "readme.local-ai-analysis.6"],
+      "mutatesGraph": false,
+      "owner": "FL-111",
+      "payload": {
+        "destinationId": "string",
+        "duration": "duration",
+        "preset": "string?",
+        "prompt": "string"
+      },
+      "prototypeFunctions": [],
+      "prototypeSource": "beyond the prototype: local MusicGen generation",
+      "scope": "job",
+      "undoable": false
+    },
+    {
+      "capability": "renderWorker",
+      "deliveryPlanIds": ["STU-306"],
+      "description": "Queue proxy, thumbnail and waveform generation for project media.",
+      "id": "job.enqueueProxy",
+      "manifestIds": ["readme.media-import.4"],
+      "mutatesGraph": false,
+      "owner": "FL-105",
+      "payload": {
+        "assetIds": "string[]",
+        "destinationId": "string"
+      },
+      "prototypeFunctions": [],
+      "prototypeSource": "beyond the prototype: proxy and waveform generation",
+      "scope": "job",
+      "undoable": false
+    },
+    {
+      "capability": "restorationWorker",
+      "deliveryPlanIds": [],
+      "description": "Queue a Frameleaf restoration pass with an explicit, never implicit, destination.",
+      "id": "job.enqueueRestoration",
+      "manifestIds": [],
+      "mutatesGraph": false,
+      "owner": "FL-110",
+      "payload": {
+        "destinationId": "string",
+        "mode": "string",
+        "preview": "boolean",
+        "upscale": "number"
+      },
+      "prototypeFunctions": ["estimateRender"],
+      "prototypeSource": "estimateRender via RestorePanel",
+      "scope": "job",
+      "undoable": false
+    },
+    {
+      "capability": "renderWorker",
+      "deliveryPlanIds": ["AI-104"],
+      "description": "Queue a reversed conform of a clip source.",
+      "id": "job.enqueueReverseConform",
+      "manifestIds": ["extra.reverse-conform"],
+      "mutatesGraph": false,
+      "owner": "FL-111",
+      "payload": {
+        "clipId": "string",
+        "destinationId": "string"
+      },
+      "prototypeFunctions": [],
+      "prototypeSource": "beyond the prototype: reversed media conforming",
+      "scope": "job",
+      "undoable": false
+    },
+    {
+      "capability": "analysisWorker",
+      "deliveryPlanIds": ["AI-104"],
+      "description": "Queue scene detection over project media.",
+      "id": "job.enqueueSceneDetection",
+      "manifestIds": ["readme.local-ai-analysis.3"],
+      "mutatesGraph": false,
+      "owner": "FL-111",
+      "payload": {
+        "assetIds": "string[]",
+        "destinationId": "string",
+        "mode": "string",
+        "verifyWithModel": "boolean?"
+      },
+      "prototypeFunctions": [],
+      "prototypeSource": "beyond the prototype: histogram and adaptive scene detection",
+      "scope": "job",
+      "undoable": false
+    },
+    {
+      "capability": "analysisWorker",
+      "deliveryPlanIds": ["STU-305"],
+      "description": "Queue silence detection; the edit itself is applied after review.",
+      "id": "job.enqueueSilenceRemoval",
+      "manifestIds": ["extra.silence-removal"],
+      "mutatesGraph": false,
+      "owner": "FL-103",
+      "payload": {
+        "destinationId": "string",
+        "minimumSilence": "duration?",
+        "sequenceId": "string",
+        "thresholdDb": "number?"
+      },
+      "prototypeFunctions": [],
+      "prototypeSource": "beyond the prototype: silence removal with review",
+      "scope": "job",
+      "undoable": false
+    },
+    {
+      "capability": "generationWorker",
+      "deliveryPlanIds": ["AI-104"],
+      "description": "Queue a local text-to-speech voiceover; the result arrives as an asset.",
+      "id": "job.enqueueTextToSpeech",
+      "manifestIds": [
+        "extra.tts-kokoro",
+        "extra.tts-moss",
+        "extra.tts-supertonic",
+        "readme.local-ai-analysis.5"
+      ],
+      "mutatesGraph": false,
+      "owner": "FL-111",
+      "payload": {
+        "destinationId": "string",
+        "engine": "string?",
+        "text": "string",
+        "voice": "string"
+      },
+      "prototypeFunctions": [],
+      "prototypeSource": "beyond the prototype: local text-to-speech voiceovers",
+      "scope": "job",
+      "undoable": false
+    },
+    {
+      "capability": "transcriptionWorker",
+      "deliveryPlanIds": ["AI-104"],
+      "description": "Queue on-device transcription; captions land through captions.set.",
+      "id": "job.enqueueTranscription",
+      "manifestIds": ["readme.local-ai-analysis.1"],
+      "mutatesGraph": false,
+      "owner": "FL-111",
+      "payload": {
+        "destinationId": "string",
+        "language": "string",
+        "sequenceId": "string"
+      },
+      "prototypeFunctions": ["sampleCaptions"],
+      "prototypeSource": "sampleCaptions (simulated transcription in the prototype)",
+      "scope": "job",
+      "undoable": false
+    },
+    {
+      "capability": "restorationWorker",
+      "deliveryPlanIds": ["AI-104"],
+      "description": "Queue an upscale pass for a clip to an explicit destination.",
+      "id": "job.enqueueUpscale",
+      "manifestIds": ["extra.upscale-anime4k"],
+      "mutatesGraph": false,
+      "owner": "FL-111",
+      "payload": {
+        "clipId": "string",
+        "destinationId": "string",
+        "factor": "number"
+      },
+      "prototypeFunctions": [],
+      "prototypeSource": "beyond the prototype: Anime4K upscaling",
+      "scope": "job",
+      "undoable": false
+    },
+    {
+      "capability": null,
+      "deliveryPlanIds": ["STU-205", "STU-304"],
+      "description": "Add a keyframe on an animatable property at a time.",
+      "id": "keyframe.add",
+      "manifestIds": [
+        "command.addKeyframe",
+        "readme.keyframe-animation.5",
+        "readme.keyframe-animation.6"
+      ],
+      "mutatesGraph": true,
+      "owner": "FL-100",
+      "payload": {
+        "at": "time",
+        "clipId": "string",
+        "easing": "string?",
+        "property": "string",
+        "value": "object"
+      },
+      "prototypeFunctions": [],
+      "prototypeSource": "beyond the prototype: Freecut keyframe model",
+      "scope": "keyframe",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "deliveryPlanIds": ["STU-205"],
+      "description": "Remove keyframes from one property.",
+      "id": "keyframe.remove",
+      "manifestIds": ["command.removeKeyframes"],
+      "mutatesGraph": true,
+      "owner": "FL-100",
+      "payload": {
+        "clipId": "string",
+        "keyframeIds": "string[]",
+        "property": "string"
+      },
+      "prototypeFunctions": [],
+      "prototypeSource": "beyond the prototype: Freecut keyframe model",
+      "scope": "keyframe",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "deliveryPlanIds": ["STU-304"],
+      "description": "Set easing or an explicit bezier on selected keyframes.",
+      "id": "keyframe.setEasing",
+      "manifestIds": ["readme.keyframe-animation.2"],
+      "mutatesGraph": true,
+      "owner": "FL-100",
+      "payload": {
+        "bezier": "object?",
+        "clipId": "string",
+        "easing": "string",
+        "keyframeIds": "string[]",
+        "property": "string"
+      },
+      "prototypeFunctions": [],
+      "prototypeSource": "beyond the prototype: Freecut easing presets and tangents",
+      "scope": "keyframe",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "deliveryPlanIds": ["STU-304"],
+      "description": "Retime or revalue one keyframe from the graph editor or dopesheet.",
+      "id": "keyframe.update",
+      "manifestIds": ["readme.keyframe-animation.1"],
+      "mutatesGraph": true,
+      "owner": "FL-100",
+      "payload": {
+        "at": "time?",
+        "clipId": "string",
+        "keyframeId": "string",
+        "property": "string",
+        "value": "object?"
+      },
+      "prototypeFunctions": [],
+      "prototypeSource": "beyond the prototype: Freecut graph editor and dopesheet",
+      "scope": "keyframe",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "deliveryPlanIds": ["STU-306"],
+      "description": "Remap Lottie colours and themes, edit its text and adjust value slots.",
+      "id": "lottie.update",
+      "manifestIds": ["readme.media-import.2"],
+      "mutatesGraph": true,
+      "owner": "FL-105",
+      "payload": {
+        "clipId": "string",
+        "colors": "object?",
+        "slots": "object?",
+        "text": "object?"
+      },
+      "prototypeFunctions": [],
+      "prototypeSource": "beyond the prototype: Lottie colour, text and slot editing",
+      "scope": "media",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "deliveryPlanIds": ["STU-301"],
+      "description": "Add a marker on the sequence at a time.",
+      "id": "marker.add",
+      "manifestIds": ["readme.timeline-editing.6"],
+      "mutatesGraph": true,
+      "owner": "FL-94",
+      "payload": {
+        "at": "time",
+        "colour": "string?",
+        "name": "string?"
+      },
+      "prototypeFunctions": [],
+      "prototypeSource": "beyond the prototype: sequence markers",
+      "scope": "sequence",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "deliveryPlanIds": [],
+      "description": "Remove a sequence marker.",
+      "id": "marker.remove",
+      "manifestIds": [],
+      "mutatesGraph": true,
+      "owner": "FL-94",
+      "payload": {
+        "markerId": "string"
+      },
+      "prototypeFunctions": [],
+      "prototypeSource": "beyond the prototype: sequence markers",
+      "scope": "sequence",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "deliveryPlanIds": [],
+      "description": "Rename, recolour or move a sequence marker.",
+      "id": "marker.update",
+      "manifestIds": [],
+      "mutatesGraph": true,
+      "owner": "FL-94",
+      "payload": {
+        "markerId": "string",
+        "patch": "object"
+      },
+      "prototypeFunctions": [],
+      "prototypeSource": "beyond the prototype: sequence markers",
+      "scope": "sequence",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "deliveryPlanIds": ["STU-306"],
+      "description": "Reference library assets from the project without copying an original.",
+      "id": "media.import",
+      "manifestIds": ["readme.media-import.1"],
+      "mutatesGraph": true,
+      "owner": "FL-105",
+      "payload": {
+        "assetIds": "string[]"
+      },
+      "prototypeFunctions": [],
+      "prototypeSource": "beyond the prototype: project media bin",
+      "scope": "media",
+      "undoable": false
+    },
+    {
+      "capability": null,
+      "deliveryPlanIds": ["STU-306"],
+      "description": "Relink project media to another asset when the original moved.",
+      "id": "media.relink",
+      "manifestIds": ["readme.media-import.4"],
+      "mutatesGraph": true,
+      "owner": "FL-105",
+      "payload": {
+        "assetId": "string",
+        "mediaId": "string"
+      },
+      "prototypeFunctions": [],
+      "prototypeSource": "beyond the prototype: media relinking",
+      "scope": "media",
+      "undoable": false
+    },
+    {
+      "capability": null,
+      "deliveryPlanIds": [],
+      "description": "Drop unused media references from the project; originals are untouched.",
+      "id": "media.remove",
+      "manifestIds": [],
+      "mutatesGraph": true,
+      "owner": "FL-105",
+      "payload": {
+        "mediaIds": "string[]"
+      },
+      "prototypeFunctions": [],
+      "prototypeSource": "beyond the prototype: project media bin",
+      "scope": "media",
+      "undoable": false
+    },
+    {
+      "capability": null,
+      "deliveryPlanIds": ["STU-205"],
+      "description": "Place a music bed on the music track.",
+      "id": "music.add",
+      "manifestIds": ["command.addItem"],
+      "mutatesGraph": true,
+      "owner": "FL-94",
+      "payload": {
+        "at": "time",
+        "duration": "duration?",
+        "musicId": "string",
+        "volume": "number?"
+      },
+      "prototypeFunctions": ["addMusic"],
+      "prototypeSource": "addMusic",
+      "scope": "clip",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "deliveryPlanIds": [],
+      "description": "Tell the host the engine no longer needs the frame it last requested.",
+      "id": "preview.release",
+      "manifestIds": [],
+      "mutatesGraph": false,
+      "owner": "FL-96",
+      "payload": {},
+      "prototypeFunctions": [],
+      "prototypeSource": "Studio.jsx preview monitor",
+      "scope": "preview",
+      "undoable": false
+    },
+    {
+      "capability": "gpuWorker",
+      "deliveryPlanIds": [],
+      "description": "Ask for one frame of the current revision, rendered at an exact rational time.",
+      "id": "preview.request",
+      "manifestIds": [],
+      "mutatesGraph": false,
+      "owner": "FL-96",
+      "payload": {
+        "at": "time",
+        "quality": "string",
+        "viewportHeight": "number",
+        "viewportWidth": "number"
+      },
+      "prototypeFunctions": [],
+      "prototypeSource": "Studio.jsx preview monitor",
+      "scope": "preview",
+      "undoable": false
+    },
+    {
+      "capability": null,
+      "deliveryPlanIds": ["STU-301"],
+      "description": "Apply a project template, including canvas and frame rate defaults.",
+      "id": "project.applyTemplate",
+      "manifestIds": ["readme.timeline-editing.8"],
+      "mutatesGraph": true,
+      "owner": "FL-94",
+      "payload": {
+        "templateId": "string"
+      },
+      "prototypeFunctions": [],
+      "prototypeSource": "beyond the prototype: project templates",
+      "scope": "project",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "deliveryPlanIds": ["STU-204"],
+      "description": "Export a validated portable project bundle, optionally with copies of the media the person owns.",
+      "id": "project.exportBundle",
+      "manifestIds": ["readme.projects-storage.5"],
+      "mutatesGraph": false,
+      "owner": "FL-91",
+      "payload": {
+        "includeMedia": "boolean?",
+        "sequenceIds": "string[]?"
+      },
+      "prototypeFunctions": [],
+      "prototypeSource": "beyond the prototype: portable project bundles",
+      "scope": "project",
+      "undoable": false
+    },
+    {
+      "capability": null,
+      "deliveryPlanIds": [],
+      "description": "Import a validated portable project bundle into this project.",
+      "id": "project.importBundle",
+      "manifestIds": [],
+      "mutatesGraph": true,
+      "owner": "FL-91",
+      "payload": {
+        "bundleUploadId": "string"
+      },
+      "prototypeFunctions": [],
+      "prototypeSource": "beyond the prototype: portable project bundles",
+      "scope": "project",
+      "undoable": false
+    },
+    {
+      "capability": null,
+      "deliveryPlanIds": [],
+      "description": "Rename the project.",
+      "id": "project.rename",
+      "manifestIds": [],
+      "mutatesGraph": true,
+      "owner": "FL-94",
+      "payload": {
+        "name": "string"
+      },
+      "prototypeFunctions": ["renameProject"],
+      "prototypeSource": "renameProject",
+      "scope": "project",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "deliveryPlanIds": ["STU-302"],
+      "description": "Set the project master bus, which is not the monitor or device volume.",
+      "id": "project.setMasterAudio",
+      "manifestIds": ["readme.preview-playback.6"],
+      "mutatesGraph": true,
+      "owner": "FL-103",
+      "payload": {
+        "ducking": "boolean?",
+        "gainDb": "number?",
+        "muted": "boolean?"
+      },
+      "prototypeFunctions": [],
+      "prototypeSource": "beyond the prototype: project master bus",
+      "scope": "project",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "deliveryPlanIds": [],
+      "description": "Set editor preferences stored with the project: mode, guides, loop, ducking.",
+      "id": "project.setSettings",
+      "manifestIds": [],
+      "mutatesGraph": true,
+      "owner": "FL-94",
+      "payload": {
+        "patch": "object"
+      },
+      "prototypeFunctions": ["setSettings"],
+      "prototypeSource": "setSettings",
+      "scope": "project",
+      "undoable": false
+    },
+    {
+      "capability": null,
+      "deliveryPlanIds": ["STU-304"],
+      "description": "Bake a procedural motion modifier into explicit keyframes.",
+      "id": "property.bakeModifier",
+      "manifestIds": ["readme.keyframe-animation.3"],
+      "mutatesGraph": true,
+      "owner": "FL-100",
+      "payload": {
+        "clipId": "string",
+        "modifierId": "string",
+        "property": "string"
+      },
+      "prototypeFunctions": [],
+      "prototypeSource": "beyond the prototype: procedural motion modifiers",
+      "scope": "keyframe",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "deliveryPlanIds": ["STU-304"],
+      "description": "Set or clear a property expression.",
+      "id": "property.setExpression",
+      "manifestIds": ["extra.expressions"],
+      "mutatesGraph": true,
+      "owner": "FL-100",
+      "payload": {
+        "clipId": "string",
+        "expression": "string?",
+        "property": "string"
+      },
+      "prototypeFunctions": [],
+      "prototypeSource": "beyond the prototype: property expressions",
+      "scope": "keyframe",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "deliveryPlanIds": [],
+      "description": "Attach or clear a procedural motion modifier on a property.",
+      "id": "property.setModifier",
+      "manifestIds": [],
+      "mutatesGraph": true,
+      "owner": "FL-100",
+      "payload": {
+        "clipId": "string",
+        "modifier": "object?",
+        "property": "string"
+      },
+      "prototypeFunctions": [],
+      "prototypeSource": "beyond the prototype: procedural motion modifiers",
+      "scope": "keyframe",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "deliveryPlanIds": [],
+      "description": "Add a timestamped review comment.",
+      "id": "review.add",
+      "manifestIds": [],
+      "mutatesGraph": false,
+      "owner": "FL-94",
+      "payload": {
+        "text": "string",
+        "time": "time"
+      },
+      "prototypeFunctions": ["addReviewComment"],
+      "prototypeSource": "addReviewComment",
+      "scope": "review",
+      "undoable": false
+    },
+    {
+      "capability": null,
+      "deliveryPlanIds": [],
+      "description": "Remove a review comment.",
+      "id": "review.remove",
+      "manifestIds": [],
+      "mutatesGraph": false,
+      "owner": "FL-94",
+      "payload": {
+        "commentId": "string"
+      },
+      "prototypeFunctions": ["removeReviewComment"],
+      "prototypeSource": "removeReviewComment",
+      "scope": "review",
+      "undoable": false
+    },
+    {
+      "capability": null,
+      "deliveryPlanIds": [],
+      "description": "Edit or resolve a review comment.",
+      "id": "review.update",
+      "manifestIds": [],
+      "mutatesGraph": false,
+      "owner": "FL-94",
+      "payload": {
+        "commentId": "string",
+        "patch": "object"
+      },
+      "prototypeFunctions": ["updateReviewComment"],
+      "prototypeSource": "updateReviewComment",
+      "scope": "review",
+      "undoable": false
+    },
+    {
+      "capability": null,
+      "deliveryPlanIds": ["STU-301"],
+      "description": "Add a sequence to the project.",
+      "id": "sequence.add",
+      "manifestIds": ["readme.timeline-editing.2"],
+      "mutatesGraph": true,
+      "owner": "FL-94",
+      "payload": {
+        "fps": "rate?",
+        "height": "number?",
+        "name": "string",
+        "width": "number?"
+      },
+      "prototypeFunctions": [],
+      "prototypeSource": "beyond the prototype: the prototype ships two fixed sequences",
+      "scope": "sequence",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "deliveryPlanIds": [],
+      "description": "Duplicate a sequence, including its tracks and clips.",
+      "id": "sequence.duplicate",
+      "manifestIds": [],
+      "mutatesGraph": true,
+      "owner": "FL-94",
+      "payload": {
+        "name": "string?",
+        "sequenceId": "string"
+      },
+      "prototypeFunctions": [],
+      "prototypeSource": "beyond the prototype: the prototype ships two fixed sequences",
+      "scope": "sequence",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "deliveryPlanIds": [],
+      "description": "Remove a sequence; the project keeps at least one.",
+      "id": "sequence.remove",
+      "manifestIds": [],
+      "mutatesGraph": true,
+      "owner": "FL-94",
+      "payload": {
+        "sequenceId": "string"
+      },
+      "prototypeFunctions": [],
+      "prototypeSource": "beyond the prototype: the prototype ships two fixed sequences",
+      "scope": "sequence",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "deliveryPlanIds": [],
+      "description": "Switch the active sequence, which is stored on the project.",
+      "id": "sequence.setActive",
+      "manifestIds": [],
+      "mutatesGraph": true,
+      "owner": "FL-94",
+      "payload": {
+        "sequenceId": "string"
+      },
+      "prototypeFunctions": ["setActiveSequence"],
+      "prototypeSource": "setActiveSequence",
+      "scope": "sequence",
+      "undoable": false
+    },
+    {
+      "capability": null,
+      "deliveryPlanIds": [],
+      "description": "Set sequence name, caption language and caption burn-in.",
+      "id": "sequence.setFields",
+      "manifestIds": [],
+      "mutatesGraph": true,
+      "owner": "FL-94",
+      "payload": {
+        "captionLanguage": "string?",
+        "captionsBurnIn": "boolean?",
+        "name": "string?"
+      },
+      "prototypeFunctions": ["setSequenceFields"],
+      "prototypeSource": "setSequenceFields",
+      "scope": "sequence",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "deliveryPlanIds": ["STU-301"],
+      "description": "Set the sequence canvas and frame rate, including auto-match from first media.",
+      "id": "sequence.setSettings",
+      "manifestIds": ["readme.timeline-editing.8"],
+      "mutatesGraph": true,
+      "owner": "FL-94",
+      "payload": {
+        "fps": "rate?",
+        "height": "number?",
+        "sequenceId": "string",
+        "width": "number?"
+      },
+      "prototypeFunctions": [],
+      "prototypeSource": "beyond the prototype: canvas and frame rate are fixed there",
+      "scope": "sequence",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "deliveryPlanIds": ["STU-304"],
+      "description": "Set per-character, per-word or per-line text animation.",
+      "id": "text.setMotion",
+      "manifestIds": ["readme.keyframe-animation.4"],
+      "mutatesGraph": true,
+      "owner": "FL-100",
+      "payload": {
+        "clipId": "string",
+        "motion": "object?"
+      },
+      "prototypeFunctions": [],
+      "prototypeSource": "beyond the prototype: per-character motion text",
+      "scope": "clip",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "deliveryPlanIds": ["STU-205"],
+      "description": "Add a title clip on the title track.",
+      "id": "title.add",
+      "manifestIds": ["command.addText"],
+      "mutatesGraph": true,
+      "owner": "FL-94",
+      "payload": {
+        "animation": "string?",
+        "at": "time",
+        "duration": "duration?",
+        "position": "string?",
+        "style": "string?",
+        "text": "string"
+      },
+      "prototypeFunctions": ["addTitle"],
+      "prototypeSource": "addTitle",
+      "scope": "clip",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "deliveryPlanIds": ["STU-205"],
+      "description": "Add a track of a kind at an index.",
+      "id": "track.add",
+      "manifestIds": ["command.addTrack"],
+      "mutatesGraph": true,
+      "owner": "FL-94",
+      "payload": {
+        "index": "number?",
+        "kind": "string",
+        "name": "string?"
+      },
+      "prototypeFunctions": [],
+      "prototypeSource": "beyond the prototype: its six track kinds are fixed",
+      "scope": "track",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "deliveryPlanIds": [],
+      "description": "Remove a track and the clips on it.",
+      "id": "track.remove",
+      "manifestIds": [],
+      "mutatesGraph": true,
+      "owner": "FL-94",
+      "payload": {
+        "trackId": "string"
+      },
+      "prototypeFunctions": [],
+      "prototypeSource": "beyond the prototype: its six track kinds are fixed",
+      "scope": "track",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "deliveryPlanIds": [],
+      "description": "Reorder tracks, which changes compositing order.",
+      "id": "track.reorder",
+      "manifestIds": [],
+      "mutatesGraph": true,
+      "owner": "FL-94",
+      "payload": {
+        "index": "number",
+        "trackId": "string"
+      },
+      "prototypeFunctions": [],
+      "prototypeSource": "beyond the prototype: its track order is fixed",
+      "scope": "track",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "deliveryPlanIds": ["STU-301"],
+      "description": "Set track name, mute, lock, solo and gain.",
+      "id": "track.set",
+      "manifestIds": ["readme.timeline-editing.5"],
+      "mutatesGraph": true,
+      "owner": "FL-94",
+      "payload": {
+        "patch": "object",
+        "trackId": "string"
+      },
+      "prototypeFunctions": ["setTrack"],
+      "prototypeSource": "setTrack",
+      "scope": "track",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "deliveryPlanIds": ["STU-305"],
+      "description": "Set the track fader, pan and the track EQ stage.",
+      "id": "track.setAudio",
+      "manifestIds": ["readme.audio.1", "readme.audio.3"],
+      "mutatesGraph": true,
+      "owner": "FL-103",
+      "payload": {
+        "eq": "object?",
+        "gainDb": "number?",
+        "pan": "number?",
+        "trackId": "string"
+      },
+      "prototypeFunctions": ["setTrack"],
+      "prototypeSource": "setTrack (gain only in the prototype)",
+      "scope": "track",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "deliveryPlanIds": ["STU-305"],
+      "description": "Place a recorded or generated voiceover on the voice track.",
+      "id": "voiceover.add",
+      "manifestIds": ["extra.microphone"],
+      "mutatesGraph": true,
+      "owner": "FL-94",
+      "payload": {
+        "at": "time",
+        "duration": "duration",
+        "uploadId": "string"
+      },
+      "prototypeFunctions": ["addVoiceover"],
+      "prototypeSource": "addVoiceover",
+      "scope": "clip",
+      "undoable": true
+    }
+  ],
+  "counts": {
+    "commands": 90,
+    "commandsWithoutManifestRow": 23,
+    "commandsWithoutPrototypeFunction": 53,
+    "manifestRows": 210,
+    "manifestRowsDeclaredNonCommand": 28,
+    "manifestRowsMapped": 182
+  },
+  "engine": "freecut",
+  "engineRevision": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+  "fieldTypes": [
+    "boolean",
+    "duration",
+    "number",
+    "object",
+    "object[]",
+    "rate",
+    "string",
+    "string[]",
+    "time"
+  ],
+  "generator": "scripts/frameleaf-studio-commands.mjs",
+  "issueMapPath": "docs/docs/developer/frameleaf-plan/freecut-issue-map.json",
+  "manifestPath": "studio/freecut-feature-manifest.json",
+  "nonCommandRows": [
+    {
+      "id": "extra.bento",
+      "owner": "FL-98",
+      "reason": "Panel layout preset; a client preference, not a graph change."
+    },
+    {
+      "id": "extra.portable-headless",
+      "owner": "FL-91",
+      "reason": "Workspace and lifecycle API the host owns; not an in-editor command."
+    },
+    {
+      "id": "module.docs",
+      "owner": "FL-88",
+      "reason": "Source module inventory row, not an action."
+    },
+    {
+      "id": "module.editor",
+      "owner": "FL-88",
+      "reason": "Source module inventory row, not an action."
+    },
+    {
+      "id": "module.effects",
+      "owner": "FL-99",
+      "reason": "Source module inventory row, not an action."
+    },
+    {
+      "id": "module.export",
+      "owner": "FL-105",
+      "reason": "Source module inventory row, not an action."
+    },
+    {
+      "id": "module.keyframes",
+      "owner": "FL-100",
+      "reason": "Source module inventory row, not an action."
+    },
+    {
+      "id": "module.lottie-browser",
+      "owner": "FL-105",
+      "reason": "Source module inventory row, not an action."
+    },
+    {
+      "id": "module.media-library",
+      "owner": "FL-105",
+      "reason": "Source module inventory row, not an action."
+    },
+    {
+      "id": "module.preview",
+      "owner": "FL-98",
+      "reason": "Source module inventory row, not an action."
+    },
+    {
+      "id": "module.project-bundle",
+      "owner": "FL-91",
+      "reason": "Source module inventory row, not an action."
+    },
+    {
+      "id": "module.projects",
+      "owner": "FL-91",
+      "reason": "Source module inventory row, not an action."
+    },
+    {
+      "id": "module.scene-browser",
+      "owner": "FL-111",
+      "reason": "Source module inventory row, not an action."
+    },
+    {
+      "id": "module.settings",
+      "owner": "FL-88",
+      "reason": "Source module inventory row, not an action."
+    },
+    {
+      "id": "module.timeline",
+      "owner": "FL-94",
+      "reason": "Source module inventory row, not an action."
+    },
+    {
+      "id": "module.workspace-gate",
+      "owner": "FL-91",
+      "reason": "Source module inventory row, not an action."
+    },
+    {
+      "id": "readme.audio.4",
+      "owner": "FL-103",
+      "reason": "Render-path preservation obligation proved by export evidence, not by a command."
+    },
+    {
+      "id": "readme.effects-masks-compositing.8",
+      "owner": "FL-99",
+      "reason": "Colour picker and eyedropper; an input control whose result travels in another payload."
+    },
+    {
+      "id": "readme.local-ai-analysis.7",
+      "owner": "FL-111",
+      "reason": "Model cache and unload controls live in settings, outside the project graph."
+    },
+    {
+      "id": "readme.media-import.3",
+      "owner": "FL-105",
+      "reason": "ProRes decode is a deployment capability, not an editing command."
+    },
+    {
+      "id": "readme.preview-playback.2",
+      "owner": "FL-98",
+      "reason": "Playback clock and composition runtime; no graph change."
+    },
+    {
+      "id": "readme.preview-playback.3",
+      "owner": "FL-98",
+      "reason": "Scrub overlays, prewarming and adaptive quality; no graph change."
+    },
+    {
+      "id": "readme.preview-playback.5",
+      "owner": "FL-98",
+      "reason": "Colour scopes are read-only measurement surfaces."
+    },
+    {
+      "id": "readme.projects-storage.1",
+      "owner": "FL-91",
+      "reason": "Project storage is server-side here; the workspace folder API does not apply."
+    },
+    {
+      "id": "readme.projects-storage.2",
+      "owner": "FL-91",
+      "reason": "Workspace switching is replaced by the account library; not an editing command."
+    },
+    {
+      "id": "readme.projects-storage.3",
+      "owner": "FL-91",
+      "reason": "Project storage and migration are host lifecycle, not editing commands."
+    },
+    {
+      "id": "readme.projects-storage.4",
+      "owner": "FL-91",
+      "reason": "Project trash and delete flows are host lifecycle with their own authorization."
+    },
+    {
+      "id": "readme.projects-storage.6",
+      "owner": "FL-91",
+      "reason": "Auto-save, thumbnails and orphan cleanup are host obligations, not commands."
+    }
+  ],
+  "prototypePath": "design/frameleaf/template/src/studio-project.mjs",
+  "schemaVersion": 1,
+  "scopes": [
+    "clip",
+    "composition",
+    "effect",
+    "history",
+    "job",
+    "keyframe",
+    "media",
+    "preview",
+    "project",
+    "review",
+    "sequence",
+    "track"
+  ],
+  "status": "vocabulary-published-semantics-owned-by-later-stories",
+  "webVocabularyPath": "web/src/lib/frameleaf/studio/commands.ts"
+}

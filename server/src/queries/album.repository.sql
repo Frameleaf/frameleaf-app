@@ -77,7 +77,17 @@ select
         where
           "album_asset"."albumId" = "album"."id"
           and "asset"."deletedAt" is null
-          and "asset"."visibility" in ('archive', 'timeline')
+          and (
+            "asset"."visibility" in ('archive', 'timeline')
+            and not exists (
+              select
+                1
+              from
+                asset_lock
+              where
+                asset_lock."assetId" = "asset"."id"
+            )
+          )
         order by
           "asset"."fileCreatedAt" desc
       ) as "asset"
@@ -228,7 +238,17 @@ from
   "asset"
   inner join "album_asset" on "album_asset"."assetId" = "asset"."id"
 where
-  "asset"."visibility" in ('archive', 'timeline')
+  (
+    "asset"."visibility" in ('archive', 'timeline')
+    and not exists (
+      select
+        1
+      from
+        asset_lock
+      where
+        asset_lock."assetId" = "asset"."id"
+    )
+  )
   and "album_asset"."albumId" in ($1)
   and "asset"."deletedAt" is null
 group by
@@ -463,7 +483,17 @@ select
         where
           "album_asset"."albumId" = "album"."id"
           and "asset"."deletedAt" is null
-          and "asset"."visibility" in ('archive', 'timeline')
+          and (
+            "asset"."visibility" in ('archive', 'timeline')
+            and not exists (
+              select
+                1
+              from
+                asset_lock
+              where
+                asset_lock."assetId" = "asset"."id"
+            )
+          )
         order by
           "asset"."fileCreatedAt" desc
       ) as "asset"
@@ -480,6 +510,18 @@ from
 where
   "id_ancestor" = $1
   and "id_descendant" != $2
+
+-- AlbumRepository.getChildIds
+select
+  "id"
+from
+  "album"
+where
+  "parentId" = $1
+  and "deletedAt" is null
+order by
+  "sortOrder" asc nulls last,
+  "createdAt" desc
 
 -- AlbumRepository.getAncestorIds
 select
@@ -499,6 +541,15 @@ where
   "id_ancestor" = $1
   and "id_descendant" != $2
 
+-- AlbumRepository.getPositions
+SELECT
+  "albumId"::text AS "albumId",
+  position
+FROM
+  immich_fork.album_position
+WHERE
+  "userId" = $1::uuid
+
 -- AlbumRepository.getContributorCounts
 select
   "asset"."ownerId" as "userId",
@@ -509,6 +560,14 @@ from
 where
   "asset"."deletedAt" is null
   and "album_asset"."albumId" = $1
+  and not exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
+  )
   and not (
     case
       when "asset"."id" is null then false

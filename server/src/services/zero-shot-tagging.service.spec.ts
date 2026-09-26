@@ -46,7 +46,11 @@ describe(ZeroShotTaggingService.name, () => {
     await sut.tagAsset('asset-2', OWNER_ID, EMBEDDING);
 
     expect(mocks.machineLearning.encodeText).toHaveBeenCalledTimes(CLIP_ZERO_SHOT_LABELS.length);
-    expect(mocks.machineLearning.encodeText).toHaveBeenCalledWith(expect.any(String), { modelName: 'memo-model' });
+    expect(mocks.machineLearning.encodeText).toHaveBeenCalledWith(
+      expect.objectContaining({ destinationId: expect.any(String), workload: expect.any(String) }),
+      expect.any(String),
+      { modelName: 'memo-model' },
+    );
   });
 
   it('logs ML failures without throwing, and retries on the next call', async () => {

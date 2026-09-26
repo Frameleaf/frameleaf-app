@@ -3,6 +3,7 @@ import { ApiTags } from '@nestjs/swagger';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import { AssetResponseDto } from 'src/dtos/asset-response.dto.js';
+import { FolderSummaryResponseDto } from 'src/dtos/view.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
 import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
 import { ViewService } from 'src/services/view.service.js';
@@ -21,6 +22,18 @@ export class ViewController {
   })
   getUniqueOriginalPaths(@Auth() auth: AuthDto): Promise<string[]> {
     return this.service.getUniqueOriginalPaths(auth);
+  }
+
+  @Get('folder/summary')
+  @Authenticated({ permission: Permission.FolderRead })
+  @Endpoint({
+    summary: 'Retrieve folder summaries',
+    description:
+      'Retrieve, for each folder, how many originals it holds directly and their size in bytes, counting only the Timeline items the folder views list.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  getFolderSummary(@Auth() auth: AuthDto): Promise<FolderSummaryResponseDto[]> {
+    return this.service.getFolderSummary(auth);
   }
 
   @Get('folder')

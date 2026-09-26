@@ -1,3 +1,4 @@
+import { sql } from 'kysely';
 import { DateTime } from 'luxon';
 import { InjectKysely } from 'nestjs-kysely';
 import type { Insertable, Kysely, Updateable } from 'kysely';
@@ -52,6 +53,22 @@ export class NotificationRepository {
       .where('deletedAt', 'is', null)
       .orderBy('createdAt', 'desc')
       .execute();
+  }
+
+  /**
+   * FL-155: whether `userId` already has a notification carrying `dedupeKey` (in `data`) created
+   * after `since`, read or not, so a repeating condition notifies once per window.
+   */
+  @GenerateSql({ params: [DummyValue.UUID, DummyValue.STRING, DummyValue.DATE] })
+  async findRecentByDedupeKey(userId: string, dedupeKey: string, since: Date) {
+    const row = await this.db
+      .selectFrom('notification')
+      .select('id')
+      .where('userId', '=', userId)
+      .where(sql<string>`"data"->>'dedupeKey'`, '=', dedupeKey)
+      .where('createdAt', '>', since)
+      .executeTakeFirst();
+    return row ?? null;
   }
 
   create(notification: Insertable<NotificationTable>) {

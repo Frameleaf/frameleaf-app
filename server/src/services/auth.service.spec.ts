@@ -4,8 +4,8 @@ import type { UserMetadataItem } from 'src/types.js';
 import { SALT_ROUNDS } from 'src/constants.js';
 import { UserAdmin } from 'src/database.js';
 import { AuthDto, SignUpDto } from 'src/dtos/auth.dto.js';
-import { AuthType, Permission } from 'src/enum.js';
-import { AuthService } from 'src/services/auth.service.js';
+import { AuthType, Permission, SystemMetadataKey, UserMetadataKey } from 'src/enum.js';
+import { AuthService, emailVerificationProblem } from 'src/services/auth.service.js';
 import { ApiKeyFactory } from 'test/factories/api-key.factory.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
 import { OAuthProfileFactory } from 'test/factories/oauth-profile.factory.js';
@@ -256,6 +256,89 @@ describe(AuthService.name, () => {
       expect(mocks.event.emit).toHaveBeenCalledWith('SessionDelete', { sessionId: 'token123' });
     });
 
+    describe('for a Sign in with Frameleaf session (FL-177)', () => {
+      const auth = { user: { id: '123' }, session: { id: 'fl-session' } } as AuthDto;
+
+      beforeEach(() => {
+        mocks.config.getEnv.mockReturnValue({
+          ...mocks.config.getEnv(),
+          frameleafCloud: { ...mocks.config.getEnv().frameleafCloud, url: 'https://api.frameleaf.cloud' },
+        });
+        mocks.systemMetadata.get.mockImplementation((key) =>
+          Promise.resolve(
+            (key === SystemMetadataKey.FrameleafCloudLink
+              ? {
+                  status: 'linked',
+                  cloudUrl: 'https://api.frameleaf.cloud',
+                  instanceId: 'instance-1',
+                  oidc: {
+                    issuer: 'https://id.frameleaf.cloud',
+                    clientId: 'instance-1',
+                    scope: 'openid email profile',
+                    roleClaim: 'frameleaf_role',
+                    storageLabelClaim: '',
+                  },
+                }
+              : null) as never,
+          ),
+        );
+        mocks.database.withLock.mockImplementation((_lock, callback) => callback() as never);
+        mocks.instanceIdentity.loadOrCreate.mockResolvedValue({ instanceId: 'instance-1', kid: 'kid-1' } as never);
+        mocks.session.get.mockResolvedValue({
+          id: 'fl-session',
+          expiresAt: null,
+          oauthBearerToken: 'id-token-1',
+          pinExpiresAt: null,
+        });
+        mocks.session.delete.mockResolvedValue();
+        mocks.frameleafAccount.getSession.mockResolvedValue({ sessionId: 'fl-session', sub: 'fl-sub' } as never);
+      });
+
+      it('ends the Frameleaf session through the issuer’s end_session_endpoint', async () => {
+        mocks.oauth.getLogoutEndpoint.mockResolvedValue('https://id.frameleaf.cloud/session/end');
+
+        const result = await sut.logout(auth, AuthType.Password);
+
+        const url = new URL(result.redirectUri);
+        expect(`${url.origin}${url.pathname}`).toBe('https://id.frameleaf.cloud/session/end');
+        expect(url.searchParams.get('client_id')).toBe('instance-1');
+        expect(url.searchParams.get('id_token_hint')).toBe('id-token-1');
+        expect(mocks.oauth.getLogoutEndpoint).toHaveBeenCalledWith(
+          expect.objectContaining({ clientId: 'instance-1', issuerUrl: 'https://id.frameleaf.cloud' }),
+        );
+        expect(mocks.session.delete).toHaveBeenCalledWith('fl-session');
+      });
+
+      it('never sends anyone to an end-session endpoint outside the configured cloud', async () => {
+        mocks.oauth.getLogoutEndpoint.mockResolvedValue('https://id.elsewhere.test/session/end');
+
+        await expect(sut.logout(auth, AuthType.Password)).resolves.toEqual({
+          successful: true,
+          redirectUri: '/auth/login?autoLaunch=0',
+        });
+      });
+
+      it('signs out locally when the issuer cannot be reached', async () => {
+        mocks.oauth.getLogoutEndpoint.mockRejectedValue(new Error('unreachable'));
+
+        await expect(sut.logout(auth, AuthType.Password)).resolves.toEqual({
+          successful: true,
+          redirectUri: '/auth/login?autoLaunch=0',
+        });
+        expect(mocks.session.delete).toHaveBeenCalledWith('fl-session');
+      });
+
+      it('leaves a session Sign in with Frameleaf did not create to the usual sign-out', async () => {
+        mocks.frameleafAccount.getSession.mockResolvedValue(undefined);
+
+        await expect(sut.logout(auth, AuthType.Password)).resolves.toEqual({
+          successful: true,
+          redirectUri: '/auth/login?autoLaunch=0',
+        });
+        expect(mocks.oauth.getLogoutEndpoint).not.toHaveBeenCalled();
+      });
+    });
+
     it('should return the default redirect if auth type is OAUTH but oauth is not enabled', async () => {
       const auth = { user: { id: '123' } } as AuthDto;
 
@@ -268,6 +351,68 @@ describe(AuthService.name, () => {
 
   describe('backchannelLogout', () => {
     const dto = { logout_token: 'fake-jwt-token' };
+
+    describe('for Sign in with Frameleaf (FL-158)', () => {
+      const token = (aud: string) =>
+        ['e30', Buffer.from(JSON.stringify({ aud })).toString('base64url'), 'sig'].join('.');
+
+      beforeEach(() => {
+        mocks.config.getEnv.mockReturnValue({
+          ...mocks.config.getEnv(),
+          frameleafCloud: { ...mocks.config.getEnv().frameleafCloud, url: 'https://cloud.test' },
+        });
+        mocks.systemMetadata.get.mockImplementation((key) =>
+          Promise.resolve(
+            (key === SystemMetadataKey.FrameleafCloudLink
+              ? {
+                  status: 'linked',
+                  cloudUrl: 'https://cloud.test',
+                  instanceId: 'instance-1',
+                  oidc: {
+                    issuer: 'https://id.cloud.test',
+                    clientId: 'instance-1',
+                    scope: 'openid',
+                    roleClaim: 'frameleaf_role',
+                    storageLabelClaim: '',
+                  },
+                }
+              : null) as never,
+          ),
+        );
+        // FL-177: the client authenticates with this server's key only
+        mocks.database.withLock.mockImplementation((_lock, callback) => callback() as never);
+        mocks.instanceIdentity.loadOrCreate.mockResolvedValue({ instanceId: 'instance-1', kid: 'kid-1' } as never);
+      });
+
+      it('ends every session tagged with the sid or sub, verified against the Frameleaf client', async () => {
+        mocks.oauth.validateLogoutToken.mockResolvedValue({ sid: 'fl-sid', sub: 'fl-sub' });
+        mocks.session.delete.mockResolvedValue();
+        mocks.frameleafAccount.findSessions.mockResolvedValue([
+          { sessionId: 'session-1' },
+          { sessionId: 'session-2' },
+        ] as never);
+
+        await sut.backchannelLogout({ logout_token: token('instance-1') });
+
+        expect(mocks.oauth.validateLogoutToken).toHaveBeenCalledWith(
+          expect.objectContaining({ clientId: 'instance-1', issuerUrl: 'https://id.cloud.test' }),
+          expect.any(String),
+        );
+        expect(mocks.frameleafAccount.findSessions).toHaveBeenCalledWith({ sid: 'fl-sid', sub: 'fl-sub' });
+        expect(mocks.session.delete).toHaveBeenCalledWith('session-1');
+        expect(mocks.session.delete).toHaveBeenCalledWith('session-2');
+        expect(mocks.event.emit).toHaveBeenCalledWith('SessionDelete', { sessionId: 'session-2' });
+        expect(mocks.frameleafAccount.deleteSessions).toHaveBeenCalledWith(['session-1', 'session-2']);
+        expect(mocks.session.invalidateOAuth).not.toHaveBeenCalled();
+      });
+
+      it('leaves a token for another audience to the administrator’s own provider', async () => {
+        await expect(sut.backchannelLogout({ logout_token: token('someone-else') })).rejects.toThrow(
+          'Received backchannel logout request but OAuth is not enabled',
+        );
+        expect(mocks.frameleafAccount.findSessions).not.toHaveBeenCalled();
+      });
+    });
 
     it('should throw a Bad Request Exception if OAuth is not enabled', async () => {
       await expect(sut.backchannelLogout(dto)).rejects.toBeInstanceOf(BadRequestException);
@@ -414,6 +559,54 @@ describe(AuthService.name, () => {
       ).rejects.toBeInstanceOf(UnauthorizedException);
     });
 
+    it('says an expired key expired, with the same message and nothing about the link', async () => {
+      mocks.sharedLink.getByKey.mockResolvedValue(sharedLinkStub.expired as any);
+
+      const error = await sut
+        .authenticate({
+          headers: { 'x-immich-share-key': 'key' },
+          queryParams: {},
+          metadata: { adminRoute: false, sharedLinkRoute: true, uri: 'test' },
+        })
+        .catch((error_: UnauthorizedException) => error_);
+
+      expect(error).toBeInstanceOf(UnauthorizedException);
+      expect((error as UnauthorizedException).getResponse()).toEqual({
+        message: 'Invalid share key',
+        error: 'Unauthorized',
+        statusCode: 401,
+        reason: 'expired',
+      });
+    });
+
+    it('does not say a link of a removed account expired', async () => {
+      mocks.sharedLink.getByKey.mockResolvedValue({ ...sharedLinkStub.expired, user: null } as any);
+
+      const error = await sut
+        .authenticate({
+          headers: { 'x-immich-share-key': 'key' },
+          queryParams: {},
+          metadata: { adminRoute: false, sharedLinkRoute: true, uri: 'test' },
+        })
+        .catch((error_: UnauthorizedException) => error_);
+
+      expect((error as UnauthorizedException).getResponse()).not.toHaveProperty('reason');
+    });
+
+    it('gives an unknown key no reason', async () => {
+      mocks.sharedLink.getByKey.mockResolvedValue(void 0);
+
+      const error = await sut
+        .authenticate({
+          headers: { 'x-immich-share-key': 'key' },
+          queryParams: {},
+          metadata: { adminRoute: false, sharedLinkRoute: true, uri: 'test' },
+        })
+        .catch((error_: UnauthorizedException) => error_);
+
+      expect((error as UnauthorizedException).getResponse()).not.toHaveProperty('reason');
+    });
+
     it('should not accept a key on a non-shared route', async () => {
       mocks.sharedLink.getByKey.mockResolvedValue(sharedLinkStub.valid as any);
 
@@ -555,54 +748,13 @@ describe(AuthService.name, () => {
       });
     });
 
-    it('should hide NSFW assets when configured and the session is not elevated', async () => {
+    it('should leave sensitive media to the lock record instead of the session filter (FL-34)', async () => {
       const session = SessionFactory.create();
       const sessionWithToken = {
         id: session.id,
         updatedAt: session.updatedAt,
         user: UserFactory.create(),
         pinExpiresAt: null,
-        appVersion: null,
-        oauthSid: null,
-      };
-
-      mocks.systemMetadata.get.mockResolvedValue({
-        machineLearning: { nsfwDetection: { hideFromLibrary: true } },
-      });
-      mocks.session.getByToken.mockResolvedValue(sessionWithToken);
-      const hiddenContent = {
-        includeNsfw: true,
-        personIds: [],
-        scope: 'owned',
-        tagIds: [],
-        userId: sessionWithToken.user.id,
-      };
-
-      await expect(
-        sut.authenticate({
-          headers: { cookie: 'immich_access_token=auth_token' },
-          queryParams: {},
-          metadata: { adminRoute: false, sharedLinkRoute: false, uri: 'test' },
-        }),
-      ).resolves.toEqual({
-        user: sessionWithToken.user,
-        session: {
-          id: session.id,
-          hasElevatedPermission: false,
-        },
-        hiddenContent,
-        hideNsfwAssets: true,
-        suppressedContent: hiddenContent,
-      });
-    });
-
-    it('should not hide NSFW assets when the PIN session is elevated', async () => {
-      const session = SessionFactory.create();
-      const sessionWithToken = {
-        id: session.id,
-        updatedAt: session.updatedAt,
-        user: UserFactory.create(),
-        pinExpiresAt: DateTime.now().plus({ minutes: 15 }).toJSDate(),
         appVersion: null,
         oauthSid: null,
       };
@@ -618,22 +770,46 @@ describe(AuthService.name, () => {
         metadata: { adminRoute: false, sharedLinkRoute: false, uri: 'test' },
       });
 
-      const suppressedContent = {
-        includeNsfw: true,
-        personIds: [],
-        scope: 'owned',
-        tagIds: [],
-        userId: sessionWithToken.user.id,
-      };
       expect(result).toEqual({
         user: sessionWithToken.user,
         session: {
           id: session.id,
-          hasElevatedPermission: true,
+          hasElevatedPermission: false,
         },
-        suppressedContent,
       });
+      expect(result.hiddenContent).toBeUndefined();
       expect(result.hideNsfwAssets).toBeUndefined();
+    });
+
+    it('should keep suppressed people in the session filter without the sensitive flag', async () => {
+      const session = SessionFactory.create();
+      const sessionWithToken = {
+        id: session.id,
+        updatedAt: session.updatedAt,
+        user: UserFactory.create(),
+        pinExpiresAt: null,
+        appVersion: null,
+        oauthSid: null,
+      };
+
+      mocks.systemMetadata.get.mockResolvedValue({
+        machineLearning: { nsfwDetection: { hideFromLibrary: true } },
+      });
+      mocks.session.getByToken.mockResolvedValue(sessionWithToken);
+      mocks.user.getMetadata.mockResolvedValue([
+        {
+          key: UserMetadataKey.Preferences,
+          value: { privacy: { suppression: { personIds: ['person-1'], tagIds: [], petIds: [], scope: 'owned' } } },
+        },
+      ] as any);
+
+      const result = await sut.authenticate({
+        headers: { cookie: 'immich_access_token=auth_token' },
+        queryParams: {},
+        metadata: { adminRoute: false, sharedLinkRoute: false, uri: 'test' },
+      });
+
+      expect(result.hiddenContent).toEqual(expect.objectContaining({ includeNsfw: false, personIds: ['person-1'] }));
     });
 
     it('should extend a near-expiry elevated PIN session to sixty minutes', async () => {
@@ -651,7 +827,7 @@ describe(AuthService.name, () => {
       };
 
       mocks.session.getByToken.mockResolvedValue(sessionWithToken);
-      mocks.session.update.mockResolvedValue(session);
+      mocks.session.refreshPinExpiry.mockResolvedValue(true);
 
       await expect(
         sut.authenticate({
@@ -668,9 +844,120 @@ describe(AuthService.name, () => {
         }),
       );
 
-      expect(mocks.session.update).toHaveBeenCalledWith(session.id, {
-        pinExpiresAt: new Date('2026-05-08T13:00:00.000Z'),
+      expect(mocks.session.refreshPinExpiry).toHaveBeenCalledWith(session.id, new Date('2026-05-08T13:00:00.000Z'));
+      expect(mocks.session.update).not.toHaveBeenCalledWith(
+        session.id,
+        expect.objectContaining({ pinExpiresAt: expect.anything() }),
+      );
+      vi.useRealTimers();
+    });
+
+    describe('when the elevation refresh finds the session changed (FL-34)', () => {
+      const nearExpiry = () => {
+        const session = SessionFactory.create({ updatedAt: new Date() });
+        return {
+          id: session.id,
+          updatedAt: session.updatedAt,
+          user: UserFactory.create(),
+          isPendingSyncReset: false,
+          pinExpiresAt: DateTime.now().plus({ minutes: 1 }).toJSDate(),
+          appVersion: null,
+          oauthSid: null,
+        };
+      };
+      const authenticate = () =>
+        sut.authenticate({
+          headers: { cookie: 'immich_access_token=auth_token' },
+          queryParams: {},
+          metadata: { adminRoute: false, sharedLinkRoute: false, uri: 'test' },
+        });
+
+      it('continues without elevation when the session was locked meanwhile', async () => {
+        const session = nearExpiry();
+        mocks.session.getByToken
+          .mockResolvedValueOnce(session)
+          .mockResolvedValueOnce({ ...session, pinExpiresAt: null });
+        mocks.session.refreshPinExpiry.mockResolvedValue(false);
+
+        await expect(authenticate()).resolves.toEqual(
+          expect.objectContaining({ session: { id: session.id, hasElevatedPermission: false } }),
+        );
+        expect(mocks.session.getByToken).toHaveBeenCalledTimes(2);
       });
+
+      it('rejects the request when the session was deleted meanwhile', async () => {
+        const session = nearExpiry();
+        mocks.session.getByToken.mockResolvedValueOnce(session).mockResolvedValueOnce(void 0);
+        mocks.session.refreshPinExpiry.mockResolvedValue(false);
+
+        await expect(authenticate()).rejects.toBeInstanceOf(UnauthorizedException);
+      });
+    });
+
+    it('does not extend an elevated session for a status read (FL-34)', async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-05-08T12:00:00.000Z'));
+      const session = SessionFactory.create({ updatedAt: new Date('2026-05-08T12:00:00.000Z') });
+      const sessionWithToken = {
+        id: session.id,
+        updatedAt: session.updatedAt,
+        user: UserFactory.create(),
+        isPendingSyncReset: false,
+        pinExpiresAt: DateTime.now().plus({ minutes: 1 }).toJSDate(),
+        appVersion: null,
+        oauthSid: null,
+      };
+      mocks.session.getByToken.mockResolvedValue(sessionWithToken);
+
+      await expect(
+        sut.authenticate({
+          headers: { cookie: 'immich_access_token=auth_token' },
+          queryParams: {},
+          metadata: { adminRoute: false, sharedLinkRoute: false, uri: 'test', refreshElevation: false },
+        }),
+      ).resolves.toEqual(expect.objectContaining({ session: { id: session.id, hasElevatedPermission: true } }));
+
+      expect(mocks.session.refreshPinExpiry).not.toHaveBeenCalled();
+      vi.useRealTimers();
+    });
+
+    it('does not elevate a request whose refresh loses to a concurrent lock (FL-34)', async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-05-08T12:00:00.000Z'));
+      const session = SessionFactory.create({ updatedAt: new Date('2026-05-08T12:00:00.000Z') });
+      const sessionWithToken = {
+        id: session.id,
+        updatedAt: session.updatedAt,
+        user: UserFactory.create(),
+        isPendingSyncReset: false,
+        pinExpiresAt: DateTime.now().plus({ minutes: 1 }).toJSDate(),
+        appVersion: null,
+        oauthSid: null,
+      };
+
+      mocks.session.getByToken.mockResolvedValue(sessionWithToken);
+      mocks.session.refreshPinExpiry.mockResolvedValue(false);
+
+      await expect(
+        sut.authenticate({
+          headers: { cookie: 'immich_access_token=auth_token' },
+          queryParams: {},
+          metadata: { adminRoute: false, sharedLinkRoute: false, uri: 'test' },
+        }),
+      ).resolves.toEqual(
+        expect.objectContaining({
+          session: {
+            id: session.id,
+            hasElevatedPermission: false,
+          },
+        }),
+      );
+
+      expect(mocks.session.refreshPinExpiry).toHaveBeenCalledWith(session.id, new Date('2026-05-08T13:00:00.000Z'));
+      expect(mocks.session.update).not.toHaveBeenCalledWith(
+        session.id,
+        expect.objectContaining({ pinExpiresAt: expect.anything() }),
+      );
       vi.useRealTimers();
     });
 
@@ -851,6 +1138,26 @@ describe(AuthService.name, () => {
     });
   });
 
+  /** An override that is this server's mobile-redirect endpoint, so its Frameleaf sibling is known. */
+  const frameleafOverride = {
+    oauth: {
+      ...systemConfigStub.oauthWithMobileOverride.oauth,
+      mobileRedirectUri: 'https://photos.example.test/immich/api/oauth/mobile-redirect',
+    },
+  };
+
+  describe('getFrameleafMobileRedirect (FL-131)', () => {
+    it('passes the query to the Frameleaf app callback', () => {
+      expect(sut.getFrameleafMobileRedirect('/api/oauth/frameleaf-mobile-redirect?code=123&state=456')).toEqual(
+        'frameleaf-auth:///oauth-callback?code=123&state=456',
+      );
+    });
+
+    it('works without query params', () => {
+      expect(sut.getFrameleafMobileRedirect('https://immich.app')).toEqual('frameleaf-auth:///oauth-callback?');
+    });
+  });
+
   describe('authorize', () => {
     it('should fail if oauth is disabled', async () => {
       mocks.systemMetadata.get.mockResolvedValue({ oauth: { enabled: false } });
@@ -865,9 +1172,93 @@ describe(AuthService.name, () => {
 
       await sut.authorize({ redirectUri: 'https://demo.immich.app' });
     });
+
+    it('sends each app its own callback when the mobile redirect override is on (FL-131)', async () => {
+      mocks.systemMetadata.get.mockResolvedValue(frameleafOverride);
+
+      await sut.authorize({ redirectUri: 'frameleaf-auth:///oauth-callback' });
+      await sut.authorize({ redirectUri: 'app.immich:///oauth-callback' });
+
+      expect(mocks.oauth.authorize.mock.calls.map(([, redirectUri]) => redirectUri)).toEqual([
+        'https://photos.example.test/immich/api/oauth/frameleaf-mobile-redirect',
+        'https://photos.example.test/immich/api/oauth/mobile-redirect',
+      ]);
+    });
+
+    it('refuses to send the Frameleaf callback anywhere but beside a mobile-redirect override (FL-131)', async () => {
+      mocks.systemMetadata.get.mockResolvedValue(systemConfigStub.oauthWithMobileOverride);
+
+      await expect(sut.authorize({ redirectUri: 'frameleaf-auth:///oauth-callback' })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      // The Immich app's override is unchanged.
+      await sut.authorize({ redirectUri: 'app.immich:///oauth-callback' });
+      expect(mocks.oauth.authorize).toHaveBeenCalledWith(
+        expect.anything(),
+        'http://mobile-redirect',
+        undefined,
+        undefined,
+      );
+    });
+
+    it('passes the Frameleaf callback through when the override is off (FL-131)', async () => {
+      mocks.systemMetadata.get.mockResolvedValue(systemConfigStub.oauthEnabled);
+
+      await sut.authorize({ redirectUri: 'frameleaf-auth:///oauth-callback' });
+
+      expect(mocks.oauth.authorize).toHaveBeenCalledWith(
+        expect.anything(),
+        'frameleaf-auth:///oauth-callback',
+        undefined,
+        undefined,
+      );
+    });
   });
 
   describe('callback', () => {
+    it('refuses to link an existing account by an email the provider has not verified (FL-158)', async () => {
+      const user = UserFactory.create();
+      mocks.systemMetadata.get.mockResolvedValue(systemConfigStub.oauthEnabled);
+      mocks.oauth.getProfileAndOAuthSid.mockResolvedValue({
+        profile: OAuthProfileFactory.create({ email: user.email, email_verified: false }),
+      });
+      mocks.user.getByEmail.mockResolvedValue(user);
+
+      await expect(
+        sut.callback(
+          { url: 'http://immich/auth/login?code=abc123', state: 'xyz789', codeVerifier: 'foo' },
+          {},
+          loginDetails,
+        ),
+      ).rejects.toThrow('has not been verified');
+      expect(mocks.user.update).not.toHaveBeenCalled();
+      expect(mocks.session.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses to register an account when the provider omits email_verified, saying how to fix it (FL-158)', async () => {
+      mocks.systemMetadata.get.mockResolvedValue(systemConfigStub.oauthWithAutoRegister);
+      mocks.oauth.getProfileAndOAuthSid.mockResolvedValue({
+        profile: OAuthProfileFactory.create({ email_verified: undefined }),
+      });
+      mocks.user.getByEmail.mockResolvedValue(void 0);
+
+      await expect(
+        sut.callback(
+          { url: 'http://immich/auth/login?code=abc123', state: 'xyz789', codeVerifier: 'foo' },
+          {},
+          loginDetails,
+        ),
+      ).rejects.toThrow('map the email_verified claim');
+      expect(mocks.user.create).not.toHaveBeenCalled();
+    });
+
+    it('accepts email_verified sent as the string "true" (FL-158)', () => {
+      expect(emailVerificationProblem({ email_verified: 'true' })).toBeNull();
+      expect(emailVerificationProblem({ email_verified: true })).toBeNull();
+      expect(emailVerificationProblem({ email_verified: 'false' })).toContain('has not been verified');
+      expect(emailVerificationProblem({})).toContain('map the email_verified claim');
+    });
+
     it('should throw an error if OAuth is not enabled', async () => {
       await expect(
         sut.callback({ url: '', state: 'xyz789', codeVerifier: 'foo' }, {}, loginDetails),
@@ -933,7 +1324,7 @@ describe(AuthService.name, () => {
 
     it('should normalize the email from the OAuth profile before linking', async () => {
       const user = UserFactory.create();
-      const profile = OAuthProfileFactory.create({ email: '  TEST@IMMICH.CLOUD  ' });
+      const profile = OAuthProfileFactory.create({ email: '  TeSt@ExAmPlE.CoM  ' });
 
       mocks.systemMetadata.get.mockResolvedValue(systemConfigStub.oauthEnabled);
       mocks.oauth.getProfileAndOAuthSid.mockResolvedValue({ profile });
@@ -947,7 +1338,7 @@ describe(AuthService.name, () => {
         loginDetails,
       );
 
-      expect(mocks.user.getByEmail).toHaveBeenCalledWith('test@immich.cloud');
+      expect(mocks.user.getByEmail).toHaveBeenCalledWith('test@example.com');
       expect(mocks.user.update).toHaveBeenCalledWith(user.id, { oauthId: profile.sub });
     });
 
@@ -1030,6 +1421,37 @@ describe(AuthService.name, () => {
         );
       });
     }
+
+    for (const url of ['frameleaf-auth:/oauth-callback?code=abc123', 'frameleaf-auth:///oauth-callback?code=abc123']) {
+      it(`should use the Frameleaf mobile redirect for a url of ${url} (FL-131)`, async () => {
+        mocks.systemMetadata.get.mockResolvedValue(frameleafOverride);
+        mocks.user.getByOAuthId.mockResolvedValue(UserFactory.create());
+        mocks.oauth.getProfileAndOAuthSid.mockResolvedValue({ profile: OAuthProfileFactory.create() });
+        mocks.session.create.mockResolvedValue(SessionFactory.create());
+
+        await sut.callback({ url, state: 'xyz789', codeVerifier: 'foo' }, {}, loginDetails);
+
+        expect(mocks.oauth.getProfileAndOAuthSid).toHaveBeenCalledWith(
+          expect.objectContaining({}),
+          'https://photos.example.test/immich/api/oauth/frameleaf-mobile-redirect?code=abc123',
+          'xyz789',
+          'foo',
+        );
+      });
+    }
+
+    it('refuses a Frameleaf callback when the override is not a mobile-redirect address (FL-131)', async () => {
+      mocks.systemMetadata.get.mockResolvedValue(systemConfigStub.oauthWithMobileOverride);
+
+      await expect(
+        sut.callback(
+          { url: 'frameleaf-auth:///oauth-callback?code=abc123', state: 'xyz789', codeVerifier: 'foo' },
+          {},
+          loginDetails,
+        ),
+      ).rejects.toThrow(/frameleaf-mobile-redirect/);
+      expect(mocks.oauth.getProfileAndOAuthSid).not.toHaveBeenCalled();
+    });
 
     it('should use the default quota', async () => {
       mocks.systemMetadata.get.mockResolvedValue(systemConfigStub.oauthWithStorageQuota);
@@ -1162,7 +1584,7 @@ describe(AuthService.name, () => {
     it('should sync the profile picture', async () => {
       const fileId = newUuid();
       const user = UserFactory.create({ oauthId: 'oauth-id' });
-      const profile = OAuthProfileFactory.create({ picture: 'https://auth.immich.cloud/profiles/1.jpg' });
+      const profile = OAuthProfileFactory.create({ picture: 'https://auth.example.com/profiles/1.jpg' });
       const pictureBytes = new Uint8Array([1, 2, 3, 4, 5]);
 
       mocks.systemMetadata.get.mockResolvedValue(systemConfigStub.oauthEnabled);
@@ -1181,6 +1603,7 @@ describe(AuthService.name, () => {
 
       expect(mocks.user.update).toHaveBeenCalledWith(user.id, {
         profileImagePath: expect.stringContaining(`/data/profile/${user.id}/${fileId}.webp`),
+        profileImageAssetId: null,
         profileChangedAt: expect.any(Date),
       });
       expect(mocks.oauth.getProfilePicture).toHaveBeenCalledWith(profile.picture);
@@ -1193,7 +1616,7 @@ describe(AuthService.name, () => {
 
     it('should not update the user when thumbnail processing fails on the OAuth picture', async () => {
       const user = UserFactory.create({ oauthId: 'oauth-id' });
-      const profile = OAuthProfileFactory.create({ picture: 'https://auth.immich.cloud/profiles/1.jpg' });
+      const profile = OAuthProfileFactory.create({ picture: 'https://auth.example.com/profiles/1.jpg' });
 
       mocks.systemMetadata.get.mockResolvedValue(systemConfigStub.oauthEnabled);
       mocks.oauth.getProfileAndOAuthSid.mockResolvedValue({ profile });
@@ -1223,7 +1646,7 @@ describe(AuthService.name, () => {
         profile: OAuthProfileFactory.create({
           sub: oauthId,
           email: user.email,
-          picture: 'https://auth.immich.cloud/profiles/1.jpg',
+          picture: 'https://auth.example.com/profiles/1.jpg',
         }),
       });
       mocks.user.getByOAuthId.mockResolvedValue(user);
@@ -1550,14 +1973,28 @@ describe(AuthService.name, () => {
 
       mocks.user.getForPinCode.mockResolvedValue({ pinCode: '123456 (hashed)', password: '' });
       mocks.crypto.compareBcrypt.mockImplementation((a, b) => `${a} (hashed)` === b);
-      mocks.session.update.mockResolvedValue(SessionFactory.create());
+      mocks.session.elevate.mockResolvedValue(true);
 
       await sut.unlockSession(auth, { pinCode: '123456' });
 
-      expect(mocks.session.update).toHaveBeenCalledWith(auth.session!.id, {
-        pinExpiresAt: new Date('2026-05-08T13:00:00.000Z'),
-      });
+      // conditional on the credentials the check read (FL-34)
+      expect(mocks.session.elevate).toHaveBeenCalledWith(
+        auth.session!.id,
+        user.id,
+        { pinCode: '123456 (hashed)', password: '' },
+        new Date('2026-05-08T13:00:00.000Z'),
+      );
       vi.useRealTimers();
+    });
+
+    it('does not elevate when the PIN or password changed after the check (FL-34)', async () => {
+      const auth = AuthFactory.from().session().build();
+      mocks.user.getForPinCode.mockResolvedValue({ pinCode: '123456 (hashed)', password: '' });
+      mocks.crypto.compareBcrypt.mockImplementation((a, b) => `${a} (hashed)` === b);
+      mocks.session.elevate.mockResolvedValue(false);
+
+      await expect(sut.unlockSession(auth, { pinCode: '123456' })).rejects.toBeInstanceOf(UnauthorizedException);
+      expect(mocks.session.update).not.toHaveBeenCalled();
     });
 
     it('should throttle repeated PIN failures and reset the count after a successful unlock', async () => {
@@ -1565,14 +2002,14 @@ describe(AuthService.name, () => {
       const auth = AuthFactory.from().session().build();
       mocks.user.getForPinCode.mockResolvedValue({ pinCode: '123456 (hashed)', password: '' });
       mocks.crypto.compareBcrypt.mockImplementation((a, b) => `${a} (hashed)` === b);
-      mocks.session.update.mockResolvedValue(SessionFactory.create());
+      mocks.session.elevate.mockResolvedValue(true);
 
       for (let attempt = 0; attempt < 5; attempt++) {
         await expect(sut.unlockSession(auth, { pinCode: '000000' })).rejects.toBeInstanceOf(BadRequestException);
       }
       await expect(sut.unlockSession(auth, { pinCode: '123456' })).rejects.toThrow('Too many failed PIN attempts');
       expect(mocks.user.getForPinCode).toHaveBeenCalledTimes(5);
-      expect(mocks.session.update).not.toHaveBeenCalled();
+      expect(mocks.session.elevate).not.toHaveBeenCalled();
 
       vi.advanceTimersByTime(60_001);
       await sut.unlockSession(auth, { pinCode: '123456' });
@@ -1590,6 +2027,15 @@ describe(AuthService.name, () => {
   });
 
   describe('lockSession', () => {
+    it('does not announce a lock before it is persisted', async () => {
+      const auth = AuthFactory.from().session().build();
+      mocks.session.update.mockRejectedValue(new Error('write failed'));
+
+      await expect(sut.lockSession(auth)).rejects.toThrow('write failed');
+
+      expect(mocks.websocket.clientSend).not.toHaveBeenCalled();
+    });
+
     it('should clear elevated access immediately', async () => {
       const user = UserFactory.create();
       const auth = AuthFactory.from(user).session({ hasElevatedPermission: true }).build();
@@ -1598,6 +2044,8 @@ describe(AuthService.name, () => {
       await sut.lockSession(auth);
 
       expect(mocks.session.update).toHaveBeenCalledWith(auth.session!.id, { pinExpiresAt: null });
+      // only this session's other tabs are told (FL-34)
+      expect(mocks.websocket.clientSend).toHaveBeenCalledWith('on_session_lock', auth.session!.id);
     });
   });
 
@@ -1610,11 +2058,15 @@ describe(AuthService.name, () => {
       mocks.user.getForPinCode.mockResolvedValue({ pinCode: '123456 (hashed)', password: '' });
       mocks.user.update.mockResolvedValue(user);
       mocks.crypto.compareBcrypt.mockImplementation((a, b) => `${a} (hashed)` === b);
+      mocks.session.lockAll.mockResolvedValue();
 
       await sut.changePinCode(auth, dto);
 
       expect(mocks.crypto.compareBcrypt).toHaveBeenCalledWith('123456', '123456 (hashed)');
       expect(mocks.user.update).toHaveBeenCalledWith(user.id, { pinCode: '012345 (hashed)' });
+      // an elevation granted by the old PIN ends with it, in every session (FL-34)
+      expect(mocks.session.lockAll).toHaveBeenCalledWith(user.id);
+      expect(mocks.websocket.clientSend).toHaveBeenCalledWith('on_session_lock', user.id);
     });
 
     it('should fail if the PIN code does not match', async () => {
@@ -1641,6 +2093,7 @@ describe(AuthService.name, () => {
 
       expect(mocks.user.update).toHaveBeenCalledWith(user.id, { pinCode: null });
       expect(mocks.session.lockAll).toHaveBeenCalledWith(user.id);
+      expect(mocks.websocket.clientSend).toHaveBeenCalledWith('on_session_lock', user.id);
     });
 
     it('should throw if the PIN code does not match', async () => {
@@ -1649,6 +2102,283 @@ describe(AuthService.name, () => {
       mocks.crypto.compareBcrypt.mockImplementation((a, b) => `${a} (hashed)` === b);
 
       await expect(sut.resetPinCode(AuthFactory.create(user), { pinCode: '000000' })).rejects.toThrow('Wrong PIN code');
+    });
+  });
+
+  describe('remote access (FL-161)', () => {
+    const user = UserFactory.create();
+    const sessionRow = () => ({
+      id: 'session-1',
+      updatedAt: new Date(),
+      user,
+      pinExpiresAt: null,
+      appVersion: null,
+      oauthSid: null,
+    });
+    const sessionRequest = (via: 'lan' | 'wan' | 'relay' | null) => ({
+      headers: { authorization: 'Bearer auth_token' },
+      queryParams: {},
+      metadata: { adminRoute: false, sharedLinkRoute: false, uri: '/api/assets', via },
+    });
+    const allowPassword = () =>
+      mocks.systemMetadata.get.mockImplementation((key) =>
+        Promise.resolve(
+          (key === SystemMetadataKey.SystemConfig
+            ? { frameleafCloud: { remoteAccess: { allowOriginalsOverRelay: false, allowPasswordOverRelay: true } } }
+            : null) as never,
+        ),
+      );
+    const refusedWith = async (promise: Promise<unknown>, code: string) => {
+      const error = await promise.then(() => null).catch((error_: unknown) => error_);
+      expect(error).toBeInstanceOf(ForbiddenException);
+      expect((error as ForbiddenException).getResponse()).toMatchObject({ code, statusCode: 403 });
+    };
+    const signInRequired = (promise: Promise<unknown>) => refusedWith(promise, 'frameleaf_sign_in_required');
+
+    describe('authenticate', () => {
+      it.each([null, 'lan'] as const)('never checks a request that arrived %s', async (via) => {
+        mocks.session.getByToken.mockResolvedValue(sessionRow());
+
+        await expect(sut.authenticate(sessionRequest(via))).resolves.toMatchObject({ user });
+        expect(mocks.frameleafAccount.getSession).not.toHaveBeenCalled();
+        expect(mocks.frameleafAccount.getLinkByUser).not.toHaveBeenCalled();
+      });
+
+      it.each(['wan', 'relay'] as const)('accepts a Frameleaf session arriving %s', async (via) => {
+        mocks.session.getByToken.mockResolvedValue(sessionRow());
+        mocks.frameleafAccount.getSession.mockResolvedValue({ sessionId: 'session-1', sub: 'fl-sub' } as never);
+
+        await expect(sut.authenticate(sessionRequest(via))).resolves.toMatchObject({ user });
+        expect(mocks.frameleafAccount.getSession).toHaveBeenCalledWith('session-1');
+      });
+
+      it.each(['wan', 'relay'] as const)('refuses a password session arriving %s', async (via) => {
+        mocks.session.getByToken.mockResolvedValue(sessionRow());
+        mocks.frameleafAccount.getSession.mockResolvedValue(undefined);
+        mocks.systemMetadata.get.mockResolvedValue(null as never);
+
+        await signInRequired(sut.authenticate(sessionRequest(via)));
+      });
+
+      it('lets any valid session sign out over the relay', async () => {
+        mocks.session.getByToken.mockResolvedValue(sessionRow());
+        mocks.frameleafAccount.getSession.mockResolvedValue(undefined);
+
+        await expect(
+          sut.authenticate({
+            ...sessionRequest('relay'),
+            metadata: { ...sessionRequest('relay').metadata, uri: '/api/auth/logout', remoteSignInExempt: true },
+          }),
+        ).resolves.toMatchObject({ user });
+        expect(mocks.frameleafAccount.getSession).not.toHaveBeenCalled();
+      });
+
+      it('accepts a password session over the relay when an administrator allowed passwords there', async () => {
+        mocks.session.getByToken.mockResolvedValue(sessionRow());
+        mocks.frameleafAccount.getSession.mockResolvedValue(undefined);
+        allowPassword();
+
+        await expect(sut.authenticate(sessionRequest('relay'))).resolves.toMatchObject({ user });
+      });
+
+      it.each(['wan', 'relay'] as const)('lets a public shared link through %s', async (via) => {
+        mocks.sharedLink.getByKey.mockResolvedValue({ ...sharedLinkStub.valid, user } as any);
+
+        await expect(
+          sut.authenticate({
+            headers: { 'x-immich-share-key': 'key' },
+            queryParams: {},
+            metadata: { adminRoute: false, sharedLinkRoute: true, uri: '/api/assets', via },
+          }),
+        ).resolves.toMatchObject({ sharedLink: expect.anything() });
+        expect(mocks.frameleafAccount.getSession).not.toHaveBeenCalled();
+      });
+
+      it.each(['wan', 'relay'] as const)(
+        'accepts an API key %s only when its owner is linked to a Frameleaf account',
+        async (via) => {
+          const apiKey = ApiKeyFactory.from({ permissions: [Permission.All] })
+            .user(user)
+            .build();
+          mocks.apiKey.getKey.mockResolvedValue(apiKey);
+          const request = {
+            headers: { 'x-api-key': 'auth_token' },
+            queryParams: {},
+            metadata: { adminRoute: false, sharedLinkRoute: false, uri: '/api/assets', via },
+          };
+
+          mocks.frameleafAccount.getLinkByUser.mockResolvedValueOnce(undefined);
+          await signInRequired(sut.authenticate(request));
+
+          mocks.frameleafAccount.getLinkByUser.mockResolvedValueOnce({ userId: user.id, sub: 'fl-sub' } as never);
+          await expect(sut.authenticate(request)).resolves.toMatchObject({ user, apiKey: expect.anything() });
+          expect(mocks.frameleafAccount.getLinkByUser).toHaveBeenCalledWith(user.id);
+        },
+      );
+
+      it('does not let an allowed password open API keys of unlinked owners', async () => {
+        const apiKey = ApiKeyFactory.from({ permissions: [Permission.All] })
+          .user(user)
+          .build();
+        mocks.apiKey.getKey.mockResolvedValue(apiKey);
+        mocks.frameleafAccount.getLinkByUser.mockResolvedValue(undefined);
+        allowPassword();
+
+        await signInRequired(
+          sut.authenticate({
+            headers: { 'x-api-key': 'auth_token' },
+            queryParams: {},
+            metadata: { adminRoute: false, sharedLinkRoute: false, uri: '/api/assets', via: 'relay' },
+          }),
+        );
+      });
+    });
+
+    describe('login', () => {
+      it.each(['wan', 'relay'] as const)('refuses a password %s before looking anyone up', async (via) => {
+        mocks.systemMetadata.get.mockResolvedValue(null as never);
+
+        await signInRequired(sut.login(dto, { ...loginDetails, via }));
+        expect(mocks.user.getByEmail).not.toHaveBeenCalled();
+        expect(mocks.crypto.compareBcrypt).not.toHaveBeenCalled();
+      });
+
+      it('accepts a password over the relay when an administrator allowed it', async () => {
+        const passwordUser = UserFactory.create({ password: 'immich_password' });
+        mocks.user.getByEmail.mockResolvedValue(passwordUser);
+        mocks.session.create.mockResolvedValue(SessionFactory.create());
+        allowPassword();
+
+        await expect(sut.login(dto, { ...loginDetails, via: 'relay' })).resolves.toMatchObject({
+          userId: passwordUser.id,
+        });
+      });
+
+      it.each([null, 'lan'] as const)('keeps password sign-in %s as it was', async (via) => {
+        const passwordUser = UserFactory.create({ password: 'immich_password' });
+        mocks.user.getByEmail.mockResolvedValue(passwordUser);
+        mocks.session.create.mockResolvedValue(SessionFactory.create());
+
+        await expect(sut.login(dto, { ...loginDetails, via })).resolves.toMatchObject({ userId: passwordUser.id });
+      });
+    });
+
+    describe('requireOriginalTransfer', () => {
+      it.each([null, undefined, 'lan', 'wan'] as const)('never refuses a transfer that arrived %s', async (via) => {
+        await expect(sut.requireOriginalTransfer(via, '/api/assets/1/original')).resolves.toBeUndefined();
+        expect(mocks.systemMetadata.get).not.toHaveBeenCalled();
+      });
+
+      it('refuses originals, archives and backups over the relay by default', async () => {
+        mocks.systemMetadata.get.mockResolvedValue(null as never);
+
+        await refusedWith(
+          sut.requireOriginalTransfer('relay', '/api/download/archive'),
+          'frameleaf_relay_originals_refused',
+        );
+      });
+
+      it('allows them over the relay once an administrator did', async () => {
+        mocks.systemMetadata.get.mockResolvedValue({
+          frameleafCloud: { remoteAccess: { allowOriginalsOverRelay: true, allowPasswordOverRelay: false } },
+        } as never);
+
+        await expect(sut.requireOriginalTransfer('relay', '/api/download/archive')).resolves.toBeUndefined();
+      });
+    });
+
+    describe('authenticateWebsocket', () => {
+      const secret = 'edge-secret-0123456789abcdef';
+
+      beforeEach(() => {
+        mocks.config.getEnv.mockReturnValue({
+          ...mocks.config.getEnv(),
+          frameleafCloud: {
+            ...mocks.config.getEnv().frameleafCloud,
+            url: 'https://api.frameleaf.cloud',
+            edge: { ...mocks.config.getEnv().frameleafCloud.edge, secret },
+          },
+        });
+        mocks.systemMetadata.get.mockImplementation((key) =>
+          Promise.resolve(
+            (key === SystemMetadataKey.FrameleafCloudLink
+              ? {
+                  status: 'linked',
+                  cloudUrl: 'https://api.frameleaf.cloud',
+                  instanceId: 'instance-1',
+                  services: { relayOrigin: 'https://r.k3v9.frameleaf-direct.net' },
+                }
+              : null) as never,
+          ),
+        );
+        mocks.session.getByToken.mockResolvedValue(sessionRow());
+        mocks.frameleafAccount.getSession.mockResolvedValue({ sessionId: 'session-1', sub: 'fl-sub' } as never);
+      });
+
+      it('refuses a page from another origin before reading the session', async () => {
+        await expect(
+          sut.authenticateWebsocket({
+            host: '192.168.1.10:2283',
+            origin: 'https://evil.example',
+            authorization: 'Bearer auth_token',
+          }),
+        ).rejects.toBeInstanceOf(ForbiddenException);
+        expect(mocks.session.getByToken).not.toHaveBeenCalled();
+      });
+
+      it('accepts the same origin and the published relay name', async () => {
+        await expect(
+          sut.authenticateWebsocket({
+            host: '192.168.1.10:2283',
+            origin: 'http://192.168.1.10:2283',
+            authorization: 'Bearer auth_token',
+          }),
+        ).resolves.toMatchObject({ auth: { user }, via: null });
+
+        await expect(
+          sut.authenticateWebsocket({
+            host: '127.0.0.1:2283',
+            origin: 'https://r.k3v9.frameleaf-direct.net',
+            authorization: 'Bearer auth_token',
+            'x-frameleaf-via': 'relay',
+            'x-frameleaf-via-auth': secret,
+          }),
+        ).resolves.toMatchObject({ auth: { user }, via: 'relay' });
+        expect(mocks.frameleafAccount.getSession).toHaveBeenCalledWith('session-1');
+      });
+
+      it('applies the remote rule to a relayed handshake', async () => {
+        mocks.frameleafAccount.getSession.mockResolvedValue(undefined);
+
+        await signInRequired(
+          sut.authenticateWebsocket({
+            host: '127.0.0.1:2283',
+            origin: 'https://r.k3v9.frameleaf-direct.net',
+            authorization: 'Bearer auth_token',
+            'x-frameleaf-via': 'relay',
+            'x-frameleaf-via-auth': secret,
+          }),
+        );
+      });
+
+      it('refuses a via claim without the edge secret, never treating it as home', async () => {
+        for (const claim of [
+          { 'x-frameleaf-via': 'lan', 'x-frameleaf-via-auth': 'guess' },
+          { 'x-frameleaf-via': 'lan' },
+          { 'x-frameleaf-via-auth': secret },
+        ]) {
+          await expect(
+            sut.authenticateWebsocket({ authorization: 'Bearer auth_token', ...claim }),
+          ).rejects.toBeInstanceOf(ForbiddenException);
+        }
+        expect(mocks.session.getByToken).not.toHaveBeenCalled();
+      });
+
+      it('leaves a handshake without an origin (an app) to authentication', async () => {
+        await expect(sut.authenticateWebsocket({ authorization: 'Bearer auth_token' })).resolves.toMatchObject({
+          auth: { user },
+        });
+      });
     });
   });
 });

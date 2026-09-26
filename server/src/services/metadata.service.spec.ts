@@ -94,6 +94,7 @@ describe(MetadataService.name, () => {
     ({ sut, mocks } = newTestService(MetadataService));
 
     mockReadTags();
+    mocks.assetJob.getLockedPropertiesForMetadataExtraction.mockResolvedValue([]);
 
     mocks.config.getWorker.mockReturnValue(ImmichWorker.Microservices);
 
@@ -402,6 +403,28 @@ describe(MetadataService.name, () => {
         width: null,
         height: null,
       });
+    });
+
+    it('keeps a location the owner removed or set instead of reading the file coordinates (FL-51)', async () => {
+      const asset = AssetFactory.from().exif({ latitude: null, longitude: null }).build();
+      mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+      mocks.assetJob.getLockedPropertiesForMetadataExtraction.mockResolvedValue(['latitude', 'longitude']);
+      mocks.systemMetadata.get.mockResolvedValue({ reverseGeocoding: { enabled: true } });
+      mocks.storage.stat.mockResolvedValue({
+        size: 123_456,
+        mtime: asset.fileModifiedAt,
+        mtimeMs: asset.fileModifiedAt.valueOf(),
+        birthtimeMs: asset.fileCreatedAt.valueOf(),
+      } as Stats);
+      mockReadTags({ GPSLatitude: 10, GPSLongitude: 20 });
+
+      await sut.handleMetadataExtraction({ id: asset.id });
+
+      expect(mocks.map.reverseGeocode).not.toHaveBeenCalled();
+      const [{ exif }] = mocks.asset.upsertExif.mock.calls.at(-1)!;
+      expect(exif).not.toHaveProperty('city');
+      expect(exif).not.toHaveProperty('state');
+      expect(exif).not.toHaveProperty('country');
     });
 
     it('should discard latitude and longitude on null island', async () => {
@@ -1491,6 +1514,30 @@ describe(MetadataService.name, () => {
       ]);
     });
 
+    it('should not make a face tag on a Locked photo the thumbnail of a person it creates (FL-53)', async () => {
+      const asset = AssetFactory.create({ visibility: AssetVisibility.Locked });
+      const person = PersonFactory.create();
+
+      mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+      mocks.systemMetadata.get.mockResolvedValue({ metadata: { faces: { import: true } } });
+      mockReadTags(makeFaceTags({ Name: person.name }));
+      mocks.person.getDistinctNames.mockResolvedValue([]);
+      mocks.person.createGroups.mockResolvedValue([PersonGroupFactory.create({ id: person.personGroupId })]);
+      mocks.person.createAll.mockResolvedValue([person]);
+      await sut.handleMetadataExtraction({ id: asset.id });
+
+      // the person and the face are still created; the face is simply not their thumbnail
+      expect(mocks.person.createAll).toHaveBeenCalledWith([expect.objectContaining({ name: person.name })]);
+      expect(mocks.person.refreshFaces).toHaveBeenCalledWith(
+        [expect.objectContaining({ assetId: asset.id, sourceType: SourceType.Exif })],
+        [],
+      );
+      expect(mocks.person.updateAll).not.toHaveBeenCalled();
+      expect(mocks.job.queueAll).not.toHaveBeenCalledWith(
+        expect.arrayContaining([expect.objectContaining({ name: JobName.PersonGenerateThumbnail })]),
+      );
+    });
+
     it('should assign metadata face tags to existing persons', async () => {
       const asset = AssetFactory.create();
       const person = PersonFactory.create();
@@ -2096,6 +2143,43 @@ describe(MetadataService.name, () => {
       ]);
     });
 
+    it('writes a removed location as no coordinates and keeps it locked (FL-51)', async () => {
+      const asset = AssetFactory.from()
+        .file({ type: AssetFileType.Sidecar })
+        .exif({ latitude: null, longitude: null })
+        .build();
+
+      mocks.assetJob.getLockedPropertiesForMetadataExtraction.mockResolvedValue(['latitude', 'longitude', 'rating']);
+      mocks.assetJob.getForSidecarWriteJob.mockResolvedValue(getForSidecarWrite(asset));
+
+      await expect(sut.handleSidecarWrite({ id: asset.id })).resolves.toBe(JobStatus.Success);
+
+      expect(mocks.metadata.writeTags).toHaveBeenCalledWith(
+        asset.files[0].path,
+        expect.objectContaining({ GPSLatitude: null, GPSLongitude: null }),
+      );
+      expect(mocks.asset.unlockProperties).toHaveBeenCalledWith(asset.id, ['rating']);
+    });
+
+    it('keeps a removed location and a typed place name locked together (FL-51, FL-36)', async () => {
+      const asset = AssetFactory.from()
+        .file({ type: AssetFileType.Sidecar })
+        .exif({ latitude: null, longitude: null })
+        .build();
+
+      mocks.assetJob.getLockedPropertiesForMetadataExtraction.mockResolvedValue([
+        'latitude',
+        'longitude',
+        'city',
+        'rating',
+      ]);
+      mocks.assetJob.getForSidecarWriteJob.mockResolvedValue(getForSidecarWrite(asset));
+
+      await expect(sut.handleSidecarWrite({ id: asset.id })).resolves.toBe(JobStatus.Success);
+
+      expect(mocks.asset.unlockProperties).toHaveBeenCalledWith(asset.id, ['rating']);
+    });
+
     it('should write rating', async () => {
       const asset = AssetFactory.from().file({ type: AssetFileType.Sidecar }).exif().build();
       asset.exifInfo.rating = 4;
@@ -2104,6 +2188,17 @@ describe(MetadataService.name, () => {
       mocks.assetJob.getForSidecarWriteJob.mockResolvedValue(getForSidecarWrite(asset));
       await expect(sut.handleSidecarWrite({ id: asset.id })).resolves.toBe(JobStatus.Success);
       expect(mocks.metadata.writeTags).toHaveBeenCalledWith(asset.files[0].path, { Rating: 4 });
+      expect(mocks.asset.unlockProperties).toHaveBeenCalledWith(asset.id, ['rating']);
+    });
+
+    it('keeps a typed place name locked after writing the sidecar (FL-36, V-24)', async () => {
+      const asset = AssetFactory.from().file({ type: AssetFileType.Sidecar }).exif().build();
+      asset.exifInfo.rating = 2;
+
+      mocks.assetJob.getLockedPropertiesForMetadataExtraction.mockResolvedValue(['rating', 'city', 'state', 'country']);
+      mocks.assetJob.getForSidecarWriteJob.mockResolvedValue(getForSidecarWrite(asset));
+      await expect(sut.handleSidecarWrite({ id: asset.id })).resolves.toBe(JobStatus.Success);
+      expect(mocks.metadata.writeTags).toHaveBeenCalledWith(asset.files[0].path, { Rating: 2 });
       expect(mocks.asset.unlockProperties).toHaveBeenCalledWith(asset.id, ['rating']);
     });
 

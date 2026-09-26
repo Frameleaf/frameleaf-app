@@ -1,6 +1,6 @@
 <script lang="ts">
-  import SettingInputField from '$lib/components/shared-components/settings/SettingInputField.svelte';
-  import SettingSwitch from '$lib/components/shared-components/settings/SettingSwitch.svelte';
+  import SettingField from '$lib/components/frameleaf/settings/SettingField.svelte';
+  import SettingToggle from '$lib/components/frameleaf/settings/SettingToggle.svelte';
   import { SettingInputFieldType } from '$lib/constants';
   import type { AdminConfigMachineLearningDto } from '@immich/sdk';
   import { Button, IconButton } from '@immich/ui';
@@ -12,14 +12,13 @@
     workingConfig: AdminConfigMachineLearningDto;
     savedConfig: AdminConfigMachineLearningDto;
     disabled: boolean;
-    managedRunPodUrl: string;
   }
 
-  let { workingConfig = $bindable(), savedConfig, disabled, managedRunPodUrl }: Props = $props();
+  let { workingConfig = $bindable(), savedConfig, disabled }: Props = $props();
 </script>
 
 <div class="flex flex-col gap-4">
-  <SettingSwitch
+  <SettingToggle
     title={$t('admin.machine_learning_enabled')}
     subtitle={$t('admin.machine_learning_enabled_description')}
     {disabled}
@@ -28,16 +27,9 @@
 
   <hr />
 
-  {#if managedRunPodUrl}
-    <div class="rounded-sm border border-immich-gray/30 bg-immich-bg/30 p-2 font-mono text-xs break-all">
-      <span class="font-sans text-immich-gray not-italic">{$t('admin.machine_learning_runpod_managed_url_label')}</span>
-      {managedRunPodUrl}
-    </div>
-  {/if}
-
   <div>
     {#each workingConfig.urls as _, i (i)}
-      <SettingInputField
+      <SettingField
         inputType={SettingInputFieldType.TEXT}
         label={i === 0 ? $t('url') : undefined}
         description={i === 0 ? $t('admin.machine_learning_url_description') : undefined}
@@ -56,7 +48,7 @@
             />
           {/if}
         {/snippet}
-      </SettingInputField>
+      </SettingField>
     {/each}
   </div>
 

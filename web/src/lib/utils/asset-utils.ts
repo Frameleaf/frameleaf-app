@@ -1,9 +1,12 @@
 import {
+  AssetMediaSize,
   AssetVisibility,
   bulkTagAssets,
   createStack,
   deleteAssets,
   deleteStacks,
+  downloadArchive as requestArchive,
+  downloadAsset as requestAsset,
   getBaseUrl,
   getDownloadInfo,
   getStack,
@@ -12,7 +15,9 @@ import {
   updateAssets,
   type AssetResponseDto,
   type AssetTypeEnum,
+  type DownloadArchiveInfo,
   type DownloadInfoDto,
+  type DownloadResponseDto,
   type ExifResponseDto,
   type StackResponseDto,
   type UserResponseDto,
@@ -21,14 +26,19 @@ import { toastManager } from '@immich/ui';
 import { DateTime } from 'luxon';
 import { t } from 'svelte-i18n';
 import { get } from 'svelte/store';
-import type { AssetMultiSelectManager } from '$lib/managers/asset-multi-select-manager.svelte';
 import { authManager } from '$lib/managers/auth-manager.svelte';
-import { downloadManager } from '$lib/managers/download-manager.svelte';
+import {
+  downloadManager,
+  EmptyDownloadError,
+  bufferLimit,
+  holdOrStream,
+  StreamedDownload,
+  type DownloadContext,
+  type DownloadTask,
+} from '$lib/managers/download-manager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
-import { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
 import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
-import { locale } from '$lib/stores/preferences.store';
-import { downloadUrlPost, withError } from '$lib/utils';
+import { downloadUrl, downloadUrlPost, getAssetMediaUrl } from '$lib/utils';
 import { getByteUnitString } from '$lib/utils/byte-units';
 import { getFormatter } from '$lib/utils/i18n';
 import { navigate } from '$lib/utils/navigation';
@@ -76,54 +86,194 @@ export const removeTag = async ({
   return assetIds;
 };
 
-export const downloadArchive = async (fileName: string, options: Omit<DownloadInfoDto, 'archiveSize'>) => {
+/**
+ * Hands a failure to the shared error handler without a toast: the download row shows the error
+ * (FL-45 D-2), while a public share still gets its revoked-link handling from a 401 (FL-56).
+ */
+const reportDownloadError = (error: unknown) => {
+  if (error instanceof EmptyDownloadError) {
+    return;
+  }
+  handleError(error, get(t)('errors.unable_to_download_files'), { notify: false });
+};
+
+const withDownloadErrors =
+  (task: DownloadTask): DownloadTask =>
+  async (context) => {
+    try {
+      return await task(context);
+    } catch (error) {
+      if (!context.signal.aborted) {
+        reportDownloadError(error);
+      }
+      throw error;
+    }
+  };
+
+/** The surface a new download shows on: the public share strip on a share page, else the panel. */
+const downloadGroup = () => (authManager.isSharedLink ? ('share' as const) : undefined);
+
+const abortError = () => new DOMException('The download was cancelled', 'AbortError');
+
+/**
+ * For a caller that only fires `downloadArchive` off: a cancel is the user's choice, not an error,
+ * so it settles quietly; any other failure is passed on.
+ */
+export const ignoreCancelledDownload = (error: unknown): void => {
+  if ((error as { name?: unknown } | null)?.name === 'AbortError') {
+    return;
+  }
+  throw error;
+};
+
+/**
+ * Downloads photos and videos as zip archives (FL-45 D-1/D-3). One row appears at once while the
+ * server plans the archives; a plan split by the account's archive size limit becomes one row per
+ * part. A part up to `bufferLimit()` is fetched into the tab with progress, Cancel and Retry, one
+ * part at a time; a larger part is ready at once and Save streams it through the browser.
+ *
+ * The signature is unchanged from the legacy helper. The promise resolves once every part is ready
+ * to save, and rejects when one fails or is cancelled (an `AbortError`), so a caller that reports
+ * the outcome reports what actually happened.
+ */
+export const downloadArchive = (fileName: string, options: Omit<DownloadInfoDto, 'archiveSize'>): Promise<void> => {
   const archiveSize = authManager.authenticated ? authManager.preferences.download.archiveSize : undefined;
   const dto = { ...options, archiveSize };
-  const [error, downloadInfo] = await withError(() => getDownloadInfo({ ...authManager.params, downloadInfoDto: dto }));
-  if (error) {
-    const $t = get(t);
-    handleError(error, $t('errors.unable_to_download_files'));
-    return;
-  }
+  const params = authManager.params;
+  const group = downloadGroup();
+  const stamp = DateTime.now().toFormat('yyyyLLdd_HHmmss');
+  const nameOf = (index: number, count: number) => `${fileName}${count > 1 ? `+${index + 1}` : ''}-${stamp}`;
+  const streamUrl = () => {
+    const query = asQueryString(params);
+    return getBaseUrl() + '/download/archive' + (query ? `?${query}` : '');
+  };
 
-  if (!downloadInfo) {
-    return;
-  }
-
-  for (let index = 0; index < downloadInfo.archives.length; index++) {
-    const archive = downloadInfo.archives[index];
-    const suffix = downloadInfo.archives.length > 1 ? `+${index + 1}` : '';
-    const archiveName = `${fileName}${suffix}-${DateTime.now().toFormat('yyyyLLdd_HHmmss')}`;
-    const queryParams = asQueryString(authManager.params);
-
-    const downloadKey =
-      downloadInfo.archives.length > 1
-        ? `${archiveName} (${index + 1}/${downloadInfo.archives.length})`
-        : `${archiveName} `;
-
-    const url = getBaseUrl() + '/download/archive' + (queryParams ? `?${queryParams}` : '');
-
-    try {
-      if (downloadInfo.archives.length > 1) {
-        downloadManager.add(downloadKey, url, archive.assetIds, archiveName, archive.size);
-      } else {
-        downloadUrlPost(url, archive.assetIds, archiveName);
-        const $t = await getFormatter();
-        const $locale = get(locale);
-        toastManager.primary(
-          $t('downloading_archive_filename_size', {
-            values: { size: getByteUnitString(archive.size, $locale), filename: archiveName },
-          }),
-          { timeout: 10_000 },
-        );
+  // Held parts are fetched one after another, never in parallel (B1). The next part starts once
+  // the manager has recorded the one before it, so what the tab holds is counted before it decides.
+  let turn: Promise<unknown> = Promise.resolve();
+  const inTurn = ({ key, signal }: DownloadContext, run: () => Promise<Blob | StreamedDownload>) => {
+    const mine = turn.then(() => {
+      if (signal.aborted) {
+        throw abortError();
       }
-    } catch (error) {
-      const $t = get(t);
-      handleError(error, $t('errors.unable_to_download_files'));
-      return;
-    }
-  }
+      return run();
+    });
+    turn = downloadManager.settled(key).catch(() => {});
+    return mine;
+  };
+
+  const fetchArchive =
+    (archive: DownloadArchiveInfo, archiveName: string): DownloadTask =>
+    (context) => {
+      const stream = new StreamedDownload(() => downloadUrlPost(streamUrl(), archive.assetIds, archiveName));
+      // A part that could never be held is ready at once; it does not wait for the parts before it.
+      if (archive.size > bufferLimit()) {
+        return Promise.resolve(stream);
+      }
+      // Each held part waits for the one before it, then holds only what the tab can still hold.
+      return inTurn(context, () =>
+        holdOrStream(context, {
+          size: archive.size,
+          request: (fetch) =>
+            requestArchive(
+              { ...params, downloadArchiveDto: { assetIds: archive.assetIds, archiveName, edited: true } },
+              { signal: context.signal, fetch },
+            ),
+          stream,
+        }),
+      );
+    };
+
+  const describeArchive = (archive: DownloadArchiveInfo, archiveName: string) => ({
+    name: `${archiveName}.zip`,
+    assetIds: archive.assetIds,
+    count: archive.assetIds.length,
+    total: archive.size,
+    group,
+  });
+
+  // Kept after the first successful plan so a retry of the first archive does not plan (and add
+  // the other archives) again.
+  let plan: DownloadResponseDto | undefined;
+  let firstPlan = false;
+  const partOutcomes: Promise<void>[] = [];
+
+  const firstKey = downloadManager.start(
+    { name: `${nameOf(0, 1)}.zip`, assetIds: options.assetIds ?? [], count: options.assetIds?.length ?? 0, group },
+    withDownloadErrors(async (context) => {
+      if (!plan) {
+        const response = await getDownloadInfo({ ...params, downloadInfoDto: dto }, { signal: context.signal });
+        if (response.archives.length === 0) {
+          throw new EmptyDownloadError();
+        }
+        // M2: a cancel while the plan was loading starts none of the other parts.
+        if (context.signal.aborted) {
+          throw abortError();
+        }
+        plan = response;
+        firstPlan = true;
+      }
+      const count = plan.archives.length;
+      const archiveName = nameOf(0, count);
+      context.describe(describeArchive(plan.archives[0], archiveName));
+      // The first part takes its turn before the parts after it are added behind it.
+      const first = fetchArchive(plan.archives[0], archiveName)(context);
+      if (firstPlan) {
+        firstPlan = false;
+        for (const [offset, archive] of plan.archives.slice(1).entries()) {
+          const partName = nameOf(offset + 1, count);
+          const key = downloadManager.start(
+            describeArchive(archive, partName),
+            withDownloadErrors(fetchArchive(archive, partName)),
+          );
+          // Registered now, so a part saved (and removed) before the first part is ready still
+          // counts as ready rather than cancelled.
+          const settled = downloadManager.settled(key);
+          settled.catch(() => {});
+          partOutcomes.push(settled);
+        }
+      }
+      return first;
+    }),
+  );
+
+  // The plan (and so every part's outcome) is known before the first part can be ready.
+  return downloadManager
+    .settled(firstKey)
+    .then(() => Promise.all(partOutcomes))
+    .then(() => undefined);
 };
+
+/**
+ * Downloads one file (an original, its edited version or a Live Photo's motion part) through the
+ * download panel, with Cancel and Retry (FL-45 D-3). A file up to `bufferLimit()` (or of unknown
+ * size) is fetched with progress; a larger one is ready at once and Save streams it through the
+ * browser. Returns the panel row's key.
+ */
+export const downloadAssetFile = ({
+  id,
+  filename,
+  edited,
+  size,
+}: {
+  id: string;
+  filename: string;
+  edited: boolean;
+  size?: number;
+}) =>
+  downloadManager.start(
+    { name: filename, assetIds: [id], count: 1, total: size ?? 0, group: downloadGroup() },
+    withDownloadErrors((context) =>
+      holdOrStream(context, {
+        // An edited file is not the size recorded for the original, so its headers decide.
+        size: edited || !size ? undefined : size,
+        request: (fetch) => requestAsset({ ...authManager.params, id, edited }, { signal: context.signal, fetch }),
+        stream: new StreamedDownload((name) =>
+          downloadUrl(getAssetMediaUrl({ id, size: AssetMediaSize.Original, edited }), name),
+        ),
+      }),
+    ),
+  );
 
 /**
  * Returns the lowercase filename extension without a dot (.) and
@@ -362,36 +512,6 @@ export const keepThisDeleteOthers = async (keepAsset: AssetResponseDto, stack: S
   }
 };
 
-export const selectAllAssets = async (timelineManager: TimelineManager, assetInteraction: AssetMultiSelectManager) => {
-  if (assetInteraction.selectAll) {
-    // Selection is already ongoing
-    return;
-  }
-  assetInteraction.selectAll = true;
-
-  try {
-    for (const timelineMonth of timelineManager.months) {
-      if (!timelineMonth.isLoaded) {
-        await timelineManager.loadTimelineMonth(timelineMonth.yearMonth);
-      }
-
-      if (!assetInteraction.selectAll) {
-        assetInteraction.clear();
-        break; // Cancelled
-      }
-      assetInteraction.selectAssets([...timelineMonth.assetsIterator()]);
-
-      for (const dateGroup of timelineMonth.timelineDays) {
-        assetInteraction.addGroupToMultiselectGroup(dateGroup.groupTitle);
-      }
-    }
-  } catch (error) {
-    const $t = get(t);
-    handleError(error, $t('errors.error_selecting_all_assets'));
-    assetInteraction.selectAll = false;
-  }
-};
-
 export const toggleArchive = async (asset: AssetResponseDto) => {
   const $t = get(t);
   try {
@@ -410,11 +530,10 @@ export const toggleArchive = async (asset: AssetResponseDto) => {
     } else {
       toastManager.primary($t('removed_from_archive'));
     }
+    return asset;
   } catch (error) {
     handleError(error, $t('errors.unable_to_add_remove_archive', { values: { archived: asset.isArchived } }));
   }
-
-  return asset;
 };
 
 const showUndoArchiveToast = (description: string, assets: TimelineAsset[]) => {
@@ -453,32 +572,6 @@ const undoArchiveAssets = async (assets: TimelineAsset[]) => {
   } catch (error) {
     handleError(error, $t('errors.unable_to_archive_unarchive', { values: { archived: false } }));
   }
-};
-
-export const archiveAssets = async (assets: TimelineAsset[], visibility: AssetVisibility) => {
-  const ids = assets.map(({ id }) => id);
-  const $t = get(t);
-
-  try {
-    if (ids.length > 0) {
-      await updateAssets({
-        assetBulkUpdateDto: { ids, visibility },
-      });
-    }
-
-    if (visibility === AssetVisibility.Archive) {
-      showUndoArchiveToast($t('archived_count', { values: { count: ids.length } }), assets);
-    } else {
-      toastManager.primary($t('unarchived_count', { values: { count: ids.length } }));
-    }
-  } catch (error) {
-    handleError(
-      error,
-      $t('errors.unable_to_archive_unarchive', { values: { archived: visibility === AssetVisibility.Archive } }),
-    );
-  }
-
-  return ids;
 };
 
 export const delay = async (ms: number) => {
@@ -528,7 +621,7 @@ export const copyImageToClipboard = async (source: HTMLImageElement) => {
   await navigator.clipboard.write([new ClipboardItem({ ['image/png']: imgToBlob(source) })]);
 };
 
-export const navigateToAsset = async (targetAsset: AssetResponseDto | undefined | null) => {
+export const navigateToAsset = async (targetAsset: Pick<AssetResponseDto, 'id'> | undefined | null) => {
   if (!targetAsset) {
     return false;
   }

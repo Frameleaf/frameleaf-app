@@ -1,38 +1,39 @@
 <script lang="ts">
-  import SettingAccordion from '$lib/components/shared-components/settings/SettingAccordion.svelte';
-  import SettingInputField from '$lib/components/shared-components/settings/SettingInputField.svelte';
-  import SettingSwitch from '$lib/components/shared-components/settings/SettingSwitch.svelte';
-  import SettingButtonsRow from '$lib/components/shared-components/settings/SystemConfigButtonRow.svelte';
+  import SettingGroup from '$lib/components/frameleaf/settings/SettingGroup.svelte';
+  import SettingField from '$lib/components/frameleaf/settings/SettingField.svelte';
+  import SettingToggle from '$lib/components/frameleaf/settings/SettingToggle.svelte';
+  import SettingActions from '$lib/components/frameleaf/settings/SettingActions.svelte';
   import { SettingInputFieldType } from '$lib/constants';
   import FormatMessage from '$lib/elements/FormatMessage.svelte';
+  import { requireSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
-  import { systemConfigManager } from '$lib/managers/system-config-manager.svelte';
   import { Link } from '@immich/ui';
   import { t } from 'svelte-i18n';
   import { fade } from 'svelte/transition';
 
   const disabled = $derived(featureFlagsManager.value.configFile);
-  const config = $derived(systemConfigManager.value);
-  let configToEdit = $state(systemConfigManager.cloneValue());
+  const settingsDraft = requireSystemConfigDraft();
+  const configToEdit = $derived(settingsDraft.draft);
+  const config = $derived(settingsDraft.baseline);
 </script>
 
 <div>
   <div in:fade={{ duration: 500 }}>
     <form autocomplete="off" onsubmit={(event) => event.preventDefault()}>
-      <div class="ms-4 mt-4 flex flex-col gap-4">
-        <SettingAccordion
+      <div class="flex flex-col gap-4">
+        <SettingGroup
           key="integrity-checks-missing-files"
           title={$t('admin.integrity_checks_missing_files')}
           subtitle={$t('admin.integrity_checks_missing_files_description')}
         >
-          <div class="ms-4 mt-4 flex flex-col gap-4">
-            <SettingSwitch
+          <div class="flex flex-col gap-4">
+            <SettingToggle
               title={$t('admin.integrity_checks_missing_files_enable_description')}
               {disabled}
               bind:checked={configToEdit.integrityChecks.missingFiles.enabled}
             />
 
-            <SettingInputField
+            <SettingField
               inputType={SettingInputFieldType.TEXT}
               label={$t('admin.cron_expression')}
               bind:value={configToEdit.integrityChecks.missingFiles.cronExpression}
@@ -55,23 +56,23 @@
                   </FormatMessage>
                 </p>
               {/snippet}
-            </SettingInputField>
+            </SettingField>
           </div>
-        </SettingAccordion>
+        </SettingGroup>
 
-        <SettingAccordion
+        <SettingGroup
           key="integrity-checks-untracked-files"
           title={$t('admin.integrity_checks_untracked_files')}
           subtitle={$t('admin.integrity_checks_untracked_files_description')}
         >
-          <div class="ms-4 mt-4 flex flex-col gap-4">
-            <SettingSwitch
+          <div class="flex flex-col gap-4">
+            <SettingToggle
               title={$t('admin.integrity_checks_untracked_files_enable_description')}
               {disabled}
               bind:checked={configToEdit.integrityChecks.untrackedFiles.enabled}
             />
 
-            <SettingInputField
+            <SettingField
               inputType={SettingInputFieldType.TEXT}
               label={$t('admin.cron_expression')}
               bind:value={configToEdit.integrityChecks.untrackedFiles.cronExpression}
@@ -94,23 +95,23 @@
                   </FormatMessage>
                 </p>
               {/snippet}
-            </SettingInputField>
+            </SettingField>
           </div>
-        </SettingAccordion>
+        </SettingGroup>
 
-        <SettingAccordion
+        <SettingGroup
           key="integrity-checks-checksum-files"
           title={$t('admin.integrity_checks_checksum_files')}
           subtitle={$t('admin.integrity_checks_checksum_files_description')}
         >
-          <div class="ms-4 mt-4 flex flex-col gap-4">
-            <SettingSwitch
+          <div class="flex flex-col gap-4">
+            <SettingToggle
               title={$t('admin.integrity_checks_checksum_files_enable_description')}
               {disabled}
               bind:checked={configToEdit.integrityChecks.checksumFiles.enabled}
             />
 
-            <SettingInputField
+            <SettingField
               inputType={SettingInputFieldType.TEXT}
               label={$t('admin.cron_expression')}
               bind:value={configToEdit.integrityChecks.checksumFiles.cronExpression}
@@ -133,9 +134,9 @@
                   </FormatMessage>
                 </p>
               {/snippet}
-            </SettingInputField>
+            </SettingField>
 
-            <SettingInputField
+            <SettingField
               inputType={SettingInputFieldType.NUMBER}
               label={$t('admin.integrity_checks_checksum_files_time_limit')}
               description={$t('admin.integrity_checks_checksum_files_time_limit_description')}
@@ -145,7 +146,7 @@
                 config.integrityChecks.checksumFiles.timeLimit}
             />
 
-            <SettingInputField
+            <SettingField
               inputType={SettingInputFieldType.NUMBER}
               label={$t('admin.integrity_checks_checksum_files_percentage_limit')}
               description={$t('admin.integrity_checks_checksum_files_percentage_limit_description')}
@@ -158,9 +159,9 @@
                 config.integrityChecks.checksumFiles.percentageLimit}
             />
           </div>
-        </SettingAccordion>
+        </SettingGroup>
 
-        <SettingButtonsRow bind:configToEdit keys={['integrityChecks']} {disabled} />
+        <SettingActions keys={['integrityChecks']} {disabled} />
       </div>
     </form>
   </div>

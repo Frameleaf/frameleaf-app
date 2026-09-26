@@ -1,44 +1,24 @@
 <script lang="ts">
+  /**
+   * Support Frameleaf (FL-157): the prototype's Buy screen in the wide auth shell
+   * (AuthScreens.jsx:1696-2088, `AuthShell wide`). A key relayed from the Frameleaf store arrives
+   * through session storage (see `+page.ts`), never through the address.
+   */
   import { goto } from '$app/navigation';
-  import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
-  import LicenseActivationSuccess from '$lib/components/shared-components/purchasing/PurchaseActivationSuccess.svelte';
-  import LicenseContent from '$lib/components/shared-components/purchasing/PurchaseContent.svelte';
-  import SupporterBadge from './SupporterBadge.svelte';
-  import { authManager } from '$lib/managers/auth-manager.svelte';
+  import AuthShell from '$lib/components/frameleaf/AuthShell.svelte';
+  import BuyScreen from '$lib/components/frameleaf/buy/BuyScreen.svelte';
   import { Route } from '$lib/route';
-  import { Alert, Container, Stack } from '@immich/ui';
-  import { mdiAlertCircleOutline } from '@mdi/js';
-  import { t } from 'svelte-i18n';
   import type { PageData } from './$types';
 
-  interface Props {
-    data: PageData;
-  }
+  let { data }: { data: PageData } = $props();
 
-  let { data }: Props = $props();
-  let showLicenseActivated = $state(false);
+  const back = () => (history.length > 1 ? history.back() : void goto(Route.photos()));
 </script>
 
-<UserPageLayout title={data.meta.title}>
-  <Container size="medium" center>
-    <Stack gap={4} class="mt-4">
-      {#if data.isActivated === false}
-        <Alert icon={mdiAlertCircleOutline} color="danger" title={$t('purchase_failed_activation')} />
-      {/if}
+<svelte:head>
+  <title>{data.meta.title}</title>
+</svelte:head>
 
-      {#if authManager.isPurchased}
-        <SupporterBadge logoSize="lg" centered />
-      {/if}
-
-      {#if showLicenseActivated || data.isActivated === true}
-        <LicenseActivationSuccess onDone={() => goto(Route.photos(), { replaceState: false })} />
-      {:else}
-        <LicenseContent
-          onActivate={() => {
-            showLicenseActivated = true;
-          }}
-        />
-      {/if}
-    </Stack>
-  </Container>
-</UserPageLayout>
+<AuthShell wide>
+  <BuyScreen pendingKey={data.pendingKey} onBack={back} />
+</AuthShell>

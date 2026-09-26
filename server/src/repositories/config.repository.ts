@@ -21,6 +21,10 @@ import {
   LogLevel,
   QueueName,
 } from 'src/enum.js';
+import { AppReleaseConfig, parseAppReleases, parseHelpLinks } from 'src/utils/app-releases.js';
+import { parseTrustedLanCidrs } from 'src/utils/frameleaf-cloud.js';
+import { FRAMELEAF_RELEASES_API, FRAMELEAF_RELEASE_FEED } from 'src/utils/frameleaf-release.js';
+import { RecoveryRootConfig, parseRecoveryRoots } from 'src/utils/media-health-roots.js';
 import { setDifference } from 'src/utils/set.js';
 
 export interface EnvData {
@@ -66,13 +70,11 @@ export interface EnvData {
     vectorExtension?: VectorExtension;
   };
 
-  licensePublicKey: {
-    client: string;
-    server: string;
-  };
-
   versionCheck: {
+    /** Frameleaf Cloud release feed, asked first. */
     url: string;
+    /** Frameleaf's GitHub releases, asked only when the feed cannot answer. */
+    fallbackUrl: string;
   };
 
   network: {
@@ -110,6 +112,10 @@ export interface EnvData {
   storage: {
     ignoreMountCheckErrors: boolean;
     mediaLocation?: string;
+    /** Directories administrators may select Google Photos imports from (FL-65). */
+    importRoots: string[];
+    /** Library Care recovery locations (FL-69). Searched and read only; never linked in place. */
+    recoveryRoots?: RecoveryRootConfig[];
   };
 
   workers: ImmichWorker[];
@@ -121,23 +127,26 @@ export interface EnvData {
     };
   };
 
+  /** Signed release destinations of this installation's apps (FL-82). */
+  appReleases: AppReleaseConfig;
+
+  /** FL-159: Frameleaf Cloud deployment configuration. `url` null means not configured. */
+  frameleafCloud: {
+    url: string | null;
+    identityDir: string | null;
+    /** FL-155: single-use headless link token, or null. */
+    linkToken: string | null;
+    /** FL-154: the edge worker's direct listener. */
+    edge: { port: number; bind: string; secret: string | null };
+    /** FL-158: this server's home-network address, or null. */
+    localUrl: string | null;
+    /** FL-154: networks treated as home besides RFC 1918 and ULA. */
+    trustedLanCidrs: string[];
+  };
+
   noColor: boolean;
   nodeVersion?: string;
 }
-
-const productionKeys = {
-  client:
-    'LS0tLS1CRUdJTiBQVUJMSUMgS0VZLS0tLS0KTUlJQklqQU5CZ2txaGtpRzl3MEJBUUVGQUFPQ0FROEFNSUlCQ2dLQ0FRRUF2LzdTMzJjUkE1KysxTm5WRHNDTQpzcFAvakpISU1xT0pYRm5oNE53QTJPcHorUk1mZGNvOTJQc09naCt3d1FlRXYxVTJjMnBqelRpUS8ybHJLcS9rCnpKUmxYd2M0Y1Vlc1FETUpPRitQMnFPTlBiQUprWHZDWFlCVUxpdENJa29Md2ZoU0dOanlJS2FSRGhkL3ROeU4KOCtoTlJabllUMWhTSWo5U0NrS3hVQ096YXRQVjRtQ0RlclMrYkUrZ0VVZVdwOTlWOWF6dkYwRkltblRXcFFTdwpjOHdFWmdPTWg0c3ZoNmFpY3dkemtQQ3dFTGFrMFZhQkgzMUJFVUNRTGI5K0FJdEhBVXRKQ0t4aGI1V2pzMXM5CmJyWGZpMHZycGdjWi82RGFuWTJxZlNQem5PbXZEMkZycmxTMXE0SkpOM1ZvN1d3LzBZeS95TWNtelRXWmhHdWgKVVFJREFRQUIKLS0tLS1FTkQgUFVCTElDIEtFWS0tLS0tDQo=',
-  server:
-    'LS0tLS1CRUdJTiBQVUJMSUMgS0VZLS0tLS0KTUlJQklqQU5CZ2txaGtpRzl3MEJBUUVGQUFPQ0FROEFNSUlCQ2dLQ0FRRUFvcG5ZRGEwYS9kVTVJZUc3NGlFRQpNd2RBS2pzTmN6TGRDcVJkMVo5eTVUMndqTzdlWUlPZUpUc2wzNTBzUjBwNEtmU1VEU1h2QzlOcERwYzF0T0tsCjVzaEMvQXhwdlFBTENva0Y0anQ4dnJyZDlmQ2FYYzFUcVJiT21uaGl1Z0Q2dmtyME8vRmIzVURpM1UwVHZoUFAKbFBkdlNhd3pMcldaUExmbUhWVnJiclNLbW45SWVTZ3kwN3VrV1RJeUxzY2lOcnZuQnl3c0phUmVEdW9OV1BCSApVL21vMm1YYThtNHdNV2hpWGVoaUlPUXFNdVNVZ1BlQ3NXajhVVngxQ0dsUnpQREEwYlZOUXZlS1hXVnhjRUk2ClVMRWdKeTJGNDlsSDArYVlDbUJmN05FcjZWUTJXQjk1ZXZUS1hLdm4wcUlNN25nRmxjVUF3NmZ1VjFjTkNUSlMKNndJREFRQUIKLS0tLS1FTkQgUFVCTElDIEtFWS0tLS0tDQo=',
-};
-
-const stagingKeys = {
-  client:
-    'LS0tLS1CRUdJTiBQVUJMSUMgS0VZLS0tLS0KTUlJQklqQU5CZ2txaGtpRzl3MEJBUUVGQUFPQ0FROEFNSUlCQ2dLQ0FRRUFuSUNyTm5jbGpPSC9JdTNtWVVaRQp0dGJLV1c3OGRuajl5M0U2ekk3dU1NUndEckdYWFhkTGhkUDFxSWtlZHh0clVVeUpCMWR4R04yQW91S082MlNGCldrbU9PTmNGQlRBWFZTdjhUNVY0S0VwWnFQYWEwaXpNaGxMaE5sRXEvY1ZKdllrWlh1Z2x6b1o3cG1nbzFSdHgKam1iRm5NNzhrYTFRUUJqOVdLaEw2eWpWRUl2MDdVS0lKWHBNTnNuS2g1V083MjZhYmMzSE9udTlETjY5VnFFRQo3dGZrUnRWNmx2U1NzMkFVMngzT255cHA4ek53b0lPTWRibGsyb09aWWROZzY0Y3l2SzJoU0FlU3NVMFRyOVc5Ckgra0Y5QlNCNlk0QXl0QlVkSmkrK2pMSW5HM2Q5cU9ieFVzTlYrN05mRkF5NjJkL0xNR0xSOC9OUFc0U0s3c0MKRlFJREFRQUIKLS0tLS1FTkQgUFVCTElDIEtFWS0tLS0tDQo=',
-  server:
-    'LS0tLS1CRUdJTiBQVUJMSUMgS0VZLS0tLS0KTUlJQklqQU5CZ2txaGtpRzl3MEJBUUVGQUFPQ0FROEFNSUlCQ2dLQ0FRRUE3Sy8yd3ZLUS9NdU8ydi9MUm5saAoyUy9zTHhDOGJiTEw1UUlKOGowQ3BVZW40YURlY2dYMUpKUmtGNlpUVUtpNTdTbEhtS3RSM2JOTzJmdTBUUVg5Ck5WMEJzVzllZVB0MmlTMWl4VVFmTzRObjdvTjZzbEtac01qd29RNGtGRGFmM3VHTlZJc0dMb3UxVWRLUVhpeDEKUlRHcXVTb3NZVjNWRlk3Q1hGYTVWaENBL3poVXNsNGFuVXp3eEF6M01jUFVlTXBaenYvbVZiQlRKVzBPSytWZgpWQUJvMXdYMkVBanpBekVHVzQ3Vko4czhnMnQrNHNPaHFBNStMQjBKVzlORUg5QUpweGZzWE4zSzVtM00yNUJVClZXcTlRYStIdHRENnJ0bnAvcUFweXVkWUdwZk9HYTRCUlZTR1MxMURZM0xrb2FlRzYwUEU5NHpoYjduOHpMWkgKelFJREFRQUIKLS0tLS1FTkQgUFVCTElDIEtFWS0tLS0tDQo=',
-};
 
 const WORKER_TYPES = new Set(Object.values(ImmichWorker));
 
@@ -172,6 +181,7 @@ const getEnv = (): EnvData => {
     throw new Error(messages.join('\n'));
   }
   const dto = parseResult.data;
+  const helpLinks = parseHelpLinks(dto);
 
   const includedWorkers = asSet(dto.IMMICH_WORKERS_INCLUDE, [ImmichWorker.Api, ImmichWorker.Microservices]);
   const excludedWorkers = asSet(dto.IMMICH_WORKERS_EXCLUDE, []);
@@ -183,7 +193,6 @@ const getEnv = (): EnvData => {
   }
 
   const environment = dto.IMMICH_ENV || ImmichEnvironment.Production;
-  const isProd = environment === ImmichEnvironment.Production;
   const buildFolder = dto.IMMICH_BUILD_DATA || '/build';
   const folders = {
     geodata: join(buildFolder, 'geodata'),
@@ -252,10 +261,11 @@ const getEnv = (): EnvData => {
       sourceRef: dto.IMMICH_SOURCE_REF,
       sourceCommit: dto.IMMICH_SOURCE_COMMIT,
       sourceUrl: dto.IMMICH_SOURCE_URL,
-      thirdPartySourceUrl: dto.IMMICH_THIRD_PARTY_SOURCE_URL,
-      thirdPartyBugFeatureUrl: dto.IMMICH_THIRD_PARTY_BUG_FEATURE_URL,
-      thirdPartyDocumentationUrl: dto.IMMICH_THIRD_PARTY_DOCUMENTATION_URL,
-      thirdPartySupportUrl: dto.IMMICH_THIRD_PARTY_SUPPORT_URL,
+      // FL-135: validated https help destinations, `FRAMELEAF_*` first (see `parseHelpLinks`)
+      thirdPartySourceUrl: helpLinks.sourceUrl,
+      thirdPartyBugFeatureUrl: helpLinks.bugFeatureUrl,
+      thirdPartyDocumentationUrl: helpLinks.documentationUrl,
+      thirdPartySupportUrl: helpLinks.supportUrl,
     },
 
     bull: {
@@ -265,7 +275,9 @@ const getEnv = (): EnvData => {
         defaultJobOptions: {
           attempts: 1,
           removeOnComplete: true,
-          removeOnFail: false,
+          // FL-71: failed jobs are kept for the Job manager to review, retry or remove; each queue
+          // keeps its newest 1,000, the most one "Remove failed records" clears.
+          removeOnFail: { count: 1000 },
         },
       },
       queues: Object.values(QueueName).map((name) => ({ name })),
@@ -295,10 +307,10 @@ const getEnv = (): EnvData => {
       config: resolveHelmetFile(dto.IMMICH_HELMET_FILE),
     },
 
-    licensePublicKey: isProd ? productionKeys : stagingKeys,
-
     versionCheck: {
-      url: isProd ? 'https://version.immich.cloud/version' : 'https://version.dev.immich.cloud/version',
+      // FL-80 / FL-192: Frameleaf's own release feeds only; no Immich version service, in any environment.
+      url: FRAMELEAF_RELEASE_FEED,
+      fallbackUrl: FRAMELEAF_RELEASES_API,
     },
 
     network: {
@@ -327,9 +339,26 @@ const getEnv = (): EnvData => {
       allow: dto.IMMICH_ALLOW_SETUP ?? true,
     },
 
+    appReleases: parseAppReleases(dto),
+
+    frameleafCloud: {
+      url: dto.FRAMELEAF_CLOUD_URL ? dto.FRAMELEAF_CLOUD_URL.replace(/\/+$/, '') : null,
+      identityDir: dto.FRAMELEAF_IDENTITY_DIR ?? null,
+      linkToken: dto.FRAMELEAF_LINK_TOKEN ?? null,
+      edge: {
+        port: dto.FRAMELEAF_EDGE_PORT ?? 2443,
+        bind: dto.FRAMELEAF_EDGE_BIND ?? '0.0.0.0',
+        secret: dto.FRAMELEAF_EDGE_SECRET ?? null,
+      },
+      localUrl: dto.FRAMELEAF_LOCAL_URL ? new URL(dto.FRAMELEAF_LOCAL_URL).origin : null,
+      trustedLanCidrs: parseTrustedLanCidrs(dto.FRAMELEAF_TRUSTED_LAN_CIDRS),
+    },
+
     storage: {
       ignoreMountCheckErrors: !!dto.IMMICH_IGNORE_MOUNT_CHECK_ERRORS,
       mediaLocation: dto.IMMICH_MEDIA_LOCATION,
+      importRoots: dto.IMMICH_IMPORT_ROOTS,
+      recoveryRoots: parseRecoveryRoots(dto.FRAMELEAF_RECOVERY_ROOTS),
     },
 
     telemetry: {

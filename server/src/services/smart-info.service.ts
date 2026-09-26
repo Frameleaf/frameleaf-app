@@ -4,13 +4,21 @@ import type { JobOf } from 'src/types.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import { SystemConfig } from 'src/dtos/config.dto.js';
 
-import { AssetVisibility, DatabaseLock, ImmichWorker, JobName, JobStatus, QueueName } from 'src/enum.js';
+import { AssetVisibility, DatabaseLock, ImmichWorker, JobName, JobStatus, MlWorkload, QueueName } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
+import { ClassificationService } from 'src/services/classification.service.js';
 import { ZeroShotTaggingService } from 'src/services/zero-shot-tagging.service.js';
 import { batched, getCLIPModelInfo, isSmartSearchEnabled } from 'src/utils/misc.js';
 
 @Injectable()
 export class SmartInfoService extends BaseService {
+  private _classificationService: ClassificationService | undefined;
+
+  private get classificationService(): ClassificationService {
+    this._classificationService ??= BaseService.create(ClassificationService, this);
+    return this._classificationService;
+  }
+
   private get zeroShotTaggingService(): ZeroShotTaggingService {
     // Constructed lazily via BaseService.create so we reuse the same repo
     // singletons without threading a new dep through BaseService's ctor.
@@ -113,7 +121,16 @@ export class SmartInfoService extends BaseService {
       return JobStatus.Skipped;
     }
 
-    const embedding = await this.machineLearningRepository.encodeImage(asset.files[0].path, machineLearning.clip);
+    const selection = await this.selectRoutedMlDestination({
+      workload: MlWorkload.Clip,
+      jobId: id,
+      jobName: JobName.SmartSearch,
+    });
+    const embedding = await this.machineLearningRepository.encodeImage(
+      selection,
+      asset.files[0].path,
+      machineLearning.clip,
+    );
 
     if (this.databaseRepository.isBusy(DatabaseLock.CLIPDimSize)) {
       this.logger.verbose(`Waiting for CLIP dimension size to be updated`);
@@ -128,6 +145,8 @@ export class SmartInfoService extends BaseService {
 
     await this.searchRepository.upsert(asset.id, embedding);
     await this.zeroShotTaggingService.tagAsset(asset.id, asset.ownerId, embedding);
+    // The owner's classification rules (FL-60) can compare the new visual embedding. Never throws.
+    await this.classificationService.evaluateAsset(asset.id, asset.ownerId);
 
     return JobStatus.Success;
   }

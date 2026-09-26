@@ -1,13 +1,17 @@
 import { CronExpression } from '@nestjs/schedule';
 import { validateCronExpression } from 'cron';
+import { cloneDeep, defaultsDeep } from 'lodash-es';
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 import type { DeepPartial } from 'src/types.js';
+import { CloudBackupKeyModeSchema, CloudBackupTargetSettingSchema } from 'src/dtos/cloud-backup.dto.js';
 import {
   AudioCodec,
   AudioCodecSchema,
   CQMode,
   CQModeSchema,
+  ClassificationRuleAction,
+  ClassificationRuleActionSchema,
   Colorspace,
   ColorspaceSchema,
   ConfigVisibility,
@@ -167,48 +171,73 @@ const nsfwDetectionDefaults = {
   hideFromLibrary: false,
 };
 
-const runpodServerlessDefaults = {
-  // GPU **pool IDs** (not specific types). RunPod's serverless API
-  // accepts AMPERE_16, AMPERE_24, ADA_24, AMPERE_48, ADA_48_PRO,
-  // AMPERE_80, ADA_80_PRO, HOPPER_141, ADA_32_PRO, BLACKWELL_96,
-  // BLACKWELL_180.
-  //
-  // Defaults target Qwen2.5-VL-9B image description at fp16 (~24 GB
-  // weights + activations). 48 GB pools (A40/A6000, L40/L40S) leave
-  // headroom; 80 GB (A100, H100) is the fallback for availability.
-  // Smaller pools work for CLIP/face/OCR but Qwen 9B will OOM there.
-  // See https://docs.runpod.io/references/gpu-types#gpu-pools.
-  gpuTypeIds: ['AMPERE_48', 'ADA_48_PRO', 'AMPERE_80'],
-  workersMin: 0,
-  workersMax: 3,
-  idleTimeoutSeconds: 30,
-  executionTimeoutMs: 600_000,
-  // LB endpoints have no queue, so REQUEST_COUNT is the only meaningful
-  // scaler. RunPod silently accepts QUEUE_DELAY for LB but it's a no-op.
-  scalerType: 'REQUEST_COUNT' as const,
-  scalerValue: 4,
+/**
+ * FL-159: Frameleaf Cloud processing. Everything is off until an administrator turns it on and adds the
+ * destination; faces are refused by policy and cannot be turned on in this version.
+ */
+const CLOUD_ROUTED_WORKLOADS = ['descriptions', 'upscale', 'restoration', 'studio', 'interpolation'] as const;
+const frameleafCloudDefaults = {
+  // FL-158: Sign in with Frameleaf. Off at home until an administrator shows it. The client
+  // authenticates with this server's key only (private_key_jwt); there is no client secret (FL-177).
+  signIn: { buttonText: 'Sign in with Frameleaf', showOnLocalLogin: false },
+  // FL-161: what remote access may carry. Remote visitors always sign in with Frameleaf; originals,
+  // archives and database backups stay off the relay, and passwords are refused away from home,
+  // unless an administrator turns these on.
+  remoteAccess: { allowOriginalsOverRelay: false, allowPasswordOverRelay: false },
+  cloudMl: {
+    enabled: false,
+    // Where each kind of work may run (§3.2): this server only until an administrator chooses.
+    routing: {
+      descriptions: 'local' as 'local' | 'both' | 'cloud',
+      upscale: 'local' as 'local' | 'both' | 'cloud',
+      restoration: 'local' as 'local' | 'both' | 'cloud',
+      studio: 'local' as 'local' | 'both' | 'cloud',
+      interpolation: 'local' as 'local' | 'both' | 'cloud',
+    },
+    startWith: 'local' as 'local' | 'cloud',
+    // FL-186: the Frameleaf Cloud model is not a setting. It is the catalogue SKU chosen per model group
+    // (`ml_cloud_model_choice`, `PUT admin/cloud/ml/models/{group}`), else the catalogue's marked
+    // default; a `models` key saved by an earlier version is dropped when the configuration is read.
+    autoDescribe: { enabled: false, dailyBudgetUsd: 2 },
+    faces: { enabled: false as const },
+  },
+  // FL-160: cloud backup is off until an administrator sets it up (Settings › Frameleaf Cloud › Cloud
+  // backup), which claims the bucket. The bucket key is never part of the configuration: it is a 0600
+  // file under the identity directory, or held in memory only.
+  cloudBackup: {
+    enabled: false,
+    target: 'off' as 'off' | 'managed' | 'byo-s3',
+    s3: { endpoint: '', region: '', bucket: '', accessKeyId: '', secretAccessKey: '' },
+    keyMode: 'server' as 'server' | 'own-stored' | 'own-memory',
+    include: { thumbs: false, encodedVideo: false },
+  },
 };
 
-const runpodDefaults = {
-  enabled: false,
-  mode: 'disabled' as const,
-  apiKey: '',
-  hfToken: '',
-  imageName: 'ghcr.io/frameleaf/frameleaf-machine-learning:release-cuda-runpod',
-  dataPrivacyAcknowledged: false,
-  defaultGpuTypeId: 'NVIDIA RTX A5000',
-  containerDiskGb: 50,
-  volumeGb: 20,
-  autoStopEnabled: true,
-  autoStopGraceMinutes: 15,
-  autoBackfillOnLaunch: false,
-  maxRuntimeHours: 24,
-  provisionTimeoutMinutes: 5,
-  serverless: runpodServerlessDefaults,
+/**
+ * Library care (FL-69, settings-catalog.mjs:905-977): the template's Media health & integrity,
+ * Repair queues and Enrichment completeness toggles. Hoisted like the other fork defaults so the
+ * schema can default a configuration saved before the section existed.
+ */
+const libraryCareDefaults = {
+  healthScan: true,
+  healthScanCronExpression: CronExpression.EVERY_DAY_AT_2AM as string,
+  checksumScan: true,
+  integrityAudit: true,
+  livePhotoRepair: true,
+  rawRecovery: true,
+  duplicateReview: true,
+  incrementalEnrichment: true,
+  manualMetadata: true,
+};
+
+const smartAlbumRulesDefaults = {
+  visualCategories: true,
+  defaultAction: ClassificationRuleAction.Review,
 };
 
 const smartAlbumsDefaults = {
   enabled: false,
+  rules: smartAlbumRulesDefaults,
   builtIn: {
     travel: {
       enabled: true,
@@ -450,90 +479,125 @@ export const NsfwDetectionConfigSchema = AdminConfigMachineLearningModelSchema.e
     .describe('Hide NSFW assets from library views unless the session has PIN-elevated access'),
 }).meta({ id: 'AdminConfigNsfwDetectionDto' });
 
-const AdminConfigRunPodServerlessSchema = z
-  .object({
-    gpuTypeIds: z
-      .array(z.string())
-      .min(1)
-      .describe('Ranked GPU pool IDs the endpoint can use (cheapest first). At least one required.'),
-    workersMin: z.int().min(0).max(10).describe('Always-warm workers (0 = scale to zero)'),
-    workersMax: z.int().min(1).max(20).describe('Max concurrent workers'),
-    idleTimeoutSeconds: z.int().min(5).max(3600).describe('Seconds before an idle worker scales down'),
-    executionTimeoutMs: z.int().min(5000).max(3_600_000).describe('Max time per request (ms)'),
-    scalerType: z.enum(['QUEUE_DELAY', 'REQUEST_COUNT']).describe('Worker autoscaler strategy'),
-    scalerValue: z.int().min(1).max(60).describe('Scaler threshold (queue seconds or request count)'),
-  })
-  .meta({ id: 'AdminConfigRunPodServerlessDto' })
-  // Cross-field guard — reject configs where workersMin > workersMax instead
-  // of letting RunPod's endpoint create fail at provisioning time with a less
-  // obvious error.
-  .refine((data) => data.workersMax >= data.workersMin, {
-    message: 'workersMax must be greater than or equal to workersMin',
-    path: ['workersMax'],
-  });
+const CloudRouteModeSchema = z
+  .enum(['local', 'both', 'cloud'])
+  .describe(
+    'local: this server or a home-network worker only; both: each job lets the person pick; cloud: Frameleaf Cloud only',
+  )
+  .meta({ id: 'CloudRouteMode' });
 
-const AdminConfigRunPodSchema = z
+const routedRecord = <T extends z.ZodType>(schema: T) =>
+  z.object(
+    Object.fromEntries(CLOUD_ROUTED_WORKLOADS.map((workload) => [workload, schema])) as Record<
+      (typeof CLOUD_ROUTED_WORKLOADS)[number],
+      T
+    >,
+  );
+
+const AdminConfigFrameleafCloudSchema = z
   .object({
-    enabled: configBool.describe('Enabled'),
-    // Optional in the wire DTO so older clients that don't know about the
-    // discriminator can still PUT the legacy shape. Server back-compat
-    // infers the effective mode from `enabled` when this is undefined or
-    // 'disabled' (see `effectiveMode` in runpod.service.ts).
-    mode: z
-      .enum(['disabled', 'pod', 'serverless'])
-      .default('disabled')
-      .describe(
-        'disabled = off, pod = manually launched dedicated GPU, serverless = auto-managed scale-to-zero endpoint. Optional for back-compat with legacy clients.',
-      ),
-    // apiKey is a billing credential. mapAdminConfig() redacts it to '' on
-    // every GET response, and updateAdminConfig() interprets an empty incoming
-    // value as "preserve the stored key" (rather than "wipe it"). Net effect:
-    // the secret is never returned by the API once set, and admin form
-    // round-trips don't accidentally erase it. To rotate, send a new
-    // non-empty value.
-    //
-    // We intentionally do NOT use `.meta({ writeOnly: true })`: although the
-    // OpenAPI semantics are correct, oazapfts removes write-only fields from
-    // the generated TypeScript type entirely, which breaks the admin form's
-    // ability to bind to the field as an input. The masking + preserve
-    // pattern above achieves the same security guarantee at the application
-    // layer.
-    apiKey: z.string().describe('RunPod API key (write-only; empty preserves the existing key)'),
-    apiKeyConfigured: z
-      .boolean()
-      .optional()
-      .describe('Read-only indicator that a key is currently stored. Set by the server; ignored on write.'),
-    // Same redact/preserve pattern as apiKey. Forwarded to the ML worker as
-    // HF_TOKEN so it can pull gated/large HuggingFace models (Qwen-VL etc.)
-    // without rate-limit hits. Optional — empty string disables forwarding.
-    hfToken: z
-      .string()
-      .default('')
-      .describe('HuggingFace token forwarded to worker as HF_TOKEN (write-only; empty preserves the existing token)'),
-    hfTokenConfigured: z
-      .boolean()
-      .optional()
-      .describe('Read-only indicator that an HF token is currently stored. Set by the server; ignored on write.'),
-    imageName: z.string().min(1).describe('Container image to launch'),
-    dataPrivacyAcknowledged: configBool.describe('User accepted that image previews leave the network'),
-    // Pod-mode settings
-    defaultGpuTypeId: z.string().min(1).describe('Preferred GPU type ID (Pod mode)'),
-    containerDiskGb: z.int().min(10).max(2000).describe('Container disk size (GB) (Pod mode)'),
-    volumeGb: z.int().min(0).max(2000).describe('Persistent volume size (GB) (Pod mode)'),
-    autoStopEnabled: configBool.describe('Auto-stop when idle (Pod mode)'),
-    autoStopGraceMinutes: z.int().min(1).max(1440).describe('Idle minutes before auto-stop (Pod mode)'),
-    autoBackfillOnLaunch: configBool.describe('Auto-run ML backfill on pod ready (Pod mode)'),
-    maxRuntimeHours: z.int().min(1).max(168).describe('Hard runtime ceiling (hours) (Pod mode)'),
-    provisionTimeoutMinutes: z
-      .int()
-      .min(1)
-      .max(60)
-      .default(5)
-      .describe('How long to wait for the pod to reach RUNNING + healthy /ping before giving up (Pod mode)'),
-    // Serverless-mode settings
-    serverless: AdminConfigRunPodServerlessSchema.default(runpodServerlessDefaults),
+    signIn: z
+      .object({
+        buttonText: z.string().max(100).describe('Sign in with Frameleaf button text').meta({ visibility: Public }),
+        showOnLocalLogin: configBool
+          .describe('Show Sign in with Frameleaf on the local sign-in page too')
+          .meta({ visibility: Public }),
+      })
+      .default(frameleafCloudDefaults.signIn)
+      .meta({ id: 'AdminConfigFrameleafSignInDto' }),
+    remoteAccess: z
+      .object({
+        allowOriginalsOverRelay: configBool.describe(
+          'Allow original downloads, archives and database backups over the Frameleaf relay',
+        ),
+        allowPasswordOverRelay: configBool.describe(
+          'Allow password sign-in, and sessions it creates, over remote access',
+        ),
+      })
+      .default(frameleafCloudDefaults.remoteAccess)
+      .meta({ id: 'AdminConfigFrameleafRemoteAccessDto' }),
+    cloudMl: z
+      .object({
+        enabled: configBool.describe(
+          'Use Frameleaf Cloud for chosen jobs (each job still needs consent and confirmation)',
+        ),
+        routing: routedRecord(CloudRouteModeSchema)
+          .describe('Where each kind of work may run')
+          .meta({ id: 'AdminConfigFrameleafCloudRoutingDto' }),
+        startWith: z
+          .enum(['local', 'cloud'])
+          .describe('The destination a job preselects when its kind of work may run in both places'),
+        autoDescribe: z
+          .object({
+            enabled: configBool.describe('Describe new photos automatically on Frameleaf Cloud'),
+            dailyBudgetUsd: z
+              .number()
+              .min(0.5)
+              .max(100)
+              .meta({ format: 'double' })
+              .describe('Daily budget for automatic descriptions, USD; counts toward the AI Wallet daily cap'),
+          })
+          .meta({ id: 'AdminConfigFrameleafCloudAutoDescribeDto' }),
+        faces: z
+          .object({ enabled: z.literal(false).describe('Faces never run on Frameleaf Cloud') })
+          .meta({ id: 'AdminConfigFrameleafCloudFacesDto' }),
+      })
+      .meta({ id: 'AdminConfigFrameleafCloudMlDto' }),
+    cloudBackup: z
+      .object({
+        enabled: configBool.describe(
+          'Back up to the claimed bucket (set up from Settings › Frameleaf Cloud › Cloud backup)',
+        ),
+        target: CloudBackupTargetSettingSchema,
+        s3: z
+          .object({
+            endpoint: emptyOrUrl('The storage address must be empty or a valid URL').describe(
+              'Storage address of your own S3-compatible bucket (HTTPS)',
+            ),
+            region: z.string().max(64).describe('Region; empty reads it from the storage address or uses us-east-1'),
+            bucket: z.string().max(63).describe('Bucket name'),
+            accessKeyId: z.string().max(256).describe('Access key ID'),
+            // FL-160: write-only, like the SMTP password (FL-67). mapAdminConfig() returns '' and a save
+            // that sends '' back keeps the stored secret for the same address, bucket and access key.
+            // Replace or clear it through /admin/config/credentials/cloud-backup-s3-secret-key.
+            secretAccessKey: z.string().describe('Secret access key (write-only; empty preserves the existing secret)'),
+            secretAccessKeyConfigured: z
+              .boolean()
+              .optional()
+              .describe('Read-only indicator that a secret access key is stored. Set by the server; ignored on write.'),
+          })
+          .meta({ id: 'AdminConfigFrameleafCloudBackupS3Dto' }),
+        keyMode: CloudBackupKeyModeSchema,
+        include: z
+          .object({
+            thumbs: configBool.describe('Also back up thumbnails and previews'),
+            encodedVideo: configBool.describe('Also back up transcoded videos'),
+          })
+          .meta({ id: 'AdminConfigFrameleafCloudBackupIncludeDto' }),
+      })
+      .default(frameleafCloudDefaults.cloudBackup)
+      .meta({ id: 'AdminConfigFrameleafCloudBackupDto' }),
   })
-  .meta({ id: 'AdminConfigRunPodDto' });
+  .meta({ id: 'AdminConfigFrameleafCloudDto' });
+
+/**
+ * A stored Frameleaf Cloud configuration read back over the defaults, so a value saved before a
+ * field existed (or in an older shape) still yields a complete configuration. Unknown keys are dropped,
+ * including the `cloudMl.models` slider positions of earlier versions (FL-186). Only a configuration
+ * that is still invalid falls back to the defaults.
+ */
+export const readFrameleafCloudConfig = (
+  value: unknown,
+  warn: (message: string) => void = () => {},
+): SystemConfig['frameleafCloud'] => {
+  const merged = defaultsDeep({}, value ?? {}, frameleafCloudDefaults) as SystemConfig['frameleafCloud'];
+  const parsed = AdminConfigFrameleafCloudSchema.safeParse(merged);
+  if (parsed.success) {
+    return parsed.data;
+  }
+  warn(`Frameleaf Cloud settings could not be read and were reset to the defaults: ${parsed.error.message}`);
+  return cloneDeep(frameleafCloudDefaults);
+};
 
 // Admin-controlled but unbounded strings flow into background-job log lines
 // and the smart-album evaluator. Cap to 256 chars and reject control characters
@@ -557,9 +621,21 @@ const SmartAlbumKindSchema = z
   })
   .meta({ id: 'AdminConfigSmartAlbumKindDto' });
 
+/**
+ * Rules people write for their own smart albums (FL-60). `defaultAction` is only the action a new
+ * rule starts with; archiving is never a default and always an explicit, consented rule choice.
+ */
+const AdminConfigSmartAlbumRulesSchema = z
+  .object({
+    visualCategories: configBool.describe('Whether rules may match visual category phrases'),
+    defaultAction: ClassificationRuleActionSchema.describe('The action a new rule starts with'),
+  })
+  .meta({ id: 'AdminConfigSmartAlbumRulesDto' });
+
 const AdminConfigSmartAlbumsSchema = z
   .object({
     enabled: configBool.describe('Master smart-album enabled toggle'),
+    rules: AdminConfigSmartAlbumRulesSchema.default(smartAlbumRulesDefaults),
     builtIn: z
       .object({
         travel: SmartAlbumKindSchema,
@@ -572,6 +648,26 @@ const AdminConfigSmartAlbumsSchema = z
       .meta({ id: 'AdminConfigSmartAlbumBuiltInDto' }),
   })
   .meta({ id: 'AdminConfigSmartAlbumsDto' });
+
+const AdminConfigLibraryCareSchema = z
+  .object({
+    healthScan: configBool.describe(
+      'Schedule incremental health scans of every account; each resumes from its recorded checkpoints',
+    ),
+    healthScanCronExpression: cronExpressionSchema.describe('When the scheduled health scan starts'),
+    checksumScan: configBool.describe('Health scans verify each original against its recorded checksum'),
+    integrityAudit: configBool.describe(
+      'Run the scheduled database and file reference audits (missing and untracked files)',
+    ),
+    livePhotoRepair: configBool.describe('Suggest Live Photo pairs to relink; ambiguous pairs stay in review'),
+    rawRecovery: configBool.describe('Search for recoverable copies of RAW originals when locating originals'),
+    duplicateReview: configBool.describe('Group near-duplicates for review; deletion stays explicit'),
+    incrementalEnrichment: configBool.describe(
+      'A full description rerun reprocesses only results that are missing, failed or out of date',
+    ),
+    manualMetadata: configBool.describe('A description rerun replaces only generated text and keeps manual text'),
+  })
+  .meta({ id: 'AdminConfigLibraryCareDto' });
 
 const AdminConfigGeneratedImageSchema = z
   .object({
@@ -633,7 +729,14 @@ const AdminConfigSmtpSchema = z
         port: z.int().min(0).max(65_535).describe('SMTP server port'),
         secure: configBool.describe('Whether to use secure connection (TLS/SSL)'),
         username: z.string().describe('SMTP username'),
-        password: z.string().describe('SMTP password'),
+        // FL-67: write-only, like oauth.clientSecret. mapAdminConfig() returns '' and
+        // updateAdminConfig() keeps the stored password when '' comes back. Replace or clear it
+        // through /admin/config/credentials/smtp-password.
+        password: z.string().describe('SMTP password (write-only; empty preserves the existing password)'),
+        passwordConfigured: z
+          .boolean()
+          .optional()
+          .describe('Read-only indicator that an SMTP password is stored. Set by the server; ignored on write.'),
       })
       .meta({ id: 'AdminConfigSmtpTransportDto' }),
   })
@@ -693,6 +796,7 @@ const AdminConfigSchemaWithVisibility = z
         workflow: AdminConfigJobSettingsSchema,
         editor: AdminConfigJobSettingsSchema,
         integrityCheck: AdminConfigJobSettingsSchema,
+        petRecognition: ForkJobSettingsSchema.default({ concurrency: 1 }),
       })
       .meta({ id: 'AdminConfigJobDto' }),
     logging: z
@@ -747,10 +851,14 @@ const AdminConfigSchemaWithVisibility = z
             .max(1)
             .describe('Minimum confidence score for text recognition')
             .meta({ format: 'double' }),
+          // FL-63: off by default, as in the design; suggestions stay editable and tied to their text
+          documentFields: z
+            .boolean()
+            .default(false)
+            .describe('Suggest receipt and document fields (dates, totals, references) from recognized text'),
         }).meta({ id: 'AdminConfigOcrDto' }),
         imageDescription: ImageDescriptionConfigSchema.default(imageDescriptionDefaults),
         nsfwDetection: NsfwDetectionConfigSchema.default(nsfwDetectionDefaults),
-        runpod: AdminConfigRunPodSchema.default(runpodDefaults),
       })
       .meta({ id: 'AdminConfigMachineLearningDto' }),
     map: z
@@ -774,7 +882,14 @@ const AdminConfigSchemaWithVisibility = z
         autoRegister: configBool.describe('Auto register'),
         buttonText: z.string().describe('Button text').meta({ visibility: Public }),
         clientId: z.string().describe('Client ID'),
-        clientSecret: z.string().describe('Client secret'),
+        // FL-67: write-only. mapAdminConfig() returns '' and updateAdminConfig() keeps the stored
+        // secret when '' comes back. Replace or clear it through
+        // /admin/config/credentials/oauth-client-secret.
+        clientSecret: z.string().describe('Client secret (write-only; empty preserves the existing secret)'),
+        clientSecretConfigured: z
+          .boolean()
+          .optional()
+          .describe('Read-only indicator that a client secret is stored. Set by the server; ignored on write.'),
         tokenEndpointAuthMethod: OAuthTokenEndpointAuthMethodSchema,
         timeout: z.int().min(1).describe('Timeout'),
         allowInsecureRequests: configBool.describe('Allow insecure requests'),
@@ -825,6 +940,15 @@ const AdminConfigSchemaWithVisibility = z
       })
       .meta({ id: 'AdminConfigPhysicalDeduplicationDto' })
       .default({ enabled: false, masterUserId: null }),
+    // FL-71: the template's "Logs & diagnostics" local analytics rows. The nightly collector only
+    // reads counts and sizes into this server's database; external telemetry stays off regardless.
+    analytics: z
+      .object({
+        enabled: configBool.describe('Collect local analytics history every night'),
+        historyDays: z.int().min(30).max(800).describe('Days of local analytics history to keep'),
+      })
+      .meta({ id: 'AdminConfigAnalyticsDto' })
+      .default({ enabled: true, historyDays: 730 }),
     localFeatures: z
       .object({
         askSearch: z
@@ -917,6 +1041,13 @@ const AdminConfigSchemaWithVisibility = z
       .meta({ id: 'AdminConfigTemplatesDto' }),
     server: z
       .object({
+        // FL-71 (CC-4): the server's name in the Command Center rail and context bar (CommandCenter.jsx).
+        name: z
+          .string()
+          .trim()
+          .max(100)
+          .describe('Server name shown in settings; empty uses the host name')
+          .meta({ visibility: Public }),
         externalDomain: emptyOrUrl('External domain must be an empty string or a valid URL')
           .describe('External domain')
           .meta({ visibility: User }),
@@ -928,6 +1059,8 @@ const AdminConfigSchemaWithVisibility = z
       .object({ deleteDelay: z.int().min(1).describe('Delete delay').meta({ visibility: User }) })
       .meta({ id: 'AdminConfigUserDto' }),
     smartAlbums: AdminConfigSmartAlbumsSchema.default(smartAlbumsDefaults),
+    frameleafCloud: AdminConfigFrameleafCloudSchema.default(frameleafCloudDefaults),
+    libraryCare: AdminConfigLibraryCareSchema.default(libraryCareDefaults),
   })
   .describe('Configuration properties that are visible to the admin')
   .meta({ id: 'AdminConfigDto' });
@@ -943,7 +1076,17 @@ const isVisible = (property: ConfigVisibility, visibility: ConfigVisibility) =>
 const getMeta = (schema: z.ZodType) =>
   (z.globalRegistry.get(schema) ?? {}) as { id?: string; description?: string; visibility?: ConfigVisibility };
 
-const unwrap = (schema: z.ZodType) => (schema instanceof z.ZodPipe ? (schema.def.in as z.ZodType) : schema);
+const unwrap = (schema: z.ZodType): z.ZodType => {
+  if (schema instanceof z.ZodPipe) {
+    return schema.def.in as z.ZodType;
+  }
+  // FL-158: a section with a default (the Frameleaf sections) is walked like any other, so its
+  // public properties are published and its visibility metadata is stripped
+  if (schema instanceof z.ZodDefault) {
+    return unwrap(schema.def.innerType as z.ZodType);
+  }
+  return schema;
+};
 
 const visibleSchemas = new Map<z.ZodType, Map<ConfigVisibility, z.ZodType | undefined>>();
 
@@ -963,16 +1106,18 @@ const applyVisibilityRecursive = (
   override?: string,
 ): z.ZodType | undefined => {
   const object = unwrap(schema);
-  const { id, description, visibility: property } = getMeta(schema);
+  const { id, description, visibility: property } = { ...getMeta(object), ...getMeta(schema) };
 
-  if (!(object instanceof z.ZodObject)) {
+  // the admin schema keeps a defaulted section whole, with its default (FL-158)
+  if (!(object instanceof z.ZodObject) || (visibility === Admin && schema instanceof z.ZodDefault)) {
     return isVisible(property ?? Admin, visibility) ? schema : undefined;
   }
 
-  let cache = visibleSchemas.get(schema);
+  // keyed by the section itself, so a section shared by several defaulted fields keeps one id
+  let cache = visibleSchemas.get(object);
   if (!cache) {
     cache = new Map();
-    visibleSchemas.set(schema, cache);
+    visibleSchemas.set(object, cache);
   }
 
   if (cache.has(visibility)) {
@@ -1020,7 +1165,47 @@ const stripVisibilityMetadata = <T extends z.ZodType>(schema: T): T => {
 
 export const AdminConfigSchema = applyVisibility(Admin)! as z.ZodType<SystemConfig>;
 const UserConfigSchema = applyVisibility(User)! as z.ZodType<DeepPartial<SystemConfig>>;
-const PublicConfigSchema = applyVisibility(Public)! as z.ZodType<DeepPartial<SystemConfig>>;
+/** FL-158, FL-161: how a request reached this server, as the edge worker vouched for it. */
+export const FrameleafViaSchema = z
+  .enum(['lan', 'wan', 'relay'])
+  .describe('How the request arrived, as vouched for by the edge worker')
+  .meta({ id: 'FrameleafVia' });
+
+/**
+ * FL-158: how Sign in with Frameleaf applies to this visitor, worked out per request (not stored
+ * configuration): whether it is available, whether it is the only way in (arrival through remote
+ * access), how the request arrived, and the addresses the login page offers.
+ */
+const FrameleafPublicConfigSchema = z
+  .object({
+    signInAvailable: z.boolean().describe('Whether Sign in with Frameleaf is available (the server is linked)'),
+    signInRequired: z
+      .boolean()
+      .describe('Whether this visitor arrived through remote access, where only Sign in with Frameleaf is offered'),
+    via: FrameleafViaSchema.nullable().describe(
+      'How the request arrived; null when the edge worker did not vouch for it',
+    ),
+    relayHost: z.string().nullable().describe('The remote-access host shown on the login page, when known'),
+    localUrl: z
+      .string()
+      .nullable()
+      .describe('This server on the home network; given only to a remote-access visitor who is on it'),
+    sameNetwork: z.boolean().describe('Whether a remote-access visitor is on the same network as this server'),
+  })
+  .meta({ id: 'FrameleafPublicConfigDto' });
+export type FrameleafPublicConfig = z.infer<typeof FrameleafPublicConfigSchema>;
+export const FRAMELEAF_PUBLIC_DEFAULTS: FrameleafPublicConfig = Object.freeze({
+  signInAvailable: false,
+  signInRequired: false,
+  via: null,
+  relayHost: null,
+  localUrl: null,
+  sameNetwork: false,
+});
+
+const PublicConfigSchema = (applyVisibility(Public) as z.ZodObject).extend({
+  frameleaf: FrameleafPublicConfigSchema,
+}) as unknown as z.ZodType<DeepPartial<SystemConfig> & { frameleaf: FrameleafPublicConfig }>;
 
 // prevent visibility metadata from leaking to openapi spec
 // eslint-disable-next-line unicorn/no-top-level-side-effects
@@ -1056,16 +1241,35 @@ export function mapAdminConfig(config: SystemConfig): AdminConfigDto {
   // preserve the stored value (see system-config.service.ts:updateAdminConfig).
   // The `apiKeyConfigured` flag exists so the admin UI can render a "Key
   // Saved" indicator without exposing the actual key.
+  // FL-67: the SMTP password and the OAuth client secret follow the same rule, so no secret ever
+  // reaches a settings draft, a copied or exported configuration, or a log of the response.
   return {
     ...config,
-    machineLearning: {
-      ...config.machineLearning,
-      runpod: {
-        ...config.machineLearning.runpod,
-        apiKey: '',
-        apiKeyConfigured: config.machineLearning.runpod.apiKey.length > 0,
-        hfToken: '',
-        hfTokenConfigured: config.machineLearning.runpod.hfToken.length > 0,
+    notifications: {
+      ...config.notifications,
+      smtp: {
+        ...config.notifications.smtp,
+        transport: {
+          ...config.notifications.smtp.transport,
+          password: '',
+          passwordConfigured: config.notifications.smtp.transport.password.length > 0,
+        },
+      },
+    },
+    oauth: {
+      ...config.oauth,
+      clientSecret: '',
+      clientSecretConfigured: config.oauth.clientSecret.length > 0,
+    },
+    frameleafCloud: {
+      ...config.frameleafCloud,
+      cloudBackup: {
+        ...config.frameleafCloud.cloudBackup,
+        s3: {
+          ...config.frameleafCloud.cloudBackup.s3,
+          secretAccessKey: '',
+          secretAccessKeyConfigured: config.frameleafCloud.cloudBackup.s3.secretAccessKey.length > 0,
+        },
       },
     },
   };
@@ -1075,8 +1279,11 @@ export function mapUserConfig(config: SystemConfig): UserConfigDto {
   return UserConfigSchema.parse(config);
 }
 
-export function mapPublicConfig(config: SystemConfig): PublicConfigDto {
-  return PublicConfigSchema.parse(config);
+export function mapPublicConfig(
+  config: SystemConfig,
+  frameleaf: FrameleafPublicConfig = FRAMELEAF_PUBLIC_DEFAULTS,
+): PublicConfigDto {
+  return PublicConfigSchema.parse({ ...config, frameleaf });
 }
 
 export const defaults = Object.freeze<SystemConfig>({
@@ -1152,6 +1359,7 @@ export const defaults = Object.freeze<SystemConfig>({
     workflow: { concurrency: 5 },
     editor: { concurrency: 2 },
     integrityCheck: { concurrency: 1 },
+    petRecognition: { concurrency: 1 },
   },
   logging: {
     enabled: true,
@@ -1198,15 +1406,15 @@ export const defaults = Object.freeze<SystemConfig>({
       minDetectionScore: 0.5,
       minRecognitionScore: 0.8,
       maxResolution: 736,
+      documentFields: false,
     },
     imageDescription: imageDescriptionDefaults,
     nsfwDetection: nsfwDetectionDefaults,
-    runpod: runpodDefaults,
   },
   map: {
     enabled: true,
-    lightStyle: 'https://tiles.immich.cloud/v1/style/light.json',
-    darkStyle: 'https://tiles.immich.cloud/v1/style/dark.json',
+    lightStyle: 'https://tiles.frameleaf.cloud/v1/style/light.json',
+    darkStyle: 'https://tiles.frameleaf.cloud/v1/style/dark.json',
   },
   reverseGeocoding: {
     enabled: true,
@@ -1246,6 +1454,10 @@ export const defaults = Object.freeze<SystemConfig>({
   physicalDeduplication: {
     enabled: false,
     masterUserId: null,
+  },
+  analytics: {
+    enabled: true,
+    historyDays: 730,
   },
   localFeatures: {
     askSearch: {
@@ -1312,6 +1524,7 @@ export const defaults = Object.freeze<SystemConfig>({
     },
   },
   server: {
+    name: '',
     externalDomain: '',
     loginPageMessage: '',
     publicUsers: true,
@@ -1342,4 +1555,6 @@ export const defaults = Object.freeze<SystemConfig>({
     deleteDelay: 7,
   },
   smartAlbums: smartAlbumsDefaults,
+  frameleafCloud: frameleafCloudDefaults,
+  libraryCare: libraryCareDefaults,
 });

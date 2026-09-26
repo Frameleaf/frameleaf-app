@@ -394,6 +394,73 @@ describe('/search', () => {
     });
   });
 
+  describe('POST /search/facets (FL-49)', () => {
+    it('should require authentication', async () => {
+      const { status } = await request(app).post('/search/facets').send({});
+      expect(status).toBe(401);
+    });
+
+    it('should count facets that reconcile to the statistics total', async () => {
+      const [facets, statistics] = await Promise.all([
+        request(app).post('/search/facets').set('Authorization', `Bearer ${admin.accessToken}`).send({}),
+        request(app).post('/search/statistics').set('Authorization', `Bearer ${admin.accessToken}`).send({}),
+      ]);
+      expect(facets.status).toBe(200);
+      expect(facets.body.total).toBe(statistics.body.total);
+      const sum = (field: string) =>
+        facets.body.facets
+          .find(({ fieldName }: any) => fieldName === field)
+          .counts.reduce((total: number, { count }: any) => total + count, 0);
+      expect(sum('type')).toBe(statistics.body.total);
+      expect(sum('rating')).toBe(statistics.body.total);
+      expect(sum('isFavorite')).toBe(statistics.body.total);
+    });
+
+    it('should narrow by a structured filter', async () => {
+      const { status, body } = await request(app)
+        .post('/search/facets')
+        .set('Authorization', `Bearer ${admin.accessToken}`)
+        .send({ filter: { make: { eq: 'Canon' } }, facets: ['make'], facetLimit: 3 });
+      expect(status).toBe(200);
+      expect(body.facets).toEqual([
+        { fieldName: 'make', counts: body.total > 0 ? [{ value: 'Canon', count: body.total }] : [] },
+      ]);
+    });
+  });
+
+  describe('POST /search/histogram (FL-49)', () => {
+    it('should add up to the statistics total', async () => {
+      const [histogram, statistics] = await Promise.all([
+        request(app)
+          .post('/search/histogram')
+          .set('Authorization', `Bearer ${admin.accessToken}`)
+          .send({ granularity: 'year' }),
+        request(app).post('/search/statistics').set('Authorization', `Bearer ${admin.accessToken}`).send({}),
+      ]);
+      expect(histogram.status).toBe(200);
+      expect(histogram.body.granularity).toBe('year');
+      expect(histogram.body.total).toBe(statistics.body.total);
+    });
+
+    it('should reject an unknown granularity', async () => {
+      const { status } = await request(app)
+        .post('/search/histogram')
+        .set('Authorization', `Bearer ${admin.accessToken}`)
+        .send({ granularity: 'week' });
+      expect(status).toBe(400);
+    });
+  });
+
+  describe('POST /search/smart/statistics (FL-49)', () => {
+    it('should require a query', async () => {
+      const { status } = await request(app)
+        .post('/search/smart/statistics')
+        .set('Authorization', `Bearer ${admin.accessToken}`)
+        .send({});
+      expect(status).toBe(400);
+    });
+  });
+
   describe('POST /search/random', () => {
     beforeAll(async () => {
       await Promise.all([
@@ -489,6 +556,26 @@ describe('/search', () => {
         expect(assetsWithCity.length).toEqual(body.length);
         const cities = new Set(assetsWithCity.map((asset) => asset.exifInfo.city));
         expect(cities.size).toEqual(body.length);
+      }
+    });
+  });
+
+  describe('GET /search/cities/counts', () => {
+    it('should require authentication', async () => {
+      const { status } = await request(app).get('/search/cities/counts');
+      expect(status).toBe(401);
+    });
+
+    it('should count the media in every city listed by GET /search/cities', async () => {
+      const [cities, counts] = await Promise.all([
+        request(app).get('/search/cities').set('Authorization', `Bearer ${admin.accessToken}`),
+        request(app).get('/search/cities/counts').set('Authorization', `Bearer ${admin.accessToken}`),
+      ]);
+
+      expect(counts.status).toBe(200);
+      const countByCity = new Map(counts.body.map(({ city, count }: { city: string; count: number }) => [city, count]));
+      for (const asset of cities.body) {
+        expect(countByCity.get(asset.exifInfo.city)).toBeGreaterThanOrEqual(1);
       }
     });
   });

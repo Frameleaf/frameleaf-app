@@ -5,19 +5,23 @@ import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
   AddUsersDto,
   AlbumDescendantCountResponseDto,
+  AlbumIconCatalogueResponseDto,
+  AlbumOrderDto,
   AlbumResponseDto,
   AlbumStatisticsResponseDto,
+  AlbumTreeResponseDto,
   AlbumUserParamDto,
   AlbumsAddAssetsDto,
   AlbumsAddAssetsResponseDto,
   CreateAlbumDto,
   GetAlbumInfoDto,
   GetAlbumsDto,
+  MoveAlbumDto,
   UpdateAlbumDto,
   UpdateAlbumUserDto,
 } from 'src/dtos/album.dto.js';
 import { BulkIdResponseDto, BulkIdsDto } from 'src/dtos/asset-ids.response.dto.js';
-import { MapMarkerResponseDto } from 'src/dtos/map.dto.js';
+import { AlbumMapMarkerDto, MapMarkerResponseDto } from 'src/dtos/map.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
 import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
 import { AlbumService } from 'src/services/album.service.js';
@@ -59,6 +63,43 @@ export class AlbumController {
   })
   getAlbumStatistics(@Auth() auth: AuthDto): Promise<AlbumStatisticsResponseDto> {
     return this.service.getStatistics(auth);
+  }
+
+  @Get('tree')
+  @Authenticated({ permission: Permission.AlbumRead })
+  @Endpoint({
+    summary: 'Retrieve the album directory',
+    description:
+      'Collections with their albums, albums that stand on their own, and shared spaces, for everything the authenticated user owns or is shared with. Albums nest one level deep inside collections only; collections and shared spaces are always top level.',
+    history: new HistoryBuilder().added('v3'),
+  })
+  getAlbumTree(@Auth() auth: AuthDto): Promise<AlbumTreeResponseDto> {
+    return this.service.getTree(auth);
+  }
+
+  @Get('icons')
+  @Authenticated({ permission: Permission.AlbumRead })
+  @Endpoint({
+    summary: 'Retrieve the album icon catalogue',
+    description:
+      'Every Material Design Icons name an album or collection may use, plus the categorised suggested set shown first in icon choosers. Served as data so clients never bundle the catalogue.',
+    history: new HistoryBuilder().added('v3'),
+  })
+  getAlbumIconCatalogue(): AlbumIconCatalogueResponseDto {
+    return this.service.getIconCatalogue();
+  }
+
+  @Put('order')
+  @Authenticated({ permission: Permission.AlbumUpdate })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Endpoint({
+    summary: 'Arrange a group of the album directory',
+    description:
+      "Save the authenticated user's own custom order for one group of their album directory: the albums inside a collection, or at the top level the collections, the albums on their own, or the shared spaces. The order is personal and changes organization only; access and membership are untouched. The ids must be exactly the group as it is now, otherwise 409.",
+    history: new HistoryBuilder().added('v3.2.1').alpha('v3.2.1'),
+  })
+  setAlbumOrder(@Auth() auth: AuthDto, @Body() dto: AlbumOrderDto): Promise<void> {
+    return this.service.setOrder(auth, dto);
   }
 
   @Authenticated({ permission: Permission.AlbumRead, sharedLink: true })
@@ -112,8 +153,12 @@ export class AlbumController {
     description: 'Retrieve map marker information for a specific album by its ID.',
     history: new HistoryBuilder().added('v3'),
   })
-  getAlbumMapMarkers(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<MapMarkerResponseDto[]> {
-    return this.service.getMapMarkers(auth, id);
+  getAlbumMapMarkers(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @Query() dto: AlbumMapMarkerDto,
+  ): Promise<MapMarkerResponseDto[]> {
+    return this.service.getMapMarkers(auth, id, dto);
   }
 
   @Authenticated({ permission: Permission.AlbumRead })
@@ -129,6 +174,22 @@ export class AlbumController {
     @Param() { id }: UUIDParamDto,
   ): Promise<AlbumDescendantCountResponseDto> {
     return this.service.getDescendantCount(auth, id);
+  }
+
+  @Put(':id/collection')
+  @Authenticated({ permission: Permission.AlbumUpdate })
+  @Endpoint({
+    summary: 'Move an album into or out of a collection',
+    description:
+      'Move an album into a collection, or send null to take it out so it stands on its own. Only the album owner can move it; the destination must be a collection the user can edit. Collections and shared spaces cannot be moved.',
+    history: new HistoryBuilder().added('v3'),
+  })
+  moveAlbumToCollection(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @Body() dto: MoveAlbumDto,
+  ): Promise<AlbumResponseDto> {
+    return this.service.moveToCollection(auth, id, dto);
   }
 
   @Put(':id/assets')

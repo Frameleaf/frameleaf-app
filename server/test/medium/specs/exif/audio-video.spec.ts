@@ -61,6 +61,12 @@ describe.skipIf(wrongFfmpegSkipReason !== null)('video metadata extraction', () 
       .select((eb) => withVideoFormat(eb).$notNull().as('format'))
       .executeTakeFirst();
 
-    expect(result).toEqual({ videoStream, audioStream, packets, format });
+    const { audioStream: probedAudioStream, ...others } = result ?? {};
+    expect(others).toEqual({ videoStream, packets, format });
+
+    // FL-102: the channel count, layout and sample rate come back with the audio stream, pinned
+    // per fixture (stream-header facts, measured with ffprobe: stereo AAC at 44.1/48/44.1 kHz).
+    // A null here means the probe or the persistence dropped them.
+    expect(probedAudioStream).toEqual(audioStream);
   });
 });

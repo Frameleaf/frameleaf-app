@@ -1,6 +1,6 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { BulkIdErrorReason } from 'src/dtos/asset-ids.response.dto.js';
-import { JobStatus } from 'src/enum.js';
+import { AssetVisibility, JobStatus } from 'src/enum.js';
 import { TagService } from 'src/services/tag.service.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { tagResponseStub, tagStub } from 'test/fixtures/tag.stub.js';
@@ -34,9 +34,64 @@ describe(TagService.name, () => {
     });
   });
 
+  describe('getStatistics (FL-46)', () => {
+    it("should count the owner's Timeline items per tag, with and without subtags", async () => {
+      mocks.search.searchTagStatistics.mockResolvedValue([
+        { tagId: 'tag-1', count: 1, total: 3 },
+        { tagId: 'tag-2', count: 2, total: 2 },
+      ]);
+
+      await expect(sut.getStatistics(authStub.admin)).resolves.toEqual([
+        { id: 'tag-1', count: 1, total: 3 },
+        { id: 'tag-2', count: 2, total: 2 },
+      ]);
+      expect(mocks.search.searchTagStatistics).toHaveBeenCalledWith(
+        {
+          visibility: AssetVisibility.Timeline,
+          lockedOwnerId: undefined,
+          hideLockedMotion: true,
+          userIds: [authStub.admin.user.id],
+          viewingUserId: authStub.admin.user.id,
+        },
+        { viewerId: authStub.admin.user.id, suppressedTagIds: [] },
+      );
+    });
+
+    it('should keep Timeline visibility (never Locked) even for an unlocked session', async () => {
+      mocks.search.searchTagStatistics.mockResolvedValue([]);
+      const elevated = { ...authStub.admin, session: { id: 'session-1', hasElevatedPermission: true } };
+
+      await sut.getStatistics(elevated as typeof authStub.admin);
+
+      expect(mocks.search.searchTagStatistics).toHaveBeenCalledWith(
+        expect.objectContaining({ visibility: AssetVisibility.Timeline, lockedOwnerId: authStub.admin.user.id }),
+        expect.anything(),
+      );
+    });
+
+    it('should leave hidden items and suppressed tags out while the session is locked', async () => {
+      mocks.search.searchTagStatistics.mockResolvedValue([]);
+      const hiddenContent = {
+        userId: authStub.admin.user.id,
+        includeNsfw: false,
+        tagIds: ['tag-private'],
+        personIds: [],
+        petIds: [],
+        scope: 'owned' as const,
+      };
+
+      await sut.getStatistics({ ...authStub.admin, hiddenContent });
+
+      expect(mocks.search.searchTagStatistics).toHaveBeenCalledWith(expect.objectContaining({ hiddenContent }), {
+        viewerId: authStub.admin.user.id,
+        suppressedTagIds: ['tag-private'],
+      });
+    });
+  });
+
   describe('get', () => {
     it('should throw an error for an invalid id', async () => {
-      await expect(sut.get(authStub.admin, 'tag-1')).rejects.toBeInstanceOf(BadRequestException);
+      await expect(sut.get(authStub.admin, 'tag-1')).rejects.toBeInstanceOf(NotFoundException);
       expect(mocks.tag.get).toHaveBeenCalledWith('tag-1');
     });
 
@@ -111,7 +166,7 @@ describe(TagService.name, () => {
     it('should throw an error for no update permission', async () => {
       mocks.access.tag.checkOwnerAccess.mockResolvedValue(new Set());
       await expect(sut.update(authStub.admin, 'tag-1', { name: 'tag', color: '#000000' })).rejects.toBeInstanceOf(
-        BadRequestException,
+        NotFoundException,
       );
       expect(mocks.tag.update).not.toHaveBeenCalled();
     });
@@ -119,7 +174,7 @@ describe(TagService.name, () => {
     it('should throw an error if updated tag name has a slash', async () => {
       mocks.access.tag.checkOwnerAccess.mockResolvedValue(new Set(['tag-parent']));
       await expect(sut.update(authStub.admin, 'tag-1', { name: 'tag/test2', color: '#000000' })).rejects.toBeInstanceOf(
-        BadRequestException,
+        NotFoundException,
       );
       expect(mocks.tag.update).not.toHaveBeenCalled();
     });
@@ -127,11 +182,26 @@ describe(TagService.name, () => {
     it('should update a tag', async () => {
       mocks.access.tag.checkOwnerAccess.mockResolvedValue(new Set(['tag-1']));
       mocks.tag.update.mockResolvedValue(tagStub.colorCreate);
-      mocks.tag.get.mockResolvedValue(tagStub.tag);
       await expect(sut.update(authStub.admin, 'tag-1', { name: 'tag', color: '#000000' })).resolves.toEqual(
         tagResponseStub.color1,
       );
-      expect(mocks.tag.update).toHaveBeenCalledWith('tag-1', { value: 'tag', color: '#000000' });
+      expect(mocks.tag.update).toHaveBeenCalledWith('tag-1', { name: 'tag', color: '#000000' });
+    });
+
+    it('should move a tag to the top level', async () => {
+      mocks.access.tag.checkOwnerAccess.mockResolvedValue(new Set(['tag-1']));
+      mocks.tag.update.mockResolvedValue(tagStub.colorCreate);
+      await sut.update(authStub.admin, 'tag-1', { parentId: null });
+      expect(mocks.tag.update).toHaveBeenCalledWith('tag-1', { parentId: null });
+    });
+
+    it('should require read access to the new parent', async () => {
+      mocks.access.tag.checkOwnerAccess.mockResolvedValueOnce(new Set(['tag-1']));
+      mocks.access.tag.checkOwnerAccess.mockResolvedValueOnce(new Set());
+      await expect(sut.update(authStub.admin, 'tag-1', { parentId: 'tag-other' })).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      expect(mocks.tag.update).not.toHaveBeenCalled();
     });
   });
 
@@ -182,7 +252,7 @@ describe(TagService.name, () => {
   describe('remove', () => {
     it('should throw an error for an invalid id', async () => {
       mocks.access.tag.checkOwnerAccess.mockResolvedValue(new Set());
-      await expect(sut.remove(authStub.admin, 'tag-1')).rejects.toBeInstanceOf(BadRequestException);
+      await expect(sut.remove(authStub.admin, 'tag-1')).rejects.toBeInstanceOf(NotFoundException);
       expect(mocks.tag.delete).not.toHaveBeenCalled();
     });
 
@@ -322,6 +392,63 @@ describe(TagService.name, () => {
 
       expect(mocks.tag.getAssetIds).toHaveBeenCalledWith('tag-1', ['asset-1', 'asset-2']);
       expect(mocks.tag.removeAssetIds).toHaveBeenCalledWith('tag-1', ['asset-1']);
+    });
+  });
+
+  describe('a tag suppressed while the session is locked (owner decision, September 22, 2026)', () => {
+    const lockedAuth = {
+      ...authStub.admin,
+      hideNsfwAssets: true,
+      hiddenContent: {
+        userId: authStub.admin.user.id,
+        includeNsfw: false,
+        tagIds: ['tag-1'],
+        personIds: [],
+        petIds: [],
+        scope: 'owned' as const,
+      },
+    };
+
+    it('hands the suppression filter to the access check and answers 404 like a missing tag', async () => {
+      mocks.access.tag.checkOwnerAccess.mockResolvedValue(new Set());
+
+      const suppressed = await sut.get(lockedAuth, 'tag-1').catch((error: unknown) => error);
+      const missing = await sut.get(authStub.admin, 'tag-404').catch((error: unknown) => error);
+
+      expect(mocks.access.tag.checkOwnerAccess).toHaveBeenCalledWith(
+        authStub.admin.user.id,
+        new Set(['tag-1']),
+        lockedAuth.hiddenContent,
+      );
+      expect(suppressed).toBeInstanceOf(NotFoundException);
+      expect(missing).toBeInstanceOf(NotFoundException);
+      expect((suppressed as NotFoundException).getResponse()).toEqual((missing as NotFoundException).getResponse());
+      expect(mocks.tag.get).not.toHaveBeenCalled();
+    });
+
+    it('answers writes with 404 and changes nothing', async () => {
+      mocks.access.tag.checkOwnerAccess.mockResolvedValue(new Set());
+
+      await expect(sut.update(lockedAuth, 'tag-1', { color: '#000000' })).rejects.toBeInstanceOf(NotFoundException);
+      await expect(sut.remove(lockedAuth, 'tag-1')).rejects.toBeInstanceOf(NotFoundException);
+      await expect(sut.addAssets(lockedAuth, 'tag-1', { ids: ['asset-1'] })).rejects.toBeInstanceOf(NotFoundException);
+      await expect(sut.removeAssets(lockedAuth, 'tag-1', { ids: ['asset-1'] })).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      expect(mocks.tag.update).not.toHaveBeenCalled();
+      expect(mocks.tag.delete).not.toHaveBeenCalled();
+      expect(mocks.tag.addAssetIds).not.toHaveBeenCalled();
+      expect(mocks.tag.removeAssetIds).not.toHaveBeenCalled();
+    });
+
+    it('hands the suppression filter to the tag list', async () => {
+      mocks.tag.getAll.mockResolvedValue([]);
+
+      await sut.getAll(lockedAuth);
+
+      expect(mocks.tag.getAll).toHaveBeenCalledWith(authStub.admin.user.id, {
+        hiddenContent: lockedAuth.hiddenContent,
+      });
     });
   });
 

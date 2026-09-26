@@ -47,6 +47,22 @@ export const EnvSchema = z
     IMMICH_ENV: ImmichEnvironmentSchema.optional(),
     IMMICH_HOST: z.string().optional(),
     IMMICH_IGNORE_MOUNT_CHECK_ERRORS: stringBool.optional(),
+    /**
+     * Directories an administrator permits Google Photos imports to read from (FL-65), comma
+     * separated, each an absolute path. Only directories under one of these can be selected.
+     */
+    IMMICH_IMPORT_ROOTS: z
+      .string()
+      .optional()
+      .transform((value) =>
+        value
+          ? value
+              .split(',')
+              .map((root) => root.trim())
+              .filter(Boolean)
+          : [],
+      )
+      .pipe(z.array(z.string().regex(/^\//, 'Every import root must be an absolute path'))),
     IMMICH_LOG_LEVEL: LogLevelSchema.optional(),
     IMMICH_LOG_FORMAT: LogFormatSchema.optional(),
     IMMICH_MEDIA_LOCATION: absolutePath,
@@ -69,6 +85,47 @@ export const EnvSchema = z
     IMMICH_TRUSTED_PROXIES: trustedProxiesSchema,
     IMMICH_WORKERS_INCLUDE: z.string().optional(),
     IMMICH_WORKERS_EXCLUDE: z.string().optional(),
+    /** Library Care recovery locations (FL-69): `Label=/path;Label=/path`, read only, never linked in place. */
+    FRAMELEAF_RECOVERY_ROOTS: z.string().optional(),
+    /** Signed app release destinations (FL-82); see `src/utils/app-releases.ts`. */
+    FRAMELEAF_ANDROID_RELEASE_URL: z.string().optional(),
+    FRAMELEAF_ANDROID_APP_ID: z.string().optional(),
+    FRAMELEAF_ANDROID_SIGNING_SHA256: z.string().optional(),
+    FRAMELEAF_IOS_APP_URL: z.string().optional(),
+    /**
+     * FL-159: the Frameleaf Cloud base address (deployment configuration, never a setting and never
+     * hard-coded). Unset means Frameleaf Cloud is not configured and nothing is ever contacted.
+     */
+    FRAMELEAF_CLOUD_URL: z.url({ protocol: /^https?$/ }).optional(),
+    /** FL-159: where this server's Ed25519 identity key lives (default `<media>/frameleaf/identity`). */
+    FRAMELEAF_IDENTITY_DIR: z.string().optional(),
+    /**
+     * FL-154/FL-155: a single-use link token (`fll_…`, valid at most one hour) that links this server
+     * headlessly at boot. A token that already linked, or failed, is never sent again.
+     */
+    FRAMELEAF_LINK_TOKEN: z
+      .string()
+      .regex(/^fll_[A-Za-z0-9_-]{8,512}$/)
+      .optional(),
+    /** FL-154: the edge worker's direct HTTPS port (default 2443) and bind address. */
+    FRAMELEAF_EDGE_PORT: z.coerce.number().int().min(1).max(65_535).optional(),
+    FRAMELEAF_EDGE_BIND: z.string().min(1).optional(),
+    /**
+     * FL-158: the per-boot secret the edge worker sends as `X-Frameleaf-Via-Auth`; without it every
+     * `X-Frameleaf-Via` header is ignored. FL-161: the supervisor generates a new one on every boot and
+     * hands it to its workers; a value set here is used instead.
+     */
+    FRAMELEAF_EDGE_SECRET: z.string().min(16).optional(),
+    /** FL-158: this server's address on the home network, offered to visitors who are on it. */
+    FRAMELEAF_LOCAL_URL: z.url({ protocol: /^https?$/ }).optional(),
+    /** FL-154: extra networks treated as home (comma-separated CIDRs) besides RFC 1918 and ULA. */
+    FRAMELEAF_TRUSTED_LAN_CIDRS: z.string().optional(),
+    /** FL-135: the Android store listing and this installation's help destinations (https). */
+    FRAMELEAF_ANDROID_STORE_URL: z.string().optional(),
+    FRAMELEAF_DOCS_URL: z.string().optional(),
+    FRAMELEAF_SUPPORT_URL: z.string().optional(),
+    FRAMELEAF_BUG_FEATURE_URL: z.string().optional(),
+    FRAMELEAF_SOURCE_URL: z.string().optional(),
     DB_DATABASE_NAME: z.string().optional(),
     DB_HOSTNAME: z.string().optional(),
     DB_PASSWORD: z.string().optional(),

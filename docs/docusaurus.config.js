@@ -5,17 +5,19 @@ const prism = require('prism-react-renderer');
 
 /** @type {import('@docusaurus/types').Config} */
 const config = {
-  title: 'Immich',
+  title: 'Frameleaf',
   tagline: 'Self-hosted photo and video management solution',
-  url: 'https://docs.immich.app',
+  // FL-188: the owned documentation host is help.frameleaf.ai (see .github/workflows/docs-deploy.yml
+  // for the deployment automation status).
+  url: 'https://help.frameleaf.ai',
   baseUrl: '/',
   onBrokenLinks: 'throw',
   favicon: 'img/favicon.png',
 
   // GitHub pages deployment config.
   // If you aren't using GitHub pages, you don't need these.
-  organizationName: 'immich-app', // Usually your GitHub org/user name.
-  projectName: 'immich', // Usually your repo name.
+  organizationName: 'Frameleaf', // Usually your GitHub org/user name.
+  projectName: 'frameleaf-app', // Usually your repo name.
   deploymentBranch: 'main',
   // Even if you don't use internalization, you can use this field to set useful
   // metadata like html lang. For example, if your site is Chinese, you may want
@@ -61,7 +63,7 @@ const config = {
           sidebarPath: require.resolve('./sidebars.js'),
           // Please change this to your repo.
           // Remove this to remove the "edit this page" links.
-          editUrl: 'https://github.com/immich-app/immich/tree/main/docs/',
+          editUrl: 'https://github.com/Frameleaf/frameleaf-app/tree/fork/main/docs/',
         },
         theme: {
           customCss: require.resolve('./src/css/custom.css'),
@@ -84,31 +86,22 @@ const config = {
       },
       navbar: {
         logo: {
-          alt: 'Immich Logo',
-          src: 'img/immich-logo-inline-light.png',
-          srcDark: 'img/immich-logo-inline-dark.png',
+          alt: 'Frameleaf Logo',
+          src: 'img/frameleaf-logo-inline-light.svg',
+          srcDark: 'img/frameleaf-logo-inline-dark.svg',
           className: 'rounded-none',
         },
         items: [
           {
-            type: 'custom-versionSwitcher',
+            href: 'https://github.com/Frameleaf/frameleaf-app',
             position: 'right',
-          },
-          {
-            href: 'https://immich.app/',
-            position: 'right',
-            label: 'Home',
-          },
-          {
-            href: 'https://github.com/immich-app/immich',
             label: 'GitHub',
-            position: 'right',
           },
           {
             type: 'html',
             position: 'right',
             value:
-              '<a href="https://buy.immich.app" target="_blank" class="no-underline hover:no-underline"><button class="buy-button bg-immich-primary dark:bg-immich-dark-primary text-white dark:text-black rounded-xl">Buy Immich</button></a>',
+              '<a href="/overview/support-the-project" class="no-underline hover:no-underline"><button class="buy-button bg-immich-primary dark:bg-immich-dark-primary text-white dark:text-black rounded-xl">Support Frameleaf</button></a>',
           },
         ],
       },
@@ -116,82 +109,24 @@ const config = {
         style: 'light',
         links: [
           {
-            title: 'Download',
+            title: 'Frameleaf',
             items: [
               {
-                label: 'Android',
-                href: 'https://get.immich.app/android',
+                label: 'Releases',
+                href: 'https://github.com/Frameleaf/frameleaf-app/releases',
               },
               {
-                label: 'iOS',
-                href: 'https://get.immich.app/ios',
-              },
-              {
-                label: 'Server',
-                href: 'https://immich.app/download',
+                label: 'Support Frameleaf',
+                to: '/overview/support-the-project',
               },
             ],
           },
           {
-            title: 'Company',
+            title: 'Community',
             items: [
               {
-                label: 'FUTO',
-                href: 'https://futo.tech/',
-              },
-              {
-                label: 'Purchase',
-                href: 'https://buy.immich.app/',
-              },
-              {
-                label: 'Merch',
-                href: 'https://immich.store/',
-              },
-            ],
-          },
-          {
-            title: 'Sites',
-            items: [
-              {
-                label: 'Home',
-                href: 'https://immich.app',
-              },
-              {
-                label: 'My Immich',
-                href: 'https://my.immich.app/',
-              },
-              {
-                label: 'Awesome Immich',
-                href: 'https://awesome.immich.app/',
-              },
-              {
-                label: 'Immich API',
-                href: 'https://api.immich.app/',
-              },
-              {
-                label: 'Immich Data',
-                href: 'https://data.immich.app/',
-              },
-              {
-                label: 'Immich Datasets',
-                href: 'https://datasets.immich.app/',
-              },
-            ],
-          },
-          {
-            title: 'Miscellaneous',
-            items: [
-              {
-                label: 'Roadmap',
-                href: 'https://immich.app/roadmap',
-              },
-              {
-                label: 'Cursed Knowledge',
-                href: 'https://immich.app/cursed-knowledge',
-              },
-              {
-                label: 'Privacy Policy',
-                href: 'https://immich.app/privacy-policy',
+                label: 'Discussions',
+                href: 'https://github.com/Frameleaf/frameleaf-app/discussions',
               },
             ],
           },
@@ -200,24 +135,12 @@ const config = {
             items: [
               {
                 label: 'GitHub',
-                href: 'https://github.com/immich-app/immich',
-              },
-              {
-                label: 'YouTube',
-                href: 'https://www.youtube.com/@immich-app',
-              },
-              {
-                label: 'Discord',
-                href: 'https://discord.immich.app',
-              },
-              {
-                label: 'Reddit',
-                href: 'https://www.reddit.com/r/immich/',
+                href: 'https://github.com/Frameleaf/frameleaf-app',
               },
             ],
           },
         ],
-        copyright: `Immich is available as open source under the terms of the GNU AGPL v3 License.`,
+        copyright: `Frameleaf is available as open source under the terms of the GNU AGPL v3 License.`,
       },
       prism: {
         theme: prism.themes.github,

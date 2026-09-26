@@ -1,22 +1,29 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { DateTime } from 'luxon';
+import { AssetFile } from 'src/database.js';
+import { AssetResponseDto } from 'src/dtos/asset-response.dto.js';
 import { AssetJobName, AssetStatsResponseDto } from 'src/dtos/asset.dto.js';
 import { AssetEditAction, type AssetEditActionItem } from 'src/dtos/editing.dto.js';
 import {
   AssetFileType,
+  AssetLockReason,
   AssetMetadataKey,
+  AssetPathType,
   AssetStatus,
   AssetType,
   AssetVisibility,
   JobName,
   JobStatus,
+  Permission,
 } from 'src/enum.js';
-import { AssetStats } from 'src/repositories/asset.repository.js';
+import { AssetStats, RemovedAsset } from 'src/repositories/asset.repository.js';
 import { AssetService } from 'src/services/asset.service.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
+import { PartnerFactory } from 'test/factories/partner.factory.js';
+import { UserFactory } from 'test/factories/user.factory.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
-import { getForAsset, getForAssetDeletion } from 'test/mappers.js';
+import { getForAsset, getForAssetDeletion, getForPartner } from 'test/mappers.js';
 import { factory, newUuid } from 'test/small.factory.js';
 import { ServiceMocks, makeStream, newTestService } from 'test/utils.js';
 
@@ -36,6 +43,8 @@ const statResponse: AssetStatsResponseDto = {
 describe(AssetService.name, () => {
   let sut: AssetService;
   let mocks: ServiceMocks;
+  /** What the mocked removal reports beyond the asset's own original and generated files. */
+  let removedExtras: Partial<RemovedAsset>;
 
   it('should work', () => {
     expect(sut).toBeDefined();
@@ -43,13 +52,27 @@ describe(AssetService.name, () => {
 
   beforeEach(() => {
     ({ sut, mocks } = newTestService(AssetService));
+    mocks.partner.getAll.mockResolvedValue([]);
     mocks.duplicateRepository.getVideoDuplicateFrames.mockResolvedValue([]);
-    mocks.asset.remove.mockImplementation((asset) =>
-      Promise.resolve({
-        originalPath: (asset as unknown as { originalPath: string }).originalPath,
+    removedExtras = {};
+    // the file cleanup is queued inside the removal's transaction, from the files the repository reads
+    // there, as the repository does
+    mocks.asset.remove.mockImplementation(async (asset, release) => {
+      const deletion = asset as unknown as { originalPath: string; files?: AssetFile[] };
+      const removed: RemovedAsset = {
+        originalPath: deletion.originalPath,
         reservationTemporaryPath: null,
-      }),
-    );
+        files: deletion.files ?? [],
+        videoDuplicateFramePaths: [],
+        derivedPaths: [],
+        pendingMoves: [],
+        ...removedExtras,
+      };
+      if (release) {
+        await release.queue(release.files(removed));
+      }
+      return removed;
+    });
   });
 
   describe('getStatistics', () => {
@@ -109,6 +132,86 @@ describe(AssetService.name, () => {
         new Set([asset.id]),
         undefined,
       );
+    });
+
+    it('should name the viewer as the Locked owner of the stack read only when elevated (FL-34)', async () => {
+      const asset = AssetFactory.create();
+      const ordinary = AuthFactory.create({ id: asset.ownerId });
+      const elevated = AuthFactory.from({ id: asset.ownerId }).session({ hasElevatedPermission: true }).build();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getById.mockResolvedValue(getForAsset(asset));
+
+      await sut.get(ordinary, asset.id);
+      expect(mocks.asset.getById).toHaveBeenLastCalledWith(
+        asset.id,
+        expect.objectContaining({ stack: { assets: true } }),
+      );
+
+      await sut.get(elevated, asset.id);
+      expect(mocks.asset.getById).toHaveBeenLastCalledWith(
+        asset.id,
+        expect.objectContaining({ stack: { assets: true, lockedOwnerId: asset.ownerId } }),
+      );
+    });
+
+    it("should hide location on a partner's asset when the partner turned location sharing off", async () => {
+      const auth = AuthFactory.create();
+      const sharer = UserFactory.create();
+      const partner = PartnerFactory.from({ shareLocation: false })
+        .sharedBy(sharer)
+        .sharedWith({ id: auth.user.id })
+        .build();
+      const asset = AssetFactory.from({ ownerId: sharer.id })
+        .exif({ latitude: 42, longitude: 69, city: 'Calgary', state: 'Alberta', country: 'Canada', make: 'Canon' })
+        .build();
+      mocks.access.asset.checkPartnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getById.mockResolvedValue(getForAsset(asset));
+      mocks.partner.getAll.mockResolvedValue([getForPartner(partner)]);
+
+      const response = (await sut.get(auth, asset.id)) as AssetResponseDto;
+
+      expect(mocks.partner.getAll).toHaveBeenCalledWith(auth.user.id);
+      expect(response.exifInfo).toEqual(
+        expect.objectContaining({
+          latitude: null,
+          longitude: null,
+          city: null,
+          state: null,
+          country: null,
+          make: 'Canon',
+        }),
+      );
+    });
+
+    it("should keep location on a partner's asset while location sharing is on", async () => {
+      const auth = AuthFactory.create();
+      const sharer = UserFactory.create();
+      const partner = PartnerFactory.from({ shareLocation: true })
+        .sharedBy(sharer)
+        .sharedWith({ id: auth.user.id })
+        .build();
+      const asset = AssetFactory.from({ ownerId: sharer.id })
+        .exif({ latitude: 42, longitude: 69, city: 'Calgary' })
+        .build();
+      mocks.access.asset.checkPartnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getById.mockResolvedValue(getForAsset(asset));
+      mocks.partner.getAll.mockResolvedValue([getForPartner(partner)]);
+
+      const response = (await sut.get(auth, asset.id)) as AssetResponseDto;
+
+      expect(response.exifInfo).toEqual(expect.objectContaining({ latitude: 42, longitude: 69, city: 'Calgary' }));
+    });
+
+    it('should never consult the partner policy for the owner of the asset', async () => {
+      const auth = AuthFactory.create();
+      const asset = AssetFactory.from({ ownerId: auth.user.id }).exif({ latitude: 42, longitude: 69 }).build();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getById.mockResolvedValue(getForAsset(asset));
+
+      const response = (await sut.get(auth, asset.id)) as AssetResponseDto;
+
+      expect(mocks.partner.getAll).not.toHaveBeenCalled();
+      expect(response.exifInfo).toEqual(expect.objectContaining({ latitude: 42, longitude: 69 }));
     });
 
     it('should filter direct asset reads when NSFW privacy hiding is active', async () => {
@@ -221,6 +324,74 @@ describe(AssetService.name, () => {
       expect(mocks.asset.update).toHaveBeenCalledWith({ id: asset.id, isFavorite: true });
     });
 
+    it('should queue a new thumbnail for people whose featured face became Locked (FL-53)', async () => {
+      const asset = AssetFactory.create();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getById.mockResolvedValue(getForAsset(asset));
+      mocks.asset.update.mockResolvedValue(getForAsset(asset));
+      mocks.asset.lock.mockResolvedValue([asset.id]);
+      mocks.person.getMissingThumbnailsForAssets.mockResolvedValue([
+        { ownerId: 'owner-1', personGroupId: 'person-group-1' },
+      ]);
+
+      await sut.update(authStub.adminWithElevatedPermission, asset.id, { visibility: AssetVisibility.Locked });
+
+      expect(mocks.person.getMissingThumbnailsForAssets).toHaveBeenCalledWith([asset.id]);
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([
+        { name: JobName.PersonGenerateThumbnail, data: { ownerId: 'owner-1', personGroupId: 'person-group-1' } },
+      ]);
+    });
+
+    it('should answer from the updated row when a session without the PIN locks the asset (FL-34)', async () => {
+      const asset = AssetFactory.create();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.update.mockResolvedValue(getForAsset(asset));
+      mocks.asset.lock.mockResolvedValue([asset.id]);
+
+      const response = await sut.update(authStub.admin, asset.id, { visibility: AssetVisibility.Locked });
+
+      expect(mocks.asset.lock).toHaveBeenCalledWith([asset.id], AssetLockReason.Marked, authStub.admin.user.id);
+      expect(mocks.asset.getById).not.toHaveBeenCalled();
+      expect(response).toEqual(expect.objectContaining({ id: asset.id, visibility: AssetVisibility.Locked }));
+    });
+
+    it('should not look for face thumbnails when the asset does not move into the Locked folder', async () => {
+      const asset = AssetFactory.create();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getById.mockResolvedValue(getForAsset(asset));
+      mocks.asset.update.mockResolvedValue(getForAsset(asset));
+
+      await sut.update(authStub.admin, asset.id, { visibility: AssetVisibility.Archive });
+
+      expect(mocks.person.getMissingThumbnailsForAssets).not.toHaveBeenCalled();
+      expect(mocks.user.getLockedProfileImageSources).not.toHaveBeenCalled();
+    });
+
+    it('should replace a profile picture copied from a photo that became Locked (FL-53)', async () => {
+      const asset = AssetFactory.create();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getById.mockResolvedValue(getForAsset(asset));
+      mocks.asset.update.mockResolvedValue(getForAsset(asset));
+      mocks.user.getLockedProfileImageSources.mockResolvedValue([
+        { id: 'user-1', profileImagePath: '/profile/user-1/old.webp', profileImageAssetId: asset.id },
+      ]);
+      mocks.user.getProfileImageReplacement.mockResolvedValue(undefined);
+      mocks.user.replaceLockedProfileImage.mockResolvedValue(true);
+      mocks.asset.lock.mockResolvedValue([asset.id]);
+
+      await sut.update(authStub.adminWithElevatedPermission, asset.id, { visibility: AssetVisibility.Locked });
+
+      // no other photo may stand in, so the user is back to the default avatar
+      expect(mocks.user.replaceLockedProfileImage).toHaveBeenCalledWith('user-1', asset.id, {
+        profileImagePath: '',
+        profileImageAssetId: null,
+      });
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.FileDelete,
+        data: { files: ['/profile/user-1/old.webp'] },
+      });
+    });
+
     it('should update the exif description', async () => {
       const asset = AssetFactory.create();
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
@@ -235,6 +406,35 @@ describe(AssetService.name, () => {
           lockedPropertiesBehavior: 'append',
         }),
       );
+    });
+
+    it("removes a Live Photo's location from its paired video too (FL-51)", async () => {
+      const asset = AssetFactory.create();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getById.mockResolvedValue(getForAsset(asset));
+      mocks.asset.update.mockResolvedValue(getForAsset(asset));
+      mocks.asset.getByIds.mockResolvedValue([{ id: asset.id, livePhotoVideoId: 'motion-1' }] as never);
+
+      await sut.update(authStub.admin, asset.id, { latitude: null, longitude: null });
+
+      expect(mocks.asset.clearLocation).toHaveBeenCalledWith([asset.id, 'motion-1']);
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.SidecarWrite, data: { id: asset.id } });
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.SidecarWrite, data: { id: 'motion-1' } });
+    });
+
+    it('removes typed place names with the location instead of storing them (FL-51, FL-36)', async () => {
+      const asset = AssetFactory.create();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getById.mockResolvedValue(getForAsset(asset));
+      mocks.asset.update.mockResolvedValue(getForAsset(asset));
+      mocks.asset.getByIds.mockResolvedValue([{ id: asset.id, livePhotoVideoId: null }] as never);
+
+      await sut.update(authStub.admin, asset.id, { latitude: null, longitude: null, city: 'Paris' });
+
+      expect(mocks.asset.clearLocation).toHaveBeenCalledWith([asset.id]);
+      expect(mocks.asset.unlockProperties).not.toHaveBeenCalled();
+      expect(mocks.asset.upsertExif).not.toHaveBeenCalled();
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.SidecarWrite, data: { id: asset.id } });
     });
 
     it('should update the exif rating', async () => {
@@ -255,6 +455,79 @@ describe(AssetService.name, () => {
           lockedPropertiesBehavior: 'append',
         }),
       );
+    });
+
+    it('stores and locks a typed place name, clearing an empty one (FL-36, V-24)', async () => {
+      const asset = AssetFactory.create();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getById.mockResolvedValueOnce(getForAsset(asset));
+      mocks.asset.update.mockResolvedValueOnce(getForAsset(asset));
+
+      await sut.update(authStub.admin, asset.id, {
+        latitude: 51.4,
+        longitude: -116.2,
+        city: '  Lake Louise ',
+        state: 'Alberta',
+        country: '',
+      });
+
+      expect(mocks.asset.upsertExif).toHaveBeenCalledWith(
+        expect.objectContaining({
+          exif: {
+            assetId: asset.id,
+            latitude: 51.4,
+            longitude: -116.2,
+            city: 'Lake Louise',
+            state: 'Alberta',
+            country: null,
+            lockedProperties: ['latitude', 'longitude', 'city', 'state', 'country'],
+          },
+          lockedPropertiesBehavior: 'append',
+        }),
+      );
+      expect(mocks.asset.unlockProperties).not.toHaveBeenCalled();
+    });
+
+    it('lets geocoding name a moved item whose place was not typed (FL-36, V-24)', async () => {
+      const asset = AssetFactory.create();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getById.mockResolvedValueOnce(getForAsset(asset));
+      mocks.asset.update.mockResolvedValueOnce(getForAsset(asset));
+
+      await sut.update(authStub.admin, asset.id, { latitude: 10, longitude: 20 });
+
+      expect(mocks.asset.unlockProperties).toHaveBeenCalledWith(asset.id, ['city', 'state', 'country']);
+      expect(mocks.asset.upsertExif).toHaveBeenCalledWith(
+        expect.objectContaining({
+          exif: { assetId: asset.id, latitude: 10, longitude: 20, lockedProperties: ['latitude', 'longitude'] },
+        }),
+      );
+    });
+
+    it('keeps a typed place when the same edit names it at the new coordinates (FL-36, V-24)', async () => {
+      const asset = AssetFactory.create();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getById.mockResolvedValueOnce(getForAsset(asset));
+      mocks.asset.update.mockResolvedValueOnce(getForAsset(asset));
+
+      await sut.update(authStub.admin, asset.id, { latitude: 35.68, longitude: 139.69, city: 'Tokyo' });
+
+      expect(mocks.asset.unlockProperties).not.toHaveBeenCalled();
+      expect(mocks.asset.upsertExif).toHaveBeenCalledWith(
+        expect.objectContaining({ exif: expect.objectContaining({ city: 'Tokyo' }) }),
+      );
+    });
+
+    it('never passes place names to the asset row (FL-36, V-24)', async () => {
+      const asset = AssetFactory.create();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getById.mockResolvedValueOnce(getForAsset(asset));
+      mocks.asset.update.mockResolvedValueOnce(getForAsset(asset));
+
+      await sut.update(authStub.admin, asset.id, { city: 'Banff' });
+
+      expect(mocks.asset.update).toHaveBeenCalledWith(expect.not.objectContaining({ city: expect.anything() }));
+      expect(mocks.asset.unlockProperties).not.toHaveBeenCalled();
     });
 
     it('should fail linking a live video if the motion part could not be found', async () => {
@@ -419,6 +692,80 @@ describe(AssetService.name, () => {
       });
     });
 
+    it('removes the location for null coordinates and rewrites the sidecars (FL-51)', async () => {
+      const auth = AuthFactory.create();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1', 'asset-2']));
+
+      mocks.asset.getByIds.mockResolvedValue([
+        { id: 'asset-1', livePhotoVideoId: 'motion-1' },
+        { id: 'asset-2', livePhotoVideoId: null },
+      ] as never);
+
+      await sut.updateAll(auth, { ids: ['asset-1', 'asset-2'], latitude: null, longitude: null });
+
+      // the Live Photo's paired video loses its location with the photo
+      expect(mocks.asset.clearLocation).toHaveBeenCalledWith(['asset-1', 'asset-2', 'motion-1']);
+      expect(mocks.asset.updateAllExif).not.toHaveBeenCalled();
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([
+        { name: JobName.SidecarWrite, data: { id: 'asset-1' } },
+        { name: JobName.SidecarWrite, data: { id: 'asset-2' } },
+        { name: JobName.SidecarWrite, data: { id: 'motion-1' } },
+      ]);
+    });
+
+    it('should keep album membership when assets are locked (FL-32, FL-34)', async () => {
+      const auth = authStub.adminWithElevatedPermission;
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1', 'asset-2']));
+
+      mocks.person.getMissingThumbnailsForAssets.mockResolvedValue([]);
+
+      await sut.updateAll(auth, { ids: ['asset-1', 'asset-2'], visibility: AssetVisibility.Locked });
+
+      // `visibility: locked` is a lock record, never a stored visibility
+      expect(mocks.asset.lock).toHaveBeenCalledWith(['asset-1', 'asset-2'], AssetLockReason.Marked, auth.user.id);
+      expect(mocks.asset.updateAll).not.toHaveBeenCalled();
+      expect(mocks.album.removeAssetsFromAll).not.toHaveBeenCalled();
+    });
+
+    it('should never unlock when storing another visibility (FL-34)', async () => {
+      const auth = authStub.adminWithElevatedPermission;
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+
+      await sut.updateAll(auth, { ids: ['asset-1'], visibility: AssetVisibility.Timeline });
+
+      expect(mocks.asset.unlock).not.toHaveBeenCalled();
+      expect(mocks.asset.updateAll).toHaveBeenCalledWith(['asset-1'], { visibility: AssetVisibility.Timeline });
+      expect(mocks.asset.lock).not.toHaveBeenCalled();
+    });
+
+    it('should leave the lock alone when no visibility is asked for (FL-34)', async () => {
+      const auth = authStub.adminWithElevatedPermission;
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+
+      await sut.updateAll(auth, { ids: ['asset-1'], isFavorite: true });
+
+      expect(mocks.asset.lock).not.toHaveBeenCalled();
+      expect(mocks.asset.unlock).not.toHaveBeenCalled();
+    });
+
+    it('should queue one new thumbnail per person whose featured face became Locked (FL-53)', async () => {
+      const auth = authStub.adminWithElevatedPermission;
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1', 'asset-2']));
+      // the same person twice, e.g. from two chunks of a large move
+      mocks.asset.lock.mockResolvedValue(['asset-1', 'asset-2']);
+      mocks.person.getMissingThumbnailsForAssets.mockResolvedValue([
+        { ownerId: 'owner-1', personGroupId: 'person-group-1' },
+        { ownerId: 'owner-1', personGroupId: 'person-group-1' },
+      ]);
+
+      await sut.updateAll(auth, { ids: ['asset-1', 'asset-2'], visibility: AssetVisibility.Locked });
+
+      expect(mocks.person.getMissingThumbnailsForAssets).toHaveBeenCalledWith(['asset-1', 'asset-2']);
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([
+        { name: JobName.PersonGenerateThumbnail, data: { ownerId: 'owner-1', personGroupId: 'person-group-1' } },
+      ]);
+    });
+
     it('should not update Assets table if no relevant fields are provided', async () => {
       const auth = AuthFactory.create();
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
@@ -447,7 +794,11 @@ describe(AssetService.name, () => {
         rating: undefined,
       });
       expect(mocks.asset.updateAll).toHaveBeenCalled();
-      expect(mocks.asset.updateAllExif).toHaveBeenCalledWith(['asset-1'], { latitude: 0, longitude: 0 });
+      expect(mocks.asset.updateAllExif).toHaveBeenCalledWith(['asset-1'], { latitude: 0, longitude: 0 }, [
+        'city',
+        'state',
+        'country',
+      ]);
       expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.SidecarWrite, data: { id: 'asset-1' } }]);
     });
 
@@ -464,11 +815,11 @@ describe(AssetService.name, () => {
         rating: undefined,
       });
       expect(mocks.asset.updateAll).toHaveBeenCalled();
-      expect(mocks.asset.updateAllExif).toHaveBeenCalledWith(['asset-1'], {
-        dateTimeOriginal,
-        latitude: 30,
-        longitude: 50,
-      });
+      expect(mocks.asset.updateAllExif).toHaveBeenCalledWith(
+        ['asset-1'],
+        { dateTimeOriginal, latitude: 30, longitude: 50 },
+        ['city', 'state', 'country'],
+      );
       expect(mocks.asset.updateAll).toHaveBeenCalledWith(
         ['asset-1'],
         expect.objectContaining({
@@ -477,6 +828,36 @@ describe(AssetService.name, () => {
         }),
       );
       expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.SidecarWrite, data: { id: 'asset-1' } }]);
+    });
+
+    it('releases typed place names when a bulk change moves the items (FL-36, V-24)', async () => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1', 'asset-2']));
+
+      await sut.updateAll(authStub.admin, { ids: ['asset-1', 'asset-2'], latitude: 35.68, longitude: 139.69 });
+
+      expect(mocks.asset.updateAllExif).toHaveBeenCalledWith(
+        ['asset-1', 'asset-2'],
+        { latitude: 35.68, longitude: 139.69 },
+        ['city', 'state', 'country'],
+      );
+    });
+
+    it('does not release place names on a bulk location removal, which clears them (FL-51, FL-36)', async () => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+      mocks.asset.getByIds.mockResolvedValue([{ id: 'asset-1', livePhotoVideoId: null }] as never);
+
+      await sut.updateAll(authStub.admin, { ids: ['asset-1'], latitude: null, longitude: null, rating: 2 });
+
+      expect(mocks.asset.updateAllExif).toHaveBeenCalledWith(['asset-1'], { rating: 2 }, []);
+      expect(mocks.asset.clearLocation).toHaveBeenCalledWith(['asset-1']);
+    });
+
+    it('keeps typed place names when a bulk change does not move the items (FL-36, V-24)', async () => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+
+      await sut.updateAll(authStub.admin, { ids: ['asset-1'], rating: 4 });
+
+      expect(mocks.asset.updateAllExif).toHaveBeenCalledWith(['asset-1'], { rating: 4 }, []);
     });
 
     it('should update Assets table if duplicateId is provided as null', async () => {
@@ -510,6 +891,70 @@ describe(AssetService.name, () => {
         id: 'asset-1',
         fileCreatedAt: new Date('2020-02-25T04:41:00.000Z'),
         localDateTime: new Date('2020-02-25T04:41:00.000Z'),
+      });
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.SidecarWrite, data: { id: 'asset-1' } }]);
+    });
+  });
+
+  describe('lock (FL-34)', () => {
+    it('should lock assets of the caller as their own lock without asking for the PIN', async () => {
+      const auth = authStub.admin;
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+      mocks.asset.lock.mockResolvedValue(['asset-1']);
+
+      await sut.lock(auth, { ids: ['asset-1'] });
+
+      expect(mocks.asset.lock).toHaveBeenCalledWith(['asset-1'], AssetLockReason.Marked, auth.user.id);
+      expect(mocks.person.getMissingThumbnailsForAssets).toHaveBeenCalledWith(['asset-1']);
+    });
+
+    it('should refuse assets the caller may not change', async () => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set());
+
+      await expect(sut.lock(authStub.admin, { ids: ['asset-1'] })).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(mocks.asset.lock).not.toHaveBeenCalled();
+    });
+
+    it('should follow up nothing when every asset was already locked', async () => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+      mocks.asset.lock.mockResolvedValue([]);
+
+      await sut.lock(authStub.admin, { ids: ['asset-1'] });
+
+      expect(mocks.person.getMissingThumbnailsForAssets).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('shiftDateTimeOriginalFrom (FL-32)', () => {
+    it('requires update access for every item', async () => {
+      await expect(
+        sut.shiftDateTimeOriginalFrom(authStub.admin, [{ id: 'asset-1', from: new Date() }], 30),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(mocks.asset.setDateTimeOriginal).not.toHaveBeenCalled();
+    });
+
+    it('sets each item to its recorded start plus the shift, the same way twice', async () => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+      mocks.asset.setDateTimeOriginal.mockResolvedValue({
+        assetId: 'asset-1',
+        dateTimeOriginal: new Date('2020-02-25T05:16:00.000Z'),
+      } as never);
+      const items = [{ id: 'asset-1', from: new Date('2020-02-25T04:41:00.000Z') }];
+
+      await sut.shiftDateTimeOriginalFrom(authStub.admin, items, 35);
+      await sut.shiftDateTimeOriginalFrom(authStub.admin, items, 35);
+
+      expect(mocks.asset.setDateTimeOriginal).toHaveBeenCalledTimes(2);
+      for (const call of mocks.asset.setDateTimeOriginal.mock.calls) {
+        expect(call).toEqual(['asset-1', new Date('2020-02-25T05:16:00.000Z')]);
+      }
+      expect(mocks.asset.updateDateTimeOriginal).not.toHaveBeenCalled();
+      expect(mocks.asset.update).toHaveBeenCalledWith({
+        id: 'asset-1',
+        fileCreatedAt: new Date('2020-02-25T05:16:00.000Z'),
+        localDateTime: new Date('2020-02-25T05:16:00.000Z'),
       });
       expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.SidecarWrite, data: { id: 'asset-1' } }]);
     });
@@ -553,6 +998,10 @@ describe(AssetService.name, () => {
       vi.useFakeTimers();
     });
 
+    beforeEach(() => {
+      mocks.assetEdit.releaseOrphanedVideoVersions.mockResolvedValue([]);
+    });
+
     afterAll(() => {
       vi.useRealTimers();
     });
@@ -584,6 +1033,19 @@ describe(AssetService.name, () => {
         { name: JobName.AssetDelete, data: { id: asset.id, deleteOnDisk: true } },
       ]);
     });
+
+    it('queues the files of orphaned video versions for deletion (FL-39)', async () => {
+      mocks.assetJob.streamForDeletedJob.mockReturnValue(makeStream([]));
+      mocks.systemMetadata.get.mockResolvedValue({ trash: { enabled: true, days: 7 } });
+      mocks.assetEdit.releaseOrphanedVideoVersions.mockResolvedValue(['/v.master.mp4', '/v.master.mp4.lineage.json']);
+
+      await expect(sut.handleAssetDeletionCheck()).resolves.toBe(JobStatus.Success);
+
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.FileDelete,
+        data: { files: ['/v.master.mp4', '/v.master.mp4.lineage.json'] },
+      });
+    });
   });
 
   describe('handleAssetDeletion', () => {
@@ -596,9 +1058,7 @@ describe(AssetService.name, () => {
         .file({ type: AssetFileType.Thumbnail, isEdited: true })
         .build();
       mocks.assetJob.getForAssetDeletion.mockResolvedValue(getForAssetDeletion(asset));
-      mocks.duplicateRepository.getVideoDuplicateFrames.mockResolvedValue([
-        { assetId: asset.id, frameIndex: 0, path: '/data/thumbs/video-frame.jpeg' } as any,
-      ]);
+      removedExtras = { videoDuplicateFramePaths: ['/data/thumbs/video-frame.jpeg'] };
 
       await sut.handleAssetDeletion({ id: asset.id, deleteOnDisk: true });
 
@@ -608,51 +1068,132 @@ describe(AssetService.name, () => {
             name: JobName.FileDelete,
             data: {
               files: [...asset.files.map(({ path }) => path), '/data/thumbs/video-frame.jpeg', asset.originalPath],
+              removedAssetId: asset.id,
             },
           },
         ],
       ]);
-      expect(mocks.asset.remove).toHaveBeenCalledWith(getForAssetDeletion(asset));
+      expect(mocks.asset.remove).toHaveBeenCalledWith(getForAssetDeletion(asset), {
+        files: expect.any(Function),
+        queue: expect.any(Function),
+      });
     });
 
-    it('should delete the entire stack if deleted asset was the primary asset and the stack would only contain one asset afterwards', async () => {
-      const asset = AssetFactory.from()
-        .stack({}, (builder) => builder.asset())
+    it('never deletes the original or sidecar of an external library item (FL-78)', async () => {
+      const asset = AssetFactory.from({ libraryId: newUuid(), isExternal: true })
+        .file({ type: AssetFileType.Thumbnail })
+        .file({ type: AssetFileType.Preview })
         .build();
-      mocks.stack.delete.mockResolvedValue();
       mocks.assetJob.getForAssetDeletion.mockResolvedValue(getForAssetDeletion(asset));
 
       await sut.handleAssetDeletion({ id: asset.id, deleteOnDisk: true });
 
-      expect(mocks.stack.delete).toHaveBeenCalledWith(asset.stackId);
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.FileDelete,
+        data: { files: asset.files.map(({ path }) => path), removedAssetId: asset.id },
+      });
+      const deleted = mocks.job.queue.mock.calls.flatMap(([item]) => (item.data as { files?: string[] }).files ?? []);
+      expect(deleted).not.toContain(asset.originalPath);
+      expect(mocks.user.updateUsage).not.toHaveBeenCalled();
     });
 
-    it('should delete the stack when a non-primary asset is deleted and only the primary would remain', async () => {
-      const asset = AssetFactory.from().build();
-      const deletionAsset = {
-        ...getForAssetDeletion(asset),
-        stack: { id: newUuid(), primaryAssetId: newUuid(), assets: [{ id: asset.id }] },
-      };
-      mocks.stack.delete.mockResolvedValue();
-      mocks.assetJob.getForAssetDeletion.mockResolvedValue(deletionAsset);
+    it('leaves the stack change to the removal, so a removal that rolls back leaves the stack (FL-179)', async () => {
+      const asset = AssetFactory.from()
+        .stack({}, (builder) => builder.asset())
+        .build();
+      mocks.assetJob.getForAssetDeletion.mockResolvedValue(getForAssetDeletion(asset));
+      mocks.asset.remove.mockRejectedValueOnce(new Error('removal rolled back'));
 
-      await sut.handleAssetDeletion({ id: asset.id, deleteOnDisk: true });
-
-      expect(mocks.stack.delete).toHaveBeenCalledWith(deletionAsset.stack.id);
-    });
-
-    it('should keep the stack when a non-primary asset is deleted and the primary plus another asset remain', async () => {
-      const asset = AssetFactory.from().build();
-      const deletionAsset = {
-        ...getForAssetDeletion(asset),
-        stack: { id: newUuid(), primaryAssetId: newUuid(), assets: [{ id: asset.id }, { id: newUuid() }] },
-      };
-      mocks.assetJob.getForAssetDeletion.mockResolvedValue(deletionAsset);
-
-      await sut.handleAssetDeletion({ id: asset.id, deleteOnDisk: true });
+      await expect(sut.handleAssetDeletion({ id: asset.id, deleteOnDisk: true })).rejects.toThrow(
+        'removal rolled back',
+      );
 
       expect(mocks.stack.delete).not.toHaveBeenCalled();
       expect(mocks.stack.update).not.toHaveBeenCalled();
+    });
+
+    it('releases both paths of a storage move that never committed (FL-179)', async () => {
+      const asset = AssetFactory.from().file({ type: AssetFileType.Thumbnail }).build();
+      mocks.assetJob.getForAssetDeletion.mockResolvedValue(getForAssetDeletion(asset));
+      removedExtras = {
+        pendingMoves: [
+          {
+            pathType: AssetPathType.Original,
+            oldPath: asset.originalPath,
+            newPath: '/data/library/2024/moved.jpg',
+            stagedPath: '/data/library/2024/moved.jpg.m1.moving',
+          },
+          {
+            pathType: AssetFileType.Thumbnail,
+            oldPath: asset.files[0].path,
+            newPath: '/data/thumbs/moved.webp',
+            stagedPath: '/data/thumbs/moved.webp.m2.moving',
+          },
+        ],
+      };
+
+      await sut.handleAssetDeletion({ id: asset.id, deleteOnDisk: true });
+
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.FileDelete,
+        data: {
+          files: [
+            asset.files[0].path,
+            asset.originalPath,
+            '/data/library/2024/moved.jpg',
+            '/data/library/2024/moved.jpg.m1.moving',
+            '/data/thumbs/moved.webp',
+            '/data/thumbs/moved.webp.m2.moving',
+          ],
+          removedAssetId: asset.id,
+        },
+      });
+    });
+
+    it('never releases the moved original of an external library item (FL-179)', async () => {
+      const asset = AssetFactory.from({ libraryId: newUuid(), isExternal: true })
+        .file({ type: AssetFileType.Thumbnail })
+        .build();
+      mocks.assetJob.getForAssetDeletion.mockResolvedValue(getForAssetDeletion(asset));
+      removedExtras = {
+        pendingMoves: [
+          {
+            pathType: AssetPathType.Original,
+            oldPath: asset.originalPath,
+            newPath: '/library/moved.jpg',
+            stagedPath: '/library/moved.jpg.m1.moving',
+          },
+          {
+            pathType: AssetFileType.Sidecar,
+            oldPath: `${asset.originalPath}.xmp`,
+            newPath: '/library/moved.jpg.xmp',
+            stagedPath: '/library/moved.jpg.xmp.m2.moving',
+          },
+          {
+            pathType: AssetFileType.Thumbnail,
+            oldPath: asset.files[0].path,
+            newPath: '/data/thumbs/moved.webp',
+            stagedPath: '/data/thumbs/moved.webp.m3.moving',
+          },
+        ],
+      };
+
+      await sut.handleAssetDeletion({ id: asset.id, deleteOnDisk: true });
+
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.FileDelete,
+        // a staged copy is always Frameleaf's own; the library's own files are never released
+        data: {
+          files: [
+            asset.files[0].path,
+            '/library/moved.jpg.m1.moving',
+            '/library/moved.jpg.xmp.m2.moving',
+            '/data/thumbs/moved.webp',
+            '/data/thumbs/moved.webp.m3.moving',
+          ],
+          removedAssetId: asset.id,
+        },
+      });
     });
 
     it('should delete a live photo', async () => {
@@ -666,9 +1207,10 @@ describe(AssetService.name, () => {
         deleteOnDisk: true,
       });
 
+      // the file cleanup is queued with the removal (FL-169), the motion part after it
       expect(mocks.job.queue.mock.calls).toEqual([
+        [{ name: JobName.FileDelete, data: { files: [asset.originalPath], removedAssetId: asset.id } }],
         [{ name: JobName.AssetDelete, data: { id: motionAsset.id, deleteOnDisk: true } }],
-        [{ name: JobName.FileDelete, data: { files: [asset.originalPath] } }],
       ]);
     });
 
@@ -680,7 +1222,12 @@ describe(AssetService.name, () => {
       await sut.handleAssetDeletion({ id: asset.id, deleteOnDisk: true });
 
       expect(mocks.job.queue.mock.calls).toEqual([
-        [{ name: JobName.FileDelete, data: { files: [`/data/library/IMG_${asset.id}.jpg`] } }],
+        [
+          {
+            name: JobName.FileDelete,
+            data: { files: [`/data/library/IMG_${asset.id}.jpg`], removedAssetId: asset.id },
+          },
+        ],
       ]);
     });
 
@@ -689,6 +1236,123 @@ describe(AssetService.name, () => {
       mocks.assetJob.getForAssetDeletion.mockResolvedValue(getForAssetDeletion(asset));
       await sut.handleAssetDeletion({ id: asset.id, deleteOnDisk: true });
       expect(mocks.user.updateUsage).toHaveBeenCalledWith(asset.ownerId, -5000);
+    });
+
+    it('keeps an asset restored from the trash since the deletion was queued (FL-71)', async () => {
+      const asset = AssetFactory.from().file({ type: AssetFileType.Thumbnail }).build();
+      mocks.assetJob.getForAssetDeletion.mockResolvedValue({ ...getForAssetDeletion(asset), deletedAt: null });
+      mocks.asset.getLivePhotoCount.mockResolvedValue(0);
+
+      await expect(sut.handleAssetDeletion({ id: asset.id, deleteOnDisk: true })).resolves.toBe(JobStatus.Skipped);
+
+      expect(mocks.asset.remove).not.toHaveBeenCalled();
+      expect(mocks.stack.delete).not.toHaveBeenCalled();
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+    });
+
+    it('keeps a restored photo’s motion part while a photo still uses it (FL-71)', async () => {
+      const motion = AssetFactory.from({ type: AssetType.Video, visibility: AssetVisibility.Hidden }).build();
+      mocks.assetJob.getForAssetDeletion.mockResolvedValue({ ...getForAssetDeletion(motion), deletedAt: null });
+      mocks.asset.getLivePhotoCount.mockResolvedValue(1);
+
+      await expect(sut.handleAssetDeletion({ id: motion.id, deleteOnDisk: true })).resolves.toBe(JobStatus.Skipped);
+
+      expect(mocks.asset.getLivePhotoCount).toHaveBeenCalledWith(motion.id);
+      expect(mocks.asset.remove).not.toHaveBeenCalled();
+    });
+
+    it('deletes a motion part that no photo uses any more, though it was never trashed (FL-71)', async () => {
+      const motion = AssetFactory.from({ type: AssetType.Video, visibility: AssetVisibility.Hidden }).build();
+      mocks.assetJob.getForAssetDeletion.mockResolvedValue({ ...getForAssetDeletion(motion), deletedAt: null });
+      mocks.asset.getLivePhotoCount.mockResolvedValue(0);
+
+      await expect(sut.handleAssetDeletion({ id: motion.id, deleteOnDisk: true })).resolves.toBe(JobStatus.Success);
+
+      expect(mocks.asset.remove).toHaveBeenCalled();
+    });
+
+    describe('when a step fails (FL-169)', () => {
+      it('queues the file cleanup inside the removal, so a failure to queue it keeps the asset', async () => {
+        const asset = AssetFactory.from()
+          .file({ type: AssetFileType.Thumbnail })
+          .exif({ fileSizeInByte: 5000 })
+          .build();
+        mocks.assetJob.getForAssetDeletion.mockResolvedValue(getForAssetDeletion(asset));
+        // the repository runs the queue inside its transaction and rolls the removal back when it throws
+        mocks.job.queue.mockRejectedValue(new Error('redis unavailable'));
+
+        await expect(sut.handleAssetDeletion({ id: asset.id, deleteOnDisk: true })).rejects.toThrow(
+          'redis unavailable',
+        );
+
+        expect(mocks.job.queue).toHaveBeenCalledWith({
+          name: JobName.FileDelete,
+          data: { files: [...asset.files.map(({ path }) => path), asset.originalPath], removedAssetId: asset.id },
+        });
+        expect(mocks.user.updateUsage).not.toHaveBeenCalled();
+        expect(mocks.event.emit).not.toHaveBeenCalledWith('AssetDelete', expect.anything());
+      });
+
+      it('still succeeds, with its files queued, when announcing the deletion fails after the row is gone', async () => {
+        const motionAsset = AssetFactory.from({ type: AssetType.Video, visibility: AssetVisibility.Hidden }).build();
+        const asset = AssetFactory.from({ livePhotoVideoId: motionAsset.id }).exif({ fileSizeInByte: 5000 }).build();
+        mocks.assetJob.getForAssetDeletion.mockResolvedValue(getForAssetDeletion(asset));
+        mocks.asset.getLivePhotoCount.mockResolvedValue(0);
+        mocks.event.emit.mockRejectedValue(new Error('listener failed'));
+
+        await expect(sut.handleAssetDeletion({ id: asset.id, deleteOnDisk: true })).resolves.toBe(JobStatus.Success);
+
+        expect(mocks.job.queue.mock.calls).toEqual([
+          [{ name: JobName.FileDelete, data: { files: [asset.originalPath], removedAssetId: asset.id } }],
+          [{ name: JobName.AssetDelete, data: { id: motionAsset.id, deleteOnDisk: true } }],
+        ]);
+        expect(mocks.user.updateUsage).toHaveBeenCalledWith(asset.ownerId, -5000);
+      });
+
+      it('releases restoration and develop outputs with the asset, and never twice', async () => {
+        const asset = AssetFactory.from().file({ type: AssetFileType.Thumbnail }).build();
+        mocks.assetJob.getForAssetDeletion.mockResolvedValue(getForAssetDeletion(asset));
+        const thumbnailPath = asset.files[0]!.path;
+        removedExtras = { derivedPaths: ['/data/restorations/result.jpg', '/data/develop/master.tif', thumbnailPath] };
+
+        await sut.handleAssetDeletion({ id: asset.id, deleteOnDisk: true });
+
+        expect(mocks.job.queue).toHaveBeenCalledWith({
+          name: JobName.FileDelete,
+          data: {
+            files: [thumbnailPath, '/data/restorations/result.jpg', '/data/develop/master.tif', asset.originalPath],
+            removedAssetId: asset.id,
+          },
+        });
+      });
+
+      it('announces the deletion and releases the motion part though the usage update fails', async () => {
+        const motionAsset = AssetFactory.from({ type: AssetType.Video, visibility: AssetVisibility.Hidden }).build();
+        const asset = AssetFactory.create({ livePhotoVideoId: motionAsset.id });
+        mocks.assetJob.getForAssetDeletion.mockResolvedValue(getForAssetDeletion(asset));
+        mocks.asset.getLivePhotoCount.mockResolvedValue(0);
+        mocks.user.updateUsage.mockRejectedValue(new Error('database unavailable'));
+
+        await expect(sut.handleAssetDeletion({ id: asset.id, deleteOnDisk: true })).resolves.toBe(JobStatus.Success);
+
+        expect(mocks.event.emit).toHaveBeenCalledWith('AssetDelete', { assetId: asset.id, userId: asset.ownerId });
+        expect(mocks.job.queue).toHaveBeenCalledWith({
+          name: JobName.AssetDelete,
+          data: { id: motionAsset.id, deleteOnDisk: true },
+        });
+      });
+
+      it('does not fail the job when the motion part cannot be queued after the row is gone', async () => {
+        const asset = AssetFactory.create({ livePhotoVideoId: newUuid() });
+        mocks.assetJob.getForAssetDeletion.mockResolvedValue(getForAssetDeletion(asset));
+        mocks.asset.getLivePhotoCount.mockRejectedValue(new Error('database unavailable'));
+
+        await expect(sut.handleAssetDeletion({ id: asset.id, deleteOnDisk: true })).resolves.toBe(JobStatus.Success);
+
+        expect(mocks.job.queue.mock.calls).toEqual([
+          [{ name: JobName.FileDelete, data: { files: [asset.originalPath], removedAssetId: asset.id } }],
+        ]);
+      });
     });
 
     it('should fail if asset could not be found', async () => {
@@ -757,6 +1421,14 @@ describe(AssetService.name, () => {
       ]);
     });
 
+    it('should run the text recognition job to read a photo again', async () => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+
+      await sut.run(authStub.admin, { assetIds: ['asset-1'], name: AssetJobName.REFRESH_OCR });
+
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.Ocr, data: { id: 'asset-1' } }]);
+    });
+
     it('should run the refresh thumbnails job', async () => {
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
 
@@ -792,6 +1464,28 @@ describe(AssetService.name, () => {
 
       expect(mocks.asset.upsertBulkMetadata).not.toHaveBeenCalled();
     });
+
+    it('should lock an asset whose owner review marks it sensitive (FL-34)', async () => {
+      const asset = AssetFactory.create();
+      const value = { nsfwDetection: { review: { action: 'marked-nsfw', isNsfw: true } } };
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.upsertMetadata.mockResolvedValue([]);
+
+      await sut.upsertMetadata(authStub.admin, asset.id, { items: [{ key: AssetMetadataKey.MlEnrichment, value }] });
+
+      expect(mocks.asset.lock).toHaveBeenCalledWith([asset.id], AssetLockReason.Marked, authStub.admin.user.id);
+    });
+
+    it('should not lock a detection while hiding sensitive detections is off (FL-34)', async () => {
+      const asset = AssetFactory.create();
+      const value = { nsfwDetection: { status: 'success', result: { isNsfw: true, score: 0.99, labels: {} } } };
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.upsertMetadata.mockResolvedValue([]);
+
+      await sut.upsertMetadata(authStub.admin, asset.id, { items: [{ key: AssetMetadataKey.MlEnrichment, value }] });
+
+      expect(mocks.asset.lock).not.toHaveBeenCalled();
+    });
   });
 
   describe('upsertBulkMetadata', () => {
@@ -812,7 +1506,263 @@ describe(AssetService.name, () => {
     });
   });
 
+  describe('video version operations', () => {
+    it('does not expose history without edit access', async () => {
+      await expect(sut.getVideoEditVersions(authStub.admin, 'asset-1')).rejects.toBeInstanceOf(BadRequestException);
+      expect(mocks.assetEdit.listVideoVersions).not.toHaveBeenCalled();
+    });
+
+    it('queues only the export version and hides internal paths from the response', async () => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+      mocks.assetEdit.createVideoExport.mockResolvedValue({
+        id: 'version-1',
+        assetId: 'asset-1',
+        purpose: 'export',
+        status: 'pending',
+        createdAt: new Date('2026-01-01'),
+        recipe: [],
+        sourcePath: '/private/original',
+      } as any);
+      mocks.job.queue.mockResolvedValue(undefined);
+      const result = await sut.exportVideoEditVersion(authStub.admin, 'asset-1');
+      expect(result).not.toHaveProperty('sourcePath');
+      expect(mocks.assetEdit.createVideoExport).toHaveBeenCalledWith('asset-1', authStub.admin.user.id);
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.AssetVideoEditGeneration,
+        data: { id: 'asset-1', versionId: 'version-1' },
+      });
+    });
+
+    it('restores an original (empty-recipe) version with edit create permission only', async () => {
+      mocks.access.asset.checkOwnerAccess.mockImplementation((_userId, ids) => Promise.resolve(new Set(ids)));
+      mocks.assetEdit.getVideoVersion.mockResolvedValue({
+        ownerId: authStub.admin.user.id,
+        status: 'ready',
+        recipe: [],
+      } as any);
+      mocks.asset.getById.mockResolvedValue({ id: 'asset-1', type: AssetType.Video, files: [] } as any);
+      mocks.assetEdit.replaceAll.mockResolvedValue([]);
+      mocks.assetEdit.getRequestedVideoVersion.mockResolvedValue({ id: 'version-2' } as any);
+      const requireAccess = vi.spyOn(sut as any, 'requireAccess');
+      await sut.restoreVideoEditVersion(authStub.admin, 'asset-1', 'version-1');
+      expect(mocks.assetEdit.replaceAll).toHaveBeenCalledWith('asset-1', [], 'revert');
+      expect(requireAccess.mock.calls.map(([options]: any) => options.permission)).toEqual([
+        Permission.AssetEditCreate,
+      ]);
+    });
+
+    it('rejects a ready version owned by a different user before restoring its recipe', async () => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+      mocks.assetEdit.getVideoVersion.mockResolvedValue({ ownerId: 'other', status: 'ready', recipe: [] } as any);
+      await expect(sut.restoreVideoEditVersion(authStub.admin, 'asset-1', 'version-1')).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(mocks.assetEdit.replaceAll).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['video_version_selected_or_missing', BadRequestException],
+      ['video_version_inactive', BadRequestException],
+      ['video_version_not_found', NotFoundException],
+    ])('maps a %s refusal to a client error and deletes nothing', async (code, type) => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+      mocks.assetEdit.pruneVideoVersion.mockRejectedValue(new Error(code));
+      await expect(sut.pruneVideoEditVersion(authStub.admin, 'asset-1', 'version-1')).rejects.toBeInstanceOf(type);
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+    });
+
+    it('queues only the unreferenced files of a pruned version', async () => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+      mocks.assetEdit.pruneVideoVersion.mockResolvedValue(['/master.mp4', '/master.mp4.lineage.json']);
+      await sut.pruneVideoEditVersion(authStub.admin, 'asset-1', 'version-1');
+      expect(mocks.assetEdit.pruneVideoVersion).toHaveBeenCalledWith('asset-1', 'version-1', authStub.admin.user.id);
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.FileDelete,
+        data: { files: ['/master.mp4', '/master.mp4.lineage.json'] },
+      });
+    });
+
+    it('keeps history-owned edited files when reverting a retained video to the original', async () => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+      mocks.asset.getById.mockResolvedValue({
+        id: 'asset-1',
+        type: AssetType.Video,
+        files: [{ id: 'file-1', path: '/proxy.mp4', type: AssetFileType.EncodedVideo, isEdited: true }],
+      } as any);
+      mocks.assetEdit.replaceAll.mockResolvedValue([]);
+      mocks.assetEdit.getRequestedVideoVersion.mockResolvedValue({ id: 'version-2' } as any);
+      await sut.removeAssetEdits(authStub.admin, 'asset-1');
+      expect(mocks.assetEdit.replaceAll).toHaveBeenCalledWith('asset-1', [], 'save');
+      expect(mocks.asset.deleteFiles).not.toHaveBeenCalled();
+      expect(mocks.job.queue).toHaveBeenCalledExactlyOnceWith({
+        name: JobName.AssetVideoEditGeneration,
+        data: { id: 'asset-1' },
+      });
+    });
+  });
+
+  describe('original video edit metadata', () => {
+    beforeEach(() => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+      mocks.asset.getById.mockResolvedValue({
+        type: AssetType.Video,
+        duration: 5000,
+        originalPath: '/original.mp4',
+      } as any);
+      mocks.assetEdit.getAll.mockResolvedValue([]);
+    });
+
+    it('lists the original keyframes in milliseconds for the fast trim (FL-113)', async () => {
+      mocks.media.probe.mockResolvedValue({
+        format: { duration: 30 },
+        videoStreams: [
+          { index: 0, width: 1920, height: 1080, rotation: 0, timeBase: 600, timeBaseRational: { num: 1, den: 600 } },
+        ],
+      } as any);
+      mocks.media.probePackets.mockResolvedValue({ startPts: 300, keyframePts: [300, 1500, 1500, 2700] } as any);
+      await expect(sut.getAssetEditKeyframes(authStub.admin, 'asset-1')).resolves.toEqual({
+        keyframesMs: [0, 2000, 4000],
+      });
+      expect(mocks.media.probePackets).toHaveBeenCalledWith('/original.mp4', 0);
+    });
+
+    it('refuses keyframes for a photo', async () => {
+      mocks.asset.getById.mockResolvedValue({ type: AssetType.Image, originalPath: '/a.jpg' } as any);
+      await expect(sut.getAssetEditKeyframes(authStub.admin, 'asset-1')).rejects.toThrow('not a video');
+    });
+
+    it('returns the rotated original raster and timeline instead of current render metadata', async () => {
+      mocks.media.probe.mockResolvedValue({
+        format: { duration: 30 },
+        videoStreams: [{ width: 1920, height: 1080, rotation: -90 }],
+      } as any);
+      await expect(sut.getAssetEdits(authStub.admin, 'asset-1')).resolves.toMatchObject({
+        originalVideo: { width: 1080, height: 1920, durationMs: 30_000 },
+      });
+      expect(mocks.media.probe).toHaveBeenCalledWith('/original.mp4');
+    });
+
+    it('validates a larger crop and longer trim against the original instead of edited metadata', async () => {
+      mocks.asset.getForEdit.mockResolvedValue({
+        type: AssetType.Video,
+        duration: 5000,
+        originalPath: '/original.mp4',
+        originalFileName: 'original.mp4',
+        livePhotoVideoId: null,
+        exifImageWidth: 640,
+        exifImageHeight: 360,
+        orientation: null,
+        projectionType: null,
+      });
+      mocks.media.probe.mockResolvedValue({
+        format: { duration: 30 },
+        videoStreams: [{ width: 1920, height: 1080, rotation: 0 }],
+      } as any);
+      const edits: AssetEditActionItem[] = [
+        { action: AssetEditAction.Crop, parameters: { x: 0, y: 0, width: 1000, height: 600 } },
+        { action: AssetEditAction.Trim, parameters: { startMs: 0, endMs: 25_000 } },
+      ];
+      mocks.assetEdit.replaceAll.mockResolvedValue([]);
+      await expect(sut.editAsset(authStub.admin, 'asset-1', { edits })).resolves.toMatchObject({ assetId: 'asset-1' });
+      expect(mocks.assetEdit.replaceAll).toHaveBeenCalledWith('asset-1', edits, 'save');
+      await expect(
+        sut.editAsset(authStub.admin, 'asset-1', {
+          edits: [{ action: AssetEditAction.Crop, parameters: { x: 0, y: 0, width: 1922, height: 1080 } }],
+        }),
+      ).rejects.toThrow('Crop parameters are out of bounds');
+    });
+
+    it.each([
+      { format: { duration: 30 }, videoStreams: [] },
+      { format: { duration: NaN }, videoStreams: [{ width: 1920, height: 1080, rotation: 0 }] },
+      { format: { duration: 30 }, videoStreams: [{ width: 0, height: 1080, rotation: 0 }] },
+    ])('omits unavailable original metadata when listing and refuses to save against it: %j', async (source) => {
+      mocks.media.probe.mockResolvedValue(source as any);
+      const listed = await sut.getAssetEdits(authStub.admin, 'asset-1');
+      expect(listed).toEqual({ assetId: 'asset-1', edits: [] });
+      mocks.asset.getForEdit.mockResolvedValue({
+        type: AssetType.Video,
+        duration: 5000,
+        originalPath: '/original.mp4',
+        originalFileName: 'original.mp4',
+        livePhotoVideoId: null,
+        exifImageWidth: 640,
+        exifImageHeight: 360,
+        orientation: null,
+        projectionType: null,
+      });
+      await expect(
+        sut.editAsset(authStub.admin, 'asset-1', {
+          edits: [{ action: AssetEditAction.Rotate, parameters: { angle: 90 } }],
+        }),
+      ).rejects.toThrow('Original video metadata');
+      expect(mocks.assetEdit.replaceAll).not.toHaveBeenCalled();
+    });
+
+    it('says what an edited version does with HDR and Dolby Vision originals (FL-113)', async () => {
+      mocks.media.probe.mockResolvedValue({
+        format: { duration: 30 },
+        videoStreams: [{ width: 1920, height: 1080, rotation: 0, colorTransfer: 16, dvProfile: null }],
+      } as any);
+      await expect(sut.getAssetEdits(authStub.admin, 'asset-1')).resolves.toMatchObject({
+        originalVideo: { colorPolicy: 'tone-map', colorReason: expect.stringContaining('HDR original is preserved') },
+      });
+
+      mocks.media.probe.mockResolvedValue({
+        format: { duration: 30 },
+        videoStreams: [{ width: 1920, height: 1080, rotation: 0, colorTransfer: 1, dvProfile: null }],
+      } as any);
+      await expect(sut.getAssetEdits(authStub.admin, 'asset-1')).resolves.toMatchObject({
+        originalVideo: { colorPolicy: 'preserve' },
+      });
+    });
+
+    it('refuses to queue an edit of a Dolby Vision profile 5 original, and still allows reverting (FL-113)', async () => {
+      mocks.media.probe.mockResolvedValue({
+        format: { duration: 30 },
+        videoStreams: [{ width: 1920, height: 1080, rotation: 0, colorTransfer: 16, dvProfile: 5 }],
+      } as any);
+      await expect(sut.getAssetEdits(authStub.admin, 'asset-1')).resolves.toMatchObject({
+        originalVideo: { colorPolicy: 'unsupported', colorReason: expect.stringContaining('Dolby Vision profile 5') },
+      });
+      mocks.asset.getForEdit.mockResolvedValue({
+        type: AssetType.Video,
+        duration: 30_000,
+        originalPath: '/original.mp4',
+        originalFileName: 'original.mp4',
+        livePhotoVideoId: null,
+        exifImageWidth: 1920,
+        exifImageHeight: 1080,
+        orientation: null,
+        projectionType: null,
+      });
+      await expect(
+        sut.editAsset(authStub.admin, 'asset-1', {
+          edits: [{ action: AssetEditAction.Trim, parameters: { startMs: 0, endMs: 10_000 } }],
+        }),
+      ).rejects.toThrow('Dolby Vision profile 5');
+      expect(mocks.assetEdit.replaceAll).not.toHaveBeenCalled();
+    });
+
+    it('swaps the raster for any quarter-turn display rotation', async () => {
+      mocks.media.probe.mockResolvedValue({
+        format: { duration: 30 },
+        videoStreams: [{ width: 1920, height: 1080, rotation: 270 }],
+      } as any);
+      await expect(sut.getAssetEdits(authStub.admin, 'asset-1')).resolves.toMatchObject({
+        originalVideo: { width: 1080, height: 1920 },
+      });
+    });
+  });
+
   describe('editAsset', () => {
+    beforeEach(() => {
+      mocks.media.probe.mockResolvedValue({
+        format: { duration: 10 },
+        videoStreams: [{ width: 1920, height: 1080, rotation: 0 }],
+        audioStreams: [],
+      } as any);
+    });
     it('should enforce crop first', async () => {
       await expect(
         sut.editAsset(authStub.admin, 'asset-1', {
@@ -856,10 +1806,97 @@ describe(AssetService.name, () => {
         edits: [{ id: 'edit-1', ...edit }],
       });
 
-      expect(mocks.assetEdit.replaceAll).toHaveBeenCalledWith('asset-1', [edit]);
+      expect(mocks.assetEdit.replaceAll).toHaveBeenCalledWith('asset-1', [edit], 'save');
       expect(mocks.job.queue).toHaveBeenCalledWith({
         name: JobName.AssetVideoEditGeneration,
         data: { id: 'asset-1' },
+      });
+    });
+
+    it('records a video edit as a job in Activity, naming the version it will render (FL-43)', async () => {
+      const edit: AssetEditActionItem = { action: AssetEditAction.Trim, parameters: { startMs: 1000, endMs: 5000 } };
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+      mocks.asset.getForEdit.mockResolvedValue({
+        type: AssetType.Video,
+        duration: 10_000,
+        livePhotoVideoId: null,
+        originalPath: '/upload/video.mp4',
+        originalFileName: 'video.mp4',
+        exifImageWidth: 1920,
+        exifImageHeight: 1080,
+        orientation: null,
+        projectionType: null,
+      });
+      mocks.assetEdit.replaceAll.mockResolvedValue([{ id: 'edit-1', ...edit }]);
+      mocks.assetEdit.getRequestedVideoVersion.mockResolvedValue({ id: 'version-1' } as never);
+      mocks.mediaOperation.create.mockResolvedValue({ id: 'op-1' } as never);
+
+      await sut.editAsset(authStub.admin, 'asset-1', { edits: [edit] });
+
+      expect(mocks.mediaOperation.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          ownerId: authStub.admin.user.id,
+          kind: 'quick_edit',
+          label: 'video.mp4',
+          assetId: 'asset-1',
+          revisionId: 'version-1',
+          settings: { edit: 'video_edit' },
+        }),
+      );
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.AssetVideoEditGeneration,
+        data: { id: 'asset-1', operationId: 'op-1' },
+      });
+    });
+
+    it('records a photo edit as a job in Activity (FL-43)', async () => {
+      const edit: AssetEditActionItem = { action: AssetEditAction.Rotate, parameters: { angle: 90 } };
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+      mocks.asset.getForEdit.mockResolvedValue({
+        type: AssetType.Image,
+        duration: null,
+        livePhotoVideoId: null,
+        originalPath: '/upload/photo.jpg',
+        originalFileName: 'photo.jpg',
+        exifImageWidth: 1920,
+        exifImageHeight: 1080,
+        orientation: null,
+        projectionType: null,
+      });
+      mocks.assetEdit.replaceAll.mockResolvedValue([{ id: 'edit-1', ...edit }]);
+      mocks.mediaOperation.create.mockResolvedValue({ id: 'op-2' } as never);
+
+      await sut.editAsset(authStub.admin, 'asset-1', { edits: [edit] });
+
+      expect(mocks.mediaOperation.create).toHaveBeenCalledWith(
+        expect.objectContaining({ label: 'photo.jpg', revisionId: null, settings: { edit: 'photo_edit' } }),
+      );
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.AssetEditThumbnailGeneration,
+        data: { id: 'asset-1', operationId: 'op-2' },
+      });
+    });
+
+    it('records a video export as its own job, pointing at the exported version (FL-43)', async () => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+      mocks.assetEdit.createVideoExport.mockResolvedValue({
+        id: 'version-2',
+        purpose: 'export',
+        status: 'pending',
+        createdAt: new Date('2026-09-25T10:00:00.000Z'),
+        recipe: [],
+      } as never);
+      mocks.asset.getById.mockResolvedValue({ id: 'asset-1', originalFileName: 'video.mp4' } as never);
+      mocks.mediaOperation.create.mockResolvedValue({ id: 'op-3' } as never);
+
+      await sut.exportVideoEditVersion(authStub.admin, 'asset-1');
+
+      expect(mocks.mediaOperation.create).toHaveBeenCalledWith(
+        expect.objectContaining({ label: 'video.mp4', revisionId: 'version-2', settings: { edit: 'video_export' } }),
+      );
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.AssetVideoEditGeneration,
+        data: { id: 'asset-1', versionId: 'version-2', operationId: 'op-3' },
       });
     });
 
@@ -951,6 +1988,36 @@ describe(AssetService.name, () => {
         name: JobName.AssetVideoEditGeneration,
         data: { id: 'asset-1' },
       });
+    });
+
+    it('accepts a whole-clip speed with speed ranges, and refuses two whole-clip speeds (FL-113)', async () => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+      mocks.asset.getForEdit.mockResolvedValue({
+        type: AssetType.Video,
+        duration: 10_000,
+        livePhotoVideoId: null,
+        originalPath: '/upload/video.mp4',
+        originalFileName: 'video.mp4',
+        exifImageWidth: 1920,
+        exifImageHeight: 1080,
+        orientation: null,
+        projectionType: null,
+      });
+      const edits: AssetEditActionItem[] = [
+        { action: AssetEditAction.Speed, parameters: { rate: 2 } },
+        { action: AssetEditAction.Speed, parameters: { rate: 0.5, startMs: 1000, endMs: 3000 } },
+      ];
+      mocks.assetEdit.replaceAll.mockResolvedValue(edits.map((edit, index) => ({ id: `edit-${index}`, ...edit })));
+      await expect(sut.editAsset(authStub.admin, 'asset-1', { edits })).resolves.toMatchObject({ assetId: 'asset-1' });
+
+      await expect(
+        sut.editAsset(authStub.admin, 'asset-1', {
+          edits: [
+            { action: AssetEditAction.Speed, parameters: { rate: 2 } },
+            { action: AssetEditAction.Speed, parameters: { rate: 4 } },
+          ],
+        }),
+      ).rejects.toThrow('Only one whole-clip speed edit is allowed');
     });
 
     it('should reject overlapping video speed segments', async () => {

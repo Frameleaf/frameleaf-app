@@ -1,20 +1,21 @@
 <script lang="ts">
-  import SettingAccordion from '$lib/components/shared-components/settings/SettingAccordion.svelte';
-  import SettingInputField from '$lib/components/shared-components/settings/SettingInputField.svelte';
-  import SettingSelect from './SettingSelect.svelte';
-  import SettingSwitch from '$lib/components/shared-components/settings/SettingSwitch.svelte';
-  import SettingButtonsRow from '$lib/components/shared-components/settings/SystemConfigButtonRow.svelte';
+  import SettingGroup from '$lib/components/frameleaf/settings/SettingGroup.svelte';
+  import SettingField from '$lib/components/frameleaf/settings/SettingField.svelte';
+  import SettingSelect from '$lib/components/frameleaf/settings/SettingSelect.svelte';
+  import SettingToggle from '$lib/components/frameleaf/settings/SettingToggle.svelte';
+  import SettingActions from '$lib/components/frameleaf/settings/SettingActions.svelte';
   import { SettingInputFieldType } from '$lib/constants';
   import FormatMessage from '$lib/elements/FormatMessage.svelte';
+  import { requireSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
-  import { systemConfigManager } from '$lib/managers/system-config-manager.svelte';
   import { Link } from '@immich/ui';
   import { t } from 'svelte-i18n';
   import { fade } from 'svelte/transition';
 
   const disabled = $derived(featureFlagsManager.value.configFile);
-  const config = $derived(systemConfigManager.value);
-  let configToEdit = $state(systemConfigManager.cloneValue());
+  const settingsDraft = requireSystemConfigDraft();
+  const configToEdit = $derived(settingsDraft.draft);
+  const config = $derived(settingsDraft.baseline);
 
   let cronExpressionOptions = $derived([
     { text: $t('interval.night_at_midnight'), value: '0 0 * * *' },
@@ -27,28 +28,28 @@
 <div>
   <div in:fade={{ duration: 500 }}>
     <form autocomplete="off" onsubmit={(event) => event.preventDefault()}>
-      <div class="ms-4 mt-4 flex flex-col gap-4">
-        <SettingAccordion
+      <div class="flex flex-col gap-4">
+        <SettingGroup
           key="library-watching"
           title={$t('admin.library_watching_settings')}
           subtitle={$t('admin.library_watching_settings_description')}
         >
-          <div class="ms-4 mt-4 flex flex-col gap-4">
-            <SettingSwitch
+          <div class="flex flex-col gap-4">
+            <SettingToggle
               title={$t('admin.library_watching_enable_description')}
               {disabled}
               bind:checked={configToEdit.library.watch.enabled}
             />
           </div>
-        </SettingAccordion>
+        </SettingGroup>
 
-        <SettingAccordion
+        <SettingGroup
           key="library-scanning"
           title={$t('admin.library_scanning')}
           subtitle={$t('admin.library_scanning_description')}
         >
-          <div class="ms-4 mt-4 flex flex-col gap-4">
-            <SettingSwitch
+          <div class="flex flex-col gap-4">
+            <SettingToggle
               title={$t('admin.library_scanning_enable_description')}
               {disabled}
               bind:checked={configToEdit.library.scan.enabled}
@@ -62,7 +63,7 @@
               bind:value={configToEdit.library.scan.cronExpression}
             />
 
-            <SettingInputField
+            <SettingField
               inputType={SettingInputFieldType.TEXT}
               required={true}
               disabled={disabled || !configToEdit.library.scan.enabled}
@@ -83,11 +84,11 @@
                   </FormatMessage>
                 </p>
               {/snippet}
-            </SettingInputField>
+            </SettingField>
           </div>
-        </SettingAccordion>
+        </SettingGroup>
 
-        <SettingButtonsRow bind:configToEdit keys={['library']} {disabled} />
+        <SettingActions keys={['library']} {disabled} />
       </div>
     </form>
   </div>

@@ -1,52 +1,27 @@
 import { createJob, deleteIntegrityReport, IntegrityReport, ManualJobName } from '@immich/sdk';
-import { modalManager, toastManager, type ActionItem } from '@immich/ui';
-import { mdiDownload, mdiTrashCanOutline } from '@mdi/js';
-import type { MessageFormatter } from 'svelte-i18n';
-import { goto } from '$app/navigation';
+import { toastManager } from '@immich/ui';
+import { confirmFrameleaf } from '$lib/frameleaf/confirm';
 import { eventManager } from '$lib/managers/event-manager.svelte';
-import { Route } from '$lib/route';
 import { handleError } from '$lib/utils/handle-error';
 import { getFormatter } from '$lib/utils/i18n';
 
-export const getIntegrityReportActions = ($t: MessageFormatter, reportType: IntegrityReport) => {
-  const Download: ActionItem = {
-    title: $t('admin.download_csv'),
-    icon: mdiDownload,
-    onAction: () => goto(Route.integrityReportCsv(reportType)),
-  };
-
-  const Delete: ActionItem = {
-    title: $t('trash_page_delete_all'),
-    icon: mdiTrashCanOutline,
-    color: 'danger',
-    onAction: () => handleRemoveAllIntegrityReportItems(reportType),
-  };
-
-  return { Download, Delete };
-};
-
-export const getIntegrityReportItemActions = ($t: MessageFormatter, reportId: string, reportType: IntegrityReport) => {
-  const Download: ActionItem = {
-    title: $t('download'),
-    icon: mdiDownload,
-    onAction: () => goto(Route.integrityReportFile(reportId)),
-    $if: () => reportType === IntegrityReport.UntrackedFile || reportType === IntegrityReport.ChecksumMismatch,
-  };
-
-  const Delete: ActionItem = {
-    title: $t('delete'),
-    icon: mdiTrashCanOutline,
-    color: 'danger',
-    onAction: () => handleRemoveIntegrityReportItem(reportId),
-  };
-
-  return { Download, Delete };
-};
+/**
+ * Acting on a finding is destructive: an untracked file is deleted from disk, and an item whose file
+ * is missing or no longer matches its checksum is moved to the trash (`IntegrityService`). The
+ * Frameleaf confirmation (FL-81 CC-22/23, the prototype's "Delete this report?") says so in full.
+ */
+const consequenceKey = (reportType: IntegrityReport) =>
+  reportType === IntegrityReport.UntrackedFile
+    ? 'admin.frameleaf_maintenance_report_delete_untracked'
+    : 'admin.frameleaf_maintenance_report_delete_trash';
 
 export const handleRemoveAllIntegrityReportItems = async (reportType: IntegrityReport) => {
   const $t = await getFormatter();
-  const confirm = await modalManager.showDialog({
-    confirmText: $t('delete'),
+  const confirm = await confirmFrameleaf({
+    title: $t('admin.frameleaf_maintenance_report_delete_title'),
+    prompt: $t(consequenceKey(reportType)),
+    confirmText: $t('admin.frameleaf_maintenance_report_delete_action'),
+    danger: true,
   });
 
   if (!confirm) {
@@ -91,10 +66,17 @@ export const handleRemoveAllIntegrityReportItems = async (reportType: IntegrityR
   }
 };
 
-export const handleRemoveIntegrityReportItem = async (reportId: string) => {
+export const handleRemoveIntegrityReportItem = async (reportId: string, reportType: IntegrityReport) => {
   const $t = await getFormatter();
-  const confirm = await modalManager.showDialog({
+  const confirm = await confirmFrameleaf({
+    title: $t('admin.frameleaf_maintenance_finding_delete_title'),
+    prompt: $t(
+      reportType === IntegrityReport.UntrackedFile
+        ? 'admin.frameleaf_maintenance_finding_delete_untracked'
+        : 'admin.frameleaf_maintenance_finding_delete_trash',
+    ),
     confirmText: $t('delete'),
+    danger: true,
   });
 
   if (!confirm) {

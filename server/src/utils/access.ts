@@ -1,4 +1,4 @@
-import { BadRequestException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import type { HiddenContentFilter } from 'src/utils/hidden-content.js';
 import { AuthSharedLink } from 'src/database.js';
 import { AuthDto } from 'src/dtos/auth.dto.js';
@@ -51,6 +51,12 @@ const checkAssetOwnerAccess = (
     ? access.asset.checkOwnerAccess(auth.user.id, ids, hasElevatedPermission, accessPrivacy(auth))
     : access.asset.checkOwnerAccess(auth.user.id, ids, hasElevatedPermission);
 
+// FL-34: derivative files carry their source asset's hidden-content filter, like the asset checks above
+const checkAssetFileOwnerAccess = (access: AccessRepository, auth: AuthDto, ids: Set<string>) =>
+  accessPrivacy(auth)
+    ? access.assetFile.checkOwnerAccess(auth.user.id, ids, auth.session?.hasElevatedPermission, accessPrivacy(auth))
+    : access.assetFile.checkOwnerAccess(auth.user.id, ids, auth.session?.hasElevatedPermission);
+
 const checkAssetAlbumAccess = (access: AccessRepository, auth: AuthDto, ids: Set<string>) =>
   accessPrivacy(auth)
     ? access.asset.checkAlbumAccess(auth.user.id, ids, accessPrivacy(auth))
@@ -66,10 +72,9 @@ const checkPersonOwnerAccess = (access: AccessRepository, auth: AuthDto, ids: Se
     ? access.person.checkOwnerAccess(auth.user.id, ids, accessPrivacy(auth))
     : access.person.checkOwnerAccess(auth.user.id, ids);
 
+// a face on the caller's own Locked media needs their elevated session, like the media itself (FL-34)
 const checkPersonFaceOwnerAccess = (access: AccessRepository, auth: AuthDto, ids: Set<string>) =>
-  accessPrivacy(auth)
-    ? access.person.checkFaceOwnerAccess(auth.user.id, ids, accessPrivacy(auth))
-    : access.person.checkFaceOwnerAccess(auth.user.id, ids);
+  access.person.checkFaceOwnerAccess(auth.user.id, ids, accessPrivacy(auth), !!auth.session?.hasElevatedPermission);
 
 const checkActivityOwnerAccess = (access: AccessRepository, auth: AuthDto, ids: Set<string>) =>
   accessPrivacy(auth)
@@ -107,6 +112,18 @@ export const requireAccess = async (access: AccessRepository, request: AccessReq
   const allowedIds = await checkAccess(access, request);
   if (!areSetsEqual(new Set(request.ids), allowedIds)) {
     throw new BadRequestException(`Not found or no ${request.permission} access`);
+  }
+};
+
+/**
+ * `requireAccess` for a route that names one person or tag (FL-37, FL-46, FL-58). An id that does
+ * not exist, one that belongs to someone else and one the session suppresses while it is not
+ * unlocked all answer the same 404, so nothing tells a suppressed entity apart from a missing one.
+ */
+export const requireEntityAccess = async (access: AccessRepository, request: AccessRequest, entity: string) => {
+  const allowedIds = await checkAccess(access, request);
+  if (!areSetsEqual(new Set(request.ids), allowedIds)) {
+    throw new NotFoundException(`${entity} not found`);
   }
 };
 
@@ -206,13 +223,17 @@ const checkOtherAccess = async (access: AccessRepository, request: OtherAccessRe
     }
 
     case Permission.AssetShare: {
-      const isOwner = await checkAssetOwnerAccess(access, auth, ids, false);
+      // Owner decision, September 22, 2026: an elevated (PIN-unlocked) owner may put Locked media into
+      // albums by any path; the album then hides it from every session that is not the owner's elevated
+      // one. An ordinary session is still refused. Shared links never carry Locked media, so the
+      // shared-link service refuses it on top of this check (see SharedLinkService).
+      const isOwner = await checkAssetOwnerAccess(access, auth, ids, !!auth.session?.hasElevatedPermission);
       const isPartner = await checkAssetPartnerAccess(access, auth, setDifference(ids, isOwner));
       return setUnion(isOwner, isPartner);
     }
 
     case Permission.AssetFileDownload: {
-      return access.assetFile.checkOwnerAccess(auth.user.id, ids, auth.session?.hasElevatedPermission);
+      return checkAssetFileOwnerAccess(access, auth, ids);
     }
 
     case Permission.AssetView: {
@@ -255,7 +276,7 @@ const checkOtherAccess = async (access: AccessRepository, request: OtherAccessRe
 
     case Permission.AssetFileRead:
     case Permission.AssetFileDelete: {
-      return await access.assetFile.checkOwnerAccess(auth.user.id, ids, auth.session?.hasElevatedPermission);
+      return await checkAssetFileOwnerAccess(access, auth, ids);
     }
 
     case Permission.AlbumRead: {
@@ -339,6 +360,8 @@ const checkOtherAccess = async (access: AccessRepository, request: OtherAccessRe
       return await access.authDevice.checkOwnerAccess(auth.user.id, ids);
     }
 
+    // FL-38: correcting a face (reassign, unassign, move, hide) is its asset owner's call
+    case Permission.FaceUpdate:
     case Permission.FaceDelete: {
       return checkPersonFaceOwnerAccess(access, auth, ids);
     }

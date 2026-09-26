@@ -6,6 +6,7 @@ export const newMediaRepositoryMock = (): Mocked<RepositoryInterface<MediaReposi
   return {
     generateThumbnail: vitest.fn().mockImplementation(() => Promise.resolve()),
     writeExif: vitest.fn().mockImplementation(() => Promise.resolve()),
+    removeLocation: vitest.fn().mockResolvedValue(true),
     copyTagGroup: vitest.fn().mockImplementation(() => Promise.resolve()),
     generateThumbhash: vitest.fn().mockResolvedValue(Buffer.from('')),
     decodeImage: vitest.fn().mockResolvedValue({ data: Buffer.from(''), info: {} }),
@@ -21,7 +22,13 @@ export const newMediaRepositoryMock = (): Mocked<RepositoryInterface<MediaReposi
     }),
     transcode: vitest.fn(),
     getImageMetadata: vitest.fn(),
+    getOrientedSize: vitest.fn().mockResolvedValue({ width: 0, height: 0 }),
     scoreThumbnailCandidate: vitest.fn().mockResolvedValue(0),
     composeImageGrid: vitest.fn().mockImplementation(() => Promise.resolve()),
+    writeCloudUpload: vitest.fn().mockImplementation(() => Promise.resolve()),
+    renderDevelopGeometry: vitest
+      .fn()
+      .mockImplementation((data: Buffer, info: unknown) => Promise.resolve({ data, info })),
+    encodeDevelopOutput: vitest.fn().mockResolvedValue(Buffer.from('')),
   };
 };

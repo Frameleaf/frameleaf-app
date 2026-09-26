@@ -1,171 +1,94 @@
 <script lang="ts">
-  import { page } from '$app/stores';
-  import ChangePinCodeSettings from './PinCodeSettings.svelte';
+  /**
+   * The signed-in account's settings, one Command Center section at a time (FL-71). FL-67: profile,
+   * password, PIN, API keys, sign-in provider, signed-in devices, Locked tags and people, and
+   * supporter status are the design template's `PersonalAccess` and `ProtectedContent` sections
+   * (`$lib/components/frameleaf/access`). Each keeps its old group key as its section key, so
+   * existing `?isOpen=` and `?open=oauth` links still land on it.
+   */
+  import ApiKeysSection from '$lib/components/frameleaf/access/ApiKeysSection.svelte';
+  import DevicesSection from '$lib/components/frameleaf/access/DevicesSection.svelte';
+  import FrameleafAccountSection from '$lib/components/frameleaf/access/FrameleafAccountSection.svelte';
+  import LockedRulesPanel from '$lib/components/frameleaf/access/LockedRulesPanel.svelte';
+  import PasswordSection from '$lib/components/frameleaf/access/PasswordSection.svelte';
+  import PinSection from '$lib/components/frameleaf/access/PinSection.svelte';
+  import ProfileSection from '$lib/components/frameleaf/access/ProfileSection.svelte';
+  import SignInProviderSection from '$lib/components/frameleaf/access/SignInProviderSection.svelte';
+  import SupporterSection from '$lib/components/frameleaf/access/SupporterSection.svelte';
+  import TakeoutSettingsSection from '$lib/components/frameleaf/settings/TakeoutSettingsSection.svelte';
+  import { authManager } from '$lib/managers/auth-manager.svelte';
+  import { getApiKeys, getSessions, type ApiKeyResponseDto, type SessionResponseDto } from '@immich/sdk';
+  import PreservationPanel from '$lib/components/frameleaf/PreservationPanel.svelte';
+  import AppSettings from './AppSettings.svelte';
   import DownloadSettings from './DownloadSettings.svelte';
   import FeatureSettings from './FeatureSettings.svelte';
   import NotificationsSettings from './NotificationsSettings.svelte';
-  import SuppressedContentSettings from './SuppressedContentSettings.svelte';
-  import UserPurchaseSettings from './UserPurchaseSettings.svelte';
-  import UserUsageStatistic from './UserUsageStatistic.svelte';
-  import { OpenQueryParam, QueryParameter } from '$lib/constants';
-  import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
-  import { oauth } from '$lib/utils';
-  import { type ApiKeyResponseDto, type SessionResponseDto } from '@immich/sdk';
-  import {
-    mdiAccountGroupOutline,
-    mdiAccountOutline,
-    mdiApi,
-    mdiBellOutline,
-    mdiCogOutline,
-    mdiDevices,
-    mdiDownload,
-    mdiFeatureSearchOutline,
-    mdiFormTextboxPassword,
-    mdiKeyOutline,
-    mdiLockSmart,
-    mdiServerOutline,
-    mdiShieldLockOutline,
-    mdiTwoFactorAuthentication,
-  } from '@mdi/js';
-  import { t } from 'svelte-i18n';
-  import SettingAccordion from '$lib/components/shared-components/settings/SettingAccordion.svelte';
-  import AppSettings from './AppSettings.svelte';
-  import ChangePasswordSettings from './ChangePasswordSettings.svelte';
-  import DeviceList from './DeviceList.svelte';
-  import OauthSettings from './OauthSettings.svelte';
   import SharingSettings from './SharingSettings.svelte';
-  import UserApiKeyList from './UserApiKeyList.svelte';
-  import UserProfileSettings from './UserProfileSettings.svelte';
+  import UserUsageStatistic from './UserUsageStatistic.svelte';
 
   interface Props {
+    /** The account section to show (its old accordion key). */
+    section: string;
     keys?: ApiKeyResponseDto[];
     sessions?: SessionResponseDto[];
   }
 
-  let { keys = $bindable([]), sessions = $bindable([]) }: Props = $props();
+  let { section, keys = $bindable([]), sessions = $bindable([]) }: Props = $props();
 
-  let oauthOpen =
-    oauth.isCallback(location) || $page.url.searchParams.get(QueryParameter.OPEN_SETTING) === OpenQueryParam.OAUTH;
+  // The key and device lists load when their section opens, not with every Command Center page.
+  $effect(() => {
+    if (section === 'api-keys') {
+      void getApiKeys()
+        .then((result) => (keys = result))
+        .catch(() => {});
+    } else if (section === 'authorized-devices') {
+      void refreshSessions();
+    }
+  });
+
+  /** After a password change signed out the other devices. */
+  const refreshSessions = async () => {
+    try {
+      sessions = await getSessions();
+    } catch {
+      // The device list keeps what it showed; it refreshes on its next action.
+    }
+  };
 </script>
 
-<SettingAccordion
-  icon={mdiCogOutline}
-  key="app-settings"
-  title={$t('app_settings')}
-  subtitle={$t('manage_the_app_settings')}
->
+{#if section === 'app-settings'}
   <AppSettings />
-</SettingAccordion>
-
-<SettingAccordion icon={mdiAccountOutline} key="account" title={$t('account')} subtitle={$t('manage_your_account')}>
-  <UserProfileSettings />
-</SettingAccordion>
-
-<SettingAccordion
-  icon={mdiServerOutline}
-  key="user-usage-info"
-  title={$t('user_usage_stats')}
-  subtitle={$t('user_usage_stats_description')}
->
+{:else if section === 'account'}
+  <ProfileSection />
+{:else if section === 'user-usage-info'}
   <UserUsageStatistic />
-</SettingAccordion>
-
-<SettingAccordion icon={mdiApi} key="api-keys" title={$t('api_keys')} subtitle={$t('manage_your_api_keys')}>
-  <UserApiKeyList bind:keys />
-</SettingAccordion>
-
-<SettingAccordion
-  icon={mdiDevices}
-  key="authorized-devices"
-  title={$t('authorized_devices')}
-  subtitle={$t('manage_your_devices')}
->
-  <DeviceList bind:devices={sessions} />
-</SettingAccordion>
-
-<SettingAccordion
-  icon={mdiDownload}
-  key="download-settings"
-  title={$t('download_settings')}
-  subtitle={$t('download_settings_description')}
->
+{:else if section === 'api-keys'}
+  <ApiKeysSection bind:keys />
+{:else if section === 'authorized-devices'}
+  <DevicesSection bind:sessions />
+{:else if section === 'download-settings'}
   <DownloadSettings />
-</SettingAccordion>
-
-<SettingAccordion
-  icon={mdiFeatureSearchOutline}
-  key="feature"
-  title={$t('features')}
-  subtitle={$t('features_setting_description')}
->
+{:else if section === 'preservation'}
+  <!-- FL-74: every account preserves and restores its own originals, not only administrators. -->
+  <PreservationPanel />
+{:else if section === 'takeout'}
+  <TakeoutSettingsSection showRoots={authManager.user.isAdmin} />
+{:else if section === 'feature'}
   <FeatureSettings />
-</SettingAccordion>
-
-<SettingAccordion
-  icon={mdiBellOutline}
-  key={OpenQueryParam.NOTIFICATIONS}
-  title={$t('notifications')}
-  subtitle={$t('notifications_setting_description')}
->
+{:else if section === 'email-preferences'}
   <NotificationsSettings />
-</SettingAccordion>
-
-{#if featureFlagsManager.value.oauth}
-  <SettingAccordion
-    icon={mdiTwoFactorAuthentication}
-    key={OpenQueryParam.OAUTH}
-    title={$t('oauth')}
-    subtitle={$t('manage_your_oauth_connection')}
-    isOpen={oauthOpen || undefined}
-  >
-    <OauthSettings />
-  </SettingAccordion>
-{/if}
-
-<SettingAccordion
-  icon={mdiFormTextboxPassword}
-  key="password"
-  title={$t('password')}
-  subtitle={$t('change_your_password')}
->
-  <ChangePasswordSettings />
-</SettingAccordion>
-
-<SettingAccordion
-  icon={mdiLockSmart}
-  key="user-pin-code-settings"
-  title={$t('user_pin_code_settings')}
-  subtitle={$t('user_pin_code_settings_description')}
-  autoScrollTo={true}
->
-  <ChangePinCodeSettings />
-</SettingAccordion>
-
-<SettingAccordion
-  icon={mdiShieldLockOutline}
-  key="suppressed-content"
-  title={$t('suppressed_content')}
-  subtitle={$t('suppressed_content_settings_description')}
-  autoScrollTo={true}
->
-  <SuppressedContentSettings />
-</SettingAccordion>
-
-<SettingAccordion
-  icon={mdiKeyOutline}
-  key={OpenQueryParam.PURCHASE_SETTINGS}
-  title={$t('user_purchase_settings')}
-  subtitle={$t('user_purchase_settings_description')}
-  autoScrollTo={true}
->
-  <UserPurchaseSettings />
-</SettingAccordion>
-
-<SettingAccordion
-  icon={mdiAccountGroupOutline}
-  key={OpenQueryParam.SHARING}
-  title={$t('sharing')}
-  subtitle={$t('manage_sharing_with_other_users')}
->
+{:else if section === 'oauth'}
+  <SignInProviderSection />
+{:else if section === 'frameleaf-account'}
+  <FrameleafAccountSection />
+{:else if section === 'password'}
+  <PasswordSection onSessionsChanged={refreshSessions} />
+{:else if section === 'user-pin-code-settings'}
+  <PinSection />
+{:else if section === 'suppressed-content'}
+  <LockedRulesPanel />
+{:else if section === 'user-purchase-settings'}
+  <SupporterSection />
+{:else if section === 'sharing'}
   <SharingSettings />
-</SettingAccordion>
+{/if}

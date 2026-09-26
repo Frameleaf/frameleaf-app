@@ -1,11 +1,11 @@
 <script lang="ts">
-  import SettingAccordion from '$lib/components/shared-components/settings/SettingAccordion.svelte';
-  import SettingInputField from '$lib/components/shared-components/settings/SettingInputField.svelte';
-  import SettingSwitch from '$lib/components/shared-components/settings/SettingSwitch.svelte';
+  import SettingGroup from '$lib/components/frameleaf/settings/SettingGroup.svelte';
+  import SettingField from '$lib/components/frameleaf/settings/SettingField.svelte';
+  import SettingToggle from '$lib/components/frameleaf/settings/SettingToggle.svelte';
   import { SettingInputFieldType } from '$lib/constants';
   import type { AdminConfigMachineLearningDto } from '@immich/sdk';
   import { t } from 'svelte-i18n';
-  import SettingSelect from '../SettingSelect.svelte';
+  import SettingSelect from '$lib/components/frameleaf/settings/SettingSelect.svelte';
 
   interface Props {
     workingConfig: AdminConfigMachineLearningDto;
@@ -16,13 +16,13 @@
   let { workingConfig, savedConfig, disabled }: Props = $props();
 </script>
 
-<SettingAccordion
+<SettingGroup
   key="ocr"
   title={$t('admin.machine_learning_ocr')}
   subtitle={$t('admin.machine_learning_ocr_description')}
 >
-  <div class="mt-4 ml-4 flex flex-col gap-4">
-    <SettingSwitch
+  <div class="flex flex-col gap-4">
+    <SettingToggle
       title={$t('admin.machine_learning_ocr_enabled')}
       subtitle={$t('admin.machine_learning_ocr_enabled_description')}
       bind:checked={workingConfig.ocr.enabled}
@@ -50,7 +50,7 @@
       isEdited={workingConfig.ocr.modelName !== savedConfig.ocr.modelName}
     />
 
-    <SettingInputField
+    <SettingField
       inputType={SettingInputFieldType.NUMBER}
       label={$t('admin.machine_learning_ocr_min_detection_score')}
       description={$t('admin.machine_learning_ocr_min_detection_score_description')}
@@ -62,7 +62,7 @@
       isEdited={workingConfig.ocr.minDetectionScore !== savedConfig.ocr.minDetectionScore}
     />
 
-    <SettingInputField
+    <SettingField
       inputType={SettingInputFieldType.NUMBER}
       label={$t('admin.machine_learning_ocr_min_recognition_score')}
       description={$t('admin.machine_learning_ocr_min_score_recognition_description')}
@@ -74,7 +74,7 @@
       isEdited={workingConfig.ocr.minRecognitionScore !== savedConfig.ocr.minRecognitionScore}
     />
 
-    <SettingInputField
+    <SettingField
       inputType={SettingInputFieldType.NUMBER}
       label={$t('admin.machine_learning_ocr_max_resolution')}
       description={$t('admin.machine_learning_ocr_max_resolution_description')}
@@ -83,5 +83,14 @@
       disabled={disabled || !workingConfig.enabled || !workingConfig.ocr.enabled}
       isEdited={workingConfig.ocr.maxResolution !== savedConfig.ocr.maxResolution}
     />
+
+    <!-- FL-63: off by default; suggestions stay editable and tied to the text they were read from -->
+    <SettingToggle
+      title={$t('admin.machine_learning_ocr_document_fields')}
+      subtitle={$t('admin.machine_learning_ocr_document_fields_description')}
+      bind:checked={workingConfig.ocr.documentFields}
+      disabled={disabled || !workingConfig.enabled || !workingConfig.ocr.enabled}
+      isEdited={!!workingConfig.ocr.documentFields !== !!savedConfig.ocr.documentFields}
+    />
   </div>
-</SettingAccordion>
+</SettingGroup>

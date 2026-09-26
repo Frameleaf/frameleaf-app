@@ -1,0 +1,329 @@
+{
+  "schemaVersion": 1,
+  "qualification": "Source inventory only; no distribution approval.",
+  "archives": [
+    {
+      "location": "node_modules/@radix-ui/number",
+      "archiveFile": "@radix-ui--number-1.1.1.tgz",
+      "sha256": "4c8cfcc6bc5d3b7e358e0889ea38dde6faba009c23b10fd74313a04a8a94aebb",
+      "integrity": "sha512-MkKCwxlXTgz6CFoJx3pCwn07GKp36+aZyu/u2Ln2VrA5DcdyCZkASEDBTd8x5whTQQL5CiYf4prXKLcgQdv29g==",
+      "noticePaths": [],
+      "resolved": "https://registry.npmjs.org/@radix-ui/number/-/number-1.1.1.tgz",
+      "archiveBytes": 1529,
+      "packageName": "@radix-ui/number",
+      "packageVersion": "1.1.1",
+      "noticeFiles": []
+    },
+    {
+      "location": "node_modules/@radix-ui/react-compose-refs",
+      "archiveFile": "@radix-ui--react-compose-refs-1.1.2.tgz",
+      "sha256": "a3417c6290a04dd4dc34a8ce6b17be86da6c6a7d7455c5f47e16d7911777169f",
+      "integrity": "sha512-z4eqJvfiNnFMHIIvXP3CY57y2WJs5g2v3X0zm9mEJkrkNv4rDxu+sg9Jh8EkXyeqBkB7SOcboo9dMVqhyrACIg==",
+      "noticePaths": [],
+      "resolved": "https://registry.npmjs.org/@radix-ui/react-compose-refs/-/react-compose-refs-1.1.2.tgz",
+      "archiveBytes": 2979,
+      "packageName": "@radix-ui/react-compose-refs",
+      "packageVersion": "1.1.2",
+      "noticeFiles": []
+    },
+    {
+      "location": "node_modules/@radix-ui/react-context",
+      "archiveFile": "@radix-ui--react-context-1.1.2.tgz",
+      "sha256": "f1ed108c0bf1896d19f7b695d882e0b9dddb23b1526eca6409e8b48149b8c934",
+      "integrity": "sha512-jCi/QKUM2r1Ju5a3J64TH2A5SpKAgh0LpknyqdQ4m6DCV0xJ2HG1xARRwNGPQfi1SLdLWZ1OJz6F4OMBBNiGJA==",
+      "noticePaths": [],
+      "resolved": "https://registry.npmjs.org/@radix-ui/react-context/-/react-context-1.1.2.tgz",
+      "archiveBytes": 4597,
+      "packageName": "@radix-ui/react-context",
+      "packageVersion": "1.1.2",
+      "noticeFiles": []
+    },
+    {
+      "location": "node_modules/@radix-ui/react-direction",
+      "archiveFile": "@radix-ui--react-direction-1.1.1.tgz",
+      "sha256": "5eb20a248a5900771e69a4d2d42dfaa91c44826f9a82220572e1a3164c0131c4",
+      "integrity": "sha512-1UEWRX6jnOA2y4H5WczZ44gOOjTEmlqv1uNW4GAJEO5+bauCBhv8snY65Iw5/VOS/ghKN9gr2KjnLKxrsvoMVw==",
+      "noticePaths": [],
+      "resolved": "https://registry.npmjs.org/@radix-ui/react-direction/-/react-direction-1.1.1.tgz",
+      "archiveBytes": 2435,
+      "packageName": "@radix-ui/react-direction",
+      "packageVersion": "1.1.1",
+      "noticeFiles": []
+    },
+    {
+      "location": "node_modules/@radix-ui/react-id",
+      "archiveFile": "@radix-ui--react-id-1.1.1.tgz",
+      "sha256": "a10d67becad6bc10846f9bc0a79e4a15a285eadca6eae4d88d06bea5586bcafb",
+      "integrity": "sha512-kGkGegYIdQsOb4XjsfM97rXsiHaBwco+hFI66oO4s9LU+PLAC5oJ7khdOVFxkhsmlbpUqDAvXw11CluXP+jkHg==",
+      "noticePaths": [],
+      "resolved": "https://registry.npmjs.org/@radix-ui/react-id/-/react-id-1.1.1.tgz",
+      "archiveBytes": 2429,
+      "packageName": "@radix-ui/react-id",
+      "packageVersion": "1.1.1",
+      "noticeFiles": []
+    },
+    {
+      "location": "node_modules/@radix-ui/react-use-callback-ref",
+      "archiveFile": "@radix-ui--react-use-callback-ref-1.1.1.tgz",
+      "sha256": "1c155d182c8a65220235aec52112944128866fb9524f5406203c47cd01c9a74b",
+      "integrity": "sha512-FkBMwD+qbGQeMu1cOHnuGB6x4yzPjho8ap5WtbEJ26umhgqVXbhekKUQO+hZEL1vU92a3wHwdp0HAcqAUF5iDg==",
+      "noticePaths": [],
+      "resolved": "https://registry.npmjs.org/@radix-ui/react-use-callback-ref/-/react-use-callback-ref-1.1.1.tgz",
+      "archiveBytes": 2232,
+      "packageName": "@radix-ui/react-use-callback-ref",
+      "packageVersion": "1.1.1",
+      "noticeFiles": []
+    },
+    {
+      "location": "node_modules/@radix-ui/react-use-escape-keydown",
+      "archiveFile": "@radix-ui--react-use-escape-keydown-1.1.1.tgz",
+      "sha256": "dc1121b1b1793279880daecfa04230de411404c8e9ac849c1d1c8714dd013e33",
+      "integrity": "sha512-Il0+boE7w/XebUHyBjroE+DbByORGR9KKmITzbR7MyQ4akpORYP/ZmbhAr0DG7RmmBqoOnZdy2QlvajJ2QA59g==",
+      "noticePaths": [],
+      "resolved": "https://registry.npmjs.org/@radix-ui/react-use-escape-keydown/-/react-use-escape-keydown-1.1.1.tgz",
+      "archiveBytes": 2454,
+      "packageName": "@radix-ui/react-use-escape-keydown",
+      "packageVersion": "1.1.1",
+      "noticeFiles": []
+    },
+    {
+      "location": "node_modules/@radix-ui/react-use-layout-effect",
+      "archiveFile": "@radix-ui--react-use-layout-effect-1.1.1.tgz",
+      "sha256": "fc152ce4e230913604de541dfa46af95e4c13d60e92640407a973b81272b51a7",
+      "integrity": "sha512-RbJRS4UWQFkzHTTwVymMTUv8EqYhOp8dOOviLj2ugtTiXRaRQS7GLGxZTLL1jWhMeoSCf5zmcZkqTl9IiYfXcQ==",
+      "noticePaths": [],
+      "resolved": "https://registry.npmjs.org/@radix-ui/react-use-layout-effect/-/react-use-layout-effect-1.1.1.tgz",
+      "archiveBytes": 2117,
+      "packageName": "@radix-ui/react-use-layout-effect",
+      "packageVersion": "1.1.1",
+      "noticeFiles": []
+    },
+    {
+      "location": "node_modules/@radix-ui/react-use-previous",
+      "archiveFile": "@radix-ui--react-use-previous-1.1.1.tgz",
+      "sha256": "6822dd3497b440baf5254cd13dce70c192ac2961759f4e88bc66dcc216adf1d8",
+      "integrity": "sha512-2dHfToCj/pzca2Ck724OZ5L0EVrr3eHRNsG/b3xQJLA2hZpVCS99bLAX+hm1IHXDEnzU6by5z/5MIY794/a8NQ==",
+      "noticePaths": [],
+      "resolved": "https://registry.npmjs.org/@radix-ui/react-use-previous/-/react-use-previous-1.1.1.tgz",
+      "archiveBytes": 2201,
+      "packageName": "@radix-ui/react-use-previous",
+      "packageVersion": "1.1.1",
+      "noticeFiles": []
+    },
+    {
+      "location": "node_modules/@radix-ui/react-use-rect",
+      "archiveFile": "@radix-ui--react-use-rect-1.1.1.tgz",
+      "sha256": "8a9cd8d9a2f962dd65ee2bc31fa874738aa7b778c8dd46810f8ce8ece78aabc6",
+      "integrity": "sha512-QTYuDesS0VtuHNNvMh+CjlKJ4LJickCMUAqjlE3+j8w+RlRpwyX3apEQKGFzbZGdo7XNG1tXa+bQqIE7HIXT2w==",
+      "noticePaths": [],
+      "resolved": "https://registry.npmjs.org/@radix-ui/react-use-rect/-/react-use-rect-1.1.1.tgz",
+      "archiveBytes": 2365,
+      "packageName": "@radix-ui/react-use-rect",
+      "packageVersion": "1.1.1",
+      "noticeFiles": []
+    },
+    {
+      "location": "node_modules/@radix-ui/react-use-size",
+      "archiveFile": "@radix-ui--react-use-size-1.1.1.tgz",
+      "sha256": "c939dd43081637e69a7033e6a0e23ace43bc3edc2dbd2cb26b27fddcd80a6bbb",
+      "integrity": "sha512-ewrXRDTAqAXlkl6t/fkXWNAhFX9I+CkKlw6zjEwk86RSPKwZr3xpBRso655aqYafwtnbpHLj6toFzmd6xdVptQ==",
+      "noticePaths": [],
+      "resolved": "https://registry.npmjs.org/@radix-ui/react-use-size/-/react-use-size-1.1.1.tgz",
+      "archiveBytes": 3102,
+      "packageName": "@radix-ui/react-use-size",
+      "packageVersion": "1.1.1",
+      "noticeFiles": []
+    },
+    {
+      "location": "node_modules/@radix-ui/rect",
+      "archiveFile": "@radix-ui--rect-1.1.1.tgz",
+      "sha256": "4a541ef9b63826a44e1d500a5a10e80f70d2934286156d73a8143d7e17f557af",
+      "integrity": "sha512-HPwpGIzkl28mWyZqG52jiqDJ12waP11Pa1lGoiyUkIEuMLBP0oeK/C89esbXrxsky5we7dfd8U58nm0SgAWpVw==",
+      "noticePaths": [],
+      "resolved": "https://registry.npmjs.org/@radix-ui/rect/-/rect-1.1.1.tgz",
+      "archiveBytes": 3386,
+      "packageName": "@radix-ui/rect",
+      "packageVersion": "1.1.1",
+      "noticeFiles": []
+    },
+    {
+      "location": "node_modules/guid-typescript",
+      "archiveFile": "guid-typescript-1.0.9.tgz",
+      "sha256": "29775e81a4855bc391f853e9285508a465ee50da0ccb562559ae09412a3ababc",
+      "integrity": "sha512-Y8T4vYhEfwJOTbouREvG+3XDsjr8E3kIr7uf+JZ0BYloFsttiHU0WfvANVsR7TxNUJa/WpCnw/Ino/p+DeBhBQ==",
+      "noticePaths": [],
+      "resolved": "https://registry.npmjs.org/guid-typescript/-/guid-typescript-1.0.9.tgz",
+      "archiveBytes": 1813,
+      "packageName": "guid-typescript",
+      "packageVersion": "1.0.9",
+      "noticeFiles": []
+    },
+    {
+      "location": "node_modules/html-parse-stringify",
+      "archiveFile": "html-parse-stringify-3.0.1.tgz",
+      "sha256": "12a1b9963491eddca3f60f22983653729f506919877688b82c967ac04f3c9f0a",
+      "integrity": "sha512-KknJ50kTInJ7qIScF3jeaFRpMpE8/lfiTdzf/twXyPBLAGrLRTmkz3AdTnKeh40X8k9L2fdYwEp/42WGXIRGcg==",
+      "noticePaths": [],
+      "resolved": "https://registry.npmjs.org/html-parse-stringify/-/html-parse-stringify-3.0.1.tgz",
+      "archiveBytes": 10672,
+      "packageName": "html-parse-stringify",
+      "packageVersion": "3.0.1",
+      "noticeFiles": []
+    },
+    {
+      "location": "node_modules/kokoro-js/node_modules/onnxruntime-common",
+      "archiveFile": "onnxruntime-common-1.21.0.tgz",
+      "sha256": "9c6126102b312514e64703c0922772974ee5c83e89eb345161226bcfeb67a22c",
+      "integrity": "sha512-Q632iLLrtCAVOTO65dh2+mNbQir/QNTVBG3h/QdZBpns7mZ0RYbLRBgGABPbpU9351AgYy7SJf1WaeVwMrBFPQ==",
+      "commit": null,
+      "resolved": "https://registry.npmjs.org/onnxruntime-common/-/onnxruntime-common-1.21.0.tgz",
+      "archiveBytes": 64246,
+      "packageName": "onnxruntime-common",
+      "packageVersion": "1.21.0",
+      "noticeFiles": []
+    },
+    {
+      "location": "node_modules/kokoro-js/node_modules/onnxruntime-web/node_modules/onnxruntime-common",
+      "archiveFile": "onnxruntime-common-1.22.0-dev.20250409-89f8206ba4.tgz",
+      "sha256": "68278cc8ffbb82c278e000ed3124271275f63b49fb2ac906be108223adc6442b",
+      "integrity": "sha512-vDJMkfCfb0b1A836rgHj+ORuZf4B4+cc2bASQtpeoJLueuFc5DuYwjIZUBrSvx/fO5IrLjLz+oTrB3pcGlhovQ==",
+      "commit": "89f8206ba4f1c22c39e0297fb55272e8ce8cd7d0",
+      "resolved": "https://registry.npmjs.org/onnxruntime-common/-/onnxruntime-common-1.22.0-dev.20250409-89f8206ba4.tgz",
+      "archiveBytes": 65249,
+      "packageName": "onnxruntime-common",
+      "packageVersion": "1.22.0-dev.20250409-89f8206ba4",
+      "noticeFiles": []
+    },
+    {
+      "location": "node_modules/onnxruntime-common",
+      "archiveFile": "onnxruntime-common-1.24.3.tgz",
+      "sha256": "e9575aff207975a78d8b4c0ceff2a2d0767468b9d2a20d33fe6d74e43f67e193",
+      "integrity": "sha512-GeuPZO6U/LBJXvwdaqHbuUmoXiEdeCjWi/EG7Y1HNnDwJYuk6WUbNXpF6luSUY8yASul3cmUlLGrCCL1ZgVXqA==",
+      "commit": null,
+      "resolved": "https://registry.npmjs.org/onnxruntime-common/-/onnxruntime-common-1.24.3.tgz",
+      "archiveBytes": 66044,
+      "packageName": "onnxruntime-common",
+      "packageVersion": "1.24.3",
+      "noticeFiles": []
+    },
+    {
+      "location": "node_modules/onnxruntime-web/node_modules/onnxruntime-common",
+      "archiveFile": "onnxruntime-common-1.24.0-dev.20251116-b39e144322.tgz",
+      "sha256": "00385ed2743575c5d0e1e95c5bacbb12ee4848ca2223c017282a472d7d08556f",
+      "integrity": "sha512-BOoomdHYmNRL5r4iQ4bMvsl2t0/hzVQ3OM3PHD0gxeXu1PmggqBv3puZicEUVOA3AtHHYmqZtjMj9FOfGrATTw==",
+      "commit": "b39e14432259d5f579f34c3e338f1f70aa368f01",
+      "resolved": "https://registry.npmjs.org/onnxruntime-common/-/onnxruntime-common-1.24.0-dev.20251116-b39e144322.tgz",
+      "archiveBytes": 66168,
+      "packageName": "onnxruntime-common",
+      "packageVersion": "1.24.0-dev.20251116-b39e144322",
+      "noticeFiles": []
+    },
+    {
+      "location": "node_modules/react-hotkeys-hook",
+      "archiveFile": "react-hotkeys-hook-5.2.4.tgz",
+      "sha256": "3cdd3c0f9ef337e00cc18bcd6d888b033e189dc0c561c163b6a9a40e4e6f549e",
+      "integrity": "sha512-BgKg+A1+TawkYluh5Bo4cTmcgMN5L29uhJbDUQdHwPX+qgXRjIPYU5kIDHyxnAwCkCBiu9V5OpB2mpyeluVF2A==",
+      "noticePaths": [],
+      "resolved": "https://registry.npmjs.org/react-hotkeys-hook/-/react-hotkeys-hook-5.2.4.tgz",
+      "archiveBytes": 8782,
+      "packageName": "react-hotkeys-hook",
+      "packageVersion": "5.2.4",
+      "noticeFiles": []
+    },
+    {
+      "location": "node_modules/react-remove-scroll-bar",
+      "archiveFile": "react-remove-scroll-bar-2.3.8.tgz",
+      "sha256": "ccc872d7a2dc007cbf9d755f30d56b8d80eabdbe22c44c95a709129bfdc46f01",
+      "integrity": "sha512-9r+yi9+mgU33AKcj6IbT9oRCO78WriSj6t/cF8DWBZJ9aOGPOTEDvdUDz1FwKim7QXWwmHqtdHnRJfhAxEG46Q==",
+      "noticePaths": [],
+      "resolved": "https://registry.npmjs.org/react-remove-scroll-bar/-/react-remove-scroll-bar-2.3.8.tgz",
+      "archiveBytes": 4937,
+      "packageName": "react-remove-scroll-bar",
+      "packageVersion": "2.3.8",
+      "noticeFiles": []
+    },
+    {
+      "location": "node_modules/react-resizable-panels",
+      "archiveFile": "react-resizable-panels-3.0.6.tgz",
+      "sha256": "3a52cfe3c7d9e4693566718af32deedbc50eeef7fae561bd48d7ac29c6737ceb",
+      "integrity": "sha512-b3qKHQ3MLqOgSS+FRYKapNkJZf5EQzuf6+RLiq1/IlTHw99YrZ2NJZLk4hQIzTnnIkRg2LUqyVinu6YWWpUYew==",
+      "noticePaths": [],
+      "resolved": "https://registry.npmjs.org/react-resizable-panels/-/react-resizable-panels-3.0.6.tgz",
+      "archiveBytes": 115789,
+      "packageName": "react-resizable-panels",
+      "packageVersion": "3.0.6",
+      "noticeFiles": []
+    }
+  ],
+  "sourceInspections": [
+    {
+      "repo": "lovell/sharp-libvips",
+      "revision": "20b5e899954907a3039d6e3d4c200aaa0ec52c4c",
+      "path": "LICENSE",
+      "url": "https://raw.githubusercontent.com/lovell/sharp-libvips/20b5e899954907a3039d6e3d4c200aaa0ec52c4c/LICENSE",
+      "file": "lovell--sharp-libvips-20b5e899954907a3039d6e3d4c200aaa0ec52c4c-LICENSE",
+      "sha256": "b40930bbcf80744c86c46a12bc9da056641d722716c378f5659b9e555ef833e1",
+      "bytes": 11357
+    },
+    {
+      "repo": "radix-ui/primitives",
+      "revision": "fcef0668a5c827e5a4baac405474d75680f9a4eb",
+      "path": "LICENSE",
+      "url": "https://raw.githubusercontent.com/radix-ui/primitives/fcef0668a5c827e5a4baac405474d75680f9a4eb/LICENSE",
+      "file": "radix-ui--primitives-fcef0668a5c827e5a4baac405474d75680f9a4eb-LICENSE",
+      "sha256": "0e80a2d229d2fd4fc7e8636142ec5d0ff0bc031f14c15b682e2ac01dfd5b5138",
+      "bytes": 1063
+    },
+    {
+      "repo": "NicolasDeveloper/guid-typescript",
+      "revision": "1870de806c3db7ba46c5b8a1387c60fc9dda9284",
+      "error": "HTTP Error 404: Not Found",
+      "url": "https://raw.githubusercontent.com/NicolasDeveloper/guid-typescript/1870de806c3db7ba46c5b8a1387c60fc9dda9284/LICENSE"
+    },
+    {
+      "repo": "henrikjoreteg/html-parse-stringify",
+      "revision": "ce46022f537ef9b050fac592f9fcc30bf838e5ba",
+      "error": "HTTP Error 404: Not Found",
+      "url": "https://raw.githubusercontent.com/henrikjoreteg/html-parse-stringify/ce46022f537ef9b050fac592f9fcc30bf838e5ba/LICENSE"
+    },
+    {
+      "repo": "JohannesKlauss/react-keymap-hook",
+      "revision": "f2006c7ba118175c7cd673c13296ebfb618bbd7a",
+      "path": "LICENSE",
+      "url": "https://raw.githubusercontent.com/JohannesKlauss/react-keymap-hook/f2006c7ba118175c7cd673c13296ebfb618bbd7a/LICENSE",
+      "file": "JohannesKlauss--react-keymap-hook-f2006c7ba118175c7cd673c13296ebfb618bbd7a-LICENSE",
+      "sha256": "1def416e8042d3442057400f3345c3bd089476898d94b5d5ae9669b0c0d340a8",
+      "bytes": 1072
+    },
+    {
+      "repo": "theKashey/react-remove-scroll-bar",
+      "revision": "b3b1287aad81def2e2ae707274b74531b61ddbaf",
+      "error": "HTTP Error 404: Not Found",
+      "url": "https://raw.githubusercontent.com/theKashey/react-remove-scroll-bar/b3b1287aad81def2e2ae707274b74531b61ddbaf/LICENSE"
+    },
+    {
+      "repo": "bvaughn/react-resizable-panels",
+      "revision": "43a071df6bb96d54e8b81a6be0e2d453af45cc4b",
+      "path": "LICENSE",
+      "url": "https://raw.githubusercontent.com/bvaughn/react-resizable-panels/43a071df6bb96d54e8b81a6be0e2d453af45cc4b/LICENSE",
+      "file": "bvaughn--react-resizable-panels-43a071df6bb96d54e8b81a6be0e2d453af45cc4b-LICENSE",
+      "sha256": "8b21167f99f3c016b39473b2984ceb03b54bf796dd9a7c74fcb80cfd513fe8a8",
+      "bytes": 1069
+    }
+  ],
+  "additionalSourceInspections": [
+    {
+      "url": "https://codeload.github.com/henrikjoreteg/html-parse-stringify/tar.gz/ce46022f537ef9b050fac592f9fcc30bf838e5ba",
+      "sha256": "021f520938429ac4921f44a8c7958df980fb6c9c0a0003bebc530c51eb0ba9ea",
+      "fullNoticeFiles": []
+    },
+    {
+      "url": "https://codeload.github.com/NicolasDeveloper/guid-typescript/tar.gz/1870de806c3db7ba46c5b8a1387c60fc9dda9284",
+      "status": 404
+    },
+    {
+      "url": "https://codeload.github.com/theKashey/react-remove-scroll-bar/tar.gz/b3b1287aad81def2e2ae707274b74531b61ddbaf",
+      "status": 404
+    }
+  ]
+}

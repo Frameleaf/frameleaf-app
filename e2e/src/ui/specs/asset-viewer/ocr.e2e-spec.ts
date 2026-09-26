@@ -196,7 +196,8 @@ test.describe('OCR text interaction', () => {
     const ocrBox = page.locator('[data-viewer-content] [data-testid="ocr-box"]').first();
     await expect(ocrBox).toBeVisible();
 
-    const imgLocator = page.locator('[data-viewer-content] img[draggable="false"]');
+    // The thumbnail stays under the preview until the preview has loaded; read the preview itself.
+    const imgLocator = page.locator('[data-viewer-content] img[data-testid="preview"]');
     const initialTransform = await imgLocator.evaluate((element) => {
       return getComputedStyle(element.closest('[style*="transform"]') ?? element).transform;
     });
@@ -225,7 +226,8 @@ test.describe('OCR text interaction', () => {
     const ocrBox = page.locator('[data-viewer-content] [data-testid="ocr-box"]').first();
     await expect(ocrBox).toBeVisible();
 
-    const imgLocator = page.locator('[data-viewer-content] img[draggable="false"]');
+    // The thumbnail stays under the preview until the preview has loaded; read the preview itself.
+    const imgLocator = page.locator('[data-viewer-content] img[data-testid="preview"]');
     const initialTransform = await imgLocator.evaluate((element) => {
       return getComputedStyle(element.closest('[style*="transform"]') ?? element).transform;
     });

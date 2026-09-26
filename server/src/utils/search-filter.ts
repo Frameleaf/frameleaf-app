@@ -1,3 +1,4 @@
+import { BadRequestException } from '@nestjs/common';
 import { AuthDto } from 'src/dtos/auth.dto.js';
 import { SearchFilter, SearchFilterBranch } from 'src/dtos/search.dto.js';
 import { AssetVisibility } from 'src/enum.js';
@@ -7,7 +8,7 @@ type EnumField = 'type' | 'visibility';
 type EnumOperator = keyof NonNullable<SearchFilterBranch[EnumField]>;
 type EnumOperandMap<T> = { eq: T; ne: T; in: T[]; notIn: T[] };
 type EnumCondition<T> = { [K in EnumOperator]?: EnumOperandMap<T>[K] };
-type IdsFilterField = 'albumIds' | 'personIds' | 'tagIds';
+type IdsFilterField = 'albumIds' | 'personIds' | 'petIds' | 'tagIds';
 
 const filterBranches = (filter: SearchFilter): SearchFilterBranch[] => [filter, ...(filter.or ?? [])];
 
@@ -58,6 +59,19 @@ export const applyLockedVisibilityPolicy = (auth: AuthDto, filter: SearchFilter)
   return { ...filter, visibility: { ne: AssetVisibility.Locked } };
 };
 
+const LOCATION_FIELDS = ['city', 'state', 'country'] as const;
+
+/**
+ * Whether any branch narrows by place. Matching on a partner's place names would reveal locations the
+ * partner hides, so such searches leave those partners out of the searched universe (FL-54).
+ */
+export const filterUsesLocation = (filter: SearchFilter): boolean =>
+  filterBranches(filter).some((branch) => LOCATION_FIELDS.some((field) => branch[field] !== undefined));
+
+/** The flat (deprecated) search DTOs carry the same three place fields at the top level. */
+export const usesLocationFilter = (dto: { city?: string | null; state?: string | null; country?: string | null }) =>
+  LOCATION_FIELDS.some((field) => dto[field] !== undefined);
+
 export const collectFilterIds = (filter: SearchFilter, field: IdsFilterField): string[] => {
   const ids = new Set<string>();
 
@@ -70,4 +84,16 @@ export const collectFilterIds = (filter: SearchFilter, field: IdsFilterField): s
   }
 
   return [...ids];
+};
+
+/**
+ * Pets belong to their owner alone (FL-58): no pet endpoint accepts a shared link, so a shared-link
+ * visitor has no pet to filter by. This check is load-bearing rather than cosmetic: a shared-link
+ * request authenticates as the link's owner, so the SQL's "the viewer's own pets" scoping alone would
+ * let a visitor who learnt a pet id narrow the shared album by the owner's pet.
+ */
+export const requirePetFilterAllowed = (auth: AuthDto, petIds: readonly string[] | undefined): void => {
+  if (auth.sharedLink && petIds && petIds.length > 0) {
+    throw new BadRequestException('Pet filters are not available through a shared link');
+  }
 };

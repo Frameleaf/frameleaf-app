@@ -20,6 +20,7 @@ import { FileUploadInterceptor } from 'src/middleware/file-upload.interceptor.js
 import { GlobalExceptionFilter } from 'src/middleware/global-exception.filter.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { ActivityRepository } from 'src/repositories/activity.repository.js';
+import { AdminAuditRepository } from 'src/repositories/admin-audit.repository.js';
 import { AlbumUserRepository } from 'src/repositories/album-user.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { ApiKeyRepository } from 'src/repositories/api-key.repository.js';
@@ -28,6 +29,7 @@ import { AssetEditRepository } from 'src/repositories/asset-edit.repository.js';
 import { AssetFileRepository } from 'src/repositories/asset-file.repository.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
+import { ClassificationRepository } from 'src/repositories/classification.repository.js';
 import { ClusterGroupRepository } from 'src/repositories/cluster-group.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { CronRepository } from 'src/repositories/cron.repository.js';
@@ -38,15 +40,24 @@ import { DuplicateRepository } from 'src/repositories/duplicate.repository.js';
 import { EmailRepository } from 'src/repositories/email.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
 import { ForkSchemaRepository } from 'src/repositories/fork-schema.repository.js';
+import { FrameleafAccountRepository } from 'src/repositories/frameleaf-account.repository.js';
+import { FrameleafCloudMlRepository } from 'src/repositories/frameleaf-cloud-ml.repository.js';
+import { FrameleafCloudRepository } from 'src/repositories/frameleaf-cloud.repository.js';
+import { FrameleafConsentRepository } from 'src/repositories/frameleaf-consent.repository.js';
+import { FrameleafUserLicenseRepository } from 'src/repositories/frameleaf-user-license.repository.js';
+import { HardwareProbeRepository } from 'src/repositories/hardware-probe.repository.js';
+import { InstanceIdentityRepository } from 'src/repositories/instance-identity.repository.js';
 import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LibraryRepository } from 'src/repositories/library.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
 import { MapRepository } from 'src/repositories/map.repository.js';
+import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
 import { MemoryRepository } from 'src/repositories/memory.repository.js';
 import { MetadataRepository } from 'src/repositories/metadata.repository.js';
+import { MlDestinationRepository } from 'src/repositories/ml-destination.repository.js';
 import { MoveRepository } from 'src/repositories/move.repository.js';
 import { NotificationRepository } from 'src/repositories/notification.repository.js';
 import { OAuthRepository } from 'src/repositories/oauth.repository.js';
@@ -56,7 +67,7 @@ import { PersonRepository } from 'src/repositories/person.repository.js';
 import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
 import { PluginRepository } from 'src/repositories/plugin.repository.js';
 import { ProcessRepository } from 'src/repositories/process.repository.js';
-import { RunPodRepository } from 'src/repositories/runpod.repository.js';
+import { RenderWorkerRepository } from 'src/repositories/render-worker.repository.js';
 import { SearchRepository } from 'src/repositories/search.repository.js';
 import { ServerInfoRepository } from 'src/repositories/server-info.repository.js';
 import { SessionRepository } from 'src/repositories/session.repository.js';
@@ -82,6 +93,7 @@ import { BaseService } from 'src/services/base.service.js';
 import { RepositoryInterface } from 'src/types.js';
 import { getKyselyConfig } from 'src/utils/database.js';
 import { ClusterGroupFactory } from 'test/factories/cluster-group.factory.js';
+import { mlDestinationStub, mlProbeStub } from 'test/fixtures/ml-destination.stub.js';
 import { IAccessRepositoryMock, newAccessRepositoryMock } from 'test/repositories/access.repository.mock.js';
 import { newAssetRepositoryMock } from 'test/repositories/asset.repository.mock.js';
 import { newConfigRepositoryMock } from 'test/repositories/config.repository.mock.js';
@@ -133,7 +145,10 @@ export const controllerSetup = async (controller: ControllerClass | ControllerCl
       { provide: APP_GUARD, useClass: AuthGuard },
       { provide: LoggingRepository, useValue: LoggingRepository.create() },
       { provide: ClsService, useValue: { getId: vi.fn() } },
-      { provide: AuthService, useValue: { authenticate: vi.fn(), requireSetupAvailable: vi.fn() } },
+      {
+        provide: AuthService,
+        useValue: { authenticate: vi.fn(), requireSetupAvailable: vi.fn(), requireOriginalTransfer: vi.fn() },
+      },
       ...providers,
     ],
   })
@@ -237,6 +252,7 @@ export const automock = <T>(
 export type ServiceOverrides = {
   access: AccessRepository;
   activity: ActivityRepository;
+  adminAudit: AdminAuditRepository;
   album: AlbumRepository;
   albumUser: AlbumUserRepository;
   apiKey: ApiKeyRepository;
@@ -245,6 +261,7 @@ export type ServiceOverrides = {
   assetEdit: AssetEditRepository;
   assetFile: AssetFileRepository;
   assetJob: AssetJobRepository;
+  classification: ClassificationRepository;
   clusterGroup: ClusterGroupRepository;
   config: ConfigRepository;
   cron: CronRepository;
@@ -262,8 +279,10 @@ export type ServiceOverrides = {
   machineLearning: MachineLearningRepository;
   map: MapRepository;
   media: MediaRepository;
+  mediaOperation: MediaOperationRepository;
   memory: MemoryRepository;
   metadata: MetadataRepository;
+  mlDestination: MlDestinationRepository;
   move: MoveRepository;
   notification: NotificationRepository;
   ocr: OcrRepository;
@@ -273,7 +292,14 @@ export type ServiceOverrides = {
   physicalFile: PhysicalFileRepository;
   plugin: PluginRepository;
   process: ProcessRepository;
-  runPod: RunPodRepository;
+  renderWorker: RenderWorkerRepository;
+  frameleafCloud: FrameleafCloudRepository;
+  frameleafCloudMl: FrameleafCloudMlRepository;
+  frameleafConsent: FrameleafConsentRepository;
+  frameleafUserLicense: FrameleafUserLicenseRepository;
+  frameleafAccount: FrameleafAccountRepository;
+  hardwareProbe: HardwareProbeRepository;
+  instanceIdentity: InstanceIdentityRepository;
   search: SearchRepository;
   serverInfo: ServerInfoRepository;
   smartAlbum: SmartAlbumRepository;
@@ -316,6 +342,9 @@ export const getMocks = () => {
 
   databaseMock.withLock.mockImplementation((_type, fn) => fn());
   databaseMock.withAssetMetadataLock.mockImplementation((_assetId, fn) => fn(undefined as never));
+  databaseMock.withAssetMetadataLocks.mockImplementation((_assetIds, fn) => fn(undefined as never));
+  databaseMock.withUserPreferencesLock.mockImplementation((_userId, fn) => fn(undefined as never));
+  databaseMock.applyIsolatedFrameleafMigrations.mockResolvedValue({ applied: [], pending: [], skipped: null });
   databaseMock.getPostgresVersion = vitest.fn().mockResolvedValue('14.10 (Debian 14.10-1.pgdg120+1)');
   databaseMock.getPostgresVersionRange = vitest.fn().mockReturnValue('>=14.0.0');
   databaseMock.createExtension = vitest.fn().mockResolvedValue(void 0);
@@ -328,12 +357,15 @@ export const getMocks = () => {
     cron: automock(CronRepository, { args: [, loggerMock] }),
     crypto: newCryptoRepositoryMock(),
     activity: automock(ActivityRepository),
+    // recording an administrator's change is incidental to most tests (FL-76)
+    adminAudit: automock(AdminAuditRepository, { strict: false }),
     album: automock(AlbumRepository, { strict: false }),
     albumUser: automock(AlbumUserRepository),
     asset: newAssetRepositoryMock(),
     assetEdit: automock(AssetEditRepository),
     assetFile: automock(AssetFileRepository),
     assetJob: automock(AssetJobRepository),
+    classification: automock(ClassificationRepository, { strict: false }),
     clusterGroup: automock(ClusterGroupRepository),
     app: automock(AppRepository, { strict: false }),
     config: newConfigRepositoryMock(),
@@ -351,8 +383,10 @@ export const getMocks = () => {
     machineLearning: automock(MachineLearningRepository, { args: [loggerMock], strict: false }),
     map: automock(MapRepository, { args: [undefined, undefined, { setContext: () => {} }] }),
     media: newMediaRepositoryMock(),
+    mediaOperation: automock(MediaOperationRepository, { strict: false }),
     memory: automock(MemoryRepository),
     metadata: newMetadataRepositoryMock(),
+    mlDestination: automock(MlDestinationRepository),
     move: automock(MoveRepository, { strict: false }),
     notification: automock(NotificationRepository),
     ocr: automock(OcrRepository, { strict: false }),
@@ -362,7 +396,14 @@ export const getMocks = () => {
     physicalFile: automock(PhysicalFileRepository, { strict: false }),
     plugin: automock(PluginRepository, { strict: true, args: [databaseMock, loggerMock] }),
     process: automock(ProcessRepository),
-    runPod: automock(RunPodRepository, { args: [loggerMock], strict: false }),
+    renderWorker: automock(RenderWorkerRepository, { strict: false }),
+    frameleafCloud: automock(FrameleafCloudRepository, { args: [loggerMock], strict: false }),
+    frameleafCloudMl: automock(FrameleafCloudMlRepository, { strict: false }),
+    frameleafConsent: automock(FrameleafConsentRepository, { strict: false }),
+    frameleafUserLicense: automock(FrameleafUserLicenseRepository, { strict: false }),
+    frameleafAccount: automock(FrameleafAccountRepository, { strict: false }),
+    hardwareProbe: automock(HardwareProbeRepository, { strict: false }),
+    instanceIdentity: automock(InstanceIdentityRepository, { strict: false }),
     search: automock(SearchRepository, { strict: false }),
     // eslint-disable-next-line no-sparse-arrays
     serverInfo: automock(ServerInfoRepository, { args: [, loggerMock], strict: false }),
@@ -391,6 +432,42 @@ export const getMocks = () => {
   // every new user gets a cluster group, which is incidental to most tests
   mocks.clusterGroup.create.mockResolvedValue(ClusterGroupFactory.create());
 
+  // no album is filled by smart album rules, and no classification rule exists, unless a test says so (FL-60)
+  mocks.smartAlbum.getSmartBackedAlbumIds.mockResolvedValue(new Set());
+  mocks.classification.getRuleAlbumIds.mockResolvedValue(new Set());
+  mocks.classification.getRules.mockResolvedValue([]);
+  mocks.classification.getEnabledRules.mockResolvedValue([]);
+  mocks.classification.getRuleByAlbumId.mockResolvedValue(undefined);
+  mocks.classification.recordAlbumRemovals.mockResolvedValue({
+    added: 0,
+    suggested: 0,
+    removed: 0,
+    unchanged: 0,
+    tagged: [],
+    untagged: [],
+  });
+  mocks.classification.recordAlbumAdditions.mockResolvedValue();
+
+  // moving photos into the Locked folder finds no released face thumbnails or profile pictures
+  // unless a test says otherwise (FL-53)
+  mocks.person.getMissingThumbnailsForAssets.mockResolvedValue([]);
+  mocks.user.getLockedProfileImageSources.mockResolvedValue([]);
+
+  // library workloads are routed to a healthy local destination unless a test says otherwise
+  mocks.mlDestination.getRoute.mockImplementation((workload) =>
+    Promise.resolve({ workload, destinationId: mlDestinationStub.local.id, modelId: null, updatedAt: new Date() }),
+  );
+  mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.local);
+  // no route names a restoration endpoint for library work unless a test says otherwise (FL-72)
+  mocks.mlDestination.getRoutes.mockResolvedValue([]);
+  mocks.mlDestination.getSpend.mockResolvedValue(0);
+  mocks.mlDestination.recordProbe.mockResolvedValue();
+  mocks.mlDestination.recordAccounting.mockResolvedValue();
+  mocks.machineLearning.probe.mockResolvedValue(mlProbeStub.healthy);
+  // no owner hides their locations from an album's owner unless a test says otherwise (FL-54)
+  mocks.partner.getLocationHiddenOwnerIdsForAlbums.mockResolvedValue([]);
+  mocks.partner.getLocationHiddenThroughAlbums.mockResolvedValue(new Set());
+
   return mocks;
 };
 
@@ -404,6 +481,7 @@ export const newTestService = <T extends BaseService>(
     overrides.logger || (mocks.logger as As<LoggingRepository>),
     overrides.access || (mocks.access as IAccessRepository as AccessRepository),
     overrides.activity || (mocks.activity as As<ActivityRepository>),
+    overrides.adminAudit || (mocks.adminAudit as As<AdminAuditRepository>),
     overrides.album || (mocks.album as As<AlbumRepository>),
     overrides.albumUser || (mocks.albumUser as As<AlbumUserRepository>),
     overrides.apiKey || (mocks.apiKey as As<ApiKeyRepository>),
@@ -412,6 +490,7 @@ export const newTestService = <T extends BaseService>(
     overrides.assetEdit || (mocks.assetEdit as As<AssetEditRepository>),
     overrides.assetFile || (mocks.assetFile as As<AssetFileRepository>),
     overrides.assetJob || (mocks.assetJob as As<AssetJobRepository>),
+    overrides.classification || (mocks.classification as As<ClassificationRepository>),
     overrides.clusterGroup || (mocks.clusterGroup as As<ClusterGroupRepository>),
     overrides.config || (mocks.config as As<ConfigRepository> as ConfigRepository),
     overrides.cron || (mocks.cron as As<CronRepository>),
@@ -428,8 +507,10 @@ export const newTestService = <T extends BaseService>(
     overrides.machineLearning || (mocks.machineLearning as As<MachineLearningRepository>),
     overrides.map || (mocks.map as As<MapRepository>),
     overrides.media || (mocks.media as As<MediaRepository>),
+    overrides.mediaOperation || (mocks.mediaOperation as As<MediaOperationRepository>),
     overrides.memory || (mocks.memory as As<MemoryRepository>),
     overrides.metadata || (mocks.metadata as As<MetadataRepository>),
+    overrides.mlDestination || (mocks.mlDestination as As<MlDestinationRepository>),
     overrides.move || (mocks.move as As<MoveRepository>),
     overrides.notification || (mocks.notification as As<NotificationRepository>),
     overrides.oauth || (mocks.oauth as As<OAuthRepository>),
@@ -439,7 +520,14 @@ export const newTestService = <T extends BaseService>(
     overrides.physicalFile || (mocks.physicalFile as As<PhysicalFileRepository>),
     overrides.plugin || (mocks.plugin as As<PluginRepository>),
     overrides.process || (mocks.process as As<ProcessRepository>),
-    overrides.runPod || (mocks.runPod as As<RunPodRepository>),
+    overrides.renderWorker || (mocks.renderWorker as As<RenderWorkerRepository>),
+    overrides.frameleafCloud || (mocks.frameleafCloud as As<FrameleafCloudRepository>),
+    overrides.frameleafCloudMl || (mocks.frameleafCloudMl as As<FrameleafCloudMlRepository>),
+    overrides.frameleafConsent || (mocks.frameleafConsent as As<FrameleafConsentRepository>),
+    overrides.frameleafUserLicense || (mocks.frameleafUserLicense as As<FrameleafUserLicenseRepository>),
+    overrides.frameleafAccount || (mocks.frameleafAccount as As<FrameleafAccountRepository>),
+    overrides.hardwareProbe || (mocks.hardwareProbe as As<HardwareProbeRepository>),
+    overrides.instanceIdentity || (mocks.instanceIdentity as As<InstanceIdentityRepository>),
     overrides.search || (mocks.search as As<SearchRepository>),
     overrides.serverInfo || (mocks.serverInfo as As<ServerInfoRepository>),
     overrides.smartAlbum || (mocks.smartAlbum as As<SmartAlbumRepository>),

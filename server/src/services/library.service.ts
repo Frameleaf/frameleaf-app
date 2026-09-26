@@ -1,40 +1,67 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
 import { Insertable } from 'kysely';
-import { R_OK } from 'node:constants';
-import { Stats } from 'node:fs';
-import path, { isAbsolute, parse } from 'node:path';
+import { createHash } from 'node:crypto';
+import path from 'node:path';
 import picomatch from 'picomatch';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
+import type { LibraryRemovalCounts } from 'src/repositories/library.repository.js';
 import type { JobOf } from 'src/types.js';
 import { JOBS_LIBRARY_PAGINATION_SIZE } from 'src/constants.js';
-import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import {
   CreateLibraryDto,
+  LibraryRemovalDto,
+  LibraryRemovalReviewDto,
   LibraryResponseDto,
+  LibrarySearchDto,
   LibraryStatsResponseDto,
+  ManagedUploadsStatsResponseDto,
   UpdateLibraryDto,
   ValidateLibraryDto,
-  ValidateLibraryImportPathResponseDto,
   ValidateLibraryResponseDto,
   mapLibrary,
 } from 'src/dtos/library.dto.js';
 import {
-  AssetStatus,
-  AssetType,
-  ChecksumAlgorithm,
+  AdminAuditAction,
   CronJob,
   DatabaseLock,
   ImmichWorker,
   JobName,
   JobStatus,
   QueueName,
+  UserStatus,
 } from 'src/enum.js';
-import { AssetSyncResult } from 'src/repositories/library.repository.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
 import { BaseService } from 'src/services/base.service.js';
+import {
+  type ImportPathNeighbour,
+  checkImportPathOnDisk,
+  checkImportPaths,
+  invalidExclusionPatterns,
+  isSameOrInside,
+  normalizeImportPath,
+} from 'src/utils/library-paths.js';
+import { libraryAssetFromFile, libraryPathsFingerprint } from 'src/utils/library-scan.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { batched, findOrFail, handlePromiseError } from 'src/utils/misc.js';
+
+/**
+ * One entry for the administrator audit trail about a library (FL-76), listed in its owner's
+ * account history. `auth` is absent when a library changes without an administrator's request.
+ */
+const libraryEvent = (
+  auth: AuthDto | undefined,
+  library: { id: string; name: string; ownerId: string },
+  action: AdminAuditAction,
+) => ({
+  userId: library.ownerId,
+  actorId: auth?.user.id ?? null,
+  libraryId: library.id,
+  action,
+  subject: library.name,
+  detail: null,
+});
 
 @Injectable()
 export class LibraryService extends BaseService {
@@ -209,8 +236,8 @@ export class LibraryService extends BaseService {
     return mapLibrary(library);
   }
 
-  async getAll(): Promise<LibraryResponseDto[]> {
-    const libraries = await this.libraryRepository.getAll(false);
+  async getAll(dto: LibrarySearchDto = {}): Promise<LibraryResponseDto[]> {
+    const libraries = await this.libraryRepository.getAll(dto.withDeleted ?? false);
     return libraries.map((library) => mapLibrary(library));
   }
 
@@ -230,21 +257,42 @@ export class LibraryService extends BaseService {
     return JobStatus.Success;
   }
 
-  async create(dto: CreateLibraryDto): Promise<LibraryResponseDto> {
+  async create(dto: CreateLibraryDto, auth?: AuthDto): Promise<LibraryResponseDto> {
+    // FL-78: a library belongs to a live account, for good; its folders are checked before it exists
+    const owner = await this.userRepository.get(dto.ownerId, { withDeleted: true });
+    if (!owner || owner.deletedAt || owner.status !== UserStatus.Active) {
+      throw new BadRequestException('Choose an active account to own the library');
+    }
+
+    await this.requireValidImportPaths(dto.importPaths ?? []);
+    const importPaths = (dto.importPaths ?? []).map((importPath) => normalizeImportPath(importPath));
+
+    const exclusionPatterns = dto.exclusionPatterns ?? [
+      '**/@eaDir/**',
+      '**/._*',
+      '**/#recycle/**',
+      '**/#snapshot/**',
+      '**/.stversions/**',
+      '**/.stfolder/**',
+    ];
+    this.requireValidExclusionPatterns(exclusionPatterns);
+
     const library = await this.libraryRepository.create({
       ownerId: dto.ownerId,
       name: dto.name ?? 'New External Library',
-      importPaths: dto.importPaths ?? [],
-      exclusionPatterns: dto.exclusionPatterns ?? [
-        '**/@eaDir/**',
-        '**/._*',
-        '**/#recycle/**',
-        '**/#snapshot/**',
-        '**/.stversions/**',
-        '**/.stfolder/**',
-      ],
+      importPaths,
+      exclusionPatterns,
     });
+    await this.recordAdminEvents([libraryEvent(auth, library, AdminAuditAction.LibraryCreated)]);
+    if (importPaths.length > 0) {
+      await this.notifyWatchers(library.id);
+    }
     return mapLibrary(library);
+  }
+
+  /** Every account's managed uploads, for the Libraries list (FL-78). */
+  getManagedUploads(): Promise<ManagedUploadsStatsResponseDto[]> {
+    return this.libraryRepository.getManagedUploadStatistics();
   }
 
   @OnJob({ name: JobName.LibrarySyncFiles, queue: QueueName.Library })
@@ -259,15 +307,29 @@ export class LibraryService extends BaseService {
       this.logger.debug(`Library ${job.libraryId} is deleted, won't import assets into it`);
       return JobStatus.Failed;
     }
+    // FL-78: never import into an account on its way out
+    const owner = await this.userRepository.get(library.ownerId, { withDeleted: true });
+    if (!owner || owner.deletedAt || owner.status !== UserStatus.Active) {
+      this.logger.debug(`Library ${job.libraryId} belongs to a deleted account, won't import assets into it`);
+      return JobStatus.Skipped;
+    }
 
     const assetImports: Insertable<AssetTable>[] = [];
     await Promise.all(
-      job.paths.map(async (path) => {
+      job.paths.map(async (filePath) => {
+        const assetPath = path.normalize(filePath);
         try {
-          const asset = await this.processEntity(path, library.ownerId, job.libraryId);
-          assetImports.push(asset);
+          const stat = await this.storageRepository.stat(assetPath);
+          assetImports.push(
+            libraryAssetFromFile(
+              { path: assetPath, mtime: stat.mtime },
+              { ownerId: library.ownerId, libraryId: job.libraryId },
+              (value) => this.cryptoRepository.hashSha1(value),
+              mimeTypes.isVideo(assetPath),
+            ),
+          );
         } catch (error) {
-          this.logger.error(`Error processing ${path} for library ${job.libraryId}: ${error}`);
+          this.logger.error(`Error processing ${assetPath} for library ${job.libraryId}: ${error}`);
         }
       }),
     );
@@ -292,81 +354,174 @@ export class LibraryService extends BaseService {
     return JobStatus.Success;
   }
 
-  private async validateImportPath(importPath: string): Promise<ValidateLibraryImportPathResponseDto> {
-    const validation = new ValidateLibraryImportPathResponseDto();
-    validation.importPath = importPath;
-    validation.isValid = false;
-
-    if (StorageCore.isImmichPath(importPath)) {
-      validation.message = 'Cannot use media upload folder for external libraries';
-      return validation;
-    }
-
-    if (!isAbsolute(importPath)) {
-      validation.message = `Import path must be absolute, try ${path.resolve(importPath)}`;
-      return validation;
-    }
-
-    try {
-      const stat = await this.storageRepository.stat(importPath);
-      if (!stat.isDirectory()) {
-        validation.message = 'Not a directory';
-        return validation;
-      }
-    } catch (error: any) {
-      if (error.code === 'ENOENT') {
-        validation.message = 'Path does not exist (ENOENT)';
-        return validation;
-      }
-      validation.message = String(error);
-      return validation;
-    }
-
-    const isAccess = await this.storageRepository.checkFileExists(importPath, R_OK);
-
-    if (!isAccess) {
-      validation.message = 'Lacking read permission for folder';
-      return validation;
-    }
-
-    validation.isValid = true;
-    return validation;
-  }
-
+  /**
+   * Check import folders without saving them (FL-78): their form, where they are, clashes with each
+   * other and with other libraries, and whether this server can read them right now. `id` names the
+   * library being edited, whose own folders are not a clash; for a library not created yet any id
+   * that names no library will do.
+   */
   async validate(id: string, dto: ValidateLibraryDto): Promise<ValidateLibraryResponseDto> {
-    const importPaths = await Promise.all(
-      (dto.importPaths || []).map((importPath) => this.validateImportPath(importPath)),
-    );
+    const importPaths = await checkImportPaths(this.storageRepository, dto.importPaths ?? [], {
+      neighbours: await this.getNeighbours(id),
+    });
     return { importPaths };
   }
 
-  async update(id: string, dto: UpdateLibraryDto): Promise<LibraryResponseDto> {
-    await this.findOrFail(id);
-
+  async update(id: string, dto: UpdateLibraryDto, auth?: AuthDto): Promise<LibraryResponseDto> {
+    const existing = await this.findOrFail(id);
+    // The owner is fixed once a library exists: the update DTO has no owner, and none is ever read.
     if (dto.importPaths) {
-      const validation = await this.validate(id, { importPaths: dto.importPaths });
-      if (validation.importPaths) {
-        for (const path of validation.importPaths) {
-          if (!path.isValid) {
-            throw new BadRequestException(`Invalid import path: ${path.message}`);
-          }
-        }
-      }
+      await this.requireValidImportPaths(dto.importPaths, id);
+    }
+    const update: UpdateLibraryDto = {
+      name: dto.name,
+      importPaths: dto.importPaths?.map((importPath) => normalizeImportPath(importPath)),
+      exclusionPatterns: dto.exclusionPatterns,
+    };
+
+    if (update.exclusionPatterns) {
+      this.requireValidExclusionPatterns(update.exclusionPatterns);
     }
 
-    const library = await this.libraryRepository.update(id, dto);
+    const library = await this.libraryRepository.update(id, update);
+    await this.recordAdminEvents([libraryEvent(auth, library, AdminAuditAction.LibraryUpdated)]);
+
+    const foldersChanged =
+      libraryPathsFingerprint(existing) !==
+      libraryPathsFingerprint(library as { importPaths: string[]; exclusionPatterns: string[] });
+    if (foldersChanged) {
+      // A running scan was asked about the old folders; it stops, and the watcher follows the new ones.
+      await this.eventRepository.emit('LibraryScanStop', { libraryId: id, reason: 'paths_changed' });
+      await this.notifyWatchers(id);
+    }
+
     return mapLibrary(library);
   }
 
-  async delete(id: string) {
-    await this.findOrFail(id);
+  /**
+   * The first stage of removing a library (FL-78): what goes, what stays, and a token bound to the
+   * library as it is now. Confirming with a stale token is refused, so a removal is never confirmed
+   * against consequences nobody saw.
+   */
+  async getRemovalReview(id: string): Promise<LibraryRemovalReviewDto> {
+    const library = await this.findOrFail(id);
+    const counts = await this.libraryRepository.getRemovalCounts(id);
+    return {
+      libraryId: library.id,
+      name: library.name,
+      ownerId: library.ownerId,
+      photos: counts.photos,
+      videos: counts.videos,
+      total: counts.photos + counts.videos,
+      usage: counts.usage,
+      offline: counts.offline,
+      albums: counts.albums,
+      sharedLinks: counts.sharedLinks,
+      faces: counts.faces,
+      scanActive: false,
+      originalsKept: true,
+      reviewToken: this.removalToken(library, counts),
+    };
+  }
 
-    if (this.watchLibraries) {
-      await this.unwatch(id);
+  /**
+   * The second stage: the typed name and the review token are checked against the library as it is
+   * now — its permission was checked again by the endpoint — and only then is it removed.
+   */
+  async remove(auth: AuthDto, id: string, dto: LibraryRemovalDto): Promise<void> {
+    const library = await this.findOrFail(id);
+    if (dto.confirmName !== library.name) {
+      throw new BadRequestException('Type the library name to confirm');
     }
 
+    const counts = await this.libraryRepository.getRemovalCounts(id);
+    if (dto.reviewToken !== this.removalToken(library, counts)) {
+      throw new ConflictException('The library changed after it was reviewed. Review the removal again.');
+    }
+
+    await this.delete(id, auth, counts.photos + counts.videos);
+  }
+
+  private removalToken(
+    library: { id: string; updatedAt: Date; importPaths: string[]; exclusionPatterns: string[] },
+    counts: LibraryRemovalCounts,
+  ) {
+    return createHash('sha256')
+      .update(
+        JSON.stringify({
+          id: library.id,
+          updatedAt: new Date(library.updatedAt).toISOString(),
+          folders: libraryPathsFingerprint(library),
+          counts,
+        }),
+      )
+      .digest('hex')
+      .slice(0, 48);
+  }
+
+  private async getNeighbours(id: string | undefined): Promise<ImportPathNeighbour[]> {
+    const libraries = await this.libraryRepository.getAll(false);
+    return libraries
+      .filter((library) => library.id !== id)
+      .map(({ id, name, importPaths }) => ({ id, name, importPaths }));
+  }
+
+  private async requireValidImportPaths(importPaths: string[], id?: string) {
+    const checks = await checkImportPaths(this.storageRepository, importPaths, {
+      neighbours: await this.getNeighbours(id),
+    });
+    for (const check of checks) {
+      if (!check.isValid) {
+        throw new BadRequestException(`Invalid import path: ${check.message}`);
+      }
+    }
+  }
+
+  private requireValidExclusionPatterns(patterns: string[]) {
+    const invalid = invalidExclusionPatterns(patterns);
+    if (invalid.length > 0) {
+      throw new BadRequestException(`Invalid exclusion pattern: ${invalid[0]}`);
+    }
+  }
+
+  /** Tell the worker that watches folders to read this library again (FL-78). */
+  private async notifyWatchers(id: string) {
+    this.websocketRepository.serverSend('LibraryWatchUpdate', { id });
+    await this.onWatchUpdate({ id });
+  }
+
+  @OnEvent({ name: 'LibraryWatchUpdate', server: true, workers: [ImmichWorker.Microservices] })
+  async onWatchUpdate({ id }: ArgOf<'LibraryWatchUpdate'>) {
+    if (!this.watchLibraries) {
+      return;
+    }
+
+    const library = await this.libraryRepository.get(id);
+    if (!library) {
+      await this.unwatch(id);
+      return;
+    }
+
+    await this.watch(id);
+  }
+
+  /**
+   * Remove a library: its scan stops, its watcher closes, and its items are removed in the
+   * background. The files in its folders are never touched: they were only ever referenced.
+   */
+  async delete(id: string, auth?: AuthDto, itemCount?: number) {
+    const library = await this.findOrFail(id);
+
     await this.libraryRepository.softDelete(id);
+    await this.eventRepository.emit('LibraryScanStop', { libraryId: id, reason: 'library_removed' });
+    await this.notifyWatchers(id);
     await this.jobRepository.queue({ name: JobName.LibraryDelete, data: { id } });
+
+    const counts = itemCount === undefined ? await this.libraryRepository.getRemovalCounts(id) : undefined;
+    const count = itemCount ?? counts!.photos + counts!.videos;
+    await this.recordAdminEvents([
+      { ...libraryEvent(auth, library, AdminAuditAction.LibraryDeleted), detail: String(count) },
+    ]);
   }
 
   @OnJob({ name: JobName.LibraryDelete, queue: QueueName.Library })
@@ -396,27 +551,6 @@ export class LibraryService extends BaseService {
     return JobStatus.Success;
   }
 
-  private async processEntity(filePath: string, ownerId: string, libraryId: string) {
-    const assetPath = path.normalize(filePath);
-    const stat = await this.storageRepository.stat(assetPath);
-
-    return {
-      ownerId,
-      libraryId,
-      checksum: this.cryptoRepository.hashSha1(`path:${assetPath}`),
-      checksumAlgorithm: ChecksumAlgorithm.sha1Path,
-      originalPath: assetPath,
-
-      fileCreatedAt: stat.mtime,
-      fileModifiedAt: stat.mtime,
-      localDateTime: stat.mtime,
-      type: mimeTypes.isVideo(assetPath) ? AssetType.Video : AssetType.Image,
-      originalFileName: parse(assetPath).base,
-      isExternal: true,
-      livePhotoVideoId: null,
-    };
-  }
-
   async queuePostSyncJobs(assetIds: string[]) {
     this.logger.debug(`Queuing sidecar discovery for ${assetIds.length} asset(s)`);
 
@@ -429,331 +563,48 @@ export class LibraryService extends BaseService {
     );
   }
 
-  async queueScan(id: string) {
-    await this.findOrFail(id);
-
-    this.logger.log(`Starting to scan library ${id}`);
-
-    await this.jobRepository.queue({
-      name: JobName.LibrarySyncFilesQueueAll,
-      data: {
-        id,
-      },
-    });
-
-    await this.jobRepository.queue({ name: JobName.LibrarySyncAssetsQueueAll, data: { id } });
-  }
-
-  @OnJob({ name: JobName.LibraryScanQueueAll, queue: QueueName.Library })
-  async handleQueueScanAll(): Promise<JobStatus> {
-    this.logger.log(`Initiating scan of all external libraries...`);
-
-    await this.jobRepository.queue({ name: JobName.LibraryDeleteCheck, data: {} });
-
-    const libraries = await this.libraryRepository.getAll(true);
-
-    await this.jobRepository.queueAll(
-      libraries.map((library) => ({
-        name: JobName.LibrarySyncFilesQueueAll,
-        data: {
-          id: library.id,
-        },
-      })),
-    );
-    await this.jobRepository.queueAll(
-      libraries.map((library) => ({
-        name: JobName.LibrarySyncAssetsQueueAll,
-        data: {
-          id: library.id,
-        },
-      })),
-    );
-
-    return JobStatus.Success;
-  }
-
-  @OnJob({ name: JobName.LibrarySyncAssets, queue: QueueName.Library })
-  async handleSyncAssets(job: JobOf<JobName.LibrarySyncAssets>): Promise<JobStatus> {
-    const assets = await this.assetJobRepository.getForSyncAssets(job.assetIds);
-
-    const assetIdsToOffline: string[] = [];
-    const trashedAssetIdsToOffline: string[] = [];
-    const assetIdsToOnline: string[] = [];
-    const trashedAssetIdsToOnline: string[] = [];
-    const assetIdsToUpdate: string[] = [];
-
-    this.logger.debug(`Checking batch of ${assets.length} existing asset(s) in library ${job.libraryId}`);
-
-    const stats = await Promise.all(
-      assets.map((asset) => this.storageRepository.stat(asset.originalPath).catch(() => null)),
-    );
-
-    for (let i = 0; i < assets.length; i++) {
-      const asset = assets[i];
-      const stat = stats[i];
-      const action = this.checkExistingAsset(asset, stat);
-      switch (action) {
-        case AssetSyncResult.DO_NOTHING: {
-          break;
-        }
-        case AssetSyncResult.OFFLINE: {
-          if (asset.status === AssetStatus.Trashed) {
-            trashedAssetIdsToOffline.push(asset.id);
-          } else {
-            assetIdsToOffline.push(asset.id);
-          }
-          break;
-        }
-        case AssetSyncResult.UPDATE: {
-          assetIdsToUpdate.push(asset.id);
-          break;
-        }
-        case AssetSyncResult.CHECK_OFFLINE: {
-          const isInImportPath = job.importPaths.some((path) => asset.originalPath.startsWith(path));
-
-          if (!isInImportPath) {
-            this.logger.verbose(
-              `Offline asset ${asset.originalPath} is still not in any import path, keeping offline in library ${job.libraryId}`,
-            );
-            break;
-          }
-
-          const isExcluded = job.exclusionPatterns.some((pattern) => picomatch.isMatch(asset.originalPath, pattern));
-
-          if (!isExcluded) {
-            this.logger.debug(`Offline asset ${asset.originalPath} is now online in library ${job.libraryId}`);
-            if (asset.status === AssetStatus.Trashed) {
-              trashedAssetIdsToOnline.push(asset.id);
-            } else {
-              assetIdsToOnline.push(asset.id);
-            }
-            break;
-          }
-
-          this.logger.verbose(
-            `Offline asset ${asset.originalPath} is in an import path but still covered by exclusion pattern, keeping offline in library ${job.libraryId}`,
-          );
-
-          break;
-        }
-      }
-    }
-
-    const promises = [];
-    if (assetIdsToOffline.length > 0) {
-      promises.push(this.assetRepository.updateAll(assetIdsToOffline, { isOffline: true, deletedAt: new Date() }));
-    }
-
-    if (trashedAssetIdsToOffline.length > 0) {
-      promises.push(this.assetRepository.updateAll(trashedAssetIdsToOffline, { isOffline: true }));
-    }
-
-    if (assetIdsToOnline.length > 0) {
-      promises.push(this.assetRepository.updateAll(assetIdsToOnline, { isOffline: false, deletedAt: null }));
-    }
-
-    if (trashedAssetIdsToOnline.length > 0) {
-      promises.push(this.assetRepository.updateAll(trashedAssetIdsToOnline, { isOffline: false }));
-    }
-
-    if (assetIdsToUpdate.length > 0) {
-      promises.push(this.queuePostSyncJobs(assetIdsToUpdate));
-    }
-
-    await Promise.all(promises);
-
-    const remainingCount = assets.length - assetIdsToOffline.length - assetIdsToUpdate.length - assetIdsToOnline.length;
-    const cumulativePercentage = ((100 * job.progressCounter) / job.totalAssets).toFixed(1);
-    this.logger.log(
-      `Checked existing asset(s): ${assetIdsToOffline.length + trashedAssetIdsToOffline.length} offlined, ${assetIdsToOnline.length + trashedAssetIdsToOnline.length} onlined, ${assetIdsToUpdate.length} updated, ${remainingCount} unchanged of current batch of ${assets.length} (Total progress: ${job.progressCounter} of ${job.totalAssets}, ${cumulativePercentage} %) in library ${job.libraryId}.`,
-    );
-
-    return JobStatus.Success;
-  }
-
-  private checkExistingAsset(
-    asset: {
-      isOffline: boolean;
-      libraryId: string | null;
-      originalPath: string;
-      status: AssetStatus;
-      fileModifiedAt: Date;
-    },
-    stat: Stats | null,
-  ): AssetSyncResult {
-    if (!stat) {
-      // File not found on disk or permission error
-      if (asset.isOffline) {
-        this.logger.verbose(
-          `Asset ${asset.originalPath} is still not accessible, keeping offline in library ${asset.libraryId}`,
-        );
-        return AssetSyncResult.DO_NOTHING;
-      }
-
-      this.logger.debug(
-        `Asset ${asset.originalPath} is no longer on disk or is inaccessible because of permissions, marking offline in library ${asset.libraryId}`,
-      );
-      return AssetSyncResult.OFFLINE;
-    }
-
-    if (asset.isOffline && asset.status !== AssetStatus.Deleted) {
-      // Only perform the expensive check if the asset is offline
-      return AssetSyncResult.CHECK_OFFLINE;
-    }
-
-    if (stat.mtime.valueOf() !== asset.fileModifiedAt.valueOf()) {
-      this.logger.verbose(`Asset ${asset.originalPath} needs metadata extraction in library ${asset.libraryId}`);
-
-      return AssetSyncResult.UPDATE;
-    }
-
-    return AssetSyncResult.DO_NOTHING;
-  }
-
-  @OnJob({ name: JobName.LibrarySyncFilesQueueAll, queue: QueueName.Library })
-  async handleQueueSyncFiles(job: JobOf<JobName.LibrarySyncFilesQueueAll>): Promise<JobStatus> {
-    const library = await this.libraryRepository.get(job.id);
-    if (!library) {
-      this.logger.debug(`Library ${job.id} not found, skipping refresh`);
-      return JobStatus.Skipped;
-    }
-
-    this.logger.debug(`Validating import paths for library ${library.id}...`);
-
-    const validImportPaths: string[] = [];
-
-    for (const importPath of library.importPaths) {
-      const validation = await this.validateImportPath(importPath);
-      if (validation.isValid) {
-        validImportPaths.push(path.normalize(importPath));
-      } else {
-        this.logger.warn(`Skipping invalid import path: ${importPath}. Reason: ${validation.message}`);
-      }
-    }
-
-    if (validImportPaths.length === 0) {
-      this.logger.warn(`No valid import paths found for library ${library.id}`);
-
-      return JobStatus.Skipped;
-    }
-
-    const pathsOnDisk = this.storageRepository.walk({
-      pathsToCrawl: validImportPaths,
-      includeHidden: false,
-      exclusionPatterns: library.exclusionPatterns,
-      take: JOBS_LIBRARY_PAGINATION_SIZE,
-    });
-
-    let importCount = 0;
-    let crawlCount = 0;
-
-    this.logger.log(`Starting disk crawl of ${validImportPaths.length} import path(s) for library ${library.id}...`);
-
-    for await (const pathBatch of pathsOnDisk) {
-      crawlCount += pathBatch.length;
-      const paths = await this.assetRepository.filterNewExternalAssetPaths(library.id, pathBatch);
-
-      if (paths.length > 0) {
-        importCount += paths.length;
-
-        await this.jobRepository.queue({
-          name: JobName.LibrarySyncFiles,
-          data: {
-            libraryId: library.id,
-            paths,
-            progressCounter: crawlCount,
-          },
-        });
-      }
-
-      this.logger.log(
-        `Crawled ${crawlCount} file(s) so far: ${paths.length} of current batch of ${pathBatch.length} will be imported to library ${library.id}...`,
-      );
-    }
-
-    this.logger.log(
-      `Finished disk crawl, ${crawlCount} file(s) found on disk and queued ${importCount} file(s) for import into ${library.id}`,
-    );
-
-    await this.libraryRepository.update(job.id, { refreshedAt: new Date() });
-
-    return JobStatus.Success;
-  }
-
+  /**
+   * Files the watcher saw disappear (FL-78). Each item goes offline — into the trash, back when its
+   * file returns — exactly as a scan marks it; it is never removed outright, so its albums, faces,
+   * descriptions and edits stay with it. And only when its folder is demonstrably still there: an
+   * unmounted share makes every file "disappear" at once, and that is not a deletion.
+   */
   @OnJob({ name: JobName.LibraryRemoveAsset, queue: QueueName.Library })
   async handleAssetRemoval(job: JobOf<JobName.LibraryRemoveAsset>): Promise<JobStatus> {
-    // This is only for handling file unlink events via the file watcher
-    this.logger.verbose(`Deleting asset(s) ${job.paths} from library ${job.libraryId}`);
-    for (const assetPath of job.paths) {
-      const asset = await this.assetRepository.getByLibraryIdAndOriginalPath(job.libraryId, assetPath);
-      if (asset) {
-        await this.assetRepository.remove(asset);
-      }
-    }
-
-    return JobStatus.Success;
-  }
-
-  @OnJob({ name: JobName.LibrarySyncAssetsQueueAll, queue: QueueName.Library })
-  async handleQueueSyncAssets(job: JobOf<JobName.LibrarySyncAssetsQueueAll>): Promise<JobStatus> {
-    const library = await this.libraryRepository.get(job.id);
+    const library = await this.libraryRepository.get(job.libraryId);
     if (!library) {
       return JobStatus.Skipped;
     }
 
-    const assetCount = await this.assetRepository.getLibraryAssetCount(job.id);
-    if (!assetCount) {
-      this.logger.log(`Library ${library.id} is empty, no need to check assets`);
-      return JobStatus.Success;
+    const roots = library.importPaths.map((importPath) => normalizeImportPath(importPath));
+    const offline: string[] = [];
+    const trashedOffline: string[] = [];
+
+    for (const assetPath of job.paths) {
+      const root = roots.find((candidate) => isSameOrInside(assetPath, candidate));
+      if (!root || !(await checkImportPathOnDisk(this.storageRepository, root)).isValid) {
+        this.logger.warn(`Ignoring removal of ${assetPath} in library ${library.id}: its import folder is unavailable`);
+        continue;
+      }
+
+      if (await this.storageRepository.checkFileExists(assetPath)) {
+        continue;
+      }
+
+      const asset = await this.assetRepository.getByLibraryIdAndOriginalPath(library.id, assetPath);
+      if (!asset || asset.isOffline) {
+        continue;
+      }
+
+      (asset.deletedAt ? trashedOffline : offline).push(asset.id);
     }
 
-    this.logger.log(
-      `Checking ${assetCount} asset(s) against import paths and exclusion patterns in library ${library.id}...`,
-    );
-
-    const offlineResult = await this.assetRepository.detectOfflineExternalAssets(
-      library.id,
-      library.importPaths,
-      library.exclusionPatterns,
-    );
-
-    const affectedAssetCount = Number(offlineResult.numUpdatedRows);
-
-    this.logger.log(
-      `${affectedAssetCount} asset(s) out of ${assetCount} were offlined due to import paths and/or exclusion pattern(s) in library ${library.id}`,
-    );
-
-    if (affectedAssetCount === assetCount) {
-      return JobStatus.Success;
+    if (offline.length > 0) {
+      await this.assetRepository.updateAll(offline, { isOffline: true, deletedAt: new Date() });
     }
-
-    this.logger.log(`Scanning library ${library.id} for assets missing from disk...`);
-
-    let count = 0;
-    const existingAssets = this.libraryRepository.streamAssetIds(library.id);
-    for await (const assets of batched(existingAssets, JOBS_LIBRARY_PAGINATION_SIZE)) {
-      count += assets.length;
-
-      await this.jobRepository.queue({
-        name: JobName.LibrarySyncAssets,
-        data: {
-          libraryId: library.id,
-          importPaths: library.importPaths,
-          exclusionPatterns: library.exclusionPatterns,
-          assetIds: assets.map(({ id }) => id),
-          progressCounter: count,
-          totalAssets: assetCount,
-        },
-      });
-
-      const completePercentage = ((100 * count) / assetCount).toFixed(1);
-
-      this.logger.log(
-        `Queued check of ${count} of ${assetCount} (${completePercentage} %) existing asset(s) so far in library ${library.id}`,
-      );
+    if (trashedOffline.length > 0) {
+      await this.assetRepository.updateAll(trashedOffline, { isOffline: true });
     }
-
-    this.logger.log(`Finished queuing ${count} asset check(s) for library ${library.id}`);
 
     return JobStatus.Success;
   }

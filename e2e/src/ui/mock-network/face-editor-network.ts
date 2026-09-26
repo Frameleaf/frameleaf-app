@@ -1,4 +1,4 @@
-import { BrowserContext } from '@playwright/test';
+import { BrowserContext, Route } from '@playwright/test';
 import { randomThumbnail } from 'src/ui/generators/timeline.js';
 
 // Minimal valid H.264 MP4 (8x8px, 1 frame) that browsers can decode to get videoWidth/videoHeight
@@ -75,12 +75,84 @@ export type FaceCreateCapture = {
     imageWidth: number;
     imageHeight: number;
   }>;
+  /** `POST /api/people` bodies, from the face tagger's "Create person" form. */
+  people: Array<{ name: string }>;
 };
 
-export const setupFaceEditorMockApiRoutes = async (
+/** FL-38: a face as `GET /api/faces` lists it, with its revision and provenance. */
+export type MockFace = {
+  id: string;
+  imageWidth: number;
+  imageHeight: number;
+  boundingBoxX1: number;
+  boundingBoxY1: number;
+  boundingBoxX2: number;
+  boundingBoxY2: number;
+  sourceType: 'machine-learning' | 'manual';
+  revision: string;
+  correctedAt: string | null;
+  hiddenAt: string | null;
+  person: MockPerson | null;
+};
+
+export const createMockDetectedFace = (person: MockPerson | null, id = 'detected-face-1'): MockFace => ({
+  id,
+  imageWidth: 1000,
+  imageHeight: 800,
+  boundingBoxX1: 100,
+  boundingBoxY1: 80,
+  boundingBoxX2: 300,
+  boundingBoxY2: 280,
+  sourceType: 'machine-learning',
+  revision: `${id}-rev-1`,
+  correctedAt: null,
+  hiddenAt: null,
+  person,
+});
+
+/**
+ * FL-38: what the mocked face endpoints hold and how they answer. `conflictOnCorrect` and
+ * `conflictOnCreate` make the next correction or face creation fail with 409, as the server does
+ * when another editor changed the face or the image changed since the dialog read it.
+ */
+export type FaceTaggerMockState = {
+  faces: MockFace[];
+  sourceRevision: string;
+  /** The source revision `GET /api/faces/source` answers once a conflict was served. */
+  sourceRevisionAfterConflict?: string;
+  conflictOnCorrect?: boolean;
+  conflictOnCreate?: boolean;
+  corrections: Array<{ id: string; body: Record<string, unknown> }>;
+  deletes: Array<{ id: string; body: Record<string, unknown> }>;
+  faceReads: number;
+};
+
+export const createFaceTaggerMockState = (faces: MockFace[] = []): FaceTaggerMockState => ({
+  faces,
+  sourceRevision: 'source-rev-1',
+  corrections: [],
+  deletes: [],
+  faceReads: 0,
+});
+
+/** The server's answer to a stale correction or a box drawn on an image that changed since. */
+const conflict = (route: Route) =>
+  route.fulfill({
+    status: 409,
+    contentType: 'application/json',
+    json: { message: 'This face changed in another view.', statusCode: 409, error: 'Conflict' },
+  });
+
+/**
+ * FL-38: the routes the Frameleaf face tagger (`FaceTagger.svelte`) calls — the asset's
+ * existing faces and their source revision, the people to choose from, and the batch save's
+ * person creates, face creates, revision-checked corrections and removals.
+ */
+export const setupFaceTaggerMockApiRoutes = async (
   context: BrowserContext,
   mockPeople: MockPerson[],
   faceCreateCapture: FaceCreateCapture,
+  state: FaceTaggerMockState = createFaceTaggerMockState(),
 ) => {
   await context.route('**/api/people?*', async (route, request) => {
     if (request.method() !== 'GET') {
@@ -99,18 +171,84 @@ export const setupFaceEditorMockApiRoutes = async (
     });
   });
 
-  await context.route('**/api/faces', async (route, request) => {
+  await context.route('**/api/people', async (route, request) => {
+    if (request.method() !== 'POST') {
+      return route.fallback();
+    }
+
+    const body = request.postDataJSON() as { name: string };
+    faceCreateCapture.people.push(body);
+    const person: MockPerson = {
+      id: `created-person-${faceCreateCapture.people.length}`,
+      name: body.name,
+      birthDate: null,
+      isHidden: false,
+      thumbnailPath: '',
+      updatedAt: '2025-01-01T00:00:00.000Z',
+    };
+
+    return route.fulfill({ status: 201, contentType: 'application/json', json: person });
+  });
+
+  await context.route(/\/api\/faces\?/, async (route, request) => {
+    if (request.method() !== 'GET') {
+      return route.fallback();
+    }
+
+    state.faceReads++;
+    return route.fulfill({ status: 200, contentType: 'application/json', json: state.faces });
+  });
+
+  await context.route(/\/api\/faces\/source\?/, async (route) => {
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      json: { assetId: new URL(route.request().url()).searchParams.get('id'), revision: state.sourceRevision },
+    });
+  });
+
+  await context.route(/\/api\/faces$/, async (route, request) => {
     if (request.method() !== 'POST') {
       return route.fallback();
     }
 
     const body = request.postDataJSON();
     faceCreateCapture.requests.push(body);
+    if (state.conflictOnCreate) {
+      state.conflictOnCreate = false;
+      state.sourceRevision = state.sourceRevisionAfterConflict ?? state.sourceRevision;
+      return conflict(route);
+    }
 
+    const face: MockFace = {
+      ...createMockDetectedFace(mockPeople.find((person) => person.id === body.personId) ?? null),
+      id: `manual-face-${faceCreateCapture.requests.length}`,
+      sourceType: 'manual',
+    };
+    return route.fulfill({ status: 201, contentType: 'application/json', json: face });
+  });
+
+  await context.route(/\/api\/faces\/[^/?]+$/, async (route, request) => {
+    const id = new URL(request.url()).pathname.split('/').at(-1)!;
+    const body = (request.postDataJSON() ?? {}) as Record<string, unknown>;
+    if (request.method() === 'DELETE') {
+      state.deletes.push({ id, body });
+      return route.fulfill({ status: 204 });
+    }
+    if (request.method() !== 'PATCH') {
+      return route.fallback();
+    }
+
+    state.corrections.push({ id, body });
+    if (state.conflictOnCorrect) {
+      state.conflictOnCorrect = false;
+      return conflict(route);
+    }
+    const face = state.faces.find((row) => row.id === id) ?? createMockDetectedFace(null, id);
     return route.fulfill({
-      status: 201,
-      contentType: 'text/plain',
-      body: 'OK',
+      status: 200,
+      contentType: 'application/json',
+      json: { ...face, revision: `${id}-rev-2`, correctedAt: '2026-09-25T00:00:00.000Z' },
     });
   });
 

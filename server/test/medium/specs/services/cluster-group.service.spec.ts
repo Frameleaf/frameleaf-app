@@ -1,5 +1,7 @@
 import { Kysely } from 'kysely';
+import { AlbumKind, AlbumUserRole } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
+import { AlbumUserRepository } from 'src/repositories/album-user.repository.js';
 import { ClusterGroupRepository } from 'src/repositories/cluster-group.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -259,6 +261,56 @@ describe(ClusterGroupService.name, () => {
         'Cannot leave a cluster group without any other members',
       );
       await expect(getClusterGroupId(ctx, user.id)).resolves.toBe(clusterGroupId);
+    });
+  });
+
+  describe('shared spaces are untouched by recognition groups (FL-54)', () => {
+    it('never adds, removes or changes a space membership or invitation when someone joins or leaves', async () => {
+      const { sut, ctx } = setup();
+      const { user: owner } = await ctx.newUser();
+      const { user: member } = await ctx.newUser();
+      const { user: invited } = await ctx.newUser();
+      const { album: space } = await ctx.newAlbum({ ownerId: owner.id, kind: AlbumKind.Space });
+      await ctx.newAlbumUser({ albumId: space.id, userId: member.id, role: AlbumUserRole.Viewer });
+      await ctx.get(AlbumUserRepository).createInvite({
+        albumId: space.id,
+        userId: invited.id,
+        role: AlbumUserRole.Editor,
+        invitedById: owner.id,
+      });
+      const membership = () =>
+        ctx.database
+          .selectFrom('album_user')
+          .select(['album_user.userId', 'album_user.role'])
+          .where('album_user.albumId', '=', space.id)
+          .orderBy('album_user.userId')
+          .execute();
+      const invitations = () =>
+        ctx.database
+          .selectFrom('shared_space_invite')
+          .select(['shared_space_invite.userId', 'shared_space_invite.role'])
+          .where('shared_space_invite.albumId', '=', space.id)
+          .execute();
+      const before = { members: await membership(), invites: await invitations() };
+
+      // The space's owner brings the member into their recognition group…
+      const clusterGroupId = await getClusterGroupId(ctx, owner.id);
+      const { value: request } = await sut.createRequest(factory.auth({ user: owner }), clusterGroupId, {
+        userId: member.id,
+      });
+      await sut.acceptRequest(factory.auth({ user: member }), request.id);
+      // …and the invitee into it too, who has not answered the space's invitation.
+      const { value: second } = await sut.createRequest(factory.auth({ user: owner }), clusterGroupId, {
+        userId: invited.id,
+      });
+      await sut.acceptRequest(factory.auth({ user: invited }), second.id);
+      await expect(membership()).resolves.toEqual(before.members);
+      await expect(invitations()).resolves.toEqual(before.invites);
+
+      // Leaving the recognition group takes nobody out of the space either.
+      await sut.leave(factory.auth({ user: member }), clusterGroupId);
+      await expect(membership()).resolves.toEqual(before.members);
+      await expect(invitations()).resolves.toEqual(before.invites);
     });
   });
 

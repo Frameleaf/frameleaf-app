@@ -49,7 +49,7 @@ export class ForkConfigRepository {
       }
       config = validated.data;
       const values = [
-        { key: 'machineLearning.runpod', value: config.machineLearning?.runpod ?? {} },
+        { key: 'frameleafCloud', value: config.frameleafCloud ?? {} },
         { key: 'smartAlbums', value: config.smartAlbums ?? {} },
       ];
       for (const row of values) {
@@ -63,7 +63,7 @@ export class ForkConfigRepository {
     if (!isForkWriteEnabled(await this.getPhase(kysely))) {
       return;
     }
-    await this.writeSidecarConfig('machineLearning.runpod', config.machineLearning?.runpod ?? {}, kysely);
+    await this.writeSidecarConfig('frameleafCloud', config.frameleafCloud ?? {}, kysely);
     await this.writeSidecarConfig('smartAlbums', config.smartAlbums ?? {}, kysely);
   }
 

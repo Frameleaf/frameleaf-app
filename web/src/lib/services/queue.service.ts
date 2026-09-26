@@ -6,11 +6,10 @@ import {
   runQueueCommandLegacy,
   updateQueue,
   type QueueResponseDto,
+  retryFailedQueueJobs,
 } from '@immich/sdk';
-import { modalManager, toastManager, type ActionItem, type IconLike } from '@immich/ui';
+import { type IconLike } from '@immich/ui';
 import {
-  mdiClose,
-  mdiCog,
   mdiContentDuplicate,
   mdiDatabaseOutline,
   mdiFaceRecognition,
@@ -22,29 +21,18 @@ import {
   mdiImageBrokenVariant,
   mdiLibraryShelves,
   mdiOcr,
-  mdiPause,
+  mdiPaw,
   mdiPencil,
-  mdiPlay,
-  mdiPlus,
   mdiStateMachine,
   mdiShieldSearch,
   mdiTable,
   mdiTagFaces,
   mdiTextBoxSearchOutline,
-  mdiTrashCanOutline,
   mdiTrayFull,
   mdiVideo,
 } from '@mdi/js';
 import type { MessageFormatter } from 'svelte-i18n';
-import { goto } from '$app/navigation';
-import { OpenQueryParam } from '$lib/constants';
 import { eventManager } from '$lib/managers/event-manager.svelte';
-import { queueManager } from '$lib/managers/queue-manager.svelte';
-import JobCreateModal from '$lib/modals/JobCreateModal.svelte';
-import { Route } from '$lib/route';
-import type { HeaderButtonActionItem } from '$lib/types';
-import { handleError } from '$lib/utils/handle-error';
-import { getFormatter } from '$lib/utils/i18n';
 
 type QueueItem = {
   icon: IconLike;
@@ -52,119 +40,49 @@ type QueueItem = {
   subtitle?: string;
 };
 
-export const getQueuesActions = ($t: MessageFormatter, queues: QueueResponseDto[] | undefined) => {
-  const pausedQueues = (queues ?? []).filter(({ isPaused }) => isPaused).map(({ name }) => name);
+/*
+ * Queue commands (FL-71). The Job manager (`JobsManager.svelte`) sends every one of them through
+ * its review, including from the command palette; these only talk to the server and announce the
+ * queue's new state.
+ */
 
-  const ResumePaused: HeaderButtonActionItem = {
-    title: $t('resume_paused_jobs', { values: { count: pausedQueues.length } }),
-    $if: () => pausedQueues.length > 0,
-    icon: mdiPlay,
-    onAction: () => handleResumePausedJobs(pausedQueues),
-    data: {
-      title: pausedQueues.join(', '),
-    },
-  };
-
-  const CreateJob: ActionItem = {
-    icon: mdiPlus,
-    title: $t('admin.create_job'),
-    shortcuts: { shift: true, key: 'n' },
-    onAction: () => modalManager.show(JobCreateModal, {}),
-  };
-
-  const ManageConcurrency: ActionItem = {
-    icon: mdiCog,
-    title: $t('admin.manage_concurrency'),
-    description: $t('admin.manage_concurrency_description'),
-    onAction: () => goto(Route.systemSettings({ isOpen: OpenQueryParam.JOB })),
-  };
-
-  return { ResumePaused, ManageConcurrency, CreateJob };
-};
-
-export const getQueueActions = ($t: MessageFormatter, queue: QueueResponseDto) => {
-  const Pause: ActionItem = {
-    icon: mdiPause,
-    title: $t('pause'),
-    $if: () => !queue.isPaused,
-    onAction: () => handlePauseQueue(queue),
-  };
-
-  const Resume: ActionItem = {
-    icon: mdiPlay,
-    title: $t('resume'),
-    $if: () => queue.isPaused,
-    onAction: () => handleResumeQueue(queue),
-  };
-
-  const Empty: ActionItem = {
-    icon: mdiClose,
-    title: $t('clear'),
-    onAction: () => handleEmptyQueue(queue),
-  };
-
-  const RemoveFailedJobs: ActionItem = {
-    icon: mdiTrashCanOutline,
-    color: 'danger',
-    title: $t('admin.remove_failed_jobs'),
-    onAction: () => handleRemoveFailedJobs(queue),
-  };
-
-  return { Pause, Resume, Empty, RemoveFailedJobs };
-};
-
-export const handlePauseQueue = async (queue: QueueResponseDto) => {
+export const handlePauseQueue = async (queue: Pick<QueueResponseDto, 'name'>) => {
   const response = await updateQueue({ name: queue.name, queueUpdateDto: { isPaused: true } });
   eventManager.emit('QueueUpdate', response);
 };
 
-export const handleResumeQueue = async (queue: QueueResponseDto) => {
+export const handleResumeQueue = async (queue: Pick<QueueResponseDto, 'name'>) => {
   const response = await updateQueue({ name: queue.name, queueUpdateDto: { isPaused: false } });
   eventManager.emit('QueueUpdate', response);
 };
 
-export const handleEmptyQueue = async (queue: QueueResponseDto) => {
-  const $t = await getFormatter();
-  const item = asQueueItem($t, queue);
-
-  try {
-    await emptyQueue({ name: queue.name, queueDeleteDto: { failed: false } });
-    const response = await getQueue({ name: queue.name });
-    eventManager.emit('QueueUpdate', response);
-    toastManager.primary($t('admin.cleared_jobs', { values: { job: item.title } }));
-  } catch (error) {
-    handleError(error, $t('errors.something_went_wrong'));
-  }
+/** Removes the queue's waiting jobs; active, delayed and failed jobs remain. */
+export const handleClearWaitingJobs = async (queue: Pick<QueueResponseDto, 'name'>) => {
+  await emptyQueue({ name: queue.name, queueDeleteDto: { failed: false } });
+  eventManager.emit('QueueUpdate', await getQueue({ name: queue.name }));
 };
 
-const handleResumePausedJobs = async (queues: QueueName[]) => {
-  const $t = await getFormatter();
-
-  try {
-    for (const name of queues) {
-      await runQueueCommandLegacy({ name, queueCommandDto: { command: QueueCommand.Resume, force: false } });
-    }
-    await queueManager.refresh();
-  } catch (error) {
-    handleError(error, $t('admin.failed_job_command', { values: { command: 'resume', job: 'paused jobs' } }));
-  }
+/**
+ * Removes the queue's failed job records (at most 1,000 per request); waiting, delayed and active
+ * jobs remain. Only the queue command clears failed jobs alone: `emptyQueue` with `failed` also
+ * drains the waiting jobs.
+ */
+export const handleClearFailedJobs = async (queue: Pick<QueueResponseDto, 'name'>) => {
+  await runQueueCommandLegacy({
+    name: queue.name,
+    queueCommandDto: { command: QueueCommand.ClearFailed, force: false },
+  });
+  eventManager.emit('QueueUpdate', await getQueue({ name: queue.name }));
 };
 
-const handleRemoveFailedJobs = async (queue: QueueResponseDto) => {
-  const $t = await getFormatter();
-
-  try {
-    await emptyQueue({ name: queue.name, queueDeleteDto: { failed: true } });
-    const response = await getQueue({ name: queue.name });
-    eventManager.emit('QueueUpdate', response);
-    toastManager.primary();
-  } catch (error) {
-    handleError(error, $t('errors.something_went_wrong'));
-  }
+/** FL-71 "Retry failed" (`JobsManager.jsx` 715-727): every failed job goes back in the queue. */
+export const handleRetryFailedJobs = async (queue: Pick<QueueResponseDto, 'name'>) => {
+  await retryFailedQueueJobs({ name: queue.name });
+  eventManager.emit('QueueUpdate', await getQueue({ name: queue.name }));
 };
 
 export const asQueueItem = ($t: MessageFormatter, queue: { name: QueueName }): QueueItem => {
-  // TODO merge this mapping with data from QueuePanel.svelte
+  // The Job manager's own titles and categories are in $lib/frameleaf/job-queues (FL-71).
   const items: Record<QueueName, QueueItem> = {
     [QueueName.ThumbnailGeneration]: {
       icon: mdiFileJpgBox,
@@ -277,6 +195,11 @@ export const asQueueItem = ($t: MessageFormatter, queue: { name: QueueName }): Q
     [QueueName.Editor]: {
       icon: mdiPencil,
       title: $t('editor'),
+    },
+    [QueueName.PetRecognition]: {
+      icon: mdiPaw,
+      title: $t('frameleaf_jobs_queue_pet_recognition'),
+      subtitle: $t('frameleaf_jobs_queue_pet_recognition_description'),
     },
   };
 

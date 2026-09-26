@@ -20,6 +20,7 @@ import {
 } from 'src/enum.js';
 import { hexOrBufferToBase64 } from 'src/utils/bytes.js';
 import { asDateTimeString } from 'src/utils/date.js';
+import { effectiveVisibilityOf } from 'src/utils/locked.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 
 const SanitizedAssetResponseSchema = z
@@ -64,7 +65,7 @@ export const AssetResponseSchema = SanitizedAssetResponseSchema.extend(
     createdAt: z
       .string()
       .meta({ format: 'date-time' })
-      .describe('The UTC timestamp when the asset was originally uploaded to Immich.'),
+      .describe('The UTC timestamp when the asset was originally uploaded to Frameleaf.'),
     ownerId: z.uuidv4().describe('Owner user ID'),
     owner: UserResponseSchema.optional(),
     libraryId: z
@@ -143,6 +144,8 @@ export type MapAsset = {
   isFavorite: boolean;
   isOffline: boolean;
   visibility: AssetVisibility;
+  /** FL-34: selected by reads that know the lock (`isLocked()` in `src/utils/locked.ts`) */
+  isLocked?: boolean | null;
   libraryId: string | null;
   livePhotoVideoId: string | null;
   localDateTime: Date;
@@ -196,6 +199,8 @@ const mapStack = (entity: { stack?: Stack | null }) => {
 
 export function mapAsset(entity: MaybeDehydrated<MapAsset>, options: AssetMapOptions = {}): AssetResponseDto {
   const { stripMetadata = false, withStack = false } = options;
+  // FL-34: `locked` for a locked asset, whatever its stored visibility
+  const visibility = effectiveVisibilityOf(entity);
 
   if (stripMetadata) {
     const sanitizedAssetResponse: SanitizedAssetResponseDto = {
@@ -229,9 +234,9 @@ export function mapAsset(entity: MaybeDehydrated<MapAsset>, options: AssetMapOpt
     localDateTime: asDateTimeString(entity.localDateTime),
     updatedAt: asDateTimeString(entity.updatedAt),
     isFavorite: options.auth?.user.id === entity.ownerId && entity.isFavorite,
-    isArchived: entity.visibility === AssetVisibility.Archive,
+    isArchived: visibility === AssetVisibility.Archive,
     isTrashed: !!entity.deletedAt,
-    visibility: entity.visibility,
+    visibility,
     duration: entity.duration,
     exifInfo: entity.exifInfo ? mapExif(entity.exifInfo) : undefined,
     livePhotoVideoId: entity.livePhotoVideoId,

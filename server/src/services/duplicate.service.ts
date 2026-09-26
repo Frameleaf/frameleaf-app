@@ -14,6 +14,7 @@ import {
   AssetVisibility,
   JobName,
   JobStatus,
+  MlWorkload,
   Permission,
   QueueName,
   StorageFolder,
@@ -23,6 +24,7 @@ import { AssetDuplicateResult } from 'src/repositories/search.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { suggestDuplicateKeepAssetIds } from 'src/utils/duplicate.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import { effectiveVisibilityOf } from 'src/utils/locked.js';
 import { ThumbnailConfig } from 'src/utils/media.js';
 import { batched, isDuplicateDetectionEnabled } from 'src/utils/misc.js';
 
@@ -279,6 +281,14 @@ export class DuplicateService extends BaseService {
       }
 
       await this.assetRepository.updateAll(idsToKeep, { duplicateId: null, ...assetUpdate });
+      if (assetUpdate.visibility === AssetVisibility.Locked) {
+        // a kept copy that became Locked is no longer a face thumbnail or profile picture (FL-53)
+        await this.afterAssetsLocked(idsToKeep);
+        // give every stack sibling the cascade also locked the same real-time update the kept copies
+        // get, so an open web client reflects the whole stack at once (FL-53, `locked-stacks.ts`)
+        const siblingIds = (await this.assetRepository.getStackSiblingIds(idsToKeep)) ?? [];
+        await this.notifyAssetsUpdated([...idsToKeep, ...siblingIds], auth.user.id);
+      }
     } else if (idsToKeep.length > 0) {
       await this.assetRepository.updateAll(idsToKeep, { duplicateId: null });
     }
@@ -315,7 +325,8 @@ export class DuplicateService extends BaseService {
     response.assetUpdate.isFavorite = assets.some((asset) => asset.isFavorite);
 
     const visibilityOrder = [AssetVisibility.Locked, AssetVisibility.Archive, AssetVisibility.Timeline];
-    let visibility = visibilityOrder.find((level) => assets.some((asset) => asset.visibility === level));
+    // `locked` is the lock record (FL-34); `updateAll` turns it into a lock on the kept copy
+    let visibility = visibilityOrder.find((level) => assets.some((asset) => effectiveVisibilityOf(asset) === level));
     if (!visibility && assets.some((asset) => asset.visibility === AssetVisibility.Hidden)) {
       visibility = AssetVisibility.Hidden;
     }
@@ -372,8 +383,9 @@ export class DuplicateService extends BaseService {
 
   @OnJob({ name: JobName.AssetDetectDuplicatesQueueAll, queue: QueueName.DuplicateDetection })
   async handleQueueSearchDuplicates({ force }: JobOf<JobName.AssetDetectDuplicatesQueueAll>): Promise<JobStatus> {
-    const { machineLearning } = await this.getConfig({ withCache: false });
-    if (!isDuplicateDetectionEnabled(machineLearning)) {
+    const { machineLearning, libraryCare } = await this.getConfig({ withCache: false });
+    // Library care → "Group near-duplicates for review" (FL-69, settings-catalog.mjs:951-956).
+    if (!isDuplicateDetectionEnabled(machineLearning) || !libraryCare.duplicateReview) {
       return JobStatus.Skipped;
     }
 
@@ -471,7 +483,12 @@ export class DuplicateService extends BaseService {
 
       try {
         await this.mediaRepository.transcode(asset.originalPath, path, command);
-        const embedding = await this.machineLearningRepository.encodeImage(path, machineLearning.clip);
+        const selection = await this.selectRoutedMlDestination({
+          workload: MlWorkload.Clip,
+          jobId: asset.id,
+          jobName: JobName.AssetGenerateVideoDuplicateFrames,
+        });
+        const embedding = await this.machineLearningRepository.encodeImage(selection, path, machineLearning.clip);
 
         frames.push({
           assetId: asset.id,
@@ -517,8 +534,8 @@ export class DuplicateService extends BaseService {
 
   @OnJob({ name: JobName.AssetDetectDuplicates, queue: QueueName.DuplicateDetection })
   async handleSearchDuplicates({ id }: JobOf<JobName.AssetDetectDuplicates>): Promise<JobStatus> {
-    const { machineLearning } = await this.getConfig({ withCache: true });
-    if (!isDuplicateDetectionEnabled(machineLearning)) {
+    const { machineLearning, libraryCare } = await this.getConfig({ withCache: true });
+    if (!isDuplicateDetectionEnabled(machineLearning) || !libraryCare.duplicateReview) {
       return JobStatus.Skipped;
     }
 

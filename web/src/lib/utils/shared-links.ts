@@ -37,7 +37,9 @@ export const loadSharedLink = async ({
       : getMySharedLink({ key, slug });
 
   try {
-    const [sharedLink, asset] = await Promise.all([sharedLinkPromise, getAssetInfoFromParam(params)]);
+    // The link answers first: a password gate or a gone link wins over whatever the item request says.
+    const sharedLink = await sharedLinkPromise;
+    const asset = await getAssetInfoFromParam(params);
     setSharedLink(sharedLink);
     const assetCount = sharedLink.assets.length;
     const assetId = sharedLink.album?.albumThumbnailAssetId || sharedLink.assets[0]?.id;

@@ -7,7 +7,17 @@ select
   "asset_exif"."longitude" as "lon",
   "asset_exif"."city",
   "asset_exif"."state",
-  "asset_exif"."country"
+  "asset_exif"."country",
+  "asset"."originalFileName",
+  "asset"."type",
+  to_char(
+    "asset"."fileCreatedAt" at time zone 'UTC',
+    'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'
+  ) as "fileCreatedAt",
+  to_char(
+    "asset"."localDateTime" at time zone 'UTC',
+    'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'
+  ) as "localDateTime"
 from
   "asset"
   inner join "asset_exif" on "asset"."id" = "asset_exif"."assetId"
@@ -17,8 +27,19 @@ from
 where
   "asset"."deletedAt" is null
   and "album_asset"."albumId" = $1
+  and (
+    "asset"."visibility" in ('archive', 'timeline')
+    and not exists (
+      select
+        1
+      from
+        asset_lock
+      where
+        asset_lock."assetId" = "asset"."id"
+    )
+  )
 order by
-  "fileCreatedAt" desc
+  "asset"."fileCreatedAt" desc
 
 -- MapRepository.getMapMarkers
 select
@@ -27,7 +48,17 @@ select
   "asset_exif"."longitude" as "lon",
   "asset_exif"."city",
   "asset_exif"."state",
-  "asset_exif"."country"
+  "asset_exif"."country",
+  "asset"."originalFileName",
+  "asset"."type",
+  to_char(
+    "asset"."fileCreatedAt" at time zone 'UTC',
+    'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'
+  ) as "fileCreatedAt",
+  to_char(
+    "asset"."localDateTime" at time zone 'UTC',
+    'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'
+  ) as "localDateTime"
 from
   "asset"
   inner join "asset_exif" on "asset"."id" = "asset_exif"."assetId"
@@ -35,17 +66,39 @@ from
   and "asset_exif"."longitude" is not null
 where
   "asset"."deletedAt" is null
-  and "asset"."visibility" = $1
   and (
-    "ownerId" in ($2)
+    "asset"."visibility" = 'timeline'
+    and not exists (
+      select
+        1
+      from
+        asset_lock
+      where
+        asset_lock."assetId" = "asset"."id"
+    )
+  )
+  and (
+    "ownerId" in ($1)
     or exists (
       select
       from
         "album_asset"
+        inner join "album_user" as "album_owner" on "album_owner"."albumId" = "album_asset"."albumId"
+        and "album_owner"."role" = 'owner'
       where
         "asset"."id" = "album_asset"."assetId"
-        and "album_asset"."albumId" in ($3)
+        and "album_asset"."albumId" in ($2)
+        and not exists (
+          select
+          from
+            "partner"
+          where
+            "partner"."sharedById" = "asset"."ownerId"
+            and "partner"."sharedWithId" = "album_owner"."userId"
+            and "partner"."sharedById" != "partner"."sharedWithId"
+            and "partner"."shareLocation" = $3
+        )
     )
   )
 order by
-  "fileCreatedAt" desc
+  "asset"."fileCreatedAt" desc

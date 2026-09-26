@@ -1,11 +1,15 @@
 import { AssetTypeEnum, getAssetInfo } from '@immich/sdk';
 import { toastManager } from '@immich/ui';
 import { mdiTune } from '@mdi/js';
+import { get } from 'svelte/store';
 import { vitest } from 'vitest';
+import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { getAssetActions, handleDownloadAsset } from '$lib/services/asset.service';
+import { SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
+import * as utils from '$lib/utils';
 import { setSharedLink } from '$lib/utils';
-import { getFormatter } from '$lib/utils/i18n';
+import { downloadAssetFile } from '$lib/utils/asset-utils';
 import { assetFactory } from '@test-data/factories/asset-factory';
 import { preferencesFactory } from '@test-data/factories/preferences-factory';
 import { sharedLinkFactory } from '@test-data/factories/shared-link-factory';
@@ -23,6 +27,11 @@ vitest.mock('$lib/utils/i18n', () => ({
 }));
 
 vitest.mock('@immich/sdk');
+
+vitest.mock('$lib/utils/asset-utils', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$lib/utils/asset-utils')>()),
+  downloadAssetFile: vitest.fn(),
+}));
 
 vitest.mock('$lib/utils', async () => {
   const originalModule = await vitest.importActual('$lib/utils');
@@ -89,6 +98,19 @@ describe('AssetService', () => {
       setSharedLink(sharedLinkFactory.build({ allowDownload: true }));
       const assetActions = getAssetActions(() => '', asset);
       expect(assetActions.SharedLinkDownload.$if?.()).toStrictEqual(true);
+    });
+
+    it('should pause a running slideshow when T opens the tag box (MediaViewer.jsx:803-807)', () => {
+      setOwnerUser();
+      const asset = assetFactory.build({ ownerId, isTrashed: false });
+      slideshowStore.slideshowState.set(SlideshowState.PlaySlideshow);
+      getAssetActions(() => '', asset).Tag.onAction?.({} as never);
+      expect(get(slideshowStore.slideshowState)).toBe(SlideshowState.PauseSlideshow);
+      expect(assetViewerManager.focusRequest).toBe('tags');
+      slideshowStore.slideshowState.set(SlideshowState.None);
+      getAssetActions(() => '', asset).Tag.onAction?.({} as never);
+      expect(get(slideshowStore.slideshowState)).toBe(SlideshowState.None);
+      assetViewerManager.focusRequest = null;
     });
 
     it('should allow editing owned videos with dimensions and duration', () => {
@@ -160,25 +182,49 @@ describe('AssetService', () => {
   });
 
   describe('handleDownloadAsset', () => {
-    it('should use the asset originalFileName when showing toasts', async () => {
-      const $t = vitest.fn().mockReturnValue('formatter');
-      vitest.mocked(getFormatter).mockResolvedValue($t);
-      const asset = assetFactory.build({ originalFileName: 'asset.heic' });
-      await handleDownloadAsset(asset, { edited: false });
-      expect($t).toHaveBeenNthCalledWith(1, 'downloading_asset_filename', { values: { filename: 'asset.heic' } });
-      expect(toastManager.primary).toHaveBeenCalledWith('formatter');
+    beforeEach(() => {
+      vitest.clearAllMocks();
     });
 
-    it('should use the motion asset originalFileName when showing toasts', async () => {
-      const $t = vitest.fn().mockReturnValue('formatter');
-      vitest.mocked(getFormatter).mockResolvedValue($t);
+    // FL-45 D-3: a single download goes through the download panel, one row per file.
+    it('adds the asset to the download panel under its originalFileName', async () => {
+      const asset = assetFactory.build({ originalFileName: 'asset.heic', livePhotoVideoId: null });
+      await handleDownloadAsset(asset, { edited: false });
+      expect(downloadAssetFile).toHaveBeenCalledTimes(1);
+      expect(downloadAssetFile).toHaveBeenCalledWith(
+        expect.objectContaining({ id: asset.id, filename: 'asset.heic', edited: false }),
+      );
+      expect(toastManager.primary).not.toHaveBeenCalled();
+    });
+
+    it('saves the file directly on a public share, as its lightbox does (PublicViewer.jsx:508-517)', async () => {
+      const downloadUrl = vitest.spyOn(utils, 'downloadUrl').mockImplementation(() => {});
+      const isSharedLink = vitest.spyOn(authManager, 'isSharedLink', 'get').mockReturnValue(true);
+      try {
+        const asset = assetFactory.build({ originalFileName: 'shared.heic', livePhotoVideoId: null });
+        await handleDownloadAsset(asset, { edited: false });
+        expect(downloadAssetFile).not.toHaveBeenCalled();
+        // `@immich/sdk` is mocked here, so only the file name is meaningful.
+        expect(downloadUrl).toHaveBeenCalledWith(expect.any(String), 'shared.heic');
+      } finally {
+        isSharedLink.mockRestore();
+        downloadUrl.mockRestore();
+      }
+    });
+
+    it('adds the motion part as its own row with a -motion name', async () => {
       const motionAsset = assetFactory.build({ originalFileName: 'asset.mov' });
       vitest.mocked(getAssetInfo).mockResolvedValue(motionAsset);
       const asset = assetFactory.build({ originalFileName: 'asset.heic', livePhotoVideoId: '1' });
-      await handleDownloadAsset(asset, { edited: false });
-      expect($t).toHaveBeenNthCalledWith(1, 'downloading_asset_filename', { values: { filename: 'asset.heic' } });
-      expect($t).toHaveBeenNthCalledWith(2, 'downloading_asset_filename', { values: { filename: 'asset-motion.mov' } });
-      expect(toastManager.primary).toHaveBeenCalledWith('formatter');
+      await handleDownloadAsset(asset, { edited: true });
+      expect(downloadAssetFile).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({ id: asset.id, filename: 'asset.heic', edited: true }),
+      );
+      expect(downloadAssetFile).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({ id: '1', filename: 'asset-motion.mov', edited: true }),
+      );
     });
   });
 });

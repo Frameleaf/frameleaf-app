@@ -1,7 +1,8 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
-import type { ArgOf } from 'src/repositories/event.repository.js';
+import type { AdminNotice, ArgOf } from 'src/repositories/event.repository.js';
 import type { EmailImageAttachment, JobOf, UserMetadataItem } from 'src/types.js';
+import { JOBS_WITH_SENSITIVE_DATA } from 'src/constants.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import { MapAlbumDto } from 'src/dtos/album.dto.js';
 import { mapAsset } from 'src/dtos/asset-response.dto.js';
@@ -27,7 +28,7 @@ import { EmailTemplate } from 'src/repositories/email.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { getFilenameExtension } from 'src/utils/file.js';
 import { type HiddenContentFilter, hasHiddenContentFilter } from 'src/utils/hidden-content.js';
-import { getExternalDomain, isNsfwHidingEnabled } from 'src/utils/misc.js';
+import { isNsfwHidingEnabled } from 'src/utils/misc.js';
 import { isEqualObject } from 'src/utils/object.js';
 import { getPreferences } from 'src/utils/preferences.js';
 
@@ -86,7 +87,9 @@ export class NotificationService extends BaseService {
       return;
     }
 
-    this.logger.error(`Unable to run job handler (${job.name}): ${error}`, error?.stack, JSON.stringify(job.data));
+    // FL-71: the signup notice and its mail carry a password, which never goes to the log
+    const data = JOBS_WITH_SENSITIVE_DATA.has(job.name) ? '[redacted]' : JSON.stringify(job.data);
+    this.logger.error(`Unable to run job handler (${job.name}): ${error}`, error?.stack, data);
 
     switch (job.name) {
       case JobName.DatabaseBackup: {
@@ -251,6 +254,107 @@ export class NotificationService extends BaseService {
     this.websocketRepository.clientSend('on_notification', userId, mapNotification(item));
   }
 
+  /**
+   * Somebody was named in a shared space comment (FL-55). One in-app
+   * notification per mentioned member, through the same repository and socket
+   * as every other notification. This reads only the space's name — never an
+   * asset — so it runs for every comment whatever the item's visibility, and
+   * needs no elevated session; the client decides what to show when the
+   * notification is opened.
+   */
+  @OnEvent({ name: 'SharedSpaceMention' })
+  async onSharedSpaceMention({ id, assetId, activityId, userIds, senderName }: ArgOf<'SharedSpaceMention'>) {
+    const album = await this.albumRepository.getById(id, { withAssets: false });
+    if (!album) {
+      return;
+    }
+
+    for (const userId of userIds) {
+      const item = await this.notificationRepository.create({
+        userId,
+        type: NotificationType.SharedSpaceMention,
+        level: NotificationLevel.Info,
+        title: 'Mentioned in a shared space',
+        description: `${senderName} mentioned you in ${album.albumName}`,
+        data: JSON.stringify({ albumId: id, assetId, activityId }),
+      });
+
+      this.websocketRepository.clientSend('on_notification', userId, mapNotification(item));
+    }
+  }
+
+  /**
+   * Somebody answered a member's comment in a shared space (FL-55, threaded
+   * replies). One in-app notification to the author of the comment that was
+   * answered, and no email, as for mentions. Like the mention handler this
+   * reads only the space's name, never an asset, so it needs no elevated
+   * session; the service has already checked the recipient is still a member.
+   */
+  @OnEvent({ name: 'SharedSpaceReply' })
+  async onSharedSpaceReply({
+    id,
+    assetId,
+    activityId,
+    parentActivityId,
+    userId,
+    senderName,
+  }: ArgOf<'SharedSpaceReply'>) {
+    const album = await this.albumRepository.getById(id, { withAssets: false });
+    if (!album) {
+      return;
+    }
+
+    const item = await this.notificationRepository.create({
+      userId,
+      type: NotificationType.SharedSpaceReply,
+      level: NotificationLevel.Info,
+      title: 'Reply in a shared space',
+      description: `${senderName} replied to your comment in ${album.albumName}`,
+      data: JSON.stringify({ albumId: id, assetId, activityId, parentActivityId }),
+    });
+
+    this.websocketRepository.clientSend('on_notification', userId, mapNotification(item));
+  }
+
+  /**
+   * FL-155: one notice to every administrator. With a `dedupeKey`, an administrator who already got
+   * a notice with that key in the last `dedupeDays` (1 to 30, default 7) is skipped, so a repeating
+   * condition (a failing check-in, a clone warning) notifies once per window.
+   */
+  async notifyAdmins(notice: AdminNotice): Promise<number> {
+    const days = Math.min(30, Math.max(1, Math.floor(notice.dedupeDays ?? 7)));
+    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+    let sent = 0;
+    for (const admin of await this.userRepository.getAdmins()) {
+      if (
+        notice.dedupeKey &&
+        (await this.notificationRepository.findRecentByDedupeKey(admin.id, notice.dedupeKey, since))
+      ) {
+        continue;
+      }
+      const item = await this.notificationRepository.create({
+        userId: admin.id,
+        type: notice.type,
+        level: notice.level,
+        title: notice.title,
+        description: notice.description,
+        data: notice.dedupeKey ? { dedupeKey: notice.dedupeKey } : null,
+      });
+      this.websocketRepository.clientSend('on_notification', admin.id, mapNotification(item));
+      sent++;
+    }
+    return sent;
+  }
+
+  @OnEvent({ name: 'AdminNotify' })
+  async onAdminNotify(notice: ArgOf<'AdminNotify'>) {
+    try {
+      await this.notifyAdmins(notice);
+    } catch (error) {
+      this.logger.warn(`Unable to notify administrators (${notice.title}): ${error}`);
+    }
+  }
+
   @OnEvent({ name: 'SessionDelete' })
   onSessionDelete({ sessionId }: ArgOf<'SessionDelete'>) {
     // after the response is sent
@@ -273,14 +377,14 @@ export class NotificationService extends BaseService {
     const { html, text } = await this.emailRepository.renderEmail({
       template: EmailTemplate.TEST_EMAIL,
       data: {
-        baseUrl: getExternalDomain(server),
+        baseUrl: await this.getPublicUrl(server),
         displayName: user.name,
       },
       customTemplate: tempTemplate!,
     });
     const { messageId } = await this.emailRepository.sendEmail({
       to: user.email,
-      subject: 'Test email from Immich',
+      subject: 'Test email from Frameleaf',
       html,
       text,
       from: dto.from,
@@ -302,7 +406,7 @@ export class NotificationService extends BaseService {
     const { html, text } = await this.emailRepository.renderEmail({
       template: EmailTemplate.WELCOME,
       data: {
-        baseUrl: getExternalDomain(server),
+        baseUrl: await this.getPublicUrl(server),
         displayName: user.name,
         username: user.email,
         password,
@@ -314,7 +418,7 @@ export class NotificationService extends BaseService {
       name: JobName.SendMail,
       data: {
         to: user.email,
-        subject: 'Welcome to Immich',
+        subject: 'Welcome to Frameleaf',
         html,
         text,
       },
@@ -349,7 +453,7 @@ export class NotificationService extends BaseService {
     const { html, text } = await this.emailRepository.renderEmail({
       template: EmailTemplate.ALBUM_INVITE,
       data: {
-        baseUrl: getExternalDomain(server),
+        baseUrl: await this.getPublicUrl(server),
         albumId: album.id,
         albumName: album.albumName,
         senderName,
@@ -406,7 +510,7 @@ export class NotificationService extends BaseService {
     const { html, text } = await this.emailRepository.renderEmail({
       template: EmailTemplate.ALBUM_UPDATE,
       data: {
-        baseUrl: getExternalDomain(server),
+        baseUrl: await this.getPublicUrl(server),
         albumId: album.id,
         albumName: album.albumName,
         recipientName: user.name,
@@ -498,6 +602,7 @@ export class NotificationService extends BaseService {
       includeNsfw: isNsfwHidingEnabled(machineLearning),
       tagIds: suppression.tagIds,
       personIds: suppression.personIds,
+      petIds: suppression.petIds,
       scope: suppression.scope,
     };
   }

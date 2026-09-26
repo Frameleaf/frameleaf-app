@@ -25,6 +25,7 @@ describe('iCloud source-owned Stack and Live Photo reconciliation (PostgreSQL)',
       `CREATE TABLE asset(id uuid PRIMARY KEY,"ownerId" uuid,type text,visibility text DEFAULT 'timeline',"stackId" uuid,"livePhotoVideoId" uuid,"deletedAt" timestamptz,"originalPath" text DEFAULT '/original/immutable')`,
       `CREATE TABLE stack(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),"ownerId" uuid,"primaryAssetId" uuid UNIQUE REFERENCES asset)`,
       'ALTER TABLE asset ADD FOREIGN KEY("stackId") REFERENCES stack',
+      `CREATE TABLE asset_lock("assetId" uuid PRIMARY KEY REFERENCES asset ON DELETE CASCADE,reason text NOT NULL,"lockedAt" timestamptz NOT NULL DEFAULT now(),"lockedBy" uuid,"previousVisibility" text)`,
       'CREATE TABLE album_asset("albumId" uuid,"assetId" uuid REFERENCES asset,PRIMARY KEY("albumId","assetId"))',
     ]) {
       await sql.raw(statement).execute(db);

@@ -7,7 +7,20 @@ select
   "ownerId",
   "duplicateId",
   "stackId",
-  "visibility",
+  (
+    case
+      when "asset"."visibility" = 'hidden' then "asset"."visibility"
+      when exists (
+        select
+          1
+        from
+          asset_lock
+        where
+          asset_lock."assetId" = "asset"."id"
+      ) then 'locked'::asset_visibility_enum
+      else "asset"."visibility"
+    end
+  ) as "visibility",
   "smart_search"."embedding"
 from
   "asset"
@@ -213,6 +226,7 @@ select
   "asset"."ownerId",
   "asset"."thumbhash",
   "asset"."type",
+  "asset"."checksum",
   (
     select
       coalesce(json_agg(agg), '[]')
@@ -304,7 +318,15 @@ select
         where
           "asset_video"."assetId" is not null
       ) as obj
-  ) as "format"
+  ) as "format",
+  (
+    select
+      "video_moment_index"."coverTimestampMs"
+    from
+      "video_moment_index"
+    where
+      "video_moment_index"."assetId" = "asset"."id"
+  ) as "coverTimestampMs"
 from
   "asset"
   inner join "asset_exif" on "asset"."id" = "asset_exif"."assetId"
@@ -332,6 +354,14 @@ select
   "asset"."width",
   "asset"."height",
   "asset"."isEdited",
+  exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
+  ) as "isLocked",
   (
     select
       coalesce(json_agg(agg), '[]')
@@ -402,7 +432,17 @@ from
   inner join "asset_job_status" as "job_status" on "job_status"."assetId" = "asset"."id"
 where
   "asset"."deletedAt" is null
-  and "asset"."visibility" in ('archive', 'timeline')
+  and (
+    "asset"."visibility" in ('archive', 'timeline')
+    and not exists (
+      select
+        1
+      from
+        asset_lock
+      where
+        asset_lock."assetId" = "asset"."id"
+    )
+  )
   and "job_status"."duplicatesDetectedAt" is null
 
 -- AssetJobRepository.streamForVideoDuplicateFrames
@@ -415,7 +455,14 @@ where
   "asset"."type" = 'VIDEO'
   and "asset"."deletedAt" is null
   and "asset"."visibility" != 'hidden'
-  and "asset"."visibility" != 'locked'
+  and not exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
+  )
 group by
   "asset"."id"
 having
@@ -426,7 +473,20 @@ select
   "asset"."id",
   "asset"."ownerId",
   "asset"."originalPath",
-  "asset"."visibility",
+  (
+    case
+      when "asset"."visibility" = 'hidden' then "asset"."visibility"
+      when exists (
+        select
+          1
+        from
+          asset_lock
+        where
+          asset_lock."assetId" = "asset"."id"
+      ) then 'locked'::asset_visibility_enum
+      else "asset"."visibility"
+    end
+  ) as "visibility",
   (
     select
       to_json(obj)
@@ -549,6 +609,7 @@ where
 select
   "asset"."id",
   "asset"."visibility",
+  "asset"."checksum",
   to_json("asset_exif") as "exifInfo",
   (
     select
@@ -724,6 +785,7 @@ select
   "asset"."livePhotoVideoId",
   "asset"."originalPath",
   "asset"."isOffline",
+  "asset"."deletedAt",
   to_json("asset_exif") as "exifInfo",
   (
     select
@@ -798,6 +860,7 @@ select
   "asset"."id",
   "asset"."ownerId",
   "asset"."originalPath",
+  "asset"."checksum",
   (
     select
       coalesce(json_agg(agg), '[]')
@@ -824,7 +887,10 @@ select
           "asset_audio"."index",
           "asset_audio"."codecName",
           "asset_audio"."profile",
-          "asset_audio"."bitrate"
+          "asset_audio"."bitrate",
+          "asset_audio"."channels",
+          "asset_audio"."channelLayout",
+          "asset_audio"."sampleRate"
         from
           (
             select
@@ -1075,20 +1141,7 @@ where
       and "asset_file"."type" = $2
   )
   and "asset"."visibility" in ('archive', 'timeline')
-  and (
-    "asset"."type" = 'IMAGE'
-    or (
-      "asset"."type" = 'VIDEO'
-      and exists (
-        select
-          "asset_video_duplicate_frame"."assetId"
-        from
-          "asset_video_duplicate_frame"
-        where
-          "asset_video_duplicate_frame"."assetId" = "asset"."id"
-      )
-    )
-  )
+  and "asset"."type" in ('IMAGE', 'VIDEO')
   and not exists (
     select
       "asset_metadata"."assetId"

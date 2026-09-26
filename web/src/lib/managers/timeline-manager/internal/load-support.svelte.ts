@@ -1,4 +1,4 @@
-import { getTimeBucket } from '@immich/sdk';
+import { getTimeBucket, getTimelineOrdered } from '@immich/sdk';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { toISOYearMonthUTC } from '$lib/utils/timeline-util';
 import { TimelineManager } from '../timeline-manager.svelte';
@@ -57,4 +57,39 @@ export async function loadFromTimeBuckets(
       )}`,
     );
   }
+}
+
+/** FL-30 (S-15): assets per page of a flat order. */
+export const ORDERED_PAGE_SIZE = 500;
+
+/**
+ * The key of page `page` of a flat order. Pages are held as synthetic months whose keys sort in page
+ * order the way the manager orders months (newest first), far past any real capture date.
+ */
+export const orderedPageYearMonth = (page: number) => ({ year: 9999 - Math.floor(page / 12), month: 12 - (page % 12) });
+
+/** Load one page of a flat order into its synthetic month, in the server's order. */
+export async function loadOrderedPage(
+  timelineMonth: TimelineMonth,
+  page: number,
+  options: TimelineManagerOptions,
+  signal: AbortSignal,
+): Promise<void> {
+  if (timelineMonth.getFirstAsset() || !options.orderedBy) {
+    return;
+  }
+  const response = await getTimelineOrdered(
+    {
+      ...authManager.params,
+      ...options,
+      sort: options.orderedBy,
+      skip: page * ORDERED_PAGE_SIZE,
+      take: ORDERED_PAGE_SIZE,
+    },
+    { signal },
+  );
+  if (!response || signal.aborted) {
+    return;
+  }
+  timelineMonth.addOrderedAssets(response);
 }

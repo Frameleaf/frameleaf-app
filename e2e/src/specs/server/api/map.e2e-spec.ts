@@ -70,6 +70,10 @@ describe('/map', () => {
           lat: expect.closeTo(39.115),
           lon: expect.closeTo(-108.400968),
           state: 'Colorado',
+          originalFileName: expect.any(String),
+          type: 'IMAGE',
+          fileCreatedAt: expect.any(String),
+          localDateTime: expect.any(String),
         },
         {
           city: 'Ralston',
@@ -78,6 +82,10 @@ describe('/map', () => {
           lat: expect.closeTo(41.2203),
           lon: expect.closeTo(-96.071625),
           state: 'Nebraska',
+          originalFileName: expect.any(String),
+          type: 'IMAGE',
+          fileCreatedAt: expect.any(String),
+          localDateTime: expect.any(String),
         },
       ]);
     });
@@ -118,6 +126,10 @@ describe('/map', () => {
           lat: expect.closeTo(39.115),
           lon: expect.closeTo(-108.400968),
           state: 'Colorado',
+          originalFileName: expect.any(String),
+          type: 'IMAGE',
+          fileCreatedAt: expect.any(String),
+          localDateTime: expect.any(String),
         },
         {
           city: 'Ralston',
@@ -126,6 +138,10 @@ describe('/map', () => {
           lat: expect.closeTo(41.2203),
           lon: expect.closeTo(-96.071625),
           state: 'Nebraska',
+          originalFileName: expect.any(String),
+          type: 'IMAGE',
+          fileCreatedAt: expect.any(String),
+          localDateTime: expect.any(String),
         },
       ]);
     });

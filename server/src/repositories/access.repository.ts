@@ -6,19 +6,31 @@ import { ChunkedSet, DummyValue, GenerateSql } from 'src/decorators.js';
 import { AlbumUserRole, AssetVisibility } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
 import {
+  anyUuid,
   asUuid,
   getHiddenContentFilter,
   hiddenContentAssetIdExists,
+  isMotionOfLockedStill,
+  isNotLockedAsset,
   tagHasVisibleAssetOrNoAssets,
+  tagIsSuppressed,
   withDefaultVisibility,
   withHiddenContentFilter,
 } from 'src/utils/database.js';
+import { isNotLocked, isTimelineVisible } from 'src/utils/locked.js';
 
 type AccessPrivacy = boolean | HiddenContentFilter | undefined;
 
 const privacyOptions = (privacy: AccessPrivacy): HiddenContentQueryOptions => {
   return typeof privacy === 'object' ? { hiddenContent: privacy } : privacy ? { excludeNsfw: true } : {};
 };
+
+/**
+ * FL-37 / FL-46: the people or tags a session that is not unlocked suppresses. Only a real
+ * hidden-content filter carries them; the NSFW-only form (`true`) suppresses no entity.
+ */
+const suppressedEntityIds = (privacy: AccessPrivacy, entity: 'personIds' | 'tagIds'): string[] =>
+  typeof privacy === 'object' ? privacy[entity] : [];
 
 class ActivityAccess {
   constructor(private db: Kysely<DB>) {}
@@ -169,48 +181,53 @@ class AssetAccess {
     const options = privacyOptions(hideNsfwAssets);
     const hiddenContent = getHiddenContentFilter(options);
 
-    return this.db
-      .with('target', (qb) => qb.selectNoFrom(sql`array[${sql.join([...assetIds])}]::uuid[]`.as('ids')))
-      .selectFrom('album')
-      .innerJoin('album_asset as albumAssets', 'album.id', 'albumAssets.albumId')
-      .innerJoin('asset', (join) =>
-        join.onRef('asset.id', '=', 'albumAssets.assetId').on('asset.deletedAt', 'is', null),
-      )
-      .leftJoin('album_user as albumUsers', 'albumUsers.albumId', 'album.id')
-      .leftJoin('user', (join) => join.onRef('user.id', '=', 'albumUsers.userId').on('user.deletedAt', 'is', null))
-      .crossJoin('target')
-      .select(['asset.id', 'asset.livePhotoVideoId'])
-      .$if(!!hiddenContent, (qb) =>
-        qb.select(
-          hiddenContentAssetIdExists(sql.ref('asset.livePhotoVideoId'), hiddenContent!).as('isLivePhotoVideoNsfw'),
-        ),
-      )
-      .where((eb) =>
-        eb.or([
-          eb('asset.id', '=', sql<string>`any(target.ids)`),
-          eb('asset.livePhotoVideoId', '=', sql<string>`any(target.ids)`),
-        ]),
-      )
-      .where('user.id', '=', userId)
-      .where('album.deletedAt', 'is', null)
-      .$call((qb) => withHiddenContentFilter(qb, options))
-      .execute()
-      .then((assets) => {
-        const allowedIds = new Set<string>();
-        for (const asset of assets) {
-          if (asset.id && assetIds.has(asset.id)) {
-            allowedIds.add(asset.id);
+    return (
+      this.db
+        .with('target', (qb) => qb.selectNoFrom(sql`array[${sql.join([...assetIds])}]::uuid[]`.as('ids')))
+        .selectFrom('album')
+        .innerJoin('album_asset as albumAssets', 'album.id', 'albumAssets.albumId')
+        .innerJoin('asset', (join) =>
+          join.onRef('asset.id', '=', 'albumAssets.assetId').on('asset.deletedAt', 'is', null),
+        )
+        .leftJoin('album_user as albumUsers', 'albumUsers.albumId', 'album.id')
+        .leftJoin('user', (join) => join.onRef('user.id', '=', 'albumUsers.userId').on('user.deletedAt', 'is', null))
+        .crossJoin('target')
+        .select(['asset.id', 'asset.livePhotoVideoId'])
+        .$if(!!hiddenContent, (qb) =>
+          qb.select(
+            hiddenContentAssetIdExists(sql.ref('asset.livePhotoVideoId'), hiddenContent!).as('isLivePhotoVideoNsfw'),
+          ),
+        )
+        .where((eb) =>
+          eb.or([
+            eb('asset.id', '=', sql<string>`any(target.ids)`),
+            eb('asset.livePhotoVideoId', '=', sql<string>`any(target.ids)`),
+          ]),
+        )
+        .where('user.id', '=', userId)
+        .where('album.deletedAt', 'is', null)
+        // Locked media stays a member of an album but is never reachable through the album: only its
+        // owner's elevated session sees it, via checkOwnerAccess (owner decision, September 22, 2026).
+        .where(isNotLocked('asset'))
+        .$call((qb) => withHiddenContentFilter(qb, options))
+        .execute()
+        .then((assets) => {
+          const allowedIds = new Set<string>();
+          for (const asset of assets) {
+            if (asset.id && assetIds.has(asset.id)) {
+              allowedIds.add(asset.id);
+            }
+            if (
+              asset.livePhotoVideoId &&
+              assetIds.has(asset.livePhotoVideoId) &&
+              !(hiddenContent && asset.isLivePhotoVideoNsfw)
+            ) {
+              allowedIds.add(asset.livePhotoVideoId);
+            }
           }
-          if (
-            asset.livePhotoVideoId &&
-            assetIds.has(asset.livePhotoVideoId) &&
-            !(hiddenContent && asset.isLivePhotoVideoNsfw)
-          ) {
-            allowedIds.add(asset.livePhotoVideoId);
-          }
-        }
-        return allowedIds;
-      });
+          return allowedIds;
+        })
+    );
   }
 
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID_SET] })
@@ -225,15 +242,19 @@ class AssetAccess {
       return new Set<string>();
     }
 
-    return this.db
-      .selectFrom('asset')
-      .select('asset.id')
-      .where('asset.id', 'in', [...assetIds])
-      .where('asset.ownerId', '=', userId)
-      .$if(!hasElevatedPermission, (eb) => eb.where('asset.visibility', '!=', AssetVisibility.Locked))
-      .$call((qb) => withHiddenContentFilter(qb, privacyOptions(hideNsfwAssets)))
-      .execute()
-      .then((assets) => new Set(assets.map((asset) => asset.id)));
+    return (
+      this.db
+        .selectFrom('asset')
+        .select('asset.id')
+        .where('asset.id', 'in', [...assetIds])
+        .where('asset.ownerId', '=', userId)
+        .$if(!hasElevatedPermission, (eb) => eb.where(isNotLocked('asset')))
+        // the motion part of a Locked live photo is as private as the still (FL-34)
+        .$if(!hasElevatedPermission, (qb) => qb.where((eb) => eb.not(isMotionOfLockedStill(eb))))
+        .$call((qb) => withHiddenContentFilter(qb, privacyOptions(hideNsfwAssets)))
+        .execute()
+        .then((assets) => new Set(assets.map((asset) => asset.id)))
+    );
   }
 
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID_SET] })
@@ -243,25 +264,31 @@ class AssetAccess {
       return new Set<string>();
     }
 
-    return this.db
-      .selectFrom('partner')
-      .innerJoin('user as sharedBy', (join) =>
-        join.onRef('sharedBy.id', '=', 'partner.sharedById').on('sharedBy.deletedAt', 'is', null),
-      )
-      .innerJoin('asset', (join) => join.onRef('asset.ownerId', '=', 'sharedBy.id').on('asset.deletedAt', 'is', null))
-      .select('asset.id')
-      .where('partner.sharedWithId', '=', userId)
-      .where((eb) =>
-        eb.or([
-          eb('asset.visibility', '=', sql.lit(AssetVisibility.Timeline)),
-          eb('asset.visibility', '=', sql.lit(AssetVisibility.Hidden)),
-        ]),
-      )
+    return (
+      this.db
+        .selectFrom('partner')
+        .innerJoin('user as sharedBy', (join) =>
+          join.onRef('sharedBy.id', '=', 'partner.sharedById').on('sharedBy.deletedAt', 'is', null),
+        )
+        .innerJoin('asset', (join) => join.onRef('asset.ownerId', '=', 'sharedBy.id').on('asset.deletedAt', 'is', null))
+        .select('asset.id')
+        .where('partner.sharedWithId', '=', userId)
+        .where((eb) =>
+          eb.or([
+            eb('asset.visibility', '=', sql.lit(AssetVisibility.Timeline)),
+            eb('asset.visibility', '=', sql.lit(AssetVisibility.Hidden)),
+          ]),
+        )
+        // a partner never reaches locked media (FL-34)
+        .where(isNotLocked('asset'))
 
-      .where('asset.id', 'in', [...assetIds])
-      .$call((qb) => withHiddenContentFilter(qb, privacyOptions(hideNsfwAssets)))
-      .execute()
-      .then((assets) => new Set(assets.map((asset) => asset.id)));
+        .where('asset.id', 'in', [...assetIds])
+        // a partner never reaches the motion part of a Locked live photo (FL-34)
+        .where((eb) => eb.not(isMotionOfLockedStill(eb)))
+        .$call((qb) => withHiddenContentFilter(qb, privacyOptions(hideNsfwAssets)))
+        .execute()
+        .then((assets) => new Set(assets.map((asset) => asset.id)))
+    );
   }
 
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID_SET] })
@@ -274,66 +301,80 @@ class AssetAccess {
     const options = privacyOptions(hideNsfwAssets);
     const hiddenContent = getHiddenContentFilter(options);
 
-    return this.db
-      .selectFrom('shared_link')
-      .leftJoin('album', (join) => join.onRef('album.id', '=', 'shared_link.albumId').on('album.deletedAt', 'is', null))
-      .leftJoin('shared_link_asset', 'shared_link_asset.sharedLinkId', 'shared_link.id')
-      .leftJoin('asset', (join) =>
-        join.onRef('asset.id', '=', 'shared_link_asset.assetId').on('asset.deletedAt', 'is', null),
-      )
-      .leftJoin('album_asset', 'album_asset.albumId', 'album.id')
-      .leftJoin('asset as albumAssets', (join) =>
-        join.onRef('albumAssets.id', '=', 'album_asset.assetId').on('albumAssets.deletedAt', 'is', null),
-      )
-      .select([
-        'asset.id as assetId',
-        'asset.livePhotoVideoId as assetLivePhotoVideoId',
-        'albumAssets.id as albumAssetId',
-        'albumAssets.livePhotoVideoId as albumAssetLivePhotoVideoId',
-      ])
-      .$if(!!hiddenContent, (qb) =>
-        qb.select([
-          hiddenContentAssetIdExists(sql.ref('asset.livePhotoVideoId'), hiddenContent!).as('isAssetLivePhotoVideoNsfw'),
-          hiddenContentAssetIdExists(sql.ref('albumAssets.livePhotoVideoId'), hiddenContent!).as(
-            'isAlbumAssetLivePhotoVideoNsfw',
-          ),
-        ]),
-      )
-      .where('shared_link.id', '=', sharedLinkId)
-      .where(
-        sql`array["asset"."id", "asset"."livePhotoVideoId", "albumAssets"."id", "albumAssets"."livePhotoVideoId"]`,
-        '&&',
-        sql`array[${sql.join([...assetIds])}]::uuid[] `,
-      )
-      .$call((qb) => withHiddenContentFilter(qb, options, 'asset'))
-      .$call((qb) => withHiddenContentFilter(qb, options, 'albumAssets'))
-      .execute()
-      .then((rows) => {
-        const allowedIds = new Set<string>();
-        for (const row of rows) {
-          if (row.assetId && assetIds.has(row.assetId)) {
-            allowedIds.add(row.assetId);
+    return (
+      this.db
+        .selectFrom('shared_link')
+        .leftJoin('album', (join) =>
+          join.onRef('album.id', '=', 'shared_link.albumId').on('album.deletedAt', 'is', null),
+        )
+        .leftJoin('shared_link_asset', 'shared_link_asset.sharedLinkId', 'shared_link.id')
+        // A shared link never reaches Locked media, whether the link names the asset or its album
+        // (owner decision, September 22, 2026).
+        .leftJoin('asset', (join) =>
+          join
+            .onRef('asset.id', '=', 'shared_link_asset.assetId')
+            .on('asset.deletedAt', 'is', null)
+            .on(isNotLocked('asset')),
+        )
+        .leftJoin('album_asset', 'album_asset.albumId', 'album.id')
+        .leftJoin('asset as albumAssets', (join) =>
+          join
+            .onRef('albumAssets.id', '=', 'album_asset.assetId')
+            .on('albumAssets.deletedAt', 'is', null)
+            .on(isNotLocked('albumAssets')),
+        )
+        .select([
+          'asset.id as assetId',
+          'asset.livePhotoVideoId as assetLivePhotoVideoId',
+          'albumAssets.id as albumAssetId',
+          'albumAssets.livePhotoVideoId as albumAssetLivePhotoVideoId',
+        ])
+        .$if(!!hiddenContent, (qb) =>
+          qb.select([
+            hiddenContentAssetIdExists(sql.ref('asset.livePhotoVideoId'), hiddenContent!).as(
+              'isAssetLivePhotoVideoNsfw',
+            ),
+            hiddenContentAssetIdExists(sql.ref('albumAssets.livePhotoVideoId'), hiddenContent!).as(
+              'isAlbumAssetLivePhotoVideoNsfw',
+            ),
+          ]),
+        )
+        .where('shared_link.id', '=', sharedLinkId)
+        .where(
+          sql`array["asset"."id", "asset"."livePhotoVideoId", "albumAssets"."id", "albumAssets"."livePhotoVideoId"]`,
+          '&&',
+          sql`array[${sql.join([...assetIds])}]::uuid[] `,
+        )
+        .$call((qb) => withHiddenContentFilter(qb, options, 'asset'))
+        .$call((qb) => withHiddenContentFilter(qb, options, 'albumAssets'))
+        .execute()
+        .then((rows) => {
+          const allowedIds = new Set<string>();
+          for (const row of rows) {
+            if (row.assetId && assetIds.has(row.assetId)) {
+              allowedIds.add(row.assetId);
+            }
+            if (
+              row.assetLivePhotoVideoId &&
+              assetIds.has(row.assetLivePhotoVideoId) &&
+              !(hiddenContent && row.isAssetLivePhotoVideoNsfw)
+            ) {
+              allowedIds.add(row.assetLivePhotoVideoId);
+            }
+            if (row.albumAssetId && assetIds.has(row.albumAssetId)) {
+              allowedIds.add(row.albumAssetId);
+            }
+            if (
+              row.albumAssetLivePhotoVideoId &&
+              assetIds.has(row.albumAssetLivePhotoVideoId) &&
+              !(hiddenContent && row.isAlbumAssetLivePhotoVideoNsfw)
+            ) {
+              allowedIds.add(row.albumAssetLivePhotoVideoId);
+            }
           }
-          if (
-            row.assetLivePhotoVideoId &&
-            assetIds.has(row.assetLivePhotoVideoId) &&
-            !(hiddenContent && row.isAssetLivePhotoVideoNsfw)
-          ) {
-            allowedIds.add(row.assetLivePhotoVideoId);
-          }
-          if (row.albumAssetId && assetIds.has(row.albumAssetId)) {
-            allowedIds.add(row.albumAssetId);
-          }
-          if (
-            row.albumAssetLivePhotoVideoId &&
-            assetIds.has(row.albumAssetLivePhotoVideoId) &&
-            !(hiddenContent && row.isAlbumAssetLivePhotoVideoNsfw)
-          ) {
-            allowedIds.add(row.albumAssetLivePhotoVideoId);
-          }
-        }
-        return allowedIds;
-      });
+          return allowedIds;
+        })
+    );
   }
 }
 
@@ -342,20 +383,31 @@ class AssetFileAccess {
 
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID_SET] })
   @ChunkedSet({ paramIndex: 1 })
-  async checkOwnerAccess(userId: string, fileIds: Set<string>, hasElevatedPermission: boolean | undefined) {
+  async checkOwnerAccess(
+    userId: string,
+    fileIds: Set<string>,
+    hasElevatedPermission: boolean | undefined,
+    hideNsfwAssets?: AccessPrivacy,
+  ) {
     if (fileIds.size === 0) {
       return new Set<string>();
     }
 
-    return this.db
-      .selectFrom('asset_file')
-      .select('asset_file.id')
-      .innerJoin('asset', 'asset.id', 'asset_file.assetId')
-      .$if(!hasElevatedPermission, (eb) => eb.where('asset.visibility', '!=', AssetVisibility.Locked))
-      .where('asset.ownerId', '=', userId)
-      .where('asset_file.id', 'in', [...fileIds])
-      .execute()
-      .then((files) => new Set(files.map(({ id }) => id)));
+    return (
+      this.db
+        .selectFrom('asset_file')
+        .select('asset_file.id')
+        .innerJoin('asset', 'asset.id', 'asset_file.assetId')
+        .$if(!hasElevatedPermission, (eb) => eb.where(isNotLocked('asset')))
+        .$if(!hasElevatedPermission, (qb) => qb.where((eb) => eb.not(isMotionOfLockedStill(eb))))
+        .where('asset.ownerId', '=', userId)
+        .where('asset_file.id', 'in', [...fileIds])
+        // FL-34: a derivative file is as private as its source asset, so the caller's hidden-content
+        // filter applies to it exactly as it does to the asset itself (`AssetAccess.checkOwnerAccess`)
+        .$call((qb) => withHiddenContentFilter(qb, privacyOptions(hideNsfwAssets)))
+        .execute()
+        .then((files) => new Set(files.map(({ id }) => id)))
+    );
   }
 }
 
@@ -525,7 +577,7 @@ class MemoryAccess {
                 .innerJoin('asset', 'asset.id', 'memory_asset.assetId')
                 .select('memory_asset.memoriesId')
                 .whereRef('memory_asset.memoriesId', '=', 'memory.id')
-                .where('asset.visibility', '=', sql.lit(AssetVisibility.Timeline))
+                .where(isTimelineVisible('asset'))
                 .where('asset.deletedAt', 'is', null)
                 .$call((qb) => withHiddenContentFilter(qb, privacyOptions(hideNsfwAssets))),
             ),
@@ -621,66 +673,86 @@ class PersonAccess {
       return new Set<string>();
     }
 
-    return this.db
-      .selectFrom('person')
-      .select('person.personGroupId')
-      .where('person.personGroupId', 'in', [...personGroupIds])
-      .where('person.ownerId', '=', userId)
-      .$if(!!getHiddenContentFilter(privacyOptions(hideNsfwAssets)), (qb) =>
-        qb.where((eb) =>
-          eb.or([
-            eb.not((eb) =>
+    const suppressedIds = suppressedEntityIds(hideNsfwAssets, 'personIds');
+    return (
+      this.db
+        .selectFrom('person')
+        .select('person.personGroupId')
+        .where('person.personGroupId', 'in', [...personGroupIds])
+        .where('person.ownerId', '=', userId)
+        // FL-37: while the session is not unlocked a suppressed person is not there at all, even one
+        // with no photo yet; the service answers it exactly like a missing id
+        .$if(suppressedIds.length > 0, (qb) =>
+          qb.where((eb) => eb.not(eb('person.personGroupId', '=', anyUuid(suppressedIds)))),
+        )
+        .$if(!!getHiddenContentFilter(privacyOptions(hideNsfwAssets)), (qb) =>
+          qb.where((eb) =>
+            eb.or([
+              eb.not((eb) =>
+                eb.exists(
+                  eb
+                    .selectFrom('asset_face')
+                    .innerJoin('asset', (join) =>
+                      join
+                        .onRef('asset.id', '=', 'asset_face.assetId')
+                        .on(isTimelineVisible('asset'))
+                        .on('asset.deletedAt', 'is', null),
+                    )
+                    .whereRef('asset_face.personGroupId', '=', 'person.personGroupId')
+                    .where('asset_face.deletedAt', 'is', null)
+                    .where('asset_face.isVisible', 'is', true),
+                ),
+              ),
               eb.exists(
                 eb
                   .selectFrom('asset_face')
                   .innerJoin('asset', (join) =>
                     join
                       .onRef('asset.id', '=', 'asset_face.assetId')
-                      .on('asset.visibility', '=', sql.lit(AssetVisibility.Timeline))
+                      .on(isTimelineVisible('asset'))
                       .on('asset.deletedAt', 'is', null),
                   )
                   .whereRef('asset_face.personGroupId', '=', 'person.personGroupId')
                   .where('asset_face.deletedAt', 'is', null)
-                  .where('asset_face.isVisible', 'is', true),
+                  .where('asset_face.isVisible', 'is', true)
+                  .$call((qb) => withHiddenContentFilter(qb, privacyOptions(hideNsfwAssets))),
               ),
-            ),
-            eb.exists(
-              eb
-                .selectFrom('asset_face')
-                .innerJoin('asset', (join) =>
-                  join
-                    .onRef('asset.id', '=', 'asset_face.assetId')
-                    .on('asset.visibility', '=', sql.lit(AssetVisibility.Timeline))
-                    .on('asset.deletedAt', 'is', null),
-                )
-                .whereRef('asset_face.personGroupId', '=', 'person.personGroupId')
-                .where('asset_face.deletedAt', 'is', null)
-                .where('asset_face.isVisible', 'is', true)
-                .$call((qb) => withHiddenContentFilter(qb, privacyOptions(hideNsfwAssets))),
-            ),
-          ]),
-        ),
-      )
-      .execute()
-      .then((persons) => new Set(persons.map((person) => person.personGroupId)));
+            ]),
+          ),
+        )
+        .execute()
+        .then((persons) => new Set(persons.map((person) => person.personGroupId)))
+    );
   }
 
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID_SET, true] })
   @ChunkedSet({ paramIndex: 1 })
-  async checkFaceOwnerAccess(userId: string, assetFaceIds: Set<string>, hideNsfwAssets?: AccessPrivacy) {
+  async checkFaceOwnerAccess(
+    userId: string,
+    assetFaceIds: Set<string>,
+    hideNsfwAssets?: AccessPrivacy,
+    hasElevatedPermission?: boolean,
+  ) {
     if (assetFaceIds.size === 0) {
       return new Set<string>();
     }
 
-    return this.db
-      .selectFrom('asset_face')
-      .select('asset_face.id')
-      .leftJoin('asset', (join) => join.onRef('asset.id', '=', 'asset_face.assetId').on('asset.deletedAt', 'is', null))
-      .where('asset_face.id', 'in', [...assetFaceIds])
-      .where('asset.ownerId', '=', userId)
-      .$call((qb) => withHiddenContentFilter(qb, privacyOptions(hideNsfwAssets)))
-      .execute()
-      .then((faces) => new Set(faces.map((face) => face.id)));
+    return (
+      this.db
+        .selectFrom('asset_face')
+        .select('asset_face.id')
+        .leftJoin('asset', (join) =>
+          join.onRef('asset.id', '=', 'asset_face.assetId').on('asset.deletedAt', 'is', null),
+        )
+        .where('asset_face.id', 'in', [...assetFaceIds])
+        .where('asset.ownerId', '=', userId)
+        // a face on Locked media is reachable only from its owner's elevated session (FL-34); left out,
+        // the session counts as ordinary
+        .$if(!hasElevatedPermission, (qb) => qb.where((eb) => isNotLockedAsset(eb)))
+        .$call((qb) => withHiddenContentFilter(qb, privacyOptions(hideNsfwAssets)))
+        .execute()
+        .then((faces) => new Set(faces.map((face) => face.id)))
+    );
   }
 }
 
@@ -714,18 +786,26 @@ class TagAccess {
       return new Set<string>();
     }
 
-    return this.db
-      .selectFrom('tag')
-      .select('tag.id')
-      .where('tag.id', 'in', [...tagIds])
-      .where('tag.userId', '=', userId)
-      .$if(!!getHiddenContentFilter(privacyOptions(hideNsfwAssets)), (qb) =>
-        qb.where(
-          tagHasVisibleAssetOrNoAssets(sql.ref('tag.id'), getHiddenContentFilter(privacyOptions(hideNsfwAssets))),
-        ),
-      )
-      .execute()
-      .then((tags) => new Set(tags.map((tag) => tag.id)));
+    const suppressedIds = suppressedEntityIds(hideNsfwAssets, 'tagIds');
+    return (
+      this.db
+        .selectFrom('tag')
+        .select('tag.id')
+        .where('tag.id', 'in', [...tagIds])
+        .where('tag.userId', '=', userId)
+        // FL-46: while the session is not unlocked a suppressed tag, and every tag nested under one,
+        // is not there at all, even an empty one; the service answers it exactly like a missing id
+        .$if(suppressedIds.length > 0, (qb) =>
+          qb.where(sql<boolean>`not ${tagIsSuppressed(sql.ref('tag.id'), suppressedIds)}`),
+        )
+        .$if(!!getHiddenContentFilter(privacyOptions(hideNsfwAssets)), (qb) =>
+          qb.where(
+            tagHasVisibleAssetOrNoAssets(sql.ref('tag.id'), getHiddenContentFilter(privacyOptions(hideNsfwAssets))),
+          ),
+        )
+        .execute()
+        .then((tags) => new Set(tags.map((tag) => tag.id)))
+    );
   }
 }
 

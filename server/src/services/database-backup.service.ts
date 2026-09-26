@@ -1,16 +1,31 @@
 import { BadRequestException, Injectable, Optional } from '@nestjs/common';
 import { debounce } from 'lodash-es';
 import { DateTime } from 'luxon';
+import { randomUUID } from 'node:crypto';
 import path, { basename } from 'node:path';
 import { Duplex, PassThrough, Readable, Writable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import { coerce, satisfies } from 'semver';
+import { coerce, gt, satisfies } from 'semver';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import { serverVersion } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
-import { DatabaseBackupListResponseDto } from 'src/dtos/database-backup.dto.js';
-import { CacheControl, DatabaseLock, ImmichWorker, JobName, JobStatus, QueueName, StorageFolder } from 'src/enum.js';
+import {
+  BackupRestoreVerificationRecordDto,
+  BackupRestoreVerificationResponseDto,
+  DatabaseBackupListResponseDto,
+} from 'src/dtos/database-backup.dto.js';
+import {
+  CacheControl,
+  DatabaseLock,
+  ImmichWorker,
+  JobName,
+  JobStatus,
+  QueueName,
+  StorageFolder,
+  SystemMetadataKey,
+} from 'src/enum.js';
 import { MaintenanceHealthRepository } from 'src/maintenance/maintenance-health.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { CronRepository } from 'src/repositories/cron.repository.js';
@@ -21,16 +36,37 @@ import { ProcessRepository } from 'src/repositories/process.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
+import { appendConfigHistory, readConfigHistory, reviewHistoryTitle } from 'src/utils/config-history.js';
 import { getConfig } from 'src/utils/config.js';
 import {
   UnsupportedPostgresError,
   findDatabaseBackupVersion,
+  isCloudBackupDumpName,
   isFailedDatabaseBackupName,
   isValidDatabaseBackupName,
   isValidDatabaseRoutineBackupName,
 } from 'src/utils/database-backups.js';
 import { ImmichFileResponse } from 'src/utils/file.js';
 import { handlePromiseError } from 'src/utils/misc.js';
+
+/** FL-71 (CC-9): how often a backup should be proved to restore before the Overview asks again. */
+export const RESTORE_VERIFICATION_INTERVAL_DAYS = 90;
+
+/**
+ * When the next restore test is due and whether it is overdue: never proved (either part) is due
+ * now; otherwise the older of the two records plus the interval.
+ */
+export const restoreVerificationDue = (
+  record: { metadataVerifiedAt?: string | null; originalsVerifiedAt?: string | null },
+  now: Date,
+): { dueAt: string | null; overdue: boolean } => {
+  if (!record.metadataVerifiedAt || !record.originalsVerifiedAt) {
+    return { dueAt: null, overdue: true };
+  }
+  const oldest = Math.min(Date.parse(record.metadataVerifiedAt), Date.parse(record.originalsVerifiedAt));
+  const dueAt = new Date(oldest + RESTORE_VERIFICATION_INTERVAL_DAYS * 24 * 60 * 60 * 1000);
+  return { dueAt: dueAt.toISOString(), overdue: dueAt.getTime() <= now.getTime() };
+};
 
 @Injectable()
 export class DatabaseBackupService {
@@ -293,13 +329,78 @@ export class DatabaseBackupService {
     };
   }
 
+  /** FL-71 (CC-9): the last recorded restore test and whether another is due. Administrators only. */
+  async getRestoreVerification(): Promise<BackupRestoreVerificationResponseDto> {
+    const record = (await this.systemMetadataRepository.get(SystemMetadataKey.BackupRestoreVerification)) ?? {};
+    const verifier = record.verifiedBy ? await this.userRepository.get(record.verifiedBy, { withDeleted: true }) : null;
+    return {
+      metadataVerifiedAt: record.metadataVerifiedAt ?? null,
+      originalsVerifiedAt: record.originalsVerifiedAt ?? null,
+      verifiedBy: verifier ? { id: verifier.id, name: verifier.name } : null,
+      ...restoreVerificationDue(record, new Date()),
+      intervalDays: RESTORE_VERIFICATION_INTERVAL_DAYS,
+    };
+  }
+
+  /**
+   * FL-71 (CC-9): an administrator records that a restore test succeeded for the database, the
+   * original files or both. A part not tested keeps its earlier record.
+   */
+  async recordRestoreVerification(
+    auth: AuthDto,
+    dto: BackupRestoreVerificationRecordDto,
+  ): Promise<BackupRestoreVerificationResponseDto> {
+    const record = (await this.systemMetadataRepository.get(SystemMetadataKey.BackupRestoreVerification)) ?? {};
+    const now = new Date().toISOString();
+    await this.systemMetadataRepository.set(SystemMetadataKey.BackupRestoreVerification, {
+      metadataVerifiedAt: dto.metadata ? now : (record.metadataVerifiedAt ?? null),
+      originalsVerifiedAt: dto.originals ? now : (record.originalsVerifiedAt ?? null),
+      verifiedBy: auth.user.id,
+    });
+    await this.recordReview(auth, 'Recovery readiness', now);
+    return this.getRestoreVerification();
+  }
+
+  /**
+   * FL-71 (CC-10): a review lands in the settings change history as "Reviewed: {title}"
+   * (`CommandCenter.jsx:2495`), with no values. Appended under the settings lock like a save; a
+   * failure is logged and never undoes the review.
+   */
+  private async recordReview(auth: AuthDto, title: string, at: string) {
+    try {
+      await this.databaseRepository.withLock(DatabaseLock.SystemConfigUpdate, async () => {
+        const history = readConfigHistory(
+          await this.systemMetadataRepository.get(SystemMetadataKey.SystemConfigHistory),
+        );
+        await this.systemMetadataRepository.set(
+          SystemMetadataKey.SystemConfigHistory,
+          appendConfigHistory(
+            history,
+            {
+              id: randomUUID(),
+              createdAt: at,
+              actorId: auth.user.id,
+              actorName: auth.user.name,
+              kind: 'review',
+              title: reviewHistoryTitle(title),
+            },
+            [],
+          ),
+        );
+      });
+    } catch (error) {
+      this.logger.error(`Unable to record the review in the change history: ${error}`);
+    }
+  }
+
   async listBackups(): Promise<DatabaseBackupListResponseDto> {
     const backupsFolder = StorageCore.getBaseFolder(StorageFolder.Backups);
     const files = await this.storageRepository.readdir(backupsFolder);
     const timezone = DateTime.local().zoneName;
 
     const validFiles = files
-      .filter((fn) => isValidDatabaseBackupName(fn))
+      // FL-160: a cloud backup run's own temporary dump is never offered for a restore
+      .filter((fn) => isValidDatabaseBackupName(fn) && !isCloudBackupDumpName(fn))
       .toSorted((a, b) => (a.startsWith('uploaded-') === b.startsWith('uploaded-') ? a.localeCompare(b) : 1))
       .toReversed();
 
@@ -361,6 +462,7 @@ export class DatabaseBackupService {
   async restoreDatabaseBackup(
     filename: string,
     progressCb?: (action: 'backup' | 'restore' | 'migrations' | 'rollback', progress: number) => void,
+    { keepSafetyBackup = true }: { keepSafetyBackup?: boolean } = {},
   ): Promise<void> {
     this.logger.debug(`Database Restore Started`);
 
@@ -375,6 +477,16 @@ export class DatabaseBackupService {
 
       let isPgClusterDump = false;
       const version = findDatabaseBackupVersion(filename);
+
+      // FL-81: migrations only move a database forward, so a backup from a newer server cannot run on
+      // this one. It is refused before the restore point is made or anything is changed.
+      const backupVersion = version ? coerce(version) : null;
+      const runningVersion = coerce(serverVersion.toString());
+      if (backupVersion && runningVersion && gt(backupVersion, runningVersion)) {
+        throw new Error(
+          `This backup was made by a newer server (v${backupVersion.toString()}) than the one running (v${runningVersion.toString()}). Update the server first.`,
+        );
+      }
       if (version && satisfies(version, '<= 2.4')) {
         isPgClusterDump = true;
       }
@@ -436,6 +548,16 @@ export class DatabaseBackupService {
         await (migrationMode === 'isolated' || migrationMode === 'official-origin'
           ? this.databaseRepository.runOfficialMigrations()
           : this.databaseRepository.runMigrations());
+        if (migrationMode === 'isolated') {
+          // FL-180: as at startup, a restored library past the certified cutover receives the newer
+          // Frameleaf public migrations before the `immich_fork` migrations that may build on them.
+          const { applied } = await this.databaseRepository.withLock(DatabaseLock.Migrations, () =>
+            this.databaseRepository.applyIsolatedFrameleafMigrations('startup'),
+          );
+          for (const name of applied) {
+            this.logger.log(`Frameleaf migration "${name}" succeeded`);
+          }
+        }
         await this.databaseRepository.runForkMigrations();
 
         const hasAdmin = await this.userRepository.hasAdmin();
@@ -472,6 +594,15 @@ export class DatabaseBackupService {
         await pipeline(sqlStream, progressSource, psql, progressSink);
 
         throw error;
+      }
+
+      // The restore point is always made, for the rollback above. After a successful restore it is
+      // kept as the administrator's safety backup ("Create a safety backup of the current database
+      // first", the template's RestoreDialog) unless they chose not to keep it.
+      if (!keepSafetyBackup) {
+        await this.storageRepository.unlink(restorePointFilePath).catch((error: unknown) => {
+          this.logger.warn(`Could not remove the restore point ${restorePointFilePath}: ${error}`);
+        });
       }
     } catch (error) {
       this.logger.error(`Database Restore Failure: ${error}`);

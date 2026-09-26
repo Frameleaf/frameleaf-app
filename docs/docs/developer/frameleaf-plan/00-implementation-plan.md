@@ -4,7 +4,7 @@ Status: implementation backlog, not a release or a claim of completed parity. Pr
 
 ## Read this first
 
-Frameleaf will be a complete photo and video library with a restrained, dark-first creative workspace and a full Freecut-based Studio. Existing Immich and fork capabilities must survive the redesign. The current React prototype is design evidence; production remains Svelte, NestJS/PostgreSQL, Python ML, and native Flutter. Rewriting production as the prototype is not approved.
+Frameleaf will be a complete photo and video library with a restrained, dark-first creative workspace and a full Freecut-based Studio. Existing upstream and fork capabilities must survive the redesign. The current React prototype is design evidence; production remains Svelte, NestJS/PostgreSQL, Python ML, and native Flutter. Rewriting production as the prototype is not approved.
 
 This plan supersedes chronological planning notes where they conflict. Explicit subsequent owner decisions take precedence. The source audits remain the preservation baseline; historical checkmarks are not release evidence. Read the [agent execution instructions](01-agent-execution.md), then the assigned issue and its source paths in the consolidated backlog.
 
@@ -38,11 +38,11 @@ The preserved dirty-checkout evidence includes the following unreviewed implemen
 
 ### Identity and presentation
 
-Use Frameleaf throughout customer-facing web, native apps, PWA, emails, installation, help and release assets. Retain “Built on Immich” attribution in README/About and required notices. Preserve compatibility-sensitive protocol paths, database identities and released migration semantics. New native app IDs and signing are separate from upstream identities. Do not rename every internal `immich` occurrence mechanically.
+Use Frameleaf throughout customer-facing web, native apps, PWA, emails, installation, help and release assets. Retain the upstream-project attribution in README/About and required notices. Preserve compatibility-sensitive protocol paths, database identities and released migration semantics. New native app IDs and signing are separate from upstream identities. Do not rename every internal `immich` occurrence mechanically.
 
 The user-supplied seven-SVG kit in `design/frameleaf/brand-kit` is the authoritative artwork. Preserve originals and record platform derivatives; earlier generated PNGs are references, not release masters. Follow the committed [design handoff](https://github.com/Frameleaf/frameleaf-app/blob/2fbab9c61f948edf392fad88167a51180fa9d8db/design/frameleaf/README.md), [brand preservation contract](06-brand-assets.md), manifest and file hashes for actual variants, theme contrast and platform export requirements. Source preservation does not establish web/native integration or release qualification.
 
-Apply the approved three-pane design with photography dominant, compact neutral surfaces, fine separators and modest radii. Green/teal/blue identify focus, selection and meaningful state. Light mode is equally usable. Primary destinations are Library, Studio and Activity; settings form a separate command center. User text must describe the task, without implementation words such as fork, DTO or worker-admission proof unless a technical control requires them.
+Apply the approved three-pane design with photography dominant, compact neutral surfaces and fine separators, refined on September 24, 2026 to an Apple Photos–style language: the Apple system font (SF Pro) with bundled Inter as the fallback, continuous (squircle) corners, restrained frosted materials, spring motion that becomes crossfades under Reduce Motion, and squircle people photos. The decisions and their production owners are in the [interaction requirements](https://github.com/Frameleaf/frameleaf-app/blob/claude/frameleaf-implementation/design/frameleaf/INTERACTION-REQUIREMENTS.md) and [prototype to production](09-prototype-to-production.md#september-24-apple-style-refinements). Green/teal/blue identify focus, selection and meaningful state; a reserved indigo sparkle marks AI-produced content. Light mode is equally usable. Primary destinations are Library, Studio and Activity; settings form a separate command center. User text must describe the task, without implementation words such as fork, DTO or worker-admission proof unless a technical control requires them.
 
 ### Library continuity and feature preservation
 
@@ -107,6 +107,10 @@ Library/quick-edit releases can be delivered while Studio is disabled, provided 
 6. Expand by dependency order, moving complete workflows rather than accumulating disconnected mocked screens.
 
 The backlog contains acceptance-sized implementation packages, not estimates or invented dates. When a package cannot fit one reviewable change, create linked child tasks with unchanged parent acceptance; do not call a broad epic complete after scaffolding. Jira status and evidence track execution; the repo plan defines the technical contract.
+
+## Frameleaf Cloud workstream
+
+The `cloud` workstream (Plan IDs `CLD-*`, Jira epics CLD-E01 to CLD-E04) adds the optional Frameleaf account link, license certificates and supporter keys, Frameleaf sign-in, remote access through a per-server certificate and a blind relay, the Frameleaf Cloud processing destination that replaces the previous GPU-provider integration, and cloud backup to one dedicated bucket per server. Its contract is the [Frameleaf Cloud integration guide](15-frameleaf-cloud-integration.md) and the approved design record is `docs/superpowers/specs/2026-09-24-frameleaf-cloud-design.md`. Everything in it is opt-in: a server with no account and no license keeps every existing feature, the cloud base address is deployment configuration rather than a setting, and every item is `planned-not-qualified` until its own acceptance evidence exists. The cloud services themselves are planned in Jira project FC and Confluence space FC.
 
 ## Definition of ready and done
 

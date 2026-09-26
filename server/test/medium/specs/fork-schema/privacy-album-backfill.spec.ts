@@ -4,6 +4,7 @@ import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { ForkAlbumMetadataRepository } from 'src/repositories/fork-album-metadata.repository.js';
+import { ForkEnrichmentRepository } from 'src/repositories/fork-enrichment.repository.js';
 import { ForkPrivacyRepository } from 'src/repositories/fork-privacy.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -11,7 +12,6 @@ import { ImageEnrichmentService } from 'src/services/image-enrichment.service.js
 import { withNsfwAssets, withoutNsfwAssets } from 'src/utils/database.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { mediumFactory } from 'test/medium.factory.js';
-import { newUuid } from 'test/small.factory.js';
 import { getKyselyDB, newTestService } from 'test/utils.js';
 
 describe('privacy and album fork sidecars', () => {
@@ -194,7 +194,7 @@ describe('privacy and album fork sidecars', () => {
     const albums = new ForkAlbumMetadataRepository(db);
     const privacy = new ForkPrivacyRepository(db);
     await albums.backfillAlbums([album.id!]);
-    const legacyRow = { id: album.id!, parentId: null, icon: 'changed-legacy', sortOrder: 9 };
+    const legacyRow = { id: album.id!, parentId: null, icon: 'changed-legacy', sortOrder: 9, kind: 'album' };
 
     await sql`UPDATE immich_fork.state SET phase = 'dual-write' WHERE id = 1`.execute(db);
     await expect(albums.applyReadMetadata([legacyRow])).resolves.toEqual([legacyRow]);
@@ -270,17 +270,23 @@ describe('privacy and album fork sidecars', () => {
     );
   });
 
-  it('rejects authoritative enrichment reads when the required privacy sidecar is missing', async () => {
-    const assetId = newUuid();
+  // FL-34 (coordinator decision, September 24, 2026): a missing privacy row is "no classification yet"
+  it('reads enrichment without a privacy sidecar as unclassified after the cutover', async () => {
+    const user = await mediumFactory.userWithClusterGroup(db);
+    const asset = mediumFactory.assetInsert({ ownerId: user.id });
+    await db.insertInto('user').values(user).execute();
+    await db.insertInto('asset').values(asset).execute();
+    await sql`UPDATE immich_fork.state SET phase = 'active', active = true WHERE id = 1`.execute(db);
+    await new ForkEnrichmentRepository(db).initialize([asset.id!]);
+    await expect(new ForkPrivacyRepository(db).get(asset.id!)).resolves.toBeUndefined();
     const { sut, mocks } = newTestService(ImageEnrichmentService);
     (sut as unknown as { db: Kysely<DB> }).db = db;
-    mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([assetId]));
-    mocks.asset.getMetadataByKey.mockResolvedValue({ value: {} } as never);
-    await sql`UPDATE immich_fork.state SET phase = 'active', active = true WHERE id = 1`.execute(db);
+    mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id!]));
 
-    await expect(sut.getAssetEnrichment(authStub.user1, assetId)).rejects.toThrow(
-      `Missing fork privacy sidecar for asset ${assetId}`,
-    );
+    const response = await sut.getAssetEnrichment(authStub.user1, asset.id!);
+    expect(response.nsfwDetection?.effectiveIsNsfw ?? false).toBe(false);
+    // a read writes nothing
+    await expect(new ForkPrivacyRepository(db).get(asset.id!)).resolves.toBeUndefined();
   });
 
   it('deletes album metadata and every related closure pair in the legacy delete transaction', async () => {

@@ -1,5 +1,6 @@
 import { BrowserContext } from '@playwright/test';
 import { playwrightHost } from 'src/../playwright.config.js';
+import { adminConfigDefaults } from 'src/ui/mock-network/admin-config.js';
 
 export const setupBaseMockApiRoutes = async (context: BrowserContext, adminUserId: string) => {
   await context.addCookies([
@@ -16,7 +17,7 @@ export const setupBaseMockApiRoutes = async (context: BrowserContext, adminUserI
       contentType: 'application/json',
       json: {
         id: adminUserId,
-        email: 'admin@immich.cloud',
+        email: 'admin@example.com',
         name: 'Immich Admin',
         profileImagePath: '',
         avatarColor: 'orange',
@@ -94,7 +95,7 @@ export const setupBaseMockApiRoutes = async (context: BrowserContext, adminUserI
       contentType: 'application/json',
       json: {
         version: 'v2.2.3',
-        versionUrl: 'https://github.com/immich-app/immich/releases/tag/v2.2.3',
+        versionUrl: 'https://github.com/Frameleaf/frameleaf-app/releases?q=frameleaf-v2.2.3&expanded=true',
         licensed: false,
         build: '1234567890',
         buildUrl: 'https://github.com/immich-app/immich/actions/runs/1234567890',
@@ -119,6 +120,7 @@ export const setupBaseMockApiRoutes = async (context: BrowserContext, adminUserI
       contentType: 'application/json',
       json: {
         smartSearch: false,
+        askSearch: false,
         facialRecognition: false,
         duplicateDetection: false,
         map: true,
@@ -136,12 +138,23 @@ export const setupBaseMockApiRoutes = async (context: BrowserContext, adminUserI
       },
     });
   });
+  // The session privacy guard (FL-34) holds the app until the session status is verified; a signed-in
+  // test session is not elevated. Specs that need another status register their own route later,
+  // which takes precedence.
+  await context.route('**/api/auth/status', async (route) => {
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      json: { isElevated: false, password: true, pinCode: false },
+    });
+  });
   await context.route('**/api/server/config', async (route) => {
     return route.fulfill({
       status: 200,
       contentType: 'application/json',
       json: {
         loginPageMessage: '',
+        serverName: '',
         trashDays: 30,
         userDeleteDelay: 7,
         oauthButtonText: 'Login with OAuth',
@@ -149,9 +162,10 @@ export const setupBaseMockApiRoutes = async (context: BrowserContext, adminUserI
         isOnboarded: true,
         externalDomain: '',
         publicUsers: true,
-        mapDarkStyleUrl: 'https://tiles.immich.cloud/v1/style/dark.json',
-        mapLightStyleUrl: 'https://tiles.immich.cloud/v1/style/light.json',
+        mapDarkStyleUrl: 'https://tiles.frameleaf.cloud/v1/style/dark.json',
+        mapLightStyleUrl: 'https://tiles.frameleaf.cloud/v1/style/light.json',
         maintenanceMode: false,
+        frameleaf: { via: null, signInAvailable: false, signInRequired: false, publicUrl: null },
       },
     });
   });
@@ -274,6 +288,34 @@ export const setupBaseMockApiRoutes = async (context: BrowserContext, adminUserI
         diskUsagePercentage: 74.4,
       },
     });
+  });
+  // FL-71: the Command Center (`/user-settings`) is where the rail's Trash, the old `/trash` addresses
+  // and every settings area open. The mocked user is an administrator, and an administrator's
+  // Command Center loads the server settings with it, so the mocked server answers with its defaults.
+  await context.route('**/api/system-config', async (route) => {
+    if (route.request().method() !== 'GET') {
+      return route.fallback();
+    }
+    return route.fulfill({ status: 200, contentType: 'application/json', json: adminConfigDefaults });
+  });
+  await context.route('**/api/system-config/defaults', async (route) => {
+    return route.fulfill({ status: 200, contentType: 'application/json', json: adminConfigDefaults });
+  });
+  await context.route('**/api/admin/config/revision', async (route) => {
+    if (route.request().method() !== 'GET') {
+      return route.fallback();
+    }
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      json: { config: adminConfigDefaults, revision: 'e2e-defaults' },
+    });
+  });
+  await context.route('**/api/admin/config/history', async (route) => {
+    return route.fulfill({ status: 200, contentType: 'application/json', json: { entries: [] } });
+  });
+  await context.route('**/api/analytics/scopes', async (route) => {
+    return route.fulfill({ status: 200, contentType: 'application/json', json: { scopes: [] } });
   });
   await context.route('**/api/server/version-history', async (route) => {
     return route.fulfill({

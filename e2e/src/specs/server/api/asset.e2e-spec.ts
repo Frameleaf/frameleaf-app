@@ -143,6 +143,16 @@ describe('/asset', () => {
     utils.disconnectWebsocket(websocket);
   });
 
+  describe('GET /assets/:id/image-enrichment (FL-36)', () => {
+    it('should report no description confidence before a description exists', async () => {
+      const { status, body } = await request(app)
+        .get(`/assets/${user1Assets[0].id}/image-enrichment`)
+        .set('Authorization', `Bearer ${user1.accessToken}`);
+      expect(status).toBe(200);
+      expect(body.description).toMatchObject({ status: 'missing', confidence: null });
+    });
+  });
+
   describe('GET /assets/:id/original', () => {
     it('should download the file', async () => {
       const response = await request(app)
@@ -435,6 +445,50 @@ describe('/asset', () => {
       expect(status).toEqual(200);
     });
 
+    // FL-36 (V-24): a place name typed in the information panel is kept over reverse geocoding.
+    it('should keep a typed place name through metadata extraction', async () => {
+      const { status, body } = await request(app)
+        .put(`/assets/${user1Assets[0].id}`)
+        .set('Authorization', `Bearer ${user1.accessToken}`)
+        .send({ latitude: 51.1784, longitude: -115.5708, city: ' Banff ', state: '', country: 'Canada' });
+      expect(status).toEqual(200);
+      expect(body).toMatchObject({
+        exifInfo: expect.objectContaining({ city: 'Banff', state: null, country: 'Canada' }),
+      });
+
+      await utils.waitForQueueFinish(admin.accessToken, 'sidecar');
+      await utils.waitForQueueFinish(admin.accessToken, 'metadataExtraction');
+
+      const asset = await getAssetInfo({ id: user1Assets[0].id }, { headers: asBearerAuth(user1.accessToken) });
+      expect(asset.exifInfo).toMatchObject({ city: 'Banff', state: null, country: 'Canada' });
+    });
+
+    it('should let a moved item be named again when no place is typed', async () => {
+      await request(app)
+        .put(`/assets/${user1Assets[0].id}`)
+        .set('Authorization', `Bearer ${user1.accessToken}`)
+        .send({ city: 'Typed City' });
+      const { status } = await request(app)
+        .put(`/assets/${user1Assets[0].id}`)
+        .set('Authorization', `Bearer ${user1.accessToken}`)
+        .send({ latitude: 0, longitude: 0 });
+      expect(status).toEqual(200);
+
+      await utils.waitForQueueFinish(admin.accessToken, 'sidecar');
+      await utils.waitForQueueFinish(admin.accessToken, 'metadataExtraction');
+
+      const asset = await getAssetInfo({ id: user1Assets[0].id }, { headers: asBearerAuth(user1.accessToken) });
+      expect(asset.exifInfo?.city).not.toBe('Typed City');
+    });
+
+    it('should refuse a place name for an item the user cannot change', async () => {
+      const { status } = await request(app)
+        .put(`/assets/${user1Assets[0].id}`)
+        .set('Authorization', `Bearer ${user2.accessToken}`)
+        .send({ city: 'Elsewhere' });
+      expect(status).toEqual(400);
+    });
+
     it.skip('should geocode country from gps data in the middle of nowhere', async () => {
       const { status } = await request(app)
         .put(`/assets/${user1Assets[0].id}`)
@@ -686,6 +740,26 @@ describe('/asset', () => {
   });
 
   describe('PUT /assets', () => {
+    // FL-36: a bulk metadata change is all or nothing: an item the user cannot change, or one that is
+    // gone, refuses the whole request, so a frozen selection never half-applies.
+    it('refuses a bulk change that includes an item the user cannot change', async () => {
+      const { status } = await request(app)
+        .put('/assets')
+        .set('Authorization', `Bearer ${user1.accessToken}`)
+        .send({ ids: [user1Assets[0].id, user2Assets[0].id], isFavorite: true });
+      expect(status).toBe(400);
+      const untouched = await utils.getAssetInfo(user2.accessToken, user2Assets[0].id);
+      expect(untouched.isFavorite).toBe(false);
+    });
+
+    it('refuses a stale bulk selection', async () => {
+      const { status } = await request(app)
+        .put('/assets')
+        .set('Authorization', `Bearer ${user1.accessToken}`)
+        .send({ ids: [user1Assets[0].id, '00000000-0000-4000-8000-000000000000'], rating: 3 });
+      expect(status).toBe(400);
+    });
+
     it('should update date time original relatively', async () => {
       const { status, body } = await request(app)
         .put(`/assets/`)

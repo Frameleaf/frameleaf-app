@@ -1,33 +1,58 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Put } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Put, Query } from '@nestjs/common';
 import { ApiExcludeEndpoint, ApiTags } from '@nestjs/swagger';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
   CreateLibraryDto,
+  LibraryRemovalDto,
+  LibraryRemovalReviewDto,
   LibraryResponseDto,
+  LibrarySearchDto,
   LibraryStatsResponseDto,
+  ManagedUploadsStatsResponseDto,
   UpdateLibraryDto,
   ValidateLibraryDto,
   ValidateLibraryResponseDto,
 } from 'src/dtos/library.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
-import { Authenticated } from 'src/middleware/auth.guard.js';
+import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
+import { LibraryScanService } from 'src/services/library-scan.service.js';
 import { LibraryService } from 'src/services/library.service.js';
 import { UUIDParamDto } from 'src/validation.js';
 
 @ApiTags(ApiTag.Libraries)
 @Controller('libraries')
 export class LibraryController {
-  constructor(private service: LibraryService) {}
+  constructor(
+    private service: LibraryService,
+    private scans: LibraryScanService,
+  ) {}
 
   @Get()
   @Authenticated({ permission: Permission.LibraryRead, admin: true })
   @Endpoint({
     summary: 'Retrieve libraries',
-    description: 'Retrieve a list of external libraries.',
-    history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
+    description: 'Retrieve a list of external libraries, each with its latest scan.',
+    history: new HistoryBuilder()
+      .added('v1')
+      .beta('v1')
+      .stable('v2')
+      .updated('v3', 'Each library carries its latest scan and removal state'),
   })
-  getAllLibraries(): Promise<LibraryResponseDto[]> {
-    return this.service.getAll();
+  async getAllLibraries(@Query() dto: LibrarySearchDto): Promise<LibraryResponseDto[]> {
+    return this.scans.withScans(await this.service.getAll(dto));
+  }
+
+  @Get('managed-uploads')
+  @Authenticated({ permission: Permission.LibraryStatistics, admin: true })
+  @Endpoint({
+    summary: 'Retrieve managed upload statistics',
+    description:
+      'Retrieve, for every active account, the photos, videos and original sizes it keeps in managed upload storage rather than in external libraries.',
+    history: new HistoryBuilder().added('v3'),
+  })
+  getManagedUploadStatistics(): Promise<ManagedUploadsStatsResponseDto[]> {
+    return this.service.getManagedUploads();
   }
 
   @Post()
@@ -37,8 +62,8 @@ export class LibraryController {
     description: 'Create a new external library.',
     history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
   })
-  createLibrary(@Body() dto: CreateLibraryDto): Promise<LibraryResponseDto> {
-    return this.service.create(dto);
+  createLibrary(@Auth() auth: AuthDto, @Body() dto: CreateLibraryDto): Promise<LibraryResponseDto> {
+    return this.service.create(dto, auth);
   }
 
   @Get(':id')
@@ -48,8 +73,9 @@ export class LibraryController {
     description: 'Retrieve an external library by its ID.',
     history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
   })
-  getLibrary(@Param() { id }: UUIDParamDto): Promise<LibraryResponseDto> {
-    return this.service.get(id);
+  async getLibrary(@Param() { id }: UUIDParamDto): Promise<LibraryResponseDto> {
+    const [library] = await this.scans.withScans([await this.service.get(id)]);
+    return library;
   }
 
   @Put(':id')
@@ -63,15 +89,23 @@ export class LibraryController {
       .stable('v2')
       .deprecated('v3', { replacementId: 'updateLibrary' }),
   })
-  updateLibrary(@Param() { id }: UUIDParamDto, @Body() dto: UpdateLibraryDto): Promise<LibraryResponseDto> {
-    return this.service.update(id, dto);
+  updateLibrary(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @Body() dto: UpdateLibraryDto,
+  ): Promise<LibraryResponseDto> {
+    return this.service.update(id, dto, auth);
   }
 
   @Patch(':id')
   @ApiExcludeEndpoint()
   @Authenticated({ permission: Permission.LibraryUpdate, admin: true })
-  updateLibraryV3(@Param() { id }: UUIDParamDto, @Body() dto: UpdateLibraryDto): Promise<LibraryResponseDto> {
-    return this.service.update(id, dto);
+  updateLibraryV3(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @Body() dto: UpdateLibraryDto,
+  ): Promise<LibraryResponseDto> {
+    return this.service.update(id, dto, auth);
   }
 
   @Delete(':id')
@@ -82,8 +116,8 @@ export class LibraryController {
     description: 'Delete an external library by its ID.',
     history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
   })
-  deleteLibrary(@Param() { id }: UUIDParamDto): Promise<void> {
-    return this.service.delete(id);
+  deleteLibrary(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<void> {
+    return this.service.delete(id, auth);
   }
 
   @Post(':id/validate')
@@ -119,7 +153,46 @@ export class LibraryController {
     description: 'Queue a scan for the external library to find and import new assets.',
     history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
   })
-  scanLibrary(@Param() { id }: UUIDParamDto): Promise<void> {
-    return this.service.queueScan(id);
+  scanLibrary(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<void> {
+    return this.scans.queueManual(auth, id);
+  }
+
+  @Delete(':id/scan')
+  @Authenticated({ permission: Permission.LibraryUpdate, admin: true })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Endpoint({
+    summary: 'Cancel a library scan',
+    description:
+      "Stop the external library's waiting, running or paused scan. Items it already handled stay as they are.",
+    history: new HistoryBuilder().added('v3'),
+  })
+  cancelLibraryScan(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<void> {
+    return this.scans.cancel(auth, id);
+  }
+
+  @Get(':id/removal')
+  @Authenticated({ permission: Permission.LibraryDelete, admin: true })
+  @Endpoint({
+    summary: 'Review a library removal',
+    description:
+      'The first stage of removing an external library: the indexed items, albums, shared links and faces the removal takes with it, and a token to confirm it with. Source files are never deleted.',
+    history: new HistoryBuilder().added('v3'),
+  })
+  async getLibraryRemovalReview(@Param() { id }: UUIDParamDto): Promise<LibraryRemovalReviewDto> {
+    const review = await this.service.getRemovalReview(id);
+    return { ...review, scanActive: await this.scans.isActive(id) };
+  }
+
+  @Post(':id/removal')
+  @Authenticated({ permission: Permission.LibraryDelete, admin: true })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Endpoint({
+    summary: 'Remove a library',
+    description:
+      'The second stage of removing an external library: confirm with the typed name and the review token. Refused when the library changed after the review.',
+    history: new HistoryBuilder().added('v3'),
+  })
+  removeLibrary(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto, @Body() dto: LibraryRemovalDto): Promise<void> {
+    return this.service.remove(auth, id, dto);
   }
 }

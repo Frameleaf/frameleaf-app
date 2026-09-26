@@ -7,6 +7,12 @@ import sharp from 'sharp';
 import { ReleaseChannel } from 'src/enum.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import {
+  GitHubRelease,
+  newestFrameleafRelease,
+  parseFrameleafFeedRelease,
+  releaseFeedChannel,
+} from 'src/utils/frameleaf-release.js';
 
 export interface VersionResponse {
   version: string;
@@ -56,8 +62,94 @@ export class ServerInfoRepository {
     this.logger.setContext(ServerInfoRepository.name);
   }
 
-  getLatestRelease(_channel: ReleaseChannel): Promise<VersionResponse> {
-    return Promise.reject(new Error('External version checks are disabled in this fork'));
+  /**
+   * The newest Frameleaf release on the channel (FL-80 S-4 / O-8, FL-192). Only Frameleaf is asked; no
+   * Immich service is contacted, and no instance identifier is sent to either source.
+   *
+   * The Frameleaf Cloud release feed (`versionCheck.url`, FC-70) is asked first with the channel
+   * (`stable` or `beta`). If it fails or answers with something that is not a release, Frameleaf's
+   * GitHub releases (`versionCheck.fallbackUrl`) are asked instead. The version is returned with a
+   * leading "v".
+   */
+  async getLatestRelease(channel: ReleaseChannel): Promise<VersionResponse> {
+    const { versionCheck } = this.configRepository.getEnv();
+    try {
+      return await this.getFeedRelease(versionCheck.url, channel);
+    } catch (error) {
+      this.logger.warn(
+        `Frameleaf release feed unavailable, asking GitHub releases instead: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+
+    try {
+      return await this.getGitHubRelease(versionCheck.fallbackUrl, channel);
+    } catch (error) {
+      throw new Error('Failed to fetch latest release', { cause: error });
+    }
+  }
+
+  private async getFeedRelease(url: string, channel: ReleaseChannel): Promise<VersionResponse> {
+    const feedUrl = new URL(url);
+    feedUrl.searchParams.set('channel', releaseFeedChannel(channel));
+    const body = await this.fetchJson(feedUrl.href, { Accept: 'application/json' });
+    const release = parseFrameleafFeedRelease(body, channel);
+    if (!release) {
+      throw new Error('Release feed returned no release');
+    }
+    return { version: `v${release.version}`, published_at: release.publishedAt };
+  }
+
+  /**
+   * Stable reads the latest published GitHub release; Release candidate reads the recent releases and
+   * includes prereleases. The version is parsed from the `frameleaf-v<semver>-<n>` tag.
+   *
+   * Our release script never marks a GitHub release as a prerelease, so `/releases/latest` can be a
+   * release-candidate tag; Stable then falls back to the release list and its newest stable tag.
+   */
+  private async getGitHubRelease(url: string, channel: ReleaseChannel): Promise<VersionResponse> {
+    const includePrerelease = channel === ReleaseChannel.ReleaseCandidate;
+    let newest = includePrerelease
+      ? undefined
+      : newestFrameleafRelease([(await this.fetchReleases(`${url}/latest`)) as GitHubRelease], false);
+    if (!newest) {
+      const releases = await this.fetchReleases(`${url}?per_page=30`);
+      newest = newestFrameleafRelease(Array.isArray(releases) ? releases : [releases], includePrerelease);
+    }
+    if (!newest) {
+      throw new Error('No Frameleaf release tag found');
+    }
+    return { version: `v${newest.tag.version}`, published_at: newest.release.published_at ?? '' };
+  }
+
+  private fetchReleases(url: string) {
+    return this.fetchJson(url, {
+      Accept: 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28',
+    }) as Promise<GitHubRelease | GitHubRelease[]>;
+  }
+
+  /**
+   * One release lookup. Every request gives up after 10 seconds, sends only a generic user agent, and a
+   * failure names the HTTP status and any rate-limit reset or Retry-After.
+   */
+  private async fetchJson(url: string, headers: Record<string, string>): Promise<unknown> {
+    const response = await fetch(url, {
+      headers: { ...headers, 'User-Agent': 'Frameleaf-Server' },
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!response.ok) {
+      const details = [`status ${response.status}`];
+      const retryAfter = response.headers.get('retry-after');
+      if (retryAfter) {
+        details.push(`Retry-After ${retryAfter}s`);
+      }
+      const reset = Number(response.headers.get('x-ratelimit-reset'));
+      if (response.headers.get('x-ratelimit-remaining') === '0' && Number.isFinite(reset) && reset > 0) {
+        details.push(`rate limit resets at ${new Date(reset * 1000).toISOString()}`);
+      }
+      throw new Error(`Release lookup failed with ${details.join(', ')}`);
+    }
+    return response.json();
   }
 
   buildVersions?: ServerBuildVersions;

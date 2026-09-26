@@ -3,6 +3,7 @@ import z from 'zod';
 import { Stack } from 'src/database.js';
 import { AssetResponseSchema, mapAsset } from 'src/dtos/asset-response.dto.js';
 import { AuthDto } from 'src/dtos/auth.dto.js';
+import { getLockedOwnerId, isLockedAssetRow } from 'src/utils/locked-visibility.js';
 
 const StackSearchSchema = z
   .object({
@@ -37,8 +38,13 @@ export class StackUpdateDto extends createZodDto(StackUpdateSchema) {}
 export class StackResponseDto extends createZodDto(StackResponseSchema) {}
 
 export const mapStack = (stack: Stack, { auth }: { auth?: AuthDto }) => {
-  const primary = stack.assets.filter((asset) => asset.id === stack.primaryAssetId);
-  const others = stack.assets.filter((asset) => asset.id !== stack.primaryAssetId);
+  // Defense in depth (FL-34): the stack reads already leave out Locked media the viewer may not see,
+  // including any stack whose primary is Locked. A Locked member still never maps for anyone but its
+  // owner in an elevated session.
+  const lockedOwnerId = auth ? getLockedOwnerId(auth) : undefined;
+  const assets = stack.assets.filter((asset) => !isLockedAssetRow(asset) || asset.ownerId === lockedOwnerId);
+  const primary = assets.filter((asset) => asset.id === stack.primaryAssetId);
+  const others = assets.filter((asset) => asset.id !== stack.primaryAssetId);
 
   return {
     id: stack.id,

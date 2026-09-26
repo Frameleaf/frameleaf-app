@@ -115,7 +115,7 @@
       "sourcePhase": 1,
       "status": "planned-not-qualified",
       "tests": [
-        "Walk album→filter→viewer→Info→manual-face→quick edit→return and representative lease/recovery/owner flows; keyboard and narrow-screen visual review."
+        "Walk album\u2192filter\u2192viewer\u2192Info\u2192manual-face\u2192quick edit\u2192return and representative lease/recovery/owner flows; keyboard and narrow-screen visual review."
       ],
       "title": "Capture actionable designs for the remaining high-risk workflows",
       "type": "story",
@@ -284,7 +284,7 @@
       "id": "FN-204",
       "objective": "Freeze the intended matching set for select-all and long-running bulk operations without crossing ownership/privacy boundaries.",
       "paths": [
-        "web/src/lib/components/timeline/AssetSelectControlBar.svelte",
+        "web/src/lib/components/frameleaf/SelectionBar.svelte",
         "web/src/lib/managers/timeline-manager",
         "server/src/services/asset.service.ts",
         "server/src/repositories/access.repository.ts"
@@ -313,7 +313,7 @@
       "epicId": "FN-E02",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
       "id": "FN-205",
-      "objective": "Demonstrate album→filter/sort→select→layout switch→viewer→Info face addition→quick edit→return using authenticated production services.",
+      "objective": "Demonstrate album\u2192filter/sort\u2192select\u2192layout switch\u2192viewer\u2192Info face addition\u2192quick edit\u2192return using authenticated production services.",
       "paths": [
         "web/src/routes/(user)/albums",
         "web/src/lib/components/asset-viewer",
@@ -484,7 +484,7 @@
       "sourcePhase": 3,
       "status": "planned-not-qualified",
       "tests": [
-        "Migration-order/catalog tests plus real PostgreSQL ownership races; isolated official→fork→official→fork media/reference certification."
+        "Migration-order/catalog tests plus real PostgreSQL ownership races; isolated official\u2192fork\u2192official\u2192fork media/reference certification."
       ],
       "title": "Preserve schema handoff and deduplicated ownership across new features",
       "type": "story",
@@ -790,8 +790,8 @@
         "server/src/repositories/fork-enrichment.repository.ts",
         "server/src/repositories/fork-privacy.repository.ts",
         "server/src/utils/database.ts",
-        "web/src/lib/components/timeline/actions/MarkNsfwAction.svelte",
-        "web/src/lib/components/shared-components/navigation-bar/ElevatedSessionToggle.svelte"
+        "web/src/lib/frameleaf/bulk-operations.ts",
+        "web/src/lib/components/frameleaf/AccountMenu.svelte"
       ],
       "phase": 4,
       "priority": "High",
@@ -802,7 +802,7 @@
       "sourcePhase": "P0",
       "status": "planned-not-qualified",
       "tests": [
-        "Add real PostgreSQL mark→query→safe and retry/race cases covering missing privacy rows, albums, tags/people suppression and derived sources.",
+        "Add real PostgreSQL mark\u2192query\u2192safe and retry/race cases covering missing privacy rows, albums, tags/people suppression and derived sources.",
         "Add web/API tests for lock while viewer/search/Trash is open, expired elevation and cross-account requests; assert no names or counts leak."
       ],
       "title": "Verify and repair sensitive-mark projection before live Locked integration",
@@ -825,7 +825,7 @@
         "web/src/lib/components/asset-viewer/AssetViewer.svelte",
         "web/src/lib/components/asset-viewer/AssetViewerNavBar.svelte",
         "web/src/lib/components/asset-viewer/SlideshowBar.svelte",
-        "web/src/lib/modals/SlideshowSettingsModal.svelte",
+        "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
         "e2e/src/specs/web/asset-viewer/navbar.e2e-spec.ts",
         "prototypes/frameleaf/src/MediaViewer.jsx"
       ],
@@ -927,7 +927,7 @@
       "paths": [
         "web/src/routes/(user)/tags/[[photos=photos]]/[[assetId=id]]/+page.svelte",
         "web/src/routes/(user)/folders/[[photos=photos]]/[[assetId=id]]/+page.svelte",
-        "web/src/lib/services/tag.service.ts",
+        "web/src/lib/components/frameleaf/TagBrowserPanel.svelte",
         "web/src/lib/stores/folders.svelte.ts",
         "web/src/lib/components/shared-components/tree",
         "e2e/src/specs/server/api/tag.e2e-spec.ts"
@@ -959,7 +959,7 @@
       "objective": "Local Trash/large-file workflows share sample state; bind them to source lifecycle and recheck the current server empty-trash semantics against sensitive-media policy.",
       "paths": [
         "web/src/routes/(user)/trash/[[photos=photos]]/[[assetId=id]]/+page.svelte",
-        "web/src/routes/(user)/utilities/large-files/[[photos=photos]]/[[assetId=id]]/+page.svelte",
+        "web/src/lib/components/frameleaf/LargeFilesUtility.svelte",
         "server/src/services/trash.service.ts",
         "server/src/repositories/trash.repository.ts",
         "e2e/src/specs/server/api/trash.e2e-spec.ts",
@@ -974,7 +974,7 @@
       "status": "planned-not-qualified",
       "tests": [
         "Extend Trash API tests for hidden assets, changing marks/rules between review and apply, shared physical originals and stale restores.",
-        "Add cross-tab/websocket reload tests from viewer trash→settings restore and large-file removal→next item."
+        "Add cross-tab/websocket reload tests from viewer trash\u2192settings restore and large-file removal\u2192next item."
       ],
       "title": "Connect Trash and large-file review to real asset lifecycle",
       "type": "story",
@@ -996,7 +996,7 @@
         "web/src/lib/components/discovery/query.ts",
         "web/src/lib/components/discovery/query.spec.ts",
         "web/src/lib/elements/SearchBar.svelte",
-        "web/src/lib/managers/search-manager.svelte.ts",
+        "web/src/lib/frameleaf/search-filters.ts",
         "server/src/dtos/discovery.dto.ts",
         "server/src/dtos/search.dto.ts"
       ],
@@ -1078,7 +1078,7 @@
       "status": "planned-not-qualified",
       "tests": [
         "Test count-to-query consistency, archived/revoked assets, no score data and named/hidden people.",
-        "Browser verify Explore→filtered timeline→viewer→back with grouping/scroll retained."
+        "Browser verify Explore\u2192filtered timeline\u2192viewer\u2192back with grouping/scroll retained."
       ],
       "title": "Connect Explore and Best Photos to actual discovery data",
       "type": "story",
@@ -1104,7 +1104,7 @@
         "web/src/lib/stores/preferences.store.ts",
         "server/src/services/map.service.ts",
         "e2e/src/specs/server/api/map.e2e-spec.ts",
-        "web/src/routes/(user)/utilities/geolocation/+page.svelte"
+        "web/src/lib/components/frameleaf/GeolocationUtility.svelte"
       ],
       "phase": 4,
       "priority": "Medium",
@@ -1136,8 +1136,8 @@
       "objective": "Fixed sample collections and snapshots lack album lifecycle and hierarchy. Port the real album list/tree and source controls.",
       "paths": [
         "web/src/routes/(user)/albums/+page.svelte",
-        "web/src/routes/(user)/albums/AlbumsControls.svelte",
-        "web/src/lib/components/shared-components/side-bar/AlbumNavigationTree.svelte",
+        "web/src/lib/components/frameleaf/AlbumDirectory.svelte",
+        "web/src/lib/components/frameleaf/LibraryRail.svelte",
         "web/src/lib/services/album.service.ts",
         "server/src/services/album.service.ts",
         "e2e/src/specs/web/album.e2e-spec.ts"
@@ -1171,9 +1171,9 @@
       "objective": "A scoped sample grid lacks the source album detail workflow. Preserve title/description/cover, collaboration, activity and source asset actions.",
       "paths": [
         "web/src/routes/(user)/albums/[albumId=id]/[[photos=photos]]/[[assetId=id]]/+page.svelte",
-        "web/src/lib/modals/AlbumOptionsModal.svelte",
-        "web/src/lib/components/album-page/AlbumMap.svelte",
-        "web/src/lib/components/asset-viewer/ActivityViewer.svelte",
+        "web/src/lib/components/frameleaf/AlbumShareDialog.svelte",
+        "web/src/lib/components/frameleaf/AlbumHeader.svelte",
+        "web/src/lib/components/frameleaf/ActivityPanel.svelte",
         "web/src/lib/services/album.service.ts"
       ],
       "phase": 4,
@@ -1205,7 +1205,7 @@
         "web/src/routes/(user)/sharing/+page.svelte",
         "web/src/routes/(user)/partners/[userId]/[[photos=photos]]/[[assetId=id]]/+page.svelte",
         "web/src/routes/(user)/shared-links",
-        "web/src/lib/modals/SharedLinkCreateModal.svelte",
+        "web/src/lib/components/frameleaf/SharedLinkForm.svelte",
         "server/src/services/partner.service.ts",
         "server/src/services/shared-link.service.ts",
         "prototypes/frameleaf/src/SharingAccess.jsx"
@@ -1304,8 +1304,8 @@
       "objective": "The prototype supports photographed cards and filtering, but source person management is richer. Adapt list/detail/manage screens without changing identity architecture.",
       "paths": [
         "web/src/routes/(user)/people",
-        "web/src/lib/services/person.service.ts",
-        "web/src/lib/modals/PersonEditBirthDateModal.svelte",
+        "web/src/lib/components/frameleaf/people/PersonHero.svelte",
+        "web/src/lib/components/frameleaf/people/BirthdayDialog.svelte",
         "server/src/services/person.service.ts",
         "e2e/src/specs/server/api/person.e2e-spec.ts",
         "prototypes/frameleaf/src/People.jsx"
@@ -1319,7 +1319,7 @@
       "status": "planned-not-qualified",
       "tests": [
         "Extend manage visibility/person API tests for hidden/unnamed people, rejected merge and permission changes.",
-        "Add browser person detail→assets→back, birthday validation and featured-photo updates."
+        "Add browser person detail\u2192assets\u2192back, birthday validation and featured-photo updates."
       ],
       "title": "Restore complete People directory and person management",
       "type": "story",
@@ -1338,8 +1338,8 @@
       "id": "REC-002",
       "objective": "The new sample face tagger supports manual regions but explicitly does not alter existing detected identities. Port the source face editor and assignment contracts together.",
       "paths": [
-        "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
-        "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+        "web/src/lib/components/frameleaf/FaceTagger.svelte",
+        "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
         "web/src/lib/components/asset-viewer/DetailPanelPeople.svelte",
         "server/src/services/person.service.ts",
         "prototypes/frameleaf/src/FaceTagger.jsx",
@@ -1458,7 +1458,7 @@
       "status": "planned-not-qualified",
       "tests": [
         "Run enrichment plan, frame/index and caption PostgreSQL suites including source replacement between inference/read/publication.",
-        "Browser preview→selected-stage plan→reload/cancel/retry plus frame-to-moment search; assert no automatic ASR and no preview metadata writes."
+        "Browser preview\u2192selected-stage plan\u2192reload/cancel/retry plus frame-to-moment search; assert no automatic ASR and no preview metadata writes."
       ],
       "title": "Migrate sample-first enrichment and timestamped moment workbench",
       "type": "story",
@@ -1513,7 +1513,7 @@
         "web/src/routes/(user)/culling/+page.svelte",
         "web/src/lib/components/culling/CullingCompare.svelte",
         "server/src/repositories/culling.repository.ts",
-        "web/src/routes/(user)/utilities/duplicates/[[photos=photos]]/[[assetId=id]]/+page.svelte",
+        "web/src/lib/components/frameleaf/DuplicateUtility.svelte",
         "prototypes/frameleaf/src/UtilitiesManager.jsx",
         "e2e/src/specs/web/duplicates.e2e-spec.ts"
       ],
@@ -1596,7 +1596,7 @@
       "status": "planned-not-qualified",
       "tests": [
         "Run document/OCR fixtures for cropped-away evidence, replacement tokens, manual correction and hidden source derivatives.",
-        "Browser search→field→region→correction→reload plus access revocation while detail is open."
+        "Browser search\u2192field\u2192region\u2192correction\u2192reload plus access revocation while detail is open."
       ],
       "title": "Migrate OCR-backed document discovery and corrections",
       "type": "story",
@@ -1648,7 +1648,7 @@
       "epicId": "IMP-E01",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
       "id": "IMP-001",
-      "objective": "Resumable Takeout services exist; backup settings are only an entry point. Deliver source→stage→scan→review→import→reconcile against the existing manifest API.",
+      "objective": "Resumable Takeout services exist; backup settings are only an entry point. Deliver source\u2192stage\u2192scan\u2192review\u2192import\u2192reconcile against the existing manifest API.",
       "paths": [
         "web/src/routes/(user)/takeout/+page.svelte",
         "web/src/lib/components/takeout/upload.ts",
@@ -1685,7 +1685,7 @@
       "id": "IMP-002",
       "objective": "The source iCloud route is inventoried and the prototype has sample connections. Bind the real account/authentication/options and job lifecycle.",
       "paths": [
-        "web/src/routes/(user)/utilities/icloud-sync/ICloudSync.svelte",
+        "web/src/lib/components/frameleaf/ICloudSyncPanel.svelte",
         "server/src/controllers/icloud-sync.controller.ts",
         "server/src/services/icloud-sync.service.ts",
         "server/src/services/icloud-staging.service.ts",
@@ -1721,7 +1721,7 @@
       "objective": "Settings utilities provide local evidence review but not live aggregate scans. Migrate Care queues and the shared MediaHealth source/candidate review.",
       "paths": [
         "web/src/routes/(user)/library-care/+page.svelte",
-        "web/src/routes/(user)/utilities/MediaHealthReview.svelte",
+        "web/src/lib/components/frameleaf/LibraryCareHealth.svelte",
         "server/src/services/library-care.service.ts",
         "server/src/services/media-health.service.ts",
         "server/src/repositories/library-care.integration.spec.ts",
@@ -1734,7 +1734,7 @@
       "status": "planned-not-qualified",
       "tests": [
         "Run Care/media-health and disposable filesystem fixtures for changed sources, root escape, wrong checksum, missing candidate and restart.",
-        "Browser scan→finding→candidate→review→repair→reconcile plus partial failures and administrator/owner access differences."
+        "Browser scan\u2192finding\u2192candidate\u2192review\u2192repair\u2192reconcile plus partial failures and administrator/owner access differences."
       ],
       "title": "Build Library Care and source-aware missing/corrupt recovery",
       "type": "story",
@@ -1753,10 +1753,10 @@
       "id": "IMP-004",
       "objective": "The source presents photo/video candidates and confidence; preserve this complete relationship-editing flow beyond sample pair state.",
       "paths": [
-        "web/src/routes/(user)/utilities/live-photos/+page.svelte",
+        "web/src/lib/components/frameleaf/LivePhotosUtility.svelte",
         "server/src/services/asset.service.ts",
         "server/src/dtos/asset.dto.ts",
-        "web/src/lib/components/timeline/actions/LinkLivePhotoAction.svelte",
+        "web/src/lib/frameleaf/bulk-actions.ts",
         "prototypes/frameleaf/src/UtilitiesManager.jsx"
       ],
       "phase": 4,
@@ -1768,7 +1768,7 @@
       "status": "planned-not-qualified",
       "tests": [
         "Add API fixtures for photo/video mismatch, stale existing links, foreign owners and partial batch failures.",
-        "Browser candidate review→relink→viewer motion playback→reload, with failed candidates retained."
+        "Browser candidate review\u2192relink\u2192viewer motion playback\u2192reload, with failed candidates retained."
       ],
       "title": "Restore Live Photo candidate and batch relinking review",
       "type": "story",
@@ -1838,7 +1838,7 @@
       "status": "planned-not-qualified",
       "tests": [
         "Run preservation PostgreSQL/staging tests with tampered manifest, partial packages, wrong owners and hidden OCR evidence.",
-        "Browser export→verify→review restore→reconciliation with interrupted/repeated imports and unavailable sources."
+        "Browser export\u2192verify\u2192review restore\u2192reconciliation with interrupted/repeated imports and unavailable sources."
       ],
       "title": "Port preservation package export, verification and restoration",
       "type": "story",
@@ -2035,9 +2035,9 @@
       "objective": "The prototype offers local password/PIN/key/OAuth/session/supporter and suppression forms. Bind them to their exact owner-scoped APIs.",
       "paths": [
         "web/src/routes/(user)/user-settings",
-        "web/src/lib/modals/ApiKeyCreateModal.svelte",
-        "web/src/lib/modals/ApiKeyUpdateModal.svelte",
-        "web/src/lib/modals/AvatarEditModal.svelte",
+        "web/src/lib/components/frameleaf/access/ApiKeyDialog.svelte",
+        "web/src/lib/components/frameleaf/access/ApiKeysSection.svelte",
+        "web/src/lib/components/frameleaf/AvatarEditorDialog.svelte",
         "server/src/services/auth.service.ts",
         "server/src/services/session.service.ts",
         "prototypes/frameleaf/src/ProtectedContent.jsx"
@@ -2106,7 +2106,7 @@
         "web/src/routes/admin/queues",
         "server/src/services/queue.service.ts",
         "server/src/services/job.service.ts",
-        "server/src/services/runpod.service.ts",
+        "server/src/services/cloud-ml.service.ts",
         "server/src/repositories/machine-learning.repository.ts",
         "server/src/services/video-restoration.service.ts",
         "prototypes/frameleaf/src/JobsManager.jsx",
@@ -2142,7 +2142,7 @@
       "paths": [
         "server/src/services/server.service.ts",
         "server/src/repositories/user.repository.ts",
-        "server/src/services/runpod.service.ts",
+        "server/src/services/cloud-ml.service.ts",
         "server/src/repositories/video-restoration.repository.ts",
         "docs/docs/developer/frameleaf-command-center-data.md",
         "prototypes/frameleaf/src/SettingsAnalytics.jsx",
@@ -2250,10 +2250,10 @@
         "web/src/routes/(user)/workflows",
         "server/src/services/workflow.service.ts",
         "server/src/services/workflow-execution.service.ts",
-        "web/src/lib/modals/AppDownloadModal.svelte",
-        "web/src/lib/modals/ObtainiumConfigModal.svelte",
-        "prototypes/frameleaf/src/WorkflowDesigner.jsx",
-        "prototypes/frameleaf/src/workflow-schema.mjs"
+        "web/src/lib/components/frameleaf/WorkflowDesigner.svelte",
+        "web/src/lib/components/frameleaf/ApplicationSetup.svelte",
+        "design/frameleaf/template/src/WorkflowDesigner.jsx",
+        "design/frameleaf/template/src/workflow-schema.mjs"
       ],
       "phase": 4,
       "priority": "Medium",
@@ -3153,7 +3153,7 @@
       "status": "planned-not-qualified",
       "tests": [
         "Hour-long rational timeline, VFR/burst gaps/B-frame reorder, nonzero timestamps and mixed-cadence fixtures.",
-        "Property tests for frame↔time conversion and deterministic trim/edit boundaries."
+        "Property tests for frame\u2194time conversion and deterministic trim/edit boundaries."
       ],
       "title": "Use rational time and preserve original VFR mappings",
       "type": "story",
@@ -3217,7 +3217,7 @@
       "sourcePhase": "core",
       "status": "planned-not-qualified",
       "tests": [
-        "GPU→encoder gradient/clipping/alpha tests, >256-level preservation and native decode comparison.",
+        "GPU\u2192encoder gradient/clipping/alpha tests, >256-level preservation and native decode comparison.",
         "Mono/stereo/5.1/7.1 impulses, long-run A/V sync, pitch/EQ and encoding failure/device-loss fixtures."
       ],
       "title": "Connect float frames to native encoding and channel-aware audio",
@@ -3362,7 +3362,7 @@
       "epicId": "VID-200",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
       "id": "VID-202",
-      "objective": "Extend tiny diagnostic fixtures into complete edit→float graph→native master proofs for HDR10/HLG and 4K workloads.",
+      "objective": "Extend tiny diagnostic fixtures into complete edit\u2192float graph\u2192native master proofs for HDR10/HLG and 4K workloads.",
       "paths": [
         "studio/tools/encode-probe.mjs",
         "studio/tools/preflight-validators.mjs",
@@ -3532,7 +3532,7 @@
       "sourcePhase": "feature-completion",
       "status": "planned-not-qualified",
       "tests": [
-        "RealBasicVSR x4→requested2x comparisons and SeedVR2 intermediate compression/frame-count/seam evaluation.",
+        "RealBasicVSR x4\u2192requested2x comparisons and SeedVR2 intermediate compression/frame-count/seam evaluation.",
         "OOM/NaN/changed weights/dirty checkout/unsupported input and deterministic repeat tests."
       ],
       "title": "Qualify real Faithful and Creative model adapters",
@@ -3565,7 +3565,7 @@
       "sourcePhase": "feature-completion",
       "status": "planned-not-qualified",
       "tests": [
-        "Real-model preview→full, chunk interruption, multi-audio/VFR, endpoint loss and resumed artifact verification.",
+        "Real-model preview\u2192full, chunk interruption, multi-audio/VFR, endpoint loss and resumed artifact verification.",
         "Authenticated web/native UI, complete remote cleanup, source-change and inherited-privacy tests."
       ],
       "title": "Complete preview-first restoration lifecycle and retention",
@@ -3780,7 +3780,7 @@
       "priority": "Medium",
       "risks": [
         "Sharing a collection or project never grants unrelated originals.",
-        "A shared identity link must not expose another owner’s private name."
+        "A shared identity link must not expose another owner\u2019s private name."
       ],
       "sourcePhase": 4,
       "status": "planned-not-qualified",
@@ -3959,7 +3959,7 @@
       "acceptance": [
         "Complete graph/null/array/expression payloads survive load/command/revision/export and are never reduced to the subset the client currently renders.",
         "Optimistic expected revisions, idempotency keys, single-editor lease renewal/release, conflict review and reconnect recovery work across web/native with one authoritative revision history.",
-        "Quick editor→tablet Studio→library preserves current source/time/selection/undo state; unsupported recipe semantics block destructive saves; phone review remains useful without a qualified editor.",
+        "Quick editor\u2192tablet Studio\u2192library preserves current source/time/selection/undo state; unsupported recipe semantics block destructive saves; phone review remains useful without a qualified editor.",
         "Review and project persistence remain usable without an admitted renderer; broad native full-workspace adoption waits for VID-090, and final Studio availability requires the integrated qualification gates."
       ],
       "dependencies": ["MOB-102", "STU-202", "STU-203", "STU-205", "REL-202"],
@@ -4047,7 +4047,7 @@
       "phase": 5,
       "priority": "Medium",
       "risks": [
-        "Baseline dependency/model terms differ from Freecut’s root license.",
+        "Baseline dependency/model terms differ from Freecut\u2019s root license.",
         "Image-only previews cannot certify temporal/audio/effect parity."
       ],
       "sourcePhase": 5,
@@ -4066,7 +4066,7 @@
       "acceptance": [
         "Authenticated remote preview supports frame-accurate seek, source/render revision correlation, reconnect/cancel and SDR/HDR presentation with truthful display capability and tone mapping.",
         "Native export covers the full required media matrix including newly authored edited Dolby Vision; original masters, atomic publication, provenance and revision result references remain intact.",
-        "Local/LAN compatible GPU is offered first when available; RunPod is explicit and persists per job. Faithful/Creative 2× restoration has motion preview, time/size/cost estimates, durable progress/retry/cancel and no implicit cloud transfer."
+        "Local/LAN compatible GPU is offered first when available; RunPod is explicit and persists per job. Faithful/Creative 2\u00d7 restoration has motion preview, time/size/cost estimates, durable progress/retry/cancel and no implicit cloud transfer."
       ],
       "dependencies": [
         "MOB-201",
@@ -4186,7 +4186,7 @@
     {
       "acceptance": [
         "Guide users through same-server sign-in, limited/full media permission, album selections, existing-server checksum matches, local-only assets and verified backup before uninstalling the other app.",
-        "Never auto-enable backup or delete the old app’s data; demonstrate both clients can coexist without duplicate original creation or silent loss of unsent edits/albums.",
+        "Never auto-enable backup or delete the old app\u2019s data; demonstrate both clients can coexist without duplicate original creation or silent loss of unsent edits/albums.",
         "Uploads recover across screen lock, app kill/reboot, Wi-Fi/cellular/LAN changes, server downtime, battery constraints, duplicate retries and OS background quotas; progress and retry reasons are truthful."
       ],
       "dependencies": ["MOB-301", "REL-101", "REL-102"],
@@ -4205,7 +4205,7 @@
       "phase": 4,
       "priority": "Medium",
       "risks": [
-        "The new app cannot inherit another app’s sandbox, tokens or permission grants.",
+        "The new app cannot inherit another app\u2019s sandbox, tokens or permission grants.",
         "Background execution is OS-controlled; do not promise guaranteed continuous upload."
       ],
       "sourcePhase": 4,
@@ -4653,9 +4653,9 @@
     },
     {
       "acceptance": [
-        "Run exact certified-tag/digest lanes for existing-origin upgrade, current fork→official and official→fork return; do not broaden certified versions without real evidence.",
+        "Run exact certified-tag/digest lanes for existing-origin upgrade, current fork\u2192official and official\u2192fork return; do not broaden certified versions without real evidence.",
         "Private schemas/sidecars, project revisions/leases, paused jobs, physical dedup references, contributor ownership, preservation copies, derivatives and owner deletion retain integrity; public schema/protocol IDs remain compatible.",
-        "Include mid-normalization/restart/checkpoint failures and signed native upgrade/rollback/co-install paths; cleanup never deletes another owner’s referenced originals or silently resumes inactive-fork work."
+        "Include mid-normalization/restart/checkpoint failures and signed native upgrade/rollback/co-install paths; cleanup never deletes another owner\u2019s referenced originals or silently resumes inactive-fork work."
       ],
       "dependencies": ["REL-202", "MOB-302", "STU-404", "FN-304"],
       "epicId": "QA-100",
@@ -4797,7 +4797,7 @@
     {
       "acceptance": [
         "Server DTOs remain additive with correct OpenAPI scalar/null/enum/map/binary schemas; unknown edit actions and complete Freecut JSON survive serialization, cache and transport.",
-        "Build server→sync OpenAPI→generate/build TypeScript→generate Dart with pinned tools and checked-in patches→regenerate Flutter code→compile/test; never hand-edit ignored generated Dart output.",
+        "Build server\u2192sync OpenAPI\u2192generate/build TypeScript\u2192generate Dart with pinned tools and checked-in patches\u2192regenerate Flutter code\u2192compile/test; never hand-edit ignored generated Dart output.",
         "Diff compatibility against the appropriate same-repository base, test old-client/server defaults and binary Takeout/resumable bodies, and fail CI on stale tracked generated artifacts or unexpected operation changes."
       ],
       "dependencies": ["REL-201", "FN-301"],
@@ -4871,6 +4871,613 @@
       "type": "story",
       "workstream": "native",
       "workstreamGuide": "docs/docs/developer/frameleaf-plan/04-native-and-release.md"
+    },
+    {
+      "acceptance": [
+        "Every child issue has production evidence and preserves the source actions named in its acceptance criteria.",
+        "Nothing is enabled or contacted before an administrator opts in; the cloud base address is deployment configuration."
+      ],
+      "dependencies": [],
+      "epicId": null,
+      "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
+      "id": "CLD-E01",
+      "objective": "Add the optional Frameleaf account link, license certificates, supporter keys and Frameleaf sign-in to the self-hosted server and Command Center without changing what works with no account.",
+      "paths": [
+        "server/src/services/auth.service.ts",
+        "server/src/services/server.service.ts",
+        "server/src/dtos/config.dto.ts",
+        "web/src/lib/frameleaf/settings-areas.ts",
+        "web/src/routes/(user)/buy",
+        "design/frameleaf/template/src/AuthScreens.jsx"
+      ],
+      "phase": 3,
+      "priority": "Medium",
+      "risks": [
+        "A linked account must never become a requirement for local use; local photos are never locked by license state."
+      ],
+      "sourcePhase": "P1",
+      "status": "planned-not-qualified",
+      "tests": ["Run the child issues' focused tests on GitHub Actions; record browser/API evidence per story."],
+      "title": "Frameleaf Cloud account, licensing and sign-in (self-hosted)",
+      "type": "epic",
+      "workstream": "cloud",
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/15-frameleaf-cloud-integration.md"
+    },
+    {
+      "acceptance": [
+        "Every child issue has production evidence and preserves the source actions named in its acceptance criteria.",
+        "Rate limiting, hashed shared-link passwords and origin checks ship before any listener is exposed."
+      ],
+      "dependencies": [],
+      "epicId": null,
+      "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
+      "id": "CLD-E02",
+      "objective": "Expose a linked server remotely through a per-server certificate, a blind relay tunnel and best-effort direct connect, with every remote user signed in through a Frameleaf account.",
+      "paths": [
+        "server/src/main.ts",
+        "server/src/app.common.ts",
+        "server/src/services/auth.service.ts",
+        "server/src/repositories/websocket.repository.ts",
+        "docs/docs/guides/remote-access.md"
+      ],
+      "phase": 4,
+      "priority": "Medium",
+      "risks": ["Direct connect is best effort (CGNAT, bridge networking); the relay is the guaranteed path."],
+      "sourcePhase": "P1",
+      "status": "planned-not-qualified",
+      "tests": ["Run the child issues' focused tests on GitHub Actions; record browser/API evidence per story."],
+      "title": "Remote access: edge worker, relay and direct connect (self-hosted)",
+      "type": "epic",
+      "workstream": "cloud",
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/15-frameleaf-cloud-integration.md"
+    },
+    {
+      "acceptance": [
+        "Every child issue has production evidence and preserves the source actions named in its acceptance criteria.",
+        "No customer-facing string, document or enum names the previous GPU provider."
+      ],
+      "dependencies": [],
+      "epicId": null,
+      "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
+      "id": "CLD-E03",
+      "objective": "Replace the previous GPU-provider destination with Frameleaf Cloud as an explicit, consented, wallet-billed processing destination under the existing no-fallback admission rules.",
+      "paths": [
+        "server/src/utils/ml-destination.ts",
+        "server/src/services/ml-destination.service.ts",
+        "server/src/repositories/machine-learning.repository.ts",
+        "server/src/services/asset-restoration.service.ts",
+        "server/src/services/image-enrichment.service.ts",
+        "docs/docs/administration/workers-and-endpoints.md"
+      ],
+      "phase": 4,
+      "priority": "Medium",
+      "risks": ["Nothing falls back: a refused cloud job is refused in place with its reason."],
+      "sourcePhase": "P1",
+      "status": "planned-not-qualified",
+      "tests": ["Run the child issues' focused tests on GitHub Actions; record browser/API evidence per story."],
+      "title": "Frameleaf Cloud processing destination and AI Wallet (self-hosted)",
+      "type": "epic",
+      "workstream": "cloud",
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/15-frameleaf-cloud-integration.md"
+    },
+    {
+      "acceptance": [
+        "Every child issue has production evidence and preserves the source actions named in its acceptance criteria.",
+        "Keys never leave the server or the user; the cloud only sees object names and sizes."
+      ],
+      "dependencies": [],
+      "epicId": null,
+      "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
+      "id": "CLD-E04",
+      "objective": "Back up the database and originals to one dedicated bucket per server with a per-bucket key, uploading only new or changed content by hash and never duplicates.",
+      "paths": [
+        "server/src/services/database-backup.service.ts",
+        "server/src/services/media-health-operation.service.ts"
+      ],
+      "phase": 4,
+      "priority": "Medium",
+      "risks": ["A lost own-memory key makes backups unrecoverable; the UI states this before the mode is chosen."],
+      "sourcePhase": "P1",
+      "status": "planned-not-qualified",
+      "tests": ["Run the child issues' focused tests on GitHub Actions; record browser/API evidence per story."],
+      "title": "Cloud backup (self-hosted)",
+      "type": "epic",
+      "workstream": "cloud",
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/15-frameleaf-cloud-integration.md"
+    },
+    {
+      "acceptance": [
+        "The delivery validator passes with the cloud workstream registered and every CLD item mapped to a Jira key.",
+        "FR mirror pages carry source path, SHA-256 and backlink and are read back.",
+        "No new document names the previous GPU provider."
+      ],
+      "dependencies": ["FN-101"],
+      "epicId": "CLD-E01",
+      "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
+      "id": "CLD-000",
+      "objective": "Land the approved design as repository-owned documents and backlog records before any feature work.",
+      "paths": [
+        "docs/superpowers/specs/2026-09-24-frameleaf-cloud-design.md",
+        "docs/docs/developer/frameleaf-plan/15-frameleaf-cloud-integration.md",
+        "docs/docs/developer/frameleaf-plan/backlog.json",
+        "docs/docs/developer/frameleaf-plan/jira-map.json",
+        "docs/docs/developer/frameleaf-plan/delivery-backlog-evidence.json",
+        "scripts/frameleaf-delivery-backlog-contracts.mjs",
+        "docs/docs/developer/frameleaf-plan/confluence-mirror.json"
+      ],
+      "phase": 3,
+      "priority": "Medium",
+      "risks": ["Publication of the plan is documentation synchronization, not implementation."],
+      "sourcePhase": "P1",
+      "status": "planned-not-qualified",
+      "tests": [
+        "node scripts/frameleaf-delivery-backlog-contracts.mjs; node --test scripts/frameleaf-delivery-backlog-contracts.test.mjs scripts/frameleaf-documentation-coverage.test.mjs; prettier --check over docs/."
+      ],
+      "title": "Register the Frameleaf Cloud workstream",
+      "type": "story",
+      "workstream": "cloud",
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/15-frameleaf-cloud-integration.md"
+    },
+    {
+      "acceptance": [
+        "A UUIDv7 instance id and an Ed25519 key are created once under a database lock; the private key is a 0600 file under the identity directory and only the public JWK and kid are stored.",
+        "FRAMELEAF_CLOUD_URL, FRAMELEAF_IDENTITY_DIR, FRAMELEAF_LINK_TOKEN and the edge port/bind variables are parsed and documented; an unset address shows not configured and never falls back.",
+        "GET admin/cloud/status reports not-configured/unlinked and the cloud area exists in the Command Center; no outbound request is made without a link."
+      ],
+      "dependencies": ["CLD-000"],
+      "epicId": "CLD-E01",
+      "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
+      "id": "CLD-001",
+      "objective": "Give the server a stable instance identity and the deployment-configured cloud address, with the Command Center area present but inert until linked.",
+      "paths": [
+        "server/src/dtos/env.dto.ts",
+        "server/src/repositories/config.repository.ts",
+        "server/src/enum.ts",
+        "server/src/types.ts",
+        "web/src/lib/frameleaf/settings-areas.ts"
+      ],
+      "phase": 3,
+      "priority": "Medium",
+      "risks": ["The cloud address is deployment configuration, never a setting."],
+      "sourcePhase": "P1",
+      "status": "planned-not-qualified",
+      "tests": [
+        "instance-identity.repository.spec.ts (temporary directory, exclusive-create race); frameleaf-cloud.repository.spec.ts (timeout, allow-listed upstream errors); settings-areas, command-index and SettingsHost specs; OpenAPI and SDK regeneration."
+      ],
+      "title": "Instance identity and Frameleaf Cloud deployment configuration",
+      "type": "story",
+      "workstream": "cloud",
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/15-frameleaf-cloud-integration.md"
+    },
+    {
+      "acceptance": [
+        "The device flow completes from the admin UI with a user code and QR code and honours interval, slow_down, expired_token and access_denied.",
+        "A one-time link token links headlessly once; unlinking from either side leaves no secret behind and turns remote access, cloud processing and backup off.",
+        "The heartbeat runs every five minutes with jitter under a database lock and sends exactly the fields shown in the panel; every link, unlink and revoke is an admin audit row and admins receive deduplicated notices.",
+        "The account and link page states the benefit \"Access your library from the Frameleaf mobile apps from anywhere\"."
+      ],
+      "dependencies": ["CLD-001"],
+      "epicId": "CLD-E01",
+      "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
+      "id": "CLD-002",
+      "objective": "Link and unlink the server through the device authorization flow or a one-time link token, and keep the link alive with a heartbeat that sends only what the panel shows.",
+      "paths": [
+        "server/src/repositories/user.repository.ts",
+        "server/src/services/notification.service.ts",
+        "server/src/repositories/websocket.repository.ts"
+      ],
+      "phase": 4,
+      "priority": "Medium",
+      "risks": ["A revoke command must never delete local data."],
+      "sourcePhase": "P1",
+      "status": "planned-not-qualified",
+      "tests": [
+        "Service state-machine spec with a fake cloud; notification dedupe spec; Playwright ui spec with mocked cloud routes."
+      ],
+      "title": "Link a server to a Frameleaf account (device flow, link token, heartbeat, unlink)",
+      "type": "story",
+      "workstream": "cloud",
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/15-frameleaf-cloud-integration.md"
+    },
+    {
+      "acceptance": [
+        "GET admin/license returns the license status with entitlements; activate, certificate install, delete and refresh routes exist with the documented permissions.",
+        "Certificates verify against pinned keys including the spare; unknown kid, wrong subject and tampered payloads are refused; grace keeps entitlements and expiry only turns feature flags off.",
+        "Inherited product-key code, embedded third-party keys, the payment-host CSP entry and the server/license routes are removed; per-user supporter keys live in the fork schema.",
+        "Licence is its own page, separate from Plan; a licensed server (server or individual supporter key) gets 20 % off Frameleaf Cloud plans only and AI credit is never discounted, so every run keeps at least 100 % over loaded cost."
+      ],
+      "dependencies": ["CLD-001"],
+      "epicId": "CLD-E01",
+      "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
+      "id": "CLD-003",
+      "objective": "Replace the inherited product-key mechanism with Frameleaf license certificates and supporter keys, with grace periods that never lock local data.",
+      "paths": [
+        "server/src/constants.ts",
+        "server/src/services/server.service.ts",
+        "server/src/controllers/server.controller.ts",
+        "server/src/services/user.service.ts",
+        "server/src/dtos/user.dto.ts",
+        "server/src/dtos/license.dto.ts",
+        "server/src/repositories/config.repository.ts",
+        "server/src/services/frameleaf-license.service.ts",
+        "server/helmet.json"
+      ],
+      "phase": 4,
+      "priority": "High",
+      "risks": ["The user license DTO shape change is a recorded protocol change for the native rebuild."],
+      "sourcePhase": "P1",
+      "status": "planned-not-qualified",
+      "tests": [
+        "Key and certificate vector spec; rewritten server and user service specs; controllers index spec; medium spec with catalog and ledger counts; OpenAPI and SDK regeneration."
+      ],
+      "title": "Frameleaf license certificates replace the Immich product key",
+      "type": "story",
+      "workstream": "cloud",
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/15-frameleaf-cloud-integration.md"
+    },
+    {
+      "acceptance": [
+        "The prototype states are ported: heading, subscription plan cards, one-time supporter cards, key entry with validation, activated card, badge switch with the correct sense and in-place removal; Plan and Licence are separate pages and plan prices show the 20 % licensed-server discount while AI credit top-ups never do.",
+        "Keys travel only in the URL fragment, session storage or a POST body; the products endpoint returns bundled prices and the deployment-configured store address without an outbound call.",
+        "The onboarding license step exists; inherited purchase strings and components are removed."
+      ],
+      "dependencies": ["CLD-003"],
+      "epicId": "CLD-E01",
+      "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
+      "id": "CLD-004",
+      "objective": "Port the prototype's Support Frameleaf screen and route keys through a fragment-only relay so no key ever appears in a query string.",
+      "paths": [
+        "web/src/routes/(user)/buy/+page.svelte",
+        "web/src/routes/(user)/buy/+page.ts",
+        "web/src/routes/link/+page.ts",
+        "web/src/lib/components/frameleaf/access/SupporterSection.svelte",
+        "web/src/lib/components/frameleaf/AccountMenu.svelte",
+        "web/src/lib/frameleaf/onboarding.ts",
+        "web/svelte.config.js",
+        "i18n/en.json",
+        "design/frameleaf/template/src/AuthScreens.jsx"
+      ],
+      "phase": 4,
+      "priority": "Medium",
+      "risks": ["Store prices are a bundled snapshot until the owner allows a live lookup."],
+      "sourcePhase": "P1",
+      "status": "planned-not-qualified",
+      "tests": [
+        "BuyScreen and cloud helper specs; ui Playwright spec asserting no key in any URL; onboarding step-count e2e."
+      ],
+      "title": "Support Frameleaf screen and license relay (/buy, /link)",
+      "type": "story",
+      "workstream": "cloud",
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/15-frameleaf-cloud-integration.md"
+    },
+    {
+      "acceptance": [
+        "An unverified email is refused for every provider; a user linked to the administrator's provider can also link Frameleaf.",
+        "Sessions created through Frameleaf are tagged and cloud back-channel logout ends them; the mobile override rewrites to the Frameleaf callback scheme.",
+        "The login page shows Sign in with Frameleaf from public config and only that button when remote sign-in is required."
+      ],
+      "dependencies": ["CLD-002", "ADM-005", "ADM-103"],
+      "epicId": "CLD-E01",
+      "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
+      "id": "CLD-005",
+      "objective": "Accept Frameleaf accounts through a second, runtime-derived OpenID Connect provider slot that coexists with the administrator's own provider.",
+      "paths": [
+        "server/src/services/auth.service.ts",
+        "server/src/dtos/config.dto.ts",
+        "web/src/routes/auth/login/+page.svelte"
+      ],
+      "phase": 4,
+      "priority": "High",
+      "risks": ["The inherited oauth configuration is never preset or overwritten."],
+      "sourcePhase": "P1",
+      "status": "planned-not-qualified",
+      "tests": [
+        "auth.service and frameleaf-auth.service specs; medium specs for both fork tables; web login spec; ledger and catalog counts."
+      ],
+      "title": "Sign in with Frameleaf (second OIDC provider slot)",
+      "type": "story",
+      "workstream": "cloud",
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/15-frameleaf-cloud-integration.md"
+    },
+    {
+      "acceptance": [
+        "The Frameleaf Cloud glance tile shows link, remote and license state; every cloud section is reachable from search and deep links.",
+        "Documentation lists every environment variable and credential; customer copy never says fork, DTO or the previous provider and never names Immich as the product.",
+        "Confluence mirrors are updated in the same pass.",
+        "The Public server URL setting moves from Server identity to Remote access with \"Use the Frameleaf address\" and \"Use my domain\"; every settings section row has an icon and settings copy is plain language, outcome first, with no internal terms, as prototyped."
+      ],
+      "dependencies": ["CLD-004", "CLD-005", "CLD-104", "CLD-203", "CLD-302"],
+      "epicId": "CLD-E01",
+      "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
+      "id": "CLD-006",
+      "objective": "Finish the Command Center surfaces, onboarding summary and administrator documentation for every Frameleaf Cloud feature.",
+      "paths": [
+        "web/src/lib/components/frameleaf/settings/CommandCenterOverview.svelte",
+        "web/src/lib/frameleaf/command-index.ts",
+        "web/src/routes/(user)/user-settings/personal-sections.ts",
+        "docs/docs/guides/remote-access.md",
+        "docs/docs/FAQ.mdx",
+        "docs/docs/install/environment-variables.md",
+        "docs/docs/developer/frameleaf-plan/confluence-mirror.json",
+        "web/src/lib/frameleaf/settings-areas.ts"
+      ],
+      "phase": 4,
+      "priority": "Medium",
+      "risks": ["Documentation publication is not implementation evidence."],
+      "sourcePhase": "P1",
+      "status": "planned-not-qualified",
+      "tests": ["Overview and command-index specs; copy grep test over i18n and docs; documentation-coverage test."],
+      "title": "Command Center polish, onboarding and documentation for Frameleaf Cloud",
+      "type": "story",
+      "workstream": "cloud",
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/15-frameleaf-cloud-integration.md"
+    },
+    {
+      "acceptance": [
+        "Login, OAuth callbacks, shared-link login, license activation and link start are rate limited with a per-IP ceiling for relayed requests.",
+        "Shared-link passwords are hashed with constant-time token comparison and existing links keep working after migration; the websocket gateway checks origins.",
+        "Client-supplied via headers are dropped, secret-authenticated ones set the request origin, and relayed requests require a Frameleaf-tagged session while public shared links keep working."
+      ],
+      "dependencies": ["CLD-005"],
+      "epicId": "CLD-E02",
+      "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
+      "id": "CLD-101",
+      "objective": "Add the rate limits, hashed shared-link passwords, origin checks and the trusted via-header contract that must exist before any listener is exposed.",
+      "paths": [
+        "server/src/services/shared-link.service.ts",
+        "server/src/services/auth.service.ts",
+        "server/src/middleware/auth.guard.ts",
+        "server/src/repositories/websocket.repository.ts",
+        "server/src/main.ts"
+      ],
+      "phase": 4,
+      "priority": "High",
+      "risks": ["Originals and archives are refused over the relay unless the administrator allows them."],
+      "sourcePhase": "P1",
+      "status": "planned-not-qualified",
+      "tests": ["Middleware, guard and service specs; sql-schema-up-to-date job."],
+      "title": "Remote-access security prerequisites",
+      "type": "story",
+      "workstream": "cloud",
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/15-frameleaf-cloud-integration.md"
+    },
+    {
+      "acceptance": [
+        "The edge worker is forked like the API worker and stays idle until the server is linked, entitled and remote access is enabled.",
+        "A wildcard certificate is issued through the cloud TXT record API with keys that never leave the host and renews with jitter; the HTTPS listener proxies to the API with forwarded headers and the via contract.",
+        "Disable or unlink removes the certificate and listener; shutdown closes sockets within five seconds; the public address is published through server config, the well-known document and the connections endpoint.",
+        "A custom public hostname on the owner's domain works through a CNAME to the relay name plus an _acme-challenge CNAME to the server's Frameleaf challenge name; a DNS check moves it from pending to verified and the server issues and renews its certificate."
+      ],
+      "dependencies": ["CLD-101"],
+      "epicId": "CLD-E02",
+      "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
+      "id": "CLD-102",
+      "objective": "Run a dedicated edge worker that obtains the per-server certificate through the cloud DNS challenge API and serves HTTPS directly on the local network.",
+      "paths": [
+        "server/src/enum.ts",
+        "server/src/dtos/config.dto.ts",
+        "server/src/controllers/server.controller.ts",
+        "server/package.json",
+        "docs/docs/guides/remote-access.md"
+      ],
+      "phase": 4,
+      "priority": "Medium",
+      "risks": ["Certificate issuance depends on the cloud DNS service being reachable."],
+      "sourcePhase": "P1",
+      "status": "planned-not-qualified",
+      "tests": [
+        "Proxy core spec (headers, upgrade, range); certificate spec against a fake ACME directory; state service spec."
+      ],
+      "title": "Edge worker: certificate and direct listener",
+      "type": "story",
+      "workstream": "cloud",
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/15-frameleaf-cloud-integration.md"
+    },
+    {
+      "acceptance": [
+        "The server authenticates to the relay with a short-lived token and an Ed25519 challenge proof, then serves reversed HTTP/2 connect streams as TLS-terminated visitor connections with the relay-supplied client address.",
+        "Keepalive misses reconnect with full-jitter backoff, tokens refresh at half life, and a relay is re-selected after repeated failures.",
+        "The relay candidate is published and a disconnected relay raises a deduplicated administrator notice; originals are refused over the relay by default."
+      ],
+      "dependencies": ["CLD-102"],
+      "epicId": "CLD-E02",
+      "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
+      "id": "CLD-103",
+      "objective": "Keep an outbound tunnel to the Frameleaf relay that never decrypts traffic, terminating each visitor's TLS on the server.",
+      "paths": [
+        "docs/docs/developer/frameleaf-plan/15-frameleaf-cloud-integration.md",
+        "docs/docs/guides/remote-access.md",
+        "server/src/app.common.ts",
+        "server/src/main.ts"
+      ],
+      "phase": 4,
+      "priority": "High",
+      "risks": ["Relay bandwidth caps are enforced by the cloud, not the server."],
+      "sourcePhase": "P1",
+      "status": "planned-not-qualified",
+      "tests": ["A fake relay harness round-trips HTTP and WebSocket; backoff spec; ui status panel spec."],
+      "title": "Edge worker: blind relay tunnel",
+      "type": "story",
+      "workstream": "cloud",
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/15-frameleaf-cloud-integration.md"
+    },
+    {
+      "acceptance": [
+        "UPnP, NAT-PMP or PCP mappings refresh their leases and are removed on disable; a manual public-port mode exists.",
+        "A mismatch between the mapped address and the cloud-observed address marks carrier-grade NAT and the wide-area candidate is verified only after the cloud probe succeeds; bridge networking yields documented guidance.",
+        "A local user signing in with Frameleaf returns to the local origin with a tagged child session; a verified custom hostname is published as a candidate and used like the Frameleaf address."
+      ],
+      "dependencies": ["CLD-103"],
+      "epicId": "CLD-E02",
+      "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
+      "id": "CLD-104",
+      "objective": "Add best-effort router port mapping, a verified wide-area candidate and a sign-in bounce so local users land back on their local address.",
+      "paths": ["web/src/routes/auth/login/+page.svelte", "server/package.json", "docs/docs/guides/remote-access.md"],
+      "phase": 4,
+      "priority": "Medium",
+      "risks": ["Bridge networking cannot map ports; host networking or manual forwarding is documented."],
+      "sourcePhase": "P1",
+      "status": "planned-not-qualified",
+      "tests": ["Port-mapper mocked spec; handoff spec; mocked ui e2e."],
+      "title": "Edge worker: port mapping, WAN candidate and LAN\u2192relay sign-in bounce",
+      "type": "story",
+      "workstream": "cloud",
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/15-frameleaf-cloud-integration.md"
+    },
+    {
+      "acceptance": [
+        "The Frameleaf Cloud destination row is created only by an explicit administrator action and authenticates with a short-lived instance token; the probe reads ping, capabilities and hardware from the regional gateway.",
+        "Admission refuses on missing or outdated consent, an empty wallet, missing entitlement or an unreachable cloud and never falls back; faces are refused by policy and stay local on InsightFace buffalo_l under the purchased commercial licence; per-feature consent is versioned with names and medical signals off by default.",
+        "A hardware check under Compute & jobs → Hardware & GPU reports per container whether a GPU is present, visible and usable (NVIDIA Container Toolkit versus /dev/dri and the render group), shows a fix with a copy-ready compose snippet for each detected misconfiguration and runs a short benchmark per workload.",
+        "Each workload is routed Local only, Both or Cloud only; with Both each job picks local or Frameleaf Cloud at confirmation, and a job is never moved to the cloud silently; Studio exports render locally only (this server or a LAN worker) and are not a cloud workload.",
+        "A colour-banded model slider (white = CPU, green = fits your GPU, blue = Frameleaf Cloud) appears in Where each job runs, Cloud processing, the per-job confirmation, the editor Enhance panel and Studio; models whose licence forbids commercial hosted use never get a blue band; prices show as GPU time × rate + start fee with per-unit estimates.",
+        "The previous provider's code, configuration, credentials, metadata keys, documents and strings are gone and a test proves no customer-facing string names it; accounting cost is filled from settlements."
+      ],
+      "dependencies": ["CLD-002", "CLD-003", "FN-302", "AI-101"],
+      "epicId": "CLD-E03",
+      "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
+      "id": "CLD-201",
+      "objective": "Make Frameleaf Cloud the only cloud processing destination kind, with recorded consent, wallet checks and no fallback, and remove the previous provider integration entirely.",
+      "paths": [
+        "server/src/enum.ts",
+        "server/src/schema/tables/ml-destination.table.ts",
+        "server/src/dtos/config.dto.ts",
+        "web/src/lib/components/frameleaf/MlDestinationsPanel.svelte",
+        "docs/docs/administration/workers-and-endpoints.md",
+        "i18n/en.json",
+        "server/src/utils/ml-destination.ts",
+        "server/src/services/ml-destination.service.ts",
+        "machine-learning/immich_ml"
+      ],
+      "phase": 4,
+      "priority": "High",
+      "risks": ["Wallet balance is shown only from the cloud response; no top-up address is invented."],
+      "sourcePhase": "P1",
+      "status": "planned-not-qualified",
+      "tests": [
+        "ml-destination specs; migration in sql-schema-up-to-date; service spec with a fake gateway; web specs; catalog regeneration."
+      ],
+      "title": "Frameleaf Cloud replaces the previous GPU-provider destination",
+      "type": "story",
+      "workstream": "cloud",
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/15-frameleaf-cloud-integration.md"
+    },
+    {
+      "acceptance": [
+        "A job is a durable media operation with lease, cursor, pause, resume and cancel; the estimate (GPU time × rate + start fee, with per-photo or per-minute estimates as a p50–p90 range), wallet balance, model slider choice and per-job consent are shown before confirmation.",
+        "Restoration runs on serverless workers only: long video is cut into 20–30 second chunks across at most five workers with a checkpoint per chunk; inputs upload to presigned addresses, progress is polled, results are checksum-verified, cancel releases the hold, provider failures refund and an insufficient balance refuses without downgrading.",
+        "A Smooth motion frame-interpolation job (RIFE locally, FILM on Frameleaf Cloud) is offered in the editor video Enhance panel and Studio for slow motion and export frame-rate conversion; it previews a short clip first and saves the result as a new version; Studio exports themselves render locally only and Smooth motion at export runs on Frameleaf Cloud only as its own job.",
+        "No metadata leaves the server in clips or stills; Activity shows every job with stages Queued, Starting, Running and Done, Failed, Cancelled or Paused in an In progress section, with estimated, so-far and settled cost."
+      ],
+      "dependencies": ["CLD-201"],
+      "epicId": "CLD-E03",
+      "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
+      "id": "CLD-202",
+      "objective": "Run restoration and upscaling as cloud jobs with a visible estimate, explicit confirmation, progress, verified results and settled cost.",
+      "paths": [
+        "server/src/services/asset-restoration.service.ts",
+        "server/src/dtos/asset-restoration.dto.ts",
+        "server/src/services/restoration-worker.service.ts",
+        "web/src/lib/frameleaf/activity.ts",
+        "web/src/lib/components/frameleaf/ActivityView.svelte",
+        "web/src/lib/components/asset-viewer/editor/VideoEditorPanel.svelte",
+        "web/src/routes/(user)/studio/+page.svelte"
+      ],
+      "phase": 4,
+      "priority": "High",
+      "risks": ["A job resumes by its cloud job id after a restart."],
+      "sourcePhase": "P1",
+      "status": "planned-not-qualified",
+      "tests": [
+        "Service spec with a fake gateway; activity mapping spec; ui confirmation dialog spec; ffmpeg metadata test."
+      ],
+      "title": "Cloud restoration and upscaling jobs (estimate \u2192 confirm \u2192 submit \u2192 progress \u2192 result)",
+      "type": "story",
+      "workstream": "cloud",
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/15-frameleaf-cloud-integration.md"
+    },
+    {
+      "acceptance": [
+        "Descriptions routed to the cloud submit per-owner batches keyed for packing and never one run per asset.",
+        "Automatic batching is off by default with a daily budget; exhaustion stops new batches and notifies administrators once; backfill shows the estimate by GPU time (with a per-photo estimate) before enqueueing.",
+        "The model comes from the descriptions ladder through the model slider; for the 72B class a minimum batch of about 200 photos is suggested, and smaller batches are steered to the 27B/35B class.",
+        "Prompts exclude names and medical signals unless consented."
+      ],
+      "dependencies": ["CLD-201"],
+      "epicId": "CLD-E03",
+      "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
+      "id": "CLD-203",
+      "objective": "Send routed description work to Frameleaf Cloud in per-owner batches with a daily budget instead of one job per asset.",
+      "paths": [
+        "server/src/services/enrichment-plan.service.ts",
+        "server/src/services/image-enrichment.service.ts",
+        "server/src/utils/ml-destination.ts"
+      ],
+      "phase": 4,
+      "priority": "Medium",
+      "risks": ["Waiting assets are listed in Library Care."],
+      "sourcePhase": "P1",
+      "status": "planned-not-qualified",
+      "tests": ["Collector spec (batching windows, budget); plan spec."],
+      "title": "Cloud description batches",
+      "type": "story",
+      "workstream": "cloud",
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/15-frameleaf-cloud-integration.md"
+    },
+    {
+      "acceptance": [
+        "Setup claims an empty bucket with a root marker holding the instance id, refuses buckets claimed by another server or holding foreign objects, and probes customer-key encryption support.",
+        "Setup first asks \"Generate a key for me\" (server mode with a recovery kit) or \"I'll maintain my own key\" (created in the browser, download required before continuing, \"Keep a copy on this server\" on for own-stored or off for own-memory after a typed acknowledgement); key modes server, own-stored and own-memory behave as specified; every object request carries the customer-key headers and a request without them fails the test suite.",
+        "A run writes the database dump, uploads only content hashes absent from the index as hash-named objects, then a manifest; a second unchanged run uploads nothing and identical files on the same server produce one object; runs survive restart and failures notify all administrators."
+      ],
+      "dependencies": ["CLD-002", "CLD-003"],
+      "epicId": "CLD-E04",
+      "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
+      "id": "CLD-301",
+      "objective": "Back up to one dedicated bucket per server with a per-bucket key sent as customer-provided encryption, uploading each unique content hash once.",
+      "paths": ["server/src/dtos/config.dto.ts", "server/src/services/database-backup.service.ts"],
+      "phase": 4,
+      "priority": "High",
+      "risks": ["A lost own-memory key makes backups unrecoverable; the UI says so before the mode is chosen."],
+      "sourcePhase": "P1",
+      "status": "planned-not-qualified",
+      "tests": [
+        "Store spec against a fake S3 asserting the encryption headers, multipart and checksums; index spec; dedup spec; medium spec with catalog and ledger counts; ui spec."
+      ],
+      "title": "Cloud backup: bucket claim, per-bucket key modes and content-addressed runs",
+      "type": "story",
+      "workstream": "cloud",
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/15-frameleaf-cloud-integration.md"
+    },
+    {
+      "acceptance": [
+        "A single scheduler runs under a database lock; retention keeps daily, weekly and monthly manifests and deletes only objects no kept manifest references.",
+        "Weekly verification reads a sample and monthly checks every referenced hash; managed bucket credentials are fetched at run start and never persisted; over-quota switches to read-only without touching data.",
+        "Escrow is offered only in server-key mode; restore by manifest verifies every object and feeds Library Care or the maintenance database restore; the command-line restore is documented.",
+        "Each backup run and restore shows its stage and progress in Activity (Queued, Starting, Running, Done, Failed, Cancelled or Paused) and under Settings → Background work."
+      ],
+      "dependencies": ["CLD-301"],
+      "epicId": "CLD-E04",
+      "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
+      "id": "CLD-302",
+      "objective": "Schedule backups, prune only unreferenced objects, verify samples, use managed bucket grants, offer escrow in server-key mode and restore by manifest.",
+      "paths": [
+        "docs/docs/developer/frameleaf-plan/15-frameleaf-cloud-integration.md",
+        "server/src/services/database-backup.service.ts",
+        "server/src/services/media-health-operation.service.ts",
+        "web/src/lib/frameleaf/activity.ts",
+        "web/src/lib/components/frameleaf/ActivityView.svelte"
+      ],
+      "phase": 4,
+      "priority": "High",
+      "risks": ["Restore never overwrites originals in place."],
+      "sourcePhase": "P1",
+      "status": "planned-not-qualified",
+      "tests": ["Cron and lock spec; restore spec; documentation."],
+      "title": "Cloud backup: schedule, retention, verification, managed storage, escrow and restore",
+      "type": "story",
+      "workstream": "cloud",
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/15-frameleaf-cloud-integration.md"
     }
   ],
   "projectKey": "FL",
@@ -5019,6 +5626,26 @@
     "QA-104",
     "QA-105",
     "REL-200",
-    "REL-203"
+    "REL-203",
+    "CLD-E01",
+    "CLD-E02",
+    "CLD-E03",
+    "CLD-E04",
+    "CLD-000",
+    "CLD-001",
+    "CLD-002",
+    "CLD-003",
+    "CLD-004",
+    "CLD-005",
+    "CLD-101",
+    "CLD-102",
+    "CLD-103",
+    "CLD-104",
+    "CLD-201",
+    "CLD-202",
+    "CLD-203",
+    "CLD-301",
+    "CLD-302",
+    "CLD-006"
   ]
 }

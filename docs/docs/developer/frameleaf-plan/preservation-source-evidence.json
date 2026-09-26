@@ -4,15 +4,15 @@
   "sourceSnapshots": {
     "acceptedRoutes": {
       "path": "docs/docs/developer/frameleaf-route-inventory.json",
-      "sha256": "a2628a98b2f0d0f4a8716eee03ac1b7fe88bea4b4c5211bcadc616ed25d50bd2"
+      "sha256": "bd3c5ae5f8fa9867cb6e049f53bad1cd275d14f8d481c7fbb2e9a0b963aa670f"
     },
     "acceptedActionFamilies": {
       "path": "docs/docs/developer/frameleaf-library-action-parity.md",
-      "sha256": "5d007780e048330da577a052aa8cb844cf168721d3ec38dd9b422d2025677d0f"
+      "sha256": "b6a4dd66d641441ed3bb3913c95f5a160b0c4fb8ec25b7626294cf02f9005154"
     },
     "acceptedNative": {
       "path": "mobile/frameleaf-parity.json",
-      "sha256": "0e980c2fc45b41d6644491ed654dc9ced63a0bc0c19c2a90be451e726efa22ee"
+      "sha256": "7433d51fd0112b7e99e812647f0f7113b7a20b46e7ab0034e7085a179cc60bc6"
     },
     "acceptedFreecut": {
       "path": "studio/freecut-feature-manifest.json",
@@ -53,6 +53,18 @@
       "rationale": "Preserve root welcome/setup/login/photo redirects based on actual initialization, session and maintenance state; this is a lifecycle entry, not a second library screen.",
       "loaderRationale": "Uses the root initialization/language/palette/maintenance loader only. Page-specific setup, authentication and redirect requirements remain authoritative; do not add private user data just because the shared shell is reused.",
       "status": "planned-not-qualified"
+    },
+    {
+      "id": "/activity",
+      "family": "activity",
+      "access": "authenticated",
+      "source": ["web/src/routes/(user)/activity/+page.svelte", "web/src/routes/(user)/activity/+page.ts"],
+      "loaders": ["web/src/routes/(user)/+layout.ts", "web/src/routes/+layout.ts"],
+      "primaryIssueId": "FN-303",
+      "secondaryIssueIds": ["STU-403", "ADM-101", "LIB-002"],
+      "rationale": "Added by FL-104: the Activity page over the durable job feed and this browser's own transfers, filtered by all, running, done or failed. Own durable operation state and its presentation; it must not invent per-job retry or history the server does not record. Implemented in committed code, not qualified: route presence is not action, authorization or release evidence.",
+      "loaderRationale": "Inherits root initialization and the (user) authentication/optional-asset loader. Preserve page-level stronger checks and per-resource APIs; a signed-in shared layout does not establish asset ownership, elevation or action permission.",
+      "status": "implemented-in-code-not-qualified"
     },
     {
       "id": "/albums",
@@ -170,6 +182,21 @@
       "rationale": "Own evidence-backed document search and editable OCR fields; an ordinary tag filter is not the replacement.",
       "loaderRationale": "Inherits root initialization and the (user) authentication/optional-asset loader. Preserve page-level stronger checks and per-resource APIs; a signed-in shared layout does not establish asset ownership, elevation or action permission.",
       "status": "planned-not-qualified"
+    },
+    {
+      "id": "/documents/[[photos=photos]]/[[assetId=id]]",
+      "family": "documents",
+      "access": "authenticated",
+      "source": [
+        "web/src/routes/(user)/documents/[[photos=photos]]/[[assetId=id]]/+page.svelte",
+        "web/src/routes/(user)/documents/[[photos=photos]]/[[assetId=id]]/+page.ts"
+      ],
+      "loaders": ["web/src/routes/(user)/+layout.ts", "web/src/routes/+layout.ts"],
+      "primaryIssueId": "REC-105",
+      "secondaryIssueIds": ["LIB-102", "LIB-003", "LIB-002"],
+      "rationale": "Added by FL-63: the Documents destination listing photos by their recognized text, with the search kept in the address and the viewer at /documents/photos/{assetId}. Own OCR-backed discovery and field corrections; an ordinary tag filter is not the replacement. Implemented in committed code, not qualified: route presence is not action, authorization or release evidence.",
+      "loaderRationale": "Inherits root initialization and the (user) authentication/optional-asset loader. Preserve page-level stronger checks and per-resource APIs; a signed-in shared layout does not establish asset ownership, elevation or action permission.",
+      "status": "implemented-in-code-not-qualified"
     },
     {
       "id": "/enrichment",
@@ -382,7 +409,22 @@
       "secondaryIssueIds": ["LIB-102", "REC-104", "LIB-002"],
       "rationale": "Own named pet identities, observations and recognition review; a pets tag query is not individual recognition.",
       "loaderRationale": "Inherits root initialization and the (user) authentication/optional-asset loader. Preserve page-level stronger checks and per-resource APIs; a signed-in shared layout does not establish asset ownership, elevation or action permission.",
-      "status": "planned-not-qualified"
+      "status": "implemented-in-code-not-qualified"
+    },
+    {
+      "id": "/pets/[petId=id]/[[photos=photos]]/[[assetId=id]]",
+      "family": "pets",
+      "access": "authenticated",
+      "source": [
+        "web/src/routes/(user)/pets/[petId=id]/[[photos=photos]]/[[assetId=id]]/+page.svelte",
+        "web/src/routes/(user)/pets/[petId=id]/[[photos=photos]]/[[assetId=id]]/+page.ts"
+      ],
+      "loaders": ["web/src/routes/(user)/+layout.ts", "web/src/routes/+layout.ts"],
+      "primaryIssueId": "REC-004",
+      "secondaryIssueIds": ["LIB-003", "LIB-002"],
+      "rationale": "Added by FL-58: one pet's photos on its own page, loaded owner-scoped so another account's pet reads as not found. Own named pet identities and their photo set; a pets tag query is not individual recognition. Implemented in committed code, not qualified: route presence is not action, authorization or release evidence.",
+      "loaderRationale": "Inherits root initialization and the (user) authentication/optional-asset loader. Preserve page-level stronger checks and per-resource APIs; a signed-in shared layout does not establish asset ownership, elevation or action permission.",
+      "status": "implemented-in-code-not-qualified"
     },
     {
       "id": "/photo-tools",
@@ -562,6 +604,21 @@
       "status": "planned-not-qualified"
     },
     {
+      "id": "/sharing/[spaceId=id]/[[photos=photos]]/[[assetId=id]]",
+      "family": "spaces",
+      "access": "authenticated",
+      "source": [
+        "web/src/routes/(user)/sharing/[spaceId=id]/[[photos=photos]]/[[assetId=id]]/+page.svelte",
+        "web/src/routes/(user)/sharing/[spaceId=id]/[[photos=photos]]/[[assetId=id]]/+page.ts"
+      ],
+      "loaders": ["web/src/routes/(user)/+layout.ts", "web/src/routes/+layout.ts"],
+      "primaryIssueId": "LIB-204",
+      "secondaryIssueIds": ["LIB-202", "LIB-203", "LIB-003", "LIB-002"],
+      "rationale": "Added by FL-55: one shared space and its viewer at /sharing/{spaceId}/photos/{assetId}, with members, linked albums, people, activity and what is new since the last visit, each read through membership-checked endpoints. An address that is not a space this person belongs to becomes a plain not-found page. Space roles and public-link grants remain distinct. Implemented in committed code, not qualified: route presence is not action, authorization or release evidence.",
+      "loaderRationale": "Inherits root initialization and the (user) authentication/optional-asset loader. Preserve page-level stronger checks and per-resource APIs; a signed-in shared layout does not establish asset ownership, elevation or action permission.",
+      "status": "implemented-in-code-not-qualified"
+    },
+    {
       "id": "/sharing/sharedlinks",
       "family": "sharing",
       "access": "authenticated",
@@ -610,7 +667,22 @@
       "secondaryIssueIds": ["STU-202", "STU-203", "STU-204", "ADM-106", "LIB-002"],
       "rationale": "Own the React editor integration at the real Svelte /studio route; preserve authenticated project/revision/source review. Project lifecycle and resource authorization have Studio owners. Library parity review does not qualify preview/export, native editing or media rendering.",
       "loaderRationale": "Inherits the global and (user) initialization/authentication chain. Source manifests and project revisions additionally require current server resource authorization; mounting the editor must not reuse a stale reviewed graph after access loss.",
-      "status": "planned-not-qualified"
+      "status": "implemented-in-code-not-qualified"
+    },
+    {
+      "id": "/studio/projects",
+      "family": "studio",
+      "access": "authenticated",
+      "source": [
+        "web/src/routes/(user)/studio/projects/+page.svelte",
+        "web/src/routes/(user)/studio/projects/+page.ts"
+      ],
+      "loaders": ["web/src/routes/(user)/+layout.ts", "web/src/routes/+layout.ts"],
+      "primaryIssueId": "STU-204",
+      "secondaryIssueIds": ["STU-201", "STU-203"],
+      "rationale": "Added by FL-91: the Studio project library with active and archived shelves, search, ordering and portable bundle import and export. Project lifecycle and resource authorization remain server-side; the library does not qualify preview, export or rendering. Implemented in committed code, not qualified: route presence is not action, authorization or release evidence.",
+      "loaderRationale": "Inherits root initialization and the (user) authentication/optional-asset loader. Preserve page-level stronger checks and per-resource APIs; a signed-in shared layout does not establish asset ownership, elevation or action permission.",
+      "status": "implemented-in-code-not-qualified"
     },
     {
       "id": "/suppressed/[[photos=photos]]/[[assetId=id]]",
@@ -700,35 +772,38 @@
       "id": "/utilities",
       "family": "utilities",
       "access": "authenticated",
-      "source": ["web/src/routes/(user)/utilities/+page.svelte", "web/src/routes/(user)/utilities/+page.ts"],
+      "source": [
+        "web/src/lib/components/frameleaf/settings/UtilitiesArea.svelte",
+        "web/src/routes/(user)/utilities/+page.ts"
+      ],
       "loaders": ["web/src/routes/(user)/+layout.ts", "web/src/routes/+layout.ts"],
       "primaryIssueId": "ADM-002",
       "secondaryIssueIds": ["REC-103", "LIB-007", "LIB-104", "IMP-002", "IMP-003", "IMP-004", "ADM-105"],
       "rationale": "Own the utility directory and task-page host only; each operational utility below has a specific primary owner and source authorization.",
       "loaderRationale": "Inherits root initialization and the (user) authentication/optional-asset loader. Preserve page-level stronger checks and per-resource APIs; a signed-in shared layout does not establish asset ownership, elevation or action permission.",
-      "status": "planned-not-qualified"
+      "status": "implemented-in-code-not-qualified"
     },
     {
       "id": "/utilities/corrupt-media",
       "family": "utilities",
-      "access": "authenticated",
+      "access": "admin",
       "source": [
-        "web/src/routes/(user)/utilities/corrupt-media/+page.svelte",
+        "web/src/lib/components/frameleaf/LibraryCareHealth.svelte",
         "web/src/routes/(user)/utilities/corrupt-media/+page.ts"
       ],
       "loaders": ["web/src/routes/(user)/+layout.ts", "web/src/routes/+layout.ts"],
       "primaryIssueId": "IMP-003",
       "secondaryIssueIds": ["LIB-007", "LIB-002"],
-      "rationale": "Own source-backed corrupt-media review, recovery and destructive confirmation. The menu currently lists this under an administrator condition, but the page loader authenticates normally and MediaHealthService scopes findings/actions to auth.user.id. Preserve source owner checks rather than inventing an admin-only page gate; distinguish unsupported RAW from confirmed damage.",
+      "rationale": "Administrator media-health review is hosted in Command Center Utilities; the existing admin loader and server authorization remain authoritative for findings, recovery, and destructive confirmation.",
       "loaderRationale": "Inherits root initialization and the (user) authentication/optional-asset loader. Preserve page-level stronger checks and per-resource APIs; a signed-in shared layout does not establish asset ownership, elevation or action permission.",
-      "status": "planned-not-qualified"
+      "status": "implemented-in-code-not-qualified"
     },
     {
       "id": "/utilities/duplicates/[[photos=photos]]/[[assetId=id]]",
       "family": "utilities",
       "access": "authenticated",
       "source": [
-        "web/src/routes/(user)/utilities/duplicates/[[photos=photos]]/[[assetId=id]]/+page.svelte",
+        "web/src/lib/components/frameleaf/DuplicateUtility.svelte",
         "web/src/routes/(user)/utilities/duplicates/[[photos=photos]]/[[assetId=id]]/+page.ts"
       ],
       "loaders": ["web/src/routes/(user)/+layout.ts", "web/src/routes/+layout.ts"],
@@ -736,14 +811,29 @@
       "secondaryIssueIds": ["LIB-007", "LIB-004", "LIB-002"],
       "rationale": "Own complete owner-only duplicate/burst review and reversible keeper/stack decisions; preserve full group membership through filtering and optional asset navigation.",
       "loaderRationale": "Inherits root initialization and the (user) authentication/optional-asset loader. Preserve page-level stronger checks and per-resource APIs; a signed-in shared layout does not establish asset ownership, elevation or action permission.",
-      "status": "planned-not-qualified"
+      "status": "implemented-in-code-not-qualified"
+    },
+    {
+      "id": "/utilities/downloads",
+      "family": "utilities",
+      "access": "authenticated",
+      "source": [
+        "web/src/lib/components/frameleaf/ApplicationSetup.svelte",
+        "web/src/routes/(user)/utilities/downloads/+page.ts"
+      ],
+      "loaders": ["web/src/routes/(user)/+layout.ts", "web/src/routes/+layout.ts"],
+      "primaryIssueId": "ADM-105",
+      "secondaryIssueIds": ["ADM-001", "ADM-005"],
+      "rationale": "Added by FL-82: Own the Mobile applications setup from the prototype Utilities; downloads come only from the owner-configured signed release destinations (GET /server/app-releases) with a truthful unavailable state, never another product's stores.",
+      "loaderRationale": "Inherits root initialization and the (user) authentication/optional-asset loader. Preserve page-level stronger checks and per-resource APIs; a signed-in shared layout does not establish asset ownership, elevation or action permission.",
+      "status": "implemented-in-code-not-qualified"
     },
     {
       "id": "/utilities/geolocation",
       "family": "utilities",
       "access": "authenticated",
       "source": [
-        "web/src/routes/(user)/utilities/geolocation/+page.svelte",
+        "web/src/lib/components/frameleaf/GeolocationUtility.svelte",
         "web/src/routes/(user)/utilities/geolocation/+page.ts"
       ],
       "loaders": ["web/src/routes/(user)/+layout.ts", "web/src/routes/+layout.ts"],
@@ -751,7 +841,7 @@
       "secondaryIssueIds": ["LIB-004", "LIB-002"],
       "rationale": "Own actual selected-asset location editing/removal in addition to geographic browsing; use current server metadata and ownership checks.",
       "loaderRationale": "Inherits root initialization and the (user) authentication/optional-asset loader. Preserve page-level stronger checks and per-resource APIs; a signed-in shared layout does not establish asset ownership, elevation or action permission.",
-      "status": "planned-not-qualified"
+      "status": "implemented-in-code-not-qualified"
     },
     {
       "id": "/utilities/geolocation/photos/[photoId]",
@@ -770,22 +860,22 @@
       "family": "utilities",
       "access": "authenticated",
       "source": [
-        "web/src/routes/(user)/utilities/icloud-sync/+page.svelte",
+        "web/src/lib/components/frameleaf/ICloudSyncPanel.svelte",
         "web/src/routes/(user)/utilities/icloud-sync/+page.ts"
       ],
       "loaders": ["web/src/routes/(user)/+layout.ts", "web/src/routes/+layout.ts"],
       "primaryIssueId": "IMP-002",
       "secondaryIssueIds": ["ADM-005", "LIB-002"],
-      "rationale": "Own independent iCloud connections, real login/2FA, configuration and sync/reconciliation; page loader authenticates before listICloudConnections.",
+      "rationale": "Own independent iCloud connections, real login/2FA, configuration and sync/reconciliation; the authenticated Command Center tool loader lists the current user connections.",
       "loaderRationale": "Inherits root initialization and the (user) authentication/optional-asset loader. Preserve page-level stronger checks and per-resource APIs; a signed-in shared layout does not establish asset ownership, elevation or action permission.",
-      "status": "planned-not-qualified"
+      "status": "implemented-in-code-not-qualified"
     },
     {
       "id": "/utilities/large-files/[[photos=photos]]/[[assetId=id]]",
       "family": "utilities",
       "access": "authenticated",
       "source": [
-        "web/src/routes/(user)/utilities/large-files/[[photos=photos]]/[[assetId=id]]/+page.svelte",
+        "web/src/lib/components/frameleaf/LargeFilesUtility.svelte",
         "web/src/routes/(user)/utilities/large-files/[[photos=photos]]/[[assetId=id]]/+page.ts"
       ],
       "loaders": ["web/src/routes/(user)/+layout.ts", "web/src/routes/+layout.ts"],
@@ -793,14 +883,14 @@
       "secondaryIssueIds": ["LIB-003", "LIB-004", "LIB-002"],
       "rationale": "Own real large-file review and lifecycle transitions, preserving viewer cursor movement after removal and avoiding claims of immediate physical disk savings.",
       "loaderRationale": "Inherits root initialization and the (user) authentication/optional-asset loader. Preserve page-level stronger checks and per-resource APIs; a signed-in shared layout does not establish asset ownership, elevation or action permission.",
-      "status": "planned-not-qualified"
+      "status": "implemented-in-code-not-qualified"
     },
     {
       "id": "/utilities/live-photos",
       "family": "utilities",
       "access": "authenticated",
       "source": [
-        "web/src/routes/(user)/utilities/live-photos/+page.svelte",
+        "web/src/lib/components/frameleaf/LivePhotosUtility.svelte",
         "web/src/routes/(user)/utilities/live-photos/+page.ts"
       ],
       "loaders": ["web/src/routes/(user)/+layout.ts", "web/src/routes/+layout.ts"],
@@ -808,41 +898,56 @@
       "secondaryIssueIds": ["LIB-003", "LIB-002"],
       "rationale": "Own current photo/video candidate evidence, confidence, selected/high-confidence batch relinking and partial failures.",
       "loaderRationale": "Inherits root initialization and the (user) authentication/optional-asset loader. Preserve page-level stronger checks and per-resource APIs; a signed-in shared layout does not establish asset ownership, elevation or action permission.",
-      "status": "planned-not-qualified"
+      "status": "implemented-in-code-not-qualified"
     },
     {
       "id": "/utilities/missing-media",
       "family": "utilities",
-      "access": "authenticated",
+      "access": "admin",
       "source": [
-        "web/src/routes/(user)/utilities/missing-media/+page.svelte",
+        "web/src/lib/components/frameleaf/LibraryCareHealth.svelte",
         "web/src/routes/(user)/utilities/missing-media/+page.ts"
       ],
       "loaders": ["web/src/routes/(user)/+layout.ts", "web/src/routes/+layout.ts"],
       "primaryIssueId": "IMP-003",
       "secondaryIssueIds": ["LIB-007", "LIB-002"],
-      "rationale": "Own missing-original scan/candidate/recovery evidence. The menu currently lists this under an administrator condition, but the page loader authenticates normally and MediaHealthService scopes findings/actions to auth.user.id. Navigation visibility is not the source authorization boundary.",
+      "rationale": "Administrator media-health review is hosted in Command Center Utilities; the existing admin loader and server authorization remain authoritative for findings, recovery, and destructive confirmation.",
       "loaderRationale": "Inherits root initialization and the (user) authentication/optional-asset loader. Preserve page-level stronger checks and per-resource APIs; a signed-in shared layout does not establish asset ownership, elevation or action permission.",
-      "status": "planned-not-qualified"
+      "status": "implemented-in-code-not-qualified"
+    },
+    {
+      "id": "/utilities/obtainium",
+      "family": "utilities",
+      "access": "authenticated",
+      "source": [
+        "web/src/lib/components/frameleaf/ApplicationSetup.svelte",
+        "web/src/routes/(user)/utilities/obtainium/+page.ts"
+      ],
+      "loaders": ["web/src/routes/(user)/+layout.ts", "web/src/routes/+layout.ts"],
+      "primaryIssueId": "ADM-105",
+      "secondaryIssueIds": ["ADM-001", "ADM-005"],
+      "rationale": "Added by FL-82: Own the Obtainium setup for direct Android updates from the prototype Utilities; downloads come only from the owner-configured signed release destinations (GET /server/app-releases) with a truthful unavailable state, never another product's stores.",
+      "loaderRationale": "Inherits root initialization and the (user) authentication/optional-asset loader. Preserve page-level stronger checks and per-resource APIs; a signed-in shared layout does not establish asset ownership, elevation or action permission.",
+      "status": "implemented-in-code-not-qualified"
     },
     {
       "id": "/workflows",
       "family": "workflows",
       "access": "authenticated",
-      "source": ["web/src/routes/(user)/workflows/+page.svelte", "web/src/routes/(user)/workflows/+page.ts"],
+      "source": ["web/src/lib/components/frameleaf/WorkflowsPanel.svelte", "web/src/routes/(user)/workflows/+page.ts"],
       "loaders": ["web/src/routes/(user)/+layout.ts", "web/src/routes/+layout.ts"],
       "primaryIssueId": "ADM-105",
       "secondaryIssueIds": ["ADM-001", "ADM-005"],
       "rationale": "Own workflow list/detail, installed method schemas, lossless imports and real execution/log contracts; sample plugin execution is not evidence.",
       "loaderRationale": "Inherits root initialization and the (user) authentication/optional-asset loader. Preserve page-level stronger checks and per-resource APIs; a signed-in shared layout does not establish asset ownership, elevation or action permission.",
-      "status": "planned-not-qualified"
+      "status": "implemented-in-code-not-qualified"
     },
     {
       "id": "/workflows/[workflowId]",
       "family": "workflows",
       "access": "authenticated",
       "source": [
-        "web/src/routes/(user)/workflows/[workflowId]/+page.svelte",
+        "web/src/lib/components/frameleaf/WorkflowsPanel.svelte",
         "web/src/routes/(user)/workflows/[workflowId]/+page.ts"
       ],
       "loaders": ["web/src/routes/(user)/+layout.ts", "web/src/routes/+layout.ts"],
@@ -850,7 +955,7 @@
       "secondaryIssueIds": ["ADM-001", "ADM-005"],
       "rationale": "Own workflow list/detail, installed method schemas, lossless imports and real execution/log contracts; sample plugin execution is not evidence.",
       "loaderRationale": "Inherits root initialization and the (user) authentication/optional-asset loader. Preserve page-level stronger checks and per-resource APIs; a signed-in shared layout does not establish asset ownership, elevation or action permission.",
-      "status": "planned-not-qualified"
+      "status": "implemented-in-code-not-qualified"
     },
     {
       "id": "/admin",
@@ -977,6 +1082,36 @@
       "status": "planned-not-qualified"
     },
     {
+      "id": "/admin/physical-deduplication",
+      "family": "admin-physical-deduplication",
+      "access": "admin",
+      "source": [
+        "web/src/routes/admin/physical-deduplication/+page.svelte",
+        "web/src/routes/admin/physical-deduplication/+page.ts"
+      ],
+      "loaders": ["web/src/routes/+layout.ts", "web/src/routes/admin/+layout.ts"],
+      "primaryIssueId": "REC-103",
+      "secondaryIssueIds": ["ADM-002", "ADM-101"],
+      "rationale": "Added by FL-71: the administrator physical deduplication page with a matching-media preview across accounts. Own the preview and apply contract; original files are never overwritten and per-owner references must survive. Implemented in committed code, not qualified: route presence is not action, authorization or release evidence.",
+      "loaderRationale": "Inherits the root loader plus an explicit admin-authenticated configuration loader. Any listed nested resource loaders must run with current access; the primary screen owner coordinates shared changes instead of weakening the inherited gate.",
+      "status": "implemented-in-code-not-qualified"
+    },
+    {
+      "id": "/admin/processing-destinations",
+      "family": "admin-processing-destinations",
+      "access": "admin",
+      "source": [
+        "web/src/routes/admin/processing-destinations/+page.svelte",
+        "web/src/routes/admin/processing-destinations/+page.ts"
+      ],
+      "loaders": ["web/src/routes/+layout.ts", "web/src/routes/admin/+layout.ts"],
+      "primaryIssueId": "AI-101",
+      "secondaryIssueIds": ["ADM-101", "ADM-002"],
+      "rationale": "Added by FL-110: the administrator processing destinations surface listing machine-learning destinations and workload routes. Cloud processing stays explicit and never becomes a silent fallback. Implemented in committed code, not qualified: route presence is not action, authorization or release evidence.",
+      "loaderRationale": "Inherits the root loader plus an explicit admin-authenticated configuration loader. Any listed nested resource loaders must run with current access; the primary screen owner coordinates shared changes instead of weakening the inherited gate.",
+      "status": "implemented-in-code-not-qualified"
+    },
+    {
       "id": "/admin/queues",
       "family": "admin-queues",
       "access": "admin",
@@ -999,6 +1134,18 @@
       "rationale": "Own real queue overview/detail/actions and source constraints; common Activity coordination cannot invent unsupported per-job retry or history.",
       "loaderRationale": "Inherits the root loader plus an explicit admin-authenticated configuration loader. Any listed nested resource loaders must run with current access; the primary screen owner coordinates shared changes instead of weakening the inherited gate.",
       "status": "planned-not-qualified"
+    },
+    {
+      "id": "/admin/render-workers",
+      "family": "admin-render-workers",
+      "access": "admin",
+      "source": ["web/src/routes/admin/render-workers/+page.svelte", "web/src/routes/admin/render-workers/+page.ts"],
+      "loaders": ["web/src/routes/+layout.ts", "web/src/routes/admin/+layout.ts"],
+      "primaryIssueId": "STU-401",
+      "secondaryIssueIds": ["ADM-101", "STU-403"],
+      "rationale": "Added by FL-95: the administrator render workers page with worker registrations, limits and the admission audit. Own authenticated renderer admission and resource limits; the page does not qualify rendered output. Implemented in committed code, not qualified: route presence is not action, authorization or release evidence.",
+      "loaderRationale": "Inherits the root loader plus an explicit admin-authenticated configuration loader. Any listed nested resource loaders must run with current access; the primary screen owner coordinates shared changes instead of weakening the inherited gate.",
+      "status": "implemented-in-code-not-qualified"
     },
     {
       "id": "/admin/server-status",
@@ -1243,9 +1390,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -1291,9 +1438,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -1339,9 +1486,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -1387,9 +1534,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -1435,9 +1582,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -1483,9 +1630,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -1531,9 +1678,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -1579,9 +1726,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -1627,9 +1774,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -1675,9 +1822,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -1723,9 +1870,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -1771,9 +1918,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -1819,9 +1966,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -1867,9 +2014,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -1915,9 +2062,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -1963,9 +2110,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -2011,9 +2158,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -2059,9 +2206,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -2107,9 +2254,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -2155,9 +2302,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -2203,9 +2350,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -2251,9 +2398,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -2299,9 +2446,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -2347,9 +2494,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -2395,9 +2542,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -2443,9 +2590,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -2491,9 +2638,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -2539,9 +2686,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -2587,9 +2734,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -2635,9 +2782,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -2683,9 +2830,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -2731,9 +2878,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -2779,9 +2926,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -2827,9 +2974,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -2875,9 +3022,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -2923,9 +3070,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -2971,9 +3118,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -3019,9 +3166,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -3067,9 +3214,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -3115,9 +3262,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -3163,9 +3310,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -3211,9 +3358,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -3259,9 +3406,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -3307,9 +3454,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -3361,14 +3508,14 @@
           "sha256": "1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612"
         },
         {
-          "path": "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
+          "path": "web/src/lib/components/frameleaf/FaceTagger.svelte",
           "availability": "accepted-main",
-          "sha256": "97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37"
+          "sha256": "d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447"
         },
         {
-          "path": "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+          "path": "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
           "availability": "accepted-main",
-          "sha256": "d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453"
+          "sha256": "3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206"
         },
         {
           "path": "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte",
@@ -3425,14 +3572,14 @@
           "sha256": "1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612"
         },
         {
-          "path": "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
+          "path": "web/src/lib/components/frameleaf/FaceTagger.svelte",
           "availability": "accepted-main",
-          "sha256": "97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37"
+          "sha256": "d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447"
         },
         {
-          "path": "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+          "path": "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
           "availability": "accepted-main",
-          "sha256": "d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453"
+          "sha256": "3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206"
         },
         {
           "path": "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte",
@@ -3489,14 +3636,14 @@
           "sha256": "1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612"
         },
         {
-          "path": "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
+          "path": "web/src/lib/components/frameleaf/FaceTagger.svelte",
           "availability": "accepted-main",
-          "sha256": "97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37"
+          "sha256": "d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447"
         },
         {
-          "path": "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+          "path": "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
           "availability": "accepted-main",
-          "sha256": "d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453"
+          "sha256": "3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206"
         },
         {
           "path": "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte",
@@ -3553,14 +3700,14 @@
           "sha256": "1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612"
         },
         {
-          "path": "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
+          "path": "web/src/lib/components/frameleaf/FaceTagger.svelte",
           "availability": "accepted-main",
-          "sha256": "97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37"
+          "sha256": "d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447"
         },
         {
-          "path": "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+          "path": "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
           "availability": "accepted-main",
-          "sha256": "d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453"
+          "sha256": "3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206"
         },
         {
           "path": "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte",
@@ -3617,14 +3764,14 @@
           "sha256": "1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612"
         },
         {
-          "path": "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
+          "path": "web/src/lib/components/frameleaf/FaceTagger.svelte",
           "availability": "accepted-main",
-          "sha256": "97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37"
+          "sha256": "d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447"
         },
         {
-          "path": "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+          "path": "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
           "availability": "accepted-main",
-          "sha256": "d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453"
+          "sha256": "3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206"
         },
         {
           "path": "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte",
@@ -3681,14 +3828,14 @@
           "sha256": "1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612"
         },
         {
-          "path": "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
+          "path": "web/src/lib/components/frameleaf/FaceTagger.svelte",
           "availability": "accepted-main",
-          "sha256": "97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37"
+          "sha256": "d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447"
         },
         {
-          "path": "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+          "path": "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
           "availability": "accepted-main",
-          "sha256": "d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453"
+          "sha256": "3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206"
         },
         {
           "path": "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte",
@@ -3745,14 +3892,14 @@
           "sha256": "1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612"
         },
         {
-          "path": "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
+          "path": "web/src/lib/components/frameleaf/FaceTagger.svelte",
           "availability": "accepted-main",
-          "sha256": "97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37"
+          "sha256": "d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447"
         },
         {
-          "path": "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+          "path": "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
           "availability": "accepted-main",
-          "sha256": "d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453"
+          "sha256": "3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206"
         },
         {
           "path": "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte",
@@ -3809,14 +3956,14 @@
           "sha256": "1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612"
         },
         {
-          "path": "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
+          "path": "web/src/lib/components/frameleaf/FaceTagger.svelte",
           "availability": "accepted-main",
-          "sha256": "97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37"
+          "sha256": "d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447"
         },
         {
-          "path": "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+          "path": "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
           "availability": "accepted-main",
-          "sha256": "d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453"
+          "sha256": "3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206"
         },
         {
           "path": "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte",
@@ -3873,14 +4020,14 @@
           "sha256": "1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612"
         },
         {
-          "path": "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
+          "path": "web/src/lib/components/frameleaf/FaceTagger.svelte",
           "availability": "accepted-main",
-          "sha256": "97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37"
+          "sha256": "d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447"
         },
         {
-          "path": "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+          "path": "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
           "availability": "accepted-main",
-          "sha256": "d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453"
+          "sha256": "3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206"
         },
         {
           "path": "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte",
@@ -3937,14 +4084,14 @@
           "sha256": "1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612"
         },
         {
-          "path": "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
+          "path": "web/src/lib/components/frameleaf/FaceTagger.svelte",
           "availability": "accepted-main",
-          "sha256": "97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37"
+          "sha256": "d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447"
         },
         {
-          "path": "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+          "path": "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
           "availability": "accepted-main",
-          "sha256": "d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453"
+          "sha256": "3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206"
         },
         {
           "path": "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte",
@@ -4001,14 +4148,14 @@
           "sha256": "1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612"
         },
         {
-          "path": "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
+          "path": "web/src/lib/components/frameleaf/FaceTagger.svelte",
           "availability": "accepted-main",
-          "sha256": "97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37"
+          "sha256": "d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447"
         },
         {
-          "path": "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+          "path": "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
           "availability": "accepted-main",
-          "sha256": "d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453"
+          "sha256": "3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206"
         },
         {
           "path": "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte",
@@ -4065,14 +4212,14 @@
           "sha256": "1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612"
         },
         {
-          "path": "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
+          "path": "web/src/lib/components/frameleaf/FaceTagger.svelte",
           "availability": "accepted-main",
-          "sha256": "97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37"
+          "sha256": "d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447"
         },
         {
-          "path": "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+          "path": "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
           "availability": "accepted-main",
-          "sha256": "d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453"
+          "sha256": "3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206"
         },
         {
           "path": "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte",
@@ -4129,14 +4276,14 @@
           "sha256": "1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612"
         },
         {
-          "path": "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
+          "path": "web/src/lib/components/frameleaf/FaceTagger.svelte",
           "availability": "accepted-main",
-          "sha256": "97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37"
+          "sha256": "d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447"
         },
         {
-          "path": "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+          "path": "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
           "availability": "accepted-main",
-          "sha256": "d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453"
+          "sha256": "3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206"
         },
         {
           "path": "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte",
@@ -4193,14 +4340,14 @@
           "sha256": "1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612"
         },
         {
-          "path": "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
+          "path": "web/src/lib/components/frameleaf/FaceTagger.svelte",
           "availability": "accepted-main",
-          "sha256": "97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37"
+          "sha256": "d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447"
         },
         {
-          "path": "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+          "path": "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
           "availability": "accepted-main",
-          "sha256": "d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453"
+          "sha256": "3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206"
         },
         {
           "path": "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte",
@@ -4257,14 +4404,14 @@
           "sha256": "1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612"
         },
         {
-          "path": "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
+          "path": "web/src/lib/components/frameleaf/FaceTagger.svelte",
           "availability": "accepted-main",
-          "sha256": "97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37"
+          "sha256": "d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447"
         },
         {
-          "path": "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+          "path": "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
           "availability": "accepted-main",
-          "sha256": "d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453"
+          "sha256": "3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206"
         },
         {
           "path": "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte",
@@ -4321,14 +4468,14 @@
           "sha256": "1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612"
         },
         {
-          "path": "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
+          "path": "web/src/lib/components/frameleaf/FaceTagger.svelte",
           "availability": "accepted-main",
-          "sha256": "97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37"
+          "sha256": "d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447"
         },
         {
-          "path": "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+          "path": "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
           "availability": "accepted-main",
-          "sha256": "d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453"
+          "sha256": "3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206"
         },
         {
           "path": "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte",
@@ -4385,14 +4532,14 @@
           "sha256": "1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612"
         },
         {
-          "path": "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
+          "path": "web/src/lib/components/frameleaf/FaceTagger.svelte",
           "availability": "accepted-main",
-          "sha256": "97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37"
+          "sha256": "d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447"
         },
         {
-          "path": "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+          "path": "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
           "availability": "accepted-main",
-          "sha256": "d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453"
+          "sha256": "3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206"
         },
         {
           "path": "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte",
@@ -4449,14 +4596,14 @@
           "sha256": "1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612"
         },
         {
-          "path": "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
+          "path": "web/src/lib/components/frameleaf/FaceTagger.svelte",
           "availability": "accepted-main",
-          "sha256": "97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37"
+          "sha256": "d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447"
         },
         {
-          "path": "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+          "path": "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
           "availability": "accepted-main",
-          "sha256": "d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453"
+          "sha256": "3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206"
         },
         {
           "path": "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte",
@@ -4513,14 +4660,14 @@
           "sha256": "1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612"
         },
         {
-          "path": "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
+          "path": "web/src/lib/components/frameleaf/FaceTagger.svelte",
           "availability": "accepted-main",
-          "sha256": "97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37"
+          "sha256": "d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447"
         },
         {
-          "path": "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+          "path": "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
           "availability": "accepted-main",
-          "sha256": "d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453"
+          "sha256": "3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206"
         },
         {
           "path": "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte",
@@ -4577,14 +4724,14 @@
           "sha256": "1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612"
         },
         {
-          "path": "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
+          "path": "web/src/lib/components/frameleaf/FaceTagger.svelte",
           "availability": "accepted-main",
-          "sha256": "97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37"
+          "sha256": "d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447"
         },
         {
-          "path": "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+          "path": "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
           "availability": "accepted-main",
-          "sha256": "d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453"
+          "sha256": "3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206"
         },
         {
           "path": "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte",
@@ -4641,14 +4788,14 @@
           "sha256": "1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612"
         },
         {
-          "path": "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
+          "path": "web/src/lib/components/frameleaf/FaceTagger.svelte",
           "availability": "accepted-main",
-          "sha256": "97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37"
+          "sha256": "d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447"
         },
         {
-          "path": "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+          "path": "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
           "availability": "accepted-main",
-          "sha256": "d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453"
+          "sha256": "3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206"
         },
         {
           "path": "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte",
@@ -4705,14 +4852,14 @@
           "sha256": "1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612"
         },
         {
-          "path": "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
+          "path": "web/src/lib/components/frameleaf/FaceTagger.svelte",
           "availability": "accepted-main",
-          "sha256": "97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37"
+          "sha256": "d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447"
         },
         {
-          "path": "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+          "path": "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
           "availability": "accepted-main",
-          "sha256": "d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453"
+          "sha256": "3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206"
         },
         {
           "path": "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte",
@@ -4769,14 +4916,14 @@
           "sha256": "1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612"
         },
         {
-          "path": "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
+          "path": "web/src/lib/components/frameleaf/FaceTagger.svelte",
           "availability": "accepted-main",
-          "sha256": "97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37"
+          "sha256": "d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447"
         },
         {
-          "path": "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+          "path": "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
           "availability": "accepted-main",
-          "sha256": "d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453"
+          "sha256": "3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206"
         },
         {
           "path": "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte",
@@ -4833,14 +4980,14 @@
           "sha256": "1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612"
         },
         {
-          "path": "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
+          "path": "web/src/lib/components/frameleaf/FaceTagger.svelte",
           "availability": "accepted-main",
-          "sha256": "97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37"
+          "sha256": "d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447"
         },
         {
-          "path": "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+          "path": "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
           "availability": "accepted-main",
-          "sha256": "d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453"
+          "sha256": "3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206"
         },
         {
           "path": "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte",
@@ -4897,14 +5044,14 @@
           "sha256": "1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612"
         },
         {
-          "path": "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
+          "path": "web/src/lib/components/frameleaf/FaceTagger.svelte",
           "availability": "accepted-main",
-          "sha256": "97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37"
+          "sha256": "d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447"
         },
         {
-          "path": "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+          "path": "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
           "availability": "accepted-main",
-          "sha256": "d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453"
+          "sha256": "3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206"
         },
         {
           "path": "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte",
@@ -4961,14 +5108,14 @@
           "sha256": "1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612"
         },
         {
-          "path": "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
+          "path": "web/src/lib/components/frameleaf/FaceTagger.svelte",
           "availability": "accepted-main",
-          "sha256": "97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37"
+          "sha256": "d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447"
         },
         {
-          "path": "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+          "path": "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
           "availability": "accepted-main",
-          "sha256": "d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453"
+          "sha256": "3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206"
         },
         {
           "path": "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte",
@@ -5025,14 +5172,14 @@
           "sha256": "1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612"
         },
         {
-          "path": "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
+          "path": "web/src/lib/components/frameleaf/FaceTagger.svelte",
           "availability": "accepted-main",
-          "sha256": "97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37"
+          "sha256": "d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447"
         },
         {
-          "path": "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+          "path": "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
           "availability": "accepted-main",
-          "sha256": "d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453"
+          "sha256": "3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206"
         },
         {
           "path": "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte",
@@ -5054,14 +5201,14 @@
       "entrypoints": ["route:/photos/[[assetId=id]]", "route:/studio"],
       "source": [
         {
-          "path": "web/src/lib/components/asset-viewer/editor/EditorPanel.svelte",
+          "path": "web/src/lib/components/frameleaf/editor/QuickEditor.svelte",
           "availability": "accepted-main",
-          "sha256": "0b0b71ea428cdfabbb0b6baee5c80408f248af4dbd2751560a906461b9c36664"
+          "sha256": "78e81e9ad7db4c53623ba35c2729e435269e332b0bdd9202477d03ff3a389c1e"
         },
         {
-          "path": "web/src/lib/components/asset-viewer/editor/transform-tool/TransformTool.svelte",
+          "path": "web/src/lib/components/frameleaf/editor/CropOverlay.svelte",
           "availability": "accepted-main",
-          "sha256": "a9a339a82543743d3d095383b4fc7c0fed7629223e2f251dc95513d6bfd200a6"
+          "sha256": "5b6d745832b424a121888fb1a47ccd8139dee719552ead4c2497dbd3828d190d"
         },
         {
           "path": "web/src/lib/components/asset-viewer/editor/VideoEditorPanel.svelte",
@@ -5088,14 +5235,14 @@
       "entrypoints": ["route:/photos/[[assetId=id]]", "route:/studio"],
       "source": [
         {
-          "path": "web/src/lib/components/asset-viewer/editor/EditorPanel.svelte",
+          "path": "web/src/lib/components/frameleaf/editor/QuickEditor.svelte",
           "availability": "accepted-main",
-          "sha256": "0b0b71ea428cdfabbb0b6baee5c80408f248af4dbd2751560a906461b9c36664"
+          "sha256": "78e81e9ad7db4c53623ba35c2729e435269e332b0bdd9202477d03ff3a389c1e"
         },
         {
-          "path": "web/src/lib/components/asset-viewer/editor/transform-tool/TransformTool.svelte",
+          "path": "web/src/lib/components/frameleaf/editor/CropOverlay.svelte",
           "availability": "accepted-main",
-          "sha256": "a9a339a82543743d3d095383b4fc7c0fed7629223e2f251dc95513d6bfd200a6"
+          "sha256": "5b6d745832b424a121888fb1a47ccd8139dee719552ead4c2497dbd3828d190d"
         },
         {
           "path": "web/src/lib/components/asset-viewer/editor/VideoEditorPanel.svelte",
@@ -5122,14 +5269,14 @@
       "entrypoints": ["route:/photos/[[assetId=id]]", "route:/studio"],
       "source": [
         {
-          "path": "web/src/lib/components/asset-viewer/editor/EditorPanel.svelte",
+          "path": "web/src/lib/components/frameleaf/editor/QuickEditor.svelte",
           "availability": "accepted-main",
-          "sha256": "0b0b71ea428cdfabbb0b6baee5c80408f248af4dbd2751560a906461b9c36664"
+          "sha256": "78e81e9ad7db4c53623ba35c2729e435269e332b0bdd9202477d03ff3a389c1e"
         },
         {
-          "path": "web/src/lib/components/asset-viewer/editor/transform-tool/TransformTool.svelte",
+          "path": "web/src/lib/components/frameleaf/editor/CropOverlay.svelte",
           "availability": "accepted-main",
-          "sha256": "a9a339a82543743d3d095383b4fc7c0fed7629223e2f251dc95513d6bfd200a6"
+          "sha256": "5b6d745832b424a121888fb1a47ccd8139dee719552ead4c2497dbd3828d190d"
         },
         {
           "path": "web/src/lib/components/asset-viewer/editor/VideoEditorPanel.svelte",
@@ -5156,14 +5303,14 @@
       "entrypoints": ["route:/photos/[[assetId=id]]", "route:/studio"],
       "source": [
         {
-          "path": "web/src/lib/components/asset-viewer/editor/EditorPanel.svelte",
+          "path": "web/src/lib/components/frameleaf/editor/QuickEditor.svelte",
           "availability": "accepted-main",
-          "sha256": "0b0b71ea428cdfabbb0b6baee5c80408f248af4dbd2751560a906461b9c36664"
+          "sha256": "78e81e9ad7db4c53623ba35c2729e435269e332b0bdd9202477d03ff3a389c1e"
         },
         {
-          "path": "web/src/lib/components/asset-viewer/editor/transform-tool/TransformTool.svelte",
+          "path": "web/src/lib/components/frameleaf/editor/CropOverlay.svelte",
           "availability": "accepted-main",
-          "sha256": "a9a339a82543743d3d095383b4fc7c0fed7629223e2f251dc95513d6bfd200a6"
+          "sha256": "5b6d745832b424a121888fb1a47ccd8139dee719552ead4c2497dbd3828d190d"
         },
         {
           "path": "web/src/lib/components/asset-viewer/editor/VideoEditorPanel.svelte",
@@ -5190,14 +5337,14 @@
       "entrypoints": ["route:/photos/[[assetId=id]]", "route:/studio"],
       "source": [
         {
-          "path": "web/src/lib/components/asset-viewer/editor/EditorPanel.svelte",
+          "path": "web/src/lib/components/frameleaf/editor/QuickEditor.svelte",
           "availability": "accepted-main",
-          "sha256": "0b0b71ea428cdfabbb0b6baee5c80408f248af4dbd2751560a906461b9c36664"
+          "sha256": "78e81e9ad7db4c53623ba35c2729e435269e332b0bdd9202477d03ff3a389c1e"
         },
         {
-          "path": "web/src/lib/components/asset-viewer/editor/transform-tool/TransformTool.svelte",
+          "path": "web/src/lib/components/frameleaf/editor/CropOverlay.svelte",
           "availability": "accepted-main",
-          "sha256": "a9a339a82543743d3d095383b4fc7c0fed7629223e2f251dc95513d6bfd200a6"
+          "sha256": "5b6d745832b424a121888fb1a47ccd8139dee719552ead4c2497dbd3828d190d"
         },
         {
           "path": "web/src/lib/components/asset-viewer/editor/VideoEditorPanel.svelte",
@@ -5224,14 +5371,14 @@
       "entrypoints": ["route:/photos/[[assetId=id]]", "route:/studio"],
       "source": [
         {
-          "path": "web/src/lib/components/asset-viewer/editor/EditorPanel.svelte",
+          "path": "web/src/lib/components/frameleaf/editor/QuickEditor.svelte",
           "availability": "accepted-main",
-          "sha256": "0b0b71ea428cdfabbb0b6baee5c80408f248af4dbd2751560a906461b9c36664"
+          "sha256": "78e81e9ad7db4c53623ba35c2729e435269e332b0bdd9202477d03ff3a389c1e"
         },
         {
-          "path": "web/src/lib/components/asset-viewer/editor/transform-tool/TransformTool.svelte",
+          "path": "web/src/lib/components/frameleaf/editor/CropOverlay.svelte",
           "availability": "accepted-main",
-          "sha256": "a9a339a82543743d3d095383b4fc7c0fed7629223e2f251dc95513d6bfd200a6"
+          "sha256": "5b6d745832b424a121888fb1a47ccd8139dee719552ead4c2497dbd3828d190d"
         },
         {
           "path": "web/src/lib/components/asset-viewer/editor/VideoEditorPanel.svelte",
@@ -5258,14 +5405,14 @@
       "entrypoints": ["route:/photos/[[assetId=id]]", "route:/studio"],
       "source": [
         {
-          "path": "web/src/lib/components/asset-viewer/editor/EditorPanel.svelte",
+          "path": "web/src/lib/components/frameleaf/editor/QuickEditor.svelte",
           "availability": "accepted-main",
-          "sha256": "0b0b71ea428cdfabbb0b6baee5c80408f248af4dbd2751560a906461b9c36664"
+          "sha256": "78e81e9ad7db4c53623ba35c2729e435269e332b0bdd9202477d03ff3a389c1e"
         },
         {
-          "path": "web/src/lib/components/asset-viewer/editor/transform-tool/TransformTool.svelte",
+          "path": "web/src/lib/components/frameleaf/editor/CropOverlay.svelte",
           "availability": "accepted-main",
-          "sha256": "a9a339a82543743d3d095383b4fc7c0fed7629223e2f251dc95513d6bfd200a6"
+          "sha256": "5b6d745832b424a121888fb1a47ccd8139dee719552ead4c2497dbd3828d190d"
         },
         {
           "path": "web/src/lib/components/asset-viewer/editor/VideoEditorPanel.svelte",
@@ -5292,14 +5439,14 @@
       "entrypoints": ["route:/photos/[[assetId=id]]", "route:/studio"],
       "source": [
         {
-          "path": "web/src/lib/components/asset-viewer/editor/EditorPanel.svelte",
+          "path": "web/src/lib/components/frameleaf/editor/QuickEditor.svelte",
           "availability": "accepted-main",
-          "sha256": "0b0b71ea428cdfabbb0b6baee5c80408f248af4dbd2751560a906461b9c36664"
+          "sha256": "78e81e9ad7db4c53623ba35c2729e435269e332b0bdd9202477d03ff3a389c1e"
         },
         {
-          "path": "web/src/lib/components/asset-viewer/editor/transform-tool/TransformTool.svelte",
+          "path": "web/src/lib/components/frameleaf/editor/CropOverlay.svelte",
           "availability": "accepted-main",
-          "sha256": "a9a339a82543743d3d095383b4fc7c0fed7629223e2f251dc95513d6bfd200a6"
+          "sha256": "5b6d745832b424a121888fb1a47ccd8139dee719552ead4c2497dbd3828d190d"
         },
         {
           "path": "web/src/lib/components/asset-viewer/editor/VideoEditorPanel.svelte",
@@ -5326,14 +5473,14 @@
       "entrypoints": ["route:/photos/[[assetId=id]]", "route:/studio"],
       "source": [
         {
-          "path": "web/src/lib/components/asset-viewer/editor/EditorPanel.svelte",
+          "path": "web/src/lib/components/frameleaf/editor/QuickEditor.svelte",
           "availability": "accepted-main",
-          "sha256": "0b0b71ea428cdfabbb0b6baee5c80408f248af4dbd2751560a906461b9c36664"
+          "sha256": "78e81e9ad7db4c53623ba35c2729e435269e332b0bdd9202477d03ff3a389c1e"
         },
         {
-          "path": "web/src/lib/components/asset-viewer/editor/transform-tool/TransformTool.svelte",
+          "path": "web/src/lib/components/frameleaf/editor/CropOverlay.svelte",
           "availability": "accepted-main",
-          "sha256": "a9a339a82543743d3d095383b4fc7c0fed7629223e2f251dc95513d6bfd200a6"
+          "sha256": "5b6d745832b424a121888fb1a47ccd8139dee719552ead4c2497dbd3828d190d"
         },
         {
           "path": "web/src/lib/components/asset-viewer/editor/VideoEditorPanel.svelte",
@@ -5360,14 +5507,14 @@
       "entrypoints": ["route:/photos/[[assetId=id]]", "route:/studio"],
       "source": [
         {
-          "path": "web/src/lib/components/asset-viewer/editor/EditorPanel.svelte",
+          "path": "web/src/lib/components/frameleaf/editor/QuickEditor.svelte",
           "availability": "accepted-main",
-          "sha256": "0b0b71ea428cdfabbb0b6baee5c80408f248af4dbd2751560a906461b9c36664"
+          "sha256": "78e81e9ad7db4c53623ba35c2729e435269e332b0bdd9202477d03ff3a389c1e"
         },
         {
-          "path": "web/src/lib/components/asset-viewer/editor/transform-tool/TransformTool.svelte",
+          "path": "web/src/lib/components/frameleaf/editor/CropOverlay.svelte",
           "availability": "accepted-main",
-          "sha256": "a9a339a82543743d3d095383b4fc7c0fed7629223e2f251dc95513d6bfd200a6"
+          "sha256": "5b6d745832b424a121888fb1a47ccd8139dee719552ead4c2497dbd3828d190d"
         },
         {
           "path": "web/src/lib/components/asset-viewer/editor/VideoEditorPanel.svelte",
@@ -5394,14 +5541,14 @@
       "entrypoints": ["route:/photos/[[assetId=id]]", "route:/studio"],
       "source": [
         {
-          "path": "web/src/lib/components/asset-viewer/editor/EditorPanel.svelte",
+          "path": "web/src/lib/components/frameleaf/editor/QuickEditor.svelte",
           "availability": "accepted-main",
-          "sha256": "0b0b71ea428cdfabbb0b6baee5c80408f248af4dbd2751560a906461b9c36664"
+          "sha256": "78e81e9ad7db4c53623ba35c2729e435269e332b0bdd9202477d03ff3a389c1e"
         },
         {
-          "path": "web/src/lib/components/asset-viewer/editor/transform-tool/TransformTool.svelte",
+          "path": "web/src/lib/components/frameleaf/editor/CropOverlay.svelte",
           "availability": "accepted-main",
-          "sha256": "a9a339a82543743d3d095383b4fc7c0fed7629223e2f251dc95513d6bfd200a6"
+          "sha256": "5b6d745832b424a121888fb1a47ccd8139dee719552ead4c2497dbd3828d190d"
         },
         {
           "path": "web/src/lib/components/asset-viewer/editor/VideoEditorPanel.svelte",
@@ -5428,14 +5575,14 @@
       "entrypoints": ["route:/photos/[[assetId=id]]", "route:/studio"],
       "source": [
         {
-          "path": "web/src/lib/components/asset-viewer/editor/EditorPanel.svelte",
+          "path": "web/src/lib/components/frameleaf/editor/QuickEditor.svelte",
           "availability": "accepted-main",
-          "sha256": "0b0b71ea428cdfabbb0b6baee5c80408f248af4dbd2751560a906461b9c36664"
+          "sha256": "78e81e9ad7db4c53623ba35c2729e435269e332b0bdd9202477d03ff3a389c1e"
         },
         {
-          "path": "web/src/lib/components/asset-viewer/editor/transform-tool/TransformTool.svelte",
+          "path": "web/src/lib/components/frameleaf/editor/CropOverlay.svelte",
           "availability": "accepted-main",
-          "sha256": "a9a339a82543743d3d095383b4fc7c0fed7629223e2f251dc95513d6bfd200a6"
+          "sha256": "5b6d745832b424a121888fb1a47ccd8139dee719552ead4c2497dbd3828d190d"
         },
         {
           "path": "web/src/lib/components/asset-viewer/editor/VideoEditorPanel.svelte",
@@ -5462,14 +5609,14 @@
       "entrypoints": ["route:/photos/[[assetId=id]]", "route:/studio"],
       "source": [
         {
-          "path": "web/src/lib/components/asset-viewer/editor/EditorPanel.svelte",
+          "path": "web/src/lib/components/frameleaf/editor/QuickEditor.svelte",
           "availability": "accepted-main",
-          "sha256": "0b0b71ea428cdfabbb0b6baee5c80408f248af4dbd2751560a906461b9c36664"
+          "sha256": "78e81e9ad7db4c53623ba35c2729e435269e332b0bdd9202477d03ff3a389c1e"
         },
         {
-          "path": "web/src/lib/components/asset-viewer/editor/transform-tool/TransformTool.svelte",
+          "path": "web/src/lib/components/frameleaf/editor/CropOverlay.svelte",
           "availability": "accepted-main",
-          "sha256": "a9a339a82543743d3d095383b4fc7c0fed7629223e2f251dc95513d6bfd200a6"
+          "sha256": "5b6d745832b424a121888fb1a47ccd8139dee719552ead4c2497dbd3828d190d"
         },
         {
           "path": "web/src/lib/components/asset-viewer/editor/VideoEditorPanel.svelte",
@@ -5496,14 +5643,14 @@
       "entrypoints": ["route:/photos/[[assetId=id]]", "route:/studio"],
       "source": [
         {
-          "path": "web/src/lib/components/asset-viewer/editor/EditorPanel.svelte",
+          "path": "web/src/lib/components/frameleaf/editor/QuickEditor.svelte",
           "availability": "accepted-main",
-          "sha256": "0b0b71ea428cdfabbb0b6baee5c80408f248af4dbd2751560a906461b9c36664"
+          "sha256": "78e81e9ad7db4c53623ba35c2729e435269e332b0bdd9202477d03ff3a389c1e"
         },
         {
-          "path": "web/src/lib/components/asset-viewer/editor/transform-tool/TransformTool.svelte",
+          "path": "web/src/lib/components/frameleaf/editor/CropOverlay.svelte",
           "availability": "accepted-main",
-          "sha256": "a9a339a82543743d3d095383b4fc7c0fed7629223e2f251dc95513d6bfd200a6"
+          "sha256": "5b6d745832b424a121888fb1a47ccd8139dee719552ead4c2497dbd3828d190d"
         },
         {
           "path": "web/src/lib/components/asset-viewer/editor/VideoEditorPanel.svelte",
@@ -5530,14 +5677,14 @@
       "entrypoints": ["route:/photos/[[assetId=id]]", "route:/studio"],
       "source": [
         {
-          "path": "web/src/lib/components/asset-viewer/editor/EditorPanel.svelte",
+          "path": "web/src/lib/components/frameleaf/editor/QuickEditor.svelte",
           "availability": "accepted-main",
-          "sha256": "0b0b71ea428cdfabbb0b6baee5c80408f248af4dbd2751560a906461b9c36664"
+          "sha256": "78e81e9ad7db4c53623ba35c2729e435269e332b0bdd9202477d03ff3a389c1e"
         },
         {
-          "path": "web/src/lib/components/asset-viewer/editor/transform-tool/TransformTool.svelte",
+          "path": "web/src/lib/components/frameleaf/editor/CropOverlay.svelte",
           "availability": "accepted-main",
-          "sha256": "a9a339a82543743d3d095383b4fc7c0fed7629223e2f251dc95513d6bfd200a6"
+          "sha256": "5b6d745832b424a121888fb1a47ccd8139dee719552ead4c2497dbd3828d190d"
         },
         {
           "path": "web/src/lib/components/asset-viewer/editor/VideoEditorPanel.svelte",
@@ -5564,14 +5711,14 @@
       "entrypoints": ["route:/photos/[[assetId=id]]", "route:/studio"],
       "source": [
         {
-          "path": "web/src/lib/components/asset-viewer/editor/EditorPanel.svelte",
+          "path": "web/src/lib/components/frameleaf/editor/QuickEditor.svelte",
           "availability": "accepted-main",
-          "sha256": "0b0b71ea428cdfabbb0b6baee5c80408f248af4dbd2751560a906461b9c36664"
+          "sha256": "78e81e9ad7db4c53623ba35c2729e435269e332b0bdd9202477d03ff3a389c1e"
         },
         {
-          "path": "web/src/lib/components/asset-viewer/editor/transform-tool/TransformTool.svelte",
+          "path": "web/src/lib/components/frameleaf/editor/CropOverlay.svelte",
           "availability": "accepted-main",
-          "sha256": "a9a339a82543743d3d095383b4fc7c0fed7629223e2f251dc95513d6bfd200a6"
+          "sha256": "5b6d745832b424a121888fb1a47ccd8139dee719552ead4c2497dbd3828d190d"
         },
         {
           "path": "web/src/lib/components/asset-viewer/editor/VideoEditorPanel.svelte",
@@ -5598,14 +5745,14 @@
       "entrypoints": ["route:/photos/[[assetId=id]]", "route:/studio"],
       "source": [
         {
-          "path": "web/src/lib/components/asset-viewer/editor/EditorPanel.svelte",
+          "path": "web/src/lib/components/frameleaf/editor/QuickEditor.svelte",
           "availability": "accepted-main",
-          "sha256": "0b0b71ea428cdfabbb0b6baee5c80408f248af4dbd2751560a906461b9c36664"
+          "sha256": "78e81e9ad7db4c53623ba35c2729e435269e332b0bdd9202477d03ff3a389c1e"
         },
         {
-          "path": "web/src/lib/components/asset-viewer/editor/transform-tool/TransformTool.svelte",
+          "path": "web/src/lib/components/frameleaf/editor/CropOverlay.svelte",
           "availability": "accepted-main",
-          "sha256": "a9a339a82543743d3d095383b4fc7c0fed7629223e2f251dc95513d6bfd200a6"
+          "sha256": "5b6d745832b424a121888fb1a47ccd8139dee719552ead4c2497dbd3828d190d"
         },
         {
           "path": "web/src/lib/components/asset-viewer/editor/VideoEditorPanel.svelte",
@@ -5632,14 +5779,14 @@
       "entrypoints": ["route:/photos/[[assetId=id]]", "route:/studio"],
       "source": [
         {
-          "path": "web/src/lib/components/asset-viewer/editor/EditorPanel.svelte",
+          "path": "web/src/lib/components/frameleaf/editor/QuickEditor.svelte",
           "availability": "accepted-main",
-          "sha256": "0b0b71ea428cdfabbb0b6baee5c80408f248af4dbd2751560a906461b9c36664"
+          "sha256": "78e81e9ad7db4c53623ba35c2729e435269e332b0bdd9202477d03ff3a389c1e"
         },
         {
-          "path": "web/src/lib/components/asset-viewer/editor/transform-tool/TransformTool.svelte",
+          "path": "web/src/lib/components/frameleaf/editor/CropOverlay.svelte",
           "availability": "accepted-main",
-          "sha256": "a9a339a82543743d3d095383b4fc7c0fed7629223e2f251dc95513d6bfd200a6"
+          "sha256": "5b6d745832b424a121888fb1a47ccd8139dee719552ead4c2497dbd3828d190d"
         },
         {
           "path": "web/src/lib/components/asset-viewer/editor/VideoEditorPanel.svelte",
@@ -5670,9 +5817,9 @@
       ],
       "source": [
         {
-          "path": "web/src/routes/(user)/albums/AlbumsControls.svelte",
+          "path": "web/src/lib/components/frameleaf/AlbumDirectory.svelte",
           "availability": "accepted-main",
-          "sha256": "c2446a57664a4eb1eab1517e10b42aab74783dc418794e6c8df47a5bfacb57db"
+          "sha256": "99e396c5754d1e4b0b0e7272ddf97068e56a7a0ea76283d39bfd9812230f31a7"
         },
         {
           "path": "web/src/routes/(user)/albums/+page.svelte",
@@ -5690,7 +5837,7 @@
           "sha256": "b5f517c1dfd938e10d299b2c27df8052a51b8999ffe3ce7c0cd9f4fdaf2be6ae"
         },
         {
-          "path": "web/src/lib/modals/AlbumOptionsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/AlbumShareDialog.svelte",
           "availability": "accepted-main",
           "sha256": "aec0b2119eeaf178d4b8e67f394f069511a7a6e464075bd1235fa3cf95263d01"
         },
@@ -5719,9 +5866,9 @@
       ],
       "source": [
         {
-          "path": "web/src/routes/(user)/albums/AlbumsControls.svelte",
+          "path": "web/src/lib/components/frameleaf/AlbumDirectory.svelte",
           "availability": "accepted-main",
-          "sha256": "c2446a57664a4eb1eab1517e10b42aab74783dc418794e6c8df47a5bfacb57db"
+          "sha256": "99e396c5754d1e4b0b0e7272ddf97068e56a7a0ea76283d39bfd9812230f31a7"
         },
         {
           "path": "web/src/routes/(user)/albums/+page.svelte",
@@ -5739,7 +5886,7 @@
           "sha256": "b5f517c1dfd938e10d299b2c27df8052a51b8999ffe3ce7c0cd9f4fdaf2be6ae"
         },
         {
-          "path": "web/src/lib/modals/AlbumOptionsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/AlbumShareDialog.svelte",
           "availability": "accepted-main",
           "sha256": "aec0b2119eeaf178d4b8e67f394f069511a7a6e464075bd1235fa3cf95263d01"
         },
@@ -5768,9 +5915,9 @@
       ],
       "source": [
         {
-          "path": "web/src/routes/(user)/albums/AlbumsControls.svelte",
+          "path": "web/src/lib/components/frameleaf/AlbumDirectory.svelte",
           "availability": "accepted-main",
-          "sha256": "c2446a57664a4eb1eab1517e10b42aab74783dc418794e6c8df47a5bfacb57db"
+          "sha256": "99e396c5754d1e4b0b0e7272ddf97068e56a7a0ea76283d39bfd9812230f31a7"
         },
         {
           "path": "web/src/routes/(user)/albums/+page.svelte",
@@ -5788,7 +5935,7 @@
           "sha256": "b5f517c1dfd938e10d299b2c27df8052a51b8999ffe3ce7c0cd9f4fdaf2be6ae"
         },
         {
-          "path": "web/src/lib/modals/AlbumOptionsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/AlbumShareDialog.svelte",
           "availability": "accepted-main",
           "sha256": "aec0b2119eeaf178d4b8e67f394f069511a7a6e464075bd1235fa3cf95263d01"
         },
@@ -5817,9 +5964,9 @@
       ],
       "source": [
         {
-          "path": "web/src/routes/(user)/albums/AlbumsControls.svelte",
+          "path": "web/src/lib/components/frameleaf/AlbumDirectory.svelte",
           "availability": "accepted-main",
-          "sha256": "c2446a57664a4eb1eab1517e10b42aab74783dc418794e6c8df47a5bfacb57db"
+          "sha256": "99e396c5754d1e4b0b0e7272ddf97068e56a7a0ea76283d39bfd9812230f31a7"
         },
         {
           "path": "web/src/routes/(user)/albums/+page.svelte",
@@ -5837,7 +5984,7 @@
           "sha256": "b5f517c1dfd938e10d299b2c27df8052a51b8999ffe3ce7c0cd9f4fdaf2be6ae"
         },
         {
-          "path": "web/src/lib/modals/AlbumOptionsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/AlbumShareDialog.svelte",
           "availability": "accepted-main",
           "sha256": "aec0b2119eeaf178d4b8e67f394f069511a7a6e464075bd1235fa3cf95263d01"
         },
@@ -5866,9 +6013,9 @@
       ],
       "source": [
         {
-          "path": "web/src/routes/(user)/albums/AlbumsControls.svelte",
+          "path": "web/src/lib/components/frameleaf/AlbumDirectory.svelte",
           "availability": "accepted-main",
-          "sha256": "c2446a57664a4eb1eab1517e10b42aab74783dc418794e6c8df47a5bfacb57db"
+          "sha256": "99e396c5754d1e4b0b0e7272ddf97068e56a7a0ea76283d39bfd9812230f31a7"
         },
         {
           "path": "web/src/routes/(user)/albums/+page.svelte",
@@ -5886,7 +6033,7 @@
           "sha256": "b5f517c1dfd938e10d299b2c27df8052a51b8999ffe3ce7c0cd9f4fdaf2be6ae"
         },
         {
-          "path": "web/src/lib/modals/AlbumOptionsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/AlbumShareDialog.svelte",
           "availability": "accepted-main",
           "sha256": "aec0b2119eeaf178d4b8e67f394f069511a7a6e464075bd1235fa3cf95263d01"
         },
@@ -5915,9 +6062,9 @@
       ],
       "source": [
         {
-          "path": "web/src/routes/(user)/albums/AlbumsControls.svelte",
+          "path": "web/src/lib/components/frameleaf/AlbumDirectory.svelte",
           "availability": "accepted-main",
-          "sha256": "c2446a57664a4eb1eab1517e10b42aab74783dc418794e6c8df47a5bfacb57db"
+          "sha256": "99e396c5754d1e4b0b0e7272ddf97068e56a7a0ea76283d39bfd9812230f31a7"
         },
         {
           "path": "web/src/routes/(user)/albums/+page.svelte",
@@ -5935,7 +6082,7 @@
           "sha256": "b5f517c1dfd938e10d299b2c27df8052a51b8999ffe3ce7c0cd9f4fdaf2be6ae"
         },
         {
-          "path": "web/src/lib/modals/AlbumOptionsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/AlbumShareDialog.svelte",
           "availability": "accepted-main",
           "sha256": "aec0b2119eeaf178d4b8e67f394f069511a7a6e464075bd1235fa3cf95263d01"
         },
@@ -5964,9 +6111,9 @@
       ],
       "source": [
         {
-          "path": "web/src/routes/(user)/albums/AlbumsControls.svelte",
+          "path": "web/src/lib/components/frameleaf/AlbumDirectory.svelte",
           "availability": "accepted-main",
-          "sha256": "c2446a57664a4eb1eab1517e10b42aab74783dc418794e6c8df47a5bfacb57db"
+          "sha256": "99e396c5754d1e4b0b0e7272ddf97068e56a7a0ea76283d39bfd9812230f31a7"
         },
         {
           "path": "web/src/routes/(user)/albums/+page.svelte",
@@ -5984,7 +6131,7 @@
           "sha256": "b5f517c1dfd938e10d299b2c27df8052a51b8999ffe3ce7c0cd9f4fdaf2be6ae"
         },
         {
-          "path": "web/src/lib/modals/AlbumOptionsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/AlbumShareDialog.svelte",
           "availability": "accepted-main",
           "sha256": "aec0b2119eeaf178d4b8e67f394f069511a7a6e464075bd1235fa3cf95263d01"
         },
@@ -6013,9 +6160,9 @@
       ],
       "source": [
         {
-          "path": "web/src/routes/(user)/albums/AlbumsControls.svelte",
+          "path": "web/src/lib/components/frameleaf/AlbumDirectory.svelte",
           "availability": "accepted-main",
-          "sha256": "c2446a57664a4eb1eab1517e10b42aab74783dc418794e6c8df47a5bfacb57db"
+          "sha256": "99e396c5754d1e4b0b0e7272ddf97068e56a7a0ea76283d39bfd9812230f31a7"
         },
         {
           "path": "web/src/routes/(user)/albums/+page.svelte",
@@ -6033,7 +6180,7 @@
           "sha256": "b5f517c1dfd938e10d299b2c27df8052a51b8999ffe3ce7c0cd9f4fdaf2be6ae"
         },
         {
-          "path": "web/src/lib/modals/AlbumOptionsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/AlbumShareDialog.svelte",
           "availability": "accepted-main",
           "sha256": "aec0b2119eeaf178d4b8e67f394f069511a7a6e464075bd1235fa3cf95263d01"
         },
@@ -6062,9 +6209,9 @@
       ],
       "source": [
         {
-          "path": "web/src/routes/(user)/albums/AlbumsControls.svelte",
+          "path": "web/src/lib/components/frameleaf/AlbumDirectory.svelte",
           "availability": "accepted-main",
-          "sha256": "c2446a57664a4eb1eab1517e10b42aab74783dc418794e6c8df47a5bfacb57db"
+          "sha256": "99e396c5754d1e4b0b0e7272ddf97068e56a7a0ea76283d39bfd9812230f31a7"
         },
         {
           "path": "web/src/routes/(user)/albums/+page.svelte",
@@ -6082,7 +6229,7 @@
           "sha256": "b5f517c1dfd938e10d299b2c27df8052a51b8999ffe3ce7c0cd9f4fdaf2be6ae"
         },
         {
-          "path": "web/src/lib/modals/AlbumOptionsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/AlbumShareDialog.svelte",
           "availability": "accepted-main",
           "sha256": "aec0b2119eeaf178d4b8e67f394f069511a7a6e464075bd1235fa3cf95263d01"
         },
@@ -6111,9 +6258,9 @@
       ],
       "source": [
         {
-          "path": "web/src/routes/(user)/albums/AlbumsControls.svelte",
+          "path": "web/src/lib/components/frameleaf/AlbumDirectory.svelte",
           "availability": "accepted-main",
-          "sha256": "c2446a57664a4eb1eab1517e10b42aab74783dc418794e6c8df47a5bfacb57db"
+          "sha256": "99e396c5754d1e4b0b0e7272ddf97068e56a7a0ea76283d39bfd9812230f31a7"
         },
         {
           "path": "web/src/routes/(user)/albums/+page.svelte",
@@ -6131,7 +6278,7 @@
           "sha256": "b5f517c1dfd938e10d299b2c27df8052a51b8999ffe3ce7c0cd9f4fdaf2be6ae"
         },
         {
-          "path": "web/src/lib/modals/AlbumOptionsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/AlbumShareDialog.svelte",
           "availability": "accepted-main",
           "sha256": "aec0b2119eeaf178d4b8e67f394f069511a7a6e464075bd1235fa3cf95263d01"
         },
@@ -6160,9 +6307,9 @@
       ],
       "source": [
         {
-          "path": "web/src/routes/(user)/albums/AlbumsControls.svelte",
+          "path": "web/src/lib/components/frameleaf/AlbumDirectory.svelte",
           "availability": "accepted-main",
-          "sha256": "c2446a57664a4eb1eab1517e10b42aab74783dc418794e6c8df47a5bfacb57db"
+          "sha256": "99e396c5754d1e4b0b0e7272ddf97068e56a7a0ea76283d39bfd9812230f31a7"
         },
         {
           "path": "web/src/routes/(user)/albums/+page.svelte",
@@ -6180,7 +6327,7 @@
           "sha256": "b5f517c1dfd938e10d299b2c27df8052a51b8999ffe3ce7c0cd9f4fdaf2be6ae"
         },
         {
-          "path": "web/src/lib/modals/AlbumOptionsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/AlbumShareDialog.svelte",
           "availability": "accepted-main",
           "sha256": "aec0b2119eeaf178d4b8e67f394f069511a7a6e464075bd1235fa3cf95263d01"
         },
@@ -6209,9 +6356,9 @@
       ],
       "source": [
         {
-          "path": "web/src/routes/(user)/albums/AlbumsControls.svelte",
+          "path": "web/src/lib/components/frameleaf/AlbumDirectory.svelte",
           "availability": "accepted-main",
-          "sha256": "c2446a57664a4eb1eab1517e10b42aab74783dc418794e6c8df47a5bfacb57db"
+          "sha256": "99e396c5754d1e4b0b0e7272ddf97068e56a7a0ea76283d39bfd9812230f31a7"
         },
         {
           "path": "web/src/routes/(user)/albums/+page.svelte",
@@ -6229,7 +6376,7 @@
           "sha256": "b5f517c1dfd938e10d299b2c27df8052a51b8999ffe3ce7c0cd9f4fdaf2be6ae"
         },
         {
-          "path": "web/src/lib/modals/AlbumOptionsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/AlbumShareDialog.svelte",
           "availability": "accepted-main",
           "sha256": "aec0b2119eeaf178d4b8e67f394f069511a7a6e464075bd1235fa3cf95263d01"
         },
@@ -6258,9 +6405,9 @@
       ],
       "source": [
         {
-          "path": "web/src/routes/(user)/albums/AlbumsControls.svelte",
+          "path": "web/src/lib/components/frameleaf/AlbumDirectory.svelte",
           "availability": "accepted-main",
-          "sha256": "c2446a57664a4eb1eab1517e10b42aab74783dc418794e6c8df47a5bfacb57db"
+          "sha256": "99e396c5754d1e4b0b0e7272ddf97068e56a7a0ea76283d39bfd9812230f31a7"
         },
         {
           "path": "web/src/routes/(user)/albums/+page.svelte",
@@ -6278,7 +6425,7 @@
           "sha256": "b5f517c1dfd938e10d299b2c27df8052a51b8999ffe3ce7c0cd9f4fdaf2be6ae"
         },
         {
-          "path": "web/src/lib/modals/AlbumOptionsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/AlbumShareDialog.svelte",
           "availability": "accepted-main",
           "sha256": "aec0b2119eeaf178d4b8e67f394f069511a7a6e464075bd1235fa3cf95263d01"
         },
@@ -6307,9 +6454,9 @@
       ],
       "source": [
         {
-          "path": "web/src/routes/(user)/albums/AlbumsControls.svelte",
+          "path": "web/src/lib/components/frameleaf/AlbumDirectory.svelte",
           "availability": "accepted-main",
-          "sha256": "c2446a57664a4eb1eab1517e10b42aab74783dc418794e6c8df47a5bfacb57db"
+          "sha256": "99e396c5754d1e4b0b0e7272ddf97068e56a7a0ea76283d39bfd9812230f31a7"
         },
         {
           "path": "web/src/routes/(user)/albums/+page.svelte",
@@ -6327,7 +6474,7 @@
           "sha256": "b5f517c1dfd938e10d299b2c27df8052a51b8999ffe3ce7c0cd9f4fdaf2be6ae"
         },
         {
-          "path": "web/src/lib/modals/AlbumOptionsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/AlbumShareDialog.svelte",
           "availability": "accepted-main",
           "sha256": "aec0b2119eeaf178d4b8e67f394f069511a7a6e464075bd1235fa3cf95263d01"
         },
@@ -6356,9 +6503,9 @@
       ],
       "source": [
         {
-          "path": "web/src/routes/(user)/albums/AlbumsControls.svelte",
+          "path": "web/src/lib/components/frameleaf/AlbumDirectory.svelte",
           "availability": "accepted-main",
-          "sha256": "c2446a57664a4eb1eab1517e10b42aab74783dc418794e6c8df47a5bfacb57db"
+          "sha256": "99e396c5754d1e4b0b0e7272ddf97068e56a7a0ea76283d39bfd9812230f31a7"
         },
         {
           "path": "web/src/routes/(user)/albums/+page.svelte",
@@ -6376,7 +6523,7 @@
           "sha256": "b5f517c1dfd938e10d299b2c27df8052a51b8999ffe3ce7c0cd9f4fdaf2be6ae"
         },
         {
-          "path": "web/src/lib/modals/AlbumOptionsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/AlbumShareDialog.svelte",
           "availability": "accepted-main",
           "sha256": "aec0b2119eeaf178d4b8e67f394f069511a7a6e464075bd1235fa3cf95263d01"
         },
@@ -6405,9 +6552,9 @@
       ],
       "source": [
         {
-          "path": "web/src/routes/(user)/albums/AlbumsControls.svelte",
+          "path": "web/src/lib/components/frameleaf/AlbumDirectory.svelte",
           "availability": "accepted-main",
-          "sha256": "c2446a57664a4eb1eab1517e10b42aab74783dc418794e6c8df47a5bfacb57db"
+          "sha256": "99e396c5754d1e4b0b0e7272ddf97068e56a7a0ea76283d39bfd9812230f31a7"
         },
         {
           "path": "web/src/routes/(user)/albums/+page.svelte",
@@ -6425,7 +6572,7 @@
           "sha256": "b5f517c1dfd938e10d299b2c27df8052a51b8999ffe3ce7c0cd9f4fdaf2be6ae"
         },
         {
-          "path": "web/src/lib/modals/AlbumOptionsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/AlbumShareDialog.svelte",
           "availability": "accepted-main",
           "sha256": "aec0b2119eeaf178d4b8e67f394f069511a7a6e464075bd1235fa3cf95263d01"
         },
@@ -6454,9 +6601,9 @@
       ],
       "source": [
         {
-          "path": "web/src/routes/(user)/albums/AlbumsControls.svelte",
+          "path": "web/src/lib/components/frameleaf/AlbumDirectory.svelte",
           "availability": "accepted-main",
-          "sha256": "c2446a57664a4eb1eab1517e10b42aab74783dc418794e6c8df47a5bfacb57db"
+          "sha256": "99e396c5754d1e4b0b0e7272ddf97068e56a7a0ea76283d39bfd9812230f31a7"
         },
         {
           "path": "web/src/routes/(user)/albums/+page.svelte",
@@ -6474,7 +6621,7 @@
           "sha256": "b5f517c1dfd938e10d299b2c27df8052a51b8999ffe3ce7c0cd9f4fdaf2be6ae"
         },
         {
-          "path": "web/src/lib/modals/AlbumOptionsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/AlbumShareDialog.svelte",
           "availability": "accepted-main",
           "sha256": "aec0b2119eeaf178d4b8e67f394f069511a7a6e464075bd1235fa3cf95263d01"
         },
@@ -6503,9 +6650,9 @@
       ],
       "source": [
         {
-          "path": "web/src/routes/(user)/albums/AlbumsControls.svelte",
+          "path": "web/src/lib/components/frameleaf/AlbumDirectory.svelte",
           "availability": "accepted-main",
-          "sha256": "c2446a57664a4eb1eab1517e10b42aab74783dc418794e6c8df47a5bfacb57db"
+          "sha256": "99e396c5754d1e4b0b0e7272ddf97068e56a7a0ea76283d39bfd9812230f31a7"
         },
         {
           "path": "web/src/routes/(user)/albums/+page.svelte",
@@ -6523,7 +6670,7 @@
           "sha256": "b5f517c1dfd938e10d299b2c27df8052a51b8999ffe3ce7c0cd9f4fdaf2be6ae"
         },
         {
-          "path": "web/src/lib/modals/AlbumOptionsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/AlbumShareDialog.svelte",
           "availability": "accepted-main",
           "sha256": "aec0b2119eeaf178d4b8e67f394f069511a7a6e464075bd1235fa3cf95263d01"
         },
@@ -6552,9 +6699,9 @@
       ],
       "source": [
         {
-          "path": "web/src/routes/(user)/albums/AlbumsControls.svelte",
+          "path": "web/src/lib/components/frameleaf/AlbumDirectory.svelte",
           "availability": "accepted-main",
-          "sha256": "c2446a57664a4eb1eab1517e10b42aab74783dc418794e6c8df47a5bfacb57db"
+          "sha256": "99e396c5754d1e4b0b0e7272ddf97068e56a7a0ea76283d39bfd9812230f31a7"
         },
         {
           "path": "web/src/routes/(user)/albums/+page.svelte",
@@ -6572,7 +6719,7 @@
           "sha256": "b5f517c1dfd938e10d299b2c27df8052a51b8999ffe3ce7c0cd9f4fdaf2be6ae"
         },
         {
-          "path": "web/src/lib/modals/AlbumOptionsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/AlbumShareDialog.svelte",
           "availability": "accepted-main",
           "sha256": "aec0b2119eeaf178d4b8e67f394f069511a7a6e464075bd1235fa3cf95263d01"
         },
@@ -6601,9 +6748,9 @@
       ],
       "source": [
         {
-          "path": "web/src/routes/(user)/albums/AlbumsControls.svelte",
+          "path": "web/src/lib/components/frameleaf/AlbumDirectory.svelte",
           "availability": "accepted-main",
-          "sha256": "c2446a57664a4eb1eab1517e10b42aab74783dc418794e6c8df47a5bfacb57db"
+          "sha256": "99e396c5754d1e4b0b0e7272ddf97068e56a7a0ea76283d39bfd9812230f31a7"
         },
         {
           "path": "web/src/routes/(user)/albums/+page.svelte",
@@ -6621,7 +6768,7 @@
           "sha256": "b5f517c1dfd938e10d299b2c27df8052a51b8999ffe3ce7c0cd9f4fdaf2be6ae"
         },
         {
-          "path": "web/src/lib/modals/AlbumOptionsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/AlbumShareDialog.svelte",
           "availability": "accepted-main",
           "sha256": "aec0b2119eeaf178d4b8e67f394f069511a7a6e464075bd1235fa3cf95263d01"
         },
@@ -6650,9 +6797,9 @@
       ],
       "source": [
         {
-          "path": "web/src/routes/(user)/albums/AlbumsControls.svelte",
+          "path": "web/src/lib/components/frameleaf/AlbumDirectory.svelte",
           "availability": "accepted-main",
-          "sha256": "c2446a57664a4eb1eab1517e10b42aab74783dc418794e6c8df47a5bfacb57db"
+          "sha256": "99e396c5754d1e4b0b0e7272ddf97068e56a7a0ea76283d39bfd9812230f31a7"
         },
         {
           "path": "web/src/routes/(user)/albums/+page.svelte",
@@ -6670,7 +6817,7 @@
           "sha256": "b5f517c1dfd938e10d299b2c27df8052a51b8999ffe3ce7c0cd9f4fdaf2be6ae"
         },
         {
-          "path": "web/src/lib/modals/AlbumOptionsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/AlbumShareDialog.svelte",
           "availability": "accepted-main",
           "sha256": "aec0b2119eeaf178d4b8e67f394f069511a7a6e464075bd1235fa3cf95263d01"
         },
@@ -6700,14 +6847,14 @@
           "sha256": "9b9e1c4c6b7c21c5131a89a0a3ddf63d8350dcfd300bdb07623a7b6055fdd807"
         },
         {
-          "path": "web/src/lib/components/timeline/Timeline.svelte",
+          "path": "web/src/lib/components/frameleaf/LibraryTimeline.svelte",
           "availability": "accepted-main",
-          "sha256": "ff1908085e4ad3078a761606b1393c360bef9bf4f62f27af4515df345bd78f45"
+          "sha256": "69a8361e850ce9f6f4c232fa8cb45eee8aa1887229ee4b0f255b2c5dfa082be6"
         },
         {
-          "path": "web/src/lib/components/timeline/AssetSelectControlBar.svelte",
+          "path": "web/src/lib/components/frameleaf/SelectionBar.svelte",
           "availability": "accepted-main",
-          "sha256": "d7ea62b88e35896e2a1a4d21b71766d803a28dac7424f4a82daac9fd711802d1"
+          "sha256": "9779111d52112cab5e21e752d18eb7f75fcae56725804c220f77f8d93a93d96d"
         },
         {
           "path": "web/src/lib/components/timeline/actions",
@@ -6735,14 +6882,14 @@
           "sha256": "9b9e1c4c6b7c21c5131a89a0a3ddf63d8350dcfd300bdb07623a7b6055fdd807"
         },
         {
-          "path": "web/src/lib/components/timeline/Timeline.svelte",
+          "path": "web/src/lib/components/frameleaf/LibraryTimeline.svelte",
           "availability": "accepted-main",
-          "sha256": "ff1908085e4ad3078a761606b1393c360bef9bf4f62f27af4515df345bd78f45"
+          "sha256": "69a8361e850ce9f6f4c232fa8cb45eee8aa1887229ee4b0f255b2c5dfa082be6"
         },
         {
-          "path": "web/src/lib/components/timeline/AssetSelectControlBar.svelte",
+          "path": "web/src/lib/components/frameleaf/SelectionBar.svelte",
           "availability": "accepted-main",
-          "sha256": "d7ea62b88e35896e2a1a4d21b71766d803a28dac7424f4a82daac9fd711802d1"
+          "sha256": "9779111d52112cab5e21e752d18eb7f75fcae56725804c220f77f8d93a93d96d"
         },
         {
           "path": "web/src/lib/components/timeline/actions",
@@ -6770,14 +6917,14 @@
           "sha256": "9b9e1c4c6b7c21c5131a89a0a3ddf63d8350dcfd300bdb07623a7b6055fdd807"
         },
         {
-          "path": "web/src/lib/components/timeline/Timeline.svelte",
+          "path": "web/src/lib/components/frameleaf/LibraryTimeline.svelte",
           "availability": "accepted-main",
-          "sha256": "ff1908085e4ad3078a761606b1393c360bef9bf4f62f27af4515df345bd78f45"
+          "sha256": "69a8361e850ce9f6f4c232fa8cb45eee8aa1887229ee4b0f255b2c5dfa082be6"
         },
         {
-          "path": "web/src/lib/components/timeline/AssetSelectControlBar.svelte",
+          "path": "web/src/lib/components/frameleaf/SelectionBar.svelte",
           "availability": "accepted-main",
-          "sha256": "d7ea62b88e35896e2a1a4d21b71766d803a28dac7424f4a82daac9fd711802d1"
+          "sha256": "9779111d52112cab5e21e752d18eb7f75fcae56725804c220f77f8d93a93d96d"
         },
         {
           "path": "web/src/lib/components/timeline/actions",
@@ -6805,14 +6952,14 @@
           "sha256": "9b9e1c4c6b7c21c5131a89a0a3ddf63d8350dcfd300bdb07623a7b6055fdd807"
         },
         {
-          "path": "web/src/lib/components/timeline/Timeline.svelte",
+          "path": "web/src/lib/components/frameleaf/LibraryTimeline.svelte",
           "availability": "accepted-main",
-          "sha256": "ff1908085e4ad3078a761606b1393c360bef9bf4f62f27af4515df345bd78f45"
+          "sha256": "69a8361e850ce9f6f4c232fa8cb45eee8aa1887229ee4b0f255b2c5dfa082be6"
         },
         {
-          "path": "web/src/lib/components/timeline/AssetSelectControlBar.svelte",
+          "path": "web/src/lib/components/frameleaf/SelectionBar.svelte",
           "availability": "accepted-main",
-          "sha256": "d7ea62b88e35896e2a1a4d21b71766d803a28dac7424f4a82daac9fd711802d1"
+          "sha256": "9779111d52112cab5e21e752d18eb7f75fcae56725804c220f77f8d93a93d96d"
         },
         {
           "path": "web/src/lib/components/timeline/actions",
@@ -6840,14 +6987,14 @@
           "sha256": "9b9e1c4c6b7c21c5131a89a0a3ddf63d8350dcfd300bdb07623a7b6055fdd807"
         },
         {
-          "path": "web/src/lib/components/timeline/Timeline.svelte",
+          "path": "web/src/lib/components/frameleaf/LibraryTimeline.svelte",
           "availability": "accepted-main",
-          "sha256": "ff1908085e4ad3078a761606b1393c360bef9bf4f62f27af4515df345bd78f45"
+          "sha256": "69a8361e850ce9f6f4c232fa8cb45eee8aa1887229ee4b0f255b2c5dfa082be6"
         },
         {
-          "path": "web/src/lib/components/timeline/AssetSelectControlBar.svelte",
+          "path": "web/src/lib/components/frameleaf/SelectionBar.svelte",
           "availability": "accepted-main",
-          "sha256": "d7ea62b88e35896e2a1a4d21b71766d803a28dac7424f4a82daac9fd711802d1"
+          "sha256": "9779111d52112cab5e21e752d18eb7f75fcae56725804c220f77f8d93a93d96d"
         },
         {
           "path": "web/src/lib/components/timeline/actions",
@@ -6875,14 +7022,14 @@
           "sha256": "9b9e1c4c6b7c21c5131a89a0a3ddf63d8350dcfd300bdb07623a7b6055fdd807"
         },
         {
-          "path": "web/src/lib/components/timeline/Timeline.svelte",
+          "path": "web/src/lib/components/frameleaf/LibraryTimeline.svelte",
           "availability": "accepted-main",
-          "sha256": "ff1908085e4ad3078a761606b1393c360bef9bf4f62f27af4515df345bd78f45"
+          "sha256": "69a8361e850ce9f6f4c232fa8cb45eee8aa1887229ee4b0f255b2c5dfa082be6"
         },
         {
-          "path": "web/src/lib/components/timeline/AssetSelectControlBar.svelte",
+          "path": "web/src/lib/components/frameleaf/SelectionBar.svelte",
           "availability": "accepted-main",
-          "sha256": "d7ea62b88e35896e2a1a4d21b71766d803a28dac7424f4a82daac9fd711802d1"
+          "sha256": "9779111d52112cab5e21e752d18eb7f75fcae56725804c220f77f8d93a93d96d"
         },
         {
           "path": "web/src/lib/components/timeline/actions",
@@ -6910,14 +7057,14 @@
           "sha256": "9b9e1c4c6b7c21c5131a89a0a3ddf63d8350dcfd300bdb07623a7b6055fdd807"
         },
         {
-          "path": "web/src/lib/components/timeline/Timeline.svelte",
+          "path": "web/src/lib/components/frameleaf/LibraryTimeline.svelte",
           "availability": "accepted-main",
-          "sha256": "ff1908085e4ad3078a761606b1393c360bef9bf4f62f27af4515df345bd78f45"
+          "sha256": "69a8361e850ce9f6f4c232fa8cb45eee8aa1887229ee4b0f255b2c5dfa082be6"
         },
         {
-          "path": "web/src/lib/components/timeline/AssetSelectControlBar.svelte",
+          "path": "web/src/lib/components/frameleaf/SelectionBar.svelte",
           "availability": "accepted-main",
-          "sha256": "d7ea62b88e35896e2a1a4d21b71766d803a28dac7424f4a82daac9fd711802d1"
+          "sha256": "9779111d52112cab5e21e752d18eb7f75fcae56725804c220f77f8d93a93d96d"
         },
         {
           "path": "web/src/lib/components/timeline/actions",
@@ -6945,14 +7092,14 @@
           "sha256": "9b9e1c4c6b7c21c5131a89a0a3ddf63d8350dcfd300bdb07623a7b6055fdd807"
         },
         {
-          "path": "web/src/lib/components/timeline/Timeline.svelte",
+          "path": "web/src/lib/components/frameleaf/LibraryTimeline.svelte",
           "availability": "accepted-main",
-          "sha256": "ff1908085e4ad3078a761606b1393c360bef9bf4f62f27af4515df345bd78f45"
+          "sha256": "69a8361e850ce9f6f4c232fa8cb45eee8aa1887229ee4b0f255b2c5dfa082be6"
         },
         {
-          "path": "web/src/lib/components/timeline/AssetSelectControlBar.svelte",
+          "path": "web/src/lib/components/frameleaf/SelectionBar.svelte",
           "availability": "accepted-main",
-          "sha256": "d7ea62b88e35896e2a1a4d21b71766d803a28dac7424f4a82daac9fd711802d1"
+          "sha256": "9779111d52112cab5e21e752d18eb7f75fcae56725804c220f77f8d93a93d96d"
         },
         {
           "path": "web/src/lib/components/timeline/actions",
@@ -6980,14 +7127,14 @@
           "sha256": "9b9e1c4c6b7c21c5131a89a0a3ddf63d8350dcfd300bdb07623a7b6055fdd807"
         },
         {
-          "path": "web/src/lib/components/timeline/Timeline.svelte",
+          "path": "web/src/lib/components/frameleaf/LibraryTimeline.svelte",
           "availability": "accepted-main",
-          "sha256": "ff1908085e4ad3078a761606b1393c360bef9bf4f62f27af4515df345bd78f45"
+          "sha256": "69a8361e850ce9f6f4c232fa8cb45eee8aa1887229ee4b0f255b2c5dfa082be6"
         },
         {
-          "path": "web/src/lib/components/timeline/AssetSelectControlBar.svelte",
+          "path": "web/src/lib/components/frameleaf/SelectionBar.svelte",
           "availability": "accepted-main",
-          "sha256": "d7ea62b88e35896e2a1a4d21b71766d803a28dac7424f4a82daac9fd711802d1"
+          "sha256": "9779111d52112cab5e21e752d18eb7f75fcae56725804c220f77f8d93a93d96d"
         },
         {
           "path": "web/src/lib/components/timeline/actions",
@@ -7015,14 +7162,14 @@
           "sha256": "9b9e1c4c6b7c21c5131a89a0a3ddf63d8350dcfd300bdb07623a7b6055fdd807"
         },
         {
-          "path": "web/src/lib/components/timeline/Timeline.svelte",
+          "path": "web/src/lib/components/frameleaf/LibraryTimeline.svelte",
           "availability": "accepted-main",
-          "sha256": "ff1908085e4ad3078a761606b1393c360bef9bf4f62f27af4515df345bd78f45"
+          "sha256": "69a8361e850ce9f6f4c232fa8cb45eee8aa1887229ee4b0f255b2c5dfa082be6"
         },
         {
-          "path": "web/src/lib/components/timeline/AssetSelectControlBar.svelte",
+          "path": "web/src/lib/components/frameleaf/SelectionBar.svelte",
           "availability": "accepted-main",
-          "sha256": "d7ea62b88e35896e2a1a4d21b71766d803a28dac7424f4a82daac9fd711802d1"
+          "sha256": "9779111d52112cab5e21e752d18eb7f75fcae56725804c220f77f8d93a93d96d"
         },
         {
           "path": "web/src/lib/components/timeline/actions",
@@ -7050,14 +7197,14 @@
           "sha256": "9b9e1c4c6b7c21c5131a89a0a3ddf63d8350dcfd300bdb07623a7b6055fdd807"
         },
         {
-          "path": "web/src/lib/components/timeline/Timeline.svelte",
+          "path": "web/src/lib/components/frameleaf/LibraryTimeline.svelte",
           "availability": "accepted-main",
-          "sha256": "ff1908085e4ad3078a761606b1393c360bef9bf4f62f27af4515df345bd78f45"
+          "sha256": "69a8361e850ce9f6f4c232fa8cb45eee8aa1887229ee4b0f255b2c5dfa082be6"
         },
         {
-          "path": "web/src/lib/components/timeline/AssetSelectControlBar.svelte",
+          "path": "web/src/lib/components/frameleaf/SelectionBar.svelte",
           "availability": "accepted-main",
-          "sha256": "d7ea62b88e35896e2a1a4d21b71766d803a28dac7424f4a82daac9fd711802d1"
+          "sha256": "9779111d52112cab5e21e752d18eb7f75fcae56725804c220f77f8d93a93d96d"
         },
         {
           "path": "web/src/lib/components/timeline/actions",
@@ -7085,14 +7232,14 @@
           "sha256": "9b9e1c4c6b7c21c5131a89a0a3ddf63d8350dcfd300bdb07623a7b6055fdd807"
         },
         {
-          "path": "web/src/lib/components/timeline/Timeline.svelte",
+          "path": "web/src/lib/components/frameleaf/LibraryTimeline.svelte",
           "availability": "accepted-main",
-          "sha256": "ff1908085e4ad3078a761606b1393c360bef9bf4f62f27af4515df345bd78f45"
+          "sha256": "69a8361e850ce9f6f4c232fa8cb45eee8aa1887229ee4b0f255b2c5dfa082be6"
         },
         {
-          "path": "web/src/lib/components/timeline/AssetSelectControlBar.svelte",
+          "path": "web/src/lib/components/frameleaf/SelectionBar.svelte",
           "availability": "accepted-main",
-          "sha256": "d7ea62b88e35896e2a1a4d21b71766d803a28dac7424f4a82daac9fd711802d1"
+          "sha256": "9779111d52112cab5e21e752d18eb7f75fcae56725804c220f77f8d93a93d96d"
         },
         {
           "path": "web/src/lib/components/timeline/actions",
@@ -7120,14 +7267,14 @@
           "sha256": "9b9e1c4c6b7c21c5131a89a0a3ddf63d8350dcfd300bdb07623a7b6055fdd807"
         },
         {
-          "path": "web/src/lib/components/timeline/Timeline.svelte",
+          "path": "web/src/lib/components/frameleaf/LibraryTimeline.svelte",
           "availability": "accepted-main",
-          "sha256": "ff1908085e4ad3078a761606b1393c360bef9bf4f62f27af4515df345bd78f45"
+          "sha256": "69a8361e850ce9f6f4c232fa8cb45eee8aa1887229ee4b0f255b2c5dfa082be6"
         },
         {
-          "path": "web/src/lib/components/timeline/AssetSelectControlBar.svelte",
+          "path": "web/src/lib/components/frameleaf/SelectionBar.svelte",
           "availability": "accepted-main",
-          "sha256": "d7ea62b88e35896e2a1a4d21b71766d803a28dac7424f4a82daac9fd711802d1"
+          "sha256": "9779111d52112cab5e21e752d18eb7f75fcae56725804c220f77f8d93a93d96d"
         },
         {
           "path": "web/src/lib/components/timeline/actions",
@@ -7155,14 +7302,14 @@
           "sha256": "9b9e1c4c6b7c21c5131a89a0a3ddf63d8350dcfd300bdb07623a7b6055fdd807"
         },
         {
-          "path": "web/src/lib/components/timeline/Timeline.svelte",
+          "path": "web/src/lib/components/frameleaf/LibraryTimeline.svelte",
           "availability": "accepted-main",
-          "sha256": "ff1908085e4ad3078a761606b1393c360bef9bf4f62f27af4515df345bd78f45"
+          "sha256": "69a8361e850ce9f6f4c232fa8cb45eee8aa1887229ee4b0f255b2c5dfa082be6"
         },
         {
-          "path": "web/src/lib/components/timeline/AssetSelectControlBar.svelte",
+          "path": "web/src/lib/components/frameleaf/SelectionBar.svelte",
           "availability": "accepted-main",
-          "sha256": "d7ea62b88e35896e2a1a4d21b71766d803a28dac7424f4a82daac9fd711802d1"
+          "sha256": "9779111d52112cab5e21e752d18eb7f75fcae56725804c220f77f8d93a93d96d"
         },
         {
           "path": "web/src/lib/components/timeline/actions",
@@ -7190,14 +7337,14 @@
           "sha256": "9b9e1c4c6b7c21c5131a89a0a3ddf63d8350dcfd300bdb07623a7b6055fdd807"
         },
         {
-          "path": "web/src/lib/components/timeline/Timeline.svelte",
+          "path": "web/src/lib/components/frameleaf/LibraryTimeline.svelte",
           "availability": "accepted-main",
-          "sha256": "ff1908085e4ad3078a761606b1393c360bef9bf4f62f27af4515df345bd78f45"
+          "sha256": "69a8361e850ce9f6f4c232fa8cb45eee8aa1887229ee4b0f255b2c5dfa082be6"
         },
         {
-          "path": "web/src/lib/components/timeline/AssetSelectControlBar.svelte",
+          "path": "web/src/lib/components/frameleaf/SelectionBar.svelte",
           "availability": "accepted-main",
-          "sha256": "d7ea62b88e35896e2a1a4d21b71766d803a28dac7424f4a82daac9fd711802d1"
+          "sha256": "9779111d52112cab5e21e752d18eb7f75fcae56725804c220f77f8d93a93d96d"
         },
         {
           "path": "web/src/lib/components/timeline/actions",
@@ -7225,14 +7372,14 @@
           "sha256": "9b9e1c4c6b7c21c5131a89a0a3ddf63d8350dcfd300bdb07623a7b6055fdd807"
         },
         {
-          "path": "web/src/lib/components/timeline/Timeline.svelte",
+          "path": "web/src/lib/components/frameleaf/LibraryTimeline.svelte",
           "availability": "accepted-main",
-          "sha256": "ff1908085e4ad3078a761606b1393c360bef9bf4f62f27af4515df345bd78f45"
+          "sha256": "69a8361e850ce9f6f4c232fa8cb45eee8aa1887229ee4b0f255b2c5dfa082be6"
         },
         {
-          "path": "web/src/lib/components/timeline/AssetSelectControlBar.svelte",
+          "path": "web/src/lib/components/frameleaf/SelectionBar.svelte",
           "availability": "accepted-main",
-          "sha256": "d7ea62b88e35896e2a1a4d21b71766d803a28dac7424f4a82daac9fd711802d1"
+          "sha256": "9779111d52112cab5e21e752d18eb7f75fcae56725804c220f77f8d93a93d96d"
         },
         {
           "path": "web/src/lib/components/timeline/actions",
@@ -7255,19 +7402,19 @@
       "entrypoints": ["route:/search/[[photos=photos]]/[[assetId=id]]", "route:/discover", "route:/explore"],
       "source": [
         {
-          "path": "web/src/lib/components/shared-components/search-bar/SearchBar.svelte",
+          "path": "web/src/lib/components/frameleaf/SearchEntry.svelte",
           "availability": "accepted-main",
-          "sha256": "9ad37356aaa8abd3b5aa113619125bc8fd24d7942274645c9a5727e0c384bfd1"
+          "sha256": "62d504b92a5d5dcb45881f8de79266e696d46e02bcc781d5d858722c3003209b"
         },
         {
-          "path": "web/src/lib/components/shared-components/search-bar/SearchFilters.svelte",
+          "path": "web/src/lib/components/frameleaf/FilterPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "b93693ea10bc0891f845e3b0cd01b225585f816ad72ff54eebda2483192eb32f"
+          "sha256": "b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b"
         },
         {
-          "path": "web/src/lib/components/shared-components/search-bar",
-          "availability": "accepted-main-directory",
-          "sha256": null
+          "path": "web/src/lib/components/frameleaf/SearchPalette.svelte",
+          "availability": "accepted-main",
+          "sha256": "ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee"
         },
         {
           "path": "web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte",
@@ -7304,19 +7451,19 @@
       "entrypoints": ["route:/search/[[photos=photos]]/[[assetId=id]]", "route:/discover", "route:/explore"],
       "source": [
         {
-          "path": "web/src/lib/components/shared-components/search-bar/SearchBar.svelte",
+          "path": "web/src/lib/components/frameleaf/SearchEntry.svelte",
           "availability": "accepted-main",
-          "sha256": "9ad37356aaa8abd3b5aa113619125bc8fd24d7942274645c9a5727e0c384bfd1"
+          "sha256": "62d504b92a5d5dcb45881f8de79266e696d46e02bcc781d5d858722c3003209b"
         },
         {
-          "path": "web/src/lib/components/shared-components/search-bar/SearchFilters.svelte",
+          "path": "web/src/lib/components/frameleaf/FilterPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "b93693ea10bc0891f845e3b0cd01b225585f816ad72ff54eebda2483192eb32f"
+          "sha256": "b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b"
         },
         {
-          "path": "web/src/lib/components/shared-components/search-bar",
-          "availability": "accepted-main-directory",
-          "sha256": null
+          "path": "web/src/lib/components/frameleaf/SearchPalette.svelte",
+          "availability": "accepted-main",
+          "sha256": "ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee"
         },
         {
           "path": "web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte",
@@ -7353,19 +7500,19 @@
       "entrypoints": ["route:/search/[[photos=photos]]/[[assetId=id]]", "route:/discover", "route:/explore"],
       "source": [
         {
-          "path": "web/src/lib/components/shared-components/search-bar/SearchBar.svelte",
+          "path": "web/src/lib/components/frameleaf/SearchEntry.svelte",
           "availability": "accepted-main",
-          "sha256": "9ad37356aaa8abd3b5aa113619125bc8fd24d7942274645c9a5727e0c384bfd1"
+          "sha256": "62d504b92a5d5dcb45881f8de79266e696d46e02bcc781d5d858722c3003209b"
         },
         {
-          "path": "web/src/lib/components/shared-components/search-bar/SearchFilters.svelte",
+          "path": "web/src/lib/components/frameleaf/FilterPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "b93693ea10bc0891f845e3b0cd01b225585f816ad72ff54eebda2483192eb32f"
+          "sha256": "b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b"
         },
         {
-          "path": "web/src/lib/components/shared-components/search-bar",
-          "availability": "accepted-main-directory",
-          "sha256": null
+          "path": "web/src/lib/components/frameleaf/SearchPalette.svelte",
+          "availability": "accepted-main",
+          "sha256": "ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee"
         },
         {
           "path": "web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte",
@@ -7402,19 +7549,19 @@
       "entrypoints": ["route:/search/[[photos=photos]]/[[assetId=id]]", "route:/discover", "route:/explore"],
       "source": [
         {
-          "path": "web/src/lib/components/shared-components/search-bar/SearchBar.svelte",
+          "path": "web/src/lib/components/frameleaf/SearchEntry.svelte",
           "availability": "accepted-main",
-          "sha256": "9ad37356aaa8abd3b5aa113619125bc8fd24d7942274645c9a5727e0c384bfd1"
+          "sha256": "62d504b92a5d5dcb45881f8de79266e696d46e02bcc781d5d858722c3003209b"
         },
         {
-          "path": "web/src/lib/components/shared-components/search-bar/SearchFilters.svelte",
+          "path": "web/src/lib/components/frameleaf/FilterPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "b93693ea10bc0891f845e3b0cd01b225585f816ad72ff54eebda2483192eb32f"
+          "sha256": "b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b"
         },
         {
-          "path": "web/src/lib/components/shared-components/search-bar",
-          "availability": "accepted-main-directory",
-          "sha256": null
+          "path": "web/src/lib/components/frameleaf/SearchPalette.svelte",
+          "availability": "accepted-main",
+          "sha256": "ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee"
         },
         {
           "path": "web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte",
@@ -7451,19 +7598,19 @@
       "entrypoints": ["route:/search/[[photos=photos]]/[[assetId=id]]", "route:/discover", "route:/explore"],
       "source": [
         {
-          "path": "web/src/lib/components/shared-components/search-bar/SearchBar.svelte",
+          "path": "web/src/lib/components/frameleaf/SearchEntry.svelte",
           "availability": "accepted-main",
-          "sha256": "9ad37356aaa8abd3b5aa113619125bc8fd24d7942274645c9a5727e0c384bfd1"
+          "sha256": "62d504b92a5d5dcb45881f8de79266e696d46e02bcc781d5d858722c3003209b"
         },
         {
-          "path": "web/src/lib/components/shared-components/search-bar/SearchFilters.svelte",
+          "path": "web/src/lib/components/frameleaf/FilterPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "b93693ea10bc0891f845e3b0cd01b225585f816ad72ff54eebda2483192eb32f"
+          "sha256": "b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b"
         },
         {
-          "path": "web/src/lib/components/shared-components/search-bar",
-          "availability": "accepted-main-directory",
-          "sha256": null
+          "path": "web/src/lib/components/frameleaf/SearchPalette.svelte",
+          "availability": "accepted-main",
+          "sha256": "ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee"
         },
         {
           "path": "web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte",
@@ -7500,19 +7647,19 @@
       "entrypoints": ["route:/search/[[photos=photos]]/[[assetId=id]]", "route:/discover", "route:/explore"],
       "source": [
         {
-          "path": "web/src/lib/components/shared-components/search-bar/SearchBar.svelte",
+          "path": "web/src/lib/components/frameleaf/SearchEntry.svelte",
           "availability": "accepted-main",
-          "sha256": "9ad37356aaa8abd3b5aa113619125bc8fd24d7942274645c9a5727e0c384bfd1"
+          "sha256": "62d504b92a5d5dcb45881f8de79266e696d46e02bcc781d5d858722c3003209b"
         },
         {
-          "path": "web/src/lib/components/shared-components/search-bar/SearchFilters.svelte",
+          "path": "web/src/lib/components/frameleaf/FilterPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "b93693ea10bc0891f845e3b0cd01b225585f816ad72ff54eebda2483192eb32f"
+          "sha256": "b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b"
         },
         {
-          "path": "web/src/lib/components/shared-components/search-bar",
-          "availability": "accepted-main-directory",
-          "sha256": null
+          "path": "web/src/lib/components/frameleaf/SearchPalette.svelte",
+          "availability": "accepted-main",
+          "sha256": "ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee"
         },
         {
           "path": "web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte",
@@ -7549,19 +7696,19 @@
       "entrypoints": ["route:/search/[[photos=photos]]/[[assetId=id]]", "route:/discover", "route:/explore"],
       "source": [
         {
-          "path": "web/src/lib/components/shared-components/search-bar/SearchBar.svelte",
+          "path": "web/src/lib/components/frameleaf/SearchEntry.svelte",
           "availability": "accepted-main",
-          "sha256": "9ad37356aaa8abd3b5aa113619125bc8fd24d7942274645c9a5727e0c384bfd1"
+          "sha256": "62d504b92a5d5dcb45881f8de79266e696d46e02bcc781d5d858722c3003209b"
         },
         {
-          "path": "web/src/lib/components/shared-components/search-bar/SearchFilters.svelte",
+          "path": "web/src/lib/components/frameleaf/FilterPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "b93693ea10bc0891f845e3b0cd01b225585f816ad72ff54eebda2483192eb32f"
+          "sha256": "b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b"
         },
         {
-          "path": "web/src/lib/components/shared-components/search-bar",
-          "availability": "accepted-main-directory",
-          "sha256": null
+          "path": "web/src/lib/components/frameleaf/SearchPalette.svelte",
+          "availability": "accepted-main",
+          "sha256": "ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee"
         },
         {
           "path": "web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte",
@@ -7598,19 +7745,19 @@
       "entrypoints": ["route:/search/[[photos=photos]]/[[assetId=id]]", "route:/discover", "route:/explore"],
       "source": [
         {
-          "path": "web/src/lib/components/shared-components/search-bar/SearchBar.svelte",
+          "path": "web/src/lib/components/frameleaf/SearchEntry.svelte",
           "availability": "accepted-main",
-          "sha256": "9ad37356aaa8abd3b5aa113619125bc8fd24d7942274645c9a5727e0c384bfd1"
+          "sha256": "62d504b92a5d5dcb45881f8de79266e696d46e02bcc781d5d858722c3003209b"
         },
         {
-          "path": "web/src/lib/components/shared-components/search-bar/SearchFilters.svelte",
+          "path": "web/src/lib/components/frameleaf/FilterPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "b93693ea10bc0891f845e3b0cd01b225585f816ad72ff54eebda2483192eb32f"
+          "sha256": "b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b"
         },
         {
-          "path": "web/src/lib/components/shared-components/search-bar",
-          "availability": "accepted-main-directory",
-          "sha256": null
+          "path": "web/src/lib/components/frameleaf/SearchPalette.svelte",
+          "availability": "accepted-main",
+          "sha256": "ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee"
         },
         {
           "path": "web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte",
@@ -7647,19 +7794,19 @@
       "entrypoints": ["route:/search/[[photos=photos]]/[[assetId=id]]", "route:/discover", "route:/explore"],
       "source": [
         {
-          "path": "web/src/lib/components/shared-components/search-bar/SearchBar.svelte",
+          "path": "web/src/lib/components/frameleaf/SearchEntry.svelte",
           "availability": "accepted-main",
-          "sha256": "9ad37356aaa8abd3b5aa113619125bc8fd24d7942274645c9a5727e0c384bfd1"
+          "sha256": "62d504b92a5d5dcb45881f8de79266e696d46e02bcc781d5d858722c3003209b"
         },
         {
-          "path": "web/src/lib/components/shared-components/search-bar/SearchFilters.svelte",
+          "path": "web/src/lib/components/frameleaf/FilterPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "b93693ea10bc0891f845e3b0cd01b225585f816ad72ff54eebda2483192eb32f"
+          "sha256": "b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b"
         },
         {
-          "path": "web/src/lib/components/shared-components/search-bar",
-          "availability": "accepted-main-directory",
-          "sha256": null
+          "path": "web/src/lib/components/frameleaf/SearchPalette.svelte",
+          "availability": "accepted-main",
+          "sha256": "ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee"
         },
         {
           "path": "web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte",
@@ -7696,19 +7843,19 @@
       "entrypoints": ["route:/search/[[photos=photos]]/[[assetId=id]]", "route:/discover", "route:/explore"],
       "source": [
         {
-          "path": "web/src/lib/components/shared-components/search-bar/SearchBar.svelte",
+          "path": "web/src/lib/components/frameleaf/SearchEntry.svelte",
           "availability": "accepted-main",
-          "sha256": "9ad37356aaa8abd3b5aa113619125bc8fd24d7942274645c9a5727e0c384bfd1"
+          "sha256": "62d504b92a5d5dcb45881f8de79266e696d46e02bcc781d5d858722c3003209b"
         },
         {
-          "path": "web/src/lib/components/shared-components/search-bar/SearchFilters.svelte",
+          "path": "web/src/lib/components/frameleaf/FilterPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "b93693ea10bc0891f845e3b0cd01b225585f816ad72ff54eebda2483192eb32f"
+          "sha256": "b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b"
         },
         {
-          "path": "web/src/lib/components/shared-components/search-bar",
-          "availability": "accepted-main-directory",
-          "sha256": null
+          "path": "web/src/lib/components/frameleaf/SearchPalette.svelte",
+          "availability": "accepted-main",
+          "sha256": "ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee"
         },
         {
           "path": "web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte",
@@ -7745,19 +7892,19 @@
       "entrypoints": ["route:/search/[[photos=photos]]/[[assetId=id]]", "route:/discover", "route:/explore"],
       "source": [
         {
-          "path": "web/src/lib/components/shared-components/search-bar/SearchBar.svelte",
+          "path": "web/src/lib/components/frameleaf/SearchEntry.svelte",
           "availability": "accepted-main",
-          "sha256": "9ad37356aaa8abd3b5aa113619125bc8fd24d7942274645c9a5727e0c384bfd1"
+          "sha256": "62d504b92a5d5dcb45881f8de79266e696d46e02bcc781d5d858722c3003209b"
         },
         {
-          "path": "web/src/lib/components/shared-components/search-bar/SearchFilters.svelte",
+          "path": "web/src/lib/components/frameleaf/FilterPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "b93693ea10bc0891f845e3b0cd01b225585f816ad72ff54eebda2483192eb32f"
+          "sha256": "b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b"
         },
         {
-          "path": "web/src/lib/components/shared-components/search-bar",
-          "availability": "accepted-main-directory",
-          "sha256": null
+          "path": "web/src/lib/components/frameleaf/SearchPalette.svelte",
+          "availability": "accepted-main",
+          "sha256": "ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee"
         },
         {
           "path": "web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte",
@@ -7794,19 +7941,19 @@
       "entrypoints": ["route:/search/[[photos=photos]]/[[assetId=id]]", "route:/discover", "route:/explore"],
       "source": [
         {
-          "path": "web/src/lib/components/shared-components/search-bar/SearchBar.svelte",
+          "path": "web/src/lib/components/frameleaf/SearchEntry.svelte",
           "availability": "accepted-main",
-          "sha256": "9ad37356aaa8abd3b5aa113619125bc8fd24d7942274645c9a5727e0c384bfd1"
+          "sha256": "62d504b92a5d5dcb45881f8de79266e696d46e02bcc781d5d858722c3003209b"
         },
         {
-          "path": "web/src/lib/components/shared-components/search-bar/SearchFilters.svelte",
+          "path": "web/src/lib/components/frameleaf/FilterPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "b93693ea10bc0891f845e3b0cd01b225585f816ad72ff54eebda2483192eb32f"
+          "sha256": "b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b"
         },
         {
-          "path": "web/src/lib/components/shared-components/search-bar",
-          "availability": "accepted-main-directory",
-          "sha256": null
+          "path": "web/src/lib/components/frameleaf/SearchPalette.svelte",
+          "availability": "accepted-main",
+          "sha256": "ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee"
         },
         {
           "path": "web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte",
@@ -7843,19 +7990,19 @@
       "entrypoints": ["route:/search/[[photos=photos]]/[[assetId=id]]", "route:/discover", "route:/explore"],
       "source": [
         {
-          "path": "web/src/lib/components/shared-components/search-bar/SearchBar.svelte",
+          "path": "web/src/lib/components/frameleaf/SearchEntry.svelte",
           "availability": "accepted-main",
-          "sha256": "9ad37356aaa8abd3b5aa113619125bc8fd24d7942274645c9a5727e0c384bfd1"
+          "sha256": "62d504b92a5d5dcb45881f8de79266e696d46e02bcc781d5d858722c3003209b"
         },
         {
-          "path": "web/src/lib/components/shared-components/search-bar/SearchFilters.svelte",
+          "path": "web/src/lib/components/frameleaf/FilterPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "b93693ea10bc0891f845e3b0cd01b225585f816ad72ff54eebda2483192eb32f"
+          "sha256": "b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b"
         },
         {
-          "path": "web/src/lib/components/shared-components/search-bar",
-          "availability": "accepted-main-directory",
-          "sha256": null
+          "path": "web/src/lib/components/frameleaf/SearchPalette.svelte",
+          "availability": "accepted-main",
+          "sha256": "ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee"
         },
         {
           "path": "web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte",
@@ -7892,19 +8039,19 @@
       "entrypoints": ["route:/search/[[photos=photos]]/[[assetId=id]]", "route:/discover", "route:/explore"],
       "source": [
         {
-          "path": "web/src/lib/components/shared-components/search-bar/SearchBar.svelte",
+          "path": "web/src/lib/components/frameleaf/SearchEntry.svelte",
           "availability": "accepted-main",
-          "sha256": "9ad37356aaa8abd3b5aa113619125bc8fd24d7942274645c9a5727e0c384bfd1"
+          "sha256": "62d504b92a5d5dcb45881f8de79266e696d46e02bcc781d5d858722c3003209b"
         },
         {
-          "path": "web/src/lib/components/shared-components/search-bar/SearchFilters.svelte",
+          "path": "web/src/lib/components/frameleaf/FilterPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "b93693ea10bc0891f845e3b0cd01b225585f816ad72ff54eebda2483192eb32f"
+          "sha256": "b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b"
         },
         {
-          "path": "web/src/lib/components/shared-components/search-bar",
-          "availability": "accepted-main-directory",
-          "sha256": null
+          "path": "web/src/lib/components/frameleaf/SearchPalette.svelte",
+          "availability": "accepted-main",
+          "sha256": "ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee"
         },
         {
           "path": "web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte",
@@ -7941,19 +8088,19 @@
       "entrypoints": ["route:/search/[[photos=photos]]/[[assetId=id]]", "route:/discover", "route:/explore"],
       "source": [
         {
-          "path": "web/src/lib/components/shared-components/search-bar/SearchBar.svelte",
+          "path": "web/src/lib/components/frameleaf/SearchEntry.svelte",
           "availability": "accepted-main",
-          "sha256": "9ad37356aaa8abd3b5aa113619125bc8fd24d7942274645c9a5727e0c384bfd1"
+          "sha256": "62d504b92a5d5dcb45881f8de79266e696d46e02bcc781d5d858722c3003209b"
         },
         {
-          "path": "web/src/lib/components/shared-components/search-bar/SearchFilters.svelte",
+          "path": "web/src/lib/components/frameleaf/FilterPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "b93693ea10bc0891f845e3b0cd01b225585f816ad72ff54eebda2483192eb32f"
+          "sha256": "b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b"
         },
         {
-          "path": "web/src/lib/components/shared-components/search-bar",
-          "availability": "accepted-main-directory",
-          "sha256": null
+          "path": "web/src/lib/components/frameleaf/SearchPalette.svelte",
+          "availability": "accepted-main",
+          "sha256": "ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee"
         },
         {
           "path": "web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte",
@@ -7990,19 +8137,19 @@
       "entrypoints": ["route:/search/[[photos=photos]]/[[assetId=id]]", "route:/discover", "route:/explore"],
       "source": [
         {
-          "path": "web/src/lib/components/shared-components/search-bar/SearchBar.svelte",
+          "path": "web/src/lib/components/frameleaf/SearchEntry.svelte",
           "availability": "accepted-main",
-          "sha256": "9ad37356aaa8abd3b5aa113619125bc8fd24d7942274645c9a5727e0c384bfd1"
+          "sha256": "62d504b92a5d5dcb45881f8de79266e696d46e02bcc781d5d858722c3003209b"
         },
         {
-          "path": "web/src/lib/components/shared-components/search-bar/SearchFilters.svelte",
+          "path": "web/src/lib/components/frameleaf/FilterPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "b93693ea10bc0891f845e3b0cd01b225585f816ad72ff54eebda2483192eb32f"
+          "sha256": "b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b"
         },
         {
-          "path": "web/src/lib/components/shared-components/search-bar",
-          "availability": "accepted-main-directory",
-          "sha256": null
+          "path": "web/src/lib/components/frameleaf/SearchPalette.svelte",
+          "availability": "accepted-main",
+          "sha256": "ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee"
         },
         {
           "path": "web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte",
@@ -8039,19 +8186,19 @@
       "entrypoints": ["route:/search/[[photos=photos]]/[[assetId=id]]", "route:/discover", "route:/explore"],
       "source": [
         {
-          "path": "web/src/lib/components/shared-components/search-bar/SearchBar.svelte",
+          "path": "web/src/lib/components/frameleaf/SearchEntry.svelte",
           "availability": "accepted-main",
-          "sha256": "9ad37356aaa8abd3b5aa113619125bc8fd24d7942274645c9a5727e0c384bfd1"
+          "sha256": "62d504b92a5d5dcb45881f8de79266e696d46e02bcc781d5d858722c3003209b"
         },
         {
-          "path": "web/src/lib/components/shared-components/search-bar/SearchFilters.svelte",
+          "path": "web/src/lib/components/frameleaf/FilterPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "b93693ea10bc0891f845e3b0cd01b225585f816ad72ff54eebda2483192eb32f"
+          "sha256": "b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b"
         },
         {
-          "path": "web/src/lib/components/shared-components/search-bar",
-          "availability": "accepted-main-directory",
-          "sha256": null
+          "path": "web/src/lib/components/frameleaf/SearchPalette.svelte",
+          "availability": "accepted-main",
+          "sha256": "ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee"
         },
         {
           "path": "web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte",
@@ -8088,19 +8235,19 @@
       "entrypoints": ["route:/search/[[photos=photos]]/[[assetId=id]]", "route:/discover", "route:/explore"],
       "source": [
         {
-          "path": "web/src/lib/components/shared-components/search-bar/SearchBar.svelte",
+          "path": "web/src/lib/components/frameleaf/SearchEntry.svelte",
           "availability": "accepted-main",
-          "sha256": "9ad37356aaa8abd3b5aa113619125bc8fd24d7942274645c9a5727e0c384bfd1"
+          "sha256": "62d504b92a5d5dcb45881f8de79266e696d46e02bcc781d5d858722c3003209b"
         },
         {
-          "path": "web/src/lib/components/shared-components/search-bar/SearchFilters.svelte",
+          "path": "web/src/lib/components/frameleaf/FilterPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "b93693ea10bc0891f845e3b0cd01b225585f816ad72ff54eebda2483192eb32f"
+          "sha256": "b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b"
         },
         {
-          "path": "web/src/lib/components/shared-components/search-bar",
-          "availability": "accepted-main-directory",
-          "sha256": null
+          "path": "web/src/lib/components/frameleaf/SearchPalette.svelte",
+          "availability": "accepted-main",
+          "sha256": "ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee"
         },
         {
           "path": "web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte",
@@ -8137,19 +8284,19 @@
       "entrypoints": ["route:/search/[[photos=photos]]/[[assetId=id]]", "route:/discover", "route:/explore"],
       "source": [
         {
-          "path": "web/src/lib/components/shared-components/search-bar/SearchBar.svelte",
+          "path": "web/src/lib/components/frameleaf/SearchEntry.svelte",
           "availability": "accepted-main",
-          "sha256": "9ad37356aaa8abd3b5aa113619125bc8fd24d7942274645c9a5727e0c384bfd1"
+          "sha256": "62d504b92a5d5dcb45881f8de79266e696d46e02bcc781d5d858722c3003209b"
         },
         {
-          "path": "web/src/lib/components/shared-components/search-bar/SearchFilters.svelte",
+          "path": "web/src/lib/components/frameleaf/FilterPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "b93693ea10bc0891f845e3b0cd01b225585f816ad72ff54eebda2483192eb32f"
+          "sha256": "b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b"
         },
         {
-          "path": "web/src/lib/components/shared-components/search-bar",
-          "availability": "accepted-main-directory",
-          "sha256": null
+          "path": "web/src/lib/components/frameleaf/SearchPalette.svelte",
+          "availability": "accepted-main",
+          "sha256": "ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee"
         },
         {
           "path": "web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte",
@@ -8186,19 +8333,19 @@
       "entrypoints": ["route:/search/[[photos=photos]]/[[assetId=id]]", "route:/discover", "route:/explore"],
       "source": [
         {
-          "path": "web/src/lib/components/shared-components/search-bar/SearchBar.svelte",
+          "path": "web/src/lib/components/frameleaf/SearchEntry.svelte",
           "availability": "accepted-main",
-          "sha256": "9ad37356aaa8abd3b5aa113619125bc8fd24d7942274645c9a5727e0c384bfd1"
+          "sha256": "62d504b92a5d5dcb45881f8de79266e696d46e02bcc781d5d858722c3003209b"
         },
         {
-          "path": "web/src/lib/components/shared-components/search-bar/SearchFilters.svelte",
+          "path": "web/src/lib/components/frameleaf/FilterPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "b93693ea10bc0891f845e3b0cd01b225585f816ad72ff54eebda2483192eb32f"
+          "sha256": "b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b"
         },
         {
-          "path": "web/src/lib/components/shared-components/search-bar",
-          "availability": "accepted-main-directory",
-          "sha256": null
+          "path": "web/src/lib/components/frameleaf/SearchPalette.svelte",
+          "availability": "accepted-main",
+          "sha256": "ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee"
         },
         {
           "path": "web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte",
@@ -8235,19 +8382,19 @@
       "entrypoints": ["route:/search/[[photos=photos]]/[[assetId=id]]", "route:/discover", "route:/explore"],
       "source": [
         {
-          "path": "web/src/lib/components/shared-components/search-bar/SearchBar.svelte",
+          "path": "web/src/lib/components/frameleaf/SearchEntry.svelte",
           "availability": "accepted-main",
-          "sha256": "9ad37356aaa8abd3b5aa113619125bc8fd24d7942274645c9a5727e0c384bfd1"
+          "sha256": "62d504b92a5d5dcb45881f8de79266e696d46e02bcc781d5d858722c3003209b"
         },
         {
-          "path": "web/src/lib/components/shared-components/search-bar/SearchFilters.svelte",
+          "path": "web/src/lib/components/frameleaf/FilterPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "b93693ea10bc0891f845e3b0cd01b225585f816ad72ff54eebda2483192eb32f"
+          "sha256": "b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b"
         },
         {
-          "path": "web/src/lib/components/shared-components/search-bar",
-          "availability": "accepted-main-directory",
-          "sha256": null
+          "path": "web/src/lib/components/frameleaf/SearchPalette.svelte",
+          "availability": "accepted-main",
+          "sha256": "ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee"
         },
         {
           "path": "web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte",
@@ -8284,19 +8431,19 @@
       "entrypoints": ["route:/search/[[photos=photos]]/[[assetId=id]]", "route:/discover", "route:/explore"],
       "source": [
         {
-          "path": "web/src/lib/components/shared-components/search-bar/SearchBar.svelte",
+          "path": "web/src/lib/components/frameleaf/SearchEntry.svelte",
           "availability": "accepted-main",
-          "sha256": "9ad37356aaa8abd3b5aa113619125bc8fd24d7942274645c9a5727e0c384bfd1"
+          "sha256": "62d504b92a5d5dcb45881f8de79266e696d46e02bcc781d5d858722c3003209b"
         },
         {
-          "path": "web/src/lib/components/shared-components/search-bar/SearchFilters.svelte",
+          "path": "web/src/lib/components/frameleaf/FilterPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "b93693ea10bc0891f845e3b0cd01b225585f816ad72ff54eebda2483192eb32f"
+          "sha256": "b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b"
         },
         {
-          "path": "web/src/lib/components/shared-components/search-bar",
-          "availability": "accepted-main-directory",
-          "sha256": null
+          "path": "web/src/lib/components/frameleaf/SearchPalette.svelte",
+          "availability": "accepted-main",
+          "sha256": "ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee"
         },
         {
           "path": "web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte",
@@ -8333,19 +8480,19 @@
       "entrypoints": ["route:/search/[[photos=photos]]/[[assetId=id]]", "route:/discover", "route:/explore"],
       "source": [
         {
-          "path": "web/src/lib/components/shared-components/search-bar/SearchBar.svelte",
+          "path": "web/src/lib/components/frameleaf/SearchEntry.svelte",
           "availability": "accepted-main",
-          "sha256": "9ad37356aaa8abd3b5aa113619125bc8fd24d7942274645c9a5727e0c384bfd1"
+          "sha256": "62d504b92a5d5dcb45881f8de79266e696d46e02bcc781d5d858722c3003209b"
         },
         {
-          "path": "web/src/lib/components/shared-components/search-bar/SearchFilters.svelte",
+          "path": "web/src/lib/components/frameleaf/FilterPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "b93693ea10bc0891f845e3b0cd01b225585f816ad72ff54eebda2483192eb32f"
+          "sha256": "b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b"
         },
         {
-          "path": "web/src/lib/components/shared-components/search-bar",
-          "availability": "accepted-main-directory",
-          "sha256": null
+          "path": "web/src/lib/components/frameleaf/SearchPalette.svelte",
+          "availability": "accepted-main",
+          "sha256": "ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee"
         },
         {
           "path": "web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte",
@@ -8382,19 +8529,19 @@
       "entrypoints": ["route:/search/[[photos=photos]]/[[assetId=id]]", "route:/discover", "route:/explore"],
       "source": [
         {
-          "path": "web/src/lib/components/shared-components/search-bar/SearchBar.svelte",
+          "path": "web/src/lib/components/frameleaf/SearchEntry.svelte",
           "availability": "accepted-main",
-          "sha256": "9ad37356aaa8abd3b5aa113619125bc8fd24d7942274645c9a5727e0c384bfd1"
+          "sha256": "62d504b92a5d5dcb45881f8de79266e696d46e02bcc781d5d858722c3003209b"
         },
         {
-          "path": "web/src/lib/components/shared-components/search-bar/SearchFilters.svelte",
+          "path": "web/src/lib/components/frameleaf/FilterPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "b93693ea10bc0891f845e3b0cd01b225585f816ad72ff54eebda2483192eb32f"
+          "sha256": "b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b"
         },
         {
-          "path": "web/src/lib/components/shared-components/search-bar",
-          "availability": "accepted-main-directory",
-          "sha256": null
+          "path": "web/src/lib/components/frameleaf/SearchPalette.svelte",
+          "availability": "accepted-main",
+          "sha256": "ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee"
         },
         {
           "path": "web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte",
@@ -8431,19 +8578,19 @@
       "entrypoints": ["route:/search/[[photos=photos]]/[[assetId=id]]", "route:/discover", "route:/explore"],
       "source": [
         {
-          "path": "web/src/lib/components/shared-components/search-bar/SearchBar.svelte",
+          "path": "web/src/lib/components/frameleaf/SearchEntry.svelte",
           "availability": "accepted-main",
-          "sha256": "9ad37356aaa8abd3b5aa113619125bc8fd24d7942274645c9a5727e0c384bfd1"
+          "sha256": "62d504b92a5d5dcb45881f8de79266e696d46e02bcc781d5d858722c3003209b"
         },
         {
-          "path": "web/src/lib/components/shared-components/search-bar/SearchFilters.svelte",
+          "path": "web/src/lib/components/frameleaf/FilterPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "b93693ea10bc0891f845e3b0cd01b225585f816ad72ff54eebda2483192eb32f"
+          "sha256": "b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b"
         },
         {
-          "path": "web/src/lib/components/shared-components/search-bar",
-          "availability": "accepted-main-directory",
-          "sha256": null
+          "path": "web/src/lib/components/frameleaf/SearchPalette.svelte",
+          "availability": "accepted-main",
+          "sha256": "ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee"
         },
         {
           "path": "web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte",
@@ -8480,19 +8627,19 @@
       "entrypoints": ["route:/search/[[photos=photos]]/[[assetId=id]]", "route:/discover", "route:/explore"],
       "source": [
         {
-          "path": "web/src/lib/components/shared-components/search-bar/SearchBar.svelte",
+          "path": "web/src/lib/components/frameleaf/SearchEntry.svelte",
           "availability": "accepted-main",
-          "sha256": "9ad37356aaa8abd3b5aa113619125bc8fd24d7942274645c9a5727e0c384bfd1"
+          "sha256": "62d504b92a5d5dcb45881f8de79266e696d46e02bcc781d5d858722c3003209b"
         },
         {
-          "path": "web/src/lib/components/shared-components/search-bar/SearchFilters.svelte",
+          "path": "web/src/lib/components/frameleaf/FilterPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "b93693ea10bc0891f845e3b0cd01b225585f816ad72ff54eebda2483192eb32f"
+          "sha256": "b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b"
         },
         {
-          "path": "web/src/lib/components/shared-components/search-bar",
-          "availability": "accepted-main-directory",
-          "sha256": null
+          "path": "web/src/lib/components/frameleaf/SearchPalette.svelte",
+          "availability": "accepted-main",
+          "sha256": "ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee"
         },
         {
           "path": "web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte",
@@ -8529,19 +8676,19 @@
       "entrypoints": ["route:/search/[[photos=photos]]/[[assetId=id]]", "route:/discover", "route:/explore"],
       "source": [
         {
-          "path": "web/src/lib/components/shared-components/search-bar/SearchBar.svelte",
+          "path": "web/src/lib/components/frameleaf/SearchEntry.svelte",
           "availability": "accepted-main",
-          "sha256": "9ad37356aaa8abd3b5aa113619125bc8fd24d7942274645c9a5727e0c384bfd1"
+          "sha256": "62d504b92a5d5dcb45881f8de79266e696d46e02bcc781d5d858722c3003209b"
         },
         {
-          "path": "web/src/lib/components/shared-components/search-bar/SearchFilters.svelte",
+          "path": "web/src/lib/components/frameleaf/FilterPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "b93693ea10bc0891f845e3b0cd01b225585f816ad72ff54eebda2483192eb32f"
+          "sha256": "b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b"
         },
         {
-          "path": "web/src/lib/components/shared-components/search-bar",
-          "availability": "accepted-main-directory",
-          "sha256": null
+          "path": "web/src/lib/components/frameleaf/SearchPalette.svelte",
+          "availability": "accepted-main",
+          "sha256": "ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee"
         },
         {
           "path": "web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte",

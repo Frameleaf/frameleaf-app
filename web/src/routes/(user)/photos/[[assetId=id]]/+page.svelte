@@ -1,177 +1,81 @@
 <script lang="ts">
-  import ActionMenuItem from '$lib/components/ActionMenuItem.svelte';
+  import { goto } from '$app/navigation';
+  import { page } from '$app/state';
+  import IconButton from '$lib/components/frameleaf/IconButton.svelte';
+  import LibraryView from '$lib/components/frameleaf/LibraryView.svelte';
   import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
-  import ButtonContextMenu from '$lib/components/shared-components/context-menu/ButtonContextMenu.svelte';
-  import EmptyPlaceholder from '$lib/components/shared-components/EmptyPlaceholder.svelte';
-  import ArchiveAction from '$lib/components/timeline/actions/ArchiveAction.svelte';
-  import ChangeDate from '$lib/components/timeline/actions/ChangeDateAction.svelte';
-  import ChangeDescription from '$lib/components/timeline/actions/ChangeDescriptionAction.svelte';
-  import ChangeLocation from '$lib/components/timeline/actions/ChangeLocationAction.svelte';
-  import CreateSharedLink from '$lib/components/timeline/actions/CreateSharedLinkAction.svelte';
-  import DeleteAssets from '$lib/components/timeline/actions/DeleteAssetsAction.svelte';
-  import DownloadAction from '$lib/components/timeline/actions/DownloadAction.svelte';
-  import FavoriteAction from '$lib/components/timeline/actions/FavoriteAction.svelte';
-  import LinkLivePhotoAction from '$lib/components/timeline/actions/LinkLivePhotoAction.svelte';
-  import MarkNsfwAction from '$lib/components/timeline/actions/MarkNsfwAction.svelte';
-  import SelectAllAssets from '$lib/components/timeline/actions/SelectAllAction.svelte';
-  import SetVisibilityAction from '$lib/components/timeline/actions/SetVisibilityAction.svelte';
-  import StackAction from '$lib/components/timeline/actions/StackAction.svelte';
-  import TagAction from '$lib/components/timeline/actions/TagAction.svelte';
-  import AssetSelectControlBar from '$lib/components/timeline/AssetSelectControlBar.svelte';
-  import Timeline from '$lib/components/timeline/Timeline.svelte';
+  import TimelineAssetViewer from '$lib/components/timeline/TimelineAssetViewer.svelte';
   import { AssetAction } from '$lib/constants';
-  import { assetMultiSelectManager } from '$lib/managers/asset-multi-select-manager.svelte';
+  import Portal from '$lib/elements/Portal.svelte';
+  import { brandedArchiveName } from '$lib/frameleaf/archive-name';
+  import { formatMapArea, parseMapArea } from '$lib/frameleaf/map-settings';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
-  import { authManager } from '$lib/managers/auth-manager.svelte';
-  import { memoryManager } from '$lib/managers/memory-manager.svelte';
   import { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
   import { Route } from '$lib/route';
-  import { getAssetBulkActions } from '$lib/services/asset.service';
-  import { getAssetMediaUrl, memoryLaneTitle } from '$lib/utils';
-  import {
-    updateStackedAssetInTimeline,
-    updateUnstackedAssetInTimeline,
-    type OnLink,
-    type OnUnlink,
-  } from '$lib/utils/actions';
-  import { openFileUploadDialog } from '$lib/utils/file-uploader';
-  import { getAltText } from '$lib/utils/thumbnail-util';
-  import { toTimelineAsset } from '$lib/utils/timeline-util';
+  import { navigate } from '$lib/utils/navigation';
   import { AssetVisibility } from '@immich/sdk';
-  import { ActionButton, CommandPaletteDefaultProvider, ImageCarousel } from '@immich/ui';
-  import { mdiDotsVertical } from '@mdi/js';
-  import { DateTime } from 'luxon';
+  import { Icon } from '@immich/ui';
+  import { mdiClose } from '@mdi/js';
   import { t } from 'svelte-i18n';
 
+  /**
+   * The library page (FL-33): Timeline, Browse and Work over one live library session.
+   *
+   * The selection bar and its bulk actions are FL-32's Frameleaf bar, which `LibraryView` mounts
+   * and binds to the same session, so this page no longer carries an action list of its own. The
+   * viewer is still the production one and opens through the existing asset route.
+   *
+   * The prototype's library has no memory strip above the photos (FL-33, T-15): Memories is its own
+   * destination, so the upstream `ImageCarousel` is gone, and an empty library shows the Frameleaf
+   * empty state `LibraryView` draws rather than the legacy "click to upload" card.
+   */
   let timelineManager = $state<TimelineManager>() as TimelineManager;
-  const options = { visibility: AssetVisibility.Timeline, withStacked: true, withPartners: true };
-
-  let selectedAssets = $derived(assetMultiSelectManager.assets);
-  let isAssetStackSelected = $derived(selectedAssets.length === 1 && !!selectedAssets[0].stack);
-  let isLinkActionAvailable = $derived.by(() => {
-    const isLivePhoto = selectedAssets.length === 1 && !!selectedAssets[0].livePhotoVideoId;
-    const isLivePhotoCandidate =
-      selectedAssets.length === 2 &&
-      selectedAssets.some((asset) => asset.isImage) &&
-      selectedAssets.some((asset) => asset.isVideo);
-
-    return assetMultiSelectManager.isAllUserOwned && (isLivePhoto || isLivePhotoCandidate);
+  let viewerInvisible = $state(false);
+  /**
+   * The Map screen's "Search this area" lands here (prototype `MapView` onQuery → Library titled
+   * "Map area"): the library narrowed to the area's bounds through the timeline's own `bbox`.
+   * The session's server-side "select everything matching" knows nothing of the area, so the bar
+   * offers the loaded selection instead while an area is shown.
+   */
+  const area = $derived(parseMapArea(page.url.searchParams.get('area')));
+  const options = $derived({
+    visibility: AssetVisibility.Timeline,
+    withStacked: true,
+    withPartners: true,
+    ...(area && { bbox: formatMapArea(area) }),
   });
-
-  const handleEscape = () => {
-    if (assetViewerManager.isViewing) {
-      return;
-    }
-    if (assetMultiSelectManager.selectionActive) {
-      assetMultiSelectManager.clear();
-      return;
-    }
-  };
-
-  const handleLink: OnLink = ({ still, motion }) => {
-    timelineManager.removeAssets([motion.id]);
-    timelineManager.upsertAssets([still]);
-  };
-
-  const handleUnlink: OnUnlink = ({ still, motion }) => {
-    timelineManager.upsertAssets([motion]);
-    timelineManager.upsertAssets([still]);
-  };
-
-  const handleSetVisibility = (assetIds: string[]) => {
-    timelineManager.removeAssets(assetIds);
-    assetMultiSelectManager.clear();
-  };
-
-  const items = $derived(
-    memoryManager.memories.map((memory) => ({
-      id: memory.id,
-      title: $memoryLaneTitle(memory),
-      href: Route.viewMemory({ id: memory.id, assetId: memory.assets[0].id }),
-      alt: $t('memory_lane_title', { values: { title: $getAltText(toTimelineAsset(memory.assets[0])) } }),
-      src: getAssetMediaUrl({ id: memory.assets[0].id }),
-    })),
-  );
-
-  memoryManager.setFilters({ $for: DateTime.now().toISODate() });
 </script>
 
-<UserPageLayout hideNavbar={assetMultiSelectManager.selectionActive} scrollbar={false}>
-  <Timeline
-    enableRouting={true}
+<UserPageLayout scrollbar={false}>
+  <LibraryView
     bind:timelineManager
     {options}
-    assetInteraction={assetMultiSelectManager}
-    removeAction={AssetAction.ARCHIVE}
-    onEscape={handleEscape}
-    withStacked
+    destination={{ kind: 'library' }}
+    downloadFileName={brandedArchiveName($t('frameleaf_archive_name_photos'))}
+    selectAll={area ? 'loaded' : 'matching'}
+    enableRouting
+    onOpen={(asset) => void navigate({ targetRoute: 'current', assetId: asset.id })}
   >
-    {#if authManager.preferences.memories.enabled}
-      <ImageCarousel {items} />
+    {#if area}
+      <div class="flex items-center gap-2 px-2 pt-4 text-(--fl-text)">
+        <h1 class="text-xl font-semibold">{$t('frameleaf_map_area')}</h1>
+        <IconButton label={$t('frameleaf_map_area_clear')} onclick={() => void goto(Route.photos())}>
+          <Icon icon={mdiClose} size="18" />
+        </IconButton>
+      </div>
     {/if}
-    {#snippet empty()}
-      <EmptyPlaceholder text={$t('no_assets_message')} onClick={() => openFileUploadDialog()} class="mx-auto mt-10" />
+
+    {#snippet viewer()}
+      <Portal target="body">
+        {#if assetViewerManager.isViewing}
+          <TimelineAssetViewer
+            bind:invisible={viewerInvisible}
+            {timelineManager}
+            removeAction={AssetAction.ARCHIVE}
+            withStacked
+          />
+        {/if}
+      </Portal>
     {/snippet}
-  </Timeline>
+  </LibraryView>
 </UserPageLayout>
-
-{#if assetMultiSelectManager.selectionActive}
-  <AssetSelectControlBar>
-    {@const Actions = getAssetBulkActions($t)}
-    <CommandPaletteDefaultProvider name={$t('assets')} actions={Object.values(Actions)} />
-
-    <CreateSharedLink />
-    <SelectAllAssets {timelineManager} assetInteraction={assetMultiSelectManager} />
-    <ActionButton action={Actions.AddToAlbum} />
-
-    {#if assetMultiSelectManager.isAllUserOwned}
-      <FavoriteAction
-        removeFavorite={assetMultiSelectManager.isAllFavorite}
-        onFavorite={(ids, isFavorite) => timelineManager.update(ids, (asset) => (asset.isFavorite = isFavorite))}
-      />
-
-      <ButtonContextMenu icon={mdiDotsVertical} title={$t('menu')}>
-        <DownloadAction menuItem />
-        {#if assetMultiSelectManager.assets.length > 1 || isAssetStackSelected}
-          <StackAction
-            unstack={isAssetStackSelected}
-            onStack={(result) => updateStackedAssetInTimeline(timelineManager, result)}
-            onUnstack={(assets) => updateUnstackedAssetInTimeline(timelineManager, assets)}
-          />
-        {/if}
-        {#if isLinkActionAvailable}
-          <LinkLivePhotoAction
-            menuItem
-            unlink={assetMultiSelectManager.assets.length === 1}
-            onLink={handleLink}
-            onUnlink={handleUnlink}
-          />
-        {/if}
-        <ChangeDate menuItem />
-        <ChangeDescription menuItem />
-        <ChangeLocation menuItem />
-        <ArchiveAction
-          menuItem
-          onArchive={(ids, visibility) => timelineManager.update(ids, (asset) => (asset.visibility = visibility))}
-        />
-        <MarkNsfwAction menuItem />
-        <MarkNsfwAction menuItem markSafe />
-        {#if authManager.preferences.tags.enabled}
-          <TagAction menuItem />
-        {/if}
-        <DeleteAssets
-          menuItem
-          onAssetDelete={(assetIds) => timelineManager.removeAssets(assetIds)}
-          onUndoDelete={(assets) => timelineManager.upsertAssets(assets)}
-        />
-        <SetVisibilityAction menuItem onVisibilitySet={handleSetVisibility} />
-        <hr />
-        <ActionMenuItem action={Actions.RegenerateThumbnailJob} />
-        <ActionMenuItem action={Actions.RefreshMetadataJob} />
-        <ActionMenuItem action={Actions.TranscodeVideoJob} />
-      </ButtonContextMenu>
-    {:else}
-      <DownloadAction />
-    {/if}
-  </AssetSelectControlBar>
-{/if}

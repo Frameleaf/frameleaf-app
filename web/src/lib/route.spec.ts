@@ -20,7 +20,15 @@ describe('Route', () => {
     });
 
     it('should support query parameters', () => {
-      expect(Route.systemSettings({ isOpen: OpenQueryParam.OAUTH })).toBe('/admin/system-settings?isOpen=oauth');
+      expect(Route.systemSettings({ isOpen: OpenQueryParam.OAUTH })).toBe(
+        '/user-settings?area=security&section=authentication&isOpen=oauth',
+      );
+    });
+  });
+
+  describe(Route.physicalDeduplication.name, () => {
+    it('should work', () => {
+      expect(Route.physicalDeduplication()).toBe('/user-settings?area=storage&section=deduplication');
     });
   });
 
@@ -35,6 +43,15 @@ describe('Route', () => {
 
     it('should URI encode slug', () => {
       expect(Route.viewSharedLink({ key: 'uuid-key', slug: 'albums/the-moon?' })).toBe('/s/albums%2Fthe-moon%3F');
+    });
+  });
+
+  describe(Route.viewSharedSpaceAsset.name, () => {
+    it('keeps the viewer inside the shared space', () => {
+      expect(Route.viewSharedSpace({ id: 'space-1' })).toBe('/sharing/space-1');
+      expect(Route.viewSharedSpaceAsset({ spaceId: 'space-1', assetId: 'asset-1' })).toBe(
+        '/sharing/space-1/photos/asset-1',
+      );
     });
   });
 
@@ -78,11 +95,13 @@ describe('Route', () => {
 
   describe(Route.systemSettings.name, () => {
     it('should work', () => {
-      expect(Route.systemSettings()).toBe('/admin/system-settings');
+      expect(Route.systemSettings()).toBe('/user-settings');
     });
 
     it('should support query parameters', () => {
-      expect(Route.systemSettings({ isOpen: OpenQueryParam.OAUTH })).toBe('/admin/system-settings?isOpen=oauth');
+      expect(Route.systemSettings({ isOpen: OpenQueryParam.OAUTH })).toBe(
+        '/user-settings?area=security&section=authentication&isOpen=oauth',
+      );
     });
   });
 
@@ -90,18 +109,18 @@ describe('Route', () => {
     beforeEach(() => {
       // @ts-expect-error - override location for testing
       // eslint-disable-next-line unicorn/no-global-object-property-assignment
-      globalThis.location = new URL('https://my.immich.server');
-      vi.spyOn(document, 'baseURI', 'get').mockReturnValue('https://my.immich.server/');
+      globalThis.location = new URL('https://photos.example.com');
+      vi.spyOn(document, 'baseURI', 'get').mockReturnValue('https://photos.example.com/');
     });
 
     it('should resolve relative URLs', () => {
-      expect(Route.continue('/some/path', '/fallback')).property('href', 'https://my.immich.server/some/path');
+      expect(Route.continue('/some/path', '/fallback')).property('href', 'https://photos.example.com/some/path');
     });
 
     it('should resolve absolute URLs on the same origin', () => {
-      expect(Route.continue('https://my.immich.server/some/path', '/fallback')).property(
+      expect(Route.continue('https://photos.example.com/some/path', '/fallback')).property(
         'href',
-        'https://my.immich.server/some/path',
+        'https://photos.example.com/some/path',
       );
     });
 
@@ -110,7 +129,7 @@ describe('Route', () => {
     });
 
     it('should return fallback for null URLs', () => {
-      expect(Route.continue(null, '/fallback')).property('href', 'https://my.immich.server/fallback');
+      expect(Route.continue(null, '/fallback')).property('href', 'https://photos.example.com/fallback');
     });
 
     it('should block javascript: URLs', () => {

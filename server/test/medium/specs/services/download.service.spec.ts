@@ -1,5 +1,5 @@
 import { Kysely } from 'kysely';
-import { AssetMetadataKey } from 'src/enum.js';
+import { AssetMetadataKey, AssetVisibility } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
@@ -91,6 +91,26 @@ describe(DownloadService.name, () => {
       });
       expect(unlockedDownload.archives.flatMap(({ assetIds }) => assetIds)).toEqual(expect.arrayContaining(assetIds));
       expect(unlockedDownload.totalSize).toBe(5000);
+    });
+
+    it('should plan Locked media into a timeline download only for an elevated session (FL-34)', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const { asset: timeline } = await ctx.newAsset({ ownerId: user.id });
+      const { asset: locked } = await ctx.newAsset({ ownerId: user.id, visibility: AssetVisibility.Locked });
+      for (const assetId of [timeline.id, locked.id]) {
+        await ctx.newExif({ assetId, fileSizeInByte: 1000 });
+      }
+
+      const planned = async (auth: ReturnType<typeof factory.auth>) => {
+        const response = await sut.getDownloadInfo(auth, { userId: user.id });
+        return response.archives.flatMap(({ assetIds }) => assetIds).sort();
+      };
+
+      await expect(planned(factory.auth({ user: { id: user.id } }))).resolves.toEqual([timeline.id]);
+      await expect(
+        planned(factory.auth({ user: { id: user.id }, session: { hasElevatedPermission: true } })),
+      ).resolves.toEqual([timeline.id, locked.id].sort());
     });
   });
 });

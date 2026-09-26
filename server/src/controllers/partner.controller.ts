@@ -50,7 +50,8 @@ export class PartnerController {
   @Authenticated({ permission: Permission.PartnerUpdate })
   @Endpoint({
     summary: 'Update a partner',
-    description: "Specify whether a partner's assets should appear in the user's timeline.",
+    description:
+      "Specify whether a partner's assets should appear in the user's timeline (inTimeline), or, as the sharing user, whether that partner may see the locations of shared assets (shareLocation). Exactly one field per request.",
     history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
   })
   updatePartner(

@@ -1,11 +1,11 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { serverVersion } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent } from 'src/decorators.js';
-import { LicenseKeyDto, LicenseResponseDto } from 'src/dtos/license.dto.js';
 import {
   ServerAboutResponseDto,
   ServerApkLinksDto,
+  ServerAppReleasesResponseDto,
   ServerConfigDto,
   ServerFeaturesDto,
   ServerMediaTypesResponseDto,
@@ -18,7 +18,11 @@ import { StorageFolder, SystemMetadataKey } from 'src/enum.js';
 import { UserStatsQueryResponse } from 'src/repositories/user.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { DEFAULT_RAW_PROMPT_TEMPLATE } from 'src/services/prompt-assembler.service.js';
+import { apkLinks } from 'src/utils/app-releases.js';
 import { asHumanReadable } from 'src/utils/bytes.js';
+import { readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
+import { entitlementFlags, isLicensed } from 'src/utils/frameleaf-license.js';
+import { type FrameleafVia, frameleafPublicUrl, isRemoteVia, signInClient } from 'src/utils/frameleaf-sign-in.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import {
   isDuplicateDetectionEnabled,
@@ -39,6 +43,17 @@ export class ServerService extends BaseService {
       await this.systemMetadataRepository.set(SystemMetadataKey.AdminOnboarding, {
         isOnboarded: true,
       });
+      // FL-176: a configuration file owns the settings setup would change, so setup never runs.
+      const setup = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafSetup);
+      if (!setup?.completed) {
+        await this.systemMetadataRepository.set(SystemMetadataKey.FrameleafSetup, {
+          completed: true,
+          completedAt: new Date().toISOString(),
+          flow: setup?.flow ?? null,
+          progress: null,
+          updatedAt: new Date().toISOString(),
+        });
+      }
     }
     this.logger.log(`Feature Flags: ${JSON.stringify(await this.getFeatures(), null, 2)}`);
   }
@@ -47,24 +62,49 @@ export class ServerService extends BaseService {
     const version = `v${serverVersion.toString()}`;
     const { buildMetadata } = this.configRepository.getEnv();
     const buildVersions = await this.serverInfoRepository.getBuildVersions();
-    const licensed = await this.systemMetadataRepository.get(SystemMetadataKey.License);
+    // FL-156: licensed while the supporter key or the plan certificate is active or in grace
+    const licenses = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafLicense);
+    const licensed = isLicensed(licenses);
 
     return {
       version,
-      versionUrl: `https://github.com/immich-app/immich/releases/tag/${version}`,
-      licensed: !!licensed,
+      // Releases are tagged frameleaf-v<version>-<n> (.github/frameleaf-release.cjs) and carry GitHub's generated notes;
+      // the server only knows <version>, so link the release search for it.
+      versionUrl: `https://github.com/Frameleaf/frameleaf-app/releases?q=frameleaf-${version}&expanded=true`,
+      licensed,
       ...buildMetadata,
       ...buildVersions,
     };
   }
 
+  /**
+   * The signed APKs of this server version, from the release destination the operator configured
+   * (FL-82). Without one there is nothing to download: installation is never sent to another
+   * product's releases.
+   */
   getApkLinks(): ServerApkLinksDto {
-    const baseUrl = `https://github.com/immich-app/immich/releases/download/v${serverVersion.toString()}`;
+    const { android } = this.configRepository.getEnv().appReleases;
+    if (!android) {
+      throw new NotFoundException('No signed Android release is configured for this server');
+    }
+    return apkLinks(android.releaseUrl, serverVersion.toString());
+  }
+
+  /** What the app download and Obtainium setup pages can offer, and what is unavailable (FL-82). */
+  getAppReleases(): ServerAppReleasesResponseDto {
+    const { android, iosUrl, androidStoreUrl } = this.configRepository.getEnv().appReleases;
+    const store = androidStoreUrl ? { storeUrl: androidStoreUrl } : {};
     return {
-      arm64v8a: `${baseUrl}/app-arm64-v8a-release.apk`,
-      armeabiv7a: `${baseUrl}/app-armeabi-v7a-release.apk`,
-      universal: `${baseUrl}/app-release.apk`,
-      x86_64: `${baseUrl}/app-x86_64-release.apk`,
+      android: android
+        ? {
+            available: true,
+            appId: android.appId,
+            signingCertificateSha256: android.signingSha256,
+            links: apkLinks(android.releaseUrl, serverVersion.toString()),
+            ...store,
+          }
+        : { available: false, ...store },
+      ios: iosUrl ? { available: true, url: iosUrl } : { available: false },
     };
   }
 
@@ -101,11 +141,16 @@ export class ServerService extends BaseService {
       notifications,
       physicalDeduplication,
       ffmpeg,
+      localFeatures,
     } = await this.getConfig({ withCache: false });
     const { configFile } = this.configRepository.getEnv();
+    const cloud = await this.frameleafCloudFlags();
 
     return {
+      ...cloud,
       smartSearch: isSmartSearchEnabled(machineLearning),
+      // FL-31: Ask Search answers through smart search, so it needs both the setting and smart search
+      askSearch: localFeatures.askSearch.enabled && isSmartSearchEnabled(machineLearning),
       facialRecognition: isFacialRecognitionEnabled(machineLearning),
       duplicateDetection: isDuplicateDetectionEnabled(machineLearning),
       map: map.enabled,
@@ -128,19 +173,47 @@ export class ServerService extends BaseService {
     };
   }
 
-  async getSystemConfig(): Promise<ServerConfigDto> {
+  /**
+   * FL-156: what cloud-connected features the server may offer. `frameleafCloud` is true while the
+   * server is linked; the others follow the licence certificates. Self-hosted features never read
+   * these flags.
+   */
+  private async frameleafCloudFlags() {
+    const { linked } = await readCloudLink({
+      configRepository: this.configRepository,
+      systemMetadataRepository: this.systemMetadataRepository,
+    });
+    const licenses = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafLicense);
+    const flags = entitlementFlags([licenses?.key, licenses?.plan]);
+    return {
+      frameleafCloud: linked,
+      remoteAccess: linked && flags.remoteAccess,
+      cloudMl: linked && flags.cloudMl,
+      cloudBackup: linked && flags.cloudBackup,
+      supporter: flags.supporter,
+    };
+  }
+
+  async getSystemConfig(via: FrameleafVia | null = null): Promise<ServerConfigDto> {
     const config = await this.getConfig({ withCache: false });
     const isInitialized = !(await this.isSetupAvailable());
-    const onboarding = await this.systemMetadataRepository.get(SystemMetadataKey.AdminOnboarding);
+    // FL-176: the server counts as onboarded once Frameleaf first-run setup is complete.
+    const setup = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafSetup);
+    // FL-161: how this request arrived and what that asks of it, for the web app and the apps
+    const { link, linked } = await readCloudLink({
+      configRepository: this.configRepository,
+      systemMetadataRepository: this.systemMetadataRepository,
+    });
 
     return {
       loginPageMessage: config.server.loginPageMessage,
+      serverName: config.server.name,
       trashDays: config.trash.days,
       userDeleteDelay: config.user.deleteDelay,
       oauthButtonText: config.oauth.buttonText,
       oauthAccountManagementUrl: config.oauth.accountManagementUrl,
       isInitialized,
-      isOnboarded: onboarding?.isOnboarded || false,
+      isOnboarded: setup?.completed === true,
       externalDomain: config.server.externalDomain,
       publicUsers: config.server.publicUsers,
       mapDarkStyleUrl: config.map.darkStyle,
@@ -148,6 +221,12 @@ export class ServerService extends BaseService {
       maintenanceMode: false,
       defaultImageDescriptionRawPromptTemplate: DEFAULT_RAW_PROMPT_TEMPLATE,
       minFaces: config.machineLearning.facialRecognition.minFaces,
+      frameleaf: {
+        via,
+        signInAvailable: !!signInClient(link, linked),
+        signInRequired: isRemoteVia(via) && !config.frameleafCloud.remoteAccess.allowPasswordOverRelay,
+        publicUrl: linked ? frameleafPublicUrl(link) : null,
+      },
     };
   }
 
@@ -190,38 +269,5 @@ export class ServerService extends BaseService {
       image: Object.keys(mimeTypes.image),
       sidecar: Object.keys(mimeTypes.sidecar),
     };
-  }
-
-  async deleteLicense(): Promise<void> {
-    await this.systemMetadataRepository.delete(SystemMetadataKey.License);
-  }
-
-  async getLicense(): Promise<LicenseResponseDto> {
-    const license = await this.systemMetadataRepository.get(SystemMetadataKey.License);
-    if (!license) {
-      throw new NotFoundException();
-    }
-    return license;
-  }
-
-  async setLicense(dto: LicenseKeyDto): Promise<LicenseResponseDto> {
-    if (!dto.licenseKey.startsWith('IMSV-')) {
-      throw new BadRequestException('Invalid license key');
-    }
-    const { licensePublicKey } = this.configRepository.getEnv();
-    const isLicenseValid = this.cryptoRepository.verifySha256(
-      dto.licenseKey,
-      dto.activationKey,
-      licensePublicKey.server,
-    );
-    if (!isLicenseValid) {
-      throw new BadRequestException('Invalid license key');
-    }
-
-    const licenseData = { ...dto, activatedAt: new Date() };
-
-    await this.systemMetadataRepository.set(SystemMetadataKey.License, licenseData);
-
-    return licenseData;
   }
 }

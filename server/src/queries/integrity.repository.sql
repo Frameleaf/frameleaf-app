@@ -60,6 +60,12 @@ where
 -- IntegrityRepository.getVideoDuplicateFramePathsByPaths
 SELECT
   to_regclass('immich_fork.state')::text AS "stateTable"
+SELECT
+  phase
+FROM
+  immich_fork.state
+WHERE
+  id = 1
 select
   "path"
 from

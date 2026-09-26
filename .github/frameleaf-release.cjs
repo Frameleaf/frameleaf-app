@@ -46,13 +46,6 @@ const VARIANTS = Object.freeze(
     },
     {
       image: "frameleaf-machine-learning",
-      suffix: "-cuda-runpod",
-      device: "cuda",
-      platforms: ["linux/amd64"],
-      target: "prod-runpod",
-    },
-    {
-      image: "frameleaf-machine-learning",
       suffix: "-openvino",
       device: "openvino",
       platforms: ["linux/amd64"],
@@ -94,8 +87,95 @@ const INSTALL_FILES = [
   "hwaccel.ml.yml",
   "hwaccel.transcoding.yml",
 ];
+// FL-191: Frameleaf images a release depends on besides the versioned server/ML variants. They are
+// published separately (Postgres Image and CLI Build dispatches), so promotion proves each exists
+// and the bundle pins the database by digest.
+const DEPENDENCY_IMAGES = Object.freeze([
+  "frameleaf-postgres",
+  "frameleaf-cli",
+]);
+// Referenced by the installation documentation rather than the Compose files.
+const REQUIRED_TOOL_IMAGES = Object.freeze([
+  "ghcr.io/frameleaf/frameleaf-cli:latest",
+]);
+// Only the server and ML variants follow the release version; their candidates are verified above.
+const RELEASE_MANAGED_IMAGE =
+  /^ghcr\.io\/frameleaf\/(?:frameleaf-server|frameleaf-machine-learning):\$\{IMMICH_VERSION/;
+const OWNED_IMAGE =
+  /^ghcr\.io\/frameleaf\/([a-z0-9-]+)(?::([A-Za-z0-9_][A-Za-z0-9_.-]{0,127}))?(?:@(sha256:[a-f0-9]{64}))?$/;
 const hash = (bytes) =>
   `sha256:${crypto.createHash("sha256").update(bytes).digest("hex")}`;
+function installImageReferences(text) {
+  return [...text.matchAll(/^\s*image:\s*["']?([^\s"'#]+)/gm)].map(
+    (match) => match[1],
+  );
+}
+// Every image an installation pulls must exist before its bundle is promoted. Returns the verified
+// digest of each owned dependency reference, keyed by the reference as written.
+async function verifyDependencyImages(registry, root) {
+  const references = new Set(REQUIRED_TOOL_IMAGES);
+  for (const name of INSTALL_FILES.filter((file) => file.endsWith(".yml")))
+    for (const reference of installImageReferences(
+      await fs.readFile(path.join(root, "docker", name), "utf8"),
+    ))
+      references.add(reference);
+  const resolved = new Map();
+  for (const reference of references) {
+    assert(
+      !/immich-app/.test(reference),
+      `${reference}: installations must not pull upstream images`,
+    );
+    if (RELEASE_MANAGED_IMAGE.test(reference)) continue;
+    assert(
+      !reference.includes("${"),
+      `${reference}: only the Frameleaf server and ML images may follow the release version`,
+    );
+    const owned = reference.match(OWNED_IMAGE);
+    if (!owned) {
+      assert.match(
+        reference,
+        /@sha256:[a-f0-9]{64}$/,
+        `${reference}: third-party installation images must be digest-pinned`,
+      );
+      continue;
+    }
+    const [, image, tag, pinned] = owned;
+    assert(
+      DEPENDENCY_IMAGES.includes(image),
+      `${reference}: not a known Frameleaf dependency image`,
+    );
+    assert(tag || pinned, `${reference}: needs a tag or digest`);
+    let found;
+    try {
+      // Anonymous, as an installation pulls it: the job token could also read a private package.
+      found = await registry.read(image, tag ?? pinned, "manifests", {
+        anonymous: true,
+      });
+    } catch (error) {
+      if ([401, 403].includes(error.status))
+        throw new Error(
+          `${reference} is not public (anonymous registry status ${error.status}). Make the package public before promoting a release.`,
+        );
+      if (error.status === 404)
+        throw new Error(
+          `${reference} is not published (registry status 404). Publish it with its workflow's manual dispatch before promoting a release.`,
+        );
+      // Integrity failures (digest mismatches) are not transient; report them as they are.
+      if (error.code === "ERR_ASSERTION") throw error;
+      throw new Error(
+        `Transient registry failure reading ${reference} (${error.status ? `status ${error.status}` : error.message}); promotion stopped, retry the release job.`,
+      );
+    }
+    if (pinned)
+      assert.equal(
+        found.digest,
+        pinned,
+        `${reference}: tag no longer resolves to the pinned digest`,
+      );
+    resolved.set(reference, found.digest);
+  }
+  return resolved;
+}
 const imageName = (spec) => `ghcr.io/frameleaf/${spec.image}`;
 const commitTag = (sha, spec) => `commit-${sha}${spec.suffix}`;
 function variant(image, suffix = "") {
@@ -290,33 +370,35 @@ class Registry {
     this.env = env;
     this.tokens = new Map();
   }
-  async token(image) {
+  async token(image, anonymous = false) {
     assert(
-      VARIANTS.some((v) => v.image === image),
+      VARIANTS.some((v) => v.image === image) ||
+        DEPENDENCY_IMAGES.includes(image),
       "Unknown registry image",
     );
-    if (!this.tokens.has(image)) {
-      assert(this.env.GITHUB_TOKEN, "GITHUB_TOKEN is required");
-      const auth = Buffer.from(
-        `${this.env.GITHUB_ACTOR || "frameleaf"}:${this.env.GITHUB_TOKEN}`,
-      ).toString("base64");
+    const key = anonymous ? `anonymous:${image}` : image;
+    if (!this.tokens.has(key)) {
+      const headers = {};
+      if (!anonymous) {
+        assert(this.env.GITHUB_TOKEN, "GITHUB_TOKEN is required");
+        headers.Authorization = `Basic ${Buffer.from(
+          `${this.env.GITHUB_ACTOR || "frameleaf"}:${this.env.GITHUB_TOKEN}`,
+        ).toString("base64")}`;
+      }
       const response = await fetch(
         `https://ghcr.io/token?service=ghcr.io&scope=repository:frameleaf/${image}:pull`,
-        {
-          headers: { Authorization: `Basic ${auth}` },
-          signal: AbortSignal.timeout(60_000),
-        },
+        { headers, signal: AbortSignal.timeout(60_000) },
       );
       const body = JSON.parse(await checkedResponse(response, 1024 * 1024));
       assert(
         typeof body.token === "string" && body.token.length > 0,
         "Missing registry token",
       );
-      this.tokens.set(image, body.token);
+      this.tokens.set(key, body.token);
     }
-    return this.tokens.get(image);
+    return this.tokens.get(key);
   }
-  async read(image, reference, kind = "manifests") {
+  async read(image, reference, kind = "manifests", { anonymous = false } = {}) {
     assert(
       DIGEST.test(reference) ||
         /^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$/.test(reference),
@@ -327,7 +409,7 @@ class Registry {
       `https://ghcr.io/v2/frameleaf/${image}/${kind}/${reference}`,
       {
         headers: {
-          Authorization: `Bearer ${await this.token(image)}`,
+          Authorization: `Bearer ${await this.token(image, anonymous)}`,
           Accept: [...INDEX_TYPES, ...IMAGE_TYPES].join(","),
         },
         signal: AbortSignal.timeout(60_000),
@@ -395,7 +477,260 @@ async function verifyImage(
     digest: index.digest,
     platforms: [...platforms.keys()].sort(),
     sourceCommit: sha,
+    buildSourceCommit: sha,
+    buildDigest: index.digest,
   };
+}
+// Keep the original build identity. Qualification may advance without rebuilding.
+const BUILD_INPUTS = {
+  "frameleaf-server": [
+    "server",
+    "packages",
+    "web",
+    "i18n",
+    "open-api",
+    "package.json",
+    "pnpm-lock.yaml",
+    "pnpm-workspace.yaml",
+    ".pnpmfile.cjs",
+    "mise.toml",
+    "mise.lock",
+    "LICENSE",
+    ".dockerignore",
+  ],
+  "frameleaf-machine-learning": ["machine-learning"],
+};
+function identicalBuildInputs(
+  spec,
+  built,
+  qualified,
+  git = (...args) => execFileSync("git", args),
+) {
+  assert(SHA.test(built) && SHA.test(qualified), "Invalid reuse source SHA");
+  git("merge-base", "--is-ancestor", built, qualified);
+  const inputs = [
+    ...BUILD_INPUTS[spec.image],
+    ".gitattributes",
+    ".github/frameleaf-release.cjs",
+    ".github/workflows/docker.yml",
+    ".github/workflows/local-multi-runner-build.yml",
+  ];
+  assert.equal(
+    git("diff", "--name-only", built, qualified, "--", ...inputs)
+      .toString()
+      .trim(),
+    "",
+    "Image build inputs changed",
+  );
+}
+async function releaseEvidence(tag = "latest") {
+  const record = await github(
+    tag === "latest"
+      ? "releases/latest"
+      : `releases/tags/${encodeURIComponent(tag)}`,
+  );
+  assert(
+    !record.draft && !record.prerelease,
+    "Reuse requires a published stable release",
+  );
+  assert(
+    /^frameleaf-v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?-\d+$/.test(record.tag_name),
+    "Invalid reuse release tag",
+  );
+  const asset = record.assets?.find((a) => a.name === "release-manifest.json");
+  assert(Number.isSafeInteger(asset?.id), "Missing release manifest");
+  const manifest = await github(`releases/assets/${asset.id}`, {
+    headers: { Accept: "application/octet-stream" },
+  });
+  assert.equal(manifest.repository, REPOSITORY, "Foreign reuse repository");
+  assert.equal(manifest.tag, record.tag_name, "Reuse release tag differs");
+  assert.equal(
+    manifest.sourceCommit,
+    record.target_commitish,
+    "Reuse release source differs",
+  );
+  const run = new RegExp(`^${SOURCE}/actions/runs/([0-9]+)$`).exec(
+    manifest.certifiedBuildRun,
+  );
+  assert(
+    run &&
+      trustedRun(await github(`actions/runs/${run[1]}`), manifest.sourceCommit),
+    "Reuse release run is not trusted",
+  );
+  return manifest;
+}
+async function verifyReuse(
+  registry,
+  spec,
+  sha,
+  manifest,
+  checkInputs = identicalBuildInputs,
+) {
+  assert.equal(manifest.repository, REPOSITORY, "Foreign reuse repository");
+  assert(SHA.test(manifest.sourceCommit), "Invalid qualified source");
+  checkInputs(spec, manifest.sourceCommit, sha);
+  const records = manifest.images?.filter(
+    (r) => r.image === imageName(spec) && r.suffix === spec.suffix,
+  );
+  assert.equal(records?.length, 1, "Missing or duplicate reuse variant");
+  const prior = records[0];
+  assert.equal(
+    prior.sourceCommit,
+    manifest.sourceCommit,
+    "Reuse image qualification differs",
+  );
+  const built = prior.buildSourceCommit || prior.sourceCommit;
+  const digest = prior.buildDigest || prior.digest;
+  assert(DIGEST.test(digest), "Invalid reusable digest");
+  checkInputs(spec, built, sha);
+  const image = await verifyImage(registry, spec, built, digest);
+  assert.equal(image.digest, digest, "Reuse digest differs");
+  return {
+    ...image,
+    sourceCommit: sha,
+    buildSourceCommit: built,
+    buildDigest: digest,
+    reusedFromRelease: manifest.tag,
+  };
+}
+async function candidateImage(
+  registry,
+  spec,
+  sha,
+  evidence = releaseEvidence,
+  checkInputs = identicalBuildInputs,
+) {
+  const index = await registry.read(spec.image, commitTag(sha, spec));
+  const tag = index.json.annotations?.["org.frameleaf.qualification.release"];
+  if (!tag) return verifyImage(registry, spec, sha, index.digest);
+  const image = await verifyReuse(
+    registry,
+    spec,
+    sha,
+    await evidence(tag),
+    checkInputs,
+  );
+  assert.equal(
+    index.json.annotations["org.frameleaf.qualification.revision"],
+    sha,
+    "Wrong qualification revision",
+  );
+  assert.equal(
+    index.json.annotations["org.frameleaf.build.digest"],
+    image.buildDigest,
+    "Wrong original build digest",
+  );
+  const original = await registry.read(spec.image, image.buildDigest);
+  assert.deepEqual(
+    index.json.manifests,
+    original.json.manifests,
+    "Reused manifest content differs",
+  );
+  const verified = await verifyImage(
+    registry,
+    spec,
+    image.buildSourceCommit,
+    index.digest,
+  );
+  return { ...image, digest: verified.digest };
+}
+async function planReuse(env = process.env, registry = new Registry(env)) {
+  assert.equal(env.GITHUB_REPOSITORY, REPOSITORY);
+  assert.equal(env.GITHUB_REF, `refs/heads/${MAIN}`);
+  assert(SHA.test(env.GITHUB_SHA));
+  if (env.GITHUB_EVENT_NAME === "workflow_dispatch") {
+    // Commit tags are immutable. A manual refresh needs an unpublished source
+    // revision; reject before spending runners on digests we cannot publish.
+    for (const spec of VARIANTS) {
+      try {
+        await registry.read(spec.image, commitTag(env.GITHUB_SHA, spec));
+      } catch (error) {
+        if (error.status === 404) continue;
+        throw error;
+      }
+      throw new Error(
+        "Manual rebuild requires a new source revision: a candidate already exists for this SHA. Retry failed jobs from the original run to recover publication.",
+      );
+    }
+  }
+  let manifest;
+  if (env.GITHUB_EVENT_NAME === "push") {
+    try {
+      manifest = await releaseEvidence();
+    } catch (error) {
+      console.log(`Build required: ${error.message}`);
+    }
+  }
+  for (const image of Object.keys(BUILD_INPUTS)) {
+    let reuse = false;
+    if (manifest) {
+      try {
+        for (const spec of VARIANTS.filter((v) => v.image === image))
+          await verifyReuse(registry, spec, env.GITHUB_SHA, manifest);
+        reuse = true;
+      } catch (error) {
+        console.log(`${image}: build required: ${error.message}`);
+      }
+    }
+    const key = image.replace("frameleaf-", "");
+    await fs.appendFile(
+      env.GITHUB_OUTPUT,
+      `${key}=${!reuse}\n${key}-release=${reuse ? manifest.tag : ""}\n`,
+    );
+  }
+}
+// `imagetools create` writes a new index and does not carry the source index's own annotations, so
+// the reused tag restates the ones validateIndex requires (as mergeCandidate does) besides the
+// qualification record; the revision stays the commit the image was built from.
+function reuseAnnotations(spec, image, env) {
+  return [
+    "--annotation",
+    `index:org.opencontainers.image.source=${SOURCE}`,
+    "--annotation",
+    `index:org.opencontainers.image.revision=${image.buildSourceCommit}`,
+    "--annotation",
+    `index:org.frameleaf.build.variant=${spec.device}${spec.suffix}`,
+    "--annotation",
+    `index:org.frameleaf.qualification.revision=${env.GITHUB_SHA}`,
+    "--annotation",
+    `index:org.frameleaf.qualification.release=${env.REUSE_RELEASE}`,
+    "--annotation",
+    `index:org.frameleaf.build.digest=${image.buildDigest}`,
+  ];
+}
+async function reuseCandidate(env = process.env) {
+  assert.equal(env.GITHUB_REPOSITORY, REPOSITORY);
+  assert.equal(env.GITHUB_REF, `refs/heads/${MAIN}`);
+  assert.equal(env.GITHUB_EVENT_NAME, "push");
+  const spec = variant(env.IMAGE, env.SUFFIX);
+  assert(/^frameleaf-v/.test(env.REUSE_RELEASE || ""), "Missing reuse release");
+  const registry = new Registry(env);
+  const image = await verifyReuse(
+    registry,
+    spec,
+    env.GITHUB_SHA,
+    await releaseEvidence(env.REUSE_RELEASE),
+  );
+  const ref = commitTag(env.GITHUB_SHA, spec);
+  let exists = true;
+  try {
+    await registry.read(spec.image, ref);
+  } catch (error) {
+    if (error.status !== 404) throw error;
+    exists = false;
+  }
+  if (!exists)
+    docker(
+      "create",
+      ...reuseAnnotations(spec, image, env),
+      "--tag",
+      `${image.image}:${ref}`,
+      `${image.image}@${image.buildDigest}`,
+    );
+  const verified = await candidateImage(registry, spec, env.GITHUB_SHA);
+  if (await currentMainline(env.GITHUB_SHA))
+    await tagImage(registry, spec, verified, "edge");
+  console.log(JSON.stringify(verified));
 }
 async function github(endpoint, options = {}) {
   const response = await fetch(
@@ -510,7 +845,13 @@ async function mergeCandidate(env = process.env) {
     }),
   );
 }
-async function createBundle(directory, root, tag, manifest) {
+async function createBundle(
+  directory,
+  root,
+  tag,
+  manifest,
+  dependencies = new Map(),
+) {
   assert(
     /^frameleaf-v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?-\d+$/.test(tag),
     "Invalid release tag",
@@ -531,6 +872,26 @@ async function createBundle(directory, root, tag, manifest) {
         "${IMMICH_VERSION:-release}",
         "${IMMICH_VERSION:-" + tag + "}",
       );
+    }
+    if (name.endsWith(".yml")) {
+      // Pin each verified Frameleaf dependency (the database) to the digest promotion checked.
+      body = body.replace(
+        /^(\s*image:\s*)(\S+)$/gm,
+        (line, prefix, reference) => {
+          const verified = dependencies.get(reference);
+          return verified && !reference.includes("@")
+            ? `${prefix}${reference}@${verified}`
+            : line;
+        },
+      );
+      for (const reference of installImageReferences(body)) {
+        const owned = reference.match(OWNED_IMAGE);
+        if (owned && !RELEASE_MANAGED_IMAGE.test(reference))
+          assert(
+            owned[3],
+            `${name}: ${reference} was not verified and pinned by digest`,
+          );
+      }
     }
     await fs.writeFile(path.join(directory, name), body);
     files.push(name);
@@ -610,7 +971,10 @@ async function release(env = process.env) {
   const images = [];
   // Verify every source before creating any release or floating image alias.
   for (const spec of VARIANTS)
-    images.push(await verifyImage(registry, spec, env.SOURCE_SHA));
+    images.push(await candidateImage(registry, spec, env.SOURCE_SHA));
+  // The database and CLI images are published separately; a bundle that names a missing image is
+  // never reserved, tagged or promoted.
+  const dependencies = await verifyDependencyImages(registry, process.cwd());
   const version = JSON.parse(await fs.readFile("server/package.json")).version;
   const releases = await listAll("releases");
   const refs = await github("git/matching-refs/tags/frameleaf-v");
@@ -625,12 +989,16 @@ async function release(env = process.env) {
       "Release tag targets another commit",
     );
   const manifest = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     repository: REPOSITORY,
     sourceCommit: env.SOURCE_SHA,
     tag,
     certifiedBuildRun: `${SOURCE}/actions/runs/${env.CERTIFIED_RUN_ID}`,
     images,
+    dependencies: [...dependencies].map(([reference, digest]) => ({
+      reference,
+      digest,
+    })),
     certification:
       "Integration and all three official-container roundtrip lanes passed in the referenced build run.",
     provenance:
@@ -675,7 +1043,13 @@ async function release(env = process.env) {
     "frameleaf-release",
     tag,
   );
-  const assets = await createBundle(directory, process.cwd(), tag, manifest);
+  const assets = await createBundle(
+    directory,
+    process.cwd(),
+    tag,
+    manifest,
+    dependencies,
+  );
   assert(
     await currentMainline(env.SOURCE_SHA),
     "Mainline changed before promotion; draft/version tags retained for inspection",
@@ -701,6 +1075,7 @@ async function release(env = process.env) {
   );
 }
 module.exports = {
+  reuseAnnotations,
   REPOSITORY,
   SOURCE,
   VARIANTS,
@@ -713,10 +1088,16 @@ module.exports = {
   chooseTag,
   verifyImage,
   createBundle,
+  DEPENDENCY_IMAGES,
+  verifyDependencyImages,
   hash,
   checkedResponse,
   Registry,
   reserveAndStage,
+  identicalBuildInputs,
+  verifyReuse,
+  candidateImage,
+  planReuse,
 };
 if (require.main === module) {
   (async () => {
@@ -728,6 +1109,8 @@ if (require.main === module) {
       );
     } else if (process.argv[2] === "merge-candidate") await mergeCandidate();
     else if (process.argv[2] === "release") await release();
+    else if (process.argv[2] === "plan-reuse") await planReuse();
+    else if (process.argv[2] === "reuse-candidate") await reuseCandidate();
     else throw new Error("Expected build-matrix, merge-candidate or release");
   })().catch((error) => {
     console.error(error.message);

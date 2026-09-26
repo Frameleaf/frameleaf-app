@@ -10,6 +10,7 @@
     "resolveJsonModule": true,
     "target": "es2024",
     "moduleResolution": "nodenext",
+    "rewriteRelativeImportExtensions": true,
     "lib": ["dom", "esnext"],
     "sourceMap": true,
     "outDir": "./dist",

@@ -10,14 +10,14 @@ The ledger reverse-maps every accepted inventory row exactly once:
 
 | Inventory      | Source rows | Qualification                                                                                    |
 | -------------- | ----------: | ------------------------------------------------------------------------------------------------ |
-| Web routes     |          84 | 70 committed routes plus 14 preserved dirty-only routes; route presence is not action parity     |
+| Web routes     |          92 | 80 committed routes plus 12 preserved dirty-only routes; route presence is not action parity     |
 | Settings       |         535 | 530 accepted-main mappings plus 5 candidate-only mappings kept explicitly unaccepted             |
 | Pinned Freecut |         210 | Source/command/render/test states remain independently unqualified                               |
 | Native         |         227 | 211 committed entries plus 16 preserved dirty-only requirements; no device qualification implied |
 
 The detailed web audit contributes another 153 action rows. They decompose shared viewer, Info/people, quick-edit, album, timeline/bulk, and search/discovery behaviors without duplicating those behaviors at each route entrypoint.
 
-The 1,209 total source rows resolve to 1,189 canonical requirements. The only collapsed rows are 20 reviewed aliases between queue concurrency controls and their matching `system:job.<queue>.concurrency` schema leaves. A shared file, module, route loader, or target is not enough to merge requirements. Positional account/library setting IDs are retained as aliases behind semantic stable IDs, and all raw inventory IDs have a reverse mapping.
+The 1,217 total source rows resolve to 1,197 canonical requirements. The only collapsed rows are 20 reviewed aliases between queue concurrency controls and their matching `system:job.<queue>.concurrency` schema leaves. A shared file, module, route loader, or target is not enough to merge requirements. Positional account/library setting IDs are retained as aliases behind semantic stable IDs, and all raw inventory IDs have a reverse mapping.
 
 ## Per-row contract
 

@@ -1,198 +1,154 @@
 <script lang="ts">
-  import { serverConfigManager } from '$lib/managers/server-config-manager.svelte';
-  import SettingAccordion from '$lib/components/shared-components/settings/SettingAccordion.svelte';
-  import { authManager } from '$lib/managers/auth-manager.svelte';
-  import { handleError } from '$lib/utils/handle-error';
-  import { AssetOrder, updateMyPreferences } from '@immich/sdk';
-  import { Button, Field, NumberInput, Select, Switch, toastManager } from '@immich/ui';
+  /**
+   * The account's own library features (FL-77), from the design template's "Library features"
+   * settings (`settings-advanced.mjs`) with the album viewing order and "Show memories" it maps
+   * onto the same preferences (`account-preference-settings.mjs`).
+   *
+   * Each navigation switch is its own preference: it stays visible, keeps its value and is only
+   * unavailable while its feature is off. These switches choose tools and navigation; they never
+   * restrict access. While an administrator has turned casting off the Chromecast switch is
+   * unavailable and is never sent.
+   */
+  import OwnPreferencesForm from '$lib/components/frameleaf/settings/OwnPreferencesForm.svelte';
+  import SettingField from '$lib/components/frameleaf/settings/SettingField.svelte';
+  import SettingSelect from '$lib/components/frameleaf/settings/SettingSelect.svelte';
+  import SettingToggle from '$lib/components/frameleaf/settings/SettingToggle.svelte';
+  import { SettingInputFieldType } from '$lib/constants';
+  import type { AccountPreferenceKey } from '$lib/frameleaf/account-preferences';
+  import { createOwnPreferencesDraft } from '$lib/frameleaf/own-preferences-draft';
+  import { AssetOrder } from '@immich/sdk';
   import { t } from 'svelte-i18n';
-  import { fade } from 'svelte/transition';
 
-  // Albums
-  let defaultAssetOrder = $state(authManager.preferences.albums?.defaultAssetOrder ?? AssetOrder.Desc);
+  const keys: AccountPreferenceKey[] = [
+    'albums.defaultAssetOrder',
+    'folders.enabled',
+    'folders.sidebarWeb',
+    'memories.enabled',
+    'memories.sidebarWeb',
+    'memories.duration',
+    'people.enabled',
+    'people.sidebarWeb',
+    'people.minimumFaces',
+    'ratings.enabled',
+    'sharedLinks.enabled',
+    'sharedLinks.sidebarWeb',
+    'tags.enabled',
+    'tags.sidebarWeb',
+    'cast.gCastEnabled',
+    'recentlyAdded.sidebarWeb',
+  ];
 
-  // Folders
-  let foldersEnabled = $state(authManager.preferences.folders?.enabled ?? false);
-  let foldersSidebar = $state(authManager.preferences.folders?.sidebarWeb ?? false);
-
-  // Memories
-  let memoriesEnabled = $state(authManager.preferences.memories?.enabled ?? true);
-  let memoriesDuration = $state(authManager.preferences.memories?.duration ?? 5);
-  let memoriesSidebar = $state(authManager.preferences.memories?.sidebarWeb ?? false);
-
-  // People
-  let peopleEnabled = $state(authManager.preferences.people?.enabled ?? false);
-  let peopleSidebar = $state(authManager.preferences.people?.sidebarWeb ?? false);
-  let peopleMinFaces = $state(authManager.preferences.people?.minimumFaces ?? serverConfigManager.value.minFaces);
-
-  // Ratings
-  let ratingsEnabled = $state(authManager.preferences.ratings?.enabled ?? false);
-
-  // Shared links
-  let sharedLinksEnabled = $state(authManager.preferences.sharedLinks?.enabled ?? true);
-  let sharedLinkSidebar = $state(authManager.preferences.sharedLinks?.sidebarWeb ?? false);
-
-  // Tags
-  let tagsEnabled = $state(authManager.preferences.tags?.enabled ?? false);
-  let tagsSidebar = $state(authManager.preferences.tags?.sidebarWeb ?? false);
-
-  // Cast
-  let gCastEnabled = $state(authManager.preferences.cast?.gCastEnabled ?? false);
-
-  // Recently added
-  let recentlyAddedSidebar = $state(authManager.preferences.recentlyAdded?.sidebarWeb ?? false);
-
-  const handleSave = async () => {
-    try {
-      const response = await updateMyPreferences({
-        userPreferencesUpdateDto: {
-          albums: { defaultAssetOrder },
-          folders: { enabled: foldersEnabled, sidebarWeb: foldersSidebar },
-          memories: { enabled: memoriesEnabled, duration: memoriesDuration, sidebarWeb: memoriesSidebar },
-          people: { enabled: peopleEnabled, sidebarWeb: peopleSidebar, minimumFaces: peopleMinFaces },
-          ratings: { enabled: ratingsEnabled },
-          sharedLinks: { enabled: sharedLinksEnabled, sidebarWeb: sharedLinkSidebar },
-          tags: { enabled: tagsEnabled, sidebarWeb: tagsSidebar },
-          cast: { gCastEnabled },
-          recentlyAdded: { sidebarWeb: recentlyAddedSidebar },
-        },
-      });
-
-      authManager.setPreferences(response);
-      toastManager.primary($t('saved_settings'));
-    } catch (error) {
-      handleError(error, $t('errors.unable_to_update_settings'));
-    }
-  };
-
-  const onsubmit = (event: Event) => {
-    event.preventDefault();
-  };
+  const store = createOwnPreferencesDraft(keys);
+  const draft = $derived(store.draft);
+  const castDisabledByAdmin = $derived(draft['cast.adminDisabled']);
 </script>
 
-<section class="my-4">
-  <div in:fade={{ duration: 500 }}>
-    <form autocomplete="off" {onsubmit}>
-      <div class="flex flex-col sm:ms-4 md:ms-8">
-        <SettingAccordion key="albums" title={$t('albums')} subtitle={$t('albums_feature_description')}>
-          <div class="mt-4 flex flex-col gap-4 sm:ms-4">
-            <Field label={$t('albums_default_sort_order')} description={$t('albums_default_sort_order_description')}>
-              <Select
-                options={[
-                  { label: $t('oldest_first'), value: AssetOrder.Asc },
-                  { label: $t('newest_first'), value: AssetOrder.Desc },
-                ]}
-                bind:value={defaultAssetOrder}
-              />
-            </Field>
-          </div>
-        </SettingAccordion>
+<OwnPreferencesForm {store}>
+  <SettingSelect
+    label={$t('frameleaf_own_prefs_album_order')}
+    desc={$t('frameleaf_own_prefs_album_order_help')}
+    options={[
+      { value: AssetOrder.Desc, text: $t('newest_first') },
+      { value: AssetOrder.Asc, text: $t('oldest_first') },
+    ]}
+    bind:value={
+      () => draft['albums.defaultAssetOrder'], (value) => store.set('albums.defaultAssetOrder', value as AssetOrder)
+    }
+  />
 
-        <SettingAccordion key="folders" title={$t('folders')} subtitle={$t('folders_feature_description')}>
-          <div class="mt-4 flex flex-col gap-4 sm:ms-4">
-            <Field label={$t('enable')}>
-              <Switch bind:checked={foldersEnabled} />
-            </Field>
+  <SettingToggle
+    title={$t('frameleaf_own_prefs_folders')}
+    subtitle={$t('frameleaf_own_prefs_folders_help')}
+    bind:checked={() => draft['folders.enabled'], (value) => store.set('folders.enabled', value)}
+  />
+  <SettingToggle
+    title={$t('frameleaf_own_prefs_folders_sidebar')}
+    subtitle={$t('frameleaf_own_prefs_folders_sidebar_help')}
+    disabled={!draft['folders.enabled']}
+    bind:checked={() => draft['folders.sidebarWeb'], (value) => store.set('folders.sidebarWeb', value)}
+  />
 
-            {#if foldersEnabled}
-              <Field label={$t('sidebar')} description={$t('sidebar_display_description')}>
-                <Switch bind:checked={foldersSidebar} />
-              </Field>
-            {/if}
-          </div>
-        </SettingAccordion>
+  <SettingToggle
+    title={$t('frameleaf_own_prefs_memories')}
+    subtitle={$t('frameleaf_own_prefs_memories_help')}
+    bind:checked={() => draft['memories.enabled'], (value) => store.set('memories.enabled', value)}
+  />
+  <SettingToggle
+    title={$t('frameleaf_own_prefs_memories_sidebar')}
+    subtitle={$t('frameleaf_own_prefs_memories_sidebar_help')}
+    disabled={!draft['memories.enabled']}
+    bind:checked={() => draft['memories.sidebarWeb'], (value) => store.set('memories.sidebarWeb', value)}
+  />
+  <SettingField
+    inputType={SettingInputFieldType.NUMBER}
+    label={$t('frameleaf_own_prefs_memory_duration')}
+    description={$t('frameleaf_own_prefs_memory_duration_help')}
+    min={1}
+    max={3600}
+    bind:value={() => draft['memories.duration'], (value) => store.set('memories.duration', value ?? null)}
+  />
 
-        <SettingAccordion key="memories" title={$t('time_based_memories')} subtitle={$t('photos_from_previous_years')}>
-          <div class="mt-4 flex flex-col gap-4 sm:ms-4">
-            <Field label={$t('enable')}>
-              <Switch bind:checked={memoriesEnabled} />
-            </Field>
+  <SettingToggle
+    title={$t('frameleaf_own_prefs_people')}
+    subtitle={$t('frameleaf_own_prefs_people_help')}
+    bind:checked={() => draft['people.enabled'], (value) => store.set('people.enabled', value)}
+  />
+  <SettingToggle
+    title={$t('frameleaf_own_prefs_people_sidebar')}
+    subtitle={$t('frameleaf_own_prefs_people_sidebar_help')}
+    disabled={!draft['people.enabled']}
+    bind:checked={() => draft['people.sidebarWeb'], (value) => store.set('people.sidebarWeb', value)}
+  />
+  <SettingField
+    inputType={SettingInputFieldType.NUMBER}
+    label={$t('frameleaf_own_prefs_minimum_faces')}
+    description={$t('frameleaf_own_prefs_minimum_faces_help')}
+    min={1}
+    max={100_000}
+    disabled={!draft['people.enabled']}
+    bind:value={() => draft['people.minimumFaces'], (value) => store.set('people.minimumFaces', value ?? null)}
+  />
 
-            {#if memoriesEnabled}
-              <Field label={$t('sidebar')} description={$t('sidebar_display_description')}>
-                <Switch bind:checked={memoriesSidebar} />
-              </Field>
-            {/if}
+  <SettingToggle
+    title={$t('frameleaf_own_prefs_ratings')}
+    subtitle={$t('frameleaf_own_prefs_ratings_help')}
+    bind:checked={() => draft['ratings.enabled'], (value) => store.set('ratings.enabled', value)}
+  />
 
-            <Field label={$t('duration')} description={$t('time_based_memories_duration')}>
-              <NumberInput bind:value={memoriesDuration} />
-            </Field>
-          </div>
-        </SettingAccordion>
+  <SettingToggle
+    title={$t('frameleaf_own_prefs_shared_links')}
+    subtitle={$t('frameleaf_own_prefs_shared_links_help')}
+    bind:checked={() => draft['sharedLinks.enabled'], (value) => store.set('sharedLinks.enabled', value)}
+  />
+  <SettingToggle
+    title={$t('frameleaf_own_prefs_shared_links_sidebar')}
+    subtitle={$t('frameleaf_own_prefs_shared_links_sidebar_help')}
+    disabled={!draft['sharedLinks.enabled']}
+    bind:checked={() => draft['sharedLinks.sidebarWeb'], (value) => store.set('sharedLinks.sidebarWeb', value)}
+  />
 
-        <SettingAccordion key="people" title={$t('people')} subtitle={$t('people_feature_description')}>
-          <div class="mt-4 flex flex-col gap-4 sm:ms-4">
-            <Field label={$t('enable')}>
-              <Switch bind:checked={peopleEnabled} />
-            </Field>
+  <SettingToggle
+    title={$t('frameleaf_own_prefs_tags')}
+    subtitle={$t('frameleaf_own_prefs_tags_help')}
+    bind:checked={() => draft['tags.enabled'], (value) => store.set('tags.enabled', value)}
+  />
+  <SettingToggle
+    title={$t('frameleaf_own_prefs_tags_sidebar')}
+    subtitle={$t('frameleaf_own_prefs_tags_sidebar_help')}
+    disabled={!draft['tags.enabled']}
+    bind:checked={() => draft['tags.sidebarWeb'], (value) => store.set('tags.sidebarWeb', value)}
+  />
 
-            {#if peopleEnabled}
-              <Field label={$t('sidebar')} description={$t('sidebar_display_description')}>
-                <Switch bind:checked={peopleSidebar} />
-              </Field>
-              <Field label={$t('minFaces')} description={$t('minFaces_description')}>
-                <NumberInput bind:value={peopleMinFaces} />
-              </Field>
-            {/if}
-          </div>
-        </SettingAccordion>
+  <SettingToggle
+    title={$t('frameleaf_own_prefs_cast')}
+    subtitle={castDisabledByAdmin ? $t('frameleaf_cast_disabled_by_admin') : $t('frameleaf_own_prefs_cast_help')}
+    disabled={castDisabledByAdmin}
+    bind:checked={() => draft['cast.gCastEnabled'], (value) => store.set('cast.gCastEnabled', value)}
+  />
 
-        <SettingAccordion key="rating" title={$t('rating')} subtitle={$t('rating_description')}>
-          <div class="mt-4 flex flex-col gap-4 sm:ms-4">
-            <Field label={$t('enable')}>
-              <Switch bind:checked={ratingsEnabled} />
-            </Field>
-          </div>
-        </SettingAccordion>
-
-        <SettingAccordion key="shared-links" title={$t('shared_links')} subtitle={$t('shared_links_description')}>
-          <div class="mt-4 flex flex-col gap-4 sm:ms-4">
-            <Field label={$t('enable')}>
-              <Switch bind:checked={sharedLinksEnabled} />
-            </Field>
-
-            {#if sharedLinksEnabled}
-              <Field label={$t('sidebar')} description={$t('sidebar_display_description')}>
-                <Switch bind:checked={sharedLinkSidebar} />
-              </Field>
-            {/if}
-          </div>
-        </SettingAccordion>
-
-        <SettingAccordion key="tags" title={$t('tags')} subtitle={$t('tag_feature_description')}>
-          <div class="mt-4 flex flex-col gap-4 sm:ms-4">
-            <Field label={$t('enable')}>
-              <Switch bind:checked={tagsEnabled} />
-            </Field>
-
-            {#if tagsEnabled}
-              <Field label={$t('sidebar')} description={$t('sidebar_display_description')}>
-                <Switch bind:checked={tagsSidebar} />
-              </Field>
-            {/if}
-          </div>
-        </SettingAccordion>
-
-        <SettingAccordion key="cast" title={$t('cast')} subtitle={$t('cast_description')}>
-          <div class="mt-4 flex flex-col gap-4 sm:ms-4">
-            <Field label={$t('gcast_enabled')} description={$t('gcast_enabled_description')}>
-              <Switch bind:checked={gCastEnabled} />
-            </Field>
-          </div>
-        </SettingAccordion>
-
-        <SettingAccordion key="recentlyAdded" title={$t('recently_added')} subtitle={$t('recently_added_description')}>
-          <div class="mt-4 flex flex-col gap-4 sm:ms-4">
-            <Field label={$t('sidebar')} description={$t('sidebar_display_description')}>
-              <Switch bind:checked={recentlyAddedSidebar} />
-            </Field>
-          </div>
-        </SettingAccordion>
-
-        <div class="mt-4 flex justify-end">
-          <Button shape="round" type="submit" size="small" onclick={() => handleSave()}>{$t('save')}</Button>
-        </div>
-      </div>
-    </form>
-  </div>
-</section>
+  <SettingToggle
+    title={$t('frameleaf_own_prefs_recently_added_sidebar')}
+    subtitle={$t('frameleaf_own_prefs_recently_added_sidebar_help')}
+    bind:checked={() => draft['recentlyAdded.sidebarWeb'], (value) => store.set('recentlyAdded.sidebarWeb', value)}
+  />
+</OwnPreferencesForm>

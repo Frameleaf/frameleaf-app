@@ -3,9 +3,10 @@ import { DateTime } from 'luxon';
 import { Duplex, PassThrough, Readable } from 'node:stream';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { SystemConfig, defaults } from 'src/dtos/config.dto.js';
-import { ImmichWorker, JobStatus, StorageFolder } from 'src/enum.js';
+import { DatabaseLock, ImmichWorker, JobStatus, StorageFolder, SystemMetadataKey } from 'src/enum.js';
 import { MaintenanceHealthRepository } from 'src/maintenance/maintenance-health.repository.js';
-import { DatabaseBackupService } from 'src/services/database-backup.service.js';
+import { DatabaseBackupService, restoreVerificationDue } from 'src/services/database-backup.service.js';
+import { authStub } from 'test/fixtures/auth.stub.js';
 import { systemConfigStub } from 'test/fixtures/system-config.stub.js';
 import { AutoMocked, ServiceMocks, automock, getMocks, mockDuplex, mockSpawn } from 'test/utils.js';
 
@@ -662,6 +663,8 @@ describe(DatabaseBackupService.name, () => {
         `immich-db-backup-${DateTime.fromISO('2025-07-27T11:01:16Z').toFormat("yyyyLLdd'T'HHmmss")}-v1.234.5-pg14.5.sql.gz`,
         'immich-db-backup-1753789649000.sql.gz',
         `immich-db-backup-${DateTime.fromISO('2025-07-29T11:01:16Z').toFormat("yyyyLLdd'T'HHmmss")}-v1.234.5-pg14.5.sql.gz`,
+        // FL-160: a cloud backup run's leftover dump is not a restore point
+        'cloud-backup-immich-db-backup-20250730T110116-v1.234.5-pg14.5.sql.gz',
       ]);
       mocks.storage.stat.mockResolvedValue({ size: 1024 } as any);
 
@@ -696,7 +699,7 @@ describe(DatabaseBackupService.name, () => {
       mocks.storage.readdir.mockResolvedValue([]);
       mocks.process.spawn.mockReturnValue(mockSpawn(0, 'data', ''));
       mocks.process.spawnDuplexStream.mockImplementation(() => mockDuplex()('command', 0, 'data', ''));
-      mocks.process.fork.mockImplementation(() => mockSpawn(0, 'Immich Server is listening', ''));
+      mocks.process.fork.mockImplementation(() => mockSpawn(0, 'Frameleaf Server is listening', ''));
       mocks.storage.rename.mockResolvedValue();
       mocks.storage.unlink.mockResolvedValue();
       mocks.storage.createPlainReadStream.mockReturnValue(Readable.from(mockData()));
@@ -735,6 +738,53 @@ describe(DatabaseBackupService.name, () => {
         mocks.job as never,
         maintenanceHealthRepositoryMock,
       );
+    });
+
+    describe('safety backup', () => {
+      const restorePoint = expect.stringContaining('restore-point-');
+
+      it('keeps the restore point by default', async () => {
+        mocks.user.hasAdmin.mockResolvedValue(true);
+
+        await sut.restoreDatabaseBackup('development-filename.sql');
+
+        expect(mocks.storage.unlink).not.toHaveBeenCalledWith(restorePoint);
+      });
+
+      it('removes the restore point after a successful restore when it is not to be kept', async () => {
+        mocks.user.hasAdmin.mockResolvedValue(true);
+
+        await sut.restoreDatabaseBackup('development-filename.sql', undefined, { keepSafetyBackup: false });
+
+        expect(mocks.storage.unlink).toHaveBeenCalledWith(restorePoint);
+      });
+
+      it('keeps the restore point after a failed restore even when it was not to be kept', async () => {
+        mocks.user.hasAdmin.mockResolvedValue(false);
+
+        await expect(
+          sut.restoreDatabaseBackup('development-filename.sql', undefined, { keepSafetyBackup: false }),
+        ).rejects.toThrow('Server health check failed, no admin exists.');
+
+        expect(mocks.storage.unlink).not.toHaveBeenCalledWith(restorePoint);
+      });
+    });
+
+    it('refuses a backup from a newer server before changing anything (FL-81)', async () => {
+      await expect(
+        sut.restoreDatabaseBackup('immich-db-backup-20260101T000000-v999.0.0-pg14.19.sql.gz'),
+      ).rejects.toThrow('This backup was made by a newer server (v999.0.0)');
+
+      expect(mocks.process.spawnDuplexStream).not.toHaveBeenCalled();
+      expect(mocks.storage.createWriteStream).not.toHaveBeenCalled();
+    });
+
+    it('restores a backup from an older server (FL-81)', async () => {
+      mocks.user.hasAdmin.mockResolvedValue(true);
+
+      await expect(
+        sut.restoreDatabaseBackup('immich-db-backup-20260101T000000-v2.5.0-pg14.19.sql.gz'),
+      ).resolves.toBeUndefined();
     });
 
     it('should fail to restore invalid backup', async () => {
@@ -841,27 +891,41 @@ describe(DatabaseBackupService.name, () => {
       },
     );
 
-    it.each(['isolated', 'official-origin'] as const)(
-      'runs official then fork migrations when restoring a %s database',
-      async (mode) => {
-        const migrationOrder: string[] = [];
-        mocks.user.hasAdmin.mockResolvedValue(true);
-        mocks.database.detectMigrationMode.mockResolvedValue(mode);
-        mocks.database.runOfficialMigrations.mockImplementation(() => {
-          migrationOrder.push('official');
-          return Promise.resolve();
-        });
-        mocks.database.runForkMigrations.mockImplementation(() => {
-          migrationOrder.push('fork');
-          return Promise.resolve();
-        });
+    it.each([
+      ['isolated', ['official', 'frameleaf', 'fork']],
+      ['official-origin', ['official', 'fork']],
+    ] as const)('runs official then fork migrations when restoring a %s database', async (mode, expected) => {
+      const migrationOrder: string[] = [];
+      mocks.user.hasAdmin.mockResolvedValue(true);
+      mocks.database.detectMigrationMode.mockResolvedValue(mode);
+      mocks.database.runOfficialMigrations.mockImplementation(() => {
+        migrationOrder.push('official');
+        return Promise.resolve();
+      });
+      mocks.database.applyIsolatedFrameleafMigrations.mockImplementation(() => {
+        migrationOrder.push('frameleaf');
+        return Promise.resolve({ applied: [], pending: [], skipped: null });
+      });
+      mocks.database.runForkMigrations.mockImplementation(() => {
+        migrationOrder.push('fork');
+        return Promise.resolve();
+      });
 
-        await sut.restoreDatabaseBackup('development-filename.sql');
+      await sut.restoreDatabaseBackup('development-filename.sql');
 
-        expect(migrationOrder).toEqual(['official', 'fork']);
-        expect(mocks.database.runMigrations).not.toHaveBeenCalled();
-      },
-    );
+      expect(migrationOrder).toEqual(expected);
+      expect(mocks.database.runMigrations).not.toHaveBeenCalled();
+    });
+
+    it('applies newer Frameleaf migrations under the migrations lock when restoring a library past the cutover (FL-180)', async () => {
+      mocks.user.hasAdmin.mockResolvedValue(true);
+      mocks.database.detectMigrationMode.mockResolvedValue('isolated');
+
+      await sut.restoreDatabaseBackup('development-filename.sql');
+
+      expect(mocks.database.withLock).toHaveBeenCalledWith(DatabaseLock.Migrations, expect.any(Function));
+      expect(mocks.database.applyIsolatedFrameleafMigrations).toHaveBeenCalledExactlyOnceWith('startup');
+    });
 
     it('guards an inactive schema version 2 restore before either migration provider runs', async () => {
       mocks.user.hasAdmin.mockResolvedValue(true);
@@ -1012,6 +1076,81 @@ describe(DatabaseBackupService.name, () => {
       expect(mocks.user.hasAdmin).toHaveBeenCalled();
       expect(maintenanceHealthRepositoryMock.checkApiHealth).toHaveBeenCalled();
       expect(mocks.process.spawnDuplexStream).toHaveBeenCalledTimes(4);
+    });
+  });
+
+  describe('restore verification (FL-71 CC-9)', () => {
+    const day = 24 * 60 * 60 * 1000;
+    const now = new Date('2026-09-24T12:00:00.000Z');
+
+    it('is due at once while either part has never been proved', () => {
+      expect(restoreVerificationDue({}, now)).toEqual({ dueAt: null, overdue: true });
+      expect(restoreVerificationDue({ metadataVerifiedAt: now.toISOString() }, now)).toEqual({
+        dueAt: null,
+        overdue: true,
+      });
+    });
+
+    it('is due 90 days after the older of the two tests', () => {
+      const recent = new Date(now.getTime() - 10 * day).toISOString();
+      const older = new Date(now.getTime() - 80 * day).toISOString();
+      expect(restoreVerificationDue({ metadataVerifiedAt: recent, originalsVerifiedAt: older }, now)).toEqual({
+        dueAt: new Date(now.getTime() + 10 * day).toISOString(),
+        overdue: false,
+      });
+      const stale = new Date(now.getTime() - 91 * day).toISOString();
+      expect(restoreVerificationDue({ metadataVerifiedAt: recent, originalsVerifiedAt: stale }, now).overdue).toBe(
+        true,
+      );
+    });
+
+    it('reports the record with the administrator who made it', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({
+        metadataVerifiedAt: '2026-09-20T10:00:00.000Z',
+        originalsVerifiedAt: null,
+        verifiedBy: 'admin-id',
+      });
+      mocks.user.get.mockResolvedValue({ id: 'admin-id', name: 'Ada' } as never);
+
+      await expect(sut.getRestoreVerification()).resolves.toEqual({
+        metadataVerifiedAt: '2026-09-20T10:00:00.000Z',
+        originalsVerifiedAt: null,
+        verifiedBy: { id: 'admin-id', name: 'Ada' },
+        overdue: true,
+        dueAt: null,
+        intervalDays: 90,
+      });
+    });
+
+    it('records the tested parts now and keeps the untested part', async () => {
+      mocks.database.withLock.mockImplementation((_lock, fn) => fn());
+      mocks.systemMetadata.get.mockImplementation((key) =>
+        Promise.resolve(
+          (key === SystemMetadataKey.BackupRestoreVerification
+            ? { metadataVerifiedAt: '2026-01-01T00:00:00.000Z' }
+            : null) as never,
+        ),
+      );
+      mocks.user.get.mockResolvedValue(undefined as never);
+
+      await sut.recordRestoreVerification(authStub.admin, { metadata: false, originals: true });
+
+      expect(mocks.systemMetadata.set).toHaveBeenCalledWith(SystemMetadataKey.BackupRestoreVerification, {
+        metadataVerifiedAt: '2026-01-01T00:00:00.000Z',
+        originalsVerifiedAt: expect.any(String),
+        verifiedBy: authStub.admin.user.id,
+      });
+      // FL-71 (CC-10): the review lands in the change history as "Reviewed: Recovery readiness".
+      expect(mocks.systemMetadata.set).toHaveBeenCalledWith(SystemMetadataKey.SystemConfigHistory, {
+        entries: [
+          expect.objectContaining({
+            kind: 'review',
+            title: 'Reviewed: Recovery readiness',
+            actorId: authStub.admin.user.id,
+            changes: [],
+          }),
+        ],
+      });
     });
   });
 });

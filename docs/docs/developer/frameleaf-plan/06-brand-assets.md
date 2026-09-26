@@ -79,7 +79,7 @@ The active [canonical backlog](backlog.json) now makes this kit explicit:
 
 - **REL-101 — Native identities and signed artifacts:** derive launcher, adaptive, monochrome and store assets from the supplied kit; verify masks, transparency, safe areas and every app/extension target. Identity/signing values remain independent owner inputs.
 - **REL-102 — Authentication and transition:** use the supplied symbol/wordmark on sign-in, setup and migration surfaces while preserving both apps' callback and protocol identities.
-- **REL-103 — Complete branding:** replace earlier generated marks through recorded derivatives across web/PWA/native, notifications/widgets, public/auth/share, documentation, installation and distribution surfaces; verify theme contrast and keep “Built on Immich” attribution and required notices separate.
+- **REL-103 — Complete branding:** replace earlier generated marks through recorded derivatives across web/PWA/native, notifications/widgets, public/auth/share, documentation, installation and distribution surfaces; verify theme contrast and keep the upstream-project attribution and required notices separate.
 
 The foundation design-system and shell tasks consume the same kit. Future agents must record which supplied file each consumer uses, the original/derivative hash, visible size/background, accessible label and verification evidence. Completion requires implemented surfaces and generated platform assets, not just copying the ZIP into the repository. This import changes no app code, prototype screens, callbacks, application IDs, signing or publishing destinations.
 

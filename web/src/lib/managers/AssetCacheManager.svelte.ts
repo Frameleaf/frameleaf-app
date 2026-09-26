@@ -1,4 +1,5 @@
 import { getAssetInfo, getAssetOcr, getFaces } from '@immich/sdk';
+import { onLibraryAccessChange } from '$lib/frameleaf/library-access';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 
@@ -6,6 +7,8 @@ const defaultSerializer = <K>(params: K) => JSON.stringify(params);
 
 class AsyncCache<K, V> {
   #cache = new Map<string, V>();
+  #generation = 0;
+  #keyGenerations = new Map<string, number>();
 
   constructor(private fetcher: (params: K) => Promise<V>) {}
 
@@ -17,7 +20,20 @@ class AsyncCache<K, V> {
       return cached;
     }
 
-    const value = await this.fetcher(params);
+    const generation = this.#generation;
+    const keyGeneration = this.#keyGenerations.get(cacheKey);
+    let value: V;
+    try {
+      value = await this.fetcher(params);
+    } catch (error) {
+      if (generation !== this.#generation || keyGeneration !== this.#keyGenerations.get(cacheKey)) {
+        throw new DOMException('Asset cache invalidated', 'AbortError');
+      }
+      throw error;
+    }
+    if (generation !== this.#generation || keyGeneration !== this.#keyGenerations.get(cacheKey)) {
+      throw new DOMException('Asset cache invalidated', 'AbortError');
+    }
     if (value && updateCache) {
       this.#cache.set(cacheKey, value);
     }
@@ -28,9 +44,15 @@ class AsyncCache<K, V> {
   clearKey(params: K) {
     const cacheKey = defaultSerializer(params);
     this.#cache.delete(cacheKey);
+    this.#keyGenerations.set(cacheKey, (this.#keyGenerations.get(cacheKey) ?? 0) + 1);
   }
 
-  clear() {
+  /** `revoke` also rejects fetches still in flight: their answers belong to the old access boundary. */
+  clear(revoke = false) {
+    if (revoke) {
+      this.#generation++;
+      this.#keyGenerations.clear();
+    }
     this.#cache.clear();
   }
 }
@@ -41,6 +63,7 @@ class AssetCacheManager {
   #faceCache = new AsyncCache(getFaces);
 
   constructor() {
+    onLibraryAccessChange(() => this.revoke());
     eventManager.on({
       AssetEditsApplied: (assetId) => {
         this.invalidateAsset(assetId);
@@ -82,10 +105,18 @@ class AssetCacheManager {
     this.#faceCache.clear();
   }
 
+  /** Drops cached answers; fetches in flight still resolve (a data refresh, not an access change). */
   invalidate() {
     this.clearAssetCache();
     this.clearOcrCache();
     this.clearFaceCache();
+  }
+
+  /** An access boundary (lock, account switch): drops cached answers and rejects fetches in flight. */
+  revoke() {
+    this.#assetCache.clear(true);
+    this.#ocrCache.clear(true);
+    this.#faceCache.clear(true);
   }
 }
 

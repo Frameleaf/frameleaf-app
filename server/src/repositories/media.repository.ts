@@ -13,10 +13,12 @@ import type {
   GenerateThumbnailOptions,
   ImageDimensions,
   ProbeOptions,
+  RawImageInfo,
   TranscodeCommand,
   VideoInfo,
   VideoPacketInfo,
 } from 'src/types.js';
+import type { DevelopDetailPlan, DevelopGeometryPlan } from 'src/utils/develop-recipe.js';
 import { ORIENTATION_TO_SHARP_ROTATION } from 'src/constants.js';
 import { Exif } from 'src/database.js';
 import { AssetEditActionItem } from 'src/dtos/editing.dto.js';
@@ -31,11 +33,15 @@ import {
   DvSignalCompatibility,
   H264Profile,
   HevcProfile,
+  ImageFormat,
   LogLevel,
   RawExtractedFormat,
 } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { LOCATION_DELETE_ARGS } from 'src/utils/location-tags.js';
+import { parseFfprobeColorRange } from 'src/utils/media-policy.js';
 import { handlePromiseError } from 'src/utils/misc.js';
+import { tryParseRational } from 'src/utils/rational-time.js';
 import { createAffineMatrix } from 'src/utils/transform.js';
 
 const probe = (input: string, options: string[]): Promise<FfprobeData> =>
@@ -131,6 +137,21 @@ export class MediaRepository {
     }
   }
 
+  /**
+   * FL-54: removes every location tag from a derived file in place. A preview extracted from a RAW keeps the
+   * camera's own EXIF, GPS included; nobody needs it in a derived image, and the fullsize file is served to
+   * partners and shared links without the original's location policy. Returns false when exiftool fails.
+   */
+  async removeLocation(path: string): Promise<boolean> {
+    try {
+      await exiftool.write(path, {}, { writeArgs: [...LOCATION_DELETE_ARGS, '-overwrite_original'] });
+      return true;
+    } catch (error: any) {
+      this.logger.warn(`Could not remove the location from ${path}: ${error.message}`);
+      return false;
+    }
+  }
+
   async copyTagGroup(tagGroup: string, source: string, target: string): Promise<boolean> {
     try {
       await exiftool.write(
@@ -183,6 +204,21 @@ export class MediaRepository {
         chromaSubsampling: options.quality >= 80 ? '4:4:4' : '4:2:0',
         progressive: options.progressive,
       })
+      .toFile(output);
+  }
+
+  /**
+   * FL-163: the copy of a photo that may leave this server for Frameleaf Cloud. The preview is decoded and
+   * written again as a JPEG; sharp keeps no EXIF, XMP or IPTC unless asked to (`keepExif`,
+   * `withMetadata`), so the capture location, camera, dates and every other tag stay here. Colours are
+   * converted to sRGB and only the sRGB profile is embedded: the preview's own ICC profile is not kept,
+   * because it could identify the device and a description model reads sRGB anyway.
+   */
+  async writeCloudUpload(input: string, output: string): Promise<void> {
+    await sharp(input, { failOn: 'error', limitInputPixels: false })
+      .rotate()
+      .withIccProfile('srgb')
+      .jpeg({ quality: 90, chromaSubsampling: '4:4:4', progressive: false })
       .toFile(output);
   }
 
@@ -258,6 +294,136 @@ export class MediaRepository {
     return pipeline;
   }
 
+  /**
+   * Still-image develop geometry (FL-113): quarter turns and flips, then an arbitrary
+   * straighten with the frame scaled back to cover its own bounds, then the recipe crop.
+   * Runs as staged pipelines because sharp allows one rotation and two extracts per pipeline.
+   * Input and output are 8-bit interleaved raw buffers; the original file is only ever read.
+   */
+  async renderDevelopGeometry(
+    input: Buffer,
+    raw: RawImageInfo,
+    plan: DevelopGeometryPlan,
+  ): Promise<{ data: Buffer; info: RawImageInfo }> {
+    let current = await sharp(input, { raw, limitInputPixels: false, unlimited: true })
+      .rotate(plan.rotation)
+      .flop(plan.flipHorizontal)
+      .flip(plan.flipVertical)
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+
+    const { width, height } = plan.oriented;
+    if (plan.straighten !== 0) {
+      const theta = (Math.abs(plan.straighten) * Math.PI) / 180;
+      const cos = Math.cos(theta);
+      const sin = Math.sin(theta);
+      // The rotated bitmap grows to these bounds; the centre window of the original size divided
+      // by the cover scale, resized back up, is the straightened frame the client previews.
+      const scale = Math.max((width * cos + height * sin) / width, (width * sin + height * cos) / height);
+      const windowWidth = Math.max(1, Math.round(width / scale));
+      const windowHeight = Math.max(1, Math.round(height / scale));
+      const rotated = await sharp(current.data, {
+        raw: this.toRawInfo(current.info),
+        limitInputPixels: false,
+        unlimited: true,
+      })
+        .rotate(plan.straighten, { background: { r: 0, g: 0, b: 0, alpha: 1 } })
+        .raw()
+        .toBuffer({ resolveWithObject: true });
+      current = await sharp(rotated.data, {
+        raw: this.toRawInfo(rotated.info),
+        limitInputPixels: false,
+        unlimited: true,
+      })
+        .extract({
+          left: Math.max(0, Math.round((rotated.info.width - windowWidth) / 2)),
+          top: Math.max(0, Math.round((rotated.info.height - windowHeight) / 2)),
+          width: Math.min(windowWidth, rotated.info.width),
+          height: Math.min(windowHeight, rotated.info.height),
+        })
+        .resize(width, height, { fit: 'fill' })
+        .raw()
+        .toBuffer({ resolveWithObject: true });
+    }
+
+    const { extract } = plan;
+    if (extract.left !== 0 || extract.top !== 0 || extract.width !== width || extract.height !== height) {
+      current = await sharp(current.data, {
+        raw: this.toRawInfo(current.info),
+        limitInputPixels: false,
+        unlimited: true,
+      })
+        .extract({
+          left: Math.min(extract.left, Math.max(0, current.info.width - 1)),
+          top: Math.min(extract.top, Math.max(0, current.info.height - 1)),
+          width: Math.min(extract.width, current.info.width - extract.left),
+          height: Math.min(extract.height, current.info.height - extract.top),
+        })
+        .raw()
+        .toBuffer({ resolveWithObject: true });
+    }
+
+    return { data: current.data, info: this.toRawInfo(current.info) };
+  }
+
+  /**
+   * Detail stages after the tone pass (noise reduction, clarity, sharpening) and encoding of
+   * one develop output. `size` bounds the longest edge for a preview and is omitted for the
+   * edited master, which keeps the source resolution. Writes to `output` when given, otherwise
+   * returns the encoded bytes.
+   */
+  async encodeDevelopOutput(
+    input: Buffer,
+    raw: RawImageInfo,
+    options: {
+      detail: DevelopDetailPlan;
+      colorspace: string;
+      format: ImageFormat;
+      quality: number;
+      progressive?: boolean;
+      size?: number;
+    },
+    output?: string,
+  ): Promise<Buffer | undefined> {
+    let data = input;
+    let info = raw;
+    const open = () => sharp(data, { raw: info, limitInputPixels: false, unlimited: true });
+    const { detail } = options;
+    if (detail.median > 0 || detail.clarity) {
+      let pipeline = open();
+      if (detail.median > 0) {
+        pipeline = pipeline.median(detail.median);
+      }
+      if (detail.clarity) {
+        pipeline = pipeline.sharpen(detail.clarity);
+      }
+      const result = await pipeline.raw().toBuffer({ resolveWithObject: true });
+      data = result.data;
+      info = this.toRawInfo(result.info);
+    }
+    let pipeline = open();
+    if (detail.sharpen) {
+      pipeline = pipeline.sharpen(detail.sharpen);
+    }
+    if (options.size !== undefined) {
+      pipeline = pipeline.resize(options.size, options.size, { fit: 'inside', withoutEnlargement: true });
+    }
+    pipeline = pipeline.withIccProfile(options.colorspace).toFormat(options.format, {
+      quality: options.quality,
+      chromaSubsampling: options.quality >= 80 ? '4:4:4' : '4:2:0',
+      progressive: options.progressive ?? false,
+    });
+    if (output) {
+      await pipeline.toFile(output);
+      return;
+    }
+    return pipeline.toBuffer();
+  }
+
+  private toRawInfo(info: { width: number; height: number; channels: number }): RawImageInfo {
+    return { width: info.width, height: info.height, channels: info.channels as RawImageInfo['channels'] };
+  }
+
   async generateThumbhash(input: string | Buffer, options: GenerateThumbhashOptions): Promise<Buffer> {
     const { rgbaToThumbHash } = await import('thumbhash');
 
@@ -300,12 +466,17 @@ export class MediaRepository {
             frameCount: this.parseInt(options?.countFrames ? stream.nb_read_packets : stream.nb_frames),
             frameRate: this.parseFrameRate(stream.avg_frame_rate ?? stream.r_frame_rate),
             timeBase: this.parseRational(stream.time_base)?.den ?? null,
+            // FL-93: the same two values kept exactly, so nothing downstream has to
+            // reconstruct 30000/1001 or 1/30000 out of a float.
+            timeBaseRational: tryParseRational(stream.time_base),
+            frameRateRational: tryParseRational(stream.avg_frame_rate ?? stream.r_frame_rate),
             rotation: this.parseInt(stream.rotation),
             bitrate: this.parseInt(stream.bit_rate),
             pixelFormat: stream.pix_fmt || 'yuv420p',
             colorPrimaries: this.parseEnum(ColorPrimaries, stream.color_primaries) ?? ColorPrimaries.Unknown,
             colorMatrix: this.parseEnum(ColorMatrix, stream.color_space) ?? ColorMatrix.Unknown,
             colorTransfer: this.parseEnum(ColorTransfer, stream.color_transfer) ?? ColorTransfer.Unknown,
+            colorRange: parseFfprobeColorRange(stream.color_range),
             dvProfile: this.parseOptionalInt(stream.dv_profile) as DvProfile | null,
             dvLevel: this.parseOptionalInt(stream.dv_level),
             dvBlSignalCompatibilityId: this.parseOptionalInt(
@@ -322,6 +493,11 @@ export class MediaRepository {
           profile:
             stream.codec_name === 'aac' ? this.parseEnum(AacProfile, stream.profile as string | undefined) : null,
           bitrate: this.parseInt(stream.bit_rate),
+          // FL-102: the channel layout and sample rate are facts about the source, kept so a
+          // render can preserve them instead of falling back to a stereo downmix.
+          channels: this.parseOptionalInt(stream.channels),
+          channelLayout: stream.channel_layout ?? null,
+          sampleRate: this.parseOptionalInt(stream.sample_rate),
         })),
     };
   }
@@ -352,6 +528,14 @@ export class MediaRepository {
     const keyframeAccDuration: number[] = [];
     const keyframeOwnDuration: number[] = [];
     const postDiscard: { pts: number; duration: number }[] = [];
+    // FL-93: the stream's own origin and cadence, observed rather than assumed. `startPts` is
+    // the smallest presentation timestamp seen — packets arrive in decode order, so a B-frame
+    // reorder means the first line is not necessarily the earliest picture. `firstDuration`
+    // seeds the variable-frame-rate check: any packet whose duration differs makes the source
+    // genuinely VFR, and a VFR source must never be coerced onto a nominal fps.
+    let startPts: number | null = null;
+    let firstDuration: number | null = null;
+    let variableFrameRate = false;
     const parseLine = (line: string) => {
       if (!line) {
         return;
@@ -361,6 +545,14 @@ export class MediaRepository {
       const duration = Number.parseInt(durationStr);
       if (Number.isNaN(pts) || Number.isNaN(duration) || !flags) {
         return;
+      }
+      if (startPts === null || pts < startPts) {
+        startPts = pts;
+      }
+      if (firstDuration === null) {
+        firstDuration = duration;
+      } else if (duration !== firstDuration) {
+        variableFrameRate = true;
       }
       // Discarded packets don't contribute to packet count, but still contribute to video duration
       totalDuration += duration;
@@ -409,6 +601,8 @@ export class MediaRepository {
           keyframePts,
           keyframeAccDuration,
           keyframeOwnDuration,
+          startPts: startPts ?? 0,
+          variableFrameRate,
         });
       });
     });
@@ -455,6 +649,12 @@ export class MediaRepository {
   async getImageMetadata(input: string | Buffer): Promise<ImageDimensions & { isTransparent: boolean }> {
     const { width = 0, height = 0, hasAlpha = false } = await sharp(input, { unlimited: true }).metadata();
     return { width, height, isTransparent: hasAlpha };
+  }
+
+  /** Width and height as the image is displayed, after its EXIF orientation (FL-64 imported versions). */
+  async getOrientedSize(input: string): Promise<ImageDimensions> {
+    const { width = 0, height = 0, orientation } = await sharp(input, { unlimited: true }).metadata();
+    return orientation && orientation >= 5 ? { width: height, height: width } : { width, height };
   }
 
   async scoreThumbnailCandidate(input: string): Promise<number> {

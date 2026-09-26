@@ -40,7 +40,27 @@ const knownFields = new Set([
   "description",
   "ocr",
   "originalPath",
+  "descriptionStatus",
+  "sensitiveStatus",
 ]);
+export const descriptionStatuses = ["generated", "manual", "missing", "failed"];
+export const sensitiveStatuses = ["reviewed", "needs-review", "overridden"];
+const statusFields = {
+  descriptionStatus: descriptionStatuses,
+  sensitiveStatus: sensitiveStatuses,
+};
+/** Derived from the asset's enrichment record; a description without one counts as manual. */
+export function descriptionStatus(asset) {
+  const status = fold(asset?.enrichment?.description?.status);
+  if (status === "failed") return "failed";
+  if (!string(asset?.description).trim()) return "missing";
+  return status === "generated" ? "generated" : "manual";
+}
+export function sensitiveStatus(asset) {
+  const status = fold(asset?.enrichment?.sensitive?.status).replace(/_/g, "-");
+  if (sensitiveStatuses.includes(status)) return status;
+  return record(asset?.enrichment?.sensitive) ? "reviewed" : null;
+}
 const arrayFields = new Set(["personIds", "tagIds", "albumIds"]);
 const dateFields = new Set(["takenAt", "createdAt", "updatedAt"]);
 const booleanFields = new Set([
@@ -55,6 +75,8 @@ const catalog = (items) =>
     : [];
 const labelFor = (items, id) => {
   const item = catalog(items).find((item) => item.id === id);
+  if (item && "name" in item && !item.name?.trim() && !item.label)
+    return "Unnamed person";
   return item?.name || item?.label || String(id);
 };
 const idFor = (items, value) =>
@@ -187,6 +209,8 @@ function fieldValue(asset, field, options) {
   if (field === "hasAlbums")
     return idsFor(asset, "albumIds", options).length > 0;
   if (field === "hasTags") return idsFor(asset, "tagIds", options).length > 0;
+  if (field === "descriptionStatus") return descriptionStatus(asset);
+  if (field === "sensitiveStatus") return sensitiveStatus(asset);
   if (field === "originalFileName")
     return asset.originalFileName ?? asset.name ?? "";
   if (["make", "model", "lensModel"].includes(field))
@@ -438,6 +462,8 @@ const facetFields = [
   "hasPeople",
   "hasAlbums",
   "hasTags",
+  "descriptionStatus",
+  "sensitiveStatus",
 ];
 const fieldNames = {
   personIds: "People",
@@ -457,6 +483,21 @@ const fieldNames = {
   ocr: "OCR text",
   originalPath: "Full path",
   visibility: "Visibility",
+  descriptionStatus: "Description",
+  sensitiveStatus: "Sensitivity",
+};
+export const statusLabels = {
+  descriptionStatus: {
+    generated: "Generated",
+    manual: "Written manually",
+    missing: "No description",
+    failed: "Generation failed",
+  },
+  sensitiveStatus: {
+    reviewed: "Reviewed",
+    "needs-review": "Needs review",
+    overridden: "Overridden",
+  },
 };
 function valueLabel(field, value, options) {
   if (field === "personIds") return labelFor(options.people, value);
@@ -484,6 +525,8 @@ function valueLabel(field, value, options) {
     };
     return labels[field][value === true || value === "true" ? 1 : 0];
   }
+  if (statusFields[field])
+    return statusLabels[field][value] || (value === null ? "Not set" : String(value));
   return value === null ? "Not set" : String(value);
 }
 
@@ -556,6 +599,9 @@ export function sampleFacets(scopedAssets, query = {}, options = {}) {
       if (booleanFields.has(field))
         for (const value of ["true", "false"])
           if (!counts.has(value)) counts.set(value, 0);
+      if (statusFields[field])
+        for (const value of statusFields[field])
+          if (!counts.has(value)) counts.set(value, 0);
       const values = [...counts].map(([value, count]) => ({
         value,
         label: valueLabel(field, value, options),
@@ -567,7 +613,10 @@ export function sampleFacets(scopedAssets, query = {}, options = {}) {
           Number(b.selected) - Number(a.selected) ||
           (field === "rating"
             ? Number(b.value) - Number(a.value)
-            : a.label.localeCompare(b.label, undefined, { numeric: true })),
+            : statusFields[field]
+              ? statusFields[field].indexOf(a.value) -
+                statusFields[field].indexOf(b.value)
+              : a.label.localeCompare(b.label, undefined, { numeric: true })),
       );
       return [field, values];
     }),
@@ -907,4 +956,47 @@ export function resolveSamplePhrase(text, options = {}) {
       ? "Matched explicit sample names, places, media words and UTC calendar phrases. Remaining words search sample metadata; no AI or server request was used."
       : "No known sample phrase was resolved. The original text remains available for local metadata matching.",
   };
+}
+
+/**
+ * Slice a result list for "Load more" style paging. `items` is the requested
+ * page; `visible` is everything through that page. Out-of-range pages clamp.
+ */
+export function paginate(items, page = 1, pageSize = 60) {
+  const list = Array.isArray(items) ? items : [];
+  const size =
+    Number.isInteger(pageSize) && pageSize > 0 ? Math.min(pageSize, 1000) : 60;
+  const pageCount = Math.max(1, Math.ceil(list.length / size));
+  const current = Math.min(
+    Math.max(1, Number.isInteger(page) ? page : 1),
+    pageCount,
+  );
+  const start = (current - 1) * size;
+  const end = Math.min(list.length, current * size);
+  return {
+    items: list.slice(start, end),
+    visible: list.slice(0, end),
+    page: current,
+    pageSize: size,
+    pageCount,
+    total: list.length,
+    start: list.length ? start + 1 : 0,
+    end,
+    hasMore: end < list.length,
+    remaining: list.length - end,
+  };
+}
+
+/** Human summary for a paginate() result. Cumulative wording suits "Load more". */
+export function pageSummary(pagination, options = {}) {
+  const noun = string(options.noun) || "items";
+  const singular = string(options.singular) || noun.replace(/s$/, "");
+  const total = Number.isInteger(pagination?.total) ? pagination.total : 0;
+  if (!total) return `No ${noun}`;
+  const name = total === 1 ? singular : noun;
+  const count = (value) => value.toLocaleString("en");
+  if (pagination.end >= total) return `Showing all ${count(total)} ${name}`;
+  if (options.cumulative)
+    return `Showing ${count(pagination.end)} of ${count(total)} ${name}`;
+  return `Showing ${count(pagination.start)}–${count(pagination.end)} of ${count(total)} ${name}`;
 }

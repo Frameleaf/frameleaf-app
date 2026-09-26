@@ -4,6 +4,7 @@ import { InjectKysely } from 'nestjs-kysely';
 import { AssetType, AssetVisibility } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
 import { asUuid } from 'src/utils/database.js';
+import { isNotLocked } from 'src/utils/locked.js';
 
 export type LivePhotoCandidateRow = {
   photoId: string;
@@ -11,7 +12,7 @@ export type LivePhotoCandidateRow = {
 };
 
 // A separated live photo's parts are still visible in the library (timeline or
-// archive). Hidden/locked assets are intentionally excluded.
+// archive). Hidden and locked (FL-34, the lock record) assets are intentionally excluded.
 const VISIBLE_STATES = [AssetVisibility.Timeline, AssetVisibility.Archive];
 
 // Lowercased filename with its extension stripped (e.g. `IMG_1234.HEIC` -> `img_1234`).
@@ -43,6 +44,8 @@ export class LivePhotoRepository {
       .where('video.deletedAt', 'is', null)
       .where('photo.visibility', 'in', VISIBLE_STATES)
       .where('video.visibility', 'in', VISIBLE_STATES)
+      .where(isNotLocked('photo'))
+      .where(isNotLocked('video'))
       .where((eb) =>
         eb.not(
           eb.exists(
@@ -79,6 +82,8 @@ export class LivePhotoRepository {
       .where('video.deletedAt', 'is', null)
       .where('photo.visibility', 'in', VISIBLE_STATES)
       .where('video.visibility', 'in', VISIBLE_STATES)
+      .where(isNotLocked('photo'))
+      .where(isNotLocked('video'))
       .where((eb) =>
         eb.not(
           eb.exists(

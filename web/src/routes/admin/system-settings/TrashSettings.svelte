@@ -1,23 +1,24 @@
 <script lang="ts">
-  import SettingButtonsRow from '$lib/components/shared-components/settings/SystemConfigButtonRow.svelte';
-  import SettingInputField from '$lib/components/shared-components/settings/SettingInputField.svelte';
-  import SettingSwitch from '$lib/components/shared-components/settings/SettingSwitch.svelte';
+  import SettingActions from '$lib/components/frameleaf/settings/SettingActions.svelte';
+  import SettingField from '$lib/components/frameleaf/settings/SettingField.svelte';
+  import SettingToggle from '$lib/components/frameleaf/settings/SettingToggle.svelte';
   import { SettingInputFieldType } from '$lib/constants';
+  import { requireSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
-  import { systemConfigManager } from '$lib/managers/system-config-manager.svelte';
   import { t } from 'svelte-i18n';
   import { fade } from 'svelte/transition';
 
   const disabled = $derived(featureFlagsManager.value.configFile);
-  const config = $derived(systemConfigManager.value);
-  let configToEdit = $state(systemConfigManager.cloneValue());
+  const settingsDraft = requireSystemConfigDraft();
+  const configToEdit = $derived(settingsDraft.draft);
+  const config = $derived(settingsDraft.baseline);
 </script>
 
 <div>
   <div in:fade={{ duration: 500 }}>
     <form autocomplete="off" onsubmit={(event) => event.preventDefault()}>
-      <div class="ms-4 mt-4 flex flex-col gap-4">
-        <SettingSwitch
+      <div class="flex flex-col gap-4">
+        <SettingToggle
           title={$t('admin.trash_enabled_description')}
           {disabled}
           bind:checked={configToEdit.trash.enabled}
@@ -25,7 +26,7 @@
 
         <hr />
 
-        <SettingInputField
+        <SettingField
           inputType={SettingInputFieldType.NUMBER}
           label={$t('admin.trash_number_of_days')}
           description={$t('admin.trash_number_of_days_description')}
@@ -35,7 +36,7 @@
           isEdited={configToEdit.trash.days !== config.trash.days}
         />
 
-        <SettingButtonsRow bind:configToEdit keys={['trash']} {disabled} />
+        <SettingActions keys={['trash']} {disabled} />
       </div>
     </form>
   </div>

@@ -1,7 +1,14 @@
 <script lang="ts">
+  /**
+   * Setting a PIN for the first time (FL-76). Entry uses the shared Frameleaf `PinCells`
+   * control so it matches the sign-in PIN prompt and the Locked unlock dialog, which both
+   * render this form when the account has no PIN yet. `setupPinCode` hashes the code server
+   * side; the digits are cleared here as soon as it returns.
+   */
+  import PinCells from '$lib/components/frameleaf/PinCells.svelte';
   import { handleError } from '$lib/utils/handle-error';
   import { setupPinCode } from '@immich/sdk';
-  import { Button, Field, Heading, PinInput, toastManager } from '@immich/ui';
+  import { Button, Field, Heading, toastManager } from '@immich/ui';
   import { t } from 'svelte-i18n';
 
   interface Props {
@@ -30,6 +37,8 @@
       resetForm();
     } catch (error) {
       handleError(error, $t('unable_to_setup_pin_code'));
+      // A rejected code never lingers client side.
+      resetForm();
     } finally {
       isLoading = false;
     }
@@ -47,10 +56,15 @@
       <Heading>{$t('setup_pin_code')}</Heading>
     {/if}
     <Field label={$t('new_pin_code')}>
-      <PinInput bind:value={newPinCode} />
+      <PinCells bind:value={newPinCode} label={$t('new_pin_code')} disabled={isLoading} />
     </Field>
     <Field label={$t('confirm_new_pin_code')}>
-      <PinInput bind:value={confirmPinCode} />
+      <PinCells
+        bind:value={confirmPinCode}
+        label={$t('confirm_new_pin_code')}
+        error={confirmPinCode.length === 6 && newPinCode !== confirmPinCode}
+        disabled={isLoading}
+      />
     </Field>
   </div>
 

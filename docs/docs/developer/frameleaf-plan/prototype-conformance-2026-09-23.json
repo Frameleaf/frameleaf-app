@@ -1,0 +1,2797 @@
+{
+  "schemaVersion": 1,
+  "status": "audited-implementation-not-qualified",
+  "scope": "FL-83 prototype conformance: for every web action in the preservation ledger and every committed route, the September 22, 2026 prototype module that designs it, the production counterpart and the audited conformance status. A row never establishes qualification; Studio, native and GPU work carry their own gates.",
+  "auditDocument": "docs/docs/developer/frameleaf-plan/11-conformance-audit-2026-09-23.md",
+  "auditedIntegrationHead": "f603a8f1c7",
+  "reconciledIntegrationHead": "ad0616322d",
+  "statusVocabulary": [
+    "match",
+    "partial",
+    "missing",
+    "fixed",
+    "in-flight",
+    "studio-parked",
+    "retained-live-route",
+    "intentional-product-change"
+  ],
+  "counts": {
+    "webActions": 153,
+    "routes": 83,
+    "byStatus": {
+      "match": 58,
+      "partial": 11,
+      "missing": 0,
+      "fixed": 146,
+      "in-flight": 6,
+      "studio-parked": 2,
+      "retained-live-route": 8,
+      "intentional-product-change": 5
+    }
+  },
+  "webActions": [
+    {
+      "requirementId": "action:albums-organization:add-selected-existing-assets",
+      "title": "Add selected existing assets",
+      "prototype": [
+        "design/frameleaf/template/src/Collections.jsx",
+        "design/frameleaf/template/src/CollectionHeader.jsx",
+        "design/frameleaf/template/src/collections-data.mjs"
+      ],
+      "production": [
+        "web/src/lib/components/frameleaf/AlbumDirectory.svelte",
+        "web/src/lib/components/frameleaf/AlbumHeader.svelte"
+      ],
+      "status": "fixed",
+      "gaps": ["AL-11", "AL-17"],
+      "followUp": "Add photos labels and the album page in the Frameleaf shell (fixed on codex/FL-52-albums-sharing)"
+    },
+    {
+      "requirementId": "action:albums-organization:album-display-order-newest-oldest",
+      "title": "Album display order newest/oldest",
+      "prototype": [
+        "design/frameleaf/template/src/Collections.jsx",
+        "design/frameleaf/template/src/CollectionHeader.jsx",
+        "design/frameleaf/template/src/collections-data.mjs"
+      ],
+      "production": [
+        "web/src/lib/components/frameleaf/AlbumDirectory.svelte",
+        "web/src/lib/components/frameleaf/AlbumHeader.svelte"
+      ],
+      "status": "match",
+      "gaps": [],
+      "followUp": null
+    },
+    {
+      "requirementId": "action:albums-organization:album-grouping-by-owner-year-no-grouping",
+      "title": "Album grouping by owner/year/no grouping",
+      "prototype": [
+        "design/frameleaf/template/src/Collections.jsx",
+        "design/frameleaf/template/src/CollectionHeader.jsx",
+        "design/frameleaf/template/src/collections-data.mjs"
+      ],
+      "production": [
+        "web/src/lib/components/frameleaf/AlbumDirectory.svelte",
+        "web/src/lib/components/frameleaf/AlbumHeader.svelte"
+      ],
+      "status": "intentional-product-change",
+      "gaps": [],
+      "followUp": "The Albums page groups by collection shelves (interaction requirements, Sept 22); owner/year grouping is retired"
+    },
+    {
+      "requirementId": "action:albums-organization:album-search-owned-shared-all-filtering",
+      "title": "Album search; owned/shared/all filtering",
+      "prototype": [
+        "design/frameleaf/template/src/Collections.jsx",
+        "design/frameleaf/template/src/CollectionHeader.jsx",
+        "design/frameleaf/template/src/collections-data.mjs"
+      ],
+      "production": [
+        "web/src/lib/components/frameleaf/AlbumDirectory.svelte",
+        "web/src/lib/components/frameleaf/AlbumHeader.svelte"
+      ],
+      "status": "match",
+      "gaps": [],
+      "followUp": null
+    },
+    {
+      "requirementId": "action:albums-organization:album-slideshow-download-cast",
+      "title": "Album slideshow/download/cast",
+      "prototype": [
+        "design/frameleaf/template/src/Collections.jsx",
+        "design/frameleaf/template/src/CollectionHeader.jsx",
+        "design/frameleaf/template/src/collections-data.mjs"
+      ],
+      "production": [
+        "web/src/lib/components/frameleaf/AlbumDirectory.svelte",
+        "web/src/lib/components/frameleaf/AlbumHeader.svelte"
+      ],
+      "status": "match",
+      "gaps": [],
+      "followUp": null
+    },
+    {
+      "requirementId": "action:albums-organization:album-sort-by-title-count-modified-created-recent-oldest",
+      "title": "Album sort by title/count/modified/created/recent/oldest",
+      "prototype": [
+        "design/frameleaf/template/src/Collections.jsx",
+        "design/frameleaf/template/src/CollectionHeader.jsx",
+        "design/frameleaf/template/src/collections-data.mjs"
+      ],
+      "production": [
+        "web/src/lib/components/frameleaf/AlbumDirectory.svelte",
+        "web/src/lib/components/frameleaf/AlbumHeader.svelte"
+      ],
+      "status": "match",
+      "gaps": [],
+      "followUp": null
+    },
+    {
+      "requirementId": "action:albums-organization:browse-albums-as-covers-list",
+      "title": "Browse albums as covers/list",
+      "prototype": [
+        "design/frameleaf/template/src/Collections.jsx",
+        "design/frameleaf/template/src/CollectionHeader.jsx",
+        "design/frameleaf/template/src/collections-data.mjs"
+      ],
+      "production": [
+        "web/src/lib/components/frameleaf/AlbumDirectory.svelte",
+        "web/src/lib/components/frameleaf/AlbumHeader.svelte"
+      ],
+      "status": "match",
+      "gaps": [],
+      "followUp": null
+    },
+    {
+      "requirementId": "action:albums-organization:change-collaborator-editor-viewer-role-remove-collaborator-leave-shared-album",
+      "title": "Change collaborator Editor/Viewer role; remove collaborator; leave shared album",
+      "prototype": [
+        "design/frameleaf/template/src/Collections.jsx",
+        "design/frameleaf/template/src/CollectionHeader.jsx",
+        "design/frameleaf/template/src/collections-data.mjs"
+      ],
+      "production": [
+        "web/src/lib/components/frameleaf/AlbumDirectory.svelte",
+        "web/src/lib/components/frameleaf/AlbumHeader.svelte"
+      ],
+      "status": "fixed",
+      "gaps": ["AL-3", "AL-5", "AL-15", "AL-44"],
+      "followUp": "Frameleaf share dialog everywhere, leave confirmation, invite search, role labels (fixed on codex/FL-52-albums-sharing)"
+    },
+    {
+      "requirementId": "action:albums-organization:create-album",
+      "title": "Create album",
+      "prototype": [
+        "design/frameleaf/template/src/Collections.jsx",
+        "design/frameleaf/template/src/CollectionHeader.jsx",
+        "design/frameleaf/template/src/collections-data.mjs"
+      ],
+      "production": [
+        "web/src/lib/components/frameleaf/AlbumDirectory.svelte",
+        "web/src/lib/components/frameleaf/AlbumHeader.svelte"
+      ],
+      "status": "fixed",
+      "gaps": ["AL-8"],
+      "followUp": "Stay on the page after create (fixed); AL-8"
+    },
+    {
+      "requirementId": "action:albums-organization:create-manage-album-public-links",
+      "title": "Create/manage album public links",
+      "prototype": [
+        "design/frameleaf/template/src/Collections.jsx",
+        "design/frameleaf/template/src/CollectionHeader.jsx",
+        "design/frameleaf/template/src/collections-data.mjs"
+      ],
+      "production": [
+        "web/src/lib/components/frameleaf/AlbumDirectory.svelte",
+        "web/src/lib/components/frameleaf/AlbumHeader.svelte"
+      ],
+      "status": "fixed",
+      "gaps": ["AL-7", "AL-24", "AL-33"],
+      "followUp": "Create link menu item, Link ready step, Frameleaf form and share sheet from the viewer (fixed on codex/FL-52-albums-sharing)"
+    },
+    {
+      "requirementId": "action:albums-organization:custom-smart-album-filter-preset-snapshot",
+      "title": "Custom smart album / filter preset / snapshot",
+      "prototype": [
+        "design/frameleaf/template/src/Collections.jsx",
+        "design/frameleaf/template/src/CollectionHeader.jsx",
+        "design/frameleaf/template/src/collections-data.mjs"
+      ],
+      "production": [
+        "web/src/lib/components/frameleaf/AlbumDirectory.svelte",
+        "web/src/lib/components/frameleaf/AlbumHeader.svelte"
+      ],
+      "status": "partial",
+      "gaps": ["AL-1", "AL-6", "AL-12", "S-14"],
+      "followUp": "Per-album rules shipped with FL-60 (AL-1, AL-12) and saved presets in the rail (S-14); AL-6 remains"
+    },
+    {
+      "requirementId": "action:albums-organization:delete-album-while-retaining-assets",
+      "title": "Delete album while retaining assets",
+      "prototype": [
+        "design/frameleaf/template/src/Collections.jsx",
+        "design/frameleaf/template/src/CollectionHeader.jsx",
+        "design/frameleaf/template/src/collections-data.mjs"
+      ],
+      "production": [
+        "web/src/lib/components/frameleaf/AlbumDirectory.svelte",
+        "web/src/lib/components/frameleaf/AlbumHeader.svelte"
+      ],
+      "status": "fixed",
+      "gaps": ["AL-4"],
+      "followUp": "Frameleaf delete dialog everywhere; legacy prompt path removed"
+    },
+    {
+      "requirementId": "action:albums-organization:edit-album-title-and-description",
+      "title": "Edit album title and description",
+      "prototype": [
+        "design/frameleaf/template/src/Collections.jsx",
+        "design/frameleaf/template/src/CollectionHeader.jsx",
+        "design/frameleaf/template/src/collections-data.mjs"
+      ],
+      "production": [
+        "web/src/lib/components/frameleaf/AlbumDirectory.svelte",
+        "web/src/lib/components/frameleaf/AlbumHeader.svelte"
+      ],
+      "status": "fixed",
+      "gaps": ["AL-2"],
+      "followUp": "Frameleaf edit dialog with the full icon chooser; AlbumEditModal retired (fixed on codex/FL-52-albums-sharing)"
+    },
+    {
+      "requirementId": "action:albums-organization:nested-albums-expand-collapse-all-top-level-all-views",
+      "title": "Nested albums: expand/collapse all, top-level/all views",
+      "prototype": [
+        "design/frameleaf/template/src/Collections.jsx",
+        "design/frameleaf/template/src/CollectionHeader.jsx",
+        "design/frameleaf/template/src/collections-data.mjs"
+      ],
+      "production": [
+        "web/src/lib/components/frameleaf/LibraryRail.svelte",
+        "web/src/lib/components/frameleaf/CollectionShelf.svelte"
+      ],
+      "status": "match",
+      "gaps": [],
+      "followUp": null
+    },
+    {
+      "requirementId": "action:albums-organization:real-folders-and-external-library-path-browsing",
+      "title": "Real folders and external-library path browsing",
+      "prototype": ["design/frameleaf/template/src/Folders.jsx"],
+      "production": ["web/src/lib/components/frameleaf/FolderBrowserPanel.svelte"],
+      "status": "fixed",
+      "gaps": ["FD-1", "FD-2", "FD-3", "FD-4", "FD-5", "FD-6"],
+      "followUp": "Folders browser: storage-folder tree, sort, counts and sizes, browsable files with the viewer and bulk actions (fixed on codex/FL-46-complete-browsers)"
+    },
+    {
+      "requirementId": "action:albums-organization:remove-selected-assets-from-album",
+      "title": "Remove selected assets from album",
+      "prototype": [
+        "design/frameleaf/template/src/Collections.jsx",
+        "design/frameleaf/template/src/CollectionHeader.jsx",
+        "design/frameleaf/template/src/collections-data.mjs"
+      ],
+      "production": ["web/src/lib/frameleaf/bulk-actions.ts"],
+      "status": "match",
+      "gaps": [],
+      "followUp": null
+    },
+    {
+      "requirementId": "action:albums-organization:select-change-album-cover",
+      "title": "Select/change album cover",
+      "prototype": [
+        "design/frameleaf/template/src/Collections.jsx",
+        "design/frameleaf/template/src/CollectionHeader.jsx",
+        "design/frameleaf/template/src/collections-data.mjs"
+      ],
+      "production": [
+        "web/src/lib/components/frameleaf/AlbumDirectory.svelte",
+        "web/src/lib/components/frameleaf/AlbumHeader.svelte"
+      ],
+      "status": "partial",
+      "gaps": ["AL-13"],
+      "followUp": "\"Always use the newest item\" option in the cover dialog"
+    },
+    {
+      "requirementId": "action:albums-organization:share-album-invite-people",
+      "title": "Share album; invite people",
+      "prototype": [
+        "design/frameleaf/template/src/Collections.jsx",
+        "design/frameleaf/template/src/CollectionHeader.jsx",
+        "design/frameleaf/template/src/collections-data.mjs"
+      ],
+      "production": [
+        "web/src/lib/components/frameleaf/AlbumDirectory.svelte",
+        "web/src/lib/components/frameleaf/AlbumHeader.svelte"
+      ],
+      "status": "fixed",
+      "gaps": ["AL-3", "AL-15"],
+      "followUp": "Invite search field + listbox; Frameleaf share dialog from the Albums page (fixed on codex/FL-52-albums-sharing)"
+    },
+    {
+      "requirementId": "action:albums-organization:show-hide-asset-owner-badges",
+      "title": "Show/hide asset owner badges",
+      "prototype": [
+        "design/frameleaf/template/src/Collections.jsx",
+        "design/frameleaf/template/src/CollectionHeader.jsx",
+        "design/frameleaf/template/src/collections-data.mjs"
+      ],
+      "production": [
+        "web/src/lib/components/frameleaf/AlbumDirectory.svelte",
+        "web/src/lib/components/frameleaf/AlbumHeader.svelte"
+      ],
+      "status": "match",
+      "gaps": [],
+      "followUp": null
+    },
+    {
+      "requirementId": "action:albums-organization:toggle-comments-likes-show-activity",
+      "title": "Toggle comments/likes; show activity",
+      "prototype": [
+        "design/frameleaf/template/src/Collections.jsx",
+        "design/frameleaf/template/src/CollectionHeader.jsx",
+        "design/frameleaf/template/src/collections-data.mjs"
+      ],
+      "production": ["web/src/lib/components/frameleaf/ActivityPanel.svelte"],
+      "status": "fixed",
+      "gaps": ["AL-14", "AL-18"],
+      "followUp": "Activity control always shown; Frameleaf per-asset activity panel (fixed on codex/FL-52-albums-sharing)"
+    },
+    {
+      "requirementId": "action:albums-organization:upload-from-computer-into-album",
+      "title": "Upload from computer into album",
+      "prototype": [
+        "design/frameleaf/template/src/Collections.jsx",
+        "design/frameleaf/template/src/CollectionHeader.jsx",
+        "design/frameleaf/template/src/collections-data.mjs"
+      ],
+      "production": ["web/src/lib/components/frameleaf/UploadMenuButton.svelte"],
+      "status": "fixed",
+      "gaps": ["AL-11"],
+      "followUp": "Add photos menu labels"
+    },
+    {
+      "requirementId": "action:info-people:accept-detection-result-mark-safe-sensitive-from-evidence-panel",
+      "title": "Accept detection result; mark safe/sensitive from evidence panel",
+      "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
+      "production": ["web/src/lib/components/asset-viewer/DetailPanelImageEnrichment.svelte"],
+      "status": "fixed",
+      "gaps": ["V-2", "V-10"],
+      "followUp": "Enrichment card for owners (fix-viewer); its Accept and Clear tags stay as preserved source actions, recorded deviations (codex/FL-35-complete-viewer)"
+    },
+    {
+      "requirementId": "action:info-people:add-a-person-draw-bounding-box-search-existing-person-confirm",
+      "title": "Add a person: draw bounding box, search existing person, confirm",
+      "prototype": ["design/frameleaf/template/src/FaceTagger.jsx", "design/frameleaf/template/src/face-tags.mjs"],
+      "production": ["web/src/lib/components/frameleaf/FaceTagger.svelte"],
+      "status": "fixed",
+      "gaps": ["V-28"],
+      "followUp": "Draw-to-tag, numeric inputs, multi-face session, Undo, Remove face, batch Save face tags and the stale-revision banner (FL-38); detected faces move and resize through the revision-checked PATCH /faces/:id, and every correction is kept in the person's correction history (FL-57)"
+    },
+    {
+      "requirementId": "action:info-people:add-edit-location",
+      "title": "Add/edit location",
+      "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
+      "production": [
+        "web/src/lib/components/asset-viewer/DetailPanelLocation.svelte",
+        "web/src/lib/components/frameleaf/ViewerLocationDialog.svelte"
+      ],
+      "status": "fixed",
+      "gaps": ["V-24"],
+      "followUp": "Edit location dialog with City / State or region / Country, coordinates and a MapLibre pin; typed place names are kept over geocoding (codex/FL-35-complete-viewer)"
+    },
+    {
+      "requirementId": "action:info-people:add-remove-tags",
+      "title": "Add/remove tags",
+      "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
+      "production": ["web/src/lib/components/asset-viewer/DetailPanelTags.svelte"],
+      "status": "fixed",
+      "gaps": ["V-25"],
+      "followUp": "Inline Add a tag combobox with Create and No tags yet.; T opens it (codex/FL-35-complete-viewer)"
+    },
+    {
+      "requirementId": "action:info-people:camera-lens-location-search-shortcuts",
+      "title": "Camera/lens/location search shortcuts",
+      "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
+      "production": ["web/src/lib/components/frameleaf/ViewerDetailRows.svelte"],
+      "status": "match",
+      "gaps": [],
+      "followUp": null
+    },
+    {
+      "requirementId": "action:info-people:clear-generated-description",
+      "title": "Clear generated description",
+      "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
+      "production": ["web/src/lib/components/asset-viewer/DetailPanelImageEnrichment.svelte"],
+      "status": "match",
+      "gaps": [],
+      "followUp": null
+    },
+    {
+      "requirementId": "action:info-people:clear-generated-tags",
+      "title": "Clear generated tags",
+      "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
+      "production": ["web/src/lib/components/asset-viewer/DetailPanelImageEnrichment.svelte"],
+      "status": "match",
+      "gaps": [],
+      "followUp": null
+    },
+    {
+      "requirementId": "action:info-people:create-a-person-while-tagging-a-manual-face",
+      "title": "Create a person while tagging a manual face",
+      "prototype": ["design/frameleaf/template/src/FaceTagger.jsx"],
+      "production": ["web/src/lib/components/frameleaf/FaceTagger.svelte"],
+      "status": "match",
+      "gaps": [],
+      "followUp": null
+    },
+    {
+      "requirementId": "action:info-people:display-edit-faces-with-no-named-person",
+      "title": "Display/edit faces with no named person",
+      "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
+      "production": ["web/src/lib/components/frameleaf/PersonFaceActions.svelte"],
+      "status": "match",
+      "gaps": [],
+      "followUp": null
+    },
+    {
+      "requirementId": "action:info-people:edit-add-description",
+      "title": "Edit/add description",
+      "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
+      "production": ["web/src/lib/components/asset-viewer/DetailPanelDescription.svelte"],
+      "status": "fixed",
+      "gaps": ["V-19"],
+      "followUp": "Enter commits, Escape reverts, non-owner placeholder (fix-viewer)"
+    },
+    {
+      "requirementId": "action:info-people:edit-capture-date-time-timezone",
+      "title": "Edit capture date/time/timezone",
+      "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
+      "production": [
+        "web/src/lib/components/asset-viewer/DetailPanelDate.svelte",
+        "web/src/lib/components/frameleaf/ViewerDateDialog.svelte"
+      ],
+      "status": "fixed",
+      "gaps": ["V-23"],
+      "followUp": "Edit date and time dialog: date, time, Keep the current time zone, preview (codex/FL-35-complete-viewer)"
+    },
+    {
+      "requirementId": "action:info-people:edit-reassign-existing-detected-face",
+      "title": "Edit/reassign existing detected face",
+      "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
+      "production": ["web/src/lib/components/frameleaf/PersonFaceActions.svelte"],
+      "status": "match",
+      "gaps": [],
+      "followUp": null
+    },
+    {
+      "requirementId": "action:info-people:hover-focus-person-highlights-corresponding-face-box",
+      "title": "Hover/focus person highlights corresponding face box",
+      "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
+      "production": ["web/src/lib/components/asset-viewer/DetailPanelPeople.svelte"],
+      "status": "match",
+      "gaps": [],
+      "followUp": null
+    },
+    {
+      "requirementId": "action:info-people:inspect-description-detection-status-model-evidence-score-and-review",
+      "title": "Inspect description/detection status, model/evidence, score and review",
+      "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
+      "production": ["web/src/lib/components/asset-viewer/DetailPanelImageEnrichment.svelte"],
+      "status": "fixed",
+      "gaps": ["V-2"],
+      "followUp": "Card visible to owners, not only admins (fix-viewer)"
+    },
+    {
+      "requirementId": "action:info-people:open-location-in-openstreetmap",
+      "title": "Open location in OpenStreetMap",
+      "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
+      "production": ["web/src/lib/components/asset-viewer/DetailPanelLocation.svelte"],
+      "status": "match",
+      "gaps": [],
+      "followUp": null
+    },
+    {
+      "requirementId": "action:info-people:person-age-at-capture-birthday-tooltip",
+      "title": "Person age-at-capture/birthday tooltip",
+      "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
+      "production": ["web/src/lib/components/asset-viewer/DetailPanelPeople.svelte"],
+      "status": "match",
+      "gaps": [],
+      "followUp": null
+    },
+    {
+      "requirementId": "action:info-people:recognized-person-avatars-and-open-persons-media",
+      "title": "Recognized person avatars and open person's media",
+      "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
+      "production": ["web/src/lib/components/asset-viewer/DetailPanelPeople.svelte"],
+      "status": "match",
+      "gaps": [],
+      "followUp": null
+    },
+    {
+      "requirementId": "action:info-people:rerun-description-on-asset",
+      "title": "Rerun description on asset",
+      "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
+      "production": ["web/src/lib/components/asset-viewer/DetailPanelImageEnrichment.svelte"],
+      "status": "match",
+      "gaps": [],
+      "followUp": null
+    },
+    {
+      "requirementId": "action:info-people:rerun-sensitive-detection-on-asset",
+      "title": "Rerun sensitive detection on asset",
+      "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
+      "production": ["web/src/lib/components/asset-viewer/DetailPanelImageEnrichment.svelte"],
+      "status": "match",
+      "gaps": [],
+      "followUp": null
+    },
+    {
+      "requirementId": "action:info-people:select-copy-ocr-text-with-image-region-boxes",
+      "title": "Select/copy OCR text with image-region boxes",
+      "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
+      "production": ["web/src/lib/components/frameleaf/DocumentTextSection.svelte"],
+      "status": "match",
+      "gaps": [],
+      "followUp": null
+    },
+    {
+      "requirementId": "action:info-people:set-clear-rating",
+      "title": "Set/clear rating",
+      "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
+      "production": ["web/src/lib/components/asset-viewer/DetailPanelStarRating.svelte"],
+      "status": "fixed",
+      "gaps": ["V-3", "V-20"],
+      "followUp": "Rating popover in the top row; explicit Clear in the panel (codex/FL-35-complete-viewer)"
+    },
+    {
+      "requirementId": "action:info-people:show-appears-in-albums-navigate-to-album-membership",
+      "title": "Show “appears in” albums; navigate to album membership",
+      "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
+      "production": ["web/src/lib/components/asset-viewer/DetailPanel.svelte"],
+      "status": "match",
+      "gaps": [],
+      "followUp": null
+    },
+    {
+      "requirementId": "action:info-people:show-file-location-open-parent-folder",
+      "title": "Show file location; open parent folder",
+      "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
+      "production": ["web/src/lib/components/frameleaf/ViewerDetailRows.svelte"],
+      "status": "match",
+      "gaps": [],
+      "followUp": null
+    },
+    {
+      "requirementId": "action:info-people:show-filename-capture-date-dimensions-camera-lens-exposure-location",
+      "title": "Show filename, capture date, dimensions, camera/lens/exposure/location",
+      "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
+      "production": [
+        "web/src/lib/components/frameleaf/ViewerDetailRows.svelte",
+        "web/src/lib/components/frameleaf/ViewerTitle.svelte"
+      ],
+      "status": "match",
+      "gaps": [],
+      "followUp": null
+    },
+    {
+      "requirementId": "action:info-people:show-hidden-people-toggle",
+      "title": "Show hidden people toggle",
+      "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
+      "production": ["web/src/lib/components/asset-viewer/DetailPanelPeople.svelte"],
+      "status": "fixed",
+      "gaps": ["V-21"],
+      "followUp": "Text toggle \"Show hidden (n)\" and empty state (fix-viewer)"
+    },
+    {
+      "requirementId": "action:info-people:show-offline-file-availability-and-ownership-context",
+      "title": "Show offline/file availability and ownership context",
+      "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
+      "production": ["web/src/lib/components/frameleaf/ViewerOfflineBanner.svelte"],
+      "status": "fixed",
+      "gaps": ["V-27"],
+      "followUp": "Owner line for every non-owned asset; the offline banner (codex/FL-35-complete-viewer)"
+    },
+    {
+      "requirementId": "action:info-people:show-shared-by-owner-metadata",
+      "title": "Show shared-by/owner metadata",
+      "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
+      "production": ["web/src/lib/components/asset-viewer/DetailPanel.svelte"],
+      "status": "fixed",
+      "gaps": ["V-27"],
+      "followUp": "Owned by / Shared by line whenever the asset is not the viewer's (codex/FL-35-complete-viewer)"
+    },
+    {
+      "requirementId": "action:quick-edit:ai-preview-full-job-faithful-creative-local-lan-versus-runpod",
+      "title": "AI preview/full job, Faithful/Creative, local/LAN versus RunPod",
+      "prototype": ["design/frameleaf/template/src/Studio.jsx"],
+      "production": [
+        "web/src/lib/components/frameleaf/editor/RestorationPanel.svelte",
+        "web/src/lib/components/frameleaf/editor/RestorationCompare.svelte"
+      ],
+      "status": "fixed",
+      "gaps": ["R-1", "R-2", "R-3"],
+      "followUp": "Estimate Output and Cloud cost rows, 100% loupe, Use current frame and the video labels (fixed in FL-115)"
+    },
+    {
+      "requirementId": "action:quick-edit:audio-mute-gain-channel-timing-preservation",
+      "title": "Audio mute, gain, channel/timing preservation",
+      "prototype": [
+        "design/frameleaf/template/src/Editor.jsx",
+        "design/frameleaf/template/src/develop.mjs",
+        "design/frameleaf/template/src/state.mjs"
+      ],
+      "production": ["web/src/lib/components/frameleaf/editor/VideoQuickEditor.svelte"],
+      "status": "fixed",
+      "gaps": ["VE-1"],
+      "followUp": "Audio panel in the Frameleaf video editor: clip gain 0-150% (limited above 100%), mute switch, channels preserved (FL-113)"
+    },
+    {
+      "requirementId": "action:quick-edit:auto-enhance-and-stabilization",
+      "title": "Auto-enhance and stabilization",
+      "prototype": [
+        "design/frameleaf/template/src/Editor.jsx",
+        "design/frameleaf/template/src/develop.mjs",
+        "design/frameleaf/template/src/state.mjs"
+      ],
+      "production": ["web/src/lib/components/frameleaf/editor/VideoQuickEditor.svelte"],
+      "status": "fixed",
+      "gaps": ["VE-10", "VE-1"],
+      "followUp": "Enhance panel: Stabilize (edges cropped) and Auto-enhance, applied when the version is saved (FL-113)"
+    },
+    {
+      "requirementId": "action:quick-edit:brightness-contrast-white-point-highlights-shadows-black-point-saturation-warmth-tint-skin-tone-blue-tone-vignette-hdr-adjustments",
+      "title": "Brightness/contrast/white point/highlights/shadows/black point/saturation/warmth/tint/skin tone/blue tone/vignette/HDR adjustments",
+      "prototype": [
+        "design/frameleaf/template/src/Editor.jsx",
+        "design/frameleaf/template/src/develop.mjs",
+        "design/frameleaf/template/src/state.mjs"
+      ],
+      "production": [
+        "web/src/lib/components/frameleaf/editor/DevelopGroup.svelte",
+        "web/src/lib/components/frameleaf/editor/VideoQuickEditor.svelte"
+      ],
+      "status": "fixed",
+      "gaps": ["VE-4"],
+      "followUp": "Video Adjust uses the develop groups with a histogram of the current frame; the server renders the develop model (FL-113)"
+    },
+    {
+      "requirementId": "action:quick-edit:extract-frame-from-playhead",
+      "title": "Extract frame from playhead",
+      "prototype": [
+        "design/frameleaf/template/src/Editor.jsx",
+        "design/frameleaf/template/src/develop.mjs",
+        "design/frameleaf/template/src/state.mjs"
+      ],
+      "production": ["web/src/lib/components/frameleaf/editor/VideoQuickEditor.svelte"],
+      "status": "fixed",
+      "gaps": ["VE-3"],
+      "followUp": "Export frame on the transport and in More actions, saved as a new photo (FL-113)"
+    },
+    {
+      "requirementId": "action:quick-edit:fast-keyframe-trim-versus-precise-trim-with-actual-boundaries",
+      "title": "Fast keyframe trim versus precise trim with actual boundaries",
+      "prototype": [
+        "design/frameleaf/template/src/Editor.jsx",
+        "design/frameleaf/template/src/develop.mjs",
+        "design/frameleaf/template/src/state.mjs"
+      ],
+      "production": ["web/src/lib/components/frameleaf/editor/VideoQuickEditor.svelte"],
+      "status": "fixed",
+      "gaps": ["VE-7"],
+      "followUp": "Precise / Fast · keyframes trim, In/Out fields, I/O keys; a lone fast trim copies the streams (FL-113)"
+    },
+    {
+      "requirementId": "action:quick-edit:filter-effect-presets-and-strengths",
+      "title": "Filter/effect presets and strengths",
+      "prototype": [
+        "design/frameleaf/template/src/Editor.jsx",
+        "design/frameleaf/template/src/develop.mjs",
+        "design/frameleaf/template/src/state.mjs"
+      ],
+      "production": [
+        "web/src/lib/components/frameleaf/editor/PresetStrip.svelte",
+        "web/src/lib/components/frameleaf/editor/VideoQuickEditor.svelte"
+      ],
+      "status": "fixed",
+      "gaps": ["VE-5"],
+      "followUp": "Video presets through PresetStrip, with strength and the video-only B&W (FL-113)"
+    },
+    {
+      "requirementId": "action:quick-edit:numeric-trim-input-and-draggable-start-end-handles",
+      "title": "Numeric trim input and draggable start/end handles",
+      "prototype": [
+        "design/frameleaf/template/src/Editor.jsx",
+        "design/frameleaf/template/src/develop.mjs",
+        "design/frameleaf/template/src/state.mjs"
+      ],
+      "production": ["web/src/lib/components/frameleaf/editor/VideoQuickEditor.svelte"],
+      "status": "fixed",
+      "gaps": ["VE-7", "VE-1"],
+      "followUp": "Filmstrip trim handles (drag and keys) and numeric In/Out (FL-113)"
+    },
+    {
+      "requirementId": "action:quick-edit:open-close-reset-save-photo-edit",
+      "title": "Open/close/reset/save photo edit",
+      "prototype": [
+        "design/frameleaf/template/src/Editor.jsx",
+        "design/frameleaf/template/src/develop.mjs",
+        "design/frameleaf/template/src/state.mjs"
+      ],
+      "production": ["web/src/lib/components/frameleaf/editor/QuickEditor.svelte"],
+      "status": "fixed",
+      "gaps": ["E-3", "E-4"],
+      "followUp": "Discard with toast; Save version closes"
+    },
+    {
+      "requirementId": "action:quick-edit:open-full-workspace-retaining-draft-and-playhead",
+      "title": "Open full workspace retaining draft and playhead",
+      "prototype": [
+        "design/frameleaf/template/src/Editor.jsx",
+        "design/frameleaf/template/src/develop.mjs",
+        "design/frameleaf/template/src/state.mjs"
+      ],
+      "production": ["web/src/lib/components/frameleaf/editor/QuickEditor.svelte"],
+      "status": "fixed",
+      "gaps": ["E-1", "MPY-10", "ST-1"],
+      "followUp": "Open in Studio from the editor keeps the draft, its undo history and the playhead (editor-continuity, FL-113); Studio starts at that playhead in the Freecut editor and Back to quick edit returns to the same draft (ST-1, FL-88); the memory player's Make a movie opens Studio with its items (MPY-10, FL-62)"
+    },
+    {
+      "requirementId": "action:quick-edit:persistent-render-status-cancel-retry-reload-revision-supersession",
+      "title": "Persistent render status, cancel/retry/reload/revision supersession",
+      "prototype": [
+        "design/frameleaf/template/src/Editor.jsx",
+        "design/frameleaf/template/src/develop.mjs",
+        "design/frameleaf/template/src/state.mjs"
+      ],
+      "production": ["web/src/lib/frameleaf/develop-api.ts"],
+      "status": "match",
+      "gaps": [],
+      "followUp": null
+    },
+    {
+      "requirementId": "action:quick-edit:photo-crop-free-original-square-aspect-rotate-left-right-horizontal-vertical-flip",
+      "title": "Photo crop: free/original/square/aspect; rotate left/right; horizontal/vertical flip",
+      "prototype": [
+        "design/frameleaf/template/src/Editor.jsx",
+        "design/frameleaf/template/src/develop.mjs",
+        "design/frameleaf/template/src/state.mjs"
+      ],
+      "production": ["web/src/lib/components/frameleaf/editor/CropOverlay.svelte"],
+      "status": "match",
+      "gaps": [],
+      "followUp": null
+    },
+    {
+      "requirementId": "action:quick-edit:rotate-straighten-mirror-crop-coordinates-aspect",
+      "title": "Rotate, straighten, mirror, crop coordinates/aspect",
+      "prototype": [
+        "design/frameleaf/template/src/Editor.jsx",
+        "design/frameleaf/template/src/develop.mjs",
+        "design/frameleaf/template/src/state.mjs"
+      ],
+      "production": [
+        "web/src/lib/components/frameleaf/editor/CropOverlay.svelte",
+        "web/src/lib/components/frameleaf/editor/VideoQuickEditor.svelte"
+      ],
+      "status": "fixed",
+      "gaps": ["VE-6"],
+      "followUp": "Video crop chips, straighten dial, turns, flips and the draggable crop through CropOverlay (FL-113)"
+    },
+    {
+      "requirementId": "action:quick-edit:save-version-versus-export-versus-revert",
+      "title": "Save version versus Export versus Revert",
+      "prototype": [
+        "design/frameleaf/template/src/Editor.jsx",
+        "design/frameleaf/template/src/develop.mjs",
+        "design/frameleaf/template/src/state.mjs"
+      ],
+      "production": [
+        "web/src/lib/components/frameleaf/editor/QuickEditor.svelte",
+        "web/src/lib/components/frameleaf/editor/VideoQuickEditor.svelte"
+      ],
+      "status": "fixed",
+      "gaps": ["VE-11", "E-2"],
+      "followUp": "Video versions with Save version, Versions menu, export and revert (FL-39, FL-113); Versions popover (E-2)"
+    },
+    {
+      "requirementId": "action:quick-edit:text-overlay-content-position-timing-style",
+      "title": "Text overlay content/position/timing/style",
+      "prototype": [
+        "design/frameleaf/template/src/Editor.jsx",
+        "design/frameleaf/template/src/develop.mjs",
+        "design/frameleaf/template/src/state.mjs"
+      ],
+      "production": ["web/src/lib/components/frameleaf/editor/VideoQuickEditor.svelte"],
+      "status": "fixed",
+      "gaps": ["VE-9"],
+      "followUp": "Up to 20 overlays with grid position, timing, size, swatches and shadow, rendered the same way (FL-113)"
+    },
+    {
+      "requirementId": "action:quick-edit:undo-redo-reset-and-reopen-draft",
+      "title": "Undo/redo/reset and reopen draft",
+      "prototype": [
+        "design/frameleaf/template/src/Editor.jsx",
+        "design/frameleaf/template/src/develop.mjs",
+        "design/frameleaf/template/src/state.mjs"
+      ],
+      "production": ["web/src/lib/components/frameleaf/editor/QuickEditor.svelte"],
+      "status": "fixed",
+      "gaps": ["VE-11"],
+      "followUp": "Undo/redo (buttons and ⌘Z) and Revert for video as for photos (FL-113)"
+    },
+    {
+      "requirementId": "action:quick-edit:video-quick-tools-trim-rotate-crop-adjust-audio",
+      "title": "Video quick tools: Trim, Rotate, Crop, Adjust, Audio",
+      "prototype": [
+        "design/frameleaf/template/src/Editor.jsx",
+        "design/frameleaf/template/src/develop.mjs",
+        "design/frameleaf/template/src/state.mjs"
+      ],
+      "production": ["web/src/lib/components/frameleaf/editor/VideoQuickEditor.svelte"],
+      "status": "fixed",
+      "gaps": ["VE-1", "VE-2", "VE-3", "VE-12"],
+      "followUp": "Frameleaf video quick editor (VideoQuickEditor.svelte), opens on Trim (FL-113)"
+    },
+    {
+      "requirementId": "action:quick-edit:whole-video-and-segment-speed-changes",
+      "title": "Whole-video and segment speed changes",
+      "prototype": [
+        "design/frameleaf/template/src/Editor.jsx",
+        "design/frameleaf/template/src/develop.mjs",
+        "design/frameleaf/template/src/state.mjs"
+      ],
+      "production": ["web/src/lib/components/frameleaf/editor/VideoQuickEditor.svelte"],
+      "status": "fixed",
+      "gaps": ["VE-8"],
+      "followUp": "Whole-clip speed plus ranges at the playhead, blue bands on the filmstrip (FL-113)"
+    },
+    {
+      "requirementId": "action:search-discovery:camera-make-model-lens",
+      "title": "Camera make/model/lens",
+      "prototype": [
+        "design/frameleaf/template/src/SearchPalette.jsx",
+        "design/frameleaf/template/src/search-palette.mjs",
+        "design/frameleaf/template/src/FilterPanel.jsx",
+        "design/frameleaf/template/src/search.mjs"
+      ],
+      "production": [
+        "web/src/lib/components/frameleaf/SearchPalette.svelte",
+        "web/src/lib/components/frameleaf/FilterPanel.svelte"
+      ],
+      "status": "match",
+      "gaps": [],
+      "followUp": null
+    },
+    {
+      "requirementId": "action:search-discovery:cancel-stale-requests-and-restore-url-query-navigation-position",
+      "title": "Cancel stale requests and restore URL/query/navigation position",
+      "prototype": [
+        "design/frameleaf/template/src/SearchPalette.jsx",
+        "design/frameleaf/template/src/search-palette.mjs",
+        "design/frameleaf/template/src/FilterPanel.jsx",
+        "design/frameleaf/template/src/search.mjs"
+      ],
+      "production": ["web/src/lib/frameleaf/search-context.ts"],
+      "status": "match",
+      "gaps": [],
+      "followUp": null
+    },
+    {
+      "requirementId": "action:search-discovery:clear-all-removable-chips-filter-presets",
+      "title": "Clear all, removable chips, filter presets",
+      "prototype": [
+        "design/frameleaf/template/src/SearchPalette.jsx",
+        "design/frameleaf/template/src/search-palette.mjs",
+        "design/frameleaf/template/src/FilterPanel.jsx",
+        "design/frameleaf/template/src/search.mjs"
+      ],
+      "production": [
+        "web/src/lib/components/frameleaf/ResultsToolbar.svelte",
+        "web/src/lib/components/frameleaf/FilterChip.svelte"
+      ],
+      "status": "fixed",
+      "gaps": ["S-19", "SD-12"],
+      "followUp": "Chips open their section, the search text is a chip and Clear all shows whenever anything is active (S-19, fixed by the FL-30 library gaps); Save search and the results-page chips (SD-12) fixed on codex/FL-49-search-palette"
+    },
+    {
+      "requirementId": "action:search-discovery:command-palette-across-assets-people-albums-places-settings-actions",
+      "title": "Command palette across assets/people/albums/places/settings/actions",
+      "prototype": [
+        "design/frameleaf/template/src/CommandPalette.jsx",
+        "design/frameleaf/template/src/command-palette.mjs"
+      ],
+      "production": ["web/src/lib/components/frameleaf/CommandPalette.svelte"],
+      "status": "fixed",
+      "gaps": ["S-1"],
+      "followUp": "Upstream palette providers and lib/commands.ts removed; the palette manager only dispatches action shortcuts and Ctrl/Cmd+K and / open Frameleaf search"
+    },
+    {
+      "requirementId": "action:search-discovery:context-smart-versus-filename-text-description-ocr-path-search",
+      "title": "Context/smart versus filename/text/description/OCR/path search",
+      "prototype": [
+        "design/frameleaf/template/src/SearchPalette.jsx",
+        "design/frameleaf/template/src/search-palette.mjs",
+        "design/frameleaf/template/src/FilterPanel.jsx",
+        "design/frameleaf/template/src/search.mjs"
+      ],
+      "production": [
+        "web/src/lib/components/frameleaf/SearchPalette.svelte",
+        "web/src/lib/components/frameleaf/FilterPanel.svelte"
+      ],
+      "status": "fixed",
+      "gaps": ["SD-1", "SD-2", "SD-3"],
+      "followUp": "Glass search palette: scope toggle with counts, per-mode placeholders, All text as an or over every text field (fixed on codex/FL-49-search-palette)"
+    },
+    {
+      "requirementId": "action:search-discovery:country-state-city-facets",
+      "title": "Country/state/city facets",
+      "prototype": [
+        "design/frameleaf/template/src/SearchPalette.jsx",
+        "design/frameleaf/template/src/search-palette.mjs",
+        "design/frameleaf/template/src/FilterPanel.jsx",
+        "design/frameleaf/template/src/search.mjs"
+      ],
+      "production": [
+        "web/src/lib/components/frameleaf/SearchPalette.svelte",
+        "web/src/lib/components/frameleaf/FilterPanel.svelte"
+      ],
+      "status": "fixed",
+      "gaps": ["FP-3", "SD-7"],
+      "followUp": "Facet counts from POST /search/facets in the palette and its Advanced view (fixed on codex/FL-49-search-palette)"
+    },
+    {
+      "requirementId": "action:search-discovery:dates-presets-custom-range",
+      "title": "Dates/presets/custom range",
+      "prototype": [
+        "design/frameleaf/template/src/SearchPalette.jsx",
+        "design/frameleaf/template/src/search-palette.mjs",
+        "design/frameleaf/template/src/FilterPanel.jsx",
+        "design/frameleaf/template/src/search.mjs"
+      ],
+      "production": [
+        "web/src/lib/components/frameleaf/SearchPalette.svelte",
+        "web/src/lib/components/frameleaf/FilterPanel.svelte"
+      ],
+      "status": "match",
+      "gaps": [],
+      "followUp": null
+    },
+    {
+      "requirementId": "action:search-discovery:dynamic-counts-facets-that-respect-access-privacy",
+      "title": "Dynamic counts/facets that respect access/privacy",
+      "prototype": [
+        "design/frameleaf/template/src/SearchPalette.jsx",
+        "design/frameleaf/template/src/search-palette.mjs",
+        "design/frameleaf/template/src/FilterPanel.jsx",
+        "design/frameleaf/template/src/search.mjs"
+      ],
+      "production": [
+        "web/src/lib/components/frameleaf/SearchPalette.svelte",
+        "web/src/lib/components/frameleaf/FilterPanel.svelte"
+      ],
+      "status": "fixed",
+      "gaps": ["FP-3", "SD-7"],
+      "followUp": "Server-scoped facet, histogram and scope counts, dropped on every access change (fixed on codex/FL-49-search-palette)"
+    },
+    {
+      "requirementId": "action:search-discovery:enrichment-review-override-failure-missing-description-missing-detection-filters",
+      "title": "Enrichment review/override/failure/missing-description/missing-detection filters",
+      "prototype": [
+        "design/frameleaf/template/src/SearchPalette.jsx",
+        "design/frameleaf/template/src/search-palette.mjs",
+        "design/frameleaf/template/src/FilterPanel.jsx",
+        "design/frameleaf/template/src/search.mjs"
+      ],
+      "production": [
+        "web/src/lib/components/frameleaf/SearchPalette.svelte",
+        "web/src/lib/components/frameleaf/FilterPanel.svelte"
+      ],
+      "status": "fixed",
+      "gaps": ["FP-2", "SD-6"],
+      "followUp": "Text & descriptions and Sensitivity review radiogroups over the one enrichment enum; palette Enrichment quick filters with counts (fixed on codex/FL-49-search-palette)"
+    },
+    {
+      "requirementId": "action:search-discovery:explore-empty-error-loading-states",
+      "title": "Explore empty/error/loading states",
+      "prototype": ["design/frameleaf/template/src/ExploreLibrary.jsx"],
+      "production": ["web/src/lib/components/frameleaf/ExplorePanel.svelte"],
+      "status": "fixed",
+      "gaps": ["T-12"],
+      "followUp": "Explore empty copy \"Nothing to explore in this view\" (fixed on codex/FL-50-explore-albums-map)"
+    },
+    {
+      "requirementId": "action:search-discovery:explore-memories-carousel-and-open-memory-story",
+      "title": "Explore memories carousel and open memory story",
+      "prototype": ["design/frameleaf/template/src/ExploreLibrary.jsx", "design/frameleaf/template/src/Memories.jsx"],
+      "production": ["web/src/lib/components/frameleaf/ExplorePanel.svelte"],
+      "status": "fixed",
+      "gaps": ["T-15"],
+      "followUp": "The upstream memory strip is gone from the library (FL-33 library gaps); memories open from the Memories destination"
+    },
+    {
+      "requirementId": "action:search-discovery:explore-people-and-view-all",
+      "title": "Explore people and View all",
+      "prototype": ["design/frameleaf/template/src/ExploreLibrary.jsx"],
+      "production": ["web/src/lib/components/frameleaf/ExplorePanel.svelte"],
+      "status": "fixed",
+      "gaps": ["T-12"],
+      "followUp": "Per-card counts from POST /search/facets in the scope of the search each card opens (fixed on codex/FL-50-explore-albums-map)"
+    },
+    {
+      "requirementId": "action:search-discovery:explore-places-and-view-all",
+      "title": "Explore places and View all",
+      "prototype": ["design/frameleaf/template/src/ExploreLibrary.jsx"],
+      "production": ["web/src/lib/components/frameleaf/ExplorePanel.svelte"],
+      "status": "fixed",
+      "gaps": ["T-12"],
+      "followUp": "Per-card counts from POST /search/facets in the scope of the search each card opens (fixed on codex/FL-50-explore-albums-map)"
+    },
+    {
+      "requirementId": "action:search-discovery:explore-recently-added-and-direct-asset-viewer",
+      "title": "Explore recently added and direct asset viewer",
+      "prototype": ["design/frameleaf/template/src/ExploreLibrary.jsx"],
+      "production": ["web/src/lib/components/frameleaf/ExplorePanel.svelte"],
+      "status": "fixed",
+      "gaps": ["T-12"],
+      "followUp": "Recent captures by capture date with name, Video label and capture day (fixed on codex/FL-50-explore-albums-map)"
+    },
+    {
+      "requirementId": "action:search-discovery:extra-things-collections-highlight-cards",
+      "title": "Extra Things/Collections/highlight cards",
+      "prototype": ["design/frameleaf/template/src/ExploreLibrary.jsx"],
+      "production": ["web/src/lib/components/frameleaf/ExplorePanel.svelte"],
+      "status": "fixed",
+      "gaps": ["T-12"],
+      "followUp": "\"Things in your photos\" tags section with counts and covers (fixed on codex/FL-50-explore-albums-map)"
+    },
+    {
+      "requirementId": "action:search-discovery:image-video-type",
+      "title": "Image/video type",
+      "prototype": [
+        "design/frameleaf/template/src/SearchPalette.jsx",
+        "design/frameleaf/template/src/search-palette.mjs",
+        "design/frameleaf/template/src/FilterPanel.jsx",
+        "design/frameleaf/template/src/search.mjs"
+      ],
+      "production": [
+        "web/src/lib/components/frameleaf/SearchPalette.svelte",
+        "web/src/lib/components/frameleaf/FilterPanel.svelte"
+      ],
+      "status": "match",
+      "gaps": [],
+      "followUp": null
+    },
+    {
+      "requirementId": "action:search-discovery:interpret-natural-language-into-editable-constraints",
+      "title": "Interpret natural language into editable constraints",
+      "prototype": [
+        "design/frameleaf/template/src/SearchPalette.jsx",
+        "design/frameleaf/template/src/search-palette.mjs",
+        "design/frameleaf/template/src/FilterPanel.jsx",
+        "design/frameleaf/template/src/search.mjs"
+      ],
+      "production": [
+        "web/src/lib/components/frameleaf/SearchPalette.svelte",
+        "web/src/lib/components/frameleaf/FilterPanel.svelte"
+      ],
+      "status": "match",
+      "gaps": [],
+      "followUp": null
+    },
+    {
+      "requirementId": "action:search-discovery:map-search-results-clustering-bounded-truncated-result-disclosure",
+      "title": "Map search results, clustering, bounded/truncated result disclosure",
+      "prototype": ["design/frameleaf/template/src/MapView.jsx"],
+      "production": ["web/src/lib/components/shared-components/map/Map.svelte"],
+      "status": "fixed",
+      "gaps": ["MV-2", "MV-4", "MV-5", "MV-6"],
+      "followUp": "Cluster zoom, In-view chip, empty state, list rows (fixed, FL-51 on codex/FL-50-complete-discovery)"
+    },
+    {
+      "requirementId": "action:search-discovery:moment-search-frame-caption-transcript-timestamp-matches-and-jump-playback",
+      "title": "Moment search: frame/caption/transcript timestamp matches and jump playback",
+      "prototype": [
+        "design/frameleaf/template/src/SearchPalette.jsx",
+        "design/frameleaf/template/src/search-palette.mjs",
+        "design/frameleaf/template/src/FilterPanel.jsx",
+        "design/frameleaf/template/src/search.mjs"
+      ],
+      "production": ["web/src/lib/components/frameleaf/VideoMomentsPanel.svelte"],
+      "status": "in-flight",
+      "gaps": [],
+      "followUp": "FL-59 video moments (beyond the prototype)"
+    },
+    {
+      "requirementId": "action:search-discovery:people-filter-with-face-avatars-and-matching-choices",
+      "title": "People filter with face avatars and matching choices",
+      "prototype": [
+        "design/frameleaf/template/src/SearchPalette.jsx",
+        "design/frameleaf/template/src/search-palette.mjs",
+        "design/frameleaf/template/src/FilterPanel.jsx",
+        "design/frameleaf/template/src/search.mjs"
+      ],
+      "production": ["web/src/lib/components/frameleaf/FilterMultiSelect.svelte"],
+      "status": "match",
+      "gaps": [],
+      "followUp": null
+    },
+    {
+      "requirementId": "action:search-discovery:people-tag-any-all-exclude-groups-and-retained-chips",
+      "title": "People/tag any/all/exclude groups and retained chips",
+      "prototype": [
+        "design/frameleaf/template/src/SearchPalette.jsx",
+        "design/frameleaf/template/src/search-palette.mjs",
+        "design/frameleaf/template/src/FilterPanel.jsx",
+        "design/frameleaf/template/src/search.mjs"
+      ],
+      "production": ["web/src/lib/components/frameleaf/FilterMultiSelect.svelte"],
+      "status": "match",
+      "gaps": [],
+      "followUp": null
+    },
+    {
+      "requirementId": "action:search-discovery:play-annotate-a-discovered-video-moment",
+      "title": "Play/annotate a discovered video moment",
+      "prototype": [
+        "design/frameleaf/template/src/SearchPalette.jsx",
+        "design/frameleaf/template/src/search-palette.mjs",
+        "design/frameleaf/template/src/FilterPanel.jsx",
+        "design/frameleaf/template/src/search.mjs"
+      ],
+      "production": ["web/src/lib/components/frameleaf/VideoMomentResults.svelte"],
+      "status": "in-flight",
+      "gaps": [],
+      "followUp": "FL-59 video moments (beyond the prototype)"
+    },
+    {
+      "requirementId": "action:search-discovery:rating-favorites-archive-not-in-album-untagged",
+      "title": "Rating/favorites/archive/not-in-album/untagged",
+      "prototype": [
+        "design/frameleaf/template/src/SearchPalette.jsx",
+        "design/frameleaf/template/src/search-palette.mjs",
+        "design/frameleaf/template/src/FilterPanel.jsx",
+        "design/frameleaf/template/src/search.mjs"
+      ],
+      "production": [
+        "web/src/lib/components/frameleaf/SearchPalette.svelte",
+        "web/src/lib/components/frameleaf/FilterPanel.svelte"
+      ],
+      "status": "match",
+      "gaps": [],
+      "followUp": null
+    },
+    {
+      "requirementId": "action:search-discovery:save-update-delete-custom-server-queries",
+      "title": "Save/update/delete custom server queries",
+      "prototype": [
+        "design/frameleaf/template/src/App.jsx",
+        "design/frameleaf/template/src/FilterPanel.jsx",
+        "design/frameleaf/template/src/LibraryRail.jsx"
+      ],
+      "production": [
+        "web/src/lib/components/frameleaf/RailSavedSearches.svelte",
+        "web/src/lib/components/frameleaf/LibraryRail.svelte"
+      ],
+      "status": "fixed",
+      "gaps": ["S-14"],
+      "followUp": "Palette Save search (Smart album, Album snapshot, saved search) and RailSavedSearches mounted in LibraryRail's Albums section"
+    },
+    {
+      "requirementId": "action:search-discovery:search-assets-inside-shared-spaces-or-named-pets",
+      "title": "Search assets inside Shared Spaces or named pets",
+      "prototype": [
+        "design/frameleaf/template/src/SearchPalette.jsx",
+        "design/frameleaf/template/src/search-palette.mjs",
+        "design/frameleaf/template/src/FilterPanel.jsx",
+        "design/frameleaf/template/src/search.mjs"
+      ],
+      "production": [
+        "web/src/lib/components/frameleaf/SearchPalette.svelte",
+        "web/src/lib/components/frameleaf/FilterPanel.svelte"
+      ],
+      "status": "fixed",
+      "gaps": ["SD-1"],
+      "followUp": "Palette scope toggle: current album, pet or space and the entire library, each with its count (fixed on codex/FL-49-search-palette)"
+    },
+    {
+      "requirementId": "action:search-discovery:search-input-recent-searches-clear-history-individual-term",
+      "title": "Search input, recent searches, clear history/individual term",
+      "prototype": [
+        "design/frameleaf/template/src/SearchPalette.jsx",
+        "design/frameleaf/template/src/search-palette.mjs",
+        "design/frameleaf/template/src/FilterPanel.jsx",
+        "design/frameleaf/template/src/search.mjs"
+      ],
+      "production": [
+        "web/src/lib/components/frameleaf/SearchPalette.svelte",
+        "web/src/lib/components/frameleaf/FilterPanel.svelte"
+      ],
+      "status": "fixed",
+      "gaps": ["SD-5"],
+      "followUp": "Recent searches keep chips, mode and filters, with the Try a search fallback (fixed on codex/FL-49-search-palette)"
+    },
+    {
+      "requirementId": "action:search-discovery:server-paging-load-more-and-large-result-sets",
+      "title": "Server paging/load more and large result sets",
+      "prototype": [
+        "design/frameleaf/template/src/SearchPalette.jsx",
+        "design/frameleaf/template/src/search-palette.mjs",
+        "design/frameleaf/template/src/FilterPanel.jsx",
+        "design/frameleaf/template/src/search.mjs"
+      ],
+      "production": [
+        "web/src/lib/components/frameleaf/ShowMore.svelte",
+        "web/src/lib/components/frameleaf/LibraryView.svelte"
+      ],
+      "status": "fixed",
+      "gaps": ["T-14"],
+      "followUp": "ShowMore only where a page pages its results (never under the timeline); Select all N reads the grid's count until the server has counted (FL-33 shell completion)"
+    },
+    {
+      "requirementId": "action:timeline-bulk:bulk-add-remove-tags",
+      "title": "Bulk add/remove tags",
+      "prototype": [
+        "design/frameleaf/template/src/TimelineLibrary.jsx",
+        "design/frameleaf/template/src/SelectionBar.jsx",
+        "design/frameleaf/template/src/selection.mjs"
+      ],
+      "production": ["web/src/lib/components/frameleaf/BulkTagDialog.svelte"],
+      "status": "match",
+      "gaps": [],
+      "followUp": null
+    },
+    {
+      "requirementId": "action:timeline-bulk:bulk-add-to-album",
+      "title": "Bulk add to album",
+      "prototype": [
+        "design/frameleaf/template/src/TimelineLibrary.jsx",
+        "design/frameleaf/template/src/SelectionBar.jsx",
+        "design/frameleaf/template/src/selection.mjs"
+      ],
+      "production": ["web/src/lib/components/frameleaf/BulkAlbumDialog.svelte"],
+      "status": "match",
+      "gaps": [],
+      "followUp": null
+    },
+    {
+      "requirementId": "action:timeline-bulk:bulk-change-date-location-description",
+      "title": "Bulk change date, location, description",
+      "prototype": [
+        "design/frameleaf/template/src/TimelineLibrary.jsx",
+        "design/frameleaf/template/src/SelectionBar.jsx",
+        "design/frameleaf/template/src/selection.mjs"
+      ],
+      "production": [
+        "web/src/lib/components/frameleaf/BulkDateDialog.svelte",
+        "web/src/lib/components/frameleaf/BulkLocationDialog.svelte"
+      ],
+      "status": "intentional-product-change",
+      "gaps": ["T-13", "T-19"],
+      "followUp": "Friendly searchable zones and the selection pre-fill are done (T-19, FL-32 library gaps); the location place-name fields are not built by owner decision (T-13, FL-146 2026-09-25)"
+    },
+    {
+      "requirementId": "action:timeline-bulk:bulk-delete-undo-with-partial-failures",
+      "title": "Bulk delete/undo with partial failures",
+      "prototype": [
+        "design/frameleaf/template/src/TimelineLibrary.jsx",
+        "design/frameleaf/template/src/SelectionBar.jsx",
+        "design/frameleaf/template/src/selection.mjs"
+      ],
+      "production": ["web/src/lib/frameleaf/bulk-controller.svelte.ts"],
+      "status": "fixed",
+      "gaps": ["T-1"],
+      "followUp": "Undo on the result toast"
+    },
+    {
+      "requirementId": "action:timeline-bulk:bulk-download-archive-unarchive",
+      "title": "Bulk download/archive/unarchive",
+      "prototype": [
+        "design/frameleaf/template/src/TimelineLibrary.jsx",
+        "design/frameleaf/template/src/SelectionBar.jsx",
+        "design/frameleaf/template/src/selection.mjs"
+      ],
+      "production": ["web/src/lib/frameleaf/bulk-operations.ts"],
+      "status": "fixed",
+      "gaps": ["T-17"],
+      "followUp": "Archived items leave a Timeline view and unarchived ones leave Archive; no Archived badge; Offline badge from the bucket (FL-33 shell completion)"
+    },
+    {
+      "requirementId": "action:timeline-bulk:bulk-favorite-unfavorite",
+      "title": "Bulk favorite/unfavorite",
+      "prototype": [
+        "design/frameleaf/template/src/TimelineLibrary.jsx",
+        "design/frameleaf/template/src/SelectionBar.jsx",
+        "design/frameleaf/template/src/selection.mjs"
+      ],
+      "production": [
+        "web/src/lib/components/frameleaf/LibraryView.svelte",
+        "web/src/lib/components/frameleaf/SelectionBar.svelte"
+      ],
+      "status": "match",
+      "gaps": [],
+      "followUp": null
+    },
+    {
+      "requirementId": "action:timeline-bulk:bulk-mark-unmark-sensitive",
+      "title": "Bulk mark/unmark Sensitive",
+      "prototype": [
+        "design/frameleaf/template/src/TimelineLibrary.jsx",
+        "design/frameleaf/template/src/SelectionBar.jsx",
+        "design/frameleaf/template/src/selection.mjs"
+      ],
+      "production": [
+        "web/src/lib/components/frameleaf/LibraryView.svelte",
+        "web/src/lib/components/frameleaf/SelectionBar.svelte"
+      ],
+      "status": "match",
+      "gaps": [],
+      "followUp": null
+    },
+    {
+      "requirementId": "action:timeline-bulk:bulk-refresh-thumbnails-metadata-transcodes",
+      "title": "Bulk refresh thumbnails/metadata/transcodes",
+      "prototype": [
+        "design/frameleaf/template/src/TimelineLibrary.jsx",
+        "design/frameleaf/template/src/SelectionBar.jsx",
+        "design/frameleaf/template/src/selection.mjs"
+      ],
+      "production": [
+        "web/src/lib/components/frameleaf/LibraryView.svelte",
+        "web/src/lib/components/frameleaf/SelectionBar.svelte"
+      ],
+      "status": "match",
+      "gaps": [],
+      "followUp": null
+    },
+    {
+      "requirementId": "action:timeline-bulk:click-open-asset-select-deselect-items",
+      "title": "Click/open asset; select/deselect items",
+      "prototype": [
+        "design/frameleaf/template/src/TimelineLibrary.jsx",
+        "design/frameleaf/template/src/SelectionBar.jsx",
+        "design/frameleaf/template/src/selection.mjs"
+      ],
+      "production": ["web/src/lib/components/frameleaf/AssetTile.svelte"],
+      "status": "fixed",
+      "gaps": ["T-4", "T-20"],
+      "followUp": "Tile hover quick actions are done (T-4, FL-33 library gaps); Deselect label, full day titles and Timeline-only Locked (T-20, FL-33 shell completion)"
+    },
+    {
+      "requirementId": "action:timeline-bulk:date-grouped-photos-browse-chronological-library",
+      "title": "Date-grouped photos; browse chronological library",
+      "prototype": [
+        "design/frameleaf/template/src/TimelineLibrary.jsx",
+        "design/frameleaf/template/src/SelectionBar.jsx",
+        "design/frameleaf/template/src/selection.mjs"
+      ],
+      "production": ["web/src/lib/components/frameleaf/LibraryTimeline.svelte"],
+      "status": "fixed",
+      "gaps": ["T-3", "T-7", "T-10"],
+      "followUp": "Timeline captions and the Frameleaf empty states are done (T-7, T-10, FL-33 library gaps); Years/Months/Days/All grouping with ⌘-wheel, pinch, D/M/Y and the announcement (T-3); All rows (and Years when not shown as cards) run on across month boundaries as one flow (FL-143)"
+    },
+    {
+      "requirementId": "action:timeline-bulk:grid-list-compare-and-persisted-query-selection-layout",
+      "title": "Grid/list/compare and persisted query/selection/layout",
+      "prototype": [
+        "design/frameleaf/template/src/TimelineLibrary.jsx",
+        "design/frameleaf/template/src/SelectionBar.jsx",
+        "design/frameleaf/template/src/selection.mjs"
+      ],
+      "production": ["web/src/lib/components/frameleaf/ResultsToolbar.svelte"],
+      "status": "fixed",
+      "gaps": ["T-8", "S-15", "S-17"],
+      "followUp": "Toolbar count, Slideshow, information toggle, Sort (Timeline dated; Browse/Work/List by upload date, file name or rating through GET /timeline/ordered), Grid/List and More library actions are in (S-15, FL-30 library gaps and review); square Browse and Work grids with Thumbnail size (T-8); the grid runs on across month boundaries as one grid, and All rows as one flow (FL-143)"
+    },
+    {
+      "requirementId": "action:timeline-bulk:jump-scroll-to-time-restore-asset-position",
+      "title": "Jump/scroll to time; restore asset position",
+      "prototype": [
+        "design/frameleaf/template/src/TimelineLibrary.jsx",
+        "design/frameleaf/template/src/SelectionBar.jsx",
+        "design/frameleaf/template/src/selection.mjs"
+      ],
+      "production": ["web/src/lib/components/frameleaf/YearScrubber.svelte"],
+      "status": "match",
+      "gaps": [],
+      "followUp": null
+    },
+    {
+      "requirementId": "action:timeline-bulk:link-live-photo-still-and-video",
+      "title": "Link Live Photo still and video",
+      "prototype": [
+        "design/frameleaf/template/src/TimelineLibrary.jsx",
+        "design/frameleaf/template/src/SelectionBar.jsx",
+        "design/frameleaf/template/src/selection.mjs"
+      ],
+      "production": [
+        "web/src/lib/components/frameleaf/LibraryView.svelte",
+        "web/src/lib/components/frameleaf/SelectionBar.svelte"
+      ],
+      "status": "match",
+      "gaps": [],
+      "followUp": null
+    },
+    {
+      "requirementId": "action:timeline-bulk:select-all-select-groups-range-multi-selection-keyboard-bulk-behavior",
+      "title": "Select all; select groups; range/multi-selection; keyboard bulk behavior",
+      "prototype": [
+        "design/frameleaf/template/src/TimelineLibrary.jsx",
+        "design/frameleaf/template/src/SelectionBar.jsx",
+        "design/frameleaf/template/src/selection.mjs"
+      ],
+      "production": [
+        "web/src/lib/frameleaf/library-shortcuts.ts",
+        "web/src/lib/components/frameleaf/LibraryView.svelte"
+      ],
+      "status": "fixed",
+      "gaps": ["T-5", "S-22", "T-14"],
+      "followUp": "Library action shortcuts work on every library page (T-5, FL-33 library gaps); ←/→ move focus in the timeline and Delete has no Shift path there (S-22); Select all N (T-14)"
+    },
+    {
+      "requirementId": "action:timeline-bulk:stack-selected-photos",
+      "title": "Stack selected photos",
+      "prototype": [
+        "design/frameleaf/template/src/TimelineLibrary.jsx",
+        "design/frameleaf/template/src/SelectionBar.jsx",
+        "design/frameleaf/template/src/selection.mjs"
+      ],
+      "production": [
+        "web/src/lib/components/frameleaf/LibraryView.svelte",
+        "web/src/lib/components/frameleaf/SelectionBar.svelte"
+      ],
+      "status": "match",
+      "gaps": [],
+      "followUp": null
+    },
+    {
+      "requirementId": "action:timeline-bulk:upload-from-library-progress-errors-duplicates",
+      "title": "Upload from library, progress, errors, duplicates",
+      "prototype": ["design/frameleaf/template/src/UploadPanel.jsx"],
+      "production": ["web/src/lib/components/frameleaf/UploadPanel.svelte", "web/src/lib/stores/upload.ts"],
+      "status": "fixed",
+      "gaps": ["U-1", "U-2", "U-3", "U-4", "U-5", "S-20"],
+      "followUp": "Dismiss errors scope, pill, row status and region fixed on codex/FL-45-download-panel (S-20 fixed earlier)"
+    },
+    {
+      "requirementId": "action:viewer:add-to-album",
+      "title": "Add to album",
+      "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
+      "production": ["web/src/lib/components/asset-viewer/AssetViewer.svelte", "web/src/lib/frameleaf/viewer-menu.ts"],
+      "status": "match",
+      "gaps": [],
+      "followUp": null
+    },
+    {
+      "requirementId": "action:viewer:add-to-stack",
+      "title": "Add to stack",
+      "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
+      "production": ["web/src/lib/components/asset-viewer/AssetViewer.svelte", "web/src/lib/frameleaf/viewer-menu.ts"],
+      "status": "fixed",
+      "gaps": ["V-11"],
+      "followUp": "Label \"Add to stack\" (codex/FL-35-complete-viewer)"
+    },
+    {
+      "requirementId": "action:viewer:album-activity-comments-likes-activity-panel",
+      "title": "Album activity: comments, likes, activity panel",
+      "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
+      "production": ["web/src/lib/components/frameleaf/ActivityPanel.svelte"],
+      "status": "fixed",
+      "gaps": ["AL-18"],
+      "followUp": "Frameleaf per-asset activity panel (fixed on codex/FL-52-albums-sharing)"
+    },
+    {
+      "requirementId": "action:viewer:archive-unarchive",
+      "title": "Archive / unarchive",
+      "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
+      "production": ["web/src/lib/components/asset-viewer/AssetViewer.svelte", "web/src/lib/frameleaf/viewer-menu.ts"],
+      "status": "match",
+      "gaps": [],
+      "followUp": null
+    },
+    {
+      "requirementId": "action:viewer:cast-to-receiver",
+      "title": "Cast to receiver",
+      "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
+      "production": ["web/src/lib/services/app.service.ts"],
+      "status": "match",
+      "gaps": [],
+      "followUp": null
+    },
+    {
+      "requirementId": "action:viewer:copy-image-to-clipboard",
+      "title": "Copy image to clipboard",
+      "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
+      "production": ["web/src/lib/components/asset-viewer/AssetViewer.svelte", "web/src/lib/frameleaf/viewer-menu.ts"],
+      "status": "fixed",
+      "gaps": ["V-5"],
+      "followUp": "Label \"Copy image\" (codex/FL-35-complete-viewer)"
+    },
+    {
+      "requirementId": "action:viewer:download-current-edited-media",
+      "title": "Download current/edited media",
+      "prototype": ["design/frameleaf/template/src/UploadPanel.jsx", "design/frameleaf/template/src/system-data.mjs"],
+      "production": [
+        "web/src/lib/components/frameleaf/DownloadPanel.svelte",
+        "web/src/lib/managers/download-manager.svelte.ts",
+        "web/src/lib/services/asset.service.ts"
+      ],
+      "status": "fixed",
+      "gaps": ["D-1", "D-2", "D-3"],
+      "followUp": "Single downloads go through the download panel with progress, Cancel and Retry (codex/FL-45-download-panel)"
+    },
+    {
+      "requirementId": "action:viewer:download-original-separately",
+      "title": "Download original separately",
+      "prototype": ["design/frameleaf/template/src/UploadPanel.jsx", "design/frameleaf/template/src/system-data.mjs"],
+      "production": [
+        "web/src/lib/components/frameleaf/DownloadPanel.svelte",
+        "web/src/lib/managers/download-manager.svelte.ts",
+        "web/src/lib/services/asset.service.ts"
+      ],
+      "status": "fixed",
+      "gaps": ["D-1", "D-2", "D-3"],
+      "followUp": "Original and edited files are separate download panel rows (codex/FL-45-download-panel)"
+    },
+    {
+      "requirementId": "action:viewer:favorite-unfavorite",
+      "title": "Favorite / unfavorite",
+      "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
+      "production": ["web/src/lib/components/asset-viewer/AssetViewer.svelte", "web/src/lib/frameleaf/viewer-menu.ts"],
+      "status": "fixed",
+      "gaps": ["V-5"],
+      "followUp": "Labels \"Add to favorites\" / \"Remove from favorites\" (codex/FL-35-complete-viewer)"
+    },
+    {
+      "requirementId": "action:viewer:image-video-panorama-and-photo-sphere-viewers",
+      "title": "Image/video panorama and photo-sphere viewers",
+      "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
+      "production": ["web/src/lib/components/asset-viewer/ImagePanoramaViewer.svelte"],
+      "status": "match",
+      "gaps": [],
+      "followUp": null
+    },
+    {
+      "requirementId": "action:viewer:keep-this-stack-asset-and-delete-the-others",
+      "title": "Keep this stack asset and delete the others",
+      "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
+      "production": ["web/src/lib/components/frameleaf/ViewerStackStrip.svelte"],
+      "status": "fixed",
+      "gaps": ["V-11"],
+      "followUp": "Label \"Keep this, remove the rest\""
+    },
+    {
+      "requirementId": "action:viewer:keyboard-navigation-and-focus-restoration",
+      "title": "Keyboard navigation and focus restoration",
+      "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
+      "production": ["web/src/lib/components/asset-viewer/PhotoViewer.svelte"],
+      "status": "fixed",
+      "gaps": ["V-14", "V-15"],
+      "followUp": "Zoom keys (fix-viewer); Space, S, T, Backspace and no a/d (codex/FL-35-complete-viewer)"
+    },
+    {
+      "requirementId": "action:viewer:live-motion-photo-play-and-stop",
+      "title": "Live/Motion Photo play and stop",
+      "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
+      "production": ["web/src/lib/components/frameleaf/ViewerLiveBadge.svelte"],
+      "status": "fixed",
+      "gaps": ["V-16"],
+      "followUp": "On-image Live badge with hover-to-play (codex/FL-35-complete-viewer)"
+    },
+    {
+      "requirementId": "action:viewer:make-stack-primary",
+      "title": "Make stack primary",
+      "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
+      "production": ["web/src/lib/components/frameleaf/ViewerStackStrip.svelte"],
+      "status": "fixed",
+      "gaps": ["V-11"],
+      "followUp": "Label \"Set as stack primary\""
+    },
+    {
+      "requirementId": "action:viewer:mark-sensitive-unmark-sensitive",
+      "title": "Mark Sensitive / Unmark Sensitive",
+      "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
+      "production": ["web/src/lib/components/asset-viewer/AssetViewer.svelte", "web/src/lib/frameleaf/viewer-menu.ts"],
+      "status": "match",
+      "gaps": [],
+      "followUp": null
+    },
+    {
+      "requirementId": "action:viewer:move-into-out-of-origin-locked-visibility",
+      "title": "Move into/out of origin Locked visibility",
+      "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
+      "production": ["web/src/lib/components/asset-viewer/actions/SetVisibilityAction.svelte"],
+      "status": "intentional-product-change",
+      "gaps": [],
+      "followUp": "Locked is one lock record; visibility = locked is never written (CODEX-HANDOFF §3)"
+    },
+    {
+      "requirementId": "action:viewer:move-to-trash",
+      "title": "Move to trash",
+      "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
+      "production": ["web/src/lib/components/asset-viewer/actions/DeleteAction.svelte"],
+      "status": "fixed",
+      "gaps": ["V-5", "V-15"],
+      "followUp": "Label \"Move to trash (Delete)\"; Backspace"
+    },
+    {
+      "requirementId": "action:viewer:offline-asset-indicator-and-source-specific-behavior",
+      "title": "Offline asset indicator and source-specific behavior",
+      "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
+      "production": ["web/src/lib/components/frameleaf/ViewerOfflineBanner.svelte"],
+      "status": "fixed",
+      "gaps": ["V-6"],
+      "followUp": "FL-35 September 24 viewer: the legacy Offline button and panel block are gone; the offline banner remains"
+    },
+    {
+      "requirementId": "action:viewer:open-editor",
+      "title": "Open editor",
+      "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
+      "production": ["web/src/lib/components/asset-viewer/AssetViewer.svelte", "web/src/lib/frameleaf/viewer-menu.ts"],
+      "status": "fixed",
+      "gaps": ["V-5"],
+      "followUp": "Label \"Edit\" (codex/FL-35-complete-viewer)"
+    },
+    {
+      "requirementId": "action:viewer:open-full-viewer-close-back-escape-previous-next",
+      "title": "Open full viewer; close/back/Escape; previous/next",
+      "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
+      "production": [
+        "web/src/lib/components/frameleaf/ViewerTitle.svelte",
+        "web/src/lib/components/frameleaf/ViewerFooter.svelte"
+      ],
+      "status": "fixed",
+      "gaps": ["V-5"],
+      "followUp": "\"Close viewer\" titled \"Close viewer (Escape)\"; \"n of N\" is in the footer (V-12) (codex/FL-35-complete-viewer)"
+    },
+    {
+      "requirementId": "action:viewer:open-info",
+      "title": "Open Info",
+      "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
+      "production": ["web/src/lib/components/asset-viewer/AssetViewer.svelte", "web/src/lib/frameleaf/viewer-menu.ts"],
+      "status": "fixed",
+      "gaps": ["V-5"],
+      "followUp": "Label \"Information (I)\" (fix-viewer)"
+    },
+    {
+      "requirementId": "action:viewer:permanently-delete-in-the-appropriate-viewer-context",
+      "title": "Permanently delete in the appropriate viewer context",
+      "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
+      "production": ["web/src/lib/components/asset-viewer/actions/DeleteAction.svelte"],
+      "status": "fixed",
+      "gaps": ["V-1", "V-4"],
+      "followUp": "Non-suppressible confirm with prototype copy (fix-viewer); Delete permanently in the Trash group"
+    },
+    {
+      "requirementId": "action:viewer:play-pause-seek-volume-fullscreen-for-video",
+      "title": "Play/pause/seek/volume/fullscreen for video",
+      "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
+      "production": [
+        "web/src/lib/components/asset-viewer/VideoNativeViewer.svelte",
+        "web/src/lib/components/frameleaf/ViewerFooter.svelte"
+      ],
+      "status": "fixed",
+      "gaps": ["V-13"],
+      "followUp": "FL-35 September 24 viewer: the footer carries full screen and the source segment"
+    },
+    {
+      "requirementId": "action:viewer:refresh-faces-for-this-asset",
+      "title": "Refresh faces for this asset",
+      "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
+      "production": ["web/src/lib/components/asset-viewer/AssetViewer.svelte", "web/src/lib/frameleaf/viewer-menu.ts"],
+      "status": "match",
+      "gaps": [],
+      "followUp": null
+    },
+    {
+      "requirementId": "action:viewer:refresh-metadata-for-this-asset",
+      "title": "Refresh metadata for this asset",
+      "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
+      "production": ["web/src/lib/components/asset-viewer/AssetViewer.svelte", "web/src/lib/frameleaf/viewer-menu.ts"],
+      "status": "match",
+      "gaps": [],
+      "followUp": null
+    },
+    {
+      "requirementId": "action:viewer:regenerate-thumbnails-for-this-asset",
+      "title": "Regenerate thumbnails for this asset",
+      "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
+      "production": ["web/src/lib/components/asset-viewer/AssetViewer.svelte", "web/src/lib/frameleaf/viewer-menu.ts"],
+      "status": "match",
+      "gaps": [],
+      "followUp": null
+    },
+    {
+      "requirementId": "action:viewer:remove-from-current-album",
+      "title": "Remove from current album",
+      "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
+      "production": ["web/src/lib/components/asset-viewer/AssetViewer.svelte", "web/src/lib/frameleaf/viewer-menu.ts"],
+      "status": "match",
+      "gaps": [],
+      "followUp": null
+    },
+    {
+      "requirementId": "action:viewer:restore-a-trashed-asset-from-viewer",
+      "title": "Restore a trashed asset from viewer",
+      "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
+      "production": ["web/src/lib/components/asset-viewer/AssetViewer.svelte", "web/src/lib/frameleaf/viewer-menu.ts"],
+      "status": "fixed",
+      "gaps": ["V-4"],
+      "followUp": "Restore in the trash toolbar and the Trash group (codex/FL-35-complete-viewer)"
+    },
+    {
+      "requirementId": "action:viewer:set-account-profile-picture",
+      "title": "Set account profile picture",
+      "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
+      "production": ["web/src/lib/components/asset-viewer/AssetViewer.svelte", "web/src/lib/frameleaf/viewer-menu.ts"],
+      "status": "fixed",
+      "gaps": ["V-11"],
+      "followUp": "Label \"Profile picture\""
+    },
+    {
+      "requirementId": "action:viewer:set-album-cover",
+      "title": "Set album cover",
+      "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
+      "production": ["web/src/lib/components/frameleaf/ViewerChooserDialog.svelte"],
+      "status": "fixed",
+      "gaps": ["V-9", "V-11"],
+      "followUp": "Album cover, with the album chooser outside the album (codex/FL-35-complete-viewer)"
+    },
+    {
+      "requirementId": "action:viewer:set-persons-featured-photo",
+      "title": "Set person's featured photo",
+      "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
+      "production": ["web/src/lib/components/frameleaf/ViewerChooserDialog.svelte"],
+      "status": "fixed",
+      "gaps": ["V-9", "V-11"],
+      "followUp": "Featured photo for person, with the person chooser (codex/FL-35-complete-viewer)"
+    },
+    {
+      "requirementId": "action:viewer:share-with-recipients-create-or-manage-a-public-link",
+      "title": "Share with recipients / create or manage a public link",
+      "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
+      "production": [
+        "web/src/lib/components/frameleaf/ShareSheet.svelte",
+        "web/src/lib/components/frameleaf/SharedLinkForm.svelte"
+      ],
+      "status": "partial",
+      "gaps": ["AL-30", "AL-30b", "AL-32", "AL-33"],
+      "followUp": "Selection Share link opens the form and ShareSheet offers the link only (fixed); the viewer's Share opens ShareSheet (AL-33, fixed on codex/FL-52-albums-sharing); per-item person sharing has no server contract (AL-30b, owner)"
+    },
+    {
+      "requirementId": "action:viewer:shared-link-download-with-link-restrictions",
+      "title": "Shared-link download with link restrictions",
+      "prototype": ["design/frameleaf/template/src/PublicViewer.jsx"],
+      "production": ["web/src/lib/components/pages/SharedLinkPage.svelte"],
+      "status": "fixed",
+      "gaps": ["AL-37"],
+      "followUp": "Labelled Download in the public viewer; slideshow no longer gated on downloads (fixed, FL-56)"
+    },
+    {
+      "requirementId": "action:viewer:slideshow-ascending-descending-order",
+      "title": "Slideshow ascending/descending order",
+      "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
+      "production": [
+        "web/src/lib/components/asset-viewer/SlideshowBar.svelte",
+        "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte"
+      ],
+      "status": "fixed",
+      "gaps": ["V-8"],
+      "followUp": "Frameleaf slideshow settings panel (fixed on codex/FL-62-sept24-slideshow-memories)"
+    },
+    {
+      "requirementId": "action:viewer:slideshow-blurred-background-look-progress-transition-settings",
+      "title": "Slideshow blurred-background look, progress/transition settings",
+      "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
+      "production": [
+        "web/src/lib/components/asset-viewer/SlideshowBar.svelte",
+        "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte"
+      ],
+      "status": "fixed",
+      "gaps": ["V-8", "V-18"],
+      "followUp": "Frameleaf settings panel, five transitions and inline slideshow (fixed on codex/FL-62-sept24-slideshow-memories)"
+    },
+    {
+      "requirementId": "action:viewer:slideshow-duration-contain-cover-metadata-captions",
+      "title": "Slideshow duration, contain/cover, metadata captions",
+      "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
+      "production": [
+        "web/src/lib/components/asset-viewer/SlideshowBar.svelte",
+        "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte"
+      ],
+      "status": "fixed",
+      "gaps": ["V-8"],
+      "followUp": "Frameleaf slideshow settings panel (fixed on codex/FL-62-sept24-slideshow-memories)"
+    },
+    {
+      "requirementId": "action:viewer:slideshow-play-pause-previous-next-repeat-shuffle",
+      "title": "Slideshow play/pause, previous/next, repeat, shuffle",
+      "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
+      "production": ["web/src/lib/components/asset-viewer/SlideshowBar.svelte"],
+      "status": "fixed",
+      "gaps": ["V-7", "V-15", "V-18"],
+      "followUp": "Play/Pause slideshow and Slideshow settings in the menu, Space/S, inline playback (codex/FL-35-complete-viewer)"
+    },
+    {
+      "requirementId": "action:viewer:star-rating-clear-rating",
+      "title": "Star rating / clear rating",
+      "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
+      "production": ["web/src/lib/components/asset-viewer/actions/RatingAction.svelte"],
+      "status": "fixed",
+      "gaps": ["V-3"],
+      "followUp": "Rating popover in the top row"
+    },
+    {
+      "requirementId": "action:viewer:toggle-original-video-versus-encoded-playback",
+      "title": "Toggle original video versus encoded playback",
+      "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
+      "production": ["web/src/lib/components/frameleaf/ViewerFooter.svelte"],
+      "status": "fixed",
+      "gaps": ["V-11"],
+      "followUp": "The footer segment \"Play original / Play encoded\" (V-13); the menu entry is gone, as in the template (codex/FL-35-complete-viewer)"
+    },
+    {
+      "requirementId": "action:viewer:transcode-this-video",
+      "title": "Transcode this video",
+      "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
+      "production": ["web/src/lib/components/asset-viewer/AssetViewer.svelte", "web/src/lib/frameleaf/viewer-menu.ts"],
+      "status": "fixed",
+      "gaps": ["V-7"],
+      "followUp": "Transcode video and Refresh encoded video in the Jobs group (codex/FL-35-complete-viewer)"
+    },
+    {
+      "requirementId": "action:viewer:unstack-remove-one-item-from-a-stack",
+      "title": "Unstack; remove one item from a stack",
+      "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
+      "production": ["web/src/lib/components/frameleaf/ViewerStackStrip.svelte"],
+      "status": "fixed",
+      "gaps": ["V-10", "V-11"],
+      "followUp": "Label \"Unstack\"; \"Remove from stack\" stays as the FL-36 remove-member action (recorded deviation, codex/FL-35-complete-viewer)"
+    },
+    {
+      "requirementId": "action:viewer:view-in-timeline",
+      "title": "View in timeline",
+      "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
+      "production": ["web/src/lib/components/asset-viewer/AssetViewer.svelte", "web/src/lib/frameleaf/viewer-menu.ts"],
+      "status": "match",
+      "gaps": [],
+      "followUp": null
+    },
+    {
+      "requirementId": "action:viewer:view-similar-photos",
+      "title": "View similar photos",
+      "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
+      "production": ["web/src/lib/components/asset-viewer/AssetViewer.svelte", "web/src/lib/frameleaf/viewer-menu.ts"],
+      "status": "fixed",
+      "gaps": ["V-11"],
+      "followUp": "Label \"Find similar\" (codex/FL-35-complete-viewer)"
+    },
+    {
+      "requirementId": "action:viewer:zoom-in-out-fit-image-pan",
+      "title": "Zoom in/out, fit, image pan",
+      "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
+      "production": [
+        "web/src/lib/components/asset-viewer/PhotoViewer.svelte",
+        "web/src/lib/components/frameleaf/ViewerFooter.svelte"
+      ],
+      "status": "fixed",
+      "gaps": ["V-6", "V-13", "V-14"],
+      "followUp": "FL-35: footer Zoom out / Fit or N% of fit / Zoom in; zoom keys (fix-viewer); legacy buttons gone"
+    }
+  ],
+  "routes": [
+    {
+      "route": "/",
+      "prototype": ["design/frameleaf/template/src/AuthScreens.jsx"],
+      "production": ["web/src/routes/+page.ts"],
+      "status": "retained-live-route",
+      "gaps": [],
+      "followUp": "Lifecycle redirect (welcome / setup / login / photos)"
+    },
+    {
+      "route": "/activity",
+      "prototype": ["design/frameleaf/template/src/Activity.jsx"],
+      "production": [
+        "web/src/routes/(user)/activity/+page.svelte",
+        "web/src/lib/components/frameleaf/ActivityView.svelte"
+      ],
+      "status": "fixed",
+      "gaps": ["A-1", "A-6", "A-8", "A-9", "A-10"],
+      "followUp": "The indicator and filter count say \"jobs\" (A-1) and rows carry the status line with percent, ETA, \"Paused at N%\" and \"Waiting for connection\" (A-6), both by the FL-30 library gaps. A-2…A-5 and A-7 are fixed on claude/frameleaf-implementation by the design foundation Activity port. FL-104 adds the completion live region (A-8), the Reduce Motion guard (A-9) and Pause disabled with its reason (A-10)"
+    },
+    {
+      "route": "/admin",
+      "prototype": ["design/frameleaf/template/src/CommandCenter.jsx"],
+      "production": ["web/src/routes/admin/+page.ts"],
+      "status": "fixed",
+      "gaps": ["CC-9", "C-2"],
+      "followUp": "Overview homepage on /admin with the template copy, the restore-test and worker-compatibility rows, and the ML endpoint, GPU Studio and cloud destination from the server (FL-71)"
+    },
+    {
+      "route": "/admin/jobs-status",
+      "prototype": ["design/frameleaf/template/src/JobsManager.jsx"],
+      "production": ["web/src/routes/admin/jobs-status/+page.ts"],
+      "status": "fixed",
+      "gaps": ["CC-35"],
+      "followUp": "Redirects to the Job manager (FL-71)"
+    },
+    {
+      "route": "/admin/library-management",
+      "prototype": ["design/frameleaf/template/src/AccountsLibraries.jsx"],
+      "production": [
+        "web/src/routes/admin/library-management/(list)/+page.ts",
+        "web/src/lib/components/frameleaf/LibrariesManager.svelte"
+      ],
+      "status": "fixed",
+      "gaps": ["CC-34"],
+      "followUp": "Frameleaf libraries in the Command Center: search, filter, sort, status and scan progress, Cancel scan, typed-name removal (FL-78, closed September 25)"
+    },
+    {
+      "route": "/admin/library-management/[id]",
+      "prototype": ["design/frameleaf/template/src/AccountsLibraries.jsx"],
+      "production": [
+        "web/src/routes/admin/library-management/[id]/+page.ts",
+        "web/src/lib/components/frameleaf/LibraryDetail.svelte"
+      ],
+      "status": "fixed",
+      "gaps": ["CC-34"],
+      "followUp": "Frameleaf libraries in the Command Center: search, filter, sort, status and scan progress, Cancel scan, typed-name removal (FL-78, closed September 25)"
+    },
+    {
+      "route": "/admin/library-management/[id]/edit",
+      "prototype": ["design/frameleaf/template/src/AccountsLibraries.jsx"],
+      "production": [
+        "web/src/routes/admin/library-management/[id]/edit/+page.ts",
+        "web/src/lib/components/frameleaf/LibraryFormDialog.svelte"
+      ],
+      "status": "fixed",
+      "gaps": ["CC-34"],
+      "followUp": "Frameleaf libraries in the Command Center: search, filter, sort, status and scan progress, Cancel scan, typed-name removal (FL-78, closed September 25)"
+    },
+    {
+      "route": "/admin/library-management/new",
+      "prototype": ["design/frameleaf/template/src/AccountsLibraries.jsx"],
+      "production": [
+        "web/src/routes/admin/library-management/(list)/new/+page.ts",
+        "web/src/lib/components/frameleaf/LibraryFormDialog.svelte"
+      ],
+      "status": "fixed",
+      "gaps": ["CC-34"],
+      "followUp": "Frameleaf libraries in the Command Center: search, filter, sort, status and scan progress, Cancel scan, typed-name removal (FL-78, closed September 25)"
+    },
+    {
+      "route": "/admin/maintenance",
+      "prototype": [
+        "design/frameleaf/template/src/Maintenance.jsx",
+        "design/frameleaf/template/src/maintenance-data.mjs"
+      ],
+      "production": [
+        "web/src/routes/admin/maintenance/+page.ts",
+        "web/src/routes/(user)/user-settings/sections/MaintenanceSection.svelte"
+      ],
+      "status": "fixed",
+      "gaps": ["CC-21"],
+      "followUp": "The server records each check's last full run and the card reads \"Last run …\" / \"Never run\" (FL-81 CC-21); mode card, reason, backups, integrity checks and reports fixed by FL-81 (CC-14..CC-20, CC-22, CC-24)"
+    },
+    {
+      "route": "/admin/maintenance/integrity-report/[type]",
+      "prototype": ["design/frameleaf/template/src/Maintenance.jsx"],
+      "production": [
+        "web/src/routes/admin/maintenance/integrity-report/[type]/+page.ts",
+        "web/src/routes/(user)/user-settings/sections/IntegrityReportSection.svelte"
+      ],
+      "status": "fixed",
+      "gaps": ["CC-23"],
+      "followUp": "Report viewer summary, Download CSV and Download report file, delete confirm (fixed by FL-81); severity is server-limited"
+    },
+    {
+      "route": "/admin/physical-deduplication",
+      "prototype": [
+        "design/frameleaf/template/src/PhysicalDedupManager.jsx",
+        "design/frameleaf/template/src/physical-dedup-data.mjs"
+      ],
+      "production": [
+        "web/src/routes/admin/physical-deduplication/+page.ts",
+        "web/src/lib/components/frameleaf/PhysicalDedupManager.svelte"
+      ],
+      "status": "fixed",
+      "gaps": ["UT-23", "UT-24", "UT-25"],
+      "followUp": "Configuration-error state with Open settings; per-read file availability with the unavailable overlay; detail line, picker and Change link (FL-71, September 25)"
+    },
+    {
+      "route": "/admin/processing-destinations",
+      "prototype": [
+        "design/frameleaf/template/src/WorkerManager.jsx",
+        "design/frameleaf/template/src/worker-settings.mjs"
+      ],
+      "production": [
+        "web/src/routes/admin/processing-destinations/+page.ts",
+        "web/src/routes/(user)/user-settings/sections/ProcessingSection.svelte"
+      ],
+      "status": "match",
+      "gaps": ["CC-45"],
+      "followUp": "Only the enclosing admin sidebar (CC-1)"
+    },
+    {
+      "route": "/admin/queues",
+      "prototype": ["design/frameleaf/template/src/JobsManager.jsx", "design/frameleaf/template/src/jobs-data.mjs"],
+      "production": [
+        "web/src/routes/admin/queues/+page.ts",
+        "web/src/routes/(user)/user-settings/sections/QueuesSection.svelte"
+      ],
+      "status": "fixed",
+      "gaps": ["CC-42", "CC-43", "CC-44"],
+      "followUp": "Job manager fixed by FL-71 (CC-35..CC-41, Retry failed, Account and Worker columns, Account filter J-1 with per-account counts) and FL-59 (CC-42, the Frameleaf Enrichment tasks dialog with When and Acceleration); CC-43 and CC-44 are obsolete: the GPU provider is removed and Frameleaf Cloud processing replaces it (FL-159)"
+    },
+    {
+      "route": "/admin/queues/[name]",
+      "prototype": ["design/frameleaf/template/src/JobsManager.jsx"],
+      "production": [
+        "web/src/routes/admin/queues/[name]/+page.ts",
+        "web/src/routes/(user)/user-settings/sections/QueuesSection.svelte"
+      ],
+      "status": "fixed",
+      "gaps": ["CC-38"],
+      "followUp": "Queue detail with job tabs, Account and Worker columns, Retry failed and the job detail dialog (FL-71)"
+    },
+    {
+      "route": "/admin/render-workers",
+      "prototype": ["design/frameleaf/template/src/WorkerManager.jsx"],
+      "production": [
+        "web/src/routes/admin/render-workers/+page.ts",
+        "web/src/routes/(user)/user-settings/sections/RenderWorkersSection.svelte"
+      ],
+      "status": "studio-parked",
+      "gaps": [],
+      "followUp": "Render workers are beyond the prototype (Studio rendering)"
+    },
+    {
+      "route": "/admin/server-status",
+      "prototype": ["design/frameleaf/template/src/CommandCenter.jsx"],
+      "production": ["web/src/routes/admin/server-status/+page.ts"],
+      "status": "fixed",
+      "gaps": ["CC-9"],
+      "followUp": "Redirects to Library analytics in the Command Center (FL-79); the Overview is /admin"
+    },
+    {
+      "route": "/admin/system-settings",
+      "prototype": [
+        "design/frameleaf/template/src/CommandCenter.jsx",
+        "design/frameleaf/template/src/settings-catalog.mjs",
+        "design/frameleaf/template/src/ConfigurationTransfer.jsx"
+      ],
+      "production": [
+        "web/src/routes/admin/system-settings/+page.ts",
+        "web/src/lib/components/frameleaf/settings/SettingsHost.svelte",
+        "web/src/lib/components/frameleaf/settings/SettingsHost.svelte"
+      ],
+      "status": "partial",
+      "gaps": ["CC-1", "CC-2", "CC-3", "CC-4", "CC-5", "CC-6", "CC-7", "CC-8", "CC-11", "CC-12"],
+      "followUp": "Rail, areas, search, directory and draft/review fixed (FL-66, FL-71; section titles, search count and scope note aligned in the Sept 24 re-audit); the server name fixed (CC-4, `server.name`); the platform shortcut hint fixed (CC-7, September 25); configuration transfer fixed by FL-71 (CC-46..CC-48)"
+    },
+    {
+      "route": "/admin/user-management",
+      "prototype": ["design/frameleaf/template/src/AccountsLibraries.jsx"],
+      "production": ["web/src/routes/admin/user-management/+page.ts"],
+      "status": "retained-live-route",
+      "gaps": [],
+      "followUp": "Redirect to /admin/users"
+    },
+    {
+      "route": "/admin/users",
+      "prototype": [
+        "design/frameleaf/template/src/AccountsLibraries.jsx",
+        "design/frameleaf/template/src/account-library-data.mjs"
+      ],
+      "production": [
+        "web/src/routes/admin/users/(list)/+page.ts",
+        "web/src/routes/(user)/user-settings/sections/UsersSection.svelte",
+        "web/src/lib/components/frameleaf/AccountTable.svelte"
+      ],
+      "status": "fixed",
+      "gaps": ["CC-25", "CC-26", "CC-27"],
+      "followUp": "\"Your server\" heading, Items and Storage used / quota columns, toolbar, Edit account in the detail header (FL-71, FL-76)"
+    },
+    {
+      "route": "/admin/users/[id]",
+      "prototype": ["design/frameleaf/template/src/AccountsLibraries.jsx"],
+      "production": [
+        "web/src/routes/admin/users/[id]/+page.ts",
+        "web/src/routes/(user)/user-settings/sections/UserDetail.svelte",
+        "web/src/lib/components/frameleaf/AccountDetailTabs.svelte"
+      ],
+      "status": "fixed",
+      "gaps": ["CC-28", "CC-30", "CC-32"],
+      "followUp": "Detail header, PIN is set / No PIN set with Set, Change and Reset PIN from the admin-only PIN state, typed email on every delete (FL-76); snapshot, sign-in provider and device dialog fixed by FL-76 (CC-29, CC-31, CC-33)"
+    },
+    {
+      "route": "/admin/users/[id]/edit",
+      "prototype": ["design/frameleaf/template/src/AccountsLibraries.jsx"],
+      "production": [
+        "web/src/routes/admin/users/[id]/edit/+page.ts",
+        "web/src/routes/(user)/user-settings/sections/UserDetail.svelte",
+        "web/src/lib/components/frameleaf/AccountFormDialog.svelte"
+      ],
+      "status": "match",
+      "gaps": [],
+      "followUp": null
+    },
+    {
+      "route": "/admin/users/new",
+      "prototype": ["design/frameleaf/template/src/AccountsLibraries.jsx"],
+      "production": [
+        "web/src/routes/admin/users/(list)/new/+page.ts",
+        "web/src/routes/(user)/user-settings/sections/UsersSection.svelte",
+        "web/src/lib/components/frameleaf/AccountFormDialog.svelte"
+      ],
+      "status": "match",
+      "gaps": [],
+      "followUp": null
+    },
+    {
+      "route": "/albums",
+      "prototype": [
+        "design/frameleaf/template/src/Collections.jsx",
+        "design/frameleaf/template/src/AlbumCard.jsx",
+        "design/frameleaf/template/src/collections-data.mjs"
+      ],
+      "production": [
+        "web/src/routes/(user)/albums/+page.svelte",
+        "web/src/lib/components/frameleaf/AlbumDirectory.svelte"
+      ],
+      "status": "partial",
+      "gaps": ["AL-1", "AL-2", "AL-3", "AL-4", "AL-5", "AL-6", "AL-7", "AL-8", "AL-9"],
+      "followUp": "Albums page dialogs and smart album create fixed; AL-6 (built-in smart albums) and AL-9 (editor move rights, owner decision) remain"
+    },
+    {
+      "route": "/albums/[albumId=id]/[[photos=photos]]/[[assetId=id]]",
+      "prototype": [
+        "design/frameleaf/template/src/CollectionHeader.jsx",
+        "design/frameleaf/template/src/ActivityPanel.jsx"
+      ],
+      "production": [
+        "web/src/routes/(user)/albums/[albumId=id]/[[photos=photos]]/[[assetId=id]]/+page.svelte",
+        "web/src/lib/components/frameleaf/AlbumHeader.svelte"
+      ],
+      "status": "partial",
+      "gaps": ["AL-10", "AL-11", "AL-12", "AL-13", "AL-14", "AL-15", "AL-16", "AL-17", "AL-18"],
+      "followUp": "Album header conformance; AL-13 (newest-item cover) needs a server change"
+    },
+    {
+      "route": "/archive/[[photos=photos]]/[[assetId=id]]",
+      "prototype": ["design/frameleaf/template/src/TimelineLibrary.jsx", "design/frameleaf/template/src/App.jsx"],
+      "production": ["web/src/routes/(user)/archive/[[photos=photos]]/[[assetId=id]]/+page.svelte"],
+      "status": "fixed",
+      "gaps": ["T-10", "S-10"],
+      "followUp": "Frameleaf empty state (T-10, FL-33 library gaps; S-10 fixed)"
+    },
+    {
+      "route": "/auth/change-password",
+      "prototype": ["design/frameleaf/template/src/AuthScreens.jsx"],
+      "production": ["web/src/routes/auth/change-password/+page.svelte"],
+      "status": "fixed",
+      "gaps": ["AU-3"],
+      "followUp": "Prototype copy, strength meter, Sign out instead (fixed on claude/frameleaf-implementation by the FL-80 auth screens)"
+    },
+    {
+      "route": "/auth/login",
+      "prototype": ["design/frameleaf/template/src/AuthScreens.jsx"],
+      "production": ["web/src/routes/auth/login/+page.svelte"],
+      "status": "fixed",
+      "gaps": ["AU-1"],
+      "followUp": "Heading, forgot-password note and \"Keep me signed in\" (fixed on claude/frameleaf-implementation by the FL-80 auth screens); relay-only and local Sign in with Frameleaf views with the same-network banner (FL-158)"
+    },
+    {
+      "route": "/auth/logout",
+      "prototype": ["design/frameleaf/template/src/SystemPanels.jsx"],
+      "production": ["web/src/routes/auth/logout/+page.svelte"],
+      "status": "retained-live-route",
+      "gaps": [],
+      "followUp": "Sign-out redirect"
+    },
+    {
+      "route": "/auth/onboarding",
+      "prototype": [
+        "design/frameleaf/template/src/FirstRunSetup.jsx",
+        "design/frameleaf/template/src/first-run-setup.mjs"
+      ],
+      "production": [
+        "web/src/routes/auth/onboarding/+page.svelte",
+        "web/src/lib/components/frameleaf/setup/FirstRunSetup.svelte",
+        "web/src/lib/components/frameleaf/setup/AccountSetupTool.svelte",
+        "web/src/lib/frameleaf/first-run-setup.ts"
+      ],
+      "status": "fixed",
+      "gaps": ["FS-1", "O-8", "O-12"],
+      "followUp": "FS-1 fixed (FL-176): the existing-library setup flow (admin sign-in, Your library is safe, account, library check, processing, protection, privacy, people, imports, Ready) on the dark stage with server-saved progress, and the one-time Set up your account tool for every other account; residue: the found-backup offer waits on Cloud discovery (FL-145)"
+    },
+    {
+      "route": "/auth/pin-prompt",
+      "prototype": ["design/frameleaf/template/src/AuthScreens.jsx"],
+      "production": ["web/src/routes/auth/pin-prompt/+page.svelte", "web/src/lib/components/frameleaf/PinCells.svelte"],
+      "status": "fixed",
+      "gaps": ["AU-4"],
+      "followUp": "PIN prompt copy, keypad, Reset PIN, create-mode cells (fixed on claude/frameleaf-implementation by the FL-80 auth screens)"
+    },
+    {
+      "route": "/auth/register",
+      "prototype": [
+        "design/frameleaf/template/src/FirstRunSetup.jsx",
+        "design/frameleaf/template/src/first-run-setup.mjs"
+      ],
+      "production": [
+        "web/src/routes/auth/register/+page.svelte",
+        "web/src/lib/components/frameleaf/setup/FirstRunSetup.svelte",
+        "web/src/lib/frameleaf/first-run-setup.ts"
+      ],
+      "status": "fixed",
+      "gaps": ["FS-1", "AU-2"],
+      "followUp": "FS-1 fixed (FL-176): the new-server setup flow (logo intro, sign-in choice, local admin through the sign-up API, storage check and folder layout, processing, protection, privacy, imports, Ready) replaces the FL-80 register screen; Frameleaf sign-in falls back to a local account while Frameleaf Cloud isn't reachable"
+    },
+    {
+      "route": "/best-photos/[[photos=photos]]/[[assetId=id]]",
+      "prototype": ["design/frameleaf/template/src/App.jsx", "design/frameleaf/template/src/AssetTile.jsx"],
+      "production": ["web/src/routes/(user)/best-photos/[[photos=photos]]/[[assetId=id]]/+page.svelte"],
+      "status": "fixed",
+      "gaps": ["T-6"],
+      "followUp": "Tiles show each item's own rating and Best Photos keeps the server quality order (T-6 fixed, FL-50); ranked video best-moment play and cover actions added on codex/FL-50-explore-albums-map"
+    },
+    {
+      "route": "/buy",
+      "prototype": ["design/frameleaf/template/src/AuthScreens.jsx", "design/frameleaf/template/src/system-data.mjs"],
+      "production": ["web/src/routes/(user)/buy/+page.svelte", "web/src/lib/components/frameleaf/buy/BuyScreen.svelte"],
+      "status": "fixed",
+      "gaps": ["BU-1", "S-31", "B-1", "B-2", "B-3", "B-4", "B-5", "B-6", "B-7", "B-9"],
+      "followUp": "Support Frameleaf screen ported (FL-157): plan and supporter cards in US dollars, FL- key field with check symbol, activated card, hide-badge switch, remove key in place, wide auth shell; store from FRAMELEAF_CLOUD_URL or \"not available yet\" (FL-172); backup priced separately (coordinator decision)"
+    },
+    {
+      "route": "/documents/[[photos=photos]]/[[assetId=id]]",
+      "prototype": ["design/frameleaf/template/src/App.jsx"],
+      "production": ["web/src/routes/(user)/documents/[[photos=photos]]/[[assetId=id]]/+page.svelte"],
+      "status": "in-flight",
+      "gaps": [],
+      "followUp": "FL-63 documents (beyond the prototype)"
+    },
+    {
+      "route": "/explore",
+      "prototype": [
+        "design/frameleaf/template/src/ExploreLibrary.jsx",
+        "design/frameleaf/template/src/explore-timeline.mjs"
+      ],
+      "production": [
+        "web/src/routes/(user)/explore/+page.svelte",
+        "web/src/lib/components/frameleaf/ExplorePanel.svelte"
+      ],
+      "status": "fixed",
+      "gaps": ["T-12"],
+      "followUp": "Explore sections, counts and snapping carousels (fixed on codex/FL-50-explore-albums-map)"
+    },
+    {
+      "route": "/favorites/[[photos=photos]]/[[assetId=id]]",
+      "prototype": ["design/frameleaf/template/src/TimelineLibrary.jsx", "design/frameleaf/template/src/App.jsx"],
+      "production": ["web/src/routes/(user)/favorites/[[photos=photos]]/[[assetId=id]]/+page.svelte"],
+      "status": "fixed",
+      "gaps": ["T-10", "S-10"],
+      "followUp": "Frameleaf empty state (T-10, FL-33 library gaps; S-10 fixed)"
+    },
+    {
+      "route": "/folders/[[photos=photos]]/[[assetId=id]]",
+      "prototype": ["design/frameleaf/template/src/Folders.jsx", "design/frameleaf/template/src/discovery-data.mjs"],
+      "production": [
+        "web/src/routes/(user)/folders/[[photos=photos]]/[[assetId=id]]/+page.svelte",
+        "web/src/lib/components/frameleaf/FolderBrowserPanel.svelte"
+      ],
+      "status": "fixed",
+      "gaps": ["FD-1", "FD-2", "FD-3", "FD-4", "FD-5", "FD-6", "FD-7", "FD-8"],
+      "followUp": "Folders browser ported from Folders.jsx (fixed on codex/FL-46-complete-browsers)"
+    },
+    {
+      "route": "/link",
+      "prototype": ["design/frameleaf/template/src/App.jsx"],
+      "production": ["web/src/routes/link/+page.ts"],
+      "status": "retained-live-route",
+      "gaps": [],
+      "followUp": "Deep-link resolver; licence-key fragment relay (FL-157) and the Frameleaf account link return (FL-158)"
+    },
+    {
+      "route": "/locked/[[photos=photos]]/[[assetId=id]]",
+      "prototype": [
+        "design/frameleaf/template/src/LockedContent.jsx",
+        "design/frameleaf/template/src/locked-content.mjs"
+      ],
+      "production": ["web/src/routes/(user)/locked/[[photos=photos]]/[[assetId=id]]/+page.svelte"],
+      "status": "fixed",
+      "gaps": ["S-6", "S-7", "T-20"],
+      "followUp": "Locked control and in-place unlock dialog (fixed on claude/frameleaf-implementation by FL-80); the layout switch offers the Timeline only (T-20)"
+    },
+    {
+      "route": "/maintenance",
+      "prototype": ["design/frameleaf/template/src/AuthScreens.jsx", "design/frameleaf/template/src/system-data.mjs"],
+      "production": ["web/src/routes/maintenance/+page.svelte"],
+      "status": "fixed",
+      "gaps": ["MS-1", "M-1", "M-2", "M-3", "M-4", "M-5", "M-6"],
+      "followUp": "Maintenance splash (fixed by FL-80)"
+    },
+    {
+      "route": "/map/[[photos=photos]]/[[assetId=id]]",
+      "prototype": ["design/frameleaf/template/src/MapView.jsx", "design/frameleaf/template/src/discovery-data.mjs"],
+      "production": ["web/src/routes/(user)/map/[[photos=photos]]/[[assetId=id]]/+page.svelte"],
+      "status": "fixed",
+      "gaps": ["MV-1", "MV-2", "MV-3", "MV-4", "MV-5", "MV-6", "MV-7", "MV-8"],
+      "followUp": "Map settings sheet with counts, cluster zoom, chips, empty, offline and disabled states, list rows and hover card (fixed, FL-51)"
+    },
+    {
+      "route": "/memories",
+      "prototype": ["design/frameleaf/template/src/Memories.jsx", "design/frameleaf/template/src/discovery-data.mjs"],
+      "production": [
+        "web/src/routes/(user)/memories/+page.svelte",
+        "web/src/lib/components/frameleaf/MemoriesPanel.svelte"
+      ],
+      "status": "fixed",
+      "gaps": ["MI-1", "MI-2", "MI-3", "MI-4", "MI-5", "MI-6", "MI-7"],
+      "followUp": "Today/Upcoming/Earlier from the local date, badges, quiet card, Hide memory with Hidden memories, show-less, Memory settings (fixed, FL-62)"
+    },
+    {
+      "route": "/memories/[id]/[[photos=photos]]/[[assetId=id]]",
+      "prototype": ["design/frameleaf/template/src/MemoryPlayer.jsx"],
+      "production": [
+        "web/src/routes/(user)/memories/[id]/[[photos=photos]]/[[assetId=id]]/+page.svelte",
+        "web/src/lib/components/frameleaf/MemoryPlayerPanel.svelte"
+      ],
+      "status": "fixed",
+      "gaps": ["MPY-1", "MPY-2", "MPY-3", "MPY-4", "MPY-5", "MPY-6", "MPY-7", "MPY-8", "MPY-9", "MPY-10"],
+      "followUp": "Header and segment labels, Show all items (G), Space/M/G/Home/End, soundtrack, Open item, people, rename/reorder/favorite, Make a movie opens Studio (fixed, FL-62)"
+    },
+    {
+      "route": "/memory/[[photos=photos]]/[[assetId=id]]",
+      "prototype": ["design/frameleaf/template/src/Memories.jsx"],
+      "production": ["web/src/routes/(user)/memory/[[photos=photos]]/[[assetId=id]]/+page.ts"],
+      "status": "retained-live-route",
+      "gaps": [],
+      "followUp": "Redirect to /memories"
+    },
+    {
+      "route": "/partners/[userId]/[[photos=photos]]/[[assetId=id]]",
+      "prototype": ["design/frameleaf/template/src/PartnerLibrary.jsx"],
+      "production": [
+        "web/src/routes/(user)/partners/[userId]/[[photos=photos]]/[[assetId=id]]/+page.svelte",
+        "web/src/lib/components/frameleaf/PartnerLibraryHeader.svelte"
+      ],
+      "status": "partial",
+      "gaps": ["AL-39", "AL-40", "AL-41"],
+      "followUp": "Partner header copy (the legacy bar is removed, AL-41)"
+    },
+    {
+      "route": "/people",
+      "prototype": ["design/frameleaf/template/src/People.jsx", "design/frameleaf/template/src/people-data.mjs"],
+      "production": [
+        "web/src/routes/(user)/people/+page.svelte",
+        "web/src/lib/components/frameleaf/people/PersonCard.svelte",
+        "web/src/lib/components/frameleaf/people/MergePeopleDialog.svelte"
+      ],
+      "status": "fixed",
+      "gaps": ["PG-1", "PG-2", "PG-3", "PG-4", "PG-5", "PG-6", "PG-7", "PG-8", "PG-9", "PN-1", "PN-2", "PN-3"],
+      "followUp": "People grid: sort, Find a person, counts (GET /people assetCount/lastSeenAt), labels, summary, empty/status copy, combobox name editor and Frameleaf merge/birthday dialogs (PN-1/PN-2 by fix-discovery; the rest on codex/FL-37-people-faces)"
+    },
+    {
+      "route": "/people/[personId]/[[photos=photos]]/[[assetId=id]]",
+      "prototype": ["design/frameleaf/template/src/PersonDetail.jsx", "design/frameleaf/template/src/People.jsx"],
+      "production": [
+        "web/src/routes/(user)/people/[personId]/[[photos=photos]]/[[assetId=id]]/+page.svelte",
+        "web/src/lib/components/frameleaf/people/PersonHero.svelte",
+        "web/src/lib/components/frameleaf/people/FixMatchPanel.svelte",
+        "web/src/lib/components/frameleaf/people/CorrectionHistoryPanel.svelte"
+      ],
+      "status": "fixed",
+      "gaps": ["PD-1", "PD-2", "PD-3", "PD-4", "PD-5", "PD-6", "PD-7", "PD-8", "PD-9"],
+      "followUp": "Person hero toolbar, facts line, name editor, Fix incorrect match panel and Frameleaf featured/merge/birthday dialogs (codex/FL-37-people-faces); Fix incorrect match splits selected faces into an existing or new person with revision-checked corrections, and PD-9 Correction history is FL-57's paginated history with Undo (the story requires it; FL-146 defaults accepted 2026-09-25)"
+    },
+    {
+      "route": "/people/manage",
+      "prototype": ["design/frameleaf/template/src/ManagePeople.jsx"],
+      "production": ["web/src/routes/(user)/people/manage/+page.svelte"],
+      "status": "fixed",
+      "gaps": ["MP-1", "MP-2", "MP-3", "MP-4", "MP-5", "MP-6"],
+      "followUp": "Batch labels, pending footer, Discard changes? guard, back button, empty and status copy (fixed on claude/frameleaf-implementation by the people visibility recovery); MP-6 card aria (name, state, unsaved change) verified present"
+    },
+    {
+      "route": "/pets",
+      "prototype": ["design/frameleaf/template/src/App.jsx"],
+      "production": ["web/src/routes/(user)/pets/+page.svelte"],
+      "status": "intentional-product-change",
+      "gaps": [],
+      "followUp": "FL-58 pets beyond the prototype's tag query: durable named cat/dog profiles, checksum-guarded review with Undo, CLIP-based recognition on the routed destination (this server, a computer on the network or Frameleaf Cloud) with actionable refusals; composed from the People grid and grouped-list patterns"
+    },
+    {
+      "route": "/pets/[petId=id]/[[photos=photos]]/[[assetId=id]]",
+      "prototype": ["design/frameleaf/template/src/App.jsx"],
+      "production": ["web/src/routes/(user)/pets/[petId=id]/[[photos=photos]]/[[assetId=id]]/+page.svelte"],
+      "status": "intentional-product-change",
+      "gaps": [],
+      "followUp": "FL-58 pet page (beyond the prototype): the pet's confirmed photos through the petIds search filter, and its decisions with stale regions to check"
+    },
+    {
+      "route": "/photos/[[assetId=id]]",
+      "prototype": [
+        "design/frameleaf/template/src/TimelineLibrary.jsx",
+        "design/frameleaf/template/src/App.jsx",
+        "design/frameleaf/template/src/AssetTile.jsx"
+      ],
+      "production": [
+        "web/src/routes/(user)/photos/[[assetId=id]]/+page.svelte",
+        "web/src/lib/components/frameleaf/LibraryView.svelte"
+      ],
+      "status": "fixed",
+      "gaps": ["T-3", "T-4", "T-5", "T-6", "T-7", "T-8", "T-10", "T-14", "T-15", "S-15", "S-16", "S-17", "S-19"],
+      "followUp": "Timeline, toolbar and bottom bar conformance (FL-30/FL-33 shell completion)"
+    },
+    {
+      "route": "/places",
+      "prototype": ["design/frameleaf/template/src/Places.jsx", "design/frameleaf/template/src/discovery-data.mjs"],
+      "production": ["web/src/routes/(user)/places/+page.svelte"],
+      "status": "fixed",
+      "gaps": ["PL-1", "PL-2", "PL-3", "PL-4", "PL-5", "PL-6", "PL-7", "PL-8"],
+      "followUp": "Frameleaf Places panel: summary, counts, grouping, state map, search and empty states (fixed, FL-51)"
+    },
+    {
+      "route": "/recently-added/[[assetId=id]]",
+      "prototype": ["design/frameleaf/template/src/TimelineLibrary.jsx"],
+      "production": ["web/src/routes/(user)/recently-added/[[assetId=id]]/+page.svelte"],
+      "status": "fixed",
+      "gaps": ["T-10", "S-10"],
+      "followUp": "Frameleaf empty state (T-10, FL-33 library gaps; S-10 fixed)"
+    },
+    {
+      "route": "/recently-added/[[photos=photos]]/[[assetId=id]]",
+      "prototype": ["design/frameleaf/template/src/TimelineLibrary.jsx"],
+      "production": ["web/src/routes/(user)/recently-added/[[photos=photos]]/[[assetId=id]]/+page.svelte"],
+      "status": "fixed",
+      "gaps": ["T-10", "S-10"],
+      "followUp": "Frameleaf empty state (T-10, FL-33 library gaps; S-10 fixed)"
+    },
+    {
+      "route": "/s/[slug]/[[photos=photos]]/[[assetId=id]]",
+      "prototype": ["design/frameleaf/template/src/PublicViewer.jsx"],
+      "production": [
+        "web/src/routes/(user)/s/[slug]/[[photos=photos]]/[[assetId=id]]/+page.svelte",
+        "web/src/lib/components/pages/SharedLinkPage.svelte"
+      ],
+      "status": "fixed",
+      "gaps": ["AL-34", "AL-35", "AL-36", "AL-37", "AL-38"],
+      "followUp": "Public viewer states, title line and footer; slideshow not gated on downloads (fixed, FL-56)"
+    },
+    {
+      "route": "/search/[[photos=photos]]/[[assetId=id]]",
+      "prototype": [
+        "design/frameleaf/template/src/SearchPalette.jsx",
+        "design/frameleaf/template/src/search-palette.mjs",
+        "design/frameleaf/template/src/FilterPanel.jsx",
+        "design/frameleaf/template/src/search.mjs"
+      ],
+      "production": [
+        "web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte",
+        "web/src/lib/components/frameleaf/SearchPalette.svelte"
+      ],
+      "status": "fixed",
+      "gaps": ["SD-12"],
+      "followUp": "Search palette (SD-1..SD-11, FP-1..FP-5) and the results page's palette-style chips (SD-12) fixed on codex/FL-49-search-palette"
+    },
+    {
+      "route": "/share/[key]/[[photos=photos]]/[[assetId=id]]",
+      "prototype": ["design/frameleaf/template/src/PublicViewer.jsx"],
+      "production": [
+        "web/src/routes/(user)/share/[key]/[[photos=photos]]/[[assetId=id]]/+page.svelte",
+        "web/src/lib/components/pages/SharedLinkPage.svelte"
+      ],
+      "status": "fixed",
+      "gaps": ["AL-34", "AL-35", "AL-36", "AL-37", "AL-38"],
+      "followUp": "Public viewer states, title line and footer; slideshow not gated on downloads (fixed, FL-56)"
+    },
+    {
+      "route": "/shared-links",
+      "prototype": [
+        "design/frameleaf/template/src/SharedLinks.jsx",
+        "design/frameleaf/template/src/SharedLinkForm.jsx",
+        "design/frameleaf/template/src/shared-links-data.mjs"
+      ],
+      "production": [
+        "web/src/routes/(user)/shared-links/(list)/+layout.svelte",
+        "web/src/lib/components/frameleaf/SharedLinkList.svelte"
+      ],
+      "status": "partial",
+      "gaps": ["AL-19", "AL-20", "AL-21", "AL-22", "AL-23", "AL-24", "AL-25", "AL-26", "AL-27", "AL-28", "AL-29"],
+      "followUp": "Shared links form preview/slug availability (AL-25, AL-26); AL-19..AL-24, AL-27..AL-29 fixed"
+    },
+    {
+      "route": "/shared-links/[id]/edit",
+      "prototype": ["design/frameleaf/template/src/SharedLinkForm.jsx"],
+      "production": ["web/src/routes/(user)/shared-links/(list)/[id]/edit/+page.ts"],
+      "status": "retained-live-route",
+      "gaps": ["AL-23"],
+      "followUp": "Redirect to the list's Frameleaf edit form (/shared-links?edit={id})"
+    },
+    {
+      "route": "/sharing",
+      "prototype": [
+        "design/frameleaf/template/src/Collections.jsx",
+        "design/frameleaf/template/src/CollectionHeader.jsx"
+      ],
+      "production": [
+        "web/src/routes/(user)/sharing/+page.svelte",
+        "web/src/lib/components/frameleaf/SharedSpacesWorkspace.svelte"
+      ],
+      "status": "fixed",
+      "gaps": ["AL-45", "AL-2", "AL-3", "AL-5"],
+      "followUp": "Workspace menu through Frameleaf dialogs (fixed on codex/FL-52-albums-sharing)"
+    },
+    {
+      "route": "/sharing/[spaceId=id]/[[photos=photos]]/[[assetId=id]]",
+      "prototype": ["design/frameleaf/template/src/CollectionHeader.jsx"],
+      "production": [
+        "web/src/routes/(user)/sharing/[spaceId=id]/[[photos=photos]]/[[assetId=id]]/+page.svelte",
+        "web/src/lib/components/frameleaf/SharedSpaceDetail.svelte"
+      ],
+      "status": "partial",
+      "gaps": ["AL-42", "AL-43", "AL-44"],
+      "followUp": "Space header controls (AL-42); confirmations and role labels fixed on codex/FL-52-albums-sharing"
+    },
+    {
+      "route": "/sharing/sharedlinks",
+      "prototype": ["design/frameleaf/template/src/SharedLinks.jsx"],
+      "production": ["web/src/routes/(user)/sharing/sharedlinks/+page.ts"],
+      "status": "retained-live-route",
+      "gaps": [],
+      "followUp": "Redirect to /shared-links"
+    },
+    {
+      "route": "/studio",
+      "prototype": ["design/frameleaf/template/src/Studio.jsx", "design/frameleaf/template/src/studio-project.mjs"],
+      "production": ["web/src/routes/(user)/studio/+page.svelte", "web/src/lib/components/frameleaf/StudioHost.svelte"],
+      "status": "fixed",
+      "gaps": ["ST-1", "ST-2", "ST-3", "ST-4", "ST-5", "ST-6"],
+      "followUp": "The header (ST-2…ST-7, FL-88: rename, Library back, review count, Basic/Advanced, avatar, export dialog; workspace layout stored per account, FL-91) and the workspace itself: the pinned Freecut editor mounted in a same-origin frame through studio/adapters/web (ST-1, FL-88; engine unparked 2026-09-25), with canonical commands applied by the engine (FL-92)"
+    },
+    {
+      "route": "/studio/projects",
+      "prototype": ["design/frameleaf/template/src/Studio.jsx"],
+      "production": ["web/src/routes/(user)/studio/projects/+page.svelte"],
+      "status": "studio-parked",
+      "gaps": [],
+      "followUp": "Project library is beyond the prototype"
+    },
+    {
+      "route": "/suppressed/[[photos=photos]]/[[assetId=id]]",
+      "prototype": ["design/frameleaf/template/src/LockedContent.jsx"],
+      "production": ["web/src/routes/(user)/suppressed/[[photos=photos]]/[[assetId=id]]/+page.svelte"],
+      "status": "fixed",
+      "gaps": ["S-6", "S-7"],
+      "followUp": "Locked destination behind the in-place unlock (fixed on claude/frameleaf-implementation by FL-80)"
+    },
+    {
+      "route": "/suppressed/albums/[albumId=id]/[[photos=photos]]/[[assetId=id]]",
+      "prototype": [
+        "design/frameleaf/template/src/LockedContent.jsx",
+        "design/frameleaf/template/src/CollectionHeader.jsx"
+      ],
+      "production": [
+        "web/src/routes/(user)/suppressed/albums/[albumId=id]/[[photos=photos]]/[[assetId=id]]/+page.svelte"
+      ],
+      "status": "fixed",
+      "gaps": ["S-6", "S-7"],
+      "followUp": "Locked album view behind the in-place unlock"
+    },
+    {
+      "route": "/tags/[[photos=photos]]/[[assetId=id]]",
+      "prototype": ["design/frameleaf/template/src/Tags.jsx", "design/frameleaf/template/src/discovery-data.mjs"],
+      "production": [
+        "web/src/routes/(user)/tags/[[photos=photos]]/[[assetId=id]]/+page.svelte",
+        "web/src/lib/components/frameleaf/TagBrowserPanel.svelte"
+      ],
+      "status": "fixed",
+      "gaps": ["TG-1", "TG-2", "TG-3", "TG-4", "TG-5", "TG-6", "TG-7", "TG-8", "TG-9", "TG-10", "TG-11", "TG-12"],
+      "followUp": "Tags browser ported from Tags.jsx (fixed on codex/FL-46-complete-browsers)"
+    },
+    {
+      "route": "/takeout",
+      "prototype": ["design/frameleaf/template/src/UtilitiesManager.jsx"],
+      "production": ["web/src/routes/(user)/takeout/+page.svelte"],
+      "status": "in-flight",
+      "gaps": [],
+      "followUp": "FL-65 Takeout import (beyond the prototype's utilities directory)"
+    },
+    {
+      "route": "/trash/[[photos=photos]]/[[assetId=id]]",
+      "prototype": ["design/frameleaf/template/src/TrashManager.jsx", "design/frameleaf/template/src/trash-data.mjs"],
+      "production": [
+        "web/src/routes/(user)/trash/[[photos=photos]]/[[assetId=id]]/+page.ts",
+        "web/src/routes/(user)/user-settings/sections/TrashSection.svelte",
+        "web/src/lib/components/frameleaf/TrashManager.svelte"
+      ],
+      "status": "match",
+      "gaps": [],
+      "followUp": null
+    },
+    {
+      "route": "/user-settings",
+      "prototype": [
+        "design/frameleaf/template/src/AccountPreferences.jsx",
+        "design/frameleaf/template/src/AccountsLibraries.jsx",
+        "design/frameleaf/template/src/SharingAccess.jsx"
+      ],
+      "production": ["web/src/routes/(user)/user-settings/+page.svelte"],
+      "status": "fixed",
+      "gaps": ["CC-49", "AL-46", "US-2"],
+      "followUp": "Personal preferences inside the command center; App settings controls, confirmations and People & sharing fixed by FL-67/FL-71 (CC-50..CC-54, AL-46); server key product name fixed (US-2)"
+    },
+    {
+      "route": "/utilities",
+      "prototype": [
+        "design/frameleaf/template/src/UtilitiesManager.jsx",
+        "design/frameleaf/template/src/utilities-data.mjs"
+      ],
+      "production": [
+        "web/src/routes/(user)/utilities/+page.ts",
+        "web/src/lib/components/frameleaf/settings/UtilitiesArea.svelte"
+      ],
+      "status": "match",
+      "gaps": ["UT-12"],
+      "followUp": "UT-12 obsolete: the September 24 prototype has no hub cards, utilities are Command Center directory rows. PL-0, UT-1 and UT-1a are fixed on claude/frameleaf-implementation: utilities are the Command Center utilities area and application setup is a utility"
+    },
+    {
+      "route": "/utilities/corrupt-media",
+      "prototype": [
+        "design/frameleaf/template/src/UtilitiesManager.jsx",
+        "design/frameleaf/template/src/UtilityRecovery.jsx"
+      ],
+      "production": [
+        "web/src/routes/(user)/utilities/corrupt-media/+page.ts",
+        "web/src/lib/components/frameleaf/LibraryCareHealth.svelte"
+      ],
+      "status": "fixed",
+      "gaps": ["UT-2"],
+      "followUp": "Undo on the notice through the reopen endpoint (FL-69)"
+    },
+    {
+      "route": "/utilities/downloads",
+      "prototype": [
+        "design/frameleaf/template/src/UtilitiesManager.jsx",
+        "design/frameleaf/template/src/utilities-data.mjs"
+      ],
+      "production": [
+        "web/src/routes/(user)/utilities/downloads/+page.ts",
+        "web/src/lib/components/frameleaf/ApplicationSetup.svelte"
+      ],
+      "status": "fixed",
+      "gaps": ["UT-1", "UT-1a"],
+      "followUp": "Mobile applications setup is a Command Center utility (fixed on claude/frameleaf-implementation)"
+    },
+    {
+      "route": "/utilities/duplicates/[[photos=photos]]/[[assetId=id]]",
+      "prototype": [
+        "design/frameleaf/template/src/DuplicateReview.jsx",
+        "design/frameleaf/template/src/duplicate-review.mjs"
+      ],
+      "production": [
+        "web/src/routes/(user)/utilities/duplicates/[[photos=photos]]/[[assetId=id]]/+page.ts",
+        "web/src/lib/components/frameleaf/DuplicateUtility.svelte",
+        "web/src/lib/components/frameleaf/DuplicateReview.svelte"
+      ],
+      "status": "match",
+      "gaps": [],
+      "followUp": null
+    },
+    {
+      "route": "/utilities/geolocation",
+      "prototype": [
+        "design/frameleaf/template/src/UtilitiesManager.jsx",
+        "design/frameleaf/template/src/UtilityMapPicker.jsx"
+      ],
+      "production": [
+        "web/src/routes/(user)/utilities/geolocation/+page.ts",
+        "web/src/lib/components/frameleaf/GeolocationUtility.svelte"
+      ],
+      "status": "partial",
+      "gaps": ["GL-1", "UT-10", "UT-17", "UT-18", "UT-19", "UT-5"],
+      "followUp": "Location editor conformance"
+    },
+    {
+      "route": "/utilities/geolocation/photos/[photoId]",
+      "prototype": ["design/frameleaf/template/src/UtilitiesManager.jsx"],
+      "production": ["web/src/routes/(user)/utilities/geolocation/photos/[photoId]/+page.ts"],
+      "status": "retained-live-route",
+      "gaps": [],
+      "followUp": "Viewer deep link inside the location editor"
+    },
+    {
+      "route": "/utilities/icloud-sync",
+      "prototype": [
+        "design/frameleaf/template/src/UtilitiesManager.jsx",
+        "design/frameleaf/template/src/utilities-data.mjs"
+      ],
+      "production": [
+        "web/src/routes/(user)/utilities/icloud-sync/+page.ts",
+        "web/src/lib/components/frameleaf/ICloudSyncPanel.svelte"
+      ],
+      "status": "fixed",
+      "gaps": ["UT-11"],
+      "followUp": "Recent utility activity on every tool (FL-69)"
+    },
+    {
+      "route": "/utilities/large-files/[[photos=photos]]/[[assetId=id]]",
+      "prototype": ["design/frameleaf/template/src/UtilitiesManager.jsx"],
+      "production": [
+        "web/src/routes/(user)/utilities/large-files/[[photos=photos]]/[[assetId=id]]/+page.ts",
+        "web/src/lib/components/frameleaf/LargeFilesUtility.svelte",
+        "web/src/lib/components/frameleaf/LargeFilesReview.svelte"
+      ],
+      "status": "fixed",
+      "gaps": ["UT-11", "UT-15", "UT-16"],
+      "followUp": "Recent utility activity, row type and resolution, title (fixed on codex/FL-35-complete-viewer, FL-47)"
+    },
+    {
+      "route": "/utilities/live-photos",
+      "prototype": ["design/frameleaf/template/src/UtilitiesManager.jsx"],
+      "production": [
+        "web/src/routes/(user)/utilities/live-photos/+page.ts",
+        "web/src/lib/components/frameleaf/LivePhotosUtility.svelte"
+      ],
+      "status": "partial",
+      "gaps": ["LP-1", "UT-3", "UT-4", "UT-5", "UT-6", "UT-7", "UT-8", "UT-9"],
+      "followUp": "Live Photo pairing labels, states, scope, notice"
+    },
+    {
+      "route": "/utilities/missing-media",
+      "prototype": [
+        "design/frameleaf/template/src/UtilitiesManager.jsx",
+        "design/frameleaf/template/src/UtilityRecovery.jsx"
+      ],
+      "production": [
+        "web/src/routes/(user)/utilities/missing-media/+page.ts",
+        "web/src/lib/components/frameleaf/LibraryCareHealth.svelte"
+      ],
+      "status": "fixed",
+      "gaps": ["UT-2"],
+      "followUp": "Undo on the notice through the reopen endpoint (FL-69)"
+    },
+    {
+      "route": "/utilities/obtainium",
+      "prototype": [
+        "design/frameleaf/template/src/UtilitiesManager.jsx",
+        "design/frameleaf/template/src/utilities-data.mjs"
+      ],
+      "production": [
+        "web/src/routes/(user)/utilities/obtainium/+page.ts",
+        "web/src/lib/components/frameleaf/ApplicationSetup.svelte"
+      ],
+      "status": "fixed",
+      "gaps": ["UT-1", "UT-1a"],
+      "followUp": "Obtainium setup is a Command Center utility (fixed on claude/frameleaf-implementation)"
+    },
+    {
+      "route": "/workflows",
+      "prototype": [
+        "design/frameleaf/template/src/WorkflowDesigner.jsx",
+        "design/frameleaf/template/src/workflow-schema.mjs"
+      ],
+      "production": [
+        "web/src/routes/(user)/workflows/+page.ts",
+        "web/src/lib/components/frameleaf/WorkflowsPanel.svelte"
+      ],
+      "status": "in-flight",
+      "gaps": [],
+      "followUp": "FL-82 workflows and plugins"
+    },
+    {
+      "route": "/workflows/[workflowId]",
+      "prototype": ["design/frameleaf/template/src/WorkflowDesigner.jsx"],
+      "production": [
+        "web/src/routes/(user)/workflows/[workflowId]/+page.ts",
+        "web/src/lib/components/frameleaf/WorkflowDesigner.svelte"
+      ],
+      "status": "in-flight",
+      "gaps": [],
+      "followUp": "FL-82 workflows and plugins"
+    }
+  ]
+}

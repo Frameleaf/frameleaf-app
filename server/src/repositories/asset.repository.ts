@@ -4,6 +4,7 @@ import {
   Insertable,
   Kysely,
   NotNull,
+  RawBuilder,
   SelectQueryBuilder,
   Selectable,
   ShallowDehydrateObject,
@@ -15,14 +16,18 @@ import { isEmpty, isUndefined, omitBy } from 'lodash-es';
 import { InjectKysely } from 'nestjs-kysely';
 import type { Updateable } from 'kysely';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { ForkSchemaPhase } from 'src/repositories/fork-schema.repository.js';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
-import { LockableProperty, Stack } from 'src/database.js';
-import { Chunked, ChunkedArray, DummyValue, GenerateSql } from 'src/decorators.js';
+import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
+import { AssetFile, LockableProperty, Stack } from 'src/database.js';
+import { Chunked, ChunkedArray, ChunkedSet, DummyValue, GenerateSql } from 'src/decorators.js';
 import {
   AssetFileType,
+  AssetLockReason,
   AssetMetadataKey,
   AssetOrder,
   AssetOrderBy,
+  AssetPathType,
   AssetStatus,
   AssetType,
   AssetVisibility,
@@ -30,9 +35,12 @@ import {
   TimeBucketDateType,
 } from 'src/enum.js';
 import { isForkWriteEnabled } from 'src/fork-schema/authority.js';
-import { getForkSchemaPhase } from 'src/repositories/fork-derived-results.js';
+import { VideoEditVersion } from 'src/repositories/asset-edit.repository.js';
+import { getForkSchemaPhase, readsForkSidecar } from 'src/repositories/fork-derived-results.js';
 import { ForkEnrichmentRepository } from 'src/repositories/fork-enrichment.repository.js';
 import { ForkPrivacyRepository } from 'src/repositories/fork-privacy.repository.js';
+import { canWriteFork } from 'src/repositories/fork-write-guard.js';
+import { lockFilePath } from 'src/repositories/physical-file.repository.js';
 import { SmartAlbumRepository } from 'src/repositories/smart-album.repository.js';
 import { DB } from 'src/schema/index.js';
 import { AssetAudioTable, AssetKeyframeTable, AssetVideoTable } from 'src/schema/tables/asset-av.table.js';
@@ -41,16 +49,21 @@ import { AssetFileTable } from 'src/schema/tables/asset-file.table.js';
 import { AssetJobStatusTable } from 'src/schema/tables/asset-job-status.table.js';
 import { AssetMetadataTable } from 'src/schema/tables/asset-metadata.table.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
+import { releaseLockedCoverReferences } from 'src/utils/cover-references.js';
 import {
   anyUuid,
   asUuid,
   getHiddenContentFilter,
+  hasHiddenLockedPrimary,
   hasPeople,
+  hasPets,
   hiddenContentAssetIdExists,
   inSharedAlbum,
+  isMotionOfLockedStill,
   removeUndefinedKeys,
   truncatedDate,
   unnest,
+  withAlbumVisibility,
   withDefaultVisibility,
   withEdits,
   withExif,
@@ -61,16 +74,130 @@ import {
   withHiddenContentFilter,
   withHiddenContentOnly,
   withLibrary,
+  withLockedOwnerScope,
   withNsfwAssets,
   withOwner,
   withSmartSearch,
   withTagId,
   withTags,
 } from 'src/utils/database.js';
+import { lockDerivedResults } from 'src/utils/derivative-locks.js';
+import { lockAssetRowsInOrder, onStacksJoined, otherStackMembers } from 'src/utils/locked-stacks.js';
+import {
+  effectiveVisibility,
+  isLocked,
+  isNotLocked,
+  isTimelineVisible,
+  lockReasonOf,
+  lockedForReason,
+  visibilityIs,
+} from 'src/utils/locked.js';
+import { getEditedMasterLineagePath } from 'src/utils/media-policy.js';
 import { globToPostgresRegex } from 'src/utils/misc.js';
 import { deriveIsNsfwFromMetadata } from 'src/utils/nsfw.js';
 
 export type AssetStats = Record<AssetType, number>;
+
+/** The files a removed asset held, read under its row lock in the removal's transaction (FL-169). */
+export type RemovedAsset = {
+  originalPath: string;
+  reservationTemporaryPath: string | null;
+  /** Its generated, edited and sidecar files. */
+  files: AssetFile[];
+  videoDuplicateFramePaths: string[];
+  /** Outputs of its restorations and develop revisions, whose rows go with it. */
+  derivedPaths: string[];
+  videoEditPaths?: string[];
+  /**
+   * Storage moves of its files that were recorded but never committed (FL-179). The file can be at
+   * either path, so both are released: a move that renamed the file and then failed to save the new
+   * path leaves it where no row of the asset names it.
+   */
+  pendingMoves: AssetPendingMove[];
+};
+
+export type AssetMovePathType = AssetPathType | AssetFileType;
+
+/** A recorded move; `stagedPath` is where a copy across filesystems is staged (`getStagedMovePath`). */
+export type AssetPendingMove = { pathType: AssetMovePathType; oldPath: string; newPath: string; stagedPath: string };
+
+/**
+ * FL-179: where a move across filesystems stages its copy, beside the new path and named by the move's
+ * record, so a copy left by an interrupted move is found from the record: the next attempt of the move
+ * replaces it, and a removal of the asset releases it.
+ */
+export const getStagedMovePath = (to: string, moveId: string) => `${to}.${moveId}.moving`;
+
+/** The path types whose moves `moveFile` commits: the asset's original and its own unedited files. */
+export const ASSET_MOVE_PATH_TYPES: ReadonlySet<string> = new Set<string>([
+  ...Object.values(AssetPathType),
+  ...Object.values(AssetFileType),
+]);
+
+/** One storage move of an asset's file, recorded in `move_history` before it starts (FL-179). */
+export type AssetFileMove = {
+  /** The `move_history` row that records the move until it commits. */
+  moveId: string;
+  assetId: string;
+  pathType: AssetMovePathType;
+  /** Where the asset's row records the file when the move starts. */
+  from: string;
+  /** Where the file is: `from`, or where an earlier attempt that never committed left it. */
+  source: string;
+  to: string;
+};
+
+/**
+ * - `moved`: the file is at `to` and every row that named it says so.
+ * - `failed`: the file could not be moved; nothing changed and the move stays recorded.
+ * - `removed`: the asset no longer exists; nothing was moved.
+ * - `changed`: the asset's row names another path now; nothing was moved.
+ * - `deferred`: rows that cannot change now name the file (a handoff runs, or a normalization has it
+ *   reserved); nothing was moved and the move stays recorded.
+ * - `mismatched`: the asset's Frameleaf mapping names another path than its row; nothing was moved and
+ *   the move stays recorded until the two agree again (a relink or verification repairs them).
+ */
+export type AssetFileMoveResult = 'moved' | 'failed' | 'removed' | 'changed' | 'deferred' | 'mismatched';
+
+/** The filesystem side of a move, run by `moveFile` while it holds the move's locks. */
+export type AssetFileMoveOperations = {
+  /** A rename on one filesystem to `to`; false when it could not, having changed nothing. */
+  rename: () => Promise<boolean>;
+  /**
+   * Removes what is left at `source` once the new path is saved, before the transaction commits. If the
+   * commit then fails, the file is at `to` while the rows still name `from`; the move is still recorded
+   * (its deletion rolled back), so the next move finishes it and a removal releases both paths. Must not
+   * throw.
+   */
+  finish: () => Promise<void>;
+  /** Leaves the file only at `source` again after the new path could not be saved. Must not throw. */
+  undo: () => Promise<void>;
+};
+
+/** FL-179: how many times a removal starts over when its locks changed under it. */
+const REMOVE_ATTEMPTS = 3;
+
+/** FL-179: the removal found, under the asset's row lock, a path or stack it had not locked before it. */
+class RemovalLocksChanged extends Error {
+  constructor() {
+    super('The paths or stack of the asset changed during its removal');
+  }
+}
+
+const hasForkSchema = async (db: Kysely<DB>): Promise<boolean> => {
+  const { rows } = await sql<{ table: string | null }>`SELECT to_regclass('immich_fork.state')::text AS table`.execute(
+    db,
+  );
+  return !!rows[0]?.table;
+};
+
+/** The file cleanup `remove` queues inside its transaction (FL-169). */
+export type AssetFileRelease = {
+  /** Every file the removal frees, in the order they are queued. Called with what the removal reports. */
+  files: (removed: RemovedAsset) => string[];
+  /** Queues their deletion; a failure rolls the removal back. */
+  queue: (files: string[]) => Promise<void>;
+};
 
 export interface DescriptionStats {
   totalAssets: number;
@@ -91,7 +218,11 @@ interface AssetStatsOptions extends HiddenContentQueryOptions {
   visibility?: AssetVisibility;
 }
 
-type AssetChecksumOptions = HiddenContentQueryOptions;
+/**
+ * `lockedOwnerId`: the owner, when their session is elevated. Only then may a duplicate lookup name
+ * their Locked media; otherwise a Locked match stays unnamed (FL-34).
+ */
+type AssetChecksumOptions = HiddenContentQueryOptions & LockedVisibilityOptions;
 
 interface LivePhotoSearchOptions {
   ownerId: string;
@@ -108,6 +239,8 @@ interface AssetBuilderOptions extends HiddenContentQueryOptions {
   albumId?: string;
   tagId?: string;
   personId?: string;
+  /** FL-58: one of the viewer's own pets; matched against confirmed pet observations only */
+  petId?: string;
   userIds?: string[];
   withStacked?: boolean;
   exifInfo?: boolean;
@@ -116,6 +249,20 @@ interface AssetBuilderOptions extends HiddenContentQueryOptions {
   visibility?: AssetVisibility;
   withCoordinates?: boolean;
   bbox?: BoundingBox;
+  /** owners whose location columns (city, country, latitude, longitude) come back null for this viewer */
+  locationHiddenOwnerIds?: string[];
+  /**
+   * The one owner whose Locked media may show when no visibility is requested: the viewer, in an
+   * elevated session, looking at an album (see `withAlbumVisibility`). Never set for the main timeline.
+   */
+  lockedOwnerId?: string;
+  /** FL-34: with `visibility: locked`, only assets locked for one of these reasons. */
+  lockReasons?: AssetLockReason[];
+  /**
+   * FL-34: the owner whose own sensitive marks and detections an ordinary timeline reveals — the viewer,
+   * in an elevated session ("Revealed for this session"). Never set for albums or the Locked view.
+   */
+  revealLockedOwnerId?: string;
 }
 
 export interface TimeBucketOptions extends AssetBuilderOptions {
@@ -124,9 +271,37 @@ export interface TimeBucketOptions extends AssetBuilderOptions {
   order?: AssetOrder;
 }
 
+/** FL-30 (S-15): the flat Browse/Work orders the time buckets cannot give. */
+export type TimelineOrderedSort = 'filename' | 'rating';
+
+export interface TimelineOrderedPage {
+  sort: TimelineOrderedSort;
+  skip: number;
+  take: number;
+}
+
 export interface TimeBucketItem {
   timeBucket: string;
   count: number;
+}
+
+/** FL-33: how many places a curated timeline card names */
+export const TIMELINE_HIGHLIGHT_PLACES = 3;
+
+export interface TimelineHighlightOptions {
+  grouping: 'year' | 'month';
+  /** highlights besides the key photo */
+  highlightCount: number;
+  /** false for a shared link that hides EXIF: no card names a place */
+  withPlaces: boolean;
+}
+
+export interface TimelineHighlightItem {
+  timeBucket: string;
+  count: number;
+  keyAssetId: string | null;
+  highlightAssetIds: string[];
+  places: string[];
 }
 
 export interface YearMonthDay {
@@ -156,7 +331,11 @@ interface GetByIdsRelations {
   library?: boolean;
   owner?: boolean;
   smartSearch?: boolean;
-  stack?: { assets?: boolean };
+  /**
+   * `lockedOwnerId`: the viewer, when their session is elevated. A stack whose primary is Locked media
+   * someone else owns, or that the viewer has not unlocked, is left off the asset (FL-34).
+   */
+  stack?: { assets?: boolean; lockedOwnerId?: string };
   tags?: boolean;
   edits?: boolean;
 }
@@ -200,6 +379,10 @@ const withBoundingBox = <T>(qb: SelectQueryBuilder<DB, 'asset' | 'asset_exif', T
   );
 };
 
+/** FL-54: leaves out assets of owners who hide their locations from the viewer (no-op when there are none). */
+const withoutLocationHiddenOwners = <O>(qb: SelectQueryBuilder<DB, 'asset' | 'asset_exif', O>, ownerIds?: string[]) =>
+  ownerIds && ownerIds.length > 0 ? qb.where('asset.ownerId', 'not in', ownerIds) : qb;
+
 @Injectable()
 export class AssetRepository {
   private readonly forkPrivacy: ForkPrivacyRepository;
@@ -233,6 +416,9 @@ export class AssetRepository {
               index: ref('excluded.index'),
               profile: ref('excluded.profile'),
               codecName: ref('excluded.codecName'),
+              channels: ref('excluded.channels'),
+              channelLayout: ref('excluded.channelLayout'),
+              sampleRate: ref('excluded.sampleRate'),
             })),
           ),
       );
@@ -345,7 +531,40 @@ export class AssetRepository {
 
   @GenerateSql({ params: [[DummyValue.UUID], { model: DummyValue.STRING }] })
   @Chunked()
-  async updateAllExif(ids: string[], options: Updateable<AssetExifTable>): Promise<void> {
+  async updateAllExif(
+    ids: string[],
+    options: Updateable<AssetExifTable>,
+    unlock: readonly LockableProperty[] = [],
+  ): Promise<void> {
+    if (ids.length === 0) {
+      return;
+    }
+
+    const locked = Object.keys(options) as LockableProperty[];
+    await this.db
+      .updateTable('asset_exif')
+      .set((eb) => ({
+        ...options,
+        // `unlock` releases locks the change makes stale (a typed place name at new coordinates)
+        lockedProperties:
+          unlock.length === 0
+            ? distinctLocked(eb, locked)
+            : sql<
+                LockableProperty[] | null
+              >`nullif(array(select distinct property from unnest(${eb.ref('asset_exif.lockedProperties')} || ${locked}) property where not property = any(${[...unlock]})), '{}')`,
+      }))
+      .where('assetId', 'in', ids)
+      .execute();
+  }
+
+  /**
+   * FL-51: removes the location of these assets (the geolocation utility's "Remove location"): the
+   * coordinates and the place names read from them. The coordinates stay locked, so the sidecar is
+   * written without them and a later metadata read keeps the location removed instead of reading
+   * the original file's coordinates back.
+   */
+  @Chunked()
+  async clearLocation(ids: string[]): Promise<void> {
     if (ids.length === 0) {
       return;
     }
@@ -353,8 +572,12 @@ export class AssetRepository {
     await this.db
       .updateTable('asset_exif')
       .set((eb) => ({
-        ...options,
-        lockedProperties: distinctLocked(eb, Object.keys(options) as LockableProperty[]),
+        latitude: null,
+        longitude: null,
+        city: null,
+        state: null,
+        country: null,
+        lockedProperties: distinctLocked(eb, ['latitude', 'longitude']),
       }))
       .where('assetId', 'in', ids)
       .execute();
@@ -373,6 +596,24 @@ export class AssetRepository {
       .where('assetId', 'in', ids)
       .returning(['assetId', 'dateTimeOriginal', 'timeZone'])
       .execute();
+  }
+
+  /**
+   * Set one asset's capture date outright, locking it as `updateDateTimeOriginal` does (FL-32).
+   *
+   * The durable bulk shift uses this with `recorded start + minutes`, which lands where the relative
+   * update would and can be repeated without moving the date again. The time zone is not touched.
+   */
+  setDateTimeOriginal(assetId: string, dateTimeOriginal: Date) {
+    return this.db
+      .updateTable('asset_exif')
+      .set((eb) => ({
+        dateTimeOriginal,
+        lockedProperties: distinctLocked(eb, ['dateTimeOriginal', 'timeZone']),
+      }))
+      .where('assetId', '=', assetId)
+      .returning(['assetId', 'dateTimeOriginal'])
+      .executeTakeFirst();
   }
 
   @GenerateSql({ params: [DummyValue.UUID, ['description']] })
@@ -536,11 +777,18 @@ export class AssetRepository {
     });
   }
 
-  async create(asset: Insertable<AssetTable>) {
+  /**
+   * Creates an asset. With `lock` (FL-34, an upload into the Locked view) its lock record is written
+   * in the same transaction, so the asset is never listed unlocked, not even for a moment.
+   */
+  async create(asset: Insertable<AssetTable>, lock?: { reason: AssetLockReason; lockedBy: string | null }) {
     return this.db.transaction().execute(async (tx) => {
       const result = await tx.insertInto('asset').values(asset).returningAll().executeTakeFirstOrThrow();
       await this.forkPrivacy.mirrorFromLegacy(result.id, tx);
       await this.forkEnrichment.initialize([result.id], tx);
+      if (lock) {
+        await this.lockIn(tx, [result.id], lock.reason, lock.lockedBy);
+      }
       return result;
     });
   }
@@ -550,7 +798,7 @@ export class AssetRepository {
     if (assets.length === 0) {
       return [];
     }
-    return this.db.transaction().execute(async (tx) => {
+    return this.inTransaction(async (tx) => {
       const ids = await tx.insertInto('asset').values(assets).returning('id').execute();
       await this.forkPrivacy.mirrorManyFromLegacy(
         ids.map(({ id }) => id),
@@ -562,6 +810,102 @@ export class AssetRepository {
       );
       return ids.map(({ id }) => id);
     });
+  }
+
+  /**
+   * One owner's timeline assets in a local-date window, with the place their metadata
+   * records, ordered by local capture time (FL-62).
+   *
+   * `localDateTime` is the wall clock where the photograph was taken, so the bounds are
+   * compared as local dates: a trip that crossed a timezone still returns the days the
+   * owner lived through, not the server's. Only assets with a generated preview are
+   * returned, so a story can always be rendered.
+   */
+  // No @GenerateSql: the committed snapshots under server/src/queries are generated against
+  // a live database, which this slice could not run.
+  getEventStoryCandidates(ownerId: string, from: Date, to: Date) {
+    return this.db
+      .selectFrom('asset')
+      .innerJoin('asset_job_status', 'asset.id', 'asset_job_status.assetId')
+      .leftJoin('asset_exif', 'asset.id', 'asset_exif.assetId')
+      .select([
+        'asset.id as id',
+        'asset.localDateTime as localDateTime',
+        'asset_exif.city as city',
+        'asset_exif.state as state',
+        'asset_exif.country as country',
+      ])
+      .where('asset.ownerId', '=', ownerId)
+      .where(isTimelineVisible('asset'))
+      .where('asset.deletedAt', 'is', null)
+      .where('asset.localDateTime', '>=', from)
+      .where('asset.localDateTime', '<=', to)
+      .where((eb) =>
+        eb.exists((qb) =>
+          qb
+            .selectFrom('asset_file')
+            .whereRef('asset_file.assetId', '=', 'asset.id')
+            .where('asset_file.type', '=', AssetFileType.Preview),
+        ),
+      )
+      .orderBy('asset.localDateTime', 'asc')
+      .orderBy('asset.id', 'asc')
+      .execute();
+  }
+
+  /**
+   * A spread of one owner's assets across a calendar year, for a year-in-review recap
+   * (FL-62). Diversity is enforced in SQL: at most `perDay` assets from any one local day
+   * and at most `perMonth` from any one local month, so a single busy weekend cannot
+   * become the whole year. The year boundaries are the owner's local ones.
+   */
+  // No @GenerateSql: the committed snapshots under server/src/queries are generated against
+  // a live database, which this slice could not run.
+  getYearInReviewCandidates(ownerId: string, year: number, perDay = 2, perMonth = 10) {
+    return this.db
+      .with('candidate', (qb) =>
+        qb
+          .selectFrom('asset')
+          .innerJoin('asset_job_status', 'asset.id', 'asset_job_status.assetId')
+          .select([
+            'asset.id as id',
+            'asset.localDateTime as localDateTime',
+            sql<number>`date_part('month', (asset."localDateTime" at time zone 'UTC')::date)::int`.as('month'),
+            sql<number>`row_number() over (
+              partition by (asset."localDateTime" at time zone 'UTC')::date
+              order by asset."localDateTime" asc, asset.id asc
+            )`.as('dayRank'),
+          ])
+          .where('asset.ownerId', '=', ownerId)
+          .where(isTimelineVisible('asset'))
+          .where('asset.deletedAt', 'is', null)
+          .where(sql`date_part('year', (asset."localDateTime" at time zone 'UTC')::date)::int`, '=', year)
+          .where((eb) =>
+            eb.exists((qb) =>
+              qb
+                .selectFrom('asset_file')
+                .whereRef('asset_file.assetId', '=', 'asset.id')
+                .where('asset_file.type', '=', AssetFileType.Preview),
+            ),
+          ),
+      )
+      .with('ranked', (qb) =>
+        qb
+          .selectFrom('candidate')
+          .selectAll('candidate')
+          .select(
+            sql<number>`row_number() over (
+              partition by "month"
+              order by "localDateTime" asc, "id" asc
+            )`.as('monthRank'),
+          )
+          .where('candidate.dayRank', '<=', perDay),
+      )
+      .selectFrom('ranked')
+      .select(['id', 'localDateTime', 'month'])
+      .where('ranked.monthRank', '<=', perMonth)
+      .orderBy('localDateTime', 'asc')
+      .execute();
   }
 
   @GenerateSql({ params: [DummyValue.UUID, { year: 2000, day: 1, month: 1 }] })
@@ -590,7 +934,7 @@ export class AssetRepository {
                 .innerJoin('asset_job_status', 'asset.id', 'asset_job_status.assetId')
                 .where(sql`(asset."localDateTime" at time zone 'UTC')::date`, '=', sql`today.date`)
                 .where('asset.ownerId', '=', anyUuid(ownerIds))
-                .where('asset.visibility', '=', AssetVisibility.Timeline)
+                .where(isTimelineVisible('asset'))
                 .where((eb) =>
                   eb.exists((qb) =>
                     qb
@@ -618,7 +962,253 @@ export class AssetRepository {
   @GenerateSql({ params: [[DummyValue.UUID]] })
   @ChunkedArray()
   getByIds(ids: string[]) {
-    return this.db.selectFrom('asset').selectAll('asset').where('asset.id', '=', anyUuid(ids)).execute();
+    return this.db
+      .selectFrom('asset')
+      .selectAll('asset')
+      .select(isLocked('asset').as('isLocked'))
+      .where('asset.id', '=', anyUuid(ids))
+      .execute();
+  }
+
+  /** Which of these assets are locked (FL-34: the lock record), whoever owns them. */
+  @ChunkedSet()
+  async getLockedAssetIds(ids: string[]): Promise<Set<string>> {
+    if (ids.length === 0) {
+      return new Set();
+    }
+
+    const rows = await this.db
+      .selectFrom('asset_lock')
+      .select('asset_lock.assetId')
+      .where('asset_lock.assetId', '=', anyUuid(ids))
+      .execute();
+    return new Set(rows.map(({ assetId }) => assetId));
+  }
+
+  /** Why each of these assets is locked; an asset that is not locked is absent (FL-34). */
+  @ChunkedArray()
+  getLockReasons(ids: string[]) {
+    if (ids.length === 0) {
+      return Promise.resolve([]);
+    }
+
+    return this.db
+      .selectFrom('asset_lock')
+      .select(['asset_lock.assetId', 'asset_lock.reason', 'asset_lock.lockedAt'])
+      .where('asset_lock.assetId', '=', anyUuid(ids))
+      .execute();
+  }
+
+  /**
+   * Locks assets (FL-34). A lock is metadata: albums, favourites, tags, faces, stack and the stored
+   * visibility are left as they are, and every read except the owner's elevated session stops showing
+   * the asset. Stacks and live photos lock as a whole: every member of a stack and both parts of a live
+   * photo lock with any one of them. An asset that is already locked keeps its lock and reason.
+   *
+   * In the same transaction every cover, featured photo and face thumbnail the newly locked assets
+   * were is released (FL-53, `releaseLockedCoverReferences`), and the assets are touched so clients
+   * that sync learn of the change. Returns the ids this call locked, for the caller to queue the
+   * released face thumbnails and sidecar writes. With `kysely` (a caller's transaction) the lock
+   * commits with the caller's own writes, such as the sensitive review that caused it.
+   */
+  async lock(ids: string[], reason: AssetLockReason, lockedBy: string | null, kysely?: Kysely<DB>): Promise<string[]> {
+    if (ids.length === 0) {
+      return [];
+    }
+
+    return kysely
+      ? this.lockIn(kysely, ids, reason, lockedBy)
+      : this.inTransaction((tx) => this.lockIn(tx, ids, reason, lockedBy));
+  }
+
+  /**
+   * FL-34: takes, in the caller's transaction and in id order, the row locks that a later lock or
+   * unlock of `ids` needs on its whole stack and live-photo group. Called first in a transaction that
+   * writes one member (its `is_nsfw`, its review) and may then lock the group, so two such
+   * transactions for members of one group queue here instead of each holding its own row and waiting
+   * on the other's.
+   */
+  async lockGroupRows(ids: string[], kysely: Kysely<DB>): Promise<void> {
+    await lockAssetRowsInOrder(kysely, await this.getLockGroupIds(kysely, ids));
+  }
+
+  /**
+   * FL-34: the ids a lock or unlock of `ids` covers, read outside any transaction: what a caller takes
+   * the per-asset metadata locks of before it takes the group's rows (see `lockGroupMembers`).
+   */
+  findLockGroupIds(ids: string[]): Promise<string[]> {
+    return ids.length === 0 ? Promise.resolve([]) : this.getLockGroupIds(this.db, ids);
+  }
+
+  /**
+   * FL-34: `lockGroupRows`, returning each member of the group with its owner and whether it is locked
+   * as read under those row locks, for a caller that reviews and unlocks the whole group in `kysely`.
+   */
+  async lockGroupMembers(
+    ids: string[],
+    kysely: Kysely<DB>,
+  ): Promise<{ id: string; ownerId: string; isLocked: boolean }[]> {
+    const groupIds = await this.getLockGroupIds(kysely, ids);
+    if (groupIds.length === 0) {
+      return [];
+    }
+    await lockAssetRowsInOrder(kysely, groupIds);
+    return kysely
+      .selectFrom('asset')
+      .select(['asset.id', 'asset.ownerId'])
+      .select(isLocked('asset').as('isLocked'))
+      .where('asset.id', '=', anyUuid(groupIds))
+      .orderBy('asset.id')
+      .execute();
+  }
+
+  /** `lock` inside the caller's transaction `tx`. */
+  private async lockIn(
+    tx: Kysely<DB>,
+    ids: string[],
+    reason: AssetLockReason,
+    lockedBy: string | null,
+  ): Promise<string[]> {
+    const targetIds = await this.getLockGroupIds(tx, ids);
+    if (targetIds.length === 0) {
+      return [];
+    }
+    // the group's rows before its lock records, in id order, like every lock writer (FL-34)
+    await lockAssetRowsInOrder(tx, targetIds);
+
+    const { rows } = await sql<{ assetId: string }>`
+      insert into asset_lock ("assetId", "reason", "lockedBy")
+      select target.id, ${reason}, ${lockedBy}::uuid
+      from unnest(${`{${targetIds}}`}::uuid[]) as target(id)
+      on conflict ("assetId") do nothing
+      returning "assetId"
+    `.execute(tx);
+    const lockedIds = rows.map(({ assetId }) => assetId);
+    if (lockedIds.length > 0) {
+      // This update waits for any Studio export publication holding these rows, so the propagation
+      // below sees every version it committed (FL-106).
+      await tx.updateTable('asset').set({ updatedAt: new Date() }).where('id', '=', anyUuid(lockedIds)).execute();
+      lockedIds.push(...(await lockDerivedResults(tx, lockedIds)));
+      await releaseLockedCoverReferences(tx, lockedIds);
+    }
+
+    return lockedIds;
+  }
+
+  /**
+   * Assets that sensitive-content detection flagged, that no owner has reviewed and that are not locked
+   * (FL-34): what "hide sensitive detections" locks when it is switched on. The source follows the
+   * fork schema phase like `nsfwAssetIdExists` (`asset.is_nsfw` until the cutover, the privacy sidecar
+   * once it is `active`), but only positive evidence counts: an asset with no privacy row, which the
+   * fail-closed read predicate treats as sensitive, is never locked by this. A manual review, either
+   * way, is the owner's and is left alone.
+   */
+  async getUnlockedDetectionIds(): Promise<string[]> {
+    const rows = await this.db
+      .selectFrom('asset')
+      .select('asset.id')
+      .where(
+        sql<boolean>`case
+        when coalesce((select phase from immich_fork.state where id = 1), 'inactive') = 'active' then exists (
+          select 1
+          from immich_fork.asset_privacy as privacy_asset
+          where privacy_asset."assetId" = asset.id
+            and privacy_asset."isNsfw" = true
+        )
+        else asset.is_nsfw = true
+      end`,
+      )
+      .where('asset.deletedAt', 'is', null)
+      .where(isNotLocked('asset'))
+      .where((eb) =>
+        eb.not(
+          eb.exists(
+            eb
+              .selectFrom('asset_metadata')
+              .select('asset_metadata.assetId')
+              .whereRef('asset_metadata.assetId', '=', 'asset.id')
+              .where('asset_metadata.key', '=', AssetMetadataKey.MlEnrichment)
+              .where(sql`asset_metadata.value #> '{nsfwDetection,review}'`, 'is not', null),
+          ),
+        ),
+      )
+      .execute();
+    return rows.map(({ id }) => id);
+  }
+
+  /**
+   * Unlocks assets (FL-34), stacks and live photos as a whole like `lock`. The stored visibility is
+   * left as it is, so an item goes back exactly where it was. Returns what was unlocked and why it had
+   * been locked. With `kysely` (a caller's transaction) the unlock commits with the caller's writes.
+   */
+  /**
+   * Unlocks `ids` with their whole stacks and live photos. `reasons` limits the release to locks of
+   * those reasons (FL-34: Mark Safe answers a sensitive verdict, so it releases marked and detected
+   * locks and leaves an item the owner kept in the upstream Locked folder where it is).
+   */
+  async unlock(
+    ids: string[],
+    kysely?: Kysely<DB>,
+    reasons?: AssetLockReason[],
+  ): Promise<{ assetId: string; reason: AssetLockReason }[]> {
+    if (ids.length === 0) {
+      return [];
+    }
+
+    return kysely ? this.unlockIn(kysely, ids, reasons) : this.inTransaction((tx) => this.unlockIn(tx, ids, reasons));
+  }
+
+  /** `unlock` inside the caller's transaction `tx`. */
+  private async unlockIn(
+    tx: Kysely<DB>,
+    ids: string[],
+    reasons?: AssetLockReason[],
+  ): Promise<{ assetId: string; reason: AssetLockReason }[]> {
+    const targetIds = await this.getLockGroupIds(tx, ids);
+    if (targetIds.length === 0) {
+      return [];
+    }
+    // the group's rows before its lock records, in id order, like every lock writer (FL-34)
+    await lockAssetRowsInOrder(tx, targetIds);
+
+    const unlocked = await tx
+      .deleteFrom('asset_lock')
+      .where('asset_lock.assetId', '=', anyUuid(targetIds))
+      .$if(!!reasons, (qb) => qb.where('asset_lock.reason', 'in', reasons!))
+      .returning(['asset_lock.assetId', 'asset_lock.reason'])
+      .execute();
+    if (unlocked.length > 0) {
+      const unlockedIds = unlocked.map(({ assetId }) => assetId);
+      await tx.updateTable('asset').set({ updatedAt: new Date() }).where('id', '=', anyUuid(unlockedIds)).execute();
+    }
+
+    return unlocked;
+  }
+
+  /**
+   * The ids a lock or unlock of `ids` covers: the assets themselves, the stills whose video part they
+   * are, every member of their stacks, and the video parts of all of those.
+   */
+  private async getLockGroupIds(db: Kysely<DB>, ids: string[]): Promise<string[]> {
+    const { rows } = await sql<{ id: string }>`
+      with direct as (
+        select asset.id, asset."stackId" from asset where asset.id = ${anyUuid(ids)}
+        union
+        select still.id, still."stackId" from asset as still where still."livePhotoVideoId" = ${anyUuid(ids)}
+      ),
+      grouped as (
+        select direct.id from direct
+        union
+        select member.id from asset as member inner join direct on member."stackId" = direct."stackId"
+      )
+      select grouped.id from grouped
+      union
+      select asset."livePhotoVideoId" as id
+      from asset
+      inner join grouped on grouped.id = asset.id
+      where asset."livePhotoVideoId" is not null
+    `.execute(db);
+    return rows.map(({ id }) => id);
   }
 
   @GenerateSql({ params: [[DummyValue.UUID]] })
@@ -627,6 +1217,7 @@ export class AssetRepository {
     return this.db
       .selectFrom('asset')
       .selectAll('asset')
+      .select(isLocked('asset').as('isLocked'))
       .select(withFacesAndPeople({ viewingUserId }))
       .select(withTags)
       .$call(withExif)
@@ -644,6 +1235,16 @@ export class AssetRepository {
     }[]
   > {
     return this.db.transaction().execute(async (tx) => {
+      // FL-179: the stacks first, then the assets, the order the single-asset removal and the stack
+      // writers use, so neither can wait on the other in a cycle
+      await sql`
+        SELECT stack.id
+        FROM public.stack stack
+        LEFT JOIN public.asset primary_asset ON primary_asset.id = stack."primaryAssetId"
+        WHERE stack."ownerId" = ${ownerId}::uuid OR primary_asset."ownerId" = ${ownerId}::uuid
+        ORDER BY stack.id
+        FOR UPDATE OF stack
+      `.execute(tx);
       const locked = await sql<{
         id: string;
         originalPath: string;
@@ -665,6 +1266,8 @@ export class AssetRepository {
       `.execute(tx);
       const assets = locked.rows;
       const ids = assets.map(({ id }) => id);
+      // Retained video versions are left to the nightly orphan release, which queues their files
+      // for deletion; this bulk path returns only the originals it removed.
       await this.forkPrivacy.delete(ids, tx);
       await this.forkEnrichment.delete(ids, tx);
       await this.smartAlbums.deleteAssets(ids, tx);
@@ -736,6 +1339,7 @@ export class AssetRepository {
     return this.db
       .selectFrom('asset')
       .selectAll('asset')
+      .select(isLocked('asset').as('isLocked'))
       .where('asset.id', '=', asUuid(id))
       .$if(!!exifInfo, withExif)
       .$if(!!faces, (qb) =>
@@ -748,7 +1352,11 @@ export class AssetRepository {
       .$if(!!smartSearch, withSmartSearch)
       .$if(!!stack, (qb) =>
         qb
-          .leftJoin('stack', 'stack.id', 'asset.stackId')
+          .leftJoin('stack', (join) =>
+            join
+              .onRef('stack.id', '=', 'asset.stackId')
+              .on((eb) => eb.not(hasHiddenLockedPrimary(eb, stack!.lockedOwnerId))),
+          )
           .$if(!stack!.assets, (qb) =>
             qb.select((eb) => eb.fn.toJson(eb.table('stack')).$castTo<Stack | null>().as('stack')),
           )
@@ -768,6 +1376,8 @@ export class AssetRepository {
                     .whereRef('stacked.id', '!=', 'stack.primaryAssetId')
                     .where('stacked.deletedAt', 'is', null)
                     .where('stacked.visibility', '=', AssetVisibility.Timeline)
+                    // stacks lock as a whole (FL-34); a member whose lock differs never rides along
+                    .where(sql<boolean>`${isLocked('stacked')} = ${isLocked('asset')}`)
                     .groupBy('stack.id')
                     .as('stacked_assets'),
                 (join) => join.on('stack.id', 'is not', null),
@@ -788,6 +1398,18 @@ export class AssetRepository {
     if (ids.length === 0) {
       return;
     }
+
+    // `locked` is never stored (FL-34): it is a lock record. `AssetService` translates a request for
+    // it before it gets here; any other caller that still asks gets the lock, and nothing is stored.
+    if (options.visibility === AssetVisibility.Locked) {
+      const { visibility: _visibility, ...rest } = options;
+      if (!isEmpty(omitBy(rest, isUndefined))) {
+        await this.db.updateTable('asset').set(rest).where('id', '=', anyUuid(ids)).execute();
+      }
+      await this.lock(ids, AssetLockReason.Marked, null);
+      return;
+    }
+
     await this.db.updateTable('asset').set(options).where('id', '=', anyUuid(ids)).execute();
   }
 
@@ -795,11 +1417,38 @@ export class AssetRepository {
     await this.db.updateTable('asset').set(options).where('libraryId', '=', asUuid(libraryId)).execute();
   }
 
-  async update(asset: Updateable<AssetTable> & { id: string }) {
+  /**
+   * The ids of every other member of the stacks `assetIds` belong to (FL-53). Call it after `update` or
+   * `updateAll` moves `assetIds` into or out of the Locked folder, so the caller can give every stack
+   * sibling the same real-time update the moved assets get: the cascade in `locked-stacks.ts` moves the
+   * whole stack in the same transaction, so by the time this reads, every sibling already reflects it.
+   */
+  async getStackSiblingIds(assetIds: string[]): Promise<string[]> {
+    if (assetIds.length === 0) {
+      return [];
+    }
+
+    const rows = await otherStackMembers(this.db, assetIds).execute();
+    return rows.map(({ id }) => id);
+  }
+
+  async update(input: Updateable<AssetTable> & { id: string }) {
+    let asset = input;
+    // `locked` is never stored (FL-34); see `updateAll`
+    if (input.visibility === AssetVisibility.Locked) {
+      const { visibility: _visibility, ...rest } = input;
+      await this.lock([input.id], AssetLockReason.Marked, null);
+      asset = rest;
+    }
+
     const value = omitBy(asset, isUndefined);
     delete value.id;
-    if (!isEmpty(value)) {
-      return this.db
+    if (isEmpty(value)) {
+      return this.getById(asset.id, { exifInfo: true, faces: {}, edits: true });
+    }
+
+    const updateAndSelect = (db: Kysely<DB>) =>
+      db
         .with('asset', (qb) => qb.updateTable('asset').set(asset).where('id', '=', asUuid(asset.id)).returningAll())
         .selectFrom('asset')
         .selectAll('asset')
@@ -807,36 +1456,491 @@ export class AssetRepository {
         .$call((qb) => qb.select(withFaces))
         .$call((qb) => qb.select(withEdits))
         .executeTakeFirst();
+
+    if (!asset.stackId) {
+      return updateAndSelect(this.db);
     }
 
-    return this.getById(asset.id, { exifInfo: true, faces: {}, edits: true });
+    // a stack that holds a locked photo is locked as a whole (FL-53, FL-34): joining one locks the rest
+    return this.inTransaction(async (tx) => {
+      const updated = await updateAndSelect(tx);
+      await onStacksJoined(tx, [asset.stackId!]);
+      return updated;
+    });
   }
 
-  async remove(asset: {
-    id: string;
-  }): Promise<{ originalPath: string; reservationTemporaryPath: string | null } | undefined> {
-    return this.db.transaction().execute(async (tx) => {
-      const locked = await sql<{ originalPath: string; reservationTemporaryPath: string | null }>`
-        SELECT
-          coalesce(mapping."upstreamPath", reservation."upstreamPath", asset."originalPath") AS "originalPath",
-          reservation."temporaryPath" AS "reservationTemporaryPath"
-        FROM public.asset asset
-        LEFT JOIN immich_fork.asset_physical_file mapping ON mapping."assetId" = asset.id
-        LEFT JOIN immich_fork.asset_storage_reservation reservation ON reservation."assetId" = asset.id
-        WHERE asset.id = ${asset.id}::uuid
-        FOR UPDATE OF asset
-      `.execute(tx);
-      const lockedAsset = locked.rows[0];
-      if (!lockedAsset) {
+  /** Runs `callback` in a transaction, joining the current one when this repository is bound to it. */
+  private inTransaction<T>(callback: (tx: Kysely<DB>) => Promise<T>): Promise<T> {
+    return this.db.isTransaction ? callback(this.db) : this.db.transaction().execute(callback);
+  }
+
+  /**
+   * Removes an asset row and everything the fork keeps for it, in one transaction.
+   *
+   * FL-169: with `release`, the deletion of the files the removal frees is queued inside that
+   * transaction, while it holds the path lock of every one of them. A failure to queue rolls the
+   * removal back, so the row (and a retry's way to its files) survives; once the row is gone, the
+   * cleanup is already queued. FileDelete takes the same path locks, so it cannot count references
+   * before this transaction ends: after a commit the removed rows no longer protect the files, and
+   * after a rollback they still do. Files another asset still references are kept either way.
+   *
+   * FL-179: the asset's stack is dissolved, or given a new primary, in the same transaction, so a
+   * removal that rolls back leaves the stack as it was. Locks are taken as paths, then the stack row,
+   * then the asset row: path writers lock paths before rows, and stack writers (`StackRepository.create`,
+   * `deleteAll`) lock the stack before its members. What to lock is read before the row lock and read
+   * again under it; when that finds a path or stack not yet locked (a storage move recorded in between),
+   * the transaction starts over rather than lock it out of order, which could deadlock with the move.
+   * Only the last of `REMOVE_ATTEMPTS` locks late, and Postgres then resolves any deadlock by failing
+   * one side, which is retried.
+   */
+  async remove(asset: { id: string }, release?: AssetFileRelease): Promise<RemovedAsset | undefined> {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await this.db
+          .transaction()
+          .execute((tx) => this.removeOnce(tx, asset.id, release, attempt < REMOVE_ATTEMPTS));
+      } catch (error) {
+        if (!(error instanceof RemovalLocksChanged) || attempt >= REMOVE_ATTEMPTS) {
+          throw error;
+        }
+      }
+    }
+  }
+
+  private async removeOnce(
+    tx: Kysely<DB>,
+    id: string,
+    release: AssetFileRelease | undefined,
+    restartOnChange: boolean,
+  ): Promise<RemovedAsset | undefined> {
+    const lockedPaths = new Set<string>();
+    const lockPaths = async (paths: string[]) => {
+      for (const path of [...new Set(paths)].filter((path) => !lockedPaths.has(path)).toSorted()) {
+        await lockFilePath(tx, path);
+        lockedPaths.add(path);
+      }
+    };
+    const lockedStacks = new Set<string>();
+    const lockStack = async (stackId: string | null | undefined) => {
+      if (!stackId || lockedStacks.has(stackId)) {
         return;
       }
-      await this.forkPrivacy.delete([asset.id], tx);
-      await this.forkEnrichment.delete([asset.id], tx);
-      await this.smartAlbums.deleteAssets([asset.id], tx);
-      await this.deleteForkDerivedResults([asset.id], tx);
-      await tx.deleteFrom('asset').where('id', '=', asUuid(asset.id)).execute();
-      return lockedAsset;
+      await tx.selectFrom('stack').select('id').where('id', '=', asUuid(stackId)).forUpdate().execute();
+      lockedStacks.add(stackId);
+    };
+    // a lock needed after the row lock: start over, unless this is the last attempt
+    const lockLate = async (paths: string[], stackId?: string | null) => {
+      const missing = paths.filter((path) => !lockedPaths.has(path));
+      const stackMissing = !!stackId && !lockedStacks.has(stackId);
+      if (missing.length === 0 && !stackMissing) {
+        return;
+      }
+      if (restartOnChange) {
+        throw new RemovalLocksChanged();
+      }
+      await lockPaths(missing);
+      await lockStack(stackId);
+    };
+
+    if (release) {
+      const unlocked = await this.readRemovedPaths(tx, id, false);
+      if (unlocked) {
+        await lockPaths(release.files(unlocked));
+      }
+    }
+    await lockStack(await this.getStackId(tx, id));
+
+    const lockedAsset = await this.readRemovedPaths(tx, id, true);
+    if (!lockedAsset) {
+      return;
+    }
+    const stackId = await this.getStackId(tx, id);
+    await lockLate(release ? release.files(lockedAsset) : [], stackId);
+    if (stackId) {
+      // before the row goes: the stack's primary cannot name a removed asset
+      await this.leaveStack(tx, id, stackId);
+    }
+    const videoEditPaths = await this.deleteVideoEditVersions([id], tx);
+    // only a removal that releases their files takes the develop revisions (they have no foreign key)
+    const developPaths = release ? await this.deleteDevelopRevisions(id, tx) : [];
+    await this.forkPrivacy.delete([id], tx);
+    await this.forkEnrichment.delete([id], tx);
+    await this.smartAlbums.deleteAssets([id], tx);
+    await this.deleteForkDerivedResults([id], tx);
+    // FL-179: a recorded move that never committed is released with the asset (see `pendingMoves`)
+    await tx
+      .deleteFrom('move_history')
+      .where('entityId', '=', asUuid(id))
+      .where('pathType', 'in', [...ASSET_MOVE_PATH_TYPES] as AssetMovePathType[])
+      .execute();
+    await tx.deleteFrom('asset').where('id', '=', asUuid(id)).execute();
+    // the version and develop paths are the ones actually deleted, not the ones read beforehand
+    const removed: RemovedAsset = {
+      originalPath: lockedAsset.originalPath,
+      reservationTemporaryPath: lockedAsset.reservationTemporaryPath,
+      files: lockedAsset.files,
+      videoDuplicateFramePaths: lockedAsset.videoDuplicateFramePaths,
+      derivedPaths: [...new Set([...lockedAsset.restorationPaths, ...developPaths])],
+      ...(videoEditPaths.length > 0 && { videoEditPaths }),
+      pendingMoves: lockedAsset.pendingMoves,
+    };
+
+    if (release) {
+      const files = release.files(removed);
+      // a version saved after the locked read: start over as well
+      await lockLate(files);
+      await release.queue(files);
+    }
+
+    return removed;
+  }
+
+  /**
+   * Commits one storage move of an asset's file (FL-179): the rename and the new path are one unit,
+   * so a move cannot race the asset's removal and leave the file where no row names it.
+   *
+   * In one transaction the Frameleaf phase is held steady first (as `withPathLock` does), then the
+   * path lock of every path involved is taken in sorted order, then the asset row lock: the order the
+   * removal and every other path writer use. A removal therefore sees the file either at its old path
+   * or, once this commits, at its new one. The file is renamed only while the asset still resolves to
+   * `from` the way a removal does (through its physical file mapping), and then every row that names
+   * `from` is pointed at `to`: every asset (or file row) with that path, the physical file, and, where
+   * the phase writes them, the Frameleaf mappings and canonical path. Nothing is moved while rows that
+   * cannot change now name the file. The `move_history` row is deleted with them.
+   *
+   * The move stays recorded until then. If the new path cannot be saved the file is put back; if the
+   * process stops in between, the next move of the asset finds the recorded move and finishes it, and
+   * a removal releases the file at either path.
+   */
+  async moveFile(move: AssetFileMove, operations: AssetFileMoveOperations): Promise<AssetFileMoveResult> {
+    return this.db.transaction().execute(async (tx) => {
+      const forkSchema = await hasForkSchema(tx);
+      // holds the phase (FOR SHARE) for the rest of the transaction, before any other lock
+      const forkWritable = await canWriteFork(tx);
+
+      for (const path of [...new Set([move.from, move.source, move.to])].toSorted()) {
+        await lockFilePath(tx, path);
+      }
+
+      const current = await this.readMovedFile(tx, move, forkSchema);
+      if (!current) {
+        await tx.deleteFrom('move_history').where('id', '=', asUuid(move.moveId)).execute();
+        return 'removed';
+      }
+      if (current.mappingDisagrees) {
+        return 'mismatched';
+      }
+      if (current.path !== move.from) {
+        // Another writer changed the file. Unless an earlier attempt left the file elsewhere, the
+        // recorded move is dropped.
+        if (move.source === move.from) {
+          await tx.deleteFrom('move_history').where('id', '=', asUuid(move.moveId)).execute();
+        }
+        return 'changed';
+      }
+      // public physical files follow `lockPublicForkWrites`; Frameleaf rows need a writable phase
+      if (
+        current.reserved ||
+        (current.forkReferenced && !forkWritable) ||
+        (current.physicalFile && forkSchema && !forkWritable)
+      ) {
+        return 'deferred';
+      }
+
+      if (!(await operations.rename())) {
+        return 'failed';
+      }
+
+      try {
+        await this.saveMovedPath(tx, move, forkSchema && forkWritable);
+        await tx.deleteFrom('move_history').where('id', '=', asUuid(move.moveId)).execute();
+      } catch (error) {
+        // still holding the locks, so nothing has counted the file at its new path yet
+        await operations.undo();
+        throw error;
+      }
+      await operations.finish();
+      return 'moved';
     });
+  }
+
+  /**
+   * Where the asset's row records a moved file, resolved the way a removal resolves it, and what else
+   * names that path. Takes the asset row lock.
+   */
+  private async readMovedFile(
+    tx: Kysely<DB>,
+    move: AssetFileMove,
+    forkSchema: boolean,
+  ): Promise<
+    | {
+        path: string | null;
+        physicalFile: boolean;
+        forkReferenced: boolean;
+        reserved: boolean;
+        mappingDisagrees: boolean;
+      }
+    | undefined
+  > {
+    const asset = await tx
+      .selectFrom('asset')
+      .select(['id', 'originalPath'])
+      .where('id', '=', asUuid(move.assetId))
+      .forUpdate()
+      .executeTakeFirst();
+    if (!asset) {
+      return;
+    }
+
+    let path: string | null = asset.originalPath;
+    if (move.pathType !== AssetPathType.Original) {
+      const file = await tx
+        .selectFrom('asset_file')
+        .select('path')
+        .where('assetId', '=', asUuid(move.assetId))
+        .where('type', '=', move.pathType as AssetFileType)
+        .where('isEdited', '=', false)
+        .executeTakeFirst();
+      path = file?.path ?? null;
+    }
+
+    const physical = await tx.selectFrom('physical_file').select('id').where('path', '=', move.from).executeTakeFirst();
+    if (!forkSchema) {
+      return { path, physicalFile: !!physical, forkReferenced: false, reserved: false, mappingDisagrees: false };
+    }
+
+    const { rows } = await sql<{ mapped: string | null; referenced: boolean; reserved: boolean }>`
+      SELECT
+        (SELECT mapping."upstreamPath" FROM immich_fork.asset_physical_file mapping
+          WHERE mapping."assetId" = ${move.assetId}::uuid) AS mapped,
+        EXISTS (SELECT 1 FROM immich_fork.asset_physical_file mapping WHERE mapping."upstreamPath" = ${move.from})
+          OR EXISTS (SELECT 1 FROM immich_fork.physical_file physical WHERE physical."canonicalPath" = ${move.from})
+          AS referenced,
+        EXISTS (
+          SELECT 1 FROM immich_fork.asset_storage_reservation reservation
+          WHERE reservation."assetId" = ${move.assetId}::uuid
+            OR ${move.from} IN (reservation."sourcePath", reservation."upstreamPath", reservation."temporaryPath")
+        ) AS reserved
+    `.execute(tx);
+    const fork = rows[0];
+    // after cutover a removal releases the mapped path, so the file can move only while both agree
+    const mappingDisagrees =
+      move.pathType === AssetPathType.Original && !!fork.mapped && fork.mapped !== asset.originalPath;
+    return {
+      path,
+      physicalFile: !!physical,
+      forkReferenced: fork.referenced,
+      reserved: fork.reserved,
+      mappingDisagrees,
+    };
+  }
+
+  /** Points every row that names `from` at `to`, under the path locks of both. */
+  private async saveMovedPath(tx: Kysely<DB>, move: AssetFileMove, writesFork: boolean): Promise<void> {
+    // every asset naming the path shares the one file on disk, whether or not a physical file links them
+    await (move.pathType === AssetPathType.Original
+      ? tx.updateTable('asset').set({ originalPath: move.to }).where('originalPath', '=', move.from).execute()
+      : tx.updateTable('asset_file').set({ path: move.to }).where('path', '=', move.from).execute());
+    await tx.updateTable('physical_file').set({ path: move.to }).where('path', '=', move.from).execute();
+    if (!writesFork) {
+      return;
+    }
+    await sql`
+      UPDATE immich_fork.asset_physical_file SET "upstreamPath" = ${move.to}, "updatedAt" = now()
+      WHERE "upstreamPath" = ${move.from}
+    `.execute(tx);
+    await sql`
+      UPDATE immich_fork.physical_file SET "canonicalPath" = ${move.to}, "updatedAt" = now()
+      WHERE "canonicalPath" = ${move.from}
+    `.execute(tx);
+  }
+
+  /**
+   * What a removal of the asset would free, read in the removal's transaction. Locked, the asset row
+   * is held, so no generated file, frame or restoration can be added or changed until it ends.
+   */
+  private async readRemovedPaths(
+    tx: Kysely<DB>,
+    id: string,
+    lock: boolean,
+  ): Promise<(RemovedAsset & { restorationPaths: string[] }) | undefined> {
+    const rows = await sql<{ originalPath: string; reservationTemporaryPath: string | null }>`
+      SELECT
+        coalesce(mapping."upstreamPath", reservation."upstreamPath", asset."originalPath") AS "originalPath",
+        reservation."temporaryPath" AS "reservationTemporaryPath"
+      FROM public.asset asset
+      LEFT JOIN immich_fork.asset_physical_file mapping ON mapping."assetId" = asset.id
+      LEFT JOIN immich_fork.asset_storage_reservation reservation ON reservation."assetId" = asset.id
+      WHERE asset.id = ${id}::uuid
+      ${lock ? sql`FOR UPDATE OF asset` : sql``}
+    `.execute(tx);
+    const row = rows.rows[0];
+    if (!row) {
+      return;
+    }
+
+    const files = await tx
+      .selectFrom('asset_file')
+      .select(['id', 'type', 'path', 'isEdited'])
+      .where('assetId', '=', asUuid(id))
+      .execute();
+    // the legacy table and the fork sidecar can both hold an asset's frames, depending on the phase
+    const frames = await sql<{ path: string }>`
+      SELECT path FROM public.asset_video_duplicate_frame WHERE "assetId" = ${id}::uuid
+      UNION SELECT path FROM immich_fork.asset_video_duplicate_frame WHERE "assetId" = ${id}::uuid
+    `.execute(tx);
+    // restorations are removed with the asset (ON DELETE CASCADE), so their outputs are read here
+    const restorations = await tx
+      .selectFrom('asset_restoration')
+      .select(['previewBeforePath', 'previewAfterPath', 'resultPath', 'resultPreviewPath'])
+      .where('assetId', '=', asUuid(id))
+      .execute();
+    const developPaths = await this.getReleasableDevelopPaths(id, tx);
+    const videoEditPaths = await this.getReleasableVideoEditPaths([id], tx);
+    const pendingMoves = await tx
+      .selectFrom('move_history')
+      .select(['id', 'pathType', 'oldPath', 'newPath'])
+      .where('entityId', '=', asUuid(id))
+      .where('pathType', 'in', [...ASSET_MOVE_PATH_TYPES] as AssetMovePathType[])
+      .execute();
+
+    const restorationPaths = restorations
+      .flatMap((restoration) => [
+        restoration.previewBeforePath,
+        restoration.previewAfterPath,
+        restoration.resultPath,
+        restoration.resultPreviewPath,
+      ])
+      .filter((path): path is string => !!path);
+
+    return {
+      ...row,
+      files,
+      videoDuplicateFramePaths: frames.rows.map(({ path }) => path),
+      restorationPaths,
+      derivedPaths: [...new Set([...restorationPaths, ...(developPaths ?? [])])],
+      ...(videoEditPaths && videoEditPaths.length > 0 && { videoEditPaths }),
+      pendingMoves: pendingMoves.map(({ id: moveId, pathType, oldPath, newPath }) => ({
+        pathType: pathType as AssetMovePathType,
+        oldPath,
+        newPath,
+        stagedPath: getStagedMovePath(newPath, moveId),
+      })),
+    };
+  }
+
+  private async getStackId(tx: Kysely<DB>, id: string): Promise<string | null | undefined> {
+    const row = await tx.selectFrom('asset').select('stackId').where('id', '=', asUuid(id)).executeTakeFirst();
+    return row?.stackId;
+  }
+
+  /**
+   * Takes a removed asset out of its stack, with the stack row locked (FL-179). A stack left with fewer
+   * than two members is dissolved; one whose primary is removed gets another member as its primary.
+   * Members are the stack's timeline assets that are not deleted, as the trash's stack view counts them.
+   */
+  private async leaveStack(tx: Kysely<DB>, id: string, stackId: string): Promise<void> {
+    const stack = await tx
+      .selectFrom('stack')
+      .select(['id', 'primaryAssetId'])
+      .where('id', '=', asUuid(stackId))
+      .executeTakeFirst();
+    if (!stack) {
+      return;
+    }
+
+    const others = await tx
+      .selectFrom('asset')
+      .select('id')
+      .where('stackId', '=', asUuid(stackId))
+      .where('id', '!=', asUuid(stack.primaryAssetId))
+      .where('id', '!=', asUuid(id))
+      .where('visibility', '=', sql.val(AssetVisibility.Timeline))
+      .where('status', '!=', sql.val(AssetStatus.Deleted))
+      .execute();
+
+    // the primary stays unless it is the asset being removed
+    const remaining = others.length + (stack.primaryAssetId === id ? 0 : 1);
+    if (remaining < 2) {
+      await tx.deleteFrom('stack').where('id', '=', asUuid(stackId)).execute();
+    } else if (stack.primaryAssetId === id) {
+      await tx.updateTable('stack').set({ primaryAssetId: others[0].id }).where('id', '=', asUuid(stackId)).execute();
+    }
+  }
+
+  /**
+   * The outputs of the asset's develop revisions, when the revisions can be deleted with it now. The
+   * revisions have no foreign key to the asset, so the removal deletes them itself (FL-169). Like the
+   * video versions, they are left alone while fork writes are disabled or a handoff or return
+   * reconciliation runs (FL-179), and the AssetDelete listener cleans them up later.
+   */
+  private async getReleasableDevelopPaths(id: string, db: Kysely<DB>): Promise<string[] | undefined> {
+    if (!(await canWriteFork(db))) {
+      return;
+    }
+    const { rows } = await sql<{ masterPath: string | null; previewPath: string | null }>`
+      SELECT "masterPath", "previewPath" FROM immich_fork.asset_develop_revision WHERE "assetId" = ${id}::uuid
+    `.execute(db);
+    return rows.flatMap((row) => [row.masterPath, row.previewPath]).filter((path): path is string => !!path);
+  }
+
+  private async deleteDevelopRevisions(id: string, db: Kysely<DB>): Promise<string[]> {
+    if (!(await canWriteFork(db))) {
+      return [];
+    }
+    const { rows } = await sql<{ masterPath: string | null; previewPath: string | null }>`
+      DELETE FROM immich_fork.asset_develop_revision WHERE "assetId" = ${id}::uuid
+      RETURNING "masterPath", "previewPath"
+    `.execute(db);
+    return rows.flatMap((row) => [row.masterPath, row.previewPath]).filter((path): path is string => !!path);
+  }
+
+  /**
+   * The files of the assets' saved video versions, when the versions can be deleted with them now.
+   * While fork writes are disabled or a handoff runs, the rows are left behind as orphans: the asset
+   * delete must not fail, and the nightly orphan release reclaims their files later.
+   */
+  private async getReleasableVideoEditPaths(ids: string[], db: Kysely<DB>): Promise<string[] | undefined> {
+    return (await this.getReleasableVideoEditVersions(ids, db))?.paths;
+  }
+
+  private async getReleasableVideoEditVersions(
+    ids: string[],
+    db: Kysely<DB>,
+  ): Promise<{ count: number; paths: string[] } | undefined> {
+    if (ids.length === 0) return;
+    const phase = await sql<{
+      phase: ForkSchemaPhase;
+    }>`SELECT phase FROM immich_fork.state WHERE id=1 FOR SHARE`.execute(db);
+    if (!phase.rows[0] || !isForkWriteEnabled(phase.rows[0].phase)) return;
+    const handoff = await sql`SELECT 1 FROM immich_fork.migration_audit WHERE status='running'
+      AND name IN ('official-handoff-preparation','fork-return-reconciliation') LIMIT 1`.execute(db);
+    if (handoff.rows.length > 0) return;
+    const retained = await sql<Pick<VideoEditVersion, 'masterPath' | 'proxyPath' | 'files'>>`
+      SELECT "masterPath", "proxyPath", files FROM immich_fork.video_edit_version WHERE "assetId"=ANY(${ids}::uuid[])
+      UNION ALL SELECT payload->>'masterPath', payload->>'proxyPath', payload->'files' FROM immich_fork.orphaned_records
+      WHERE "sourceTable"='video_edit_version' AND payload->>'assetId'=ANY(${ids}::text[])`.execute(db);
+    const paths = retained.rows
+      .flatMap((version) => [
+        version.masterPath,
+        version.masterPath && getEditedMasterLineagePath(version.masterPath),
+        version.proxyPath,
+        ...version.files.map((file) => file.path),
+      ])
+      .filter((path): path is string => !!path);
+    return { count: retained.rows.length, paths: [...new Set(paths)] };
+  }
+
+  private async deleteVideoEditVersions(ids: string[], db: Kysely<DB>): Promise<string[]> {
+    const releasable = await this.getReleasableVideoEditVersions(ids, db);
+    if (!releasable || releasable.count === 0) return [];
+    const { paths } = releasable;
+    await sql`DELETE FROM immich_fork.video_edit_selection WHERE "assetId"=ANY(${ids}::uuid[])`.execute(db);
+    await sql`DELETE FROM immich_fork.video_edit_version WHERE "assetId"=ANY(${ids}::uuid[])`.execute(db);
+    await sql`DELETE FROM immich_fork.orphaned_records WHERE "sourceTable" IN ('video_edit_selection','video_edit_version')
+      AND payload->>'assetId'=ANY(${ids}::text[])`.execute(db);
+    // FileDelete checks all remaining public and private references under a path lock.
+    return paths;
   }
 
   private async deleteForkDerivedResults(ids: string[], db: Kysely<DB>): Promise<void> {
@@ -882,6 +1986,7 @@ export class AssetRepository {
       .select(['id', 'checksum', 'deletedAt'])
       .where('ownerId', '=', asUuid(userId))
       .where('checksum', 'in', checksums)
+      .$call((qb) => withLockedOwnerScope(qb, options.lockedOwnerId))
       .$call((qb) => withHiddenContentFilter(qb, options))
       .execute();
   }
@@ -898,6 +2003,7 @@ export class AssetRepository {
       .where('ownerId', '=', asUuid(ownerId))
       .where('checksum', '=', checksum)
       .where('libraryId', 'is', null)
+      .$call((qb) => withLockedOwnerScope(qb, options.lockedOwnerId))
       .$call((qb) => withHiddenContentFilter(qb, options))
       .limit(1)
       .executeTakeFirst();
@@ -929,7 +2035,7 @@ export class AssetRepository {
       .select((eb) => eb.fn.countAll<number>().filterWhere('type', '=', AssetType.Other).as(AssetType.Other))
       .where('ownerId', '=', asUuid(ownerId))
       .$if(visibility === undefined, withDefaultVisibility)
-      .$if(!!visibility, (qb) => qb.where('asset.visibility', '=', visibility!))
+      .$if(!!visibility, (qb) => qb.where(visibilityIs(visibility!, 'asset')))
       .$if(isFavorite !== undefined, (qb) => qb.where('isFavorite', '=', isFavorite!))
       .$if(!!isTrashed, (qb) => qb.where('asset.status', '!=', AssetStatus.Deleted))
       .$call((qb) => withHiddenContentFilter(qb, options))
@@ -940,7 +2046,10 @@ export class AssetRepository {
   @GenerateSql({
     params: [DummyValue.UUID, { from: DummyValue.DATE, to: DummyValue.DATE, type: CalendarHeatmapType.Upload }],
   })
-  getCalendarHeatmap(ownerId: string, dto: { from: Date; to: Date; type: CalendarHeatmapType }) {
+  getCalendarHeatmap(
+    ownerId: string,
+    dto: { from: Date; to: Date; type: CalendarHeatmapType; lockedOwnerId?: string },
+  ) {
     const dateColumns: Record<CalendarHeatmapType, { order: AssetOrderBy; column: 'createdAt' | 'localDateTime' }> = {
       [CalendarHeatmapType.Upload]: { order: AssetOrderBy.CreatedAt, column: 'createdAt' },
       [CalendarHeatmapType.Taken]: { order: AssetOrderBy.TakenAt, column: 'localDateTime' },
@@ -950,77 +2059,103 @@ export class AssetRepository {
 
     const date = truncatedDate<Date>(order, 'DAY');
 
-    return this.db
-      .selectFrom('asset')
-      .select(date.as('date'))
-      .select((eb) => eb.fn.countAll<number>().as('count'))
-      .where('ownerId', '=', asUuid(ownerId))
-      .where(column, '>=', dto.from)
-      .where(column, '<', dto.to)
-      .where('deletedAt', 'is', null)
-      .groupBy(date)
-      .orderBy('date', 'asc')
-      .execute();
+    return (
+      this.db
+        .selectFrom('asset')
+        .select(date.as('date'))
+        .select((eb) => eb.fn.countAll<number>().as('count'))
+        .where('ownerId', '=', asUuid(ownerId))
+        .where(column, '>=', dto.from)
+        .where(column, '<', dto.to)
+        .where('deletedAt', 'is', null)
+        // Locked media counts only for its owner's elevated session (`lockedOwnerId`, FL-34)
+        .$call((qb) => withLockedOwnerScope(qb, dto.lockedOwnerId))
+        .groupBy(date)
+        .orderBy('date', 'asc')
+        .execute()
+    );
+  }
+
+  /**
+   * The assets a timeline request may show, with the bucket each one falls in. Shared by the bucket
+   * counts and the curated highlights (FL-33) so both apply the very same owner, partner, album,
+   * visibility, Locked and hidden-content rules.
+   */
+  private timelineAssets(options: TimeBucketOptions, auth: AuthDto | undefined, timeBucketDate: RawBuilder<Date>) {
+    return (
+      this.db
+        .selectFrom('asset')
+        .select(timeBucketDate.as('timeBucket'))
+        .$if(!!options.isTrashed, (qb) => qb.where('asset.status', '!=', AssetStatus.Deleted))
+        .where('asset.deletedAt', options.isTrashed ? 'is not' : 'is', null)
+        .$if(!!options.bbox, (qb) => {
+          const bbox = options.bbox!;
+          const circle = getBoundingCircle(bbox);
+
+          const withBoundingCircle = qb
+            .innerJoin('asset_exif', 'asset.id', 'asset_exif.assetId')
+            .where(
+              sql`earth_box(ll_to_earth_public(${circle.centerLatitude}, ${circle.centerLongitude}), ${circle.radius})`,
+              '@>',
+              sql`ll_to_earth_public(asset_exif.latitude, asset_exif.longitude)`,
+            );
+
+          // FL-54: matching a place reveals it, so owners who hide their locations never match
+          return withoutLocationHiddenOwners(withBoundingBox(withBoundingCircle, bbox), options.locationHiddenOwnerIds);
+        })
+        .$if(options.visibility === undefined, (qb) => withAlbumVisibility(qb, options.lockedOwnerId))
+        .$if(!!options.visibility, (qb) =>
+          qb.where(visibilityIs(options.visibility!, 'asset', options.revealLockedOwnerId)),
+        )
+        .$if(options.visibility === AssetVisibility.Locked && !!options.lockReasons, (qb) =>
+          qb.where(lockedForReason(options.lockReasons!, 'asset')),
+        )
+        // hidden assets include live-photo motion parts; those of Locked stills stay private (FL-34)
+        .$if(options.visibility === AssetVisibility.Hidden, (qb) => qb.where((eb) => eb.not(isMotionOfLockedStill(eb))))
+        .$call((qb) => withHiddenContentFilter(qb, options))
+        .$if(!!options.albumId, (qb) =>
+          qb
+            .innerJoin('album_asset', 'asset.id', 'album_asset.assetId')
+            .where('album_asset.albumId', '=', asUuid(options.albumId!)),
+        )
+        .$if(!!options.personId, (qb) => hasPeople(qb, [options.personId!]))
+        .$if(!!options.petId, (qb) => hasPets(qb, [options.petId!], auth?.user.id))
+        .$if(!!options.withStacked, (qb) =>
+          qb
+            .leftJoin('stack', (join) =>
+              join.onRef('stack.id', '=', 'asset.stackId').onRef('stack.primaryAssetId', '=', 'asset.id'),
+            )
+            .where((eb) => eb.or([eb('asset.stackId', 'is', null), eb(eb.table('stack'), 'is not', null)])),
+        )
+        .$if(!!options.userIds, (qb) =>
+          qb.where((eb) => {
+            // TODO this should become a shared `hasAccess` style helper once implement sharing in more places
+            const isOwner = eb('asset.ownerId', '=', anyUuid(options.userIds!));
+            // a person's shared-album media widens the owner scope, except for a Locked request:
+            // Locked media is owner-private, so other members' Locked items never join it
+            const widenToSharedAlbums = !!options.personId && !!auth && options.visibility !== AssetVisibility.Locked;
+            return widenToSharedAlbums ? eb.or([isOwner, inSharedAlbum(eb, auth!.user.id)]) : isOwner;
+          }),
+        )
+        .$if(options.isFavorite !== undefined, (qb) => qb.where('asset.isFavorite', '=', options.isFavorite!))
+        .$if(!!options.assetType, (qb) => qb.where('asset.type', '=', options.assetType!))
+        .$if(options.isDuplicate !== undefined, (qb) =>
+          qb.where('asset.duplicateId', options.isDuplicate ? 'is not' : 'is', null),
+        )
+        .$if(!!options.tagId, (qb) => withTagId(qb, options.tagId!))
+    );
+  }
+
+  private timelineBucketDate(options: TimeBucketOptions, size: 'MONTH' | 'YEAR' = 'MONTH') {
+    return options.dateType === TimeBucketDateType.Added || options.orderBy === AssetOrderBy.CreatedAt
+      ? sql<Date>`date_trunc(${sql.lit(size)}, asset."createdAt" AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`
+      : sql<Date>`date_trunc(${sql.lit(size)}, "localDateTime" AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`;
   }
 
   @GenerateSql({ params: [{}, { user: { id: DummyValue.UUID } }] })
   async getTimeBuckets(options: TimeBucketOptions, auth?: AuthDto): Promise<TimeBucketItem[]> {
-    const timeBucketDate =
-      options.dateType === TimeBucketDateType.Added || options.orderBy === AssetOrderBy.CreatedAt
-        ? sql<Date>`date_trunc(${sql.lit('MONTH')}, asset."createdAt" AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`
-        : truncatedDate<Date>();
-
     return this.db
-      .with('asset', (qb) =>
-        qb
-          .selectFrom('asset')
-          .select(timeBucketDate.as('timeBucket'))
-          .$if(!!options.isTrashed, (qb) => qb.where('asset.status', '!=', AssetStatus.Deleted))
-          .where('asset.deletedAt', options.isTrashed ? 'is not' : 'is', null)
-          .$if(!!options.bbox, (qb) => {
-            const bbox = options.bbox!;
-            const circle = getBoundingCircle(bbox);
-
-            const withBoundingCircle = qb
-              .innerJoin('asset_exif', 'asset.id', 'asset_exif.assetId')
-              .where(
-                sql`earth_box(ll_to_earth_public(${circle.centerLatitude}, ${circle.centerLongitude}), ${circle.radius})`,
-                '@>',
-                sql`ll_to_earth_public(asset_exif.latitude, asset_exif.longitude)`,
-              );
-
-            return withBoundingBox(withBoundingCircle, bbox);
-          })
-          .$if(options.visibility === undefined, withDefaultVisibility)
-          .$if(!!options.visibility, (qb) => qb.where('asset.visibility', '=', options.visibility!))
-          .$call((qb) => withHiddenContentFilter(qb, options))
-          .$if(!!options.albumId, (qb) =>
-            qb
-              .innerJoin('album_asset', 'asset.id', 'album_asset.assetId')
-              .where('album_asset.albumId', '=', asUuid(options.albumId!)),
-          )
-          .$if(!!options.personId, (qb) => hasPeople(qb, [options.personId!]))
-          .$if(!!options.withStacked, (qb) =>
-            qb
-              .leftJoin('stack', (join) =>
-                join.onRef('stack.id', '=', 'asset.stackId').onRef('stack.primaryAssetId', '=', 'asset.id'),
-              )
-              .where((eb) => eb.or([eb('asset.stackId', 'is', null), eb(eb.table('stack'), 'is not', null)])),
-          )
-          .$if(!!options.userIds, (qb) =>
-            qb.where((eb) => {
-              // TODO this should become a shared `hasAccess` style helper once implement sharing in more places
-              const isOwner = eb('asset.ownerId', '=', anyUuid(options.userIds!));
-              return options.personId && auth ? eb.or([isOwner, inSharedAlbum(eb, auth.user.id)]) : isOwner;
-            }),
-          )
-          .$if(options.isFavorite !== undefined, (qb) => qb.where('asset.isFavorite', '=', options.isFavorite!))
-          .$if(!!options.assetType, (qb) => qb.where('asset.type', '=', options.assetType!))
-          .$if(options.isDuplicate !== undefined, (qb) =>
-            qb.where('asset.duplicateId', options.isDuplicate ? 'is not' : 'is', null),
-          )
-          .$if(!!options.tagId, (qb) => withTagId(qb, options.tagId!)),
-      )
+      .with('asset', () => this.timelineAssets(options, auth, this.timelineBucketDate(options)))
       .selectFrom('asset')
       .select(sql<string>`("timeBucket" AT TIME ZONE 'UTC')::date::text`.as('timeBucket'))
       .select((eb) => eb.fn.countAll<number>().as('count'))
@@ -1029,11 +2164,139 @@ export class AssetRepository {
       .execute() as any as Promise<TimeBucketItem[]>;
   }
 
+  /**
+   * FL-33: one curated card per year or month of a timeline request. Each card carries its count,
+   * its key photo (highest Best Photos score, then highest star rating, then the most recent
+   * capture, then id), up to `highlightCount` more highlights in capture order, and its three
+   * busiest places (city, else state, else country). The set of assets is exactly the one the
+   * matching `getTimeBuckets` request counts; places leave out owners who hide their locations from
+   * the viewer (`locationHiddenOwnerIds`) and every place when `withPlaces` is false.
+   */
+  @GenerateSql({
+    params: [{}, { user: { id: DummyValue.UUID } }, { grouping: 'month', highlightCount: 4, withPlaces: true }],
+  })
+  async getTimelineHighlights(
+    options: TimeBucketOptions,
+    auth: AuthDto | undefined,
+    { grouping, highlightCount, withPlaces }: TimelineHighlightOptions,
+  ): Promise<TimelineHighlightItem[]> {
+    const phase = await getForkSchemaPhase(this.db);
+    const scoreTable = sql.table(`${readsForkSidecar(phase) ? 'immich_fork' : 'public'}.asset_best_photo_score`);
+    const order = options.order === AssetOrder.Asc ? sql`asc` : sql`desc`;
+    const hiddenOwnerIds = options.locationHiddenOwnerIds ?? [];
+    const size = grouping === 'year' ? 'YEAR' : 'MONTH';
+    // the same date the cards are grouped by breaks ties and orders the highlights
+    const sortDate =
+      options.dateType === TimeBucketDateType.Added || options.orderBy === AssetOrderBy.CreatedAt
+        ? sql<Date>`asset."createdAt"`
+        : sql<Date>`asset."localDateTime"`;
+    const place = sql`coalesce(nullif(trim(e.city), ''), nullif(trim(e.state), ''), nullif(trim(e.country), ''))`;
+    const locationShared = hiddenOwnerIds.length > 0 ? sql`not (a."ownerId" = ${anyUuid(hiddenOwnerIds)})` : sql`true`;
+
+    const { rows } = await sql<{
+      timeBucket: string;
+      count: string;
+      keyAssetId: string | null;
+      highlightAssetIds: string[] | null;
+      places: string[] | null;
+    }>`
+      with asset as (
+        ${this.timelineAssets(options, auth, this.timelineBucketDate(options, size)).select([
+          'asset.id',
+          'asset.ownerId',
+          sortDate.as('sortDate'),
+        ])}
+      ),
+      ranked as (
+        select
+          a.id,
+          a."timeBucket",
+          a."sortDate",
+          row_number() over (
+            partition by a."timeBucket"
+            order by
+              s.score desc nulls last,
+              nullif(greatest(e.rating, 0), 0) desc nulls last,
+              a."sortDate" desc,
+              a.id asc
+          ) as rank
+        from asset a
+        left join asset_exif e on e."assetId" = a.id
+        left join ${scoreTable} s on s."assetId" = a.id
+      ),
+      places as (
+        select
+          a."timeBucket",
+          ${place} as place,
+          row_number() over (partition by a."timeBucket" order by count(*) desc, ${place} asc) as rank
+        from asset a
+        inner join asset_exif e on e."assetId" = a.id
+        where ${withPlaces ? sql`true` : sql`false`} and ${locationShared} and ${place} is not null
+        group by a."timeBucket", ${place}
+      )
+      select
+        (r."timeBucket" at time zone 'UTC')::date::text as "timeBucket",
+        count(*) as count,
+        (array_agg(r.id::text) filter (where r.rank = 1))[1] as "keyAssetId",
+        array_agg(r.id::text order by r."sortDate" ${order}, r.id) filter (
+          where r.rank > 1 and r.rank <= ${1 + highlightCount}
+        ) as "highlightAssetIds",
+        (
+          select array_agg(p.place order by p.rank)
+          from places p
+          where p."timeBucket" = r."timeBucket" and p.rank <= ${TIMELINE_HIGHLIGHT_PLACES}
+        ) as places
+      from ranked r
+      group by r."timeBucket"
+      order by r."timeBucket" ${order}
+    `.execute(this.db);
+
+    return rows.map((row) => ({
+      timeBucket: row.timeBucket,
+      count: Number(row.count),
+      keyAssetId: row.keyAssetId,
+      highlightAssetIds: row.highlightAssetIds ?? [],
+      places: row.places ?? [],
+    }));
+  }
+
   @GenerateSql({
     params: [DummyValue.TIME_BUCKET, { withStacked: true }, { user: { id: DummyValue.UUID } }],
   })
   getTimeBucket(timeBucket: string, options: TimeBucketOptions, auth: AuthDto) {
+    return this.timelineAssetColumns(options, auth, { timeBucket });
+  }
+
+  /**
+   * FL-30 (S-15): one page of the timeline's assets in a flat order — by file name or by rating —
+   * for the Browse and Work layouts. It is the time bucket's own query without the bucket filter,
+   * so everything that decides what a bucket may show (Locked and the elevated session, partners who
+   * hide their locations, hidden content, suppressed-only, lock reasons, stacks, a shared link that
+   * hides EXIF) decides this page identically, and the response has the bucket's columnar shape.
+   */
+  @GenerateSql({
+    params: [{ withStacked: true }, { user: { id: DummyValue.UUID } }, { sort: 'filename', skip: 0, take: 100 }],
+  })
+  getTimelineOrdered(options: TimeBucketOptions, auth: AuthDto, page: TimelineOrderedPage) {
+    return this.timelineAssetColumns(options, auth, { page });
+  }
+
+  private timelineAssetColumns(
+    options: TimeBucketOptions,
+    auth: AuthDto,
+    target: { timeBucket: string; page?: undefined } | { timeBucket?: undefined; page: TimelineOrderedPage },
+  ) {
+    const { timeBucket, page } = target;
     const order = options.order ?? 'desc';
+    const withPlaces = !auth.sharedLink || auth.sharedLink.showExif;
+    // partners who hide their locations from this viewer (FL-54): their location columns are nulled in SQL
+    // so the pre-jsonified bucket never carries them; the plain column selects stay untouched otherwise
+    const hiddenOwnerIds = options.locationHiddenOwnerIds ?? [];
+    const hidesLocation = hiddenOwnerIds.length > 0;
+    const locationColumn = <C extends 'city' | 'country' | 'latitude' | 'longitude'>(column: C) =>
+      sql<(C extends 'city' | 'country' ? string : number) | null>`case when asset."ownerId" = ${anyUuid(
+        hiddenOwnerIds,
+      )} then null else asset_exif.${sql.ref(column)} end`.as(column);
     const useAddedDate = options.dateType === TimeBucketDateType.Added || options.orderBy === AssetOrderBy.CreatedAt;
     const timeBucketDate = useAddedDate
       ? sql`date_trunc(${sql.lit('MONTH')}, asset."createdAt" AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`
@@ -1062,10 +2325,12 @@ export class AssetRepository {
           .select((eb) => [
             'asset.duration',
             'asset.id',
-            'asset.visibility',
+            effectiveVisibility('asset').as('visibility'),
             sql`asset."isFavorite" and asset."ownerId" = ${auth.user.id}`.as('isFavorite'),
             sql`asset.type = 'IMAGE'`.as('isImage'),
             sql`asset."deletedAt" is not null`.as('isTrashed'),
+            // FL-33 (T-17): the tile's Offline badge (AssetTile.jsx `asset.isOffline`).
+            'asset.isOffline',
             livePhotoVideoId,
             localOffsetHours.as('localOffsetHours'),
             'asset.ownerId',
@@ -1086,13 +2351,33 @@ export class AssetRepository {
               )
               .as('ratio'),
           ])
-          .$if(!auth.sharedLink || auth.sharedLink.showExif, (qb) =>
-            qb.select(['asset_exif.city', 'asset_exif.country']),
+          .$if(options.visibility === AssetVisibility.Locked || !!options.revealLockedOwnerId, (qb) =>
+            qb.select(lockReasonOf('asset').as('lockReason')),
           )
-          .$if(!!options.withCoordinates, (qb) => qb.select(['asset_exif.latitude', 'asset_exif.longitude']))
+          // FL-33: Work shows each tile's file name on request; hidden with the rest of the metadata
+          .$if(withPlaces, (qb) => qb.select(['asset_exif.rating', 'asset.originalFileName']))
+          // S-15: the list view's dimensions and size column; hidden with the rest of the metadata
+          .$if(withPlaces, (qb) => qb.select(['asset.width', 'asset.height', 'asset_exif.fileSizeInByte']))
+          .$if(withPlaces && !hidesLocation, (qb) => qb.select(['asset_exif.city', 'asset_exif.country']))
+          .$if(withPlaces && hidesLocation, (qb) => qb.select([locationColumn('city'), locationColumn('country')]))
+          .$if(!!options.withCoordinates && !hidesLocation, (qb) =>
+            qb.select(['asset_exif.latitude', 'asset_exif.longitude']),
+          )
+          .$if(!!options.withCoordinates && hidesLocation, (qb) =>
+            qb.select([locationColumn('latitude'), locationColumn('longitude')]),
+          )
           .where('asset.deletedAt', options.isTrashed ? 'is not' : 'is', null)
-          .$if(options.visibility === undefined, withDefaultVisibility)
-          .$if(!!options.visibility, (qb) => qb.where('asset.visibility', '=', options.visibility!))
+          .$if(options.visibility === undefined, (qb) => withAlbumVisibility(qb, options.lockedOwnerId))
+          .$if(!!options.visibility, (qb) =>
+            qb.where(visibilityIs(options.visibility!, 'asset', options.revealLockedOwnerId)),
+          )
+          .$if(options.visibility === AssetVisibility.Locked && !!options.lockReasons, (qb) =>
+            qb.where(lockedForReason(options.lockReasons!, 'asset')),
+          )
+          // hidden assets include live-photo motion parts; those of Locked stills stay private (FL-34)
+          .$if(options.visibility === AssetVisibility.Hidden, (qb) =>
+            qb.where((eb) => eb.not(isMotionOfLockedStill(eb))),
+          )
           .$call((qb) => withHiddenContentFilter(qb, options))
           .$if(!!options.bbox, (qb) => {
             const bbox = options.bbox!;
@@ -1104,9 +2389,13 @@ export class AssetRepository {
               sql`ll_to_earth_public(asset_exif.latitude, asset_exif.longitude)`,
             );
 
-            return withBoundingBox(withBoundingCircle, bbox);
+            // FL-54: matching a place reveals it, so owners who hide their locations never match
+            return withoutLocationHiddenOwners(
+              withBoundingBox(withBoundingCircle, bbox),
+              options.locationHiddenOwnerIds,
+            );
           })
-          .where(timeBucketDate, '=', timeBucket.replace(/^[+-]/, ''))
+          .$if(timeBucket !== undefined, (qb) => qb.where(timeBucketDate, '=', timeBucket!.replace(/^[+-]/, '')))
           .$if(!!options.albumId, (qb) =>
             qb.where((eb) =>
               eb.exists(
@@ -1118,10 +2407,13 @@ export class AssetRepository {
             ),
           )
           .$if(!!options.personId, (qb) => hasPeople(qb, [options.personId!]))
+          .$if(!!options.petId, (qb) => hasPets(qb, [options.petId!], auth.user.id))
           .$if(!!options.userIds, (qb) =>
             qb.where((eb) => {
               const isOwner = eb('asset.ownerId', '=', anyUuid(options.userIds!));
-              return options.personId ? eb.or([isOwner, inSharedAlbum(eb, auth.user.id)]) : isOwner;
+              // see getTimeBuckets: a Locked request never widens to other members' shared-album media
+              const widenToSharedAlbums = !!options.personId && options.visibility !== AssetVisibility.Locked;
+              return widenToSharedAlbums ? eb.or([isOwner, inSharedAlbum(eb, auth.user.id)]) : isOwner;
             }),
           )
           .$if(options.isFavorite !== undefined, (qb) => qb.where('asset.isFavorite', '=', options.isFavorite!))
@@ -1145,6 +2437,8 @@ export class AssetRepository {
                     .whereRef('stacked.stackId', '=', 'asset.stackId')
                     .where('stacked.deletedAt', 'is', null)
                     .where('stacked.visibility', '=', AssetVisibility.Timeline)
+                    // stacks lock as a whole (FL-34); a member whose lock differs is never counted
+                    .where(sql<boolean>`${isLocked('stacked')} = ${isLocked('asset')}`)
                     .$call((qb) => withHiddenContentFilter(qb, options, 'stacked'))
                     .groupBy('stacked.stackId')
                     .as('stacked_assets'),
@@ -1158,9 +2452,28 @@ export class AssetRepository {
           )
           .$if(!!options.isTrashed, (qb) => qb.where('asset.status', '!=', AssetStatus.Deleted))
           .$if(!!options.tagId, (qb) => withTagId(qb, options.tagId!))
-          .orderBy(orderDate, order)
-          .orderBy(orderTimestamp, order)
-          .orderBy('asset.originalFileName', order),
+          .$if(!page, (qb) =>
+            qb.orderBy(orderDate, order).orderBy(orderTimestamp, order).orderBy('asset.originalFileName', order),
+          )
+          // File names in the ICU root collation (`und-x-icu`): letters compare regardless of case and
+          // accents first, as a person reads a list, rather than by byte value. Digits still compare
+          // one by one ("IMG_10" before "IMG_2"). This needs a Postgres built with ICU, which the Immich
+          // Postgres images (production and e2e) are. The newest capture, then the id, break ties so
+          // pages never overlap.
+          .$if(page?.sort === 'filename', (qb) =>
+            qb
+              .orderBy(sql`asset."originalFileName" collate "und-x-icu"`, 'asc')
+              .orderBy('asset.fileCreatedAt', 'desc')
+              .orderBy('asset.id', 'asc'),
+          )
+          // Highest rating first; an unrated item counts as 0, below every star and above rejected.
+          .$if(page?.sort === 'rating', (qb) =>
+            qb
+              .orderBy(sql`coalesce(asset_exif.rating, 0)`, 'desc')
+              .orderBy('asset.fileCreatedAt', 'desc')
+              .orderBy('asset.id', 'asc'),
+          )
+          .$if(!!page, (qb) => qb.offset(page!.skip).limit(page!.take)),
       )
       .with('agg', (qb) =>
         qb
@@ -1173,6 +2486,7 @@ export class AssetRepository {
             eb.fn.coalesce(eb.fn('array_agg', ['isImage']), sql.lit('{}')).as('isImage'),
             // TODO: isTrashed is redundant as it will always be all true or false depending on the options
             eb.fn.coalesce(eb.fn('array_agg', ['isTrashed']), sql.lit('{}')).as('isTrashed'),
+            eb.fn.coalesce(eb.fn('array_agg', ['isOffline']), sql.lit('{}')).as('isOffline'),
             eb.fn.coalesce(eb.fn('array_agg', ['livePhotoVideoId']), sql.lit('{}')).as('livePhotoVideoId'),
             eb.fn.coalesce(eb.fn('array_agg', ['fileCreatedAt']), sql.lit('{}')).as('fileCreatedAt'),
             eb.fn.coalesce(eb.fn('array_agg', ['createdAt']), sql.lit('{}')).as('createdAt'),
@@ -1183,10 +2497,18 @@ export class AssetRepository {
             eb.fn.coalesce(eb.fn('array_agg', ['status']), sql.lit('{}')).as('status'),
             eb.fn.coalesce(eb.fn('array_agg', ['thumbhash']), sql.lit('{}')).as('thumbhash'),
           ])
+          .$if(options.visibility === AssetVisibility.Locked || !!options.revealLockedOwnerId, (qb) =>
+            qb.select((eb) => eb.fn.coalesce(eb.fn('array_agg', ['lockReason']), sql.lit('{}')).as('lockReason')),
+          )
           .$if(!auth.sharedLink || auth.sharedLink.showExif, (qb) =>
             qb.select((eb) => [
               eb.fn.coalesce(eb.fn('array_agg', ['city']), sql.lit('{}')).as('city'),
               eb.fn.coalesce(eb.fn('array_agg', ['country']), sql.lit('{}')).as('country'),
+              eb.fn.coalesce(eb.fn('array_agg', ['rating']), sql.lit('{}')).as('rating'),
+              eb.fn.coalesce(eb.fn('array_agg', ['originalFileName']), sql.lit('{}')).as('originalFileName'),
+              eb.fn.coalesce(eb.fn('array_agg', ['width']), sql.lit('{}')).as('width'),
+              eb.fn.coalesce(eb.fn('array_agg', ['height']), sql.lit('{}')).as('height'),
+              eb.fn.coalesce(eb.fn('array_agg', ['fileSizeInByte']), sql.lit('{}')).as('fileSizeInByte'),
             ]),
           )
           .$if(!!options.withCoordinates, (qb) =>
@@ -1224,7 +2546,7 @@ export class AssetRepository {
       .select(['assetId as data', 'asset_exif.city as value'])
       .$narrowType<{ value: NotNull }>()
       .where('ownerId', '=', asUuid(ownerId))
-      .where('visibility', '=', AssetVisibility.Timeline)
+      .where(isTimelineVisible('asset'))
       .where('type', '=', AssetType.Image)
       .where('deletedAt', 'is', null)
       .$call((qb) => withHiddenContentFilter(qb, options))
@@ -1241,7 +2563,7 @@ export class AssetRepository {
       .selectFrom('asset')
       .select(['id as data', 'createdAt as value'])
       .where('ownerId', '=', asUuid(ownerId))
-      .where('asset.visibility', '=', AssetVisibility.Timeline)
+      .where(isTimelineVisible('asset'))
       .where('type', '=', AssetType.Image)
       .where('deletedAt', 'is', null)
       .$call((qb) => withHiddenContentFilter(qb, options))
@@ -1405,7 +2727,7 @@ export class AssetRepository {
   private buildGetForOriginal(ids: string[], isEdited: boolean) {
     return this.db
       .selectFrom('asset')
-      .select('asset.id')
+      .select(['asset.id', 'asset.ownerId'])
       .select('originalFileName')
       .where('asset.id', 'in', ids)
       .$if(isEdited, (qb) =>
@@ -1439,7 +2761,7 @@ export class AssetRepository {
       .leftJoin('asset_file', (join) =>
         join.onRef('asset.id', '=', 'asset_file.assetId').on('asset_file.type', '=', type),
       )
-      .select(['asset.originalPath', 'asset.originalFileName', 'asset_file.path as path'])
+      .select(['asset.ownerId', 'asset.originalPath', 'asset.originalFileName', 'asset_file.path as path'])
       .orderBy('asset_file.isEdited', isEdited ? 'desc' : 'asc')
       .executeTakeFirstOrThrow();
   }
@@ -1448,7 +2770,7 @@ export class AssetRepository {
   async getForVideo(id: string) {
     return this.db
       .selectFrom('asset')
-      .select(['asset.originalPath'])
+      .select(['asset.originalPath', 'asset.ownerId'])
       .select((eb) => withFilePath(eb, AssetFileType.EncodedVideo).as('encodedVideoPath'))
       .select((eb) => withFilePath(eb, AssetFileType.EncodedVideo, true).as('editedVideoPath'))
       .where('asset.id', '=', id)
@@ -1535,8 +2857,8 @@ export class AssetRepository {
       .innerJoin('asset_job_status as job_status', 'job_status.assetId', 'asset.id')
       .where('asset.type', '=', sql.lit(AssetType.Image))
       .where('asset.deletedAt', 'is', null)
-      .where('asset.visibility', '!=', sql.lit(AssetVisibility.Hidden))
-      .$call(withDefaultVisibility)
+      // stored visibility only, like the job: background work includes locked media (FL-34)
+      .where('asset.visibility', 'in', [sql.lit(AssetVisibility.Archive), sql.lit(AssetVisibility.Timeline)])
       .where((eb) =>
         eb.exists(
           eb

@@ -1,6 +1,6 @@
 # OAuth Authentication
 
-This page contains details about using OAuth in Immich.
+This page contains details about using OAuth in Frameleaf.
 
 :::tip
 Unable to set `app.immich:///oauth-callback` as a valid redirect URI? See [Mobile Redirect URI](#mobile-redirect-uri) for an alternative solution.
@@ -8,7 +8,7 @@ Unable to set `app.immich:///oauth-callback` as a valid redirect URI? See [Mobil
 
 ## Overview
 
-Immich supports 3rd party authentication via [OpenID Connect][oidc] (OIDC), an identity layer built on top of OAuth2. OIDC is supported by most identity providers, including:
+Frameleaf supports 3rd party authentication via [OpenID Connect][oidc] (OIDC), an identity layer built on top of OAuth2. OIDC is supported by most identity providers, including:
 
 - [Authentik](https://integrations.goauthentik.io/media/immich/)
 - [Authelia](https://www.authelia.com/integration/openid-connect/immich/)
@@ -18,7 +18,7 @@ Immich supports 3rd party authentication via [OpenID Connect][oidc] (OIDC), an i
 
 ## Prerequisites
 
-Before enabling OAuth in Immich, a new client application needs to be configured in the 3rd-party authentication server. While the specifics of this setup vary from provider to provider, the general approach should be the same.
+Before enabling OAuth in Frameleaf, a new client application needs to be configured in the 3rd-party authentication server. While the specifics of this setup vary from provider to provider, the general approach should be the same.
 
 1. Create a new (Client) Application
    1. The **Provider** type should be `OpenID Connect` or `OAuth2`
@@ -33,7 +33,7 @@ Before enabling OAuth in Immich, a new client application needs to be configured
    - `http://DOMAIN:PORT/auth/login` - for logging in with OAuth from the Web Client
    - `http://DOMAIN:PORT/user-settings` - for manually linking OAuth in the Web Client
 
-   Redirect URIs should contain all the domains you will be using to access Immich. Some examples include:
+   Redirect URIs should contain all the domains you will be using to access Frameleaf. Some examples include:
 
    Mobile
    - `app.immich:///oauth-callback` (You **MUST** include this for iOS and Android mobile apps to work properly)
@@ -47,37 +47,45 @@ Before enabling OAuth in Immich, a new client application needs to be configured
    - `http://192.168.0.200:2283/user-settings`
 
    Hostname
-   - `https://immich.example.com/auth/login`
-   - `https://immich.example.com/user-settings`
+   - `https://photos.example.com/auth/login`
+   - `https://photos.example.com/user-settings`
 
 3. Configure Backchannel logout URL
 
    If the authentication server supports it, the **Backchannel logout URL** can be specified, and it is of the form: `http://DOMAIN:PORT/api/oauth/backchannel-logout`.
 
+## Verified email addresses
+
+An email address from the provider is used to link a sign-in to an existing account, or to create a new account, only when the provider says it is verified: the `email_verified` claim must be `true` (the text `"true"` is accepted too). A sign-in with an unverified address, or without the claim, is refused with a message saying why.
+
+:::note Upgrading
+Some providers (for example Microsoft Entra ID) do not send `email_verified`. With them, a person whose account is not yet linked to the provider cannot sign in by email, and automatic registration is refused, until you map an `email_verified` claim in the provider. Accounts already linked to the provider (by its account ID) are not affected and keep signing in as before.
+:::
+
 ## Enable OAuth
 
-Once you have a new OAuth client application configured, Immich can be configured using the Administration Settings page, available on the web (Administration -> Settings).
+Once you have a new OAuth client application configured, Frameleaf can be configured using the Administration Settings page, available on the web (Administration -> Settings).
 
-| Setting                                              | Type    | Default              | Description                                                                         |
-| ---------------------------------------------------- | ------- | -------------------- | ----------------------------------------------------------------------------------- |
-| Enabled                                              | boolean | false                | Enable/disable OAuth                                                                |
-| `issuer_url`                                         | URL     | (required)           | Required. Self-discovery URL for client (from previous step)                        |
-| `client_id`                                          | string  | (required)           | Required. Client ID (from previous step)                                            |
-| `client_secret`                                      | string  | (required)           | Required. Client Secret (previous step)                                             |
-| `scope`                                              | string  | openid email profile | Full list of scopes to send with the request (space delimited)                      |
-| `id_token_signed_response_alg`                       | string  | RS256                | The algorithm used to sign the id token (examples: RS256, HS256)                    |
-| `userinfo_signed_response_alg`                       | string  | none                 | The algorithm used to sign the userinfo response (examples: RS256, HS256)           |
-| `prompt`                                             | string  | (empty)              | Prompt parameter for authorization url (examples: select_account, login, consent)   |
-| `end_session_endpoint`                               | URL     | (empty)              | Http(s) alternative end session endpoint (logout URI)                               |
-| Request timeout                                      | string  | 30,000 (30 seconds)  | Number of milliseconds to wait for http requests to complete before giving up       |
-| Storage Label Claim                                  | string  | preferred_username   | Claim mapping for the user's storage label**¹**                                     |
-| Role Claim                                           | string  | immich_role          | Claim mapping for the user's role. (should return "user" or "admin")**¹**           |
-| Storage Quota Claim                                  | string  | immich_quota         | Claim mapping for the user's storage**¹**                                           |
-| Default Storage Quota (GiB)                          | number  | 0                    | Default quota for user without storage quota claim (empty for unlimited quota)      |
-| Button Text                                          | string  | Login with OAuth     | Text for the OAuth button on the web                                                |
-| Auto Register                                        | boolean | true                 | When true, will automatically register a user the first time they sign in           |
-| [Auto Launch](#auto-launch)                          | boolean | false                | When true, will skip the login page and automatically start the OAuth login process |
-| [Mobile Redirect URI Override](#mobile-redirect-uri) | URL     | (empty)              | Http(s) alternative mobile redirect URI                                             |
+| Setting                                              | Type    | Default              | Description                                                                                                                                                 |
+| ---------------------------------------------------- | ------- | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Enabled                                              | boolean | false                | Enable/disable OAuth                                                                                                                                        |
+| `issuer_url`                                         | URL     | (required)           | Required. Self-discovery URL for client (from previous step)                                                                                                |
+| `client_id`                                          | string  | (required)           | Required. Client ID (from previous step)                                                                                                                    |
+| `client_secret`                                      | string  | (required)           | Required. Client Secret (previous step)                                                                                                                     |
+| `scope`                                              | string  | openid email profile | Full list of scopes to send with the request (space delimited)                                                                                              |
+| `id_token_signed_response_alg`                       | string  | RS256                | The algorithm used to sign the id token (examples: RS256, HS256). Left empty, the algorithms the provider advertises in its discovery document are accepted |
+| `userinfo_signed_response_alg`                       | string  | none                 | The algorithm used to sign the userinfo response (examples: RS256, HS256)                                                                                   |
+| `prompt`                                             | string  | (empty)              | Prompt parameter for authorization url (examples: select_account, login, consent)                                                                           |
+| `end_session_endpoint`                               | URL     | (empty)              | Http(s) alternative end session endpoint (logout URI)                                                                                                       |
+| Request timeout                                      | string  | 30,000 (30 seconds)  | Number of milliseconds to wait for http requests to complete before giving up                                                                               |
+| Storage Label Claim                                  | string  | preferred_username   | Claim mapping for the user's storage label**¹**                                                                                                             |
+| Role Claim                                           | string  | immich_role          | Claim mapping for the user's role. (should return "user" or "admin")**¹**                                                                                   |
+| Storage Quota Claim                                  | string  | immich_quota         | Claim mapping for the user's storage**¹**                                                                                                                   |
+| Default Storage Quota (GiB)                          | number  | 0                    | Default quota for user without storage quota claim (empty for unlimited quota)                                                                              |
+| Button Text                                          | string  | Login with OAuth     | Text for the OAuth button on the web                                                                                                                        |
+| Auto Register                                        | boolean | true                 | When true, will automatically register a user the first time they sign in                                                                                   |
+| [Auto Launch](#auto-launch)                          | boolean | false                | When true, will skip the login page and automatically start the OAuth login process                                                                         |
+| [Mobile Redirect URI Override](#mobile-redirect-uri) | URL     | (empty)              | Http(s) alternative mobile redirect URI                                                                                                                     |
 
 :::note Claim Options [1]
 
@@ -89,7 +97,7 @@ Claim is only used on user creation and not synchronized after that.
 The Issuer URL should look something like the following, and return a valid json document.
 
 - `https://accounts.google.com/.well-known/openid-configuration`
-- `http://localhost:9000/application/o/immich/.well-known/openid-configuration`
+- `http://localhost:9000/application/o/frameleaf/.well-known/openid-configuration`
 
 The `.well-known/openid-configuration` part of the url is optional and will be automatically added during discovery.
 :::
@@ -97,7 +105,7 @@ The `.well-known/openid-configuration` part of the url is optional and will be a
 ## Auto Launch
 
 When Auto Launch is enabled, the login page will automatically redirect the user to the OAuth authorization url, to login with OAuth. To access the login screen again, use the browser's back button, or navigate directly to `/auth/login?autoLaunch=0`.
-Auto Launch can also be enabled on a per-request basis by navigating to `/auth/login?autoLaunch=1`, this can be useful in situations where Immich is called from e.g. Nextcloud using the _External sites_ app and the _oidc_ app so as to enable users to directly interact with a logged-in instance of Immich.
+Auto Launch can also be enabled on a per-request basis by navigating to `/auth/login?autoLaunch=1`, this can be useful in situations where Frameleaf is called from e.g. Nextcloud using the _External sites_ app and the _oidc_ app so as to enable users to directly interact with a logged-in instance of Frameleaf.
 
 ## Mobile Redirect URI
 
@@ -109,9 +117,20 @@ The redirect URI for the mobile app is `app.immich:///oauth-callback`, which is 
 
 With these steps in place, you should be able to use OAuth from the [Mobile App](/features/mobile-app.mdx) without a custom scheme redirect URI.
 
-:::info
-Immich has a route (`/api/oauth/mobile-redirect`) that is already configured to forward requests to `app.immich:///oauth-callback`, and can be used for step 1.
+::info
+Frameleaf has a route (`/api/oauth/mobile-redirect`) that is already configured to forward requests to `app.immich:///oauth-callback`, and can be used for step 1.
 :::
+
+### Frameleaf mobile app
+
+The Frameleaf mobile app signs in with its own callback, `frameleaf-auth:///oauth-callback`, so it can be installed beside the upstream mobile app without either app opening for the other's sign-in. Without the override, register `frameleaf-auth:///oauth-callback` as a redirect URI with your provider.
+
+When the `Mobile Redirect URI Override` is enabled, the Frameleaf app is sent to `/api/oauth/frameleaf-mobile-redirect` on the same server, which forwards to `frameleaf-auth:///oauth-callback`. In that case:
+
+1. The override must be this server's `/api/oauth/mobile-redirect` address (for example `https://photos.example.com/api/oauth/mobile-redirect`). Any other override cannot be matched to a Frameleaf address, and Frameleaf app sign-in is refused with an error.
+2. Register a **second** redirect URI with your provider: the same address ending in `/api/oauth/frameleaf-mobile-redirect` (for example `https://photos.example.com/api/oauth/frameleaf-mobile-redirect`).
+
+Administration → Settings → Authentication lists both apps' callbacks for the current configuration under **Mobile app callbacks**. For what does and does not carry over between the two apps, see [Moving to the Frameleaf app](./frameleaf-app-transition.md).
 
 ## Example Configuration
 
@@ -122,7 +141,7 @@ Immich has a route (`/api/oauth/mobile-redirect`) that is already configured to 
 
 Here's an example of OAuth configured for Authelia:
 
-This assumes there exist an attribute `immichquota` in the user schema, which is used to set the user's storage quota in Immich.
+This assumes there exist an attribute `frameleafquota` in the user schema, which is used to set the user's storage quota in Frameleaf.
 The configuration concerning the quota is optional.
 
 ```yaml
@@ -132,7 +151,7 @@ authentication_backend:
     # See: https://www.authelia.com/c/ldap
     attributes:
       extra:
-        immichquota: # The attribute name from LDAP
+        frameleafquota: # The attribute name from LDAP
           name: 'immich_quota'
           multi_valued: false
           value_type: 'integer'
@@ -141,33 +160,33 @@ identity_providers:
     ## The other portions of the mandatory OpenID Connect 1.0 configuration go here.
     ## See: https://www.authelia.com/c/oidc
     claims_policies:
-      immich_policy:
+      frameleaf_policy:
         custom_claims:
           immich_quota:
             attribute: 'immich_quota'
     scopes:
-      immich_scope:
+      frameleaf_scope:
         claims:
           - 'immich_quota'
 
     clients:
-      - client_id: 'immich'
-        client_name: 'Immich'
+      - client_id: 'frameleaf'
+        client_name: 'Frameleaf'
         # https://www.authelia.com/integration/openid-connect/frequently-asked-questions/#how-do-i-generate-a-client-identifier-or-client-secret
         client_secret: '$pbkdf2-sha512$310000$c8p78n7pUMln0jzvd4aK4Q$JNRBzwAo0ek5qKn50cFzzvE9RXV88h1wJn5KGiHrD0YKtZaR/nCb2CJPOsKaPK0hjf.9yHxzQGZziziccp6Yng'
         public: false
         require_pkce: true
         pkce_challenge_method: 'S256'
         redirect_uris:
-          - 'https://example.immich.app/auth/login'
-          - 'https://example.immich.app/user-settings'
+          - 'https://photos.example.com/auth/login'
+          - 'https://photos.example.com/user-settings'
           - 'app.immich:///oauth-callback'
         scopes:
           - 'openid'
           - 'profile'
           - 'email'
-          - 'immich_scope'
-        claims_policy: 'immich_policy'
+          - 'frameleaf_scope'
+        claims_policy: 'frameleaf_policy'
         response_types:
           - 'code'
         grant_types:
@@ -177,18 +196,18 @@ identity_providers:
         token_endpoint_auth_method: 'client_secret_post'
 ```
 
-Configuration of OAuth in Immich System Settings
+Configuration of OAuth in Frameleaf System Settings
 
 | Setting                            | Value                                                               |
 | ---------------------------------- | ------------------------------------------------------------------- |
 | Issuer URL                         | `https://auth.example.com`                                          |
-| Client ID                          | immich                                                              |
+| Client ID                          | frameleaf                                                           |
 | Client Secret                      | 0v89FXkQOWO\***\*\*\*\*\***\*\*\***\*\*\*\*\***mprbvXD549HH6s1iw... |
 | Token Endpoint Auth Method         | client_secret_post                                                  |
-| Scope                              | openid email profile immich_scope                                   |
+| Scope                              | openid email profile frameleaf_scope                                |
 | ID Token Signed Response Algorithm | RS256                                                               |
 | Userinfo Signed Response Algorithm | RS256                                                               |
-| End Session Endpoint               | https://auth.example.com/logout?rd=https://immich.example.com/      |
+| End Session Endpoint               | https://auth.example.com/logout?rd=https://photos.example.com/      |
 | Storage Label Claim                | uid                                                                 |
 | Storage Quota Claim                | immich_quota                                                        |
 | Default Storage Quota (GiB)        | 0 (empty for unlimited quota)                                       |
@@ -209,13 +228,15 @@ Here's an example of OAuth configured for Authentik:
 
 Configuration of Authorised redirect URIs (Authentik OAuth2/OpenID Provider)
 
-<img src={require('./img/authentik-redirect-uris-example.webp').default} width='70%' title="Authentik authorised redirect URIs" />
+1. Open the provider's **Protocol settings** and set **Client type** to **Confidential**.
+2. In **Redirect URIs/Origins (RegEx)**, add one URI per line for each address you use, for example `https://photos.example.com/auth/login` and `https://photos.example.com/user-settings`, plus the mobile callback described in [Mobile Redirect URI](#mobile-redirect-uri).
+3. Copy the **Client ID** and **Client Secret** into the Frameleaf settings below.
 
-Configuration of OAuth in Immich System Settings
+Configuration of OAuth in Frameleaf System Settings
 
 | Setting                      | Value                                                               |
 | ---------------------------- | ------------------------------------------------------------------- |
-| Issuer URL                   | `https://authentik.example.com/application/o/immich/`               |
+| Issuer URL                   | `https://authentik.example.com/application/o/frameleaf/`            |
 | Client ID                    | AFCj2rM1f4rps**\*\*\*\***\***\*\*\*\***lCLEum6hH9...                |
 | Client Secret                | 0v89FXkQOWO\***\*\*\*\*\***\*\*\***\*\*\*\*\***mprbvXD549HH6s1iw... |
 | Scope                        | openid email profile                                                |
@@ -240,9 +261,15 @@ Here's an example of OAuth configured for Google:
 
 Configuration of Authorised redirect URIs (Google Console)
 
-<img src={require('./img/google-redirect-uris-example.webp').default} width='50%' title="Google authorised redirect URIs" />
+In the OAuth client's **Authorised redirect URIs**, select **Add URI** for each of these, then save:
 
-Configuration of OAuth in Immich System Settings
+1. `https://photos.example.com/auth/login`
+2. `https://photos.example.com/user-settings`
+3. `https://photos.example.com/api/oauth/mobile-redirect`
+
+Google notes that changes can take from five minutes to a few hours to apply.
+
+Configuration of OAuth in Frameleaf System Settings
 
 | Setting                      | Value                                                                        |
 | ---------------------------- | ---------------------------------------------------------------------------- |
@@ -258,7 +285,7 @@ Configuration of OAuth in Immich System Settings
 | Auto Register                | Enabled (optional)                                                           |
 | Auto Launch                  | Enabled                                                                      |
 | Mobile Redirect URI Override | Enabled (required)                                                           |
-| Mobile Redirect URI          | `https://example.immich.app/api/oauth/mobile-redirect`                       |
+| Mobile Redirect URI          | `https://photos.example.com/api/oauth/mobile-redirect`                       |
 
 </details>
 
@@ -269,30 +296,32 @@ Configuration of OAuth in Immich System Settings
 
 Here's an example of OAuth configured for Keycloak:
 
-Create your immich client on your Keycloak Realm.
+Create a frameleaf client on your Keycloak Realm.
 
-<img src={require('./img/keycloak-general-settings.webp').default} width='100%' title="Keycloak Client general Settings" />
-<img src={require('./img/keycloak-access-settings.webp').default} width='100%' title="Keycloak Client Access Settings" />
+1. **General settings**: create an OpenID Connect client and set its **Client ID** (the value you enter as Client ID below).
+2. **Access settings**: set **Root URL**, **Home URL** and **Admin URL** to your server address (for example `https://photos.example.com`). Under **Valid redirect URIs**, add `https://photos.example.com/auth/login`, `https://photos.example.com/user-settings` and the mobile callback described in [Mobile Redirect URI](#mobile-redirect-uri). Set **Valid post logout redirect URIs** and **Web origins** to `+`.
+3. **Capability config**: set it up as shown below.
+
 <img src={require('./img/keycloak-capability-config.webp').default} width='100%' title="Keycloak Client Capability Configuration" />
 
-Configuration of OAuth in Immich System Settings
+Configuration of OAuth in Frameleaf System Settings
 
-| Setting                      | Value                                                 |
-| ---------------------------- | ----------------------------------------------------- |
-| Issuer URL                   | `https://<KEYCLOAK_DOMAIN>/realms/<YOUR_REALM>`       |
-| Client ID                    | immich                                                |
-| Client Secret                | can be obtained from Clients -> immich -> Credentials |
-| Scope                        | openid email profile                                  |
-| Signing Algorithm            | RS256                                                 |
-| Storage Label Claim          | preferred_username                                    |
-| Role Claim                   | immich_role                                           |
-| Storage Quota Claim          | immich_quota                                          |
-| Default Storage Quota (GiB)  | 0 (empty for unlimited quota)                         |
-| Button Text                  | Sign in with Keycloak (recommended)                   |
-| Auto Register                | Enabled (optional)                                    |
-| Auto Launch                  | Enabled (optional)                                    |
-| Mobile Redirect URI Override | Disabled                                              |
-| Mobile Redirect URI          |                                                       |
+| Setting                      | Value                                                    |
+| ---------------------------- | -------------------------------------------------------- |
+| Issuer URL                   | `https://<KEYCLOAK_DOMAIN>/realms/<YOUR_REALM>`          |
+| Client ID                    | frameleaf                                                |
+| Client Secret                | can be obtained from Clients -> frameleaf -> Credentials |
+| Scope                        | openid email profile                                     |
+| Signing Algorithm            | RS256                                                    |
+| Storage Label Claim          | preferred_username                                       |
+| Role Claim                   | immich_role                                              |
+| Storage Quota Claim          | immich_quota                                             |
+| Default Storage Quota (GiB)  | 0 (empty for unlimited quota)                            |
+| Button Text                  | Sign in with Keycloak (recommended)                      |
+| Auto Register                | Enabled (optional)                                       |
+| Auto Launch                  | Enabled (optional)                                       |
+| Mobile Redirect URI Override | Disabled                                                 |
+| Mobile Redirect URI          |                                                          |
 
 Role Claim can be managed via Client Role. Remember to create a mapper with claim name `immich_role`.
 

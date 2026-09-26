@@ -9,7 +9,7 @@ import { join, parse } from 'node:path';
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import type { JobOf } from 'src/types.js';
 import { StorageCore } from 'src/cores/storage.core.js';
-import { Asset, AssetFile } from 'src/database.js';
+import { Asset, AssetFile, placeProperties } from 'src/database.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import {
   AssetFileType,
@@ -33,6 +33,7 @@ import { BaseService } from 'src/services/base.service.js';
 import { getAssetFiles, linkLivePhotoAssets } from 'src/utils/asset.util.js';
 import { isAssetChecksumConstraint } from 'src/utils/database.js';
 import { mergeTimeZone } from 'src/utils/date.js';
+import { isLockedRow } from 'src/utils/locked.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { batched, isFaceImportEnabled } from 'src/utils/misc.js';
 import { upsertTags } from 'src/utils/tag.js';
@@ -244,10 +245,14 @@ export class MetadataService extends BaseService {
     const dates = this.getDates(asset, exifTags, stats);
 
     const { width, height } = this.getImageDimensions(exifTags);
+    // FL-51: coordinates the owner set or removed are locked; the place names then stay as stored
+    // instead of being read from the file's own coordinates
+    const lockedProperties = (await this.assetJobRepository.getLockedPropertiesForMetadataExtraction(asset.id)) ?? [];
+    const locationLocked = lockedProperties.includes('latitude');
     let geo: ReverseGeocodeResult = { country: null, state: null, city: null },
       latitude: number | null = null,
       longitude: number | null = null;
-    if (this.hasGeo(exifTags)) {
+    if (this.hasGeo(exifTags) && !locationLocked) {
       latitude = Number(exifTags.GPSLatitude);
       longitude = Number(exifTags.GPSLongitude);
       if (reverseGeocoding.enabled) {
@@ -268,9 +273,7 @@ export class MetadataService extends BaseService {
       // gps
       latitude,
       longitude,
-      country: geo.country,
-      state: geo.state,
-      city: geo.city,
+      ...(!locationLocked && { country: geo.country, state: geo.state, city: geo.city }),
 
       // image/file
       fileSizeInByte: stats.size,
@@ -313,6 +316,10 @@ export class MetadataService extends BaseService {
             index: audio.index,
             profile: audio.profile,
             codecName: audio.codecName,
+            // FL-102: channel-aware audio. Null stays null; it means "not probed", not "stereo".
+            channels: audio.channels ?? null,
+            channelLayout: audio.channelLayout ?? null,
+            sampleRate: audio.sampleRate ?? null,
           }
         : undefined;
 
@@ -521,7 +528,16 @@ export class MetadataService extends BaseService {
       await this.assetRepository.upsertFile({ assetId: id, type: AssetFileType.Sidecar, path: sidecarPath });
     }
 
-    await this.assetRepository.unlockProperties(asset.id, lockedProperties);
+    // FL-36 (V-24): the sidecar has no place names, so a typed city, state or country stays locked.
+    // FL-51: a removed location stays locked, so the next metadata read does not bring the original
+    // file's coordinates back
+    const locationRemoved =
+      lockedProperties.includes('latitude') && asset.exifInfo.latitude === null && asset.exifInfo.longitude === null;
+    const keptLocked = new Set<string>([...placeProperties, ...(locationRemoved ? ['latitude', 'longitude'] : [])]);
+    await this.assetRepository.unlockProperties(
+      asset.id,
+      lockedProperties.filter((property) => !keptLocked.has(property)),
+    );
 
     return JobStatus.Success;
   }
@@ -958,6 +974,8 @@ export class MetadataService extends BaseService {
       clusterGroupId: string;
       faces: { id: string; sourceType: SourceType }[];
       originalPath: string;
+      visibility: AssetVisibility;
+      isLocked?: boolean | null;
     },
     tags: ImmichTags,
   ) {
@@ -1011,7 +1029,11 @@ export class MetadataService extends BaseService {
           clusterGroupId: asset.clusterGroupId,
           name: region.Name,
         });
-        missingWithFaceAsset.push({ personGroupId, ownerId: asset.ownerId, faceAssetId: face.id });
+        // A face on a Locked photo is never a person's thumbnail (FL-53): the person is created without
+        // one and takes another face of theirs later (the missing-thumbnail sweep), or keeps none.
+        if (!isLockedRow(asset)) {
+          missingWithFaceAsset.push({ personGroupId, ownerId: asset.ownerId, faceAssetId: face.id });
+        }
       }
     }
 
@@ -1024,7 +1046,7 @@ export class MetadataService extends BaseService {
         missing.map(({ name, ownerId, personGroupId }) => ({ name, ownerId, personGroupId })),
       );
 
-      const jobs = missing.map(
+      const jobs = missingWithFaceAsset.map(
         ({ personGroupId, ownerId }) =>
           ({ name: JobName.PersonGenerateThumbnail, data: { personGroupId, ownerId } }) as const,
       );

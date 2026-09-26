@@ -217,6 +217,175 @@ const candidateOnlySettings = new Set([
   "roadmap:enrichment",
   "roadmap:care",
 ]);
+// Settings rows connected to production workflows.
+// The row stays unqualified until acceptance; it no longer claims "not yet built".
+const shippedSettingHomes = {
+  // FL-75: the prototype's Storage & originals migration checklist opens the CLI audit report.
+  "roadmap:migration": {
+    target: {
+      module:
+        "web/src/lib/components/frameleaf/settings/MigrationSettingsSection.svelte",
+      area: "storage",
+      section: "migration",
+    },
+    evidence: [
+      "web/src/lib/components/frameleaf/settings/MigrationSettingsSection.spec.ts",
+      "web/src/lib/frameleaf/migration-report.spec.ts",
+      "packages/cli/src/commands/migrate/migrate-fixtures.spec.ts",
+      "docs/docs/administration/server-migration.md",
+    ],
+    notes:
+      "Server migration is the resumable command-line tool; the web home shows its exact commands and opens its audit report read-only. It never runs a migration or holds API keys.",
+  },
+  // FL-71: the separate job settings form is gone. Queue concurrency is edited in the Job manager's
+  // Concurrency dialog (template `ConcurrencyDialog` in `JobsManager.jsx`) and saved or discarded
+  // through the one settings draft's save bar and review.
+  "action:system/job/reset-saved": {
+    target: {
+      module:
+        "web/src/lib/components/frameleaf/settings/SettingsSaveBar.svelte",
+      area: "processing",
+      section: "queues",
+    },
+    evidence: ["web/src/lib/frameleaf/system-config-draft.svelte.spec.ts"],
+    notes:
+      "Discard in the settings save bar returns pending concurrency values to the saved settings.",
+  },
+  "action:system/job/save": {
+    target: {
+      module:
+        "web/src/lib/components/frameleaf/jobs/JobsConcurrencyDialog.svelte",
+      area: "processing",
+      section: "queues",
+    },
+    evidence: [
+      "web/src/lib/components/frameleaf/jobs/JobsConcurrencyDialog.spec.ts",
+    ],
+    notes:
+      "The Concurrency dialog's Review opens the settings review; saving there writes job.<queue>.concurrency with every other pending setting.",
+  },
+  "action:system/job/reset-defaults": {
+    removed: true,
+    target: {
+      module:
+        "web/src/lib/components/frameleaf/jobs/JobsConcurrencyDialog.svelte",
+      area: "processing",
+      section: "queues",
+    },
+    evidence: [],
+    notes:
+      "Removed per the prototype: the template's Concurrency dialog offers Done and Review only, with no reset to defaults.",
+  },
+};
+// FL-71: routes whose screens moved into the Command Center (`/user-settings?area=&section=`).
+// Their old addresses only redirect there; the row stays unqualified until acceptance and names the
+// Command Center home (area, section, production module) instead of the retired page.
+const commandCenterRouteHomes = {
+  "/admin": {
+    area: "overview",
+    module:
+      "web/src/lib/components/frameleaf/settings/CommandCenterOverview.svelte",
+  },
+  "/admin/system-settings": {
+    area: "overview",
+    module: "web/src/routes/(user)/user-settings/SystemSettings.svelte",
+  },
+  "/admin/server-status": {
+    area: "analytics",
+    module: "web/src/lib/components/frameleaf/analytics/AnalyticsArea.svelte",
+  },
+  "/admin/jobs-status": {
+    area: "processing",
+    section: "queues",
+    module: "web/src/lib/components/frameleaf/JobsManager.svelte",
+  },
+  "/admin/queues": {
+    area: "processing",
+    section: "queues",
+    module: "web/src/lib/components/frameleaf/JobsManager.svelte",
+  },
+  "/admin/queues/[name]": {
+    area: "processing",
+    section: "queues",
+    module: "web/src/lib/components/frameleaf/JobsManager.svelte",
+  },
+  "/admin/render-workers": {
+    area: "processing",
+    section: "render-workers",
+    module:
+      "web/src/routes/(user)/user-settings/sections/RenderWorkersSection.svelte",
+  },
+  // The old page held the worker inventory (`#workers`) above the workload destinations.
+  "/admin/processing-destinations": {
+    area: "processing",
+    sections: ["routing", "workers"],
+    module:
+      "web/src/routes/(user)/user-settings/sections/ProcessingSection.svelte",
+  },
+  "/admin/physical-deduplication": {
+    area: "storage",
+    section: "deduplication",
+    module:
+      "web/src/routes/(user)/user-settings/sections/DeduplicationSection.svelte",
+  },
+  "/admin/maintenance": {
+    area: "maintenance",
+    module:
+      "web/src/routes/(user)/user-settings/sections/MaintenanceSection.svelte",
+  },
+  "/admin/maintenance/integrity-report/[type]": {
+    area: "maintenance",
+    section: "integrity",
+    module:
+      "web/src/routes/(user)/user-settings/sections/IntegrityReportSection.svelte",
+  },
+  "/admin/user-management": {
+    area: "users",
+    section: "accounts",
+    module: "web/src/routes/(user)/user-settings/sections/UsersSection.svelte",
+  },
+  "/admin/users": {
+    area: "users",
+    section: "accounts",
+    module: "web/src/routes/(user)/user-settings/sections/UsersSection.svelte",
+  },
+  "/admin/users/new": {
+    area: "users",
+    section: "accounts",
+    module: "web/src/lib/components/frameleaf/AccountFormDialog.svelte",
+  },
+  "/admin/users/[id]": {
+    area: "users",
+    section: "accounts",
+    module: "web/src/routes/(user)/user-settings/sections/UserDetail.svelte",
+  },
+  "/admin/users/[id]/edit": {
+    area: "users",
+    section: "accounts",
+    module: "web/src/lib/components/frameleaf/AccountFormDialog.svelte",
+  },
+  "/admin/library-management": {
+    area: "libraries",
+    module: "web/src/lib/components/frameleaf/LibrariesManager.svelte",
+  },
+  "/admin/library-management/new": {
+    area: "libraries",
+    module: "web/src/lib/components/frameleaf/LibraryFormDialog.svelte",
+  },
+  "/admin/library-management/[id]": {
+    area: "libraries",
+    module: "web/src/lib/components/frameleaf/LibraryDetail.svelte",
+  },
+  "/admin/library-management/[id]/edit": {
+    area: "libraries",
+    module: "web/src/lib/components/frameleaf/LibraryFormDialog.svelte",
+  },
+  "/trash/[[photos=photos]]/[[assetId=id]]": {
+    area: "trash",
+    section: "contents",
+    module: "web/src/routes/(user)/user-settings/sections/TrashSection.svelte",
+  },
+};
 const sharedQueueConcurrency = new Set([
   "backgroundTask",
   "editor",
@@ -779,7 +948,10 @@ async function buildLedger() {
           paths: row.source,
           access: row.access,
         },
-        { status: "not-qualified", target: row.id },
+        {
+          status: "not-qualified",
+          target: commandCenterRouteHomes[row.id] ?? row.id,
+        },
         { status: "preserve-existing-contracts", evidence: [] },
         { status: "not-qualified", evidence: [] },
         { status: "missing-route-action-qualification", evidence: [] },
@@ -823,7 +995,17 @@ async function buildLedger() {
     });
   }
 
-  for (const row of evidence.settings) {
+  for (const sourceRow of evidence.settings) {
+    const shipped = shippedSettingHomes[sourceRow.id];
+    const row = shipped
+      ? {
+          ...sourceRow,
+          // A removed action keeps its target only as the place it was removed from.
+          auditStatus: shipped.removed ? "Intentional change" : "mapped-unqualified",
+          target: shipped.target,
+          notes: shipped.notes,
+        }
+      : sourceRow;
     const area = row.target?.area;
     const [primary, secondary] = settingOwnership(row);
     requirements.push({
@@ -838,14 +1020,23 @@ async function buildLedger() {
         `${row.target?.module ?? "unknown"}:${area ?? "unknown"}/${row.target?.section ?? "unknown"}`,
       ].filter(Boolean),
       owners: ownerSet(primary, secondary),
-      disposition:
-        row.auditStatus === "not-yet-built"
-          ? { kind: "not-yet-designed", legacyFallback: true }
-          : { kind: "legacy-fallback-until-qualified", legacyFallback: true },
+      disposition: shipped?.removed
+        ? { kind: "intentional-product-change", legacyFallback: false }
+        : shipped
+          ? { kind: "legacy-fallback-until-qualified", legacyFallback: false }
+          : row.auditStatus === "not-yet-built"
+            ? { kind: "not-yet-designed", legacyFallback: true }
+            : { kind: "legacy-fallback-until-qualified", legacyFallback: true },
       qualification: "planned-not-qualified",
       mappings: mapping(
         { status: row.sourceAvailability, paths: [row.source] },
-        { status: row.auditStatus, target: row.target },
+        shipped
+          ? {
+              status: row.auditStatus,
+              target: row.target,
+              evidence: shipped.evidence,
+            }
+          : { status: row.auditStatus, target: row.target },
         {
           status: row.productionConnected
             ? "connected-unqualified"
@@ -1119,6 +1310,7 @@ async function validateLedger(ledger) {
     "resource-flow",
     "deployment-policy",
     "not-yet-built",
+    "mapped-unqualified",
     "pending",
     "review-only-preview",
     "Local",
@@ -1171,7 +1363,7 @@ async function validateLedger(ledger) {
   )
     errors.push("invalid or changed baseline contract");
   const expectedInventoryContract = {
-    webRoutes: 84,
+    webRoutes: 94,
     settings: 535,
     freecut: 210,
     native: 227,
@@ -1599,11 +1791,11 @@ async function validateLedger(ledger) {
     errors.push("stale normalized source evidence hash");
   const expectedHashes = {
     acceptedRoutes:
-      "a2628a98b2f0d0f4a8716eee03ac1b7fe88bea4b4c5211bcadc616ed25d50bd2",
+      "bd3c5ae5f8fa9867cb6e049f53bad1cd275d14f8d481c7fbb2e9a0b963aa670f",
     acceptedActionFamilies:
-      "5d007780e048330da577a052aa8cb844cf168721d3ec38dd9b422d2025677d0f",
+      "b6a4dd66d641441ed3bb3913c95f5a160b0c4fb8ec25b7626294cf02f9005154",
     acceptedNative:
-      "0e980c2fc45b41d6644491ed654dc9ced63a0bc0c19c2a90be451e726efa22ee",
+      "7433d51fd0112b7e99e812647f0f7113b7a20b46e7ab0034e7085a179cc60bc6",
     acceptedFreecut:
       "dba7454283c4b72ef27b237ff62b384b063775bf14c7bb3bd8cb71ec4eab296a",
     routeOwnershipEvidence:

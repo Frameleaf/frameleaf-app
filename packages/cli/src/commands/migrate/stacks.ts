@@ -4,7 +4,8 @@ import type { Ledger } from 'src/commands/migrate/ledger';
 
 /**
  * Phase 7: recreate stacks (grouped/burst photos) from their translated member IDs, primary
- * first. A stack needs at least two members present on B; smaller ones are marked done.
+ * first. A stack waits while any enumerated member is not on B yet; one that ends up with
+ * fewer than two members (the rest were never enumerated) is marked done.
  */
 export async function migrateStacks(to: ServerClient, ledger: Ledger, controller: Controller) {
   controller.setPhase('stacks');
@@ -15,11 +16,19 @@ export async function migrateStacks(to: ServerClient, ledger: Ledger, controller
     }
     const orderedAIds = [stack.primaryAId, ...stack.memberAIds.filter((id) => id !== stack.primaryAId)];
     const bAssetIds: string[] = [];
+    let pending = 0;
     for (const aId of orderedAIds) {
       const bId = ledger.bId(aId);
       if (bId) {
         bAssetIds.push(bId);
+      } else if (ledger.hasAsset(aId)) {
+        pending++;
       }
+    }
+    if (pending > 0) {
+      // Creating the stack now would leave the late member out for good; wait for it.
+      controller.log(`stack ${stack.primaryAId}: ${pending} member(s) not on destination yet`);
+      continue;
     }
     if (bAssetIds.length < 2) {
       ledger.setStackDone(stack.primaryAId, '');

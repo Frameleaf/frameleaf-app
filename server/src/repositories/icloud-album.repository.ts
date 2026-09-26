@@ -29,6 +29,7 @@ type DestinationAlbum = {
   parentId: string | null;
   icon: string | null;
   sortOrder: number | null;
+  kind: string;
 };
 type Membership = {
   libraryKey: string;
@@ -178,7 +179,7 @@ export class ICloudAlbumRepository {
 
   private async ownedAlbum(db: Kysely<DB>, metadata: ForkAlbumMetadataRepository, id: string, ownerId: string) {
     const { rows } =
-      await sql<DestinationAlbum>`SELECT a.id,a."albumName",a."parentId",a.icon,a."sortOrder" FROM album a
+      await sql<DestinationAlbum>`SELECT a.id,a."albumName",a."parentId",a.icon,a."sortOrder",a.kind FROM album a
       JOIN album_user u ON u."albumId"=a.id WHERE a.id=${id}::uuid AND a."deletedAt" IS NULL
         AND u."userId"=${ownerId}::uuid AND u.role='owner' FOR UPDATE OF a`.execute(db);
     return await metadata.applyReadMetadata(rows, db).then((items) => items[0]);
@@ -208,7 +209,7 @@ export class ICloudAlbumRepository {
       }
       return { id: row.albumId, created: false };
     }
-    row.albumId = await this.createAlbum(db, metadata, row.name, null, ownerId);
+    row.albumId = await this.createAlbum(db, metadata, row.name, null, ownerId, 'collection');
     await this.saveState(db, row, {
       sourceName: row.name,
       sourceParentId: null,
@@ -224,10 +225,11 @@ export class ICloudAlbumRepository {
     name: string,
     parentId: string | null,
     ownerId: string,
+    kind: 'album' | 'collection' = 'album',
   ) {
     const id = await sql<{
       id: string;
-    }>`INSERT INTO album ("albumName","parentId") VALUES (${name},${parentId}::uuid) RETURNING id`
+    }>`INSERT INTO album ("albumName","parentId",kind) VALUES (${name},${parentId}::uuid,${kind}) RETURNING id`
       .execute(db)
       .then(({ rows }) => rows[0].id);
     await sql`INSERT INTO album_user ("albumId","userId",role) VALUES (${id}::uuid,${ownerId}::uuid,'owner')`.execute(
@@ -237,9 +239,19 @@ export class ICloudAlbumRepository {
     if (parentId) {
       await sql`INSERT INTO album_closure (id_ancestor,id_descendant) SELECT id_ancestor,${id}::uuid FROM album_closure
         WHERE id_descendant=${parentId}::uuid`.execute(db);
+      await this.promoteToCollection(db, metadata, parentId);
     }
     await metadata.mirrorFromLegacy([id], db);
     return id;
+  }
+
+  /** An album that holds albums is a collection; mirrored iCloud folders become collections the first time they get a child. */
+  private async promoteToCollection(db: Kysely<DB>, metadata: ForkAlbumMetadataRepository, id: string) {
+    const { numAffectedRows } =
+      await sql`UPDATE album SET kind='collection' WHERE id=${id}::uuid AND kind='album'`.execute(db);
+    if (Number(numAffectedRows ?? 0) > 0) {
+      await metadata.mirrorFromLegacy([id], db);
+    }
   }
 
   private async reparent(db: Kysely<DB>, metadata: ForkAlbumMetadataRepository, id: string, parentId: string | null) {
@@ -252,6 +264,7 @@ export class ICloudAlbumRepository {
         FROM album_closure super CROSS JOIN album_closure sub WHERE super.id_descendant=${parentId}::uuid AND sub.id_ancestor=${id}::uuid`.execute(
         db,
       );
+      await this.promoteToCollection(db, metadata, parentId);
     }
     await metadata.mirrorFromLegacy([id], db);
     // Same closure rewrite as AlbumRepository.reparent, mirrored in SQL without loading a large subtree.

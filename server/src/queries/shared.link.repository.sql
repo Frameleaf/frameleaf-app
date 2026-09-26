@@ -54,6 +54,14 @@ select
         where
           "shared_link"."id" = "shared_link_asset"."sharedLinkId"
           and "asset"."deletedAt" is null
+          and not exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "asset"."id"
+          )
           and not (
             case
               when "asset"."id" is null then false
@@ -99,6 +107,20 @@ select
           "asset"."fileCreatedAt" asc
       ) as agg
   ) as "assets",
+  (
+    select
+      to_json(obj)
+    from
+      (
+        select
+          "user"."name"
+        from
+          "user"
+        where
+          "user"."id" = "shared_link"."userId"
+          and "user"."deletedAt" is null
+      ) as obj
+  ) as "owner",
   to_json("album") as "album"
 from
   "shared_link"
@@ -166,6 +188,14 @@ from
         where
           "album_asset"."assetId" = "asset"."id"
           and "asset"."deletedAt" is null
+          and not exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "asset"."id"
+          )
           and not (
             case
               when "asset"."id" is null then false
@@ -265,6 +295,14 @@ select
         where
           "shared_link"."id" = "shared_link_asset"."sharedLinkId"
           and "asset"."deletedAt" is null
+          and not exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "asset"."id"
+          )
         order by
           "asset"."fileCreatedAt" asc
         limit
@@ -451,6 +489,14 @@ from
       ) as "exifInfo" on true
     where
       "asset"."id" = "shared_link_asset"."assetId"
+      and not exists (
+        select
+          1
+        from
+          asset_lock
+        where
+          asset_lock."assetId" = "asset"."id"
+      )
   ) as "assets" on true
 where
   "shared_link"."id" = $1

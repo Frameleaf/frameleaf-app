@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { shortcuts } from '$lib/actions/shortcut';
   import { Icon } from '@immich/ui';
   import { mdiChevronLeft, mdiChevronRight } from '@mdi/js';
   import { t } from 'svelte-i18n';
@@ -11,14 +10,11 @@
   }
 
   let { onPreviousAsset }: Props = $props();
-</script>
 
-<svelte:document
-  use:shortcuts={[
-    { shortcut: { key: 'ArrowLeft' }, onShortcut: onPreviousAsset },
-    { shortcut: { key: 'a' }, onShortcut: onPreviousAsset },
-  ]}
-/>
+  // FL-148: the ArrowLeft shortcut is bound once, unconditionally, by AssetViewer itself - this
+  // component only renders while `previousAsset` is already resolved, so a shortcut bound here would
+  // have no listener for a keypress that arrives while that (async) lookup is still in flight.
+</script>
 
 <NavigationArea onClick={onPreviousAsset} label={$t('view_previous_asset')}>
   <Icon icon={languageManager.rtl ? mdiChevronRight : mdiChevronLeft} size="36" aria-hidden />

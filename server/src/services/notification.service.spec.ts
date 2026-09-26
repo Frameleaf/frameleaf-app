@@ -1,5 +1,5 @@
 import { AdminConfigDto, SystemConfig, defaults } from 'src/dtos/config.dto.js';
-import { AssetFileType, JobName, JobStatus, UserMetadataKey } from 'src/enum.js';
+import { AssetFileType, JobName, JobStatus, NotificationLevel, NotificationType, UserMetadataKey } from 'src/enum.js';
 import { NotificationService } from 'src/services/notification.service.js';
 import { AlbumFactory } from 'test/factories/album.factory.js';
 import { AssetFileFactory } from 'test/factories/asset-file.factory.js';
@@ -59,6 +59,60 @@ describe(NotificationService.name, () => {
 
   it('should work', () => {
     expect(sut).toBeDefined();
+  });
+
+  describe('notifyAdmins (FL-155)', () => {
+    const notice = {
+      type: NotificationType.SystemMessage,
+      level: NotificationLevel.Warning,
+      title: 'This server cannot reach Frameleaf Cloud',
+      description: 'The last 3 check-ins failed.',
+      dedupeKey: 'frameleaf-cloud:heartbeat-failing',
+      dedupeDays: 1,
+    };
+
+    it('notifies every administrator and tags the notice with its dedupe key', async () => {
+      const [first, second] = [UserFactory.create({ isAdmin: true }), UserFactory.create({ isAdmin: true })];
+      mocks.user.getAdmins.mockResolvedValue([first, second] as never);
+      mocks.notification.findRecentByDedupeKey.mockResolvedValue(null);
+      mocks.notification.create.mockResolvedValue(notificationStub.albumEvent as never);
+
+      await expect(sut.notifyAdmins(notice)).resolves.toBe(2);
+      expect(mocks.notification.create).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: first.id, data: { dedupeKey: notice.dedupeKey } }),
+      );
+      expect(mocks.websocket.clientSend).toHaveBeenCalledWith('on_notification', second.id, expect.anything());
+    });
+
+    it('skips an administrator who already got the same notice within the window', async () => {
+      const [first, second] = [UserFactory.create({ isAdmin: true }), UserFactory.create({ isAdmin: true })];
+      mocks.user.getAdmins.mockResolvedValue([first, second] as never);
+      mocks.notification.findRecentByDedupeKey.mockImplementation((userId) =>
+        Promise.resolve(userId === first.id ? { id: 'n1' } : null),
+      );
+      mocks.notification.create.mockResolvedValue(notificationStub.albumEvent as never);
+
+      await expect(sut.notifyAdmins(notice)).resolves.toBe(1);
+      expect(mocks.notification.create).toHaveBeenCalledTimes(1);
+      const since = mocks.notification.findRecentByDedupeKey.mock.calls[0][2];
+      expect(Date.now() - since.getTime()).toBeGreaterThan(23 * 60 * 60 * 1000);
+      expect(Date.now() - since.getTime()).toBeLessThan(25 * 60 * 60 * 1000);
+    });
+
+    it('caps the window at 30 days and always sends a notice without a key', async () => {
+      mocks.user.getAdmins.mockResolvedValue([UserFactory.create({ isAdmin: true })] as never);
+      mocks.notification.findRecentByDedupeKey.mockResolvedValue(null);
+      mocks.notification.create.mockResolvedValue(notificationStub.albumEvent as never);
+
+      await sut.notifyAdmins({ ...notice, dedupeDays: 365 });
+      const since = mocks.notification.findRecentByDedupeKey.mock.calls[0][2];
+      expect(Date.now() - since.getTime()).toBeLessThanOrEqual(30 * 24 * 60 * 60 * 1000 + 1000);
+
+      mocks.notification.findRecentByDedupeKey.mockClear();
+      await sut.notifyAdmins({ ...notice, dedupeKey: undefined });
+      expect(mocks.notification.findRecentByDedupeKey).not.toHaveBeenCalled();
+      expect(mocks.notification.create).toHaveBeenLastCalledWith(expect.objectContaining({ data: null }));
+    });
   });
 
   describe('onConfigUpdate', () => {
@@ -122,6 +176,29 @@ describe(NotificationService.name, () => {
     });
   });
 
+  describe('onJobError (FL-71)', () => {
+    beforeEach(() => {
+      mocks.user.getAdmin.mockResolvedValue(UserFactory.create({ isAdmin: true }));
+    });
+
+    it.each([
+      { name: JobName.NotifyUserSignup, data: { id: 'user-1', password: 'hunter2-secret' } },
+      { name: JobName.SendMail, data: { to: 'a@b.c', subject: 's', html: 'hunter2-secret', text: 'hunter2-secret' } },
+    ] as const)('never logs the data of a $name job, which carries a password', async (job) => {
+      await sut.onJobError({ job, error: new Error('smtp down') });
+
+      expect(mocks.logger.error).toHaveBeenCalledWith(expect.any(String), expect.any(String), '[redacted]');
+      expect(JSON.stringify(mocks.logger.error.mock.calls)).not.toContain('hunter2-secret');
+    });
+
+    it('still logs the data of other jobs', async () => {
+      const job = { name: JobName.AssetGenerateThumbnails, data: { id: 'asset-1' } } as const;
+      await sut.onJobError({ job, error: new Error('Input file is missing') });
+
+      expect(mocks.logger.error).toHaveBeenCalledWith(expect.any(String), expect.any(String), JSON.stringify(job.data));
+    });
+  });
+
   describe('onAssetHide', () => {
     it('should send connected clients an event', () => {
       sut.onAssetHide({ assetId: 'asset-id', userId: 'user-id' });
@@ -179,6 +256,54 @@ describe(NotificationService.name, () => {
         name: JobName.NotifyAlbumInvite,
         data: { id: '', recipientId: '42', senderName: 'foo' },
       });
+    });
+  });
+
+  describe('onSharedSpaceReply', () => {
+    it('tells the author of the answered comment in the app only, never by email', async () => {
+      const album = AlbumFactory.create({ albumName: 'Family' });
+      mocks.album.getById.mockResolvedValue(getForAlbum(album));
+      mocks.notification.create.mockResolvedValue(notificationStub.albumEvent);
+
+      await sut.onSharedSpaceReply({
+        id: album.id,
+        assetId: null,
+        activityId: 'reply-1',
+        parentActivityId: 'comment-1',
+        userId: '42',
+        senderName: 'Bo',
+      });
+
+      expect(mocks.notification.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: '42',
+          type: 'SharedSpaceReply',
+          description: 'Bo replied to your comment in Family',
+          data: JSON.stringify({
+            albumId: album.id,
+            assetId: null,
+            activityId: 'reply-1',
+            parentActivityId: 'comment-1',
+          }),
+        }),
+      );
+      expect(mocks.websocket.clientSend).toHaveBeenCalledWith('on_notification', '42', expect.anything());
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+    });
+
+    it('does nothing once the space is gone', async () => {
+      mocks.album.getById.mockResolvedValue(void 0);
+
+      await sut.onSharedSpaceReply({
+        id: newUuid(),
+        assetId: null,
+        activityId: 'reply-1',
+        parentActivityId: 'comment-1',
+        userId: '42',
+        senderName: 'Bo',
+      });
+
+      expect(mocks.notification.create).not.toHaveBeenCalled();
     });
   });
 
@@ -263,7 +388,7 @@ describe(NotificationService.name, () => {
       await expect(sut.handleUserSignup({ id: '' })).resolves.toBe(JobStatus.Success);
       expect(mocks.job.queue).toHaveBeenCalledWith({
         name: JobName.SendMail,
-        data: expect.objectContaining({ subject: 'Welcome to Immich' }),
+        data: expect.objectContaining({ subject: 'Welcome to Frameleaf' }),
       });
     });
   });
@@ -408,6 +533,7 @@ describe(NotificationService.name, () => {
           includeNsfw: true,
           tagIds: [],
           personIds: [],
+          petIds: [],
           scope: 'owned',
         },
       });
@@ -598,6 +724,7 @@ describe(NotificationService.name, () => {
           includeNsfw: true,
           tagIds: [],
           personIds: [],
+          petIds: [],
           scope: 'owned',
         },
       });

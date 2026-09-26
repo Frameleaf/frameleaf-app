@@ -165,3 +165,45 @@ test("Best Photos uses supplied quality scores independently from manual ratings
     ["rated"],
   );
 });
+
+test("scrubber positions months and years in proportion to their item counts", async () => {
+  const { assetMonthId, scrubberMonthAt, timelineScrubber } = await import(
+    "../src/explore-timeline.mjs"
+  );
+  const assets = [
+    { id: "a", date: "2026-03-01" },
+    { id: "b", date: "2026-03-02" },
+    { id: "c", date: "2026-03-03" },
+    { id: "d", date: "2025-12-01" },
+    { id: "e", date: "bad" },
+  ];
+  const model = timelineScrubber(assets);
+  assert.equal(model.total, 4, "undated items are not on the track");
+  assert.deepEqual(
+    model.months.map((m) => [m.id, m.start, m.end, m.firstAssetId]),
+    [
+      ["2026-03", 0, 0.75, "c"],
+      ["2025-12", 0.75, 1, "d"],
+    ],
+  );
+  assert.deepEqual(
+    model.years.map((y) => [y.year, y.start, y.end, y.count]),
+    [
+      ["2026", 0, 0.75, 3],
+      ["2025", 0.75, 1, 1],
+    ],
+  );
+  assert.equal(model.years[0].center, 0.375);
+  assert.equal(scrubberMonthAt(model, 0.2).id, "2026-03");
+  assert.equal(scrubberMonthAt(model, 0.75).id, "2025-12");
+  assert.equal(scrubberMonthAt(model, 1).id, "2025-12", "end of track clamps to the last month");
+  assert.equal(scrubberMonthAt(model, -4).id, "2026-03");
+  assert.equal(scrubberMonthAt(model, Number.NaN).id, "2026-03");
+  assert.equal(scrubberMonthAt(timelineScrubber([]), 0.5), null);
+  assert.equal(timelineScrubber([]).total, 0);
+  assert.equal(assetMonthId(assets[0]), "2026-03");
+  assert.equal(assetMonthId(assets[4]), null);
+  const ascending = timelineScrubber(assets, "asc");
+  assert.equal(ascending.months[0].id, "2025-12");
+  assert.equal(ascending.months[0].firstAssetId, "d");
+});

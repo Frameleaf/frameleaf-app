@@ -63,11 +63,10 @@ describe('DetailPanelImageEnrichment', () => {
     renderWithTooltips(DetailPanelImageEnrichment, {
       asset,
       isOwner: true,
-      isAdmin: true,
       onAssetSuppressed,
     });
 
-    await fireEvent.click(await screen.findByRole('button', { name: 'mark_nsfw' }));
+    await fireEvent.click(await screen.findByRole('button', { name: 'frameleaf_info_mark_sensitive' }));
 
     await waitFor(() =>
       expect(updateAssetImageEnrichment).toHaveBeenCalledWith({
@@ -77,5 +76,81 @@ describe('DetailPanelImageEnrichment', () => {
     );
     await waitFor(() => expect(getAssetInfo).toHaveBeenCalledWith({ id: asset.id }));
     expect(onAssetSuppressed).toHaveBeenCalledWith(asset);
+  });
+
+  // FL-36 AI provenance (MediaViewer.jsx:2608-2743): who wrote the description, how the check was made.
+  describe('AI provenance', () => {
+    const withDescription = (confidence: number | null): AssetImageEnrichmentResponseDto => ({
+      ...enrichmentFactory('asset', false),
+      description: {
+        status: Status.Success,
+        appliedDescription: true,
+        appliedTags: false,
+        description: 'A lake at dusk',
+        modelName: 'vision-model',
+        confidence,
+      },
+      nsfwDetection: {
+        status: Status2.Success,
+        effectiveIsNsfw: false,
+        isNsfw: false,
+        score: 0.12,
+        modelName: 'nsfw-model',
+        appliedTags: false,
+      },
+    });
+
+    it('names the model and its confidence for an AI-written description', async () => {
+      const asset = assetFactory.build({
+        type: AssetTypeEnum.Image,
+        exifInfo: { description: 'A lake at dusk' },
+      });
+      vi.mocked(getAssetImageEnrichment).mockResolvedValue(withDescription(0.87));
+
+      renderWithTooltips(DetailPanelImageEnrichment, { asset, isOwner: true });
+
+      const row = await screen.findByTestId('frameleaf-enrichment-description');
+      expect(row).toHaveTextContent('frameleaf_info_written_by_ai · vision-model · frameleaf_info_confidence');
+      expect(row.querySelector('.fl-enrich-icon.ai')).not.toBeNull();
+    });
+
+    it('leaves the confidence out when the server reported none', async () => {
+      const asset = assetFactory.build({
+        type: AssetTypeEnum.Image,
+        exifInfo: { description: 'A lake at dusk' },
+      });
+      vi.mocked(getAssetImageEnrichment).mockResolvedValue(withDescription(null));
+
+      renderWithTooltips(DetailPanelImageEnrichment, { asset, isOwner: true });
+
+      const row = await screen.findByTestId('frameleaf-enrichment-description');
+      expect(row).toHaveTextContent('frameleaf_info_written_by_ai · vision-model');
+      expect(row).not.toHaveTextContent('frameleaf_info_confidence');
+    });
+
+    it('says an owner-written description was written by you', async () => {
+      const asset = assetFactory.build({
+        type: AssetTypeEnum.Image,
+        exifInfo: { description: 'Grandma at the lake' },
+      });
+      vi.mocked(getAssetImageEnrichment).mockResolvedValue(withDescription(0.9));
+
+      renderWithTooltips(DetailPanelImageEnrichment, { asset, isOwner: true });
+
+      const row = await screen.findByTestId('frameleaf-enrichment-description');
+      expect(row).toHaveTextContent('frameleaf_info_written_by_you');
+      expect(row.querySelector('.fl-enrich-icon.ai')).toBeNull();
+    });
+
+    it('says how the sensitive-content check was made', async () => {
+      const asset = assetFactory.build({ type: AssetTypeEnum.Image });
+      vi.mocked(getAssetImageEnrichment).mockResolvedValue(withDescription(null));
+
+      renderWithTooltips(DetailPanelImageEnrichment, { asset, isOwner: true });
+
+      expect(await screen.findByTestId('frameleaf-sensitivity-detail')).toHaveTextContent(
+        'frameleaf_info_checked_by_ai · nsfw-model · frameleaf_info_likely_sensitive',
+      );
+    });
   });
 });

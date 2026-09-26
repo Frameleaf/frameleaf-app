@@ -1,10 +1,10 @@
-A command-line interface for interfacing with the self-hosted photo manager [Immich](https://immich.app/).
+A command-line interface for the self-hosted Frameleaf photo library.
 
-Please see the [Immich CLI documentation](https://docs.immich.app/features/command-line-interface).
+See the [CLI documentation](https://help.frameleaf.ai/features/command-line-interface).
 
 # For developers
 
-Before building the CLI, you must build the immich server and the open-api client. You can use the following command:
+Before building the CLI, you must build the server and the open-api client. You can use the following command:
 
     $ mise //:open-api
 
@@ -18,7 +18,7 @@ Go to the cli folder and build it:
 
 ## Run and Debug from source (VSCode)
 
-With VScode you can run and debug the Immich CLI. Go to the launch.json file, find the Immich CLI config and change this with the command you need to debug
+With VS Code you can run and debug the CLI. Go to the launch.json file, find the CLI config and change this with the command you need to debug
 
 `"args": ["upload", "--help"],`
 

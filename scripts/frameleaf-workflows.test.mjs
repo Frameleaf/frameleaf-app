@@ -106,6 +106,7 @@ test("standalone script tests install their locked JavaScript dependencies first
   for (const command of [
     "pnpm --filter @immich/scripts test",
     "node --test scripts/frameleaf-workflows.test.mjs",
+    "node --test scripts/frameleaf-branding.test.mjs",
   ]) {
     assert.ok(scripts.findIndex((step) => step.run === command) > install);
   }
@@ -307,11 +308,14 @@ test("CLI has one opt-in GHCR publisher and read-only no-push PR builds", () => 
     admission(publish.if, "Frameleaf/frameleaf-app", "", "release"),
     false,
   );
+  // FL-191: releases are created with the workflow token and never trigger this workflow, so
+  // publication is only the gated manual dispatch; promotion checks that the image exists.
+  assert.equal(w.on.release, undefined);
   assert.equal(
     admission(publish.if, "Frameleaf/frameleaf-app", "", "release", {
       vars: { FRAMELEAF_ENABLE_CLI_PUBLISH: "true" },
     }),
-    true,
+    false,
   );
   assert.equal(
     admission(publish.if, "immich-app/immich", "", "release", {

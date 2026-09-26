@@ -1,14 +1,15 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import {
   type InsertQueryBuilder,
   type Insertable,
   type Kysely,
   type QueryCreator,
   type Selectable,
-  type Updateable,
+  type Transaction,
   sql,
 } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
+import type { PostgresError } from 'postgres';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { columns } from 'src/database.js';
 import { Chunked, ChunkedSet, DummyValue, GenerateSql } from 'src/decorators.js';
@@ -16,9 +17,15 @@ import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
 import { TagAssetTable } from 'src/schema/tables/tag-asset.table.js';
 import { TagTable } from 'src/schema/tables/tag.table.js';
-import { getHiddenContentFilter, tagHasVisibleAssetOrNoAssets } from 'src/utils/database.js';
+import { getHiddenContentFilter, tagHasVisibleAssetOrNoAssets, tagIsSuppressed } from 'src/utils/database.js';
 
 export type TagSearchOptions = HiddenContentQueryOptions;
+
+/** A tag's new leaf name, colour and parent (`null`: top level); omitted fields stay as they are. */
+export type TagUpdate = { name?: string; color?: string | null; parentId?: string | null };
+
+const TAG_VALUE_CONSTRAINT = 'tag_userId_value_uq';
+const TAG_EXISTS = 'A tag with that name already exists';
 
 @Injectable()
 export class TagRepository {
@@ -58,10 +65,16 @@ export class TagRepository {
 
   @GenerateSql({ params: [DummyValue.UUID, { excludeNsfw: true }] })
   getAll(userId: string, options: TagSearchOptions = {}) {
+    // FL-46: a session that is not unlocked never lists a suppressed tag or one nested under it,
+    // even an empty one, so the list agrees with the 404 its own page answers
+    const suppressedTagIds = options.hiddenContent?.tagIds ?? [];
     return this.db
       .selectFrom('tag')
       .select(columns.tag)
       .where('userId', '=', userId)
+      .$if(suppressedTagIds.length > 0, (qb) =>
+        qb.where(sql<boolean>`not ${tagIsSuppressed(sql.ref('tag.id'), suppressedTagIds)}`),
+      )
       .$if(!!getHiddenContentFilter(options), (qb) =>
         qb.where(tagHasVisibleAssetOrNoAssets(sql.ref('tag.id'), getHiddenContentFilter(options))),
       )
@@ -74,68 +87,173 @@ export class TagRepository {
     return this.insertTagWithClosures((db) => db.insertInto('tag').values(tag).returningAll());
   }
 
-  @GenerateSql({ params: [DummyValue.UUID, { value: DummyValue.STRING, color: DummyValue.STRING }] })
-  async update(id: string, dto: Updateable<TagTable>) {
-    return this.db.transaction().execute(async (tx) => {
-      // Get previous tag value for reference if the current update contains a new value
-      const previousTag =
-        dto.value === undefined
-          ? undefined
-          : await tx.selectFrom('tag').select('value').where('id', '=', id).executeTakeFirst();
+  /**
+   * Renames, recolours or moves a tag (FL-46). `parentId: null` moves it to the top level, a tag id
+   * under that tag; the tag's and every descendant's value follow, and the subtree's closure rows are
+   * re-rooted.
+   *
+   * A rename or move locks all of the owner's tags (in id order, so two of them cannot deadlock) before
+   * it reads anything, then checks for a cycle and a taken path inside the same transaction: two
+   * concurrent moves (A under B, B under A) cannot both pass, and a unique-violation that still slips
+   * through (a tag created meanwhile by an upsert) is answered as the same 400.
+   */
+  @GenerateSql({ params: [DummyValue.UUID, { name: DummyValue.STRING, color: DummyValue.STRING }] })
+  async update(id: string, { name, color, parentId }: TagUpdate) {
+    try {
+      return await this.db.transaction().execute(async (tx) => {
+        if (name === undefined && parentId === undefined) {
+          return tx
+            .updateTable('tag')
+            .set({ color })
+            .where('id', '=', id)
+            .returningAll()
+            .executeTakeFirstOrThrow(() => new NotFoundException('Tag not found'));
+        }
 
-      // Perform main tag update
-      const updated = await tx
-        .updateTable('tag')
-        .set(dto)
-        .where('id', '=', id)
-        .returningAll()
-        .executeTakeFirstOrThrow();
-
-      // Check if value has changed, trigger value updates on all children if so
-      if (previousTag && dto.value !== previousTag.value) {
         await tx
-          // Use a recursive cte to get all levels of nested child tags that need to be updated
-          .withRecursive('descendants(id, value)', (qb) => {
-            const directChildren = qb
-              .selectFrom('tag as child')
-              .select((eb) => [
-                'child.id as id',
-                eb
-                  .fn<string>('concat', [
-                    eb.cast<string>(eb.val(updated.value), 'text'),
-                    eb.cast<string>(eb.val('/'), 'text'),
-                    eb.fn<string>('regexp_replace', ['child.value', eb.val('^.*/'), eb.val('')]),
-                  ])
-                  .as('value'),
-              ])
-              .where('child.parentId', '=', id);
-
-            const nestedChildren = qb
-              .selectFrom('tag as child')
-              .innerJoin('descendants as parent', 'parent.id', 'child.parentId')
-              .select((eb) => [
-                'child.id as id',
-                eb
-                  .fn<string>('concat', [
-                    'parent.value',
-                    eb.cast<string>(eb.val('/'), 'text'),
-                    eb.fn<string>('regexp_replace', ['child.value', eb.val('^.*/'), eb.val('')]),
-                  ])
-                  .as('value'),
-              ]);
-
-            return directChildren.unionAll(nestedChildren);
-          })
-          .updateTable('tag')
-          .from('descendants')
-          .set((eb) => ({
-            value: eb.ref('descendants.value'),
-          }))
-          .whereRef('tag.id', '=', 'descendants.id')
+          .selectFrom('tag')
+          .select('id')
+          .where('userId', '=', (eb) => eb.selectFrom('tag as moved').select('moved.userId').where('moved.id', '=', id))
+          .orderBy('id')
+          .forUpdate()
           .execute();
+        const existing = await tx
+          .selectFrom('tag')
+          .select(['userId', 'value', 'parentId'])
+          .where('id', '=', id)
+          .executeTakeFirstOrThrow(() => new NotFoundException('Tag not found'));
+
+        const leaf = name || (existing.value.split('/').at(-1) as string);
+        let value: string;
+        if (parentId === undefined) {
+          const parts = existing.value.split('/');
+          parts[parts.length - 1] = leaf;
+          value = parts.join('/');
+        } else if (parentId === null) {
+          value = leaf;
+        } else {
+          if (parentId === id || (await this.isAncestor(tx, id, parentId))) {
+            throw new BadRequestException('A tag cannot be moved under itself or one of its descendants');
+          }
+          const parent = await tx
+            .selectFrom('tag')
+            .select('value')
+            .where('id', '=', parentId)
+            .where('userId', '=', existing.userId)
+            .executeTakeFirstOrThrow(() => new NotFoundException('Tag not found'));
+          value = `${parent.value}/${leaf}`;
+        }
+
+        if (value !== existing.value) {
+          const taken = await tx
+            .selectFrom('tag')
+            .select('id')
+            .where('userId', '=', existing.userId)
+            .where('value', '=', value)
+            .executeTakeFirst();
+          if (taken) {
+            throw new BadRequestException(TAG_EXISTS);
+          }
+        }
+
+        const updated = await tx
+          .updateTable('tag')
+          .set({ value, color, ...(parentId !== undefined && { parentId }) })
+          .where('id', '=', id)
+          .returningAll()
+          .executeTakeFirstOrThrow();
+
+        // FL-46: a moved tag takes its whole subtree along, so the subtree's closure rows are re-rooted:
+        // links to the old ancestors are dropped and links to the new parent's ancestors added
+        if (parentId !== undefined && parentId !== existing.parentId) {
+          const subtree = tx.selectFrom('tag_closure').select('id_descendant').where('id_ancestor', '=', id);
+          await tx
+            .deleteFrom('tag_closure')
+            .where('id_descendant', 'in', subtree)
+            .where('id_ancestor', 'not in', subtree)
+            .execute();
+          if (parentId !== null) {
+            await tx
+              .insertInto('tag_closure')
+              .columns(['id_ancestor', 'id_descendant'])
+              .expression((eb) =>
+                eb
+                  .selectFrom('tag_closure as ancestor')
+                  .innerJoin('tag_closure as descendant', (join) => join.on('descendant.id_ancestor', '=', id))
+                  .where('ancestor.id_descendant', '=', parentId)
+                  .select(['ancestor.id_ancestor', 'descendant.id_descendant']),
+              )
+              .onConflict((oc) => oc.doNothing())
+              .execute();
+          }
+        }
+
+        if (value !== existing.value) {
+          await this.renameDescendants(tx, id, value);
+        }
+        return updated;
+      });
+    } catch (error) {
+      if ((error as PostgresError)?.constraint_name === TAG_VALUE_CONSTRAINT) {
+        throw new BadRequestException(TAG_EXISTS);
       }
-      return updated;
-    });
+      throw error;
+    }
+  }
+
+  /** Rewrites every descendant's value under a tag whose value became `value`. */
+  private async renameDescendants(tx: Transaction<DB>, id: string, value: string) {
+    await tx
+      // Use a recursive cte to get all levels of nested child tags that need to be updated
+      .withRecursive('descendants(id, value)', (qb) => {
+        const directChildren = qb
+          .selectFrom('tag as child')
+          .select((eb) => [
+            'child.id as id',
+            eb
+              .fn<string>('concat', [
+                eb.cast<string>(eb.val(value), 'text'),
+                eb.cast<string>(eb.val('/'), 'text'),
+                eb.fn<string>('regexp_replace', ['child.value', eb.val('^.*/'), eb.val('')]),
+              ])
+              .as('value'),
+          ])
+          .where('child.parentId', '=', id);
+
+        const nestedChildren = qb
+          .selectFrom('tag as child')
+          .innerJoin('descendants as parent', 'parent.id', 'child.parentId')
+          .select((eb) => [
+            'child.id as id',
+            eb
+              .fn<string>('concat', [
+                'parent.value',
+                eb.cast<string>(eb.val('/'), 'text'),
+                eb.fn<string>('regexp_replace', ['child.value', eb.val('^.*/'), eb.val('')]),
+              ])
+              .as('value'),
+          ]);
+
+        return directChildren.unionAll(nestedChildren);
+      })
+      .updateTable('tag')
+      .from('descendants')
+      .set((eb) => ({
+        value: eb.ref('descendants.value'),
+      }))
+      .whereRef('tag.id', '=', 'descendants.id')
+      .execute();
+  }
+
+  /** Whether `ancestorId` is `descendantId` or one of its ancestors. */
+  private async isAncestor(tx: Transaction<DB>, ancestorId: string, descendantId: string) {
+    const row = await tx
+      .selectFrom('tag_closure')
+      .select('id_ancestor')
+      .where('id_ancestor', '=', ancestorId)
+      .where('id_descendant', '=', descendantId)
+      .executeTakeFirst();
+    return !!row;
   }
 
   @GenerateSql({ params: [DummyValue.UUID] })

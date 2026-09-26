@@ -1,30 +1,30 @@
 <script lang="ts">
-  import SettingAccordion from '$lib/components/shared-components/settings/SettingAccordion.svelte';
-  import SettingInputField from '$lib/components/shared-components/settings/SettingInputField.svelte';
-  import SettingSwitch from '$lib/components/shared-components/settings/SettingSwitch.svelte';
-  import { SettingInputFieldType } from '$lib/constants';
+  import EnrichmentWorkbench from '$lib/components/frameleaf/EnrichmentWorkbench.svelte';
+  import SettingGroup from '$lib/components/frameleaf/settings/SettingGroup.svelte';
+  import SettingField from '$lib/components/frameleaf/settings/SettingField.svelte';
+  import SettingToggle from '$lib/components/frameleaf/settings/SettingToggle.svelte';
+  import { page } from '$app/state';
+  import { QueryParameter, SettingInputFieldType } from '$lib/constants';
+  import { getSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import ImageDescriptionRequeueModal from '$lib/modals/ImageDescriptionRequeueModal.svelte';
   import {
     getImageDescriptionRequeueEstimate,
     MachineLearningHardwareAcceleration,
-    Mode as RunPodMode,
     type AdminConfigImageDescriptionDto,
     type ImageDescriptionRequeueEstimateDto,
     type AdminConfigNsfwDetectionDto,
     type AdminConfigMachineLearningDto,
-    type AdminConfigRunPodServerlessDto,
   } from '@immich/sdk';
   import { Button, modalManager, toastManager } from '@immich/ui';
-  import { mdiRefresh } from '@mdi/js';
+  import { mdiFlaskOutline, mdiRefresh } from '@mdi/js';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
-  import SettingSelect from '../SettingSelect.svelte';
+  import SettingSelect from '$lib/components/frameleaf/settings/SettingSelect.svelte';
   import ImageDescriptionPromptSection from './ImageDescriptionPromptSection.svelte';
   import {
     CUSTOM_MODEL,
     DESCRIPTION_MODEL_PROFILES,
     FALLBACK_MODEL_PROFILES,
-    computeRunpodMode,
     findDescriptionProfile,
     formatDuration,
     formatTimestamp,
@@ -39,7 +39,6 @@
     imageDescription: AdminConfigImageDescriptionDto;
     savedImageDescription: AdminConfigImageDescriptionDto;
     nsfwDetection: AdminConfigNsfwDetectionDto;
-    runpodServerless: AdminConfigRunPodServerlessDto;
     detectedAcceleration: MachineLearningHardwareAcceleration | undefined;
     isMachineLearningConfigEdited: boolean;
     disabled: boolean;
@@ -50,7 +49,6 @@
     imageDescription,
     savedImageDescription,
     nsfwDetection,
-    runpodServerless,
     detectedAcceleration,
     isMachineLearningConfigEdited,
     disabled,
@@ -95,12 +93,12 @@
       value: p.value,
       text: `${p.label} — ${p.vramHint}`,
     })),
-    { value: CUSTOM_MODEL, text: $t('admin.machine_learning_runpod_custom_model_option') },
+    { value: CUSTOM_MODEL, text: $t('admin.machine_learning_custom_model_option') },
   ]);
 
   const fallbackModelOptions = $derived([
     ...FALLBACK_MODEL_PROFILES.map((p) => ({ value: p.value, text: p.label })),
-    { value: CUSTOM_MODEL, text: $t('admin.machine_learning_runpod_custom_model_option') },
+    { value: CUSTOM_MODEL, text: $t('admin.machine_learning_custom_model_option') },
   ]);
 
   // Hardware acceleration ─────────────────────────────────────────────────
@@ -148,31 +146,13 @@
     nsfwDetection.device = preset.nsfwDetectionDevice;
   };
 
-  // Recommended GPU pools hint ────────────────────────────────────────────
+  // Sample-first preview and plans (FL-59) ────────────────────────────────
 
-  const runpodMode = $derived<RunPodMode>(
-    computeRunpodMode(workingConfig.runpod?.mode, workingConfig.runpod?.enabled ?? false),
-  );
-  const recommendedPoolsForCurrentModel = $derived(findDescriptionProfile(imageDescription.modelName)?.gpuPoolIds);
-
-  const currentPoolsMatchRecommended = $derived.by(() => {
-    const recommended = recommendedPoolsForCurrentModel;
-    if (!recommended) {
-      return false;
-    }
-    const current = runpodServerless?.gpuTypeIds ?? [];
-    return current.length === recommended.length && current.every((id: string, idx: number) => id === recommended[idx]);
-  });
-
-  const applyRecommendedPools = () => {
-    const recommended = recommendedPoolsForCurrentModel;
-    if (!recommended || !runpodServerless) {
-      return;
-    }
-    runpodServerless.gpuTypeIds = [...recommended];
-  };
+  let workbenchOpen = $state(false);
 
   // Description status panel state ────────────────────────────────────────
+
+  const settingsDraft = getSystemConfigDraft();
 
   let descriptionStats = $state<ImageDescriptionRequeueEstimateDto | undefined>(undefined);
   let descriptionStatsError = $state<string | undefined>(undefined);
@@ -192,6 +172,11 @@
 
   onMount(() => {
     void loadDescriptionStats();
+    // Deep link from the Jobs manager's "Enrichment tasks" entry (FL-59): opens straight into
+    // the sample-first workbench instead of only scrolling to this section.
+    if (page.url.searchParams.get(QueryParameter.OPEN_SETTING) === 'workbench') {
+      workbenchOpen = true;
+    }
   });
 
   const handleRequeueClick = async () => {
@@ -201,6 +186,9 @@
     }
     if ('deferred' in result && result.deferred) {
       toastManager.primary($t('admin.image_description_requeue_deferred_toast'));
+    } else if ('cloudBatches' in result && result.cloudBatches) {
+      // FL-163: descriptions routed to Frameleaf Cloud go through batches, estimate first
+      toastManager.primary($t('admin.machine_learning_image_description_requeue_cloud_batches'));
     } else if ('queued' in result) {
       toastManager.primary(
         result.queued
@@ -213,15 +201,18 @@
     // Refresh the stats panel so pendingRequeueAt + counts update without a
     // page reload, regardless of whether the prior fetch completed.
     void loadDescriptionStats();
+    // The re-queue is a job, not a setting (FL-66): the reminder it writes is picked up as saved
+    // state and never enters the settings draft.
+    void settingsDraft?.refresh();
   };
 </script>
 
-<SettingAccordion
+<SettingGroup
   key="image-description"
   title={$t('admin.machine_learning_image_description')}
   subtitle={$t('admin.machine_learning_image_description_description')}
 >
-  <div class="mt-4 ml-4 flex flex-col gap-4">
+  <div class="flex flex-col gap-4">
     {#if savedImageDescription.pendingRequeueAt}
       <div
         class="flex flex-col gap-2 rounded-md border border-yellow-500/50 bg-yellow-100/40 p-3 text-sm sm:flex-row sm:items-center sm:justify-between dark:bg-yellow-900/20"
@@ -259,7 +250,7 @@
       onSelect={applyImageEnrichmentHardware}
     />
 
-    <SettingSwitch
+    <SettingToggle
       title={$t('admin.machine_learning_image_description_enabled')}
       subtitle={$t('admin.machine_learning_image_description_enabled_description')}
       bind:checked={imageDescription.enabled}
@@ -279,7 +270,7 @@
     />
 
     {#if descriptionModelChoice === CUSTOM_MODEL}
-      <SettingInputField
+      <SettingField
         inputType={SettingInputFieldType.TEXT}
         label={$t('admin.machine_learning_custom_model_hf_id')}
         bind:value={imageDescription.modelName}
@@ -287,25 +278,6 @@
         disabled={disabled || !workingConfig.enabled || !imageDescription.enabled}
         isEdited={imageDescription.modelName !== savedImageDescription.modelName}
       />
-    {/if}
-
-    {#if runpodMode === RunPodMode.Serverless && recommendedPoolsForCurrentModel && !currentPoolsMatchRecommended}
-      <div class="-mt-2 mb-4 rounded-md bg-blue-50 px-3 py-2 text-sm text-blue-900 dark:bg-blue-950 dark:text-blue-200">
-        <p class="mb-1">
-          {$t('admin.machine_learning_image_description_recommended_gpu_pools')}
-          <code class="rounded-sm bg-blue-100 px-1 dark:bg-blue-900">
-            {recommendedPoolsForCurrentModel.join(', ')}
-          </code>
-        </p>
-        <button
-          type="button"
-          class="text-xs font-medium underline hover:no-underline disabled:opacity-50"
-          onclick={applyRecommendedPools}
-          {disabled}
-        >
-          {$t('admin.machine_learning_image_description_recommended_gpu_apply')}
-        </button>
-      </div>
     {/if}
 
     <SettingSelect
@@ -320,7 +292,7 @@
     />
 
     {#if fallbackModelChoice === CUSTOM_MODEL}
-      <SettingInputField
+      <SettingField
         inputType={SettingInputFieldType.TEXT}
         label={$t('admin.machine_learning_custom_fallback_model_hf_id')}
         bind:value={imageDescription.fallbackModelName}
@@ -330,7 +302,7 @@
       />
     {/if}
 
-    <SettingInputField
+    <SettingField
       inputType={SettingInputFieldType.TEXT}
       label={$t('admin.machine_learning_hardware_device')}
       bind:value={imageDescription.device}
@@ -346,12 +318,22 @@
       {disabled}
     />
 
-    <SettingAccordion
-      key="image-description-status-regen"
-      title={$t('admin.image_description_status_section')}
-      subtitle=""
-    >
-      <div class="ms-4 mt-4 flex flex-col gap-4">
+    <!-- FL-59: try the model and prompt on a few samples before they reach the library. -->
+    <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+      <p class="text-sm text-immich-fg/70 dark:text-immich-dark-fg/70">{$t('frameleaf_enrichment_open_help')}</p>
+      <Button
+        shape="round"
+        size="small"
+        leadingIcon={mdiFlaskOutline}
+        onclick={() => (workbenchOpen = true)}
+        disabled={!workingConfig.enabled || !imageDescription.enabled}
+      >
+        {$t('frameleaf_enrichment_open')}
+      </Button>
+    </div>
+
+    <SettingGroup key="image-description-status-regen" title={$t('admin.image_description_status_section')} subtitle="">
+      <div class="flex flex-col gap-4">
         {#if descriptionStatsLoading && !descriptionStats}
           <p class="text-sm text-immich-fg/60 dark:text-immich-dark-fg/60">
             {$t('admin.machine_learning_image_description_requeue_modal_loading')}
@@ -417,6 +399,13 @@
           </Button>
         </div>
       </div>
-    </SettingAccordion>
+    </SettingGroup>
   </div>
-</SettingAccordion>
+</SettingGroup>
+
+<!--
+  The workbench is a dialog, so it lives outside the collapsible group: the Library Care
+  "Enrichment tasks" deep link (`openSetting=workbench`) opens it without first expanding this group,
+  and collapsing the group never unmounts an open workbench.
+-->
+<EnrichmentWorkbench bind:open={workbenchOpen} draft={imageDescription} saved={savedImageDescription} />

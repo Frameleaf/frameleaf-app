@@ -170,3 +170,13 @@
     padding: 22px;
   }
 }
+
+/* Unlock dialog: six digit cells, matching the sign-in PIN prompt. */
+.locked-pin-cells {
+  margin: 16px 0 10px;
+  justify-content: flex-start;
+}
+.locked-pin-cells .pin-cell {
+  width: 46px;
+  height: 56px;
+}

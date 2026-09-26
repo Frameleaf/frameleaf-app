@@ -11,13 +11,19 @@ import {
   MetadataSearchDto,
   PlacesResponseDto,
   RandomSearchDto,
+  SearchCityCountResponseDto,
   SearchExploreResponseDto,
+  SearchFacetsDto,
+  SearchFacetsResponseDto,
+  SearchHistogramDto,
+  SearchHistogramResponseDto,
   SearchPeopleDto,
   SearchPlacesDto,
   SearchResponseDto,
   SearchStatisticsResponseDto,
   SearchSuggestionRequestDto,
   SmartSearchDto,
+  SmartSearchStatisticsResponseDto,
   StatisticsSearchDto,
 } from 'src/dtos/search.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
@@ -51,6 +57,45 @@ export class SearchController {
   })
   searchAssetStatistics(@Auth() auth: AuthDto, @Body() dto: StatisticsSearchDto): Promise<SearchStatisticsResponseDto> {
     return this.service.searchStatistics(auth, dto);
+  }
+
+  @Post('facets')
+  @Authenticated({ permission: Permission.AssetRead })
+  @HttpCode(HttpStatus.OK)
+  @Endpoint({
+    summary: 'Search facet counts',
+    description:
+      "Count the assets a metadata search body matches by people, media type, places, cameras, lenses, rating, favorites and tags. People and tags are the caller's own; places of partners who hide their locations are left out.",
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  searchFacets(@Auth() auth: AuthDto, @Body() dto: SearchFacetsDto): Promise<SearchFacetsResponseDto> {
+    return this.service.searchFacets(auth, dto);
+  }
+
+  @Post('histogram')
+  @Authenticated({ permission: Permission.AssetRead })
+  @HttpCode(HttpStatus.OK)
+  @Endpoint({
+    summary: 'Search date histogram',
+    description:
+      'Count the assets a metadata search body matches per local capture day, month or year. The buckets add up to the POST /search/statistics total for the same body.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  searchHistogram(@Auth() auth: AuthDto, @Body() dto: SearchHistogramDto): Promise<SearchHistogramResponseDto> {
+    return this.service.searchHistogram(auth, dto);
+  }
+
+  @Post('smart/statistics')
+  @Authenticated({ permission: Permission.AssetRead })
+  @HttpCode(HttpStatus.OK)
+  @Endpoint({
+    summary: 'Smart search statistics',
+    description:
+      'How many assets a smart search body would rank, counted up to 1000 and flagged when capped. No text is encoded to answer it.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  searchSmartStatistics(@Auth() auth: AuthDto, @Body() dto: SmartSearchDto): Promise<SmartSearchStatisticsResponseDto> {
+    return this.service.searchSmartStatistics(auth, dto);
   }
 
   @Post('random')
@@ -144,6 +189,18 @@ export class SearchController {
   })
   getAssetsByCity(@Auth() auth: AuthDto): Promise<AssetResponseDto[]> {
     return this.service.getAssetsByCity(auth);
+  }
+
+  @Get('cities/counts')
+  @Authenticated({ permission: Permission.AssetRead })
+  @Endpoint({
+    summary: 'Retrieve asset counts by city',
+    description:
+      'Retrieve how many timeline photos and videos the user can see in each city. Counts include videos, while GET /search/cities lists only cities with at least one photo, so a city that has only videos appears here but not in that list. Locked, hidden and trashed media are never counted.',
+    history: new HistoryBuilder().added('v3'),
+  })
+  getCityAssetCounts(@Auth() auth: AuthDto): Promise<SearchCityCountResponseDto[]> {
+    return this.service.getCityAssetCounts(auth);
   }
 
   @Get('suggestions')

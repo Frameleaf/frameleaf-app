@@ -1,3 +1,11 @@
+# CLI container builds. Publication to ghcr.io/frameleaf/frameleaf-cli is a manual dispatch with publish
+# selected on the exact current fork/main, gated by FRAMELEAF_ENABLE_CLI_PUBLISH=true. Releases are created
+# with the workflow token, which never triggers this workflow, so there is no release trigger; release
+# promotion refuses to promote until frameleaf-cli:latest exists (FL-191).
+# Unlike the Postgres publisher, the CLI publish job rebuilds for amd64 and arm64 (arm64 under QEMU)
+# instead of pushing bytes a test job checked: the CLI build job compiles amd64 only and runs no image
+# test, so there are no tested bytes to reuse. Build-once publication needs a native arm64 build and an
+# image test first.
 name: CLI Build
 'on':
   pull_request:
@@ -16,9 +24,6 @@ name: CLI Build
       - packages/sdk/**
       - pnpm-lock.yaml
       - .github/workflows/cli.yml
-  release:
-    types:
-      - published
   workflow_dispatch:
     inputs:
       publish:
@@ -34,20 +39,20 @@ concurrency:
 jobs:
   build:
     name: CLI container build
-    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && github.event_name != 'release' }}
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
       contents: read
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Set up Buildx
-        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
       - name: Build without publishing
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           file: packages/cli/Dockerfile
@@ -57,9 +62,8 @@ jobs:
   publish:
     name: CLI Publish
     if:
-      ${{ github.repository == 'Frameleaf/frameleaf-app' && vars.FRAMELEAF_ENABLE_CLI_PUBLISH == 'true' && (github.event_name
-      == 'release' || (github.event_name == 'workflow_dispatch' && inputs.publish && github.ref == 'refs/heads/fork/main'))
-      }}
+      ${{ github.repository == 'Frameleaf/frameleaf-app' && vars.FRAMELEAF_ENABLE_CLI_PUBLISH == 'true' &&
+      github.event_name == 'workflow_dispatch' && inputs.publish && github.ref == 'refs/heads/fork/main' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     permissions:
@@ -67,7 +71,7 @@ jobs:
       packages: write
     steps:
       - name: Checkout release commit
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
@@ -88,27 +92,28 @@ jobs:
             exit 1
           fi
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@1f40c72289eff860ee54a304f1438e3cff362e0a
+        uses: docker/setup-qemu-action@1f40c72289eff860ee54a304f1438e3cff362e0a # v4.3.0
+        with:
+          image: tonistiigi/binfmt:qemu-v10.2.3@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0
       - name: Set up Buildx
-        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
       - name: Login to owned GHCR namespace
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ github.token }}
       - name: Container tags
         id: metadata
-        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ghcr.io/frameleaf/frameleaf-cli
           flavor: latest=false
           tags: |-
             type=sha,format=long
-            type=ref,event=tag
-            type=raw,value=latest,enable=${{ github.event_name == 'release' && !github.event.release.prerelease }}
+            type=raw,value=latest
       - name: Publish CLI image
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           file: packages/cli/Dockerfile

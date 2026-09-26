@@ -97,6 +97,38 @@ export class IntegrityRepository {
       .execute();
   }
 
+  /**
+   * Edited masters, previews and developed files brought back (FL-113, FL-64) live beside the
+   * asset's thumbnails but are tracked by their develop version, not `asset_file`. Retained video
+   * versions (FL-39) own their master, its lineage sidecar, proxy and thumbnails the same way, and an
+   * edited master in `asset_file` owns its lineage sidecar. Without this
+   * the untracked-file check would report — and offer to delete — a person's saved edits.
+   */
+  async getDevelopRevisionPathsByPaths(paths: string[]): Promise<{ path: string }[]> {
+    if (paths.length === 0) {
+      return [];
+    }
+    const { rows } = await sql<{ path: string }>`
+      SELECT "masterPath" AS path FROM immich_fork.asset_develop_revision WHERE "masterPath" IN (${sql.join(paths)})
+      UNION
+      SELECT "previewPath" AS path FROM immich_fork.asset_develop_revision WHERE "previewPath" IN (${sql.join(paths)})
+      UNION
+      SELECT "masterPath" AS path FROM immich_fork.video_edit_version WHERE "masterPath" IN (${sql.join(paths)})
+      UNION
+      SELECT "proxyPath" AS path FROM immich_fork.video_edit_version WHERE "proxyPath" IN (${sql.join(paths)})
+      UNION
+      SELECT file->>'path' AS path FROM immich_fork.video_edit_version version, jsonb_array_elements(version.files) file
+      WHERE file->>'path' IN (${sql.join(paths)})
+      UNION
+      SELECT "masterPath" || '.lineage.json' AS path FROM immich_fork.video_edit_version
+      WHERE "masterPath" || '.lineage.json' IN (${sql.join(paths)})
+      UNION
+      SELECT path || '.lineage.json' AS path FROM public.asset_file
+      WHERE "isEdited" AND type = 'encoded_video' AND path || '.lineage.json' IN (${sql.join(paths)})
+    `.execute(this.db);
+    return rows;
+  }
+
   @GenerateSql({ params: [DummyValue.STRING] })
   getPersonThumbnailPathsByPaths(paths: string[]) {
     return this.db
@@ -122,7 +154,11 @@ export class IntegrityRepository {
           .where('person.thumbnailPath', 'in', paths),
       )
       .execute();
-    return [...tracked, ...(await this.getVideoDuplicateFramePathsByPaths(paths))];
+    return [
+      ...tracked,
+      ...(await this.getVideoDuplicateFramePathsByPaths(paths)),
+      ...(await this.getDevelopRevisionPathsByPaths(paths)),
+    ];
   }
 
   @GenerateSql({ params: [] })

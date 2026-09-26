@@ -9,8 +9,7 @@
   import { Icon } from '@immich/ui';
   import { mdiChevronRight } from '@mdi/js';
   import { t } from 'svelte-i18n';
-  import { flip } from 'svelte/animate';
-  import { slide } from 'svelte/transition';
+  import { motionFlip, motionSlide } from '$lib/frameleaf/motion';
 
   interface Props {
     albums: AlbumResponseDto[];
@@ -133,7 +132,7 @@
 
 <div class="mt-4">
   {#if !isCollapsed}
-    <div class="grid grid-auto-fill-56 gap-y-4" transition:slide={{ duration: 300 }}>
+    <div class="grid grid-auto-fill-56 gap-y-4" transition:motionSlide={{ duration: 300 }}>
       {#each albums as album, index (album.id)}
         <a
           href={getAlbumHref(album)}
@@ -141,7 +140,7 @@
           album.id
             ? 'outline-primary'
             : ''}"
-          animate:flip={{ duration: 400 }}
+          animate:motionFlip={{ duration: 400 }}
           oncontextmenu={(event) => (onShowContextMenu ? oncontextmenu(event, album) : undefined)}
           draggable={dragEnabled}
           ondragstart={(event) => handleDragStart(event, album)}

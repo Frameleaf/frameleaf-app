@@ -1,5 +1,10 @@
 import { Mocked, vitest } from 'vitest';
-import { AssetRepository } from 'src/repositories/asset.repository.js';
+import {
+  AssetFileMove,
+  AssetFileMoveOperations,
+  AssetFileMoveResult,
+  AssetRepository,
+} from 'src/repositories/asset.repository.js';
 import { RepositoryInterface } from 'src/types.js';
 
 export const newAssetRepositoryMock = (): Mocked<RepositoryInterface<AssetRepository>> => {
@@ -8,7 +13,9 @@ export const newAssetRepositoryMock = (): Mocked<RepositoryInterface<AssetReposi
     createAll: vitest.fn(),
     upsertExif: vitest.fn(),
     updateAllExif: vitest.fn(),
+    clearLocation: vitest.fn(),
     updateDateTimeOriginal: vitest.fn().mockResolvedValue([]),
+    setDateTimeOriginal: vitest.fn(),
     unlockProperties: vitest.fn().mockResolvedValue([]),
     upsertJobStatus: vitest.fn(),
     getForCopy: vitest.fn(),
@@ -26,15 +33,36 @@ export const newAssetRepositoryMock = (): Mocked<RepositoryInterface<AssetReposi
     deleteAll: vitest.fn(),
     update: vitest.fn(),
     remove: vitest.fn(),
+    // FL-179: the move runs its filesystem side in the repository's transaction, as the repository does
+    moveFile: vitest.fn(
+      async (_move: AssetFileMove, { rename, finish }: AssetFileMoveOperations): Promise<AssetFileMoveResult> => {
+        if (!(await rename())) {
+          return 'failed';
+        }
+        await finish();
+        return 'moved';
+      },
+    ),
     findLivePhotoMatch: vitest.fn(),
     getStatistics: vitest.fn(),
     getCalendarHeatmap: vitest.fn(),
     getTimeBucket: vitest.fn(),
+    getTimelineOrdered: vitest.fn(),
     getTimeBuckets: vitest.fn(),
+    getTimelineHighlights: vitest.fn(),
     getAssetIdByCity: vitest.fn(),
     getRecentlyCreatedAssetIds: vitest.fn(),
     getNsfwAssetIds: vitest.fn().mockResolvedValue(new Set()),
     getHiddenContentAssetIds: vitest.fn().mockResolvedValue(new Set()),
+    getLockedAssetIds: vitest.fn().mockResolvedValue(new Set()),
+    getLockReasons: vitest.fn().mockResolvedValue([]),
+    getUnlockedDetectionIds: vitest.fn().mockResolvedValue([]),
+    getStackSiblingIds: vitest.fn().mockResolvedValue([]),
+    lock: vitest.fn().mockResolvedValue([]),
+    lockGroupRows: vitest.fn().mockResolvedValue(undefined),
+    lockGroupMembers: vitest.fn().mockResolvedValue([]),
+    findLockGroupIds: vitest.fn().mockResolvedValue([]),
+    unlock: vitest.fn().mockResolvedValue([]),
     upsertFile: vitest.fn(),
     upsertFiles: vitest.fn(),
     deleteFile: vitest.fn(),
@@ -60,5 +88,7 @@ export const newAssetRepositoryMock = (): Mocked<RepositoryInterface<AssetReposi
     getForFaces: vitest.fn(),
     getForUpdateTags: vitest.fn(),
     getDescriptionStats: vitest.fn(),
+    getEventStoryCandidates: vitest.fn(),
+    getYearInReviewCandidates: vitest.fn(),
   };
 };

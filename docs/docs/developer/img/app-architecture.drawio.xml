@@ -23,7 +23,7 @@
         <mxCell id="skFinV3TG75uy4JOHTMt-59" style="rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.013;entryY=0.863;entryDx=0;entryDy=0;strokeWidth=3;endArrow=block;endFill=1;entryPerimeter=0;fontFamily=Overpass;fontSource=https%3A%2F%2Ffonts.googleapis.com%2Fcss%3Ffamily%3DOverpass;fillColor=#fad9d5;strokeColor=#000000;" edge="1" parent="1" source="skFinV3TG75uy4JOHTMt-13" target="skFinV3TG75uy4JOHTMt-30">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="skFinV3TG75uy4JOHTMt-13" value="Immich CLI&lt;br&gt;(TypeScript)" style="whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontFamily=Overpass;fontSource=https%3A%2F%2Ffonts.googleapis.com%2Fcss%3Ffamily%3DOverpass;rounded=0;" vertex="1" parent="1">
+        <mxCell id="skFinV3TG75uy4JOHTMt-13" value="Frameleaf CLI&lt;br&gt;(TypeScript)" style="whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontFamily=Overpass;fontSource=https%3A%2F%2Ffonts.googleapis.com%2Fcss%3Ffamily%3DOverpass;rounded=0;" vertex="1" parent="1">
           <mxGeometry x="24" y="368" width="120" height="80" as="geometry" />
         </mxCell>
         <mxCell id="skFinV3TG75uy4JOHTMt-23" value="" style="verticalLabelPosition=bottom;verticalAlign=top;html=1;shape=mxgraph.basic.polygon;polyCoords=[[0.25,0],[0.75,0],[1,0.25],[1,0.75],[0.75,1],[0.25,1],[0,0.75],[0,0.25]];polyline=0;fillColor=#b1ddf0;strokeColor=#10739e;strokeWidth=2;fontFamily=Overpass;fontSource=https%3A%2F%2Ffonts.googleapis.com%2Fcss%3Ffamily%3DOverpass;rounded=0;" vertex="1" parent="1">

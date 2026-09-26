@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { positionInTimeline } from '$lib/frameleaf/viewer-position';
   import type { Action } from '$lib/components/asset-viewer/actions/action';
   import type { AssetCursor } from '$lib/components/asset-viewer/AssetViewer.svelte';
   import OnEvents from '$lib/components/OnEvents.svelte';
@@ -16,7 +17,7 @@
   import { navigate } from '$lib/utils/navigation';
   import { toTimelineAsset } from '$lib/utils/timeline-util';
   import { type AlbumResponseDto, type AssetResponseDto, type PersonResponseDto, getAssetInfo } from '@immich/sdk';
-  import { onDestroy, onMount } from 'svelte';
+  import { onDestroy, onMount, type Snippet } from 'svelte';
   import { t } from 'svelte-i18n';
 
   interface Props {
@@ -27,6 +28,8 @@
     album?: AlbumResponseDto;
     person?: PersonResponseDto;
     removeAction?: AssetAction.UNARCHIVE | AssetAction.ARCHIVE | AssetAction.SET_VISIBILITY_TIMELINE | null;
+    /** Replaces the viewer's activity side panel; a shared space mounts its own threaded comments here. */
+    activityPanel?: Snippet<[AssetResponseDto]>;
   }
 
   let {
@@ -38,6 +41,7 @@
     isShared = false,
     album,
     person,
+    activityPanel,
   }: Props = $props();
 
   const getAsset = (id: string) => {
@@ -69,9 +73,18 @@
     nextAsset: undefined,
   });
 
+  let cursorVersion = 0;
   const loadCloseAssets = async (currentAsset: AssetResponseDto) => {
+    const version = ++cursorVersion;
     const [nextAsset, previousAsset] = await Promise.all([getNextAsset(currentAsset), getPreviousAsset(currentAsset)]);
 
+    if (
+      version !== cursorVersion ||
+      assetViewerManager.asset?.id !== currentAsset.id ||
+      !assetViewerManager.isViewing
+    ) {
+      return;
+    }
     assetCursor = {
       current: currentAsset,
       nextAsset,
@@ -86,6 +99,24 @@
       handlePromiseError(loadCloseAssets(asset));
     }
   });
+
+  /**
+   * FL-35: the filmstrip shows the loaded month around the open asset. It reads only what
+   * the timeline manager already holds — it never loads a bucket of its own — so an empty
+   * or not-yet-loaded month simply means no filmstrip.
+   */
+  const filmstripAssets = $derived.by<TimelineAsset[]>(() => {
+    const current = assetCursor.current;
+    if (!current) {
+      return [];
+    }
+    return timelineManager.getTimelineMonthByAssetId(current.id)?.getAssets() ?? [];
+  });
+
+  // V-12: "n of N" through the whole timeline, from the month counts it already holds.
+  const position = $derived(
+    assetCursor.current ? positionInTimeline(timelineManager.months, assetCursor.current.id) : null,
+  );
 
   const handleRandom = async () => {
     const randomAsset = await timelineManager.getRandomAsset();
@@ -140,15 +171,34 @@
 
   const handlePreAction = async (action: Action) => {
     switch (action.type) {
+      case AssetAction.SET_VISIBILITY_LOCKED:
+      case AssetAction.SET_VISIBILITY_TIMELINE: {
+        // FL-34: Mark and Unmark Sensitive only take the item out of a view it no longer belongs in
+        if (timelineManager.keepsAfterLockChange(action.type === AssetAction.SET_VISIBILITY_LOCKED)) {
+          break;
+        }
+        timelineManager.removeAssets([action.asset.id]);
+        // A delayed confirmation for A must not navigate using the current B cursor.
+        if (assetViewerManager.asset?.id !== action.asset.id || assetCursor.current.id !== action.asset.id) {
+          return;
+        }
+        // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+        (await navigateToAsset(assetCursor?.nextAsset)) ||
+          (await navigateToAsset(assetCursor?.previousAsset)) ||
+          (await handleClose(action.asset.id));
+        break;
+      }
       case removeAction:
       case AssetAction.TRASH:
       case AssetAction.RESTORE:
       case AssetAction.DELETE:
-      case AssetAction.ARCHIVE:
-      case AssetAction.SET_VISIBILITY_LOCKED:
-      case AssetAction.SET_VISIBILITY_TIMELINE: {
+      case AssetAction.ARCHIVE: {
         // must update manager before performing any navigation
         timelineManager.removeAssets([action.asset.id]);
+        // A delayed confirmation for A must not navigate using the current B cursor.
+        if (assetViewerManager.asset?.id !== action.asset.id || assetCursor.current.id !== action.asset.id) {
+          return;
+        }
 
         // find the next asset to show or close the viewer
         // eslint-disable-next-line @typescript-eslint/no-unused-expressions
@@ -248,6 +298,7 @@
   });
 
   onDestroy(() => {
+    cursorVersion++;
     assetCacheManager.invalidate();
   });
 </script>
@@ -261,6 +312,7 @@
     {isShared}
     {album}
     {person}
+    {activityPanel}
     onAssetChange={(asset) => {
       timelineManager?.upsertAssets([toTimelineAsset(asset)]);
     }}
@@ -273,5 +325,7 @@
     onRandom={handleRandom}
     onAssetSuppressed={handleAssetSuppressed}
     onClose={handleClose}
+    {filmstripAssets}
+    {position}
   />
 {/await}

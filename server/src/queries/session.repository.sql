@@ -80,6 +80,8 @@ delete from "session"
 where
   "userId" = $1
   and "id" != $2
+returning
+  "id"
 
 -- SessionRepository.lockAll
 update "session"

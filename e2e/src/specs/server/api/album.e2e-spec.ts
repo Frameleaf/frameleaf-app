@@ -1,5 +1,6 @@
 import {
   addAssetsToAlbum,
+  AlbumKind,
   AlbumResponseDto,
   AlbumUserRole,
   AssetMediaResponseDto,
@@ -136,6 +137,8 @@ describe('/albums', () => {
       expect(status).toEqual(200);
       expect(body).toEqual({
         ...user1Albums[0],
+        isSmart: false,
+        smartRuleId: null,
         contributorCounts: [{ userId: user1.userId, assetCount: 1 }],
         lastModifiedAssetTimestamp: expect.any(String),
         startDate: expect.any(String),
@@ -404,6 +407,8 @@ describe('/albums', () => {
       expect(status).toBe(200);
       expect(body).toEqual({
         ...user1Albums[0],
+        isSmart: false,
+        smartRuleId: null,
         contributorCounts: [{ userId: user1.userId, assetCount: 1 }],
         lastModifiedAssetTimestamp: expect.any(String),
         startDate: expect.any(String),
@@ -439,6 +444,8 @@ describe('/albums', () => {
       expect(status).toBe(200);
       expect(body).toEqual({
         ...user1Albums[0],
+        isSmart: false,
+        smartRuleId: null,
         contributorCounts: [{ userId: user1.userId, assetCount: 1 }],
         assetCount: 1,
         lastModifiedAssetTimestamp: expect.any(String),
@@ -502,6 +509,7 @@ describe('/albums', () => {
         assetCount: 0,
         isActivityEnabled: true,
         order: AssetOrder.Desc,
+        kind: AlbumKind.Album,
         parentId: null,
         icon: null,
         sortOrder: null,
@@ -590,8 +598,8 @@ describe('/albums', () => {
     });
 
     describe('hierarchy', () => {
-      it('creates a child album under an existing parent', async () => {
-        const parent = await utils.createAlbum(user1.accessToken, { albumName: 'Trips' });
+      it('creates a child album under an existing collection', async () => {
+        const parent = await utils.createAlbum(user1.accessToken, { albumName: 'Trips', kind: AlbumKind.Collection });
 
         const { status, body } = await request(app)
           .post('/albums')
@@ -599,16 +607,33 @@ describe('/albums', () => {
           .send({ albumName: 'Disneyland 2024', parentId: parent.id });
 
         expect(status).toBe(201);
-        expect(body).toEqual(expect.objectContaining({ albumName: 'Disneyland 2024', parentId: parent.id }));
+        expect(body).toEqual(
+          expect.objectContaining({ albumName: 'Disneyland 2024', kind: AlbumKind.Album, parentId: parent.id }),
+        );
       });
 
-      it('reports descendant count after building a 3-level chain', async () => {
-        const a = await utils.createAlbum(user1.accessToken, { albumName: 'Trips A' });
-        const b = await utils.createAlbum(user1.accessToken, { albumName: 'Trips B', parentId: a.id });
-        await utils.createAlbum(user1.accessToken, { albumName: 'Trips C', parentId: b.id });
+      it('rejects nesting an album under a plain album', async () => {
+        const parent = await utils.createAlbum(user1.accessToken, { albumName: 'Trips' });
 
         const { status, body } = await request(app)
-          .get(`/albums/${a.id}/descendant-count`)
+          .post('/albums')
+          .set('Authorization', `Bearer ${user1.accessToken}`)
+          .send({ albumName: 'Disneyland 2024', parentId: parent.id });
+
+        expect(status).toBe(400);
+        expect(body).toEqual(errorDto.badRequest('Albums nest only inside a collection'));
+      });
+
+      it('reports the descendant count of a collection', async () => {
+        const collection = await utils.createAlbum(user1.accessToken, {
+          albumName: 'Trips',
+          kind: AlbumKind.Collection,
+        });
+        await utils.createAlbum(user1.accessToken, { albumName: 'Trips B', parentId: collection.id });
+        await utils.createAlbum(user1.accessToken, { albumName: 'Trips C', parentId: collection.id });
+
+        const { status, body } = await request(app)
+          .get(`/albums/${collection.id}/descendant-count`)
           .set('Authorization', `Bearer ${user1.accessToken}`);
 
         expect(status).toBe(200);
@@ -616,7 +641,7 @@ describe('/albums', () => {
       });
 
       it('reparents an album to the root via PATCH parentId=null', async () => {
-        const parent = await utils.createAlbum(user1.accessToken, { albumName: 'Parent' });
+        const parent = await utils.createAlbum(user1.accessToken, { albumName: 'Parent', kind: AlbumKind.Collection });
         const child = await utils.createAlbum(user1.accessToken, { albumName: 'Child', parentId: parent.id });
 
         const { status, body } = await request(app)
@@ -628,9 +653,9 @@ describe('/albums', () => {
         expect(body.parentId).toBeNull();
       });
 
-      it('rejects making an album its own descendant (cycle prevention)', async () => {
-        const a = await utils.createAlbum(user1.accessToken, { albumName: 'CycleA' });
-        const b = await utils.createAlbum(user1.accessToken, { albumName: 'CycleB', parentId: a.id });
+      it('keeps collections at the top level', async () => {
+        const a = await utils.createAlbum(user1.accessToken, { albumName: 'CollectionA', kind: AlbumKind.Collection });
+        const b = await utils.createAlbum(user1.accessToken, { albumName: 'CollectionB', kind: AlbumKind.Collection });
 
         const { status, body } = await request(app)
           .patch(`/albums/${a.id}`)
@@ -638,7 +663,7 @@ describe('/albums', () => {
           .send({ parentId: b.id });
 
         expect(status).toBe(400);
-        expect(body.message).toContain('descendants');
+        expect(body.message).toContain('top level');
       });
 
       it('rejects an album becoming its own parent', async () => {
@@ -652,9 +677,9 @@ describe('/albums', () => {
         expect(status).toBe(400);
       });
 
-      it('rejects nesting under an album owned by another user', async () => {
+      it('rejects nesting under a collection owned by another user', async () => {
         const mine = await utils.createAlbum(user1.accessToken, { albumName: 'Mine' });
-        const theirs = await utils.createAlbum(user2.accessToken, { albumName: 'Theirs' });
+        const theirs = await utils.createAlbum(user2.accessToken, { albumName: 'Theirs', kind: AlbumKind.Collection });
 
         const { status } = await request(app)
           .patch(`/albums/${mine.id}`)
@@ -664,20 +689,116 @@ describe('/albums', () => {
         expect(status).toBe(400);
       });
 
-      it('cascades delete to descendants', async () => {
-        const a = await utils.createAlbum(user1.accessToken, { albumName: 'CascadeA' });
+      it('leaves albums standing when their collection is deleted', async () => {
+        const a = await utils.createAlbum(user1.accessToken, { albumName: 'CascadeA', kind: AlbumKind.Collection });
         const b = await utils.createAlbum(user1.accessToken, { albumName: 'CascadeB', parentId: a.id });
-        const c = await utils.createAlbum(user1.accessToken, { albumName: 'CascadeC', parentId: b.id });
+        const c = await utils.createAlbum(user1.accessToken, { albumName: 'CascadeC', parentId: a.id });
 
         const del = await request(app).delete(`/albums/${a.id}`).set('Authorization', `Bearer ${user1.accessToken}`);
         expect(del.status).toBe(204);
 
-        for (const id of [a.id, b.id, c.id]) {
-          const { status } = await request(app)
+        const gone = await request(app).get(`/albums/${a.id}`).set('Authorization', `Bearer ${user1.accessToken}`);
+        expect(gone.status).toBe(400);
+
+        for (const id of [b.id, c.id]) {
+          const { status, body } = await request(app)
             .get(`/albums/${id}`)
             .set('Authorization', `Bearer ${user1.accessToken}`);
-          expect(status).toBe(400);
+          expect(status).toBe(200);
+          expect(body.parentId).toBeNull();
         }
+      });
+
+      it('shows a member an album shared from a private collection on its own, without the collection (FL-52)', async () => {
+        const privateCollection = await utils.createAlbum(user1.accessToken, {
+          albumName: 'PrivateShelfSecret',
+          kind: AlbumKind.Collection,
+        });
+        const shared = await utils.createAlbum(user1.accessToken, {
+          albumName: 'SharedFromPrivateShelf',
+          parentId: privateCollection.id,
+          albumUsers: [{ userId: user2.userId, role: AlbumUserRole.Viewer }],
+        });
+
+        const { status, body: tree } = await request(app)
+          .get('/albums/tree')
+          .set('Authorization', `Bearer ${user2.accessToken}`);
+        expect(status).toBe(200);
+
+        // The shared album stands on its own at the member's top level…
+        const standalone = tree.albums.find(({ id }: { id: string }) => id === shared.id);
+        expect(standalone).toBeDefined();
+        expect(standalone.parentId).toBeNull();
+        expect(
+          tree.collections.some(({ albums }: { albums: { id: string }[] }) =>
+            albums.some(({ id }) => id === shared.id),
+          ),
+        ).toBe(false);
+        // …and nothing about the owner's private collection reaches them.
+        const serialized = JSON.stringify(tree);
+        expect(serialized).not.toContain(privateCollection.id);
+        expect(serialized).not.toContain('PrivateShelfSecret');
+
+        // The owner still sees it inside the collection.
+        const { body: ownerTree } = await request(app)
+          .get('/albums/tree')
+          .set('Authorization', `Bearer ${user1.accessToken}`);
+        const shelf = ownerTree.collections.find(
+          ({ collection }: { collection: { id: string } }) => collection.id === privateCollection.id,
+        );
+        expect(shelf.albums.map(({ id }: { id: string }) => id)).toContain(shared.id);
+      });
+
+      it('saves a personal custom order and refuses one from a stale tree (FL-52)', async () => {
+        const shelf = await utils.createAlbum(user1.accessToken, {
+          albumName: 'OrderShelf',
+          kind: AlbumKind.Collection,
+        });
+        const a = await utils.createAlbum(user1.accessToken, { albumName: 'OrderA', parentId: shelf.id });
+        const b = await utils.createAlbum(user1.accessToken, { albumName: 'OrderB', parentId: shelf.id });
+        const auth = `Bearer ${user1.accessToken}`;
+
+        const saved = await request(app)
+          .put('/albums/order')
+          .set('Authorization', auth)
+          .send({ parentId: shelf.id, albumIds: [b.id, a.id] });
+        expect(saved.status).toBe(204);
+
+        const { body: tree } = await request(app).get('/albums/tree').set('Authorization', auth);
+        const node = tree.collections.find(
+          ({ collection }: { collection: { id: string } }) => collection.id === shelf.id,
+        );
+        expect(node.albums.map(({ id }: { id: string }) => id)).toEqual([b.id, a.id]);
+
+        // `a` leaves the collection; an order still listing it inside is refused.
+        await request(app).put(`/albums/${a.id}/collection`).set('Authorization', auth).send({ collectionId: null });
+        const stale = await request(app)
+          .put('/albums/order')
+          .set('Authorization', auth)
+          .send({ parentId: shelf.id, albumIds: [a.id, b.id] });
+        expect(stale.status).toBe(409);
+      });
+
+      it('refuses a move of an album that was moved since the client saw it (FL-52)', async () => {
+        const one = await utils.createAlbum(user1.accessToken, { albumName: 'StaleOne', kind: AlbumKind.Collection });
+        const two = await utils.createAlbum(user1.accessToken, { albumName: 'StaleTwo', kind: AlbumKind.Collection });
+        const album = await utils.createAlbum(user1.accessToken, { albumName: 'StaleAlbum' });
+        const auth = `Bearer ${user1.accessToken}`;
+
+        const first = await request(app)
+          .put(`/albums/${album.id}/collection`)
+          .set('Authorization', auth)
+          .send({ collectionId: one.id, expectedParentId: null });
+        expect(first.status).toBe(200);
+
+        const second = await request(app)
+          .put(`/albums/${album.id}/collection`)
+          .set('Authorization', auth)
+          .send({ collectionId: two.id, expectedParentId: null });
+        expect(second.status).toBe(409);
+
+        const { body } = await request(app).get(`/albums/${album.id}`).set('Authorization', auth);
+        expect(body.parentId).toBe(one.id);
       });
     });
 

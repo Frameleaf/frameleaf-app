@@ -23,6 +23,16 @@ const DEPRECATED_FLAT_FIELD = {
   deprecated: true,
 };
 
+/**
+ * FL-58: the flat `petIds` twin of `personIds`. It arrives after the structured filter, so it is born
+ * deprecated in favour of `filter.petIds`; being marked deprecated is also what makes
+ * `withShapeExclusivity` reject it next to `filter`, exactly as it rejects `personIds`.
+ */
+const FLAT_PET_IDS_FIELD = {
+  ...new HistoryBuilder().added('v3.2.0').deprecated('v3.2.0').getExtensions(),
+  deprecated: true,
+};
+
 const BaseSearchSchema = z.object({
   imageEnrichment: ImageEnrichmentFilterSchema.optional(),
   suppressedOnly: z.boolean().optional().describe('Return only suppressed content. Requires an elevated session.'),
@@ -49,6 +59,11 @@ const BaseSearchSchema = z.object({
   lensModel: z.string().nullable().optional().describe('Filter by lens model').meta(DEPRECATED_FLAT_FIELD),
   isNotInAlbum: z.boolean().optional().describe('Filter assets not in any album').meta(DEPRECATED_FLAT_FIELD),
   personIds: z.array(z.uuidv4()).optional().describe('Filter by person IDs').meta(DEPRECATED_FLAT_FIELD),
+  petIds: z
+    .array(z.uuidv4())
+    .optional()
+    .describe("Filter by the caller's own pet IDs (confirmed pet observations only)")
+    .meta(FLAT_PET_IDS_FIELD),
   tagIds: z.array(z.uuidv4()).nullish().describe('Filter by tag IDs').meta(DEPRECATED_FLAT_FIELD),
   albumIds: z.array(z.uuidv4()).optional().describe('Filter by album IDs').meta(DEPRECATED_FLAT_FIELD),
   rating: z
@@ -103,6 +118,13 @@ const PlacesResponseSchema = z
     admin2name: z.string().optional().describe('Administrative level 2 name (county/district)'),
   })
   .meta({ id: 'PlacesResponseDto' });
+
+const SearchCityCountResponseSchema = z
+  .object({
+    city: z.string().describe('City name, grouped as in GET /search/cities (which lists only cities with a photo)'),
+    count: z.int().min(1).describe('Number of timeline photos and videos in this city'),
+  })
+  .meta({ id: 'SearchCityCountResponseDto' });
 
 export enum SearchSuggestionType {
   COUNTRY = 'country',
@@ -262,9 +284,10 @@ const searchFilterBranchShape = {
   city: StringFilterNullableSchema,
   state: StringFilterNullableSchema,
   country: StringFilterNullableSchema,
-  make: StringFilterNullableSchema,
-  model: StringFilterNullableSchema,
-  lensModel: StringFilterNullableSchema,
+  // FL-49: cameras and lenses also match "contains" (like/notLike), as the search palette's camera: and lens: do
+  make: StringPatternFilterSchema,
+  model: StringPatternFilterSchema,
+  lensModel: StringPatternFilterSchema,
   description: StringPatternFilterSchema,
   originalFileName: StringPatternFilterSchema,
   originalPath: StringPatternFilterSchema,
@@ -272,10 +295,15 @@ const searchFilterBranchShape = {
   rating: NumberFilterNullableSchema,
   fileSizeInBytes: NumberFilterSchema,
   takenAt: DateFilterSchema,
+  // FL-49: the local capture date and time (the wall clock where the photo was taken, written as UTC), the
+  // date the timeline and the search histogram bucket by; year:, month:, after: and before: narrow on it
+  localDateTime: DateFilterSchema,
   createdAt: DateFilterSchema,
   updatedAt: DateFilterSchema,
   trashedAt: DateFilterNullableSchema,
   personIds: IdsFilterSchema,
+  // FL-58: matches the caller's own confirmed pet observations; another account's pet id matches nothing
+  petIds: IdsFilterSchema,
   tagIds: IdsFilterSchema,
   albumIds: IdsFilterSchema,
   checksum: StringFilterSchema,
@@ -383,12 +411,12 @@ const MetadataSearchSchema = withShapeExclusivity(
   }),
 ).meta({ id: 'MetadataSearchDto' });
 
-const StatisticsSearchSchema = withShapeExclusivity(
-  BaseSearchSchema.extend({
-    description: z.string().trim().optional().describe('Filter by description text').meta(DEPRECATED_FLAT_FIELD),
-    filter: filterField,
-  }),
-).meta({ id: 'StatisticsSearchDto' });
+const StatisticsSearchBaseSchema = BaseSearchSchema.extend({
+  description: z.string().trim().optional().describe('Filter by description text').meta(DEPRECATED_FLAT_FIELD),
+  filter: filterField,
+});
+
+const StatisticsSearchSchema = withShapeExclusivity(StatisticsSearchBaseSchema).meta({ id: 'StatisticsSearchDto' });
 
 const SmartSearchSchema = withShapeExclusivity(
   BaseSearchWithResultsSchema.extend({
@@ -409,6 +437,7 @@ export class SmartSearchDto extends createZodDto(SmartSearchSchema) {}
 export class SearchPlacesDto extends createZodDto(SearchPlacesSchema) {}
 export class SearchPeopleDto extends createZodDto(SearchPeopleSchema) {}
 export class PlacesResponseDto extends createZodDto(PlacesResponseSchema) {}
+export class SearchCityCountResponseDto extends createZodDto(SearchCityCountResponseSchema) {}
 export class SearchSuggestionRequestDto extends createZodDto(SearchSuggestionRequestSchema) {}
 
 export function mapPlaces(place: Place): PlacesResponseDto {
@@ -425,6 +454,18 @@ const SearchFacetCountResponseSchema = z
   .object({
     count: z.int().min(0).describe('Number of assets with this facet value'),
     value: z.string().describe('Facet value'),
+    label: z
+      .string()
+      .nullable()
+      .optional()
+      .describe("Display name when the value is an id (a person or a tag); the viewer's own name for it")
+      .meta(ADDED_V3_2),
+    coverAssetId: z
+      .string()
+      .nullable()
+      .optional()
+      .describe('The newest matching asset with this value (by capture time), when `facetCovers` was asked for')
+      .meta(ADDED_V3_2),
   })
   .meta({ id: 'SearchFacetCountResponseDto' });
 
@@ -476,6 +517,108 @@ const SearchStatisticsResponseSchema = z
 
 export class SearchStatisticsResponseDto extends createZodDto(SearchStatisticsResponseSchema) {}
 
+/** FL-49: facet fields the search palette refines by (`search-palette.mjs` in the design reference) */
+export enum SearchFacetField {
+  People = 'people',
+  Type = 'type',
+  City = 'city',
+  Country = 'country',
+  Make = 'make',
+  Model = 'model',
+  LensModel = 'lensModel',
+  Rating = 'rating',
+  IsFavorite = 'isFavorite',
+  Tags = 'tags',
+}
+
+export const SearchFacetFieldSchema = z.enum(SearchFacetField).meta({ id: 'SearchFacetField' });
+
+export const SEARCH_FACET_DEFAULT_LIMIT = 10;
+export const SEARCH_FACET_MAX_LIMIT = 100;
+/** smart search ranks every eligible asset; its scope count stops here and says so */
+export const SMART_SEARCH_COUNT_CAP = 1000;
+
+const facetRequestShape = {
+  facets: z
+    .array(SearchFacetFieldSchema)
+    .min(1)
+    .max(Object.values(SearchFacetField).length)
+    .optional()
+    .describe('Facets to count, each once (repeats are ignored); every facet when omitted'),
+  facetLimit: z
+    .int()
+    .min(1)
+    .max(SEARCH_FACET_MAX_LIMIT)
+    .optional()
+    .describe(`Most frequent values per facet (default ${SEARCH_FACET_DEFAULT_LIMIT})`),
+  facetCovers: z
+    .boolean()
+    .optional()
+    .describe('Also return, per value, the newest matching asset (by capture time) as its cover')
+    .meta(ADDED_V3_2),
+};
+
+const SearchFacetsSchema = withShapeExclusivity(StatisticsSearchBaseSchema.extend(facetRequestShape)).meta({
+  id: 'SearchFacetsDto',
+});
+
+const SearchFacetsResponseSchema = z
+  .object({
+    total: z.int().min(0).describe('Number of assets the search body matches, as POST /search/statistics reports'),
+    facets: z
+      .array(SearchFacetResponseSchema)
+      .describe(
+        'Per facet, the most frequent values, busiest first. type, rating and isFavorite always add up to total; people, places, cameras, lenses and tags count assets that have a value',
+      ),
+  })
+  .meta({ id: 'SearchFacetsResponseDto' });
+
+export enum SearchHistogramGranularity {
+  Day = 'day',
+  Month = 'month',
+  Year = 'year',
+}
+
+const SearchHistogramGranularitySchema = z.enum(SearchHistogramGranularity).meta({ id: 'SearchHistogramGranularity' });
+
+const SearchHistogramSchema = withShapeExclusivity(
+  StatisticsSearchBaseSchema.extend({
+    granularity: SearchHistogramGranularitySchema.default(SearchHistogramGranularity.Month).describe('Bucket size'),
+  }),
+).meta({ id: 'SearchHistogramDto' });
+
+const SearchHistogramBucketSchema = z
+  .object({
+    date: z.string().meta({ format: 'date' }).describe('First local capture date of the bucket (YYYY-MM-DD)'),
+    count: z.int().min(1),
+  })
+  .meta({ id: 'SearchHistogramBucketDto' });
+
+const SearchHistogramResponseSchema = z
+  .object({
+    granularity: SearchHistogramGranularitySchema,
+    total: z.int().min(0).describe('Sum of every bucket; equals POST /search/statistics for the same body'),
+    buckets: z.array(SearchHistogramBucketSchema).describe('Non-empty buckets by local capture date, oldest first'),
+  })
+  .meta({ id: 'SearchHistogramResponseDto' });
+
+const SmartSearchStatisticsResponseSchema = z
+  .object({
+    total: z
+      .int()
+      .min(0)
+      .max(SMART_SEARCH_COUNT_CAP)
+      .describe(`Assets smart search would rank for this body, counted up to ${SMART_SEARCH_COUNT_CAP}`),
+    capped: z.boolean().describe(`More than ${SMART_SEARCH_COUNT_CAP} assets match; total is the cap`),
+  })
+  .meta({ id: 'SmartSearchStatisticsResponseDto' });
+
+export class SearchFacetsDto extends createZodDto(SearchFacetsSchema) {}
+export class SearchFacetsResponseDto extends createZodDto(SearchFacetsResponseSchema) {}
+export class SearchHistogramDto extends createZodDto(SearchHistogramSchema) {}
+export class SearchHistogramResponseDto extends createZodDto(SearchHistogramResponseSchema) {}
+export class SmartSearchStatisticsResponseDto extends createZodDto(SmartSearchStatisticsResponseSchema) {}
+
 const SearchExploreItemSchema = z
   .object({
     value: z.string().describe('Explore value'),
@@ -503,7 +646,7 @@ const AskSearchSchema = z
 
 const AskSearchPlanSchema = z
   .object({
-    mode: z.enum(['smart', 'metadata']).describe('Search mode used to answer the query'),
+    mode: z.enum(['smart', 'metadata']).describe('Search mode used to answer the query').meta({ id: 'SearchAskMode' }),
     normalizedQuery: z.string().describe('Normalized query text'),
     filters: z.object(MetadataSearchSchema.shape).partial().describe('Structured filters applied to the search'),
   })

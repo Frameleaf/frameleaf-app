@@ -5,7 +5,6 @@ import {
   ANALYTICS_SNAPSHOT,
   GiB,
   analyticsCsv,
-  calendarWeeks,
   getAnalytics,
 } from "./analytics-data.mjs";
 import {
@@ -13,6 +12,19 @@ import {
   loadResourceState,
   subscribeResourceState,
 } from "./account-library-data.mjs";
+import { libraryInsights } from "./library-insights.mjs";
+import {
+  CaptureHeatmap,
+  CoveragePanel,
+  FormatsPanel,
+  GearPanel,
+  LibraryHero,
+  PeoplePlacesPanel,
+  RecordsPanel,
+  ShootingHabits,
+  StoragePanel,
+  YearsChart,
+} from "./AnalyticsDashboard";
 import "./settings-analytics.css";
 
 function useResources() {
@@ -108,6 +120,8 @@ function CanvasChart({
         failure: "#bf856f",
       };
       const light = element.closest("[data-theme]")?.dataset.theme === "light";
+      // Canvas text needs the real UI stack; a bare "Inter" falls back to serif.
+      const family = getComputedStyle(element).fontFamily;
       try {
         chart = new Chart(element, {
           type,
@@ -151,7 +165,7 @@ function CanvasChart({
                   boxWidth: 8,
                   boxHeight: 8,
                   padding: 18,
-                  font: { family: "Inter", size: 11 },
+                  font: { family, size: 11 },
                 },
               },
               tooltip: {
@@ -176,7 +190,7 @@ function CanvasChart({
                   maxRotation: 0,
                   autoSkip: true,
                   maxTicksLimit: compact ? 4 : 7,
-                  font: { family: "Inter", size: 10 },
+                  font: { family, size: 10 },
                   ...(horizontal
                     ? {
                         callback: (value) => number(value),
@@ -193,7 +207,7 @@ function CanvasChart({
                 ticks: {
                   color: text,
                   maxTicksLimit: compact ? 3 : 5,
-                  font: { family: "Inter", size: 10 },
+                  font: { family, size: 10 },
                   ...(!horizontal
                     ? {
                         callback: (value) => number(value),
@@ -361,103 +375,6 @@ export function LibraryGrowthChart({
   );
 }
 
-function CaptureCalendar({ report }) {
-  const [type, setType] = useState("captured");
-  const label = type === "uploaded" ? "uploads" : "captures";
-  const plotted = report.days.map((row) => ({ ...row, captured: row[type] }));
-  const weeks = calendarWeeks(plotted);
-  const maximum = Math.max(1, ...plotted.map((row) => row.captured));
-  const total = plotted.reduce((n, row) => n + row.captured, 0);
-  return (
-    <div className="analytics-capture">
-      <div className="analytics-card-heading">
-        <div>
-          <h2>Days behind the library</h2>
-          <label className="analytics-calendar-control">
-            Calendar dates{" "}
-            <select
-              value={type}
-              onChange={(event) => setType(event.target.value)}
-            >
-              <option value="captured">Date taken</option>
-              <option value="uploaded">Date uploaded</option>
-            </select>
-          </label>
-          <p>
-            {number(total)} {label} across {report.days.length} days.
-          </p>
-        </div>
-      </div>
-      <div
-        className="analytics-table-scroll"
-        tabIndex={0}
-        role="region"
-        aria-label={`${type === "uploaded" ? "Upload" : "Capture"} calendar by day and week`}
-      >
-        <table className="analytics-calendar">
-          <caption>
-            Columns begin on Monday; blank cells fall outside the selected
-            dates.
-          </caption>
-          <thead>
-            <tr>
-              <th scope="col">Week of</th>
-              {weeks.map((week) => (
-                <th scope="col" key={week[0].date}>
-                  {date(week[0].date)
-                    .replace(", 2026", "")
-                    .replace(", 2025", "")}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map(
-              (day, index) => (
-                <tr key={day}>
-                  <th scope="row">{day}</th>
-                  {weeks.map((week) => {
-                    const cell = week[index];
-                    const level =
-                      cell.captured === null
-                        ? "empty"
-                        : Math.min(4, Math.ceil((cell.captured / maximum) * 4));
-                    return (
-                      <td
-                        key={cell.date}
-                        data-level={level}
-                        title={
-                          cell.captured === null
-                            ? `${cell.date}: outside range`
-                            : `${cell.date}: ${cell.captured} ${label}`
-                        }
-                        aria-label={
-                          cell.captured === null
-                            ? `${cell.date}: outside selected dates`
-                            : `${cell.date}: ${cell.captured} ${label}`
-                        }
-                      >
-                        {cell.captured ?? "—"}
-                      </td>
-                    );
-                  })}
-                </tr>
-              ),
-            )}
-          </tbody>
-        </table>
-      </div>
-      <p className="analytics-chart-note">
-        Stronger green means more {label} relative to this selection. Every cell
-        contains its exact count; this calendar does not require color or hover
-        to read. Capture dates describe when the photo was taken; upload dates
-        describe when it entered the library. The sample journal uses same-day
-        capture and import.
-      </p>
-    </div>
-  );
-}
-
 export function SettingsAnalytics({
   onNavigate,
   scope: controlledScope,
@@ -481,6 +398,7 @@ export function SettingsAnalytics({
     () => getAnalytics({ range, scope, resources }),
     [range, scope, resources],
   );
+  const insights = useMemo(() => libraryInsights(report), [report]);
   const { summary, period } = report;
   const labels = report.series.map((row) => row.label);
   const exportCsv = () => {
@@ -548,8 +466,8 @@ export function SettingsAnalytics({
     <div className="settings-analytics">
       <header className="analytics-page-heading">
         <div>
-          <p className="analytics-eyebrow">Command center / Analytics</p>
-          <h1>A closer look at your library</h1>
+          <p className="analytics-eyebrow">Command center</p>
+          <h1>Library analytics</h1>
           <p>How it grows, what it holds, and the work behind it.</p>
         </div>
         <button type="button" className="analytics-export" onClick={exportCsv}>
@@ -612,36 +530,20 @@ export function SettingsAnalytics({
       <p className="analytics-export-status" role="status">
         {exportStatus}
       </p>
-      <dl className="analytics-stat-strip">
-        <div>
-          <dt>Library items</dt>
-          <dd>{number(summary.items)}</dd>
-          <span>
-            {number(summary.photos)} photos · {number(summary.videos)} videos
-          </span>
-        </div>
-        <div>
-          <dt>Added in this period</dt>
-          <dd>+{number(period.items)}</dd>
-          <span>
-            {number(period.photos)} photos · {number(period.videos)} videos
-          </span>
-        </div>
-        <div>
-          <dt>Physical originals</dt>
-          <dd>{gib(summary.physicalBytes)}</dd>
-          <span>{gib(summary.savedBytes)} saved by deduplication</span>
-        </div>
-        <div>
-          <dt>Whole volume used</dt>
-          <dd>{gib(summary.volumeUsedBytes)}</dd>
-          <span>
-            of {gib(summary.capacityBytes)} · {gib(summary.freeBytes)} free
-          </span>
-        </div>
-      </dl>
+      <LibraryHero report={report} insights={insights} />
       <div className="analytics-card analytics-growth-card">
         <LibraryGrowthChart range={range} scope={scope} metric={metric} />
+      </div>
+      <div className="an-dashboard">
+        <YearsChart insights={insights} />
+        <ShootingHabits insights={insights} />
+        <StoragePanel report={report} onNavigate={onNavigate} />
+        <CaptureHeatmap report={report} />
+        <GearPanel report={report} insights={insights} />
+        <FormatsPanel report={report} insights={insights} />
+        <PeoplePlacesPanel insights={insights} onNavigate={onNavigate} />
+        <CoveragePanel insights={insights} onNavigate={onNavigate} />
+        <RecordsPanel insights={insights} />
       </div>
       <div className="analytics-grid">
         <Card
@@ -669,55 +571,6 @@ export function SettingsAnalytics({
               row.photos,
               row.videos,
             ])}
-          />
-        </Card>
-        <Card
-          title="Cameras behind the moments"
-          caption={`${number(summary.items)} items, including videos. Unknown models stay visible.`}
-        >
-          <CanvasChart
-            title="Camera model mix"
-            horizontal
-            labels={report.cameras.map((row) => row.name)}
-            datasets={[
-              { label: "Items", data: report.cameras.map((row) => row.count) },
-            ]}
-          />
-          <DataTable
-            title="Camera mix"
-            columns={["Camera", "Items"]}
-            rows={report.cameras.map((row) => [row.name, row.count])}
-          />
-        </Card>
-        <Card
-          title="What uses the disk"
-          caption="Space used by your files, previews and server data across the whole volume."
-          action={{ id: "storage", label: "Storage settings" }}
-          onNavigate={onNavigate}
-        >
-          <CanvasChart
-            title="Volume usage breakdown"
-            horizontal
-            unit="GiB"
-            labels={report.storage.map((row) => row.name)}
-            datasets={[
-              {
-                label: "Used storage",
-                data: report.storage.map((row) => row.gib),
-                tone: "secondary",
-              },
-            ]}
-          />
-          <p className="analytics-chart-note">
-            {scope !== "all"
-              ? "The selected files are shown separately from other libraries and server data on the shared volume."
-              : "Free capacity is excluded from this usage chart."}{" "}
-            GiB values are rounded to two decimals.
-          </p>
-          <DataTable
-            title="Volume usage"
-            columns={["Category", "GiB", "Exact bytes"]}
-            rows={report.storage.map((row) => [row.name, row.gib, row.bytes])}
           />
         </Card>
         <Card
@@ -865,7 +718,6 @@ export function SettingsAnalytics({
             ])}
           />
         </Card>
-        <CaptureCalendar report={report} />
       </div>
       <Card
         title="Under the hood"

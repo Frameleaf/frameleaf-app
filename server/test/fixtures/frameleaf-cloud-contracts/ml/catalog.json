@@ -1,0 +1,78 @@
+{
+  "etag": "\"cat-2026-09-26.3\"",
+  "models": [
+    {
+      "sku": "ms_K6WT70CS",
+      "workload": "descriptions",
+      "rank": 2,
+      "label": "Descriptions · Standard",
+      "display": {
+        "model": "Qwen3.5-9B",
+        "gpu": "L40S-class, 48 GB"
+      },
+      "computeSku": "cs_KGECTVQ0",
+      "rate": {
+        "perSecondUsd": 0.0013,
+        "startFeeUsd": 0.02
+      },
+      "eta": {
+        "p50Sec": 45,
+        "p90Sec": 70
+      },
+      "limits": {
+        "maxInputs": 1000,
+        "maxInputBytes": 52428800
+      },
+      "rev": "mr_B2H147RBJBQ0"
+    },
+    {
+      "sku": "ms_M7QG26PT",
+      "workload": "descriptions",
+      "rank": 5,
+      "label": "Descriptions · Best (fallback)",
+      "display": {
+        "model": "Qwen2.5-VL-72B AWQ",
+        "gpu": "H200-class, 141 GB"
+      },
+      "computeSku": "cs_7WF1N0N6",
+      "rate": {
+        "perSecondUsd": 0.004583,
+        "startFeeUsd": 0.1
+      },
+      "eta": {
+        "p50Sec": 120,
+        "p90Sec": 210
+      },
+      "limits": {
+        "maxInputs": 1000,
+        "maxInputBytes": 52428800
+      },
+      "rev": "mr_68JDMAM8444M",
+      "notice": "Built with Qwen"
+    },
+    {
+      "sku": "ms_54S55W7C",
+      "workload": "upscale",
+      "rank": 1,
+      "label": "Enhance · Standard",
+      "display": {
+        "model": "Real-ESRGAN x4plus + GFPGAN v1.4",
+        "gpu": "RTX 4090-class, 24 GB"
+      },
+      "computeSku": "cs_RN7A9KND",
+      "rate": {
+        "perSecondUsd": 0.000817,
+        "startFeeUsd": 0.01
+      },
+      "eta": {
+        "p50Sec": 30,
+        "p90Sec": 55
+      },
+      "limits": {
+        "maxInputs": 200,
+        "maxMegapixels": 64
+      },
+      "rev": "mr_0WNPDD697MT0"
+    }
+  ]
+}

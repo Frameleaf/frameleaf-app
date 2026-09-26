@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Insertable } from 'kysely';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { OnJob } from 'src/decorators.js';
@@ -8,17 +8,19 @@ import {
   TagBulkAssetsResponseDto,
   TagCreateDto,
   TagResponseDto,
+  TagStatisticsResponseDto,
   TagUpdateDto,
   TagUpsertDto,
   mapTag,
 } from 'src/dtos/tag.dto.js';
-import { JobName, JobStatus, Permission, QueueName } from 'src/enum.js';
+import { AssetVisibility, JobName, JobStatus, Permission, QueueName } from 'src/enum.js';
 import { TagAssetTable } from 'src/schema/tables/tag-asset.table.js';
 import { BaseService } from 'src/services/base.service.js';
+import { requireEntityAccess } from 'src/utils/access.js';
 import { addAssets, removeAssets } from 'src/utils/asset.util.js';
 import { updateLockedColumns } from 'src/utils/database.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
-import { findOrFail } from 'src/utils/misc.js';
+import { getLockedOwnerId } from 'src/utils/locked.js';
 import { upsertTags } from 'src/utils/tag.js';
 
 @Injectable()
@@ -28,8 +30,29 @@ export class TagService extends BaseService {
     return tags.map((tag) => mapTag(tag));
   }
 
+  /**
+   * FL-46: per-tag counts for the Tags browser, in the scope its "Show all" opens: the owner's
+   * Timeline items (tags only ever carry their owner's items), so nothing archived or Locked, even
+   * in an unlocked session, and never a hidden or suppressed item. A tag the session may not see
+   * (suppressed, or nested under a suppressed tag, while locked) is left out entirely.
+   */
+  async getStatistics(auth: AuthDto): Promise<TagStatisticsResponseDto[]> {
+    const rows = await this.searchRepository.searchTagStatistics(
+      {
+        ...getHiddenContentQueryOptions(auth),
+        visibility: AssetVisibility.Timeline,
+        lockedOwnerId: getLockedOwnerId(auth),
+        hideLockedMotion: true,
+        userIds: [auth.user.id],
+        viewingUserId: auth.user.id,
+      },
+      { viewerId: auth.user.id, suppressedTagIds: auth.hiddenContent?.tagIds ?? [] },
+    );
+    return rows.map(({ tagId, count, total }) => ({ id: tagId, count, total }));
+  }
+
   async get(auth: AuthDto, id: string): Promise<TagResponseDto> {
-    await this.requireAccess({ auth, permission: Permission.TagRead, ids: [id] });
+    await this.requireTag(auth, Permission.TagRead, id);
     const tag = await this.findOrFail(id);
     return mapTag(tag);
   }
@@ -58,21 +81,16 @@ export class TagService extends BaseService {
   }
 
   async update(auth: AuthDto, id: string, dto: TagUpdateDto): Promise<TagResponseDto> {
-    await this.requireAccess({ auth, permission: Permission.TagUpdate, ids: [id] });
+    await this.requireTag(auth, Permission.TagUpdate, id);
 
-    const { name, color } = dto;
-    const existing = await this.findOrFail(id);
-
-    let value;
-    if (name) {
-      const parts = existing.value.split('/');
-      parts[parts.length - 1] = name;
-      value = parts.join('/');
-    } else {
-      value = existing.value;
+    const { name, color, parentId } = dto;
+    if (parentId) {
+      // FL-46: moving a tag, like creating one, needs the new parent to be a tag this user can read
+      await this.requireTag(auth, Permission.TagRead, parentId);
     }
 
-    const tag = await this.tagRepository.update(id, { value, color });
+    // the path, cycle and duplicate checks run with the owner's tags locked (see TagRepository.update)
+    const tag = await this.tagRepository.update(id, { name, color, parentId });
     return mapTag(tag);
   }
 
@@ -82,7 +100,7 @@ export class TagService extends BaseService {
   }
 
   async remove(auth: AuthDto, id: string): Promise<void> {
-    await this.requireAccess({ auth, permission: Permission.TagDelete, ids: [id] });
+    await this.requireTag(auth, Permission.TagDelete, id);
 
     // TODO sync tag changes for affected assets
 
@@ -112,7 +130,7 @@ export class TagService extends BaseService {
   }
 
   async addAssets(auth: AuthDto, id: string, dto: BulkIdsDto): Promise<BulkIdResponseDto[]> {
-    await this.requireAccess({ auth, permission: Permission.TagAsset, ids: [id] });
+    await this.requireTag(auth, Permission.TagAsset, id);
 
     const results = await addAssets(
       auth,
@@ -133,7 +151,7 @@ export class TagService extends BaseService {
   }
 
   async removeAssets(auth: AuthDto, id: string, dto: BulkIdsDto): Promise<BulkIdResponseDto[]> {
-    await this.requireAccess({ auth, permission: Permission.TagAsset, ids: [id] });
+    await this.requireTag(auth, Permission.TagAsset, id);
 
     const results = await removeAssets(
       auth,
@@ -159,8 +177,22 @@ export class TagService extends BaseService {
     return JobStatus.Success;
   }
 
-  private findOrFail(id: string) {
-    return findOrFail(() => this.tagRepository.get(id), 'Tag');
+  /**
+   * The access check for a route that names one tag (FL-46). A missing tag, someone else's, and one
+   * suppressed (or nested under a suppressed tag) while the session is not unlocked (owner decision,
+   * September 22, 2026) all answer the same 404; the access query itself leaves the suppressed tag out.
+   */
+  private requireTag(auth: AuthDto, permission: Permission, id: string) {
+    return requireEntityAccess(this.accessRepository, { auth, permission, ids: [id] }, 'Tag');
+  }
+
+  private async findOrFail(id: string) {
+    // A 404 like the access check's, so a tag removed between the two reads looks missing too
+    const tag = await this.tagRepository.get(id);
+    if (!tag) {
+      throw new NotFoundException('Tag not found');
+    }
+    return tag;
   }
 
   private async updateTags(assetId: string) {

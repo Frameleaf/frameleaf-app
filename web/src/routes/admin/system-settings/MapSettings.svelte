@@ -1,28 +1,33 @@
 <script lang="ts">
-  import SettingAccordion from '$lib/components/shared-components/settings/SettingAccordion.svelte';
-  import SettingInputField from '$lib/components/shared-components/settings/SettingInputField.svelte';
-  import SettingSwitch from '$lib/components/shared-components/settings/SettingSwitch.svelte';
-  import SettingButtonsRow from '$lib/components/shared-components/settings/SystemConfigButtonRow.svelte';
+  import SettingGroup from '$lib/components/frameleaf/settings/SettingGroup.svelte';
+  import SettingField from '$lib/components/frameleaf/settings/SettingField.svelte';
+  import SettingToggle from '$lib/components/frameleaf/settings/SettingToggle.svelte';
+  import SettingActions from '$lib/components/frameleaf/settings/SettingActions.svelte';
   import { SettingInputFieldType } from '$lib/constants';
   import FormatMessage from '$lib/elements/FormatMessage.svelte';
+  import { helpLinks } from '$lib/frameleaf/help-links.svelte';
+  import { requireSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
-  import { systemConfigManager } from '$lib/managers/system-config-manager.svelte';
   import { Link } from '@immich/ui';
   import { t } from 'svelte-i18n';
   import { fade } from 'svelte/transition';
 
   const disabled = $derived(featureFlagsManager.value.configFile);
-  const config = $derived(systemConfigManager.value);
-  let configToEdit = $state(systemConfigManager.cloneValue());
+  const settingsDraft = requireSystemConfigDraft();
+  const configToEdit = $derived(settingsDraft.draft);
+  const config = $derived(settingsDraft.baseline);
+
+  // FL-135: this installation's documentation, or no link at all
+  const geocodingDocs = $derived(helpLinks.docs('features/reverse-geocoding'));
 </script>
 
 <div class="mt-2">
   <div in:fade={{ duration: 500 }}>
     <form autocomplete="off" onsubmit={(event) => event.preventDefault()}>
       <div class="flex flex-col gap-4">
-        <SettingAccordion key="map" title={$t('admin.map_settings')} subtitle={$t('admin.map_settings_description')}>
-          <div class="ms-4 mt-4 flex flex-col gap-4">
-            <SettingSwitch
+        <SettingGroup key="map" title={$t('admin.map_settings')} subtitle={$t('admin.map_settings_description')}>
+          <div class="flex flex-col gap-4">
+            <SettingToggle
               title={$t('admin.map_enable_description')}
               subtitle={$t('admin.map_implications')}
               {disabled}
@@ -31,7 +36,7 @@
 
             <hr />
 
-            <SettingInputField
+            <SettingField
               inputType={SettingInputFieldType.TEXT}
               label={$t('admin.map_light_style')}
               description={$t('admin.map_style_description')}
@@ -39,7 +44,7 @@
               disabled={disabled || !configToEdit.map.enabled}
               isEdited={configToEdit.map.lightStyle !== config.map.lightStyle}
             />
-            <SettingInputField
+            <SettingField
               inputType={SettingInputFieldType.TEXT}
               label={$t('admin.map_dark_style')}
               description={$t('admin.map_style_description')}
@@ -47,29 +52,31 @@
               disabled={disabled || !configToEdit.map.enabled}
               isEdited={configToEdit.map.darkStyle !== config.map.darkStyle}
             />
-          </div></SettingAccordion
+          </div></SettingGroup
         >
 
-        <SettingAccordion key="reverse-geocoding" title={$t('admin.map_reverse_geocoding_settings')}>
+        <SettingGroup key="reverse-geocoding" title={$t('admin.map_reverse_geocoding_settings')}>
           {#snippet subtitleSnippet()}
-            <p class="text-sm dark:text-immich-dark-fg">
-              <FormatMessage key="admin.map_manage_reverse_geocoding_settings">
-                {#snippet children({ message })}
-                  <Link href="https://docs.immich.app/features/reverse-geocoding">{message}</Link>
-                {/snippet}
-              </FormatMessage>
-            </p>
+            {#if geocodingDocs}
+              <p class="text-sm dark:text-immich-dark-fg">
+                <FormatMessage key="admin.map_manage_reverse_geocoding_settings">
+                  {#snippet children({ message })}
+                    <Link href={geocodingDocs}>{message}</Link>
+                  {/snippet}
+                </FormatMessage>
+              </p>
+            {/if}
           {/snippet}
-          <div class="ms-4 mt-4 flex flex-col gap-4">
-            <SettingSwitch
+          <div class="flex flex-col gap-4">
+            <SettingToggle
               title={$t('admin.map_reverse_geocoding_enable_description')}
               {disabled}
               bind:checked={configToEdit.reverseGeocoding.enabled}
             />
-          </div></SettingAccordion
+          </div></SettingGroup
         >
 
-        <SettingButtonsRow bind:configToEdit keys={['map', 'reverseGeocoding']} {disabled} />
+        <SettingActions keys={['map', 'reverseGeocoding']} {disabled} />
       </div>
     </form>
   </div>

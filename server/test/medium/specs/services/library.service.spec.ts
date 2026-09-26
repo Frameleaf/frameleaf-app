@@ -4,7 +4,17 @@ import { copyFile, mkdir, mkdtemp, rm, utimes, writeFile } from 'node:fs/promise
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { StorageCore } from 'src/cores/storage.core.js';
-import { AssetStatus, JobName, JobStatus } from 'src/enum.js';
+import {
+  AdminAuditAction,
+  AssetLockReason,
+  AssetStatus,
+  JobName,
+  JobStatus,
+  LibraryImportPathReason,
+  MediaOperationKind,
+  MediaOperationStatus,
+} from 'src/enum.js';
+import { AdminAuditRepository } from 'src/repositories/admin-audit.repository.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
@@ -12,11 +22,16 @@ import { EventRepository } from 'src/repositories/event.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LibraryRepository } from 'src/repositories/library.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
+import { UserRepository } from 'src/repositories/user.repository.js';
+import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
 import { DB } from 'src/schema/index.js';
+import { LibraryScanService } from 'src/services/library-scan.service.js';
 import { LibraryService } from 'src/services/library.service.js';
+import { libraryAssetFromFile, libraryPathsFingerprint } from 'src/utils/library-scan.js';
 import { MediumTestContext, testAssetsDir } from 'test/medium.factory.js';
-import { newUuid } from 'test/small.factory.js';
+import { factory, newUuid } from 'test/small.factory.js';
 import { getKyselyDB } from 'test/utils.js';
 
 // `validateImportPath` checks candidate paths against the media location
@@ -44,8 +59,16 @@ class LibraryTestContext extends MediumTestContext<typeof LibraryService> {
   constructor(database: Kysely<DB>) {
     super(LibraryService, {
       database,
-      real: [AssetRepository, AssetJobRepository, CryptoRepository, LibraryRepository, StorageRepository],
-      mock: [EventRepository, JobRepository, LoggingRepository],
+      real: [
+        AdminAuditRepository,
+        AssetRepository,
+        AssetJobRepository,
+        CryptoRepository,
+        LibraryRepository,
+        StorageRepository,
+        UserRepository,
+      ],
+      mock: [EventRepository, JobRepository, LoggingRepository, WebsocketRepository],
     });
 
     const jobs = this.getMock(JobRepository);
@@ -53,6 +76,7 @@ class LibraryTestContext extends MediumTestContext<typeof LibraryService> {
     jobs.queueAll.mockResolvedValue();
 
     this.getMock(EventRepository).emit.mockResolvedValue();
+    this.getMock(WebsocketRepository).serverSend.mockReturnValue();
   }
 
   async createLibrary(options: { importPaths?: string[]; exclusionPatterns?: string[] } = {}) {
@@ -65,25 +89,35 @@ class LibraryTestContext extends MediumTestContext<typeof LibraryService> {
     });
   }
 
-  /** Runs a full library scan, manually routing jobs to their handlers */
+  /** The durable scan worker (FL-78), on the same database and repositories as the service. */
+  scans() {
+    return new LibraryScanService(
+      this.getMock(LoggingRepository) as never,
+      new MediaOperationRepository(this.database),
+      this.get(LibraryRepository),
+      this.get(AssetRepository),
+      this.get(AssetJobRepository),
+      this.get(StorageRepository),
+      this.getMock(JobRepository) as never,
+      this.get(UserRepository),
+      this.getMock(EventRepository) as never,
+      this.get(CryptoRepository),
+      this.get(AdminAuditRepository),
+    );
+  }
+
+  /** Queues a scan and runs it to its end, returning the scan job as it finished. */
   async scan(libraryId: string) {
-    const jobs = this.getMock(JobRepository);
-
-    jobs.queue.mockClear();
-    await this.sut.handleQueueSyncFiles({ id: libraryId });
-    for (const [job] of jobs.queue.mock.calls) {
-      if (job.name === JobName.LibrarySyncFiles) {
-        await this.sut.handleSyncFiles(job.data);
-      }
-    }
-
-    jobs.queue.mockClear();
-    await this.sut.handleQueueSyncAssets({ id: libraryId });
-    for (const [job] of jobs.queue.mock.calls) {
-      if (job.name === JobName.LibrarySyncAssets) {
-        await this.sut.handleSyncAssets(job.data);
-      }
-    }
+    const scans = this.scans();
+    const library = await this.get(LibraryRepository).get(libraryId);
+    await scans.queue(library!, { ownerId: library!.ownerId, trigger: 'manual' });
+    await scans.drain();
+    const [operation] = await new MediaOperationRepository(this.database).getLatestBySubject(
+      MediaOperationKind.LibraryScan,
+      'libraryId',
+      [libraryId],
+    );
+    return operation;
   }
 
   /** The paths a library scan left visible, i.e. neither offline nor trashed */
@@ -147,6 +181,7 @@ describe(LibraryService.name, () => {
     it('should create an external library with options', async () => {
       const { sut, ctx } = setup();
       const { user } = await ctx.newUser();
+      await mkdir(importPath, { recursive: true });
 
       await expect(
         sut.create({
@@ -162,6 +197,27 @@ describe(LibraryService.name, () => {
           exclusionPatterns: ['**/Raw/**'],
         }),
       );
+    });
+
+    it("should record the new library in its owner's administrator history (FL-76)", async () => {
+      const { sut, ctx } = setup();
+      const { user: admin } = await ctx.newUser({ isAdmin: true });
+      const { user } = await ctx.newUser();
+      const auth = factory.auth({ user: { id: admin.id, isAdmin: true } });
+
+      const library = await sut.create({ ownerId: user.id, name: 'Family archive' }, auth);
+
+      await expect(ctx.get(AdminAuditRepository).getByUserId(user.id, { take: 10 })).resolves.toEqual([
+        expect.objectContaining({
+          userId: user.id,
+          actorId: admin.id,
+          actorName: admin.name,
+          libraryId: library.id,
+          action: AdminAuditAction.LibraryCreated,
+          subject: 'Family archive',
+          detail: null,
+        }),
+      ]);
     });
   });
 
@@ -240,7 +296,14 @@ describe(LibraryService.name, () => {
       const missingPath = join(tempDir, 'does/not/exist');
 
       await expect(sut.validate(newUuid(), { importPaths: [missingPath] })).resolves.toEqual({
-        importPaths: [{ importPath: missingPath, isValid: false, message: 'Path does not exist (ENOENT)' }],
+        importPaths: [
+          {
+            importPath: missingPath,
+            isValid: false,
+            reason: LibraryImportPathReason.NotFound,
+            message: 'Path does not exist (ENOENT)',
+          },
+        ],
       });
     });
 
@@ -252,6 +315,7 @@ describe(LibraryService.name, () => {
           {
             importPath: 'relative/path',
             isValid: false,
+            reason: LibraryImportPathReason.NotAbsolute,
             message: `Import path must be absolute, try ${resolve('relative/path')}`,
           },
         ],
@@ -263,7 +327,14 @@ describe(LibraryService.name, () => {
       const filePath = await createFile(join(importPath, 'assetA.png'));
 
       await expect(sut.validate(newUuid(), { importPaths: [filePath] })).resolves.toEqual({
-        importPaths: [{ importPath: filePath, isValid: false, message: 'Not a directory' }],
+        importPaths: [
+          {
+            importPath: filePath,
+            isValid: false,
+            reason: LibraryImportPathReason.NotDirectory,
+            message: 'Not a directory',
+          },
+        ],
       });
     });
   });
@@ -321,7 +392,7 @@ describe(LibraryService.name, () => {
     });
   });
 
-  describe('queueScan', () => {
+  describe('scan', () => {
     it('should import a new asset', async () => {
       const { ctx } = setup();
 
@@ -477,24 +548,98 @@ describe(LibraryService.name, () => {
       const { sut, ctx } = setup();
 
       const inPath = join(importRoot, 'exclusion');
-      // a second import path that never exists on disk, as in the original report
-      const missingPath = join(importRoot, 'exclusion2');
+      const secondPath = join(importRoot, 'exclusion2');
       const asset1 = await createFile(join(inPath, 'asset1.png'));
       const asset2 = await createFile(join(inPath, 'Raw/asset2.png'));
-      const library = await ctx.createLibrary({ importPaths: [`${inPath}/`, `${missingPath}/`] });
+      await createFile(join(secondPath, 'asset3.png'));
+      const library = await ctx.createLibrary({ importPaths: [`${inPath}/`, `${secondPath}/`] });
 
       // scanning twice must be idempotent
       await ctx.scan(library.id);
-      await expect(ctx.getAssetPaths(library.id)).resolves.toEqual([asset1, asset2].sort());
+      const all = [asset1, asset2, join(secondPath, 'asset3.png')].sort();
+      await expect(ctx.getAssetPaths(library.id)).resolves.toEqual(all);
       await ctx.scan(library.id);
-      await expect(ctx.getAssetPaths(library.id)).resolves.toEqual([asset1, asset2].sort());
+      await expect(ctx.getAssetPaths(library.id)).resolves.toEqual(all);
 
       await sut.update(library.id, { exclusionPatterns: ['**/Raw/**'] });
 
       await ctx.scan(library.id);
-      await expect(ctx.getAssetPaths(library.id)).resolves.toEqual([asset1]);
+      await expect(ctx.getAssetPaths(library.id)).resolves.toEqual([asset1, join(secondPath, 'asset3.png')].sort());
+    });
+
+    it('should fail, marking nothing missing, when an import folder does not exist (FL-78)', async () => {
+      const { ctx } = setup();
+
+      const inPath = join(importRoot, 'present');
+      const missingPath = join(importRoot, 'unmounted');
+      const asset1 = await createFile(join(inPath, 'asset1.png'));
+      const asset2 = await createFile(join(missingPath, 'asset2.png'));
+      const library = await ctx.createLibrary({ importPaths: [inPath, missingPath] });
       await ctx.scan(library.id);
+      await expect(ctx.getAssetPaths(library.id)).resolves.toEqual([asset1, asset2].sort());
+
+      await rm(missingPath, { recursive: true, force: true });
+      const scan = await ctx.scan(library.id);
+
+      expect(scan).toEqual(
+        expect.objectContaining({
+          status: MediaOperationStatus.Queued,
+          errorCode: 'library_source_unavailable',
+          error: expect.stringContaining(missingPath),
+        }),
+      );
+      await expect(ctx.getAssetPaths(library.id)).resolves.toEqual([asset1, asset2].sort());
+    });
+
+    it('should fail, marking nothing missing, when an import folder comes back empty (FL-78)', async () => {
+      const { ctx } = setup();
+
+      const asset1 = await createFile(join(importPath, 'asset1.png'));
+      const asset2 = await createFile(join(importPath, 'asset2.png'));
+      const library = await ctx.createLibrary({ importPaths: [importPath] });
+      await ctx.scan(library.id);
+
+      // an unmounted share leaves an empty mount point behind
+      await rm(asset1);
+      await rm(asset2);
+      const scan = await ctx.scan(library.id);
+
+      expect(scan).toEqual(expect.objectContaining({ errorCode: 'library_source_empty' }));
+      await expect(ctx.getAssetPaths(library.id)).resolves.toEqual([asset1, asset2].sort());
+    });
+
+    it('should mark a missing file offline when its folder is still there (FL-78)', async () => {
+      const { ctx } = setup();
+
+      const asset1 = await createFile(join(importPath, 'asset1.png'));
+      const asset2 = await createFile(join(importPath, 'asset2.png'));
+      const library = await ctx.createLibrary({ importPaths: [importPath] });
+      await ctx.scan(library.id);
+
+      await rm(asset2);
+      const scan = await ctx.scan(library.id);
+
+      expect(scan).toEqual(expect.objectContaining({ status: MediaOperationStatus.Completed }));
       await expect(ctx.getAssetPaths(library.id)).resolves.toEqual([asset1]);
+      await expect(ctx.get(LibraryRepository).get(library.id)).resolves.toEqual(
+        expect.objectContaining({ refreshedAt: expect.any(Date) }),
+      );
+    });
+
+    it('should answer a second scan request with the one already waiting (FL-78)', async () => {
+      const { ctx } = setup();
+      await createFile(join(importPath, 'asset1.png'));
+      const library = await ctx.createLibrary({ importPaths: [importPath] });
+      const scans = ctx.scans();
+
+      const [first, second] = await Promise.all([
+        scans.queue(library, { ownerId: library.ownerId, trigger: 'manual' }),
+        scans.queue(library, { ownerId: library.ownerId, trigger: 'manual' }),
+      ]);
+
+      expect([first.created, second.created].filter(Boolean)).toHaveLength(1);
+      expect(first.operation.id).toBe(second.operation.id);
+      await scans.drain();
     });
 
     const annoyingExclusionPatterns = ['@', '#', '$', '%', '^', '&', '='];
@@ -518,9 +663,9 @@ describe(LibraryService.name, () => {
     });
   });
 
-  describe('handleQueueSyncAssets', () => {
+  describe('scan: settings-driven offlining', () => {
     it('should set an asset offline if its file is not in any import path', async () => {
-      const { sut, ctx } = setup();
+      const { ctx } = setup();
       const assetRepo = ctx.get(AssetRepository);
       const library = await ctx.createLibrary({ importPaths: [importPath] });
       const { asset } = await ctx.newAsset({
@@ -532,7 +677,10 @@ describe(LibraryService.name, () => {
         status: AssetStatus.Active,
       });
 
-      await expect(sut.handleQueueSyncAssets({ id: library.id })).resolves.toBe(JobStatus.Success);
+      await mkdir(importPath, { recursive: true });
+      await expect(ctx.scan(library.id)).resolves.toEqual(
+        expect.objectContaining({ status: MediaOperationStatus.Completed }),
+      );
 
       const updated = await assetRepo.getById(asset.id);
       expect(updated).toEqual(expect.objectContaining({ isOffline: true }));
@@ -540,7 +688,7 @@ describe(LibraryService.name, () => {
     });
 
     it('should set an asset offline if its file is covered by an exclusion pattern', async () => {
-      const { sut, ctx } = setup();
+      const { ctx } = setup();
       const assetRepo = ctx.get(AssetRepository);
       const library = await ctx.createLibrary({
         importPaths: [importRoot],
@@ -556,7 +704,10 @@ describe(LibraryService.name, () => {
         status: AssetStatus.Active,
       });
 
-      await expect(sut.handleQueueSyncAssets({ id: library.id })).resolves.toBe(JobStatus.Success);
+      await mkdir(importPath, { recursive: true });
+      await expect(ctx.scan(library.id)).resolves.toEqual(
+        expect.objectContaining({ status: MediaOperationStatus.Completed }),
+      );
 
       const updated = await assetRepo.getById(asset.id);
       expect(updated).toEqual(expect.objectContaining({ isOffline: true }));
@@ -564,31 +715,25 @@ describe(LibraryService.name, () => {
     });
   });
 
-  describe('handleSyncAssets', () => {
+  describe('scan: checking existing items', () => {
     it('should set an asset offline if its file is missing', async () => {
-      const { sut, ctx } = setup();
+      const { ctx } = setup();
       const assetRepo = ctx.get(AssetRepository);
       const library = await ctx.createLibrary({ importPaths: [importPath] });
       const { asset } = await ctx.newAsset({
         ownerId: library.ownerId,
         libraryId: library.id,
-        // the file is intentionally never created on disk
+        // the file is intentionally never created on disk; its folder is there with another file
         originalPath: join(importPath, 'offline.png'),
         isExternal: true,
         isOffline: false,
         status: AssetStatus.Active,
       });
+      await createFile(join(importPath, 'still-here.png'));
 
-      await expect(
-        sut.handleSyncAssets({
-          libraryId: library.id,
-          importPaths: library.importPaths,
-          exclusionPatterns: library.exclusionPatterns,
-          assetIds: [asset.id],
-          progressCounter: 1,
-          totalAssets: 1,
-        }),
-      ).resolves.toBe(JobStatus.Success);
+      await expect(ctx.scan(library.id)).resolves.toEqual(
+        expect.objectContaining({ status: MediaOperationStatus.Completed }),
+      );
 
       const updated = await assetRepo.getById(asset.id);
       expect(updated).toEqual(expect.objectContaining({ isOffline: true }));
@@ -596,7 +741,7 @@ describe(LibraryService.name, () => {
     });
 
     it('should not set an asset offline if file exists in import path and is not excluded', async () => {
-      const { sut, ctx } = setup();
+      const { ctx } = setup();
       const assetRepo = ctx.get(AssetRepository);
       const library = await ctx.createLibrary({
         importPaths: [importRoot],
@@ -613,16 +758,9 @@ describe(LibraryService.name, () => {
         status: AssetStatus.Active,
       });
 
-      await expect(
-        sut.handleSyncAssets({
-          libraryId: library.id,
-          importPaths: library.importPaths,
-          exclusionPatterns: library.exclusionPatterns,
-          assetIds: [asset.id],
-          progressCounter: 1,
-          totalAssets: 1,
-        }),
-      ).resolves.toBe(JobStatus.Success);
+      await expect(ctx.scan(library.id)).resolves.toEqual(
+        expect.objectContaining({ status: MediaOperationStatus.Completed }),
+      );
 
       const updated = await assetRepo.getById(asset.id);
       expect(updated).toEqual(expect.objectContaining({ isOffline: false }));
@@ -630,7 +768,7 @@ describe(LibraryService.name, () => {
     });
 
     it('should set an offline asset to online if its file exists in an import path and is not excluded', async () => {
-      const { sut, ctx } = setup();
+      const { ctx } = setup();
       const assetRepo = ctx.get(AssetRepository);
       const library = await ctx.createLibrary({ importPaths: [importPath] });
       const { asset } = await ctx.newAsset({
@@ -643,16 +781,9 @@ describe(LibraryService.name, () => {
         status: AssetStatus.Active,
       });
 
-      await expect(
-        sut.handleSyncAssets({
-          libraryId: library.id,
-          importPaths: library.importPaths,
-          exclusionPatterns: library.exclusionPatterns,
-          assetIds: [asset.id],
-          progressCounter: 1,
-          totalAssets: 1,
-        }),
-      ).resolves.toBe(JobStatus.Success);
+      await expect(ctx.scan(library.id)).resolves.toEqual(
+        expect.objectContaining({ status: MediaOperationStatus.Completed }),
+      );
 
       const updated = await assetRepo.getById(asset.id);
       expect(updated).toEqual(expect.objectContaining({ isOffline: false }));
@@ -660,7 +791,7 @@ describe(LibraryService.name, () => {
     });
 
     it('should not set an offline asset to online if its file exists in an import path but is excluded', async () => {
-      const { sut, ctx } = setup();
+      const { ctx } = setup();
       const assetRepo = ctx.get(AssetRepository);
       const library = await ctx.createLibrary({
         importPaths: [importRoot],
@@ -677,16 +808,9 @@ describe(LibraryService.name, () => {
         status: AssetStatus.Active,
       });
 
-      await expect(
-        sut.handleSyncAssets({
-          libraryId: library.id,
-          importPaths: library.importPaths,
-          exclusionPatterns: library.exclusionPatterns,
-          assetIds: [asset.id],
-          progressCounter: 1,
-          totalAssets: 1,
-        }),
-      ).resolves.toBe(JobStatus.Success);
+      await expect(ctx.scan(library.id)).resolves.toEqual(
+        expect.objectContaining({ status: MediaOperationStatus.Completed }),
+      );
 
       const updated = await assetRepo.getById(asset.id);
       expect(updated).toEqual(expect.objectContaining({ isOffline: true }));
@@ -694,7 +818,7 @@ describe(LibraryService.name, () => {
     });
 
     it('should keep an offline asset offline if it is outside import paths', async () => {
-      const { sut, ctx } = setup();
+      const { ctx } = setup();
       const assetRepo = ctx.get(AssetRepository);
       const library = await ctx.createLibrary({ importPaths: [importPath] });
       const { asset } = await ctx.newAsset({
@@ -706,17 +830,11 @@ describe(LibraryService.name, () => {
         deletedAt: new Date(),
         status: AssetStatus.Active,
       });
+      await mkdir(importPath, { recursive: true });
 
-      await expect(
-        sut.handleSyncAssets({
-          libraryId: library.id,
-          importPaths: library.importPaths,
-          exclusionPatterns: library.exclusionPatterns,
-          assetIds: [asset.id],
-          progressCounter: 1,
-          totalAssets: 1,
-        }),
-      ).resolves.toBe(JobStatus.Success);
+      await expect(ctx.scan(library.id)).resolves.toEqual(
+        expect.objectContaining({ status: MediaOperationStatus.Completed }),
+      );
 
       const updated = await assetRepo.getById(asset.id);
       expect(updated).toEqual(expect.objectContaining({ isOffline: true }));
@@ -724,7 +842,7 @@ describe(LibraryService.name, () => {
     });
 
     it('should set a trashed asset offline if its file is missing', async () => {
-      const { sut, ctx } = setup();
+      const { ctx } = setup();
       const assetRepo = ctx.get(AssetRepository);
       const library = await ctx.createLibrary({ importPaths: [importPath] });
       const { asset } = await ctx.newAsset({
@@ -737,17 +855,11 @@ describe(LibraryService.name, () => {
         deletedAt: new Date(),
         status: AssetStatus.Trashed,
       });
+      await mkdir(importPath, { recursive: true });
 
-      await expect(
-        sut.handleSyncAssets({
-          libraryId: library.id,
-          importPaths: library.importPaths,
-          exclusionPatterns: library.exclusionPatterns,
-          assetIds: [asset.id],
-          progressCounter: 1,
-          totalAssets: 1,
-        }),
-      ).resolves.toBe(JobStatus.Success);
+      await expect(ctx.scan(library.id)).resolves.toEqual(
+        expect.objectContaining({ status: MediaOperationStatus.Completed }),
+      );
 
       const updated = await assetRepo.getById(asset.id);
       expect(updated).toEqual(expect.objectContaining({ isOffline: true }));
@@ -755,7 +867,7 @@ describe(LibraryService.name, () => {
     });
 
     it('should set a trashed offline asset to online but keep it in trash', async () => {
-      const { sut, ctx } = setup();
+      const { ctx } = setup();
       const assetRepo = ctx.get(AssetRepository);
       const library = await ctx.createLibrary({ importPaths: [importPath] });
       const { asset } = await ctx.newAsset({
@@ -768,16 +880,9 @@ describe(LibraryService.name, () => {
         status: AssetStatus.Trashed,
       });
 
-      await expect(
-        sut.handleSyncAssets({
-          libraryId: library.id,
-          importPaths: library.importPaths,
-          exclusionPatterns: library.exclusionPatterns,
-          assetIds: [asset.id],
-          progressCounter: 1,
-          totalAssets: 1,
-        }),
-      ).resolves.toBe(JobStatus.Success);
+      await expect(ctx.scan(library.id)).resolves.toEqual(
+        expect.objectContaining({ status: MediaOperationStatus.Completed }),
+      );
 
       const updated = await assetRepo.getById(asset.id);
       expect(updated).toEqual(expect.objectContaining({ isOffline: false }));
@@ -785,7 +890,7 @@ describe(LibraryService.name, () => {
     });
 
     it('should queue sidecar checks for assets whose file changed', async () => {
-      const { sut, ctx } = setup();
+      const { ctx } = setup();
       const jobs = ctx.getMock(JobRepository);
       const library = await ctx.createLibrary({ importPaths: [importPath] });
       const rawPath = await copyTestAsset('formats/raw/Nikon/D80/glarus.nef', join(importPath, 'glarus.nef'));
@@ -801,16 +906,9 @@ describe(LibraryService.name, () => {
         status: AssetStatus.Active,
       });
 
-      await expect(
-        sut.handleSyncAssets({
-          libraryId: library.id,
-          importPaths: library.importPaths,
-          exclusionPatterns: library.exclusionPatterns,
-          assetIds: [asset.id],
-          progressCounter: 1,
-          totalAssets: 1,
-        }),
-      ).resolves.toBe(JobStatus.Success);
+      await expect(ctx.scan(library.id)).resolves.toEqual(
+        expect.objectContaining({ status: MediaOperationStatus.Completed }),
+      );
 
       expect(jobs.queueAll).toHaveBeenCalledWith([
         {
@@ -821,12 +919,12 @@ describe(LibraryService.name, () => {
     });
 
     it('should not queue sidecar checks for unchanged assets', async () => {
-      const { sut, ctx } = setup();
+      const { ctx } = setup();
       const jobs = ctx.getMock(JobRepository);
       const library = await ctx.createLibrary({ importPaths: [importPath] });
       const rawPath = await copyTestAsset('formats/raw/Nikon/D80/glarus.nef', join(importPath, 'glarus.nef'));
 
-      const { asset } = await ctx.newAsset({
+      await ctx.newAsset({
         ownerId: library.ownerId,
         libraryId: library.id,
         originalPath: rawPath,
@@ -836,16 +934,9 @@ describe(LibraryService.name, () => {
         status: AssetStatus.Active,
       });
 
-      await expect(
-        sut.handleSyncAssets({
-          libraryId: library.id,
-          importPaths: library.importPaths,
-          exclusionPatterns: library.exclusionPatterns,
-          assetIds: [asset.id],
-          progressCounter: 1,
-          totalAssets: 1,
-        }),
-      ).resolves.toBe(JobStatus.Success);
+      await expect(ctx.scan(library.id)).resolves.toEqual(
+        expect.objectContaining({ status: MediaOperationStatus.Completed }),
+      );
 
       expect(jobs.queueAll).not.toHaveBeenCalled();
     });
@@ -872,6 +963,201 @@ describe(LibraryService.name, () => {
           data: expect.objectContaining({ id: expect.any(String) }),
         }),
       ]);
+    });
+  });
+
+  describe('removal review (FL-78)', () => {
+    it('counts what a removal takes with it and confirms against it', async () => {
+      const { sut, ctx } = setup();
+      const asset1 = await createFile(join(importPath, 'asset1.png'));
+      await createFile(join(importPath, 'asset2.png'));
+      const library = await ctx.createLibrary({ importPaths: [importPath] });
+      await ctx.scan(library.id);
+      const [{ id: assetId }] = await ctx.database
+        .selectFrom('asset')
+        .select('id')
+        .where('originalPath', '=', asset1)
+        .execute();
+      const { album } = await ctx.newAlbum({ ownerId: library.ownerId });
+      await ctx.newAlbumAsset({ albumId: album.id, assetId });
+
+      const review = await sut.getRemovalReview(library.id);
+
+      expect(review).toEqual(
+        expect.objectContaining({ total: 2, photos: 2, albums: 1, sharedLinks: 0, originalsKept: true }),
+      );
+
+      await sut.remove(factory.auth(), library.id, { reviewToken: review.reviewToken, confirmName: library.name });
+      await expect(ctx.get(LibraryRepository).get(library.id)).resolves.toBeUndefined();
+      expect(existsSync(asset1)).toBe(true);
+    });
+  });
+
+  describe('scan mutation fence', () => {
+    const claimedScan = async () => {
+      const { ctx } = setup();
+      const library = await ctx.createLibrary({ importPaths: [importPath] });
+      const { operation } = await ctx.scans().queue(library, { ownerId: library.ownerId, trigger: 'manual' });
+      const operations = new MediaOperationRepository(defaultDatabase);
+      const claim = { operation, claimToken: newUuid() };
+      await defaultDatabase
+        .updateTable('media_operation')
+        .set({
+          status: MediaOperationStatus.Rendering,
+          claimToken: claim.claimToken,
+          claimExpiresAt: new Date(Date.now() + 60_000),
+        })
+        .where('id', '=', operation.id)
+        .execute();
+      return {
+        ctx,
+        library,
+        operations,
+        claim: {
+          operationId: claim.operation.id,
+          claimToken: claim.claimToken,
+          libraryId: library.id,
+          fingerprint: libraryPathsFingerprint(library),
+        },
+      };
+    };
+
+    it.each(['replacement', 'expired', 'cancelled', 'paths', 'removed', 'owner'])(
+      'rejects asset mutations after %s changes',
+      async (change) => {
+        const { ctx, library, claim } = await claimedScan();
+        switch (change) {
+          case 'replacement': {
+            await defaultDatabase
+              .updateTable('media_operation')
+              .set({ claimToken: newUuid() })
+              .where('id', '=', claim.operationId)
+              .execute();
+            break;
+          }
+          case 'expired': {
+            await defaultDatabase
+              .updateTable('media_operation')
+              .set({ claimExpiresAt: new Date(0) })
+              .where('id', '=', claim.operationId)
+              .execute();
+            break;
+          }
+          case 'cancelled': {
+            await defaultDatabase
+              .updateTable('media_operation')
+              .set({ status: MediaOperationStatus.Cancelling })
+              .where('id', '=', claim.operationId)
+              .execute();
+            break;
+          }
+          case 'paths': {
+            await ctx.get(LibraryRepository).update(library.id, { importPaths: ['/different'] });
+            break;
+          }
+          case 'removed': {
+            await ctx.get(LibraryRepository).softDelete(library.id);
+            break;
+          }
+          case 'owner': {
+            await defaultDatabase
+              .updateTable('user')
+              .set({ deletedAt: new Date() })
+              .where('id', '=', library.ownerId)
+              .execute();
+            // No default
+            break;
+          }
+        }
+        const mutate = vi.fn().mockResolvedValue(true);
+        await ctx.get(LibraryRepository).withScanClaim(claim, mutate);
+        expect(mutate).not.toHaveBeenCalled();
+      },
+    );
+
+    it('rolls back asset creation with its claim transaction', async () => {
+      const { ctx, library, claim } = await claimedScan();
+      await expect(
+        ctx.get(LibraryRepository).withScanClaim(claim, async (assets) => {
+          await assets.createAll([
+            libraryAssetFromFile(
+              { path: join(importPath, 'file.jpg'), mtime: new Date() },
+              { ownerId: library.ownerId, libraryId: library.id },
+              () => Buffer.from('checksum'),
+              false,
+            ),
+          ]);
+          throw new Error('abort batch');
+        }),
+      ).rejects.toThrow('abort batch');
+      expect(await ctx.get(AssetRepository).getLibraryAssetCount(library.id)).toBe(0);
+    });
+
+    it('does not let a stale scan cancel its replacement', async () => {
+      const { operations, claim } = await claimedScan();
+      const replacement = newUuid();
+      await defaultDatabase
+        .updateTable('media_operation')
+        .set({ claimToken: replacement })
+        .where('id', '=', claim.operationId)
+        .execute();
+      const operation = await defaultDatabase
+        .selectFrom('media_operation')
+        .selectAll()
+        .where('id', '=', claim.operationId)
+        .executeTakeFirstOrThrow();
+      expect(await operations.requestCancel(claim.operationId, operation.ownerId, claim.claimToken)).toBeUndefined();
+      expect(await operations.getForOwner(claim.operationId, operation.ownerId)).toMatchObject({
+        claimToken: replacement,
+        status: MediaOperationStatus.Rendering,
+        cancelRequestedAt: null,
+      });
+    });
+  });
+
+  describe('managed uploads (FL-78)', () => {
+    it('excludes Locked originals from managed and external byte totals', async () => {
+      const { ctx } = setup();
+      const library = await ctx.createLibrary();
+      for (const libraryId of [null, library.id]) {
+        const { asset } = await ctx.newAsset({
+          ownerId: library.ownerId,
+          libraryId,
+          originalPath: `/test/${libraryId ?? 'managed'}.jpg`,
+        });
+        await ctx
+          .get(AssetRepository)
+          .upsertExif({ exif: { assetId: asset.id!, fileSizeInByte: 1234 }, lockedPropertiesBehavior: 'override' });
+        await ctx.get(AssetRepository).lock([asset.id!], AssetLockReason.Marked, library.ownerId);
+        const { asset: visible } = await ctx.newAsset({
+          ownerId: library.ownerId,
+          libraryId,
+          originalPath: `/test/${libraryId ?? 'managed'}-visible.jpg`,
+        });
+        await ctx.get(AssetRepository).upsertExif({
+          exif: { assetId: visible.id!, fileSizeInByte: 567 },
+          lockedPropertiesBehavior: 'override',
+        });
+      }
+      const repository = ctx.get(LibraryRepository);
+      expect(await repository.getStatistics(library.id)).toMatchObject({ total: 1, usage: 567, usagePhysical: 567 });
+      expect(
+        (await repository.getManagedUploadStatistics()).find((row) => row.ownerId === library.ownerId),
+      ).toMatchObject({ total: 1, usage: 567, usagePhysical: 567 });
+    });
+
+    it("counts an account's uploads and leaves its external library items out", async () => {
+      const { sut, ctx } = setup();
+      await createFile(join(importPath, 'asset1.png'));
+      const library = await ctx.createLibrary({ importPaths: [importPath] });
+      await ctx.scan(library.id);
+      await ctx.newAsset({ ownerId: library.ownerId });
+
+      const rows = await sut.getManagedUploads();
+
+      expect(rows.find((row) => row.ownerId === library.ownerId)).toEqual(
+        expect.objectContaining({ photos: 1, total: 1 }),
+      );
     });
   });
 });

@@ -1,4 +1,23 @@
-/* Source: design/frameleaf/tokens.json. Scoped; never import prototype styles. */
+@import './base.css';
+
+/*
+ * Source: design/frameleaf/tokens.json and design/frameleaf/template/src/reference/tokens.css.
+ * Scoped to .frameleaf; never import the prototype stylesheets into production.
+ *
+ * Status colours carry meaning, so every foreground token below is chosen to clear
+ * 4.5:1 against --fl-canvas, --fl-panel and --fl-raised in its own theme, and every
+ * --fl-*-text token clears 4.5:1 against the fill it sits on. The prototype's raw
+ * brand teal and blue are decorative fills there and do not clear that bar as
+ * foregrounds, so the readable per-theme values are used here instead; the brand
+ * hues themselves stay in design/frameleaf/tokens.json.
+ * web/src/lib/frameleaf/tokens.spec.ts enforces both contracts.
+ */
+/*
+ * The asset viewer (`.fl-media-viewer`) is portaled outside every .frameleaf root, yet the
+ * prototype gives `.media-viewer` the same motion, material and type tokens (apple-style.css:4-7).
+ * It always takes the dark set: the viewer is black in both themes (apple-style.css:366-370).
+ */
+.fl-media-viewer,
 .frameleaf[data-theme='dark'] {
   --fl-accent: #22c55e;
   --fl-border: #303940;
@@ -8,6 +27,42 @@
   --fl-raised: #222a30;
   --fl-text: #e5e7eb;
   --fl-accent-text: #072211;
+  /* The prototype's primary hover (styles.css `.button.primary:hover`). */
+  --fl-accent-hover: color-mix(in srgb, var(--fl-accent), white 10%);
+  --fl-teal: #0ea5a0;
+  --fl-teal-text: #04201f;
+  --fl-blue: #5794f7;
+  --fl-blue-text: #061529;
+  --fl-warning: #e4bd69;
+  --fl-warning-text: #2b1f05;
+  --fl-danger: #f16966;
+  --fl-danger-text: #2a0605;
+  /* Reserved for AI-produced content: the sparkle on a solid indigo tile (tokens.json `ai`). */
+  --fl-ai: #5e5ce6;
+  --fl-ai-text: #ffffff;
+  /*
+   * Foregrounds on the frosted material. The material lets a photograph show through, so it can
+   * be as bright as white or as dark as black behind the panel tint; only these tokens and
+   * --fl-text are checked at 4.5:1 across both extremes and the solid fallback. --fl-muted and
+   * --fl-accent are not: use the on-material pair for secondary text and accent marks on material.
+   */
+  --fl-on-material-muted: #d3dae0;
+  --fl-on-material-accent: #8be9ab;
+  --fl-shadow-1: 0 2px 8px rgb(0 0 0 / 27%);
+  --fl-shadow-2: 0 14px 44px rgb(0 0 0 / 47%);
+  /*
+   * The viewer chrome stays dark in both themes so a photograph is judged against a
+   * neutral dark surround. The values are declared per theme rather than shared so a
+   * future light-viewer decision changes one block, and so the contrast test can
+   * assert the viewer pairs for each theme independently.
+   */
+  --fl-viewer-canvas: #08090b;
+  --fl-viewer-panel: #17181a;
+  --fl-viewer-raised: #25272b;
+  --fl-viewer-border: rgb(255 255 255 / 8%);
+  --fl-viewer-text: #f1f1f2;
+  --fl-viewer-muted: #979ba2;
+  --fl-viewer-focus: #a5d4ef;
   color-scheme: dark;
 }
 .frameleaf[data-theme='light'] {
@@ -19,19 +74,138 @@
   --fl-raised: #eef1f3;
   --fl-text: #18252b;
   --fl-accent-text: #ffffff;
+  /*
+   * Lightening the accent as the prototype does leaves white text at 4.42:1 in this theme,
+   * so the light hover darkens toward the text colour instead.
+   */
+  --fl-accent-hover: color-mix(in srgb, var(--fl-accent), var(--fl-text) 12%);
+  --fl-teal: #0a7673;
+  --fl-teal-text: #ffffff;
+  --fl-blue: #0b5fea;
+  --fl-blue-text: #ffffff;
+  --fl-warning: #886100;
+  --fl-warning-text: #ffffff;
+  --fl-danger: #c62828;
+  --fl-danger-text: #ffffff;
+  --fl-ai: #5e5ce6;
+  --fl-ai-text: #ffffff;
+  --fl-on-material-muted: #36434b;
+  --fl-on-material-accent: #0b4f28;
+  --fl-shadow-1: 0 2px 8px rgb(0 0 0 / 13%);
+  --fl-shadow-2: 0 14px 44px rgb(0 0 0 / 20%);
+  --fl-viewer-canvas: #08090b;
+  --fl-viewer-panel: #17181a;
+  --fl-viewer-raised: #25272b;
+  --fl-viewer-border: rgb(255 255 255 / 8%);
+  --fl-viewer-text: #f1f1f2;
+  --fl-viewer-muted: #979ba2;
+  --fl-viewer-focus: #a5d4ef;
   color-scheme: light;
 }
+.fl-media-viewer,
 .frameleaf {
-  --fl-radius: 4px;
-  --fl-panel-radius: 6px;
+  --fl-radius: 9px;
+  --fl-radius-control: 9px;
+  --fl-radius-card: 12px;
+  --fl-radius-dialog: 22px;
+  --fl-radius-pill: 999px;
+  /*
+   * Retained as an alias so components written against the first token pass, including
+   * shell work in flight on other branches, keep a defined radius rather than falling
+   * back to 0. New code uses --fl-radius-card or --fl-radius-control directly.
+   */
+  --fl-panel-radius: var(--fl-radius-control);
+  /* The sheet radius (apple-style.css:48 `--fl-radius-sheet`); --fl-radius-dialog is the same corner. */
+  --fl-radius-sheet: var(--fl-radius-dialog);
+  --fl-motion-fast: 120ms;
+  --fl-motion: 180ms;
+  --fl-motion-slow: 240ms;
+  --fl-ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+  /*
+   * September 24 motion (apple-style.css:11-40): a spring with a slight settle for sheets,
+   * menus and presses, and a snappy ease for small moves. Svelte transitions read the same
+   * preference through $lib/frameleaf/motion.ts, which turns movement into crossfades.
+   */
+  --fl-spring: linear(
+    0,
+    0.009,
+    0.035 2.1%,
+    0.141,
+    0.281 6.7%,
+    0.723 12.9%,
+    0.938 16.7%,
+    1.017,
+    1.077,
+    1.121,
+    1.149 24.3%,
+    1.159,
+    1.163,
+    1.161,
+    1.154 29.9%,
+    1.129 32.8%,
+    1.051 39.6%,
+    1.017 43.1%,
+    0.991,
+    0.977 51%,
+    0.974 53.8%,
+    0.975 57.1%,
+    0.997 69.8%,
+    1.003 76.9%,
+    1
+  );
+  --fl-snappy: cubic-bezier(0.2, 0.9, 0.1, 1);
+  --fl-duration: 380ms;
+  /*
+   * Frosted materials (apple-style.css:41-44): the panel at 72% over a blurred backdrop, with
+   * a hairline edge. Increase Contrast and Reduce Transparency swap in a solid panel below.
+   * Text on material uses --fl-text, --fl-on-material-muted or --fl-on-material-accent only.
+   */
+  --fl-material: color-mix(in srgb, var(--fl-panel) 72%, transparent);
+  --fl-material-edge: color-mix(in srgb, var(--fl-text) 12%, transparent);
+  --fl-material-blur: blur(24px) saturate(180%);
+  /*
+   * Edge-to-edge devices: chrome keeps clear of the notch and home indicator
+   * (apple-style.css:502-513). env() reads 0 where there is no inset.
+   */
+  --fl-safe-top: env(safe-area-inset-top, 0px);
+  --fl-safe-right: env(safe-area-inset-right, 0px);
+  --fl-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --fl-safe-left: env(safe-area-inset-left, 0px);
+  --fl-font-size: 14px;
+  --fl-font-small: 12px;
+  --fl-font-micro: 11px;
+  --fl-accent-soft: color-mix(in srgb, var(--fl-accent), transparent 86%);
   color: var(--fl-text);
   background: var(--fl-canvas);
-  font-family:
-    Inter,
-    -apple-system,
-    BlinkMacSystemFont,
-    'Segoe UI',
-    sans-serif;
+  font-size: var(--fl-font-size);
+  line-height: 1.45;
+  /* SF Pro on Apple devices, bundled Inter elsewhere: SF Pro cannot be licensed for web delivery. */
+  font-family: -apple-system, BlinkMacSystemFont, system-ui, Inter, 'Segoe UI', sans-serif;
+}
+/*
+ * Solid fallbacks for the frosted material (apple-style.css:51-57): under Increase Contrast or
+ * Reduce Transparency the material is the opaque panel, its edge the ordinary border, and
+ * nothing behind it is blurred.
+ */
+@media (prefers-contrast: more), (prefers-reduced-transparency: reduce) {
+  .fl-media-viewer,
+  .frameleaf {
+    --fl-material: var(--fl-panel);
+    --fl-material-edge: var(--fl-border);
+    --fl-material-blur: none;
+  }
+}
+/*
+ * The Display P3 accent (apple-style.css:70-77, tokens.json `accentP3`) on wide-gamut screens.
+ * web/src/lib/frameleaf/tokens.spec.ts checks it keeps the sRGB accent's contrast.
+ */
+@media (color-gamut: p3) {
+  .frameleaf[data-theme='dark'] {
+    --fl-accent: color(display-p3 0.2 0.82 0.38);
+  }
+  .frameleaf[data-theme='light'] {
+    --fl-accent: color(display-p3 0.1 0.5 0.26);
+  }
 }
 .frameleaf :focus-visible {
   outline: 2px solid var(--fl-accent);

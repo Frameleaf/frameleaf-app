@@ -1,7 +1,28 @@
+import type { FrameleafLicense, FrameleafLicenseClaims } from 'src/types.js';
 import { SystemMetadataKey } from 'src/enum.js';
 import { ServerService } from 'src/services/server.service.js';
 import { mockEnvData } from 'test/repositories/config.repository.mock.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
+
+/** A stored licence certificate for specs (FL-156); only the claims matter to the state. */
+const license = (claims: Partial<FrameleafLicenseClaims>, iat: number): FrameleafLicense => ({
+  certificate: 'x.y.z',
+  kind: claims.lic ? 'server' : 'plan',
+  source: 'account',
+  kid: 'kid-1',
+  claims: {
+    iss: 'https://id.cloud.test',
+    aud: 'frameleaf-server',
+    sub: 'account-1',
+    iid: 'instance-1',
+    ent: [],
+    lic_exp: null,
+    iat,
+    exp: iat + 7 * 86_400,
+    ...claims,
+  },
+  verifiedAt: new Date(iat * 1000).toISOString(),
+});
 
 describe(ServerService.name, () => {
   let sut: ServerService;
@@ -125,6 +146,85 @@ describe(ServerService.name, () => {
     });
   });
 
+  describe('app releases', () => {
+    const android = {
+      releaseUrl: 'https://releases.example.test/{version}',
+      appId: 'app.frameleaf.android',
+      signingSha256: `${'AB:'.repeat(31)}AB`,
+    };
+
+    it('reports both apps unavailable when no destination is configured', () => {
+      expect(sut.getAppReleases()).toEqual({ android: { available: false }, ios: { available: false } });
+    });
+
+    it('never links another product when no Android destination is configured', () => {
+      expect(() => sut.getApkLinks()).toThrow('No signed Android release is configured for this server');
+    });
+
+    it('offers the configured signed destinations', () => {
+      mocks.config.getEnv.mockReturnValue(
+        mockEnvData({ appReleases: { android, iosUrl: 'https://apps.apple.com/app/id000' } }),
+      );
+
+      const releases = sut.getAppReleases();
+      expect(releases).toMatchObject({
+        android: { available: true, appId: android.appId, signingCertificateSha256: android.signingSha256 },
+        ios: { available: true, url: 'https://apps.apple.com/app/id000' },
+      });
+      expect(releases.android.links?.universal).toMatch(
+        /^https:\/\/releases\.example\.test\/\d+\.\d+\.\d+\/app-release\.apk$/,
+      );
+      expect(sut.getApkLinks()).toEqual(releases.android.links);
+      expect(JSON.stringify(releases)).not.toContain('immich');
+    });
+
+    it('offers the Android store listing when one is configured (FL-135)', () => {
+      mocks.config.getEnv.mockReturnValue(
+        mockEnvData({ appReleases: { androidStoreUrl: 'https://f-droid.example/app' } }),
+      );
+
+      expect(sut.getAppReleases().android).toEqual({ available: false, storeUrl: 'https://f-droid.example/app' });
+    });
+  });
+
+  describe('getAboutInfo', () => {
+    it('is licensed while a licence is active or in grace, and not once it expired (FL-156)', async () => {
+      mocks.serverInfo.getBuildVersions.mockResolvedValue({} as never);
+      const now = Math.floor(Date.now() / 1000);
+      const active = { key: null, plan: license({ ent: ['CLOUD'], lic_exp: now + 60 }, now) };
+      const grace = { key: null, plan: license({ ent: ['CLOUD'], lic_exp: now - 60, grace_days: 7 }, now - 86_400) };
+      const expired = {
+        key: null,
+        plan: license({ ent: ['CLOUD'], lic_exp: now - 30 * 86_400, grace_days: 7 }, now - 31 * 86_400),
+      };
+
+      for (const [store, licensed] of [
+        [null, false],
+        [active, true],
+        [grace, true],
+        [expired, false],
+      ] as const) {
+        mocks.systemMetadata.get.mockImplementation((key) =>
+          Promise.resolve((key === SystemMetadataKey.FrameleafLicense ? store : null) as never),
+        );
+        await expect(sut.getAboutInfo()).resolves.toMatchObject({ licensed });
+      }
+    });
+
+    it('links the version to its Frameleaf release notes', async () => {
+      mocks.serverInfo.getBuildVersions.mockResolvedValue({} as never);
+      mocks.systemMetadata.get.mockResolvedValue(null);
+
+      const about = await sut.getAboutInfo();
+
+      expect(about.versionUrl).toBe(
+        `https://github.com/Frameleaf/frameleaf-app/releases?q=frameleaf-${about.version}&expanded=true`,
+      );
+      expect(about.version).toMatch(/^v\d+\.\d+\.\d+/);
+      expect(about.versionUrl).not.toContain('immich-app');
+    });
+  });
+
   describe('ping', () => {
     it('should respond with pong', () => {
       expect(sut.ping()).toEqual({ res: 'pong' });
@@ -135,6 +235,7 @@ describe(ServerService.name, () => {
     it('should respond the server features', async () => {
       await expect(sut.getFeatures()).resolves.toEqual({
         smartSearch: true,
+        askSearch: true,
         duplicateDetection: true,
         facialRecognition: true,
         importFaces: false,
@@ -154,17 +255,64 @@ describe(ServerService.name, () => {
         trash: true,
         email: false,
         realtimeTranscoding: false,
+        frameleafCloud: false,
+        remoteAccess: false,
+        cloudMl: false,
+        cloudBackup: false,
+        supporter: false,
       });
       expect(mocks.systemMetadata.get).toHaveBeenCalled();
+    });
+
+    it('reports cloud entitlements only while linked, and the supporter flag from the licence (FL-156)', async () => {
+      const now = Math.floor(Date.now() / 1000);
+      const store = {
+        key: license({ ent: ['SUPPORTER_SERVER'], lic_exp: null, lic: { last4: 'J58U', kind: 'server' } }, now),
+        plan: license({ ent: ['CLOUD', 'REMOTE_ACCESS', 'CLOUD_BACKUP', 'CLOUD_ML'], lic_exp: now + 86_400 }, now),
+      };
+      mocks.config.getEnv.mockReturnValue({
+        ...mocks.config.getEnv(),
+        frameleafCloud: { ...mocks.config.getEnv().frameleafCloud, url: 'https://cloud.test' },
+      });
+      const metadata = new Map<string, unknown>([[SystemMetadataKey.FrameleafLicense, store]]);
+      mocks.systemMetadata.get.mockImplementation((key) => Promise.resolve((metadata.get(key) ?? null) as never));
+
+      await expect(sut.getFeatures()).resolves.toMatchObject({
+        frameleafCloud: false,
+        remoteAccess: false,
+        cloudMl: false,
+        cloudBackup: false,
+        supporter: true,
+      });
+
+      metadata.set(SystemMetadataKey.FrameleafCloudLink, {
+        status: 'linked',
+        cloudUrl: 'https://cloud.test',
+        instanceId: 'instance-1',
+      });
+      await expect(sut.getFeatures()).resolves.toMatchObject({
+        frameleafCloud: true,
+        remoteAccess: true,
+        cloudMl: true,
+        cloudBackup: true,
+        supporter: true,
+      });
     });
   });
 
   describe('getSystemConfig', () => {
+    it('reports the server name an administrator set (FL-71 CC-4)', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({ server: { name: 'Home archive' } });
+
+      await expect(sut.getSystemConfig()).resolves.toEqual(expect.objectContaining({ serverName: 'Home archive' }));
+    });
+
     it('should respond the server configuration', async () => {
       const result = await sut.getSystemConfig();
       const { defaultImageDescriptionRawPromptTemplate, ...rest } = result;
       expect(rest).toEqual({
         loginPageMessage: '',
+        serverName: '',
         oauthButtonText: 'Login with OAuth',
         oauthAccountManagementUrl: '',
         trashDays: 30,
@@ -173,10 +321,11 @@ describe(ServerService.name, () => {
         isOnboarded: false,
         externalDomain: '',
         publicUsers: true,
-        mapDarkStyleUrl: 'https://tiles.immich.cloud/v1/style/dark.json',
-        mapLightStyleUrl: 'https://tiles.immich.cloud/v1/style/light.json',
+        mapDarkStyleUrl: 'https://tiles.frameleaf.cloud/v1/style/dark.json',
+        mapLightStyleUrl: 'https://tiles.frameleaf.cloud/v1/style/light.json',
         maintenanceMode: false,
         minFaces: 3,
+        frameleaf: { via: null, signInAvailable: false, signInRequired: false, publicUrl: null },
       });
       expect(defaultImageDescriptionRawPromptTemplate).toContain('{schema}');
       expect(defaultImageDescriptionRawPromptTemplate).toContain('{names}');
@@ -189,6 +338,45 @@ describe(ServerService.name, () => {
       mocks.user.hasAdmin.mockResolvedValue(true);
 
       await expect(sut.getSystemConfig()).resolves.toMatchObject({ isInitialized: true });
+    });
+
+    it('says how a request arrived and what remote access asks of it (FL-161)', async () => {
+      const env = mockEnvData({});
+      mocks.config.getEnv.mockReturnValue({
+        ...env,
+        frameleafCloud: { ...env.frameleafCloud, url: 'https://api.frameleaf.cloud' },
+      });
+      mocks.systemMetadata.get.mockImplementation((key) =>
+        Promise.resolve(
+          (key === SystemMetadataKey.FrameleafCloudLink
+            ? {
+                status: 'linked',
+                cloudUrl: 'https://api.frameleaf.cloud',
+                instanceId: 'instance-1',
+                oidc: { issuer: 'https://id.frameleaf.cloud', clientId: 'instance-1' },
+                services: {
+                  relayOrigin: 'https://r.k3v9.frameleaf-direct.net',
+                  publicUrl: 'https://photos.example.com/',
+                },
+              }
+            : null) as never,
+        ),
+      );
+
+      await expect(sut.getSystemConfig('relay')).resolves.toMatchObject({
+        frameleaf: {
+          via: 'relay',
+          signInAvailable: true,
+          signInRequired: true,
+          publicUrl: 'https://photos.example.com',
+        },
+      });
+      await expect(sut.getSystemConfig('lan')).resolves.toMatchObject({
+        frameleaf: { via: 'lan', signInRequired: false },
+      });
+      await expect(sut.getSystemConfig()).resolves.toMatchObject({
+        frameleaf: { via: null, signInRequired: false },
+      });
     });
 
     it('should be initialized when setup is disabled', async () => {
@@ -275,35 +463,6 @@ describe(ServerService.name, () => {
       });
 
       expect(mocks.user.getUserStats).toHaveBeenCalled();
-    });
-  });
-
-  describe('setLicense', () => {
-    it('should save license if valid', async () => {
-      mocks.systemMetadata.set.mockResolvedValue();
-
-      const license = { licenseKey: 'IMSV-license-key', activationKey: 'activation-key' };
-      await sut.setLicense(license);
-
-      expect(mocks.systemMetadata.set).toHaveBeenCalledWith(SystemMetadataKey.License, expect.any(Object));
-    });
-
-    it('should not save license if invalid', async () => {
-      mocks.user.upsertMetadata.mockResolvedValue();
-
-      const license = { licenseKey: 'license-key', activationKey: 'activation-key' };
-      const call = sut.setLicense(license);
-      await expect(call).rejects.toThrowError('Invalid license key');
-      expect(mocks.user.upsertMetadata).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('deleteLicense', () => {
-    it('should delete license', async () => {
-      mocks.user.upsertMetadata.mockResolvedValue();
-
-      await sut.deleteLicense();
-      expect(mocks.user.upsertMetadata).not.toHaveBeenCalled();
     });
   });
 });
