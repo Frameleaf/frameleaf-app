@@ -1,5 +1,5 @@
-import type { Migration, MigrationProvider } from 'kysely/migration';
 import { resolve } from 'node:path';
+import type { Migration, MigrationProvider } from 'kysely/migration';
 import {
   createCertifiedLedgerMigrationProvider,
   createLegacyMigrationProvider,

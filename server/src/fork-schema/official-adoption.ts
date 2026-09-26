@@ -81,7 +81,7 @@ export const planOfficialAdoption = (ledger: readonly string[], bundled: readonl
   }
   const pendingSet = new Set(pending);
   const missing = [
-    ...[...GENERIC_LEGACY_FORK_MIGRATIONS].filter((name) => !pendingSet.has(name)),
+    ...GENERIC_LEGACY_FORK_MIGRATIONS.difference(pendingSet),
     ...RESIDUE_ORDER.filter((name) => !applied.has(name) && !pendingSet.has(name)),
   ];
   if (missing.length > 0) {
