@@ -192,6 +192,15 @@ const LIST_COLUMNS = [
  * for the same job resolve in Postgres rather than in application code, and a stale token updates
  * zero rows and is reported as such rather than silently succeeding.
  */
+/** FL-162: one confirmed Frameleaf Cloud job, as a person's monthly spend counts it. */
+export type CloudMlJobSpendRow = {
+  status: MediaOperationStatus;
+  remoteJobId: string | null;
+  result: unknown;
+  holdUsd: number | null;
+  settledUsd: number | null;
+};
+
 @Injectable()
 export class MediaOperationRepository {
   private listeners = new Set<(changes: MediaOperationChange[]) => void>();
@@ -1481,6 +1490,30 @@ export class MediaOperationRepository {
         .limit(limit)
         .execute() as unknown as Promise<MediaOperation[]>
     );
+  }
+
+  /**
+   * FL-162: the Frameleaf Cloud jobs one person confirmed since `since`, with what each was settled at
+   * (its accounting row), its hold, and enough of its state to count a job still running.
+   */
+  async listCloudMlJobSpend(userId: string, since: Date): Promise<CloudMlJobSpendRow[]> {
+    const rows = await this.db
+      .selectFrom('media_operation')
+      .leftJoin('ml_workload_accounting', (join) =>
+        join.on(sql<boolean>`"ml_workload_accounting"."jobId" = "media_operation"."id"::text`),
+      )
+      .select([
+        'media_operation.status',
+        'media_operation.remoteJobId',
+        'media_operation.result',
+        sql<number | null>`("media_operation"."snapshot" -> 'approved' ->> 'holdUsd')::double precision`.as('holdUsd'),
+        'ml_workload_accounting.costUsd as settledUsd',
+      ])
+      .where('media_operation.kind', '=', MediaOperationKind.CloudMlJob)
+      .where(sql<boolean>`"media_operation"."snapshot" -> 'consent' ->> 'acceptedBy' = ${userId}`)
+      .where('media_operation.createdAt', '>=', since)
+      .execute();
+    return rows as unknown as CloudMlJobSpendRow[];
   }
 
   /** FL-162: the snapshots of unfinished cloud ML jobs, for the prepared inputs they still need. */

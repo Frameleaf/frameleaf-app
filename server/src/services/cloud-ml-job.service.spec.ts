@@ -1,4 +1,4 @@
-import { ConflictException, HttpException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, HttpException } from '@nestjs/common';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { MediaOperation } from 'src/repositories/media-operation.repository.js';
@@ -25,6 +25,8 @@ import {
   CloudMlJobResult,
   cloudMlJobActivity,
   cloudMlJobCanPause,
+  cloudMlJobSpentUsd,
+  emptyCloudMlJobResult,
 } from 'src/utils/cloud-ml-job.js';
 import {
   CloudCatalogEntry,
@@ -214,7 +216,12 @@ describe(CloudMlJobService.name, () => {
   let rows: Map<string, AssetRestoration>;
   let created: MediaOperation | undefined;
 
-  const configure = ({ enabled = true, restoration = 'both' }: { enabled?: boolean; restoration?: string } = {}) => {
+  type Spender = { userId: string; monthlyCapUsd: number | null };
+  const configure = ({
+    enabled = true,
+    restoration = 'both',
+    spenders = [{ userId: 'owner-1', monthlyCapUsd: null }],
+  }: { enabled?: boolean; restoration?: string; spenders?: Spender[] } = {}) => {
     mocks.systemMetadata.get.mockImplementation((key) =>
       Promise.resolve(
         (key === SystemMetadataKey.SystemConfig
@@ -224,6 +231,7 @@ describe(CloudMlJobService.name, () => {
                   ...defaults.frameleafCloud.cloudMl,
                   enabled,
                   routing: { ...defaults.frameleafCloud.cloudMl.routing, restoration, interpolation: 'both' },
+                  spenders,
                 },
               },
             }
@@ -383,6 +391,7 @@ describe(CloudMlJobService.name, () => {
     mocks.mediaOperation.getLatestBySubject.mockResolvedValue([]);
     mocks.mediaOperation.listUnacknowledgedCloudMlJobs.mockResolvedValue([]);
     mocks.mediaOperation.listUnfinishedCloudMlJobSnapshots.mockResolvedValue([]);
+    mocks.mediaOperation.listCloudMlJobSpend.mockResolvedValue([]);
     mocks.mediaOperation.listUnreconciledCancelledCloudMlJobs.mockResolvedValue([]);
     mocks.mediaOperation.getForWorker.mockImplementation(() => Promise.resolve(created));
     mocks.mediaOperation.getForOwner.mockImplementation(() => Promise.resolve(created));
@@ -675,6 +684,100 @@ describe(CloudMlJobService.name, () => {
       });
       release();
       await prepared();
+    });
+  });
+
+  describe('who may spend the AI Wallet', () => {
+    const admin = { user: { id: 'admin-1', isAdmin: true }, session: undefined } as unknown as AuthDto;
+    const confirm = (auth: AuthDto, estimateId: string) =>
+      sut.create(auth, { estimateId, consentVersion: '2026-09-26.1', acknowledgeDataLeaves: true }, now);
+    /** A settled job, one still running (its hold counts), and one cancelled before anything was sent. */
+    const month = [
+      { status: MediaOperationStatus.Completed, remoteJobId: 'job-a', result: {}, holdUsd: 2, settledUsd: 1.5 },
+      { status: MediaOperationStatus.Rendering, remoteJobId: 'job-b', result: {}, holdUsd: 3, settledUsd: null },
+      { status: MediaOperationStatus.Cancelled, remoteJobId: null, result: {}, holdUsd: 4, settledUsd: null },
+    ];
+
+    it('lets an administrator confirm without being on the list', async () => {
+      configure({ spenders: [] });
+
+      const estimate = await sut.estimate(owner, preview({ upscale: 2 }), now);
+      expect(estimate.permission).toEqual({
+        canConfirm: false,
+        reason: 'not-allowed',
+        monthlyCapUsd: null,
+        spentThisMonthUsd: null,
+      });
+      await expect(sut.spendPermission(admin, 2, now)).resolves.toMatchObject({ canConfirm: true, reason: null });
+      expect(mocks.mediaOperation.listCloudMlJobSpend).not.toHaveBeenCalled();
+    });
+
+    it('lets an allowed person confirm while the job fits their monthly limit, counting running holds', async () => {
+      configure({ spenders: [{ userId: 'owner-1', monthlyCapUsd: 7 }] });
+      mocks.mediaOperation.listCloudMlJobSpend.mockResolvedValue(month);
+
+      const estimate = await sut.estimate(owner, preview({ upscale: 2 }), now);
+      // 1.50 settled + 3.00 held by the running job; the cancelled one sent nothing; + 2.00 for this job
+      expect(estimate.permission).toEqual({
+        canConfirm: true,
+        reason: null,
+        monthlyCapUsd: 7,
+        spentThisMonthUsd: 4.5,
+      });
+      await expect(confirm(owner, estimate.estimateId)).resolves.toMatchObject({ operationId: OPERATION_ID });
+      expect(mocks.mediaOperation.listCloudMlJobSpend).toHaveBeenCalledWith(
+        'owner-1',
+        new Date('2026-09-01T00:00:00.000Z'),
+      );
+    });
+
+    it('refuses an allowed person past their monthly limit, at confirmation as well as in the estimate', async () => {
+      configure({ spenders: [{ userId: 'owner-1', monthlyCapUsd: 6 }] });
+      mocks.mediaOperation.listCloudMlJobSpend.mockResolvedValue(month);
+
+      const estimate = await sut.estimate(owner, preview({ upscale: 2 }), now);
+      expect(estimate.permission).toMatchObject({ canConfirm: false, reason: 'monthly-cap', spentThisMonthUsd: 4.5 });
+      await expect(confirm(owner, estimate.estimateId)).rejects.toMatchObject({
+        status: 403,
+        response: expect.objectContaining({ code: 'monthly-cap' }),
+      });
+      expect(mocks.mediaOperation.createWithin).not.toHaveBeenCalled();
+    });
+
+    it('lets anyone else see the estimate but never confirm it', async () => {
+      configure({ spenders: [{ userId: 'someone-else', monthlyCapUsd: null }] });
+
+      const estimate = await sut.estimate(owner, preview({ upscale: 2 }), now);
+      expect(estimate.p90Usd).toBe(1.6);
+      expect(estimate.permission).toMatchObject({ canConfirm: false, reason: 'not-allowed' });
+      await expect(confirm(owner, estimate.estimateId)).rejects.toBeInstanceOf(ForbiddenException);
+      expect(mocks.mediaOperation.createWithin).not.toHaveBeenCalled();
+    });
+
+    it('counts settled charges, the holds of unsettled jobs, and nothing for a job never sent', () => {
+      expect(cloudMlJobSpentUsd(month)).toBe(4.5);
+      const settledLater = {
+        status: MediaOperationStatus.Completed,
+        remoteJobId: 'job-c',
+        result: {
+          ...emptyCloudMlJobResult(),
+          cost: {
+            outcome: 'charged',
+            totalUsd: 0.25,
+            heldUsd: 2,
+            releasedUsd: 1.75,
+            note: '',
+            settledAt: '2026-09-26T05:00:00.000Z',
+            lines: [],
+          },
+        },
+        holdUsd: 2,
+        settledUsd: null,
+      };
+      // a finished job whose cost was read but whose accounting row is not settled yet counts that cost
+      expect(cloudMlJobSpentUsd([settledLater])).toBe(0.25);
+      // and one whose cost is not known yet still counts what it holds
+      expect(cloudMlJobSpentUsd([{ ...settledLater, result: {} }])).toBe(2);
     });
   });
 
