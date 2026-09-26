@@ -241,14 +241,18 @@ export class StorageTemplateService extends BaseService {
           !(await this.physicalFileRepository.isOriginalCanonical(id, physicalOriginalFileId));
 
         if (!isSharedNonCanonical) {
-          await this.storageCore.moveFile({
+          const moved = await this.storageCore.moveFile({
             entityId: id,
             pathType: AssetPathType.Original,
             oldPath,
             newPath,
             assetInfo: { sizeInBytes: fileSizeInByte, checksum },
           });
-          await this.physicalFileRepository.updateOriginalPhysicalPathForAsset(id, newPath);
+          // FL-179: the move already pointed the shared physical file at the new path; this repairs one
+          // left behind by an earlier move. It never runs when the file is not at the new path.
+          if (moved) {
+            await this.physicalFileRepository.updateOriginalPhysicalPathForAsset(id, newPath);
+          }
         }
 
         const sidecarPath = getAssetFile(asset.files, AssetFileType.Sidecar, { isEdited: false })?.path;
