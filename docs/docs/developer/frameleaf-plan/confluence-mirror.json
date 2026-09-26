@@ -1035,19 +1035,19 @@
       "readbackAt": "2026-09-25T15:36:30.000Z"
     },
     {
-      "bytes": 80264,
+      "bytes": 86303,
       "category": "plan",
       "id": "63864877",
       "source": "docs/docs/developer/frameleaf-plan/15-frameleaf-cloud-integration.md",
-      "sourceSha256": "783914cec9e83854166e3b0bb4c7474280aa13103dd1a2cd39e2fb4745d3a26b",
+      "sourceSha256": "6b63ce66d641d7a23f55bb40c3d204320ef99d6f813f4880e800a973a68ed754",
       "title": "Frameleaf Cloud: self-hosted integration (workstream cloud)",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/63864877",
-      "version": 8,
+      "version": 9,
       "sourceBranch": "master/frameleaf-implementation",
-      "sourceCommit": "08c63ed85b2ab7cf493a402eaf9f1b9d06c3072b",
-      "sourceState": "committed-fl-177-as-built-merged-2026-09-26",
-      "readbackResult": "Markdown read-back of version 8 begins with the header carrying SHA-256 783914ce, 80264 bytes, commit 08c63ed85b on the branch pushed as master/frameleaf-implementation (not merged to the default branch), the FL-177 commits aa59f6ffc3 and 8b07a02c5e merged in 9b9824f5f8, the source-at-commit backlink, FL-177, FL-175, FL-153 and the implementation-plan and agent-guide links, and ends with the source closing rule; body matches the posted source including the As built in the app (FL-177) entry, the as-built Link contract and the removed sign-in client secret, except one normalized space at a nested-backtick boundary.",
-      "readbackAt": "2026-09-26T05:19:10.000Z"
+      "sourceCommit": "625870f0e00c3e1143db99336a00b94f0522c7c4",
+      "sourceState": "committed-fl-178-dpop-merged-2026-09-26",
+      "readbackResult": "Markdown read-back of version 9 begins with the header carrying SHA-256 6b63ce66, 86303 bytes, commit 625870f0e0 on the branch pushed as master/frameleaf-implementation (not merged to the default branch), the FL-178 commits ce358f3040 and a701c01c3f merged in 625870f0e0, the source-at-commit backlink, FL-178, FL-177, FL-175, FL-153 and the implementation-plan and agent-guide links, and ends with the source closing rule; body matches the posted source including the DPoP (FC-66, RFC 9449; FL-178) entry, DPoP-bound tokens and the key-recovery check-in outcomes, except one normalized space at a nested-backtick boundary and the plain text scheme://host[:port]/path in the DPoP entry, which Confluence turned into an empty link with the same visible text.",
+      "readbackAt": "2026-09-26T05:35:40.000Z"
     }
   ],
   "spaceId": "61374475",
