@@ -377,10 +377,11 @@ export const catalogSchema = z
     }
     const defaultsPerGroup = new Map<string, number>();
     for (const model of accepted) {
-      if (model.default) {
-        const key = catalogGroupKey(model.workload, model.mode);
-        defaultsPerGroup.set(key, (defaultsPerGroup.get(key) ?? 0) + 1);
+      if (!model.default) {
+        continue;
       }
+      const key = catalogGroupKey(model.workload, model.mode);
+      defaultsPerGroup.set(key, (defaultsPerGroup.get(key) ?? 0) + 1);
     }
     const conflicting = new Set([...defaultsPerGroup].filter(([, count]) => count > 1).map(([key]) => key));
     refused += conflicting.size;

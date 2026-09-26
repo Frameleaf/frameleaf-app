@@ -191,7 +191,7 @@ const startFakeCloud = async (): Promise<FakeCloud> => {
         case 'POST /ml-eu/v2/consent': {
           const posted = JSON.parse(body);
           return send(200, {
-            ...cloudContractFixture('ml/consent-recorded.json'),
+            ...cloudContractFixture<Record<string, unknown>>('ml/consent-recorded.json'),
             recordedVersion: posted.version,
             features: posted.features,
           });
@@ -486,7 +486,7 @@ describe('Frameleaf Cloud client against a fake cloud (FL-159)', () => {
       expect(JSON.parse(gatewayRequests('POST', '/v2/estimates')[0].body)).toEqual(estimateRequest());
 
       const admitted = await ml.createJob(gateway, jobRequest(), 'batch-0192f1b0-1');
-      expect(admitted).toMatchObject({ jobId, status: 'admitted', hold: { amountUsd: 0.203_251 } });
+      expect(admitted).toMatchObject({ jobId, status: 'admitted', hold: { amountUsd: 0.203251 } });
       const [posted] = gatewayRequests('POST', '/v2/jobs');
       expect(posted.idempotencyKey).toBe('batch-0192f1b0-1');
       expect(JSON.parse(posted.body)).toEqual(jobRequest());
@@ -560,7 +560,13 @@ describe('Frameleaf Cloud client against a fake cloud (FL-159)', () => {
       const { gateway, ml } = await ready();
       cloud.respond = ({ path }) =>
         path === '/ml-eu/v2/jobs'
-          ? { status: 201, body: { ...cloudContractFixture('ml/job-admitted.json'), modelRev: 'mr_0WNPDD697MT0' } }
+          ? {
+              status: 201,
+              body: {
+                ...cloudContractFixture<Record<string, unknown>>('ml/job-admitted.json'),
+                modelRev: 'mr_0WNPDD697MT0',
+              },
+            }
           : undefined;
       await expect(ml.createJob(gateway, jobRequest(), 'batch-key-0004')).rejects.toMatchObject({
         refusal: MlAdmissionRefusal.ModelMismatch,
@@ -581,10 +587,17 @@ describe('Frameleaf Cloud client against a fake cloud (FL-159)', () => {
           }
           case `/ml-eu/v2/jobs/${jobId}`: {
             const run = cloudContractFixture('ml/rejected/job-run-worker-details.json');
-            return { status: 200, body: { ...cloudContractFixture('ml/job-admitted.json'), status: 'running', run } };
+            return {
+              status: 200,
+              body: {
+                ...cloudContractFixture<Record<string, unknown>>('ml/job-admitted.json'),
+                status: 'running',
+                run,
+              },
+            };
           }
           default: {
-            return undefined;
+            return;
           }
         }
       };
