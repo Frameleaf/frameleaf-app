@@ -376,6 +376,16 @@ describe(EdgeStateService.name, () => {
       expect(direct.listening).toBe(false);
     });
 
+    it('keeps serving when a retired connection took the lock and it is taken straight back', async () => {
+      issueWith(wildcard);
+      await sut.tick(now);
+      lockHeld = false;
+      mocks.database.holdLock.mockResolvedValue({ verify: () => Promise.resolve(true), release: vi.fn() } as never);
+      await sut.tick(now + 10_000);
+      expect(direct.stop).not.toHaveBeenCalled();
+      expect(direct.listening).toBe(true);
+    });
+
     it('keeps the certificates when only the entitlement lapsed', async () => {
       issueWith(wildcard);
       await sut.tick(now);

@@ -229,6 +229,29 @@ describe(FrameleafRemoteAccessService.name, () => {
       expect(remoteSettings().customHostname?.host ?? '').toBe('');
     });
 
+    it('refuses an answer for another hostname', async () => {
+      mocks.frameleafCloud.requestJson.mockImplementation((schema: any) =>
+        Promise.resolve(schema.parse(cloudContractFixture('remote/hostnames-list.json').hostnames[1])),
+      );
+      await expect(sut.setCustomHostname(authStub.admin, { hostname: 'photos.example.com' })).rejects.toThrow(
+        'Frameleaf Cloud answered for another hostname.',
+      );
+      expect(remoteSettings().customHostname?.host ?? '').toBe('');
+    });
+
+    it('removes the hostname here even when Frameleaf Cloud cannot be told', async () => {
+      metadata.set(SystemMetadataKey.SystemConfig, {
+        frameleafCloud: {
+          remoteAccess: { customHostname: { host: 'family.example.org', status: 'verified', checkedAt: null } },
+        },
+      });
+      mocks.frameleafCloud.requestJson.mockRejectedValue(
+        new FrameleafCloudError(MlAdmissionRefusal.CloudUnavailable, 503, 'maintenance'),
+      );
+      await expect(sut.removeCustomHostname(authStub.admin)).resolves.toMatchObject({ customHostname: null });
+      expect(remoteSettings().customHostname?.host ?? '').toBe('');
+    });
+
     it('says Frameleaf Cloud is unavailable in plain words', async () => {
       mocks.frameleafCloud.requestJson.mockRejectedValue(
         new FrameleafCloudError(MlAdmissionRefusal.CloudUnavailable, 503, 'maintenance'),
