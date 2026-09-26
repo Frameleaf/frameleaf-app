@@ -239,7 +239,7 @@
     "map_enable_description": "Abilita funzionalità della mappa",
     "map_gps_settings": "Impostazioni mappa e GPS",
     "map_gps_settings_description": "Gestisci impostazioni mappa e GPS (geocodifica inversa)",
-    "map_implications": "La funzionalità mappa si basa su un servizio tile esterno (tiles.immich.cloud)",
+    "map_implications": "La funzionalità mappa si basa su un servizio tile esterno (tiles.frameleaf.cloud)",
     "map_light_style": "Tema chiaro",
     "map_manage_reverse_geocoding_settings": "Gestisci impostazioni <link>Geocodifica inversa</link>",
     "map_reverse_geocoding": "Geocodifica inversa",

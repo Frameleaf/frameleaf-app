@@ -239,7 +239,7 @@
     "map_enable_description": "Térkép funkciók engedélyezése",
     "map_gps_settings": "Térkép és GPS beállítások",
     "map_gps_settings_description": "A térkép és GPS (fordított geokódolás) beállításainak kezelése",
-    "map_implications": "A térkép szolgáltatás egy külső csempeszolgáltatót használ (tiles.immich.cloud)",
+    "map_implications": "A térkép szolgáltatás egy külső csempeszolgáltatót használ (tiles.frameleaf.cloud)",
     "map_light_style": "Világos stílus",
     "map_manage_reverse_geocoding_settings": "A <link>fordított geokódolás</link> beállításainak kezelése",
     "map_reverse_geocoding": "Fordított geokódolás",

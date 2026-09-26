@@ -239,7 +239,7 @@
     "map_enable_description": "Włącz funkcję mapy",
     "map_gps_settings": "Mapa i ustawienia lokalizacji",
     "map_gps_settings_description": "Zarządzaj mapą oraz ustawieniami odwróconego geokodowania",
-    "map_implications": "Funkcja mapy opiera się na zewnętrznej usłudze kafelków (tiles.immich.cloud)",
+    "map_implications": "Funkcja mapy opiera się na zewnętrznej usłudze kafelków (tiles.frameleaf.cloud)",
     "map_light_style": "Styl jasny",
     "map_manage_reverse_geocoding_settings": "Zarządzaj Ustawieniem <link>Odwrotne Geokodowanie</link>",
     "map_reverse_geocoding": "Odwrotne Geokodowanie",

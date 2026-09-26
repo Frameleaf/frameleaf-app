@@ -238,7 +238,7 @@
     "map_enable_description": "Luba kaardi funktsioonid",
     "map_gps_settings": "Kaardi ja GPS-i seaded",
     "map_gps_settings_description": "Halda kaardi ja GPS-i (pöördgeokodeerimise) seadeid",
-    "map_implications": "Kaardifunktsioon kasutab välist kaarditeenust (tiles.immich.cloud)",
+    "map_implications": "Kaardifunktsioon kasutab välist kaarditeenust (tiles.frameleaf.cloud)",
     "map_light_style": "Hele stiil",
     "map_manage_reverse_geocoding_settings": "Halda <link>pöördgeokodeerimise</link> seadeid",
     "map_reverse_geocoding": "Pöördgeokodeerimine",

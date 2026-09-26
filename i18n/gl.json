@@ -239,7 +239,7 @@
     "map_enable_description": "Activar funcións do mapa",
     "map_gps_settings": "Configuración do Mapa e GPS",
     "map_gps_settings_description": "Xestionar a configuración do Mapa e GPS (Xeocodificación Inversa)",
-    "map_implications": "A función do mapa depende dun servizo de teselas externo (tiles.immich.cloud)",
+    "map_implications": "A función do mapa depende dun servizo de teselas externo (tiles.frameleaf.cloud)",
     "map_light_style": "Estilo claro",
     "map_manage_reverse_geocoding_settings": "Xestionar configuración de <link>Xeocodificación Inversa</link>",
     "map_reverse_geocoding": "Xeocodificación Inversa",
