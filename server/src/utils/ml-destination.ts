@@ -421,7 +421,14 @@ const evaluateCloudAdmission = (
     );
   }
   // FL-183 (FC-34): with no routed model and no default marked for this region and licence, the
-  // administrator picks one; no other model is ever chosen in its place
+  // administrator picks one; no other model is ever chosen in its place. Studio AI never takes a
+  // catalogue default (FL-186), so it always asks for its own choice.
+  if (!model && workload === MlWorkload.StudioAi) {
+    return refuse(
+      MlAdmissionRefusal.ModelMismatch,
+      `${destination.name}: choose a Frameleaf Cloud model for Studio AI in Where each job runs`,
+    );
+  }
   if (!model) {
     return refuse(
       MlAdmissionRefusal.ModelMismatch,

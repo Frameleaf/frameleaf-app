@@ -8,23 +8,23 @@
    * - the AI Wallet (CloudMlWalletCard): balance, held, available, spent today against the daily cap,
    *   add credit and automatic top-up;
    * - how cloud jobs are billed (GPU time per second by GPU class plus a start fee per worker) with the
-   *   GPU rate list, the model slider per kind of work, and a job estimate with its admission;
+   *   GPU rate list, the Frameleaf Cloud model per kind of work (FL-186: from the cloud's catalogue,
+   *   saved on the workload's route), and a job estimate with its admission;
    * - automatic descriptions of new photos with a daily budget;
    * - recent cloud jobs with their GPU time and settled cost.
    *
-   * Every figure comes from the server; amounts are USD for everyone. The enable toggle, the models
-   * and automatic descriptions are settings, saved with the settings bar.
+   * Every figure comes from the server; amounts are USD for everyone. The enable toggle and automatic
+   * descriptions are settings, saved with the settings bar; a model choice is saved at once.
    */
   import './frameleaf-cloud.css';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import CloudMlConsentDialog from '$lib/components/frameleaf/cloud/CloudMlConsentDialog.svelte';
   import CloudMlWalletCard from '$lib/components/frameleaf/cloud/CloudMlWalletCard.svelte';
-  import ModelSlider from '$lib/components/frameleaf/cloud/ModelSlider.svelte';
+  import CloudRouteModels from '$lib/components/frameleaf/cloud/CloudRouteModels.svelte';
   import SettingActions from '$lib/components/frameleaf/settings/SettingActions.svelte';
   import SettingToggle from '$lib/components/frameleaf/settings/SettingToggle.svelte';
   import WorkloadRoutingTable from '$lib/components/frameleaf/cloud/WorkloadRoutingTable.svelte';
   import {
-    benchmarkFor,
     cloudAdmission,
     cloudConsentNeeded,
     estimateCloudJob,
@@ -33,8 +33,6 @@
     formatRatePerMinute,
     formatUsd,
     ROUTED_WORKLOADS,
-    workerFromHardware,
-    workerGpu,
     workloadNameKey,
     workloadRoute,
   } from '$lib/frameleaf/cloud-ml';
@@ -44,11 +42,11 @@
     gpuClasses,
     gpuClassLabelKey,
     positionById,
-    resolvePosition,
     startFeeRange,
     workloadUnitKey,
     type CostEstimate,
   } from '$lib/frameleaf/gpu-model-catalog';
+  import { loadCloudModelData, type CloudModelData } from '$lib/frameleaf/cloud-models';
   import { mlWorkloadLabelKey } from '$lib/frameleaf/ml-destinations';
   import { getSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
@@ -59,11 +57,9 @@
     CloudMlConnection,
     getCloudMlSettlements,
     getCloudMlStatus,
-    getHardwareCheck,
     reconcileCloudMlUsage,
     type CloudMlSettlementDto,
     type CloudMlStatusResponseDto,
-    type HardwareCheckResponseDto,
   } from '@immich/sdk';
   import { Icon } from '@immich/ui';
   import {
@@ -80,7 +76,7 @@
   import { locale, t, type Translations } from 'svelte-i18n';
 
   let status = $state<CloudMlStatusResponseDto | null>(null);
-  let hardware = $state<HardwareCheckResponseDto | null>(null);
+  let models = $state<CloudModelData>({ catalog: null, catalogFailed: false, routes: [] });
   let settlements = $state<CloudMlSettlementDto[]>([]);
   let loadError = $state(false);
   let notice = $state('');
@@ -106,7 +102,7 @@
       loadError = true;
       handleError(error, $t('admin.frameleaf_cloud_ml_error_load'));
     }
-    hardware = await getHardwareCheck().catch(() => null);
+    models = await loadCloudModelData(status);
   };
 
   onMount(() => {
@@ -155,8 +151,6 @@
     }
   };
 
-  const worker = $derived(workerFromHardware(hardware));
-  const benchmark = $derived(benchmarkFor(hardware));
   const fees = startFeeRange();
 
   // Estimate a job: any cloud model, any quantity.
@@ -333,24 +327,23 @@
     </div>
     {#if cloudMl}
       {#each ROUTED_WORKLOADS as workload (workload)}
-        {@const route = workloadRoute(cloudMl.routing, workload)}
-        {@const gpu = workerGpu(worker, workload)}
-        {@const resolved = resolvePosition(workload, cloudMl.models[workload], { gpu, route, benchmark })}
         <div class="fc-model-row">
-          <ModelSlider
-            {workload}
-            value={resolved?.item.id}
-            {gpu}
-            {route}
-            {benchmark}
-            disabled={configDisabled}
-            label={$t(workloadNameKey(workload))}
-            onChange={(id) => (cloudMl.models[workload] = id)}
-          />
-          {#if resolved?.fallback}
-            <p class="fc-routing-summary is-warning">
-              {$t('admin.frameleaf_routing_model_fallback', { values: { model: resolved.item.name } })}
+          {#if workloadRoute(cloudMl.routing, workload) === 'local'}
+            <p class="fc-muted">
+              <strong>{$t(workloadNameKey(workload))}</strong> · {$t('admin.frameleaf_routing_job_local_only')}
             </p>
+          {:else}
+            <CloudRouteModels
+              row={workload}
+              catalog={models.catalog}
+              catalogFailed={models.catalogFailed}
+              routes={models.routes}
+              cloudDestinationId={status?.destination?.id ?? null}
+              onSaved={(routes, message) => {
+                models = { ...models, routes };
+                notice = message;
+              }}
+            />
           {/if}
         </div>
       {/each}

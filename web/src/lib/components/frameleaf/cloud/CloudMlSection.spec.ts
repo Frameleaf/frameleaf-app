@@ -38,13 +38,6 @@ const cloudConfig = (enabled = false) =>
           interpolation: 'local',
         },
         startWith: 'local',
-        models: {
-          descriptions: 'qwen3.5-9b@1',
-          upscale: '',
-          restoration: '',
-          studio: '',
-          interpolation: '',
-        },
         autoDescribe: { enabled: false, dailyBudgetUsd: 2 },
         faces: { enabled: false },
       },
@@ -279,16 +272,46 @@ describe('CloudMlSection (FL-159, prototype Processing)', () => {
     expect(await screen.findByText(/Would be refused: Add AI credit/)).toBeInTheDocument();
   });
 
-  it('chooses the model for each kind of work in the settings draft', async () => {
+  it("chooses each workload's Frameleaf Cloud model from the catalogue and saves it on the route (FL-186)", async () => {
     const store = useDraft(true);
-    sdkMock.getCloudMlStatus.mockResolvedValue(status({ enabled: true, consent: consent('2026-10-01') }));
+    sdkMock.getCloudMlStatus.mockResolvedValue(
+      status({ enabled: true, consent: consent('2026-10-01'), destination: { id: 'cloud-1' } as never }),
+    );
+    sdkMock.reconcileCloudMlUsage.mockResolvedValue({ settled: 0 });
+    sdkMock.getMlWorkloadRoutes.mockResolvedValue({
+      routes: [{ workload: MlWorkload.Enrichment, destinationId: 'cloud-1', modelId: null }],
+    });
+    const entry = {
+      workload: MlWorkload.Enrichment,
+      description: 'Qwen3.5-9B, L40S-class',
+      fingerprint: 'mr_68JDMAM8444M',
+      pricingUnit: 'second',
+      priceUsd: 0.002,
+    };
+    sdkMock.getCloudMlCatalog.mockResolvedValue({
+      models: [
+        { ...entry, id: 'ms_K6WT70CS', name: 'Descriptions · Standard', rank: 2, isDefault: true },
+        { ...entry, id: 'ms_M7QG26PT', name: 'Descriptions · Best', rank: 5, isDefault: false },
+      ],
+    });
+    sdkMock.setMlWorkloadRoute.mockResolvedValue({
+      routes: [{ workload: MlWorkload.Enrichment, destinationId: 'cloud-1', modelId: 'ms_M7QG26PT' }],
+    });
     render(CloudMlSection);
 
-    const slider = await screen.findByRole('group', { name: 'Descriptions & tags' });
-    const radios = within(slider).getAllByRole('radio');
-    const heaviest = radios.findLast((radio) => !(radio as HTMLInputElement).disabled) as HTMLInputElement;
-    await fireEvent.click(heaviest);
-    expect(store.draft.frameleafCloud!.cloudMl.models.descriptions).toBe(heaviest.value);
+    const picker = await screen.findByRole('group', { name: 'Frameleaf Cloud model for Descriptions & tags' });
+    expect(within(picker).getByRole('radio', { name: /Descriptions · Standard/ })).toBeChecked();
+    // work set to Local only says so instead of offering a model
+    expect(screen.getAllByText(/Set to this server only for this kind of work\./).length).toBeGreaterThan(0);
+
+    await fireEvent.click(within(picker).getByRole('radio', { name: /Descriptions · Best/ }));
+    expect(sdkMock.setMlWorkloadRoute).toHaveBeenCalledWith({
+      workload: MlWorkload.Enrichment,
+      mlWorkloadRouteUpdateDto: { destinationId: 'cloud-1', modelId: 'ms_M7QG26PT' },
+    });
+    await vi.waitFor(() => expect(within(picker).getByRole('radio', { name: /Descriptions · Best/ })).toBeChecked());
+    // a model choice is not a setting: nothing waits for the settings bar
+    expect(store.draft.frameleafCloud!.cloudMl).not.toHaveProperty('models');
   });
 
   it('lists recent cloud jobs with GPU time, workers, estimate and settled cost', async () => {

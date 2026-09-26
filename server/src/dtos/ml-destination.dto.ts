@@ -192,7 +192,9 @@ const MlWorkloadRouteUpdateSchema = z
       .max(200)
       .nullable()
       .optional()
-      .describe('Frameleaf Cloud only: the catalogue model this workload uses'),
+      .describe(
+        'Frameleaf Cloud only: the catalogue model SKU this workload uses; omitted keeps the routed model, null uses the catalogue default',
+      ),
   })
   .meta({ id: 'MlWorkloadRouteUpdateDto' });
 
