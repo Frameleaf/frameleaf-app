@@ -717,13 +717,13 @@ describe(CloudMlJobService.name, () => {
       mocks.mediaOperation.listCloudMlJobSpend.mockResolvedValue(month);
 
       const estimate = await sut.estimate(owner, preview({ upscale: 2 }), now);
-      // 1.50 settled + 3.00 held by the running job; the cancelled one sent nothing; + 2.20 for this job
-      // (its 2.00 hold, with room for a reseal up to 10 % higher)
+      // 1.50 settled + 3.30 for the job not sent yet (its 3.00 hold, with room for a reseal 10 % higher);
+      // the cancelled one sent nothing; + 2.20 for this job, the same way: 7.00 in all
       expect(estimate.permission).toEqual({
         canConfirm: true,
         reason: null,
         monthlyCapUsd: 7,
-        spentThisMonthUsd: 4.5,
+        spentThisMonthUsd: 4.8,
       });
       await expect(confirm(owner, estimate.estimateId)).resolves.toMatchObject({ operationId: OPERATION_ID });
       expect(mocks.mediaOperation.listCloudMlJobSpend).toHaveBeenCalledWith(
@@ -737,7 +737,7 @@ describe(CloudMlJobService.name, () => {
       mocks.mediaOperation.listCloudMlJobSpend.mockResolvedValue(month);
 
       const estimate = await sut.estimate(owner, preview({ upscale: 2 }), now);
-      expect(estimate.permission).toMatchObject({ canConfirm: false, reason: 'monthly-cap', spentThisMonthUsd: 4.5 });
+      expect(estimate.permission).toMatchObject({ canConfirm: false, reason: 'monthly-cap', spentThisMonthUsd: 4.8 });
       await expect(confirm(owner, estimate.estimateId)).rejects.toMatchObject({
         status: 403,
         response: expect.objectContaining({ code: 'monthly-cap' }),
@@ -756,7 +756,7 @@ describe(CloudMlJobService.name, () => {
     });
 
     it('counts settled charges, the holds of unsettled jobs, and nothing for a job never sent', () => {
-      expect(cloudMlJobSpentUsd(month)).toBe(4.5);
+      expect(cloudMlJobSpentUsd(month)).toBe(4.8);
       const settledLater = {
         status: MediaOperationStatus.Completed,
         remoteJobId: 'job-c',
@@ -777,8 +777,26 @@ describe(CloudMlJobService.name, () => {
       };
       // a finished job whose cost was read but whose accounting row is not settled yet counts that cost
       expect(cloudMlJobSpentUsd([settledLater])).toBe(0.25);
-      // and one whose cost is not known yet still counts what it holds
-      expect(cloudMlJobSpentUsd([{ ...settledLater, result: {} }])).toBe(2);
+      // one not sent yet counts the most a reseal could hold
+      expect(cloudMlJobSpentUsd([{ ...settledLater, status: MediaOperationStatus.Queued, result: {} }])).toBe(2.2);
+      // one sent counts what the AI Wallet actually holds for it, a resealed hold included
+      const sent = {
+        ...emptyCloudMlJobResult(),
+        submission: {
+          idempotencyKey: OPERATION_ID,
+          estimate: sealed.estimate,
+          expiresAt: sealed.expiresAt,
+          modelRev: FAITHFUL_REV,
+          computeSku: sealed.computeSku,
+          p50Usd: 1.2,
+          p90Usd: 1.6,
+          holdUsd: 2.1,
+          startupUsd: 0.5,
+          attemptedAt: '2026-09-26T04:00:00.000Z',
+        },
+        job: { ...runningRecord(), holdUsd: 2.15 },
+      };
+      expect(cloudMlJobSpentUsd([{ ...settledLater, status: MediaOperationStatus.Rendering, result: sent }])).toBe(2.15);
     });
   });
 
@@ -974,6 +992,24 @@ describe(CloudMlJobService.name, () => {
 
       const [, , key] = mocks.frameleafCloudMl.createJob.mock.calls[0];
       expect(key).toBe(`${OPERATION_ID}-2`);
+    });
+
+    it('sends nothing when a new estimate would hold more than the owner confirmed allows', async () => {
+      mocks.frameleafCloudMl.createEstimate.mockResolvedValue({
+        ...sealed,
+        expiresAt: '2026-09-26T04:35:00.000Z',
+        cost: { ...sealed.cost, hold: 2.5 },
+      });
+
+      await sut.step(claimed(), 'claim', new Date('2026-09-26T04:20:00.000Z'));
+
+      expect(mocks.frameleafCloudMl.createJob).not.toHaveBeenCalled();
+      expect(mocks.mediaOperation.fail).toHaveBeenCalledWith(
+        OPERATION_ID,
+        'claim',
+        expect.objectContaining({ errorCode: 'cloud_ml_estimate_increased' }),
+        { retry: false },
+      );
     });
 
     it('sends nothing when the new estimate is above what the owner confirmed', async () => {
