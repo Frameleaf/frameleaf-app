@@ -2,6 +2,7 @@ import { Img, Link, Section, Text } from '@react-email/components';
 import * as React from 'react';
 import { ImmichButton } from 'src/emails/components/button.component.js';
 import ImmichLayout from 'src/emails/components/immich.layout.js';
+import { NO_LINK_ALBUM } from 'src/emails/components/no-link.js';
 import { AlbumInviteEmailProps } from 'src/repositories/email.repository.js';
 import { replaceTemplateTags } from 'src/utils/replace-template-tags.js';
 
@@ -61,15 +62,21 @@ export const AlbumInviteEmail = ({
         </Section>
       )}
 
-      <Section className="flex justify-center my-6">
-        <ImmichButton href={`${baseUrl}/albums/${albumId}`}>View Album</ImmichButton>
-      </Section>
+      {baseUrl ? (
+        <>
+          <Section className="flex justify-center my-6">
+            <ImmichButton href={`${baseUrl}/albums/${albumId}`}>View Album</ImmichButton>
+          </Section>
 
-      <Text className="text-xs">
-        If you cannot click the button use the link below to view the album.
-        <br />
-        <Link href={`${baseUrl}/albums/${albumId}`}>{`${baseUrl}/albums/${albumId}`}</Link>
-      </Text>
+          <Text className="text-xs">
+            If you cannot click the button use the link below to view the album.
+            <br />
+            <Link href={`${baseUrl}/albums/${albumId}`}>{`${baseUrl}/albums/${albumId}`}</Link>
+          </Text>
+        </>
+      ) : (
+        <Text>{NO_LINK_ALBUM}</Text>
+      )}
     </ImmichLayout>
   );
 };

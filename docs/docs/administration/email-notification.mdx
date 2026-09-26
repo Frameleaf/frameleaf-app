@@ -16,6 +16,15 @@ You can use [this guide](/guides/smtp-gmail) to use Gmail's SMTP server.
 
 You can use [this guide](/guides/smtp-microsoft365) to use Microsoft's SMTP server.
 
+## Links in emails
+
+Emails link back to your server (the album, or the sign-in page for a new account) using the first address the server knows:
+
+1. The external domain in `Administration -> Settings -> Server`.
+2. For a server linked to Frameleaf Cloud, the public URL Frameleaf Cloud publishes for it.
+
+When the server has neither, emails are sent without a link and ask the recipient to open Frameleaf on their server instead. Set an external domain if you want links in emails. Without either address, a `{baseUrl}` tag in a custom template is left as written, so set an external domain before using it.
+
 ## User's notifications settings
 
 Users can manage their email notification settings from their account settings page on the web. They can choose to turn email notifications on or off for the following events:

@@ -49,8 +49,9 @@ export const getMethodNames = (instance: any) => {
   return methods;
 };
 
-export const getExternalDomain = (server: SystemConfig['server'], defaultDomain = 'https://my.immich.app') =>
-  server.externalDomain || defaultDomain;
+/** The configured external domain, else the caller's fallback (FL-190: never another project's host). */
+export const getExternalDomain = (server: SystemConfig['server'], defaultDomain?: string): string | undefined =>
+  server.externalDomain || defaultDomain || undefined;
 
 /**
  * @returns a list of strings representing the keys of the object in dot notation
