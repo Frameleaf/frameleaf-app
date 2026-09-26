@@ -1328,9 +1328,9 @@ export class DatabaseRepository extends ForkHandoffRepository {
           'adoption',
           'applied',
           jsonb_build_object(
-            'applied', ${JSON.stringify(pending)}::jsonb,
-            'officialLedger', ${JSON.stringify(ledger)}::jsonb,
-            'steps', ${JSON.stringify(steps)}::jsonb,
+            'applied', (${{ names: pending }}::jsonb -> 'names'),
+            'officialLedger', (${{ names: ledger }}::jsonb -> 'names'),
+            'steps', ${steps}::jsonb,
             'faceDecisionsCarriedOver', ${followUps.faceDecisions}::int,
             'workflowSchemaDigestBefore', ${workflowBefore.schemaDigest}::text,
             'workflowSchemaDigestAfter', ${workflowAfter.schemaDigest}::text
