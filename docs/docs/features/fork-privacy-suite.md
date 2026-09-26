@@ -36,13 +36,27 @@ variables. This applies to every machine-learning image built from this fork.
   are changed.
 - Server OpenTelemetry dependencies, automatic instrumentation, exporters, metrics listeners,
   and user/job collectors are removed. Legacy telemetry environment variables have no effect.
-- External version checks never run. Existing settings cannot re-enable them, and old queued
-  checks are skipped. Local version history and client/server compatibility information remain.
+- The version check is off by default. When an administrator turns it on, it asks only
+  Frameleaf's release feed (`api.frameleaf.cloud`), falling back to Frameleaf's GitHub releases,
+  and sends no instance identifier. Local version history and client/server compatibility information remain.
 - Transformers loads downloaded model files locally. Required model downloads remain enabled;
   no global offline mode or network block is imposed.
 
 Photo uploads, sharing, model downloads, configured remote ML and Frameleaf Cloud processing, OAuth, email,
-and map tiles remain functional. Download hosts necessarily receive the requested model/file,
+and map tiles remain functional. Nothing is fetched from Immich-hosted services. Where each download
+comes from:
+
+- Map styles and tiles: `tiles.frameleaf.cloud`.
+- Smart search and face recognition models (`frameleaf/<model>`): the model source, which is
+  `MACHINE_LEARNING_MODEL_SOURCE_URL` if set, otherwise `HF_ENDPOINT` if set, otherwise
+  `models.frameleaf.cloud`. A Hugging Face token is only ever sent to `huggingface.co`.
+- Image descriptions (on by default) and NSFW detection (off by default): their models come
+  straight from `huggingface.co`, or from `HF_ENDPOINT` if you set it. To keep these downloads off
+  `huggingface.co`, point `HF_ENDPOINT` at your own mirror, or fill the model cache yourself and set
+  `HF_HUB_OFFLINE=1` so nothing is downloaded. Turning the feature off also stops its download.
+- Text recognition (OCR) models: `www.modelscope.cn`, through the OCR library's own downloader.
+
+Download hosts necessarily receive the requested model/file,
 network address, and any required download credentials. Configured remote inference providers
 receive the images/prompts needed for that inference. These are functional requests, not usage
 or library analytics.

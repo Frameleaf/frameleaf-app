@@ -45,12 +45,12 @@ describe('Validation', () => {
 
   describe('toEmail', () => {
     it.each([
-      'test@immich.cloud',
+      'test@example.com',
       'test@immich',
-      'first.last+tag@immich.cloud',
+      'first.last+tag@example.com',
       // unicode local parts and internationalized domain names
-      'tëst@immich.cloud',
-      'leoñ@immich.cloud',
+      'tëst@example.com',
+      'leoñ@example.com',
       'test@яндекс.рф',
       'test@xn--d1acpjx3f.xn--p1ai',
       '用户@例子.广告',
@@ -59,7 +59,7 @@ describe('Validation', () => {
       expect(toEmail.safeParse(email).success).toBe(true);
     });
 
-    it.each(['immich', 'test@@immich.cloud', 'test user@immich.cloud', 'test@immich..cloud', 'test@-immich.cloud'])(
+    it.each(['immich', 'test@@example.com', 'test user@example.com', 'test@example..com', 'test@-example.com'])(
       'should reject %s',
       (email) => {
         expect(toEmail.safeParse(email).success).toBe(false);
@@ -67,7 +67,7 @@ describe('Validation', () => {
     );
 
     it('should convert the email to lower case', () => {
-      expect(toEmail.parse('tÉst@Immich.Cloud')).toBe('tést@immich.cloud');
+      expect(toEmail.parse('tÉst@Example.Com')).toBe('tést@example.com');
     });
   });
 });
