@@ -74,7 +74,7 @@ export class CloudBackupKeyRepository {
       await handle.close();
     }
 
-    let created = false;
+    let created: boolean;
     try {
       await this.restrict(temporary);
       created = await this.place(temporary, target);

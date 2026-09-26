@@ -545,12 +545,12 @@ export class CloudMlBatchService extends BaseService {
       }
       const ready = perOwner
         .values()
-        .toArray()
         .filter(
           (items) =>
             items.length >= CLOUD_DESCRIPTION_AUTO_MIN_BATCH ||
             now.getTime() - Date.parse(items[0].queuedAt) >= CLOUD_DESCRIPTION_AUTO_MAX_WAIT_MS,
-        );
+        )
+        .toArray();
       if (ready.length === 0) {
         return;
       }
