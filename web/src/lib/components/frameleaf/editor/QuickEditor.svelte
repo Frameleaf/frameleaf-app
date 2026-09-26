@@ -1481,5 +1481,11 @@
       </div>
     </div>
   {/if}
-  <div class="ed-live" role="status" aria-live="polite">{announce}</div>
+  <!--
+    One live region per editor, as in Editor.jsx: a clip announces through VideoQuickEditor's own
+    region (its in and out points, for one), so a second, always empty one is not rendered for it.
+  -->
+  {#if !isVideo}
+    <div class="ed-live" role="status" aria-live="polite">{announce}</div>
+  {/if}
 </div>

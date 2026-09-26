@@ -188,15 +188,22 @@
    */
   let frameleafAvailable = $state<boolean | null>(null);
 
+  // Any failure, including a server that answers without the Frameleaf block, reads as unavailable.
+  const probeFrameleafSignIn = async () => {
+    try {
+      const config = await getPublicConfig();
+      frameleafAvailable = config.frameleaf.signInAvailable;
+    } catch {
+      frameleafAvailable = false;
+    }
+  };
+
   onMount(() => {
     if (signedIn) {
       void loadServerData();
     }
     if (setup.flow === 'new') {
-      // A server without the Frameleaf block answers without `frameleaf`, which reads as unavailable.
-      getPublicConfig()
-        .then((config) => (frameleafAvailable = Boolean(config.frameleaf?.signInAvailable)))
-        .catch(() => (frameleafAvailable = false));
+      void probeFrameleafSignIn();
     }
   });
 

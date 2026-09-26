@@ -2416,6 +2416,7 @@ export class MediaHealthService {
       deep: true,
     });
     if (result.status === 'healthy') {
+      await this.recordContentDigests(asset, result);
       return null;
     }
     return {
@@ -2431,6 +2432,37 @@ export class MediaHealthService {
       evidence: { reason: result.reason, validationStatus: result.status },
       resolution: { reuploadRecommended: result.status === 'corrupt' },
     };
+  }
+
+  /**
+   * FL-69: an original whose own checksum is a path checksum (an external library's) records nothing
+   * a copy could be proven against. While it is present and reads back intact, keep the digests of the
+   * bytes just read, so a search can find it by content once it has moved. Only Library Care's copy
+   * verification reads them (see `recordExternalScanChecksums`). A failed write never changes the scan.
+   */
+  private async recordContentDigests(
+    asset: MediaHealthAsset,
+    digests: { sha1?: Buffer; sha256?: Buffer; sizeInBytes?: number },
+  ): Promise<void> {
+    if (
+      asset.checksumAlgorithm !== ChecksumAlgorithm.sha1Path ||
+      !digests.sha1 ||
+      !digests.sha256 ||
+      digests.sizeInBytes === undefined
+    ) {
+      return;
+    }
+    try {
+      await this.forkSchemaRepository.recordExternalScanChecksums({
+        assetId: asset.id,
+        sha1: digests.sha1,
+        sha256: digests.sha256,
+        sizeInBytes: digests.sizeInBytes,
+        path: asset.originalPath,
+      });
+    } catch (error) {
+      this.logger.warn(`Could not record the checksums of ${asset.originalPath}: ${getErrorMessage(error)}`);
+    }
   }
 
   private async locateExternalCandidates(assets: MediaHealthAsset[]): Promise<Map<string, CandidateValidation[]>> {
