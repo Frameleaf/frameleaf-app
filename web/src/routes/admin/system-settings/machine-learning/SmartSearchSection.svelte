@@ -4,6 +4,7 @@
   import SettingToggle from '$lib/components/frameleaf/settings/SettingToggle.svelte';
   import { SettingInputFieldType } from '$lib/constants';
   import FormatMessage from '$lib/elements/FormatMessage.svelte';
+  import { helpLinks } from '$lib/frameleaf/help-links.svelte';
   import type { AdminConfigMachineLearningDto } from '@immich/sdk';
   import { t } from 'svelte-i18n';
 
@@ -14,6 +15,9 @@
   }
 
   let { workingConfig, savedConfig, disabled }: Props = $props();
+
+  // FL-135 / FL-192: the model list in this installation's documentation, or no link at all
+  const clipModelsDocs = $derived(helpLinks.docs('features/searching#clip-models'));
 </script>
 
 <SettingGroup
@@ -43,7 +47,11 @@
         <p class="pb-2 text-sm immich-form-label">
           <FormatMessage key="admin.machine_learning_clip_model_description">
             {#snippet children({ message })}
-              <a target="_blank" href="https://huggingface.co/immich-app"><u>{message}</u></a>
+              {#if clipModelsDocs}
+                <a target="_blank" rel="noreferrer" href={clipModelsDocs}><u>{message}</u></a>
+              {:else}
+                {message}
+              {/if}
             {/snippet}
           </FormatMessage>
         </p>

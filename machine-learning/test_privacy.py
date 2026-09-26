@@ -141,14 +141,14 @@ def test_hub_downloads_remain_available(tmp_path: Path) -> None:
                 "ETag": '"test-etag"',
                 "Content-Length": "2",
                 "X-Xet-Hash": "b" * 64,
-                "X-Xet-Refresh-Route": "https://huggingface.co/api/models/immich-app/test-model/xet-read-token/main",
+                "X-Xet-Refresh-Route": "https://huggingface.co/api/models/frameleaf/test-model/xet-read-token/main",
             },
             content=b"{}" if request.method == "GET" else b"",
         )
 
     set_client_factory(lambda: httpx.Client(transport=httpx.MockTransport(respond)))
     try:
-        path = hf_hub_download("immich-app/test-model", "config.json", cache_dir=tmp_path, token="download-token")
+        path = hf_hub_download("frameleaf/test-model", "config.json", cache_dir=tmp_path, token="download-token")
         assert Path(path).read_bytes() == b"{}"
         assert [request.method for request in requests] == ["HEAD", "GET"]
         assert all(request.headers["authorization"] == "Bearer download-token" for request in requests)

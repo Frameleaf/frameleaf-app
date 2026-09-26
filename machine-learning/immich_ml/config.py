@@ -59,6 +59,9 @@ class MaxBatchSize(BaseModel):
     ocr: int | None = None
 
 
+DEFAULT_MODEL_SOURCE_URL = "https://models.frameleaf.cloud"
+
+
 def default_worker_timeout() -> int:
     return 900 if os.environ.get("DEVICE") == "rocm" else 300
 
@@ -72,6 +75,9 @@ class Settings(BaseSettings):
     )
 
     cache_folder: Path = (Path.home() / ".cache" / "immich_ml").resolve()
+    # Hub-compatible host serving the frameleaf/<model> repositories. Admins can
+    # point this at their own mirror with MACHINE_LEARNING_MODEL_SOURCE_URL.
+    model_source_url: str = DEFAULT_MODEL_SOURCE_URL
     model_ttl: int = 300
     model_ttl_poll_s: int = 10
     workers: int = 1
