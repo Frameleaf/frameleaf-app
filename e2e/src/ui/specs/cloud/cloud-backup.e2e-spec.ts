@@ -62,7 +62,8 @@ test.describe('Frameleaf Cloud backup setup', () => {
 
     const download = page.waitForEvent('download');
     await dialog.getByRole('button', { name: 'Download key file' }).click();
-    expect((await download).suggestedFilename()).toMatch(/^frameleaf-backup-key-[\dA-F]{4}-[\dA-F]{4}\.json$/);
+    const downloaded = await download;
+    expect(downloaded.suggestedFilename()).toMatch(/^frameleaf-backup-key-[\dA-F]{4}-[\dA-F]{4}\.json$/);
     await expect(next).toBeDisabled();
     await dialog.getByRole('checkbox', { name: /somewhere other than this server/ }).check();
     await expect(next).toBeEnabled();

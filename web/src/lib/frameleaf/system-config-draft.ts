@@ -77,6 +77,8 @@ export const SECTION_CONFIG_KEYS: Readonly<Record<string, readonly (keyof AdminC
   backup: ['backup'],
   image: ['image'],
   'cloud-processing': ['frameleafCloud'],
+  // FL-160: what a backup includes; the bucket, key and target change only through setup
+  'cloud-backup': ['frameleafCloud'],
   'integrity-checks': ['integrityChecks', 'libraryCare'],
   'external-library': ['library'],
   // FL-71: "Logs & diagnostics" also holds the local analytics settings; the search models page

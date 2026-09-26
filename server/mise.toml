@@ -26,6 +26,8 @@ run = "prettier --write ."
 
 [tasks.lint]
 env._.path = "./node_modules/.bin"
+# Type-aware linting of src and test together outgrew Node's default 4 GB heap on the CI runner.
+env.NODE_OPTIONS = "--max-old-space-size=6144"
 run = "eslint \"src/**/*.ts\" \"test/**/*.ts\" --max-warnings 0"
 
 [tasks."lint-fix"]
