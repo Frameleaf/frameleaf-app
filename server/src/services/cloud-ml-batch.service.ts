@@ -543,11 +543,14 @@ export class CloudMlBatchService extends BaseService {
         items.push(item);
         perOwner.set(item.ownerId, items);
       }
-      const ready = [...perOwner.values()].filter(
-        (items) =>
-          items.length >= CLOUD_DESCRIPTION_AUTO_MIN_BATCH ||
-          now.getTime() - Date.parse(items[0].queuedAt) >= CLOUD_DESCRIPTION_AUTO_MAX_WAIT_MS,
-      );
+      const ready = perOwner
+        .values()
+        .toArray()
+        .filter(
+          (items) =>
+            items.length >= CLOUD_DESCRIPTION_AUTO_MIN_BATCH ||
+            now.getTime() - Date.parse(items[0].queuedAt) >= CLOUD_DESCRIPTION_AUTO_MAX_WAIT_MS,
+        );
       if (ready.length === 0) {
         return;
       }
@@ -1410,7 +1413,7 @@ export class CloudMlBatchService extends BaseService {
         byOperation.set(item.clientRef.slice('batch-'.length), item);
       }
     }
-    const operations = await this.mediaOperationRepository.getManyForWorker([...byOperation.keys()]);
+    const operations = await this.mediaOperationRepository.getManyForWorker(byOperation.keys().toArray());
     for (const operation of operations) {
       const item = byOperation.get(operation.id);
       if (
