@@ -329,7 +329,13 @@ export class JobService extends BaseService {
           (asset.visibility === AssetVisibility.Timeline || asset.visibility === AssetVisibility.Archive) &&
           !isLockedRow(asset)
         ) {
-          this.websocketRepository.clientSend('on_upload_success', asset.ownerId, mapAsset(asset));
+          // FL-169: an upload trashed before its thumbnails were ready is not announced as a new timeline
+          // item. Clients treat `on_upload_success` as "add this to the timeline", so a trashed (or
+          // permanently deleted, still awaiting removal) asset would reappear in every open timeline.
+          // The v2 event below carries `deletedAt`, so its clients place the asset correctly.
+          if (!asset.deletedAt) {
+            this.websocketRepository.clientSend('on_upload_success', asset.ownerId, mapAsset(asset));
+          }
           if (asset.exifInfo) {
             const exif = asset.exifInfo;
             this.websocketRepository.clientSend('AssetUploadReadyV2', asset.ownerId, {
