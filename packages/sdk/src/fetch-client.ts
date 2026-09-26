@@ -516,6 +516,101 @@ export type CloudSignInUpdateDto = {
     /** Offer Sign in with Frameleaf on the login page at home */
     showOnLocalLogin?: boolean;
 };
+export type RemoteConnectionDto = {
+    /** Host name or address, without brackets for IPv6 */
+    address: string;
+    /** The administrator’s own hostname, verified by Frameleaf Cloud */
+    custom: boolean;
+    /** The server refuses requests for another Host */
+    dnsRebindingProtection: boolean;
+    httpsRequired: boolean;
+    ipv6: boolean;
+    kind: RemoteConnectionKind;
+    local: boolean;
+    port: number;
+    protocol: RemoteConnectionProtocol;
+    /** Carried by the Frameleaf relay */
+    relay: boolean;
+    /** The address to connect to, https only */
+    uri: string;
+    /** Frameleaf Cloud verified this entry itself */
+    verified: boolean;
+};
+export type RemoteDnsRecordDto = {
+    name: string;
+    /** What the record is for, in plain words */
+    purpose: string;
+    "type": RemoteDnsRecordType;
+    value: string;
+};
+export type RemoteAccessTestCheckDto = {
+    detail: string;
+    /** certificate, listener, api, relay or direct */
+    id: string;
+    ok: boolean;
+};
+export type RemoteAccessStatusResponseDto = {
+    candidates: RemoteConnectionDto[];
+    /** The last issuance or renewal problem */
+    certificateError: string | null;
+    certificateExpiresAt: string | null;
+    /** The wildcard name the certificate covers */
+    certificateName: string | null;
+    cgnatSuspected: boolean;
+    /** The custom hostname, when one was added */
+    customHostname: string | null;
+    customHostnameCheckedAt: string | null;
+    /** Why the hostname is not verified yet */
+    customHostnameProblem: string | null;
+    /** The two records to add at the DNS provider; empty until enrolled */
+    customHostnameRecords: RemoteDnsRecordDto[];
+    customHostnameStatus: RemoteHostnameStatus | null;
+    directListening: boolean;
+    /** External port for direct connections */
+    directPort: number;
+    /** Remote access is switched on */
+    enabled: boolean;
+    /** https://r.<label>.<direct domain>, once enrolled */
+    frameleafAddress: string | null;
+    lastTestAt: string | null;
+    lastTestChecks: RemoteAccessTestCheckDto[];
+    lastTestOk: boolean | null;
+    mode: RemoteAccessMode;
+    /** The router is asked to open the direct port automatically */
+    portMapping: boolean;
+    /** The address this server publishes */
+    publicUrl: string | null;
+    publicUrlChoice: RemoteAccessPublicUrl;
+    /** Why it is off, idle or failing, in plain words */
+    reason: string | null;
+    relayConnected: boolean;
+    relayRegion: string | null;
+    status: RemoteAccessState;
+    /** Why remote access cannot be turned on (not set up, not linked, no plan); null when it can */
+    unavailableReason: string | null;
+};
+export type RemoteAccessUpdateDto = {
+    /** External port for direct connections */
+    directPort?: number;
+    /** Turn remote access on or off */
+    enabled?: boolean;
+    mode?: RemoteAccessMode;
+    /** Ask the router to open the direct port automatically */
+    portMapping?: boolean;
+    publicUrl?: RemoteAccessPublicUrl;
+};
+export type RemoteHostnameUpdateDto = {
+    /** A subdomain of a domain you own, such as photos.example.com */
+    hostname: string;
+};
+export type RemoteConnectionsResponseDto = {
+    /** Ordered local, wan, ipv6, custom hostname, relay */
+    connections: RemoteConnectionDto[];
+    /** This server’s Frameleaf instance ID while it is linked */
+    instanceId: string | null;
+    /** The address this server publishes for remote access */
+    publicUrl: string | null;
+};
 export type AdminConfigAnalyticsDto = {
     /** Collect local analytics history every night */
     enabled: boolean;
@@ -634,11 +729,27 @@ export type AdminConfigFrameleafCloudMlDto = {
     /** The destination a job preselects when its kind of work may run in both places */
     startWith: StartWith;
 };
+export type AdminConfigFrameleafCustomHostnameDto = {
+    /** When its DNS records were last checked */
+    checkedAt: string | null;
+    /** A hostname on a domain the administrator owns; empty when none */
+    host: string;
+    status: RemoteHostnameStatus;
+};
 export type AdminConfigFrameleafRemoteAccessDto = {
     /** Allow original downloads, archives and database backups over the Frameleaf relay */
     allowOriginalsOverRelay: boolean;
     /** Allow password sign-in, and sessions it creates, over remote access */
     allowPasswordOverRelay: boolean;
+    customHostname: AdminConfigFrameleafCustomHostnameDto;
+    /** External port for direct connections */
+    directPort: number;
+    /** Serve remote access through Frameleaf Cloud (needs a linked server with a remote access plan) */
+    enabled: boolean;
+    mode: RemoteAccessMode;
+    /** Ask the router to open the direct port automatically; off when it is forwarded by hand */
+    portMapping: boolean;
+    publicUrl: RemoteAccessPublicUrl;
 };
 export type AdminConfigFrameleafSignInDto = {
     /** Sign in with Frameleaf button text */
@@ -10908,6 +11019,32 @@ export function updateCloudPermissions({ cloudPermissionsUpdateDto }: {
     })));
 }
 /**
+ * Get remote access
+ */
+export function getRemoteAccess(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: RemoteAccessStatusResponseDto;
+    }>("/admin/cloud/remote", {
+        ...opts
+    }));
+}
+/**
+ * Change remote access
+ */
+export function updateRemoteAccess({ remoteAccessUpdateDto }: {
+    remoteAccessUpdateDto: RemoteAccessUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: RemoteAccessStatusResponseDto;
+    }>("/admin/cloud/remote", oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: remoteAccessUpdateDto
+    })));
+}
+/**
  * Choose what remote access may carry
  */
 export function updateCloudRemoteAccess({ cloudRemoteAccessUpdateDto }: {
@@ -10921,6 +11058,57 @@ export function updateCloudRemoteAccess({ cloudRemoteAccessUpdateDto }: {
         method: "PUT",
         body: cloudRemoteAccessUpdateDto
     })));
+}
+/**
+ * Stop using the custom hostname
+ */
+export function removeRemoteHostname(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: RemoteAccessStatusResponseDto;
+    }>("/admin/cloud/remote/hostname", {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Use your own domain for remote access
+ */
+export function setRemoteHostname({ remoteHostnameUpdateDto }: {
+    remoteHostnameUpdateDto: RemoteHostnameUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: RemoteAccessStatusResponseDto;
+    }>("/admin/cloud/remote/hostname", oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: remoteHostnameUpdateDto
+    })));
+}
+/**
+ * Check the custom hostname’s DNS records
+ */
+export function checkRemoteHostname(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: RemoteAccessStatusResponseDto;
+    }>("/admin/cloud/remote/hostname/check", {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Test remote access
+ */
+export function testRemoteAccess(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: RemoteAccessStatusResponseDto;
+    }>("/admin/cloud/remote/test", {
+        ...opts,
+        method: "POST"
+    }));
 }
 /**
  * Choose where Sign in with Frameleaf is offered
@@ -17256,6 +17444,17 @@ export function getServerConfig(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
+ * Get connections
+ */
+export function getServerConnections(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: RemoteConnectionsResponseDto;
+    }>("/server/connections", {
+        ...opts
+    }));
+}
+/**
  * Get features
  */
 export function getServerFeatures(opts?: Oazapfts.RequestOpts) {
@@ -20099,6 +20298,39 @@ export enum CloudRouteMode {
     Both = "both",
     Cloud = "cloud"
 }
+export enum RemoteHostnameStatus {
+    Pending = "pending",
+    Verified = "verified"
+}
+export enum RemoteAccessMode {
+    Relay = "relay",
+    RelayAndDirect = "relay-and-direct"
+}
+export enum RemoteAccessPublicUrl {
+    Frameleaf = "frameleaf",
+    Custom = "custom"
+}
+export enum RemoteConnectionKind {
+    Local = "local",
+    Wan = "wan",
+    Relay = "relay",
+    Ipv6 = "ipv6"
+}
+export enum RemoteConnectionProtocol {
+    Http = "http",
+    Https = "https"
+}
+export enum RemoteDnsRecordType {
+    Cname = "CNAME"
+}
+export enum RemoteAccessState {
+    Off = "off",
+    Idle = "idle",
+    Starting = "starting",
+    Ready = "ready",
+    Error = "error",
+    Unknown = "unknown"
+}
 export enum StartWith {
     Local = "local",
     Cloud = "cloud"
@@ -20706,6 +20938,7 @@ export enum Permission {
     AdminCloudRead = "adminCloud.read",
     AdminCloudUpdate = "adminCloud.update",
     AdminCloudLink = "adminCloud.link",
+    AdminRemoteAccessUpdate = "adminRemoteAccess.update",
     FrameleafAccountRead = "frameleafAccount.read",
     FrameleafAccountUpdate = "frameleafAccount.update",
     AdminCloudMlRead = "adminCloudMl.read",
