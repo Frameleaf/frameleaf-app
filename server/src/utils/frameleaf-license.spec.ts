@@ -524,7 +524,8 @@ describe('frameleaf-license (FL-156)', () => {
         return result.ok ? asStoredLicense(result.claims, result.kid) : null;
       });
       const kinds = licenses.map((license) => license && certificateKind(license.claims));
-      expect(kinds.sort()).toEqual(['plan', 'server']);
+      expect(kinds).toHaveLength(2);
+      expect(kinds).toEqual(expect.arrayContaining(['plan', 'server']));
       expect(entitlementFlags(licenses, now)).toEqual({
         frameleafCloud: true,
         remoteAccess: true,
