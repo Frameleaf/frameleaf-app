@@ -1,4 +1,4 @@
-import type { HardwareCheckResponseDto } from '@immich/sdk';
+import { HardwareBackend, type HardwareCheckResponseDto } from '@immich/sdk';
 import { describe, expect, it } from 'vitest';
 import en from '$i18n/en.json';
 import { ROUTED_WORKLOADS } from '$lib/frameleaf/cloud-ml';
@@ -14,9 +14,7 @@ import {
   FALLBACK_MODEL_PROFILES,
 } from '../../routes/admin/system-settings/machine-learning/machine-learning-helpers';
 
-type Backend = HardwareCheckResponseDto['ml']['backend'];
-
-const check = (ml: { model: string | null; vramGb: number | null; backend: Backend }) =>
+const check = (ml: { model: string | null; vramGb: number | null; backend: HardwareBackend }) =>
   ({
     checkedAt: '2026-09-26T09:00:00.000Z',
     server: {
@@ -25,7 +23,7 @@ const check = (ml: { model: string | null; vramGb: number | null; backend: Backe
       model: null,
       vramGb: null,
       driver: null,
-      backend: 'CPU',
+      backend: HardwareBackend.Cpu,
       test: null,
     },
     ml: { reachable: true, vendor: null, driver: null, test: null, ...ml },
@@ -68,7 +66,9 @@ describe('local model stops (FL-189)', () => {
   });
 
   it('colours the models that fit a CUDA GPU green, and crosses out the ones that need more memory', () => {
-    const hardware = localHardware(check({ model: 'NVIDIA GeForce RTX 3060', vramGb: 12, backend: 'CUDA' }));
+    const hardware = localHardware(
+      check({ model: 'NVIDIA GeForce RTX 3060', vramGb: 12, backend: HardwareBackend.Cuda }),
+    );
     expect(byName(localStops(LOCAL_DESCRIPTION_MODELS, hardware, 'both'))).toEqual({
       'Florence-2 base': { band: 'gpu', reason: null },
       'Florence-2 large': { band: 'gpu', reason: null },
@@ -81,7 +81,7 @@ describe('local model stops (FL-189)', () => {
   });
 
   it('keeps CUDA-only models off a GPU that does not use CUDA', () => {
-    const hardware = localHardware(check({ model: 'Intel Arc A770', vramGb: 16, backend: 'OpenVINO' }));
+    const hardware = localHardware(check({ model: 'Intel Arc A770', vramGb: 16, backend: HardwareBackend.OpenVino }));
     const stops = byName(localStops(LOCAL_DESCRIPTION_MODELS, hardware, 'local'));
     expect(stops['Florence-2 base']).toEqual({ band: 'none', reason: 'cuda' });
     expect(stops['Qwen2.5-VL 3B']).toEqual({ band: 'gpu', reason: null });
@@ -89,7 +89,7 @@ describe('local model stops (FL-189)', () => {
   });
 
   it('runs the converted models on the processor when the check found no GPU', () => {
-    const hardware = localHardware(check({ model: null, vramGb: null, backend: 'CPU' }));
+    const hardware = localHardware(check({ model: null, vramGb: null, backend: HardwareBackend.Cpu }));
     expect(hardware).toEqual({ known: true, gpu: null });
     const stops = byName(localStops(LOCAL_DESCRIPTION_MODELS, hardware, 'local'));
     expect(stops['Qwen2.5-VL 3B']).toEqual({ band: 'cpu', reason: null });
@@ -97,7 +97,9 @@ describe('local model stops (FL-189)', () => {
   });
 
   it('crosses out the local stops of work set to Cloud only', () => {
-    const hardware = localHardware(check({ model: 'NVIDIA GeForce RTX 4090', vramGb: 24, backend: 'CUDA' }));
+    const hardware = localHardware(
+      check({ model: 'NVIDIA GeForce RTX 4090', vramGb: 24, backend: HardwareBackend.Cuda }),
+    );
     const stops = localStops(LOCAL_DESCRIPTION_MODELS, hardware, 'cloud');
     expect(stops.find((stop) => stop.model.name === 'Qwen2.5-VL 7B')).toMatchObject({
       band: 'gpu',
