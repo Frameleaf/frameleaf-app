@@ -887,7 +887,8 @@ export class ForkSchemaRepository {
    *
    * These rows carry `evidence.source = 'external-scan'` and are read only to verify a Library Care copy:
    * duplicate pre-checks, the untracked-file restore and sync never treat bytes on an external mount as
-   * a managed copy (see `EXTERNAL_SCAN_CHECKSUM`).
+   * a managed copy (see `EXTERNAL_SCAN_CHECKSUM`). Those readers also leave out every sidecar of an asset
+   * that has a path checksum, whoever wrote it.
    */
   async recordExternalScanChecksums(input: {
     assetId: string;
@@ -930,8 +931,9 @@ export class ForkSchemaRepository {
           evidence = EXCLUDED.evidence,
           "verifiedAt" = EXCLUDED."verifiedAt",
           "updatedAt" = EXCLUDED."updatedAt"
-        -- only its own earlier reads: upload, integrity and recovery evidence is never replaced here
-        WHERE asset_checksum.evidence ->> 'source' = ${EXTERNAL_SCAN_CHECKSUM}
+        -- its own earlier reads, and a relink's recovery row (the asset kept its path checksum, so the file at
+        -- this path was read just now); upload and integrity evidence is never replaced here
+        WHERE asset_checksum.evidence ->> 'source' IN (${EXTERNAL_SCAN_CHECKSUM}, 'recovery')
           AND (asset_checksum.sha1, asset_checksum.sha256, asset_checksum."sizeInBytes")
             IS DISTINCT FROM (EXCLUDED.sha1, EXCLUDED.sha256, EXCLUDED."sizeInBytes")
       `.execute(trx);
@@ -966,6 +968,7 @@ export class ForkSchemaRepository {
       WHERE asset."ownerId" = ${ownerId}::uuid
         AND checksum.sha1 IN (${digests})
         AND asset.checksum <> checksum.sha1
+        AND asset."checksumAlgorithm" <> ${ChecksumAlgorithm.sha1Path}::asset_checksum_algorithm_enum
         AND checksum.evidence ->> 'source' IS DISTINCT FROM ${EXTERNAL_SCAN_CHECKSUM}
     `.execute(this.db);
 
@@ -979,6 +982,7 @@ export class ForkSchemaRepository {
       INNER JOIN public.asset asset ON asset.id = checksum."assetId"
       WHERE asset."ownerId" = ${ownerId}::uuid
         AND (checksum.sha1 = ${sha1} OR checksum.sha256 = ${sha256})
+        AND asset."checksumAlgorithm" <> ${ChecksumAlgorithm.sha1Path}::asset_checksum_algorithm_enum
         AND checksum.evidence ->> 'source' IS DISTINCT FROM ${EXTERNAL_SCAN_CHECKSUM}
       LIMIT 1
     `.execute(this.db);

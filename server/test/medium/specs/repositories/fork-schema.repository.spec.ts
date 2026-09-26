@@ -243,5 +243,55 @@ describe(ForkSchemaRepository.name, () => {
       await expect(sut.hasAssetChecksum(user.id, sha1, sha256)).resolves.toBe(false);
       await expect(sut.getChecksumTranslations(user.id, [sha1])).resolves.toEqual([]);
     });
+
+    it('leaves an upload row alone and refreshes a relink recovery row', async () => {
+      const { ctx, sut } = setup();
+      const uploaded = await external(ctx);
+      const relinked = await external(ctx);
+      const seeded = { sha1: randomBytes(20), sha256: randomBytes(32), sizeInBytes: 5 };
+      await sut.recordAssetChecksums({
+        assetId: uploaded.asset.id,
+        ...seeded,
+        path: uploaded.asset.originalPath,
+        source: 'upload',
+      });
+      await sut.recordAssetChecksums({
+        assetId: relinked.asset.id,
+        ...seeded,
+        path: relinked.asset.originalPath,
+        source: 'recovery',
+      });
+
+      const edited = { sha1: randomBytes(20), sha256: randomBytes(32), sizeInBytes: 6 };
+      for (const { asset } of [uploaded, relinked]) {
+        await sut.recordExternalScanChecksums({ assetId: asset.id, ...edited, path: asset.originalPath });
+      }
+
+      const upload = await read(uploaded.asset.id);
+      expect(upload).toMatchObject({ sha1: seeded.sha1, sizeInBytes: 5 });
+      expect(JSON.parse(upload!.evidence)).toEqual({ source: 'upload' });
+      const refreshed = await read(relinked.asset.id);
+      expect(refreshed).toMatchObject({ sha1: edited.sha1, sizeInBytes: 6 });
+      expect(JSON.parse(refreshed!.evidence)).toEqual({ source: 'external-scan' });
+    });
+
+    it('ignores any recorded digest of a path-checksum asset, whoever wrote it', async () => {
+      const { ctx, sut } = setup();
+      const { user, asset } = await external(ctx);
+      const sha1 = randomBytes(20);
+      const sha256 = randomBytes(32);
+      // what a Library Care relink wrote before FL-69 labelled it
+      await sut.recordAssetChecksums({
+        assetId: asset.id,
+        sha1,
+        sha256,
+        sizeInBytes: 5,
+        path: asset.originalPath,
+        source: 'recovery',
+      });
+
+      await expect(sut.hasAssetChecksum(user.id, sha1, sha256)).resolves.toBe(false);
+      await expect(sut.getChecksumTranslations(user.id, [sha1])).resolves.toEqual([]);
+    });
   });
 });

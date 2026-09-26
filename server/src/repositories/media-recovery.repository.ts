@@ -167,13 +167,16 @@ export class MediaRecoveryRepository {
           AND h.status NOT IN ('resolved', 'relinked', 'trashed')) AS damaged
       FROM public.asset a LEFT JOIN public.asset_exif e ON e."assetId" = a.id
       LEFT JOIN immich_fork.asset_checksum s ON s."assetId" = a.id
+        AND a."checksumAlgorithm" <> ${ChecksumAlgorithm.sha1Path}
         AND s.evidence ->> 'source' IS DISTINCT FROM ${EXTERNAL_SCAN_CHECKSUM}
       LEFT JOIN immich_fork.asset_physical_file p ON p."assetId" = a.id
       WHERE a."ownerId" = ${ownerId}::uuid AND a.id IN (
         SELECT id FROM public.asset WHERE "ownerId" = ${ownerId}::uuid AND checksum IN (${verified.sha1}, ${verified.sha256})
           AND "checksumAlgorithm" IN (${ChecksumAlgorithm.sha1File}, ${ChecksumAlgorithm.sha256File})
-        UNION SELECT "assetId" FROM immich_fork.asset_checksum WHERE (sha1 = ${verified.sha1} OR sha256 = ${verified.sha256})
-          AND evidence ->> 'source' IS DISTINCT FROM ${EXTERNAL_SCAN_CHECKSUM}
+        UNION SELECT c."assetId" FROM immich_fork.asset_checksum c JOIN public.asset ca ON ca.id = c."assetId"
+          WHERE (c.sha1 = ${verified.sha1} OR c.sha256 = ${verified.sha256})
+            AND ca."checksumAlgorithm" <> ${ChecksumAlgorithm.sha1Path}
+            AND c.evidence ->> 'source' IS DISTINCT FROM ${EXTERNAL_SCAN_CHECKSUM}
         UNION SELECT ${mappedId ?? null}::uuid)
       ORDER BY (a.id = ${mappedId ?? null}::uuid) DESC NULLS LAST, a.id LIMIT 33
     `.execute(db);
@@ -487,9 +490,13 @@ export class MediaRecoveryRepository {
           .onConflict((oc) => oc.column('assetId').doUpdateSet({ fileSizeInByte: final.sizeInBytes }))
           .execute();
       }
+      // FL-69: an asset that keeps a path checksum (a reused external original) records its digests as an
+      // external scan's, never as a managed copy; the candidate lookup cannot currently reach one
+      const source =
+        reused && target.checksumAlgorithm === ChecksumAlgorithm.sha1Path ? EXTERNAL_SCAN_CHECKSUM : 'icloud-recovery';
       await sql`INSERT INTO immich_fork.asset_checksum ("assetId", sha1, sha256, "sizeInBytes", "verifiedPaths", "linkCount", evidence, "verifiedAt", "updatedAt")
         VALUES (${assetId}::uuid, ${final.sha1}, ${final.sha256}, ${final.sizeInBytes}, ARRAY[${promotedPath}]::text[], 1,
-          ${{ source: 'icloud-recovery', resourceId: input.resourceId, identity: final.identity }}::jsonb, now(), now())
+          ${{ source, resourceId: input.resourceId, identity: final.identity }}::jsonb, now(), now())
         ON CONFLICT ("assetId") DO UPDATE SET sha1 = EXCLUDED.sha1, sha256 = EXCLUDED.sha256, "sizeInBytes" = EXCLUDED."sizeInBytes",
           "verifiedPaths" = EXCLUDED."verifiedPaths", evidence = EXCLUDED.evidence, "verifiedAt" = now(), "updatedAt" = now()`.execute(
         trx,
@@ -582,6 +589,9 @@ export class MediaRecoveryRepository {
       (row.physicalOriginalFileId ?? null) !== target.physicalOriginalFileId ||
       row.deletedAt ||
       row.status !== AssetStatus.Active ||
+      // FL-69: effectively unreachable now. An external original has a path checksum, and the candidate
+      // lookup leaves out every recorded digest of such an asset, so it never matches recovered bytes and
+      // no target names it. Kept as a guard should that lookup ever change.
       (row.isExternal && target.outcome !== 'reused' && !input.recoverExternalAsManaged)
     ) {
       return;
