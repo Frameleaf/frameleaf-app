@@ -51,13 +51,13 @@
 ## Содержание
 
 - [Официальная документация](https://docs.immich.app)
-- [Введение](https://docs.immich.app/overview/introduction)
-- [Установка](https://docs.immich.app/install/requirements)
+- [Введение](https://help.frameleaf.ai/overview/quick-start)
+- [Установка](https://help.frameleaf.ai/install/requirements)
 - [План разработки](https://immich.app/roadmap)
 - [Демо](#demo)
 - [Возможности](#features)
-- [Перевод](https://docs.immich.app/developer/translations)
-- [Гид по участию и поддержке проекта](https://docs.immich.app/overview/support-the-project)
+- [Перевод](https://help.frameleaf.ai/developer/translations)
+- [Гид по участию и поддержке проекта](https://help.frameleaf.ai/overview/support-the-project)
 
 ## Демо
 
@@ -106,7 +106,7 @@
 
 ## Перевод
 
-Всё про перевод проекта [Здесь](https://docs.immich.app/developer/translations).
+Всё про перевод проекта [Здесь](https://help.frameleaf.ai/developer/translations).
 
 <a href="https://hosted.weblate.org/engage/immich/">
 <img src="https://hosted.weblate.org/widget/immich/immich/multi-auto.svg" alt="Translation status" />

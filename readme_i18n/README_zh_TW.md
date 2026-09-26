@@ -52,13 +52,13 @@
 ## 連結
 
 - [說明文件](https://docs.immich.app/)
-- [關於](https://docs.immich.app/overview/introduction)
-- [安裝](https://docs.immich.app/install/requirements)
+- [關於](https://help.frameleaf.ai/overview/quick-start)
+- [安裝](https://help.frameleaf.ai/install/requirements)
 - [發展藍圖](https://immich.app/roadmap)
 - [線上體驗](#線上體驗)
 - [功能](#功能)
-- [翻譯](https://docs.immich.app/developer/translations)
-- [貢獻指南](https://docs.immich.app/overview/support-the-project)
+- [翻譯](https://help.frameleaf.ai/developer/translations)
+- [貢獻指南](https://help.frameleaf.ai/overview/support-the-project)
 
 ## 線上體驗
 
@@ -107,7 +107,7 @@
 
 ## 翻譯
 
-更多翻譯相關資訊請見 [此處](https://docs.immich.app/developer/translations)。
+更多翻譯相關資訊請見 [此處](https://help.frameleaf.ai/developer/translations)。
 
 <a href="https://hosted.weblate.org/engage/immich/">
 <img src="https://hosted.weblate.org/widget/immich/immich/multi-auto.svg" alt="翻譯狀態" />

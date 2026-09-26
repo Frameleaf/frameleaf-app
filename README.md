@@ -589,13 +589,13 @@ Run `node packages/cli/dist/index.js migrate --help` for the full list. The step
 - [iCloud Photos Sync administrator setup](docs/docs/guides/icloud-photos-server-setup.md)
 - [Recover missing or corrupt media](docs/docs/guides/media-recovery.md)
 - [Upstream documentation](https://docs.immich.app/)
-- [About](https://docs.immich.app/overview/introduction)
-- [Installation](https://docs.immich.app/install/requirements)
+- [About](https://help.frameleaf.ai/overview/quick-start)
+- [Installation](https://help.frameleaf.ai/install/requirements)
 - [Roadmap](https://immich.app/roadmap)
 - [Demo](#demo)
 - [Features](#features)
-- [Translations](https://docs.immich.app/developer/translations)
-- [Contributing](https://docs.immich.app/overview/support-the-project)
+- [Translations](https://help.frameleaf.ai/developer/translations)
+- [Contributing](https://help.frameleaf.ai/overview/support-the-project)
 
 ## Demo
 
@@ -644,7 +644,7 @@ Access the upstream Immich demo [here](https://demo.immich.app); it does not inc
 
 ## Translations
 
-Read more about translations [here](https://docs.immich.app/developer/translations).
+Read more about translations [here](https://help.frameleaf.ai/developer/translations).
 
 <a href="https://hosted.weblate.org/engage/immich/">
 <img src="https://hosted.weblate.org/widget/immich/immich/multi-auto.svg" alt="Translation status" />

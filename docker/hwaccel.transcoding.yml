@@ -4,7 +4,7 @@
 # you can inline the config for a backend by copying its contents
 # into the immich-server service in the docker-compose.yml file.
 
-# See https://docs.immich.app/features/hardware-transcoding for more info on using hardware transcoding.
+# See https://help.frameleaf.ai/features/hardware-transcoding for more info on using hardware transcoding.
 
 services:
   cpu: {}
