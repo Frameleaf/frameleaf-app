@@ -11423,8 +11423,8 @@
       "identity": "public.asset.UQ_assets_owner_checksum"
     },
     {
-      "definition": "CREATE INDEX asset_file_path_idx ON public.asset_file USING btree (path)",
-      "identity": "public.asset_file.asset_file_path_idx"
+      "definition": "CREATE INDEX asset_file_path_frameleaf_idx ON public.asset_file USING btree (path)",
+      "identity": "public.asset_file.asset_file_path_frameleaf_idx"
     },
     {
       "definition": "CREATE INDEX \"classification_match_assetId_idx\" ON public.classification_match USING btree (\"assetId\")",
