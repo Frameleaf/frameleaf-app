@@ -32,7 +32,7 @@ import {
 } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
 import { CloudConnectionState, CloudMlGatewayDeps, resolveCloudGateway } from 'src/utils/frameleaf-cloud-gateway.js';
-import { CloudErrorCode, FrameleafCloudError, cloudErrorCode, isLocalOnlyModel } from 'src/utils/frameleaf-cloud.js';
+import { CloudErrorCode, FrameleafCloudError, cloudErrorCode } from 'src/utils/frameleaf-cloud.js';
 import { mapMlDestination, mlDestinationHealthOf } from 'src/utils/ml-destination-dto.js';
 import {
   ML_BUDGET_WINDOW_DAYS,
@@ -542,7 +542,6 @@ export class MlDestinationService extends BaseService {
       routes: Object.values(MlWorkload).map((workload) => ({
         workload,
         destinationId: byWorkload.get(workload)?.destinationId ?? null,
-        modelId: byWorkload.get(workload)?.modelId ?? null,
       })),
     };
   }
@@ -573,49 +572,10 @@ export class MlDestinationService extends BaseService {
     if (conflict) {
       throw new BadRequestException(conflict);
     }
-    const modelId = await this.routeModel(workload, destination, dto.modelId);
-    await this.mlDestinationRepository.setRoute(workload, destination.id, modelId);
+    // FL-186: the Frameleaf Cloud model is chosen per model group (`ml_cloud_model_choice`), not on the
+    // route, so moving a route never changes it.
+    await this.mlDestinationRepository.setRoute(workload, destination.id);
     return this.getRoutes();
-  }
-
-  /**
-   * The catalogue model a route keeps (FL-159, FL-186). A model is chosen per workload for Frameleaf
-   * Cloud only, and must be a SKU the cloud's catalogue listed at the last check for exactly this
-   * workload: restoration's faithful and creative modes are separate workloads, so a model of the
-   * other mode is refused. Leaving `modelId` out keeps the model already routed to the same Frameleaf
-   * Cloud destination, so changing something else never drops it; null clears it, and the work then
-   * uses the catalogue's default.
-   */
-  private async routeModel(
-    workload: MlWorkload,
-    destination: MlDestinationRow,
-    modelId: string | null | undefined,
-  ): Promise<string | null> {
-    const isCloud = destination.kind === MlDestinationKind.FrameleafCloud;
-    if (modelId === undefined) {
-      if (!isCloud) {
-        return null;
-      }
-      const current = await this.mlDestinationRepository.getRoute(workload);
-      return current?.destinationId === destination.id ? current.modelId : null;
-    }
-    if (modelId === null) {
-      return null;
-    }
-    if (!isCloud) {
-      throw new BadRequestException('Only Frameleaf Cloud work names a catalogue model');
-    }
-    if (isLocalOnlyModel(modelId)) {
-      throw new BadRequestException(`The model ${modelId} runs on this server only`);
-    }
-    const facts = destination.lastProbeCloud;
-    if (!(facts?.modelIds ?? []).includes(modelId)) {
-      throw new BadRequestException(`The model ${modelId} is not in the Frameleaf Cloud catalogue`);
-    }
-    if (facts?.modelWorkloads?.[modelId] !== workload) {
-      throw new BadRequestException(`The model ${modelId} does not run ${workload} in the Frameleaf Cloud catalogue`);
-    }
-    return modelId;
   }
 
   /**

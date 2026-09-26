@@ -593,6 +593,7 @@ describe(MachineLearningRepository.name, () => {
         recordAccounting,
         getRoute: vi.fn(),
         getRoutes: vi.fn().mockResolvedValue([]),
+        getCloudModelChoice: vi.fn().mockResolvedValue(null),
       } as unknown as MlDestinationRepository;
       const machineLearningRepository = {
         probe: vi

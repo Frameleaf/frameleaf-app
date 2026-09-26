@@ -44,7 +44,7 @@ The default fallback setting is `microsoft/Florence-2-base-ft`. The fallback is 
 
 #### Model licences and Frameleaf Cloud
 
-Some models may run on your own hardware but are never offered on Frameleaf Cloud, because their licences do not allow hosted commercial use. The server refuses a cloud job for them and a route that names one, and the Frameleaf Cloud model pickers never offer them. They stay available on this server and on home-network workers.
+Some models may run on your own hardware but are never offered on Frameleaf Cloud, because their licences do not allow hosted commercial use. The server refuses a cloud job for them and a model choice that names one, and the Frameleaf Cloud model pickers never offer them. They stay available on this server and on home-network workers.
 
 | Model                                                          | Licence                                         | Frameleaf Cloud |
 | -------------------------------------------------------------- | ----------------------------------------------- | --------------- |

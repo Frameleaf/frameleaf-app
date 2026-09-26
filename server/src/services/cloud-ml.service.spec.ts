@@ -244,7 +244,7 @@ describe(CloudMlService.name, () => {
 
       expect(probe.cloud?.defaultModels).toEqual({
         descriptions: 'ms_K6WT70CS',
-        'restoration:faithful': 'ms_YS60DAXB',
+        'restoration-faithful': 'ms_YS60DAXB',
       });
       expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringMatching(/catalogue has 1 problem/));
     });
@@ -487,6 +487,7 @@ describe(CloudMlService.name, () => {
       expect(result.models[1]).toEqual({
         id: 'ms_M7QG26PT',
         workload: MlWorkload.Enrichment,
+        group: 'descriptions',
         name: 'Descriptions · Best (fallback)',
         description: 'Qwen2.5-VL-72B AWQ, H200-class, 141 GB. Start fee 0.1 USD per worker. Built with Qwen',
         fingerprint: 'mr_68JDMAM8444M',
@@ -518,11 +519,78 @@ describe(CloudMlService.name, () => {
 
       const result = await sut.getCatalog();
 
-      expect(result.models.map((model) => [model.id, model.workload, model.isDefault])).toEqual([
-        ['ms_K6WT70CS', MlWorkload.Enrichment, true],
-        ['ms_M7QG26PT', MlWorkload.Enrichment, false],
-        ['ms_TTS00001', MlWorkload.StudioAi, false],
+      expect(result.models.map((model) => [model.id, model.workload, model.group, model.isDefault])).toEqual([
+        ['ms_K6WT70CS', MlWorkload.Enrichment, 'descriptions', true],
+        ['ms_M7QG26PT', MlWorkload.Enrichment, 'descriptions', false],
+        ['ms_TTS00001', MlWorkload.StudioAi, 'tts', false],
       ]);
+    });
+
+    it('lists the chosen model of every group, null where the catalogue default is used (FL-186)', async () => {
+      mocks.mlDestination.getCloudModelChoices.mockResolvedValue([
+        { modelGroup: 'tts', modelId: 'ms_TTS00001', updatedAt: new Date() },
+      ]);
+
+      await expect(sut.getModelChoices()).resolves.toEqual({
+        choices: [
+          { group: 'descriptions', modelId: null },
+          { group: 'upscale', modelId: null },
+          { group: 'restoration-faithful', modelId: null },
+          { group: 'restoration-creative', modelId: null },
+          { group: 'interpolation', modelId: null },
+          { group: 'transcription', modelId: null },
+          { group: 'tts', modelId: 'ms_TTS00001' },
+        ],
+      });
+    });
+
+    it('chooses a model only for exactly its catalogue group, and clears a choice with null (FL-186)', async () => {
+      link();
+      mocks.frameleafCloudMl.getCatalog.mockResolvedValue(
+        catalogSchema.parse({
+          ...catalogFixture,
+          models: [
+            ...restorationFixture.models,
+            { ...catalogFixture.models[2], sku: 'ms_TTS00001', workload: 'tts' },
+            { ...catalogFixture.models[2], sku: 'ms_STT00001', workload: 'transcription' },
+          ],
+        }),
+      );
+      mocks.mlDestination.getCloudModelChoices.mockResolvedValue([]);
+      mocks.mlDestination.setCloudModelChoice.mockResolvedValue();
+      mocks.mlDestination.clearCloudModelChoice.mockResolvedValue();
+
+      await sut.setModelChoice('restoration-creative', { modelId: 'ms_F1SSRED6' });
+      expect(mocks.mlDestination.setCloudModelChoice).toHaveBeenCalledWith('restoration-creative', 'ms_F1SSRED6');
+      await sut.setModelChoice('transcription', { modelId: 'ms_STT00001' });
+      expect(mocks.mlDestination.setCloudModelChoice).toHaveBeenLastCalledWith('transcription', 'ms_STT00001');
+
+      // the other restoration mode, and a speech model for transcription, are refused
+      await expect(sut.setModelChoice('restoration-creative', { modelId: 'ms_YS60DAXB' })).rejects.toThrow(
+        'The model ms_YS60DAXB does not run restoration-creative in the Frameleaf Cloud catalogue',
+      );
+      await expect(sut.setModelChoice('transcription', { modelId: 'ms_TTS00001' })).rejects.toThrow(
+        'The model ms_TTS00001 does not run transcription in the Frameleaf Cloud catalogue',
+      );
+      await expect(sut.setModelChoice('descriptions', { modelId: 'ms_GONE0001' })).rejects.toThrow(
+        /not in the Frameleaf Cloud catalogue/,
+      );
+      expect(mocks.mlDestination.setCloudModelChoice).toHaveBeenCalledTimes(2);
+
+      await sut.setModelChoice('transcription', { modelId: null });
+      expect(mocks.mlDestination.clearCloudModelChoice).toHaveBeenCalledWith('transcription');
+    });
+
+    it('stores each model group of the catalogue with the check, for admission (FL-186)', async () => {
+      link();
+      mocks.frameleafCloudMl.getCatalog.mockResolvedValue(catalogSchema.parse(restorationFixture));
+
+      const probe = await sut.probe();
+
+      expect(probe.cloud?.modelGroups).toEqual({
+        ms_YS60DAXB: 'restoration-faithful',
+        ms_F1SSRED6: 'restoration-creative',
+      });
     });
 
     it('assigns each restoration model of catalog-restoration.json to the app workload its own mode names (FL-181)', async () => {

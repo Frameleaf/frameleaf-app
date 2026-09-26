@@ -4005,6 +4005,18 @@
       "identity": "public.migration_overrides.value"
     },
     {
+      "definition": "text|not null|||",
+      "identity": "public.ml_cloud_model_choice.modelGroup"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "public.ml_cloud_model_choice.modelId"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.ml_cloud_model_choice.updatedAt"
+    },
+    {
       "definition": "text|nullable|||",
       "identity": "public.ml_destination.authToken"
     },
@@ -8163,6 +8175,10 @@
       "identity": "public.migration_overrides.migration_overrides_pkey"
     },
     {
+      "definition": "PRIMARY KEY (\"modelGroup\")",
+      "identity": "public.ml_cloud_model_choice.ml_cloud_model_choice_pkey"
+    },
+    {
       "definition": "FOREIGN KEY (\"consentAcknowledgedBy\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE SET NULL",
       "identity": "public.ml_destination.ml_destination_consentAcknowledgedBy_fkey"
     },
@@ -11747,6 +11763,10 @@
       "identity": "public.migration_overrides.migration_overrides_pkey"
     },
     {
+      "definition": "CREATE UNIQUE INDEX ml_cloud_model_choice_pkey ON public.ml_cloud_model_choice USING btree (\"modelGroup\")",
+      "identity": "public.ml_cloud_model_choice.ml_cloud_model_choice_pkey"
+    },
+    {
       "definition": "CREATE INDEX \"ml_destination_consentAcknowledgedBy_idx\" ON public.ml_destination USING btree (\"consentAcknowledgedBy\")",
       "identity": "public.ml_destination.ml_destination_consentAcknowledgedBy_idx"
     },
@@ -13504,6 +13524,10 @@
     {
       "definition": "table",
       "identity": "public.migration_overrides"
+    },
+    {
+      "definition": "table",
+      "identity": "public.ml_cloud_model_choice"
     },
     {
       "definition": "table",

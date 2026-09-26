@@ -1,18 +1,25 @@
-import { CloudMlConnection, MlWorkload, type CloudMlModelDto, type CloudMlStatusResponseDto } from '@immich/sdk';
+import {
+  CloudMlConnection,
+  CloudMlModelGroup,
+  MlWorkload,
+  type CloudMlModelDto,
+  type CloudMlStatusResponseDto,
+} from '@immich/sdk';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import {
   catalogModelsFor,
+  choicesByGroup,
   cloudModelChoice,
-  cloudRouteFor,
-  cloudWorkloadsFor,
+  cloudModelGroupsFor,
   loadCloudModelData,
   takesCatalogDefault,
 } from './cloud-models';
 
-const model = (id: string, workload: MlWorkload | null, rank: number, isDefault = false): CloudMlModelDto => ({
+const model = (id: string, group: CloudMlModelGroup | null, rank: number, isDefault = false): CloudMlModelDto => ({
   id,
-  workload,
+  workload: MlWorkload.Enrichment,
+  group,
   name: id,
   rank,
   isDefault,
@@ -23,11 +30,12 @@ const model = (id: string, workload: MlWorkload | null, rank: number, isDefault 
 });
 
 const catalog = [
-  model('ms_HEAVY001', MlWorkload.Enrichment, 5),
-  model('ms_LIGHT001', MlWorkload.Enrichment, 1, true),
-  model('ms_FAITH001', MlWorkload.RestorationFaithful, 1, true),
-  model('ms_CREAT001', MlWorkload.RestorationCreative, 2),
-  model('ms_STUDIO01', MlWorkload.StudioAi, 1, true),
+  model('ms_HEAVY001', CloudMlModelGroup.Descriptions, 5),
+  model('ms_LIGHT001', CloudMlModelGroup.Descriptions, 1, true),
+  model('ms_FAITH001', CloudMlModelGroup.RestorationFaithful, 1, true),
+  model('ms_CREAT001', CloudMlModelGroup.RestorationCreative, 2),
+  model('ms_WORDS001', CloudMlModelGroup.Transcription, 1, true),
+  model('ms_VOICE001', CloudMlModelGroup.Tts, 1),
   model('ms_UNKNOWN1', null, 1),
 ];
 
@@ -36,68 +44,78 @@ describe('Frameleaf Cloud model choice (FL-186)', () => {
     vi.clearAllMocks();
   });
 
-  it('gives restoration a workload per mode and every other kind of work one workload', () => {
-    expect(cloudWorkloadsFor('restoration')).toEqual([MlWorkload.RestorationFaithful, MlWorkload.RestorationCreative]);
-    expect(cloudWorkloadsFor('descriptions')).toEqual([MlWorkload.Enrichment]);
-    expect(cloudWorkloadsFor('studio')).toEqual([MlWorkload.StudioAi]);
-    expect(cloudWorkloadsFor('upscale')).toEqual([MlWorkload.Upscale]);
-    expect(cloudWorkloadsFor('interpolation')).toEqual([MlWorkload.Interpolation]);
+  it('gives restoration a group per mode, Studio AI one per feature, and other work one group', () => {
+    expect(cloudModelGroupsFor('restoration').map(({ group }) => group)).toEqual([
+      CloudMlModelGroup.RestorationFaithful,
+      CloudMlModelGroup.RestorationCreative,
+    ]);
+    expect(cloudModelGroupsFor('studio')).toEqual([
+      { group: CloudMlModelGroup.Transcription, workload: MlWorkload.StudioAi },
+      { group: CloudMlModelGroup.Tts, workload: MlWorkload.StudioAi },
+    ]);
+    expect(cloudModelGroupsFor('descriptions')).toEqual([
+      { group: CloudMlModelGroup.Descriptions, workload: MlWorkload.Enrichment },
+    ]);
+    expect(cloudModelGroupsFor('upscale').map(({ group }) => group)).toEqual([CloudMlModelGroup.Upscale]);
+    expect(cloudModelGroupsFor('interpolation').map(({ group }) => group)).toEqual([CloudMlModelGroup.Interpolation]);
   });
 
-  it('lists only the models of exactly one workload, lightest first', () => {
-    expect(catalogModelsFor(catalog, MlWorkload.Enrichment).map((entry) => entry.id)).toEqual([
+  it('lists only the models of exactly one group, lightest first', () => {
+    expect(catalogModelsFor(catalog, CloudMlModelGroup.Descriptions).map((entry) => entry.id)).toEqual([
       'ms_LIGHT001',
       'ms_HEAVY001',
     ]);
-    expect(catalogModelsFor(catalog, MlWorkload.RestorationCreative).map((entry) => entry.id)).toEqual(['ms_CREAT001']);
-    expect(catalogModelsFor(catalog, MlWorkload.Upscale)).toEqual([]);
+    expect(catalogModelsFor(catalog, CloudMlModelGroup.Tts).map((entry) => entry.id)).toEqual(['ms_VOICE001']);
+    expect(catalogModelsFor(catalog, CloudMlModelGroup.Upscale)).toEqual([]);
   });
 
   it('uses the chosen model, else the recommended one, and never a default for Studio AI', () => {
-    const enrichment = catalogModelsFor(catalog, MlWorkload.Enrichment);
-    expect(cloudModelChoice(enrichment, MlWorkload.Enrichment, 'ms_HEAVY001')).toEqual({
+    const descriptions = catalogModelsFor(catalog, CloudMlModelGroup.Descriptions);
+    expect(cloudModelChoice(descriptions, CloudMlModelGroup.Descriptions, 'ms_HEAVY001')).toEqual({
       kind: 'chosen',
       model: catalog[0],
     });
-    expect(cloudModelChoice(enrichment, MlWorkload.Enrichment, null)).toEqual({ kind: 'default', model: catalog[1] });
-    expect(cloudModelChoice(enrichment, MlWorkload.Enrichment, 'ms_GONE0001')).toEqual({
+    expect(cloudModelChoice(descriptions, CloudMlModelGroup.Descriptions, null)).toEqual({
+      kind: 'default',
+      model: catalog[1],
+    });
+    expect(cloudModelChoice(descriptions, CloudMlModelGroup.Descriptions, 'ms_GONE0001')).toEqual({
       kind: 'missing',
       id: 'ms_GONE0001',
     });
-    const creative = catalogModelsFor(catalog, MlWorkload.RestorationCreative);
-    expect(cloudModelChoice(creative, MlWorkload.RestorationCreative, null)).toEqual({ kind: 'none' });
-    const studio = catalogModelsFor(catalog, MlWorkload.StudioAi);
-    expect(takesCatalogDefault(MlWorkload.StudioAi)).toBe(false);
-    expect(cloudModelChoice(studio, MlWorkload.StudioAi, null)).toEqual({ kind: 'none' });
+    const creative = catalogModelsFor(catalog, CloudMlModelGroup.RestorationCreative);
+    expect(cloudModelChoice(creative, CloudMlModelGroup.RestorationCreative, null)).toEqual({ kind: 'none' });
+    const words = catalogModelsFor(catalog, CloudMlModelGroup.Transcription);
+    expect(takesCatalogDefault(CloudMlModelGroup.Transcription)).toBe(false);
+    expect(takesCatalogDefault(CloudMlModelGroup.Tts)).toBe(false);
+    expect(cloudModelChoice(words, CloudMlModelGroup.Transcription, null)).toEqual({ kind: 'none' });
   });
 
-  it('finds a route only when it points at the Frameleaf Cloud destination', () => {
-    const routes = [
-      { workload: MlWorkload.Enrichment, destinationId: 'cloud-1', modelId: 'ms_HEAVY001' },
-      { workload: MlWorkload.Upscale, destinationId: 'lan-1', modelId: null },
+  it('reads the choices, and the catalogue only once Frameleaf Cloud answers', async () => {
+    const choices = [
+      { group: CloudMlModelGroup.Descriptions, modelId: 'ms_HEAVY001' },
+      { group: CloudMlModelGroup.Tts, modelId: null },
     ];
-    expect(cloudRouteFor(routes, MlWorkload.Enrichment, 'cloud-1')).toEqual(routes[0]);
-    expect(cloudRouteFor(routes, MlWorkload.Upscale, 'cloud-1')).toBeNull();
-    expect(cloudRouteFor(routes, MlWorkload.Enrichment, null)).toBeNull();
-  });
-
-  it('reads the catalogue only once Frameleaf Cloud is ready and added, and reports a failed read', async () => {
-    const routes = [{ workload: MlWorkload.Enrichment, destinationId: 'cloud-1', modelId: null }];
-    sdkMock.getMlWorkloadRoutes.mockResolvedValue({ routes });
+    sdkMock.getCloudMlModelChoices.mockResolvedValue({ choices });
     sdkMock.getCloudMlCatalog.mockResolvedValue({ models: catalog });
-    const ready = { connection: CloudMlConnection.Ready, destination: { id: 'cloud-1' } } as CloudMlStatusResponseDto;
+    const byGroup = choicesByGroup(choices);
+    expect(byGroup).toEqual({ descriptions: 'ms_HEAVY001', tts: null });
 
     await expect(
-      loadCloudModelData({ connection: CloudMlConnection.NotLinked, destination: null } as CloudMlStatusResponseDto),
-    ).resolves.toEqual({ catalog: null, catalogFailed: false, routes });
+      loadCloudModelData({ connection: CloudMlConnection.NotLinked } as CloudMlStatusResponseDto),
+    ).resolves.toEqual({ catalog: null, catalogFailed: false, choices: byGroup });
     expect(sdkMock.getCloudMlCatalog).not.toHaveBeenCalled();
+    await expect(
+      loadCloudModelData({ connection: CloudMlConnection.Unavailable } as CloudMlStatusResponseDto),
+    ).resolves.toEqual({ catalog: null, catalogFailed: true, choices: byGroup });
 
-    await expect(loadCloudModelData(ready)).resolves.toEqual({ catalog, catalogFailed: false, routes });
+    const ready = { connection: CloudMlConnection.Ready } as CloudMlStatusResponseDto;
+    await expect(loadCloudModelData(ready)).resolves.toEqual({ catalog, catalogFailed: false, choices: byGroup });
 
     sdkMock.getCloudMlCatalog.mockRejectedValue(new Error('unavailable'));
-    await expect(loadCloudModelData(ready)).resolves.toEqual({ catalog: null, catalogFailed: true, routes });
+    await expect(loadCloudModelData(ready)).resolves.toEqual({ catalog: null, catalogFailed: true, choices: byGroup });
 
-    sdkMock.getMlWorkloadRoutes.mockRejectedValue(new Error('forbidden'));
-    await expect(loadCloudModelData(null)).resolves.toEqual({ catalog: null, catalogFailed: false, routes: [] });
+    sdkMock.getCloudMlModelChoices.mockRejectedValue(new Error('forbidden'));
+    await expect(loadCloudModelData(null)).resolves.toEqual({ catalog: null, catalogFailed: false, choices: {} });
   });
 });

@@ -109,8 +109,14 @@ export const mlDestinationStub = {
       // FL-183 (FC-34): the model the catalogue marks per group, used when no model is routed.
       defaultModels: {
         descriptions: 'describe-large',
-        'restoration:faithful': 'restore-faithful',
-        'restoration:creative': 'restore-creative',
+        'restoration-faithful': 'restore-faithful',
+        'restoration-creative': 'restore-creative',
+      },
+      // FL-186: the catalogue group of each model; admission sends a model only for its own group.
+      modelGroups: {
+        'describe-large': 'descriptions',
+        'restore-faithful': 'restoration-faithful',
+        'restore-creative': 'restoration-creative',
       },
       refusal: null,
     },

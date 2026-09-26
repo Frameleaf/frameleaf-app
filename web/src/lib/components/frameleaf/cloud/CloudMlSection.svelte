@@ -8,8 +8,8 @@
    * - the AI Wallet (CloudMlWalletCard): balance, held, available, spent today against the daily cap,
    *   add credit and automatic top-up;
    * - how cloud jobs are billed (GPU time per second by GPU class plus a start fee per worker) with the
-   *   GPU rate list, the Frameleaf Cloud model per kind of work (FL-186: from the cloud's catalogue,
-   *   saved on the workload's route), and a job estimate with its admission;
+   *   GPU rate list, the Frameleaf Cloud model per model group (FL-186: from the cloud's catalogue,
+   *   saved apart from the routes), and a job estimate with its admission;
    * - automatic descriptions of new photos with a daily budget;
    * - recent cloud jobs with their GPU time and settled cost.
    *
@@ -46,7 +46,7 @@
     workloadUnitKey,
     type CostEstimate,
   } from '$lib/frameleaf/gpu-model-catalog';
-  import { loadCloudModelData, type CloudModelData } from '$lib/frameleaf/cloud-models';
+  import { choicesByGroup, loadCloudModelData, type CloudModelData } from '$lib/frameleaf/cloud-models';
   import { mlWorkloadLabelKey } from '$lib/frameleaf/ml-destinations';
   import { getSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
@@ -76,7 +76,7 @@
   import { locale, t, type Translations } from 'svelte-i18n';
 
   let status = $state<CloudMlStatusResponseDto | null>(null);
-  let models = $state<CloudModelData>({ catalog: null, catalogFailed: false, routes: [] });
+  let models = $state<CloudModelData>({ catalog: null, catalogFailed: false, choices: {} });
   let settlements = $state<CloudMlSettlementDto[]>([]);
   let loadError = $state(false);
   let notice = $state('');
@@ -337,10 +337,9 @@
               row={workload}
               catalog={models.catalog}
               catalogFailed={models.catalogFailed}
-              routes={models.routes}
-              cloudDestinationId={status?.destination?.id ?? null}
-              onSaved={(routes, message) => {
-                models = { ...models, routes };
+              choices={models.choices}
+              onSaved={(choices, message) => {
+                models = { ...models, choices: choicesByGroup(choices) };
                 notice = message;
               }}
             />
