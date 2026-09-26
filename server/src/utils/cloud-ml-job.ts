@@ -42,8 +42,16 @@ export const CLOUD_ML_JOB_PRICE_TOLERANCE = 1.1;
 export const CLOUD_ML_JOB_MAX_ESTIMATES = 3;
 /** Frameleaf Cloud fans a long video out to at most this many serverless workers (FC-39). */
 export const CLOUD_ML_JOB_MAX_WORKERS = 5;
-/** Unconfirmed estimates kept at once; an older one is estimated again. */
-export const CLOUD_ML_JOB_ESTIMATES_KEPT = 30;
+/** Unconfirmed estimates kept at once per person; an older one is estimated again. */
+export const CLOUD_ML_JOB_ESTIMATES_KEPT = 10;
+/**
+ * Transient failures in a row a job with a cloud job may meet while it uploads or collects its result
+ * before it fails: each one waits (doubling, up to `CLOUD_ML_JOB_MAX_POLL_MS`) and tries again without
+ * spending the job's automatic retry. A running job's reads are never counted: it is read until it ends.
+ */
+export const CLOUD_ML_JOB_MAX_TRANSIENT_FAILURES = 8;
+/** How long a person waits before asking for another full-video estimate while one is being prepared. */
+export const CLOUD_ML_JOB_PREPARING_RETRY_SECONDS = 5;
 /** A Smooth motion or restoration preview is a clip of this many seconds. */
 export const CLOUD_ML_JOB_PREVIEW_SECONDS = 5;
 
@@ -85,7 +93,7 @@ export enum CloudMlJobPhase {
   Uploading = 'uploading',
   /** Every input is uploaded and the job was started; it is polled until it ends. */
   Started = 'started',
-  /** The job ended; its outputs are downloaded and checked, then it is acknowledged and settled. */
+  /** The job ended; its outputs are downloaded, checked and published, then acknowledged and settled. */
   Ending = 'ending',
   /** Nothing is left to do with the cloud job. */
   Finished = 'finished',
@@ -145,6 +153,8 @@ export const CloudMlJobSnapshotSchema = z.object({
   output: z.object({ width: z.int().min(1), height: z.int().min(1) }),
   durationSeconds: z.number().nullable(),
   approved: CloudMlJobApprovalSchema,
+  /** The estimate this job was confirmed from, so a repeated confirmation finds the job it created. */
+  estimateId: z.string().min(1).optional(),
   consent: z.object({
     version: z.string().min(1),
     textSha256: z.string().nullable(),
@@ -271,6 +281,8 @@ export const CloudMlJobResultSchema = z.object({
   costReads: z.int().min(0),
   /** Why the job waits or stopped, in the words it was given. */
   waiting: z.object({ code: z.string(), detail: z.string(), at: z.string() }).nullable(),
+  /** Transient failures in a row since the cloud job exists; reset by every step that goes through. */
+  transientFailures: z.int().min(0).default(0),
 });
 export type CloudMlJobResult = z.infer<typeof CloudMlJobResultSchema>;
 
@@ -286,6 +298,7 @@ export const emptyCloudMlJobResult = (): CloudMlJobResult => ({
   cost: null,
   costReads: 0,
   waiting: null,
+  transientFailures: 0,
 });
 
 /** The result as stored, or a fresh one when there is none or it cannot be read. */
@@ -394,8 +407,19 @@ export const cloudMlJobCanPause = (operation: { kind: string; result: unknown })
   if (operation.kind !== MediaOperationKind.CloudMlJob) {
     return true;
   }
-  const { phase } = parseCloudMlJobResult(operation.result);
-  return phase === CloudMlJobPhase.Queued || phase === CloudMlJobPhase.Uploading;
+  // an upload in flight has an admitted cloud job holding the AI Wallet: it runs to its start
+  return parseCloudMlJobResult(operation.result).phase === CloudMlJobPhase.Queued;
+};
+
+/**
+ * How long a job waits after its `failures`-th transient failure in a row: doubling from
+ * `CLOUD_ML_JOB_POLL_MS` up to `CLOUD_ML_JOB_MAX_POLL_MS`, and never sooner than the cloud's
+ * `Retry-After`.
+ */
+export const cloudMlJobBackoffMs = (failures: number, retryAfterSeconds: number | null = null): number => {
+  const doubled = CLOUD_ML_JOB_POLL_MS * 2 ** Math.max(0, failures - 1);
+  const asked = retryAfterSeconds === null ? 0 : retryAfterSeconds * 1000;
+  return Math.min(CLOUD_ML_JOB_MAX_POLL_MS, Math.max(doubled, asked));
 };
 
 /** A cloud job as Activity and `GET /cloud/ml/jobs/{id}` show it (FL-162); the DTO is `CloudMlJobActivityDto`. */
@@ -513,6 +537,32 @@ export const orderedOutputs = (outputs: readonly CloudOutputDownload[]): CloudOu
     return match ? Number(match[1]) : -1;
   };
   return outputs.toSorted((a, b) => shard(a) - shard(b));
+};
+
+/**
+ * Whether a job's outputs make one whole result: a single output, or shards numbered 0 to n − 1 with
+ * none missing, and, when the job counted its work, as many as it counted. A job stopped at its hold
+ * part-way through a video delivers only the shards it finished, which is not a whole video.
+ */
+export const outputsComplete = (
+  outputs: readonly CloudOutputDownload[],
+  progress: { done: number; total: number; unit: string } | null,
+): boolean => {
+  const shards = outputs.map((output) => /-s(\d+)$/.exec(output.outputId));
+  if (shards.every((match) => match === null)) {
+    return outputs.length === 1;
+  }
+  if (shards.some((match) => match === null)) {
+    return false;
+  }
+  const numbers = shards.map((match) => Number(match![1])).toSorted((a, b) => a - b);
+  if (numbers.some((value, index) => value !== index)) {
+    return false;
+  }
+  if (!progress || progress.total <= 0) {
+    return true;
+  }
+  return progress.done >= progress.total && (progress.unit !== 'segments' || numbers.length === progress.total);
 };
 
 /**

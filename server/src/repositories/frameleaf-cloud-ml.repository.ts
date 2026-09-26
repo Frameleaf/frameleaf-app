@@ -83,6 +83,8 @@ export class CloudTransferError extends Error {
   constructor(
     readonly failure: CloudTransferFailure,
     message: string,
+    /** The storage answer's HTTP status, when storage answered at all. */
+    readonly status: number | null = null,
   ) {
     super(message);
     this.name = 'CloudTransferError';
@@ -290,15 +292,21 @@ export class FrameleafCloudMlRepository {
     gateway: Pick<CloudMlGateway, 'url'>,
     target: CloudUploadTarget,
     file: string,
-    options: { done?: ReadonlyArray<CloudUploadedPart>; onPart?: (part: CloudUploadedPart) => Promise<boolean> } = {},
+    options: {
+      done?: ReadonlyArray<CloudUploadedPart>;
+      onPart?: (part: CloudUploadedPart) => Promise<boolean>;
+      /** Aborting stops the transfer in flight with `stopped`. */
+      signal?: AbortSignal;
+    } = {},
   ): Promise<void> {
+    const { signal } = options;
     if (target.inline) {
       this.checkStorageAddress(gateway, target.inline.url);
       const body = await readFile(file);
       if (body.length !== target.bytes) {
         throw new CloudTransferError('input-changed', `The prepared input ${target.inputId} changed size`);
       }
-      await this.storageSend(target.inline.url, 'PUT', target.headers, body);
+      await this.storageSend(target.inline.url, 'PUT', target.headers, body, signal);
       return;
     }
     const multipart = target.multipart;
@@ -326,7 +334,7 @@ export class FrameleafCloudMlRepository {
         if (bytesRead !== part.bytes) {
           throw new CloudTransferError('input-changed', `The prepared input ${target.inputId} ended early`);
         }
-        const response = await this.storageSend(part.url, 'PUT', target.headers, body);
+        const response = await this.storageSend(part.url, 'PUT', target.headers, body, signal);
         const etag = response.headers.get('etag');
         if (!etag) {
           throw new CloudTransferError('storage-refused', 'Frameleaf Cloud storage did not confirm an uploaded part');
@@ -339,11 +347,13 @@ export class FrameleafCloudMlRepository {
     } finally {
       await handle.close();
     }
-    const parts = [...done.entries()]
+    const parts = done
+      .entries()
+      .toArray()
       .toSorted(([a], [b]) => a - b)
       .map(([number, etag]) => `<Part><PartNumber>${number}</PartNumber><ETag>${escapeXml(etag)}</ETag></Part>`);
     const xml = `<CompleteMultipartUpload>${parts.join('')}</CompleteMultipartUpload>`;
-    const response = await this.storageSend(multipart.completeUrl, 'POST', target.headers, Buffer.from(xml));
+    const response = await this.storageSend(multipart.completeUrl, 'POST', target.headers, Buffer.from(xml), signal);
     // S3 can answer 200 with an error document when completing a multipart upload
     const answer = await response.text();
     if (answer.includes('<Error>')) {
@@ -361,11 +371,17 @@ export class FrameleafCloudMlRepository {
     output: CloudOutputDownload,
     headers: CloudStorageHeaders,
     destination: string,
+    options: { signal?: AbortSignal } = {},
   ): Promise<void> {
+    const { signal } = options;
     this.checkStorageAddress(gateway, output.url);
-    const response = await this.storageFetch(output.url, { method: 'GET', headers }, CLOUD_DOWNLOAD_TIMEOUT_MS);
+    const response = await this.storageFetch(output.url, { method: 'GET', headers }, CLOUD_DOWNLOAD_TIMEOUT_MS, signal);
     if (!response.ok || !response.body) {
-      throw new CloudTransferError('storage-refused', `Frameleaf Cloud storage answered ${response.status}`);
+      throw new CloudTransferError(
+        'storage-refused',
+        `Frameleaf Cloud storage answered ${response.status}`,
+        response.status,
+      );
     }
     const hash = createHash('sha256');
     let bytes = 0;
@@ -384,6 +400,11 @@ export class FrameleafCloudMlRepository {
         throw new CloudTransferError('sha256-mismatch', `Output ${output.outputId} does not match its SHA-256`);
       }
       kept = true;
+    } catch (error) {
+      if (signal?.aborted) {
+        throw new CloudTransferError('stopped', 'The download was stopped');
+      }
+      throw error;
     } finally {
       await handle.close();
       if (!kept) {
@@ -405,13 +426,15 @@ export class FrameleafCloudMlRepository {
     method: 'PUT' | 'POST',
     headers: CloudStorageHeaders,
     body: Buffer,
+    signal?: AbortSignal,
   ): Promise<Response> {
-    const response = await this.storageFetch(url, { method, headers, body }, CLOUD_TRANSFER_TIMEOUT_MS);
+    const response = await this.storageFetch(url, { method, headers, body }, CLOUD_TRANSFER_TIMEOUT_MS, signal);
     if (!response.ok) {
       // an expired presigned address answers 403; the caller signs the target again
       throw new CloudTransferError(
         response.status === 403 ? 'target-expired' : 'storage-refused',
         `Frameleaf Cloud storage answered ${response.status}`,
+        response.status,
       );
     }
     return response;
@@ -422,16 +445,21 @@ export class FrameleafCloudMlRepository {
     url: string,
     init: { method: string; headers: Record<string, string>; body?: Buffer },
     timeoutMs: number,
+    signal?: AbortSignal,
   ): Promise<Response> {
+    const timeout = AbortSignal.timeout(timeoutMs);
     try {
       return await fetch(url, {
         method: init.method,
         headers: init.headers,
         body: init.body ? new Uint8Array(init.body) : undefined,
         redirect: 'error',
-        signal: AbortSignal.timeout(timeoutMs),
+        signal: signal ? AbortSignal.any([timeout, signal]) : timeout,
       });
     } catch (error) {
+      if (signal?.aborted) {
+        throw new CloudTransferError('stopped', 'The transfer was stopped');
+      }
       throw new CloudTransferError(
         'storage-unreachable',
         `Frameleaf Cloud storage did not answer: ${error instanceof Error ? error.message : String(error)}`,
