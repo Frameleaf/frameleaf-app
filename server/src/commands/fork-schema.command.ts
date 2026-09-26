@@ -1,5 +1,9 @@
 import { Command, CommandRunner, InquirerService, Option, Question, QuestionSet, SubCommand } from 'nest-commander';
-import { ForkSchemaMigrationService, ForkSchemaMigrationStatus } from 'src/services/fork-schema-migration.service.js';
+import {
+  ForkSchemaAdoptionStatus,
+  ForkSchemaMigrationService,
+  ForkSchemaMigrationStatus,
+} from 'src/services/fork-schema-migration.service.js';
 
 type BatchOptions = { batchSize?: number };
 const DEFAULT_BATCH_SIZE = 250;
@@ -42,6 +46,36 @@ export class ForkSchemaStatusCommand extends CommandRunner {
 
   async run(): Promise<void> {
     printStatus(await this.migration.status());
+  }
+}
+
+export const formatForkSchemaAdoption = ({ adoption, ...status }: ForkSchemaAdoptionStatus): string =>
+  [
+    adoption.adopted
+      ? `Adopted: yes (${adoption.applied.length} migrations applied)`
+      : 'Adopted: already (nothing changed)',
+    formatForkSchemaStatus(status),
+  ].join('\n');
+
+@SubCommand({
+  name: 'adopt',
+  description: 'Make a library created by the official server a full Frameleaf library',
+})
+export class ForkSchemaAdoptCommand extends CommandRunner {
+  constructor(
+    private migration: ForkSchemaMigrationService,
+    private inquirer: InquirerService,
+  ) {
+    super();
+  }
+
+  async run(): Promise<void> {
+    const { confirmed } = await this.inquirer.ask<{ confirmed: boolean }>('confirm-fork-schema-adopt', {});
+    if (!confirmed) {
+      console.log('The library was not adopted.');
+      return;
+    }
+    console.log(formatForkSchemaAdoption(await this.migration.adopt()));
   }
 }
 
@@ -101,6 +135,7 @@ export class ForkSchemaVerifyCommand extends CommandRunner {
   name: 'fork-schema',
   description: 'Manage the fork schema compatibility backfill',
   subCommands: [
+    ForkSchemaAdoptCommand,
     ForkSchemaStatusCommand,
     ForkSchemaStartCommand,
     ForkSchemaPauseCommand,
@@ -121,6 +156,20 @@ export class ConfirmForkSchemaStartQuestion {
     type: 'confirm',
     name: 'confirmed',
     message: 'Start the fork schema backfill while legacy reads remain authoritative?',
+    default: false,
+  })
+  confirmed(value: boolean): boolean {
+    return value;
+  }
+}
+
+@QuestionSet({ name: 'confirm-fork-schema-adopt' })
+export class ConfirmForkSchemaAdoptQuestion {
+  @Question({
+    type: 'confirm',
+    name: 'confirmed',
+    message:
+      'Adopt this library? The official server can then only take it back through the certified handoff. Take database and media checkpoints first.',
     default: false,
   })
   confirmed(value: boolean): boolean {
