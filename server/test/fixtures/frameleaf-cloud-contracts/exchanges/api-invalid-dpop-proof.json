@@ -1,0 +1,23 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.frameleaf.cloud/v1/instance/heartbeat",
+    "headers": {
+      "Authorization": "DPoP <access_token>",
+      "DPoP": "<compact JWS: header and payload below, signed by the instance key>",
+      "Content-Type": "application/json"
+    },
+    "note": "detail is one of missing, header, signature, htm, htu, iat, jti, ath, replayed, key"
+  },
+  "status": 401,
+  "headers": {
+    "WWW-Authenticate": "DPoP error=\"invalid_dpop_proof\", algs=\"EdDSA Ed25519\""
+  },
+  "body": {
+    "code": "invalid_dpop_proof",
+    "message": "The DPoP proof isn't valid. Send a fresh proof signed by the server key.",
+    "retryable": false,
+    "detail": "replayed",
+    "requestId": "req_01J8ZK3M4N5P6Q7T"
+  }
+}
