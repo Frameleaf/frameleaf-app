@@ -8,7 +8,7 @@
  * the draft is not a document.
  */
 import type { StudioDraftResult } from './host-contract';
-import type { StudioProjectAccess, StudioProjectStatus } from './project-session';
+import type { StudioProjectAccess, StudioProjectStatus, StudioStageOutcome } from './project-session';
 
 export interface StudioDraftGate {
   accessLost: boolean;
@@ -42,3 +42,19 @@ export const decideStudioDraft = (
  */
 export const studioDraftHeld = (status: StudioProjectStatus | undefined, hasDraft: boolean): boolean =>
   hasDraft && (status === 'conflict' || status === 'lease-lost');
+
+/**
+ * What the editor is told after the session judged its draft. `superseded` (FL-174): the draft was
+ * built before a canonical command, undo, Reload or a restore put the host's own graph in place; it
+ * is kept out so the host's change stands, and the editor reloads to show it. A draft the session
+ * did not keep is refused as `lease-lost`, so the editor never believes an edit is kept when it is not.
+ */
+export const studioDraftResult = (outcome: StudioStageOutcome, hasDraft: boolean): StudioDraftResult => {
+  if (outcome === 'superseded') {
+    return { status: 'rejected', reason: 'superseded' };
+  }
+  if (outcome !== 'staged' || !hasDraft) {
+    return { status: 'rejected', reason: 'lease-lost' };
+  }
+  return { status: 'staged' };
+};
