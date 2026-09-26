@@ -144,7 +144,12 @@
 
   /** Why each stop that cannot be chosen is off, once each (the prototype's list under the key). */
   const reasons = $derived.by(() => {
-    const texts = localStops.flatMap((stop) => (stop.reason ? [reasonText(stop, stop.reason)] : []));
+    const texts: string[] = [];
+    for (const stop of localStops) {
+      if (stop.reason) {
+        texts.push(reasonText(stop, stop.reason));
+      }
+    }
     if (cloudDisabled && cloudModels.length > 0) {
       texts.push(cloudReason);
     }
@@ -220,7 +225,8 @@
     const target = recommended.id;
     choose(null);
     await tick();
-    const radios = fieldset?.querySelectorAll<HTMLInputElement>(`:scope input[name="${id}-cloud"]`) ?? [];
+    const radios =
+      fieldset?.querySelectorAll<HTMLInputElement>(`:scope input[name="${CSS.escape(`${id}-cloud`)}"]`) ?? [];
     for (const radio of radios) {
       if (radio.value === target) {
         radio.focus();
@@ -255,7 +261,10 @@
             {@const checked = stop.model.value === side.value}
             {@const off = side.disabled || stop.reason !== null}
             <label
-              class="ms-stop is-{stop.band}"
+              class="ms-stop"
+              class:is-cpu={stop.band === 'cpu'}
+              class:is-gpu={stop.band === 'gpu'}
+              class:is-none={stop.band === 'none'}
               class:is-selected={checked}
               class:is-disabled={off}
               title={stop.reason ? reasonText(stop, stop.reason) : `${stop.model.name} · ${localLabel(stop)}`}
@@ -334,7 +343,13 @@
 
   {#if local}
     {#if localSelected}
-      <p class="ms-readout is-{localSelected.band}" aria-live="polite">
+      <p
+        class="ms-readout"
+        class:is-cpu={localSelected.band === 'cpu'}
+        class:is-gpu={localSelected.band === 'gpu'}
+        class:is-none={localSelected.band === 'none'}
+        aria-live="polite"
+      >
         <Icon icon={BAND_ICONS[localSelected.band]} size="16" aria-hidden={true} />
         <span>
           {$t('admin.frameleaf_model_local_side')} · <strong>{localSelected.model.name}</strong> · {localLabel(

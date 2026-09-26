@@ -328,7 +328,7 @@ describe('CloudMlSection (FL-159, prototype Processing)', () => {
     const local = within(picker).getByRole('radiogroup', { name: "This server's model for Descriptions & tags" });
     expect(within(local).getByRole('radio', { name: /^Qwen2\.5-VL 3B/ })).toBeChecked();
     await fireEvent.click(within(local).getByRole('radio', { name: /^Qwen2\.5-VL 7B/ }));
-    expect(store.draft.machineLearning.imageDescription.modelName).toBe('Qwen/Qwen2.5-VL-7B-Instruct');
+    expect(store.draft.machineLearning.imageDescription?.modelName).toBe('Qwen/Qwen2.5-VL-7B-Instruct');
     expect(sdkMock.setCloudMlModelChoice).not.toHaveBeenCalled();
     // without a Frameleaf Cloud catalogue, kinds of work with no local model have no slider
     expect(screen.queryByRole('group', { name: 'Enhance & upscale' })).toBeNull();
