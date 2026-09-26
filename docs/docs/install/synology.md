@@ -23,7 +23,7 @@ When you're all done, you should have the following:
 - `./docker/immich-app/postgres`
 - `./docker/immich-app/library`
 
-Download [`docker-compose.yml`](https://github.com/immich-app/immich/releases/latest/download/docker-compose.yml) and [`example.env`](https://github.com/immich-app/immich/releases/latest/download/example.env) to your computer. Upload the files to the `./docker/immich-app` directory, and rename `example.env` to `.env`. Note: If you plan to use the Synology Text editor to edit the `.env` file on the NAS within File Station, you will need to rename it to a temporary name (e.g. `example.txt`) in order to see 'Open with Text Editor' in the file context menu. Once saved, rename it back to `.env`.
+Download [`docker-compose.yml`](https://github.com/Frameleaf/frameleaf-app/releases/latest/download/docker-compose.yml) and [`example.env`](https://github.com/Frameleaf/frameleaf-app/releases/latest/download/example.env) to your computer. Upload the files to the `./docker/immich-app` directory, and rename `example.env` to `.env`. Note: If you plan to use the Synology Text editor to edit the `.env` file on the NAS within File Station, you will need to rename it to a temporary name (e.g. `example.txt`) in order to see 'Open with Text Editor' in the file context menu. Once saved, rename it back to `.env`.
 
 ## Step 2 - Populate the .env file with custom values
 
@@ -83,7 +83,7 @@ Ensure your photos and videos are backed up. Your `.env` settings will define wh
 
 ## Step 2. Check release notes
 
-Always check the [release notes](https://github.com/immich-app/immich/releases) before proceeding with an update!
+Always check the [release notes](https://github.com/Frameleaf/frameleaf-app/releases) before proceeding with an update!
 
 ## Step 3. Stop containers & clean up
 

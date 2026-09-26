@@ -19,12 +19,12 @@ The install script only supports Linux operating systems and requires Docker to 
 In the shell, from a directory of your choice, run the following command:
 
 ```bash
-curl -o- https://raw.githubusercontent.com/immich-app/immich/main/install.sh | bash
+curl -o- https://raw.githubusercontent.com/Frameleaf/frameleaf-app/fork/main/install.sh | bash
 ```
 
 The script will perform the following actions:
 
-1. Download [docker-compose.yml](https://github.com/immich-app/immich/releases/latest/download/docker-compose.yml), and the [.env](https://github.com/immich-app/immich/releases/latest/download/example.env) file from the main branch of the [repository](https://github.com/immich-app/immich).
+1. Download [docker-compose.yml](https://github.com/Frameleaf/frameleaf-app/releases/latest/download/docker-compose.yml), and the [.env](https://github.com/Frameleaf/frameleaf-app/releases/latest/download/example.env) file from the latest [Frameleaf release](https://github.com/Frameleaf/frameleaf-app/releases).
 2. Start the containers.
 
 The web application and mobile app will be available at `http://<machine-ip-address>:2283`

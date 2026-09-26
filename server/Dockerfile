@@ -20,7 +20,8 @@ RUN ./configure-apt.sh && \
   apt-get install --no-install-recommends -yqq ca-certificates && \
   mkdir -p /usr/share/postgresql-common/pgdg
 
-ADD --chmod=644 https://www.postgresql.org/media/keys/ACCC4CF8.asc /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc
+# PGDG signing key (fingerprint B97B0AFCAA1A47F044F244A07FCC7D46ACCC4CF8), pinned by checksum.
+ADD --checksum=sha256:0144068502a1eddd2a0280ede10ef607d1ec592ce819940991203941564e8e76 --chmod=644 https://www.postgresql.org/media/keys/ACCC4CF8.asc /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc
 
 RUN . /etc/os-release && \
   echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main" > /etc/apt/sources.list.d/pgdg.list && \
@@ -35,7 +36,9 @@ RUN . /etc/os-release && \
   cmake \
   jq \
   libbrotli-dev \
-  # libde265 v1.0.16 includes a fix for HDR images
+  # libde265 v1.0.16 includes a fix for HDR images. Packages taken from Debian testing (this one and
+  # libmimalloc3 in the production stage) float with that suite, as they did upstream; every other
+  # compiled input is pinned by revision or checksum.
   libde265-dev/testing \
   libexif-dev \
   libexpat1-dev \
@@ -79,14 +82,19 @@ RUN . /etc/os-release && \
 
 FROM base-server-build AS base-server-geodata
 
-ADD https://download.geonames.org/export/dump/cities500.zip /build/geodata/cities500.zip
-ADD --chmod=444 https://download.geonames.org/export/dump/admin1CodesASCII.txt /build/geodata/admin1CodesASCII.txt
-ADD --chmod=444 https://download.geonames.org/export/dump/admin2Codes.txt /build/geodata/admin2Codes.txt
-ADD --chmod=444 https://download.geonames.org/export/dump/countryInfo.txt /build/geodata/countryInfo.txt
-ADD --chmod=444 https://raw.githubusercontent.com/nvkelso/natural-earth-vector/v5.1.2/geojson/ne_10m_admin_0_countries.geojson /build/geodata/ne_10m_admin_0_countries.geojson
+# Reverse-geocoding data from a fixed snapshot: GeoNames publishes no versioned files, so these are the
+# Internet Archive captures of its daily dumps, each pinned by checksum. The recorded date is the
+# snapshot's, not the build's, so every build (amd64 and arm64 alike) ships identical data and a new image
+# only re-imports geodata when this snapshot changes. Refresh all five inputs and GEODATA_DATE together.
+ARG GEODATA_DATE=2026-09-11T00:21:05+00:00
+ADD --checksum=sha256:c4ec45f18921948fc2bce5b1e89bcef98c0236c7bea986918999b3e3f71bd3ef https://web.archive.org/web/20260911002105id_/https://download.geonames.org/export/dump/cities500.zip /build/geodata/cities500.zip
+ADD --checksum=sha256:590651498043f674accda2b7f46d21286cda0e290b02f8561c5005eee9a5448c --chmod=444 https://web.archive.org/web/20260911002039id_/https://download.geonames.org/export/dump/admin1CodesASCII.txt /build/geodata/admin1CodesASCII.txt
+ADD --checksum=sha256:fe8196f90676f40a8845f24cc0687dadc668fe8c0f9de6458da65fda50b48aba --chmod=444 https://web.archive.org/web/20260911002112id_/https://download.geonames.org/export/dump/admin2Codes.txt /build/geodata/admin2Codes.txt
+ADD --checksum=sha256:93bafc525813f22e4711ff9ed6d626343094ce48c26388dc7c49189b3d7d5512 --chmod=444 https://web.archive.org/web/20260913000631id_/https://download.geonames.org/export/dump/countryInfo.txt /build/geodata/countryInfo.txt
+ADD --checksum=sha256:239eec57ac17f100a11e2536cffc56752c318b50ae765b0918ff7aab4ce8f255 --chmod=444 https://raw.githubusercontent.com/nvkelso/natural-earth-vector/v5.1.2/geojson/ne_10m_admin_0_countries.geojson /build/geodata/ne_10m_admin_0_countries.geojson
 
 RUN umask 0333 && unzip /build/geodata/cities500.zip -d /build/geodata/ && \
-  rm /build/geodata/cities500.zip && date --iso-8601=seconds | tr -d "\n" > /build/geodata/geodata-date.txt
+  rm /build/geodata/cities500.zip && printf '%s' "$GEODATA_DATE" > /build/geodata/geodata-date.txt
 
 FROM base-server-build AS base-server-jpegli
 
@@ -184,7 +192,8 @@ RUN ./configure-apt.sh && \
   apt-get install curl ca-certificates --no-install-recommends -yqq && \
   mkdir -p /usr/share/postgresql-common/pgdg
 
-ADD --chmod=644 https://www.postgresql.org/media/keys/ACCC4CF8.asc /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc
+# PGDG signing key (fingerprint B97B0AFCAA1A47F044F244A07FCC7D46ACCC4CF8), pinned by checksum.
+ADD --checksum=sha256:0144068502a1eddd2a0280ede10ef607d1ec592ce819940991203941564e8e76 --chmod=644 https://www.postgresql.org/media/keys/ACCC4CF8.asc /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc
 
 RUN . /etc/os-release && \
   echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main" > /etc/apt/sources.list.d/pgdg.list && \
@@ -234,6 +243,18 @@ RUN . /etc/os-release && \
   wget "https://github.com/intel/compute-runtime/releases/download/${CR_TAG}/intel-opencl-icd_${COMPUTE_RUNTIME_VERSION}_amd64.deb" &&  \
   # Shared libigdgmm1
   wget -nv "https://github.com/intel/compute-runtime/releases/download/${CR_TAG}/libigdgmm12_${GMMLIB_VERSION}_amd64.deb" && \
+  # SHA-256 digests GitHub records for these release assets; changing a driver version above needs its digest here.
+  printf '%s\n' \
+  'c1e1ecdfe2064c047c552651cfdcdafc504f2033afafba65654338b880048b67  intel-igc-core_1.0.17537.24_amd64.deb' \
+  'dd016400f87fa2b6a9fa9fbcca7eb4a2629174a29de679709f9bec5cede88b0e  intel-igc-opencl_1.0.17537.24_amd64.deb' \
+  'bbe71e4f414259e06a10cde72c29a2bd78d41b2bb2f6f8463b1806797fe66e85  intel-opencl-icd-legacy1_24.35.30872.36_amd64.deb' \
+  '3dbcbe4e716d62e9bd43a4a476d724cf772b4581dbcdd096d70df382e7ccad7e  intel-igc-core-2_2.38.2+22051_amd64.deb' \
+  'e265d191590efd5491bfbbd148c144fdd40aea51e0b57f8651130d2da20b8186  intel-igc-opencl-2_2.38.2+22051_amd64.deb' \
+  '6e447a783c99fb5634df298c135a81165be07db98672df96cdf413d22f3e6ac4  intel-opencl-icd_26.27.39122.11-0_amd64.deb' \
+  '6031a63d6e8a12ce61c14efc15f2c8e727061286e3820b8594e6d00615e04d54  libigdgmm12_22.10.0_amd64.deb' \
+  > intel-drivers.sha256 && \
+  sha256sum --strict -c intel-drivers.sha256 && \
+  [ "$(ls *.deb | wc -l)" -eq 7 ] && \
   dpkg -i *.deb && \
   # intel-igc-opencl ships libopencl-clang.so and .so.14 as two identical files
   ln -sf libopencl-clang.so.14 /usr/local/lib/libopencl-clang.so; \
@@ -248,6 +269,7 @@ RUN . /etc/os-release && \
   rm -rf \
   configure-apt.sh \
   ffmpeg* \
+  intel-drivers.sha256 \
   *.deb \
   /var/lib/apt/lists \
   /usr/lib/$(arch)-linux-gnu/libjpeg.so* \
