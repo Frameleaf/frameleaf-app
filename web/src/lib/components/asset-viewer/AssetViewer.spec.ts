@@ -55,6 +55,13 @@ vi.mock('$lib/components/asset-viewer/ImagePanoramaViewer.svelte', async () => {
   return { default: MockText };
 });
 
+// FL-148: the guard-parity specs only need isFaceEditMode toggled and FaceTagger mounted, not its own
+// (heavier) face-loading/canvas behaviour.
+vi.mock('$lib/components/frameleaf/FaceTagger.svelte', async () => {
+  const { default: MockText } = await import('@test-data/components/MockText.svelte');
+  return { default: MockText };
+});
+
 vi.mock('$lib/components/frameleaf/editor/QuickEditor.svelte', async () => {
   const { default: MockViewerControls } = await import('@test-data/components/MockViewerControls.svelte');
   return { default: MockViewerControls };
@@ -313,6 +320,131 @@ describe('AssetViewer', () => {
 
       resolveFirst();
       await waitFor(() => expect(onNavigateToAsset).toHaveBeenCalledTimes(2));
+    });
+
+    afterEach(() => {
+      // These guard-parity tests open the editor / face-edit mode directly on the shared manager.
+      assetViewerManager.resetPanelState();
+    });
+
+    it('drops a queued press if the editor opens before the neighbour resolves', async () => {
+      const { current, nextAsset } = buildAssets();
+      const onNavigateToAsset = vi.fn().mockResolvedValue(undefined);
+
+      const view = renderWithTooltips(AssetViewer, {
+        cursor: { current },
+        showNavigation: true,
+        onNavigateToAsset,
+      });
+
+      await fireEvent.keyDown(document, { key: 'ArrowRight' });
+      await Promise.resolve();
+
+      // The person opened the quick editor before the lookup settled.
+      assetViewerManager.openEditor();
+      await Promise.resolve();
+
+      await view.rerender({
+        componentProps: { cursor: { current, nextAsset }, showNavigation: true, onNavigateToAsset },
+      });
+      await Promise.resolve();
+
+      expect(onNavigateToAsset).not.toHaveBeenCalled();
+    });
+
+    it('drops a queued press if face-edit mode opens before the neighbour resolves', async () => {
+      const { current, nextAsset } = buildAssets();
+      const onNavigateToAsset = vi.fn().mockResolvedValue(undefined);
+
+      const view = renderWithTooltips(AssetViewer, {
+        cursor: { current },
+        showNavigation: true,
+        onNavigateToAsset,
+      });
+
+      await fireEvent.keyDown(document, { key: 'ArrowRight' });
+      await Promise.resolve();
+
+      // The person opened the face tagger (FaceTagger.svelte) before the lookup settled.
+      assetViewerManager.toggleFaceEditMode();
+      await Promise.resolve();
+
+      await view.rerender({
+        componentProps: { cursor: { current, nextAsset }, showNavigation: true, onNavigateToAsset },
+      });
+      await Promise.resolve();
+
+      expect(onNavigateToAsset).not.toHaveBeenCalled();
+    });
+
+    it('drops a queued press if a slideshow starts before the neighbour resolves', async () => {
+      const { current, nextAsset } = buildAssets();
+      const onNavigateToAsset = vi.fn().mockResolvedValue(undefined);
+
+      const view = renderWithTooltips(AssetViewer, {
+        cursor: { current },
+        showNavigation: true,
+        onNavigateToAsset,
+      });
+
+      await fireEvent.keyDown(document, { key: 'ArrowRight' });
+      await Promise.resolve();
+
+      // A slideshow started (from elsewhere - e.g. the footer's Play button) before the lookup settled;
+      // slideshow navigation runs its own path (isShuffle / slideshowHistory), not this queued intent.
+      slideshowStore.slideshowState.set(SlideshowState.PlaySlideshow);
+      await Promise.resolve();
+
+      await view.rerender({
+        componentProps: { cursor: { current, nextAsset }, showNavigation: true, onNavigateToAsset },
+      });
+      await Promise.resolve();
+
+      expect(onNavigateToAsset).not.toHaveBeenCalled();
+    });
+
+    it('does not replay a queued press once it has gone stale (about 1.5s after the keypress)', async () => {
+      const { current, nextAsset } = buildAssets();
+      const onNavigateToAsset = vi.fn().mockResolvedValue(undefined);
+      const now = vi.spyOn(Date, 'now').mockReturnValue(1_000_000);
+
+      const view = renderWithTooltips(AssetViewer, {
+        cursor: { current },
+        showNavigation: true,
+        onNavigateToAsset,
+      });
+
+      await fireEvent.keyDown(document, { key: 'ArrowRight' });
+      await Promise.resolve();
+
+      // The lookup only settles a while later - long enough that replaying the original press would
+      // move the person with no fresh interaction of their own.
+      now.mockReturnValue(1_000_000 + 2000);
+      await view.rerender({
+        componentProps: { cursor: { current, nextAsset }, showNavigation: true, onNavigateToAsset },
+      });
+      await Promise.resolve();
+
+      expect(onNavigateToAsset).not.toHaveBeenCalled();
+      now.mockRestore();
+    });
+
+    it('ignores an ArrowRight press when navigation is turned off for this viewer instance', async () => {
+      // Guard parity: the same canNavigateByKey() check that gates the replay paths above must also
+      // gate the original keypress, matching the buttons never being rendered with showNavigation=false.
+      const { current, nextAsset } = buildAssets();
+      const onNavigateToAsset = vi.fn().mockResolvedValue(undefined);
+
+      renderWithTooltips(AssetViewer, {
+        cursor: { current, nextAsset },
+        showNavigation: false,
+        onNavigateToAsset,
+      });
+
+      await fireEvent.keyDown(document, { key: 'ArrowRight' });
+      await Promise.resolve();
+
+      expect(onNavigateToAsset).not.toHaveBeenCalled();
     });
   });
 
