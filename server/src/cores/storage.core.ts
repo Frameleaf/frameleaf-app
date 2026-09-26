@@ -54,6 +54,9 @@ let instance: StorageCore | null;
 let mediaLocation: string | undefined;
 
 export class StorageCore {
+  /** FL-179: recorded moves already reported as mismatched, so a nightly retry does not warn again. */
+  private reportedMismatches = new Set<string>();
+
   private constructor(
     private assetRepository: AssetRepository,
     private configRepository: ConfigRepository,
@@ -320,9 +323,14 @@ export class StorageCore {
     } else if (result === 'deferred') {
       this.logger.log(`Deferred moving ${oldPath}: records that cannot change now name it; the nightly job retries`);
     } else if (result === 'mismatched') {
-      this.logger.warn(
-        `Deferred moving ${oldPath}: asset ${entityId} is mapped to another file; the move is kept until they agree`,
-      );
+      const message = `Deferred moving ${oldPath}: asset ${entityId} is mapped to another file; the move is kept until they agree`;
+      // retried every night: reported once per recorded move
+      if (this.reportedMismatches.has(move.id)) {
+        this.logger.debug(message);
+      } else {
+        this.reportedMismatches.add(move.id);
+        this.logger.warn(message);
+      }
     }
     return result === 'moved';
   }

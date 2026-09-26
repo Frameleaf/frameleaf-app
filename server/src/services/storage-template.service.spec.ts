@@ -1,4 +1,5 @@
 import { Stats } from 'node:fs';
+import type { PendingAssetMove } from 'src/repositories/move.repository.js';
 import { SystemConfig, defaults } from 'src/dtos/config.dto.js';
 import { AssetFileType, AssetPathType, AssetType, JobName, JobStatus } from 'src/enum.js';
 import { StorageTemplateService } from 'src/services/storage-template.service.js';
@@ -1230,20 +1231,78 @@ describe(StorageTemplateService.name, () => {
   });
 
   describe('onNightlyDatabaseCleanup (FL-179)', () => {
+    const pending = (overrides: Partial<PendingAssetMove> & Pick<PendingAssetMove, 'id' | 'entityId'>) => ({
+      pathType: AssetPathType.Original,
+      oldPath: `/data/library/${overrides.id}-old.jpg`,
+      newPath: `/data/library/${overrides.id}-new.jpg`,
+      assetExists: true,
+      isExternal: false,
+      originalPath: `/data/library/${overrides.id}-old.jpg`,
+      currentPath: `/data/library/${overrides.id}-old.jpg`,
+      ...overrides,
+    });
+
     it('queues every asset with a recorded move again, by the job that finishes it', async () => {
       mocks.move.getPendingAssetMoves.mockResolvedValue([
-        { entityId: 'asset-1', pathType: AssetPathType.Original },
-        { entityId: 'asset-1', pathType: AssetFileType.Sidecar },
-        { entityId: 'asset-2', pathType: AssetFileType.Thumbnail },
-        { entityId: 'asset-2', pathType: AssetPathType.EncodedVideo },
+        pending({ id: 'm1', entityId: 'asset-1' }),
+        pending({ id: 'm2', entityId: 'asset-1', pathType: AssetFileType.Sidecar }),
+        pending({ id: 'm3', entityId: 'asset-2', pathType: AssetFileType.Thumbnail }),
+        pending({ id: 'm4', entityId: 'asset-2', pathType: AssetPathType.EncodedVideo }),
       ]);
+      mocks.storage.checkFileExists.mockResolvedValue(true);
 
       await sut.onNightlyDatabaseCleanup();
 
+      expect(mocks.move.deleteMoves).not.toHaveBeenCalled();
       expect(mocks.job.queueAll).toHaveBeenCalledWith([
         { name: JobName.StorageTemplateMigrationSingle, data: { id: 'asset-1' } },
         { name: JobName.AssetFileMigration, data: { id: 'asset-2' } },
       ]);
+    });
+
+    it('forgets the moves that can never finish, and keeps the ones only blocked for now', async () => {
+      mocks.move.getPendingAssetMoves.mockResolvedValue([
+        pending({ id: 'gone', entityId: 'asset-1', assetExists: false, currentPath: null, originalPath: null }),
+        pending({ id: 'done', entityId: 'asset-2', currentPath: '/data/library/done-new.jpg' }),
+        pending({ id: 'external', entityId: 'asset-3', isExternal: true }),
+        pending({ id: 'motion', entityId: 'asset-4', originalPath: '/data/encoded-video/motion.mp4' }),
+        pending({ id: 'lost', entityId: 'asset-5' }),
+        pending({ id: 'blocked', entityId: 'asset-6' }),
+      ]);
+      mocks.storage.checkFileExists.mockImplementation((path) => Promise.resolve(!path.includes('lost')));
+
+      await sut.onNightlyDatabaseCleanup();
+
+      expect(mocks.move.deleteMoves).toHaveBeenCalledWith(['gone', 'done', 'external', 'motion', 'lost']);
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([
+        { name: JobName.StorageTemplateMigrationSingle, data: { id: 'asset-6' } },
+      ]);
+    });
+
+    it('reports a move kept for a mismatched mapping once, however often it is retried', async () => {
+      const user = UserFactory.create();
+      const asset = AssetFactory.from({ fileCreatedAt: new Date('2022-06-19T23:41:36.910Z') })
+        .owner(user)
+        .exif({ fileSizeInByte: 5000 })
+        .build();
+      mocks.user.get.mockResolvedValue(user);
+      mocks.assetJob.getForStorageTemplateJob.mockResolvedValue(getForStorageTemplate(asset));
+      mocks.move.create.mockResolvedValue({
+        id: 'move-mismatched',
+        entityId: asset.id,
+        pathType: AssetPathType.Original,
+        oldPath: asset.originalPath,
+        newPath: '/data/library/new.jpg',
+      });
+      mocks.asset.moveFile.mockResolvedValue('mismatched');
+
+      await sut.handleMigrationSingle({ id: asset.id });
+      await sut.handleMigrationSingle({ id: asset.id });
+
+      const warnings = mocks.logger.warn.mock.calls.filter(([message]) =>
+        String(message).includes('mapped to another file'),
+      );
+      expect(warnings).toHaveLength(1);
     });
 
     it('defers a failure to the next night', async () => {
