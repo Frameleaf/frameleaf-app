@@ -135,7 +135,7 @@ The key is never part of the settings, a database dump, a log or an answer from 
 
 **Back up now** starts a run, which shows in Activity. A run backs up, in this order:
 
-- a fresh database dump, as `db/<file>`; the bucket keeps the seven most recent dumps and the dump of every backup retention keeps;
+- a fresh database dump, as `db/<file>`; the clean-up keeps the seven most recent dumps and the dump of every backup retention keeps;
 - every original, sidecar and profile image, each unique file once as `o/<sha256>`. Locked and trashed photos are included; files in external libraries are not. Thumbnails, previews and transcoded videos are left out unless you include them in the settings;
 - a manifest of the run, `m/<time>.json.gz`, naming every photo's files by checksum.
 
@@ -145,7 +145,7 @@ A run records where it is every 25 photos. The administrator who started it can 
 
 Every backup run, check, clean-up and restore shows in **Activity** under **Background work** for administrators while it is queued, starting, running or paused, with the files and bytes done so far. Those rows are read-only: pausing, resuming and cancelling live on the Cloud backup page and in **Settings › Background work**. Finished ones stay in the list like any other job.
 
-Only one backup operation uses the bucket at a time: a run, a check, a clean-up or a restore waits for the one in progress, and a scheduled run is never queued beside one that is still unfinished.
+Only one backup operation uses the bucket at a time: a run, a check, a clean-up or a restore waits for the one in progress, and a scheduled run is never queued beside one that is still unfinished. A scheduled run that finds a check, a clean-up or a restore in progress starts as soon as it has ended, and no check starts in the hour before a scheduled run. A backup this server has no record of (a bucket claimed again, or a database restored from before later runs) is picked up by the next run from the bucket's own manifests.
 
 ### Schedule and retention
 
@@ -160,7 +160,7 @@ The server checks the bucket on its own while cloud backup is on (`frameleafClou
 - **Weekly**, it fetches the week's share of the backed-up files (1/52 of them, so every file once a year) and checks each against its checksum. **Verify** on the Cloud backup page runs this check now.
 - **Monthly**, it checks that every file and database dump a kept run names is still in the bucket, with the size it was backed up at.
 
-A file that is missing or damaged is uploaded again by the next run when this server still has it, and every run that names it is marked incomplete. Administrators are told what was found, and the Cloud backup page shows the last check.
+A check that fails is tried again the next day. A file that is missing or damaged is uploaded again by the next run when this server still has it, and every run that names it is marked incomplete. Administrators are told what was found, and the Cloud backup page shows the last check.
 
 ### Frameleaf-managed storage
 
@@ -176,7 +176,7 @@ With a key this server generated, you can keep an encrypted copy of it with Fram
 
 The **Restore** section on the Cloud backup page restores from any kept backup. It shows the newest backup, the database backup it pairs with, and how far back deleted items can come from.
 
-- **Items.** Search the chosen backup by file name and see whether each item is still in the library, in the trash, or gone. **Restore…** on an item still in the library opens the restore dialog: choose the backup to restore from, and the item's files go back where the library expects them. A file already there that is not the backed-up one is moved to `<media>/frameleaf/restore/replaced/<restore>` and never deleted; a file already there with the backed-up content is left alone. **Restore** on a deleted item brings its files back into `<media>/frameleaf/restore/<restore>`, where Library Care's search for missing originals finds them. Thumbnails and previews of items restored in place are made again.
+- **Items.** Search the chosen backup by file name and see whether each item is still in the library, in the trash, or gone. A Locked item is listed as a Locked item, never by name, and a search by name does not find it. **Restore…** on an item still in the library opens the restore dialog: choose the backup to restore from, and the item's files go back where the library expects them. A file already there that is not the backed-up one is moved to `<media>/frameleaf/restore/replaced/<restore>` and never deleted; a file already there with the backed-up content is left alone. **Restore** on a deleted item brings its files back into `<media>/frameleaf/restore/<restore>`, where Library Care's search for missing originals finds them. Thumbnails and previews of items restored in place are made again.
 - **Whole library.** Type RESTORE to start. Every file goes back in place as above, and the paired database backup is written to `<media>/backups` as `cloud-restore-<file>`. Restore it from **Maintenance** (the existing database restore), which signs everyone out until it finishes; the library then goes back to that backup's time.
 
 Every file is fetched with the bucket key and checked against its checksum before it is written; a missing or mismatched file stops the restore and names the file, and everything restored before it stays in place. A restore runs on the server as a job (`cloud_restore`) with its progress in Activity; it can be paused, resumed and cancelled like a backup run, and a restore interrupted by a restart carries on from the next file. In own-memory key mode, load the key first. With Frameleaf-managed storage, the items in a backup can be browsed only while no backup operation is running, because reading them uses a fresh key.
@@ -200,6 +200,6 @@ immich-admin cloud-backup restore \
 - `--scope library` (the default) restores every file in place and the database dump; `files` restores into `<media>/frameleaf/restore/command-<time>`; `database` restores the dump only.
 - `--restore-database` also restores the database from the dump, as the maintenance restore does, replacing the database the server has now. Without it, the command says where the dump is.
 
-The key must open the bucket's claim, or nothing is restored. Every file is checked against its checksum as it is written. Afterwards, start the server and set cloud backup up again with the same bucket and key: the bucket's claim and backups are kept. A Frameleaf-managed bucket's access keys are issued to the linked server only, so recover a managed bucket by restoring the database first (from a local backup, or with a key you were given for it) and then restoring from the Cloud backup page once the server is linked again.
+The command takes none of the server's locks: stop the server first, or at least make sure no backup operation is running. Files whose backed-up place is outside the media folder are restored into `<media>/frameleaf/restore/command-<time>` instead. The key must open the bucket's claim, or nothing is restored. Every file is checked against its checksum as it is written. Afterwards, start the server and set cloud backup up again with the same bucket and key: the bucket's claim and backups are kept. A Frameleaf-managed bucket's access keys are issued to the linked server only, so recover a managed bucket by restoring the database first (from a local backup, or with a key you were given for it) and then restoring from the Cloud backup page once the server is linked again.
 
 **Turn off backup…** stops backing up. The bucket, its backups and the key are kept, so the backups stay readable with the key file or recovery kit.

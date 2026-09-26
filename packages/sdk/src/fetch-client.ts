@@ -244,9 +244,11 @@ export type CloudBackupManifestItemDto = {
     assetId: string;
     bytes: number;
     files: number;
+    /** A Locked item: never named in this list */
+    locked: boolean;
     /** When the original was last written before the backup */
     modifiedAt: string | null;
-    /** The original’s file name when it was backed up */
+    /** The original’s file name when it was backed up; empty for a Locked item */
     name: string;
     ownerId: string | null;
     ownerName: string | null;

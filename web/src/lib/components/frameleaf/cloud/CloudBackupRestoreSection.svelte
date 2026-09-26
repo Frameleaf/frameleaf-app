@@ -154,7 +154,7 @@
       void start(CloudBackupRestoreScope.Files, [item.assetId]);
       return;
     }
-    dialogItem = item;
+    dialogItem = item.locked ? { ...item, name: $t('frameleaf_cloud_restore_locked_item') } : item;
     dialogOpen = true;
   };
 
@@ -274,7 +274,7 @@
                   {@const inLibrary = item.state === CloudBackupItemState.Active}
                   <tr>
                     <th scope="row">
-                      {item.name}
+                      {item.locked ? $t('frameleaf_cloud_restore_locked_item') : item.name}
                       <small>
                         {[item.modifiedAt ? formatWhen(item.modifiedAt) : null, getByteUnitString(item.bytes)]
                           .filter(Boolean)

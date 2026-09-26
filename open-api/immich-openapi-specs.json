@@ -51673,13 +51673,17 @@
             "minimum": -9007199254740991,
             "type": "integer"
           },
+          "locked": {
+            "description": "A Locked item: never named in this list",
+            "type": "boolean"
+          },
           "modifiedAt": {
             "description": "When the original was last written before the backup",
             "nullable": true,
             "type": "string"
           },
           "name": {
-            "description": "The original’s file name when it was backed up",
+            "description": "The original’s file name when it was backed up; empty for a Locked item",
             "type": "string"
           },
           "ownerId": {
@@ -51698,6 +51702,7 @@
           "assetId",
           "bytes",
           "files",
+          "locked",
           "modifiedAt",
           "name",
           "ownerId",
