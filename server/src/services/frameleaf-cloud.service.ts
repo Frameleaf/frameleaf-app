@@ -26,7 +26,11 @@ import {
   SystemMetadataKey,
 } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
-import { loadInstanceIdentity, loadInstanceIdentityLocked } from 'src/utils/frameleaf-cloud-gateway.js';
+import {
+  identityDirectory,
+  loadInstanceIdentity,
+  loadInstanceIdentityLocked,
+} from 'src/utils/frameleaf-cloud-gateway.js';
 import {
   CloudCommand,
   CloudCommandType,
@@ -728,6 +732,7 @@ export class FrameleafCloudService extends BaseService {
     for (const command of response.commands) {
       next = await this.runCommand(cloudUrl, document, next, command);
     }
+    await this.rotateAfterDamagedKey(cloudUrl, document, next);
     await this.keepPublishedPricing(response.pricing);
     if (response.entitlementsChanged && permissionsOf(next).allowEntitlementRefresh) {
       await this.jobRepository.queue({ name: JobName.FrameleafLicenseRefresh, data: { force: true } });
@@ -886,9 +891,41 @@ export class FrameleafCloudService extends BaseService {
     }
   }
 
+  /**
+   * FL-175: the key the cloud accepted in the last rotation could not be read and was set aside, so
+   * this server still signs with its previous key, which the cloud accepts only until that rotation's
+   * retire window closes. This check-in just succeeded with it, so rotate again now, and tell the
+   * administrators in case the new rotation fails too.
+   */
+  private async rotateAfterDamagedKey(
+    cloudUrl: string,
+    document: FrameleafDiscoveryDocument,
+    link: FrameleafCloudLink,
+  ) {
+    const identity = await loadInstanceIdentity(this.gatewayDeps());
+    if (!identity.rotationNeeded) {
+      return;
+    }
+    this.notify({
+      level: NotificationLevel.Warning,
+      title: 'This server’s new identity key was damaged',
+      description:
+        'The key Frameleaf Cloud accepted in the last key rotation could not be read, so it was set aside and this server keeps using its previous key. A new rotation is starting. If it does not finish before the previous key expires, the link to Frameleaf Cloud stops working and this server must be linked again.',
+      dedupeKey: 'frameleaf-cloud:identity-key-damaged',
+      dedupeDays: 1,
+    });
+    try {
+      await this.rotateKey(cloudUrl, document, link);
+      this.logger.log('Rotated the identity key again after the last rotation left a damaged key');
+    } catch (error) {
+      this.logger.warn(
+        `Could not rotate the identity key after a damaged one; trying again at the next check-in: ${error}`,
+      );
+    }
+  }
+
   /** Key rotation: nonce, then the new key with a proof signed by the current key. */
   private async rotateKey(cloudUrl: string, document: FrameleafDiscoveryDocument, link: FrameleafCloudLink) {
-    const identity = await loadInstanceIdentity(this.gatewayDeps());
     const endpoints = linkEndpoints(document);
     const { bearer } = await this.apiToken(cloudUrl, link);
     const { nonce } = await this.frameleafCloudRepository.requestJson(keyNonceSchema, {
@@ -896,8 +933,10 @@ export class FrameleafCloudService extends BaseService {
       bearer,
     });
     // under the identity lock, so no other worker loads the key while it is being swapped; the swap
-    // itself survives a crash (InstanceIdentityRepository.recoverRotation)
+    // itself survives a crash (InstanceIdentityRepository.recoverRotation). The identity is loaded
+    // under the same lock, so the proof is signed by the key that is current at this moment.
     await this.databaseRepository.withLock(DatabaseLock.FrameleafIdentity, async () => {
+      const identity = await loadInstanceIdentityLocked(this.gatewayDeps());
       const rotated = await this.instanceIdentityRepository.rotate(
         identity,
         async (newJwk, signWithCurrent) => {
@@ -961,14 +1000,21 @@ export class FrameleafCloudService extends BaseService {
     });
   }
 
+  /**
+   * Remove the retired key once its window closed. Decided from disk under the identity lock (the
+   * retiring key and its sidecar, not the stored record), so a rotation in another worker can never
+   * lose its retiring key to an older decision (FL-175).
+   */
   private async removeRetiredKey() {
-    const identity = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafInstance);
-    if (identity?.retiring && Date.parse(identity.retiring.until) <= Date.now()) {
-      await this.systemMetadataRepository.set(
-        SystemMetadataKey.FrameleafInstance,
-        await this.instanceIdentityRepository.removeRetired(identity),
-      );
-    }
+    await this.databaseRepository.withLock(DatabaseLock.FrameleafIdentity, async () => {
+      const identity = await loadInstanceIdentityLocked(this.gatewayDeps());
+      if (identity.retiring && Date.parse(identity.retiring.until) <= Date.now()) {
+        await this.systemMetadataRepository.set(
+          SystemMetadataKey.FrameleafInstance,
+          await this.instanceIdentityRepository.removeRetired(identityDirectory(this.configRepository), identity),
+        );
+      }
+    });
   }
 
   // ------------------------------------------------------------------ helpers

@@ -59,7 +59,8 @@ export const loadInstanceIdentityLocked = async (deps: CloudGatewayDeps): Promis
     existing.kid !== identity.kid ||
     existing.instanceId !== identity.instanceId ||
     existing.retiring?.rotationId !== identity.retiring?.rotationId ||
-    existing.candidate?.kid !== identity.candidate?.kid
+    existing.candidate?.kid !== identity.candidate?.kid ||
+    existing.rotationNeeded?.since !== identity.rotationNeeded?.since
   ) {
     await deps.systemMetadataRepository.set(SystemMetadataKey.FrameleafInstance, identity);
   }
