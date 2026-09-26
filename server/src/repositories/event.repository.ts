@@ -198,7 +198,16 @@ export type EventItem<T extends EmitEvent> = {
   event: T;
   handler: EmitHandler<T>;
   server: boolean;
+  label?: string;
 };
+
+/**
+ * FL-169: events announced after something irreversible, whose handlers each do their own part of
+ * the follow-up (revoking Studio access, clearing move history, telling clients). Every handler runs
+ * even when an earlier one throws; a failure is logged and never reaches the emitter, which could not
+ * repeat the change anyway. Other events keep stopping at, and rethrowing, the first failure.
+ */
+const ISOLATED_EVENTS: ReadonlySet<EmitEvent> = new Set<EmitEvent>(['AssetDelete']);
 
 export type AuthFn = (client: Socket) => Promise<AuthDto>;
 
@@ -281,13 +290,23 @@ export class EventRepository {
 
   async onEvent<T extends EmitEvent>(event: { name: T; args: ArgsOf<T>; server: boolean }): Promise<void> {
     const handlers = this.emitHandlers[event.name] || [];
-    for (const { handler, server } of handlers) {
+    const isolated = ISOLATED_EVENTS.has(event.name);
+    for (const { handler, server, label } of handlers) {
       // exclude handlers that ignore server events
       if (!server && event.server) {
         continue;
       }
 
-      await handler(...event.args);
+      if (!isolated) {
+        await handler(...event.args);
+        continue;
+      }
+
+      try {
+        await handler(...event.args);
+      } catch (error: any) {
+        this.logger.error(`Event ${event.name} handler ${label ?? 'unknown'} failed: ${error}`, error?.stack);
+      }
     }
   }
 }

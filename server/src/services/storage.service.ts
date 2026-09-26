@@ -138,7 +138,7 @@ export class StorageService extends BaseService {
 
   @OnJob({ name: JobName.FileDelete, queue: QueueName.BackgroundTask })
   async handleDeleteFiles(job: JobOf<JobName.FileDelete>): Promise<JobStatus> {
-    const { files } = job;
+    const { files, removedAssetId } = job;
 
     // TODO: one job per file
     for (const file of files) {
@@ -153,8 +153,10 @@ export class StorageService extends BaseService {
         // paths without checking whether those paths were already shared
         // master files, and unlinked the only copy. Refuse to delete anything
         // a live row still names, whatever the caller intended.
-        const { deleted, references } = await this.physicalFileRepository.deleteUnreferencedPath(file, () =>
-          this.storageRepository.unlink(file),
+        const { deleted, references } = await this.physicalFileRepository.deleteUnreferencedPath(
+          file,
+          () => this.storageRepository.unlink(file),
+          { removedAssetId },
         );
 
         if (!deleted) {

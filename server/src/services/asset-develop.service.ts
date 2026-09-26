@@ -587,7 +587,11 @@ export class AssetDevelopService {
     }
   }
 
-  /** Rows and rendered files go with the asset; the original was never ours to delete. */
+  /**
+   * Rows and rendered files go with the asset; the original was never ours to delete. A permanent
+   * deletion takes the rows and releases the files inside its removal (FL-169); this cleans up what
+   * that removal had to leave while fork writes were disabled.
+   */
   @OnEvent({ name: 'AssetDelete' })
   async onAssetDelete({ assetId }: ArgOf<'AssetDelete'>) {
     const files = await this.assetDevelopRepository.getFilePaths(assetId);
