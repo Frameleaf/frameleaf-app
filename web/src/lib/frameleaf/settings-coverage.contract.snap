@@ -170,6 +170,49 @@
   "ffmpeg.twoPass": {
     "type": "boolean"
   },
+  "frameleafCloud.cloudBackup.enabled": {
+    "type": "boolean"
+  },
+  "frameleafCloud.cloudBackup.include.encodedVideo": {
+    "type": "boolean"
+  },
+  "frameleafCloud.cloudBackup.include.thumbs": {
+    "type": "boolean"
+  },
+  "frameleafCloud.cloudBackup.keyMode": {
+    "type": "string",
+    "enum": [
+      "server",
+      "own-stored",
+      "own-memory"
+    ]
+  },
+  "frameleafCloud.cloudBackup.s3.accessKeyId": {
+    "type": "string"
+  },
+  "frameleafCloud.cloudBackup.s3.bucket": {
+    "type": "string"
+  },
+  "frameleafCloud.cloudBackup.s3.endpoint": {
+    "type": "string"
+  },
+  "frameleafCloud.cloudBackup.s3.region": {
+    "type": "string"
+  },
+  "frameleafCloud.cloudBackup.s3.secretAccessKey": {
+    "type": "string"
+  },
+  "frameleafCloud.cloudBackup.s3.secretAccessKeyConfigured": {
+    "type": "boolean"
+  },
+  "frameleafCloud.cloudBackup.target": {
+    "type": "string",
+    "enum": [
+      "off",
+      "managed",
+      "byo-s3"
+    ]
+  },
   "frameleafCloud.cloudMl.autoDescribe.dailyBudgetUsd": {
     "type": "number",
     "format": "double",

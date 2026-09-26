@@ -591,6 +591,7 @@ describe('enrichment, configuration, and automation fork sidecars', () => {
           }),
           signIn: { buttonText: 'Sign in with Frameleaf', showOnLocalLogin: false },
           remoteAccess: { allowOriginalsOverRelay: false, allowPasswordOverRelay: false },
+          cloudBackup: defaults.frameleafCloud.cloudBackup,
         },
       },
       { key: 'smartAlbums', value: expect.objectContaining({ enabled: true }) },
