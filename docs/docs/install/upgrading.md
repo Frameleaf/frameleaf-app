@@ -48,7 +48,7 @@ Downgrading to an earlier version, even within the same minor version, is not su
 ## Migrating to VectorChord
 
 :::info
-If you deploy Frameleaf using Docker Compose, see `ghcr.io/immich-app/postgres` in the `docker-compose.yml` file and have not explicitly set the `DB_VECTOR_EXTENSION` environmental variable, your Frameleaf database is already using VectorChord and this section does not apply to you.
+If you deploy Frameleaf using Docker Compose, see a `database` image tag containing `vectorchord` (such as `ghcr.io/frameleaf/frameleaf-postgres:14-vectorchord0.4.3-pgvectors0.2.0`) in the `docker-compose.yml` file and have not explicitly set the `DB_VECTOR_EXTENSION` environmental variable, your Frameleaf database is already using VectorChord and this section does not apply to you.
 :::
 
 :::important
@@ -67,7 +67,7 @@ After making a backup, please modify your `docker-compose.yml` file with the fol
   database:
     container_name: immich_postgres
 -   image: docker.io/tensorchord/pgvecto-rs:pg14-v0.2.0@sha256:739cdd626151ff1f796dc95a6591b55a714f341c737e27f045019ceabf8e8c52
-+   image: ghcr.io/immich-app/postgres:14-vectorchord0.4.3-pgvectors0.2.0
++   image: ghcr.io/frameleaf/frameleaf-postgres:14-vectorchord0.4.3-pgvectors0.2.0
     environment:
       POSTGRES_PASSWORD: ${DB_PASSWORD}
       POSTGRES_USER: ${DB_USERNAME}
@@ -103,7 +103,7 @@ After making a backup, please modify your `docker-compose.yml` file with the fol
 ```
 
 :::important
-If you deviated from the defaults of pg14 or pgvectors0.2.0, you must adjust the pg major version and pgvecto.rs version. If you are still using the default `docker.io/tensorchord/pgvecto-rs:pg14-v0.2.0` image, you can just follow the changes above. For example, if the previous image is `docker.io/tensorchord/pgvecto-rs:pg16-v0.3.0`, the new image should be `ghcr.io/immich-app/postgres:16-vectorchord0.3.0-pgvectors0.3.0` instead of the image specified in the diff.
+If you deviated from the defaults of pg14 or pgvectors0.2.0, you must adjust the pg major version and pgvecto.rs version. If you are still using the default `docker.io/tensorchord/pgvecto-rs:pg14-v0.2.0` image, you can just follow the changes above. Frameleaf publishes one database image, for PostgreSQL 14 with pgvecto.rs 0.2.0. It can't open a database from another PostgreSQL major version, so if the previous image is another combination, such as `docker.io/tensorchord/pgvecto-rs:pg16-v0.3.0`, follow the [standalone PostgreSQL migration](/administration/postgres-standalone#migrating-to-vectorchord) instead of the diff.
 :::
 
 After making these changes, you can start Frameleaf as normal. Frameleaf will make some changes to the DB during startup, which can take seconds to minutes to finish, depending on hardware and library size. In particular, it’s normal for the server logs to be seemingly stuck at `Reindexing clip_index` and `Reindexing face_index` for some time if you have over 100k assets in Frameleaf and/or Frameleaf is on a relatively weak server. If you see these logs and there are no errors, just give it time.
@@ -130,7 +130,7 @@ The new DB image includes pgvector and pgvecto.rs in addition to VectorChord, so
 
 #### Do I still need pgvecto.rs installed after migrating to VectorChord?
 
-pgvecto.rs only needs to be available during the migration, or if you need to restore from a backup that used pgvecto.rs. For a leaner DB and a smaller image, you can optionally switch to an image variant that doesn’t have pgvecto.rs installed after you’ve performed the migration and started Frameleaf: `ghcr.io/immich-app/postgres:14-vectorchord0.4.3`, changing the PostgreSQL version as appropriate.
+pgvecto.rs only needs to be available during the migration, or if you need to restore from a backup that used pgvecto.rs. Frameleaf's database image keeps pgvecto.rs installed so that older backups still restore; there is no separate variant without it.
 
 #### Why does it matter whether my database is on an SSD or an HDD?
 
