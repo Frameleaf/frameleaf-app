@@ -7,7 +7,7 @@ import { setupBaseMockApiRoutes } from 'src/ui/mock-network/base-network.js';
  * address fragment (never a query string, a referrer or a history entry), activation through the
  * request body only, the activated card, and the "not available yet" state without a store.
  */
-const KEY = 'FL-IC8Q-BT2Q-8ELH';
+const KEY = 'FL-IC8Q-BT2Q-8EL6';
 
 const products = (storeUrl: string | null) => ({
   currency: 'USD',
@@ -50,7 +50,7 @@ test.describe('Support Frameleaf', () => {
     await context.route('**/api/users/me/license', async (route, request) => {
       if (request.method() === 'PUT') {
         activation = request.postDataJSON();
-        return route.fulfill({ json: { kind: 'individual', keyHint: '8ELH', activatedAt: new Date().toISOString() } });
+        return route.fulfill({ json: { kind: 'individual', keyHint: '8EL6', activatedAt: new Date().toISOString() } });
       }
       return route.fulfill({ status: 404, json: {} });
     });

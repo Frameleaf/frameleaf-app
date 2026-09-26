@@ -1,0 +1,10 @@
+{
+  "description": "Upstream product keys are refused as upstream, not as a typo",
+  "reason": "upstream",
+  "inputs": [
+    "IMCL-ABCD-EFGH-JKLM-NPQR",
+    "IMSV-2345-6789-ABCD-EFGH",
+    "imcl-abcd-efgh",
+    " IMSV ABCD EFGH "
+  ]
+}
