@@ -775,8 +775,10 @@ export class CloudBackupService {
   private async removeLeftoverDumps() {
     const folder = StorageCore.getBaseFolder(StorageFolder.Backups);
     const names = await this.storageRepository.readdir(folder).catch((): string[] => []);
-    for (const name of names.filter((name) => isCloudBackupDumpName(name))) {
-      await this.storageRepository.unlink(join(folder, name));
+    for (const name of names) {
+      if (isCloudBackupDumpName(name)) {
+        await this.storageRepository.unlink(join(folder, name));
+      }
     }
   }
 
@@ -1214,7 +1216,7 @@ export class CloudBackupService {
     status: FrameleafCloudBackupRun['status'],
     error?: string,
   ) {
-    const finished = status === 'completed' || status === 'failed' || status === 'cancelled';
+    const finished = (['completed', 'failed', 'cancelled'] as FrameleafCloudBackupRun['status'][]).includes(status);
     await this.updateMetadata((current) => ({
       ...current,
       lastRun: {
@@ -1289,14 +1291,13 @@ export class CloudBackupService {
     this.websocketRepository.serverSend('CloudBackupKeyRequest');
     if (this.keyAskMs > 0) {
       await new Promise<void>((resolve) => {
-        let timer: ReturnType<typeof setTimeout> | undefined;
         const done = () => {
           clearTimeout(timer);
           this.keyWaiters.delete(done);
           resolve();
         };
         this.keyWaiters.add(done);
-        timer = setTimeout(done, this.keyAskMs);
+        const timer = setTimeout(done, this.keyAskMs);
       });
     }
     return this.loadKey(metadata);

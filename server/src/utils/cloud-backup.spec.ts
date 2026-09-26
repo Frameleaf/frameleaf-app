@@ -56,6 +56,7 @@ describe('cloud backup helpers (FL-160)', () => {
       secretAccessKey: 'b',
     };
     expect(s3SettingsProblem(valid)).toBeNull();
+    // eslint-disable-next-line unicorn/prefer-https -- an HTTP storage address is what is being refused
     expect(s3SettingsProblem({ ...valid, endpoint: 'http://s3.example.test' })).toContain('HTTPS');
     expect(s3SettingsProblem({ ...valid, bucket: 'Family' })).toContain('Bucket names');
     expect(s3SettingsProblem({ ...valid, secretAccessKey: '' })).toContain('secret access key');

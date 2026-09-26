@@ -84,7 +84,7 @@ export class CloudBackupIndexRepository {
     if (objects.length === 0) {
       return;
     }
-    const unique = [...new Map(objects.map((object) => [object.sha256, object])).values()];
+    const unique = new Map(objects.map((object) => [object.sha256, object])).values().toArray();
     await this.db
       .insertInto('cloud_backup_object')
       .values(unique.map(({ sha256, size, etag }) => ({ bucket, sha256, size, etag })))
@@ -261,7 +261,7 @@ export class CloudBackupIndexRepository {
     if (entries.length === 0) {
       return;
     }
-    const unique = [...new Map(entries.map((entry) => [entry.fileKey, entry])).values()];
+    const unique = new Map(entries.map((entry) => [entry.fileKey, entry])).values().toArray();
     await this.db
       .insertInto('cloud_backup_manifest_entry')
       .values(unique.map((entry) => ({ ...entry, manifestId })))

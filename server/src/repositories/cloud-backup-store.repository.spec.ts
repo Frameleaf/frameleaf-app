@@ -42,7 +42,10 @@ class FakeS3 {
   /** CompleteMultipartUpload finishes the object, then its answer is lost (a 500), once. */
   loseCompleteAnswer = false;
 
-  fetch = async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+  fetch = (input: string | URL | Request, init?: RequestInit): Promise<Response> =>
+    Promise.resolve(this.respond(input, init));
+
+  private respond(input: string | URL | Request, init?: RequestInit): Response {
     const url = new URL(typeof input === 'string' ? input : input.toString());
     const headers = new Headers(init?.headers);
     const method = init?.method ?? 'GET';
@@ -67,7 +70,7 @@ class FakeS3 {
       expect(headers.get('content-md5')).toBe(createHash('md5').update(body).digest('base64'));
     }
 
-    const needsKey = (method === 'PUT' || method === 'GET' || method === 'HEAD' || method === 'POST') && key !== '';
+    const needsKey = ['PUT', 'GET', 'HEAD', 'POST'].includes(method) && key !== '';
     if (needsKey && !hasSseC) {
       return new Response('<Error><Code>InvalidRequest</Code></Error>', { status: 400 });
     }
@@ -81,12 +84,14 @@ class FakeS3 {
 
     if (key === '' && method === 'GET') {
       const prefix = url.searchParams.get('prefix') ?? '';
-      const contents = [...this.objects.entries()]
+      const contents = this.objects
+        .entries()
         .filter(([name]) => name.startsWith(prefix))
         .map(
           ([name, object]) =>
             `<Contents><Key>${name}</Key><Size>${object.body.length}</Size><ETag>"e"</ETag></Contents>`,
         )
+        .toArray()
         .join('');
       return new Response(`<ListBucketResult>${contents}<IsTruncated>false</IsTruncated></ListBucketResult>`);
     }
@@ -112,7 +117,10 @@ class FakeS3 {
         this.uploads.delete(uploadId);
         return new Response(null, { status: 204 });
       }
-      const numbers = [...upload.parts.keys()].toSorted((a, b) => a - b);
+      const numbers = upload.parts
+        .keys()
+        .toArray()
+        .toSorted((a, b) => a - b);
       this.objects.set(upload.key, {
         body: Buffer.concat(numbers.map((n) => upload.parts.get(n)!)),
         keyMd5: upload.keyMd5,
@@ -153,7 +161,7 @@ class FakeS3 {
         return new Response('', { status: 405 });
       }
     }
-  };
+  }
 
   /** Every object call (not LIST, DELETE or an abort) carried the customer-key headers. */
   expectSseCOnEveryObjectCall() {
