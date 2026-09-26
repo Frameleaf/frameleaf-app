@@ -46,7 +46,18 @@ export type FrameleafCloudRequest = {
   headers?: Record<string, string>;
 };
 
-type Exchange = { response: Response; text: string; nonceChallenge: boolean; nonceUsed?: string };
+/**
+ * One answer: whether it was a DPoP nonce challenge, the nonce the proof carried, and the usable
+ * `DPoP-Nonce` the answer itself carried (the retry uses that one, not whatever a parallel call
+ * stored for the origin meanwhile).
+ */
+type Exchange = {
+  response: Response;
+  text: string;
+  nonceChallenge: boolean;
+  nonceUsed?: string;
+  nonceReceived?: string;
+};
 
 /**
  * The HTTP side of Frameleaf Cloud (FL-159; the part of FL-155's `frameleaf-cloud.repository.ts`
@@ -194,13 +205,11 @@ export class FrameleafCloudRepository {
   private async exchangeJson<T extends z.ZodType>(schema: T, build: () => FrameleafCloudRequest): Promise<z.infer<T>> {
     let request = build();
     let exchange = await this.exchange(request);
-    if (request.dpop && exchange.nonceChallenge) {
-      const nonce = this.nonces.get(new URL(request.url).origin);
-      // retried once, and only when the answer brought a nonce this attempt did not already use
-      if (nonce && nonce !== exchange.nonceUsed) {
-        request = build();
-        exchange = await this.exchange(request);
-      }
+    // retried once, and only when the challenge itself brought a nonce this attempt did not already use
+    const nonce = exchange.nonceReceived;
+    if (request.dpop && exchange.nonceChallenge && nonce && nonce !== exchange.nonceUsed) {
+      request = build();
+      exchange = await this.exchange(request, nonce);
     }
     const { response, text } = exchange;
     if (!response.ok) {
@@ -253,11 +262,11 @@ export class FrameleafCloudRepository {
   }
 
   /**
-   * One HTTP exchange. With `dpop`, a proof by its key goes in the `DPoP` header (with the origin's
-   * latest nonce, and `ath` when a token is presented as `Authorization: DPoP <token>`). Any
-   * `DPoP-Nonce` the answer carries replaces the origin's nonce.
+   * One HTTP exchange. With `dpop`, a proof by its key goes in the `DPoP` header (with `nonce`, else
+   * the origin's latest nonce, and `ath` when a token is presented as `Authorization: DPoP <token>`).
+   * Any `DPoP-Nonce` the answer carries replaces the origin's nonce.
    */
-  private async exchange(request: FrameleafCloudRequest): Promise<Exchange> {
+  private async exchange(request: FrameleafCloudRequest, nonce?: string): Promise<Exchange> {
     const method = request.method ?? 'GET';
     const origin = new URL(request.url).origin;
     const headers: Record<string, string> = { Accept: 'application/json', ...request.headers };
@@ -277,7 +286,7 @@ export class FrameleafCloudRepository {
     }
     let nonceUsed: string | undefined;
     if (request.dpop) {
-      nonceUsed = this.nonces.get(origin);
+      nonceUsed = nonce ?? this.nonces.get(origin);
       const { signer, accessToken } = request.dpop;
       headers.DPoP = createDpopProof(signer, { htm: method, htu: request.url, nonce: nonceUsed, accessToken });
       if (accessToken) {
@@ -302,9 +311,10 @@ export class FrameleafCloudRepository {
       );
     }
 
-    const nonce = response.headers.get(DPOP_NONCE_HEADER);
-    if (isUsableNonce(nonce)) {
-      this.nonces.set(origin, nonce);
+    const answered = response.headers.get(DPOP_NONCE_HEADER);
+    const nonceReceived = isUsableNonce(answered) ? answered : undefined;
+    if (nonceReceived) {
+      this.nonces.set(origin, nonceReceived);
     }
     const text = await this.readBounded(response);
     let nonceChallenge = false;
@@ -319,7 +329,7 @@ export class FrameleafCloudRepository {
       }
       nonceChallenge = isNonceChallenge(response.status, code, response.headers.get('www-authenticate'));
     }
-    return { response, text, nonceChallenge, nonceUsed };
+    return { response, text, nonceChallenge, nonceUsed, nonceReceived };
   }
 
   private async readBounded(response: Response): Promise<string> {

@@ -677,9 +677,11 @@ export class FrameleafCloudService extends BaseService {
   private async checkIn(cloudUrl: string, link: FrameleafCloudLink): Promise<JobStatus> {
     let response: HeartbeatResponse;
     let document: FrameleafDiscoveryDocument;
+    let tokenKid: string | undefined;
     try {
       const api = await this.apiToken(cloudUrl, link);
       document = api.document;
+      tokenKid = api.token.signer.kid;
       response = await this.frameleafCloudRepository.requestJson(heartbeatResponseSchema, {
         method: 'POST',
         url: linkEndpoints(document).heartbeat,
@@ -687,16 +689,22 @@ export class FrameleafCloudService extends BaseService {
         body: await this.buildHeartbeatPayload(link),
       });
     } catch (error) {
+      if (this.isKeyRetiredAnswer(error, tokenKid) && (await this.keyChangedSince(tokenKid))) {
+        // key_retired for a token minted with a key another worker has replaced since: not a refusal of
+        // the current key, and the next check-in uses a token of the current key
+        await this.recordHeartbeatFailure(link, error);
+        return JobStatus.Failed;
+      }
       if (this.isRevocation(error)) {
         // a rotation whose answer was lost may have left the cloud holding the candidate key; only
-        // invalid_client can mean that, an explicit instance-revoked never does
-        if (this.isInvalidClient(error) && (await this.tryCandidateKey(cloudUrl, link))) {
+        // invalid_client or key_retired can mean that, an explicit instance-revoked never does
+        if (this.isKeyRefused(error) && (await this.tryCandidateKey(cloudUrl, link))) {
           // this check-in still failed: count it, so repeated failures still reach the administrators
           await this.recordHeartbeatFailure((await this.readLink(cloudUrl)) ?? link, error);
           return JobStatus.Failed;
         }
         // FL-175: a recovery after a key that could not be read was still open, so its window closed
-        const recoveryOpen = this.isInvalidClient(error) && (await this.keyRecoveryOpen());
+        const recoveryOpen = this.isKeyRefused(error) && (await this.keyRecoveryOpen());
         if (recoveryOpen) {
           await this.clearKeyRecovery();
           await this.auditKeyRecovery('window-closed');
@@ -816,12 +824,23 @@ export class FrameleafCloudService extends BaseService {
       return false;
     }
     const code = error.oauth?.error ?? error.envelope?.code ?? '';
-    return ['invalid_client', 'instance-revoked', 'instance_revoked'].includes(code);
+    return ['invalid_client', 'key_retired', 'instance-revoked', 'instance_revoked'].includes(code);
   }
 
-  /** The token endpoint refused this server's key (not an explicit revoke). */
-  private isInvalidClient(error: unknown): boolean {
-    return error instanceof FrameleafCloudError && (error.oauth?.error ?? error.envelope?.code) === 'invalid_client';
+  /**
+   * The cloud refused this server's key, not the server itself: `invalid_client` from the token
+   * endpoint, or `key_retired` (FC-19) from any instance route for a token minted with a retired or
+   * revoked key. Either may be a key a lost rotation answer replaced (the candidate), or the end of a
+   * recovery window.
+   */
+  private isKeyRefused(error: unknown): boolean {
+    const code = error instanceof FrameleafCloudError ? (error.oauth?.error ?? error.envelope?.code) : undefined;
+    return code === 'invalid_client' || code === 'key_retired';
+  }
+
+  /** The token endpoint answered success, but the token it issued was refused here (FL-178). */
+  private isIssuedButRefused(error: unknown): boolean {
+    return error instanceof FrameleafCloudError && error.status !== null && error.status >= 200 && error.status < 300;
   }
 
   // ------------------------------------------------------------------ commands (FL-155)
@@ -1025,6 +1044,21 @@ export class FrameleafCloudService extends BaseService {
     }
   }
 
+  /** A `key_retired` answer to a call made with a token (FL-178, FC-19). */
+  private isKeyRetiredAnswer(error: unknown, tokenKid: string | undefined): tokenKid is string {
+    return !!tokenKid && error instanceof FrameleafCloudError && error.envelope?.code === 'key_retired';
+  }
+
+  /** Whether the current identity key is no longer `kid` (another worker rotated meanwhile). */
+  private async keyChangedSince(kid: string) {
+    try {
+      return (await loadInstanceIdentity(this.gatewayDeps())).kid !== kid;
+    } catch (error) {
+      this.logger.warn(`Could not read the identity key state: ${error}`);
+      return false;
+    }
+  }
+
   /** Whether a recovery after a key that could not be read is still open (FL-175). */
   private async keyRecoveryOpen() {
     try {
@@ -1224,7 +1258,22 @@ export class FrameleafCloudService extends BaseService {
       try {
         const document = await this.discover(cloudUrl);
         const signer = await this.instanceIdentityRepository.candidateSigner(identity);
-        await this.frameleafCloudRepository.accessToken(document, instanceId, document.api, signer);
+        try {
+          await this.frameleafCloudRepository.accessToken(document, instanceId, document.api, signer);
+        } catch (error) {
+          // FL-178: the token endpoint answered success but this server refused the token it issued (not
+          // DPoP-bound, bound to another key, or unreadable). The cloud only issues a token after checking
+          // the client assertion against a key it holds for this server, so it holds the candidate: that
+          // counts as accepted. Promoting keeps the current key as retiring, so nothing is lost, while
+          // treating it as unclear would ask again every check-in until the candidate expired with the
+          // only key the cloud may still accept.
+          if (!this.isIssuedButRefused(error)) {
+            throw error;
+          }
+          this.logger.warn(
+            `Frameleaf Cloud accepted the candidate identity key, but its token was not usable: ${error}`,
+          );
+        }
       } catch (error) {
         this.frameleafCloudRepository.forget();
         if (!this.isRevocation(error)) {

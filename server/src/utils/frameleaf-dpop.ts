@@ -36,10 +36,26 @@ export const DPOP_NONCE_HEADER = 'dpop-nonce';
 /** The error code of a nonce challenge, from the token endpoint (400) or a resource (401). */
 export const USE_DPOP_NONCE = 'use_dpop_nonce';
 
-/** A nonce is `1*NQCHAR` (RFC 9449 section 8); anything else, or anything unreasonably long, is ignored. */
-const NONCE = /^[!#-[]-~]{1,512}$/;
+/** The longest nonce this server keeps; the cloud's are far shorter. */
+const MAX_NONCE_LENGTH = 512;
 
-export const isUsableNonce = (value: string | null | undefined): value is string => !!value && NONCE.test(value);
+/**
+ * Whether a `DPoP-Nonce` value is usable: `1*NQCHAR` (RFC 9449 section 8), that is %x21, %x23-5B and
+ * %x5D-7E (visible ASCII except `"` and `\`), at most `MAX_NONCE_LENGTH` characters. Checked by
+ * character code rather than a character class, so no regex rewrite can change the allowed set.
+ */
+export const isUsableNonce = (value: string | null | undefined): value is string => {
+  if (!value || value.length > MAX_NONCE_LENGTH) {
+    return false;
+  }
+  for (const char of value) {
+    const code = char.codePointAt(0) ?? 0;
+    if (code < 0x21 || code > 0x7E || code === 0x22 || code === 0x5C) {
+      return false;
+    }
+  }
+  return true;
+};
 
 /**
  * The `htu` of a request (RFC 9449 section 4.2): scheme, host, the port only when it is not the
@@ -100,7 +116,7 @@ export const isNonceChallenge = (
   if (code === USE_DPOP_NONCE) {
     return true;
   }
-  return /(?:^|[\s,])error\s*=\s*"?use_dpop_nonce"?/i.test(wwwAuthenticate ?? '');
+  return /(?:^|[\s,])error\s*=\s*"use_dpop_nonce"/i.test(wwwAuthenticate ?? '');
 };
 
 /**
