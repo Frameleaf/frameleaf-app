@@ -165,6 +165,27 @@ export function markLoaded(state: DraftSendState, mount: EditorMount): void {
   if (state.mount === mount) mount.loaded = true
 }
 
+/** A timer the current mount armed (a draft debounce, a settled-save timer). */
+export type MountTimer = ReturnType<typeof setTimeout>
+
+/**
+ * Cancel a timer the current mount armed and stop tracking it (FL-187). A timer left to fire removes
+ * itself from `timers`, but one a later edit supersedes (`watchDrafts`, `watchDirty` debounce a burst
+ * of writes into one) is only ever cleared, never removed on its own; without this, `timers` keeps a
+ * dead entry for every superseded debounce, for as long as the mount lives.
+ */
+export function cancelMountTimer(timers: Set<MountTimer>, timer: MountTimer | null): void {
+  if (timer === null) return
+  clearTimeout(timer)
+  timers.delete(timer)
+}
+
+/** Cancel every timer the current mount armed (FL-187): a remount or a dispose owns none of them. */
+export function releaseMountTimers(timers: Set<MountTimer>): void {
+  for (const timer of timers) clearTimeout(timer)
+  timers.clear()
+}
+
 /**
  * Freecut's `loadTimeline` for `projectId` ended. Only a load that succeeded, for the current mount,
  * makes it loaded: that load read the mount's own file, which holds the seeded head (no save may
