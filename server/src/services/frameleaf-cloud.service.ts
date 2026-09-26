@@ -943,7 +943,7 @@ export class FrameleafCloudService extends BaseService {
       await this.audit(AdminAuditAction.CloudKeyRecoveryRotation, 'rotated', undefined);
       return { ...link, heartbeat: { ...heartbeat, keyRecovery: undefined } };
     } catch (error) {
-      if (this.isRetireWindowClosed(error)) {
+      if (this.rotationRefusal(error) === 'key-retired') {
         await this.audit(AdminAuditAction.CloudKeyRecoveryRotation, 'window-closed', undefined);
         return this.keyRecoveryClosed(link);
       }
@@ -961,15 +961,33 @@ export class FrameleafCloudService extends BaseService {
   }
 
   /**
-   * A recovery rotation refused because the previous key's window closed: a 401 for the token or the
-   * proof. A 401 about the nonce (reused or expired, single use for five minutes) is only retried.
+   * Why the cloud refused a key rotation (FC-19 error codes of the nonce and rotate endpoints):
+   * - `key_retired` (401): the proof or client-assertion key is revoked or past its window; relink.
+   * - `nonce_invalid` (401): unknown, reused or expired nonce; one retry with a fresh nonce.
+   * - `rate-limited` (429, with Retry-After in seconds): more than three rotations an hour.
+   * The contract fixtures (packages/contracts fixtures/errors/key-retired.json, nonce-invalid.json,
+   * rotation-rate-limited.json) arrive with FC-19. Only a 401 without an envelope code (the token
+   * endpoint's OAuth errors, or an older cloud) falls back to reading "nonce" in the message; any
+   * other 401 without a code means the key is no longer accepted.
    */
-  private isRetireWindowClosed(error: unknown): boolean {
-    if (!(error instanceof FrameleafCloudError) || error.status !== 401) {
-      return false;
+  private rotationRefusal(error: unknown): 'key-retired' | 'nonce-invalid' | 'rate-limited' | null {
+    if (!(error instanceof FrameleafCloudError)) {
+      return null;
     }
-    const code = `${error.envelope?.code ?? ''} ${error.oauth?.error ?? ''} ${error.message}`;
-    return !/nonce/i.test(code);
+    const code = error.envelope?.code;
+    if (code === 'key_retired') {
+      return 'key-retired';
+    }
+    if (code === 'nonce_invalid') {
+      return 'nonce-invalid';
+    }
+    if (code === 'rate-limited' || error.status === 429) {
+      return 'rate-limited';
+    }
+    if (code || error.status !== 401) {
+      return null;
+    }
+    return /nonce/i.test(`${error.oauth?.error ?? ''} ${error.message}`) ? 'nonce-invalid' : 'key-retired';
   }
 
   /**
@@ -1012,6 +1030,24 @@ export class FrameleafCloudService extends BaseService {
    * (`until`), which the cloud never extends, so the local record keeps it too.
    */
   private async rotateKey(
+    cloudUrl: string,
+    document: FrameleafDiscoveryDocument,
+    link: FrameleafCloudLink,
+    recovery?: { until: string },
+  ) {
+    try {
+      await this.rotateKeyOnce(cloudUrl, document, link, recovery);
+    } catch (error) {
+      if (this.rotationRefusal(error) !== 'nonce-invalid') {
+        throw error;
+      }
+      // FC-19: the nonce was unknown, reused or expired; one more try with a fresh one, then the caller's backoff
+      this.logger.warn(`Frameleaf Cloud refused the key rotation nonce; trying once more with a fresh one: ${error}`);
+      await this.rotateKeyOnce(cloudUrl, document, link, recovery);
+    }
+  }
+
+  private async rotateKeyOnce(
     cloudUrl: string,
     document: FrameleafDiscoveryDocument,
     link: FrameleafCloudLink,
