@@ -134,7 +134,7 @@
   };
 </script>
 
-<AuthShell withHeader={false} attribution>
+<AuthShell withHeader={false}>
   {#if view.kind === 'select-restore'}
     <MaintenanceRestoreFlow {end} expectedVersion={data.expectedVersion} />
   {:else}

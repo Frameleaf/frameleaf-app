@@ -252,7 +252,7 @@
   >
 {/snippet}
 
-<AuthShell hero="summit" attribution>
+<AuthShell hero="summit">
   <div class="auth-heading">
     <h1>{$t('frameleaf_auth_welcome_title')}</h1>
     <p>{$t('frameleaf_auth_welcome_body')}</p>
