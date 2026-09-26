@@ -53,7 +53,7 @@ export class TimelineMonth {
   readonly yearMonth: TimelineYearMonth;
 
   /*
-   * Years and All (FL-143): a group's rows run on from one month bucket into the next, as the
+   * All (and Years when not shown as cards) (FL-143): a group's rows run on from one month bucket into the next, as the
    * prototype justifies the whole group as one flow. `internal/flow-support.svelte.ts` owns these.
    */
   /** The month this one's rows run on from: the month before it, once both are loaded. */
@@ -62,6 +62,11 @@ export class TimelineMonth {
   flowTail: FlowItem[] = [];
   /** Whether this month lays its unfinished last row out itself (nothing runs on from it). */
   flowClosed = true;
+  /**
+   * A hold: while set, this month hands exactly this many of its last tiles to the next month and
+   * closes the rest itself, so a change here does not move the next month's rows on screen.
+   */
+  flowHandOff: number | undefined = undefined;
   /** When this month was first laid out as part of a flow; see `FLOW_SETTLE_MS`. */
   flowShownAt: number | undefined = undefined;
   /** Earlier months' tiles laid out at the start of this month's rows, and drawn with this month. */
@@ -269,7 +274,7 @@ export class TimelineMonth {
       return;
     }
     const timelineManager = this.timelineManager;
-    const index = timelineManager.months.indexOf(this);
+    const index = this.#index;
     const heightDelta = height - this.#height;
     this.#height = height;
     const previousTimelineMonth = timelineManager.months[index - 1];
@@ -310,6 +315,17 @@ export class TimelineMonth {
     return this.#height;
   }
 
+  #indexHint = -1;
+
+  /** Where this month is in the manager's months, found once and checked on every read. */
+  get #index(): number {
+    const months = this.timelineManager.months;
+    if (months[this.#indexHint] !== this) {
+      this.#indexHint = months.indexOf(this);
+    }
+    return this.#indexHint;
+  }
+
   /**
    * Whether this month opens a display group: every month when grouping by month, the newest loaded
    * month of each year when grouping by year (in the display order), the first month for "all".
@@ -320,7 +336,7 @@ export class TimelineMonth {
     if (grouping === 'days' || grouping === 'months') {
       return true;
     }
-    const index = months.indexOf(this);
+    const index = this.#index;
     if (index <= 0) {
       return true;
     }
@@ -329,8 +345,8 @@ export class TimelineMonth {
 
   /**
    * The space above this month's rows: a group header, or the gap between months of one group. When
-   * a group's rows run on across months (Years and All, FL-143) that gap is the row gap, so a month
-   * boundary inside the group leaves no seam.
+   * a group's rows run on across months (All, and Years when not shown as cards; FL-143) that gap is
+   * the row gap, so a month boundary inside the group leaves no seam.
    */
   get groupHeaderHeight(): number {
     const manager = this.timelineManager;
