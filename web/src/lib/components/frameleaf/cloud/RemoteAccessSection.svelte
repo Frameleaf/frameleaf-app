@@ -104,9 +104,7 @@
       : (remote?.customHostnameRecords ?? []).map((record, index) => ({
           ...record,
           purpose:
-            index === 0
-              ? $t('frameleaf_remote_record_relay_purpose')
-              : $t('frameleaf_remote_record_challenge_purpose'),
+            index === 0 ? $t('frameleaf_remote_record_relay_purpose') : $t('frameleaf_remote_record_challenge_purpose'),
         })),
   );
 
@@ -220,7 +218,7 @@
 
   const savePort = () => {
     const value = Number(portInput);
-    if (Number.isInteger(value) && value >= 1024 && value <= 65_535 && value !== remote?.directPort) {
+    if (Number.isSafeInteger(value) && value >= 1024 && value <= 65_535 && value !== remote?.directPort) {
       void update({ directPort: value }, $t('frameleaf_remote_saved'));
     }
   };
@@ -359,10 +357,7 @@
       disabled={!!blocked || !remote || busy}
       reason={blocked ?? undefined}
       onChange={(value) =>
-        void update(
-          { enabled: value },
-          value ? $t('frameleaf_remote_on_notice') : $t('frameleaf_remote_off_notice'),
-        )}
+        void update({ enabled: value }, value ? $t('frameleaf_remote_on_notice') : $t('frameleaf_remote_off_notice'))}
     />
     <label class="fc-stack">
       {$t('frameleaf_remote_connection')}

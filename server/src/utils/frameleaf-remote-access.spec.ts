@@ -76,10 +76,7 @@ describe('frameleaf remote access (FL-165)', () => {
       expect(enrollmentProblem(INSTANCE_ID, answer)).toBeNull();
       expect(answer.domain).toBe('frameleaf.net');
       expect(directDomainOf(answer, { remote: { directDomain: 'frameleaf.example' } })).toBe('frameleaf.net');
-      expect(wildcardNames(answer)).toEqual([
-        '*.u225vlzhsdlhwh4l.frameleaf.net',
-        'u225vlzhsdlhwh4l.frameleaf.net',
-      ]);
+      expect(wildcardNames(answer)).toEqual(['*.u225vlzhsdlhwh4l.frameleaf.net', 'u225vlzhsdlhwh4l.frameleaf.net']);
       expect(challengeRecordName(answer)).toBe('_acme-challenge.u225vlzhsdlhwh4l');
     });
 

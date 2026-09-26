@@ -104,11 +104,15 @@ const applyRemote = (mock: CloudMockState, method: string, path: string, body: u
     hostname?: string;
   };
   if (method === 'PUT' && path === 'admin/cloud/remote') {
-    Object.assign(remote, {
-      ...(input.enabled !== undefined && { enabled: input.enabled }),
-      ...(input.mode !== undefined && { mode: input.mode }),
-      ...(input.publicUrl !== undefined && { publicUrlChoice: input.publicUrl }),
-    });
+    if (input.enabled !== undefined) {
+      remote.enabled = input.enabled;
+    }
+    if (input.mode !== undefined) {
+      remote.mode = input.mode;
+    }
+    if (input.publicUrl !== undefined) {
+      remote.publicUrlChoice = input.publicUrl;
+    }
   } else if (method === 'PUT' && path === 'admin/cloud/remote/hostname') {
     remote.customHostname = input.hostname ?? null;
     remote.customHostnameStatus = 'pending';
