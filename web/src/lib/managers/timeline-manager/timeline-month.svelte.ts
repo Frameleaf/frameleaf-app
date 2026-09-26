@@ -24,7 +24,7 @@ import {
 import { GroupInsertionCache } from './group-insertion-cache.svelte';
 import { TimelineDay } from './timeline-day.svelte';
 import type { TimelineManager } from './timeline-manager.svelte';
-import type { AssetDescriptor, Direction, MoveAsset, TimelineAsset } from './types';
+import type { AssetDescriptor, Direction, FlowItem, MoveAsset, TimelineAsset } from './types';
 import { ViewerAsset } from './viewer-asset.svelte';
 
 export class TimelineMonth {
@@ -51,6 +51,30 @@ export class TimelineMonth {
 
   readonly title: string;
   readonly yearMonth: TimelineYearMonth;
+
+  /*
+   * FL-143: in All (and Years when not shown as cards) and the Browse and Work grids, a group's rows
+   * run on from one month bucket into the next, as the prototype lays the whole group out as one
+   * flow. `internal/flow-support.svelte.ts` owns these.
+   */
+  /** The month this one's rows run on from: the month before it, once both are loaded. */
+  flowLinkedTo: TimelineMonth | undefined = undefined;
+  /** The unfinished last row of this month's flow; the next month carries it on when it runs on. */
+  flowTail: FlowItem[] = [];
+  /** Whether this month lays its unfinished last row out itself (nothing runs on from it). */
+  flowClosed = true;
+  /**
+   * A hold: while set, this month hands exactly this many of its last tiles to the next month and
+   * closes the rest itself, so a change here does not move the next month's rows on screen.
+   */
+  flowHandOff: number | undefined = undefined;
+  /** When this month was first laid out as part of a flow; see `FLOW_SETTLE_MS`. */
+  flowShownAt: number | undefined = undefined;
+  /** Earlier months' tiles laid out at the start of this month's rows, and drawn with this month. */
+  flowCarried: FlowItem[] = $state.raw([]);
+  /** The size of this month's rows, under its group header or gap. */
+  flowContentWidth = $state(0);
+  flowContentHeight = $state(0);
 
   constructor(
     timelineManager: TimelineManager,
@@ -251,7 +275,7 @@ export class TimelineMonth {
       return;
     }
     const timelineManager = this.timelineManager;
-    const index = timelineManager.months.indexOf(this);
+    const index = this.#index;
     const heightDelta = height - this.#height;
     this.#height = height;
     const previousTimelineMonth = timelineManager.months[index - 1];
@@ -271,7 +295,8 @@ export class TimelineMonth {
         timelineMonth.#top = newTop;
       }
     }
-    if (!timelineManager.viewportTopMonthIntersection) {
+    // A flow change (FL-143) keeps the scroll position itself: it knows which part of the month moved.
+    if (!timelineManager.viewportTopMonthIntersection || timelineManager.flowHoldsScroll) {
       return;
     }
     const { month, monthBottomViewportRatio, viewportTopRatioInMonth } = timelineManager.viewportTopMonthIntersection;
@@ -291,6 +316,17 @@ export class TimelineMonth {
     return this.#height;
   }
 
+  #indexHint = -1;
+
+  /** Where this month is in the manager's months, found once and checked on every read. */
+  get #index(): number {
+    const months = this.timelineManager.months;
+    if (months[this.#indexHint] !== this) {
+      this.#indexHint = months.indexOf(this);
+    }
+    return this.#indexHint;
+  }
+
   /**
    * Whether this month opens a display group: every month when grouping by month, the newest loaded
    * month of each year when grouping by year (in the display order), the first month for "all".
@@ -301,20 +337,24 @@ export class TimelineMonth {
     if (grouping === 'days' || grouping === 'months') {
       return true;
     }
-    const index = months.indexOf(this);
+    const index = this.#index;
     if (index <= 0) {
       return true;
     }
     return grouping === 'years' && months[index - 1].yearMonth.year !== this.yearMonth.year;
   }
 
-  /** The space above this month's rows: a group header, or the gap between months of one group. */
+  /**
+   * The space above this month's rows: a group header, or the gap between months of one group. When
+   * a group's rows run on across months (All, and Years when not shown as cards; FL-143) that gap is
+   * the row gap, so a month boundary inside the group leaves no seam.
+   */
   get groupHeaderHeight(): number {
     const manager = this.timelineManager;
-    if (manager.grouping === 'days') {
+    if (manager.grouping === 'days' || this.startsGroup) {
       return manager.headerHeight;
     }
-    return this.startsGroup ? manager.headerHeight : manager.gap;
+    return manager.continuousGroups && !manager.cells ? manager.justifiedLayoutOptions.spacing : manager.gap;
   }
 
   get top(): number {

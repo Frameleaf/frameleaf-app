@@ -81,17 +81,30 @@ const layoutRow = (
 };
 
 /**
- * Lay aspect ratios out in justified rows. `ratios` is indexed in visible order; every returned
- * tile carries the index it came from, so callers never have to re-derive the order.
+ * A justified flow that may stop short of its last row. `tailStart` is the index of the first item
+ * in the unfinished last row (the item count when every row closed exactly). With `closeTail` the
+ * unfinished row is laid out as the last row, exactly as {@link justifiedRows} does; without it the
+ * row is left open so the flow can run on into the next month bucket (FL-143).
  */
-export const justifiedRows = (ratios: readonly number[], options: JustifiedRowsOptions): JustifiedRow[] => {
+export type JustifiedFlow = { rows: JustifiedRow[]; tailStart: number };
+
+/**
+ * The greedy row filling behind {@link justifiedRows}. Its state at the end of a run is just the
+ * unfinished row, so starting a new run with that row's items continues the same flow: the rows of
+ * `[...tail, ...next]` are the rows the flow over everything would have produced from that point.
+ */
+export const justifiedFlow = (
+  ratios: readonly number[],
+  options: JustifiedRowsOptions,
+  { closeTail = true }: { closeTail?: boolean } = {},
+): JustifiedFlow => {
   const containerWidth = Number(options?.containerWidth);
   const targetRowHeight = positive(options?.targetRowHeight, 200);
   const gap = nonNegative(options?.gap, 4);
   const maxRowHeight = Math.max(targetRowHeight, positive(options?.maxRowHeight, targetRowHeight * 1.5));
   const list = Array.isArray(ratios) ? ratios.map((ratio) => clampAspectRatio(ratio)) : [];
   if (list.length === 0 || !Number.isFinite(containerWidth) || containerWidth <= 0) {
-    return [];
+    return { rows: [], tailStart: list.length };
   }
 
   const fillHeight = (aspectSum: number, count: number) => Math.max(1, containerWidth - gap * (count - 1)) / aspectSum;
@@ -126,13 +139,21 @@ export const justifiedRows = (ratios: readonly number[], options: JustifiedRowsO
       push(fillHeight(aspectSum, row.length), true);
     }
   }
-  if (row.length > 0) {
+  const tailStart = row.length > 0 ? row[0] : list.length;
+  if (row.length > 0 && closeTail) {
     const fill = fillHeight(aspectSum, row.length);
     const stretch = fill <= maxRowHeight;
     push(stretch ? fill : Math.min(targetRowHeight, maxRowHeight), stretch);
   }
-  return rows;
+  return { rows, tailStart };
 };
+
+/**
+ * Lay aspect ratios out in justified rows. `ratios` is indexed in visible order; every returned
+ * tile carries the index it came from, so callers never have to re-derive the order.
+ */
+export const justifiedRows = (ratios: readonly number[], options: JustifiedRowsOptions): JustifiedRow[] =>
+  justifiedFlow(ratios, options).rows;
 
 /** Row height that keeps roughly `perRow` landscape photos per row at this width. */
 export const rowHeightFor = (containerWidth: number, { min = 120, max = 260 }: { min?: number; max?: number } = {}) => {
@@ -145,6 +166,67 @@ export const rowHeightFor = (containerWidth: number, { min = 120, max = 260 }: {
 };
 
 /**
+ * Positions for a justified flow in the timeline manager's terms (`CommonLayoutOptions`): the tiles
+ * of the rows that were laid out, a caption row under each row, and the flow's size. Without
+ * `closeTail` the unfinished last row is left out (its items have no position here) so a later
+ * month can carry it on (FL-143).
+ */
+export type JustifiedFlowLayout = {
+  /** Indexed like the ratios; items of an unfinished row that was left open are `undefined`. */
+  positions: (CommonPosition | undefined)[];
+  tailStart: number;
+  rowCount: number;
+  width: number;
+  height: number;
+};
+
+export const justifiedFlowLayout = (
+  ratios: readonly number[],
+  options: CommonLayoutOptions,
+  { closeTail = true }: { closeTail?: boolean } = {},
+): JustifiedFlowLayout => {
+  const gap = nonNegative(options.spacing, 0);
+  const rowWidth = positive(options.rowWidth, 0);
+  const rowHeight = positive(options.rowHeight, 200);
+  const tolerance = Number.isFinite(options.heightTolerance) ? Math.max(0, options.heightTolerance) : 0.25;
+  const { rows, tailStart } = justifiedFlow(
+    ratios,
+    {
+      containerWidth: rowWidth,
+      targetRowHeight: rowHeight,
+      gap,
+      maxRowHeight: Math.round(rowHeight * (1 + tolerance)),
+    },
+    { closeTail },
+  );
+  const positions: (CommonPosition | undefined)[] = Array.from({ length: ratios.length }, () => undefined);
+  // A caption row under each row (Timeline captions): the photos keep their height and every row
+  // below starts that much lower.
+  const caption = nonNegative(options.captionHeight, 0);
+  let widest = 0;
+  let bottom = 0;
+  for (const [rowIndex, row] of rows.entries()) {
+    const top = row.top + rowIndex * caption;
+    let left = 0;
+    for (const tile of row.tiles) {
+      positions[tile.index] = { top, left, width: tile.width, height: tile.height };
+      left += tile.width + gap;
+    }
+    widest = Math.max(widest, row.width);
+    bottom = top + row.height + caption;
+  }
+  return {
+    positions,
+    tailStart,
+    rowCount: rows.length,
+    // Rows fill the container, so the flow is exactly as wide as the timeline allows. Falling back
+    // to the widest row keeps a single short row (a day with one very tall photo) honest.
+    width: rows.length === 0 ? 0 : Math.min(rowWidth, widest),
+    height: bottom,
+  };
+};
+
+/**
  * The `CommonJustifiedLayout` the timeline manager consumes, backed by the filling algorithm.
  * Positions are materialised once per day group; a group is only laid out when its month bucket is
  * in or near the viewport, so this never walks the whole library.
@@ -152,45 +234,13 @@ export const rowHeightFor = (containerWidth: number, { min = 120, max = 260 }: {
 class FilledJustifiedLayout implements CommonJustifiedLayout {
   readonly containerWidth: number;
   readonly containerHeight: number;
-  readonly #positions: CommonPosition[];
+  readonly #positions: (CommonPosition | undefined)[];
 
   constructor(ratios: readonly number[], options: CommonLayoutOptions) {
-    const gap = nonNegative(options.spacing, 0);
-    const rowWidth = positive(options.rowWidth, 0);
-    const rowHeight = positive(options.rowHeight, 200);
-    const tolerance = Number.isFinite(options.heightTolerance) ? Math.max(0, options.heightTolerance) : 0.25;
-    const rows = justifiedRows(ratios, {
-      containerWidth: rowWidth,
-      targetRowHeight: rowHeight,
-      gap,
-      maxRowHeight: Math.round(rowHeight * (1 + tolerance)),
-    });
-    const positions: CommonPosition[] = Array.from({ length: ratios.length }, () => ({
-      top: 0,
-      left: 0,
-      width: 0,
-      height: 0,
-    }));
-    // A caption row under each row (Timeline captions): the photos keep their height and every row
-    // below starts that much lower.
-    const caption = nonNegative(options.captionHeight, 0);
-    let widest = 0;
-    let bottom = 0;
-    for (const [rowIndex, row] of rows.entries()) {
-      const top = row.top + rowIndex * caption;
-      let left = 0;
-      for (const tile of row.tiles) {
-        positions[tile.index] = { top, left, width: tile.width, height: tile.height };
-        left += tile.width + gap;
-      }
-      widest = Math.max(widest, row.width);
-      bottom = top + row.height + caption;
-    }
-    this.#positions = positions;
-    // Rows fill the container, so the group is exactly as wide as the timeline allows. Falling back
-    // to the widest row keeps a single short row (a day with one very tall photo) honest.
-    this.containerWidth = rows.length === 0 ? 0 : Math.min(rowWidth, widest);
-    this.containerHeight = bottom;
+    const layout = justifiedFlowLayout(ratios, options);
+    this.#positions = layout.positions;
+    this.containerWidth = layout.width;
+    this.containerHeight = layout.height;
   }
 
   #at(boxIdx: number): CommonPosition {

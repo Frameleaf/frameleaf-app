@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { clampAspectRatio, filledJustifiedLayout, justifiedRows, rowHeightFor } from './justified-rows';
+import {
+  clampAspectRatio,
+  filledJustifiedLayout,
+  justifiedFlow,
+  justifiedFlowLayout,
+  justifiedRows,
+  rowHeightFor,
+} from './justified-rows';
 
 const CONTAINER = 1000;
 const options = (overrides: Partial<Parameters<typeof justifiedRows>[1]> = {}) => ({
@@ -141,5 +148,62 @@ describe('filledJustifiedLayout', () => {
   it('answers out-of-range boxes with a zero rectangle instead of throwing', () => {
     const layout = filledJustifiedLayout([1.5], layoutOptions);
     expect(layout.getPosition(9)).toEqual({ top: 0, left: 0, width: 0, height: 0 });
+  });
+});
+
+/**
+ * FL-143: Years and All run one flow across month buckets. A month leaves its unfinished last row
+ * open and the next month carries it on; the rows must come out exactly as one flow over everything.
+ */
+describe('justifiedFlow', () => {
+  const ratios = Array.from({ length: 41 }, (_, index) => 0.5 + ((index * 0.618_034) % 2.5));
+
+  it('matches justifiedRows when the last row is closed', () => {
+    expect(justifiedFlow(ratios, options()).rows).toEqual(justifiedRows(ratios, options()));
+  });
+
+  it('leaves the unfinished last row open and says where it starts', () => {
+    const closed = justifiedRows(ratios, options());
+    const open = justifiedFlow(ratios, options(), { closeTail: false });
+    const lastRow = closed.at(-1)!;
+    const endsExactly = rowWidth(lastRow) === CONTAINER && lastRow.height <= 200;
+    expect(open.rows).toEqual(endsExactly ? closed : closed.slice(0, -1));
+    expect(open.tailStart).toBe(endsExactly ? ratios.length : lastRow.tiles[0].index);
+  });
+
+  it('runs on across any split: the carried row plus the next items give the rows of one flow', () => {
+    const whole = justifiedRows(ratios, options());
+    for (const split of [1, 3, 7, 12, 20, 33, 40]) {
+      const first = justifiedFlow(ratios.slice(0, split), options(), { closeTail: false });
+      const rest = justifiedRows([...ratios.slice(first.tailStart, split), ...ratios.slice(split)], options());
+      const stitched = [
+        ...first.rows.map((row) => row.tiles.map((tile) => tile.index)),
+        ...rest.map((row) => row.tiles.map((tile) => tile.index + first.tailStart)),
+      ];
+      expect(stitched).toEqual(whole.map((row) => row.tiles.map((tile) => tile.index)));
+      const heights = [...first.rows, ...rest].map((row) => row.height);
+      expect(heights).toEqual(whole.map((row) => row.height));
+    }
+  });
+
+  it('has no tail when there is nothing to lay out', () => {
+    expect(justifiedFlow([], options(), { closeTail: false })).toEqual({ rows: [], tailStart: 0 });
+  });
+});
+
+describe('justifiedFlowLayout', () => {
+  const layoutOptions = { rowHeight: 200, rowWidth: CONTAINER, spacing: 4, heightTolerance: 0.25 };
+
+  it('gives the open row no positions and a height that ends at the last closed row', () => {
+    const ratios = [1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5];
+    const closed = justifiedFlowLayout(ratios, layoutOptions);
+    const open = justifiedFlowLayout(ratios, layoutOptions, { closeTail: false });
+    expect(open.tailStart).toBeLessThan(ratios.length);
+    expect(open.rowCount).toBe(closed.rowCount - 1);
+    for (const index of ratios.keys()) {
+      expect(open.positions[index]).toEqual(index < open.tailStart ? closed.positions[index] : undefined);
+    }
+    const lastOpen = open.positions[open.tailStart - 1]!;
+    expect(open.height).toBe(lastOpen.top + lastOpen.height);
   });
 });
