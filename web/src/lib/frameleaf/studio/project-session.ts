@@ -269,24 +269,12 @@ export interface StudioProjectSession {
   /** Load the project (or start the draft) and, for the owner, take the lease. */
   open(): Promise<void>;
   /**
-   * Record the engine's current document and the command ids that produced it since the last
-   * stage. The save happens after the debounce, not now. `envelopes` are the canonical commands the
-   * engine applied (FL-92); they travel with the save, and the server checks them and counts the
-   * revision summary from them.
+   * Stage the host's own graph: the result of canonical commands (FL-92), undo or redo, with the
+   * command ids and the envelopes the engine applied. They travel with the save; the server checks
+   * them and counts the revision summary from them. It advances `project.graphVersion`, so an editor
+   * draft loaded before it is refused (FL-174). The save happens after the debounce, not now.
    */
-  /**
-   * `baseRevision` is the revision the edited graph was loaded from, when the caller knows it (the
-   * editor frame reports it). Without it the draft is taken to be built on what the session shows.
-   * `graphVersion` is the `project.graphVersion` the editor's graph was loaded from. A stage with
-   * neither is the host's own (a canonical command or undo) and advances `project.graphVersion`.
-   */
-  stage(
-    graph: unknown,
-    commands?: readonly string[],
-    envelopes?: readonly StudioCommandEnvelope[],
-    baseRevision?: number,
-    graphVersion?: number,
-  ): StudioStageOutcome;
+  stage(graph: unknown, commands?: readonly string[], envelopes?: readonly StudioCommandEnvelope[]): StudioStageOutcome;
   /**
    * Stage the editor's own draft (FL-89 autosave): always the editor's, never the host's, so it can
    * never advance `project.graphVersion`. `baseRevision` and `graphVersion` are what the editor's
@@ -952,9 +940,8 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
       await load(generation, { keepDraft: false });
     },
 
-    stage(graph, commands = [], envelopes = [], baseRevision, editorGraphVersion) {
-      const origin = baseRevision === undefined && editorGraphVersion === undefined ? 'host' : 'editor';
-      return stageGraph(graph, commands, envelopes, baseRevision, editorGraphVersion, origin);
+    stage(graph, commands = [], envelopes = []) {
+      return stageGraph(graph, commands, envelopes, undefined, undefined, 'host');
     },
 
     stageEditor(graph, commands, baseRevision, editorGraphVersion) {

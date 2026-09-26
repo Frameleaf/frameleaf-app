@@ -20,6 +20,7 @@ import {
   createMedia,
   getMedia,
   getProjectMediaIds,
+  removeMediaFromProject,
   saveThumbnail,
   updateMedia,
 } from '@/infrastructure/storage'
@@ -150,6 +151,8 @@ export interface LibraryMediaSeeder {
   forget(mediaId: string): void
   /** The media is in the current bin again (imported again, or linked again by Freecut). */
   remember(mediaId: string): void
+  /** What this seeder linked to `projectId`: the bin it put there, before anyone else changed it. */
+  linked(projectId: string): ReadonlySet<string>
   /** Stop probing and release every registered URL. */
   dispose(): void
 }
@@ -165,6 +168,21 @@ export function createLibraryMediaSeeder(options: {
   const seeded = new Set<string>()
   /** Removed from the bin by the person; never carried to another mount. */
   const removed = new Set<string>()
+  /** What was linked to each recent mount's project here (the last few mounts only). */
+  const linkedTo = new Map<string, Set<string>>()
+  const link = async (target: string, id: string) => {
+    await associateMediaWithProject(target, id)
+    let ids = linkedTo.get(target)
+    if (!ids) {
+      ids = new Set()
+      linkedTo.set(target, ids)
+      for (const key of linkedTo.keys()) {
+        if (linkedTo.size <= 4) break
+        linkedTo.delete(key)
+      }
+    }
+    ids.add(id)
+  }
   const controller = new AbortController()
   let probing: Promise<void> = Promise.resolve()
 
@@ -220,7 +238,7 @@ export function createLibraryMediaSeeder(options: {
           record.mimeType,
         )
         blobUrlManager.registerUrl(asset.id, sourceUrlOf(asset))
-        await associateMediaWithProject(projectId(), asset.id)
+        await link(projectId(), asset.id)
       }
       if (fresh.length > 0) onChange()
       // Probe one at a time in the background, handoff order first: it is the starting cut.
@@ -234,8 +252,16 @@ export function createLibraryMediaSeeder(options: {
       if (from && from !== target) {
         for (const id of await getProjectMediaIds(from)) ids.add(id)
       }
+      const linked: string[] = []
       for (const id of ids) {
-        if (!removed.has(id)) await associateMediaWithProject(target, id)
+        if (removed.has(id)) continue
+        await link(target, id)
+        linked.push(id)
+      }
+      // Removed from the bin while this ran (Freecut's removal of the current mount): not linked
+      // after all, so the removal stands.
+      for (const id of linked) {
+        if (removed.has(id)) await removeMediaFromProject(target, id)
       }
       onChange()
     },
@@ -244,6 +270,9 @@ export function createLibraryMediaSeeder(options: {
     },
     remember(mediaId) {
       removed.delete(mediaId)
+    },
+    linked(projectId) {
+      return linkedTo.get(projectId) ?? new Set()
     },
     dispose() {
       controller.abort()
@@ -320,12 +349,14 @@ export function followRetiredImports(options: {
   /** The current mount's links as last read, per mount project, to tell a removal from an addition. */
   const known = new Map<string, Set<string>>()
   const reconcile = async (projectId: string) => {
+    // Before the first read of this mount's links, what the seeder had put there when this read began
+    // is the baseline, so a removal that lands before that read still counts.
+    const seededBefore = new Set(media.linked(projectId))
     const now = new Set(await getProjectMediaIds(projectId))
-    const before = known.get(projectId)
+    const before = known.get(projectId) ?? seededBefore
     // Only the current mount's links are compared; a replaced mount's are let go.
     known.clear()
     known.set(projectId, now)
-    if (!before) return
     for (const id of now) {
       if (!before.has(id)) media.remember(id)
     }
