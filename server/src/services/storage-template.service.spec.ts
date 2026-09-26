@@ -1269,14 +1269,61 @@ describe(StorageTemplateService.name, () => {
         pending({ id: 'lost', entityId: 'asset-5' }),
         pending({ id: 'blocked', entityId: 'asset-6' }),
       ]);
-      mocks.storage.checkFileExists.mockImplementation((path) => Promise.resolve(!path.includes('lost')));
+      mocks.storage.stat.mockImplementation((path) =>
+        path.includes('lost')
+          ? Promise.reject(Object.assign(new Error('gone'), { code: 'ENOENT' }))
+          : Promise.resolve({} as Stats),
+      );
 
       await sut.onNightlyDatabaseCleanup();
 
-      expect(mocks.move.deleteMoves).toHaveBeenCalledWith(['gone', 'done', 'external', 'motion', 'lost']);
+      // each only while it still names the paths it was judged by
+      expect(mocks.move.deleteMoves).toHaveBeenCalledWith(
+        ['gone', 'done', 'external', 'motion', 'lost'].map((id) =>
+          expect.objectContaining({ id, oldPath: expect.any(String), newPath: expect.any(String) }),
+        ),
+      );
       expect(mocks.job.queueAll).toHaveBeenCalledWith([
         { name: JobName.StorageTemplateMigrationSingle, data: { id: 'asset-6' } },
       ]);
+    });
+
+    const failing = (code: string, match: (path: string) => boolean) => (path: string) =>
+      match(path) ? Promise.reject(Object.assign(new Error(code), { code })) : Promise.resolve({} as Stats);
+
+    it.each(['EIO', 'ENOTCONN', 'EACCES'])('keeps a record whose paths cannot be read (%s)', async (code) => {
+      mocks.move.getPendingAssetMoves.mockResolvedValue([pending({ id: 'unreadable', entityId: 'asset-1' })]);
+      mocks.storage.stat.mockImplementation(failing(code, (path) => path.includes('unreadable')));
+
+      await sut.onNightlyDatabaseCleanup();
+
+      expect(mocks.move.deleteMoves).not.toHaveBeenCalled();
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([
+        { name: JobName.StorageTemplateMigrationSingle, data: { id: 'asset-1' } },
+      ]);
+    });
+
+    it('keeps a record whose files are missing while the media folder is not mounted', async () => {
+      mocks.move.getPendingAssetMoves.mockResolvedValue([pending({ id: 'offline', entityId: 'asset-1' })]);
+      // the mount-check file is missing too: the folder is not mounted
+      mocks.storage.stat.mockImplementation(
+        failing('ENOENT', (path) => path.includes('offline') || path.endsWith('/.immich')),
+      );
+
+      await sut.onNightlyDatabaseCleanup();
+
+      expect(mocks.move.deleteMoves).not.toHaveBeenCalled();
+    });
+
+    it('drops a record whose files are missing at both paths of a mounted media folder', async () => {
+      mocks.move.getPendingAssetMoves.mockResolvedValue([pending({ id: 'lost', entityId: 'asset-1' })]);
+      mocks.storage.stat.mockImplementation(failing('ENOENT', (path) => path.includes('lost')));
+
+      await sut.onNightlyDatabaseCleanup();
+
+      expect(mocks.storage.stat).toHaveBeenCalledWith('/data/library/.immich');
+      expect(mocks.move.deleteMoves).toHaveBeenCalledWith([expect.objectContaining({ id: 'lost' })]);
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([]);
     });
 
     it('reports a move kept for a mismatched mapping once, however often it is retried', async () => {
