@@ -155,6 +155,24 @@
   let sharedLink = getSharedLink();
   let fullscreenElement = $state<Element>();
 
+  /**
+   * FL-148: outside a slideshow, `cursor.nextAsset` / `cursor.previousAsset` come from an async
+   * neighbour lookup the caller runs after the asset changes (TimelineAssetViewer's `loadCloseAssets`),
+   * which can still be in flight - most visibly at a month boundary, where it lazily loads the next
+   * timeline bucket over the network. A real ArrowRight/ArrowLeft press (or button click) that lands
+   * before that lookup resolves must not be dropped as if there were no such neighbour: it is queued
+   * here and replayed by the `$effect` below once the lookup settles for this same asset.
+   */
+  let pendingNavigation = $state<{ order: 'previous' | 'next'; forAssetId: string } | undefined>();
+
+  /**
+   * FL-148: a second arrow press (or click) that arrives while the first navigation is still in
+   * flight used to be dropped outright (`tracker.isActive()` returning early with nothing queued).
+   * The latest such request is kept here and replayed - through the normal `navigateAsset` path,
+   * including the neighbour-not-loaded queueing above - once the in-flight one settles.
+   */
+  let queuedWhileBusy: 'previous' | 'next' | undefined;
+
   let isPlayingOriginalVideo = $state($alwaysLoadOriginalVideo);
   let slideshowStartAssetId = $state<string>();
 
@@ -349,47 +367,87 @@
     slideshowDirection = order;
     preloadManager.cancelBeforeNavigation(order);
 
+    if ($slideshowState !== SlideshowState.PlaySlideshow) {
+      const target = order === 'previous' ? previousAsset : nextAsset;
+      if (target === undefined) {
+        // FL-148: the neighbour lookup for this asset has not resolved yet - queue the latest intent
+        // rather than silently dropping it; the replay effect below fires once it does (or does
+        // nothing further if there truly is no such neighbour).
+        pendingNavigation = { order, forAssetId: asset.id };
+        return;
+      }
+    }
+    pendingNavigation = undefined;
+
     if (tracker.isActive()) {
+      // FL-148: queue the latest request instead of dropping it; it replays (below) once the
+      // in-flight navigation ends.
+      queuedWhileBusy = order;
       return;
     }
 
-    void tracker.invoke(async () => {
-      const isShuffle =
-        $slideshowState === SlideshowState.PlaySlideshow && $slideshowNavigation === SlideshowNavigation.Shuffle;
+    void tracker
+      .invoke(async () => {
+        const isShuffle =
+          $slideshowState === SlideshowState.PlaySlideshow && $slideshowNavigation === SlideshowNavigation.Shuffle;
 
-      let hasNext: boolean;
+        let hasNext: boolean;
 
-      if (isShuffle) {
-        hasNext = order === 'previous' ? slideshowHistory.previous() : slideshowHistory.next();
-        if (!hasNext) {
-          const asset = await onRandom?.();
-          if (asset) {
-            slideshowHistory.queue(asset);
-            hasNext = true;
+        if (isShuffle) {
+          hasNext = order === 'previous' ? slideshowHistory.previous() : slideshowHistory.next();
+          if (!hasNext) {
+            const asset = await onRandom?.();
+            if (asset) {
+              slideshowHistory.queue(asset);
+              hasNext = true;
+            }
           }
+        } else {
+          hasNext = order === 'previous' ? await goToAsset(cursor.previousAsset) : await goToAsset(cursor.nextAsset);
         }
-      } else {
-        hasNext = order === 'previous' ? await goToAsset(cursor.previousAsset) : await goToAsset(cursor.nextAsset);
-      }
 
-      if ($slideshowState !== SlideshowState.PlaySlideshow) {
-        return;
-      }
+        if ($slideshowState !== SlideshowState.PlaySlideshow) {
+          return;
+        }
 
-      if (hasNext) {
-        $restartSlideshowProgress = true;
-        return;
-      }
+        if (hasNext) {
+          $restartSlideshowProgress = true;
+          return;
+        }
 
-      if ($slideshowRepeat && slideshowStartAssetId) {
-        await assetViewerManager.setAssetId(slideshowStartAssetId);
-        $restartSlideshowProgress = true;
-        return;
-      }
+        if ($slideshowRepeat && slideshowStartAssetId) {
+          await assetViewerManager.setAssetId(slideshowStartAssetId);
+          $restartSlideshowProgress = true;
+          return;
+        }
 
-      await handleStopSlideshow();
-    }, $t('error_while_navigating'));
+        await handleStopSlideshow();
+      }, $t('error_while_navigating'))
+      .then(() => {
+        if (!queuedWhileBusy) {
+          return;
+        }
+        const queuedOrder = queuedWhileBusy;
+        queuedWhileBusy = undefined;
+        navigateAsset(queuedOrder);
+      });
   };
+
+  // FL-148: replays a navigation intent queued above once its neighbour lookup resolves for the same
+  // asset. If the displayed asset changed for some other reason first, the stale intent is dropped.
+  $effect(() => {
+    if (!pendingNavigation || pendingNavigation.forAssetId !== asset.id) {
+      pendingNavigation = undefined;
+      return;
+    }
+    const target = pendingNavigation.order === 'previous' ? previousAsset : nextAsset;
+    if (target === undefined) {
+      return;
+    }
+    const { order } = pendingNavigation;
+    pendingNavigation = undefined;
+    navigateAsset(order);
+  });
 
   const navigateStack = (direction: 'previous' | 'next') => {
     if (!stack || !withStacked || assetViewerManager.isShowEditor) {
@@ -406,6 +464,27 @@
     }
     cursor = { ...cursor, current: assets[nextIndex] };
     notifyAssetUpdate?.(cursor.current);
+  };
+
+  /**
+   * FL-148: the ArrowLeft/ArrowRight shortcuts used to live only inside `NextAssetAction` /
+   * `PreviousAssetAction`, which are conditionally rendered on `nextAsset`/`previousAsset` already
+   * being resolved - so while that (async) lookup was still in flight the keypress had no listener to
+   * reach at all. Binding the shortcut here, unconditionally, keeps it always reachable; it reproduces
+   * the same visibility guards those components rendered under so it does nothing when the on-screen
+   * buttons would not have been there either (in a slideshow, the editor, or face-edit mode, or with
+   * navigation turned off for this viewer instance).
+   */
+  const navigateAssetByKey = (order: 'previous' | 'next') => {
+    if (
+      $slideshowState !== SlideshowState.None ||
+      !showNavigation ||
+      assetViewerManager.isShowEditor ||
+      assetViewerManager.isFaceEditMode
+    ) {
+      return;
+    }
+    navigateAsset(order);
   };
 
   /**
@@ -811,6 +890,8 @@
   use:shortcuts={[
     { shortcut: { key: 'ArrowUp' }, onShortcut: () => navigateStack('previous') },
     { shortcut: { key: 'ArrowDown' }, onShortcut: () => navigateStack('next') },
+    { shortcut: { key: 'ArrowLeft' }, onShortcut: () => navigateAssetByKey('previous') },
+    { shortcut: { key: 'ArrowRight' }, onShortcut: () => navigateAssetByKey('next') },
   ]}
 />
 
