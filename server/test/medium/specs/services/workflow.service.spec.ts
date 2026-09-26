@@ -187,6 +187,48 @@ describe(WorkflowService.name, () => {
         .execute();
       expect(details).toEqual([]);
     });
+
+    it('keeps the steps a queued run completed, once each, until they are old or the workflow goes (FL-179)', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const auth = factory.auth({ user });
+      const created = await sut.create(auth, { trigger: WorkflowTrigger.AssetCreate, enabled: false });
+      const repository = ctx.get(WorkflowRepository);
+      const executionId = '00000000-0000-4000-8000-000000000179';
+      const otherExecutionId = '00000000-0000-4000-8000-000000000180';
+      const filterStep = '00000000-0000-4000-8000-000000000001';
+      const actionStep = '00000000-0000-4000-8000-000000000002';
+
+      await repository.completeStep({ executionId, workflowId: created.id, stepId: filterStep, halted: false });
+      // a replay that records the same step again changes nothing
+      await repository.completeStep({ executionId, workflowId: created.id, stepId: filterStep, halted: false });
+      await repository.completeStep({ executionId, workflowId: created.id, stepId: actionStep, halted: true });
+
+      await expect(repository.getCompletedSteps(executionId)).resolves.toEqual(
+        new Map([
+          [filterStep, { halted: false }],
+          [actionStep, { halted: true }],
+        ]),
+      );
+      // a retry is queued with its own execution id, and starts with nothing completed
+      await expect(repository.getCompletedSteps(otherExecutionId)).resolves.toEqual(new Map());
+
+      await expect(repository.deleteCompletedStepsBefore(new Date(Date.now() - 60_000))).resolves.toBe(0);
+      await expect(repository.getCompletedSteps(executionId)).resolves.toHaveProperty('size', 2);
+
+      await repository.completeStep({
+        executionId: otherExecutionId,
+        workflowId: created.id,
+        stepId: filterStep,
+        halted: false,
+      });
+      await expect(repository.deleteCompletedStepsBefore(new Date(Date.now() + 60_000))).resolves.toBe(3);
+      await expect(repository.getCompletedSteps(executionId)).resolves.toEqual(new Map());
+
+      await repository.completeStep({ executionId, workflowId: created.id, stepId: filterStep, halted: false });
+      await sut.delete(auth, created.id);
+      await expect(repository.getCompletedSteps(executionId)).resolves.toEqual(new Map());
+    });
   });
 
   describe('getAll', () => {
