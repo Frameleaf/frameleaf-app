@@ -3,6 +3,7 @@ import { addMessages } from 'svelte-i18n';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { createSetup, flowSteps, saveLocalSetup } from '$lib/frameleaf/first-run-setup';
+import { authManager } from '$lib/managers/auth-manager.svelte';
 import en from '../../../../../i18n/en.json';
 import Page from './+page.svelte';
 
@@ -57,11 +58,17 @@ describe('new server setup (FL-176)', () => {
     expect(sdkMock.login).toHaveBeenCalledWith({
       loginCredentialDto: { email: 'ada@example.test', password: 'Correct-Horse-9' },
     });
-    // The new-server flow is saved straight away, before the debounced progress save (FL-176 N2).
-    expect(sdkMock.updateFrameleafSetup).toHaveBeenCalledWith({
-      frameleafSetupUpdateDto: expect.objectContaining({ flow: 'new' }),
+    // The new-server flow is saved straight away at the library step, before the session loads (which
+    // redraws the page) and before the debounced progress save (FL-176 N2).
+    await waitFor(() => expect(sdkMock.getFrameleafSetupStorage).toHaveBeenCalled());
+    expect(sdkMock.updateFrameleafSetup).toHaveBeenNthCalledWith(1, {
+      frameleafSetupUpdateDto: expect.objectContaining({
+        flow: 'new',
+        progress: expect.objectContaining({ step: 'library' }),
+      }),
     });
     const firstSave = sdkMock.updateFrameleafSetup.mock.invocationCallOrder[0];
+    expect(firstSave).toBeLessThan(vi.mocked(authManager.load).mock.invocationCallOrder[0]);
     expect(firstSave).toBeLessThan(sdkMock.getFrameleafSetupStorage.mock.invocationCallOrder[0]);
     expect(await screen.findByRole('heading', { name: en.frameleaf_setup_library_title })).toBeInTheDocument();
     expect(await screen.findByText('Writable, 2.0 TB free')).toBeInTheDocument();

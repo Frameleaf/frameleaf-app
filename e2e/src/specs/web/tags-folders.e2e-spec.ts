@@ -141,8 +141,11 @@ test.describe('Tags and Folders', () => {
 
     await files.first().locator('.fl-tile-open').click();
     await page.waitForURL(/\/folders\/photos\/[\w-]+/);
+    // The address changes before the viewer has loaded its item; go back from the open viewer.
+    await expect(page.locator('#immich-asset-viewer')).toBeVisible();
     await page.goBack();
     await page.waitForURL(folderUrl);
+    await expect(page.locator('#immich-asset-viewer')).toHaveCount(0);
     await expect(files).toHaveCount(1);
 
     await page.getByRole('navigation', { name: 'Folder path' }).getByRole('button', { name: 'All folders' }).click();
