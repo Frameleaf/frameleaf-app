@@ -205,7 +205,7 @@
     "map_enable_description": "मानचित्र सुविधाएँ सक्षम करें",
     "map_gps_settings": "मानचित्र एवं जीपीएस सेटिंग्स",
     "map_gps_settings_description": "मानचित्र और जीपीएस (रिवर्स जियोकोडिंग) सेटिंग्स प्रबंधित करें",
-    "map_implications": "मानचित्र सुविधा एक बाहरी टाइल सेवा (tiles.immich.cloud) पर निर्भर करती है",
+    "map_implications": "मानचित्र सुविधा एक बाहरी टाइल सेवा (tiles.frameleaf.cloud) पर निर्भर करती है",
     "map_light_style": "हल्की शैली",
     "map_manage_reverse_geocoding_settings": "प्रबंधित करना <link>रिवर्स जियोकोडिंग</link> समायोजन",
     "map_reverse_geocoding": "रिवर्स जियोकोडिंग",

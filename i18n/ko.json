@@ -236,7 +236,7 @@
     "map_enable_description": "지도 기능 활성화",
     "map_gps_settings": "지도 및 GPS 설정",
     "map_gps_settings_description": "지도 사용자 정의 및 역지오코딩 설정을 관리합니다.",
-    "map_implications": "지도 기능은 외부 타일 서비스(tiles.immich.cloud)에 의존합니다.",
+    "map_implications": "지도 기능은 외부 타일 서비스(tiles.frameleaf.cloud)에 의존합니다.",
     "map_light_style": "라이트 스타일",
     "map_manage_reverse_geocoding_settings": "<link>역지오코딩</link> 설정을 관리합니다.",
     "map_reverse_geocoding": "역지오코딩",

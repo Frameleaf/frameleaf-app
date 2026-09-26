@@ -239,7 +239,7 @@
     "map_enable_description": "Kaartfuncties inschakelen",
     "map_gps_settings": "Kaart- & gps-instellingen",
     "map_gps_settings_description": "Beheer kaart- & gps-instellingen (omgekeerde geocodering)",
-    "map_implications": "De kaartfunctie is afhankelijk van een externe service (tiles.immich.cloud)",
+    "map_implications": "De kaartfunctie is afhankelijk van een externe service (tiles.frameleaf.cloud)",
     "map_light_style": "Lichte stijl",
     "map_manage_reverse_geocoding_settings": "Beheer <link>omgekeerde geocodering</link> instellingen",
     "map_reverse_geocoding": "Omgekeerde geocodering",

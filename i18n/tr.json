@@ -239,7 +239,7 @@
     "map_enable_description": "Harita ayarlarını etkinleştir",
     "map_gps_settings": "Harita ve GPS Ayarları",
     "map_gps_settings_description": "Harita Yönetimi ve GPS (Ters Jeokodlama) Ayarları",
-    "map_implications": "Harita özelliği, harici bir döşeme hizmetine (tiles.immich.cloud) bağlıdır",
+    "map_implications": "Harita özelliği, harici bir döşeme hizmetine (tiles.frameleaf.cloud) bağlıdır",
     "map_light_style": "Açık stil",
     "map_manage_reverse_geocoding_settings": "<link>Coğrafi Kodlama</link> ayarlarını yönet",
     "map_reverse_geocoding": "Coğrafi Kodlama",
