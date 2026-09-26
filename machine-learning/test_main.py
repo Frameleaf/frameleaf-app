@@ -11,19 +11,21 @@ from types import SimpleNamespace
 from typing import Any, Callable
 from unittest import mock
 
+import httpx
 import numpy as np
 import onnxruntime as ort
 import orjson
 import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
+from huggingface_hub.errors import HfHubHTTPError, LocalEntryNotFoundError, RepositoryNotFoundError
 from PIL import Image
 from pytest import MonkeyPatch
 from pytest_mock import MockerFixture
 
-from immich_ml.config import MaxBatchSize, Settings, settings
+from immich_ml.config import MaxBatchSize, Settings, log, settings
 from immich_ml.main import load, preload_models
-from immich_ml.models.base import InferenceModel
+from immich_ml.models.base import InferenceModel, ModelUnavailableError
 from immich_ml.models.cache import ModelCache
 from immich_ml.models.clip.textual import MClipTextualEncoder, OpenClipTextualEncoder
 from immich_ml.models.clip.visual import OpenClipVisualEncoder
@@ -166,10 +168,12 @@ class TestBase:
         encoder.download()
 
         snapshot_download.assert_called_once_with(
-            "immich-app/ViT-B-32__openai",
+            "frameleaf/ViT-B-32__openai",
             cache_dir=encoder.cache_dir,
             local_dir=encoder.cache_dir,
             ignore_patterns=["*.armnn", "*.rknn"],
+            endpoint="https://models.frameleaf.cloud",
+            token=False,
         )
 
     def test_download_downloads_armnn_if_preferred_format(self, snapshot_download: mock.Mock) -> None:
@@ -177,10 +181,12 @@ class TestBase:
         encoder.download()
 
         snapshot_download.assert_called_once_with(
-            "immich-app/ViT-B-32__openai",
+            "frameleaf/ViT-B-32__openai",
             cache_dir=encoder.cache_dir,
             local_dir=encoder.cache_dir,
             ignore_patterns=["*.rknn"],
+            endpoint="https://models.frameleaf.cloud",
+            token=False,
         )
 
     def test_download_downloads_rknn_if_preferred_format(self, snapshot_download: mock.Mock) -> None:
@@ -188,11 +194,72 @@ class TestBase:
         encoder.download()
 
         snapshot_download.assert_called_once_with(
-            "immich-app/ViT-B-32__openai",
+            "frameleaf/ViT-B-32__openai",
             cache_dir=encoder.cache_dir,
             local_dir=encoder.cache_dir,
             ignore_patterns=["*.armnn"],
+            endpoint="https://models.frameleaf.cloud",
+            token=False,
         )
+
+    def test_download_uses_configured_model_source(self, snapshot_download: mock.Mock, mocker: MockerFixture) -> None:
+        mocker.patch.object(settings, "model_source_url", "https://models.example.com/")
+        encoder = OpenClipTextualEncoder("ViT-B-32__openai", cache_dir="/path/to/cache")
+        encoder.download()
+
+        snapshot_download.assert_called_once_with(
+            "frameleaf/ViT-B-32__openai",
+            cache_dir=encoder.cache_dir,
+            local_dir=encoder.cache_dir,
+            ignore_patterns=["*.armnn", "*.rknn"],
+            endpoint="https://models.example.com",
+            token=None,
+        )
+
+    @pytest.mark.parametrize("status", [401, 404])
+    def test_download_names_missing_model_and_model_source(
+        self, snapshot_download: mock.Mock, mocker: MockerFixture, status: int
+    ) -> None:
+        error = mocker.patch.object(log, "error")
+        request = httpx.Request("GET", "https://models.frameleaf.cloud/api/models/frameleaf/buffalo_l/revision/main")
+        snapshot_download.side_effect = RepositoryNotFoundError(
+            "Repository not found", response=httpx.Response(status, request=request)
+        )
+        recognizer = FaceRecognizer("buffalo_l", cache_dir="/path/to/cache")
+
+        with pytest.raises(ModelUnavailableError) as raised:
+            recognizer.download()
+
+        message = str(raised.value)
+        assert "'buffalo_l'" in message
+        assert "https://models.frameleaf.cloud" in message
+        assert "frameleaf/buffalo_l" in message
+        assert "MACHINE_LEARNING_MODEL_SOURCE_URL" in message
+        assert "immich" not in message.lower()
+        error.assert_called_once_with(message)
+        snapshot_download.assert_called_once()
+
+    def test_download_treats_uncached_not_found_as_missing_model(self, snapshot_download: mock.Mock) -> None:
+        request = httpx.Request("GET", "https://models.frameleaf.cloud/api/models/frameleaf/antelopev2/revision/main")
+        not_found = HfHubHTTPError("Not found", response=httpx.Response(404, request=request))
+        missing = LocalEntryNotFoundError("Cannot find an appropriate cached snapshot folder")
+        missing.__cause__ = not_found
+        snapshot_download.side_effect = missing
+        detector = FaceDetector("antelopev2", cache_dir="/path/to/cache")
+
+        with pytest.raises(ModelUnavailableError, match="antelopev2"):
+            detector.download()
+
+    def test_download_keeps_other_source_errors(self, snapshot_download: mock.Mock) -> None:
+        request = httpx.Request("GET", "https://models.frameleaf.cloud/api/models/frameleaf/buffalo_l/revision/main")
+        outage = HfHubHTTPError("Service unavailable", response=httpx.Response(503, request=request))
+        snapshot_download.side_effect = outage
+        recognizer = FaceRecognizer("buffalo_l", cache_dir="/path/to/cache")
+
+        with pytest.raises(HfHubHTTPError) as raised:
+            recognizer.download()
+
+        assert raised.value is outage
 
     def test_throws_exception_if_model_path_does_not_exist(
         self, snapshot_download: mock.Mock, ort_session: mock.Mock, path: mock.Mock
@@ -2101,6 +2168,23 @@ class TestLoad:
         assert res is mock_model
         mock_model.clear_cache.assert_called_once()
         assert mock_model.load.call_count == 2
+
+    async def test_load_reports_missing_model_without_clearing_cache(self) -> None:
+        mock_model = mock.Mock(spec=InferenceModel)
+        mock_model.model_name = "buffalo_l"
+        mock_model.model_type = ModelType.RECOGNITION
+        mock_model.model_task = ModelTask.FACIAL_RECOGNITION
+        mock_model.loaded = False
+        mock_model.load_attempts = 0
+        mock_model.load.side_effect = ModelUnavailableError("Model 'buffalo_l' isn't available")
+
+        with pytest.raises(HTTPException) as raised:
+            await load(mock_model)
+
+        assert raised.value.status_code == 503
+        assert raised.value.detail == "Model 'buffalo_l' isn't available"
+        mock_model.clear_cache.assert_not_called()
+        mock_model.load.assert_called_once()
 
     async def test_load_raises_if_os_error_and_already_retried(self) -> None:
         mock_model = mock.Mock(spec=InferenceModel)

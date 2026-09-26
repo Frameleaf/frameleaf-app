@@ -6,14 +6,46 @@ from shutil import rmtree
 from typing import Any, ClassVar
 
 from huggingface_hub import snapshot_download
+from huggingface_hub.errors import (
+    HfHubHTTPError,
+    RemoteEntryNotFoundError,
+    RepositoryNotFoundError,
+    RevisionNotFoundError,
+)
 
 import immich_ml.sessions.ann.loader
 import immich_ml.sessions.rknn as rknn
 from immich_ml.sessions.ort import OrtSession
 
-from ..config import clean_name, log, settings
+from ..config import DEFAULT_MODEL_SOURCE_URL, clean_name, log, settings
 from ..schemas import ModelFormat, ModelIdentity, ModelSession, ModelTask, ModelType
 from ..sessions.ann import AnnSession
+
+
+# Organisation on the model source that holds the Frameleaf model repositories.
+MODEL_SOURCE_ORG = "frameleaf"
+
+# Status codes a Hub-compatible source returns for a repository it does not serve.
+_MISSING_MODEL_STATUSES = {401, 403, 404, 410}
+
+
+class ModelUnavailableError(RuntimeError):
+    """The configured model source does not serve the requested model."""
+
+
+def model_source_url() -> str:
+    return settings.model_source_url.rstrip("/")
+
+
+def _is_missing_model(error: BaseException) -> bool:
+    current: BaseException | None = error
+    while current is not None:
+        if isinstance(current, (RepositoryNotFoundError, RevisionNotFoundError, RemoteEntryNotFoundError)):
+            return True
+        if isinstance(current, HfHubHTTPError) and current.response.status_code in _MISSING_MODEL_STATUSES:
+            return True
+        current = current.__cause__
+    return False
 
 
 class InferenceModel(ABC):
@@ -72,12 +104,28 @@ class InferenceModel(ABC):
             ModelFormat.RKNN: ["*.armnn"],
         }
 
-        snapshot_download(
-            f"immich-app/{clean_name(self.model_name)}",
-            cache_dir=self.cache_dir,
-            local_dir=self.cache_dir,
-            ignore_patterns=ignored_patterns.get(self.model_format, []),
-        )
+        repo_id = f"{MODEL_SOURCE_ORG}/{clean_name(self.model_name)}"
+        endpoint = model_source_url()
+        try:
+            snapshot_download(
+                repo_id,
+                cache_dir=self.cache_dir,
+                local_dir=self.cache_dir,
+                ignore_patterns=ignored_patterns.get(self.model_format, []),
+                endpoint=endpoint,
+                # The Frameleaf mirror is public; never forward a Hugging Face token to it.
+                token=False if endpoint == DEFAULT_MODEL_SOURCE_URL else None,
+            )
+        except Exception as error:
+            if not _is_missing_model(error):
+                raise
+            message = (
+                f"Model '{self.model_name}' isn't available from the model source {endpoint} "
+                f"(looked for {repo_id}). An admin can set MACHINE_LEARNING_MODEL_SOURCE_URL "
+                "to their own model source that serves this model."
+            )
+            log.error(message)
+            raise ModelUnavailableError(message) from error
 
     def _load(self) -> ModelSession:
         return self._make_session(self.model_path)
