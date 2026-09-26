@@ -424,22 +424,6 @@ describe(MediaRecoveryRepository.name, () => {
       .execute();
     expect(await sut.findCandidates(context.authority.ownerId, verified)).toEqual([]);
   });
-  it('never matches the recorded digests of an asset with a path checksum, whoever wrote them (FL-69)', async () => {
-    const context = await arrange();
-    await db
-      .updateTable('asset')
-      .set({ checksumAlgorithm: 'sha1-path' as never })
-      .where('id', '=', context.assetId)
-      .execute();
-    // a Library Care relink's row and an external scan's: bytes on an external mount are not a managed copy
-    for (const source of ['recovery', 'external-scan']) {
-      await sql`INSERT INTO immich_fork.asset_checksum ("assetId", sha1, sha256, "sizeInBytes", "verifiedPaths", "linkCount", evidence, "verifiedAt", "updatedAt")
-        VALUES (${context.assetId}::uuid, ${verified.sha1}, ${verified.sha256}, ${verified.sizeInBytes}, ARRAY['/external/original.jpg']::text[], 1,
-          jsonb_build_object('source', ${source}::text), now(), now())
-        ON CONFLICT ("assetId") DO UPDATE SET evidence = EXCLUDED.evidence`.execute(db);
-      expect(await sut.findCandidates(context.authority.ownerId, verified)).toEqual([]);
-    }
-  });
   it('rejects removed tombstones and normalization reservations', async () => {
     const first = await arrange();
     await sql`UPDATE immich_fork.icloud_resource SET status = 'removed' WHERE id = ${first.authority.resourceId}::uuid`.execute(

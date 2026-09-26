@@ -1102,7 +1102,11 @@ export class MediaHealthRepository {
     const external = 'expectedLibraryId' in input;
     return this.db.transaction().execute(async (trx) => {
       const phase = await this.lockHealthPhase(trx);
-      if (!writesForkSidecar(phase)) {
+      // A relink writes whichever schemas the locked phase keeps: the legacy tables before the fork
+      // backfill (a new install stays in the legacy phase until it runs), the fork sidecar once it does.
+      // With neither (inactive or failed), nothing may be written.
+      const forkWrites = writesForkSidecar(phase);
+      if (!writesLegacy(phase) && !forkWrites) {
         return false;
       }
       const migrating = await sql`SELECT 1 FROM immich_fork.migration_audit
@@ -1325,17 +1329,20 @@ export class MediaHealthRepository {
           return false;
         }
         const forkId = forkPhysical?.id ?? legacyId ?? randomUUID();
-        if (!forkPhysical) {
+        // the fork's physical mapping is kept only while its writes are on; the backfill rebuilds it
+        if (forkWrites && !forkPhysical) {
           await sql`INSERT INTO immich_fork.physical_file (id, "canonicalAssetId", type, checksum, "sizeInBytes", "canonicalPath", "createdAt", "updatedAt")
             VALUES (${forkId}::uuid, ${canonical}::uuid, 'original', ${input.sha256}, ${input.sizeInBytes}, ${recoveredPath}, now(), now())`.execute(
             trx,
           );
         }
-        await sql`INSERT INTO immich_fork.asset_physical_file ("assetId", "physicalFileId", "upstreamPath", "verifiedAt", "updatedAt")
-          VALUES (${asset.id}::uuid, ${forkId}::uuid, ${recoveredPath}, now(), now()) ON CONFLICT ("assetId") DO UPDATE SET
-          "physicalFileId" = EXCLUDED."physicalFileId", "upstreamPath" = EXCLUDED."upstreamPath", "verifiedAt" = now(), "updatedAt" = now()`.execute(
-          trx,
-        );
+        if (forkWrites) {
+          await sql`INSERT INTO immich_fork.asset_physical_file ("assetId", "physicalFileId", "upstreamPath", "verifiedAt", "updatedAt")
+            VALUES (${asset.id}::uuid, ${forkId}::uuid, ${recoveredPath}, now(), now()) ON CONFLICT ("assetId") DO UPDATE SET
+            "physicalFileId" = EXCLUDED."physicalFileId", "upstreamPath" = EXCLUDED."upstreamPath", "verifiedAt" = now(), "updatedAt" = now()`.execute(
+            trx,
+          );
+        }
         const column = await sql<{
           present: boolean;
         }>`SELECT EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid = 'public.asset'::regclass AND attname = 'physicalOriginalFileId' AND NOT attisdropped) AS present`.execute(
@@ -1359,7 +1366,7 @@ export class MediaHealthRepository {
             WHERE id = ${asset.physicalOriginalFileId}::uuid AND "canonicalAssetId" = ${asset.id}::uuid`.execute(trx);
         }
         const previousForkId = oldMapping.rows[0]?.physicalFileId;
-        if (previousForkId) {
+        if (forkWrites && previousForkId) {
           await sql`UPDATE immich_fork.physical_file SET "canonicalAssetId" = (SELECT "assetId" FROM immich_fork.asset_physical_file WHERE "physicalFileId" = ${previousForkId}::uuid ORDER BY "assetId" LIMIT 1)
             WHERE id = ${previousForkId}::uuid AND "canonicalAssetId" = ${asset.id}::uuid`.execute(trx);
         }
