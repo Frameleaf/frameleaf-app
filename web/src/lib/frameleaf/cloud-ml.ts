@@ -108,8 +108,14 @@ export const walletAvailable = (wallet: Pick<CloudMlWalletDto, 'balanceUsd' | 'h
 export const canLowerCap = (current: number | null | undefined, next: number) =>
   current === null || current === undefined || next < current;
 
-/** The server refused a wallet change because the account owner has to make it (403 step-up). */
-export const isStepUpRequired = (error: unknown) => isHttpError(error) && error.status === 403;
+/**
+ * The server refused a wallet change because the account owner has to make it: a 403 carrying the
+ * `step-up-required` code, never any other 403.
+ */
+export const isStepUpRequired = (error: unknown) =>
+  isHttpError(error) &&
+  error.status === 403 &&
+  (error.data as { code?: unknown } | undefined)?.code === 'step-up-required';
 
 /** A custom top-up amount the checkout accepts: whole dollars from $20 to $500. */
 export const isTopUpAmount = (amount: number) =>

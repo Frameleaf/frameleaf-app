@@ -2249,6 +2249,11 @@ export enum DatabaseLock {
   FrameleafHeartbeat = 946,
   /** FL-156: one server refreshes the Frameleaf licence certificate at a time. */
   FrameleafLicenseRefresh = 947,
+  /**
+   * FL-177: a Sign in with Frameleaf role change counts the administrators and demotes as one step,
+   * so two sign-ins at once can never demote the last two administrators.
+   */
+  FrameleafRoleChange = 948,
 }
 
 export enum MaintenanceAction {

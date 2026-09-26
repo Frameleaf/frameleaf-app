@@ -113,7 +113,9 @@ describe(discoveryProblem.name, () => {
         );
         expect(storeAddress('https://api.frameleaf.example', document.store)).toBeNull();
         // the same document under another configured cloud is refused as a whole
-        expect(discoveryProblem('https://api.frameleaf.example', document)).toMatch(/is not on frameleaf\.example/);
+        expect(discoveryProblem('https://api.frameleaf.example', document)).toMatch(
+          /is not on api\.frameleaf\.example/,
+        );
       },
     );
 
@@ -144,7 +146,7 @@ describe(discoveryProblem.name, () => {
       }
     });
 
-    it('never widens an apex, a two-label host, an IP address or localhost to its parent', () => {
+    it('never widens an apex, a two-label host, an IP address, localhost or any other domain to its parent', () => {
       expect(cloudDomainOf('api.frameleaf.cloud')).toBe('frameleaf.cloud');
       expect(cloudDomainOf('frameleaf.cloud')).toBeNull();
       expect(cloudDomainOf('cloud.test')).toBeNull();
@@ -152,10 +154,27 @@ describe(discoveryProblem.name, () => {
       expect(cloudDomainOf('127.0.0.1')).toBeNull();
       expect(cloudDomainOf('[::1]')).toBeNull();
       expect(cloudDomainOf('frameleaf.co.uk')).toBeNull();
-      expect(cloudDomainOf('api.frameleaf.co.uk')).toBe('frameleaf.co.uk');
+      expect(cloudDomainOf('api.frameleaf.co.uk')).toBeNull();
+      expect(cloudDomainOf('evilframeleaf.cloud')).toBeNull();
       expect(cloudAddressProblem('https://frameleaf.co.uk', 'issuer', 'https://id.attacker.co.uk')).toMatch(/not on/);
       expect(cloudAddressProblem('https://frameleaf.cloud', 'issuer', 'https://id.other.cloud')).toMatch(/not on/);
       expect(cloudAddressProblem('http://127.0.0.1:8080', 'issuer', 'http://1.0.0.1:8080')).toMatch(/not on/);
+    });
+
+    // FL-177 review: shared hosting and registry domains are registrable by anyone
+    it.each([
+      ['https://frameleaf.herokuapp.com', 'https://attacker.herokuapp.com'],
+      ['https://frameleaf.github.io', 'https://attacker.github.io'],
+      ['https://frameleaf.duckdns.org', 'https://attacker.duckdns.org'],
+      ['https://frameleaf.fly.dev', 'https://attacker.fly.dev'],
+      ['https://api.ec2-1-2-3-4.compute.amazonaws.com', 'https://id.ec2-5-6-7-8.compute.amazonaws.com'],
+      ['https://api.frameleaf.id.au', 'https://id.attacker.id.au'],
+      ['https://api.cloud.example.com', 'https://id.example.com'],
+    ])('accepts only %s itself and its subdomains, never %s', (configured, sibling) => {
+      expect(cloudDomainOf(new URL(configured).hostname)).toBeNull();
+      expect(cloudAddressProblem(configured, 'issuer', sibling)).toMatch(/not on/);
+      expect(cloudAddressProblem(configured, 'issuer', configured)).toBeNull();
+      expect(cloudAddressProblem(configured, 'issuer', configured.replace('https://', 'https://id.'))).toBeNull();
     });
 
     it('still pins siblings to https and the configured port', () => {

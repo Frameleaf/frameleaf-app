@@ -81,7 +81,7 @@ describe('CloudAccountSection (FL-154, FL-155)', () => {
   it.each([
     [CloudLinkRefusal.InstanceLimit, 'Your plan has no room for another server'],
     [CloudLinkRefusal.ServerRefused, 'Frameleaf Cloud refused this server'],
-    [CloudLinkRefusal.InstanceIdTaken, 'This server’s ID is already registered'],
+    [CloudLinkRefusal.InstanceIdTaken, 'This server’s ID is still registered'],
     [CloudLinkRefusal.KeyAlreadyLinked, 'This server’s key is already linked'],
   ])('explains a refused link (%s) in words an administrator can act on (FL-177)', async (linkRefusal, title) => {
     sdkMock.getCloudStatus.mockResolvedValue(
@@ -144,6 +144,8 @@ describe('CloudAccountSection (FL-154, FL-155)', () => {
 
     expect(await screen.findByText('Linked to Frameleaf')).toBeInTheDocument();
     expect(screen.getByText('owner@example.test')).toBeInTheDocument();
+    // FL-177 review (#32): a role changed in the Frameleaf account applies at the next sign-in
+    expect(screen.getByText(/applies here at that person’s next Sign in with Frameleaf/)).toBeInTheDocument();
     expect(screen.getByText('At home only')).toBeInTheDocument();
 
     const sends = screen.getByTestId('cloud-heartbeat-fields');

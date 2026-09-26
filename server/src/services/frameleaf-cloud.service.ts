@@ -776,6 +776,11 @@ export class FrameleafCloudService extends BaseService {
         // FL-177 (FC-19): the token was minted with a key the cloud retired or revoked. A candidate
         // key the cloud may hold after a lost rotation answer is tried first; otherwise only a new
         // link helps, which the administrators are asked for. The link itself is not revoked.
+        if (link.heartbeat?.relinkRequested || link.heartbeat?.keyRecovery?.closed) {
+          // already waiting for a new link: no candidate lock, no discovery, no repeated warning
+          await this.recordHeartbeatFailure(link, error);
+          return JobStatus.Failed;
+        }
         const recovered = await this.tryCandidateKey(cloudUrl, link);
         const current = (await this.readLink(cloudUrl)) ?? link;
         let next = current;

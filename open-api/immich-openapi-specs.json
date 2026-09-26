@@ -49811,7 +49811,7 @@
         "type": "object"
       },
       "CloudLinkRefusal": {
-        "description": "Why Frameleaf Cloud refused the last link: instance-limit: the plan has no room for another server; server-refused: the server was removed from the account or the account is suspended; instance-id-taken: another server is registered with this server’s ID; key-already-linked: this server’s key is already linked (a copied identity directory)",
+        "description": "Why Frameleaf Cloud refused the last link: instance-limit: the plan has no room for another server; server-refused: the server was removed from the account or the account is suspended; instance-id-taken: this server, or another one with its ID, is still registered; key-already-linked: this server’s key is already linked (a copied identity directory)",
         "enum": [
           "instance-limit",
           "server-refused",
