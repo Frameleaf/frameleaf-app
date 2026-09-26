@@ -838,7 +838,8 @@ export class ForkSchemaRepository {
    * table) continue to ignore these rows until normalization runs and upserts
    * over them. Upload and integrity evidence never overwrite existing rows;
    * recovery replaces ambiguous historical digests with bytes re-verified at
-   * action time.
+   * action time, and an external-library scan replaces them with the bytes it
+   * just read (an external original's own checksum is only a path checksum).
    */
   async recordAssetChecksums(input: {
     assetId: string;
@@ -846,7 +847,7 @@ export class ForkSchemaRepository {
     sha256: Buffer;
     sizeInBytes: number;
     path: string;
-    source: 'upload' | 'integrity' | 'recovery';
+    source: 'upload' | 'integrity' | 'recovery' | 'external-scan';
   }): Promise<void> {
     await sql`
       INSERT INTO immich_fork.asset_checksum
@@ -870,7 +871,7 @@ export class ForkSchemaRepository {
         evidence = EXCLUDED.evidence,
         "verifiedAt" = EXCLUDED."verifiedAt",
         "updatedAt" = EXCLUDED."updatedAt"
-      WHERE ${input.source} = 'recovery'
+      WHERE ${input.source} IN ('recovery', 'external-scan')
     `.execute(this.db);
   }
 
