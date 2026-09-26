@@ -77,6 +77,7 @@ import { MemoryAuditTable } from 'src/schema/tables/memory-audit.table.js';
 import { MemoryExportTable } from 'src/schema/tables/memory-export.table.js';
 import { MemoryTable } from 'src/schema/tables/memory.table.js';
 import {
+  MlCloudModelChoiceTable,
   MlDestinationTable,
   MlWorkloadAccountingTable,
   MlWorkloadRouteTable,
@@ -232,6 +233,7 @@ export class ImmichDatabase {
     MlDestinationTable,
     MlWorkloadRouteTable,
     MlWorkloadAccountingTable,
+    MlCloudModelChoiceTable,
     MoveTable,
     NaturalEarthCountriesTable,
     NotificationTable,
@@ -415,6 +417,7 @@ export interface DB {
   ml_destination: MlDestinationTable;
   ml_workload_route: MlWorkloadRouteTable;
   ml_workload_accounting: MlWorkloadAccountingTable;
+  ml_cloud_model_choice: MlCloudModelChoiceTable;
   operational_metric_sample: OperationalMetricSampleTable;
   partner: PartnerTable;
   partner_audit: PartnerAuditTable;

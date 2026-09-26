@@ -188,21 +188,6 @@
       false
     ]
   },
-  "frameleafCloud.cloudMl.models.descriptions": {
-    "type": "string"
-  },
-  "frameleafCloud.cloudMl.models.interpolation": {
-    "type": "string"
-  },
-  "frameleafCloud.cloudMl.models.restoration": {
-    "type": "string"
-  },
-  "frameleafCloud.cloudMl.models.studio": {
-    "type": "string"
-  },
-  "frameleafCloud.cloudMl.models.upscale": {
-    "type": "string"
-  },
   "frameleafCloud.cloudMl.routing.descriptions": {
     "type": "string",
     "enum": [

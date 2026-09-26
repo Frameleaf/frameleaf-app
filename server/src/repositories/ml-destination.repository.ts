@@ -6,6 +6,7 @@ import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { MlDestinationHealth, MlDestinationKind, MlWorkload } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
 import {
+  MlCloudModelChoiceTable,
   MlDestinationTable,
   MlProbeHardware,
   MlWorkloadAccountingTable,
@@ -13,6 +14,7 @@ import {
 } from 'src/schema/tables/ml-destination.table.js';
 
 export type MlDestinationRow = Selectable<MlDestinationTable>;
+export type MlCloudModelChoiceRow = Selectable<MlCloudModelChoiceTable>;
 export type MlWorkloadRouteRow = Selectable<MlWorkloadRouteTable>;
 export type MlWorkloadAccountingRow = Selectable<MlWorkloadAccountingTable>;
 
@@ -176,17 +178,51 @@ export class MlDestinationRepository {
     return this.db.selectFrom('ml_workload_route').selectAll().where('workload', '=', workload).executeTakeFirst();
   }
 
-  async setRoute(workload: MlWorkload, destinationId: string, modelId: string | null = null): Promise<void> {
+  /**
+   * Route a workload to a destination. FL-186: the route no longer carries the Frameleaf Cloud model
+   * (`ml_cloud_model_choice` does), so `modelId` is left untouched and is no longer read.
+   */
+  async setRoute(workload: MlWorkload, destinationId: string): Promise<void> {
     await this.db
       .insertInto('ml_workload_route')
-      .values({ workload, destinationId, modelId, updatedAt: new Date() })
-      .onConflict((oc) => oc.column('workload').doUpdateSet({ destinationId, modelId, updatedAt: new Date() }))
+      .values({ workload, destinationId, updatedAt: new Date() })
+      .onConflict((oc) => oc.column('workload').doUpdateSet({ destinationId, updatedAt: new Date() }))
       .execute();
   }
 
   @GenerateSql({ params: [DummyValue.STRING] })
   async clearRoute(workload: MlWorkload): Promise<void> {
     await this.db.deleteFrom('ml_workload_route').where('workload', '=', workload).execute();
+  }
+
+  /** FL-186: the Frameleaf Cloud model an administrator chose per model group. */
+  @GenerateSql()
+  getCloudModelChoices(): Promise<MlCloudModelChoiceRow[]> {
+    return this.db.selectFrom('ml_cloud_model_choice').selectAll().orderBy('modelGroup', 'asc').execute();
+  }
+
+  /** FL-186: the chosen Frameleaf Cloud model SKU of one model group, or null for the catalogue default. */
+  @GenerateSql({ params: [DummyValue.STRING] })
+  async getCloudModelChoice(group: string): Promise<string | null> {
+    const row = await this.db
+      .selectFrom('ml_cloud_model_choice')
+      .select('modelId')
+      .where('modelGroup', '=', group)
+      .executeTakeFirst();
+    return row?.modelId ?? null;
+  }
+
+  async setCloudModelChoice(group: string, modelId: string): Promise<void> {
+    await this.db
+      .insertInto('ml_cloud_model_choice')
+      .values({ modelGroup: group, modelId, updatedAt: new Date() })
+      .onConflict((oc) => oc.column('modelGroup').doUpdateSet({ modelId, updatedAt: new Date() }))
+      .execute();
+  }
+
+  @GenerateSql({ params: [DummyValue.STRING] })
+  async clearCloudModelChoice(group: string): Promise<void> {
+    await this.db.deleteFrom('ml_cloud_model_choice').where('modelGroup', '=', group).execute();
   }
 
   async recordAccounting(entry: MlAccountingInsert): Promise<void> {

@@ -256,12 +256,18 @@ export type CloudMlStatusResponseDto = {
 export type CloudMlModelDto = {
     description: string;
     fingerprint: string;
+    /** The group this model is chosen for, or null for one this server does not know */
+    group: (CloudMlModelGroup) | null;
     id: string;
+    /** Frameleaf Cloud recommends this model for its workload (and restoration mode) in this region; work with no chosen model uses it */
+    isDefault: boolean;
     name: string;
     /** Price per unit, USD */
     priceUsd: number | null;
     /** What one price unit is (for example an image or a video minute) */
     pricingUnit: string | null;
+    /** Position on its workload's ladder, 1 = lightest */
+    rank: number;
     /** The workload this model serves, or null for one this server does not know */
     workload: (MlWorkload) | null;
 };
@@ -284,6 +290,19 @@ export type CloudMlDestinationCreateDto = {
     name?: string;
     /** The workloads Frameleaf Cloud may run; faces, search and text recognition are refused */
     workloads: MlWorkload[];
+};
+export type CloudMlModelChoiceDto = {
+    group: CloudMlModelGroup;
+    /** The chosen catalogue model SKU, or null when the group uses the catalogue default */
+    modelId: string | null;
+};
+export type CloudMlModelChoicesResponseDto = {
+    /** Every model group, in a fixed order */
+    choices: CloudMlModelChoiceDto[];
+};
+export type CloudMlModelChoiceUpdateDto = {
+    /** A catalogue model SKU of exactly this group; null uses the catalogue default */
+    modelId: string | null;
 };
 export type CloudMlSettlementDto = {
     /** The job id Frameleaf Cloud settled */
@@ -407,13 +426,6 @@ export type AdminConfigFrameleafCloudFacesDto = {
     /** Faces never run on Frameleaf Cloud */
     enabled: false;
 };
-export type AdminConfigFrameleafCloudModelsDto = {
-    descriptions: string;
-    interpolation: string;
-    restoration: string;
-    studio: string;
-    upscale: string;
-};
 export type AdminConfigFrameleafCloudRoutingDto = {
     descriptions: CloudRouteMode;
     interpolation: CloudRouteMode;
@@ -426,7 +438,6 @@ export type AdminConfigFrameleafCloudMlDto = {
     /** Use Frameleaf Cloud for chosen jobs (each job still needs consent and confirmation) */
     enabled: boolean;
     faces: AdminConfigFrameleafCloudFacesDto;
-    models: AdminConfigFrameleafCloudModelsDto;
     routing: AdminConfigFrameleafCloudRoutingDto;
     /** The destination a job preselects when its kind of work may run in both places */
     startWith: StartWith;
@@ -5872,8 +5883,6 @@ export type MlCapabilitiesResponseDto = {
 export type MlWorkloadRouteDto = {
     /** Destination the workload is routed to, or null when unrouted */
     destinationId: string | null;
-    /** Frameleaf Cloud catalogue model for this workload, or null */
-    modelId: string | null;
     workload: MlWorkload;
 };
 export type MlWorkloadRoutesResponseDto = {
@@ -5882,8 +5891,6 @@ export type MlWorkloadRoutesResponseDto = {
 export type MlWorkloadRouteUpdateDto = {
     /** Destination to route the workload to; null removes the route */
     destinationId: string | null;
-    /** Frameleaf Cloud only: the catalogue model this workload uses */
-    modelId?: string | null;
 };
 export type MlDestinationUpdateDto = {
     /** New bearer token; null clears it; omitted keeps the stored token */
@@ -5901,6 +5908,7 @@ export type MlDestinationUpdateDto = {
 export type MlAdmissionRequestDto = {
     /** Job the admission is for, recorded with the accounting row */
     jobId?: string;
+    studioFeature?: MlStudioFeature;
     workload: MlWorkload;
 };
 export type MlThroughputEstimateDto = {
@@ -10435,6 +10443,33 @@ export function createCloudMlDestination({ cloudMlDestinationCreateDto }: {
         ...opts,
         method: "POST",
         body: cloudMlDestinationCreateDto
+    })));
+}
+/**
+ * List the chosen Frameleaf Cloud models
+ */
+export function getCloudMlModelChoices(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CloudMlModelChoicesResponseDto;
+    }>("/admin/cloud/ml/models", {
+        ...opts
+    }));
+}
+/**
+ * Choose the Frameleaf Cloud model of a model group
+ */
+export function setCloudMlModelChoice({ group, cloudMlModelChoiceUpdateDto }: {
+    group: CloudMlModelGroup;
+    cloudMlModelChoiceUpdateDto: CloudMlModelChoiceUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CloudMlModelChoicesResponseDto;
+    }>(`/admin/cloud/ml/models/${encodeURIComponent(group)}`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: cloudMlModelChoiceUpdateDto
     })));
 }
 /**
@@ -19569,6 +19604,15 @@ export enum MlWorkerRole {
     Mixed = "mixed",
     Unassigned = "unassigned"
 }
+export enum CloudMlModelGroup {
+    Descriptions = "descriptions",
+    Upscale = "upscale",
+    RestorationFaithful = "restoration-faithful",
+    RestorationCreative = "restoration-creative",
+    Interpolation = "interpolation",
+    Transcription = "transcription",
+    Tts = "tts"
+}
 export enum TranscodeHWAccel {
     Nvenc = "nvenc",
     Qsv = "qsv",
@@ -20799,6 +20843,11 @@ export enum MemoryShowLessKind {
     Pet = "pet",
     Date = "date",
     Type = "type"
+}
+export enum MlStudioFeature {
+    SpeechToText = "speech-to-text",
+    Captions = "captions",
+    Speech = "speech"
 }
 export enum RestorationDynamicRange {
     Sdr = "sdr",

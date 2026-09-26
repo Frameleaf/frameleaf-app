@@ -20,9 +20,11 @@ import { MlRestorationModelsResponseDto } from 'src/dtos/restoration-inference.d
 import {
   BootstrapEventPriority,
   DatabaseLock,
+  FRAMELEAF_CLOUD_ML_WORKLOADS,
   ImmichWorker,
   LIBRARY_ML_WORKLOADS,
   MediaOperationDestination,
+  MlAdmissionRefusal,
   MlDestinationHealth,
   MlDestinationKind,
   MlWorkerRole,
@@ -32,7 +34,7 @@ import {
 } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
 import { CloudConnectionState, CloudMlGatewayDeps, resolveCloudGateway } from 'src/utils/frameleaf-cloud-gateway.js';
-import { CloudErrorCode, FrameleafCloudError, cloudErrorCode, isLocalOnlyModel } from 'src/utils/frameleaf-cloud.js';
+import { CloudErrorCode, FrameleafCloudError, cloudErrorCode } from 'src/utils/frameleaf-cloud.js';
 import { mapMlDestination, mlDestinationHealthOf } from 'src/utils/ml-destination-dto.js';
 import {
   ML_BUDGET_WINDOW_DAYS,
@@ -44,9 +46,11 @@ import {
   isCloudDestination,
   mayMixRoles,
   mlWorkerRoleOf,
+  readCloudModelChoices,
   resolveEndpoint,
   restorationRoleConflict,
   sameEndpointUrl,
+  storedAdmission,
   summarizeProbe,
   unresolvedEndpointSummary,
   workloadPolicyProblem,
@@ -542,7 +546,6 @@ export class MlDestinationService extends BaseService {
       routes: Object.values(MlWorkload).map((workload) => ({
         workload,
         destinationId: byWorkload.get(workload)?.destinationId ?? null,
-        modelId: byWorkload.get(workload)?.modelId ?? null,
       })),
     };
   }
@@ -573,21 +576,9 @@ export class MlDestinationService extends BaseService {
     if (conflict) {
       throw new BadRequestException(conflict);
     }
-    // FL-159: a catalogue model is chosen per workload for Frameleaf Cloud only, and must be one the
-    // cloud's catalogue listed at the last check.
-    const modelId = dto.modelId ?? null;
-    if (modelId !== null) {
-      if (destination.kind !== MlDestinationKind.FrameleafCloud) {
-        throw new BadRequestException('Only Frameleaf Cloud work names a catalogue model');
-      }
-      if (isLocalOnlyModel(modelId)) {
-        throw new BadRequestException(`The model ${modelId} runs on this server only`);
-      }
-      if (!(destination.lastProbeCloud?.modelIds ?? []).includes(modelId)) {
-        throw new BadRequestException(`The model ${modelId} is not in the Frameleaf Cloud catalogue`);
-      }
-    }
-    await this.mlDestinationRepository.setRoute(workload, destination.id, modelId);
+    // FL-186: the Frameleaf Cloud model is chosen per model group (`ml_cloud_model_choice`), not on the
+    // route, so moving a route never changes it.
+    await this.mlDestinationRepository.setRoute(workload, destination.id);
     return this.getRoutes();
   }
 
@@ -601,6 +592,7 @@ export class MlDestinationService extends BaseService {
       workload: dto.workload,
       destinationId: id,
       jobId: dto.jobId ?? null,
+      studioFeature: dto.studioFeature ?? null,
     });
     const row = await this.require(id);
     const sample = await this.mlDestinationRepository.getThroughput(
@@ -654,6 +646,22 @@ export class MlDestinationService extends BaseService {
     );
     const qualifiedRenderer = qualified.length > 0;
     const routed = new Map(routes.map((route) => [route.workload, route.destinationId]));
+    // FL-186: Frameleaf Cloud counts as available only when the work has a model to send, the one an
+    // administrator chose or the catalogue's default; Studio AI needs one for speech to text and one
+    // for speech. Other destinations are unchanged.
+    const choices = await readCloudModelChoices(this.mlDestinationRepository, rows);
+    const hasCloudModel = (row: MlDestinationRow, workload: MlWorkload) => {
+      if (row.kind !== MlDestinationKind.FrameleafCloud || !FRAMELEAF_CLOUD_ML_WORKLOADS.includes(workload)) {
+        return true;
+      }
+      const verdict = storedAdmission({ destination: row, workload, spentUsd: 0, choices });
+      // no model to send, or a check from before model groups that cannot tell yet
+      return (
+        verdict.admitted ||
+        (verdict.refusal !== MlAdmissionRefusal.ModelMismatch &&
+          verdict.refusal !== MlAdmissionRefusal.DestinationUnhealthy)
+      );
+    };
 
     const workloads: MlWorkloadCapabilityDto[] = Object.values(MlWorkload).map((workload) => {
       const destinations = rows.map((row) => {
@@ -677,7 +685,8 @@ export class MlDestinationService extends BaseService {
           row.lastProbeHealth === MlDestinationHealth.Healthy &&
           (row.lastProbeWorkloads ?? []).includes(workload) &&
           // FL-58: a worker that reported too little GPU memory for the workload is not offered.
-          insufficientMemoryDetail(row, workload) === null;
+          insufficientMemoryDetail(row, workload) === null &&
+          hasCloudModel(row, workload);
         const gpus = row.lastProbeHardware?.gpus ?? [];
         return {
           id: row.id,

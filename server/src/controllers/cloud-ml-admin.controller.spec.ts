@@ -23,6 +23,8 @@ describe(CloudMlAdminController.name, () => {
       ['get', '/admin/cloud/ml'],
       ['get', '/admin/cloud/ml/wallet'],
       ['get', '/admin/cloud/ml/catalog'],
+      ['get', '/admin/cloud/ml/models'],
+      ['put', '/admin/cloud/ml/models/tts'],
       ['get', '/admin/cloud/ml/consent'],
       ['get', '/admin/cloud/ml/settlements'],
       ['post', '/admin/cloud/ml/destination'],
@@ -50,6 +52,23 @@ describe(CloudMlAdminController.name, () => {
       name: 'Frameleaf Cloud',
       workloads: [MlWorkload.Enrichment],
     });
+  });
+
+  it('chooses a model per model group and refuses a group that does not exist (FL-186)', async () => {
+    service.setModelChoice.mockResolvedValue({ choices: [] });
+    const { status } = await request(ctx.getHttpServer())
+      .put('/admin/cloud/ml/models/restoration-creative')
+      .send({ modelId: 'ms_F1SSRED6' });
+    expect(status).toBe(200);
+    expect(service.setModelChoice).toHaveBeenCalledWith('restoration-creative', { modelId: 'ms_F1SSRED6' });
+
+    const unknown = await request(ctx.getHttpServer())
+      .put('/admin/cloud/ml/models/restoration')
+      .send({ modelId: null });
+    expect(unknown.status).toBe(400);
+    const missing = await request(ctx.getHttpServer()).put('/admin/cloud/ml/models/tts').send({});
+    expect(missing.status).toBe(400);
+    expect(service.setModelChoice).toHaveBeenCalledTimes(1);
   });
 
   it('refuses a destination without workloads', async () => {
