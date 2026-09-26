@@ -215,3 +215,24 @@ workflows must execute on a new asset after the normal fork restart.
 If exact ledger validation, sidecar reconciliation, workflow digest comparison,
 or final activation fails, leave maintenance mode enabled and restore the
 database and media checkpoints together.
+
+## Frameleaf schema changes released after the cutover
+
+The cutover removes Frameleaf's own schema changes from the official migration
+ledger and records them in `immich_fork.migration_audit`. A Frameleaf version
+released after your library's cutover can bring new ones. They are applied as
+follows and recorded in `immich_fork.migration_audit` with phase
+`frameleaf-public`. The official ledger never changes.
+
+- While the library is handed over, Frameleaf applies none of them, so the
+  official server starts on exactly the schema the cutover checked.
+- `prepare-fork` applies them in one transaction, after the upstream
+  migrations newer than the certified tag and before any reconciliation. If one
+  fails, nothing is applied and the return stops before reconciliation. Leave
+  maintenance mode enabled, correct the cause, and run `prepare-fork` again.
+- Once the library is active again, startup applies any released since then
+  in the same way, before the rest of the schema setup.
+
+Frameleaf refuses to start on a library that recorded a Frameleaf schema change
+this version does not include. That means a newer version already ran on it,
+and downgrades are not supported.

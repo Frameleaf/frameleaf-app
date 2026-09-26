@@ -3,7 +3,7 @@ import { DateTime } from 'luxon';
 import { Duplex, PassThrough, Readable } from 'node:stream';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { SystemConfig, defaults } from 'src/dtos/config.dto.js';
-import { ImmichWorker, JobStatus, StorageFolder, SystemMetadataKey } from 'src/enum.js';
+import { DatabaseLock, ImmichWorker, JobStatus, StorageFolder, SystemMetadataKey } from 'src/enum.js';
 import { MaintenanceHealthRepository } from 'src/maintenance/maintenance-health.repository.js';
 import { DatabaseBackupService, restoreVerificationDue } from 'src/services/database-backup.service.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
@@ -889,27 +889,41 @@ describe(DatabaseBackupService.name, () => {
       },
     );
 
-    it.each(['isolated', 'official-origin'] as const)(
-      'runs official then fork migrations when restoring a %s database',
-      async (mode) => {
-        const migrationOrder: string[] = [];
-        mocks.user.hasAdmin.mockResolvedValue(true);
-        mocks.database.detectMigrationMode.mockResolvedValue(mode);
-        mocks.database.runOfficialMigrations.mockImplementation(() => {
-          migrationOrder.push('official');
-          return Promise.resolve();
-        });
-        mocks.database.runForkMigrations.mockImplementation(() => {
-          migrationOrder.push('fork');
-          return Promise.resolve();
-        });
+    it.each([
+      ['isolated', ['official', 'frameleaf', 'fork']],
+      ['official-origin', ['official', 'fork']],
+    ] as const)('runs official then fork migrations when restoring a %s database', async (mode, expected) => {
+      const migrationOrder: string[] = [];
+      mocks.user.hasAdmin.mockResolvedValue(true);
+      mocks.database.detectMigrationMode.mockResolvedValue(mode);
+      mocks.database.runOfficialMigrations.mockImplementation(() => {
+        migrationOrder.push('official');
+        return Promise.resolve();
+      });
+      mocks.database.applyIsolatedFrameleafMigrations.mockImplementation(() => {
+        migrationOrder.push('frameleaf');
+        return Promise.resolve({ applied: [], pending: [], skipped: null });
+      });
+      mocks.database.runForkMigrations.mockImplementation(() => {
+        migrationOrder.push('fork');
+        return Promise.resolve();
+      });
 
-        await sut.restoreDatabaseBackup('development-filename.sql');
+      await sut.restoreDatabaseBackup('development-filename.sql');
 
-        expect(migrationOrder).toEqual(['official', 'fork']);
-        expect(mocks.database.runMigrations).not.toHaveBeenCalled();
-      },
-    );
+      expect(migrationOrder).toEqual(expected);
+      expect(mocks.database.runMigrations).not.toHaveBeenCalled();
+    });
+
+    it('applies newer Frameleaf migrations under the migrations lock when restoring a library past the cutover (FL-180)', async () => {
+      mocks.user.hasAdmin.mockResolvedValue(true);
+      mocks.database.detectMigrationMode.mockResolvedValue('isolated');
+
+      await sut.restoreDatabaseBackup('development-filename.sql');
+
+      expect(mocks.database.withLock).toHaveBeenCalledWith(DatabaseLock.Migrations, expect.any(Function));
+      expect(mocks.database.applyIsolatedFrameleafMigrations).toHaveBeenCalledExactlyOnceWith('startup');
+    });
 
     it('guards an inactive schema version 2 restore before either migration provider runs', async () => {
       mocks.user.hasAdmin.mockResolvedValue(true);
