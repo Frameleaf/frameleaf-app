@@ -73,6 +73,8 @@ const ENROLL_REFRESH_MS = 24 * 60 * 60 * 1000;
 /** A failed enrolment is retried after 5 minutes, doubling up to an hour. */
 const ENROLL_RETRY_FIRST_MS = 5 * 60 * 1000;
 const ENROLL_RETRY_MAX_MS = 60 * 60 * 1000;
+/** A certificate report that failed is sent again after this long. */
+const REPORT_RETRY_MS = 10 * 60 * 1000;
 /** When the cloud's name servers do not serve a challenge value yet, wait this long before validating. */
 const PROPAGATION_WAIT_MS = 30 * 1000;
 /** Without a change, the state is written again this often, so the API sees the edge worker is alive. */
@@ -108,6 +110,7 @@ export class EdgeStateService {
   private served: string | null = null;
   private lastWritten: { state: Omit<FrameleafRemoteAccess, 'updatedAt' | 'lastTest'>; at: number } | null = null;
   private enrollRetry: { at: number; failures: number } | null = null;
+  private reportAttempts = new Map<EdgeCertificateKind, number>();
   /** Specs replace the waits. */
   wait = (ms: number) => sleep(ms);
 
@@ -576,6 +579,7 @@ export class EdgeStateService {
         pair = { certificate: issued.certificate, key: issued.key };
         facts = { ...certificateFacts(issued.certificate), reported: false };
         accountPinned = issued.accountPinned;
+        this.reportAttempts.delete(kind);
         issuance = { failures: 0, lastAttemptAt: new Date(now).toISOString(), nextCheckAt: nextRenewalCheck(now) };
         this.logger.log(`Issued the ${kind} remote access certificate for ${names.join(', ')}`);
       } catch (error) {
@@ -595,7 +599,9 @@ export class EdgeStateService {
     }
 
     // the Certificate Transparency baseline: every certificate obtained is reported, once
-    if (facts && !facts.reported) {
+    const lastReport = this.reportAttempts.get(kind);
+    if (facts && !facts.reported && (lastReport === undefined || now - lastReport >= REPORT_RETRY_MS)) {
+      this.reportAttempts.set(kind, now);
       try {
         const { document, token } = await input.cloud();
         await this.frameleafCloudRepository.requestJson(z.unknown(), {
