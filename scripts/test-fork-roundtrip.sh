@@ -56,8 +56,6 @@ phase() {
   set -e
   if [[ "$status" -ne 0 ]]; then
     echo "Phase $name failed; durable output: $log" >&2
-    # A 500 from the API only says which call failed; the running servers' logs say why.
-    compose logs --no-color --tail 300 >&2 || true
     return "$status"
   fi
 }
@@ -326,6 +324,8 @@ on_error() {
   local status="$?"
   roundtrip_failed=true
   echo "Roundtrip failed with status $status at line ${BASH_LINENO[0]}: ${BASH_COMMAND}" >&2
+  # An API 500 only says which call failed; the servers' logs say why, and cleanup removes them next.
+  compose logs --no-color --tail 300 >&2 || true
   if [[ -n "${candidate_image_id:-}" ]]; then
     write_evidence failed || true
   fi

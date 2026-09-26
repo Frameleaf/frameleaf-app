@@ -89,6 +89,10 @@
     border-inline-end: 1px solid var(--fl-border);
     padding-block: 18px 14px;
   }
+  /* A hidden (narrow-screen, closed) rail is zero wide: its edge must not leave a 1px hairline. */
+  .fl-sidebar[inert] {
+    border-inline-end-width: 0;
+  }
   /* Icon-only rail: hide NavbarItem text labels and the dropdown expand/collapse
      chevron buttons. Album tree, recent albums, group headers and bottom info are
      hidden by UserSidebar itself (it owns those components). */

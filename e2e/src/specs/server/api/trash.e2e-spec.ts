@@ -390,7 +390,24 @@ describe('/trash', () => {
       const marked = await trashed();
       const laterMarked = await trashed();
       await utils.tagAssets(admin.accessToken, tag.id, [marked]);
-      await utils.updateMyPreferences(admin.accessToken, { privacy: { suppression: { tagIds: [tag.id] } } });
+
+      // FL-67: Locked rules change only from an unlocked session; the trash is then read locked again
+      const pin = { pinCode: '123456' };
+      const { body: authStatus } = await request(app).get('/auth/status').set('Authorization', bearer());
+      if (!authStatus.pinCode) {
+        await request(app).post('/auth/pin-code').set('Authorization', bearer()).send(pin).expect(204);
+      }
+      const unlocked = async (change: () => Promise<unknown>) => {
+        await request(app).post('/auth/session/unlock').set('Authorization', bearer()).send(pin).expect(204);
+        try {
+          await change();
+        } finally {
+          await request(app).post('/auth/session/lock').set('Authorization', bearer()).expect(204);
+        }
+      };
+      const setLockedTags = (tagIds: string[]) =>
+        unlocked(() => utils.updateMyPreferences(admin.accessToken, { privacy: { suppression: { tagIds } } }));
+      await setLockedTags([tag.id]);
 
       try {
         const items = await request(app).get('/trash/items').set('Authorization', bearer());
@@ -405,15 +422,18 @@ describe('/trash', () => {
         expect(reviewed.status).toBe(200);
         expect(reviewed.body.count).toBe(2);
 
-        // another tab marks a reviewed item: this session no longer sees it, so nothing changes
-        await utils.tagAssets(admin.accessToken, tag.id, [laterMarked]);
+        // another, unlocked tab marks a reviewed item: this session no longer sees it, so nothing changes
+        await unlocked(() => utils.tagAssets(admin.accessToken, tag.id, [laterMarked]));
         const { status } = await apply({ action: 'empty', token: reviewed.body.token });
         expect(status).toBe(409);
-        for (const id of [open, marked, laterMarked]) {
-          await expect(utils.getAssetInfo(admin.accessToken, id)).resolves.toMatchObject({ isTrashed: true });
-        }
+        // only an unlocked session reads the marked items, to see they were left in the trash
+        await unlocked(async () => {
+          for (const id of [open, marked, laterMarked]) {
+            await expect(utils.getAssetInfo(admin.accessToken, id)).resolves.toMatchObject({ isTrashed: true });
+          }
+        });
       } finally {
-        await utils.updateMyPreferences(admin.accessToken, { privacy: { suppression: { tagIds: [] } } });
+        await setLockedTags([]);
       }
     });
 
