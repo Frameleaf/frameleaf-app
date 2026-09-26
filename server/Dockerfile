@@ -82,18 +82,19 @@ RUN . /etc/os-release && \
 
 FROM base-server-build AS base-server-geodata
 
-# Reverse-geocoding data from a fixed snapshot: GeoNames publishes no versioned files, so these are the
-# Internet Archive captures of its daily dumps, each pinned by checksum. The recorded date is the
-# snapshot's, not the build's, so every build (amd64 and arm64 alike) ships identical data and a new image
-# only re-imports geodata when this snapshot changes. Refresh all five inputs and GEODATA_DATE together.
-ARG GEODATA_DATE=2026-09-11T00:21:05+00:00
-ADD --checksum=sha256:c4ec45f18921948fc2bce5b1e89bcef98c0236c7bea986918999b3e3f71bd3ef https://web.archive.org/web/20260911002105id_/https://download.geonames.org/export/dump/cities500.zip /build/geodata/cities500.zip
-ADD --checksum=sha256:590651498043f674accda2b7f46d21286cda0e290b02f8561c5005eee9a5448c --chmod=444 https://web.archive.org/web/20260911002039id_/https://download.geonames.org/export/dump/admin1CodesASCII.txt /build/geodata/admin1CodesASCII.txt
-ADD --checksum=sha256:fe8196f90676f40a8845f24cc0687dadc668fe8c0f9de6458da65fda50b48aba --chmod=444 https://web.archive.org/web/20260911002112id_/https://download.geonames.org/export/dump/admin2Codes.txt /build/geodata/admin2Codes.txt
-ADD --checksum=sha256:93bafc525813f22e4711ff9ed6d626343094ce48c26388dc7c49189b3d7d5512 --chmod=444 https://web.archive.org/web/20260913000631id_/https://download.geonames.org/export/dump/countryInfo.txt /build/geodata/countryInfo.txt
-ADD --checksum=sha256:239eec57ac17f100a11e2536cffc56752c318b50ae765b0918ff7aab4ce8f255 --chmod=444 https://raw.githubusercontent.com/nvkelso/natural-earth-vector/v5.1.2/geojson/ne_10m_admin_0_countries.geojson /build/geodata/ne_10m_admin_0_countries.geojson
-
-RUN umask 0333 && unzip /build/geodata/cities500.zip -d /build/geodata/ && \
+# Reverse-geocoding data from a fixed snapshot, listed with its checksums, capture dates and CC BY 4.0
+# attribution in server/base-image/geodata/geodata.lock. fetch.sh takes each file from Frameleaf's host
+# (static.frameleaf.cloud/geodata/$GEODATA_SNAPSHOT/) and falls back to its pinned capture URL; both must
+# match the checksum. GEODATA_DATE is the newest capture in the set (countryInfo.txt, 2026-09-13; the
+# others are from 2026-09-11), not the build time, so amd64 and arm64 builds ship identical data and a new
+# image only re-imports geodata when the snapshot changes. Change the lock, GEODATA_SNAPSHOT and
+# GEODATA_DATE together.
+ARG GEODATA_SNAPSHOT=2026-09-11
+ARG GEODATA_DATE=2026-09-13T00:06:31+00:00
+COPY server/base-image/geodata/ ./geodata/
+RUN GEODATA_SNAPSHOT="$GEODATA_SNAPSHOT" ./geodata/fetch.sh geodata/geodata.lock /build/geodata && \
+  chmod 444 /build/geodata/*.txt /build/geodata/*.geojson && \
+  umask 0333 && unzip /build/geodata/cities500.zip -d /build/geodata/ && \
   rm /build/geodata/cities500.zip && printf '%s' "$GEODATA_DATE" > /build/geodata/geodata-date.txt
 
 FROM base-server-build AS base-server-jpegli

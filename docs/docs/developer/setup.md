@@ -5,7 +5,7 @@ sidebar_position: 2
 # Setup
 
 :::warning
-Make sure to read the [`CONTRIBUTING.md`](https://github.com/immich-app/immich/blob/main/CONTRIBUTING.md) before you dive into the code.
+Make sure to read the [`CONTRIBUTING.md`](https://github.com/Frameleaf/frameleaf-app/blob/fork/main/CONTRIBUTING.md) before you dive into the code.
 :::
 
 :::note

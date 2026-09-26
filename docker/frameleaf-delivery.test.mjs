@@ -444,7 +444,13 @@ const historicalRecords = new Set([
   "docs/superpowers/plans/2026-07-16-fork-handoff-return-prerequisite.md",
   "docs/superpowers/plans/2026-07-16-task-6-certification-corrections.md",
 ]);
-const historicalRecord = (file) => historicalRecords.has(file);
+// Branding guard needles (FL-190): these files define the upstream strings their own guard rejects.
+const guardNeedleFiles = new Set([
+  "scripts/frameleaf-branding.mjs",
+  "scripts/frameleaf-branding.test.mjs",
+]);
+const historicalRecord = (file) =>
+  historicalRecords.has(file) || guardNeedleFiles.has(file);
 const trackedFilesContaining = (needle) => {
   const result = spawnSync(
     "git",
@@ -487,9 +493,12 @@ test("installation files and instructions come from Frameleaf releases, not upst
     "docker/frameleaf-delivery.test.mjs",
     "docs/docs/administration/backup-and-restore.md",
     "server/src/main.ts",
+    // The About dialog links the upstream licence as part of the "Built on Immich" attribution.
+    "web/src/lib/components/frameleaf/AboutDialog.svelte",
   ]);
   for (const needle of [
     ["github.com", "immich-app", "immich", "releases"].join("/"),
+    ["github.com", "immich-app", "immich", "blob"].join("/") + "/",
     ["raw.githubusercontent.com", "immich-app"].join("/"),
   ]) {
     const unexpected = trackedFilesContaining(needle).filter(
@@ -503,7 +512,15 @@ test("installation files and instructions come from Frameleaf releases, not upst
       /https:\/\/github\.com\/immich-app\/immich\/releases\S*/g,
     ))
       assert.match(url, /\/releases\/tag\/v1\.\d+\.\d+/, `${file}: ${url}`);
+    for (const [url] of read(file).matchAll(
+      /https:\/\/github\.com\/immich-app\/immich\/blob\/\S*/g,
+    ))
+      assert.match(url, /\/blob\/main\/LICENSE\b/, `${file}: ${url}`);
   }
+  assert.doesNotMatch(
+    read("docs/docs/install/kubernetes.md"),
+    /immich-charts|helm install/i,
+  );
   assert.match(
     read("install.sh"),
     /RepoUrl='https:\/\/github\.com\/Frameleaf\/frameleaf-app\/releases\/latest\/download'/,
@@ -539,6 +556,43 @@ test("the server base is built in-repo and identical in the production and devel
     assert.match(line, /--checksum=sha256:[a-f0-9]{64} /, line);
   assert.doesNotMatch(server, /^ADD (?:--\S+ )*https:\/\/download\.geonames/m);
   assert.match(server, /^ARG GEODATA_DATE=\d{4}-\d{2}-\d{2}T[\d:]+\+00:00$/m);
+  const snapshot = server.match(
+    /^ARG GEODATA_SNAPSHOT=(\d{4}-\d{2}-\d{2})$/m,
+  )?.[1];
+  assert.ok(snapshot, "geodata snapshot directory");
+  const lock = read("server/base-image/geodata/geodata.lock");
+  assert.ok(
+    lock.includes(`https://static.frameleaf.cloud/geodata/${snapshot}/<file>`),
+  );
+  const entries = lock
+    .split("\n")
+    .filter((line) => line && !line.startsWith("#"))
+    .map((line) => line.split(/\s+/));
+  assert.deepEqual(
+    entries.map(([, name]) => name),
+    [
+      "cities500.zip",
+      "admin1CodesASCII.txt",
+      "admin2Codes.txt",
+      "countryInfo.txt",
+      "ne_10m_admin_0_countries.geojson",
+    ],
+  );
+  for (const [sum, name, capture] of entries) {
+    assert.match(sum, /^[a-f0-9]{64}$/, name);
+    assert.match(
+      capture,
+      /^https:\/\/(?:web\.archive\.org\/web\/\d{14}id_\/|raw\.githubusercontent\.com\/nvkelso\/natural-earth-vector\/v5\.1\.2\/)/,
+      name,
+    );
+  }
+  assert.match(lock, /CC BY 4\.0/);
+  const fetch = read("server/base-image/geodata/fetch.sh");
+  assert.match(
+    fetch,
+    /primary="https:\/\/static\.frameleaf\.cloud\/geodata\/\$\{GEODATA_SNAPSHOT\}"/,
+  );
+  assert.match(fetch, /sha256sum --strict --quiet -c -/);
   assert.doesNotMatch(server, /date --iso-8601/);
   assert.equal(
     (server.match(/^ {2}'[a-f0-9]{64} {2}[^']+\.deb' \\$/gm) ?? []).length,
@@ -640,6 +694,17 @@ test("the Postgres workflow publishes the tested image once, by dispatch, withou
   assert.match(push.run, /docker load -i/);
   assert.match(push.run, /is not the tested/);
   assert.match(push.run, /already points to/);
+  assert.match(push.run, /not found\|manifest unknown/);
+  assert.match(push.run, /"amd64 arm64 "/);
+  assert.ok(
+    ["amd64", "arm64"].every((architecture) =>
+      publish.steps.some(
+        (step) =>
+          step.uses?.startsWith("actions/attest-sbom@") &&
+          step.with["subject-digest"].includes(`digest-${architecture}`),
+      ),
+    ),
+  );
   assert.equal(publish.outputs.digest, "${{ steps.publish.outputs.digest }}");
   assert.ok(
     publish.steps.some(

@@ -192,6 +192,12 @@ jobs:
         run: |-
           set -euo pipefail
           digest_of() { docker buildx imagetools inspect "$1" --format '{{json .Manifest}}' | jq -r .digest; }
+          # Exactly one tested image per architecture, checked before anything is pushed.
+          seen=$(for runner in ubuntu-24.04 ubuntu-24.04-arm; do cat "$RUNNER_TEMP/tested/frameleaf-postgres-$runner/architecture"; done | sort | tr '\n' ' ')
+          if [[ "$seen" != "amd64 arm64 " ]]; then
+            echo "::error::Expected one amd64 and one arm64 tested image, found: $seen"
+            exit 1
+          fi
           children=()
           for runner in ubuntu-24.04 ubuntu-24.04-arm; do
             dir="$RUNNER_TEMP/tested/frameleaf-postgres-$runner"
@@ -207,9 +213,22 @@ jobs:
               echo "::error::Pushed $architecture configuration $pushed is not the tested $tested."
               exit 1
             fi
-            children+=("$IMAGE@$(digest_of "$staging")")
+            child=$(digest_of "$staging")
+            [[ "$child" =~ ^sha256:[a-f0-9]{64}$ ]] || { echo "::error::Unreadable $architecture digest"; exit 1; }
+            echo "digest-$architecture=$child" >> "$GITHUB_OUTPUT"
+            children+=("$IMAGE@$child")
           done
-          if existing=$(digest_of "$IMAGE:$VERSION_TAG" 2> /dev/null) && [[ -n "$existing" && "$existing" != null ]]; then
+          # The version tag is absent only on a confirmed not-found; any other registry error stops here.
+          existing=""
+          if output=$(docker buildx imagetools inspect "$IMAGE:$VERSION_TAG" --format '{{json .Manifest}}' 2> "$RUNNER_TEMP/inspect.err"); then
+            existing=$(jq -r .digest <<< "$output")
+            [[ "$existing" =~ ^sha256:[a-f0-9]{64}$ ]] || { echo "::error::Unreadable digest for $IMAGE:$VERSION_TAG"; exit 1; }
+          elif ! grep -qiE 'not found|manifest unknown' "$RUNNER_TEMP/inspect.err"; then
+            cat "$RUNNER_TEMP/inspect.err"
+            echo "::error::Could not determine whether $IMAGE:$VERSION_TAG exists; refusing to publish."
+            exit 1
+          fi
+          if [[ -n "$existing" ]]; then
             # A version tag is immutable: a new build has a new digest, so it needs a new version tag.
             docker buildx imagetools create --tag "$IMAGE:commit-$SOURCE_SHA" "${children[@]}"
             index=$(digest_of "$IMAGE:commit-$SOURCE_SHA")
@@ -233,22 +252,40 @@ jobs:
           name: frameleaf-postgres-digest
           path: ${{ runner.temp }}/frameleaf-postgres-digest.json
           if-no-files-found: error
-      - name: Generate the SBOM
+      # One SBOM per architecture, attested to that architecture's image manifest.
+      - name: Generate the amd64 SBOM
         uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
         with:
-          image: ${{ env.IMAGE }}@${{ steps.publish.outputs.digest }}
+          image: ${{ env.IMAGE }}@${{ steps.publish.outputs.digest-amd64 }}
           registry-username: ${{ github.actor }}
           registry-password: ${{ github.token }}
           format: spdx-json
-          output-file: ${{ runner.temp }}/frameleaf-postgres.spdx.json
+          output-file: ${{ runner.temp }}/frameleaf-postgres-amd64.spdx.json
           upload-artifact: false
           upload-release-assets: false
-      - name: Attest the SBOM
+      - name: Attest the amd64 SBOM
         uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
         with:
           subject-name: ${{ env.IMAGE }}
-          subject-digest: ${{ steps.publish.outputs.digest }}
-          sbom-path: ${{ runner.temp }}/frameleaf-postgres.spdx.json
+          subject-digest: ${{ steps.publish.outputs.digest-amd64 }}
+          sbom-path: ${{ runner.temp }}/frameleaf-postgres-amd64.spdx.json
+          push-to-registry: true
+      - name: Generate the arm64 SBOM
+        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        with:
+          image: ${{ env.IMAGE }}@${{ steps.publish.outputs.digest-arm64 }}
+          registry-username: ${{ github.actor }}
+          registry-password: ${{ github.token }}
+          format: spdx-json
+          output-file: ${{ runner.temp }}/frameleaf-postgres-arm64.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+      - name: Attest the arm64 SBOM
+        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.publish.outputs.digest-arm64 }}
+          sbom-path: ${{ runner.temp }}/frameleaf-postgres-arm64.spdx.json
           push-to-registry: true
       - name: Attest build provenance
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
