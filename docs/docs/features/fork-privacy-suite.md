@@ -36,13 +36,16 @@ variables. This applies to every machine-learning image built from this fork.
   are changed.
 - Server OpenTelemetry dependencies, automatic instrumentation, exporters, metrics listeners,
   and user/job collectors are removed. Legacy telemetry environment variables have no effect.
-- External version checks never run. Existing settings cannot re-enable them, and old queued
-  checks are skipped. Local version history and client/server compatibility information remain.
+- The version check asks only Frameleaf's release feed (`api.frameleaf.cloud`), falling back to
+  Frameleaf's GitHub releases, and sends no instance identifier. Administrators can turn it off
+  in the version check settings. Local version history and client/server compatibility information remain.
 - Transformers loads downloaded model files locally. Required model downloads remain enabled;
   no global offline mode or network block is imposed.
 
 Photo uploads, sharing, model downloads, configured remote ML and Frameleaf Cloud processing, OAuth, email,
-and map tiles remain functional. Download hosts necessarily receive the requested model/file,
+and map tiles remain functional. Map styles and tiles come from `tiles.frameleaf.cloud` and the default
+model downloads from `models.frameleaf.cloud` (set `MACHINE_LEARNING_MODEL_SOURCE_URL` to use your own
+mirror); nothing is fetched from Immich-hosted services. Download hosts necessarily receive the requested model/file,
 network address, and any required download credentials. Configured remote inference providers
 receive the images/prompts needed for that inference. These are functional requests, not usage
 or library analytics.
