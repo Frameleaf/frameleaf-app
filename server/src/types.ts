@@ -800,6 +800,12 @@ export type FrameleafCloudLink = {
     lastFailureAt?: string;
     cloneSuspected?: boolean;
     relinkRequested?: boolean;
+    /**
+     * FL-175: the recovery rotation after a damaged key. `nextAttemptAt` spaces retries (at least 20
+     * minutes, or the cloud's Retry-After); `closed` means the previous key's window closed and the
+     * server must be linked again.
+     */
+    keyRecovery?: { nextAttemptAt?: string; closed?: boolean };
   };
   /** FL-155: sha256 of headless link tokens already used, so a token never links twice. */
   usedLinkTokens?: string[];
@@ -898,9 +904,10 @@ export type FrameleafInstanceIdentity = {
   /**
    * FL-175: the key the cloud accepted in the last rotation could not be read and was set aside, so
    * this server still uses its previous key, which the cloud only accepts for a while. The next
-   * check-in rotates again; a finished rotation clears this.
+   * check-in rotates again; a finished rotation clears this. The cloud keeps the previous key's
+   * original retire deadline (never extended), so recovery must finish by `until`, an upper bound.
    */
-  rotationNeeded?: { since: string };
+  rotationNeeded?: { since: string; until: string };
 };
 
 /** FL-159: the cached discovery document (`/.well-known/frameleaf-services`). */

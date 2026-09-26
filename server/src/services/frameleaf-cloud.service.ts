@@ -65,6 +65,9 @@ const BOOT_ID = randomUUID();
 /** Capabilities this build announces when it registers (instance contract step 4). */
 const INSTANCE_CAPABILITIES = ['heartbeat', 'commands', 'license', 'oidc'];
 
+/** FL-175: the least time between two recovery rotations after a damaged key (the cloud allows 3 an hour). */
+const KEY_RECOVERY_RETRY_MS = 20 * 60 * 1000;
+
 const sha256 = (value: string) => createHash('sha256').update(value).digest('hex');
 
 const emptyLink = (cloudUrl: string, previous?: FrameleafCloudLink | null): FrameleafCloudLink => ({
@@ -410,6 +413,7 @@ export class FrameleafCloudService extends BaseService {
     };
     this.frameleafCloudRepository.forget();
     await this.saveLink(link, 'link');
+    await this.clearKeyRecovery();
 
     const actor = 'actorId' in source ? source.actorId : undefined;
     await this.audit(AdminAuditAction.CloudLinked, link.accountLabel ?? null, actor);
@@ -443,6 +447,7 @@ export class FrameleafCloudService extends BaseService {
       }
     }
     await this.clearLink(cloudUrl, link, 'unlinked');
+    await this.clearKeyRecovery();
     await this.audit(AdminAuditAction.CloudUnlinked, link.accountLabel ?? null, auth.user.id);
     this.notify({
       level: NotificationLevel.Info,
@@ -732,7 +737,7 @@ export class FrameleafCloudService extends BaseService {
     for (const command of response.commands) {
       next = await this.runCommand(cloudUrl, document, next, command);
     }
-    await this.rotateAfterDamagedKey(cloudUrl, document, next);
+    next = await this.rotateAfterDamagedKey(cloudUrl, document, next);
     await this.keepPublishedPricing(response.pricing);
     if (response.entitlementsChanged && permissionsOf(next).allowEntitlementRefresh) {
       await this.jobRepository.queue({ name: JobName.FrameleafLicenseRefresh, data: { force: true } });
@@ -893,39 +898,125 @@ export class FrameleafCloudService extends BaseService {
 
   /**
    * FL-175: the key the cloud accepted in the last rotation could not be read and was set aside, so
-   * this server still signs with its previous key, which the cloud accepts only until that rotation's
-   * retire window closes. This check-in just succeeded with it, so rotate again now, and tell the
-   * administrators in case the new rotation fails too.
+   * this server still signs with its previous key. For the cloud that key is retiring: it accepts a
+   * rotation proven by it (and a token asserted by it) until the original rotation's retire deadline,
+   * which a recovery never extends. So rotate again while this check-in shows the key still works,
+   * with retries spaced out (the cloud allows three rotations an hour), and once the window has
+   * closed stop and ask for the server to be linked again. Returns the link to save.
    */
   private async rotateAfterDamagedKey(
     cloudUrl: string,
     document: FrameleafDiscoveryDocument,
     link: FrameleafCloudLink,
-  ) {
+  ): Promise<FrameleafCloudLink> {
+    const heartbeat = { ...link.heartbeat, failures: link.heartbeat?.failures ?? 0 };
     const identity = await loadInstanceIdentity(this.gatewayDeps());
-    if (!identity.rotationNeeded) {
-      return;
+    const needed = identity.rotationNeeded;
+    if (!needed) {
+      return heartbeat.keyRecovery ? { ...link, heartbeat: { ...heartbeat, keyRecovery: undefined } } : link;
+    }
+    if (heartbeat.keyRecovery?.closed) {
+      return link;
+    }
+    const now = Date.now();
+    if (Date.parse(needed.until) <= now) {
+      // a day after the key was set aside the previous key's window has closed: relinking is the only way
+      return this.keyRecoveryClosed(link);
+    }
+    const nextAttemptAt = heartbeat.keyRecovery?.nextAttemptAt;
+    if (nextAttemptAt && Date.parse(nextAttemptAt) > now) {
+      return link;
     }
     this.notify({
       level: NotificationLevel.Warning,
-      title: 'This server’s new identity key was damaged',
+      title: 'This server’s new identity key could not be read',
       description:
-        'The key Frameleaf Cloud accepted in the last key rotation could not be read, so it was set aside and this server keeps using its previous key. A new rotation is starting. If it does not finish before the previous key expires, the link to Frameleaf Cloud stops working and this server must be linked again.',
+        'The key Frameleaf Cloud accepted in the last key rotation could not be read, so it was set aside and this server keeps using its previous key. A new rotation is under way. If it does not finish before the previous key expires (within a day of that rotation), the link to Frameleaf Cloud stops working and this server must be linked again. This rotation runs whatever the cloud command permissions are set to.',
       dedupeKey: 'frameleaf-cloud:identity-key-damaged',
       dedupeDays: 1,
     });
     try {
-      await this.rotateKey(cloudUrl, document, link);
-      this.logger.log('Rotated the identity key again after the last rotation left a damaged key');
+      // a fresh token, asserted by the key that signs the proof: the cloud requires both from the same key
+      this.frameleafCloudRepository.forget();
+      await this.rotateKey(cloudUrl, document, link, needed);
+      this.logger.log('Rotated the identity key again after the last rotation left a key that could not be read');
+      await this.audit(AdminAuditAction.CloudKeyRecoveryRotation, 'rotated', undefined);
+      return { ...link, heartbeat: { ...heartbeat, keyRecovery: undefined } };
     } catch (error) {
+      if (this.isRetireWindowClosed(error)) {
+        await this.audit(AdminAuditAction.CloudKeyRecoveryRotation, 'window-closed', undefined);
+        return this.keyRecoveryClosed(link);
+      }
+      await this.audit(AdminAuditAction.CloudKeyRecoveryRotation, 'retrying', undefined);
+      const retryAfterMs = error instanceof FrameleafCloudError ? (error.retryAfterSeconds ?? 0) * 1000 : 0;
+      const wait = Math.max(KEY_RECOVERY_RETRY_MS, retryAfterMs);
       this.logger.warn(
-        `Could not rotate the identity key after a damaged one; trying again at the next check-in: ${error}`,
+        `Could not rotate the identity key after a damaged one; trying again in ${Math.round(wait / 60_000)} minutes: ${error}`,
       );
+      return {
+        ...link,
+        heartbeat: { ...heartbeat, keyRecovery: { nextAttemptAt: new Date(now + wait).toISOString() } },
+      };
     }
   }
 
-  /** Key rotation: nonce, then the new key with a proof signed by the current key. */
-  private async rotateKey(cloudUrl: string, document: FrameleafDiscoveryDocument, link: FrameleafCloudLink) {
+  /**
+   * A recovery rotation refused because the previous key's window closed: a 401 for the token or the
+   * proof. A 401 about the nonce (reused or expired, single use for five minutes) is only retried.
+   */
+  private isRetireWindowClosed(error: unknown): boolean {
+    if (!(error instanceof FrameleafCloudError) || error.status !== 401) {
+      return false;
+    }
+    const code = `${error.envelope?.code ?? ''} ${error.oauth?.error ?? ''} ${error.message}`;
+    return !/nonce/i.test(code);
+  }
+
+  /**
+   * The previous key's window closed before a recovery rotation finished: the server must link again.
+   * The repeat rotation is forgotten; linking again registers the current key.
+   */
+  private async keyRecoveryClosed(link: FrameleafCloudLink): Promise<FrameleafCloudLink> {
+    await this.clearKeyRecovery();
+    this.logger.error('The identity key could not be replaced before the previous key expired; link this server again');
+    this.notify({
+      level: NotificationLevel.Error,
+      title: 'Link this server to Frameleaf again',
+      description:
+        'This server’s identity key could not be replaced before its previous key expired, so Frameleaf Cloud no longer accepts it. Open Settings → Frameleaf Cloud → Account & link, unlink and link again. Nothing on this server is removed.',
+      dedupeKey: 'frameleaf-cloud:identity-key-expired',
+      dedupeDays: 1,
+    });
+    return {
+      ...link,
+      heartbeat: {
+        ...link.heartbeat,
+        failures: link.heartbeat?.failures ?? 0,
+        relinkRequested: true,
+        keyRecovery: { closed: true },
+      },
+    };
+  }
+
+  /** FL-175: forget a repeat rotation after a key that could not be read (linking again, unlinking, expiry). */
+  private async clearKeyRecovery() {
+    await this.databaseRepository.withLock(DatabaseLock.FrameleafIdentity, async () => {
+      await this.instanceIdentityRepository.clearRotationNeeded(identityDirectory(this.configRepository));
+      await loadInstanceIdentityLocked(this.gatewayDeps());
+    });
+  }
+
+  /**
+   * Key rotation: nonce, then the new key with a proof signed by the current key. `recovery` is set
+   * for the rotation after a damaged key (FL-175): the previous key keeps its original retire deadline
+   * (`until`), which the cloud never extends, so the local record keeps it too.
+   */
+  private async rotateKey(
+    cloudUrl: string,
+    document: FrameleafDiscoveryDocument,
+    link: FrameleafCloudLink,
+    recovery?: { until: string },
+  ) {
     const endpoints = linkEndpoints(document);
     const { bearer } = await this.apiToken(cloudUrl, link);
     const { nonce } = await this.frameleafCloudRepository.requestJson(keyNonceSchema, {
@@ -937,6 +1028,14 @@ export class FrameleafCloudService extends BaseService {
     // under the same lock, so the proof is signed by the key that is current at this moment.
     await this.databaseRepository.withLock(DatabaseLock.FrameleafIdentity, async () => {
       const identity = await loadInstanceIdentityLocked(this.gatewayDeps());
+      if (recovery && !identity.rotationNeeded) {
+        // another worker finished the recovery meanwhile
+        return;
+      }
+      const now = Date.now();
+      const retireHours = recovery
+        ? Math.max(0, (Date.parse(recovery.until) - now) / (60 * 60 * 1000))
+        : KEY_RETIRE_HOURS;
       const rotated = await this.instanceIdentityRepository.rotate(
         identity,
         async (newJwk, signWithCurrent) => {
@@ -947,8 +1046,8 @@ export class FrameleafCloudService extends BaseService {
             body: { newJwk, proof: signWithCurrent({ nonce, jkt: newJwk.kid }) },
           });
         },
-        KEY_RETIRE_HOURS,
-        Date.now(),
+        retireHours,
+        now,
         // only a refusal the cloud answered deletes the new key; a lost answer keeps it as the candidate
         (error) =>
           error instanceof FrameleafCloudError && error.status !== null && error.status >= 400 && error.status < 500,
