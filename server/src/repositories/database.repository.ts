@@ -48,6 +48,7 @@ import {
   OfficialAdoptionResult,
   applyAdoptionForkFollowUps,
   assertWorkflowDataPreserved,
+  countAdoptionStep,
   planOfficialAdoption,
 } from 'src/fork-schema/official-adoption.js';
 import {
@@ -625,18 +626,7 @@ export class DatabaseRepository extends ForkHandoffRepository {
   async runMigrations(): Promise<void> {
     this.logger.log('Running migrations');
 
-    const ledgerTable = await sql<{ present: boolean }>`
-      SELECT to_regclass('public.kysely_migrations') IS NOT NULL AS present
-    `.execute(this.db);
-    const ledger = ledgerTable.rows[0]?.present
-      ? await sql<{ name: string }>`SELECT name FROM public.kysely_migrations`.execute(this.db)
-      : { rows: [] };
-    const appliedNames = ledger.rows.map(({ name }) => name);
-    const provider = createCertifiedLedgerMigrationProvider(
-      createLegacyMigrationProvider(join(import.meta.dirname, '..', 'schema/migrations'), appliedNames),
-      appliedNames,
-    );
-    const migrator = this.createMigrator(provider);
+    const migrator = this.createMigrator(await this.createLedgerAwareLegacyProvider());
 
     const { error, results } = await migrator.migrateToLatest();
 
@@ -1280,11 +1270,16 @@ export class DatabaseRepository extends ForkHandoffRepository {
       if (frameleafTables.rows[0]?.present) {
         throw new Error('Library already holds Frameleaf tables');
       }
+      await this.assertAdoptionQuiescent(transaction);
 
-      const ledgerResult = await sql<{ name: string }>`
-        SELECT name FROM public.kysely_migrations ORDER BY timestamp, name
+      const ledgerResult = await sql<{ name: string; timestamp: string }>`
+        SELECT name, timestamp FROM public.kysely_migrations ORDER BY timestamp, name
       `.execute(transaction);
       const ledger = ledgerResult.rows.map(({ name }) => name);
+      // Adoption rows sort after every existing row even when this process's clock lags the one that
+      // wrote them (the ledger is ordered by timestamp, then name).
+      const latestRecorded = Math.max(0, ...ledgerResult.rows.map(({ timestamp }) => Date.parse(timestamp) || 0));
+      const firstTimestamp = Math.max(latestRecorded + 1, Date.now());
       const migrations = await createLegacyMigrationProvider(
         join(import.meta.dirname, '..', 'schema/migrations'),
         ledger,
@@ -1299,7 +1294,9 @@ export class DatabaseRepository extends ForkHandoffRepository {
         WHERE id = 1 AND phase = 'inactive' AND "schemaVersion" = '1' AND active = false
       `.execute(transaction);
 
-      for (const name of pending) {
+      const steps: Record<string, { after: Record<string, number | null>; before: Record<string, number | null> }> = {};
+      for (const [index, name] of pending.entries()) {
+        const before = await countAdoptionStep(transaction, name);
         if (POST_CERTIFIED_UPSTREAM_MIGRATIONS.has(name)) {
           const registered = REVERSIBLE_POST_CERTIFIED_MIGRATIONS.get(name);
           if (!registered) {
@@ -1311,12 +1308,15 @@ export class DatabaseRepository extends ForkHandoffRepository {
         }
         await sql`
           INSERT INTO public.kysely_migrations (name, timestamp)
-          VALUES (${name}, ${new Date().toISOString()})
+          VALUES (${name}, ${new Date(firstTimestamp + index).toISOString()})
         `.execute(transaction);
+        if (before) {
+          steps[name] = { before, after: (await countAdoptionStep(transaction, name))! };
+        }
         await this.afterOfficialAdoptionStep(transaction, name);
         this.logger.log(`Adoption migration "${name}" succeeded`);
       }
-      await applyAdoptionForkFollowUps(transaction);
+      const followUps = await applyAdoptionForkFollowUps(transaction);
 
       const workflowAfter = classifyWorkflowCompatibility(await getWorkflowCompatibilityEvidence(transaction));
       assertWorkflowDataPreserved(workflowBefore, workflowAfter);
@@ -1330,6 +1330,8 @@ export class DatabaseRepository extends ForkHandoffRepository {
           jsonb_build_object(
             'applied', ${JSON.stringify(pending)}::jsonb,
             'officialLedger', ${JSON.stringify(ledger)}::jsonb,
+            'steps', ${JSON.stringify(steps)}::jsonb,
+            'faceDecisionsCarriedOver', ${followUps.faceDecisions}::int,
             'workflowSchemaDigestBefore', ${workflowBefore.schemaDigest}::text,
             'workflowSchemaDigestAfter', ${workflowAfter.schemaDigest}::text
           ),
@@ -1338,6 +1340,42 @@ export class DatabaseRepository extends ForkHandoffRepository {
       `.execute(transaction);
       return { adopted: true, applied: pending };
     });
+  }
+
+  /**
+   * Adoption changes the schema every server reads, so it runs only with maintenance mode on and no
+   * other server connected, the conditions the certified cutover requires. Connections from this
+   * process's own address that are idle (its connection pool, the migrations lock) are not servers.
+   */
+  private async assertAdoptionQuiescent(transaction: Kysely<DB>): Promise<void> {
+    const result = await sql<{ maintenanceMode: boolean; otherConnections: number }>`
+      SELECT
+        coalesce((
+          SELECT (value->>'isMaintenanceMode')::boolean FROM public.system_metadata WHERE key = 'maintenance-mode'
+        ), false) AS "maintenanceMode",
+        (
+          SELECT count(*)::int FROM pg_stat_activity
+          WHERE datname = current_database()
+            AND pid <> pg_backend_pid()
+            AND backend_type = 'client backend'
+            AND (
+              backend_xid IS NOT NULL
+              OR state IS DISTINCT FROM 'idle'
+              OR client_addr IS DISTINCT FROM inet_client_addr()
+            )
+        ) AS "otherConnections"
+    `.execute(transaction);
+    const readiness = result.rows[0];
+    if (!readiness?.maintenanceMode) {
+      throw new Error(
+        'Adoption requires maintenance mode: run `immich-admin enable-maintenance-mode`, stop every server, then adopt',
+      );
+    }
+    if (readiness.otherConnections > 0) {
+      throw new Error(
+        `Adoption found ${readiness.otherConnections} other database connection(s); stop every server connected to this database first`,
+      );
+    }
   }
 
   /** Test seam: runs inside the adoption transaction after each applied migration. */
@@ -1485,7 +1523,7 @@ export class DatabaseRepository extends ForkHandoffRepository {
   async revertLastMigration(): Promise<string | undefined> {
     this.logger.debug('Reverting last migration');
 
-    const migrator = this.createMigrator();
+    const migrator = this.createMigrator(await this.createLedgerAwareLegacyProvider());
     const { error, results } = await migrator.migrateDown();
 
     for (const result of results ?? []) {
@@ -1511,6 +1549,24 @@ export class DatabaseRepository extends ForkHandoffRepository {
     return reverted.migrationName;
   }
 
+  /**
+   * The combined provider for the ledger as it stands: sentinels for audited certified names it does
+   * not bundle, and never the Frameleaf workflow rewrite on a ledger holding the official one (FL-44).
+   */
+  private async createLedgerAwareLegacyProvider(): Promise<MigrationProvider> {
+    const ledgerTable = await sql<{ present: boolean }>`
+      SELECT to_regclass('public.kysely_migrations') IS NOT NULL AS present
+    `.execute(this.db);
+    const ledger = ledgerTable.rows[0]?.present
+      ? await sql<{ name: string }>`SELECT name FROM public.kysely_migrations`.execute(this.db)
+      : { rows: [] };
+    const appliedNames = ledger.rows.map(({ name }) => name);
+    return createCertifiedLedgerMigrationProvider(
+      createLegacyMigrationProvider(join(import.meta.dirname, '..', 'schema/migrations'), appliedNames),
+      appliedNames,
+    );
+  }
+
   // NOTE: `revertSchemaToUpstream` was REMOVED — see commands/index.ts comment.
   // The CLI was broken (empty down() stubs silently corrupted state). For
   // downgrade, use `pg_restore` from a backup taken before installing the fork.
@@ -1534,9 +1590,7 @@ export class DatabaseRepository extends ForkHandoffRepository {
    * lands after `2100000000030-AddSha256ChecksumAlgorithm` was applied — and
    * Kysely's ordered mode refuses those as "corrupted migrations".
    */
-  private createMigrator(
-    provider: MigrationProvider = createLegacyMigrationProvider(join(import.meta.dirname, '..', 'schema/migrations')),
-  ): Migrator {
+  private createMigrator(provider: MigrationProvider): Migrator {
     return new Migrator({
       db: this.db,
       migrationLockTableName: 'kysely_migrations_lock',
