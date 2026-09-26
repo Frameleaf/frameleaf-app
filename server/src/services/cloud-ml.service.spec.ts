@@ -11,7 +11,8 @@ import {
   SystemMetadataKey,
 } from 'src/enum.js';
 import { CloudMlService, WALLET_STEP_UP_MESSAGE } from 'src/services/cloud-ml.service.js';
-import { FrameleafCloudError } from 'src/utils/frameleaf-cloud.js';
+import { type CloudCatalog, FrameleafCloudError } from 'src/utils/frameleaf-cloud.js';
+import { cloudContractFixture } from 'test/fixtures/frameleaf-cloud-contracts.js';
 import { mlDestinationStub } from 'test/fixtures/ml-destination.stub.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
@@ -25,7 +26,7 @@ const identitySigner = {
 const capabilities = {
   protocol: 'frameleaf-cloud-v2' as const,
   region: 'eu',
-  workloads: ['enrichment', 'restoration-faithful', 'face', 'teleportation'],
+  workloads: ['descriptions', 'restoration', 'face', 'teleportation'],
   consent: {
     requiredVersion: '2026-09-25',
     recordedVersion: '2026-09-25',
@@ -109,7 +110,8 @@ describe(CloudMlService.name, () => {
       models: [
         {
           id: 'describe',
-          workload: 'enrichment',
+          workload: 'descriptions',
+          mode: null,
           name: 'Describe',
           fingerprint: 'f1',
           description: '',
@@ -119,7 +121,8 @@ describe(CloudMlService.name, () => {
         {
           // Local only by owner decision (FL-146): never offered even when a catalogue lists it.
           id: 'Qwen/Qwen2.5-VL-3B-Instruct',
-          workload: 'enrichment',
+          workload: 'descriptions',
+          mode: null,
           name: 'Qwen2.5-VL 3B',
           fingerprint: 'f3',
           description: '',
@@ -129,7 +132,8 @@ describe(CloudMlService.name, () => {
         {
           // Local only by owner decision (FL-146): never offered even when a catalogue lists it.
           id: 'nllb-clip-large-siglip__v1',
-          workload: 'enrichment',
+          workload: 'descriptions',
+          mode: null,
           name: 'NLLB CLIP',
           fingerprint: 'f2',
           description: '',
@@ -138,12 +142,25 @@ describe(CloudMlService.name, () => {
         },
         {
           id: 'old',
-          workload: 'enrichment',
+          workload: 'descriptions',
+          mode: null,
           name: 'Old',
           fingerprint: 'f0',
           description: '',
           pricing: null,
           retired: true,
+        },
+        {
+          // FL-181 (P1): this catalogue confirms a faithful restoration model, but no creative one —
+          // probe.workloads must not offer restoration creative until the catalogue names one too.
+          id: 'restore-faithful',
+          workload: 'restoration',
+          mode: 'faithful',
+          name: 'Restore · Faithful',
+          fingerprint: 'r1',
+          description: '',
+          pricing: { unit: 'image', usd: 0.01 },
+          retired: false,
         },
       ],
     });
@@ -199,6 +216,9 @@ describe(CloudMlService.name, () => {
       const probe = await sut.probe();
 
       expect(probe.reachable).toBe(true);
+      // The catalogue confirms a faithful restoration model but no creative one (FL-181 P1): a
+      // restoration mode is only offered once the catalogue names a usable model for it, never on
+      // the capability alone.
       expect(probe.workloads).toEqual([MlWorkload.Enrichment, MlWorkload.RestorationFaithful]);
       expect(probe.hardware).toMatchObject({ cudaDeviceCount: 1, torchCudaAvailable: true });
       expect(probe.cloud).toMatchObject({
@@ -207,7 +227,8 @@ describe(CloudMlService.name, () => {
         consentRequiredVersion: '2026-09-25',
         balanceUsd: 12,
         heldUsd: 2,
-        modelIds: ['describe'],
+        modelIds: ['describe', 'restore-faithful'],
+        modelWorkloads: { describe: MlWorkload.Enrichment, 'restore-faithful': MlWorkload.RestorationFaithful },
         refusal: null,
       });
       expect(metadata.get(SystemMetadataKey.FrameleafMlWallet)).toMatchObject({ balanceUsd: 12, heldUsd: 2 });
@@ -224,6 +245,45 @@ describe(CloudMlService.name, () => {
       const probe = await sut.probe();
 
       expect(probe.workloads).toEqual([MlWorkload.Enrichment]);
+    });
+
+    it('offers both restoration modes once the catalogue confirms a usable model for each (FL-181 P1)', async () => {
+      link();
+      const restoration = cloudContractFixture<CloudCatalog>('ml/catalog-restoration.json');
+      mocks.frameleafCloudMl.getCatalog.mockResolvedValue(restoration);
+
+      const probe = await sut.probe();
+
+      expect(probe.workloads).toEqual([
+        MlWorkload.Enrichment,
+        MlWorkload.RestorationFaithful,
+        MlWorkload.RestorationCreative,
+      ]);
+    });
+
+    it('never offers a restoration mode the catalogue does not confirm, even if capabilities offers restoration (FL-181 P1)', async () => {
+      link();
+      const restoration = cloudContractFixture<CloudCatalog>('ml/catalog-restoration.json');
+      mocks.frameleafCloudMl.getCatalog.mockResolvedValue({
+        ...restoration,
+        models: restoration.models.filter((model) => model.mode !== 'creative'),
+      });
+
+      const probe = await sut.probe();
+
+      expect(probe.workloads).toContain(MlWorkload.RestorationFaithful);
+      expect(probe.workloads).not.toContain(MlWorkload.RestorationCreative);
+    });
+
+    it('admits neither restoration mode when the catalogue could not be read (FL-181 P1: never over-admit)', async () => {
+      link();
+      mocks.frameleafCloudMl.getCatalog.mockRejectedValue(new Error('catalog unavailable'));
+
+      const probe = await sut.probe();
+
+      expect(probe.reachable).toBe(true);
+      expect(probe.workloads).toEqual([MlWorkload.Enrichment]);
+      expect(probe.cloud?.modelIds).toEqual([]);
     });
 
     it('keeps the refusal when the gateway answers but refuses (402)', async () => {
@@ -378,8 +438,66 @@ describe(CloudMlService.name, () => {
             pricingUnit: 'image',
             priceUsd: 0.002,
           },
+          {
+            id: 'restore-faithful',
+            workload: MlWorkload.RestorationFaithful,
+            name: 'Restore · Faithful',
+            description: '',
+            fingerprint: 'r1',
+            pricingUnit: 'image',
+            priceUsd: 0.01,
+          },
         ],
       });
+    });
+
+    it('assigns a restoration model to the app workload its own mode names (FL-181)', async () => {
+      link();
+      mocks.frameleafCloudMl.getCatalog.mockResolvedValue({
+        etag: 'etag-1',
+        models: [
+          {
+            id: 'realesrgan-faithful',
+            workload: 'restoration',
+            mode: 'faithful',
+            name: 'Restore · Faithful',
+            fingerprint: 'r1',
+            description: '',
+            pricing: { unit: 'image', usd: 0.01 },
+            retired: false,
+          },
+          {
+            id: 'realesrgan-creative',
+            workload: 'restoration',
+            mode: 'creative',
+            name: 'Restore · Creative',
+            fingerprint: 'r2',
+            description: '',
+            pricing: { unit: 'image', usd: 0.012 },
+            retired: false,
+          },
+          {
+            // No mode yet (pending cloud confirmation of the field, FL-181): left unassigned rather
+            // than guessed.
+            id: 'realesrgan-unlabelled',
+            workload: 'restoration',
+            mode: null,
+            name: 'Restore',
+            fingerprint: 'r3',
+            description: '',
+            pricing: { unit: 'image', usd: 0.011 },
+            retired: false,
+          },
+        ],
+      });
+
+      const catalog = await sut.getCatalog();
+
+      expect(catalog.models.map((model) => model.workload)).toEqual([
+        MlWorkload.RestorationFaithful,
+        MlWorkload.RestorationCreative,
+        null,
+      ]);
     });
 
     it('refuses the wallet while the server is not linked', async () => {
