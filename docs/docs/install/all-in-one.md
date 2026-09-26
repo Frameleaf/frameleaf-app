@@ -4,18 +4,6 @@ sidebar_position: 70
 
 # All-In-One [Community]
 
-:::note
-This is a community contribution and not officially supported by Frameleaf, but included here for convenience.
+There is no all-in-one container image for Frameleaf. Community all-in-one images install other software, not Frameleaf.
 
-**Please report issues to the corresponding [Github Repository][github].**
-:::
-
-## Installation
-
-For installation instructions, refer to the [Github Repository][github].
-
-## Issues
-
-For issues, open an issue on the associated [GitHub Repository][github].
-
-[github]: https://github.com/imagegenius/docker-immich/
+Install with [Docker Compose](/install/docker-compose) instead, using the files from a [Frameleaf release](https://github.com/Frameleaf/frameleaf-app/releases).

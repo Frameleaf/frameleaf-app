@@ -1,10 +1,10 @@
-# Fork Privacy Suite
+# Frameleaf privacy suite
 
 This page explains what is different in Frameleaf compared with the upstream project, and how to roll it out safely in a home lab.
 
 Frameleaf is downstream-only. The upstream project did not accept this feature set, so these changes are maintained in Frameleaf instead. Frameleaf is kept up to date with the upstream project while preserving the privacy and image-enrichment features described here.
 
-## Who This Fork Is For
+## Who Frameleaf is for
 
 Use Frameleaf if you want it to help with one or more of these jobs:
 
@@ -16,14 +16,14 @@ Use Frameleaf if you want it to help with one or more of these jobs:
 - Reduce physical disk usage in family libraries when multiple users upload the exact same photos or videos.
 - Run image-enrichment ML on common home-lab hardware, including Intel iGPU/OpenVINO and NVIDIA/CUDA setups.
 
-This fork is not a replacement for backups, access control, or careful human review. ML results can be wrong, and visible tags are search metadata, not a security boundary.
+Frameleaf is not a replacement for backups, access control, or careful human review. ML results can be wrong, and visible tags are search metadata, not a security boundary.
 
 ## What Changed
 
 ### Telemetry and Automatic Reporting
 
 Telemetry is disabled in code and cannot be enabled through application settings or deployment
-variables. This applies to every machine-learning image built from this fork.
+variables. This applies to every machine-learning image built from Frameleaf.
 
 - Hugging Face reporting is disabled before importing ML libraries. Its direct telemetry sender
   is also blocked, including when the host imported the Hub first. Download headers use a
@@ -62,7 +62,7 @@ receive the images/prompts needed for that inference. These are functional reque
 or library analytics.
 
 Console logs, local job progress, and health checks remain available. The policy covers this
-fork's application and bundled dependencies; it is not a network sandbox for administrator-added
+Frameleaf's application and bundled dependencies; it is not a network sandbox for administrator-added
 plugins, arbitrary downloaded Python code, host agents, or the infrastructure provider.
 Rebuild and redeploy both server and ML images to apply this policy.
 If an older bundled Compose stack started Prometheus or Grafana, stop and remove those orphaned
@@ -150,8 +150,8 @@ The original asset rows remain separate. Each user still has their own asset id,
 Start slowly. Do not enable automatic hiding until you have reviewed classifier behavior on your own library.
 
 1. Make a backup and confirm your normal Frameleaf backup plan works. DO NOT SKIP THIS.
-2. Deploy the fork using the fork's server, web, and machine-learning images or build outputs. Do not mix upstream containers with fork-only server or web code.
-3. Open `Administration > Settings > Machine Learning Settings`. I have tested this fork on v3.0 and above and did not identify any issues using my existing upstream deployment.
+2. Deploy Frameleaf using Frameleaf's server, web, and machine-learning images or build outputs. Do not mix upstream containers with Frameleaf server or web code.
+3. Open `Administration > Settings > Machine Learning Settings`. I have tested Frameleaf on v3.0 and above and did not identify any issues using my existing upstream deployment.
 4. Choose the image-enrichment hardware profile that matches your server:
    - `Auto-detect` for most users;
    - `Intel iGPU (OpenVINO)` for Intel integrated graphics;
@@ -224,8 +224,8 @@ For NSFW discovery, prefer improving the dedicated NSFW classifier before relyin
 - Do not treat generated tags as a security boundary.
 - Expect first backfills to take time on large libraries.
 - Watch machine-learning container logs during early setup, especially when testing GPU acceleration.
-- Keep the fork updated so you continue receiving upstream fixes and improvements.
-- Before switching to the official upstream server, follow the certified handoff procedure. The official upstream server does not enforce fork privacy filters, so fork-hidden assets can become visible while the official image is running.
+- Keep Frameleaf updated so you continue receiving upstream fixes and improvements.
+- Before switching to the official upstream server, follow the certified handoff procedure. The official upstream server does not enforce Frameleaf privacy filters, so assets Frameleaf hides can become visible while the official image is running.
 
 ## More Detailed Docs
 

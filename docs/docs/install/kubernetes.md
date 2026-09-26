@@ -4,18 +4,9 @@ sidebar_position: 40
 
 # Kubernetes
 
-Frameleaf does not publish a Helm chart. Charts written for the upstream server can be adapted, but they are not tested with Frameleaf.
+Frameleaf doesn't support Kubernetes yet: there is no Frameleaf Helm chart, and charts made for other distributions pull images that aren't Frameleaf's.
 
-You can view some [examples](https://kubesearch.dev/#/immich) of how other people run the upstream server on Kubernetes.
+Install with Docker Compose instead, using the files from a [Frameleaf release](https://github.com/Frameleaf/frameleaf-app/releases):
 
-:::caution DNS in Alpine containers
-Frameleaf makes use of Alpine container images. These can encounter [a DNS resolution bug](https://stackoverflow.com/a/65593511) on Kubernetes clusters if the host
-nodes have a search domain set, like:
-
-```
-$ cat /etc/resolv.conf
-search home.lan
-nameserver 192.168.1.1
-```
-
-:::
+- [Docker Compose](/install/docker-compose), the recommended installation.
+- [Unraid](/install/unraid), [Synology](/install/synology) or [Portainer](/install/portainer), which run the same Compose files.

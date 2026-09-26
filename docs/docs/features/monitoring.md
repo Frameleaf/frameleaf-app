@@ -1,6 +1,6 @@
 # Monitoring
 
-Telemetry is permanently disabled in this fork. The server contains no OpenTelemetry SDK,
+Telemetry is permanently disabled in Frameleaf. The server contains no OpenTelemetry SDK,
 exporters, instrumentation, metrics listener, or user/job metric collectors. The old
 `IMMICH_TELEMETRY_INCLUDE`, `IMMICH_TELEMETRY_EXCLUDE`, and metrics-port variables cannot
 re-enable reporting. The bundled Compose configurations no longer start Prometheus or Grafana.
