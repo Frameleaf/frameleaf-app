@@ -30,7 +30,7 @@ import { AssetFactory } from 'test/factories/asset.factory.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { mlDestinationStub, mlProbeStub } from 'test/fixtures/ml-destination.stub.js';
 import { getForGenerateThumbnail } from 'test/mappers.js';
-import { ServiceMocks, getMocks } from 'test/utils.js';
+import { AutoMocked, ServiceMocks, automock, getMocks } from 'test/utils.js';
 
 const RESTORATION_ID = '0195e2a0-0000-7000-8000-000000000010';
 const OPERATION_ID = '0195e2a0-0000-7000-8000-000000000020';
@@ -42,7 +42,7 @@ describe(RestorationWorkerService.name, () => {
   let sut: RestorationWorkerService;
   let mocks: ServiceMocks;
   let restorations: { [K in keyof AssetRestorationRepository]: ReturnType<typeof vi.fn> };
-  let operations: { [K in keyof MediaOperationRepository]: ReturnType<typeof vi.fn> };
+  let operations: AutoMocked<MediaOperationRepository>;
   let restore: ReturnType<typeof vi.fn>;
 
   const asset = AssetFactory.from({ ownerId: authStub.user1.user.id, type: AssetType.Image })
@@ -182,14 +182,12 @@ describe(RestorationWorkerService.name, () => {
       getFilePaths: vi.fn(),
       deleteByAsset: vi.fn(),
     };
-    operations = {
-      create: vi.fn(),
-      createRetry: vi.fn(),
+    // Automocked so newly added MediaOperationRepository methods (e.g. the FL-162/FL-163 Frameleaf
+    // Cloud job queries below, which restoration never reaches) don't need a literal entry here.
+    operations = automock(MediaOperationRepository, { strict: false });
+    Object.assign(operations, {
       getForOwner: vi.fn().mockResolvedValue(operation()),
-      getOfKind: vi.fn(),
-      list: vi.fn(),
       getCheckpoints: vi.fn().mockResolvedValue([]),
-      dismiss: vi.fn(),
       claimNext: vi.fn().mockResolvedValue(undefined),
       heartbeat: vi.fn().mockResolvedValue(true),
       reportProgress: vi.fn().mockResolvedValue(true),
@@ -210,56 +208,15 @@ describe(RestorationWorkerService.name, () => {
       fail: vi.fn().mockResolvedValue('failed'),
       requeue: vi.fn().mockResolvedValue(true),
       listUnfinishedForProjects: vi.fn().mockResolvedValue([]),
-      setBulkResult: vi.fn(),
-      getBulkByRequestId: vi.fn(),
-      getActiveRetry: vi.fn(),
       countLockedAssets: vi.fn().mockResolvedValue(0),
       getDateTimeOriginals: vi.fn().mockResolvedValue(new Map()),
-      requestCancel: vi.fn(),
       acknowledgeCancel: vi.fn().mockResolvedValue(true),
       settlePause: vi.fn().mockResolvedValue(true),
-      getUnreleasedRemoteOperations: vi.fn(),
-      markRemoteReleased: vi.fn(),
-      // FL-163: the Frameleaf Cloud description batch queries, which restoration never reaches
-      setRemoteJobId: vi.fn(),
-      recordRemoteJobId: vi.fn(),
-      getManyForWorker: vi.fn(),
-      getOpenCloudDescriptionAssetIds: vi.fn(),
-      sumCloudDescriptionSpend: vi.fn(),
-      sumCloudDescriptionOpenHolds: vi.fn(),
-      hasUnsettledCloudDescriptionJobs: vi.fn(),
-      listCloudDescriptionPendingReleases: vi.fn(),
-      // FL-162: the Frameleaf Cloud job settle pass, which restoration never reaches
-      listCloudMlJobsAwaitingCost: vi.fn(),
       recoverExpiredClaims: vi.fn().mockResolvedValue({ requeued: 0, retried: 0, failed: 0, abandonedCancels: 0 }),
       upsertCheckpoint: vi.fn().mockResolvedValue(true),
       completeCheckpoint: vi.fn().mockResolvedValue(true),
       invalidateCheckpointsFrom: vi.fn().mockResolvedValue(undefined),
-      getAggregates: vi.fn(),
-      createExclusive: vi.fn(),
-      createUnlessActive: vi.fn(),
-      getLatestBySubject: vi.fn(),
-      getActiveBySubject: vi.fn(),
-      hasClaimable: vi.fn(),
-      getActiveOfKind: vi.fn(),
-      getByRequestKey: vi.fn(),
-      getClaimants: vi.fn(),
-      getDestinationLoad: vi.fn(),
-      getLockedAssetIds: vi.fn(),
-      getLockedIds: vi.fn(),
-      listExpiredBundleExports: vi.fn(),
-      listRecentOfKind: vi.fn(),
-      onChange: vi.fn(),
-      getForWorker: vi.fn(),
-      beginJobQueueRun: vi.fn(),
-      claimJobQueueDispatch: vi.fn(),
-      releaseJobQueueDispatch: vi.fn(),
-      listActiveEditsOfRevision: vi.fn(),
-      getTrackedRevisionIds: vi.fn(),
-      requestPause: vi.fn(),
-      resume: vi.fn(),
-      setFinishedResult: vi.fn(),
-    };
+    });
 
     mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
     mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.lan);

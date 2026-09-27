@@ -180,7 +180,7 @@ describe(AssetRestorationService.name, () => {
 
   describe('getOptions', () => {
     it('offers Frameleaf Cloud for a mode once a model is chosen where the catalogue marks no default (FL-186)', async () => {
-      const video = AssetFactory.from({ ownerId: authStub.user1.user.id, type: AssetType.Video, duration: '00:00:30' })
+      const video = AssetFactory.from({ ownerId: authStub.user1.user.id, type: AssetType.Video, duration: 30 })
         .exif({ exifImageWidth: 1920, exifImageHeight: 1080, orientation: '1', fileSizeInByte: 50_000_000 })
         .build();
       mocks.asset.getById.mockResolvedValue(video as never);
