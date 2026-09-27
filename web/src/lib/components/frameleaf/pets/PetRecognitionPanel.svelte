@@ -9,7 +9,7 @@
   import { Route } from '$lib/route';
   import { MlDestinationKind, PetRecognitionRunStatus, type PetRecognitionStatusResponseDto } from '@immich/sdk';
   import { Icon } from '@immich/ui';
-  import { mdiAlertCircleOutline, mdiCloudOutline, mdiLanConnect, mdiServerOutline } from '@mdi/js';
+  import { mdiAlertCircleOutline, mdiCloudOffOutline, mdiLanConnect, mdiServerOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
 
   /**
@@ -17,9 +17,10 @@
    *
    * Composed from the prototype's grouped-list rows and capsule buttons (apple-style.css
    * `.grouped`, Controls.jsx `Button`), the way the Processing destinations rows read: one line
-   * says where the work runs — this server, a computer on the network, or Frameleaf Cloud — or,
-   * when it cannot run, the server's own refusal as a sentence with the way to fix it. The page
-   * never picks another destination; the administrator's route is the only one shown.
+   * says where the work runs — this server or a computer on the network — or, when it cannot run,
+   * the server's own refusal as a sentence with the way to fix it. The page never picks another
+   * destination; the administrator's route is the only one shown. Pet recognition never runs on
+   * Frameleaf Cloud (its search data stays on this network), so a cloud route only says so.
    */
   interface Props {
     recognition: PetRecognitionStatusResponseDto;
@@ -34,25 +35,18 @@
   const run = $derived(recognition.run);
   const active = $derived(isRecognitionRunActive(run));
   const percent = $derived(run ? Math.round(recognitionRunProgress(run) * 100) : 0);
-  const destinationIcon = $derived.by(() => {
-    switch (recognition.destination?.kind) {
-      case MlDestinationKind.Lan: {
-        return mdiLanConnect;
-      }
-      case MlDestinationKind.FrameleafCloud: {
-        return mdiCloudOutline;
-      }
-      default: {
-        return mdiServerOutline;
-      }
-    }
-  });
+  const onCloud = $derived(recognition.destination?.kind === MlDestinationKind.FrameleafCloud);
+  const destinationKey = $derived(recognition.destination && recognitionDestinationKey(recognition.destination.kind));
+  const runsHere = $derived(recognition.available && !!destinationKey);
+  const destinationIcon = $derived(
+    recognition.destination?.kind === MlDestinationKind.Lan ? mdiLanConnect : mdiServerOutline,
+  );
 </script>
 
 <section class="recognition fl-continuous-corners" aria-labelledby="pet-recognition-heading">
   <header>
     <h2 id="pet-recognition-heading">{$t('frameleaf_pets_recognition_title')}</h2>
-    {#if recognition.available || active}
+    {#if runsHere || active}
       {#if active}
         <FrameleafButton disabled={busy} onclick={onCancel}>{$t('frameleaf_pets_recognition_cancel')}</FrameleafButton>
       {:else}
@@ -63,12 +57,12 @@
     {/if}
   </header>
 
-  {#if recognition.available && recognition.destination}
+  {#if recognition.available && destinationKey}
     <p class="row" data-testid="pet-recognition-destination">
       <Icon icon={destinationIcon} size="18" aria-hidden={true} />
       <span>
-        {$t(recognitionDestinationKey(recognition.destination.kind), {
-          values: { name: recognition.destination.name },
+        {$t(destinationKey, {
+          values: { name: recognition.destination?.name },
         })}
       </span>
     </p>
@@ -87,7 +81,14 @@
     </p>
   {/if}
 
-  {#if recognition.available && !recognition.hasConfirmedPhotos}
+  {#if onCloud}
+    <p class="row unavailable" data-testid="pet-recognition-never-cloud">
+      <Icon icon={mdiCloudOffOutline} size="18" aria-hidden={true} />
+      <span>{$t('frameleaf_pets_recognition_never_cloud')}</span>
+    </p>
+  {/if}
+
+  {#if runsHere && !recognition.hasConfirmedPhotos}
     <p class="note">{$t('frameleaf_pets_recognition_needs_photos')}</p>
   {/if}
 

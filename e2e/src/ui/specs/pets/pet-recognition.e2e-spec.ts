@@ -154,6 +154,9 @@ test.describe('pet recognition', () => {
     const status = recognitionSection(page).getByTestId('pet-recognition-unavailable');
     await expect(status).toContainText('its processing destination is not allowed to run pet recognition.');
     await expect(recognitionSection(page).getByText(/Recognition runs on/)).toHaveCount(0);
+    await expect(recognitionSection(page).getByTestId('pet-recognition-never-cloud')).toContainText(
+      'Pet recognition never runs on Frameleaf Cloud.',
+    );
     await expect(recognitionSection(page).getByRole('button', { name: 'Look for pets' })).toHaveCount(0);
     expect(state.calls).toEqual([]);
   });

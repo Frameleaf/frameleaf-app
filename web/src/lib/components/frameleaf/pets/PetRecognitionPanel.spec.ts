@@ -48,12 +48,33 @@ describe('PetRecognitionPanel', () => {
     expect(onStart).toHaveBeenCalled();
   });
 
-  it('calls the cloud worker Frameleaf Cloud', () => {
-    setup(status({ destination: { kind: MlDestinationKind.FrameleafCloud, name: 'Cloud worker' } }));
+  it('never offers to run on Frameleaf Cloud, since the search data it compares stays home', () => {
+    const { onStart } = setup(
+      status({ destination: { kind: MlDestinationKind.FrameleafCloud, name: 'Cloud worker' } }),
+    );
 
-    const row = screen.getByTestId('pet-recognition-destination');
-    expect(row).toHaveTextContent('Frameleaf Cloud');
-    expect(row).not.toHaveTextContent('Cloud worker');
+    expect(screen.queryByTestId('pet-recognition-destination')).not.toBeInTheDocument();
+    expect(screen.getByTestId('pet-recognition-never-cloud')).toHaveTextContent(
+      en.frameleaf_pets_recognition_never_cloud,
+    );
+    expect(screen.queryByText(/Recognition runs on/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: en.frameleaf_pets_recognition_start })).not.toBeInTheDocument();
+    expect(onStart).not.toHaveBeenCalled();
+  });
+
+  it('says why a cloud route is refused and that recognition stays on the network', () => {
+    setup(
+      status({
+        available: false,
+        reason: PetRecognitionUnavailableReason.WorkloadNotAllowed,
+        destination: { kind: MlDestinationKind.FrameleafCloud, name: 'Frameleaf Cloud' },
+      }),
+    );
+
+    expect(screen.getByTestId('pet-recognition-unavailable')).toHaveTextContent(
+      en.frameleaf_pets_recognition_reason_workload_not_allowed,
+    );
+    expect(screen.getByTestId('pet-recognition-never-cloud')).toBeInTheDocument();
   });
 
   it('names a computer on the network', () => {
