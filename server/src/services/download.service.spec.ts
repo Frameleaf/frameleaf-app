@@ -2,6 +2,7 @@ import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { Readable } from 'node:stream';
 import { vitest } from 'vitest';
 import { DownloadResponseDto } from 'src/dtos/download.dto.js';
+import { UserMetadataKey } from 'src/enum.js';
 import {
   DownloadService,
   LOCATION_OMITTED_NOTE_NAME,
@@ -643,6 +644,28 @@ describe(DownloadService.name, () => {
 
       expect(mocks.downloadRepository.downloadAssetIds).toHaveBeenCalledWith(assetIds, { excludeNsfw: true });
       expect(mocks.downloadRepository.downloadMotionAssetIds).toHaveBeenCalledWith(['asset-2'], { excludeNsfw: true });
+    });
+
+    it('should include the video portion of an android live photo when the owner prefers embedded videos', async () => {
+      const assetIds = ['asset-1'];
+
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(assetIds));
+      mocks.user.getMetadata.mockResolvedValue([
+        { key: UserMetadataKey.Preferences, value: { download: { includeEmbeddedVideos: true } } },
+      ]);
+      mocks.downloadRepository.downloadAssetIds.mockReturnValue(
+        makeStream([{ id: 'asset-1', livePhotoVideoId: 'asset-2', size: 5000 }]),
+      );
+      mocks.downloadRepository.downloadMotionAssetIds.mockReturnValue(
+        makeStream([
+          { id: 'asset-2', livePhotoVideoId: null, size: 23_456, originalPath: '/data/encoded-video/uuid-MP.mp4' },
+        ]),
+      );
+
+      await expect(sut.getDownloadInfo(authStub.admin, { assetIds })).resolves.toEqual({
+        totalSize: 28_456,
+        archives: [{ assetIds: ['asset-1', 'asset-2'], size: 28_456 }],
+      });
     });
 
     it('should skip the video portion of an android live photo by default', async () => {
