@@ -1,4 +1,13 @@
-import { MemoryExportStatus, MemoryType, type MemoryExportResponseDto, type MemoryResponseDto } from '@immich/sdk';
+import {
+  MemoryExportFormat,
+  MemoryExportStatus,
+  MemoryHighlightAudio,
+  MemoryHighlightDestination,
+  MemoryType,
+  StudioExportResolution,
+  type MemoryExportResponseDto,
+  type MemoryResponseDto,
+} from '@immich/sdk';
 import { MemoryShowLessKind } from '@immich/sdk';
 import { addMessages, t as translations } from 'svelte-i18n';
 import { get } from 'svelte/store';
@@ -62,7 +71,7 @@ const run = (overrides: Partial<MemoryExportResponseDto> = {}) =>
     memoryId: 'memory',
     ownerId: 'owner',
     title: 'Lisbon, Portugal',
-    format: 'archive',
+    format: MemoryExportFormat.Archive,
     status: MemoryExportStatus.Running,
     assetCount: 10,
     processedAssets: 0,
@@ -161,6 +170,23 @@ describe('memory stories', () => {
       expect(exportProgress(run({ processedAssets: 99 }))).toBe(1);
     });
 
+    it("reports a highlight video's progress from its render (FL-194)", () => {
+      const highlight = (progress: number) =>
+        run({
+          format: MemoryExportFormat.Highlight,
+          highlight: {
+            lengthSeconds: 60,
+            resolution: StudioExportResolution.$2160P,
+            audio: MemoryHighlightAudio.Original,
+            destination: MemoryHighlightDestination.Local,
+            progress,
+            savedAssetId: null,
+          },
+        });
+      expect(exportProgress(highlight(40))).toBe(0.4);
+      expect(exportProgress(highlight(140))).toBe(1);
+    });
+
     it('picks the newest export of the memory it was asked about', () => {
       const older = run({ id: 'older', createdAt: '2026-06-01T00:00:00.000Z' });
       const newer = run({ id: 'newer', createdAt: '2026-06-09T00:00:00.000Z' });
@@ -168,6 +194,18 @@ describe('memory stories', () => {
 
       expect(latestExport([older, other, newer], 'memory')?.id).toBe('newer');
       expect(latestExport([other], 'memory')).toBeUndefined();
+    });
+
+    it('keeps an archive and a highlight video of the same memory apart (FL-194)', () => {
+      const archive = run({ id: 'archive', createdAt: '2026-06-01T00:00:00.000Z' });
+      const highlight = run({
+        id: 'highlight',
+        format: MemoryExportFormat.Highlight,
+        createdAt: '2026-06-09T00:00:00.000Z',
+      });
+
+      expect(latestExport([archive, highlight], 'memory')?.id).toBe('archive');
+      expect(latestExport([archive, highlight], 'memory', MemoryExportFormat.Highlight)?.id).toBe('highlight');
     });
   });
 

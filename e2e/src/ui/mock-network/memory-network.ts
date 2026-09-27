@@ -11,6 +11,8 @@ export type MemoryChanges = {
   /** FL-62: private highlight export runs; a run started while `holdExports` is set stays running. */
   exports?: MemoryExportMock[];
   holdExports?: boolean;
+  /** FL-194: highlight videos saved to the library, by run id. */
+  savedHighlights?: string[];
 };
 
 type MemoryExportMock = {
@@ -18,7 +20,7 @@ type MemoryExportMock = {
   memoryId: string;
   ownerId: string;
   title: string;
-  format: 'archive';
+  format: 'archive' | 'highlight';
   status: 'pending' | 'running' | 'cancelling' | 'ready' | 'failed' | 'cancelled';
   assetCount: number;
   processedAssets: number;
@@ -30,6 +32,15 @@ type MemoryExportMock = {
   startedAt: string | null;
   finishedAt: string | null;
   expiresAt: string | null;
+  /** FL-194: a highlight video's settings and render state. */
+  highlight: {
+    lengthSeconds: number;
+    resolution: string;
+    audio: string;
+    destination: string;
+    progress: number;
+    savedAssetId: string | null;
+  } | null;
 };
 
 const curate = (memory: MemoryResponseDto, changes: MemoryChanges): MemoryResponseDto => {
@@ -130,6 +141,35 @@ export const setupMemoryMockApiRoutes = async (
     await route.fallback();
   });
 
+  // FL-194: the render workers a highlight video's dialog judges its choices against.
+  await context.route('**/api/ml-destinations/capabilities', async (route) => {
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      json: {
+        workloads: [],
+        studio: {
+          gpuWorker: true,
+          renderWorker: true,
+          restorationWorker: false,
+          transcriptionWorker: false,
+          render: [
+            {
+              destination: 'local',
+              sessions: 1,
+              gpuMemoryBytes: 16 * 1024 ** 3,
+              codecs: ['hevc_nvenc', 'h264_nvenc'],
+              maxBitDepth: 10,
+              hdr10: true,
+              dolbyVision: false,
+            },
+          ],
+        },
+        probedAt: new Date().toISOString(),
+      },
+    });
+  });
+
   // FL-62: the private highlight export's durable run, as the server keeps it.
   await context.route(/\/api\/memories\/(?:exports(?:\?.*)?$|exports\/.+|[^/]+\/exports$)/, async (route, request) => {
     const url = new URL(request.url());
@@ -140,8 +180,16 @@ export const setupMemoryMockApiRoutes = async (
     const start = pathname.match(/^\/api\/memories\/([^/]+)\/exports$/);
     if (start && request.method() === 'POST') {
       const memory = memories.find((item) => item.id === start[1])!;
+      const body = (request.postDataJSON() ?? {}) as {
+        format?: 'archive' | 'highlight';
+        highlight?: Partial<NonNullable<MemoryExportMock['highlight']>>;
+      };
+      const format = body.format ?? 'archive';
       const inFlight = changes.exports.find(
-        (run) => run.memoryId === memory.id && ['pending', 'running', 'cancelling'].includes(run.status),
+        (run) =>
+          run.memoryId === memory.id &&
+          run.format === format &&
+          ['pending', 'running', 'cancelling'].includes(run.status),
       );
       if (inFlight) {
         return route.fulfill({ status: 201, contentType: 'application/json', json: inFlight });
@@ -152,7 +200,7 @@ export const setupMemoryMockApiRoutes = async (
         memoryId: memory.id,
         ownerId: memory.ownerId,
         title: 'Memory',
-        format: 'archive',
+        format,
         status: held ? 'running' : 'ready',
         assetCount: memory.assets.length,
         processedAssets: held ? 1 : memory.assets.length,
@@ -163,7 +211,18 @@ export const setupMemoryMockApiRoutes = async (
         updatedAt: now,
         startedAt: now,
         finishedAt: held ? null : now,
-        expiresAt: held ? null : new Date(Date.now() + 86_400_000).toISOString(),
+        expiresAt: held || format === 'highlight' ? null : new Date(Date.now() + 86_400_000).toISOString(),
+        highlight:
+          format === 'highlight'
+            ? {
+                lengthSeconds: body.highlight?.lengthSeconds ?? 60,
+                resolution: body.highlight?.resolution ?? '2160p',
+                audio: body.highlight?.audio ?? 'original',
+                destination: body.highlight?.destination ?? 'local',
+                progress: held ? 30 : 100,
+                savedAssetId: null,
+              }
+            : null,
       };
       changes.exports.unshift(run);
       return route.fulfill({ status: 201, contentType: 'application/json', json: run });
@@ -175,7 +234,7 @@ export const setupMemoryMockApiRoutes = async (
       return route.fulfill({ status: 200, contentType: 'application/json', json: runs });
     }
 
-    const one = pathname.match(/^\/api\/memories\/exports\/([^/]+)(?:\/(cancel|download))?$/);
+    const one = pathname.match(/^\/api\/memories\/exports\/([^/]+)(?:\/(cancel|download|library))?$/);
     const run = one ? changes.exports.find((item) => item.id === one[1]) : undefined;
     if (one && !run) {
       return route.fulfill({ status: 404 });
@@ -185,9 +244,17 @@ export const setupMemoryMockApiRoutes = async (
       return route.fulfill({ status: 201, contentType: 'application/json', json: run });
     }
     if (run && one?.[2] === 'download' && request.method() === 'GET') {
-      return run.isDownloadable
-        ? route.fulfill({ status: 200, contentType: 'application/zip', body: Buffer.from('PK') })
-        : route.fulfill({ status: 400 });
+      if (!run.isDownloadable) {
+        return route.fulfill({ status: 400 });
+      }
+      return run.format === 'highlight'
+        ? route.fulfill({ status: 200, contentType: 'video/mp4', body: Buffer.from('mp4') })
+        : route.fulfill({ status: 200, contentType: 'application/zip', body: Buffer.from('PK') });
+    }
+    if (run?.highlight && one?.[2] === 'library' && request.method() === 'POST') {
+      run.highlight.savedAssetId = crypto.randomUUID();
+      (changes.savedHighlights ??= []).push(run.id);
+      return route.fulfill({ status: 200, contentType: 'application/json', json: run });
     }
     if (run && request.method() === 'GET') {
       return route.fulfill({ status: 200, contentType: 'application/json', json: run });

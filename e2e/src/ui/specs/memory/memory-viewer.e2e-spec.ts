@@ -76,6 +76,7 @@ test.describe('Memory Viewer - Gallery Asset Viewer Navigation', () => {
     memoryChanges.curations?.clear();
     memoryChanges.exports = [];
     memoryChanges.holdExports = false;
+    memoryChanges.savedHighlights = [];
   });
 
   test.describe('Asset viewer navigation from gallery', () => {
@@ -401,6 +402,50 @@ test.describe('Memory Viewer - Gallery Asset Viewer Navigation', () => {
       await page.getByRole('button', { name: 'Download export' }).click();
       const file = await download;
       expect(file.suggestedFilename()).toBe('Memory.zip');
+      expect(memoryChanges.exports!.map((run) => run.status)).toEqual(['ready', 'cancelled']);
+    });
+  });
+
+  // FL-194 acceptance: a highlight video rendered from the memory — options, progress, cancel and
+  // retry, then download and save to the library, nothing rendered or saved until the owner asks.
+  test.describe('Highlight video', () => {
+    test('renders a highlight with the chosen options, cancels, retries, downloads and saves it', async ({ page }) => {
+      const memory = memories[0];
+      memoryChanges.holdExports = true;
+      await memoryViewerUtils.openMemoryPageWithAsset(page, memory.id, memory.assets[1].id);
+      expect(memoryChanges.exports ?? []).toHaveLength(0);
+
+      await page.getByRole('button', { name: 'Highlight video', exact: true }).click();
+      const dialog = page.getByTestId('memory-highlight-dialog');
+      await expect(dialog.getByLabel('Length')).toHaveValue('60');
+      await expect(dialog.getByLabel('Resolution')).toHaveValue('2160p');
+      await dialog.getByLabel('Length').selectOption('30');
+      await dialog.getByLabel('Resolution').selectOption('1080p');
+      await dialog.getByLabel('Sound').selectOption('silent');
+      await dialog.getByRole('button', { name: 'Render' }).click();
+
+      await expect(page.getByRole('status', { name: 'Rendering highlight video, 30%' })).toBeVisible();
+      expect(memoryChanges.exports![0]).toMatchObject({
+        format: 'highlight',
+        highlight: { lengthSeconds: 30, resolution: '1080p', audio: 'silent', destination: 'local' },
+      });
+
+      await page.getByRole('button', { name: 'Stop the highlight video' }).click();
+      await page.getByRole('button', { name: 'Try the highlight video again' }).click();
+      // a retry opens with the settings the owner chose before
+      await expect(dialog.getByLabel('Length')).toHaveValue('30');
+      memoryChanges.holdExports = false;
+      await dialog.getByRole('button', { name: 'Render' }).click();
+
+      const download = page.waitForEvent('download');
+      await page.getByRole('button', { name: 'Download highlight video' }).click();
+      const file = await download;
+      expect(file.suggestedFilename()).toBe('Memory.mp4');
+      expect(memoryChanges.savedHighlights ?? []).toHaveLength(0);
+
+      await page.getByRole('button', { name: 'Save highlight video to library' }).click();
+      await expect(page.getByRole('link', { name: 'Open the highlight video in your library' })).toBeVisible();
+      expect(memoryChanges.savedHighlights).toHaveLength(1);
       expect(memoryChanges.exports!.map((run) => run.status)).toEqual(['ready', 'cancelled']);
     });
   });
