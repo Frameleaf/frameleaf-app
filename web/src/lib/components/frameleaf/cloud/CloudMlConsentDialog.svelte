@@ -3,8 +3,8 @@
    * Cloud processing terms (FL-159, handoff §3.1; prototype FrameleafCloud.jsx `ConsentDialog`): the
    * version Frameleaf Cloud requires now, the five promises (previews only with metadata stripped,
    * zero retention, no training, the account's region, nothing without confirmation), faces never
-   * sent, and the optional features, which stay off unless chosen (recognised names, medical
-   * signals). "Accept and turn on" stays disabled until the terms are marked as read. Accepting
+   * sent, and the optional features, which stay off unless chosen (names written in a photo, medical
+   * signals; the names people are given here are never sent, FC-44). "Accept and turn on" stays disabled until the terms are marked as read. Accepting
    * records the version on this server and with Frameleaf Cloud; when the Frameleaf Cloud destination
    * does not exist yet it is added first, and it still runs only the work routed to it.
    */
