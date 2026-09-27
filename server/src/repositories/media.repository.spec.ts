@@ -16,6 +16,10 @@ const hasFfmpeg = (() => {
     execFileSync('ffmpeg', ['-version'], { stdio: 'ignore' });
     return true;
   } catch {
+    // CI installs ffmpeg through mise: there a missing ffmpeg is a broken runner, never a skip
+    if (process.env.CI) {
+      throw new Error('[media.repository.spec] ffmpeg is not installed on CI; the byte-level clip tests must run');
+    }
     console.warn('[media.repository.spec] ffmpeg is not installed; the byte-level clip tests are skipped');
     return false;
   }
