@@ -316,6 +316,22 @@ export class TagRepository {
       .execute();
   }
 
+  /** Removes the owner's tags with these exact values from one asset, leaving every other tag on it. */
+  @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID, [DummyValue.STRING]] })
+  async removeAssetTagValues(assetId: string, userId: string, values: string[]): Promise<void> {
+    if (values.length === 0) {
+      return;
+    }
+
+    await this.db
+      .deleteFrom('tag_asset')
+      .where('assetId', '=', assetId)
+      .where('tagId', 'in', (eb) =>
+        eb.selectFrom('tag').select('tag.id').where('tag.userId', '=', userId).where('tag.value', 'in', values),
+      )
+      .execute();
+  }
+
   @GenerateSql({ params: [DummyValue.UUID, [DummyValue.UUID]] })
   @Chunked({ paramIndex: 1 })
   replaceAssetTags(assetId: string, tagIds: string[]) {
