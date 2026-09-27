@@ -24,6 +24,7 @@ import {
   MediaOperationDestination,
   MediaOperationKind,
   MediaOperationStatus,
+  MlWorkload,
   RenderWorkerStatus,
   StudioExportRemoteReason,
   StudioExportScope,
@@ -36,6 +37,7 @@ import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaOperation, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
+import { MlDestinationRepository } from 'src/repositories/ml-destination.repository.js';
 import { RenderWorkerRepository } from 'src/repositories/render-worker.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import {
@@ -53,6 +55,7 @@ import {
 import { StudioProjectRepository } from 'src/repositories/studio-project.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
+import { AssetRestorationService } from 'src/services/asset-restoration.service.js';
 import { mapOperation } from 'src/services/media-operation.service.js';
 import { StudioProjectService } from 'src/services/studio-project.service.js';
 import { StudioAuthorizedEntry, StudioResourceService } from 'src/services/studio-resource.service.js';
@@ -77,9 +80,11 @@ import {
   STUDIO_EXPORT_SWEEP_MS,
   STUDIO_EXPORT_TICK_MS,
   StudioExportPublishSnapshot,
+  StudioExportSmoothMotion,
   isInsideFolder,
   isStudioExportContentType,
   parseStudioExportPublishSnapshot,
+  parseStudioExportSmoothMotion,
   studioExportFileName,
   studioExportLibraryPath,
   studioExportProjectPath,
@@ -211,6 +216,8 @@ export class StudioExportService {
     private systemMetadata: SystemMetadataRepository,
     private renderWorkers: RenderWorkerRepository,
     private media: MediaRepository,
+    private restorations: AssetRestorationService,
+    private mlDestinations: MlDestinationRepository,
   ) {
     this.logger.setContext(StudioExportService.name);
   }
@@ -310,6 +317,7 @@ export class StudioExportService {
       resolution: dto.resolution,
       audio: dto.audio ?? 'preserve',
     };
+    const smoothMotion = await this.requireSmoothMotion(dto.smoothMotion);
     await this.requireRenderableOutput(dto.destination, settings);
     const { timing, contract } = await this.declareOutput(
       authorized.envelope.graph,
@@ -346,6 +354,8 @@ export class StudioExportService {
           timing,
           contract,
           ...(options.retainInProject && { retain: 'project' }),
+          // FL-162: Smooth motion is its own job on the published video, never part of this render.
+          ...(smoothMotion && { smoothMotion }),
         },
         settings,
         estimate: null,
@@ -682,6 +692,9 @@ export class StudioExportService {
           projectId: version.projectId as string,
           revision: version.revision,
           contract: parseStudioExportContract((operation.snapshot as { contract?: unknown } | null)?.contract),
+          smoothMotion: parseStudioExportSmoothMotion(
+            (operation.snapshot as { smoothMotion?: unknown } | null)?.smoothMotion,
+          ),
           ...(isRetainedInProject(operation.snapshot) && { retain: 'project' }),
         } satisfies StudioExportPublishSnapshot as unknown as Record<string, unknown>,
         settings: version.settings,
@@ -831,6 +844,7 @@ export class StudioExportService {
       const published = await this.publishAcknowledged(version, operation, claimToken, prepared);
       await this.afterPublished(published, prepared);
       await this.finishJob(operation, claimToken, published.version.resultAssetId);
+      await this.queueSmoothMotion(snapshot, published.version.resultAssetId, version.ownerId, operation.label);
       this.logger.log(
         `Studio export ${version.id} published as version ${published.version.version} (${published.privacy.scope}${
           published.privacy.lockReason ? `, locked: ${published.privacy.lockReason}` : ''
@@ -1052,6 +1066,49 @@ export class StudioExportService {
       });
     }
     await this.storage.unlinkDir(prepared.stagingFolder, { recursive: true, force: true }).catch(() => {});
+  }
+
+  /**
+   * FL-162: once the export is a video in the owner's library, its Smooth motion runs as a job of its
+   * own, preview first. A result kept with its project (made with shared media) has no library video to
+   * work on, and says so in the log instead.
+   */
+  private async queueSmoothMotion(
+    snapshot: StudioExportPublishSnapshot,
+    resultAssetId: string | null,
+    ownerId: string,
+    exportName: string,
+  ): Promise<void> {
+    const smoothMotion = snapshot.smoothMotion;
+    if (!smoothMotion) {
+      return;
+    }
+    if (!resultAssetId) {
+      this.logger.log(`Studio export ${snapshot.versionId} stays with its project; Smooth motion was not queued`);
+      return;
+    }
+    await this.restorations
+      .queueExportSmoothMotion({ ownerId, assetId: resultAssetId, exportName, ...smoothMotion })
+      .catch((error: unknown) =>
+        this.logger.warn(`Smooth motion after Studio export ${snapshot.versionId}: ${errorMessage(error)}`),
+      );
+  }
+
+  /** The Smooth motion asked for with an export: a destination that exists and may run interpolation. */
+  private async requireSmoothMotion(
+    requested: StudioExportCreateDto['smoothMotion'],
+  ): Promise<StudioExportSmoothMotion | null> {
+    if (!requested) {
+      return null;
+    }
+    const destination = await this.mlDestinations.getById(requested.destinationId);
+    if (!destination?.enabled || !destination.workloads.includes(MlWorkload.Interpolation)) {
+      throw new BadRequestException({
+        message: 'That destination does not run Smooth motion',
+        code: 'studio_export_smooth_motion_destination',
+      });
+    }
+    return { factor: requested.factor, destinationId: destination.id };
   }
 
   /** Undo the move of an attempt that did not publish, so the retry and retention find the file. */

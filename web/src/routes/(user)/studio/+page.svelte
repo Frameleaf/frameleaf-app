@@ -26,6 +26,8 @@
   import { createStudioEngineCommandHandlers, createStudioGraphHistory } from '$lib/frameleaf/studio/engine-commands';
   import { registerFrameStudioEngine } from '$lib/frameleaf/studio/frame-engine';
   import { createStudioBundleHandlers } from '$lib/frameleaf/studio/bundles';
+  import { createStudioRestorationHandlers } from '$lib/frameleaf/studio/restoration-jobs';
+  import type { StudioRestoreFocus } from '$lib/components/frameleaf/StudioRestorePanel.svelte';
   import { createStudioCommandEnvelope, type StudioCommandPayloads } from '$lib/frameleaf/studio/commands';
   import { probeStudioHost } from '$lib/frameleaf/studio/capabilities';
   import { loadStudioEngine, pinnedFreecutRevision } from '$lib/frameleaf/studio/engine-loader';
@@ -416,6 +418,39 @@
     });
   });
 
+  /**
+   * The Restore tab (FL-115, FL-162). A command naming Frameleaf Cloud opens it on that source, where
+   * the job is estimated and confirmed on its own; Use in Studio adds a finished version to the bin.
+   */
+  let restoreRequest = $state<{ assetId: string | null; focus: StudioRestoreFocus; nonce: number } | null>(null);
+  const openRestore = (assetId: string | null, focus: StudioRestoreFocus) => {
+    restoreRequest = { assetId, focus, nonce: (restoreRequest?.nonce ?? 0) + 1 };
+  };
+  const restorationHandlers = createStudioRestorationHandlers({
+    graph: () => project.graph,
+    revision: () => project.revision,
+    onQueued: () => {
+      queuedJobs += 1;
+      toastManager.primary($t('frameleaf_studio_restore_queued'));
+    },
+    onRefused: (messageKey) => toastManager.danger($t(messageKey)),
+    onConfirmOnCloud: (assetId, focus) => openRestore(assetId, focus),
+  });
+  const onUseRestoration = async (restoration: { id: string }) => {
+    if (restoredVersions.some((version) => version.restorationId === restoration.id)) {
+      toastManager.primary($t('frameleaf_studio_restored_already_in_bin'));
+      return;
+    }
+    try {
+      const version = await getStudioRestoredVersion({ id: restoration.id });
+      askedRestorations.add(version.restorationId);
+      restoredVersions = [...restoredVersions, version];
+      toastManager.primary($t('frameleaf_studio_restored_added', { values: { name: restoredName(version) } }));
+    } catch (error) {
+      handleError(error, $t('frameleaf_studio_restored_add_failed'));
+    }
+  };
+
   const bridge = createStudioBridge({
     context: () => ({
       revision: project.revision,
@@ -470,6 +505,9 @@
         return bundleHandlers['project.exportBundle'](envelope);
       },
       'project.importBundle': (envelope) => bundleHandlers['project.importBundle'](envelope),
+      // FL-115 / FL-162: restoration and Smooth motion jobs, preview first; the graph is unchanged.
+      'job.enqueueRestoration': (envelope) => restorationHandlers['job.enqueueRestoration'](envelope),
+      'job.enqueueInterpolation': (envelope) => restorationHandlers['job.enqueueInterpolation'](envelope),
     },
   });
 
@@ -870,6 +908,8 @@
   onStreamVideoSize={(width, height) => streamClient.reportVideoSize(width, height)}
   droppedAssetCount={data.unavailableAssetCount}
   {unavailableRestorations}
+  onUseRestoration={accessLost || forbidden ? undefined : onUseRestoration}
+  {restoreRequest}
   unsupportedSources={sessionState?.resources?.unsupportedSources ?? []}
   {session}
   {saveStatus}

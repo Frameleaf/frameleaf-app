@@ -1,8 +1,21 @@
-import { MediaOperationDestination, StudioExportColor, StudioExportFormat, StudioExportResolution } from '@immich/sdk';
-import { fireEvent, render, screen, within } from '@testing-library/svelte';
+import {
+  MediaOperationDestination,
+  MlDestinationKind,
+  MlWorkload,
+  StudioExportColor,
+  StudioExportFormat,
+  StudioExportResolution,
+  getMlCapabilities,
+} from '@immich/sdk';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
 import StudioExportDialog from '$lib/components/frameleaf/StudioExportDialog.svelte';
 import type { StudioRenderEvidence } from '$lib/frameleaf/studio/host-contract';
+
+vi.mock('@immich/sdk', async () => ({
+  ...(await vi.importActual<typeof import('@immich/sdk')>('@immich/sdk')),
+  getMlCapabilities: vi.fn(),
+}));
 
 /** The Studio video export dialog (FL-88 header, `Studio.jsx` ExportDialog). */
 describe('Studio export dialog', () => {
@@ -96,5 +109,75 @@ describe('Studio export dialog', () => {
       target: { value: StudioExportColor.DolbyVision },
     });
     expect(screen.getByText('frameleaf_studio_export_dolby_note')).toBeInTheDocument();
+  });
+
+  describe('Smooth motion after export (FL-162, FL-159)', () => {
+    const interpolation = (destinations: object[]) =>
+      vi.mocked(getMlCapabilities).mockResolvedValue({
+        probedAt: '2026-09-27T00:00:00.000Z',
+        studio: {},
+        workloads: [{ workload: MlWorkload.Interpolation, available: true, routedDestinationId: null, destinations }],
+      } as never);
+    const home = {
+      id: 'lan-1',
+      kind: MlDestinationKind.Lan,
+      name: 'Garage GPU',
+      available: true,
+      gpuMemoryBytes: null,
+    };
+    const cloud = { id: 'cloud-1', kind: MlDestinationKind.FrameleafCloud, name: 'Frameleaf Cloud', available: true };
+    const smoothGroup = () =>
+      within(screen.getByTestId('studio-export-smooth-motion')).getByRole('radiogroup', {
+        name: 'frameleaf_studio_export_smooth_motion',
+      });
+
+    it('asks for it with the model slider, and sends it as its own job next to a home render', async () => {
+      interpolation([home]);
+      const onExport = vi.fn();
+      render(StudioExportDialog, { open: true, sequenceName: 'Lake trip', renderEvidence: [evidence()], onExport });
+
+      await fireEvent.click(within(smoothGroup()).getAllByRole('radio')[2]);
+      expect(
+        await screen.findByRole('group', { name: 'frameleaf_restoration_smooth_motion_model' }),
+      ).toBeInTheDocument();
+      await waitFor(() => expect(screen.getByText('frameleaf_studio_export_smooth_motion_local')).toBeInTheDocument());
+      await fireEvent.click(exportButton());
+
+      expect(onExport).toHaveBeenCalledWith(
+        expect.objectContaining({
+          destination: MediaOperationDestination.Local,
+          smoothMotion: { factor: 4, destinationId: 'lan-1' },
+        }),
+      );
+    });
+
+    it('keeps the export at home even when Smooth motion runs on Frameleaf Cloud, confirmed separately', async () => {
+      interpolation([cloud]);
+      const onExport = vi.fn();
+      render(StudioExportDialog, { open: true, sequenceName: 'Lake trip', renderEvidence: [evidence()], onExport });
+
+      await fireEvent.click(within(smoothGroup()).getAllByRole('radio')[1]);
+      await waitFor(() => expect(screen.getByText('frameleaf_studio_export_smooth_motion_cloud')).toBeInTheDocument());
+      await fireEvent.click(exportButton());
+
+      expect(onExport).toHaveBeenCalledWith(
+        expect.objectContaining({
+          destination: MediaOperationDestination.Local,
+          smoothMotion: { factor: 2, destinationId: 'cloud-1' },
+        }),
+      );
+    });
+
+    it('will not export with Smooth motion nothing can run, and says so', async () => {
+      interpolation([]);
+      const onExport = vi.fn();
+      render(StudioExportDialog, { open: true, sequenceName: 'Lake trip', renderEvidence: [evidence()], onExport });
+
+      await fireEvent.click(within(smoothGroup()).getAllByRole('radio')[1]);
+      await waitFor(() =>
+        expect(screen.getByText('frameleaf_studio_export_smooth_motion_unavailable')).toBeInTheDocument(),
+      );
+      expect(exportButton()).toBeDisabled();
+    });
   });
 });
