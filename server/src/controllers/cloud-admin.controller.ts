@@ -103,6 +103,19 @@ export class CloudAdminController {
     return this.service.getLink();
   }
 
+  @Post('link/continue')
+  @Authenticated({ permission: Permission.AdminCloudLink, admin: true })
+  @Endpoint({
+    operationId: 'continueCloudLink',
+    summary: 'Link in the Frameleaf account’s data region',
+    description:
+      'After Frameleaf Cloud refused an approved link because the account keeps its data in another region (409 region-mismatch), links again with the same, unspent approval in the account’s region. No new code is needed.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  continueLink(@Auth() auth: AuthDto): Promise<CloudStatusResponseDto> {
+    return this.service.continueLink(auth);
+  }
+
   @Delete('link/pending')
   @Authenticated({ permission: Permission.AdminCloudLink, admin: true })
   @Endpoint({

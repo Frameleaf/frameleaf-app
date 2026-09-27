@@ -16,6 +16,7 @@ const status = (overrides: Partial<CloudStatusResponseDto> = {}): CloudStatusRes
   pending: null,
   linkResult: null,
   linkRefusal: null,
+  regionMismatch: null,
   permissions: { allowRemoteEnable: false, allowBackupTrigger: true, allowEntitlementRefresh: true },
   revoked: null,
   lastError: null,

@@ -375,6 +375,15 @@ export type CloudStatusResponseDto = {
     manageUrl: string | null;
     pending: (CloudLinkPendingDto) | null;
     permissions: CloudPermissionsDto;
+    /** FC-18: Frameleaf Cloud refused the link because the account keeps its data in another region; lastError carries its message */
+    regionMismatch: {
+        /** The data region the Frameleaf account keeps its data in (eu, na) */
+        accountRegion: string;
+        /** The approved link is kept: linking again in the account’s region needs no new code */
+        canContinue: boolean;
+        /** The data region this server asked for */
+        requestedRegion: string | null;
+    } | null;
     /** Frameleaf Cloud asked an administrator to link again */
     relinkRequested: boolean;
     /** Remote access is switched on for this linked server */
@@ -11640,6 +11649,18 @@ export function startCloudLink(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
+ * Link in the Frameleaf account’s data region
+ */
+export function continueCloudLink(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: CloudStatusResponseDto;
+    }>("/admin/cloud/link/continue", {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
  * Cancel a pending link
  */
 export function cancelCloudLink(opts?: Oazapfts.RequestOpts) {
@@ -21267,7 +21288,8 @@ export enum CloudLinkRefusal {
     InstanceLimit = "instance-limit",
     ServerRefused = "server-refused",
     InstanceIdTaken = "instance-id-taken",
-    KeyAlreadyLinked = "key-already-linked"
+    KeyAlreadyLinked = "key-already-linked",
+    RegionMismatch = "region-mismatch"
 }
 export enum CloudLinkResult {
     Pending = "pending",

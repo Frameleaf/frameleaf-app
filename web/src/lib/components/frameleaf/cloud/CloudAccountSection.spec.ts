@@ -18,6 +18,7 @@ const status = (overrides: Partial<CloudStatusResponseDto> = {}): CloudStatusRes
   pending: null,
   linkResult: null,
   linkRefusal: null,
+  regionMismatch: null,
   permissions: { allowRemoteEnable: false, allowBackupTrigger: true, allowEntitlementRefresh: true },
   revoked: null,
   lastError: null,
@@ -97,6 +98,53 @@ describe('CloudAccountSection (FL-154, FL-155)', () => {
     expect(screen.getAllByText(/Servers in your Frameleaf account|identity directory/).length).toBeGreaterThan(0);
     expect(screen.queryByText('Linking did not finish: raw cloud message')).toBeNull();
     expect(screen.getByRole('button', { name: /Link to Frameleaf/ })).toBeInTheDocument();
+  });
+
+  describe('region-mismatch (FC-18)', () => {
+    const REGION_MESSAGE =
+      "This Frameleaf account keeps its data in the EU, not North America. Link this server to an account in that region, or change the server's region setting to the EU and link again.";
+    const refusedRegion = (canContinue: boolean, overrides: Partial<CloudStatusResponseDto> = {}) =>
+      status({
+        linkRefusal: CloudLinkRefusal.RegionMismatch,
+        lastError: REGION_MESSAGE,
+        regionMismatch: { accountRegion: 'eu', requestedRegion: 'na', canContinue },
+        ...overrides,
+      });
+
+    it('shows Frameleaf Cloud’s message naming both regions and links in the account’s region', async () => {
+      sdkMock.getCloudStatus.mockResolvedValue(refusedRegion(true));
+      sdkMock.continueCloudLink.mockResolvedValue(linked());
+      render(CloudAccountSection);
+
+      expect(await screen.findByText('Your Frameleaf account keeps its data in another region')).toBeInTheDocument();
+      expect(screen.getByText(REGION_MESSAGE)).toBeInTheDocument();
+      // the kept approval means no new code: one click links in the account's region
+      await fireEvent.click(screen.getByRole('button', { name: 'Link in the EU' }));
+      await waitFor(() => expect(sdkMock.continueCloudLink).toHaveBeenCalled());
+      expect(sdkMock.startCloudLink).not.toHaveBeenCalled();
+      expect(await screen.findByText('Linked in the EU.')).toBeInTheDocument();
+    });
+
+    it('cancels the kept approval', async () => {
+      sdkMock.getCloudStatus.mockResolvedValue(refusedRegion(true));
+      sdkMock.cancelCloudLink.mockResolvedValue(status());
+      render(CloudAccountSection);
+
+      const actions = await screen.findByTestId('cloud-region-mismatch-actions');
+      await fireEvent.click(within(actions).getByRole('button', { name: 'Cancel' }));
+      await waitFor(() => expect(sdkMock.cancelCloudLink).toHaveBeenCalled());
+      expect(sdkMock.continueCloudLink).not.toHaveBeenCalled();
+    });
+
+    it('shows the message for a headless link token, which was not used up, without a continue action', async () => {
+      sdkMock.getCloudStatus.mockResolvedValue(refusedRegion(false, { linkTokenConfigured: true }));
+      render(CloudAccountSection);
+
+      expect(await screen.findByText(REGION_MESSAGE)).toBeInTheDocument();
+      expect(screen.getByText(/The link token was not used up/)).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /Link in/ })).toBeNull();
+      expect(screen.getByRole('button', { name: /Link to Frameleaf/ })).toBeInTheDocument();
+    });
   });
 
   it('leads the unlinked page with the mobile apps benefit and starts the device flow', async () => {

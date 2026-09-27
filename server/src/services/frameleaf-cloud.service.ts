@@ -47,6 +47,7 @@ import {
   CloudCommand,
   CloudCommandType,
   DEVICE_CODE_GRANT,
+  type DataRegion,
   FRAMELEAF_LINK_CLIENT_ID,
   HEARTBEAT_FAILURE_NOTICE_THRESHOLD,
   HEARTBEAT_FIELDS,
@@ -62,12 +63,14 @@ import {
   heartbeatResponseSchema,
   instanceRegistrationSchema,
   instanceServicesSchema,
+  isDataRegion,
   keyNonceSchema,
   linkEndpoints,
   linkRefusalOf,
   linkTokenSchema,
   nextHeartbeatDelay,
   permissionsOf,
+  regionMismatchOf,
   rememberNotices,
 } from 'src/utils/frameleaf-cloud-link.js';
 import {
@@ -138,6 +141,8 @@ const emptyLink = (cloudUrl: string, previous?: FrameleafCloudLink | null): Fram
  * - Nothing is contacted until an administrator starts linking, or `FRAMELEAF_LINK_TOKEN` is set.
  *   An unset `FRAMELEAF_CLOUD_URL` means "not configured"; no default host is ever used.
  * - The device code and link token are never returned or kept after use; no cloud secret is stored.
+ *   The one exception (FC-18): an approved link token the cloud refused with `region-mismatch` was not
+ *   spent, so it is kept (never returned) until the administrator links in the account's region or cancels.
  * - The heartbeat sends exactly `HEARTBEAT_FIELDS`; cloud commands run only when the matching
  *   instance-side toggle allows them, and no command or revoke deletes local data.
  * - Unlink and cloud-side revoke clear the link and switch cloud-connected features off.
@@ -195,6 +200,7 @@ export class FrameleafCloudService extends BaseService {
       pending: link?.status === 'pending' && link.pending ? this.mapPending(link.pending) : null,
       linkResult: link?.status === 'pending' ? 'pending' : (link?.lastLinkResult ?? null),
       linkRefusal: link?.status === 'unlinked' ? (link.lastLinkRefusal ?? null) : null,
+      regionMismatch: this.mapRegionMismatch(link),
       permissions: permissionsOf(link),
       revoked: link?.status === 'revoked' ? (link.revoked ?? null) : null,
       lastError: link?.lastError ?? null,
@@ -208,6 +214,22 @@ export class FrameleafCloudService extends BaseService {
       manageUrl: linked && cloudUrl && link.instanceId ? accountServerUrl(cloudUrl, link.store, link.instanceId) : null,
       signInClientId: linked ? (link.oidc?.clientId ?? null) : null,
       signInIssuer: linked ? (link.oidc?.issuer ?? null) : null,
+    };
+  }
+
+  /** FC-18: what the region refusal said, while unlinked; the held link token itself is never returned. */
+  private mapRegionMismatch(link: FrameleafCloudLink | null | undefined) {
+    if (link?.status !== 'unlinked' || link.lastLinkRefusal !== 'region-mismatch') {
+      return null;
+    }
+    const accountRegion = link.heldLink?.accountRegion ?? link.lastRegionMismatch?.accountRegion;
+    if (!accountRegion) {
+      return null;
+    }
+    return {
+      accountRegion,
+      requestedRegion: link.heldLink?.requestedRegion ?? link.lastRegionMismatch?.requestedRegion ?? null,
+      canContinue: !!link.heldLink,
     };
   }
 
@@ -338,10 +360,83 @@ export class FrameleafCloudService extends BaseService {
   async cancelLink(): Promise<CloudStatusResponseDto> {
     const cloudUrl = this.requireCloudUrl();
     const link = await this.readLink(cloudUrl);
-    if (link?.status === 'pending') {
+    if (link?.status === 'pending' || link?.heldLink) {
+      // FC-18: cancelling also drops a link token held after a region refusal
       await this.saveLink(emptyLink(cloudUrl, link), 'link');
     }
     return this.getStatus();
+  }
+
+  /**
+   * FC-18: `POST admin/cloud/link/continue`. Frameleaf Cloud refused the approved link with 409
+   * `region-mismatch` and kept the link token usable; link again with that token in the account's own
+   * region, so the administrator needs no new code. Another refusal is shown like any link refusal.
+   */
+  async continueLink(auth: AuthDto): Promise<CloudStatusResponseDto> {
+    const cloudUrl = this.requireCloudUrl();
+    const link = await this.readLink(cloudUrl);
+    const held = link?.heldLink;
+    if (!link || link.status !== 'unlinked' || !held) {
+      throw new BadRequestException('There is no refused link to continue. Start linking again.');
+    }
+    const dataRegion = isDataRegion(held.accountRegion) ? held.accountRegion : undefined;
+    try {
+      await this.completeLink(cloudUrl, { linkToken: held.linkToken, actorId: auth.user.id }, { dataRegion });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(`Frameleaf Cloud did not link this server in its account's region: ${message}`);
+      const mismatch = regionMismatchOf(error);
+      const current = (await this.readLink(cloudUrl)) ?? link;
+      if (mismatch) {
+        await this.holdRegionMismatch(cloudUrl, current, held.linkToken, held.startedBy, mismatch);
+      } else if (error instanceof FrameleafCloudError && (error.status === null || error.status >= 500)) {
+        // not answered, or paused (FC-62): the token was not spent, so it stays held for another try
+        await this.saveLink({ ...current, lastError: pausedMessageOf(error) ?? message }, 'link');
+      } else {
+        await this.saveLink(
+          {
+            ...emptyLink(cloudUrl, current),
+            lastError: `Linking did not finish: ${message}`,
+            lastLinkRefusal: linkRefusalOf(error) ?? undefined,
+          },
+          'link',
+        );
+      }
+      const paused = pausedException(error);
+      if (paused) {
+        throw paused;
+      }
+      throw new ServiceUnavailableException(`Frameleaf Cloud did not complete the request: ${message}`);
+    }
+    return this.getStatus();
+  }
+
+  /**
+   * FC-18: keep an approved link token Frameleaf Cloud refused with `region-mismatch` (it wrote nothing
+   * and did not spend the token), with the cloud's message naming both regions.
+   */
+  private async holdRegionMismatch(
+    cloudUrl: string,
+    current: FrameleafCloudLink,
+    linkToken: string,
+    startedBy: string | undefined,
+    mismatch: NonNullable<ReturnType<typeof regionMismatchOf>>,
+  ) {
+    this.logger.warn(`Frameleaf Cloud refused the link: ${mismatch.message}`);
+    await this.saveLink(
+      {
+        ...emptyLink(cloudUrl, current),
+        lastError: mismatch.message,
+        lastLinkRefusal: 'region-mismatch',
+        heldLink: {
+          linkToken,
+          accountRegion: mismatch.accountRegion,
+          requestedRegion: mismatch.requestedRegion,
+          startedBy,
+        },
+      },
+      'link',
+    );
   }
 
   /** One poll of the device-code grant (RFC 8628 section 3.4). */
@@ -367,7 +462,16 @@ export class FrameleafCloudService extends BaseService {
     });
 
     if (result.ok) {
-      await this.completeLink(cloudUrl, { linkToken: result.data.access_token, actorId: pending.startedBy });
+      try {
+        await this.completeLink(cloudUrl, { linkToken: result.data.access_token, actorId: pending.startedBy });
+      } catch (error) {
+        // FC-18: the account keeps its data in another region; the unspent link token is kept for a retry
+        const mismatch = regionMismatchOf(error);
+        if (!mismatch) {
+          throw error;
+        }
+        await this.holdRegionMismatch(cloudUrl, link, result.data.access_token, pending.startedBy, mismatch);
+      }
       return;
     }
 
@@ -425,6 +529,11 @@ export class FrameleafCloudService extends BaseService {
   async completeLink(
     cloudUrl: string,
     source: { linkToken: string; actorId?: string } | { headlessToken: string },
+    /**
+     * FC-18: `dataRegion` is sent only when the administrator chose one; nothing in this server offers
+     * that choice yet, so it is set only when linking again in the account's region after a refusal.
+     */
+    options: { dataRegion?: DataRegion } = {},
   ): Promise<FrameleafCloudLink> {
     const { instanceId } = await loadInstanceIdentity(this.gatewayDeps());
     // one key for the proof and the registered public key, even if a rotation swapped it meanwhile
@@ -454,6 +563,7 @@ export class FrameleafCloudService extends BaseService {
           bootId: await this.bootId(),
           capabilities: INSTANCE_CAPABILITIES,
           permissions,
+          ...(options.dataRegion && { dataRegion: options.dataRegion }),
         },
       });
     } catch (error) {
@@ -462,7 +572,8 @@ export class FrameleafCloudService extends BaseService {
         throw new FrameleafCloudError(
           error.refusal,
           error.status,
-          LINK_REFUSAL_MESSAGES[refusal],
+          // FC-18: the cloud's region message names both regions, so it is shown as it is
+          regionMismatchOf(error)?.message ?? LINK_REFUSAL_MESSAGES[refusal],
           error.envelope,
           error.oauth,
         );
@@ -762,6 +873,24 @@ export class FrameleafCloudService extends BaseService {
         this.logger.warn(`FRAMELEAF_LINK_TOKEN did not link this server: ${message}`);
         const current = (await this.readLink(cloudUrl)) ?? emptyLink(cloudUrl);
         const paused = pausedMessageOf(error);
+        const mismatch = regionMismatchOf(error);
+        if (mismatch) {
+          // FC-18: the cloud wrote nothing and did not spend the token, so it is not burned here either
+          this.logger.error(
+            `FRAMELEAF_LINK_TOKEN did not link this server: the Frameleaf account keeps its data in region ${mismatch.accountRegion}. ${mismatch.message} The token was not used up; it is tried again at the next start.`,
+          );
+          await this.saveLink(
+            {
+              ...current,
+              usedLinkTokens: current.usedLinkTokens?.filter((used) => used !== hash),
+              lastError: mismatch.message,
+              lastLinkRefusal: 'region-mismatch',
+              lastRegionMismatch: { accountRegion: mismatch.accountRegion, requestedRegion: mismatch.requestedRegion },
+            },
+            'link',
+          );
+          return;
+        }
         await this.saveLink(
           paused
             ? {

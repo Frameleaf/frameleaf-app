@@ -6,11 +6,11 @@
    * so plainly and offers the local account instead.
    */
   import symbolUrl from '$lib/assets/frameleaf/frameleaf-symbol.svg?url';
-  import { displayHost } from '$lib/frameleaf/cloud';
+  import { dataRegionKey, displayHost } from '$lib/frameleaf/cloud';
   import { startFrameleaf } from '$lib/frameleaf/frameleaf-sign-in';
   import { cloudManager } from '$lib/managers/cloud-manager.svelte';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
-  import { getPublicConfig } from '@immich/sdk';
+  import { CloudLinkRefusal, getPublicConfig } from '@immich/sdk';
   import { Icon } from '@immich/ui';
   import { mdiCheckDecagram, mdiCloudOffOutline } from '@mdi/js';
   import { onMount } from 'svelte';
@@ -67,6 +67,15 @@
     }
   };
 
+  /** FC-18: Frameleaf Cloud refused the approved link because the account keeps its data in another region. */
+  const regionMismatch = $derived(
+    status?.state === 'unlinked' && status.linkRefusal === CloudLinkRefusal.RegionMismatch ? status : null,
+  );
+  const accountRegion = $derived.by(() => {
+    const key = regionMismatch?.regionMismatch ? dataRegionKey(regionMismatch.regionMismatch.accountRegion) : null;
+    return key ? $t(key) : null;
+  });
+
   const start = () => run(() => (mode === 'link' ? cloudManager.startLink() : startFrameleaf('sign-in', location)));
 </script>
 
@@ -119,7 +128,27 @@
       {$t('cancel')}
     </button>
   </div>
+{:else if regionMismatch?.regionMismatch?.canContinue}
+  <div class="frs-region-mismatch" role="alert">
+    <strong>{$t('frameleaf_cloud_link_refusal_region_mismatch_title')}</strong>
+    <span>{regionMismatch.lastError || $t('frameleaf_cloud_link_refusal_region_mismatch_body')}</span>
+    <div>
+      <button type="button" class="button" disabled={busy} onclick={() => void run(() => cloudManager.continueLink())}>
+        {accountRegion
+          ? $t('frameleaf_cloud_link_continue_region', { values: { region: accountRegion } })
+          : $t('frameleaf_cloud_link_continue_account_region')}
+      </button>
+      <button type="button" class="auth-link" disabled={busy} onclick={() => void run(() => cloudManager.cancelLink())}>
+        {$t('cancel')}
+      </button>
+    </div>
+  </div>
 {:else}
+  {#if regionMismatch}
+    <p class="auth-error" role="alert">
+      {regionMismatch.lastError || $t('frameleaf_cloud_link_refusal_region_mismatch_body')}
+    </p>
+  {/if}
   <button
     type="button"
     class="button auth-frameleaf frs-frameleaf-button"
