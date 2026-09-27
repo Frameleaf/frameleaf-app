@@ -19,7 +19,11 @@ import { TagAssetTable } from 'src/schema/tables/tag-asset.table.js';
 import { TagTable } from 'src/schema/tables/tag.table.js';
 import { getHiddenContentFilter, tagHasVisibleAssetOrNoAssets, tagIsSuppressed } from 'src/utils/database.js';
 
-export type TagSearchOptions = HiddenContentQueryOptions;
+/**
+ * `hideLocked`: the session is not unlocked, so a tag carried only by locked items is left out
+ * (owner decision, September 27, 2026; see `tagHasVisibleAssetOrNoAssets`).
+ */
+export type TagSearchOptions = HiddenContentQueryOptions & { hideLocked?: boolean };
 
 /** A tag's new leaf name, colour and parent (`null`: top level); omitted fields stay as they are. */
 export type TagUpdate = { name?: string; color?: string | null; parentId?: string | null };
@@ -63,7 +67,7 @@ export class TagRepository {
     );
   }
 
-  @GenerateSql({ params: [DummyValue.UUID, { excludeNsfw: true }] })
+  @GenerateSql({ params: [DummyValue.UUID, { excludeNsfw: true, hideLocked: true }] })
   getAll(userId: string, options: TagSearchOptions = {}) {
     // FL-46: a session that is not unlocked never lists a suppressed tag or one nested under it,
     // even an empty one, so the list agrees with the 404 its own page answers
@@ -75,8 +79,10 @@ export class TagRepository {
       .$if(suppressedTagIds.length > 0, (qb) =>
         qb.where(sql<boolean>`not ${tagIsSuppressed(sql.ref('tag.id'), suppressedTagIds)}`),
       )
-      .$if(!!getHiddenContentFilter(options), (qb) =>
-        qb.where(tagHasVisibleAssetOrNoAssets(sql.ref('tag.id'), getHiddenContentFilter(options))),
+      .where(
+        tagHasVisibleAssetOrNoAssets(sql.ref('tag.id'), getHiddenContentFilter(options), {
+          hideLocked: options.hideLocked,
+        }),
       )
       .orderBy('value')
       .execute();

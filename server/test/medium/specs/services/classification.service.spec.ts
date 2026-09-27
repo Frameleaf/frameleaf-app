@@ -697,6 +697,10 @@ describe(ClassificationService.name, () => {
       const lake = await tagOf(ctx, user.id, 'lake');
       const { asset: locked } = await ctx.newAsset({ ownerId: user.id, visibility: AssetVisibility.Locked });
       await tagAsset(ctx, lake.id, locked.id);
+      // a tag carried only by locked items is hidden from a locked session (owner decision,
+      // September 27, 2026), so one visible item carries it too
+      const { asset: visible } = await ctx.newAsset({ ownerId: user.id });
+      await tagAsset(ctx, lake.id, visible.id);
       const rule = await sut.createRule(auth, {
         ...baseRule,
         albumName: 'Lake',
@@ -706,10 +710,10 @@ describe(ClassificationService.name, () => {
       });
 
       const preview = await sut.preview(auth, { ...baseRule, tagIds: [lake.id], sampleSize: 10 });
-      expect(preview.matched).toBe(0);
+      expect(preview.matched).toBe(1);
       await sut.evaluateAsset(locked.id, user.id);
       await sut.apply(auth, rule.id, { assetIds: [locked.id] });
-      expect(await albumAssetIds(ctx, rule.albumId)).toEqual([]);
+      expect(await albumAssetIds(ctx, rule.albumId)).not.toContain(locked.id);
       expect(await decisionOf(ctx, rule.id, locked.id)).toBeUndefined();
     });
 

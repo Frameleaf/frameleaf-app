@@ -56,6 +56,7 @@ import {
   isDefaultVisible,
   isLocked,
   isNotLocked,
+  lockedAssetIdExists,
   notLockedOrOwnedBy,
   visibilityIn,
   visibilityIs,
@@ -1527,16 +1528,34 @@ const taggedAssetExists = (tagId: Expression<unknown>) => sql<boolean>`exists (
       where tag_closure.id_ancestor = ${tagId}
     )`;
 
-const nonHiddenTaggedAssetExists = (tagId: Expression<unknown>, filter = nsfwOnlyFilter) => sql<boolean>`exists (
+const nonHiddenTaggedAssetExists = (
+  tagId: Expression<unknown>,
+  filter: HiddenContentFilter | undefined,
+  hideLocked: boolean,
+) => sql<boolean>`exists (
       select 1
       from tag_closure
       inner join tag_asset on tag_asset."tagId" = tag_closure.id_descendant
       where tag_closure.id_ancestor = ${tagId}
-        and not ${hiddenContentAssetIdExists(sql.ref('tag_asset.assetId'), filter)}
+        ${filter ? sql`and not ${hiddenContentAssetIdExists(sql.ref('tag_asset.assetId'), filter)}` : sql``}
+        ${hideLocked ? sql`and not ${lockedAssetIdExists(sql.ref('tag_asset.assetId'))}` : sql``}
     )`;
 
-export const tagHasVisibleAssetOrNoAssets = (tagId: Expression<unknown>, filter?: HiddenContentFilter) =>
-  sql<boolean>`(not ${taggedAssetExists(tagId)} or ${nonHiddenTaggedAssetExists(tagId, filter)})`;
+/**
+ * FL-46 / FL-34 (owner decision, September 27, 2026): a tag the session may see. A tag without items
+ * always shows; otherwise it, or a tag under it, must carry an item the session sees: not hidden by
+ * `filter` (the Locked rules, NSFW) and, with `hideLocked` (a session that is not unlocked), not
+ * locked for any reason. A tag carried only by hidden items is therefore hidden itself until one
+ * visible item carries it. Without a filter and without `hideLocked` every tag shows.
+ */
+export const tagHasVisibleAssetOrNoAssets = (
+  tagId: Expression<unknown>,
+  filter?: HiddenContentFilter,
+  { hideLocked = false }: { hideLocked?: boolean } = {},
+) =>
+  filter || hideLocked
+    ? sql<boolean>`(not ${taggedAssetExists(tagId)} or ${nonHiddenTaggedAssetExists(tagId, filter, hideLocked)})`
+    : sql<boolean>`true`;
 
 /**
  * FL-46: the tag is one of the suppressed tags or nested under one. Suppressing a tag hides the

@@ -85,6 +85,18 @@ describe('/tags', () => {
       expect(status).toBe(201);
     });
 
+    // owner decision, September 27, 2026 ("use the existing tag regardless", FL-46)
+    it('should answer an existing name with that tag instead of an error', async () => {
+      const existing = await create(admin.accessToken, { name: 'TagA' });
+      const { status, body } = await request(app)
+        .post('/tags')
+        .set('Authorization', `Bearer ${admin.accessToken}`)
+        .send({ name: 'TagA', color: '#00ff00' });
+      expect(status).toBe(201);
+      expect(body).toEqual(expect.objectContaining({ id: existing.id, name: 'TagA', value: 'TagA' }));
+      expect(body.color).toBeUndefined();
+    });
+
     it('should create a nested tag', async () => {
       const parent = await create(admin.accessToken, { name: 'TagA' });
       const { status, body } = await request(app)
