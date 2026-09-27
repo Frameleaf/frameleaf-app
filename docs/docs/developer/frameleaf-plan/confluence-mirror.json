@@ -818,18 +818,18 @@
       "version": 2
     },
     {
-      "bytes": 36905,
+      "bytes": 37001,
       "category": "development",
       "id": "61407844",
       "source": "docs/docs/developer/frameleaf-development.md",
-      "sourceCommit": "7372de4ff09a3c5d4b8f18b03b1e1e20094bd85b",
-      "sourceSha256": "45ea138f660b1ec09ed79966d6c4cef0dbdcfe2ae66e1e98665c45260d366956",
+      "sourceCommit": "239bd9b4a549ac55fa3a316768e8e82d933b75f3",
+      "sourceSha256": "0e61a08701a263f567dd705aae97e60278510d79f2bbfb2d55b0250b977c40ba",
       "title": "Frameleaf Development and Delivery",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61407844",
-      "verification": "Integration image on push: Confluence page read back at version 17 as markdown (published as HTML to keep smart links); the header carries source hash 45ea138f and 36905 bytes and names commit 7372de4ff0 on master/frameleaf-implementation, keeping the FL-142/FL-145/FL-146, integration-image, Flutter-removal, FL-191 and FL-159 history; compared with version 16, the only differences are the header and, under Integration image (pre-release), the push trigger sentence and the example commands (list and watch the latest run instead of dispatching); the page-only earlier checkpoints are unchanged; no user additions.",
+      "verification": "Integration image concurrency: Confluence page read back at version 18 as markdown (published as HTML to keep smart links); the header carries source hash 0e61a087 and 37001 bytes and names commit 239bd9b4a5 on master/frameleaf-implementation, keeping the 7372de4ff0, FL-142/FL-145/FL-146, integration-image, Flutter-removal, FL-191 and FL-159 history; compared with version 17, the only differences are the header and, under Integration image (pre-release), the one-build-at-a-time sentence (a running build finishes, a newer push replaces the queued run); the page-only earlier checkpoints are unchanged; no user additions.",
       "verified": true,
-      "verifiedAt": "2026-09-27T18:49:00.000Z",
-      "version": 17
+      "verifiedAt": "2026-09-27T19:08:00.000Z",
+      "version": 18
     },
     {
       "bytes": 411,
