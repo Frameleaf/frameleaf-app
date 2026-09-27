@@ -56,4 +56,23 @@ describe('MaintenanceSection integrity polling (FL-81)', () => {
     await vi.advanceTimersByTimeAsync(2000); // done
     expect(sdkMock.getIntegrityReportSummary).toHaveBeenCalledTimes(2);
   });
+
+  it('shows the integrity checks even when the backups cannot be listed', async () => {
+    sdkMock.getQueuesLegacy.mockResolvedValue(queue(false));
+    sdkMock.listDatabaseBackups.mockRejectedValue(new Error('500'));
+
+    render(MaintenanceSection, { section: 'integrity' });
+
+    expect(await screen.findByRole('article', { name: 'Untracked Files' })).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('says the backups could not be loaded in the backups section', async () => {
+    sdkMock.getQueuesLegacy.mockResolvedValue(queue(false));
+    sdkMock.listDatabaseBackups.mockRejectedValue(new Error('500'));
+
+    render(MaintenanceSection, { section: 'backups' });
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(en.frameleaf_cc_load_failed);
+  });
 });
