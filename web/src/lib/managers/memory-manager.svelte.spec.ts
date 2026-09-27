@@ -201,3 +201,28 @@ describe('memoryManager curation (FL-62)', () => {
     expect(searchMemories).toHaveBeenCalled();
   });
 });
+
+describe('memoryManager on a lock or unlock (FL-195 follow-up)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('drops what the other session state saw and reads the memories again', async () => {
+    const { eventManager } = await import('$lib/managers/event-manager.svelte');
+    memoryManager.memories = [memory()];
+    const mixed = { ...memory(), id: 'memory-mixed' };
+    vi.mocked(searchMemories).mockResolvedValueOnce([mixed]);
+    vi.mocked(memoriesStatistics).mockResolvedValueOnce({ total: 1 });
+
+    eventManager.emit('SessionAccessChanged', { isElevated: true });
+
+    await vi.waitFor(() => expect(memoryManager.memories.map(({ id }) => id)).toEqual(['memory-mixed']));
+    expect(searchMemories).toHaveBeenCalledWith(expect.objectContaining({ page: 1 }));
+
+    vi.mocked(searchMemories).mockResolvedValueOnce([]);
+    vi.mocked(memoriesStatistics).mockResolvedValueOnce({ total: 0 });
+    eventManager.emit('SessionAccessChanged', { isElevated: false });
+
+    await vi.waitFor(() => expect(memoryManager.memories).toEqual([]));
+  });
+});
