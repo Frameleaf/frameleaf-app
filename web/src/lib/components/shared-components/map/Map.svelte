@@ -1,11 +1,9 @@
 <script lang="ts" module>
-  import { addProtocol, setWorkerUrl } from 'maplibre-gl';
+  import { setWorkerUrl } from 'maplibre-gl';
   import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
-  import { Protocol } from 'pmtiles';
 
-  let protocol = new Protocol();
+  // FC-69: the Frameleaf tile host serves plain Z/X/Y vector tiles, so no pmtiles:// protocol is registered.
   setWorkerUrl(workerUrl);
-  void addProtocol('pmtiles', protocol.tile);
 </script>
 
 <script lang="ts">

@@ -877,9 +877,6 @@ importers:
       media-chrome:
         specifier: ^4.19.0
         version: 4.19.2(react@19.2.8)
-      pmtiles:
-        specifier: ^4.3.0
-        version: 4.5.0
       qrcode:
         specifier: ^1.5.4
         version: 1.5.4
@@ -10605,9 +10602,6 @@ packages:
 
   pmtiles@3.2.1:
     resolution: {integrity: sha512-3R4fBwwoli5mw7a6t1IGwOtfmcSAODq6Okz0zkXhS1zi9sz1ssjjIfslwPvcWw5TNhdjNBUg9fgfPLeqZlH6ng==}
-
-  pmtiles@4.5.0:
-    resolution: {integrity: sha512-CBeD4SoUluFziGdy/8k7FOjQxQy486n+929W/tWophauvMICpkZ26vGBWhDt/6b1FZQWNaf4jFdT/5+q0Wii5w==}
 
   pngjs@5.0.0:
     resolution: {integrity: sha512-40QW5YalBNfQo5yRYmiw7Yz6TKKVr3h6970B2YE+3fQpsWcrbj1PzJgxeJ19DRQjhMbKPIuMY8rFaXc8moolVw==}
@@ -24494,10 +24488,6 @@ snapshots:
   pmtiles@3.2.1:
     dependencies:
       '@types/leaflet': 1.9.21
-      fflate: 0.8.3
-
-  pmtiles@4.5.0:
-    dependencies:
       fflate: 0.8.3
 
   pngjs@5.0.0: {}
