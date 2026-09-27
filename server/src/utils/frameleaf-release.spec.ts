@@ -1,10 +1,13 @@
 import { ReleaseChannel } from 'src/enum.js';
 import {
   FrameleafFeedRelease,
+  isReleaseOffered,
   newestFrameleafRelease,
   parseFrameleafFeedRelease,
   parseFrameleafReleaseTag,
+  parseReleaseBodyFlags,
   releaseFeedChannel,
+  rolloutBucket,
 } from 'src/utils/frameleaf-release.js';
 import { cloudContractFixture } from 'test/fixtures/frameleaf-cloud-contracts.js';
 
@@ -33,10 +36,14 @@ describe('parseFrameleafFeedRelease', () => {
     expect(parseFrameleafFeedRelease(stable, ReleaseChannel.Stable)).toEqual({
       version: stable.version,
       publishedAt: stable.publishedAt,
+      withdrawn: false,
+      rolloutPercent: null,
     });
     expect(parseFrameleafFeedRelease(beta, ReleaseChannel.ReleaseCandidate)).toEqual({
       version: beta.version,
       publishedAt: beta.publishedAt,
+      withdrawn: false,
+      rolloutPercent: null,
     });
     expect(parseFrameleafFeedRelease(beta, ReleaseChannel.Stable)).toBeUndefined();
     expect(parseFrameleafReleaseTag(stable.tag)).toEqual({ version: stable.version, sequence: 4 });
@@ -47,6 +54,8 @@ describe('parseFrameleafFeedRelease', () => {
     expect(parseFrameleafFeedRelease(feedRelease, ReleaseChannel.Stable)).toEqual({
       version: '3.2.1',
       publishedAt: '2026-09-25T12:00:00Z',
+      withdrawn: false,
+      rolloutPercent: null,
     });
     expect(parseFrameleafFeedRelease({ ...feedRelease, minimumSupported: '3.0.0' }, ReleaseChannel.Stable)).toEqual(
       expect.objectContaining({ version: '3.2.1' }),
@@ -122,5 +131,57 @@ describe('newestFrameleafRelease', () => {
     expect(newestFrameleafRelease(releases, false)?.tag.version).toBe('3.2.0');
     expect(newestFrameleafRelease(releases, true)?.tag.version).toBe('3.3.0-rc.1');
     expect(newestFrameleafRelease([release('v1.0.0')], true)).toBeUndefined();
+  });
+});
+
+describe('kill switch and staged rollout (FL-142)', () => {
+  it('reads the withdrawn and rollout lines of a release body', () => {
+    expect(parseReleaseBodyFlags(null)).toEqual({ withdrawn: false, rolloutPercent: null });
+    expect(parseReleaseBodyFlags('Certified source: abc\n\nrollout: 25%\n')).toEqual({
+      withdrawn: false,
+      rolloutPercent: 25,
+    });
+    expect(parseReleaseBodyFlags('Withdrawn: database migration fails on ARM\nrollout: 100')).toEqual({
+      withdrawn: true,
+      rolloutPercent: 100,
+    });
+    // a typo never offers a release to everyone
+    expect(parseReleaseBodyFlags('rollout: half').rolloutPercent).toBe(0);
+    expect(parseReleaseBodyFlags('rollout: 250%').rolloutPercent).toBe(0);
+    // an empty reason, or the word inside a sentence, is not a withdrawal
+    expect(parseReleaseBodyFlags('withdrawn:\nThis fixes a release that was withdrawn: no').withdrawn).toBe(false);
+  });
+
+  it('places a server in a release rollout by its private seed, with a separate order per release', () => {
+    expect(rolloutBucket('seed', '3.2.1')).toBe(rolloutBucket('seed', '3.2.1'));
+    const buckets = new Set(Array.from({ length: 200 }, (_, i) => rolloutBucket(`seed-${i}`, '3.2.1')));
+    expect(buckets.size).toBeGreaterThan(50);
+    for (const bucket of buckets) {
+      expect(bucket).toBeGreaterThanOrEqual(0);
+      expect(bucket).toBeLessThan(100);
+    }
+    const orders = Array.from(
+      { length: 20 },
+      (_, i) => rolloutBucket(`seed-${i}`, '3.2.1') === rolloutBucket(`seed-${i}`, '3.3.0'),
+    );
+    expect(orders.every(Boolean)).toBe(false);
+  });
+
+  it('offers a release unless it is withdrawn or staged past this server', () => {
+    const bucket = rolloutBucket('seed', '3.2.1');
+    expect(isReleaseOffered({ withdrawn: false, rolloutPercent: null }, 'seed', '3.2.1')).toBe(true);
+    expect(isReleaseOffered({ withdrawn: true, rolloutPercent: null }, 'seed', '3.2.1')).toBe(false);
+    expect(isReleaseOffered({ withdrawn: false, rolloutPercent: bucket }, 'seed', '3.2.1')).toBe(false);
+    expect(isReleaseOffered({ withdrawn: false, rolloutPercent: bucket + 1 }, 'seed', '3.2.1')).toBe(true);
+    expect(isReleaseOffered({ withdrawn: false, rolloutPercent: 0 }, 'seed', '3.2.1')).toBe(false);
+    expect(isReleaseOffered({ withdrawn: false, rolloutPercent: 100 }, 'seed', '3.2.1')).toBe(true);
+  });
+
+  it('reads the kill switch and rollout of a feed release', () => {
+    expect(
+      parseFrameleafFeedRelease({ ...feedRelease, withdrawn: true, rolloutPercent: 10 }, ReleaseChannel.Stable),
+    ).toEqual(expect.objectContaining({ withdrawn: true, rolloutPercent: 10 }));
+    expect(parseFrameleafFeedRelease({ ...feedRelease, rolloutPercent: 101 }, ReleaseChannel.Stable)).toBeUndefined();
+    expect(parseFrameleafFeedRelease({ ...feedRelease, withdrawn: 'no' }, ReleaseChannel.Stable)).toBeUndefined();
   });
 });

@@ -2,7 +2,7 @@ import { ReleaseChannel } from 'src/enum.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { ServerInfoRepository } from 'src/repositories/server-info.repository.js';
-import { FrameleafFeedRelease } from 'src/utils/frameleaf-release.js';
+import { FrameleafFeedRelease, rolloutBucket } from 'src/utils/frameleaf-release.js';
 
 // Frameleaf Cloud release feed response (FC-70, `GET /v1/releases/latest`).
 // TODO(FC-70): replace with the shared fixture in packages/contracts/fixtures/releases/ when it lands.
@@ -16,6 +16,7 @@ const feedRelease = (extra: Partial<FrameleafFeedRelease> = {}): FrameleafFeedRe
   ...extra,
 });
 
+const SEED = 'seed-for-tests';
 const FEED = 'https://api.frameleaf.cloud/v1/releases/latest';
 const GITHUB = 'https://api.github.com/repos/Frameleaf/frameleaf-app/releases';
 
@@ -55,7 +56,7 @@ describe('Frameleaf version check (FL-80 S-4 / O-8, FL-192)', () => {
       const fetch = respond(feedRelease());
       vitest.stubGlobal('fetch', fetch);
 
-      await expect(repository.getLatestRelease(ReleaseChannel.Stable)).resolves.toEqual({
+      await expect(repository.getLatestRelease(ReleaseChannel.Stable, SEED)).resolves.toEqual({
         version: 'v3.2.1',
         published_at: '2026-09-25T12:00:00Z',
       });
@@ -70,7 +71,7 @@ describe('Frameleaf version check (FL-80 S-4 / O-8, FL-192)', () => {
       const fetch = respond(feedRelease({ version: '3.3.0-rc.1', tag: 'frameleaf-v3.3.0-rc.1-2' }));
       vitest.stubGlobal('fetch', fetch);
 
-      await expect(repository.getLatestRelease(ReleaseChannel.ReleaseCandidate)).resolves.toEqual(
+      await expect(repository.getLatestRelease(ReleaseChannel.ReleaseCandidate, SEED)).resolves.toEqual(
         expect.objectContaining({ version: 'v3.3.0-rc.1' }),
       );
       expect(fetch.mock.calls[0][0]).toBe(`${FEED}?channel=beta`);
@@ -80,7 +81,7 @@ describe('Frameleaf version check (FL-80 S-4 / O-8, FL-192)', () => {
       const fetch = respond(feedRelease());
       vitest.stubGlobal('fetch', fetch);
 
-      await repository.getLatestRelease(ReleaseChannel.Stable);
+      await repository.getLatestRelease(ReleaseChannel.Stable, SEED);
 
       const [url, init] = fetch.mock.calls[0];
       expect(new URL(url).searchParams.keys().toArray()).toEqual(['channel']);
@@ -101,7 +102,7 @@ describe('Frameleaf version check (FL-80 S-4 / O-8, FL-192)', () => {
         .mockResolvedValueOnce(Response.json(release('frameleaf-v3.2.0-2')));
       vitest.stubGlobal('fetch', fetch);
 
-      await expect(repository.getLatestRelease(ReleaseChannel.Stable)).resolves.toEqual({
+      await expect(repository.getLatestRelease(ReleaseChannel.Stable, SEED)).resolves.toEqual({
         version: 'v3.2.0',
         published_at: '2026-09-25T12:00:00Z',
       });
@@ -115,7 +116,7 @@ describe('Frameleaf version check (FL-80 S-4 / O-8, FL-192)', () => {
         .mockResolvedValueOnce(Response.json(release('frameleaf-v3.2.0-2')));
       vitest.stubGlobal('fetch', fetch);
 
-      await expect(repository.getLatestRelease(ReleaseChannel.Stable)).resolves.toEqual(
+      await expect(repository.getLatestRelease(ReleaseChannel.Stable, SEED)).resolves.toEqual(
         expect.objectContaining({ version: 'v3.2.0' }),
       );
       expect(fetch).toHaveBeenCalledTimes(2);
@@ -127,7 +128,7 @@ describe('Frameleaf version check (FL-80 S-4 / O-8, FL-192)', () => {
       const fetch = feedDownThen(Response.json(release('frameleaf-v3.2.1-4')));
       vitest.stubGlobal('fetch', fetch);
 
-      await expect(repository.getLatestRelease(ReleaseChannel.Stable)).resolves.toEqual({
+      await expect(repository.getLatestRelease(ReleaseChannel.Stable, SEED)).resolves.toEqual({
         version: 'v3.2.1',
         published_at: '2026-09-25T12:00:00Z',
       });
@@ -149,7 +150,7 @@ describe('Frameleaf version check (FL-80 S-4 / O-8, FL-192)', () => {
       );
       vitest.stubGlobal('fetch', fetch);
 
-      await expect(repository.getLatestRelease(ReleaseChannel.ReleaseCandidate)).resolves.toEqual(
+      await expect(repository.getLatestRelease(ReleaseChannel.ReleaseCandidate, SEED)).resolves.toEqual(
         expect.objectContaining({ version: 'v3.3.0-rc.1' }),
       );
       expect(fetch.mock.calls.map(([url]) => url)).toEqual([`${FEED}?channel=beta`, `${GITHUB}?per_page=30`]);
@@ -166,7 +167,7 @@ describe('Frameleaf version check (FL-80 S-4 / O-8, FL-192)', () => {
       );
       vitest.stubGlobal('fetch', fetch);
 
-      await expect(repository.getLatestRelease(ReleaseChannel.Stable)).resolves.toEqual(
+      await expect(repository.getLatestRelease(ReleaseChannel.Stable, SEED)).resolves.toEqual(
         expect.objectContaining({ version: 'v3.2.1' }),
       );
       expect(fetch.mock.calls.map(([url]) => url)).toEqual([
@@ -178,12 +179,12 @@ describe('Frameleaf version check (FL-80 S-4 / O-8, FL-192)', () => {
 
     it('fails when neither source has a Frameleaf release', async () => {
       vitest.stubGlobal('fetch', feedDownThen(Response.json(release('v3.2.1')), Response.json([release('v3.2.1')])));
-      await expect(repository.getLatestRelease(ReleaseChannel.Stable)).rejects.toThrow(
+      await expect(repository.getLatestRelease(ReleaseChannel.Stable, SEED)).rejects.toThrow(
         'Failed to fetch latest release',
       );
 
       vitest.stubGlobal('fetch', respond({ message: 'rate limited' }, 403));
-      await expect(repository.getLatestRelease(ReleaseChannel.Stable)).rejects.toThrow(
+      await expect(repository.getLatestRelease(ReleaseChannel.Stable, SEED)).rejects.toThrow(
         'Failed to fetch latest release',
       );
     });
@@ -202,7 +203,7 @@ describe('Frameleaf version check (FL-80 S-4 / O-8, FL-192)', () => {
         ),
       );
 
-      const error = await repository.getLatestRelease(ReleaseChannel.Stable).catch((error_: Error) => error_);
+      const error = await repository.getLatestRelease(ReleaseChannel.Stable, SEED).catch((error_: Error) => error_);
       expect(error).toBeInstanceOf(Error);
       expect((error as Error).message).toBe('Failed to fetch latest release');
       expect(((error as Error).cause as Error).message).toBe(
@@ -211,11 +212,86 @@ describe('Frameleaf version check (FL-80 S-4 / O-8, FL-192)', () => {
     });
   });
 
+  describe('kill switch and staged rollout (FL-142)', () => {
+    const bucket = rolloutBucket(SEED, '3.2.1');
+
+    it('offers a feed release inside its staged rollout', async () => {
+      vitest.stubGlobal('fetch', respond(feedRelease({ rolloutPercent: bucket + 1 })));
+      await expect(repository.getLatestRelease(ReleaseChannel.Stable, SEED)).resolves.toEqual(
+        expect.objectContaining({ version: 'v3.2.1' }),
+      );
+    });
+
+    it.each([
+      ['withdrawn', { withdrawn: true }],
+      ['staged to servers this one is not among', { rolloutPercent: bucket }],
+    ])('does not offer a feed release that is %s, and finds the earlier one on GitHub', async (_, flags) => {
+      const fetch = vitest
+        .fn()
+        .mockResolvedValueOnce(Response.json(feedRelease(flags)))
+        .mockResolvedValueOnce(Response.json(release('frameleaf-v3.2.1-4')))
+        .mockResolvedValueOnce(Response.json([release('frameleaf-v3.2.1-4'), release('frameleaf-v3.2.0-2')]));
+      vitest.stubGlobal('fetch', fetch);
+
+      await expect(repository.getLatestRelease(ReleaseChannel.Stable, SEED)).resolves.toEqual(
+        expect.objectContaining({ version: 'v3.2.0' }),
+      );
+    });
+
+    it('offers nothing when the feed withdrew its release and GitHub has no earlier one', async () => {
+      vitest.stubGlobal(
+        'fetch',
+        vitest
+          .fn()
+          .mockResolvedValueOnce(Response.json(feedRelease({ withdrawn: true })))
+          .mockResolvedValue(Response.json({ message: 'unavailable' }, { status: 503 })),
+      );
+      await expect(repository.getLatestRelease(ReleaseChannel.Stable, SEED)).resolves.toBeNull();
+    });
+
+    it('skips GitHub releases whose body withdraws them or stages them past this server', async () => {
+      const withdrawn = release('frameleaf-v3.2.1-4', { body: 'Notes\nwithdrawn: data loss on upgrade\n' });
+      vitest.stubGlobal(
+        'fetch',
+        feedDownThen(
+          Response.json(withdrawn),
+          Response.json([
+            withdrawn,
+            release('frameleaf-v3.2.0-2', { body: `rollout: ${rolloutBucket(SEED, '3.2.0')}%` }),
+            release('frameleaf-v3.1.0-1'),
+          ]),
+        ),
+      );
+      await expect(repository.getLatestRelease(ReleaseChannel.Stable, SEED)).resolves.toEqual(
+        expect.objectContaining({ version: 'v3.1.0' }),
+      );
+    });
+
+    it('offers nothing when every Frameleaf release on GitHub is withdrawn', async () => {
+      const withdrawn = release('frameleaf-v3.2.1-4', { body: 'withdrawn: broken' });
+      vitest.stubGlobal('fetch', feedDownThen(Response.json(withdrawn), Response.json([withdrawn])));
+      await expect(repository.getLatestRelease(ReleaseChannel.Stable, SEED)).resolves.toBeNull();
+    });
+
+    it('falls back to GitHub on a malformed kill switch or rollout in the feed', async () => {
+      for (const flags of [{ withdrawn: 'yes' }, { rolloutPercent: 150 }, { rolloutPercent: 12.5 }]) {
+        const fetch = vitest
+          .fn()
+          .mockResolvedValueOnce(Response.json(feedRelease(flags as Partial<FrameleafFeedRelease>)))
+          .mockResolvedValueOnce(Response.json(release('frameleaf-v3.2.0-2')));
+        vitest.stubGlobal('fetch', fetch);
+        await expect(repository.getLatestRelease(ReleaseChannel.Stable, SEED)).resolves.toEqual(
+          expect.objectContaining({ version: 'v3.2.0' }),
+        );
+      }
+    });
+  });
+
   it('never contacts an Immich service', async () => {
     for (const fetch of [respond(feedRelease()), respond({ message: 'unavailable' }, 503)]) {
       vitest.stubGlobal('fetch', fetch);
       for (const channel of Object.values(ReleaseChannel)) {
-        await repository.getLatestRelease(channel).catch(() => {});
+        await repository.getLatestRelease(channel, SEED).catch(() => {});
       }
       for (const [url] of fetch.mock.calls) {
         expect(String(url)).not.toMatch(/immich/i);

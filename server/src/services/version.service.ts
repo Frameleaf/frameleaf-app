@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { DateTime } from 'luxon';
+import { randomBytes } from 'node:crypto';
 import { SemVer, diff, intersects, lt } from 'semver';
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import type { IBaseJob, VersionCheckMetadata } from 'src/types.js';
@@ -196,10 +197,17 @@ export class VersionService extends BaseService {
 
   private manualCheck?: Promise<VersionCheckMetadata>;
 
+  /**
+   * FL-142: a release that is withdrawn, or staged to servers this one is not among yet, is not offered. With
+   * nothing offered, the running version is recorded as the newest, so no update is announced.
+   */
   private async checkAndNotify(channel: ReleaseChannel): Promise<VersionCheckMetadata> {
-    const { version: releaseVersion, published_at: publishedAt } =
-      await this.serverInfoRepository.getLatestRelease(channel);
-    const metadata: VersionCheckMetadata = { checkedAt: DateTime.utc().toISO(), releaseVersion };
+    const previous = await this.systemMetadataRepository.get(SystemMetadataKey.VersionCheckState);
+    const rolloutSeed = previous?.rolloutSeed ?? randomBytes(16).toString('hex');
+    const release = await this.serverInfoRepository.getLatestRelease(channel, rolloutSeed);
+    const releaseVersion = release?.version ?? `v${serverVersion.toString()}`;
+    const publishedAt = release?.published_at ?? '';
+    const metadata: VersionCheckMetadata = { checkedAt: DateTime.utc().toISO(), releaseVersion, rolloutSeed };
 
     await this.systemMetadataRepository.set(SystemMetadataKey.VersionCheckState, metadata);
 
