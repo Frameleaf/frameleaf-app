@@ -25,7 +25,8 @@ describe(EdgeDirectService.name, () => {
   const connect = (servername: string) =>
     new Promise<{ subject: string; closedByServer: boolean }>((resolve, reject) => {
       const socket = tls.connect({ host: '127.0.0.1', port, servername, rejectUnauthorized: false }, () => {
-        const subject = socket.getPeerCertificate().subject?.CN ?? '';
+        const cn = socket.getPeerCertificate().subject?.CN;
+        const subject = (Array.isArray(cn) ? cn[0] : cn) ?? '';
         socket.once('close', () => resolve({ subject, closedByServer: true }));
         setTimeout(() => {
           socket.destroy();
