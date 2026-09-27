@@ -1528,9 +1528,11 @@ describe(CloudBackupService.name, () => {
       keys.read.mockResolvedValue(keyFileOf());
       index.listKeptManifests.mockResolvedValue([kept]);
       store.get = vi.fn().mockResolvedValue(manifestBody);
-      store.download = vi.fn().mockImplementation((_connection, _key, _bucketKey, _target, sha256: string) =>
-        Promise.resolve({ size: 1, sha256 }),
-      );
+      store.download = vi
+        .fn()
+        .mockImplementation((_connection, _key, _bucketKey, _target, sha256: string) =>
+          Promise.resolve({ size: 1, sha256 }),
+        );
     });
 
     it('queues a restore under the bucket lock, named without the item, only from a kept backup', async () => {

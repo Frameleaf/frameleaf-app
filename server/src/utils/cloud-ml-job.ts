@@ -501,9 +501,12 @@ export type CloudMlJobActivity = {
  * The Activity view of a `cloud_ml_job` operation, or null for any other kind (or a snapshot that
  * cannot be read). Only the stage, model name and money are shown: never a file name, path or digest.
  */
-export const cloudMlJobActivity = (
-  operation: { kind: string; status: string; snapshot: unknown; result: unknown },
-): CloudMlJobActivity | null => {
+export const cloudMlJobActivity = (operation: {
+  kind: string;
+  status: string;
+  snapshot: unknown;
+  result: unknown;
+}): CloudMlJobActivity | null => {
   if (operation.kind !== MediaOperationKind.CloudMlJob) {
     return null;
   }
