@@ -101,6 +101,7 @@ export const envData: EnvData = {
     edge: { port: 2443, bind: '0.0.0.0', secret: null, acmeDirectoryUrl: null },
     localUrl: null,
     trustedLanCidrs: [],
+    licenseExtraJwksFile: null,
   },
 
   noColor: false,

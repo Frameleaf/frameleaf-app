@@ -32,6 +32,7 @@ import {
 import { FrameleafCloudPublicCall } from 'src/repositories/frameleaf-cloud.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { isGranted } from 'src/utils/access.js';
+import { FRAMELEAF_BUILD_CHANNEL, FrameleafBuildChannel } from 'src/utils/frameleaf-build-channel.js';
 import { loadInstanceIdentity, readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
 import {
   CloudErrorCode,
@@ -40,6 +41,7 @@ import {
   cloudErrorCode,
   storeAddress,
 } from 'src/utils/frameleaf-cloud.js';
+import { ExtraLicenseKeys, extraLicenseKeysLog, loadExtraLicenseKeys } from 'src/utils/frameleaf-license-extra-keys.js';
 import {
   BUNDLED_PRICING,
   LicenseSigningKey,
@@ -165,7 +167,9 @@ const ACTIVATION_PROOF_TTL_SECONDS = 120;
 /**
  * Frameleaf licence certificates replace the inherited product key (FL-156, CLD-003).
  *
- * - Certificates are verified only with the keys pinned in `FRAMELEAF_LICENSE_KEYS`.
+ * - Certificates are verified only with the keys pinned in `FRAMELEAF_LICENSE_KEYS`, plus, on a
+ *   pre-release integration build only, the keys of `FRAMELEAF_LICENSE_EXTRA_JWKS_FILE`
+ *   (`frameleaf-license-extra-keys.ts`). A release build never reads that file.
  * - The supporter key and the Frameleaf Cloud plan are held separately, so each can be removed alone.
  * - A daily refresh keeps them current; while it fails they stay on in grace, then the cloud flags
  *   turn off. Local data and self-hosted features never depend on any of this.
@@ -175,6 +179,34 @@ const ACTIVATION_PROOF_TTL_SECONDS = 120;
 export class FrameleafLicenseService extends BaseService {
   /** The pinned signing keys; a spec may pin its own. */
   protected licenseKeys: readonly LicenseSigningKey[] = FRAMELEAF_LICENSE_KEYS;
+  /** The channel compiled into this build; a spec may set its own. Never read from the environment. */
+  protected buildChannel: FrameleafBuildChannel = FRAMELEAF_BUILD_CHANNEL;
+  /** The extra licence keys, loaded once per process (integration builds only). */
+  private extraKeys?: ExtraLicenseKeys;
+
+  /** Load (once) and log the extra licence keys setting at startup, in every worker that verifies. */
+  @OnEvent({ name: 'AppBootstrap' })
+  onBootstrapLicenseKeys() {
+    this.extraLicenseKeys();
+  }
+
+  /** The extra licence keys this process trusts: none unless this is an integration build with a valid file. */
+  private extraLicenseKeys(): readonly LicenseSigningKey[] {
+    if (!this.extraKeys) {
+      this.extraKeys = loadExtraLicenseKeys({
+        channel: this.buildChannel,
+        path: this.configRepository.getEnv().frameleafCloud.licenseExtraJwksFile,
+        pinned: this.licenseKeys,
+      });
+      const line = extraLicenseKeysLog(this.extraKeys);
+      if (line?.level === 'warn') {
+        this.logger.warn(line.message);
+      } else if (line?.level === 'error') {
+        this.logger.error(line.message);
+      }
+    }
+    return this.extraKeys.state === 'active' && this.buildChannel === 'integration' ? this.extraKeys.keys : [];
+  }
 
   // ------------------------------------------------------------------ status
 
@@ -822,7 +854,7 @@ export class FrameleafLicenseService extends BaseService {
     let result: ReturnType<typeof verifyLicenseCertificate> = { ok: false, reason: 'instance' };
     for (const instanceId of instanceIds) {
       result = verifyLicenseCertificate(certificate, {
-        keys: this.licenseKeys,
+        keys: [...this.licenseKeys, ...this.extraLicenseKeys()],
         instanceId: instanceId!,
         accountId: linked ? link?.accountId : null,
         jkt: identity.kid,

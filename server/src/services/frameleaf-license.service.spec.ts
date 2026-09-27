@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
 import { decodeProtectedHeader, importJWK, jwtVerify } from 'jose';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -290,6 +290,88 @@ describe(FrameleafLicenseService.name, () => {
       await expect(sut.installCertificate(authStub.admin, { certificate: '{"format":"other"}' })).rejects.toThrow(
         'not a Frameleaf licence file',
       );
+    });
+
+    describe('extra licence keys (integration builds only, owner decision 2026-09-27)', () => {
+      const dev = makeLicenseSigner('active');
+      let jwksFile: string;
+      const devCertificate = () => signLicenseCertificate(dev, now(), { iid: instanceId() });
+      const withBuild = (channel: 'release' | 'integration', path: string | null = jwksFile) => {
+        (sut as unknown as { buildChannel: string }).buildChannel = channel;
+        const env = mocks.config.getEnv();
+        mocks.config.getEnv.mockReturnValue({
+          ...env,
+          frameleafCloud: { ...env.frameleafCloud, licenseExtraJwksFile: path },
+        } as never);
+        sut.onBootstrapLicenseKeys();
+      };
+
+      beforeEach(async () => {
+        jwksFile = join(identityDir, 'dev-keys.json');
+        await writeFile(
+          jwksFile,
+          JSON.stringify({
+            keys: [{ kty: 'OKP', crv: 'Ed25519', x: dev.key.x, kid: dev.key.kid, alg: 'EdDSA', use: 'sig' }],
+          }),
+        );
+      });
+
+      it('a release build ignores FRAMELEAF_LICENSE_EXTRA_JWKS_FILE and refuses the dev-signed certificate', async () => {
+        withBuild('release');
+        expect(mocks.logger.warn).toHaveBeenCalledWith(
+          expect.stringMatching(/is set .* but ignored: this is a release build/),
+        );
+        await expect(sut.installCertificate(authStub.admin, { certificate: devCertificate() })).rejects.toThrow(
+          'not a valid Frameleaf licence',
+        );
+        expect(store()).toBeUndefined();
+      });
+
+      it('an integration build logs a warning at startup and accepts a certificate the extra key signed', async () => {
+        withBuild('integration');
+        expect(mocks.logger.warn).toHaveBeenCalledWith(
+          expect.stringContaining(`Pre-release build trusting extra licence keys from ${jwksFile}`),
+        );
+        await expect(sut.installCertificate(authStub.admin, { certificate: devCertificate() })).resolves.toMatchObject({
+          state: 'active',
+          kind: 'plan',
+        });
+        expect(store()?.plan?.kid).toBe(dev.key.kid);
+      });
+
+      it('an integration build still verifies the pinned production keys', async () => {
+        withBuild('integration');
+        await expect(sut.installCertificate(authStub.admin, { certificate: certificate() })).resolves.toMatchObject({
+          state: 'active',
+        });
+        expect(store()?.plan?.kid).toBe(signer.key.kid);
+      });
+
+      it('an integration build with a bad file trusts nothing extra and says why', async () => {
+        await writeFile(
+          jwksFile,
+          JSON.stringify({ keys: [{ kty: 'OKP', crv: 'Ed25519', x: dev.key.x, kid: dev.key.kid, d: 'x' }] }),
+        );
+        withBuild('integration');
+        expect(mocks.logger.error).toHaveBeenCalledWith(
+          expect.stringMatching(/was rejected, so no extra licence keys are trusted: .*private key material/),
+        );
+        await expect(sut.installCertificate(authStub.admin, { certificate: devCertificate() })).rejects.toThrow(
+          'not a valid Frameleaf licence',
+        );
+        await expect(sut.installCertificate(authStub.admin, { certificate: certificate() })).resolves.toMatchObject({
+          state: 'active',
+        });
+      });
+
+      it('an integration build without the setting trusts only the pinned keys and logs nothing', async () => {
+        withBuild('integration', null);
+        expect(mocks.logger.warn).not.toHaveBeenCalled();
+        expect(mocks.logger.error).not.toHaveBeenCalled();
+        await expect(sut.installCertificate(authStub.admin, { certificate: devCertificate() })).rejects.toThrow(
+          'not a valid Frameleaf licence',
+        );
+      });
     });
   });
 
