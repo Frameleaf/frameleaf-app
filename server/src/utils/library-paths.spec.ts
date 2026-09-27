@@ -11,7 +11,11 @@ import {
 const readable = {
   stat: () => Promise.resolve({ isDirectory: () => true }),
   checkFileExists: () => Promise.resolve(true),
+  realpath: (filepath: string) => Promise.resolve(filepath),
 };
+
+/** A readable folder that is a symbolic link to `target`. */
+const linkedTo = (target: string) => ({ ...readable, realpath: () => Promise.resolve(target) });
 
 describe('library import folders (FL-78)', () => {
   beforeEach(() => {
@@ -56,6 +60,25 @@ describe('library import folders (FL-78)', () => {
     const [check] = await checkImportPaths(readable, ['/mnt/photos'], {
       neighbours: [{ id: 'other', name: 'Other', importPaths: ['/mnt/photos-old'] }],
     });
+    expect(check).toEqual({ importPath: '/mnt/photos', isValid: true, reason: LibraryImportPathReason.Valid });
+  });
+
+  it.each([
+    ['/data/upload/someone', LibraryImportPathReason.UploadFolder],
+    ['/', LibraryImportPathReason.ContainsUploadFolder],
+  ])('refuses a folder that is a symbolic link to %s', async (target, reason) => {
+    const [check] = await checkImportPaths(linkedTo(target), ['/mnt/photos']);
+    expect(check).toEqual(
+      expect.objectContaining({
+        isValid: false,
+        reason,
+        message: expect.stringContaining(`Import path resolves to ${target}`),
+      }),
+    );
+  });
+
+  it('accepts a folder that is a symbolic link to an ordinary folder', async () => {
+    const [check] = await checkImportPaths(linkedTo('/volume1/photos'), ['/mnt/photos']);
     expect(check).toEqual({ importPath: '/mnt/photos', isValid: true, reason: LibraryImportPathReason.Valid });
   });
 
