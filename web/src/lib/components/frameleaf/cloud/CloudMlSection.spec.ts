@@ -123,15 +123,15 @@ describe('CloudMlSection (FL-159, prototype Processing)', () => {
     await vi.waitFor(() => expect(within(select).getAllByRole('option')).toHaveLength(2));
     await fireEvent.change(select, { target: { value: 'user-2' } });
     await fireEvent.click(screen.getByRole('button', { name: 'Allow' }));
-    expect(store.draft.frameleafCloud.cloudMl.spenders).toEqual([{ userId: 'user-2', monthlyCapUsd: null }]);
+    expect(store.draft.frameleafCloud!.cloudMl.spenders).toEqual([{ userId: 'user-2', monthlyCapUsd: null }]);
 
     await fireEvent.change(screen.getByLabelText('Monthly limit for Robin · robin@example.test'), {
       target: { value: '25' },
     });
-    expect(store.draft.frameleafCloud.cloudMl.spenders).toEqual([{ userId: 'user-2', monthlyCapUsd: 25 }]);
+    expect(store.draft.frameleafCloud!.cloudMl.spenders).toEqual([{ userId: 'user-2', monthlyCapUsd: 25 }]);
 
     await fireEvent.click(screen.getByRole('button', { name: 'Stop allowing Robin · robin@example.test' }));
-    expect(store.draft.frameleafCloud.cloudMl.spenders).toEqual([]);
+    expect(store.draft.frameleafCloud!.cloudMl.spenders).toEqual([]);
   });
 
   it('asks to link the server first and keeps the toggle off until then', async () => {
