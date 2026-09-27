@@ -27,7 +27,13 @@ import {
 } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
 import { loadInstanceIdentity, readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
-import { CloudErrorCode, FrameleafCloudError, cloudErrorCode, storeAddress } from 'src/utils/frameleaf-cloud.js';
+import {
+  CloudErrorCode,
+  FrameleafCloudError,
+  accountStoreUrl,
+  cloudErrorCode,
+  storeAddress,
+} from 'src/utils/frameleaf-cloud.js';
 import {
   BUNDLED_PRICING,
   LicenseSigningKey,
@@ -191,7 +197,7 @@ export class FrameleafLicenseService extends BaseService {
   /**
    * The store (FL-177, as-built decision #29): the one discovery names (`store`, on the account site),
    * as the link last recorded it or as this process already holds discovery, else `/store` on the
-   * Frameleaf Cloud address this server was deployed with; none when that is unset. Either way it must
+   * account site (`accountStoreUrl`, never the API host); none when no cloud is configured. Either way it must
    * pass the cloud address rule. Nothing is fetched here.
    */
   private async storeUrl(): Promise<string | null> {
@@ -202,7 +208,7 @@ export class FrameleafLicenseService extends BaseService {
     const { link } = await readCloudLink(this.gatewayDeps());
     const recorded = link?.cloudUrl === cloudUrl ? storeAddress(cloudUrl, link.store) : null;
     const held = storeAddress(cloudUrl, this.frameleafCloudRepository.peekDiscovery(cloudUrl)?.store);
-    return recorded ?? held ?? `${cloudUrl}/store`;
+    return accountStoreUrl(cloudUrl, recorded ?? held);
   }
 
   // ------------------------------------------------------------------ server key and file
