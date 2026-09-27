@@ -31,6 +31,8 @@ describe(MemoryService.name, () => {
     mocks.memory.getBirthdaySubjects.mockResolvedValue([]);
     mocks.memory.getRecapSubjects.mockResolvedValue([]);
     mocks.memory.cleanupCurations.mockResolvedValue();
+    mocks.memory.searchExports.mockResolvedValue([]);
+    mocks.memory.getExistingExportIds.mockResolvedValue(new Set());
   });
 
   it('should be defined', () => {
@@ -45,6 +47,31 @@ describe(MemoryService.name, () => {
       await sut.onMemoriesCleanup();
       expect(mocks.memory.cleanup).toHaveBeenCalled();
       expect(mocks.memory.getReclaimableExports).toHaveBeenCalled();
+    });
+
+    it('removes export archives whose run is gone with its memory or owner', async () => {
+      const kept = newUuid();
+      const orphan = newUuid();
+      const partial = newUuid();
+      mocks.memory.cleanup.mockResolvedValue([]);
+      mocks.memory.getReclaimableExports.mockResolvedValue([]);
+      mocks.memory.getExistingExportIds.mockResolvedValue(new Set([kept]));
+      mocks.storage.walkFiles.mockImplementation(async function* () {
+        yield* await Promise.resolve([
+          `/data/exports/owner/${kept}.zip`,
+          `/data/exports/owner/${orphan}.zip`,
+          `/data/exports/owner/${partial}.zip.partial`,
+          '/data/exports/owner/notes.txt',
+        ]);
+      });
+
+      await sut.onMemoriesCleanup();
+
+      expect(mocks.memory.getExistingExportIds).toHaveBeenCalledWith(expect.arrayContaining([kept, orphan, partial]));
+      expect(mocks.storage.unlink).toHaveBeenCalledWith(`/data/exports/owner/${orphan}.zip`);
+      expect(mocks.storage.unlink).toHaveBeenCalledWith(`/data/exports/owner/${partial}.zip.partial`);
+      expect(mocks.storage.unlink).not.toHaveBeenCalledWith(`/data/exports/owner/${kept}.zip`);
+      expect(mocks.storage.unlink).not.toHaveBeenCalledWith('/data/exports/owner/notes.txt');
     });
   });
 
@@ -416,6 +443,27 @@ describe(MemoryService.name, () => {
 
       await expect(sut.remove(factory.auth(), memoryId)).resolves.toBeUndefined();
 
+      expect(mocks.memory.delete).toHaveBeenCalledWith(memoryId);
+    });
+
+    it('removes the private archives of its exports with the memory', async () => {
+      const auth = factory.auth();
+      const memoryId = newUuid();
+      const ready = newUuid();
+      const running = newUuid();
+
+      mocks.access.memory.checkOwnerAccess.mockResolvedValue(new Set([memoryId]));
+      mocks.memory.searchExports.mockResolvedValue([
+        { id: ready, ownerId: auth.user.id, path: `/data/exports/${ready}.zip` },
+        { id: running, ownerId: auth.user.id, path: null },
+      ] as any);
+      mocks.memory.delete.mockResolvedValue();
+
+      await sut.remove(auth, memoryId);
+
+      expect(mocks.memory.searchExports).toHaveBeenCalledWith(auth.user.id, { memoryId });
+      expect(mocks.storage.unlink).toHaveBeenCalledWith(`/data/exports/${ready}.zip`);
+      expect(mocks.storage.unlink).toHaveBeenCalledWith(expect.stringContaining(`${running}.zip.partial`));
       expect(mocks.memory.delete).toHaveBeenCalledWith(memoryId);
     });
   });

@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { isUndefined, omitBy } from 'lodash-es';
 import { DateTime } from 'luxon';
-import { parse } from 'node:path';
+import { basename, parse } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import sanitize from 'sanitize-filename';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
@@ -885,12 +885,7 @@ export class MemoryService extends BaseService {
     const runs = (await this.memoryRepository.getReclaimableExports(now, staleBefore)) ?? [];
 
     for (const run of runs) {
-      if (run.path) {
-        await this.storageRepository.unlink(run.path);
-      }
-      await this.storageRepository.unlink(
-        StorageCore.getNestedPath(StorageFolder.Exports, run.ownerId, `${run.id}.zip.partial`),
-      );
+      await this.removeExportFiles(run);
 
       if (run.status === MemoryExportStatus.Ready) {
         // the archive is gone, so the run goes with it rather than lingering as a
@@ -905,6 +900,47 @@ export class MemoryService extends BaseService {
         error: run.cancelRequestedAt ? null : 'Export was interrupted and did not resume',
         finishedAt: now,
       });
+    }
+
+    await this.removeOrphanedExportFiles();
+  }
+
+  private async removeExportFiles(run: { id: string; ownerId: string; path: string | null }) {
+    if (run.path) {
+      await this.storageRepository.unlink(run.path);
+    }
+    await this.storageRepository.unlink(
+      StorageCore.getNestedPath(StorageFolder.Exports, run.ownerId, `${run.id}.zip.partial`),
+    );
+  }
+
+  /**
+   * A run row leaves with its memory (including the 30-day cleanup of unsaved memories) by
+   * cascade, which cannot remove the archive on disk. Any archive or partial whose run no
+   * longer exists is therefore removed here, so a deleted memory never leaves a private copy.
+   */
+  private async removeOrphanedExportFiles() {
+    const files = new Map<string, string[]>();
+    for await (const file of this.storageRepository.walkFiles(StorageCore.getBaseFolder(StorageFolder.Exports))) {
+      const match = /^([\da-f-]{36})\.zip(\.partial)?$/i.exec(basename(file));
+      if (!match) {
+        continue;
+      }
+      const id = match[1].toLowerCase();
+      files.set(id, [...(files.get(id) ?? []), file]);
+    }
+    if (files.size === 0) {
+      return;
+    }
+
+    const existing = await this.memoryRepository.getExistingExportIds(files.keys().toArray());
+    for (const [id, paths] of files) {
+      if (existing.has(id)) {
+        continue;
+      }
+      for (const path of paths) {
+        await this.storageRepository.unlink(path);
+      }
     }
   }
 
@@ -1132,6 +1168,11 @@ export class MemoryService extends BaseService {
 
   async remove(auth: AuthDto, id: string): Promise<void> {
     await this.requireAccess({ auth, permission: Permission.MemoryDelete, ids: [id] });
+    // the export rows go with the memory by cascade; their private archives must go too
+    const exports = await this.memoryRepository.searchExports(auth.user.id, { memoryId: id });
+    for (const run of exports) {
+      await this.removeExportFiles(run);
+    }
     await this.memoryRepository.delete(id);
   }
 
