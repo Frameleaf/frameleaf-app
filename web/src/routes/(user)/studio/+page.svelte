@@ -85,7 +85,8 @@
   // build the loader answers `not-built` and the unavailable state says so.
   registerFrameStudioEngine();
 
-  let capabilities = $state<StudioCapabilities>(emptyStudioCapabilities());
+  // Null until the probe answers, so the host does not call an unknown deployment deficient.
+  let capabilities = $state<StudioCapabilities | null>(null);
   let renderEvidence = $state<StudioRenderEvidence[]>([]);
   let online = $state(true);
   let dirty = $state(false);
@@ -457,7 +458,7 @@
       hasLease: writable,
       hasAccess: !accessLost && !forbidden && authManager.authenticated,
       online,
-      capabilities,
+      capabilities: capabilities ?? emptyStudioCapabilities(),
     }),
     // Implemented here: the engine's graph commands and history (FL-92), the preview pair (FL-96)
     // and the bundle pair (FL-91). Every other row stays a typed extension point owned by a later
