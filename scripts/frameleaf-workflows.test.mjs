@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import {
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
@@ -660,4 +661,121 @@ test("integration image is a guarded manual pre-release that never writes releas
     JSON.stringify(w),
     /:latest|:release|:edge|frameleaf-v|commit-\$|type=registry[^"]*mode=max/,
   );
+});
+
+test("only the integration image compiles the integration build channel (extra licence keys)", () => {
+  // Owner decision 2026-09-27: an integration build may trust extra licence-signing keys from
+  // FRAMELEAF_LICENSE_EXTRA_JWKS_FILE; a release build never does. The channel is a Docker build
+  // argument compiled into the server, set by integration-image.yml and by nothing else.
+  const channelSource = "server/src/utils/frameleaf-build-channel.ts";
+  const releaseLine =
+    "export const FRAMELEAF_BUILD_CHANNEL: FrameleafBuildChannel = 'release' as FrameleafBuildChannel;";
+  const integrationLine =
+    "export const FRAMELEAF_BUILD_CHANNEL: FrameleafBuildChannel = 'integration' as FrameleafBuildChannel;";
+  const source = readFileSync(path.join(root, channelSource), "utf8");
+  assert.equal(
+    source
+      .split("\n")
+      .filter((line) => line.startsWith("export const FRAMELEAF_BUILD_CHANNEL"))
+      .length,
+    1,
+  );
+  assert.ok(
+    source.split("\n").includes(releaseLine),
+    "the source must say release",
+  );
+
+  // Every file that drives a build (.github, docker/, Dockerfiles, compose, mise, package scripts):
+  // only integration-image.yml may name the argument, and it sets exactly integration.
+  const tracked = execFileSync("git", ["ls-files", "-z"], {
+    cwd: root,
+    encoding: "utf8",
+  })
+    .split("\0")
+    .filter(Boolean);
+  const buildFiles = tracked.filter(
+    (file) =>
+      file.startsWith(".github/") ||
+      file.startsWith("docker/") ||
+      /(^|\/)Dockerfile[^/]*$/.test(file) ||
+      /(^|\/)(docker-)?compose[^/]*\.ya?ml$/.test(file) ||
+      /(^|\/)mise\.toml$/.test(file) ||
+      /(^|\/)package\.json$/.test(file) ||
+      /\.(sh|bake\.hcl)$/.test(file),
+  );
+  const naming = buildFiles.filter((file) =>
+    readFileSync(path.join(root, file), "utf8").includes(
+      "FRAMELEAF_BUILD_CHANNEL",
+    ),
+  );
+  assert.deepEqual(naming.sort(), [
+    ".github/workflows/integration-image.yml",
+    "server/Dockerfile",
+  ]);
+
+  const build = workflow("integration-image.yml").jobs.build.steps.find(
+    (s) => s.id === "build",
+  ).with;
+  const channelArgs = build["build-args"]
+    .split("\n")
+    .filter((line) => line.includes("FRAMELEAF_BUILD_CHANNEL"));
+  assert.deepEqual(channelArgs, ["FRAMELEAF_BUILD_CHANNEL=integration"]);
+  // Release builds (Deploy -> local-multi-runner-build, Deploy production) pass no channel.
+  for (const name of [
+    "docker.yml",
+    "local-multi-runner-build.yml",
+    "deploy-production.yml",
+  ])
+    assert.doesNotMatch(
+      readFileSync(path.join(root, ".github/workflows", name), "utf8"),
+      /FRAMELEAF_BUILD_CHANNEL/,
+    );
+
+  // The Dockerfile defaults to release and rewrites only that one line; run its step as written.
+  const dockerfile = readFileSync(path.join(root, "server/Dockerfile"), "utf8");
+  assert.match(dockerfile, /^ARG FRAMELEAF_BUILD_CHANNEL=release$/m);
+  assert.equal(
+    (dockerfile.match(/^ARG FRAMELEAF_BUILD_CHANNEL/gm) ?? []).length,
+    1,
+  );
+  assert.doesNotMatch(
+    dockerfile,
+    /^ENV .*FRAMELEAF_BUILD_CHANNEL/m,
+    "never a runtime environment variable",
+  );
+  const step = dockerfile
+    .split(/^ARG FRAMELEAF_BUILD_CHANNEL=release\n/m)[1]
+    .split(/\n(?=RUN |FROM |COPY |ARG |ENV )/)[0]
+    .replace(/^RUN /, "")
+    .replaceAll("\\\n", "\n");
+  const dir = mkdtempSync(path.join(tmpdir(), "frameleaf-channel-"));
+  try {
+    const run = (channel) => {
+      mkdirSync(path.join(dir, "server/src/utils"), { recursive: true });
+      writeFileSync(path.join(dir, channelSource), source);
+      const status = spawnSync("sh", ["-c", step], {
+        cwd: dir,
+        env: { ...process.env, FRAMELEAF_BUILD_CHANNEL: channel },
+      }).status;
+      return {
+        status,
+        lines: readFileSync(path.join(dir, channelSource), "utf8").split("\n"),
+      };
+    };
+    const release = run("release");
+    assert.equal(release.status, 0);
+    assert.ok(release.lines.includes(releaseLine));
+    const integration = run("integration");
+    assert.equal(integration.status, 0);
+    assert.ok(integration.lines.includes(integrationLine));
+    assert.ok(!integration.lines.includes(releaseLine));
+    for (const channel of ["", "Integration", "production", "integration "])
+      assert.notEqual(
+        run(channel).status,
+        0,
+        `channel ${JSON.stringify(channel)}`,
+      );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
