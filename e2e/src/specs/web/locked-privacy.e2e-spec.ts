@@ -83,19 +83,43 @@ test.describe('Locked content in the browser (FL-34)', () => {
     await expect(traces(page, locked.id)).toHaveCount(0);
   });
 
-  test('drops a Locked item from search results when the session locks', async ({ context, page }) => {
-    const { user, headers, plain, locked, suffix } = await setup();
+  test('lists what the Locked rules hide in the Locked view, badged Sensitive', async ({ context, page }) => {
+    const { user, plain, locked, suffix } = await setup();
+    const ruleMatch = await utils.createAsset(user.accessToken, { assetData: { filename: `rule-${suffix}.png` } });
+    const [tag] = await utils.upsertTags(user.accessToken, [`Private ${suffix}`]);
+    await utils.tagAssets(user.accessToken, tag.id, [ruleMatch.id]);
+    await utils.updateMyPreferences(user.accessToken, { privacy: { suppression: { tagIds: [tag.id] } } });
     await utils.setAuthCookies(context, user.accessToken);
 
-    // both names share the suffix, so one search finds both while unlocked
+    await page.goto('/locked');
+    await expect(traces(page, locked.id).first()).toBeVisible();
+    await expect(traces(page, ruleMatch.id).first()).toBeVisible();
+    await expect(traces(page, plain.id)).toHaveCount(0);
+    await expect(page.getByTitle('Sensitive')).toHaveCount(2);
+  });
+
+  test('drops what the Locked rules hide from open search results when the session locks', async ({
+    context,
+    page,
+  }) => {
+    const { user, headers, plain, locked, suffix } = await setup();
+    const ruleMatch = await utils.createAsset(user.accessToken, { assetData: { filename: `rule-${suffix}.png` } });
+    const [tag] = await utils.upsertTags(user.accessToken, [`Private ${suffix}`]);
+    await utils.tagAssets(user.accessToken, tag.id, [ruleMatch.id]);
+    await utils.updateMyPreferences(user.accessToken, { privacy: { suppression: { tagIds: [tag.id] } } });
+    await utils.setAuthCookies(context, user.accessToken);
+
+    // every name shares the suffix, so one search finds what this unlocked session may see
     await page.goto(`/search?query=${encodeURIComponent(JSON.stringify({ originalFileName: suffix }))}`);
     await expect(traces(page, plain.id).first()).toBeVisible();
-    await expect(traces(page, locked.id).first()).toBeVisible();
+    await expect(traces(page, ruleMatch.id).first()).toBeVisible();
+    await expect(traces(page, locked.id)).toHaveCount(0);
 
     await lockAuthSession({ headers });
-    await expect(traces(page, locked.id)).toHaveCount(0);
+    await expect(traces(page, ruleMatch.id)).toHaveCount(0);
     await expect(traces(page, plain.id).first()).toBeVisible();
-    await expect(page.getByText(`secret-${suffix}`)).toHaveCount(0);
+    await expect(page.getByText(`rule-${suffix}`)).toHaveCount(0);
+    await expect(page.getByText(`Private ${suffix}`)).toHaveCount(0);
   });
 
   test('drops a trashed Locked item from Trash when the session locks', async ({ context, page }) => {
@@ -112,20 +136,22 @@ test.describe('Locked content in the browser (FL-34)', () => {
     await expect(traces(page, plain.id).first()).toBeVisible();
   });
 
-  test('closes the Locked view when the PIN unlock expires', async ({ context, page }) => {
+  test('closes the Locked view once the PIN unlock has expired', async ({ context, page }) => {
     const { user, locked } = await setup();
-    // the unlock ends a few seconds from now, as it would after its hour
-    const client = await utils.connectDatabase();
-    await client.query(
-      `UPDATE session SET "pinExpiresAt" = now() + interval '8 seconds' WHERE "userId" = $1 AND "pinExpiresAt" IS NOT NULL`,
-      [user.userId],
-    );
     await utils.setAuthCookies(context, user.accessToken);
-
     await page.goto('/locked');
     await expect(traces(page, locked.id).first()).toBeVisible();
+    await page.waitForLoadState('networkidle');
 
-    await expect(page).toHaveURL(/\/photos\/?$/, { timeout: 20_000 });
+    // the unlock runs out on the server (its hour is up), and the tab is looked at again
+    const client = await utils.connectDatabase();
+    await client.query(
+      `UPDATE session SET "pinExpiresAt" = now() - interval '1 second' WHERE "userId" = $1 AND "pinExpiresAt" IS NOT NULL`,
+      [user.userId],
+    );
+    await page.evaluate(() => globalThis.dispatchEvent(new Event('focus')));
+
+    await expect(page).toHaveURL(/\/photos\/?$/);
     await expect(traces(page, locked.id)).toHaveCount(0);
   });
 
