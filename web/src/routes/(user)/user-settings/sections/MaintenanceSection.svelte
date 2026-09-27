@@ -115,7 +115,9 @@
 
   const updateReports = async () => {
     jobs = await getQueuesLegacy();
-    if (jobs.integrityCheck.queueStatus.isActive) {
+    // A check that is queued but not picked up yet is running too, or its results would be read early.
+    const { active, waiting, delayed } = jobs.integrityCheck.jobCounts;
+    if (jobs.integrityCheck.queueStatus.isActive || active + waiting + delayed > 0) {
       activeJobs.add(ManualJobName.IntegrityUntrackedFilesRefresh);
     } else if (activeJobs.size > 0) {
       activeJobs.clear();
