@@ -520,6 +520,15 @@ export class MemoryRepository implements IBulkAsset {
       .executeTakeFirst();
   }
 
+  /** Which of these export ids still have a run row; the rest are archives left by a cascade. */
+  async getExistingExportIds(ids: string[]): Promise<Set<string>> {
+    if (ids.length === 0) {
+      return new Set();
+    }
+    const rows = await this.db.selectFrom('memory_export').select('id').where('id', 'in', ids).execute();
+    return new Set(rows.map(({ id }) => id));
+  }
+
   /** Runs whose archive has outlived its window, and runs abandoned by a lost worker. */
   getReclaimableExports(now: Date, staleBefore: Date) {
     return this.db

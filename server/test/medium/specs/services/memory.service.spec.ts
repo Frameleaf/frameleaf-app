@@ -1,13 +1,29 @@
 import { Kysely } from 'kysely';
 import { DateTime } from 'luxon';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { StorageCore } from 'src/cores/storage.core.js';
 import { BulkIdErrorReason } from 'src/dtos/asset-ids.response.dto.js';
-import { AssetFileType, AssetLockReason, MemoryShowLessKind, MemoryType, PetObservationState } from 'src/enum.js';
+import {
+  AssetFileType,
+  AssetLockReason,
+  JobStatus,
+  MemoryExportStatus,
+  MemoryShowLessKind,
+  MemoryType,
+  PetObservationState,
+  StorageFolder,
+  SystemMetadataKey,
+} from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
+import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MemoryRepository } from 'src/repositories/memory.repository.js';
 import { PartnerRepository } from 'src/repositories/partner.repository.js';
+import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -30,6 +46,7 @@ const setup = (db?: Kysely<DB>) => {
       SystemMetadataRepository,
       UserRepository,
       PartnerRepository,
+      StorageRepository,
     ],
     mock: [LoggingRepository],
   });
@@ -533,7 +550,14 @@ describe(MemoryService.name, () => {
   describe('onMemoriesCleanup', () => {
     it('should run without error', async () => {
       const { sut } = setup();
-      await expect(sut.onMemoriesCleanup()).resolves.not.toThrow();
+      const mediaLocation = mkdtempSync(join(tmpdir(), 'memory-cleanup-'));
+      StorageCore.setMediaLocation(mediaLocation);
+      try {
+        await expect(sut.onMemoriesCleanup()).resolves.not.toThrow();
+      } finally {
+        StorageCore.reset();
+        rmSync(mediaLocation, { recursive: true, force: true });
+      }
     });
   });
 
@@ -592,6 +616,209 @@ describe(MemoryService.name, () => {
       await expect(
         repository.getPetStoryKeys(user.id, new Date('2026-07-01T00:00:00.000Z'), new Date('2026-09-30T00:00:00.000Z')),
       ).resolves.toEqual(new Set(['pet-1:2026-08']));
+    });
+  });
+
+  // FL-62 validation: memory generation across a time-zone boundary, with duplicate suppression.
+  describe('birthdays across time zones (FL-62)', () => {
+    it("keeps a 29 February pet's birthday on 28 February, shown for that day in every zone, once", async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const pet = await ctx.database
+        .insertInto('pet')
+        .values({ ownerId: user.id, name: 'Biscuit', birthDate: '2024-02-29' })
+        .returning('id')
+        .executeTakeFirstOrThrow();
+      for (const localDateTime of ['2024-06-01T10:00:00Z', '2025-03-02T10:00:00Z', '2026-08-15T10:00:00Z']) {
+        const { asset } = await ctx.newAsset({ ownerId: user.id, localDateTime });
+        await ctx
+          .get(AssetRepository)
+          .upsertFiles([{ assetId: asset.id, type: AssetFileType.Preview, path: '/path/to/preview.jpg' }]);
+        await ctx.database.insertInto('pet_observation').values({ petId: pet.id, assetId: asset.id }).execute();
+      }
+
+      vi.setSystemTime(new Date('2027-02-28T12:00:00Z'));
+      await sut.onMemoriesCreate();
+      // a second pass that has forgotten where it got to must not make the birthday twice
+      await ctx.database.deleteFrom('system_metadata').where('key', '=', SystemMetadataKey.MemoriesState).execute();
+      await sut.onMemoriesCreate();
+
+      const birthdays = await ctx.get(MemoryRepository).search(user.id, { type: MemoryType.Birthday });
+      expect(birthdays).toHaveLength(1);
+      expect(birthdays[0]).toEqual(
+        expect.objectContaining({
+          data: expect.objectContaining({ kind: 'birthday', date: '2027-02-28', subjectId: pet.id, age: 3 }),
+          // the calendar day from its first start (UTC+14) to its last end (UTC-12)
+          showAt: new Date('2027-02-27T10:00:00.000Z'),
+          hideAt: new Date('2027-03-01T11:59:59.999Z'),
+        }),
+      );
+      expect(birthdays[0].assets).toHaveLength(3);
+      vi.useRealTimers();
+    });
+  });
+
+  // FL-62 validation: the private highlight export against a real database and real files.
+  describe('private highlight export (FL-62)', () => {
+    let mediaLocation: string;
+
+    beforeEach(() => {
+      mediaLocation = mkdtempSync(join(tmpdir(), 'memory-export-'));
+      // the storage core is a singleton; an earlier service in this file made it without storage
+      StorageCore.reset();
+      StorageCore.setMediaLocation(mediaLocation);
+    });
+
+    afterEach(() => {
+      StorageCore.reset();
+      rmSync(mediaLocation, { recursive: true, force: true });
+    });
+
+    const setupExport = () => {
+      const services = newMediumService(MemoryService, {
+        database: defaultDatabase,
+        real: [
+          AccessRepository,
+          AssetRepository,
+          DatabaseRepository,
+          MemoryRepository,
+          UserRepository,
+          SystemMetadataRepository,
+          PartnerRepository,
+          StorageRepository,
+        ],
+        mock: [JobRepository, LoggingRepository],
+      });
+      services.ctx.getMock(JobRepository).queue.mockResolvedValue();
+      return services;
+    };
+
+    const memoryWithFiles = async (ctx: ReturnType<typeof setupExport>['ctx']) => {
+      const { user } = await ctx.newUser();
+      const { memory } = await ctx.newMemory({ ownerId: user.id });
+      const assets = [];
+      for (const name of ['beach.jpg', 'sunset.jpg']) {
+        const folder = join(mediaLocation, 'upload', user.id);
+        mkdirSync(folder, { recursive: true });
+        const originalPath = join(folder, name);
+        writeFileSync(originalPath, `original bytes of ${name}`);
+        const { asset } = await ctx.newAsset({ ownerId: user.id, originalPath, originalFileName: name });
+        await ctx.newMemoryAsset({ memoryId: memory.id, assetId: asset.id });
+        assets.push(asset);
+      }
+      return { user, memory, assets, auth: factory.auth({ user }) };
+    };
+
+    const archivePath = (ownerId: string, id: string) =>
+      StorageCore.getNestedPath(StorageFolder.Exports, ownerId, `${id}.zip`);
+
+    it('writes the snapshot taken at request time, and only the owner can read or download it', async () => {
+      const { sut, ctx } = setupExport();
+      const { user, memory, assets, auth } = await memoryWithFiles(ctx);
+      const { user: stranger } = await ctx.newUser();
+
+      const requested = await sut.createExport(auth, memory.id, {});
+      // a membership edit after the request cannot change the export under way
+      await sut.removeAssets(auth, memory.id, { ids: [assets[1].id] });
+
+      await expect(sut.handleMemoryExport({ id: requested.id })).resolves.toBe(JobStatus.Success);
+
+      const ready = await sut.getExport(auth, requested.id);
+      expect(ready).toEqual(
+        expect.objectContaining({ status: MemoryExportStatus.Ready, assetCount: 2, processedAssets: 2 }),
+      );
+      expect(existsSync(archivePath(user.id, requested.id))).toBe(true);
+      const download = await sut.downloadExport(auth, requested.id);
+      download.stream.destroy();
+      expect(download.length).toBe(ready.sizeInBytes);
+
+      const strangerAuth = factory.auth({ user: stranger });
+      await expect(sut.getExport(strangerAuth, requested.id)).rejects.toThrow();
+      await expect(sut.downloadExport(strangerAuth, requested.id)).rejects.toThrow();
+      await expect(sut.getExports(strangerAuth)).resolves.toEqual([]);
+    });
+
+    it('returns the run in flight for a second request, and a failed run can be retried', async () => {
+      const { sut, ctx } = setupExport();
+      const { memory, auth } = await memoryWithFiles(ctx);
+
+      const first = await sut.createExport(auth, memory.id, {});
+      await expect(sut.createExport(auth, memory.id, {})).resolves.toEqual(expect.objectContaining({ id: first.id }));
+
+      await ctx.get(MemoryRepository).updateExport(first.id, { status: MemoryExportStatus.Failed });
+      const retried = await sut.createExport(auth, memory.id, {});
+      expect(retried.id).not.toBe(first.id);
+      expect(retried.status).toBe(MemoryExportStatus.Pending);
+    });
+
+    it('cancels a run before it starts, and the worker then writes nothing', async () => {
+      const { sut, ctx } = setupExport();
+      const { user, memory, auth } = await memoryWithFiles(ctx);
+
+      const run = await sut.createExport(auth, memory.id, {});
+      await expect(sut.cancelExport(auth, run.id)).resolves.toEqual(
+        expect.objectContaining({ status: MemoryExportStatus.Cancelled }),
+      );
+
+      await expect(sut.handleMemoryExport({ id: run.id })).resolves.toBe(JobStatus.Skipped);
+      expect(existsSync(archivePath(user.id, run.id))).toBe(false);
+      await expect(sut.downloadExport(auth, run.id)).rejects.toThrow('Export is not ready');
+    });
+
+    it('removes the archive with its memory, and revokes the download', async () => {
+      const { sut, ctx } = setupExport();
+      const { user, memory, auth } = await memoryWithFiles(ctx);
+      const run = await sut.createExport(auth, memory.id, {});
+      await sut.handleMemoryExport({ id: run.id });
+      expect(existsSync(archivePath(user.id, run.id))).toBe(true);
+
+      await sut.remove(auth, memory.id);
+
+      expect(existsSync(archivePath(user.id, run.id))).toBe(false);
+      await expect(sut.downloadExport(auth, run.id)).rejects.toThrow();
+    });
+
+    it('removes an archive whose memory went by cascade at the next cleanup', async () => {
+      const { sut, ctx } = setupExport();
+      const { user, memory, auth } = await memoryWithFiles(ctx);
+      const run = await sut.createExport(auth, memory.id, {});
+      await sut.handleMemoryExport({ id: run.id });
+
+      // the 30-day cleanup of unsaved memories deletes them in SQL, which cannot reach the disk
+      await ctx.database.deleteFrom('memory').where('id', '=', memory.id).execute();
+      expect(existsSync(archivePath(user.id, run.id))).toBe(true);
+
+      await sut.onMemoriesCleanup();
+
+      expect(existsSync(archivePath(user.id, run.id))).toBe(false);
+    });
+
+    it('fails a run abandoned by a lost worker on restart, removes its partial file and never resumes it', async () => {
+      const { sut, ctx } = setupExport();
+      const { user, memory, auth } = await memoryWithFiles(ctx);
+      const run = await sut.createExport(auth, memory.id, {});
+      const repository = ctx.get(MemoryRepository);
+      await repository.claimExport(run.id);
+      const partial = `${archivePath(user.id, run.id)}.partial`;
+      mkdirSync(join(partial, '..'), { recursive: true });
+      writeFileSync(partial, 'half an archive');
+      await ctx.database
+        .updateTable('memory_export')
+        .set({ updatedAt: new Date(Date.now() - 2 * 60 * 60 * 1000) })
+        .where('id', '=', run.id)
+        .execute();
+
+      await sut.onMemoriesCleanup();
+
+      await expect(sut.getExport(auth, run.id)).resolves.toEqual(
+        expect.objectContaining({
+          status: MemoryExportStatus.Failed,
+          error: 'Export was interrupted and did not resume',
+        }),
+      );
+      expect(existsSync(partial)).toBe(false);
+      // a redelivered job cannot claim the failed run again
+      await expect(sut.handleMemoryExport({ id: run.id })).resolves.toBe(JobStatus.Skipped);
     });
   });
 });
