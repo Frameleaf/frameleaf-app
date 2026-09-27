@@ -9,6 +9,8 @@ import {
   CloudErrorCode,
   FrameleafCloudError,
   type FrameleafDiscoveryDocument,
+  accountServerUrl,
+  accountStoreUrl,
   appWorkloadsForCloudId,
   capabilitiesSchema,
   catalogDefaults,
@@ -175,6 +177,35 @@ describe(discoveryProblem.name, () => {
       expect(document.store).toBeUndefined();
       expect(storeAddress('https://api.frameleaf.cloud', undefined)).toBeNull();
       expect(storeAddress('https://api.frameleaf.cloud', 'http://frameleaf.cloud/store')).toBeNull();
+    });
+
+    describe('account site links (the store and a server page)', () => {
+      it('takes the origin from the store discovery names', () => {
+        const store = 'https://frameleaf.cloud/store';
+        expect(accountStoreUrl('https://api.frameleaf.cloud', store)).toBe('https://frameleaf.cloud/store');
+        expect(accountServerUrl('https://api.frameleaf.cloud', store, 'inst-1')).toBe(
+          'https://frameleaf.cloud/servers/inst-1',
+        );
+        expect(accountServerUrl('https://api.frameleaf.cloud', 'https://account.frameleaf.cloud/en/store', 'a b')).toBe(
+          'https://account.frameleaf.cloud/servers/a%20b',
+        );
+      });
+
+      it('never points at the API host: without discovery the cloud domain apex serves the account site', () => {
+        expect(accountStoreUrl('https://api.frameleaf.cloud', null)).toBe('https://frameleaf.cloud/store');
+        expect(accountServerUrl('https://api.frameleaf.cloud', undefined, 'inst-1')).toBe(
+          'https://frameleaf.cloud/servers/inst-1',
+        );
+        // a store address discovery names that fails the address rule is ignored the same way
+        expect(accountStoreUrl('https://api.frameleaf.cloud', 'https://attacker.example/store')).toBe(
+          'https://frameleaf.cloud/store',
+        );
+      });
+
+      it('uses the configured address itself for a development cloud without a cloud domain', () => {
+        expect(accountStoreUrl('http://127.0.0.1:3100', null)).toBe('http://127.0.0.1:3100/store');
+        expect(accountServerUrl('http://127.0.0.1:3100', null, 'inst-1')).toBe('http://127.0.0.1:3100/servers/inst-1');
+      });
     });
 
     it('keeps refusing every other host', () => {

@@ -98,6 +98,32 @@ export const storeAddress = (cloudUrl: string, store: string | null | undefined)
   store && !cloudAddressProblem(cloudUrl, 'discovery store', store) ? store.replace(/\/+$/, '') : null;
 
 /**
+ * The account site's origin. `FRAMELEAF_CLOUD_URL` is the API and discovery host, and the account site
+ * is another origin (`https://frameleaf.cloud` against `api.frameleaf.cloud`), so it comes from the store
+ * discovery names. Without one, the cloud domain's apex serves it (frameleaf-cloud#57), and a development
+ * cloud without a cloud domain serves everything from the configured address.
+ */
+const accountSiteOrigin = (cloudUrl: string, store: string | null | undefined): string => {
+  const named = storeAddress(cloudUrl, store);
+  if (named) {
+    return new URL(named).origin;
+  }
+  const configured = new URL(cloudUrl);
+  const domain = cloudDomainOf(configured.hostname);
+  return domain
+    ? `${configured.protocol}//${domain}${configured.port ? `:${configured.port}` : ''}`
+    : configured.origin;
+};
+
+/** The store: the address discovery names as given, else `/store` on the account site. */
+export const accountStoreUrl = (cloudUrl: string, store: string | null | undefined): string =>
+  storeAddress(cloudUrl, store) ?? `${accountSiteOrigin(cloudUrl, null)}/store`;
+
+/** This server's page on the account site (`/servers/<instanceId>`), where its owner manages it. */
+export const accountServerUrl = (cloudUrl: string, store: string | null | undefined, instanceId: string): string =>
+  `${accountSiteOrigin(cloudUrl, store)}/servers/${encodeURIComponent(instanceId)}`;
+
+/**
  * Why a discovery document must not be used, or null. The token issuer, the API and every regional
  * gateway must be on the configured cloud's host, a subdomain of it, or a sibling subdomain of the
  * cloud domain it belongs to (`cloudAddressProblem`), over https unless the configured
