@@ -687,6 +687,75 @@ export const utils = {
           }),
     ),
 
+  /**
+   * Stands in for the whole Frameleaf tile host (FC-69 contract) so no test reaches
+   * tiles.frameleaf.cloud: styles at /v1/style/{light,dark}.json name a "protomaps" vector source
+   * with plain Z/X/Y tiles (/v1/tiles/<build>/{z}/{x}/{y}.mvt, zoom 0–15), glyphs at
+   * /v1/fonts/{fontstack}/{range}.pbf and sprites at /v1/sprites/v4/{light,dark}. Tiles and glyphs
+   * answer empty, sprites with an empty atlas. A later `mockMapStyle` still overrides the style.
+   */
+  mockTileHost: async (context: BrowserContext) =>
+    await context.route(/^https:\/\/tiles\.frameleaf\.cloud\//, (route) => {
+      const { pathname } = new URL(route.request().url());
+      const theme = pathname.includes('dark') ? 'dark' : 'light';
+      if (/^\/v1\/style\/(light|dark)\.json$/.test(pathname)) {
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          headers: { 'access-control-allow-origin': '*' },
+          body: JSON.stringify({
+            version: 8,
+            name: `Frameleaf ${theme}`,
+            glyphs: 'https://tiles.frameleaf.cloud/v1/fonts/{fontstack}/{range}.pbf',
+            sprite: `https://tiles.frameleaf.cloud/v1/sprites/v4/${theme}`,
+            sources: {
+              protomaps: {
+                type: 'vector',
+                tiles: ['https://tiles.frameleaf.cloud/v1/tiles/20260926/{z}/{x}/{y}.mvt'],
+                minzoom: 0,
+                maxzoom: 15,
+                attribution: '© OpenStreetMap contributors Protomaps',
+              },
+            },
+            layers: [
+              { id: 'background', type: 'background', paint: { 'background-color': '#cccccc' } },
+              {
+                id: 'earth',
+                type: 'fill',
+                source: 'protomaps',
+                'source-layer': 'earth',
+                paint: { 'fill-color': '#e2dfda' },
+              },
+            ],
+          }),
+        });
+      }
+      if (/^\/v1\/sprites\/v4\/(light|dark)(@2x)?\.json$/.test(pathname)) {
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          headers: { 'access-control-allow-origin': '*' },
+          body: '{}',
+        });
+      }
+      if (/^\/v1\/sprites\/v4\/(light|dark)(@2x)?\.png$/.test(pathname)) {
+        return route.fulfill({
+          status: 200,
+          contentType: 'image/png',
+          headers: { 'access-control-allow-origin': '*' },
+          // a transparent 1×1 PNG
+          body: Buffer.from(
+            'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=',
+            'base64',
+          ),
+        });
+      }
+      if (/^\/v1\/(tiles\/\d{8}\/\d+\/\d+\/\d+\.mvt|fonts\/.+\.pbf)$/.test(pathname)) {
+        return route.fulfill({ status: 204, headers: { 'access-control-allow-origin': '*' } });
+      }
+      return route.fulfill({ status: 404, headers: { 'access-control-allow-origin': '*' } });
+    }),
+
   setMaintenanceAuthCookie: async (context: BrowserContext, token: string, domain = '127.0.0.1') =>
     await context.addCookies([
       {

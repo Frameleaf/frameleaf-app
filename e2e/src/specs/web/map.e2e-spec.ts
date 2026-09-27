@@ -20,6 +20,11 @@ test.describe('Map', () => {
     await utils.waitForQueueFinish(admin.accessToken, 'metadataExtraction');
   });
 
+  // FC-69: the Frameleaf tile host is stood in for, so no case reaches tiles.frameleaf.cloud.
+  test.beforeEach(async ({ context }) => {
+    await utils.mockTileHost(context);
+  });
+
   test('counts located items and applies the settings sheet', async ({ context, page }) => {
     await utils.setAuthCookies(context, admin.accessToken);
     await page.goto('/map');

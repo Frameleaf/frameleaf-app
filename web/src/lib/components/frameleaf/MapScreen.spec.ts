@@ -15,7 +15,6 @@ import en from '../../../../../i18n/en.json';
  */
 
 vi.mock('maplibre-gl', () => ({
-  addProtocol: vi.fn(),
   setWorkerUrl: vi.fn(),
   LngLatBounds: class {
     extend() {
@@ -24,11 +23,6 @@ vi.mock('maplibre-gl', () => ({
   },
 }));
 vi.mock('maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url', () => ({ default: 'blob:mock-worker' }));
-vi.mock('pmtiles', () => ({
-  Protocol: class {
-    tile = () => {};
-  },
-}));
 vi.mock('svelte-maplibre', async () => ({
   MapLibre: (await import('@test-data/frameleaf/MapLibreStub.svelte')).default,
   AttributionControl: (await import('@test-data/frameleaf/MapLibreChildStub.svelte')).default,
