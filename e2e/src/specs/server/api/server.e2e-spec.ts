@@ -173,7 +173,13 @@ describe('/server', () => {
         mapDarkStyleUrl: 'https://tiles.frameleaf.cloud/v1/style/dark.json',
         mapLightStyleUrl: 'https://tiles.frameleaf.cloud/v1/style/light.json',
         minFaces: 3,
-        frameleaf: { via: null, cloudConfigured: false, signInAvailable: false, signInRequired: false, publicUrl: null },
+        frameleaf: {
+          via: null,
+          cloudConfigured: false,
+          signInAvailable: false,
+          signInRequired: false,
+          publicUrl: null,
+        },
       });
       expect(defaultImageDescriptionRawPromptTemplate).toEqual(expect.any(String));
       expect(defaultImageDescriptionRawPromptTemplate).toContain('{schema}');
