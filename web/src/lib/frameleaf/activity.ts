@@ -5,7 +5,7 @@ import {
   MediaOperationDestination,
   MediaOperationKind,
   MediaOperationStatus,
-  Outcome,
+  CloudMlJobCostOutcome,
   type CloudMlJobActivityDto,
   type MediaOperationDto,
 } from '@immich/sdk';
@@ -272,7 +272,7 @@ export type ActivityCloudJob = {
     soFarUsd: number | null;
     settledUsd: number | null;
     /** `not_charged`: the whole hold went back (a failure on the cloud's side, or a job that never ran). */
-    outcome: Outcome | null;
+    outcome: CloudMlJobCostOutcome | null;
   };
 };
 

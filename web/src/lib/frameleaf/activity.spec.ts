@@ -6,7 +6,7 @@ import {
   MediaOperationDestination,
   MediaOperationKind,
   MediaOperationStatus,
-  Outcome,
+  CloudMlJobCostOutcome,
   type CloudMlJobActivityDto,
   type MediaOperationDto,
 } from '@immich/sdk';
@@ -914,7 +914,7 @@ describe('stages and Frameleaf Cloud jobs (FL-162)', () => {
             estimatedP90Usd: 0.8,
             holdUsd: 0.8,
             note: null,
-            outcome: Outcome.NotCharged,
+            outcome: CloudMlJobCostOutcome.NotCharged,
             settledUsd: 0,
             soFarUsd: null,
           },
@@ -925,7 +925,7 @@ describe('stages and Frameleaf Cloud jobs (FL-162)', () => {
     expect(item.kindKey).toBe('frameleaf_activity_kind_cloud_smooth_motion');
     expect(item.stage).toBe('failed');
     expect(item.canRetry).toBe(false);
-    expect(item.cloud?.cost.outcome).toBe(Outcome.NotCharged);
+    expect(item.cloud?.cost.outcome).toBe(CloudMlJobCostOutcome.NotCharged);
   });
 
   it('gives every other job a stage too', () => {

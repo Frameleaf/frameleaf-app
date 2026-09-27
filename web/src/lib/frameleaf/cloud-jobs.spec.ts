@@ -1,4 +1,4 @@
-import { CloudMlJobActivityStage, CloudMlJobPurpose, Outcome } from '@immich/sdk';
+import { CloudMlJobActivityStage, CloudMlJobPurpose, CloudMlJobCostOutcome } from '@immich/sdk';
 import { describe, expect, it, vi } from 'vitest';
 import type { ActivityCloudJob } from '$lib/frameleaf/activity';
 import {
@@ -101,12 +101,12 @@ describe('Frameleaf Cloud job helpers (FL-162)', () => {
       value: null,
       valueKey: 'frameleaf_activity_cloud_settling',
     });
-    expect(cloudCostFacts(cloud({ settledUsd: 1.31, outcome: Outcome.Charged }), 'done')[2]).toEqual({
+    expect(cloudCostFacts(cloud({ settledUsd: 1.31, outcome: CloudMlJobCostOutcome.Charged }), 'done')[2]).toEqual({
       labelKey: 'frameleaf_activity_cloud_settled',
       value: '$1.31',
       valueKey: undefined,
     });
-    expect(cloudCostFacts(cloud({ settledUsd: 0, outcome: Outcome.NotCharged }), 'failed')[2]).toEqual({
+    expect(cloudCostFacts(cloud({ settledUsd: 0, outcome: CloudMlJobCostOutcome.NotCharged }), 'failed')[2]).toEqual({
       labelKey: 'frameleaf_activity_cloud_settled',
       value: null,
       valueKey: 'frameleaf_activity_cloud_no_charge',
