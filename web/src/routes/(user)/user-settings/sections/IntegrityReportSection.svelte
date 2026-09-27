@@ -106,8 +106,10 @@
   onMount(async () => {
     integrityReport = await getIntegrityReport({ $type: type });
     while (running) {
-      const jobs = await getQueuesLegacy();
-      if (jobs.integrityCheck.queueStatus.isActive) {
+      const { integrityCheck } = await getQueuesLegacy();
+      // A queued refresh is not active yet, so waiting and delayed work counts as running too.
+      const { active, waiting, delayed } = integrityCheck.jobCounts;
+      if (integrityCheck.queueStatus.isActive || active + waiting + delayed > 0) {
         expectingUpdate = true;
       } else if (expectingUpdate) {
         integrityReport = await getIntegrityReport({
