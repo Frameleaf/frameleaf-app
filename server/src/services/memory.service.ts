@@ -445,7 +445,7 @@ export class MemoryService extends BaseService {
       if (memory.type !== MemoryType.PetStory && !found.name) {
         return [];
       }
-      const species = 'species' in found ? { species: found.species } : {};
+      const species = memory.type === MemoryType.PetStory && 'species' in found ? { species: found.species } : {};
       return [{ ...memory, data: { ...(memory.data as object), name: found.name, ...species } } as Memory];
     });
   }
