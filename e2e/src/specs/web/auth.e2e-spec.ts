@@ -204,9 +204,12 @@ test.describe('Sign-in lifecycle', () => {
     await logout({ headers: asBearerAuth(session.accessToken) });
     await expect(getMyUser({ headers: asBearerAuth(session.accessToken) })).rejects.toMatchObject({ status: 401 });
 
-    await page.goto('/photos');
-    await expect(page).toHaveURL(/\/auth\/login/);
-    await expect(page.getByLabel('Email', { exact: true })).toBeVisible();
+    // The open tab may already be leaving on its own (the server closes a revoked session's socket),
+    // which would abort a navigation started in it; the next navigation is made in a new tab.
+    const next = await context.newPage();
+    await next.goto('/photos');
+    await expect(next).toHaveURL(/\/auth\/login/);
+    await expect(next.getByLabel('Email', { exact: true })).toBeVisible();
   });
 
   test('forces a password change before continuing', async ({ page }) => {
