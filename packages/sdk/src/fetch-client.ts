@@ -101,10 +101,14 @@ export type CloudBackupLastRestoreDto = {
     databaseFile: string | null;
     /** The folder a files restore wrote to */
     destination: string | null;
+    /** Items still in the library whose details came back */
+    detailsRestored: number;
     error: string | null;
     files: number;
     manifestKey: string;
     operationId: string;
+    /** Deleted items made again */
+    recreated: number;
     replaced: number;
     scope: CloudBackupRestoreScope;
     skipped: number;
@@ -235,6 +239,28 @@ export type CloudBackupManifestsResponseDto = {
     /** Kept backups, newest first */
     manifests: CloudBackupManifestDto[];
 };
+export type CloudBackupManifestAlbumsDto = {
+    /** The backup run’s manifest in the bucket */
+    manifestKey: string;
+};
+export type CloudBackupManifestAlbumDto = {
+    albumId: string;
+    /** Items the album held in this backup */
+    items: number;
+    /** Of those, items no longer in the album */
+    missing: number;
+    name: string;
+    ownerId: string;
+    ownerName: string | null;
+    state: CloudBackupAlbumState;
+};
+export type CloudBackupManifestAlbumsResponseDto = {
+    /** Deleted albums and albums missing items, by name */
+    albums: CloudBackupManifestAlbumDto[];
+    /** The backup records albums; false for a backup made before they were recorded */
+    hasDetails: boolean;
+    manifestKey: string;
+};
 export type CloudBackupManifestItemsDto = {
     filter?: CloudBackupItemFilter;
     /** Items to return; 100 when absent */
@@ -248,6 +274,8 @@ export type CloudBackupManifestItemDto = {
     assetId: string;
     bytes: number;
     files: number;
+    /** The backup holds the item’s details, so a deleted item comes back as it was, not only as a file */
+    hasDetails: boolean;
     /** A Locked item: never named in this list */
     locked: boolean;
     /** When the original was last written before the backup */
@@ -269,8 +297,12 @@ export type CloudBackupPruneDto = {
     dryRun: boolean;
 };
 export type CloudBackupRestoreDto = {
+    /** album: the album to restore */
+    albumId?: string;
     /** files: the items to restore (every item when absent); asset: exactly one item */
     assetIds?: string[];
+    /** asset and album: how details of items still in the library come back; keep when absent */
+    details?: CloudBackupRestoreDetails;
     /** The backup run’s manifest in the bucket */
     manifestKey: string;
     scope: CloudBackupRestoreScope;
@@ -11143,6 +11175,21 @@ export function getCloudBackupManifests(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
+ * List the albums a backup can bring back
+ */
+export function listCloudBackupManifestAlbums({ cloudBackupManifestAlbumsDto }: {
+    cloudBackupManifestAlbumsDto: CloudBackupManifestAlbumsDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CloudBackupManifestAlbumsResponseDto;
+    }>("/admin/cloud/backup/manifests/albums", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: cloudBackupManifestAlbumsDto
+    })));
+}
+/**
  * Search the items in a backup
  */
 export function searchCloudBackupManifestItems({ cloudBackupManifestItemsDto }: {
@@ -20642,6 +20689,7 @@ export enum UserAvatarColor {
 export enum CloudBackupRestoreScope {
     Files = "files",
     Asset = "asset",
+    Album = "album",
     Database = "database",
     Library = "library"
 }
@@ -20705,6 +20753,11 @@ export enum CloudBackupManifestStatus {
     Complete = "complete",
     Degraded = "degraded"
 }
+export enum CloudBackupAlbumState {
+    Deleted = "deleted",
+    MissingItems = "missing-items",
+    Complete = "complete"
+}
 export enum CloudBackupItemFilter {
     All = "all",
     Deleted = "deleted",
@@ -20714,6 +20767,11 @@ export enum CloudBackupItemState {
     Active = "active",
     Trashed = "trashed",
     Deleted = "deleted"
+}
+export enum CloudBackupRestoreDetails {
+    Keep = "keep",
+    Fill = "fill",
+    Replace = "replace"
 }
 export enum CloudBackupTarget {
     Managed = "managed",

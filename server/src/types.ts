@@ -934,7 +934,7 @@ export type FrameleafCloudBackup = {
 /** FL-164: one restore from a manifest. Counts are files; `databaseFile` is the dump's name in `<media>/backups`. */
 export type FrameleafCloudBackupRestore = {
   operationId: string;
-  scope: 'files' | 'asset' | 'database' | 'library';
+  scope: 'files' | 'asset' | 'album' | 'database' | 'library';
   manifestKey: string;
   status: 'completed' | 'failed' | 'cancelled';
   at: string;
@@ -944,6 +944,9 @@ export type FrameleafCloudBackupRestore = {
   replaced: number;
   destination?: string;
   databaseFile?: string;
+  /** Deleted items made again, and items whose details came back (manifest v2). */
+  recreated?: number;
+  detailsRestored?: number;
   error?: string;
 };
 

@@ -828,6 +828,33 @@ export class CloudBackupIndexRepository {
     return records;
   }
 
+  /** FL-164: the items each of these albums holds now; an album that is gone is left out. */
+  // No @GenerateSql: covered by the medium spec.
+  async getAlbumMembers(albumIds: string[]): Promise<Map<string, Set<string>>> {
+    const ids = [...new Set(albumIds)];
+    if (ids.length === 0) {
+      return new Map();
+    }
+    const [albums, members] = await Promise.all([
+      this.db
+        .selectFrom('album')
+        .select('id')
+        .where('id', '=', sql<string>`any(${ids}::uuid[])`)
+        .where('deletedAt', 'is', null)
+        .execute(),
+      this.db
+        .selectFrom('album_asset')
+        .select(['albumId', 'assetId'])
+        .where('albumId', '=', sql<string>`any(${ids}::uuid[])`)
+        .execute(),
+    ]);
+    const held = new Map(albums.map(({ id }) => [id, new Set<string>()]));
+    for (const { albumId, assetId } of members) {
+      held.get(albumId)?.add(assetId);
+    }
+    return held;
+  }
+
   /** Every account's profile image. */
   @GenerateSql()
   async listProfileImages(): Promise<Array<{ userId: string; path: string }>> {
