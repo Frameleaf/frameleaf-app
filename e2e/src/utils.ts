@@ -518,6 +518,22 @@ export const utils = {
     return person;
   },
 
+  /**
+   * FL-195: a lock record as a sensitive-content detection or the upgrade from the old Locked folder
+   * writes it, which no endpoint can create on demand.
+   */
+  setAssetLock: async (assetId: string, reason: 'marked' | 'detected' | 'immich-locked-folder') => {
+    if (!client) {
+      return;
+    }
+
+    await client.query(
+      `INSERT INTO asset_lock ("assetId", reason, "previousVisibility") VALUES ($1, $2, $3)
+       ON CONFLICT ("assetId") DO UPDATE SET reason = excluded.reason, "previousVisibility" = excluded."previousVisibility"`,
+      [assetId, reason, reason === 'immich-locked-folder' ? 'locked' : null],
+    );
+  },
+
   createFace: async ({ assetId, personGroupId }: { assetId: string; personGroupId: string }) => {
     if (!client) {
       return;

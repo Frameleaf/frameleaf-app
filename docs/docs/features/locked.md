@@ -17,12 +17,32 @@ Stacks and live photos lock and unlock as a whole: locking one photo of a stack 
 ## Who sees a locked item
 
 - **You, while your session is locked**: nothing. The item is left out of the timeline, albums, search, the map, memories, people, pets and downloads. Your own devices still sync it, marked locked.
-- **You, after unlocking with your PIN**: **Locked** lists every locked item. Your timeline also shows the items you marked and the ones detection locked ("Revealed for this session"); items moved from the old Locked folder stay in Locked only. Albums show their locked members.
+- **You, after unlocking with your PIN**: **Locked** lists every locked item. Everywhere else, the items you marked, the ones detection locked and the ones your Locked rules hide behave exactly like any other item ("Revealed for this session", see below). Items moved from the old Locked folder stay in Locked only. Albums show their locked members.
 - **Partners, album and space members**: never, whatever their own session. A partner's device that already had the item is told it is now locked and hides it; it keeps only the item's id and dates, never its file name, thumbnail, location or other details.
 - **Shared links**: never.
 - **Server jobs** (thumbnails, machine learning, backups, restorations): always. Background work is never skipped because an item is locked. A bulk change you queue without unlocking skips any item that was locked after you queued it.
 
-A locked item keeps its place in your memories as it does in albums: it is left out of them while it is locked and is back once you unlock it.
+## Revealed for this session
+
+Once you unlock with your PIN, the items you marked, the ones detection locked and the ones your Locked rules hide behave like any other item, everywhere, for you:
+
+- **Search**: smart, metadata, text-in-photo (OCR) and Ask search find them, and facets, counts, the histogram and the places and suggestions lists include them.
+- **Library views**: the timeline, the archive, Explore, memories, people and pets, Best Photos, duplicates, albums, the map, tags and folders show and count them.
+- **Actions**: bulk actions (favorite, archive, add to album, change date or location, delete) and downloads work on them, and **Studio** can place them in a project and export them.
+
+They still never reach anybody else: partners, album and space members, administrators and shared links never see them, whatever their own session. Sharing a revealed item is not offered, and a revealed item never becomes a cover, a featured photo, a profile picture or a Studio project's poster, because those show whatever the session.
+
+When the session locks again, they keep every place and association they have (albums, stacks, tags, people, memories, Studio projects) but show nowhere, as before.
+
+A locked item keeps its place in your memories as it does in albums: it is left out of them while it is locked and is back once you unlock it. A memory whose every item is locked is left out entirely while the session is locked, so its title and date never show. New memories are still made only from items that are not locked.
+
+### Studio
+
+With the session unlocked you can place your marked and detected items in a Studio project like any other item, preview it and export it. Items moved from the old Locked folder are refused. When the session locks:
+
+- The project keeps its references. Opening it resolves those clips exactly like missing media, and they come back when you unlock.
+- An export made from a locked item is itself locked, with the strongest reason among its sources, so it is hidden with them and revealed with them.
+- A Studio bundle (the project file you download) carries a locked item as a bare reference, never its file, even when made while unlocked.
 
 A locked photo is never an album, collection or space cover, a person's or pet's featured photo, a face thumbnail or a profile picture source. Locking one releases every such use; each falls back to another photo (Best Photos first), or to none.
 
@@ -50,6 +70,7 @@ Going back to a release without lock records restores the upstream Locked folder
 - `POST /assets/lock` and `POST /assets/unlock` (body `{ "ids": [...] }`) lock and unlock. Unlock needs a PIN-unlocked session; lock does not, since it only hides.
 - `visibility: locked` is never stored. In requests it still means "lock" (`PUT /assets`, uploads), and asking for `visibility: locked` in timeline and search requests lists the Locked view. Responses report `visibility: locked` for a locked item.
 - Time bucket requests with `visibility: locked` and no `lockReason` also list the caller's Locked-rule matches; those keep their stored visibility (`timeline` or `archive`) and have no `lockReason`.
-- Time bucket requests with `visibility: locked` accept `lockReason` (`marked`, `detected` or `immich-locked-folder`). The `lockReason` array comes back with them, and with the timeline of a PIN-unlocked session, which reveals your marked and detected items.
+- Time bucket requests with `visibility: locked` accept `lockReason` (`marked`, `detected` or `immich-locked-folder`). The `lockReason` array comes back with them, and with every other time bucket request of a PIN-unlocked session, which reveals your marked and detected items.
+- In a PIN-unlocked session, any other requested visibility (`timeline`, `archive`, in time buckets, search bodies and structured `filter`s alike) also matches your own marked and detected items with that stored visibility, reported as `visibility: locked`. Nobody else's locked items ever match.
 - Setting any other visibility never unlocks: the item stays locked and only its stored visibility changes. Only `POST /assets/unlock` unlocks.
 - Partner sync keeps sending a partner's locked item with `visibility: locked` and its details blanked, so a device that already had it hides it.

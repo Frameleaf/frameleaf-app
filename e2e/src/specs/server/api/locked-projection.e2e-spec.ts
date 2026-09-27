@@ -44,8 +44,12 @@ const lock = (token: string) => request(app).post('/auth/session/lock').set(bear
  * count or show an item is read — timeline, search, counts, facets, memories, people, tags, folders,
  * the map, albums, stacks, duplicates, Trash, downloads — as the owner locked, the owner unlocked,
  * a partner, an album member, an elevated administrator and a shared link.
+ *
+ * FL-195 (owner decision, September 27, 2026): unlocked, the owner's marks, detections and rule
+ * matches behave like any other item in every one of those reads; items from the old Locked folder
+ * stay in the Locked view. Locked, they keep their places and associations but show nowhere.
  */
-describe('Locked projection over the API (FL-34)', () => {
+describe('Locked projection over the API (FL-34, FL-195)', () => {
   const pinCode = '975310';
   let admin: LoginResponseDto;
   let owner: LoginResponseDto;
@@ -53,9 +57,15 @@ describe('Locked projection over the API (FL-34)', () => {
   let member: LoginResponseDto;
   let plain: { id: string };
   let locked: { id: string };
+  let detected: { id: string };
+  let legacy: { id: string };
   let ruleMatch: { id: string };
   let albumId: string;
   let memoryId: string;
+  let lockedOnlyMemoryId: string;
+  let personId: string;
+  let tripTagId: string;
+  let projectId: string;
   let sharedKey: string;
   let folderPath: string;
   const hiddenTag = 'FL-34 hidden rule';
@@ -65,6 +75,7 @@ describe('Locked projection over the API (FL-34)', () => {
   // ...and one visible item brings it back, counted without the hidden one.
   const mixedTag = 'FL-34 on both';
   const tagIds: Record<string, string> = {};
+  const tripTag = 'FL-195 trip';
 
   const ownerReads = (): Read[] => [
     { name: 'timeline buckets', path: '/timeline/buckets', query: { visibility: 'timeline' } },
@@ -105,6 +116,9 @@ describe('Locked projection over the API (FL-34)', () => {
     { name: 'activities', path: '/activities', query: { albumId } },
   ];
 
+  /** Everything a locked session, or anybody else, must never see. */
+  const hiddenIds = () => [locked.id, detected.id, legacy.id, ruleMatch.id];
+
   const unlock = (token: string) =>
     request(app).post('/auth/session/unlock').set(bearer(token)).send({ pinCode }).expect(204);
 
@@ -131,11 +145,13 @@ describe('Locked projection over the API (FL-34)', () => {
 
     plain = await newAsset('plain-photo');
     locked = await newAsset('locked-secret');
+    detected = await newAsset('detected-secret');
+    legacy = await newAsset('legacy-secret');
     ruleMatch = await newAsset('rule-secret');
     const { body: plainInfo } = await request(app).get(`/assets/${plain.id}`).set(bearer(owner.accessToken));
     folderPath = plainInfo.originalPath.replace(/\/[^/]+$/, '');
 
-    const [tag] = await utils.upsertTags(owner.accessToken, [hiddenTag]);
+    const [tag, trip] = await utils.upsertTags(owner.accessToken, [hiddenTag, tripTag]);
     await utils.tagAssets(owner.accessToken, tag.id, [ruleMatch.id]);
     for (const [name, assetIds] of [
       [lockedOnlyTag, [locked.id]],
@@ -147,10 +163,19 @@ describe('Locked projection over the API (FL-34)', () => {
       tagIds[name] = created.id;
     }
     tagIds[hiddenTag] = tag.id;
+    tripTagId = trip.id;
+    // only hidden items carry this tag, so a locked session hides the tag itself (FL-46)
+    await utils.tagAssets(owner.accessToken, trip.id, [locked.id, detected.id, ruleMatch.id]);
+
+    const person = await utils.createPerson(owner.accessToken, { name: 'FL-195 Friend' });
+    personId = person.id;
+    for (const asset of [plain, locked, detected, ruleMatch]) {
+      await utils.createFace({ assetId: asset.id, personGroupId: person.id });
+    }
 
     const album = await utils.createAlbum(owner.accessToken, {
       albumName: 'Holiday',
-      assetIds: [plain.id, locked.id, ruleMatch.id],
+      assetIds: [plain.id, locked.id, detected.id, ruleMatch.id],
       albumUsers: [{ userId: member.userId, role: 'viewer' as never }],
     });
     albumId = album.id;
@@ -161,10 +186,21 @@ describe('Locked projection over the API (FL-34)', () => {
         type: 'on_this_day',
         data: { year: 2021 },
         memoryAt: '2021-06-15T00:00:00.000Z',
-        assetIds: [plain.id, locked.id, ruleMatch.id],
+        assetIds: [plain.id, locked.id, detected.id, ruleMatch.id],
       })
       .expect(201);
     memoryId = memory.id;
+    const { body: lockedOnlyMemory } = await request(app)
+      .post('/memories')
+      .set(bearer(owner.accessToken))
+      .send({
+        type: 'on_this_day',
+        data: { year: 2020 },
+        memoryAt: '2020-06-15T00:00:00.000Z',
+        assetIds: [locked.id, detected.id],
+      })
+      .expect(201);
+    lockedOnlyMemoryId = lockedOnlyMemory.id;
     const link = await utils.createSharedLink(owner.accessToken, { type: SharedLinkType.Album, albumId });
     sharedKey = link.key;
 
@@ -189,6 +225,35 @@ describe('Locked projection over the API (FL-34)', () => {
       .set(bearer(owner.accessToken))
       .send({ ids: [locked.id] })
       .expect(204);
+    // a detection and an item from the old Locked folder, as the detector and the upgrade write them
+    await utils.setAssetLock(detected.id, 'detected');
+    await utils.setAssetLock(legacy.id, 'immich-locked-folder');
+
+    // FL-195: an unlocked owner places a mark and a detection in a Studio project like any other item
+    const { body: project } = await request(app)
+      .post('/studio/projects')
+      .set(bearer(owner.accessToken))
+      .send({
+        name: 'FL-195 cut',
+        clientId: 'fl-195-editor',
+        envelope: {
+          schemaVersion: 1,
+          engine: 'freecut',
+          engineRevision: 'fl-195',
+          graph: {
+            id: 'seq-main',
+            tracks: [
+              {
+                id: 't-video',
+                kind: 'video',
+                clips: [{ assetId: plain.id }, { assetId: locked.id }, { assetId: detected.id }],
+              },
+            ],
+          },
+        },
+      });
+    expect(project.id, JSON.stringify(project)).toBeDefined();
+    projectId = project.id;
   });
 
   it("lists the owner's locks and Locked-rule matches in the Locked view of an unlocked session", async () => {
@@ -198,13 +263,13 @@ describe('Locked projection over the API (FL-34)', () => {
       .query({ visibility: 'locked' })
       .set(bearer(owner.accessToken))
       .expect(200);
-    expect(buckets).toEqual([{ timeBucket: '2021-06-01', count: 2 }]);
+    expect(buckets).toEqual([{ timeBucket: '2021-06-01', count: 4 }]);
     const { body: bucket } = await request(app)
       .get('/timeline/bucket')
       .query({ visibility: 'locked', timeBucket: '2021-06-01' })
       .set(bearer(owner.accessToken))
       .expect(200);
-    expect(new Set(bucket.id)).toEqual(new Set([locked.id, ruleMatch.id]));
+    expect(new Set(bucket.id)).toEqual(new Set([locked.id, detected.id, legacy.id, ruleMatch.id]));
 
     // the control for the sweep below: an unlocked session does find both through the same reads
     const answers = await readAll(ownerReads(), bearer(owner.accessToken));
@@ -217,15 +282,140 @@ describe('Locked projection over the API (FL-34)', () => {
     }
   });
 
+  it("finds the owner's marks, detections and rule matches everywhere once unlocked, like any other item (FL-195)", async () => {
+    await unlock(owner.accessToken);
+    const revealed = [plain.id, locked.id, detected.id, ruleMatch.id];
+    const timeline = { visibility: 'timeline' };
+    const reads: Read[] = [
+      ...ownerReads(),
+      // what the web sends: the library, a person, a tag and the search page's structured filter
+      { name: 'person buckets', path: '/timeline/buckets', query: { ...timeline, personId } },
+      { name: 'tag buckets', path: '/timeline/buckets', query: { ...timeline, tagId: tripTagId } },
+      {
+        name: 'album timeline bucket',
+        path: '/timeline/bucket',
+        query: { ...timeline, albumId, timeBucket: '2021-06-01' },
+      },
+      { name: 'search timeline', method: 'post', path: '/search/metadata', body: timeline },
+      {
+        name: 'search filter',
+        method: 'post',
+        path: '/search/metadata',
+        body: { filter: { visibility: { eq: 'timeline' } } },
+      },
+      {
+        name: 'search tag filter',
+        method: 'post',
+        path: '/search/metadata',
+        body: { filter: { tagIds: { any: [tripTagId] } } },
+      },
+      { name: 'search random timeline', method: 'post', path: '/search/random', body: { ...timeline, size: 50 } },
+      { name: 'search statistics timeline', method: 'post', path: '/search/statistics', body: timeline },
+      {
+        name: 'search statistics filter',
+        method: 'post',
+        path: '/search/statistics',
+        body: { filter: { visibility: { eq: 'timeline' } } },
+      },
+      { name: 'search histogram timeline', method: 'post', path: '/search/histogram', body: timeline },
+      { name: 'person statistics', path: `/people/${personId}/statistics` },
+      { name: 'timeline asset statistics', path: '/assets/statistics', query: timeline },
+      { name: 'map statistics', path: '/map/statistics' },
+      { name: 'studio project', path: `/studio/projects/${projectId}` },
+    ];
+    const answers = await readAll(reads, bearer(owner.accessToken));
+    const answer = (name: string) => answers.find((read) => read.name === name)!;
+    const json = (name: string) => JSON.parse(answer(name).text);
+
+    // every read that lists items lists all four, and never the item from the old Locked folder
+    for (const name of [
+      'timeline bucket',
+      'album timeline bucket',
+      'search metadata',
+      'search timeline',
+      'search filter',
+      'search random timeline',
+      'map markers',
+      'memory',
+      'folders',
+      'album',
+      'album bucket',
+      'download info',
+    ]) {
+      for (const id of revealed) {
+        expect(answer(name).text, `${name} finds ${id}`).toContain(id);
+      }
+      if (name !== 'search metadata') {
+        expect(answer(name).text, `${name} keeps the old Locked folder item in Locked`).not.toContain(legacy.id);
+      }
+    }
+
+    // and every count counts them
+    const month = [{ timeBucket: '2021-06-01', count: 4 }];
+    expect(json('timeline buckets')).toEqual(month);
+    expect(json('person buckets')).toEqual(month);
+    expect(json('tag buckets')).toEqual([{ timeBucket: '2021-06-01', count: 3 }]);
+    for (const id of [locked.id, detected.id, ruleMatch.id]) {
+      expect(answer('search tag filter').text, `tag filter finds ${id}`).toContain(id);
+    }
+    expect(json('search statistics timeline').total).toBe(4);
+    expect(json('search statistics filter').total).toBe(4);
+    expect(json('asset statistics').total).toBe(4);
+    expect(json('timeline asset statistics').total).toBe(4);
+    expect(json('album').assetCount).toBe(4);
+    expect(json('memory').assets).toHaveLength(4);
+    expect(json('person statistics').assets).toBe(4);
+    const people = json('people');
+    expect(people.people.find((row: { id: string }) => row.id === personId)?.assetCount).toBe(4);
+    const tagStats = json('tag statistics');
+    expect(tagStats.find((row: { id: string }) => row.id === tripTagId)?.count).toBe(3);
+    expect(json('search histogram timeline').total).toBe(4);
+    expect(json('memories').map((memory: { id: string }) => memory.id)).toContain(lockedOnlyMemoryId);
+
+    // Studio: the project holds the mark and the detection and every source resolves
+    const project = json('studio project');
+    expect(project.resources, JSON.stringify(project)).toEqual(
+      expect.objectContaining({ complete: true, refusedCount: 0 }),
+    );
+    // a poster shows whatever the session, so a revealed lock never becomes one
+    await request(app)
+      .put(`/studio/projects/${projectId}`)
+      .set(bearer(owner.accessToken))
+      .send({ thumbnailAssetId: locked.id })
+      .expect(400);
+    await request(app)
+      .put(`/studio/projects/${projectId}`)
+      .set(bearer(owner.accessToken))
+      .send({ thumbnailAssetId: plain.id })
+      .expect(200);
+  });
+
   it('leaves no trace of a lock or a rule match in any projection of a locked session', async () => {
     await lock(owner.accessToken);
-    const answers = await readAll(ownerReads(), bearer(owner.accessToken));
+    const answers = await readAll(
+      [
+        ...ownerReads(),
+        {
+          name: 'search filter',
+          method: 'post',
+          path: '/search/metadata',
+          body: { filter: { visibility: { eq: 'timeline' } } },
+        },
+        { name: 'person statistics', path: `/people/${personId}/statistics` },
+        { name: 'locked-only memory', path: `/memories/${lockedOnlyMemoryId}` },
+      ],
+      bearer(owner.accessToken),
+    );
     expectNoTrace(answers, [
-      locked.id,
-      ruleMatch.id,
+      ...hiddenIds(),
       'locked-secret',
+      'detected-secret',
+      'legacy-secret',
       'rule-secret',
       hiddenTag,
+      lockedOnlyMemoryId,
+      tripTag,
+      tripTagId,
       lockedOnlyTag,
       besideRuleTag,
       tagIds[hiddenTag],
@@ -239,9 +429,16 @@ describe('Locked projection over the API (FL-34)', () => {
     expect(count('album').assetCount).toBe(1);
     expect(count('timeline buckets')).toEqual([{ timeBucket: '2021-06-01', count: 1 }]);
     expect(count('memory').assets).toHaveLength(1);
+    expect(count('person statistics').assets).toBe(1);
+    // FL-195: the project keeps its references; while locked they resolve like missing media
+    const { body: project } = await request(app)
+      .get(`/studio/projects/${projectId}`)
+      .set(bearer(owner.accessToken))
+      .expect(200);
+    expect(project.resources).toEqual(expect.objectContaining({ complete: false, refusedCount: 2 }));
 
     for (const { name, status } of await readAll(
-      [...oneItemReads(locked.id), ...oneItemReads(ruleMatch.id)],
+      [...oneItemReads(locked.id), ...oneItemReads(detected.id), ...oneItemReads(ruleMatch.id)],
       bearer(owner.accessToken),
     )) {
       if (!name.startsWith('download')) {
@@ -305,7 +502,9 @@ describe('Locked projection over the API (FL-34)', () => {
     expect(
       unlocked.map(({ value }: { value: string }) => value).toSorted((a: string, b: string) => a.localeCompare(b)),
     ).toEqual(
-      [besideRuleTag, hiddenTag, lockedOnlyTag, mixedTag].toSorted((a: string, b: string) => a.localeCompare(b)),
+      [besideRuleTag, hiddenTag, lockedOnlyTag, mixedTag, tripTag].toSorted((a: string, b: string) =>
+        a.localeCompare(b),
+      ),
     );
   });
 
@@ -321,11 +520,25 @@ describe('Locked projection over the API (FL-34)', () => {
         },
         { name: 'partner map', path: '/map/markers', query: { withPartners: true } },
         { name: 'partner search', method: 'post', path: '/search/metadata', body: { withPartners: true } },
+        {
+          name: 'partner search timeline',
+          method: 'post',
+          path: '/search/metadata',
+          body: { visibility: 'timeline', withPartners: true },
+        },
+        {
+          name: 'partner search filter',
+          method: 'post',
+          path: '/search/metadata',
+          body: { filter: { visibility: { eq: 'timeline' } } },
+        },
+        { name: 'partner statistics', method: 'post', path: '/search/statistics', body: { visibility: 'timeline' } },
         ...oneItemReads(locked.id),
+        ...oneItemReads(detected.id),
       ],
       bearer(partner.accessToken),
     );
-    expectNoTrace(partnerAnswers, [locked.id, 'locked-secret']);
+    expectNoTrace(partnerAnswers, [locked.id, detected.id, legacy.id, 'locked-secret', 'detected-secret']);
 
     const memberAnswers = await readAll(
       [
@@ -333,11 +546,18 @@ describe('Locked projection over the API (FL-34)', () => {
         { name: 'member bucket', path: '/timeline/bucket', query: { albumId, timeBucket: '2021-06-01' } },
         { name: 'member album markers', path: `/albums/${albumId}/map-markers` },
         { name: 'member download', method: 'post', path: '/download/info', body: { albumId } },
+        {
+          name: 'member album search',
+          method: 'post',
+          path: '/search/metadata',
+          body: { filter: { albumIds: { any: [albumId] }, visibility: { eq: 'timeline' } } },
+        },
         ...oneItemReads(locked.id),
+        ...oneItemReads(detected.id),
       ],
       bearer(member.accessToken),
     );
-    expectNoTrace(memberAnswers, [locked.id, 'locked-secret']);
+    expectNoTrace(memberAnswers, [locked.id, detected.id, 'locked-secret', 'detected-secret']);
     expect(JSON.parse(memberAnswers[0].text).assetCount).toBe(2);
 
     const linkAnswers = await readAll(
@@ -352,7 +572,7 @@ describe('Locked projection over the API (FL-34)', () => {
       ],
       {},
     );
-    expectNoTrace(linkAnswers, [locked.id, 'locked-secret']);
+    expectNoTrace(linkAnswers, [locked.id, detected.id, 'locked-secret', 'detected-secret']);
     for (const name of ['link thumbnail', 'link original']) {
       expect(linkAnswers.find((answer) => answer.name === name)!.status, name).toBeGreaterThanOrEqual(400);
     }
@@ -363,7 +583,14 @@ describe('Locked projection over the API (FL-34)', () => {
     const answers = await readAll(
       [
         ...oneItemReads(locked.id),
+        ...oneItemReads(detected.id),
         { name: 'admin search', method: 'post', path: '/search/metadata', body: { id: locked.id } },
+        {
+          name: 'admin search filter',
+          method: 'post',
+          path: '/search/metadata',
+          body: { filter: { id: { eq: detected.id }, visibility: { eq: 'timeline' } } },
+        },
         { name: 'admin album', path: `/albums/${albumId}` },
         {
           name: 'admin user statistics',
@@ -373,7 +600,7 @@ describe('Locked projection over the API (FL-34)', () => {
       ],
       bearer(admin.accessToken),
     );
-    expectNoTrace(answers, [locked.id, 'locked-secret']);
+    expectNoTrace(answers, [locked.id, detected.id, 'locked-secret', 'detected-secret']);
     for (const { name, status } of answers) {
       if (!name.startsWith('download') && !name.startsWith('admin search')) {
         expect(status, name).toBeGreaterThanOrEqual(400);
