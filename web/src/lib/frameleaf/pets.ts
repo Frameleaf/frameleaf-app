@@ -159,7 +159,7 @@ export const petPhotosFilter = (petId: string): SearchFilter => ({
  * Where recognition runs, in the owner's words. The managed cloud worker is "Frameleaf Cloud" in
  * every customer string (owner decision, FL-146); a LAN worker is named by its destination name.
  */
-export const recognitionDestinationKey = (kind: MlDestinationKind): Translations => {
+export const recognitionDestinationKey = (kind: MlDestinationKind): Translations | undefined => {
   switch (kind) {
     case MlDestinationKind.Local: {
       return 'frameleaf_pets_recognition_runs_local';
@@ -168,7 +168,9 @@ export const recognitionDestinationKey = (kind: MlDestinationKind): Translations
       return 'frameleaf_pets_recognition_runs_lan';
     }
     case MlDestinationKind.FrameleafCloud: {
-      return 'frameleaf_pets_recognition_runs_cloud';
+      // Pet recognition compares smart-search embeddings, which stay on this network: the server
+      // refuses a Frameleaf Cloud route (workload-not-allowed), so it is never where recognition runs.
+      return undefined;
     }
   }
 };

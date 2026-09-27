@@ -189,10 +189,9 @@ describe(petPhotosFilter.name, () => {
 });
 
 describe('pet recognition status (FL-58)', () => {
-  it('names the managed cloud worker Frameleaf Cloud and a LAN worker by its name', () => {
-    expect(en[recognitionDestinationKey(MlDestinationKind.FrameleafCloud) as keyof typeof en]).toContain(
-      'Frameleaf Cloud',
-    );
+  it('names a LAN worker by its name and never says recognition runs on Frameleaf Cloud', () => {
+    expect(recognitionDestinationKey(MlDestinationKind.FrameleafCloud)).toBeUndefined();
+    expect(JSON.stringify(en)).not.toMatch(/Recognition runs on Frameleaf Cloud/);
     expect(en[recognitionDestinationKey(MlDestinationKind.Lan) as keyof typeof en]).toContain('{name}');
     expect(en[recognitionDestinationKey(MlDestinationKind.Local) as keyof typeof en]).toContain('this server');
   });
