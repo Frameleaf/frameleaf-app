@@ -124,16 +124,16 @@ Each limit counts requests in a fixed window, per client address (an IPv6 addres
 
 The client address is the one the server sees. Behind a reverse proxy, the proxy's address is used unless the proxy is trusted: private addresses and loopback need nothing, but a proxy on another address, for example a VPS reached over Tailscale (`100.64.0.0/10`), must be listed in `IMMICH_TRUSTED_PROXIES`, or every visitor shares the proxy's counter. `IMMICH_ENV=testing` turns the sign-in limits off for the automated test suites; never set it on a server people use (the server warns when it starts with it).
 
-| Requests                                                                                                      | Per address | Per account or link            | Window     |
-| ------------------------------------------------------------------------------------------------------------- | ----------- | ------------------------------ | ---------- |
-| Password sign-in (`POST /api/auth/login`)                                                                     | 30          | 10 wrong per email and address | 10 minutes |
-| Your OpenID provider's callbacks (`/api/oauth/callback`, `/api/oauth/link`)                                   | 30          | 30 per session                 | 10 minutes |
-| Sign in with Frameleaf (`/api/oauth/frameleaf/*`)                                                             | 60          | 60 per session                 | 10 minutes |
-| Shared-link password (`POST /api/shared-links/login`)                                                         | 30          | 60 wrong per link and address  | 10 minutes |
-| Licence activation (`/api/admin/license/activate`, `/api/admin/license/certificate`, `/api/users/me/license`) | 10          | 10 per session                 | 1 hour     |
-| Starting a link (`POST /api/admin/cloud/link`)                                                                | 10          | 10 per session                 | 1 hour     |
-| Every request through remote access, except thumbnails and previews                                           | 1,200       | —                              | 1 minute   |
-| Thumbnails and previews through remote access, shared links included                                          | 6,000       | —                              | 1 minute   |
+| Requests                                                                                                                                | Per address | Per account or link            | Window     |
+| --------------------------------------------------------------------------------------------------------------------------------------- | ----------- | ------------------------------ | ---------- |
+| Password sign-in (`POST /api/auth/login`)                                                                                               | 30          | 10 wrong per email and address | 10 minutes |
+| Your OpenID provider's callbacks (`/api/oauth/callback`, `/api/oauth/link`)                                                             | 30          | 30 per session                 | 10 minutes |
+| Sign in with Frameleaf (`/api/oauth/frameleaf/*`)                                                                                       | 60          | 60 per session                 | 10 minutes |
+| Shared-link password (`POST /api/shared-links/login`)                                                                                   | 30          | 60 wrong per link and address  | 10 minutes |
+| Licence activation (`/api/admin/license/activate`, `/api/admin/license/certificate`, `/api/users/me/license`, `/api/license/link-code`) | 10          | 10 per session                 | 1 hour     |
+| Starting a link (`POST /api/admin/cloud/link`)                                                                                          | 10          | 10 per session                 | 1 hour     |
+| Every request through remote access, except thumbnails and previews                                                                     | 1,200       | —                              | 1 minute   |
+| Thumbnails and previews through remote access, shared links included                                                                    | 6,000       | —                              | 1 minute   |
 
 ## Plan and licence
 
@@ -144,7 +144,9 @@ The client address is the one the server sees. Behind a reverse proxy, the proxy
 
 Every price is in US dollars. When the server was deployed without a Frameleaf Cloud address, the cards say purchasing isn't available yet.
 
-The server checks a key's format, including its check symbol, before sending it anywhere, and refuses keys of the previous product-key scheme. Keys travel only in request bodies: a key handed over by the Frameleaf store arrives in the address fragment of `/link`, is kept in the browser's session storage for **Support Frameleaf**, and is cleared from the address straight away.
+The server checks a key's format, including its check symbol, before sending it anywhere, and refuses keys of the previous product-key scheme. A key never travels in an address, not even after the `#`: you type or paste it into **Already have a key?** on **Support Frameleaf** (or the **Licence** page), and it is sent only in the request body.
+
+**Use on your server** in your Frameleaf account hands a licence over without the key. It opens this server's `/link` page with a one-time link code (`flc_…`, single use, valid for 10 minutes). The page takes the code out of the address before anything else happens, so it stays in neither the address bar nor the browser history, and **Support Frameleaf** hands it to this server in a request body. The server redeems it with Frameleaf Cloud over its signed link, and Frameleaf Cloud activates the licence for this server directly. Neither the server nor the browser ever sees the key. A server key goes to an administrator's server; anyone else can only receive a personal key. The server must be linked to the same Frameleaf account that holds the licence. On a server that isn't linked, or while Frameleaf Cloud doesn't offer link codes yet, the page asks you to link the server first or to paste the key. A link that still carries a key in its address (from before link codes) is never used: the key is removed from the address at once and you're asked to paste it. The server never records the address of `/link` or of a licence request in its logs, and `/link` is served so that no request sends its address on as a referrer.
 
 ### Licence certificates
 
