@@ -28,6 +28,7 @@ describe('frameleaf-cloud-link (FL-155)', () => {
   });
 
   it('builds a heartbeat with exactly the listed fields, dropping anything else', () => {
+    const golden = cloudContractFixture('instance/heartbeat-request.json');
     const payload = buildHeartbeat({
       version: '3.2.0',
       bootId: 'boot',
@@ -42,9 +43,15 @@ describe('frameleaf-cloud-link (FL-155)', () => {
       permissions: { allowRemoteEnable: true, email: 'x' } as never,
       licenseKid: null,
       capabilities: ['dpop', '', 'x'.repeat(33), ...Array.from({ length: 20 }, (_, index) => `c${index}`)],
+      remoteAccessSettings: { ...golden.remoteAccessSettings, publicHostname: 'photos.example.com' },
+      cloudMl: golden.cloudMl,
+      cloudBackup: golden.cloudBackup,
+      licenseState: 'active',
       albums: ['private'],
     } as never);
-    expect(Object.keys(payload)).toEqual([...HEARTBEAT_FIELDS]);
+    // FC-61: a block carrying any other key is left out, never sent
+    expect(Object.keys(payload)).toEqual(HEARTBEAT_FIELDS.filter((field) => field !== 'remoteAccessSettings'));
+    expect(JSON.stringify(payload)).not.toContain('photos.example.com');
     // the cloud's bounds (FC-50): at most 16 entries of 1 to 32 characters
     expect(payload.capabilities).toHaveLength(16);
     expect(payload.capabilities![0]).toBe('dpop');
@@ -67,6 +74,7 @@ describe('frameleaf-cloud-link (FL-155)', () => {
     expect(commandPermission('backup.run')).toBe('allowBackupTrigger');
     expect(commandPermission('secret.rotate')).toBe('allowEntitlementRefresh');
     expect(commandPermission('key.rotate')).toBe('allowEntitlementRefresh');
+    expect(commandPermission('entitlements.refresh')).toBe('allowEntitlementRefresh');
     expect(commandPermission('relink')).toBe('always');
     expect(commandPermission('data.delete')).toBeNull();
   });

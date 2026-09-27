@@ -114,3 +114,9 @@ above.
   constants in `server/src/utils/frameleaf-relay.ts` mirror `packages/contracts/src/tunnel.ts` on `codex/FC-30-relay`
   at `b223ee8`; `server/test/fixtures/relay.ts` is a Node stand-in for the Go relay (`apps/relay`), and
   `server/test/fixtures/frameleaf-relay/` holds test-only certificates and keys used nowhere else.
+- FL-159 / FC-61 (heartbeat settings snapshot and `entitlements.refresh`): `instance/heartbeat-request.json` is
+  byte-identical to `origin/main` at `b3f1391b636b041d7baf140c6ec0f12b6832be57` (FC-61 `8d02d5b`, frameleaf-cloud PR #73; it gained
+  `entitlements.refresh` in `capabilities` and the `remoteAccessSettings`, `cloudMl`, `cloudBackup` and `licenseState`
+  blocks). Every other copied `instance/` file was compared with that commit and is unchanged. The contract is
+  `packages/contracts/src/instance/heartbeat.ts` (`RemoteAccessSettings`, `CloudMlSettings`, `CloudBackupSettings`,
+  `LicenseState`); `server/src/utils/frameleaf-cloud-settings.ts` builds and checks the blocks.

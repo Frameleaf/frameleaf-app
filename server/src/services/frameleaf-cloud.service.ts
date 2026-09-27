@@ -5,7 +5,12 @@ import { arch, platform } from 'node:os';
 import z from 'zod';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { FrameleafCloudTopic } from 'src/repositories/websocket.repository.js';
-import type { FrameleafCloudLink, FrameleafCloudPermissions, FrameleafInstanceIdentity } from 'src/types.js';
+import type {
+  FrameleafCloudLink,
+  FrameleafCloudPermissions,
+  FrameleafInstanceIdentity,
+  FrameleafLicenseStore,
+} from 'src/types.js';
 import { serverVersion } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
@@ -21,6 +26,7 @@ import {
   ImmichWorker,
   JobName,
   JobStatus,
+  MlDestinationKind,
   NotificationLevel,
   NotificationType,
   QueueName,
@@ -65,6 +71,13 @@ import {
   rememberNotices,
 } from 'src/utils/frameleaf-cloud-link.js';
 import {
+  type HeartbeatSettings,
+  cloudBackupSettingsOf,
+  cloudMlSettingsOf,
+  licenseStateOf,
+  remoteAccessSettingsOf,
+} from 'src/utils/frameleaf-cloud-settings.js';
+import {
   CloudErrorCode,
   FrameleafCloudError,
   FrameleafDiscoveryDocument,
@@ -86,7 +99,15 @@ import { handlePromiseError } from 'src/utils/misc.js';
  * (`FrameleafCloudRepository` refuses to send any other call except the named public ones), so the
  * cloud may refuse this server any unbound token, at the token endpoint, on api. and on ml.<region>.
  */
-export const INSTANCE_CAPABILITIES: readonly string[] = ['heartbeat', 'commands', 'license', 'oidc', 'dpop'];
+export const INSTANCE_CAPABILITIES: readonly string[] = [
+  'heartbeat',
+  'commands',
+  'license',
+  'oidc',
+  'dpop',
+  // FC-61: this server runs the `entitlements.refresh` command, which the cloud sends only when listed
+  'entitlements.refresh',
+];
 
 /**
  * CLD-201 (FC-50): whether the check-in reports `INSTANCE_CAPABILITIES`, so a server linked before it
@@ -908,7 +929,31 @@ export class FrameleafCloudService extends BaseService {
       permissions: permissionsOf(link),
       licenseKid: license?.plan?.kid ?? license?.key?.kid ?? null,
       ...(HEARTBEAT_REPORTS_CAPABILITIES && { capabilities: INSTANCE_CAPABILITIES }),
+      ...(await this.settingsSnapshot(license)),
     });
+  }
+
+  /**
+   * FC-61: what the administrator chose, as the check-in's settings snapshot. A block that can't be read or
+   * would not pass the contract is left out (the cloud clears it), and the check-in goes ahead regardless.
+   */
+  private async settingsSnapshot(license: FrameleafLicenseStore | null): Promise<HeartbeatSettings> {
+    try {
+      const { frameleafCloud } = await this.getConfig({ withCache: true });
+      const destination = (await this.mlDestinationRepository.getAll()).find(
+        (row) => row.kind === MlDestinationKind.FrameleafCloud,
+      );
+      const backup = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafCloudBackup);
+      return {
+        remoteAccessSettings: remoteAccessSettingsOf(frameleafCloud.remoteAccess),
+        cloudMl: cloudMlSettingsOf(frameleafCloud.cloudMl, destination?.consentVersion),
+        cloudBackup: cloudBackupSettingsOf(frameleafCloud.cloudBackup, backup),
+        licenseState: licenseStateOf(license),
+      };
+    } catch (error) {
+      this.logger.warn(`Could not read the settings for the Frameleaf Cloud check-in: ${error}`);
+      return {};
+    }
   }
 
   private async checkIn(cloudUrl: string, link: FrameleafCloudLink): Promise<JobStatus> {
@@ -1279,6 +1324,12 @@ export class FrameleafCloudService extends BaseService {
       }
       case CloudCommandType.Relink: {
         return this.requireRelink(link, 'command');
+      }
+      case CloudCommandType.EntitlementsRefresh: {
+        // FC-61: as for a check-in's `entitlementsChanged`: the licence refresh fetches every certificate
+        // again (one queued refresh, however many ask for it)
+        await this.jobRepository.queue({ name: JobName.FrameleafLicenseRefresh, data: { force: true } });
+        return link;
       }
     }
   }

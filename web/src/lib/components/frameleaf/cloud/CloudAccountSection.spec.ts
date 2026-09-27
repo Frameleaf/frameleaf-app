@@ -167,6 +167,10 @@ describe('CloudAccountSection (FL-154, FL-155)', () => {
       'Permissions',
       'Licence',
       'Capabilities',
+      'Remote access settings',
+      'Cloud processing settings',
+      'Cloud backup settings',
+      'Licence state',
       'Never sent',
     ]);
 

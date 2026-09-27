@@ -40,6 +40,7 @@ import {
 } from 'test/fake-frameleaf-cloud.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { cloudContractFixture } from 'test/fixtures/frameleaf-cloud-contracts.js';
+import { mlDestinationStub } from 'test/fixtures/ml-destination.stub.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
 /** The RFC 7638 kid of an Ed25519 private key. */
@@ -196,6 +197,8 @@ describe(FrameleafCloudService.name, () => {
         }) as never,
     );
     mocks.systemMetadata.get.mockImplementation((key) => Promise.resolve((metadata.get(key) ?? null) as never));
+    // FC-61: the check-in's settings snapshot reads the Frameleaf Cloud processing destination
+    mocks.mlDestination.getAll.mockResolvedValue([]);
     mocks.systemMetadata.set.mockImplementation((key, value) => {
       metadata.set(key, value);
       return Promise.resolve();
@@ -399,8 +402,9 @@ describe(FrameleafCloudService.name, () => {
         platform: expect.any(String),
         jwk: { kty: 'OKP', crv: 'Ed25519', kid: expect.any(String) },
         bootId: expect.any(String),
-        // FC-50 (CLD-201): this build proofs every call, so it declares `dpop` beside the golden set
-        capabilities: [...golden.capabilities, 'dpop'],
+        // FC-50 (CLD-201): this build proofs every call, so it declares `dpop` beside the golden set, and
+        // FC-61: it runs the `entitlements.refresh` command
+        capabilities: [...golden.capabilities, 'dpop', 'entitlements.refresh'],
         permissions: golden.permissions,
       });
       expect(body.instanceId).toMatch(/^[\da-f]{8}-[\da-f]{4}-7[\da-f]{3}-[89ab][\da-f]{3}-[\da-f]{12}$/);
@@ -817,9 +821,10 @@ describe(FrameleafCloudService.name, () => {
         expect(Object.keys(sent[key])).toEqual(Object.keys(golden[key]));
       }
       // FC-50 (frameleaf-cloud PR #72): every check-in reports `dpop`, so a server linked before it
-      // declared the capability turns per-instance DPoP enforcement on without relinking
-      expect(golden.capabilities).toEqual(['dpop']);
-      expect(sent.capabilities).toContain('dpop');
+      // declared the capability turns per-instance DPoP enforcement on without relinking; FC-61 (PR #73)
+      // adds `entitlements.refresh`, so the cloud may send that command
+      expect(golden.capabilities).toEqual(['dpop', 'entitlements.refresh']);
+      expect(sent.capabilities).toEqual(expect.arrayContaining(golden.capabilities));
       expect(sent.capabilities).toEqual([...INSTANCE_CAPABILITIES]);
     });
 
@@ -988,6 +993,108 @@ describe(FrameleafCloudService.name, () => {
         frameleafCloud?: { remoteAccess?: { enabled?: boolean } };
       };
       expect(stored?.frameleafCloud?.remoteAccess?.enabled).toBe(true);
+    });
+
+    it('runs entitlements.refresh as a licence refresh and acknowledges it, only while the toggle allows it (FC-61)', async () => {
+      const acks: unknown[] = [];
+      cloud.on('POST /api/v1/instance/heartbeat', () => ({
+        status: 200,
+        body: { commands: [{ id: 'e1', type: 'entitlements.refresh' }] },
+      }));
+      cloud.on('POST /api/v1/instance/commands/e1/ack', (request) => {
+        acks.push(request.json());
+        return { status: 200, body: {} };
+      });
+      makeDue();
+      await sut.handleHeartbeat();
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.FrameleafLicenseRefresh, data: { force: true } });
+      expect(acks).toEqual([{ result: 'done', detail: null }]);
+      // the capability that lets the cloud send it is in every check-in
+      const beat = cloud.requests.find(({ path }) => path === '/api/v1/instance/heartbeat')!.json();
+      expect(beat.capabilities).toContain('entitlements.refresh');
+
+      vi.mocked(mocks.job.queue).mockClear();
+      await sut.updatePermissions(authStub.admin, { allowEntitlementRefresh: false });
+      makeDue();
+      await sut.handleHeartbeat();
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+      expect(acks.at(-1)).toEqual({ result: 'refused', detail: expect.stringContaining('allowEntitlementRefresh') });
+    });
+
+    it('reports the settings snapshot from the real settings, never a name, path or error text (FC-61)', async () => {
+      const config = metadata.get(SystemMetadataKey.SystemConfig) as Record<string, unknown> | undefined;
+      metadata.set(SystemMetadataKey.SystemConfig, {
+        ...config,
+        frameleafCloud: {
+          remoteAccess: {
+            mode: 'relay-and-direct',
+            publicUrl: 'custom',
+            customHostname: { host: 'photos.example.com', status: 'verified', checkedAt: null },
+          },
+          cloudMl: {
+            enabled: true,
+            routing: { descriptions: 'both', studio: 'cloud' },
+            autoDescribe: { enabled: true, dailyBudgetUsd: 4 },
+          },
+          cloudBackup: { enabled: true, target: 'managed', keyMode: 'server' },
+        },
+      });
+      clearConfigCache();
+      mocks.mlDestination.getAll.mockResolvedValue([
+        { ...mlDestinationStub.frameleafCloud, consentVersion: '2026-09-26.1' },
+      ]);
+      metadata.set(SystemMetadataKey.FrameleafCloudBackup, {
+        target: 'managed',
+        keyMode: 'server',
+        lastRun: {
+          operationId: 'run-1',
+          status: 'completed',
+          startedAt: '2026-09-25T03:00:00.000Z',
+          uploaded: 1,
+          skipped: 0,
+          missing: 0,
+          bytesUploaded: 1,
+          error: '/srv/private/path',
+        },
+      });
+      cloud.on('POST /api/v1/instance/heartbeat', () => ({ status: 200, body: {} }));
+      makeDue();
+      await sut.handleHeartbeat();
+
+      const beat = cloud.requests.find(({ path }) => path === '/api/v1/instance/heartbeat')!.json();
+      expect(Object.keys(beat)).toEqual([...HEARTBEAT_FIELDS]);
+      expect(beat).toMatchObject({
+        remoteAccessSettings: { mode: 'relay-and-direct', publicUrl: 'custom', requireFrameleafSignIn: true },
+        cloudMl: {
+          enabled: true,
+          routing: { descriptions: 'both', transcription: 'cloud-only' },
+          autoBatch: true,
+          dailyBudgetUsd: 4,
+          consentVersion: '2026-09-26.1',
+          faces: false,
+        },
+        cloudBackup: {
+          target: 'managed',
+          keyMode: 'server',
+          schedule: '0 3 * * *',
+          lastRun: { at: '2026-09-25T03:00:00.000Z', result: 'completed' },
+        },
+        licenseState: 'none',
+      });
+      const golden = cloudContractFixture('instance/heartbeat-request.json');
+      for (const key of ['remoteAccessSettings', 'cloudMl', 'cloudBackup'] as const) {
+        expect(Object.keys(beat[key]).toSorted()).toEqual(Object.keys(golden[key]).toSorted());
+      }
+      expect(JSON.stringify(beat)).not.toMatch(/example\.com|\/srv\//);
+    });
+
+    it('still checks in when the settings cannot be read, leaving the snapshot out (FC-61)', async () => {
+      mocks.mlDestination.getAll.mockRejectedValue(new Error('database is down'));
+      cloud.on('POST /api/v1/instance/heartbeat', () => ({ status: 200, body: {} }));
+      makeDue();
+      await expect(sut.handleHeartbeat()).resolves.toBe(JobStatus.Success);
+      const beat = cloud.requests.find(({ path }) => path === '/api/v1/instance/heartbeat')!.json();
+      expect(Object.keys(beat)).toEqual(HEARTBEAT_FIELDS.slice(0, 9));
     });
 
     it('refreshes the licence when entitlements changed and the toggle allows it', async () => {

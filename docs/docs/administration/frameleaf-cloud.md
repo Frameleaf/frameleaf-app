@@ -54,7 +54,7 @@ Create a link token in your Frameleaf account under **Servers → Add server**, 
 
 ## Check-ins
 
-While linked, the server checks in every few minutes: as often as Frameleaf Cloud's last answer asks, else as its service list says, else every five minutes, and never more often than once a minute or less often than every 15 minutes. **What this server sends** on the Account & link page lists every field of a check-in: the Frameleaf version, a start marker, uptime, health, the addresses used for remote access, the remote-access state, the permission choices, the licence's signing key and the capabilities this version supports (such as signing every request with its key). Photos, videos, thumbnails, metadata, names, accounts and usage are never sent.
+While linked, the server checks in every few minutes: as often as Frameleaf Cloud's last answer asks, else as its service list says, else every five minutes, and never more often than once a minute or less often than every 15 minutes. **What this server sends** on the Account & link page lists every field of a check-in: the Frameleaf version, a start marker, uptime, health, the addresses used for remote access, the remote-access state, the permission choices, the licence's signing key and the capabilities this version supports (such as signing every request with its key), and a summary of the choices on these pages: the remote access mode, direct port and relay options and whether the Frameleaf or your own address is used (never the address itself); whether cloud processing is on, where each kind of work runs, automatic descriptions and their daily budget and the terms version accepted; whether cloud backup to Frameleaf-managed storage is on, its key type, schedule and retention, whether the key is kept with Frameleaf, and how the last run ended (never file names or error text); and the licence's state. A server that backs up to its own bucket leaves the backup summary out. Frameleaf Cloud shows this summary to its support staff so they can help without asking. Photos, videos, thumbnails, metadata, names, accounts and usage are never sent.
 
 ### Messages from Frameleaf Cloud
 
@@ -74,7 +74,7 @@ Frameleaf Cloud can pause new work of one kind for a while, such as linking serv
 | Start a cloud backup            | Starting a backup run; never reading, changing or deleting backups           |   On    |
 | Refresh your plan automatically | Picking up renewals and plan changes, and renewing this server's credentials |   On    |
 
-The server checks every request against these choices and records it. A request to link again only asks an administrator to do so; no request ever deletes anything on the server.
+**Refresh your plan automatically** also lets Frameleaf Cloud ask the server to fetch its plan and licence again straight away. The server checks every request against these choices and records it. A request to link again only asks an administrator to do so; no request ever deletes anything on the server.
 
 ## Unlinking
 
