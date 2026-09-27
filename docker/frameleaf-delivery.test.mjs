@@ -6,11 +6,12 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
@@ -338,6 +339,15 @@ test("Compose resolves all deployment files and hardware overlays without a daem
       "IMMICH_VERSION=frameleaf-v3.1.0-7",
     ].join("\n");
     writeFileSync(resolve(directory, ".env"), env);
+    // The isolated DOCKER_CONFIG keeps user credentials and contexts out of the run, but
+    // Docker Desktop installs the compose plugin under the user's config directory, so link
+    // just that plugin directory in when it exists (Linux runners use the system plugin path).
+    const userPlugins = resolve(
+      process.env.DOCKER_CONFIG || resolve(homedir(), ".docker"),
+      "cli-plugins",
+    );
+    if (existsSync(userPlugins))
+      symlinkSync(userPlugins, resolve(temporary, "cli-plugins"));
     const cli = process.env.FRAMELEAF_COMPOSE_BIN || "docker";
     const prefix = process.env.FRAMELEAF_COMPOSE_BIN ? [] : ["compose"];
     const run = (filenames) => {
