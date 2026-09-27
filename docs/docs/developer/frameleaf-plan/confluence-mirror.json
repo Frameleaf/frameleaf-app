@@ -1058,19 +1058,19 @@
       "readbackAt": "2026-09-26T21:24:11.417Z"
     },
     {
-      "bytes": 133363,
+      "bytes": 135356,
       "category": "plan",
       "id": "63864877",
       "source": "docs/docs/developer/frameleaf-plan/15-frameleaf-cloud-integration.md",
-      "sourceSha256": "4085c9ced95ae043898e289732c15c3f93a0f47eaa78e25e546c64d97430357e",
+      "sourceSha256": "b3ee302c70ba28837b133d0fdefc1961e48f37be6ba3561dab02ba1d44101e7b",
       "title": "Frameleaf Cloud: self-hosted integration (workstream cloud)",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/63864877",
-      "version": 20,
-      "sourceBranch": "codex/FL-44-merge",
-      "sourceCommit": "cfbd106ad51b84a1a3bdb273130ad50f1d3119f2",
-      "sourceState": "committed-fl-192-frameleaf-net-rename-2026-09-26",
-      "readbackResult": "FL-192: markdown read-back of version 20 begins with the header carrying SHA-256 4085c9ce, 133363 bytes, the FL-192 commit cfbd106ad5 (\"docs: FL-192 per-instance names move to frameleaf.net\") committed locally on codex/FL-44-merge, one commit ahead of the pushed master/frameleaf-implementation (b5a26e6e0c), on top of the FL-190 revision at a3a4012815 (kept as the source-at-commit backlink, since cfbd106ad5 is not pushed), the added FL-192 Jira link, and the rest of the existing FL-175..FL-190 chain unchanged; the live version 19 was unchanged since its FL-190 read-back; body matches the posted HEAD source with only the relay CNAME, the custom-hostname CNAME pair and the DNS synthesis line renamed from frameleaf-direct.net to frameleaf.net (one remaining frameleaf-direct.net is the header's own mention that the retired name stays reserved), otherwise the same normalization differences as the FL-190 read-back (three nested-backtick boundary spaces and the DPoP scheme://host[:port]/path link).",
-      "readbackAt": "2026-09-26T21:33:03.505Z"
+      "version": 22,
+      "sourceBranch": "master/frameleaf-implementation",
+      "sourceCommit": "5a8b640fd55614115e40269bfbfb7e036f7a4646",
+      "sourceState": "committed-fl-163-description-batches-as-built-2026-09-27",
+      "readbackResult": "FL-163: markdown read-back of version 22 begins with the header carrying SHA-256 b3ee302c, 135356 bytes, the FL-163 commits f268714560 and 5a8b640fd5 pushed to master/frameleaf-implementation (with the server commit 911c1d766a), the source-at-commit backlink at 5a8b640fd5, and the rest of the existing FL-192..FL-153 chain unchanged. Version 21 was published by mistake with a placeholder body and was replaced by version 22 within minutes. The version 22 body was compared line by line with the version 20 read-back: only the two CLD-203 entries differ (\"Cloud description batches\" as built, and the review-fixes entry recording the upload gate as lifted), and both match the posted source exactly; every other line is byte-identical to version 20, so the same normalization differences as the FL-190/FL-192 read-backs remain (three nested-backtick boundary spaces and the DPoP scheme://host[:port]/path link).",
+      "readbackAt": "2026-09-27T06:54:30.000Z"
     }
   ],
   "spaceId": "61374475",
