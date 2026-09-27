@@ -81,6 +81,43 @@ describe('LibraryRail', () => {
     await savedSearchesStore.load(true);
   });
 
+  // FL-146 (owner decision 2026-09-27): what the prototype rail shows is on by default.
+  const prototypeDefaults = {
+    folders: { enabled: true, sidebarWeb: true },
+    memories: { enabled: true, duration: 5, sidebarWeb: true },
+    people: { enabled: true, sidebarWeb: true },
+    recentlyAdded: { sidebarWeb: true },
+    sharedLinks: { enabled: true, sidebarWeb: true },
+    tags: { enabled: true, sidebarWeb: true },
+  };
+
+  it("shows every LibraryRail.jsx destination with the server's default preferences", () => {
+    authManager.setPreferences(preferencesFactory.build(prototypeDefaults as never));
+    render(LibraryRail);
+
+    for (const name of ['Recently added', 'People', 'Memories', 'Tags', 'Folders', 'Shared links']) {
+      expect(screen.getByRole('link', { name }), name).toBeInTheDocument();
+    }
+  });
+
+  it('leaves out Recently added, Tags and Folders when the account or an administrator hid them', () => {
+    authManager.setPreferences(
+      preferencesFactory.build({
+        ...prototypeDefaults,
+        recentlyAdded: { sidebarWeb: false },
+        tags: { enabled: true, sidebarWeb: false },
+        folders: { enabled: false, sidebarWeb: true },
+      } as never),
+    );
+    render(LibraryRail);
+
+    expect(screen.queryByRole('link', { name: 'Recently added' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Tags' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Folders' })).toBeNull();
+    expect(screen.getByRole('link', { name: 'Favorites' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'People' })).toBeInTheDocument();
+  });
+
   it('folds a section from its heading and remembers it on this device', async () => {
     render(LibraryRail);
     const explore = screen.getByRole('button', { name: 'Explore' });
