@@ -42,6 +42,11 @@ export enum StudioResourceKind {
   LibraryAsset = 'library-asset',
   /** An edited master rendered from a library original by the quick editor (FL-39). */
   EditedMaster = 'edited-master',
+  /**
+   * An accepted AI restoration of a library original (FL-115), chosen explicitly for Studio. It is a
+   * separate version: the original stays what it was, and the playback choice never implies it.
+   */
+  RestoredVersion = 'restored-version',
   /** Media uploaded into the project rather than the library: voiceovers, music files, stills. */
   ProjectImport = 'project-import',
   /** A typeface used by a title or caption style. */
@@ -98,6 +103,12 @@ export enum StudioAccessCheck {
   AssetRead = 'asset-read',
   /** `checkAccess(Permission.AssetFileRead)` after `AssetRead` on the parent: owner only. */
   AssetFileOwnerRead = 'asset-file-owner-read',
+  /**
+   * The restoration belongs to the acting user, its original passes `AssetRead` as the owner (so
+   * Locked, trashed, offline and hidden originals are refused like the original itself), and the
+   * restoration is finished, not discarded and not expired.
+   */
+  AssetRestorationOwnerRead = 'asset-restoration-owner-read',
   /** The project declares the resource with its checksum; the acting user has project access. */
   ProjectDeclaration = 'project-declaration',
   /** The id is in the deployment's bundled catalogue; nothing else is accepted. */
@@ -206,6 +217,12 @@ export enum StudioRefusalReason {
    * voice, font, weight and tool stays blocked until the owner approves it (FL-146).
    */
   RightsBlocked = 'rights-blocked',
+  /** The restored version was discarded; the project names a version that no longer exists (FL-115). */
+  RestorationDiscarded = 'restoration-discarded',
+  /** The restored version passed its retention date and its file was removed (FL-115). */
+  RestorationExpired = 'restoration-expired',
+  /** The restoration has no finished result to place: it is a preview, still running, or failed. */
+  RestorationNotReady = 'restoration-not-ready',
 }
 
 /* ------------------------------------------------------------------ */
@@ -309,6 +326,28 @@ export const studioResourceRegistry: ReadonlyMap<StudioResourceKind, StudioResou
     carriesPersonalData: true,
     graphKeys: ['editedMasterOf'],
     refusals: [...commonSourceRefusals],
+  }),
+  define({
+    kind: StudioResourceKind.RestoredVersion,
+    label: 'Restored version',
+    description:
+      'An accepted AI restoration of a library original (FL-115), placed by the person choosing Use in ' +
+      'Studio. Owner only, like the restoration itself; never inherited from the playback choice and ' +
+      'never a replacement for the original. A discarded or expired restoration is refused, not ' +
+      'swapped for the original. In the editor bin it is the media id `restored-<restoration id>`.',
+    owner: StudioResourceOwner.AssetOwner,
+    accessCheck: StudioAccessCheck.AssetRestorationOwnerRead,
+    egress: personalEgress,
+    retention: StudioRetention.DerivedReplaceable,
+    fileBacked: true,
+    carriesPersonalData: true,
+    graphKeys: ['restorationId'],
+    refusals: [
+      ...commonSourceRefusals,
+      StudioRefusalReason.RestorationDiscarded,
+      StudioRefusalReason.RestorationExpired,
+      StudioRefusalReason.RestorationNotReady,
+    ],
   }),
   define({
     kind: StudioResourceKind.ProjectImport,
@@ -598,6 +637,25 @@ export type StudioResourceReference = {
   inlineLines?: number;
 };
 
+/**
+ * How a restored version is named in the editor's bin (FL-115). The bin's media id is the clip's
+ * `mediaId`, and a library asset's bin id is its own uuid, so a restored version gets a prefixed id
+ * that no asset id can collide with: `restored-<restoration uuid>`.
+ */
+export const STUDIO_RESTORED_MEDIA_PREFIX = 'restored-';
+
+export const studioRestoredMediaId = (restorationId: string): string =>
+  `${STUDIO_RESTORED_MEDIA_PREFIX}${restorationId}`;
+
+/** The restoration id a bin media id names, or null when it names anything else. */
+export const parseStudioRestoredMediaId = (value: string): string | null => {
+  if (!value.startsWith(STUDIO_RESTORED_MEDIA_PREFIX)) {
+    return null;
+  }
+  const id = value.slice(STUDIO_RESTORED_MEDIA_PREFIX.length);
+  return isStudioUuid(id) ? id : null;
+};
+
 /** Stable key for a reference, used to dedupe and to name manifest entries. */
 export const studioReferenceKey = (reference: Pick<StudioResourceReference, 'kind' | 'id' | 'family'>): string =>
   reference.family ? `${reference.kind}:${reference.family}:${reference.id}` : `${reference.kind}:${reference.id}`;
@@ -816,12 +874,22 @@ const walk = (
 
   for (const key of ['assetId', 'mediaId']) {
     const id = readId(state, node, key, graphPath);
-    if (id) {
+    const restorationId = id ? parseStudioRestoredMediaId(id) : null;
+    if (restorationId) {
+      // A restored version in the bin (FL-115): its file carries the original's audio, so an audio
+      // clip of it is the same reference.
+      pushReference(state, seen, { kind: StudioResourceKind.RestoredVersion, id: restorationId, graphPath });
+    } else if (id) {
       pushReference(state, seen, { kind: StudioResourceKind.LibraryAsset, id, graphPath });
       if (clipKind && audioClipKinds.has(clipKind)) {
         pushReference(state, seen, { kind: StudioResourceKind.Audio, id, graphPath, source: 'asset' });
       }
     }
+  }
+
+  const restorationId = readId(state, node, 'restorationId', graphPath);
+  if (restorationId) {
+    pushReference(state, seen, { kind: StudioResourceKind.RestoredVersion, id: restorationId, graphPath });
   }
 
   const editedMasterOf = readId(state, node, 'editedMasterOf', graphPath);

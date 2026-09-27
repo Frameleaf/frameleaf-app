@@ -74,6 +74,18 @@
   } from '$lib/frameleaf/studio/project-session';
   import { readStudioThemeTokens } from '$lib/frameleaf/studio/theme';
   import { idleStudioPreviewView, type StudioPreviewView } from '$lib/frameleaf/studio/preview';
+  import { StudioRestoredVersionUnavailable } from '@immich/sdk';
+  import type { Translations } from 'svelte-i18n';
+
+  const unavailableRestorationKeys: Record<StudioRestoredVersionUnavailable, Translations> = {
+    [StudioRestoredVersionUnavailable.Discarded]: 'frameleaf_studio_restored_unavailable_discarded',
+    [StudioRestoredVersionUnavailable.Expired]: 'frameleaf_studio_restored_unavailable_expired',
+    [StudioRestoredVersionUnavailable.NotReady]: 'frameleaf_studio_restored_unavailable_not_ready',
+    [StudioRestoredVersionUnavailable.Locked]: 'frameleaf_studio_restored_unavailable_locked',
+    [StudioRestoredVersionUnavailable.Trashed]: 'frameleaf_studio_restored_unavailable_trashed',
+    [StudioRestoredVersionUnavailable.Offline]: 'frameleaf_studio_restored_unavailable_offline',
+    [StudioRestoredVersionUnavailable.HiddenContent]: 'frameleaf_studio_restored_unavailable_hidden',
+  };
 
   let {
     project,
@@ -99,6 +111,7 @@
     dirty = false,
     queuedJobs = 0,
     droppedAssetCount = 0,
+    unavailableRestorations = [],
     /**
      * The remote preview the host owns (FL-96). It arrives here as data and leaves for the
      * engine as data; neither this component nor the engine ever fetches a frame itself.
@@ -169,6 +182,11 @@
     queuedJobs?: number;
     /** Handoff items this session could not read, reported rather than silently missing. */
     droppedAssetCount?: number;
+    /**
+     * Restored versions the project places that can no longer be used (FL-115): discarded, expired, or
+     * their original was trashed or locked. Said plainly; the original is never swapped in silently.
+     */
+    unavailableRestorations?: readonly { name: string; reason: StudioRestoredVersionUnavailable }[];
     preview?: StudioPreviewView;
     /** The project session (FL-89). When present the header offers history and review. */
     session?: StudioProjectSession | null;
@@ -591,6 +609,18 @@
     </div>
   {/if}
 
+  {#if unavailableRestorations.length > 0}
+    <!-- FL-115: a restored version the project places cannot be used; it is named, never replaced. -->
+    <div class="fl-studio-banner" role="alert" data-testid="studio-restored-unavailable">
+      <Icon icon={mdiAlertCircleOutline} size="18" />
+      <ul class="fl-studio-restored-list">
+        {#each unavailableRestorations as item, index (index)}
+          <li>{$t(unavailableRestorationKeys[item.reason], { values: { name: item.name } })}</li>
+        {/each}
+      </ul>
+    </div>
+  {/if}
+
   <div class="fl-studio-body">
     <!--
       The engine's only surface. It is always in the DOM so the mount target exists before
@@ -806,6 +836,13 @@
   }
   .fl-studio-banner p {
     margin: 0;
+    flex: 1 1 16rem;
+    font-size: 0.875rem;
+  }
+  .fl-studio-restored-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
     flex: 1 1 16rem;
     font-size: 0.875rem;
   }

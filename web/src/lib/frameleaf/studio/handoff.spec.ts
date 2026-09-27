@@ -31,7 +31,13 @@ describe('studio handoff', () => {
   it('builds a link that parses back to what went in', () => {
     const query = studioHandoffQuery({ projectId: 'proj-1', assetIds: ['a', 'b'] });
 
-    expect(parse(query.slice(1))).toEqual({ projectId: 'proj-1', assetIds: ['a', 'b'], returnTo: null, at: null });
+    expect(parse(query.slice(1))).toEqual({
+      projectId: 'proj-1',
+      assetIds: ['a', 'b'],
+      restorationIds: [],
+      returnTo: null,
+      at: null,
+    });
   });
 
   it('builds a bare link when there is nothing to carry', () => {
@@ -45,9 +51,17 @@ describe('studio handoff', () => {
     expect(parseStudioHandoff(new URLSearchParams(query))).toEqual({
       projectId: null,
       assetIds: ['a'],
+      restorationIds: [],
       returnTo: 'a',
       at: { num: 25, den: 2 },
     });
     expect(parseStudioHandoff(new URLSearchParams('from=../x&at=1.5'))).toMatchObject({ returnTo: null, at: null });
+  });
+
+  it('carries restorations chosen with Use in Studio beside the selection (FL-115)', () => {
+    const query = studioHandoffQuery({ restorationIds: ['r-1', '../x', 'r-2'], returnTo: 'a' });
+    expect(query).toBe('?restored=r-1%2Cr-2&from=a');
+    expect(parse(query.slice(1))).toMatchObject({ assetIds: [], restorationIds: ['r-1', 'r-2'], returnTo: 'a' });
+    expect(parse('restored=r-1,r-1,<b>').restorationIds).toEqual(['r-1']);
   });
 });

@@ -19,7 +19,16 @@
  * - Offline originals are passed through but flagged, so the bin can show them and the
  *   engine can refuse to cut with them, rather than the person finding a broken clip later.
  */
-import { AssetMediaSize, AssetTypeEnum, AssetVisibility, type AssetResponseDto } from '@immich/sdk';
+import {
+  AssetMediaSize,
+  AssetRestorationFileKind,
+  AssetRestorationSourceType,
+  AssetTypeEnum,
+  AssetVisibility,
+  type AssetResponseDto,
+  type StudioRestoredVersionDto,
+} from '@immich/sdk';
+import { restorationFileUrl } from '$lib/frameleaf/restoration';
 import { getAssetMediaUrl, getAssetPlaybackUrl } from '$lib/utils';
 import type { StudioAssetRef } from './host-contract';
 import { fromMilliseconds } from './rational-time';
@@ -59,3 +68,83 @@ export const toStudioAsset = (asset: AssetResponseDto): StudioAssetRef => {
  */
 export const toStudioAssets = (assets: readonly AssetResponseDto[]): StudioAssetRef[] =>
   assets.filter((asset) => isStudioEligibleAsset(asset)).map((asset) => toStudioAsset(asset));
+
+/**
+ * An accepted AI restoration the person chose with Use in Studio (FL-115), as a bin entry of its own.
+ *
+ * Its id is the server's `mediaId` (`restored-<restoration id>`), so a clip of it carries exactly that
+ * into the graph and the server resolves it as the restored version: never as the original, and never
+ * because the original's playback choice happens to point at it. The pixels come from the restoration
+ * file endpoint, which applies the same owner-only rules; the thumbnail is the original's, because a
+ * restoration has none of its own.
+ */
+export const toStudioRestoredAsset = (version: StudioRestoredVersionDto, name: string): StudioAssetRef => {
+  const isVideo = version.sourceType === AssetRestorationSourceType.Video;
+  const cacheKey = version.restoredAt;
+  const file = (kind: AssetRestorationFileKind) =>
+    restorationFileUrl(version.assetId, version.restorationId, kind, cacheKey);
+  return {
+    id: version.mediaId,
+    kind: isVideo ? 'video' : 'image',
+    name,
+    duration:
+      isVideo && version.durationSeconds !== null ? fromMilliseconds(Math.round(version.durationSeconds * 1000)) : null,
+    thumbnailUrl: getAssetMediaUrl({ id: version.assetId, size: AssetMediaSize.Thumbnail }),
+    previewUrl: isVideo
+      ? getAssetMediaUrl({ id: version.assetId, size: AssetMediaSize.Preview })
+      : file(AssetRestorationFileKind.ResultPreview),
+    playbackUrl: isVideo ? file(AssetRestorationFileKind.Result) : null,
+    // A version that can no longer be placed is flagged like an offline original: the bin shows it and
+    // the engine refuses to cut with it, rather than quietly playing the original in its place.
+    isOffline: !version.available,
+    width: version.width,
+    height: version.height,
+    mimeType: isVideo ? 'video/mp4' : null,
+  };
+};
+
+const RESTORED_MEDIA_ID = /^restored-[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i;
+const RESTORATION_ID = /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i;
+
+/** The restoration a bin media id names, or null for anything else (a library asset's own id). */
+export const restorationIdOfMedia = (mediaId: string): string | null =>
+  RESTORED_MEDIA_ID.test(mediaId) ? mediaId.slice('restored-'.length) : null;
+
+/**
+ * Every restored version a stored project places (FL-115), so a reopened project brings them back into
+ * the bin, and one that was discarded or expired is reported instead of silently missing. It reads the
+ * same keys the server's resolver does: `mediaId` / `assetId` with the `restored-` prefix, and
+ * `restorationId`. Bounded, like the resolver's walk.
+ */
+export const restoredVersionIdsIn = (graph: unknown, limit = 200): string[] => {
+  const found = new Set<string>();
+  const stack: { node: unknown; depth: number }[] = [{ node: graph, depth: 0 }];
+  while (stack.length > 0 && found.size < limit) {
+    const { node, depth } = stack.pop()!;
+    if (depth > 64 || !node || typeof node !== 'object') {
+      continue;
+    }
+    if (Array.isArray(node)) {
+      for (const item of node) {
+        stack.push({ node: item, depth: depth + 1 });
+      }
+      continue;
+    }
+    for (const [key, value] of Object.entries(node as Record<string, unknown>)) {
+      if (typeof value === 'string') {
+        const id =
+          key === 'mediaId' || key === 'assetId'
+            ? restorationIdOfMedia(value)
+            : key === 'restorationId' && RESTORATION_ID.test(value)
+              ? value
+              : null;
+        if (id) {
+          found.add(id.toLowerCase());
+        }
+      } else {
+        stack.push({ node: value, depth: depth + 1 });
+      }
+    }
+  }
+  return [...found];
+};

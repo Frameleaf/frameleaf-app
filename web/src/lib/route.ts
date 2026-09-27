@@ -229,6 +229,7 @@ export const Route = {
   studio: (params?: {
     projectId?: string | null;
     assetIds?: readonly string[];
+    restorationIds?: readonly string[];
     returnTo?: string | null;
     at?: { num: number; den: number } | null;
   }) => '/studio' + studioHandoffQuery(params ?? {}),

@@ -20,7 +20,7 @@
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { eventManager } from '$lib/managers/event-manager.svelte';
   import { Route } from '$lib/route';
-  import { toStudioAssets } from '$lib/frameleaf/studio/assets';
+  import { restoredVersionIdsIn, toStudioAssets, toStudioRestoredAsset } from '$lib/frameleaf/studio/assets';
   import { createStudioBridge } from '$lib/frameleaf/studio/bridge';
   import { decideStudioDraft, studioDraftHeld, studioDraftResult } from '$lib/frameleaf/studio/draft-staging';
   import { createStudioEngineCommandHandlers, createStudioGraphHistory } from '$lib/frameleaf/studio/engine-commands';
@@ -59,7 +59,13 @@
   import { reportStudioPlayhead } from '$lib/frameleaf/editor-continuity';
   import { getProfileImageUrl } from '$lib/utils';
   import { handleError } from '$lib/utils/handle-error';
-  import { createStudioExport, isHttpError } from '@immich/sdk';
+  import {
+    AssetRestorationMode,
+    createStudioExport,
+    getStudioRestoredVersion,
+    isHttpError,
+    type StudioRestoredVersionDto,
+  } from '@immich/sdk';
   import { studioRenderRefusalFromError, studioRenderRefusalKey } from '$lib/frameleaf/studio/render-output';
   import { openFileUploadDialog } from '$lib/utils/file-uploader';
   import type { PageData } from './$types';
@@ -89,8 +95,35 @@
    */
   let workspace = $state<StudioWorkspaceView | undefined>(undefined);
 
-  const assets = $derived(toStudioAssets(data.assets));
-  const handoffAssetIds = $derived(assets.map((asset) => asset.id));
+  /**
+   * Accepted restorations in the bin (FL-115): the ones chosen with Use in Studio, and the ones a
+   * reopened project already places. Each is its own version beside its original; one that was
+   * discarded or has expired stays listed as unavailable so the project fails visibly.
+   */
+  let restoredVersions = $state<StudioRestoredVersionDto[]>(untrack(() => data.restoredVersions));
+  const restoredName = (version: StudioRestoredVersionDto) =>
+    $t(
+      version.mode === AssetRestorationMode.SmoothMotion
+        ? 'frameleaf_studio_restored_name_smooth_motion'
+        : 'frameleaf_studio_restored_name',
+      { values: { name: version.originalFileName } },
+    );
+  const libraryAssets = $derived(toStudioAssets(data.assets));
+  const assets = $derived([
+    ...libraryAssets,
+    ...restoredVersions.map((version) => toStudioRestoredAsset(version, restoredName(version))),
+  ]);
+  /** The library selection only: what a Save as copy link carries in `?assets=`. */
+  const libraryAssetIds = $derived(libraryAssets.map((asset) => asset.id));
+  const handoffAssetIds = $derived([
+    ...libraryAssetIds,
+    ...data.restoredVersions.filter((version) => version.available).map((version) => version.mediaId),
+  ]);
+  const unavailableRestorations = $derived(
+    restoredVersions
+      .filter((version) => !version.available && version.unavailable)
+      .map((version) => ({ name: restoredName(version), reason: version.unavailable! })),
+  );
 
   const user = $derived(authManager.user);
 
@@ -137,6 +170,30 @@
       hasLease: false,
     },
   );
+
+  /*
+   * A reopened project brings its restored versions back into the bin (FL-115). Each is asked for once;
+   * the server answers with the same decision the resolver makes, so a discarded or expired one is
+   * listed as unavailable and one that is not this account's never appears.
+   */
+  const askedRestorations = new Set(untrack(() => data.restoredVersions.map((version) => version.restorationId)));
+  $effect(() => {
+    const wanted = restoredVersionIdsIn(project.graph).filter((id) => !askedRestorations.has(id));
+    if (wanted.length === 0) {
+      return;
+    }
+    for (const id of wanted) {
+      askedRestorations.add(id);
+    }
+    void Promise.allSettled(wanted.map((id) => getStudioRestoredVersion({ id }))).then((results) => {
+      const found = results
+        .filter((result): result is PromiseFulfilledResult<StudioRestoredVersionDto> => result.status === 'fulfilled')
+        .map((result) => result.value);
+      if (found.length > 0) {
+        restoredVersions = [...restoredVersions, ...found];
+      }
+    });
+  });
 
   const saveStatus = $derived(sessionState?.status ?? 'loading');
   const forbidden = $derived(saveStatus === 'forbidden');
@@ -612,7 +669,14 @@
       return;
     }
     // Same route, new project: the URL follows without re-running the load or remounting.
-    replaceState(Route.studio({ projectId: id, assetIds: handoffAssetIds }), {});
+    replaceState(
+      Route.studio({
+        projectId: id,
+        assetIds: libraryAssetIds,
+        restorationIds: data.restoredVersions.map((version) => version.restorationId),
+      }),
+      {},
+    );
     toastManager.primary($t('frameleaf_studio_copy_saved'));
   };
 
@@ -736,6 +800,7 @@
   accessLost={accessLost || forbidden}
   {preview}
   droppedAssetCount={data.unavailableAssetCount}
+  {unavailableRestorations}
   {session}
   {saveStatus}
   conflict={sessionState?.conflict ?? null}

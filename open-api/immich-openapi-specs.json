@@ -35057,6 +35057,63 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/studio/restored-versions/{id}": {
+      "get": {
+        "description": "An accepted restoration of one of your photos or videos as a Studio media bin entry: the media id a clip of it carries, its size and length, and whether it can be placed now. A discarded, expired or Locked one says so; someone else’s is not found.",
+        "operationId": "getStudioRestoredVersion",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioRestoredVersionDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get a restored version for Studio",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.edit.get",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/studio/workspace": {
       "get": {
         "description": "The editor layout you last saved, or nulls when you have none. Only ever your own.",
@@ -80883,6 +80940,124 @@
           "sessions"
         ],
         "type": "object"
+      },
+      "StudioRestoredVersionDto": {
+        "properties": {
+          "assetId": {
+            "description": "The library original it was made from; never replaced by it",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "available": {
+            "description": "Whether it can be placed and rendered now",
+            "type": "boolean"
+          },
+          "durationSeconds": {
+            "description": "Length of a video, in seconds",
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          },
+          "expiresAt": {
+            "description": "When the result will be removed, when it has a retention date",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "height": {
+            "description": "Pixel height of the restored file",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          },
+          "mediaId": {
+            "description": "The media id a clip of this version carries: `restored-<restorationId>`",
+            "type": "string"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/AssetRestorationMode"
+          },
+          "originalFileName": {
+            "description": "The original’s file name, for the bin label",
+            "type": "string"
+          },
+          "restorationId": {
+            "description": "The restoration",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "restoredAt": {
+            "description": "When the full result finished",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "smoothMotionFactor": {
+            "description": "Frame-rate factor of a Smooth motion version",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          },
+          "sourceType": {
+            "$ref": "#/components/schemas/AssetRestorationSourceType"
+          },
+          "unavailable": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StudioRestoredVersionUnavailable"
+              }
+            ],
+            "nullable": true
+          },
+          "upscale": {
+            "description": "Upscale factor of a restoration; 1 for Smooth motion",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "width": {
+            "description": "Pixel width of the restored file",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "assetId",
+          "available",
+          "durationSeconds",
+          "expiresAt",
+          "height",
+          "mediaId",
+          "mode",
+          "originalFileName",
+          "restorationId",
+          "restoredAt",
+          "smoothMotionFactor",
+          "sourceType",
+          "unavailable",
+          "upscale",
+          "width"
+        ],
+        "type": "object"
+      },
+      "StudioRestoredVersionUnavailable": {
+        "description": "Why the restored version cannot be placed",
+        "enum": [
+          "discarded",
+          "expired",
+          "not-ready",
+          "locked",
+          "trashed",
+          "offline",
+          "hidden-content"
+        ],
+        "type": "string"
       },
       "StudioTimeDto": {
         "properties": {

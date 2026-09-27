@@ -1,3 +1,4 @@
+import { StudioRestoredVersionUnavailable } from '@immich/sdk';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import StudioHost from '$lib/components/frameleaf/StudioHost.svelte';
@@ -216,6 +217,25 @@ describe('Studio route, engine absent', () => {
     render(StudioHost, { ...baseProps(), droppedAssetCount: 2, loadEngine: loadStudioEngine });
 
     expect(screen.getByText('frameleaf_studio_handoff_dropped')).toBeInTheDocument();
+  });
+
+  it('names a restored version the project can no longer use, instead of swapping in the original (FL-115)', () => {
+    render(StudioHost, {
+      ...baseProps(),
+      unavailableRestorations: [
+        { name: 'summit.mp4 (restored)', reason: StudioRestoredVersionUnavailable.Discarded },
+        { name: 'lake.mp4 (restored)', reason: StudioRestoredVersionUnavailable.Expired },
+      ],
+      loadEngine: loadStudioEngine,
+    });
+    const banner = screen.getByTestId('studio-restored-unavailable');
+    expect(banner).toHaveTextContent('frameleaf_studio_restored_unavailable_discarded');
+    expect(banner).toHaveTextContent('frameleaf_studio_restored_unavailable_expired');
+  });
+
+  it('shows no restored-version notice when every version can be used', () => {
+    render(StudioHost, { ...baseProps(), loadEngine: loadStudioEngine });
+    expect(screen.queryByTestId('studio-restored-unavailable')).not.toBeInTheDocument();
   });
 
   it('offers no Activity link while there is no Activity route to open', () => {

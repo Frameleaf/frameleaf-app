@@ -302,6 +302,38 @@ export const canRejectRestoration = canAcceptRestoration;
 /** Only a finished full result may become the playback version. */
 export const canSelectRestoration = (status: AssetRestorationStatus) => status === AssetRestorationStatus.Restored;
 
+/** Why a restoration cannot be placed in Studio (FL-115), or where its finished file is. */
+export type RestoredVersionState =
+  { usable: true; path: string } | { usable: false; reason: 'discarded' | 'expired' | 'not-ready' };
+
+/**
+ * Whether a restoration can be a Studio source (FL-115): only a finished result whose file still
+ * exists and whose retention has not run out. A discarded or expired one is named as such so the
+ * project fails visibly; nothing falls back to the original or to another restoration.
+ */
+export const restoredVersionState = (
+  row: { status: string; resultPath: string | null; resultExpiresAt: Date | string | null },
+  now: Date = new Date(),
+): RestoredVersionState => {
+  switch (row.status as AssetRestorationStatus) {
+    case AssetRestorationStatus.Discarded: {
+      return { usable: false, reason: 'discarded' };
+    }
+    case AssetRestorationStatus.Expired: {
+      return { usable: false, reason: 'expired' };
+    }
+    case AssetRestorationStatus.Restored: {
+      if (row.resultExpiresAt && new Date(row.resultExpiresAt).getTime() <= now.getTime()) {
+        return { usable: false, reason: 'expired' };
+      }
+      return row.resultPath ? { usable: true, path: row.resultPath } : { usable: false, reason: 'expired' };
+    }
+    default: {
+      return { usable: false, reason: 'not-ready' };
+    }
+  }
+};
+
 /** Anything idle may be discarded; a running one is cancelled first by the service. */
 export const canDiscardRestoration = (status: AssetRestorationStatus) =>
   status !== AssetRestorationStatus.Discarded && status !== AssetRestorationStatus.Expired;
