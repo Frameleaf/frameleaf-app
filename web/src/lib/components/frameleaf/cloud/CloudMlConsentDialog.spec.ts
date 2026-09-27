@@ -51,4 +51,13 @@ describe('CloudMlConsentDialog (FL-159)', () => {
     expect(sdkMock.createCloudMlDestination).toHaveBeenCalledTimes(1);
     expect(sdkMock.grantMlDestinationConsent).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'cloud-1' }));
   });
+
+  it('says names written in a photo may appear, and that the names given to people are never sent (FC-44)', () => {
+    render(CloudMlConsentDialog, { open: true, destinationId: null, consent, region: 'eu', onRecorded: vi.fn() });
+
+    const dialog = screen.getByRole('dialog', { name: 'Cloud processing terms · version 2026-10-01' });
+    expect(within(dialog).getByText('Allow names written in photos')).toBeInTheDocument();
+    expect(within(dialog).getByText(/the names you give people in Frameleaf are never sent/)).toBeInTheDocument();
+    expect(within(dialog).queryByText(/Sends the names of people/)).not.toBeInTheDocument();
+  });
 });
