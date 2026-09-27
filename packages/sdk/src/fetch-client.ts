@@ -339,6 +339,8 @@ export type CloudStatusResponseDto = {
     /** FRAMELEAF_LINK_TOKEN is set */
     linkTokenConfigured: boolean;
     linkedAt: string | null;
+    /** This server’s page on the Frameleaf account site, while linked; opened in a new tab */
+    manageUrl: string | null;
     pending: (CloudLinkPendingDto) | null;
     permissions: CloudPermissionsDto;
     /** Frameleaf Cloud asked an administrator to link again */
