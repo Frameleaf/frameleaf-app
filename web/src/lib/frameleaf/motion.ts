@@ -5,6 +5,7 @@ import {
   fly,
   scale,
   slide,
+  type FadeParams,
   type FlyParams,
   type ScaleParams,
   type SlideParams,
@@ -37,6 +38,12 @@ const gated =
   (node, params) =>
     prefersReducedMotion() ? crossfade(node, params?.delay) : move(node, params);
 
+/**
+ * `fade`, and under Reduce Motion the same short crossfade every other helper falls back to. A
+ * fade does not move anything, so it stays; it goes through here so every Svelte transition in the
+ * app has one Reduce Motion gate (FL-29).
+ */
+export const motionFade: Transition<FadeParams> = gated((node, params) => fade(node, params));
 /** `fly`, or a crossfade under Reduce Motion. */
 export const motionFly: Transition<FlyParams> = gated((node, params) => fly(node, params));
 /** `slide`, or a crossfade under Reduce Motion. */

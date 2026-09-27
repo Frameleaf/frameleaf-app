@@ -6,7 +6,7 @@
   import { AssetMediaSize } from '@immich/sdk';
   import DelayedLoadingSpinner from '$lib/components/DelayedLoadingSpinner.svelte';
   import { onMount } from 'svelte';
-  import { fade } from 'svelte/transition';
+  import { motionFade } from '$lib/frameleaf/motion';
 
   interface Props {
     asset: TimelineAsset;
@@ -54,7 +54,7 @@
 {#if !imageLoaded}
   <DelayedLoadingSpinner />
 {:else if imageLoaded}
-  <div transition:fade={{ duration: assetViewerFadeDuration }} class="size-full">
+  <div transition:motionFade={{ duration: assetViewerFadeDuration }} class="size-full">
     <img
       class="size-full rounded-2xl object-contain transition-all {motionClass}"
       style={motionStyle}

@@ -4,7 +4,7 @@
   import { AssetMediaSize, viewAsset, type AssetResponseDto } from '@immich/sdk';
   import { LoadingSpinner } from '@immich/ui';
   import { t } from 'svelte-i18n';
-  import { fade } from 'svelte/transition';
+  import { motionFade } from '$lib/frameleaf/motion';
 
   type Props = {
     asset: AssetResponseDto;
@@ -20,7 +20,7 @@
   };
 </script>
 
-<div transition:fade={{ duration: 150 }} class="flex h-full place-content-center place-items-center select-none">
+<div transition:motionFade={{ duration: 150 }} class="flex h-full place-content-center place-items-center select-none">
   {#await Promise.all([loadAssetData(assetId), import('./PhotoSphereViewerAdapter.svelte')])}
     <LoadingSpinner />
   {:then [data, { default: PhotoSphereViewer }]}

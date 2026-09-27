@@ -14,6 +14,7 @@ vi.mock('$lib/stores/media-query-manager.svelte', () => ({
 const {
   REDUCED_MOTION_FADE_MS,
   animateFlip,
+  motionFade,
   motionFlip,
   motionFly,
   motionScale,
@@ -58,6 +59,20 @@ describe('Frameleaf motion', () => {
       node.remove();
     });
   }
+
+  it('fades with its own timing normally and with the shared crossfade under Reduce Motion', () => {
+    const node = document.createElement('div');
+    document.body.append(node);
+    const fading = motionFade(node, { duration: 400 });
+    expect(fading.duration).toBe(400);
+    expect(fading.css?.(0.5, 0.5)).toMatch(/^opacity: [\d.]+$/);
+
+    media.reducedMotion = true;
+    const reduced = motionFade(node, { duration: 400, delay: 20 });
+    expect(reduced.duration).toBe(REDUCED_MOTION_FADE_MS);
+    expect(reduced.delay).toBe(20);
+    node.remove();
+  });
 
   it('flips list items normally and places them at once under Reduce Motion', () => {
     const node = document.createElement('li');
@@ -136,32 +151,28 @@ describe('Frameleaf motion', () => {
     });
   });
 
-  it('leaves no ungated moving transition or ad-hoc Reduce Motion query in Frameleaf, viewer or route code', () => {
-    const roots = [
-      'src/lib/components/frameleaf',
-      'src/lib/components/asset-viewer',
-      'src/lib/components/shared-components',
-      'src/lib/components/album-page',
-      'src/routes',
-    ];
+  it('routes every Svelte transition and flip in the app through this one helper (FL-29)', () => {
+    const helper = join('src', 'lib', 'frameleaf', 'motion.ts');
     const offenders: string[] = [];
-    for (const root of roots) {
-      for (const entry of readdirSync(root, { recursive: true, encoding: 'utf8' })) {
-        if (!entry.endsWith('.svelte')) {
-          continue;
-        }
-        const source = readFileSync(join(root, entry), 'utf8');
-        const imported = /import\s*{([^}]*)}\s*from\s*['"]svelte\/transition['"]/.exec(source)?.[1] ?? '';
-        if (/\b(fly|slide|scale)\b/.test(imported)) {
-          offenders.push(`${root}/${entry}: svelte/transition ${imported.trim()}`);
-        }
-        const animate = /import\s*{([^}]*)}\s*from\s*['"]svelte\/animate['"]/.exec(source)?.[1] ?? '';
-        if (/\bflip\b/.test(animate)) {
-          offenders.push(`${root}/${entry}: svelte/animate flip`);
-        }
-        if (/matchMedia\(\s*['"`]\(prefers-reduced-motion/.test(source)) {
-          offenders.push(`${root}/${entry}: matchMedia reduced motion`);
-        }
+    for (const entry of readdirSync('src', { recursive: true, encoding: 'utf8' })) {
+      const file = join('src', entry);
+      if (!/\.(svelte|ts)$/.test(entry) || /\.spec\.ts$/.test(entry) || file === helper) {
+        continue;
+      }
+      const source = readFileSync(file, 'utf8');
+      if (
+        /from\s*['"]svelte\/transition['"]/.test(
+          source.replaceAll(/import\s+type\s*{[^}]*}\s*from\s*['"]svelte\/transition['"];?/g, ''),
+        )
+      ) {
+        offenders.push(`${file}: svelte/transition`);
+      }
+      const animate = /import\s*{([^}]*)}\s*from\s*['"]svelte\/animate['"]/.exec(source)?.[1] ?? '';
+      if (/\bflip\b/.test(animate)) {
+        offenders.push(`${file}: svelte/animate flip`);
+      }
+      if (/matchMedia\(\s*['"`]\(prefers-reduced-motion/.test(source)) {
+        offenders.push(`${file}: matchMedia reduced motion`);
       }
     }
     expect(offenders).toEqual([]);

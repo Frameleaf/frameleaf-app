@@ -13,7 +13,7 @@
   import { ConfigCredential, sendTestEmailAdmin } from '@immich/sdk';
   import { Button, toastManager } from '@immich/ui';
   import { t } from 'svelte-i18n';
-  import { fade } from 'svelte/transition';
+  import { motionFade } from '$lib/frameleaf/motion';
 
   const disabled = $derived(featureFlagsManager.value.configFile);
   const settingsDraft = requireSystemConfigDraft();
@@ -67,7 +67,7 @@
 </script>
 
 <div>
-  <div in:fade={{ duration: 500 }}>
+  <div in:motionFade={{ duration: 500 }}>
     <form autocomplete="off" class="mt-4" onsubmit={(event) => event.preventDefault()}>
       <div class="flex flex-col gap-4">
         <SettingGroup key="email" title={$t('email')} subtitle={$t('admin.notification_email_setting_description')}>

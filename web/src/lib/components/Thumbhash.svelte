@@ -2,7 +2,7 @@
   import { decodeBase64 } from '$lib/utils';
   import { TUNABLES } from '$lib/utils/tunables';
   import type { HTMLCanvasAttributes } from 'svelte/elements';
-  import { fade } from 'svelte/transition';
+  import { motionFade } from '$lib/frameleaf/motion';
   import { thumbHashToRGBA } from 'thumbhash';
 
   type Props = HTMLCanvasAttributes & {
@@ -35,6 +35,6 @@
 <canvas
   bind:this={canvas}
   class={className}
-  out:fade={{ duration: fadeOut ? THUMBHASH_FADE_DURATION : 0 }}
+  out:motionFade={{ duration: fadeOut ? THUMBHASH_FADE_DURATION : 0 }}
   {...restProps}
 ></canvas>
