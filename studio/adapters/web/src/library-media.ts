@@ -28,7 +28,12 @@ import { mediaDir, projectMediaLinksPath } from '@/infrastructure/storage/worksp
 import type { StudioAssetRef } from '@frameleaf/host/host-contract'
 import type { VirtualWorkspace } from './virtual-workspace'
 
-const COMMON_FRAME_RATES = [23.976, 24, 25, 29.97, 30, 48, 50, 59.94, 60, 120]
+/**
+ * Broadcast rates, the NTSC ones as the exact `x/1001` float rather than a three-place decimal
+ * (FL-93): Freecut counts source frames in this unit, and `29.97` drifts a tenth of a frame from
+ * a 30000/1001 source over an hour.
+ */
+const COMMON_FRAME_RATES = [24_000 / 1001, 24, 25, 30_000 / 1001, 30, 48, 50, 60_000 / 1001, 60, 120]
 
 /** Snap a measured packet rate to the nearest broadcast rate, as Freecut's own importer does. */
 export const snapFrameRate = (fps: number): number => {

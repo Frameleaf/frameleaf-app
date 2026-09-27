@@ -6,6 +6,7 @@ import {
   canonicalJson,
   deterministicUuids,
   ENGINE_COMMANDS,
+  frameRateOf,
   secondsToFrames,
   type CanonicalEnvelope,
 } from '../src/canonical-commands'
@@ -153,6 +154,46 @@ describe('canonical commands on the Freecut engine (FL-92)', () => {
     expect(secondsToFrames(seconds(1001, 30_000), 29.97)).toBe(1)
     expect(secondsToFrames(seconds(1, 60), 30)).toBe(1) // exactly half a frame rounds up
     expect(secondsToFrames(seconds(0), 24)).toBe(0)
+  })
+
+  it('reads 30000/1001 and 24000/1001 exactly, never as 2997/100 (FL-93)', () => {
+    expect(frameRateOf(29.97)).toEqual({ num: 30_000n, den: 1001n })
+    expect(frameRateOf(30_000 / 1001)).toEqual({ num: 30_000n, den: 1001n })
+    expect(frameRateOf(23.976)).toEqual({ num: 24_000n, den: 1001n })
+    expect(frameRateOf({ num: 60_000, den: 1001 })).toEqual({ num: 60_000n, den: 1001n })
+    // 2997/100 loses a millionth of a frame per frame: past 500,000 frames (4.6 hours) the start of
+    // frame n rounded to frame n - 1. The exact rate lands on n at any length.
+    const late = seconds(600_000 * 1001, 30_000)
+    expect(secondsToFrames(late, { num: 30_000, den: 1001 })).toBe(600_000)
+    expect(secondsToFrames(late, 29.97)).toBe(600_000)
+    expect(secondsToFrames(seconds(3600), 29.97)).toBe(107_892)
+    expect(secondsToFrames(seconds(3600), 23.976)).toBe(86_314)
+    expect(() => frameRateOf(27.3)).toThrow('no exact reading')
+  })
+
+  it('places a clip on the exact cadence of an NTSC project and stores the rational', async () => {
+    const ntsc = project()
+    ntsc.metadata = { ...ntsc.metadata, fps: 29.97 }
+    const added = await applied(ntsc, [
+      envelope('clip.add', { trackId: 'v1', assetId: ASSET, at: seconds(1001 * 90, 30_000) }),
+    ])
+    expect(added.project.metadata).toEqual(
+      expect.objectContaining({ fps: 30_000 / 1001, frameRate: { num: 30_000, den: 1001 } }),
+    )
+    expect(itemsOf(added.project).find((item) => item.mediaId === ASSET)).toEqual(
+      expect.objectContaining({ from: 90 }),
+    )
+  })
+
+  it('refuses a batch for a project whose frame rate has no exact reading', async () => {
+    const odd = project()
+    odd.metadata = { ...odd.metadata, fps: 27.3 }
+    const outcome = await applyCanonicalCommands(
+      odd,
+      [envelope('clip.add', { trackId: 'v1', assetId: ASSET, at: seconds(0) })],
+      [],
+    )
+    expect(outcome).toEqual(expect.objectContaining({ status: 'rejected', reason: 'invalid' }))
   })
 
   it('places library media, splits it and keeps unknown graph fields', async () => {
