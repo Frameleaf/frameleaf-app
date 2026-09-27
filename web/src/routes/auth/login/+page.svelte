@@ -36,7 +36,7 @@
   import { oauth } from '$lib/utils';
   import { getServerErrorMessage, handleError } from '$lib/utils/handle-error';
   import { finishFrameleafSignIn, login, redeemFrameleafHandoff, type LoginResponseDto } from '@immich/sdk';
-  import { onDestroy, onMount } from 'svelte';
+  import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
   import type { PageData } from './$types';
 
@@ -76,10 +76,10 @@
     await goto(oauth.isCallback(location) ? getOAuthContinue(data.continueUrl) : data.continueUrl, {
       invalidateAll: true,
     });
-    // FL-80: the continue address is cleared when this page is left (below). A redirect of this page's
-    // own reloaded data, which the sign-in's auth change can trigger while the navigation above is
-    // still going, reads it again and must find it; cleared here, that redirect sent the callback to
-    // the library instead of where the sign-in started.
+    // FL-80: the continue address is cleared once a navigation lands outside the login page (the root
+    // layout). The sign-in's auth change reloads this page's data, and that reload can supersede the
+    // navigation above and redirect from here instead: it reads the address again and must find it.
+    // Cleared here or when this page unmounts, it sent the callback to the library instead.
     clearRememberMePreference({ keepContinue: true });
     eventManager.emit('AuthLogin', user);
   };
@@ -94,8 +94,6 @@
     }
     await onSuccess(user);
   };
-
-  onDestroy(() => clearOAuthContinue());
 
   onMount(async () => {
     const frameleafRequest = oauth.isCallback(location) ? takeFrameleafCallbackRequest(location.href) : null;

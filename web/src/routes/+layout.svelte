@@ -1,6 +1,7 @@
 <script lang="ts">
   import { afterNavigate, beforeNavigate, onNavigate } from '$app/navigation';
   import { page } from '$app/state';
+  import { clearOAuthContinue } from '$lib/frameleaf/auth-session-preference';
   import { sessionAccess, trackSessionModals } from '$lib/frameleaf/session-access.svelte';
   import { requestSessionLock, watchSessionLockOwner } from '$lib/frameleaf/session-lock';
   import SessionLockShield from '$lib/components/frameleaf/SessionLockShield.svelte';
@@ -231,8 +232,13 @@
     showNavigationLoadingBar = true;
   });
 
-  afterNavigate(() => {
+  afterNavigate(({ to }) => {
     showNavigationLoadingBar = false;
+    // FL-80: an OAuth sign-in's continue address is used up once the tab has left the login page
+    // (see `onSuccess` in auth/login/+page.svelte)
+    if (to?.route.id && to.route.id !== '/auth/login') {
+      clearOAuthContinue();
+    }
   });
 
   const { serverRestarting } = websocketStore;
