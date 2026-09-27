@@ -140,7 +140,7 @@ describe('RestorationPanel Smooth motion (FL-162, FL-159)', () => {
       Promise.resolve(
         mode === AssetRestorationMode.SmoothMotion
           ? smoothOptions()
-          : ({ ...smoothOptions(), mode: AssetRestorationMode.Faithful, destinations: [] } as never),
+          : smoothOptions({ mode: AssetRestorationMode.Faithful, destinations: [] }),
       ),
     );
   });
