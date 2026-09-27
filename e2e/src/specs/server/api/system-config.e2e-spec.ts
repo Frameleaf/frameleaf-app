@@ -72,6 +72,27 @@ describe('/system-config', () => {
       expect(disabled.body).toEqual(disabledConfig);
     });
 
+    // FL-71: the update-check frequency is a saved setting with the prototype's two choices
+    it('should save the update-check frequency and refuse one the server does not offer', async () => {
+      const config = await getSystemConfig(admin.accessToken);
+      expect(config.newVersionCheck.frequency).toBe('daily');
+
+      const weekly = { ...config, newVersionCheck: { ...config.newVersionCheck, frequency: 'weekly' } };
+      const saved = await request(app)
+        .put('/system-config')
+        .set('Authorization', `Bearer ${admin.accessToken}`)
+        .send(weekly);
+      expect(saved.status).toBe(200);
+      expect(await getSystemConfig(admin.accessToken)).toEqual(weekly);
+
+      const hourly = { ...config, newVersionCheck: { ...config.newVersionCheck, frequency: 'hourly' } };
+      const refused = await request(app)
+        .put('/system-config')
+        .set('Authorization', `Bearer ${admin.accessToken}`)
+        .send(hourly);
+      expect(refused.status).toBe(400);
+    });
+
     it('should reject an invalid config entry', async () => {
       const { status, body } = await request(app)
         .put('/system-config')

@@ -1,4 +1,4 @@
-import { getConfig, getConfigDefaults, LoginResponseDto, updateConfig } from '@immich/sdk';
+import { getConfig, getConfigDefaults, LoginResponseDto, updateConfig, VersionCheckFrequency } from '@immich/sdk';
 import { expect, Page, test } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { asBearerAuth, utils } from 'src/utils.js';
@@ -10,6 +10,7 @@ import { asBearerAuth, utils } from 'src/utils.js';
 const trashUrl = '/user-settings?area=storage&section=trash';
 const configurationUrl = '/user-settings?area=server&section=configuration';
 const notificationsUrl = '/user-settings?area=notifications&section=notifications';
+const versionCheckUrl = '/user-settings?area=server&section=version-check';
 
 // i18n/en.json
 const labels = {
@@ -29,6 +30,7 @@ const labels = {
   importSettings: 'Import settings', // frameleaf_cc_config_import
   emailTemplates: 'Email Templates', // admin.template_email_settings
   preview: 'Preview', // admin.template_email_preview
+  checkFrequency: 'Check frequency', // frameleaf_versions_frequency_title
 };
 
 const readConfig = (admin: LoginResponseDto) => getConfig({ headers: asBearerAuth(admin.accessToken) });
@@ -200,6 +202,56 @@ test.describe('Command Center settings', () => {
 
     await reviewAndSave(page);
     await expect.poll(() => savedTrashDays(admin)).toBe(days);
+  });
+
+  // FL-71 (owner decision 2026-09-27): "Check frequency" is a real setting with the prototype's
+  // Daily and Weekly, saved through the settings bar and carried by export and import.
+  test('saves the update-check frequency, exports it and imports it back', async ({ page }) => {
+    const before = await readConfig(admin);
+    expect(before.newVersionCheck.frequency).toBe('daily');
+
+    await page.goto(versionCheckUrl);
+    const select = page.getByRole('combobox', { name: labels.checkFrequency });
+    await expect(select).toHaveValue('daily');
+    await expect(select.locator('option')).toHaveText(['Daily', 'Weekly']);
+    await select.selectOption('weekly');
+    expect((await readConfig(admin)).newVersionCheck.frequency).toBe('daily');
+
+    await reviewAndSave(page);
+    await expect.poll(async () => (await readConfig(admin)).newVersionCheck.frequency).toBe('weekly');
+    await page.reload();
+    await expect(page.getByRole('combobox', { name: labels.checkFrequency })).toHaveValue('weekly');
+
+    await page.goto(configurationUrl);
+    const [download] = await Promise.all([
+      page.waitForEvent('download'),
+      page.getByRole('button', { name: labels.exportSettings }).click(),
+    ]);
+    const exported = JSON.parse(await readFile(await download.path(), 'utf8'));
+    expect(exported.newVersionCheck.frequency).toBe('weekly');
+
+    await updateConfig(
+      {
+        adminConfigDto: {
+          ...before,
+          newVersionCheck: { ...before.newVersionCheck, frequency: VersionCheckFrequency.Daily },
+        },
+      },
+      { headers: asBearerAuth(admin.accessToken) },
+    );
+    await page.reload();
+    const [chooser] = await Promise.all([
+      page.waitForEvent('filechooser'),
+      page.getByRole('button', { name: labels.importSettings }).click(),
+    ]);
+    await chooser.setFiles({
+      name: 'frameleaf-settings.json',
+      mimeType: 'application/json',
+      buffer: Buffer.from(JSON.stringify({ newVersionCheck: { frequency: 'weekly' } })),
+    });
+    await expect(page.getByText(labels.importedOne)).toBeVisible();
+    await reviewAndSave(page);
+    await expect.poll(async () => (await readConfig(admin)).newVersionCheck.frequency).toBe('weekly');
   });
 
   // FL-71: an email template preview shows the rendered template and never claims an email was sent.

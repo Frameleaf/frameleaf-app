@@ -41,6 +41,8 @@ import {
   VideoCodec,
   VideoCodecSchema,
   VideoContainer,
+  VersionCheckFrequency,
+  VersionCheckFrequencySchema,
   VideoContainerSchema,
 } from 'src/enum.js';
 
@@ -1082,7 +1084,12 @@ const AdminConfigSchemaWithVisibility = z
       })
       .meta({ id: 'AdminConfigImageDto' }),
     newVersionCheck: z
-      .object({ enabled: configBool.describe('Enabled'), channel: ReleaseChannelSchema })
+      .object({
+        enabled: configBool.describe('Enabled'),
+        channel: ReleaseChannelSchema,
+        // FL-71: a file or client from before the setting existed keeps the default schedule
+        frequency: VersionCheckFrequencySchema.default(VersionCheckFrequency.Daily),
+      })
       .meta({ id: 'AdminConfigNewVersionCheckDto' }),
     nightlyTasks: z
       .object({
@@ -1597,6 +1604,7 @@ export const defaults = Object.freeze<SystemConfig>({
   newVersionCheck: {
     enabled: false,
     channel: ReleaseChannel.Stable,
+    frequency: VersionCheckFrequency.Daily,
   },
   nightlyTasks: {
     startTime: '00:00',

@@ -1,6 +1,6 @@
 import { DateTime } from 'luxon';
 import { defaults } from 'src/dtos/config.dto.js';
-import { CronJob, JobName, JobStatus, ReleaseChannel, SystemMetadataKey } from 'src/enum.js';
+import { CronJob, JobName, JobStatus, ReleaseChannel, SystemMetadataKey, VersionCheckFrequency } from 'src/enum.js';
 import { VersionService } from 'src/services/version.service.js';
 import { factory } from 'test/small.factory.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
@@ -119,11 +119,73 @@ describe(VersionService.name, () => {
       expect(mocks.serverInfo.getLatestRelease).not.toHaveBeenCalled();
     });
 
-    it('should run if the last check was more than 50 seconds ago', async () => {
+    it('should run a forced check if the last check was more than 50 seconds ago', async () => {
       given({ checkedAt: DateTime.utc().minus({ seconds: 60 }).toISO(), releaseVersion: '1.0.0' });
       mocks.serverInfo.getLatestRelease.mockResolvedValue(mockVersionResponse('v3.0.0'));
-      await expect(sut.handleVersionCheck()).resolves.toEqual(JobStatus.Success);
+      await expect(sut.handleVersionCheck({ force: true })).resolves.toEqual(JobStatus.Success);
       expect(mocks.serverInfo.getLatestRelease).toHaveBeenCalled();
+    });
+
+    describe('check frequency (FL-71)', () => {
+      const withFrequency = (frequency?: VersionCheckFrequency) => ({
+        newVersionCheck: { enabled: true, channel: ReleaseChannel.Stable, ...(frequency && { frequency }) },
+      });
+      const checkedHoursAgo = (hours: number) => ({
+        checkedAt: DateTime.utc().minus({ hours }).toISO(),
+        releaseVersion: 'v3.0.0',
+      });
+
+      beforeEach(() => {
+        mocks.serverInfo.getLatestRelease.mockResolvedValue(mockVersionResponse('v3.0.0'));
+      });
+
+      it('defaults to daily: the hourly tick does not ask again within a day', async () => {
+        given(checkedHoursAgo(2), withFrequency());
+        await expect(sut.handleVersionCheck()).resolves.toEqual(JobStatus.Skipped);
+        expect(mocks.serverInfo.getLatestRelease).not.toHaveBeenCalled();
+      });
+
+      it('asks again once a day has passed on the daily schedule', async () => {
+        given(checkedHoursAgo(24), withFrequency(VersionCheckFrequency.Daily));
+        await expect(sut.handleVersionCheck()).resolves.toEqual(JobStatus.Success);
+        expect(mocks.serverInfo.getLatestRelease).toHaveBeenCalledWith(ReleaseChannel.Stable);
+      });
+
+      it('does not drift an hour a day: the tick just short of 24 hours after the last check asks', async () => {
+        given(
+          { checkedAt: DateTime.utc().minus({ hours: 24 }).plus({ seconds: 20 }).toISO(), releaseVersion: 'v3.0.0' },
+          withFrequency(VersionCheckFrequency.Daily),
+        );
+        await expect(sut.handleVersionCheck()).resolves.toEqual(JobStatus.Success);
+      });
+
+      it('waits a week on the weekly schedule', async () => {
+        given(checkedHoursAgo(6 * 24), withFrequency(VersionCheckFrequency.Weekly));
+        await expect(sut.handleVersionCheck()).resolves.toEqual(JobStatus.Skipped);
+        expect(mocks.serverInfo.getLatestRelease).not.toHaveBeenCalled();
+      });
+
+      it('asks once a week has passed on the weekly schedule', async () => {
+        given(checkedHoursAgo(7 * 24), withFrequency(VersionCheckFrequency.Weekly));
+        await expect(sut.handleVersionCheck()).resolves.toEqual(JobStatus.Success);
+        expect(mocks.serverInfo.getLatestRelease).toHaveBeenCalled();
+      });
+
+      it('asks at once when nothing was checked yet', async () => {
+        given(null, withFrequency(VersionCheckFrequency.Weekly));
+        await expect(sut.handleVersionCheck()).resolves.toEqual(JobStatus.Success);
+      });
+
+      it('a forced check (checks just switched on) ignores the schedule', async () => {
+        given(checkedHoursAgo(2), withFrequency(VersionCheckFrequency.Weekly));
+        await expect(sut.handleVersionCheck({ force: true })).resolves.toEqual(JobStatus.Success);
+      });
+
+      it('never checks while checks are off, whatever the frequency', async () => {
+        given(null, { newVersionCheck: { enabled: false, frequency: VersionCheckFrequency.Daily } });
+        await expect(sut.handleVersionCheck({ force: true })).resolves.toEqual(JobStatus.Skipped);
+        expect(mocks.serverInfo.getLatestRelease).not.toHaveBeenCalled();
+      });
     });
 
     it('should run and notify if a new version is available', async () => {
@@ -159,24 +221,25 @@ describe(VersionService.name, () => {
   describe('onConfigUpdate', () => {
     it('should queue a version check job when newVersionCheck is enabled', async () => {
       await sut.onConfigUpdate({
-        oldConfig: { ...defaults, newVersionCheck: { enabled: false, channel: ReleaseChannel.Stable } },
-        newConfig: { ...defaults, newVersionCheck: { enabled: true, channel: ReleaseChannel.Stable } },
+        oldConfig: { ...defaults, newVersionCheck: { ...defaults.newVersionCheck, enabled: false } },
+        newConfig: { ...defaults, newVersionCheck: { ...defaults.newVersionCheck, enabled: true } },
       });
-      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.VersionCheck, data: {} });
+      // switching checks on asks now, whatever the schedule
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.VersionCheck, data: { force: true } });
     });
 
     it('should not queue a version check job when newVersionCheck is disabled', async () => {
       await sut.onConfigUpdate({
-        oldConfig: { ...defaults, newVersionCheck: { enabled: true, channel: ReleaseChannel.Stable } },
-        newConfig: { ...defaults, newVersionCheck: { enabled: false, channel: ReleaseChannel.Stable } },
+        oldConfig: { ...defaults, newVersionCheck: { ...defaults.newVersionCheck, enabled: true } },
+        newConfig: { ...defaults, newVersionCheck: { ...defaults.newVersionCheck, enabled: false } },
       });
       expect(mocks.job.queue).not.toHaveBeenCalled();
     });
 
     it('should not queue a version check job when newVersionCheck was already enabled', async () => {
       await sut.onConfigUpdate({
-        oldConfig: { ...defaults, newVersionCheck: { enabled: true, channel: ReleaseChannel.Stable } },
-        newConfig: { ...defaults, newVersionCheck: { enabled: true, channel: ReleaseChannel.Stable } },
+        oldConfig: { ...defaults, newVersionCheck: { ...defaults.newVersionCheck, enabled: true } },
+        newConfig: { ...defaults, newVersionCheck: { ...defaults.newVersionCheck, enabled: true } },
       });
       expect(mocks.job.queue).not.toHaveBeenCalled();
     });

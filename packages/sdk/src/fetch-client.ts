@@ -1308,6 +1308,7 @@ export type AdminConfigNewVersionCheckDto = {
     channel: ReleaseChannel;
     /** Enabled */
     enabled: boolean;
+    frequency?: VersionCheckFrequency;
 };
 export type AdminConfigNightlyTasksDto = {
     /** Cluster new faces */
@@ -21151,6 +21152,10 @@ export enum Style {
 export enum ReleaseChannel {
     Stable = "stable",
     ReleaseCandidate = "releaseCandidate"
+}
+export enum VersionCheckFrequency {
+    Daily = "daily",
+    Weekly = "weekly"
 }
 export enum OAuthTokenEndpointAuthMethod {
     ClientSecretPost = "client_secret_post",
