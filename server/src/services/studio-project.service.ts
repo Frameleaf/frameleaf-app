@@ -47,7 +47,7 @@ import {
   StudioRefusedReference,
   StudioResourceService,
 } from 'src/services/studio-resource.service.js';
-import { asLockedSession } from 'src/utils/locked.js';
+import { asLockedSession, getLockedOwnerId } from 'src/utils/locked.js';
 import { checkStudioCommandBatch, studioCommandMirror } from 'src/utils/studio-commands.js';
 import {
   STUDIO_AUTOSAVE_DEBOUNCE_MS,
@@ -1106,7 +1106,10 @@ export class StudioProjectService {
     cloudConsent?: boolean,
   ): Promise<CachedResolution & { cached: boolean }> {
     const cacheable = destination !== StudioDestination.FrameleafCloud;
-    const key = `${project.id}:${revision.revision}:${auth.user.id}:${destination}`;
+    // FL-195: an unlocked session resolves the owner's revealed locks, a locked one refuses them, so a
+    // resolution is never shared between the two
+    const privacy = getLockedOwnerId(auth) ? 'unlocked' : 'locked';
+    const key = `${project.id}:${revision.revision}:${auth.user.id}:${privacy}:${destination}`;
     const now = Date.now();
 
     if (cacheable) {
