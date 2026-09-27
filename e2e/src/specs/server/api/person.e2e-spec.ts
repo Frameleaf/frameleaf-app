@@ -752,4 +752,73 @@ describe('/people', () => {
       expect(JSON.stringify(suggestions.body)).not.toContain(visiblePerson.id);
     });
   });
+
+  // FL-37 owner decision (September 22): a person kept in Locked is not there at all until the
+  // session is unlocked, and every single-person route answers the same 404 as a missing one.
+  describe('a person kept behind the PIN', () => {
+    const pinCode = '135790';
+    let owner: LoginResponseDto;
+    let secret: PersonResponseDto;
+    let everyday: PersonResponseDto;
+    const auth = () => ({ Authorization: `Bearer ${owner.accessToken}` });
+    const listIds = async () => {
+      const { status, body } = await request(app).get('/people').query({ withHidden: true }).set(auth());
+      expect(status).toBe(200);
+      return (body.people as PeopleListItemDto[]).map(({ id }) => id);
+    };
+
+    beforeAll(async () => {
+      owner = await utils.userSetup(admin.accessToken, createUserDto.create('fl37-locked-person'));
+      await request(app).post('/auth/pin-code').set(auth()).send({ pinCode }).expect(204);
+      [secret, everyday] = await Promise.all([
+        utils.createPerson(owner.accessToken, { name: 'Secret' }),
+        utils.createPerson(owner.accessToken, { name: 'Everyday' }),
+      ]);
+      const [secretAsset, everydayAsset] = await Promise.all([
+        utils.createAsset(owner.accessToken),
+        utils.createAsset(owner.accessToken),
+      ]);
+      await Promise.all([
+        utils.createFace({ assetId: secretAsset.id, personGroupId: secret.id }),
+        utils.createFace({ assetId: everydayAsset.id, personGroupId: everyday.id }),
+      ]);
+
+      await request(app).post('/auth/session/unlock').set(auth()).send({ pinCode }).expect(204);
+      const saved = await request(app)
+        .put('/users/me/preferences')
+        .set(auth())
+        .send({ privacy: { suppression: { personIds: [secret.id] } } });
+      expect(saved.status).toBe(200);
+      await request(app).post('/auth/session/lock').set(auth()).expect(204);
+    });
+
+    it('answers 404 and leaves them out while locked, and brings them back once unlocked', async () => {
+      const notFound = errorDto.notFound('Person not found');
+
+      expect(await listIds()).toEqual([everyday.id]);
+      for (const path of [`/people/${secret.id}`, `/people/${secret.id}/statistics`]) {
+        const { status, body } = await request(app).get(path).set(auth());
+        expect(status).toBe(404);
+        expect(body).toEqual(notFound);
+      }
+      const thumbnail = await request(app).get(`/people/${secret.id}/thumbnail`).set(auth());
+      expect(thumbnail.status).toBe(404);
+      const rename = await request(app).put(`/people/${secret.id}`).set(auth()).send({ name: 'Renamed' });
+      expect(rename.status).toBe(404);
+      expect(rename.body).toEqual(notFound);
+      const mergeInto = await request(app)
+        .post(`/people/${secret.id}/merge`)
+        .set(auth())
+        .send({ ids: [everyday.id] });
+      expect(mergeInto.status).toBe(404);
+      const closest = await request(app).get('/people').query({ closestPersonId: secret.id }).set(auth());
+      expect(closest.status).toBe(404);
+
+      await request(app).post('/auth/session/unlock').set(auth()).send({ pinCode }).expect(204);
+      expect(await listIds()).toEqual(expect.arrayContaining([secret.id, everyday.id]));
+      const person = await request(app).get(`/people/${secret.id}`).set(auth());
+      expect(person.status).toBe(200);
+      expect(person.body).toEqual(expect.objectContaining({ id: secret.id, name: 'Secret' }));
+    });
+  });
 });
