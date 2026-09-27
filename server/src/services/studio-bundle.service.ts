@@ -68,10 +68,12 @@ import {
   readZipDirectory,
   readZipEntry,
   relinkStudioGraph,
+  selectStudioSequences,
   serializeStudioBundleProject,
   studioBundleFileName,
   studioBundleSourceKeys,
   studioChecksumSha256,
+  studioSequenceSubsetProblem,
 } from 'src/utils/studio-bundle.js';
 import {
   STUDIO_LIFECYCLE_SWEEP_MS,
@@ -214,10 +216,26 @@ export class StudioBundleService {
       throw new ForbiddenException('Only the owner can export a Studio project');
     }
 
+    // A subset is checked against the revision being exported, so an unknown sequence is refused
+    // now rather than failing the job, and only the media the kept sequences use may be copied.
+    let sequenceIds: string[] | null = null;
+    let keptKeys: Set<string> | null = null;
+    if (dto.sequenceIds && dto.sequenceIds.length > 0) {
+      const selected = selectStudioSequences(authorized.envelope.graph, dto.sequenceIds);
+      if (!selected.ok) {
+        throw new BadRequestException(`This project has no sequence ${selected.unknown.join(', ').slice(0, 200)}`);
+      }
+      if (selected.sequenceIds) {
+        sequenceIds = [...new Set(dto.sequenceIds)];
+        keptKeys = new Set(studioBundleSourceKeys(selected.graph).map((key) => key.key));
+      }
+    }
+
     const embed = new Map<string, { key: string; kind: StudioResourceKind; id: string }>();
     if (dto.includeMedia) {
       for (const entry of authorized.manifest.entries) {
         if (
+          (!keptKeys || keptKeys.has(entry.key)) &&
           (STUDIO_BUNDLE_EMBEDDABLE_KINDS as readonly StudioResourceKind[]).includes(entry.kind) &&
           entry.sourceAccess === 'owner' &&
           entry.path &&
@@ -235,7 +253,7 @@ export class StudioBundleService {
       digest: authorized.revision.digest,
       includeMedia: dto.includeMedia === true,
       embed: embed.values().toArray(),
-      sequenceIds: null,
+      sequenceIds,
       requestKey: dto.requestKey ?? null,
     };
 
@@ -251,7 +269,7 @@ export class StudioBundleService {
       projectId: authorized.project.id,
       revisionId: authorized.revision.id,
       snapshot: snapshot as unknown as Record<string, unknown>,
-      settings: { includeMedia: snapshot.includeMedia },
+      settings: { includeMedia: snapshot.includeMedia, sequenceIds },
       estimate: null,
       totalUnits: null,
       maxAttempts: STUDIO_BUNDLE_MAX_ATTEMPTS,
@@ -613,7 +631,20 @@ export class StudioBundleService {
     if (!checked.ok || studioEnvelopeDigest(checked.envelope) !== snapshot.digest) {
       throw new BundleJobError('bundle_revision_unavailable', 'The stored project does not match its digest');
     }
-    const envelope = checked.envelope;
+    // A partial bundle carries the chosen sequences and what they nest, cut from the frozen revision.
+    let envelope = checked.envelope;
+    let carried: string[] | null = null;
+    if (snapshot.sequenceIds) {
+      const selected = selectStudioSequences(envelope.graph, snapshot.sequenceIds);
+      if (!selected.ok) {
+        throw new BundleJobError(
+          'bundle_sequences_unavailable',
+          'The version this export was made from lacks a chosen sequence',
+        );
+      }
+      envelope = { ...envelope, graph: selected.graph };
+      carried = selected.sequenceIds;
+    }
 
     const owner = await this.authFor(operation.ownerId, { elevated: true });
     if (!owner) {
@@ -700,8 +731,10 @@ export class StudioBundleService {
       producerVersion: serverVersion.toString(),
       name: project.name,
       revision: revision.revision,
-      digest: snapshot.digest,
+      // A partial bundle's document is not the stored revision, so it is named by its own digest.
+      digest: carried ? studioEnvelopeDigest(envelope) : snapshot.digest,
       sourceProjectId: project.id,
+      sequenceIds: carried,
       engine: envelope.engine,
       engineRevision: envelope.engineRevision,
       project: projectBytes,
@@ -966,6 +999,15 @@ export class StudioBundleService {
     const project = checkStudioBundleProject(manifest, projectBytes);
     if (!project.ok) {
       throw new StudioBundleArchiveError('bundle_project_invalid', project.detail);
+    }
+
+    // A partial bundle holds exactly the sequences it names, and nothing in it points at one it
+    // left behind, so the project an import creates never has a dangling compound clip.
+    if (manifest.project.sequenceIds) {
+      const problem = studioSequenceSubsetProblem(project.envelope.graph, manifest.project.sequenceIds);
+      if (problem) {
+        throw new StudioBundleArchiveError('bundle_project_invalid', problem);
+      }
     }
 
     // Every media source the document names must be in the manifest, so the review the person

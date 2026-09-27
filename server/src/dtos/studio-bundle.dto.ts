@@ -24,6 +24,14 @@ const StudioBundleExportCreateSchema = z
       .describe(
         'Copy the media you own into the bundle. Shared media always travels as a reference, and nothing Locked is ever copied.',
       ),
+    sequenceIds: z
+      .array(IdentifierSchema)
+      .min(1)
+      .max(1000)
+      .optional()
+      .describe(
+        'Export only these sequences, with every sequence they nest. `main` names the Main timeline. Leave out for the whole project.',
+      ),
     requestKey: IdentifierSchema.optional().describe('Idempotency key; a repeated submit answers with the first job'),
   })
   .meta({ id: 'StudioBundleExportCreateDto' });

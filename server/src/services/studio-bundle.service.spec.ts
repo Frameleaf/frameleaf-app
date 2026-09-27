@@ -24,7 +24,7 @@ import {
   serializeStudioBundleProject,
 } from 'src/utils/studio-bundle.js';
 import { STUDIO_ENGINE, STUDIO_ENVELOPE_SCHEMA_VERSION, studioEnvelopeDigest } from 'src/utils/studio-project.js';
-import { extractStudioResourceReferences, studioReferenceKey } from 'src/utils/studio-resources.js';
+import { StudioResourceKind, extractStudioResourceReferences, studioReferenceKey } from 'src/utils/studio-resources.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
 import { newUuid, newUuidV7 } from 'test/small.factory.js';
 import { getMocks } from 'test/utils.js';
@@ -305,6 +305,7 @@ describe(StudioBundleService.name, () => {
       access,
       project: { id: newUuidV7(), name: 'Lake trip' },
       revision: { id: newUuidV7(), revision: 4, digest: studioEnvelopeDigest(envelope) },
+      envelope,
       manifest: { entries },
     });
 
@@ -337,6 +338,40 @@ describe(StudioBundleService.name, () => {
       );
       await sut.createExport(owner, newUuidV7(), {});
       expect(operations.create.mock.calls[0][0].snapshot.embed).toEqual([]);
+    });
+
+    it('freezes a sequence subset and copies only the media the chosen sequences use', async () => {
+      const twoSequences = {
+        ...envelope,
+        graph: {
+          sequences: [
+            { id: 'seq-1', tracks: [{ clips: [{ assetId: assetA }] }] },
+            { id: 'seq-2', tracks: [{ clips: [{ assetId: assetB }] }] },
+          ],
+        },
+      };
+      studio.authorizeRevision.mockResolvedValue({
+        ...authorized('owner', [
+          { key: `library-asset:${assetA}`, kind: 'library-asset', id: assetA, sourceAccess: 'owner', path: '/a' },
+          { key: `library-asset:${assetB}`, kind: 'library-asset', id: assetB, sourceAccess: 'owner', path: '/b' },
+        ]),
+        envelope: twoSequences,
+      });
+
+      await sut.createExport(owner, newUuidV7(), { includeMedia: true, sequenceIds: ['seq-2'] });
+      const created = operations.create.mock.calls[0][0];
+      expect(created.snapshot.sequenceIds).toEqual(['seq-2']);
+      expect(created.snapshot.embed).toEqual([{ key: `library-asset:${assetB}`, kind: 'library-asset', id: assetB }]);
+
+      // Every sequence is the whole project, which is exported as one.
+      await sut.createExport(owner, newUuidV7(), { sequenceIds: ['seq-1', 'seq-2'] });
+      expect(operations.create.mock.calls[1][0].snapshot.sequenceIds).toBeNull();
+
+      // A sequence the revision does not define is refused before anything is queued.
+      await expect(sut.createExport(owner, newUuidV7(), { sequenceIds: ['seq-9'] })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(operations.create).toHaveBeenCalledTimes(2);
     });
 
     it('refuses a reviewer and answers a repeated submit with the first job', async () => {
@@ -527,6 +562,201 @@ describe(StudioBundleService.name, () => {
       });
       // Nothing in the library was written to at any point.
       expect(fs.files.get('/library/a.mov')!.toString()).toBe('lake video bytes');
+    });
+  });
+
+  describe('a partial bundle round trip', () => {
+    /** A Freecut project: Main, two standalone sequences, and a compound clip nested in one of them. */
+    const freecutEnvelope = {
+      ...envelope,
+      graph: {
+        id: 'fc-1',
+        name: 'Lake trip',
+        timeline: {
+          tracks: [{ id: 't1' }],
+          items: [{ id: 'm1', type: 'video', mediaId: assetA }],
+          topLevelSequenceIds: ['seq-b', 'seq-c'],
+          compositions: [
+            {
+              id: 'seq-b',
+              tracks: [],
+              items: [
+                { id: 'b1', type: 'video', mediaId: assetB },
+                { id: 'b2', type: 'composition', compositionId: 'comp-n' },
+              ],
+            },
+            { id: 'comp-n', tracks: [], items: [{ id: 'n1', type: 'image', mediaId: assetC, future: { keep: 1 } }] },
+            { id: 'seq-c', tracks: [], items: [{ id: 'c1', type: 'video', mediaId: assetA }] },
+          ],
+        },
+      },
+    };
+
+    const readManifest = async (bundle: Buffer) => {
+      const source = {
+        size: bundle.length,
+        read: (position: number, length: number) => Promise.resolve(bundle.subarray(position, position + length)),
+      };
+      const directory = await readZipDirectory(source);
+      const read = async (name: string) =>
+        JSON.parse((await readZipEntry(source, directory.byName.get(name)!)).toString('utf8'));
+      return {
+        manifest: (await read(STUDIO_BUNDLE_MANIFEST_ENTRY)) as StudioBundleManifest,
+        project: (await read('project.json')) as typeof freecutEnvelope,
+      };
+    };
+
+    const importBundle = async (bundle: Buffer, manifest: StudioBundleManifest) => {
+      fs.files.set('/uploads/partial.zip', bundle);
+      const upload = {
+        id: newUuidV7(),
+        ownerId: owner.user.id,
+        path: '/uploads/partial.zip',
+        digest: sha256(bundle).toString('hex'),
+        expiresAt: new Date(Date.now() + 60_000),
+        manifest,
+      } as unknown as StudioBundleUpload;
+      projects.getUpload.mockResolvedValue(upload);
+      const job = operationOf({
+        kind: MediaOperationKind.StudioBundleImport,
+        snapshot: {
+          kind: 'studio-bundle-import',
+          uploadId: upload.id,
+          digest: upload.digest,
+          name: null,
+          mapping: {},
+          requestKey: null,
+        },
+      } as never);
+      await sut.run({ operation: job, claimToken: 'import-token' });
+      return job;
+    };
+
+    it('exports only the chosen sequence with what it nests, and imports it with every reference intact', async () => {
+      const project = { id: newUuidV7(), ownerId: owner.user.id, name: 'Lake trip', deletedAt: null } as StudioProject;
+      const digest = studioEnvelopeDigest(freecutEnvelope);
+      projects.getById.mockResolvedValue(project);
+      projects.getRevision.mockResolvedValue({ id: newUuidV7(), revision: 4, digest, envelope: freecutEnvelope });
+      fs.files.set('/library/b.mov', Buffer.from('b bytes'));
+      allowed = new Map([
+        [assetA, { path: '/library/a.mov', ownerId: owner.user.id }],
+        [assetB, { path: '/library/b.mov', ownerId: owner.user.id }],
+        [assetC, { path: '/library/c.jpg', ownerId: newUuid() }],
+      ]);
+      assets.getByIds.mockResolvedValue(
+        [assetA, assetB, assetC].map((id) => ({
+          id,
+          ownerId: allowed.get(id)!.ownerId,
+          visibility: AssetVisibility.Timeline,
+          originalFileName: `${id}.mov`,
+          checksum: sha256(id),
+        })),
+      );
+
+      const exportJob = operationOf({
+        kind: MediaOperationKind.StudioBundleExport,
+        snapshot: {
+          kind: 'studio-bundle-export',
+          projectId: project.id,
+          revision: 4,
+          digest,
+          includeMedia: true,
+          embed: [{ key: `library-asset:${assetB}`, kind: 'library-asset', id: assetB }],
+          sequenceIds: ['seq-b'],
+          requestKey: null,
+        },
+      } as never);
+      await sut.run({ operation: exportJob, claimToken: 'token' });
+
+      expect(operations.fail).not.toHaveBeenCalled();
+      const exported = lastResult();
+      expect(exported).toMatchObject({ embedded: 1, referenced: 1 });
+      const bundle = fs.files.get(exported.path as string)!;
+      const { manifest, project: document } = await readManifest(bundle);
+
+      // The document carries seq-b and the compound clip it nests, nothing of Main or seq-c.
+      const timeline = document.graph.timeline;
+      expect(timeline.compositions.map((composition) => composition.id)).toEqual(['seq-b', 'comp-n']);
+      expect(timeline.items).toEqual([]);
+      expect(timeline.topLevelSequenceIds).toEqual(['seq-b']);
+      expect(timeline.compositions[1].items[0]).toMatchObject({ future: { keep: 1 } });
+      expect(manifest.project.sequenceIds).toEqual(['seq-b', 'comp-n']);
+      // It is not the stored revision, so it is named by its own digest.
+      expect(manifest.project.digest).toBe(studioEnvelopeDigest(document));
+      expect(manifest.project.digest).not.toBe(digest);
+      // Only what the kept sequences use is listed: B copied, C (shared) referenced, A not at all.
+      expect(manifest.sources.map((item) => [item.id, item.mode])).toEqual(
+        expect.arrayContaining([
+          [assetB, 'embedded'],
+          [assetC, 'reference'],
+        ]),
+      );
+      expect(manifest.sources).toHaveLength(2);
+
+      // On the importing server only the shared item resolves; the copied one has nothing to relink to.
+      allowed = new Map([[assetC, { path: '/library/c.jpg', ownerId: newUuid() }]]);
+      operations.setBulkResult.mockClear();
+      await importBundle(bundle, manifest);
+
+      expect(operations.fail).not.toHaveBeenCalled();
+      const seed = projects.createWithRevision.mock.calls[0][0];
+      expect(seed.revision.envelope.graph).toEqual(document.graph);
+      expect(seed.revision.digest).toBe(manifest.project.digest);
+      expect(lastResult()).toMatchObject({ kept: 1, embeddedVerified: 1, missing: [{ id: assetB, embedded: true }] });
+    });
+
+    it('refuses a partial bundle that points at a sequence it does not carry', async () => {
+      const cut = {
+        ...freecutEnvelope,
+        graph: {
+          ...freecutEnvelope.graph,
+          timeline: {
+            ...freecutEnvelope.graph.timeline,
+            items: [],
+            compositions: [freecutEnvelope.graph.timeline.compositions[0]],
+            topLevelSequenceIds: ['seq-b'],
+          },
+        },
+      };
+      const project = serializeStudioBundleProject(cut);
+      const manifest = buildStudioBundleManifest({
+        createdAt: new Date('2026-09-22T10:00:00.000Z'),
+        producerVersion: '3.0.0',
+        name: 'Lake trip',
+        revision: 4,
+        digest: studioEnvelopeDigest(cut),
+        sourceProjectId: 'p',
+        sequenceIds: ['seq-b'],
+        engine: STUDIO_ENGINE,
+        engineRevision: 'rev-1',
+        project,
+        sources: [
+          {
+            key: `library-asset:${assetB}`,
+            kind: StudioResourceKind.LibraryAsset,
+            id: assetB,
+            mode: 'reference',
+            path: null,
+            sha256: null,
+            bytes: null,
+            fileName: null,
+            contentType: null,
+          },
+        ],
+        media: {},
+      });
+      const bundle = buildZip([
+        { name: 'manifest.json', data: Buffer.from(JSON.stringify(manifest)) },
+        { name: 'project.json', data: project },
+      ]);
+
+      const job = await importBundle(bundle, manifest);
+      expect(operations.fail).toHaveBeenCalledWith(
+        job.id,
+        'import-token',
+        expect.objectContaining({ errorCode: 'bundle_project_invalid', error: expect.stringContaining('comp-n') }),
+      );
+      expect(projects.createWithRevision).not.toHaveBeenCalled();
     });
   });
 
