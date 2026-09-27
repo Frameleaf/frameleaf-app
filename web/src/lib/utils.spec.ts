@@ -1,10 +1,34 @@
 import { AssetTypeEnum } from '@immich/sdk';
 import { bumpPlaybackRevision, resetPlaybackRevisions } from '$lib/frameleaf/playback-revision.svelte';
-import { getAssetUrl, getAssetUrls, semverToName } from '$lib/utils';
+import { AbortError, cancelUploadRequests, getAssetUrl, getAssetUrls, semverToName, uploadRequest } from '$lib/utils';
 import { assetFactory } from '@test-data/factories/asset-factory';
 import { sharedLinkFactory } from '@test-data/factories/shared-link-factory';
 
 describe('utils', () => {
+  describe('FL-45 cancelling uploads', () => {
+    class FakeXhr extends EventTarget {
+      upload = new EventTarget();
+      readyState = 0;
+      status = 0;
+      response = null;
+      responseType = '';
+      open() {}
+      send() {}
+      abort() {
+        this.dispatchEvent(new Event('abort'));
+      }
+    }
+
+    beforeEach(() => vi.stubGlobal('XMLHttpRequest', FakeXhr));
+    afterEach(() => vi.unstubAllGlobals());
+
+    it('settles an in-flight upload as aborted when uploads are cancelled', async () => {
+      const request = uploadRequest({ url: '/api/assets', data: new FormData() });
+      cancelUploadRequests();
+      await expect(request).rejects.toBeInstanceOf(AbortError);
+    });
+  });
+
   describe('FL-115 playback cache key', () => {
     afterEach(() => resetPlaybackRevisions());
 

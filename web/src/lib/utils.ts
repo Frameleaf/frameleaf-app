@@ -120,6 +120,12 @@ export const uploadRequest = async <T>(options: UploadRequestOptions): Promise<{
       reject(error);
     });
 
+    // cancelUploadRequests() aborts the request, which fires neither error nor load.
+    xhr.addEventListener('abort', () => {
+      unsubscribe();
+      reject(new AbortError());
+    });
+
     xhr.addEventListener('load', () => {
       unsubscribe();
       if (xhr.readyState === 4 && xhr.status >= 200 && xhr.status < 300) {

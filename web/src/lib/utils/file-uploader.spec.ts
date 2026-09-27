@@ -188,6 +188,28 @@ describe('fileUploader error handling', () => {
     concurrencySpy.mockRestore();
   });
 
+  it('cancelRemainingUploads() stops an upload already on its way and says it was cancelled', async () => {
+    authManager.setUser(mockUserObject);
+    vi.spyOn(utils, 'uploadRequest').mockImplementation(
+      () =>
+        new Promise((_, reject) => {
+          vi.spyOn(utils, 'cancelUploadRequests').mockImplementation(() => reject(new utils.AbortError()));
+        }),
+    );
+
+    const handled = fileUploadHandler({ files: [mockFile] });
+    await vi.waitFor(() => expect(get(uploadAssetsStore)[0].state).toBe(UploadState.STARTED));
+    await vi.waitFor(() => expect(vi.isMockFunction(utils.cancelUploadRequests)).toBe(true));
+
+    cancelRemainingUploads();
+    await handled;
+
+    const [item] = get(uploadAssetsStore);
+    expect(item.state).toBe(UploadState.ERROR);
+    expect(item.error).toBe('frameleaf_transfer_upload_cancelled');
+    expect(get(uploadAssetsStore.stats).errors).toBe(1);
+  });
+
   it('retrying a failed Locked upload sends it to the Locked folder again', async () => {
     authManager.setUser(mockUserObject);
     const uploadRequestSpy = vi

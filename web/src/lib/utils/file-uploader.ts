@@ -15,7 +15,7 @@ import { uploadManager } from '$lib/managers/upload-manager.svelte';
 import { addAssetsToAlbums } from '$lib/services/album.service';
 import { uploadAssetsStore } from '$lib/stores/upload';
 import { UploadState } from '$lib/types';
-import { cancelUploadRequests, uploadRequest } from '$lib/utils';
+import { AbortError, cancelUploadRequests, uploadRequest } from '$lib/utils';
 import { ExecutorQueue } from '$lib/utils/executor-queue';
 import { asQueryString } from '$lib/utils/shared-links';
 import { handleError } from './handle-error';
@@ -309,7 +309,11 @@ async function fileUploader({
       return;
     }
 
-    const errorMessage = handleError(error, $t('errors.unable_to_upload_file'));
+    // Cancel remaining aborted it; handleError stays quiet about an AbortError.
+    const errorMessage =
+      error instanceof AbortError
+        ? $t('frameleaf_transfer_upload_cancelled')
+        : handleError(error, $t('errors.unable_to_upload_file'));
     uploadAssetsStore.track('error');
     uploadAssetsStore.updateItem(deviceAssetId, { state: UploadState.ERROR, error: errorMessage });
     return;
