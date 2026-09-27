@@ -47,17 +47,18 @@
     loadStudioEngine as defaultLoadStudioEngine,
     type StudioEngineResolution,
   } from '$lib/frameleaf/studio/engine-loader';
-  import type {
-    StudioAssetRef,
-    StudioAuthContext,
-    StudioCapabilities,
-    StudioEngineInstance,
-    StudioHostContext,
-    StudioRenderEvidence,
-    StudioHostServices,
-    StudioProjectHandle,
-    StudioWorkspaceMode,
-    StudioWorkspaceView,
+  import {
+    emptyStudioCapabilities,
+    type StudioAssetRef,
+    type StudioAuthContext,
+    type StudioCapabilities,
+    type StudioEngineInstance,
+    type StudioHostContext,
+    type StudioRenderEvidence,
+    type StudioHostServices,
+    type StudioProjectHandle,
+    type StudioWorkspaceMode,
+    type StudioWorkspaceView,
   } from '$lib/frameleaf/studio/host-contract';
   import type { Rational } from '$lib/frameleaf/studio/rational-time';
   import {
@@ -65,6 +66,9 @@
     reduceStudioHost,
     shouldDisposeEngine,
     studioCapabilityLabelKey,
+    studioHostAbandonsMount,
+    studioHostCanMount,
+    studioHostNeedsMount,
     studioHostCanRetry,
     studioHostHeadingKey,
     type StudioHostEvent,
@@ -145,7 +149,8 @@
     assets: readonly StudioAssetRef[];
     handoffAssetIds?: readonly string[];
     auth: StudioAuthContext;
-    capabilities: StudioCapabilities;
+    /** Null until the route's capability probe has answered; nothing is judged missing before. */
+    capabilities: StudioCapabilities | null;
     /** FL-42: what qualified render workers verified, for the engine's export sheet. */
     renderEvidence?: readonly StudioRenderEvidence[];
     services: StudioHostServices;
@@ -267,9 +272,30 @@
   let engine: StudioEngineInstance | null = null;
   let disposing: Promise<void> | null = null;
   let mountToken = 0;
+  /** The mount in progress, so a second request for the same mount joins it instead of racing it. */
+  let mounting: { token: number; done: Promise<void> } | null = null;
 
+  /**
+   * Every state change goes through here, and the engine's lifecycle follows the transition,
+   * not a later effect: entering a phase the engine must not run in abandons a mount that is
+   * still starting and tears down a running one at once, and becoming mountable again (the
+   * required workers came online, or Try again) starts exactly one mount. Doing both in the
+   * same synchronous step is what keeps capabilities that flap (met, missing, met) from leaving
+   * the old engine running or starting two.
+   */
   const dispatch = (event: StudioHostEvent) => {
-    host = reduceStudioHost(host, event);
+    const previous = host;
+    const next = reduceStudioHost(previous, event);
+    host = next;
+    if (studioHostAbandonsMount(previous, next)) {
+      mountToken += 1;
+    }
+    if (engine && shouldDisposeEngine(next.phase)) {
+      void disposeEngine();
+    }
+    if (studioHostNeedsMount(previous, next)) {
+      void mountEngine();
+    }
   };
 
   const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');
@@ -280,7 +306,7 @@
     handoffAssetIds,
     auth,
     theme: readStudioThemeTokens(appTheme, root ?? null),
-    capabilities,
+    capabilities: capabilities ?? emptyStudioCapabilities(),
     renderEvidence,
     preview,
     // FL-96: the host shows the server preview itself; the engine's own panel stays out of sight.
@@ -325,8 +351,21 @@
     dispatch({ type: 'engine-disposed' });
   };
 
-  const mountEngine = async () => {
+  const mountEngine = (): Promise<void> => {
+    if (mounting && mounting.token === mountToken) {
+      return mounting.done;
+    }
     const token = ++mountToken;
+    const done = startMount(token).finally(() => {
+      if (mounting?.token === token) {
+        mounting = null;
+      }
+    });
+    mounting = { token, done };
+    return done;
+  };
+
+  const startMount = async (token: number) => {
     if (disposing) {
       await disposing;
     }
@@ -363,9 +402,10 @@
     }
   };
 
+  // The reducer decides whether a retry can mount (the probe may still say the workers are
+  // missing); `dispatch` starts the mount when it can.
   const retry = () => {
     dispatch({ type: 'retry' });
-    void mountEngine();
   };
 
   onMount(() => {
@@ -383,7 +423,11 @@
     addEventListener('online', goOnline);
     addEventListener('offline', goOffline);
 
-    void mountEngine();
+    // Normally the probe's answer starts the mount through `dispatch`; this covers the case where
+    // the answer was already known before the stage element existed.
+    if (studioHostCanMount(host)) {
+      void mountEngine();
+    }
 
     return () => {
       removeEventListener('online', goOnline);
@@ -409,16 +453,6 @@
         engine.update(next);
       }
     });
-  });
-
-  // Leaving a state the engine may run in tears it down rather than leaving it hidden. The
-  // phase is read before the (non-reactive) engine check: short-circuiting on a null engine at
-  // first run would leave the effect with no dependencies, so it would never run again.
-  $effect(() => {
-    const phase = host.phase;
-    if (engine && shouldDisposeEngine(phase)) {
-      void disposeEngine();
-    }
   });
 
   // Access loss is terminal for this mount: the engine is disposed and the state cannot

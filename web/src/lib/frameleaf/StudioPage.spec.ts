@@ -629,3 +629,78 @@ describe('Studio engine resolution', () => {
     ).toThrow(TypeError);
   });
 });
+
+describe('Studio route, capabilities that arrive after the probe', () => {
+  it('mounts the engine when the probe answers, with no user action', async () => {
+    const engine = stubEngine();
+    const { rerender } = render(StudioHost, { ...baseProps(), capabilities: null, loadEngine: engine.load });
+
+    // Before the probe answers nothing is judged missing and nothing is mounted.
+    expect(screen.getByTestId('studio-state')).toHaveAttribute('data-phase', 'loading');
+    expect(screen.queryByText('frameleaf_studio_capability_render_worker')).not.toBeInTheDocument();
+    expect(engine.module.mount).not.toHaveBeenCalled();
+
+    await rerender({ ...baseProps(), capabilities: capable, loadEngine: engine.load });
+
+    await waitFor(() => expect(engine.module.mount).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.queryByTestId('studio-state')).not.toBeInTheDocument());
+    expect(screen.queryByRole('button', { name: 'frameleaf_studio_retry' })).not.toBeInTheDocument();
+  });
+
+  it('leaves the unavailable state and mounts once the required workers come online', async () => {
+    const engine = stubEngine();
+    const { rerender } = render(StudioHost, {
+      ...baseProps(),
+      capabilities: emptyStudioCapabilities(),
+      loadEngine: engine.load,
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('studio-state')).toHaveAttribute('data-phase', 'unavailable');
+    });
+    expect(engine.module.mount).not.toHaveBeenCalled();
+
+    await rerender({ ...baseProps(), capabilities: capable, loadEngine: engine.load });
+
+    await waitFor(() => expect(engine.module.mount).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.queryByTestId('studio-state')).not.toBeInTheDocument());
+  });
+
+  it('tears the engine down and mounts exactly one new one when the workers flap', async () => {
+    const engine = stubEngine();
+    const { rerender } = render(StudioHost, { ...baseProps(), loadEngine: engine.load });
+    await waitFor(() => expect(engine.module.mount).toHaveBeenCalledTimes(1));
+
+    // Missing and met again before the old engine's teardown can settle.
+    await rerender({ ...baseProps(), capabilities: emptyStudioCapabilities(), loadEngine: engine.load });
+    await rerender({ ...baseProps(), capabilities: { ...capable }, loadEngine: engine.load });
+
+    await waitFor(() => expect(engine.module.mount).toHaveBeenCalledTimes(2));
+    expect(engine.dispose).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(screen.queryByTestId('studio-state')).not.toBeInTheDocument());
+
+    // Nothing else starts afterwards.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(engine.module.mount).toHaveBeenCalledTimes(2);
+    expect(engine.dispose).toHaveBeenCalledTimes(1);
+  });
+
+  it('abandons a mount still starting when the workers go missing', async () => {
+    let finishMount: (instance: StudioEngineInstance) => void = () => {};
+    const instance: StudioEngineInstance = { update: vi.fn(), dispose: vi.fn() };
+    const module: StudioEngineModule = {
+      engineRevision: pinnedFreecutRevision,
+      features: [],
+      mount: vi.fn(() => new Promise<StudioEngineInstance>((resolve) => (finishMount = resolve))),
+    };
+    const load = async () => ({ status: 'available' as const, module });
+    const { rerender } = render(StudioHost, { ...baseProps(), loadEngine: load });
+    await waitFor(() => expect(module.mount).toHaveBeenCalledTimes(1));
+
+    await rerender({ ...baseProps(), capabilities: emptyStudioCapabilities(), loadEngine: load });
+    finishMount(instance);
+
+    await waitFor(() => expect(instance.dispose).toHaveBeenCalledTimes(1));
+    expect(screen.getByTestId('studio-state')).toHaveAttribute('data-phase', 'unavailable');
+  });
+});

@@ -21,12 +21,26 @@ import { unmetRequiredCapabilities } from './host-contract';
 
 export type StudioHostPhase = 'loading' | 'ready' | 'unavailable' | 'forbidden' | 'offline' | 'error';
 
+/**
+ * Why the host is `unavailable`. The two recover differently: a deployment whose required
+ * workers come online mounts the engine without the person doing anything, while an engine
+ * that is not part of the build (or failed to load) stays unavailable until they retry.
+ */
+export type StudioUnavailableReason = 'capabilities' | 'engine-absent';
+
 export interface StudioHostState {
   phase: StudioHostPhase;
   /** True once the engine has mounted and not yet been disposed. */
   mounted: boolean;
+  /**
+   * The last capabilities the server reported, or null until the probe has answered. Before
+   * the probe answers nothing is judged missing: an unknown deployment is not a deficient one.
+   */
+  capabilities: StudioCapabilities | null;
   /** Named capabilities the deployment is missing, for the unavailable state. */
   missingCapabilities: readonly StudioCapabilityId[];
+  /** Why the phase is `unavailable`; null in every other phase. */
+  unavailableReason: StudioUnavailableReason | null;
   /** Why the engine itself could not be resolved, when that is the reason. */
   engineAbsence: StudioEngineAbsenceReason | null;
   /** i18n key for the body text of the current non-ready state. */
@@ -40,7 +54,9 @@ export interface StudioHostState {
 export const initialStudioHostState = (): StudioHostState => ({
   phase: 'loading',
   mounted: false,
+  capabilities: null,
   missingCapabilities: [],
+  unavailableReason: null,
   engineAbsence: null,
   messageKey: null,
   detail: null,
@@ -48,7 +64,8 @@ export const initialStudioHostState = (): StudioHostState => ({
 });
 
 export type StudioHostEvent =
-  | { type: 'capabilities'; capabilities: StudioCapabilities }
+  /** `null` means the probe has not answered yet, which says nothing about the deployment. */
+  | { type: 'capabilities'; capabilities: StudioCapabilities | null }
   | { type: 'engine-absent'; reason: StudioEngineAbsenceReason; messageKey: Translations; detail?: string }
   | { type: 'engine-mounted' }
   | { type: 'engine-disposed' }
@@ -67,6 +84,48 @@ const disposingPhases: ReadonlySet<StudioHostPhase> = new Set<StudioHostPhase>([
 
 export const shouldDisposeEngine = (phase: StudioHostPhase): boolean => disposingPhases.has(phase);
 
+/**
+ * True when the engine may be mounted in this state: the probe has answered, nothing blocks
+ * the editor, and no engine is running yet.
+ */
+export const studioHostCanMount = (state: StudioHostState): boolean =>
+  state.phase === 'loading' && !state.mounted && state.capabilities !== null;
+
+/**
+ * True when a transition needs the host to (re)mount the engine: the state has just become
+ * mountable, because the probe answered with the required workers, because they came online
+ * after the unavailable state, or because the person pressed Try again. Only the transition
+ * itself counts, so a burst of identical events mounts once.
+ */
+export const studioHostNeedsMount = (previous: StudioHostState, next: StudioHostState): boolean =>
+  studioHostCanMount(next) && !studioHostCanMount(previous);
+
+/**
+ * True when a transition enters a phase the engine must not run in. A mount still starting
+ * at that moment has to be abandoned, or it would land after the teardown and be left running.
+ */
+export const studioHostAbandonsMount = (previous: StudioHostState, next: StudioHostState): boolean =>
+  shouldDisposeEngine(next.phase) && !shouldDisposeEngine(previous.phase);
+
+/** The phase a host that is not blocked by anything returns to. */
+const settledPhase = (state: StudioHostState): StudioHostPhase => (state.mounted ? 'ready' : 'loading');
+
+const unavailableForCapabilities = (
+  state: StudioHostState,
+  capabilities: StudioCapabilities,
+  missing: StudioCapabilityId[],
+): StudioHostState => ({
+  ...state,
+  phase: 'unavailable',
+  unavailableReason: 'capabilities',
+  mounted: false,
+  capabilities,
+  missingCapabilities: missing,
+  messageKey: 'frameleaf_studio_unavailable_body',
+  detail: null,
+  dirty: false,
+});
+
 /** A mount that lands while one of these holds is recorded, but does not make the host ready. */
 const PHASES_THAT_OUTRANK_MOUNTING: ReadonlySet<StudioHostPhase> = new Set(['offline', 'unavailable', 'error']);
 
@@ -84,6 +143,7 @@ export const reduceStudioHost = (state: StudioHostState, event: StudioHostEvent)
         mounted: false,
         // The person lost access; what the deployment can render is not their problem.
         missingCapabilities: [],
+        unavailableReason: null,
         engineAbsence: null,
         messageKey: 'frameleaf_studio_forbidden_body',
         detail: null,
@@ -101,32 +161,52 @@ export const reduceStudioHost = (state: StudioHostState, event: StudioHostEvent)
           detail: null,
         };
       }
-      // Coming back online only clears the offline state itself. A missing capability or a
-      // missing engine is still missing, and a mounted engine keeps running.
+      // Coming back online only clears the offline state itself. A missing capability is still
+      // missing, and a mounted engine keeps running. An engine that failed to load while offline
+      // was never proof of anything, so the host tries it again from `loading`.
       if (state.phase !== 'offline') {
         return state;
       }
+      if (state.capabilities && state.missingCapabilities.length > 0) {
+        return unavailableForCapabilities(state, state.capabilities, [...state.missingCapabilities]);
+      }
       return {
         ...state,
-        phase: state.mounted ? 'ready' : 'loading',
+        phase: settledPhase(state),
+        unavailableReason: null,
         messageKey: null,
       };
     }
 
     case 'capabilities': {
-      const missing = unmetRequiredCapabilities(event.capabilities);
+      const capabilities = event.capabilities;
+      if (!capabilities) {
+        // The probe has not answered. Nothing is missing yet; the host keeps loading.
+        return state;
+      }
+      const missing = unmetRequiredCapabilities(capabilities);
       if (missing.length > 0) {
+        // Offline outranks unavailable (the probe proves nothing), and an absent engine is the
+        // more fundamental reason, so both keep their phase and only record what is missing.
+        if (state.phase === 'offline' || state.unavailableReason === 'engine-absent') {
+          return { ...state, capabilities, missingCapabilities: missing };
+        }
+        return unavailableForCapabilities(state, capabilities, missing);
+      }
+      if (state.phase === 'unavailable' && state.unavailableReason === 'capabilities') {
+        // The required workers arrived: this unavailability is over, so go back to loading
+        // and let the host mount the engine (see `studioHostNeedsMount`).
         return {
           ...state,
-          phase: state.phase === 'offline' ? 'offline' : 'unavailable',
-          mounted: false,
-          missingCapabilities: missing,
-          messageKey: state.phase === 'offline' ? state.messageKey : 'frameleaf_studio_unavailable_body',
+          phase: settledPhase(state),
+          unavailableReason: null,
+          capabilities,
+          missingCapabilities: [],
+          messageKey: null,
           detail: null,
-          dirty: false,
         };
       }
-      return { ...state, missingCapabilities: [] };
+      return { ...state, capabilities, missingCapabilities: [] };
     }
 
     case 'engine-absent': {
@@ -137,6 +217,7 @@ export const reduceStudioHost = (state: StudioHostState, event: StudioHostEvent)
       return {
         ...state,
         phase: 'unavailable',
+        unavailableReason: 'engine-absent',
         mounted: false,
         engineAbsence: event.reason,
         messageKey: event.messageKey,
@@ -160,6 +241,7 @@ export const reduceStudioHost = (state: StudioHostState, event: StudioHostEvent)
       return {
         ...state,
         phase: 'error',
+        unavailableReason: null,
         mounted: false,
         messageKey: 'frameleaf_studio_error_body',
         detail: event.detail ?? null,
@@ -176,7 +258,19 @@ export const reduceStudioHost = (state: StudioHostState, event: StudioHostEvent)
     }
 
     case 'retry': {
-      return { ...initialStudioHostState(), dirty: false };
+      // A retry starts over, but what the probe already said still holds: retrying with the
+      // required workers still missing stays unavailable rather than mounting an engine that
+      // cannot render. A still-running engine (offline keeps it) is not mounted twice.
+      const fresh: StudioHostState = {
+        ...initialStudioHostState(),
+        mounted: state.mounted,
+        capabilities: state.capabilities,
+      };
+      const missing = state.capabilities ? unmetRequiredCapabilities(state.capabilities) : [];
+      if (state.capabilities && missing.length > 0) {
+        return unavailableForCapabilities(fresh, state.capabilities, missing);
+      }
+      return { ...fresh, phase: settledPhase(fresh) };
     }
   }
 };
