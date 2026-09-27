@@ -571,6 +571,10 @@ export const buildCandidates = (input: {
   trustedLanCidrs?: string[];
   /** The relay tunnel is READY: only then are the relay name and the custom hostname published (FL-166). */
   relayConnected?: boolean;
+  /** The public port direct connections reach (the router's, FL-167); the configured one by default. */
+  wanPort?: number;
+  /** The WAN name Frameleaf Cloud's probe reached (FL-167); any other WAN entry is published unverified. */
+  wanVerifiedUri?: string | null;
 }): FrameleafRemoteConnection[] => {
   const { enrollment, settings } = input;
   const direct = settings.mode === 'relay-and-direct';
@@ -584,7 +588,8 @@ export const buildCandidates = (input: {
   if (direct && input.publicIpv4 && !isHomeAddress(input.publicIpv4, [])) {
     const name = ipv4Name(enrollment, input.publicIpv4);
     if (name) {
-      candidates.push(connection('wan', name, settings.directPort));
+      const wan = connection('wan', name, input.wanPort ?? settings.directPort);
+      candidates.push({ ...wan, verified: !!input.wanVerifiedUri && wan.uri === input.wanVerifiedUri });
     }
   }
   // IPv6 has no router mapping: the listener's own port is the one visitors connect to

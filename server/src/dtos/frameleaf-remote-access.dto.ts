@@ -34,6 +34,16 @@ const RemoteConnectionKindSchema = z
 
 const RemoteConnectionProtocolSchema = z.enum(['http', 'https']).meta({ id: 'RemoteConnectionProtocol' });
 
+const RemoteMappingMethodSchema = z
+  .enum(['upnp', 'nat-pmp', 'manual'])
+  .describe('How the direct port is opened: by the router (UPnP, NAT-PMP) or forwarded by hand')
+  .meta({ id: 'RemoteMappingMethod' });
+
+const RemoteDirectGuidanceSchema = z
+  .enum(['bridge'])
+  .describe('bridge: running in a container whose network cannot reach the router')
+  .meta({ id: 'RemoteDirectGuidance' });
+
 const RemoteDnsRecordTypeSchema = z.enum(['CNAME']).meta({ id: 'RemoteDnsRecordType' });
 
 export const RemoteConnectionSchema = z
@@ -110,6 +120,18 @@ const RemoteAccessStatusResponseSchema = z
       .describe('Frameleaf Cloud stopped the relay for this server; it is tried again once relinked'),
     directListening: z.boolean(),
     cgnatSuspected: z.boolean(),
+    mappingMethod: RemoteMappingMethodSchema.nullable().describe(
+      'How the direct port is open right now; null when it is not',
+    ),
+    mappingError: z.string().nullable().describe('Why the router did not open the direct port'),
+    directGuidance: RemoteDirectGuidanceSchema.nullable(),
+    directExternalIp: z.string().nullable().describe('The public address direct connections reach'),
+    wanAddress: z.string().nullable().describe('The direct address Frameleaf Cloud tested'),
+    wanVerified: z.boolean().describe('Frameleaf Cloud reached this server directly at wanAddress'),
+    wanProblem: z
+      .string()
+      .nullable()
+      .describe('Why Frameleaf Cloud could not reach it: unreachable, timeout, certificate or not_public'),
     customHostname: z.string().nullable().describe('The custom hostname, when one was added'),
     customHostnameStatus: RemoteHostnameStatusSchema.nullable(),
     customHostnameCheckedAt: z.string().nullable(),

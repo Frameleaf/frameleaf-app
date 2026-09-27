@@ -529,6 +529,58 @@ describe(SystemConfigService.name, () => {
       });
     });
 
+    it('sends a visitor on a home address through the published public address to sign in (FL-167)', async () => {
+      const link = {
+        status: 'linked',
+        cloudUrl: 'https://cloud.test',
+        instanceId: 'instance-1',
+        oidc: { issuer: 'https://id.cloud.test', clientId: 'instance-1' },
+      };
+      let remoteAccess: Record<string, unknown> = { enabled: true };
+      const edge = {
+        status: 'ready',
+        updatedAt: new Date().toISOString(),
+        names: { instanceId: 'instance-1', names: { relay: 'r.u225vlzhsdlhwh4l.frameleaf.net' } },
+        relay: { connected: true },
+        direct: { listening: true, port: 2443, cgnatSuspected: false },
+        candidates: [
+          { kind: 'local', uri: 'https://192-168-1-10.u225vlzhsdlhwh4l.frameleaf.net:2443', relay: false },
+          { kind: 'relay', uri: 'https://r.u225vlzhsdlhwh4l.frameleaf.net', relay: true },
+        ],
+      };
+      mocks.systemMetadata.get.mockImplementation((key) =>
+        Promise.resolve(
+          (key === SystemMetadataKey.FrameleafCloudLink
+            ? link
+            : key === SystemMetadataKey.FrameleafRemoteAccess
+              ? edge
+              : key === SystemMetadataKey.SystemConfig
+                ? { frameleafCloud: { remoteAccess } }
+                : null) as never,
+        ),
+      );
+      await expect(sut.getPublicConfig({ via: 'lan', clientIp: '192.168.1.44' })).resolves.toMatchObject({
+        frameleaf: { signInOrigin: 'https://r.u225vlzhsdlhwh4l.frameleaf.net', signInRequired: false },
+      });
+      // "Use my domain" with a verified custom hostname: that is the sign-in address
+      remoteAccess = {
+        enabled: true,
+        publicUrl: 'custom',
+        customHostname: { host: 'photos.example.com', status: 'verified', checkedAt: null },
+      };
+      await expect(sut.getPublicConfig({ via: 'lan', clientIp: '192.168.1.44' })).resolves.toMatchObject({
+        frameleaf: { signInOrigin: 'https://photos.example.com' },
+      });
+      // not for a remote visitor (they are on it already), and not while the relay is down
+      await expect(sut.getPublicConfig({ via: 'relay', clientIp: '203.0.113.9' })).resolves.toMatchObject({
+        frameleaf: { signInOrigin: null },
+      });
+      edge.relay.connected = false;
+      await expect(sut.getPublicConfig({ via: 'lan', clientIp: '192.168.1.44' })).resolves.toMatchObject({
+        frameleaf: { signInOrigin: null },
+      });
+    });
+
     it('treats an arrival the edge worker did not vouch for as home, and is unavailable when not linked', async () => {
       // FL-161: the via middleware already dropped any client-supplied header; what reaches here is its verdict
       await expect(sut.getPublicConfig({ via: null, clientIp: '203.0.113.9' })).resolves.toMatchObject({

@@ -16,6 +16,7 @@ import type {
 } from 'src/types.js';
 import { type EdgeCertificateKind, EdgeCertificateRepository } from 'src/edge/edge-certificate.repository.js';
 import { EdgeDirectService } from 'src/edge/edge-direct.service.js';
+import { EdgePortMappingService } from 'src/edge/edge-port-mapping.service.js';
 import { EdgeProxyService } from 'src/edge/edge-proxy.service.js';
 import { type EdgeCloudSession, EdgeRelayService } from 'src/edge/edge-relay.service.js';
 import { DatabaseLock, NotificationLevel, NotificationType, SystemMetadataKey } from 'src/enum.js';
@@ -31,7 +32,7 @@ import { UserRepository } from 'src/repositories/user.repository.js';
 import { getConfig } from 'src/utils/config.js';
 import { identityDirectory, loadInstanceIdentity, readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
 import { entitlementFlags } from 'src/utils/frameleaf-license.js';
-import { RELAY_NOTICE_AFTER_MS } from 'src/utils/frameleaf-relay.js';
+import { RELAY_NOTICE_AFTER_MS, wanProbeResponseSchema } from 'src/utils/frameleaf-relay.js';
 import {
   ACME_ACCOUNT_URI,
   DNS_TXT_TIMEOUT_MS,
@@ -80,6 +81,9 @@ const ENROLL_RETRY_MAX_MS = 60 * 60 * 1000;
 const REPORT_RETRY_MS = 10 * 60 * 1000;
 /** When the cloud's name servers do not serve a challenge value yet, wait this long before validating. */
 const PROPAGATION_WAIT_MS = 30 * 1000;
+/** An unverified WAN candidate is probed again after an hour; a verified one twice a day. */
+const WAN_RETRY_MS = 60 * 60 * 1000;
+const WAN_RECHECK_MS = 12 * 60 * 60 * 1000;
 /** Without a change, the state is written again this often, so the API sees the edge worker is alive. */
 const STATE_REFRESH_MS = 20 * 1000;
 /** The notice administrators get when a certificate cannot be issued or renewed. */
@@ -88,6 +92,21 @@ const CERTIFICATE_NOTICE_KEY = 'frameleaf-remote:certificate';
 const RELAY_NOTICE_KEY = 'frameleaf-remote:relay';
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
+
+/**
+ * Whether this server is behind carrier-grade NAT: the router's own public address is a shared
+ * (100.64.0.0/10) or private one, or not the address Frameleaf Cloud sees check-ins come from.
+ */
+export const carrierGradeNat = (routerIp: string | null, observedIp: string | null): boolean => {
+  if (!routerIp || isIP(routerIp) !== 4) {
+    return false;
+  }
+  const [a, b] = routerIp.split('.', 2).map(Number);
+  if ((a === 100 && b >= 64 && b <= 127) || isHomeAddress(routerIp, [])) {
+    return true;
+  }
+  return !!observedIp && isIP(observedIp) === 4 && observedIp !== routerIp;
+};
 
 /**
  * The edge worker's desired-state loop (FL-165, CLD-102). Every 10 seconds it reads what remote access
@@ -136,6 +155,7 @@ export class EdgeStateService {
     private direct: EdgeDirectService,
     private proxy: EdgeProxyService,
     private relay: EdgeRelayService,
+    private portMapping: EdgePortMappingService,
   ) {
     this.logger.setContext(EdgeStateService.name);
   }
@@ -153,7 +173,11 @@ export class EdgeStateService {
     const started = Date.now();
     // a tick in progress (an ACME order can take a while) is not waited for past the deadline
     await Promise.race([this.running, sleep(Math.max(0, timeoutMs / 2)).then(() => {})]);
-    await Promise.all([this.direct.stop(Math.max(250, timeoutMs - (Date.now() - started))), this.relay.stop()]);
+    await Promise.all([
+      this.direct.stop(Math.max(250, timeoutMs - (Date.now() - started))),
+      this.relay.stop(),
+      this.portMapping.release(),
+    ]);
     this.proxy.destroy();
     await this.lock?.release();
     this.lock = null;
@@ -279,7 +303,7 @@ export class EdgeStateService {
       await this.direct.stop();
       this.served = null;
     }
-    await this.relay.stop();
+    await Promise.all([this.relay.stop(), this.portMapping.release()]);
     if (desired.removeCertificates) {
       // every pass: removing files that are already gone costs nothing, and a pair left by a crash goes too
       await this.certificates.remove(identityDirectory(this.configRepository));
@@ -470,10 +494,15 @@ export class EdgeStateService {
     }
 
     state.direct = { ...state.direct, listening: this.direct.listening };
+    // the relay's status first: the router can take a while to answer and never holds it up
     state.relay = this.relay.status();
+    const wan = await this.directConnect(desired, previous, state, advertised, now);
     await this.noticeRelayDown(state.relay, now);
     state.candidates = buildCandidates({
       relayConnected: state.relay.connected,
+      publicIpv4: wan.publicIpv4,
+      wanPort: wan.port,
+      wanVerifiedUri: wan.verifiedUri,
       enrollment,
       settings,
       listenPort: this.listenPort(),
@@ -487,11 +516,139 @@ export class EdgeStateService {
     await this.writeState(state, now);
   }
 
+  /**
+   * Direct connect (FL-167): in "Relay and direct" mode, keep the router's mapping (or take the
+   * manual port), tell carrier-grade NAT from the router's and the check-in's public addresses, and
+   * have Frameleaf Cloud probe the WAN name, which is published as verified only once the probe
+   * reached it. Nothing here ever holds up the relay.
+   */
+  private async directConnect(
+    desired: Extract<EdgeDesired, { serve: true }>,
+    previous: FrameleafRemoteAccess | null,
+    state: Omit<FrameleafRemoteAccess, 'updatedAt'>,
+    advertised: string[],
+    now: number,
+  ): Promise<{ publicIpv4: string | null; port: number; verifiedUri: string | null }> {
+    const { settings } = desired;
+    const observedIp = desired.link.heartbeat?.observedIp ?? null;
+    if (settings.mode !== 'relay-and-direct' || !this.direct.listening) {
+      await this.portMapping.release();
+      state.direct = {
+        ...state.direct,
+        mapping: null,
+        externalIp: null,
+        mappingError: null,
+        guidance: null,
+        wan: null,
+      };
+      return { publicIpv4: null, port: settings.directPort, verifiedUri: null };
+    }
+
+    let externalIp: string | null;
+    if (settings.portMapping) {
+      const internalHost = advertised.find((address) => isIP(address) === 4);
+      if (!internalHost) {
+        await this.portMapping.release();
+      }
+      const mapped = internalHost
+        ? await this.portMapping.keep({
+            internalHost,
+            internalPort: this.listenPort(),
+            externalPort: settings.directPort,
+            now,
+          })
+        : null;
+      externalIp = mapped?.externalIp ?? null;
+      const noRouter = !mapped || mapped.noGateway;
+      state.direct = {
+        ...state.direct,
+        mapping: mapped?.method ? { externalPort: mapped.externalPort!, method: mapped.method } : null,
+        externalIp,
+        mappingError: mapped ? mapped.error : 'This server does not know its address on the home network.',
+        // in a container nothing reaches the router over the bridge network: say what to do instead
+        guidance: noRouter && this.inContainer() ? 'bridge' : null,
+        cgnatSuspected: carrierGradeNat(externalIp, observedIp),
+      };
+    } else {
+      await this.portMapping.release();
+      externalIp = observedIp;
+      state.direct = {
+        ...state.direct,
+        mapping: { externalPort: settings.directPort, method: 'manual' },
+        externalIp,
+        mappingError: null,
+        guidance: null,
+        cgnatSuspected: false,
+      };
+    }
+
+    const publicIpv4 =
+      externalIp &&
+      isIP(externalIp) === 4 &&
+      !state.direct.cgnatSuspected &&
+      (!!state.direct.mapping || !settings.portMapping)
+        ? externalIp
+        : null;
+    // the port the router gave, which NAT-PMP may choose other than the one asked for
+    const port = state.direct.mapping?.externalPort ?? settings.directPort;
+    state.direct.wan = await this.probeWan(desired, previous?.direct.wan ?? null, publicIpv4, port, now);
+    return {
+      publicIpv4,
+      port,
+      verifiedUri:
+        state.direct.wan?.verified && state.direct.wan.key === `${publicIpv4}:${port}` ? state.direct.wan.uri : null,
+    };
+  }
+
+  /**
+   * `POST /v1/remote/wan-probe {port}`: Frameleaf Cloud connects back to this server's public address
+   * with its WAN name. Asked when the address or port changes, then hourly while unverified and twice
+   * a day once verified (the cloud allows 10 an hour).
+   */
+  private async probeWan(
+    desired: Extract<EdgeDesired, { serve: true }>,
+    previous: NonNullable<FrameleafRemoteAccess['direct']['wan']> | null,
+    publicIpv4: string | null,
+    port: number,
+    now: number,
+  ): Promise<FrameleafRemoteAccess['direct']['wan']> {
+    if (!publicIpv4) {
+      return null;
+    }
+    const key = `${publicIpv4}:${port}`;
+    const age = previous?.key === key ? now - Date.parse(previous.checkedAt) : Infinity;
+    if (previous?.key === key && age < (previous.verified ? WAN_RECHECK_MS : WAN_RETRY_MS)) {
+      return previous;
+    }
+    try {
+      const { document, token } = await this.cloud(desired);
+      const answer = await this.frameleafCloudRepository.requestJson(wanProbeResponseSchema, {
+        method: 'POST',
+        url: remoteEndpoints(document).wanProbe,
+        dpop: token,
+        body: { port },
+      });
+      if (answer.verified) {
+        this.logger.log(`Frameleaf Cloud reached this server directly at ${answer.uri}`);
+      }
+      return {
+        key,
+        uri: answer.uri,
+        verified: answer.verified,
+        reason: answer.reason,
+        checkedAt: new Date(now).toISOString(),
+      };
+    } catch (error) {
+      this.logger.warn(`Frameleaf Cloud could not test direct connections: ${message(error)}`);
+      return { key, uri: null, verified: false, reason: 'unreachable', checkedAt: new Date(now).toISOString() };
+    }
+  }
+
   private async stopServing() {
     if (this.direct.listening) {
       await this.direct.stop();
     }
-    await this.relay.stop();
+    await Promise.all([this.relay.stop(), this.portMapping.release()]);
     this.served = null;
   }
 

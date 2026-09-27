@@ -1283,6 +1283,12 @@ const FrameleafPublicConfigSchema = z
       .nullable()
       .describe('This server on the home network; given only to a remote-access visitor who is on it'),
     sameNetwork: z.boolean().describe('Whether a remote-access visitor is on the same network as this server'),
+    signInOrigin: z
+      .string()
+      .nullable()
+      .describe(
+        'Where a visitor on a home address signs in with Frameleaf before returning (the relay address or the verified custom domain)',
+      ),
   })
   .meta({ id: 'FrameleafPublicConfigDto' });
 export type FrameleafPublicConfig = z.infer<typeof FrameleafPublicConfigSchema>;
@@ -1293,6 +1299,7 @@ export const FRAMELEAF_PUBLIC_DEFAULTS: FrameleafPublicConfig = Object.freeze({
   relayHost: null,
   localUrl: null,
   sameNetwork: false,
+  signInOrigin: null,
 });
 
 const PublicConfigSchema = (applyVisibility(Public) as z.ZodObject).extend({
