@@ -67,6 +67,30 @@ describe(MediaOperationRepository.name, () => {
       ...overrides,
     });
 
+  describe('mergeStreamSignal (FL-96)', () => {
+    it('merges the patch into the result as an object, and only on the expected negotiation round', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const stream = await newOperation(sut, user.id, { kind: MediaOperationKind.StudioPreviewStream });
+
+      const first = await sut.mergeStreamSignal(stream.id, { negotiation: 1, offer: { sdp: 'v=0' } });
+      expect(first?.result).toEqual({ negotiation: 1, offer: { sdp: 'v=0' } });
+
+      const answered = await sut.mergeStreamSignal(stream.id, { answer: { sdp: 'v=1' } }, { negotiation: 1 });
+      expect(answered?.result).toEqual({ negotiation: 1, offer: { sdp: 'v=0' }, answer: { sdp: 'v=1' } });
+
+      await expect(
+        sut.mergeStreamSignal(stream.id, { answer: { sdp: 'late' } }, { negotiation: 0 }),
+      ).resolves.toBeUndefined();
+      const stored = await ctx.database
+        .selectFrom('media_operation')
+        .select(sql<string>`jsonb_typeof("result")`.as('type'))
+        .where('id', '=', stream.id)
+        .executeTakeFirstOrThrow();
+      expect(stored.type).toBe('object');
+    });
+  });
+
   describe('claimNext', () => {
     it('hands the same job to exactly one worker', async () => {
       const { ctx, sut } = setup();
