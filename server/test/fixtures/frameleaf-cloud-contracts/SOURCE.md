@@ -122,3 +122,12 @@ above.
   blocks). Every other copied `instance/` file was compared with that commit and is unchanged. The contract is
   `packages/contracts/src/instance/heartbeat.ts` (`RemoteAccessSettings`, `CloudMlSettings`, `CloudBackupSettings`,
   `LicenseState`); `server/src/utils/frameleaf-cloud-settings.ts` builds and checks the blocks.
+- CLD-004 / FC-37 (licence link codes): `licence/redeem-link-code-request.json`,
+  `licence/redeem-link-code-request-personal.json`, `licence/redeem-link-code-response.json`,
+  `errors/link-code-{not-found,expired,used,wrong-account,kind-mismatch,activation-limit,instance-id-taken,rate-limited}.json`,
+  `instance/discovery.json` and `instance/discovery-instance.json` (which gained `features.licenseLinkCode` and
+  `endpoints.licenseLinkCode`) are byte-identical to `origin/main` at `7a71b2f3eed26d8fd4e59c777bd36c6089c3ad5b`
+  (frameleaf-cloud PR #82). `errors/request-invalid.json` was compared with that commit and is unchanged; the cloud
+  publishes no fixture for the 403 `forbidden` (licence on hold) answer, so the spec writes that envelope inline. The
+  contract is `packages/contracts/src/licence/link-code.ts` and "Licence link codes" in `docs/instance-contract.md`;
+  `server/src/services/frameleaf-license.service.ts` (`redeemLinkCode`) sends and reads them.

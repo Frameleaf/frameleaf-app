@@ -13,11 +13,13 @@
     "relayToken": "https://api.frameleaf.cloud/v1/remote/relay-token",
     "dnsTxt": "https://api.frameleaf.cloud/v1/remote/dns/txt",
     "backupGrant": "https://api.frameleaf.cloud/v1/backup/grant",
-    "mlGrant": "https://id.frameleaf.cloud/token"
+    "mlGrant": "https://id.frameleaf.cloud/token",
+    "licenseLinkCode": "https://api.frameleaf.cloud/v1/licenses/redeem-link-code"
   },
   "jwks": { "oidc": "https://id.frameleaf.cloud/jwks", "keys": "https://api.frameleaf.cloud/.well-known/frameleaf-keys.json" },
   "regions": ["eu", "na"],
   "intervals": { "heartbeatSec": 300, "entitlementRefreshSec": 86400, "relayTokenRefreshPct": 50 },
   "limits": { "heartbeatBodyBytes": 65536, "heartbeatEndpoints": 16, "commandsPerResponse": 50, "noticesPerResponse": 20, "commandsLongPollSec": 25, "commandTtlSec": 86400 },
-  "remote": { "directDomain": "frameleaf.net" }
+  "remote": { "directDomain": "frameleaf.net" },
+  "features": { "licenseLinkCode": true }
 }

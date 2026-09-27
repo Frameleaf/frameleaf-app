@@ -12,7 +12,7 @@
    */
   import { goto } from '$app/navigation';
   import { takeFrameleafCallback } from '$lib/frameleaf/frameleaf-sign-in';
-  import { holdKeyInLinkNotice, holdPendingLinkCode, readLinkAddress } from '$lib/frameleaf/license-relay';
+  import { holdLinkNotice, holdPendingLinkCode, readLinkAddress } from '$lib/frameleaf/license-relay';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { Route } from '$lib/route';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
@@ -40,10 +40,11 @@
       void finishAccountLink(href);
       return;
     }
-    const { linkCode, carriedKey } = readLinkAddress(href);
-    if (carriedKey) {
-      // an old link with the key in it: never used, and a code beside it is not trusted either
-      holdKeyInLinkNotice();
+    const { linkCode, carriedKey, invalidLinkCode } = readLinkAddress(href);
+    if (carriedKey || invalidLinkCode) {
+      // an old link with the key in it is never used (and a code beside it is not trusted either); a
+      // code that is not shaped like one is never sent: either way, ask for the key to be pasted
+      holdLinkNotice(carriedKey ? 'key-in-link' : 'invalid-code');
       void goto(Route.buy(), { replaceState: true });
       return;
     }

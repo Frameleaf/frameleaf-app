@@ -28,7 +28,7 @@ describe('logging interceptor redaction (FL-81)', () => {
     for (const url of [
       `/link?target=activate_license&licenseKey=${key}`,
       `/link?key=${key}`,
-      '/link?target=frameleaf_license&linkCode=flc_ABCDEFGHJKMNPQRSTVWXYZ2345',
+      '/link?target=frameleaf_license&linkCode=flc_jf23qnbc4wvmpnuogenclb2hyo',
       `/api/admin/license/activate?key=${key}`,
       `/api/license/link-code?anything=${key}`,
       `/api/users/me/license?x=${key}`,

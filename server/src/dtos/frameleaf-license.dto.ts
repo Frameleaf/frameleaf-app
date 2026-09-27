@@ -79,18 +79,22 @@ const LicenseActivateSchema = z
   .meta({ id: 'LicenseActivateDto' });
 
 /**
- * CLD-004: a one-time link code from the Frameleaf account site (`flc_` and 26 base32 symbols). It
- * is not a key: it is single use, expires after ten minutes and only this server can redeem it.
+ * CLD-004: a one-time link code from the Frameleaf account site: `flc_` and 26 symbols of the lower-case
+ * RFC 4648 base32 alphabet (Frameleaf Cloud `LICENSE_LINK_CODE_RE`). It is not a key: it is single use,
+ * expires after ten minutes and only a server linked to the licence's account can redeem it.
  */
-export const LINK_CODE_PATTERN = /^flc_[A-Za-z0-9]{26}$/;
+export const LINK_CODE_PATTERN = /^flc_[a-z2-7]{26}$/;
 
 const LicenseLinkCodeSchema = z
   .object({
     code: z
       .string()
       .trim()
-      .regex(LINK_CODE_PATTERN, 'This is not a Frameleaf link code')
-      .describe('A one-time link code from the Frameleaf account site, flc_ and 26 symbols'),
+      .regex(
+        LINK_CODE_PATTERN,
+        'This link from your Frameleaf account isn’t valid. Paste the key under “Already have a key?” instead.',
+      )
+      .describe('A one-time link code from the Frameleaf account site: flc_ and 26 lower-case base32 symbols'),
   })
   .meta({ id: 'LicenseLinkCodeDto' });
 

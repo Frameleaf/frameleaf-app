@@ -34,7 +34,7 @@ describe('maintenance', () => {
 
     it('never carries a licence link code or key on into the maintenance address (CLD-004)', () => {
       for (const address of [
-        'https://photos.example.com/link?target=frameleaf_license&linkCode=flc_ABCDEFGHJKMNPQRSTVWXYZ2345',
+        'https://photos.example.com/link?target=frameleaf_license&linkCode=flc_jf23qnbc4wvmpnuogenclb2hyo',
         'https://photos.example.com/link?target=activate_license&licenseKey=FL-S8NL-49G8-J583',
       ]) {
         const url = maintenanceCreateUrl(new URL(address));

@@ -33,6 +33,7 @@
     validateProductKey,
     licensedDiscount,
   } from '$lib/frameleaf/cloud';
+  import type { LinkNotice } from '$lib/frameleaf/license-relay';
   import { withoutLockedRuleIds } from '$lib/frameleaf/locked-rules';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { authManager } from '$lib/managers/auth-manager.svelte';
@@ -62,12 +63,12 @@
   type Props = {
     /** A one-time link code from the Frameleaf account site, redeemed once by this server. */
     linkCode?: string | null;
-    /** The page was opened from an old link that carried a key; the key was not used. */
-    keyInLink?: boolean;
+    /** The page was opened from an old link that carried a key (not used) or a malformed code (not sent). */
+    linkNotice?: LinkNotice | null;
     onBack?: () => void;
   };
 
-  let { linkCode = null, keyInLink = false, onBack }: Props = $props();
+  let { linkCode = null, linkNotice = null, onBack }: Props = $props();
 
   let products = $state<LicenseProductsResponseDto | null>(null);
   let serverLicense = $state<LicenseStatusResponseDto | null>(null);
@@ -243,10 +244,12 @@
   {#if linkError}
     <p class="auth-error" role="alert">{linkError}</p>
   {/if}
-  {#if keyInLink}
+  {#if linkNotice}
     <p class="auth-note" role="status">
       <Icon icon={mdiInformationOutline} size="16" />
-      <span>{$t('frameleaf_buy_key_in_link')}</span>
+      <span>
+        {linkNotice === 'key-in-link' ? $t('frameleaf_buy_key_in_link') : $t('frameleaf_buy_link_code_invalid')}
+      </span>
     </p>
   {/if}
 

@@ -2,15 +2,15 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import {
   KEY_IN_LINK_NOTICE,
   PENDING_LINK_CODE,
-  holdKeyInLinkNotice,
+  holdLinkNotice,
   holdPendingLinkCode,
   isLicenseRelay,
   readLinkAddress,
-  takeKeyInLinkNotice,
+  takeLinkNotice,
   takePendingLinkCode,
 } from '$lib/frameleaf/license-relay';
 
-const CODE = 'flc_ABCDEFGHJKMNPQRSTVWXYZ2345';
+const CODE = 'flc_jf23qnbc4wvmpnuogenclb2hyo';
 const KEY = 'FL-S8NL-49G8-J583';
 
 describe('licence link relay (CLD-004)', () => {
@@ -21,9 +21,22 @@ describe('licence link relay (CLD-004)', () => {
       target: 'frameleaf_license',
       linkCode: CODE,
       carriedKey: false,
+      invalidLinkCode: false,
     });
-    expect(readLinkAddress('/link?linkCode=flc_short').linkCode).toBeNull();
-    expect(readLinkAddress('/link?linkCode=<script>').linkCode).toBeNull();
+    // Frameleaf Cloud's LICENSE_LINK_CODE_RE: flc_ and 26 lower-case base32 symbols
+    for (const code of [
+      'flc_short',
+      '<script>',
+      CODE.toUpperCase(),
+      `${CODE}a`,
+      'flc_jf23qnbc4wvmpnuogenclb2hy0',
+      '',
+    ]) {
+      const read = readLinkAddress(`/link?target=frameleaf_license&linkCode=${encodeURIComponent(code)}`);
+      expect(read.linkCode).toBeNull();
+      expect(read.invalidLinkCode).toBe(true);
+      expect(isLicenseRelay(`/link?linkCode=${encodeURIComponent(code)}`)).toBe(true);
+    }
   });
 
   it('detects a key in any old link form, and never returns it', () => {
@@ -63,10 +76,14 @@ describe('licence link relay (CLD-004)', () => {
     expect(sessionStorage.getItem('frameleaf:license:pending')).toBeNull();
   });
 
-  it('remembers the "paste the key" notice once, without the key', () => {
-    holdKeyInLinkNotice();
-    expect(sessionStorage.getItem(KEY_IN_LINK_NOTICE)).toBe('1');
-    expect(takeKeyInLinkNotice()).toBe(true);
-    expect(takeKeyInLinkNotice()).toBe(false);
+  it('remembers the "paste the key" notice once, without the key or the code', () => {
+    holdLinkNotice('key-in-link');
+    expect(sessionStorage.getItem(KEY_IN_LINK_NOTICE)).toBe('key-in-link');
+    expect(takeLinkNotice()).toBe('key-in-link');
+    expect(takeLinkNotice()).toBeNull();
+    holdLinkNotice('invalid-code');
+    expect(takeLinkNotice()).toBe('invalid-code');
+    sessionStorage.setItem(KEY_IN_LINK_NOTICE, 'something else');
+    expect(takeLinkNotice()).toBeNull();
   });
 });

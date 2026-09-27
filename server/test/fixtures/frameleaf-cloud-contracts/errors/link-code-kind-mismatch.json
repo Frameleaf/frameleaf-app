@@ -1,0 +1,9 @@
+{
+  "code": "link_code_kind_mismatch",
+  "message": "This server can't use this kind of licence here. The code still works where it fits.",
+  "retryable": false,
+  "data": {
+    "kind": "individual"
+  },
+  "requestId": "req_01J8ZK3M4N5P6QE4"
+}
