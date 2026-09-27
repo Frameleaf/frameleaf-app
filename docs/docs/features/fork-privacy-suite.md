@@ -47,14 +47,13 @@ and map tiles remain functional. Nothing is fetched from upstream-hosted service
 comes from:
 
 - Map styles and tiles: `tiles.frameleaf.cloud`.
-- Smart search and face recognition models (`frameleaf/<model>`): the model source, which is
+- Smart search, face recognition and text recognition (OCR) models (`frameleaf/<model>`): the model source, which is
   `MACHINE_LEARNING_MODEL_SOURCE_URL` if set, otherwise `HF_ENDPOINT` if set, otherwise
   `models.frameleaf.cloud`. A Hugging Face token is only ever sent to `huggingface.co`.
 - Image descriptions (on by default) and NSFW detection (off by default): their models come
   straight from `huggingface.co`, or from `HF_ENDPOINT` if you set it. To keep these downloads off
   `huggingface.co`, point `HF_ENDPOINT` at your own mirror, or fill the model cache yourself and set
   `HF_HUB_OFFLINE=1` so nothing is downloaded. Turning the feature off also stops its download.
-- Text recognition (OCR) models: `www.modelscope.cn`, through the OCR library's own downloader.
 
 Download hosts necessarily receive the requested model/file,
 network address, and any required download credentials. Configured remote inference providers
