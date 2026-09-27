@@ -212,6 +212,8 @@ describe(CloudMlService.name, () => {
         url: 'https://ml.eu.cloud.test',
         token: { accessToken: 'ml-token', signer: identitySigner },
         onCloneSuspected: expect.any(Function),
+        onRegionMismatch: expect.any(Function),
+        onRegionMismatchUnresolved: expect.any(Function),
       });
     });
 

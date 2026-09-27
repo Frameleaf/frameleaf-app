@@ -31,6 +31,23 @@ import {
   signClientAssertion,
 } from 'src/utils/frameleaf-dpop.js';
 
+/**
+ * FL-159/CLD-201 (FC-50): the only Frameleaf Cloud calls that go out without a DPoP proof. None of them
+ * presents an instance token, so there is nothing to bind: public discovery, the gateway's public
+ * `/ping`, the RFC 8628 device flow that precedes the link (the link token is bound by the `jkt` the
+ * owner approved), and a licence call from a server that is not linked (it has no instance token; the
+ * activation is a JWS signed by the instance key). Every other call must carry `dpop`, and
+ * `FrameleafCloudRepository` refuses to send one that carries neither, so the `dpop` capability this
+ * server declares when it links (per-instance DPoP enforcement) always holds.
+ */
+export enum FrameleafCloudPublicCall {
+  Discovery = 'discovery',
+  MlPing = 'ml-ping',
+  DeviceAuthorization = 'device-authorization',
+  DeviceToken = 'device-token',
+  UnlinkedLicense = 'unlinked-license',
+}
+
 export type FrameleafCloudRequest = {
   method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   /** Absolute URL; always built from the configured cloud address or from discovery. */
@@ -43,6 +60,8 @@ export type FrameleafCloudRequest = {
    * registering the key being linked).
    */
   dpop?: { signer: FrameleafKeySigner; accessToken?: string };
+  /** Why a request carries no `dpop` at all; only the calls `FrameleafCloudPublicCall` names. */
+  unauthenticated?: FrameleafCloudPublicCall;
   body?: unknown;
   form?: Record<string, string>;
   /** FL-177: a body sent as it is, for example a compact JWS as `application/jose`. */
@@ -120,6 +139,7 @@ export class FrameleafCloudRepository {
     }, discoverySchema);
     const document = await this.requestJson(schema, {
       url: `${cloudUrl}/.well-known/frameleaf-services`,
+      unauthenticated: FrameleafCloudPublicCall.Discovery,
     });
     // No token request or assertion ever goes to an address outside the configured cloud.
     const problem = discoveryProblem(cloudUrl, document);
@@ -355,6 +375,14 @@ export class FrameleafCloudRepository {
     } else if (request.body !== undefined) {
       headers['Content-Type'] = 'application/json';
       body = JSON.stringify(request.body);
+    }
+    // FC-50: this server declares `dpop`, so no call may go out unproofed unless it is one of the named
+    // public calls, and a public call never carries a credential
+    if (request.dpop && request.unauthenticated) {
+      throw new Error('A Frameleaf Cloud request is either DPoP-signed or a named public call, not both');
+    }
+    if (!request.dpop && (!request.unauthenticated || request.bearer)) {
+      throw new Error(`A Frameleaf Cloud request to ${new URL(request.url).pathname} carries no DPoP proof`);
     }
     if (request.bearer && request.dpop?.accessToken) {
       throw new Error('A Frameleaf Cloud request carries either a bearer credential or a DPoP token, not both');
