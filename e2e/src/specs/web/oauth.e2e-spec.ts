@@ -20,14 +20,19 @@ const buttonText = 'Sign in with the test provider';
 const sub = 'oauth-web';
 const password = 'password';
 
-const providerSignIn = async (page: Page) => {
-  await page.getByRole('button', { name: buttonText }).click();
+/** The provider's own sign-in and consent screens, from its sign-in page on. */
+const providerApprove = async (page: Page) => {
   await page.waitForURL(/e2e-auth-server:2286/);
   await page.locator('input[name="login"]').fill(sub);
   await page.locator('input[name="password"]').fill(password);
   await page.locator('button[type="submit"]').click();
   // consent
   await page.locator('button[type="submit"]').click();
+};
+
+const providerSignIn = async (page: Page) => {
+  await page.getByRole('button', { name: buttonText }).click();
+  await providerApprove(page);
 };
 
 const accessCookie = async (context: BrowserContext) => {
@@ -85,15 +90,16 @@ test.describe('Sign in with the administrator’s OAuth provider (FL-80)', () =>
   test('finishes a deep-linked sign-in whose callback opens in another tab', async ({ context, page }) => {
     await page.goto('/auth/login?continue=' + encodeURIComponent('/albums'));
 
-    // the provider sends the browser back; this tab never finishes it, a new tab does
-    await page.route('**/api/oauth/callback', (route) => route.abort());
-    const callbackRequest = page.waitForRequest(/\/auth\/login\?.*code=/);
-    await providerSignIn(page);
-    const request = await callbackRequest;
-    const callback = request.url();
+    // this tab starts the sign-in but never reaches the provider; another tab of the browser does,
+    // and the provider's callback lands there (an email link, a reopened pop-up)
+    const authorize = page.waitForRequest(/e2e-auth-server:2286\/auth\?/);
+    await page.route(/e2e-auth-server:2286\/auth\?/, (route) => route.abort());
+    await page.getByRole('button', { name: buttonText }).click();
+    const request = await authorize;
 
     const other = await context.newPage();
-    await other.goto(callback);
+    await other.goto(request.url());
+    await providerApprove(other);
     await expect(other).toHaveURL(/\/albums(\?|$)/);
     expect(await accessCookie(context)).toBeDefined();
   });
