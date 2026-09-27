@@ -21,6 +21,7 @@ import { DuplicateRepository } from 'src/repositories/duplicate.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { MapRepository } from 'src/repositories/map.repository.js';
 import { OcrRepository } from 'src/repositories/ocr.repository.js';
 import { PersonRepository } from 'src/repositories/person.repository.js';
 import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
@@ -52,6 +53,7 @@ const setup = (db?: Kysely<DB>) => {
       SharedLinkAssetRepository,
       StackRepository,
       UserRepository,
+      MapRepository,
     ],
     mock: [EventRepository, LoggingRepository, JobRepository, StorageRepository, OcrRepository, WebsocketRepository],
   });
@@ -1363,6 +1365,54 @@ describe(AssetService.name, () => {
           .executeTakeFirstOrThrow(),
       ).resolves.toEqual({
         lockedProperties: ['timeZone', 'rating', 'description', 'latitude', 'longitude', 'dateTimeOriginal'],
+      });
+    });
+
+    it('moves and removes locations only for a batch of owned items, and the map follows (FL-51)', async () => {
+      const { sut, ctx } = setup();
+      ctx.getMock(JobRepository).queueAll.mockResolvedValue();
+      const { user } = await ctx.newUser();
+      const { user: partner } = await ctx.newUser();
+      const auth = factory.auth({ user });
+      await ctx.newPartner({ sharedById: partner.id, sharedWithId: user.id, inTimeline: true });
+      const { asset: first } = await ctx.newAsset({ ownerId: user.id });
+      const { asset: second } = await ctx.newAsset({ ownerId: user.id });
+      const { asset: theirs } = await ctx.newAsset({ ownerId: partner.id });
+      for (const { id } of [first, second, theirs]) {
+        await ctx.newExif({ assetId: id, latitude: 10, longitude: 20, city: 'Old', country: 'Place' });
+      }
+      const markers = async () =>
+        (await ctx.get(MapRepository).getMapMarkers(user.id, [user.id, partner.id], []))
+          .map(({ id, lat, lon }) => ({ id, lat, lon }))
+          .toSorted((a, b) => a.id.localeCompare(b.id));
+
+      // a batch that reaches a partner's item (readable, not editable) is refused as a whole
+      await expect(
+        sut.updateAll(auth, { ids: [first.id, theirs.id], latitude: 35.68, longitude: 139.69 }),
+      ).rejects.toThrow('Not found or no asset.update access');
+      await expect(
+        sut.updateAll(auth, { ids: [first.id, theirs.id], latitude: null, longitude: null }),
+      ).rejects.toThrow('Not found or no asset.update access');
+      await expect(markers()).resolves.toEqual(
+        [first, second, theirs]
+          .map(({ id }) => ({ id, lat: 10, lon: 20 }))
+          .toSorted((a, b) => a.id.localeCompare(b.id)),
+      );
+
+      await sut.updateAll(auth, { ids: [first.id, second.id], latitude: 35.68, longitude: 139.69 });
+      await sut.updateAll(auth, { ids: [second.id], latitude: null, longitude: null });
+
+      // the moved item's place name is re-derived by the queued metadata job; the removed one has no marker
+      await expect(markers()).resolves.toEqual(
+        [
+          { id: first.id, lat: 35.68, lon: 139.69 },
+          { id: theirs.id, lat: 10, lon: 20 },
+        ].toSorted((a, b) => a.id.localeCompare(b.id)),
+      );
+      await expect(ctx.get(MapRepository).getMapStatistics(user.id, [partner.id])).resolves.toEqual({
+        archived: 0,
+        partner: 1,
+        unlocated: 1,
       });
     });
 
