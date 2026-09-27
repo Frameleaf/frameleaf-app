@@ -10,10 +10,11 @@
 # and it is not a release: nothing promotes, qualifies or advertises this image.
 name: Integration Image
 
-# A workflow that is not on the default branch (fork/main) cannot be dispatched, so every push to
-# master/frameleaf-implementation builds its head; a newer push cancels the older run. The manual
-# dispatch stays for when this file reaches the default branch. The guard below still refuses any
-# other branch or repository.
+# A workflow that is not on the default branch (fork/main) cannot be dispatched, so pushes to
+# master/frameleaf-implementation build it. One run at a time: a running build always finishes (the
+# branch moves every few minutes, faster than a build), and a newer push replaces any queued run, so
+# the next build is always the latest head. The manual dispatch stays for when this file reaches the
+# default branch. The guard below still refuses any other branch or repository.
 on:
   push:
     branches: [master/frameleaf-implementation]
@@ -21,7 +22,7 @@ on:
 
 concurrency:
   group: integration-image
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions: {}
 
