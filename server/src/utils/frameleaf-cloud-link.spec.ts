@@ -40,9 +40,14 @@ describe('frameleaf-cloud-link (FL-155)', () => {
       remoteAccess: { enabled: false, relayConnected: false, direct: false },
       permissions: { allowRemoteEnable: true, email: 'x' } as never,
       licenseKid: null,
+      capabilities: ['dpop', '', 'x'.repeat(33), ...Array.from({ length: 20 }, (_, index) => `c${index}`)],
       albums: ['private'],
     } as never);
     expect(Object.keys(payload)).toEqual([...HEARTBEAT_FIELDS]);
+    // the cloud's bounds (FC-50): at most 16 entries of 1 to 32 characters
+    expect(payload.capabilities).toHaveLength(16);
+    expect(payload.capabilities![0]).toBe('dpop');
+    expect(payload.capabilities!.every((value) => value.length > 0 && value.length <= 32)).toBe(true);
     expect(payload.uptimeSec).toBe(12);
     expect(payload.health).toEqual({ database: 'ok', storage: 'ok', jobs: 'ok' });
     expect(payload.endpoints).toHaveLength(16);

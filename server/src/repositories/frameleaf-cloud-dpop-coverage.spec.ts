@@ -183,8 +183,8 @@ describe('every Frameleaf Cloud call sends a DPoP proof (FC-50, CLD-201)', () =>
       expect(INSTANCE_CAPABILITIES).toContain('dpop');
     });
 
-    it('is not yet reported in the check-in, until Frameleaf Cloud accepts the field', () => {
-      expect(HEARTBEAT_REPORTS_CAPABILITIES).toBe(false);
+    it('is reported in every check-in, so servers linked earlier opt in without relinking', () => {
+      expect(HEARTBEAT_REPORTS_CAPABILITIES).toBe(true);
       const input = {
         version: '2.0.0',
         bootId: 'boot',
@@ -196,7 +196,6 @@ describe('every Frameleaf Cloud call sends a DPoP proof (FC-50, CLD-201)', () =>
         licenseKid: null,
       };
       expect(buildHeartbeat(input)).not.toHaveProperty('capabilities');
-      // one line turns it on for servers linked before they declared `dpop`
       expect(buildHeartbeat({ ...input, capabilities: INSTANCE_CAPABILITIES })).toMatchObject({
         capabilities: [...INSTANCE_CAPABILITIES],
       });

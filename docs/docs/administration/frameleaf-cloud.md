@@ -38,7 +38,7 @@ The first time the server links, it creates its own identity: an instance ID and
 
 Keep the identity folder on persistent storage and in your backups. If it is lost, the server gets a new identity, and the link and any licence tied to the old one stop working until you link and activate again.
 
-Every access token Frameleaf Cloud gives this server is bound to that key (DPoP). Each request that uses one, whether a check-in, a relay, backup or remote-access request, a licence refresh or a cloud processing call, carries a new proof signed by the key for that one request, so a copied token is useless anywhere else. The server tells Frameleaf Cloud this when it links, and from then on Frameleaf Cloud refuses any token for it that isn't bound to its key. A server linked with an earlier version keeps working as before, and gets the stricter check once it is linked again. The only requests without a proof are the ones that present no token: reading Frameleaf Cloud's public service list, the processing service's availability check, the linking code exchange, and licence activation on a server that isn't linked. Tokens, proofs and keys are never written to the logs.
+Every access token Frameleaf Cloud gives this server is bound to that key (DPoP). Each request that uses one, whether a check-in, a relay, backup or remote-access request, a licence refresh or a cloud processing call, carries a new proof signed by the key for that one request, so a copied token is useless anywhere else. The server tells Frameleaf Cloud this when it links and in every check-in, and from then on Frameleaf Cloud refuses any token for it that isn't bound to its key. A server linked with an earlier version switches to the stricter check at its first check-in after the upgrade, without linking again; the switch is permanent until the server is linked again. The only requests without a proof are the ones that present no token: reading Frameleaf Cloud's public service list, the processing service's availability check, the linking code exchange, and licence activation on a server that isn't linked. Tokens, proofs and keys are never written to the logs.
 
 ## Linking the server
 
@@ -54,7 +54,7 @@ Create a link token in your Frameleaf account under **Servers → Add server**, 
 
 ## Check-ins
 
-While linked, the server checks in every few minutes. **What this server sends** on the Account & link page lists every field of a check-in: the Frameleaf version, a start marker, uptime, health, the addresses used for remote access, the remote-access state, the permission choices and the licence's signing key. Photos, videos, thumbnails, metadata, names, accounts and usage are never sent.
+While linked, the server checks in every few minutes. **What this server sends** on the Account & link page lists every field of a check-in: the Frameleaf version, a start marker, uptime, health, the addresses used for remote access, the remote-access state, the permission choices, the licence's signing key and the capabilities this version supports (such as signing every request with its key). Photos, videos, thumbnails, metadata, names, accounts and usage are never sent.
 
 ## What Frameleaf Cloud may ask
 

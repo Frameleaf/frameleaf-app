@@ -87,10 +87,12 @@ export const INSTANCE_CAPABILITIES: readonly string[] = ['heartbeat', 'commands'
 
 /**
  * CLD-201 (FC-50): whether the check-in reports `INSTANCE_CAPABILITIES`, so a server linked before it
- * declared `dpop` opts in without relinking. Off until Frameleaf Cloud's heartbeat accepts the field:
- * its schema is strict today and would refuse the whole check-in.
+ * declared `dpop` opts in without relinking. Frameleaf Cloud accepts the field since frameleaf-cloud
+ * PR #72 and acts on `dpop` only when the check-in itself is DPoP-bound, which every check-in is
+ * (`FrameleafCloudRepository` refuses an unproofed call). Sending it on every check-in is idempotent;
+ * turning this off never turns enforcement off again (only a relink resets capabilities).
  */
-export const HEARTBEAT_REPORTS_CAPABILITIES: boolean = false;
+export const HEARTBEAT_REPORTS_CAPABILITIES: boolean = true;
 
 /** FL-175: the least time between two recovery rotations after a damaged key (the cloud allows 3 an hour). */
 const KEY_RECOVERY_RETRY_MS = 20 * 60 * 1000;
