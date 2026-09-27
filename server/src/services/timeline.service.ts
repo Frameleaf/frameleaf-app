@@ -116,6 +116,11 @@ export class TimelineService extends BaseService {
       ...(dto.albumId && getLockedVisibilityOptions(auth)),
       userIds,
       ...(lockReason && { lockReasons: [lockReason] }),
+      // FL-34: the Locked view also lists what the owner's Locked rules hide (the prototype's
+      // `classifyLocked`); the checks above only let the owner's elevated session ask for it
+      ...(dto.visibility === AssetVisibility.Locked &&
+        !lockReason &&
+        auth.suppressedContent && { lockedRuleMatches: auth.suppressedContent }),
       // FL-34: the owner's own sensitive marks and detections show in their ordinary timeline once the
       // session is unlocked ("Revealed for this session"); items from the old Locked folder do not
       ...(!dto.albumId && dto.visibility === AssetVisibility.Timeline && getRevealOptions(auth)),

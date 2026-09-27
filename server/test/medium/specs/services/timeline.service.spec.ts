@@ -1,6 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { Kysely } from 'kysely';
-import { AlbumUserRole, AssetVisibility, SharedLinkType } from 'src/enum.js';
+import { AlbumUserRole, AssetLockReason, AssetVisibility, SharedLinkType } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -358,6 +358,77 @@ describe(TimelineService.name, () => {
         await sut.getTimeBucket(elevatedMember, { albumId: album.id, timeBucket: '1970-02-01' }),
       );
       expect(bucket.id).toEqual([plain.id]);
+    });
+  });
+
+  describe('the Locked view (FL-34)', () => {
+    it('lists the owner’s Locked-rule matches alongside their locks, and only in the Locked view', async () => {
+      const { sut, ctx } = setup();
+      const { user: owner } = await ctx.newUser();
+      const { user: other } = await ctx.newUser();
+      const localDateTime = new Date('1970-02-10');
+      const newItem = async (ownerId: string, visibility = AssetVisibility.Timeline) => {
+        const { asset } = await ctx.newAsset({ ownerId, localDateTime, visibility });
+        await ctx.newExif({ assetId: asset.id, make: 'Canon' });
+        return asset;
+      };
+      const plain = await newItem(owner.id);
+      const locked = await newItem(owner.id, AssetVisibility.Locked);
+      const ruleMatch = await newItem(owner.id);
+      const archivedRuleMatch = await newItem(owner.id, AssetVisibility.Archive);
+      const hiddenRuleMatch = await newItem(owner.id, AssetVisibility.Hidden);
+      const othersRuleMatch = await newItem(other.id);
+      const { tag } = await ctx.newTag({ userId: owner.id, value: 'Private' });
+      await ctx.newTagAsset({
+        tagIds: [tag.id],
+        assetIds: [ruleMatch.id, archivedRuleMatch.id, hiddenRuleMatch.id, othersRuleMatch.id],
+      });
+      const rules = { userId: owner.id, includeNsfw: false, tagIds: [tag.id], personIds: [], petIds: [] };
+
+      const elevated = factory.auth({ user: { id: owner.id }, session: { hasElevatedPermission: true } });
+      elevated.suppressedContent = { ...rules, scope: 'visible' };
+      const ordinary = factory.auth({ user: { id: owner.id } });
+      ordinary.suppressedContent = { ...rules, scope: 'visible' };
+      ordinary.hiddenContent = ordinary.suppressedContent;
+
+      // the prototype's Locked view (`classifyLocked`): every lock plus every rule match, never hidden parts
+      const lockedView = JSON.parse(
+        await sut.getTimeBucket(elevated, { timeBucket: '1970-02-01', visibility: AssetVisibility.Locked }),
+      );
+      expect(new Set(lockedView.id)).toEqual(new Set([locked.id, ruleMatch.id, archivedRuleMatch.id]));
+      expect(lockedView.visibility[lockedView.id.indexOf(ruleMatch.id)]).toBe(AssetVisibility.Timeline);
+      expect(lockedView.lockReason[lockedView.id.indexOf(ruleMatch.id)]).toBeNull();
+      await expect(sut.getTimeBuckets(elevated, { visibility: AssetVisibility.Locked })).resolves.toEqual([
+        { count: 3, timeBucket: '1970-02-01' },
+      ]);
+      const ordered = JSON.parse(
+        await sut.getTimelineOrdered(elevated, {
+          sort: 'filename',
+          skip: 0,
+          take: 10,
+          visibility: AssetVisibility.Locked,
+        }),
+      );
+      expect(new Set(ordered.id)).toEqual(new Set(lockedView.id));
+
+      // a lock reason narrows to locks, so rule matches (which have none) drop out
+      const marked = JSON.parse(
+        await sut.getTimeBucket(elevated, {
+          timeBucket: '1970-02-01',
+          visibility: AssetVisibility.Locked,
+          lockReason: AssetLockReason.Marked,
+        }),
+      );
+      expect(marked.id).toEqual([locked.id]);
+
+      // an ordinary session keeps rule matches out of the timeline and cannot open the Locked view
+      const timeline = JSON.parse(
+        await sut.getTimeBucket(ordinary, { timeBucket: '1970-02-01', visibility: AssetVisibility.Timeline }),
+      );
+      expect(timeline.id).toEqual([plain.id]);
+      await expect(
+        sut.getTimeBucket(ordinary, { timeBucket: '1970-02-01', visibility: AssetVisibility.Locked }),
+      ).rejects.toBeInstanceOf(Error);
     });
   });
 
