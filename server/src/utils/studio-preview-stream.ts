@@ -196,10 +196,7 @@ export const readStreamSignal = (result: unknown): StreamSignal => {
   const offerValue = isRecord(record.offer) ? record.offer : null;
   const offerAttempt = nonNegativeInteger(offerValue?.attempt);
   const offer =
-    offerValue &&
-    typeof offerValue.sdp === 'string' &&
-    offerValue.negotiation === negotiation &&
-    offerAttempt !== null
+    offerValue && typeof offerValue.sdp === 'string' && offerValue.negotiation === negotiation && offerAttempt !== null
       ? { sdp: offerValue.sdp, negotiation, attempt: offerAttempt }
       : null;
 
@@ -210,9 +207,7 @@ export const readStreamSignal = (result: unknown): StreamSignal => {
       : null;
 
   const keepaliveAt =
-    typeof record.keepaliveAt === 'string' && !Number.isNaN(Date.parse(record.keepaliveAt))
-      ? record.keepaliveAt
-      : null;
+    typeof record.keepaliveAt === 'string' && !Number.isNaN(Date.parse(record.keepaliveAt)) ? record.keepaliveAt : null;
   const closeReason = STREAM_CLOSE_REASONS.includes(record.closeReason as StreamCloseReason)
     ? (record.closeReason as StreamCloseReason)
     : null;

@@ -43,7 +43,11 @@ describe('studio preview stream rules', () => {
         maxFrameRate: 30,
         maxDurationSeconds: STREAM_MAX_DURATION_MS / 1000,
       });
-      expect(streamBounds('full', 7680, 4320)).toMatchObject({ maxBitrateKbps: 12_000, maxWidth: 3840, maxHeight: 2160 });
+      expect(streamBounds('full', 7680, 4320)).toMatchObject({
+        maxBitrateKbps: 12_000,
+        maxWidth: 3840,
+        maxHeight: 2160,
+      });
     });
 
     it('never streams larger than the viewport or the quality cap', () => {
@@ -62,7 +66,9 @@ describe('studio preview stream rules', () => {
     });
 
     it('adds the bound when the section had none', () => {
-      expect(capVideoBitrate(answer, 1500)).toContain('m=video 9 UDP/TLS/RTP/SAVPF 96\r\nc=IN IP4 0.0.0.0\r\nb=AS:1500');
+      expect(capVideoBitrate(answer, 1500)).toContain(
+        'm=video 9 UDP/TLS/RTP/SAVPF 96\r\nc=IN IP4 0.0.0.0\r\nb=AS:1500',
+      );
     });
   });
 
@@ -175,7 +181,9 @@ describe('studio preview stream rules', () => {
           now,
         ),
       ).toBe(true);
-      expect(streamWorkerLost({ status: MediaOperationStatus.Queued, attempt: 1, claimExpiresAt: null }, now)).toBe(true);
+      expect(streamWorkerLost({ status: MediaOperationStatus.Queued, attempt: 1, claimExpiresAt: null }, now)).toBe(
+        true,
+      );
     });
 
     it('is not lost while the lease holds or before the first claim', () => {
@@ -202,9 +210,9 @@ describe('studio preview stream rules', () => {
 
     it('closes a stream that reached its bound', () => {
       const signal = readStreamSignal({ keepaliveAt: now.toISOString() });
-      expect(
-        streamCloseReason({ createdAt: new Date(now.getTime() - STREAM_MAX_DURATION_MS - 1), signal, now }),
-      ).toBe('expired');
+      expect(streamCloseReason({ createdAt: new Date(now.getTime() - STREAM_MAX_DURATION_MS - 1), signal, now })).toBe(
+        'expired',
+      );
     });
 
     it('keeps a live stream open', () => {

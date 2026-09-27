@@ -1,4 +1,10 @@
-import { BadRequestException, ConflictException, GoneException, HttpException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  GoneException,
+  HttpException,
+  NotFoundException,
+} from '@nestjs/common';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { MediaOperationKind, MediaOperationStatus, StudioPreviewQuality } from 'src/enum.js';
 import { MediaOperation, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
@@ -104,7 +110,8 @@ class FakeOperations {
       return Promise.resolve(undefined);
     }
     row.cancelRequestedAt = new Date() as never;
-    row.status = row.status === MediaOperationStatus.Queued ? MediaOperationStatus.Cancelled : MediaOperationStatus.Cancelling;
+    row.status =
+      row.status === MediaOperationStatus.Queued ? MediaOperationStatus.Cancelled : MediaOperationStatus.Cancelling;
     return Promise.resolve({ ...row });
   });
 
@@ -322,7 +329,10 @@ describe(StudioPreviewStreamService.name, () => {
       const { id } = await sut.open(auth(), openDto());
       await workerOffers(id);
       const row = operations.rows.get(id)!;
-      row.result = { ...(row.result as object), keepaliveAt: new Date(Date.now() - STREAM_IDLE_MS - 1000).toISOString() };
+      row.result = {
+        ...(row.result as object),
+        keepaliveAt: new Date(Date.now() - STREAM_IDLE_MS - 1000).toISOString(),
+      };
 
       const signal = await sut.workerSignal((await operations.getForWorker(id))!);
       expect(signal).toMatchObject({ close: true, closeReason: 'expired' });

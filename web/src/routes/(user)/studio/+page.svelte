@@ -559,7 +559,11 @@
       playhead = { num: time.num, den: time.den };
     },
     reportTransport: (state) => {
-      streamClient.setTransport({ playing: state.playing, time: rational(state.time.num, state.time.den), seek: state.seek });
+      streamClient.setTransport({
+        playing: state.playing,
+        time: rational(state.time.num, state.time.den),
+        seek: state.seek,
+      });
     },
     reportLocalPreviewSupport: (support) => {
       // Without WebCodecs the editor cannot show its own picture, so the server preview opens.
