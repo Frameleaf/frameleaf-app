@@ -483,8 +483,16 @@ test("all inline bash steps remain syntactically valid", () => {
 
 test("integration image is a guarded manual pre-release that never writes release-pipeline tags", () => {
   const w = workflow("integration-image.yml");
-  assert.deepEqual(Object.keys(w.on), ["workflow_dispatch"]);
+  // A workflow off the default branch cannot be dispatched: pushes to the integration branch build it.
+  assert.deepEqual(Object.keys(w.on), ["push", "workflow_dispatch"]);
+  assert.deepEqual(w.on.push, {
+    branches: ["master/frameleaf-implementation"],
+  });
   assert.equal(w.on.workflow_dispatch, null);
+  assert.deepEqual(w.concurrency, {
+    group: "integration-image",
+    "cancel-in-progress": true,
+  });
   assert.deepEqual(w.permissions, {});
   assert.equal(w.env.IMAGE, "ghcr.io/frameleaf/frameleaf-server");
   assert.deepEqual(Object.keys(w.jobs), [
@@ -508,12 +516,16 @@ test("integration image is a guarded manual pre-release that never writes releas
       });
     const branch = "refs/heads/master/frameleaf-implementation";
     assert.equal(dispatch("Frameleaf/frameleaf-app", branch), true, id);
+    assert.equal(dispatch("Frameleaf/frameleaf-app", branch, "push"), true, id);
     for (const [repository, ref, event] of [
       ["Frameleaf/frameleaf-app", "refs/heads/fork/main"],
+      ["Frameleaf/frameleaf-app", "refs/heads/fork/main", "push"],
       ["Frameleaf/frameleaf-app", "refs/heads/feature"],
       ["Frameleaf/frameleaf-app", "refs/tags/frameleaf-v1"],
       ["someone/frameleaf-app", branch],
-      ["Frameleaf/frameleaf-app", branch, "push"],
+      ["someone/frameleaf-app", branch, "push"],
+      ["Frameleaf/frameleaf-app", branch, "pull_request"],
+      ["Frameleaf/frameleaf-app", branch, "workflow_run"],
     ])
       assert.equal(dispatch(repository, ref, event), false, `${id} ${ref}`);
   }
@@ -548,6 +560,13 @@ test("integration image is a guarded manual pre-release that never writes releas
       "Frameleaf/frameleaf-app",
       "refs/heads/master/frameleaf-implementation",
       "push",
+      0,
+    ],
+    ["Frameleaf/frameleaf-app", "refs/heads/fork/main", "push", 1],
+    [
+      "Frameleaf/frameleaf-app",
+      "refs/heads/master/frameleaf-implementation",
+      "pull_request",
       1,
     ],
   ])
