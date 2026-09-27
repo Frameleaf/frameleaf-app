@@ -681,10 +681,10 @@
       "sourceSha256": "91582b42108952c2f891567618c57c7ec7c2d8f6156a72cc37934612eac485cf",
       "title": "Complete Feature Ownership and Jira Coverage",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61538800/Complete+Feature+Ownership+and+Jira+Coverage",
-      "verification": "Flutter app removal: Confluence page read back at version 8 as markdown; the header carries source hash 91582b42, 6548 bytes and the claude/remove-flutter-app branch for master/frameleaf-implementation; compared with version 7, the only differences are the header and the Validation block, which no longer runs the deleted scripts/frameleaf-mobile-inventory.py; no user additions.",
+      "verification": "Flutter app removal: Confluence page read back at version 9 as ADF; the header carries source hash 91582b42, 6548 bytes and the pushed commit cae33e1e91 on master/frameleaf-implementation (version 8 had named the pre-rebase commit); compared with version 7, the only differences are the header and the Validation block, which no longer runs the deleted scripts/frameleaf-mobile-inventory.py; no user additions.",
       "verified": true,
-      "verifiedAt": "2026-09-27T06:43:34.050Z",
-      "version": 8
+      "verifiedAt": "2026-09-27T07:09:46.501Z",
+      "version": 9
     },
     {
       "bytes": 11211,
