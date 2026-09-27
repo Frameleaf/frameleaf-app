@@ -47,6 +47,7 @@ import {
   mdiWrench,
   mdiCertificateOutline,
   mdiCloudOutline,
+  mdiCloudSyncOutline,
   mdiCloudUploadOutline,
   mdiEarth,
   mdiShieldAccountOutline,
@@ -286,6 +287,15 @@ export const USER_SETTINGS_AREAS: readonly {
   },
 ] as const;
 
+/**
+ * FL-168: settings a section holds that the Command Center search and the palette also find it by.
+ * The Public server URL sits in Frameleaf Cloud › Remote access (the prototype's
+ * `moveField("externalUrl", "cloud", "cloud-remote")`), so searching for it lands there.
+ */
+export const SETTINGS_SECTION_KEYWORDS: Readonly<Record<string, readonly Translations[]>> = Object.freeze({
+  'cloud-remote': ['frameleaf_remote_public_url_title', 'frameleaf_remote_domain_title', 'frameleaf_remote_hostname'],
+});
+
 /** Server settings section keys declared by `user-settings/SystemSettings.svelte`. */
 export const ADMIN_SETTINGS_AREAS: readonly {
   key: string;
@@ -318,6 +328,13 @@ export const ADMIN_SETTINGS_AREAS: readonly {
     titleKey: 'frameleaf_cc_section_cloud_remote',
     descriptionKey: 'frameleaf_cc_section_cloud_remote_description',
     icon: mdiEarth,
+  },
+  // FL-159: Frameleaf Cloud → Cloud processing.
+  {
+    key: 'cloud-processing',
+    titleKey: 'frameleaf_cc_section_cloud_processing',
+    descriptionKey: 'frameleaf_cc_section_cloud_processing_description',
+    icon: mdiCloudSyncOutline,
   },
   // FL-160: Frameleaf Cloud → Cloud backup.
   {
@@ -474,9 +491,22 @@ export const buildSettingsCommands = ($t: MessageFormatter, context: CommandInde
       title: $t(area.titleKey as Translations),
       subtitle: $t('frameleaf_search_subtitle_admin_settings'),
       icon: area.icon,
-      keywords: [$t(area.descriptionKey as Translations), $t('admin.system_settings')],
+      keywords: [
+        $t(area.descriptionKey as Translations),
+        $t('admin.system_settings'),
+        ...(SETTINGS_SECTION_KEYWORDS[area.key] ?? []).map((key) => $t(key)),
+      ],
       href: serverSettingsHref(area.key),
     })),
+    // FL-168: the Public server URL, a setting of Remote access, opens there.
+    {
+      id: 'admin:public-server-url',
+      title: $t('frameleaf_remote_public_url_title'),
+      subtitle: $t('frameleaf_search_subtitle_admin_settings'),
+      icon: mdiLinkVariant,
+      keywords: [$t('frameleaf_remote_public_url_description'), $t('frameleaf_cc_section_cloud_remote')],
+      href: serverSettingsHref('cloud-remote'),
+    },
   ];
 };
 

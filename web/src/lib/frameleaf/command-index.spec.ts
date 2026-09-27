@@ -104,6 +104,42 @@ describe('settings areas', () => {
     expect(commands.some((command) => command.id.startsWith('admin:'))).toBe(false);
   });
 
+  it('registers every Frameleaf Cloud section and opens each from its deep link (FL-168)', () => {
+    const commands = buildSettingsCommands($t, context({ isAdmin: true }));
+    const hrefOf = (id: string) => commands.find((command) => command.id === id)?.href;
+    for (const key of [
+      'cloud-account',
+      'cloud-plan',
+      'cloud-license',
+      'cloud-remote',
+      'cloud-processing',
+      'cloud-backup',
+    ]) {
+      expect(hrefOf(`admin:${key}`), key).toBe(`/user-settings?area=cloud&section=${key}`);
+    }
+    // Plan and Licence are separate pages
+    expect(hrefOf('admin:cloud-plan')).not.toBe(hrefOf('admin:cloud-license'));
+    expect(hrefOf('user:frameleaf-account')).toBe('/user-settings?isOpen=frameleaf-account');
+    for (const area of ADMIN_SETTINGS_AREAS) {
+      expect(area.icon, area.key).toBeTruthy();
+    }
+  });
+
+  it('lands the Public server URL in Remote access, not Server identity (FL-168)', () => {
+    const commands = buildSettingsCommands($t, context({ isAdmin: true }));
+    const publicUrl = commands.find((command) => command.id === 'admin:public-server-url');
+    expect(publicUrl?.title).toBe('frameleaf_remote_public_url_title');
+    expect(publicUrl?.href).toBe('/user-settings?area=cloud&section=cloud-remote');
+    expect(commands.find((command) => command.id === 'admin:cloud-remote')?.keywords).toContain(
+      'frameleaf_remote_public_url_title',
+    );
+    expect(commands.find((command) => command.id === 'admin:server')?.keywords).not.toContain(
+      'frameleaf_remote_public_url_title',
+    );
+    const index = buildCommandIndex({ settings: commands });
+    expect(index.find((item) => item.id === 'settings:admin:public-server-url')).toBeDefined();
+  });
+
   it('always offers "Frameleaf account", as the prototype does (FL-158)', () => {
     expect(buildSettingsCommands($t, context()).map((command) => command.id)).toContain('user:frameleaf-account');
   });

@@ -258,7 +258,7 @@ Additional machine learning parameters can be tuned from the admin UI.
 
 ## Prometheus
 
-Telemetry and metrics export are permanently disabled in this fork.
+Telemetry and metrics export are permanently disabled in Frameleaf.
 `IMMICH_TELEMETRY_INCLUDE`, `IMMICH_TELEMETRY_EXCLUDE`, `IMMICH_API_METRICS_PORT`, and
 `IMMICH_MICROSERVICES_METRICS_PORT` are accepted for compatibility but do not enable
 collection, open a listener, or configure an exporter. `OTEL_*` variables cannot

@@ -35,6 +35,7 @@
   import LibrariesArea from '$lib/components/frameleaf/LibrariesArea.svelte';
   import ConfigurationTransferSection from '$lib/components/frameleaf/settings/ConfigurationTransferSection.svelte';
   import SettingsHost from '$lib/components/frameleaf/settings/SettingsHost.svelte';
+  import { SETTINGS_SECTION_KEYWORDS } from '$lib/frameleaf/command-index';
   import { forConfigSave } from '$lib/frameleaf/credentials';
   import type { SettingsHostSection } from '$lib/frameleaf/settings-areas';
   import { cloneConfig, SYSTEM_CONFIG_JOURNAL_PREFIX } from '$lib/frameleaf/system-config-draft';
@@ -373,6 +374,7 @@
       title: $t(titleKey),
       subtitle: $t(`${titleKey}_description` as Translations),
       icon,
+      keywords: (SETTINGS_SECTION_KEYWORDS[key] ?? []).map((keyword) => $t(keyword)),
     })),
     {
       admin: true,

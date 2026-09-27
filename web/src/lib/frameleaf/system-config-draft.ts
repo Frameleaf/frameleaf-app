@@ -113,6 +113,8 @@ const SECTION_CONFIG_PATHS: Readonly<Record<string, string>> = Object.freeze({
   'libraryCare.incrementalEnrichment': 'enrichment-care',
   'libraryCare.manualMetadata': 'enrichment-care',
   libraryCare: 'integrity-checks',
+  // FL-168: the Public server URL sits on Frameleaf Cloud › Remote access, not Server identity.
+  'server.externalDomain': 'cloud-remote',
 });
 
 /** The settings section a changed path belongs to, if any section edits it. */
