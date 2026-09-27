@@ -71,6 +71,26 @@ describe('virtual workspace', () => {
     setWorkspaceRoot(null)
   })
 
+  it('moves a file into the directory it is given, not beside itself', async () => {
+    const workspace = new VirtualWorkspace()
+    const root = workspace.handle()
+    await writeBlob(root, ['a', 'clip.bin'], new Uint8Array([7]))
+    const from = await root.getDirectoryHandle('a')
+    const to = await root.getDirectoryHandle('b', { create: true })
+    const file = (await from.getFileHandle('clip.bin')) as FileSystemFileHandle & {
+      move(parent: FileSystemDirectoryHandle, name: string): Promise<void>
+    }
+    const writes: string[] = []
+    workspace.onWrite((path) => writes.push(path.join('/')))
+
+    await file.move(to, 'moved.bin')
+
+    expect(await exists(root, ['a', 'clip.bin'])).toBe(false)
+    expect(await exists(root, ['a', 'moved.bin'])).toBe(false)
+    expect(await exists(root, ['b', 'moved.bin'])).toBe(true)
+    expect(writes).toEqual(['b/moved.bin'])
+  })
+
   it('fetches a lazy file only when it is read, and a later write wins', async () => {
     const workspace = new VirtualWorkspace()
     const load = vi.fn(async () => new Blob(['remote']))
