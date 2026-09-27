@@ -540,7 +540,7 @@ async function main(env = process.env) {
   let evidence;
   let failed = true;
   try {
-    docker("up", "--detach", "--pull", "never");
+    docker("up", "--detach", "--pull", "missing");
     // A fresh installation runs every migration before the server reports healthy, which can outlast
     // its health check's start period; wait for every service to be healthy rather than failing on the
     // first unhealthy report. A container that exits or restarts fails at once.
