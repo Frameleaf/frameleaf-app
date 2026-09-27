@@ -337,8 +337,6 @@ describe('Locked projection over the API (FL-34, FL-195)', () => {
       'search random timeline',
       'map markers',
       'memory',
-      'folders',
-      'album',
       'album bucket',
       'download info',
     ]) {
@@ -347,6 +345,21 @@ describe('Locked projection over the API (FL-34, FL-195)', () => {
       }
       if (name !== 'search metadata') {
         expect(answer(name).text, `${name} keeps the old Locked folder item in Locked`).not.toContain(legacy.id);
+      }
+    }
+
+    // each item's own folder lists it (originals sit in per-asset folders); the old-folder item's does not
+    for (const { id } of [locked, detected, ruleMatch, legacy]) {
+      const { body: info } = await request(app).get(`/assets/${id}`).set(bearer(owner.accessToken)).expect(200);
+      const { text } = await request(app)
+        .get('/view/folder')
+        .query({ path: info.originalPath.replace(/\/[^/]+$/, '') })
+        .set(bearer(owner.accessToken))
+        .expect(200);
+      if (id === legacy.id) {
+        expect(text, 'the folder keeps the old Locked folder item in Locked').not.toContain(id);
+      } else {
+        expect(text, `folder of ${id}`).toContain(id);
       }
     }
 
