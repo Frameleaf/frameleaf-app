@@ -53,10 +53,17 @@ export const setRememberMePreference = (rememberMe: boolean) => {
   return write(preferenceKey, 'false');
 };
 
-export const clearRememberMePreference = () => {
+/**
+ * After a sign-in. `keepContinue` leaves where the sign-in continues to for the login page to clear
+ * when it is left: until then, any reload of that page's data (an auth change invalidates it) must
+ * still redirect to the same place, not to the library.
+ */
+export const clearRememberMePreference = ({ keepContinue = false }: { keepContinue?: boolean } = {}) => {
   remove(preferenceKey);
   remove(reloginKey);
-  remove(continueKey);
+  if (!keepContinue) {
+    remove(continueKey);
+  }
 };
 
 export const setOAuthContinue = (continueUrl: string | URL) => write(continueKey, String(continueUrl));
