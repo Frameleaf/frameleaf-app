@@ -1095,6 +1095,8 @@ describe(CloudBackupService.name, () => {
     });
 
     it('runs the schedule on the one server that holds its lock', async () => {
+      mocks.cron.create.mockReturnValue();
+      mocks.cron.update.mockReturnValue();
       mocks.database.tryLock.mockResolvedValue(false);
       await sut.onConfigInit({ newConfig: scheduled() });
       expect(mocks.cron.create).not.toHaveBeenCalled();
