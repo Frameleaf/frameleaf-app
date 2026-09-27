@@ -189,6 +189,13 @@ describe('Locked projection over the API (FL-34)', () => {
       .set(bearer(owner.accessToken))
       .expect(200);
     expect(new Set(bucket.id)).toEqual(new Set([locked.id, ruleMatch.id]));
+
+    // the control for the sweep below: an unlocked session does find both through the same reads
+    const answers = await readAll(ownerReads(), bearer(owner.accessToken));
+    const search = answers.find((answer) => answer.name === 'search metadata')!.text;
+    expect(search).toContain(locked.id);
+    expect(search).toContain(ruleMatch.id);
+    expect(answers.find((answer) => answer.name === 'tags')!.text).toContain(hiddenTag);
   });
 
   it('leaves no trace of a lock or a rule match in any projection of a locked session', async () => {
