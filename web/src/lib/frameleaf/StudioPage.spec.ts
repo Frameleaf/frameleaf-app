@@ -263,6 +263,33 @@ describe('Studio route, engine absent', () => {
     expect(screen.queryByTestId('studio-unsupported-sources')).not.toBeInTheDocument();
   });
 
+  it('offers the Restore tab only when the route wires it, and opens it as a drawer (FL-115)', async () => {
+    const { unmount } = render(StudioHost, { ...baseProps(), loadEngine: loadStudioEngine });
+    expect(screen.queryByRole('button', { name: 'frameleaf_studio_restore_title' })).not.toBeInTheDocument();
+    unmount();
+
+    render(StudioHost, { ...baseProps(), onUseRestoration: vi.fn(), loadEngine: loadStudioEngine });
+    await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_studio_restore_title' }));
+    const panel = screen.getByTestId('studio-restore-panel');
+    // this project has no library photo or video yet, so there is nothing to restore
+    expect(panel).toHaveTextContent('frameleaf_studio_restore_no_sources');
+  });
+
+  it('opens the Restore tab when a command sends a Frameleaf Cloud job there to confirm (FL-162)', () => {
+    render(StudioHost, {
+      ...baseProps(),
+      onUseRestoration: vi.fn(),
+      restoreRequest: { assetId: null, focus: 'smooth-motion' as const, nonce: 1 },
+      loadEngine: loadStudioEngine,
+    });
+    expect(screen.getByTestId('studio-restore-panel')).toBeInTheDocument();
+  });
+
+  it('withdraws the Restore tab once the session loses the project', () => {
+    render(StudioHost, { ...baseProps(), onUseRestoration: vi.fn(), accessLost: true, loadEngine: loadStudioEngine });
+    expect(screen.queryByRole('button', { name: 'frameleaf_studio_restore_title' })).not.toBeInTheDocument();
+  });
+
   it('offers no Activity link while there is no Activity route to open', () => {
     render(StudioHost, { ...baseProps(), queuedJobs: 3, loadEngine: loadStudioEngine });
 

@@ -147,6 +147,7 @@ describe(AssetRestorationService.name, () => {
       mocks.storage as never,
       mocks.config as never,
       mocks.systemMetadata as never,
+      mocks.notification as never,
     );
   });
 
@@ -394,6 +395,63 @@ describe(AssetRestorationService.name, () => {
           'Smooth motion needs a video',
         );
         expect(restorations.create).not.toHaveBeenCalled();
+      });
+
+      describe('after a Studio export (FL-162)', () => {
+        beforeEach(() => {
+          mocks.notification.create.mockResolvedValue({} as never);
+        });
+
+        const request = {
+          ownerId: authStub.user1.user.id,
+          assetId: video.id,
+          exportName: 'Lake trip',
+          factor: 2 as const,
+          destinationId: mlDestinationStub.lan.id,
+        };
+
+        it('queues a Smooth motion preview of the exported video on the home worker and says so', async () => {
+          await expect(sut.queueExportSmoothMotion(request)).resolves.toBeTruthy();
+
+          expect(restorations.create).toHaveBeenCalledWith(
+            expect.objectContaining({
+              assetId: video.id,
+              mode: AssetRestorationMode.SmoothMotion,
+              upscale: 2,
+              provenance: { requestedBy: authStub.user1.user.id, sessionElevated: false },
+            }),
+          );
+          expect(mocks.notification.create).toHaveBeenCalledWith(
+            expect.objectContaining({ userId: authStub.user1.user.id, title: 'Smooth motion preview queued' }),
+          );
+        });
+
+        it('never sends it to Frameleaf Cloud: the owner confirms that job separately', async () => {
+          mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.frameleafCloudConsented);
+
+          await expect(
+            sut.queueExportSmoothMotion({ ...request, destinationId: mlDestinationStub.frameleafCloudConsented.id }),
+          ).resolves.toBeNull();
+
+          expect(restorations.create).not.toHaveBeenCalled();
+          expect(operations.create).not.toHaveBeenCalled();
+          expect(mocks.notification.create).toHaveBeenCalledWith(
+            expect.objectContaining({ title: 'Confirm Smooth motion on Frameleaf Cloud' }),
+          );
+        });
+
+        it('tells the owner when it cannot start, and leaves the export alone', async () => {
+          mocks.systemMetadata.get.mockResolvedValue({
+            frameleafCloud: { cloudMl: { routing: { interpolation: 'cloud' } } },
+          } as never);
+
+          await expect(sut.queueExportSmoothMotion(request)).resolves.toBeNull();
+
+          expect(restorations.create).not.toHaveBeenCalled();
+          expect(mocks.notification.create).toHaveBeenCalledWith(
+            expect.objectContaining({ title: 'Smooth motion did not start' }),
+          );
+        });
       });
 
       it('follows Where each job runs: Cloud only refuses this server and the home network', async () => {

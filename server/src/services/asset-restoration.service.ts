@@ -28,18 +28,21 @@ import {
   MlAdmissionRefusal,
   MlDestinationKind,
   MlWorkload,
+  NotificationLevel,
+  NotificationType,
   Permission,
   StorageFolder,
 } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
-import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { AssetRestoration, AssetRestorationRepository } from 'src/repositories/asset-restoration.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
+import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
 import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { MlDestinationRepository, MlDestinationRow } from 'src/repositories/ml-destination.repository.js';
+import { NotificationRepository } from 'src/repositories/notification.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { requireAccess } from 'src/utils/access.js';
@@ -61,6 +64,7 @@ import {
   INTERPOLATION_PREVIEW_SECONDS,
   RESTORATION_PREVIEW_SECONDS,
   RestorationSnapshot,
+  type SmoothMotionFactor,
   canAcceptRestoration,
   canDiscardRestoration,
   canRejectRestoration,
@@ -172,6 +176,7 @@ export class AssetRestorationService {
     private storageRepository: StorageRepository,
     private configRepository: ConfigRepository,
     private systemMetadataRepository: SystemMetadataRepository,
+    private notificationRepository: NotificationRepository,
   ) {
     this.logger.setContext(AssetRestorationService.name);
   }
@@ -299,6 +304,83 @@ export class AssetRestorationService {
     dto: AssetRestorationRequestDto,
   ): Promise<AssetRestorationResponseDto> {
     await requireAccess(this.accessRepository, { auth, permission: Permission.AssetEditCreate, ids: [assetId] });
+    return this.queuePreview(
+      { requestedBy: auth.user.id, sessionElevated: !!auth.session?.hasElevatedPermission },
+      assetId,
+      dto,
+    );
+  }
+
+  /**
+   * FL-162 Smooth motion after a Studio export. The export itself rendered at home; this is its own
+   * job on the exported video, previewed first like any other, for the owner to review and accept.
+   * A Frameleaf Cloud choice is never sent from here: the owner is told the export is ready and
+   * confirms the Smooth motion job, with its estimate, from the video's Enhance panel.
+   */
+  async queueExportSmoothMotion(request: {
+    ownerId: string;
+    assetId: string;
+    exportName: string;
+    factor: SmoothMotionFactor;
+    destinationId: string;
+  }): Promise<AssetRestorationResponseDto | null> {
+    const destination = await this.mlDestinationRepository.getById(request.destinationId);
+    const tell = (level: NotificationLevel, title: string, description: string) =>
+      this.notificationRepository
+        .create({
+          userId: request.ownerId,
+          type: NotificationType.Custom,
+          level,
+          title,
+          description,
+          data: { assetId: request.assetId, restoration: 'smooth-motion', factor: request.factor },
+        })
+        .catch((error: unknown) => this.logger.warn(`Could not tell ${request.ownerId} about Smooth motion: ${error}`));
+
+    if (destination?.kind === MlDestinationKind.FrameleafCloud) {
+      await tell(
+        NotificationLevel.Info,
+        'Confirm Smooth motion on Frameleaf Cloud',
+        `${request.exportName} is in your library. Open it and choose Smooth motion to see the Frameleaf Cloud estimate; nothing is sent until you confirm.`,
+      );
+      return null;
+    }
+    try {
+      const queued = await this.queuePreview(
+        { requestedBy: request.ownerId, sessionElevated: false },
+        request.assetId,
+        {
+          mode: AssetRestorationMode.SmoothMotion,
+          upscale: 1,
+          smoothMotionFactor: request.factor,
+          keepGrain: false,
+          destinationId: request.destinationId,
+          region: DEFAULT_RESTORATION_REGION,
+        },
+      );
+      await tell(
+        NotificationLevel.Info,
+        'Smooth motion preview queued',
+        `${request.exportName} is in your library, and a Smooth motion preview of it is being made. Review it in its Enhance panel.`,
+      );
+      return queued;
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      this.logger.warn(`Smooth motion after the export of ${request.assetId} did not start: ${detail}`);
+      await tell(
+        NotificationLevel.Warning,
+        'Smooth motion did not start',
+        `${request.exportName} is in your library, but Smooth motion could not start: ${detail}`,
+      );
+      return null;
+    }
+  }
+
+  private async queuePreview(
+    provenance: { requestedBy: string; sessionElevated: boolean },
+    assetId: string,
+    dto: AssetRestorationRequestDto,
+  ): Promise<AssetRestorationResponseDto> {
     await this.refuseCloudRequest(dto.destinationId);
     const source = await this.requireSource(assetId);
     const smooth = dto.mode === AssetRestorationMode.SmoothMotion;
@@ -352,7 +434,7 @@ export class AssetRestorationService {
       sourceDurationSeconds: source.durationSeconds,
       previewRegion: region,
       estimate,
-      provenance: { requestedBy: auth.user.id, sessionElevated: !!auth.session?.hasElevatedPermission },
+      provenance,
     });
 
     try {

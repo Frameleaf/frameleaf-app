@@ -28,6 +28,7 @@
   import {
     mdiAlertCircleOutline,
     mdiArrowLeft,
+    mdiAutoFix,
     mdiTune,
     mdiCheckCircle,
     mdiCloudOffOutline,
@@ -39,6 +40,8 @@
   } from '@mdi/js';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import StudioHistoryPanel from '$lib/components/frameleaf/StudioHistoryPanel.svelte';
+  import StudioRestorePanel, { type StudioRestoreFocus } from '$lib/components/frameleaf/StudioRestorePanel.svelte';
+  import type { AssetRestorationResponseDto } from '@immich/sdk';
   import { decodeRefusalMessageKey } from '$lib/frameleaf/decode-refusal';
   import {
     loadStudioEngine as defaultLoadStudioEngine,
@@ -116,6 +119,8 @@
     droppedAssetCount = 0,
     unavailableRestorations = [],
     unsupportedSources = [],
+    onUseRestoration,
+    restoreRequest = null,
     /**
      * The remote preview the host owns (FL-96). It arrives here as data and leaves for the
      * engine as data; neither this component nor the engine ever fetches a frame itself.
@@ -196,6 +201,14 @@
      */
     unavailableRestorations?: readonly { name: string; reason: StudioRestoredVersionUnavailable }[];
     /**
+     * The Restore tab (FL-115, FL-162): restoration and Smooth motion of one of the project's photos or
+     * videos, preview first; Use in Studio hands a finished version back to the route for the bin.
+     * Without it there is no Restore button.
+     */
+    onUseRestoration?: (restoration: AssetRestorationResponseDto) => void;
+    /** A command or clip asked for the Restore tab on this source; each new request opens it. */
+    restoreRequest?: { assetId: string | null; focus: StudioRestoreFocus; nonce: number } | null;
+    /**
      * FL-101: placed videos the server refused when the project's sources were admitted, because it
      * cannot decode them. They stay on the timeline as the person placed them, but will not render.
      */
@@ -229,6 +242,16 @@
   let root = $state<HTMLElement>();
   let online = $state(true);
   let historyOpen = $state(false);
+  let restoreOpen = $state(false);
+  // One drawer at a time: opening one closes the other.
+  $effect(() => {
+    if (restoreRequest) {
+      untrack(() => {
+        restoreOpen = true;
+        historyOpen = false;
+      });
+    }
+  });
 
   const hasSavedProject = $derived(session !== null && project.id !== STUDIO_DRAFT_PROJECT_ID);
   /** One sentence per distinct reason, so three profile 7 clips are explained once. */
@@ -577,7 +600,14 @@
     {/if}
 
     {#if hasSavedProject}
-      <Button variant="quiet" pressed={historyOpen} onclick={() => (historyOpen = !historyOpen)}>
+      <Button
+        variant="quiet"
+        pressed={historyOpen}
+        onclick={() => {
+          historyOpen = !historyOpen;
+          restoreOpen = false;
+        }}
+      >
         <Icon icon={mdiCommentTextOutline} size="16" />
         {$t('frameleaf_studio_review')}
         {#if unresolvedComments > 0}
@@ -586,6 +616,20 @@
             >{$t('frameleaf_studio_review_open_count', { values: { count: unresolvedComments } })}</span
           >
         {/if}
+      </Button>
+    {/if}
+
+    {#if onUseRestoration && !accessLost}
+      <Button
+        variant="quiet"
+        pressed={restoreOpen}
+        onclick={() => {
+          restoreOpen = !restoreOpen;
+          historyOpen = false;
+        }}
+      >
+        <Icon icon={mdiAutoFix} size="16" />
+        {$t('frameleaf_studio_restore_title')}
       </Button>
     {/if}
 
@@ -716,6 +760,19 @@
           canRestore={project.hasLease && saveStatus !== 'conflict' && saveStatus !== 'lease-lost'}
           {playhead}
           onClose={() => (historyOpen = false)}
+        />
+      </div>
+    {/if}
+
+    {#if restoreOpen && onUseRestoration && !accessLost}
+      <div class="fl-studio-drawer">
+        <StudioRestorePanel
+          {assets}
+          assetId={restoreRequest?.assetId ?? null}
+          focus={restoreRequest?.focus ?? 'restore'}
+          theme={appTheme}
+          onUseInStudio={onUseRestoration}
+          onClose={() => (restoreOpen = false)}
         />
       </div>
     {/if}

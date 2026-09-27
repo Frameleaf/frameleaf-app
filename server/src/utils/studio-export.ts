@@ -84,6 +84,23 @@ export type StudioExportPublishSnapshot = {
   retain?: 'project';
   /** FL-102: what the result must have, copied from the render's snapshot. */
   contract?: StudioExportContract | null;
+  /** FL-162: Smooth motion of the published video, its own job after publication. */
+  smoothMotion?: StudioExportSmoothMotion | null;
+};
+
+/**
+ * Smooth motion at export (FL-162). The export renders at home; afterwards the published video gets
+ * its own Smooth motion job, preview first: on a home worker it is queued, and for Frameleaf Cloud the
+ * owner confirms and pays for it separately. The export is never sent to Frameleaf Cloud.
+ */
+export type StudioExportSmoothMotion = { factor: 2 | 4 | 8; destinationId: string };
+
+export const parseStudioExportSmoothMotion = (value: unknown): StudioExportSmoothMotion | null => {
+  const candidate = value as Partial<StudioExportSmoothMotion> | null | undefined;
+  const factor = candidate?.factor;
+  return factor && ([2, 4, 8] as const).includes(factor) && typeof candidate?.destinationId === 'string'
+    ? { factor, destinationId: candidate.destinationId }
+    : null;
 };
 
 export const parseStudioExportPublishSnapshot = (value: unknown): StudioExportPublishSnapshot | null => {

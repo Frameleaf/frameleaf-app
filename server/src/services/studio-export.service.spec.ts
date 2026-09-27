@@ -8,6 +8,8 @@ import {
   MediaOperationDestination,
   MediaOperationKind,
   MediaOperationStatus,
+  MlDestinationKind,
+  MlWorkload,
   StudioExportRemoteReason,
   StudioExportScope,
   StudioExportVersionState,
@@ -36,6 +38,8 @@ const PUBLISH = '0195e2a0-0000-7000-8000-000000000003';
 const VERSION = '0195e2a0-0000-7000-8000-000000000004';
 const CLIP = '0195e2a0-0000-4000-8000-000000000011';
 const SHARED_CLIP = '0195e2a0-0000-4000-8000-000000000012';
+const SMOOTH_DESTINATION = '0195e2a0-0000-4000-8000-000000000021';
+const LIBRARY_ONLY_DESTINATION = '0195e2a0-0000-4000-8000-000000000022';
 
 const auth = (overrides: Partial<AuthDto> = {}): AuthDto =>
   ({
@@ -232,6 +236,8 @@ describe(StudioExportService.name, () => {
   let jobs: Record<string, ReturnType<typeof vi.fn>>;
   let renderWorkers: { listLiveSessions: ReturnType<typeof vi.fn> };
   let media: { probe: ReturnType<typeof vi.fn> };
+  let restorations: { queueExportSmoothMotion: ReturnType<typeof vi.fn> };
+  let mlDestinations: { getById: ReturnType<typeof vi.fn> };
   let staged: string;
 
   beforeAll(() => StorageCore.setMediaLocation('/data'));
@@ -315,6 +321,20 @@ describe(StudioExportService.name, () => {
     jobs = { queue: vi.fn().mockResolvedValue(undefined) };
     renderWorkers = { listLiveSessions: vi.fn().mockResolvedValue([liveSession()]) };
     media = { probe: vi.fn().mockResolvedValue(renderedOutput()) };
+    restorations = { queueExportSmoothMotion: vi.fn().mockResolvedValue(null) };
+    mlDestinations = {
+      getById: vi
+        .fn()
+        .mockImplementation((id: string) =>
+          Promise.resolve(
+            id === SMOOTH_DESTINATION
+              ? { id, enabled: true, kind: MlDestinationKind.Lan, workloads: [MlWorkload.Interpolation] }
+              : id === LIBRARY_ONLY_DESTINATION
+                ? { id, enabled: true, kind: MlDestinationKind.Lan, workloads: [MlWorkload.Clip] }
+                : undefined,
+          ),
+        ),
+    };
 
     sut = new StudioExportService(
       { setContext: vi.fn(), log: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } as never,
@@ -332,6 +352,8 @@ describe(StudioExportService.name, () => {
       {} as never,
       renderWorkers as never,
       media as never,
+      restorations as never,
+      mlDestinations as never,
     );
   });
 
@@ -459,6 +481,35 @@ describe(StudioExportService.name, () => {
       );
       expect(job.snapshot.studio).not.toHaveProperty('graph');
       expect(version).toEqual(expect.objectContaining({ ownerId: OWNER, projectId: PROJECT, revision: 3 }));
+    });
+
+    it('keeps Smooth motion out of the render: it rides along as its own job for after publication (FL-162)', async () => {
+      studio.authorizeRevision.mockResolvedValue(authorized());
+      repository.createWithRender.mockResolvedValue({
+        operation: operation({ status: MediaOperationStatus.Queued }),
+        version: versionRow({ state: StudioExportVersionState.Rendering }),
+      });
+
+      await sut.create(auth(), PROJECT, {
+        ...(dto as object),
+        smoothMotion: { factor: 4, destinationId: SMOOTH_DESTINATION },
+      } as never);
+
+      const [job] = repository.createWithRender.mock.calls[0];
+      // the render itself stays on the home network destination it was asked for
+      expect(job.destination).toBe(MediaOperationDestination.Lan);
+      expect(job.snapshot.smoothMotion).toEqual({ factor: 4, destinationId: SMOOTH_DESTINATION });
+      expect(job.settings).not.toHaveProperty('smoothMotion');
+    });
+
+    it('refuses Smooth motion on a destination that does not run it, before anything is queued', async () => {
+      studio.authorizeRevision.mockResolvedValue(authorized());
+      for (const destinationId of [LIBRARY_ONLY_DESTINATION, '0199aaaa-bbbb-4ccc-8ddd-eeeeffff00ff']) {
+        await expect(
+          sut.create(auth(), PROJECT, { ...(dto as object), smoothMotion: { factor: 2, destinationId } } as never),
+        ).rejects.toBeInstanceOf(BadRequestException);
+      }
+      expect(repository.createWithRender).not.toHaveBeenCalled();
     });
 
     it('keeps the result with its project when asked, for a render the owner saves to the library later (FL-194)', async () => {
@@ -716,6 +767,21 @@ describe(StudioExportService.name, () => {
       );
     });
 
+    it('carries Smooth motion into its publication (FL-162)', async () => {
+      repository.stage = vi.fn(() => Promise.resolve({ version: versionRow(), operation: { id: PUBLISH } }));
+
+      await sut.onRenderCompleted(
+        operation({
+          snapshot: { kind: 'studio-export', smoothMotion: { factor: 8, destinationId: SMOOTH_DESTINATION } },
+        }),
+        'worker-1',
+        { path: staged, checksum: 'ab'.repeat(32), sizeInBytes: '1024', contentType: 'video/mp4' },
+      );
+
+      const publish = repository.stage.mock.calls[0][3](versionRow());
+      expect(publish.snapshot.smoothMotion).toEqual({ factor: 8, destinationId: SMOOTH_DESTINATION });
+    });
+
     it('carries a render that stays with its project into its publication (FL-194)', async () => {
       repository.stage = vi.fn(() => Promise.resolve({ version: versionRow(), operation: { id: PUBLISH } }));
 
@@ -816,6 +882,48 @@ describe(StudioExportService.name, () => {
       });
       expect(operations.fail).not.toHaveBeenCalled();
       expect(operations.requestCancel).not.toHaveBeenCalled();
+    });
+
+    it('queues Smooth motion of the published video as its own job, only after publication (FL-162)', async () => {
+      repository.publish.mockResolvedValue(published());
+      const smooth = job();
+      (smooth.operation.snapshot as Record<string, unknown>).smoothMotion = {
+        factor: 4,
+        destinationId: SMOOTH_DESTINATION,
+      };
+
+      await sut.run(smooth);
+
+      expect(operations.complete).toHaveBeenCalledWith(PUBLISH, 'claim-p', { resultAssetId: 'asset-new' });
+      expect(restorations.queueExportSmoothMotion).toHaveBeenCalledWith({
+        ownerId: OWNER,
+        assetId: 'asset-new',
+        exportName: expect.any(String),
+        factor: 4,
+        destinationId: SMOOTH_DESTINATION,
+      });
+      expect(operations.complete.mock.invocationCallOrder[0]).toBeLessThan(
+        restorations.queueExportSmoothMotion.mock.invocationCallOrder[0],
+      );
+    });
+
+    it('queues no Smooth motion for an export that was not asked for it, or that stays with its project', async () => {
+      repository.publish.mockResolvedValue(published());
+      await sut.run(job());
+      expect(restorations.queueExportSmoothMotion).not.toHaveBeenCalled();
+
+      repository.publish.mockResolvedValue(
+        published({
+          version: versionRow({ state: StudioExportVersionState.Published, version: 1, resultAssetId: null }),
+        }),
+      );
+      const smooth = job();
+      (smooth.operation.snapshot as Record<string, unknown>).smoothMotion = {
+        factor: 2,
+        destinationId: SMOOTH_DESTINATION,
+      };
+      await sut.run(smooth);
+      expect(restorations.queueExportSmoothMotion).not.toHaveBeenCalled();
     });
 
     it('verifies the file, moves it into the library and publishes it with the sources re-checked', async () => {

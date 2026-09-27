@@ -864,6 +864,7 @@
       "payload": {
         "clipId": "string",
         "destinationId": "string",
+        "factor": "number?",
         "targetFps": "rate"
       },
       "prototypeFunctions": [],
@@ -916,9 +917,12 @@
       "mutatesGraph": false,
       "owner": "FL-110",
       "payload": {
+        "assetId": "string?",
         "destinationId": "string",
+        "keepGrain": "boolean?",
         "mode": "string",
         "preview": "boolean",
+        "restorationId": "string?",
         "upscale": "number"
       },
       "prototypeFunctions": ["estimateRender"],
