@@ -238,6 +238,57 @@ describe('Frameleaf version check (FL-80 S-4 / O-8, FL-192)', () => {
       );
     });
 
+    describe('with the feed fallback', () => {
+      const fallback = {
+        version: '3.2.0',
+        tag: 'frameleaf-v3.2.0-2',
+        publishedAt: '2026-09-20T12:00:00Z',
+        url: 'https://github.com/Frameleaf/frameleaf-app/releases/tag/frameleaf-v3.2.0-2',
+        notesUrl: 'https://help.frameleaf.app/releases/3.2.0',
+        minimumSupported: null,
+        rolloutPercent: 100,
+      };
+
+      it('offers the latest release when this server is inside its rollout, never the fallback', async () => {
+        const fetch = respond(feedRelease({ rolloutPercent: bucket + 1, fallback }));
+        vitest.stubGlobal('fetch', fetch);
+        await expect(repository.getLatestRelease(ReleaseChannel.Stable, SEED)).resolves.toEqual({
+          version: 'v3.2.1',
+          published_at: '2026-09-25T12:00:00Z',
+        });
+        expect(fetch).toHaveBeenCalledTimes(1);
+      });
+
+      it('offers the fallback when this server is outside the rollout, without asking GitHub', async () => {
+        const fetch = respond(feedRelease({ rolloutPercent: bucket, fallback }));
+        vitest.stubGlobal('fetch', fetch);
+        await expect(repository.getLatestRelease(ReleaseChannel.Stable, SEED)).resolves.toEqual({
+          version: 'v3.2.0',
+          published_at: '2026-09-20T12:00:00Z',
+        });
+        expect(fetch).toHaveBeenCalledTimes(1);
+      });
+
+      it('offers nothing from the feed when it has no fallback, without asking GitHub', async () => {
+        const fetch = respond(feedRelease({ rolloutPercent: bucket, fallback: null }));
+        vitest.stubGlobal('fetch', fetch);
+        await expect(repository.getLatestRelease(ReleaseChannel.Stable, SEED)).resolves.toBeNull();
+        expect(fetch).toHaveBeenCalledTimes(1);
+      });
+
+      it('asks GitHub releases, as for any bad answer, when the fallback is invalid', async () => {
+        const fetch = vitest
+          .fn()
+          .mockResolvedValueOnce(Response.json(feedRelease({ fallback: { ...fallback, version: '3.3.0' } })))
+          .mockResolvedValueOnce(Response.json(release('frameleaf-v3.2.1-4')));
+        vitest.stubGlobal('fetch', fetch);
+        await expect(repository.getLatestRelease(ReleaseChannel.Stable, SEED)).resolves.toEqual(
+          expect.objectContaining({ version: 'v3.2.1' }),
+        );
+        expect(fetch.mock.calls.map(([url]) => url)).toEqual([`${FEED}?channel=stable`, `${GITHUB}/latest`]);
+      });
+    });
+
     it('offers nothing when the feed withdrew its release and GitHub has no earlier one', async () => {
       vitest.stubGlobal(
         'fetch',
