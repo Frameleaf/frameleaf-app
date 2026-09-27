@@ -1,7 +1,7 @@
 <script lang="ts">
   import SettingSelect from '$lib/components/frameleaf/settings/SettingSelect.svelte';
   import { Colorspace, ImageFormat } from '@immich/sdk';
-  import { fade } from 'svelte/transition';
+  import { motionFade } from '$lib/frameleaf/motion';
 
   import SettingGroup from '$lib/components/frameleaf/settings/SettingGroup.svelte';
   import SettingField from '$lib/components/frameleaf/settings/SettingField.svelte';
@@ -19,7 +19,7 @@
 </script>
 
 <div>
-  <div in:fade={{ duration: 500 }}>
+  <div in:motionFade={{ duration: 500 }}>
     <form autocomplete="off" onsubmit={(event) => event.preventDefault()}>
       <SettingGroup
         key="thumbnail-settings"

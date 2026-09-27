@@ -28,7 +28,7 @@
   import { onDestroy, tick } from 'svelte';
   import { t } from 'svelte-i18n';
   import { createBubbler, preventDefault } from 'svelte/legacy';
-  import { fade } from 'svelte/transition';
+  import { motionFade } from '$lib/frameleaf/motion';
 
   type Props = {
     minified?: boolean;
@@ -177,7 +177,7 @@
 </script>
 
 <section class="mt-2 dark:text-immich-dark-fg">
-  <div in:fade={{ duration }} class="mx-4 flex flex-col gap-4 py-4">
+  <div in:motionFade={{ duration }} class="mx-4 flex flex-col gap-4 py-4">
     {#if templateDocs && implicationsDocs}
       <p class="text-sm dark:text-immich-dark-fg">
         <FormatMessage key="admin.storage_template_more_details">
@@ -262,7 +262,7 @@
           {#await getSupportDateTimeFormat()}
             <LoadingSpinner />
           {:then options}
-            <div transition:fade={{ duration: 200 }}>
+            <div transition:motionFade={{ duration: 200 }}>
               <SupportedDatetimePanel {options} />
             </div>
           {/await}

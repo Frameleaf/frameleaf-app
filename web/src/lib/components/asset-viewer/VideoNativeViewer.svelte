@@ -57,7 +57,7 @@
   import { onDestroy, onMount, untrack } from 'svelte';
   import { useSwipe, type SwipeCustomEvent } from 'svelte-gestures';
   import { t } from 'svelte-i18n';
-  import { fade } from 'svelte/transition';
+  import { motionFade } from '$lib/frameleaf/motion';
   import './immich-time-range';
 
   interface Props {
@@ -577,7 +577,7 @@
 
 {#if showVideo}
   <div
-    transition:fade={{ duration: assetViewerFadeDuration }}
+    transition:motionFade={{ duration: assetViewerFadeDuration }}
     class="flex h-full place-content-center place-items-center select-none"
   >
     {#if castManager.isCasting}

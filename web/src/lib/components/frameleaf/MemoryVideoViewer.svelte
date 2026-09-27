@@ -7,7 +7,7 @@
   import 'media-chrome/media-controller';
   import { onMount } from 'svelte';
   import { on } from 'svelte/events';
-  import { fade } from 'svelte/transition';
+  import { motionFade } from '$lib/frameleaf/motion';
 
   interface Props {
     asset: TimelineAsset;
@@ -51,7 +51,7 @@
 </script>
 
 {#if showVideo}
-  <div class="bg-pink-9000 size-full" transition:fade={{ duration: assetViewerFadeDuration }}>
+  <div class="bg-pink-9000 size-full" transition:motionFade={{ duration: assetViewerFadeDuration }}>
     <media-controller id="memory-video" nohotkeys class="size-full rounded-2xl object-contain transition-all">
       <video
         bind:this={videoPlayer}
