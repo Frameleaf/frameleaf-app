@@ -10,11 +10,42 @@ const isTrashed = async (accessToken: string, id: string) => {
   const asset = await utils.getAssetInfo(accessToken, id);
   return asset.isTrashed;
 };
+const visibilityOf = async (accessToken: string, id: string) => {
+  const asset = await utils.getAssetInfo(accessToken, id);
+  return asset.visibility;
+};
 
 const select = async (page: Page, id: string) => {
   const tile = page.locator(`[data-asset-id="${id}"]`);
   await tile.hover();
   await tile.getByRole('checkbox').click();
+};
+
+/** SelectionBar.jsx: the overflow button and its menu are both named "More actions". */
+const moreAction = async (page: Page, name: string) => {
+  const bar = page.getByRole('region', { name: 'Selected items' });
+  await bar.getByRole('button', { name: 'More actions', exact: true }).click();
+  await page.getByRole('menu', { name: 'More actions' }).getByRole('menuitem', { name, exact: true }).click();
+};
+
+const setUpPartner = async () => {
+  await utils.resetDatabase();
+  const admin = await utils.adminSetup();
+  const partner = await utils.userSetup(admin.accessToken, {
+    name: 'Pat Partner',
+    email: 'partner@example.com',
+    password: 'password',
+  });
+  await setUserOnboarding({ onboardingDto: { isOnboarded: true } }, { headers: asBearerAuth(partner.accessToken) });
+  await createPartner(
+    { partnerCreateDto: { sharedWithId: admin.userId } },
+    { headers: asBearerAuth(partner.accessToken) },
+  );
+  await updatePartner(
+    { id: partner.userId, partnerUpdateDto: { inTimeline: true } },
+    { headers: asBearerAuth(admin.accessToken) },
+  );
+  return { admin, partner };
 };
 
 /**
@@ -28,22 +59,7 @@ test.describe('Bulk actions', () => {
 
   test.beforeAll(async () => {
     utils.initSdk();
-    await utils.resetDatabase();
-    admin = await utils.adminSetup();
-    partner = await utils.userSetup(admin.accessToken, {
-      name: 'Pat Partner',
-      email: 'partner@example.com',
-      password: 'password',
-    });
-    await setUserOnboarding({ onboardingDto: { isOnboarded: true } }, { headers: asBearerAuth(partner.accessToken) });
-    await createPartner(
-      { partnerCreateDto: { sharedWithId: admin.userId } },
-      { headers: asBearerAuth(partner.accessToken) },
-    );
-    await updatePartner(
-      { id: partner.userId, partnerUpdateDto: { inTimeline: true } },
-      { headers: asBearerAuth(admin.accessToken) },
-    );
+    ({ admin, partner } = await setUpPartner());
   });
 
   test('skips a partner’s item instead of inferring ownership, and undoes the favorite', async ({ context, page }) => {
@@ -107,5 +123,82 @@ test.describe('Bulk actions', () => {
 
     await page.getByRole('button', { name: 'Undo', exact: true }).first().click();
     await expect.poll(() => isTrashed(admin.accessToken, asset.id)).toBe(false);
+  });
+});
+
+/**
+ * FL-32: "Select all n" against the real server. The set is frozen when it is chosen, a filter that
+ * was active then bounds it, and a partner's item in the Timeline is never changed by it.
+ */
+test.describe('Everything matching', () => {
+  let admin: LoginResponseDto;
+  let partner: LoginResponseDto;
+
+  test.beforeEach(async () => {
+    utils.initSdk();
+    ({ admin, partner } = await setUpPartner());
+  });
+
+  test('archives the Timeline count the server took, leaves the partner’s item, and undoes it', async ({
+    context,
+    page,
+  }) => {
+    const own = await Promise.all([1, 2, 3].map(() => utils.createAsset(admin.accessToken)));
+    const theirs = await utils.createAsset(partner.accessToken);
+
+    await utils.setAuthCookies(context, admin.accessToken);
+    await page.goto('/photos');
+    await select(page, own[0].id);
+
+    const bar = page.getByRole('region', { name: 'Selected items' });
+    await bar.getByRole('button', { name: /^Select all \d+$/ }).click();
+    await expect(bar.getByText('Everything matching this view')).toBeVisible();
+
+    await moreAction(page, 'Archive');
+    const confirm = page.getByRole('dialog');
+    // Counted by the server for this account alone: the partner's item is not part of it.
+    await expect(confirm.getByText(/Archive all 3 matching items in your Timeline\?/)).toBeVisible();
+    await confirm.getByRole('button', { name: 'Archive', exact: true }).click();
+
+    for (const asset of own) {
+      await expect.poll(() => visibilityOf(admin.accessToken, asset.id)).toBe('archive');
+    }
+    await expect(visibilityOf(partner.accessToken, theirs.id)).resolves.toBe('timeline');
+
+    await page.getByRole('button', { name: 'Undo', exact: true }).first().click();
+    for (const asset of own) {
+      await expect.poll(() => visibilityOf(admin.accessToken, asset.id)).toBe('timeline');
+    }
+  });
+
+  test('a filter active when everything matching was chosen bounds what it archives', async ({ context, page }) => {
+    const favorites = await Promise.all([1, 2].map(() => utils.createAsset(admin.accessToken, { isFavorite: true })));
+    const other = await utils.createAsset(admin.accessToken);
+
+    await utils.setAuthCookies(context, admin.accessToken);
+    await page.goto('/photos');
+    await expect(page.locator(`[data-asset-id="${other.id}"]`)).toBeVisible();
+
+    const toolbar = page.getByTestId('frameleaf-results-toolbar');
+    await toolbar.getByRole('button', { name: 'Filter', exact: true }).click();
+    const filters = page.getByRole('complementary', { name: 'Library filters' });
+    await filters.getByRole('combobox', { name: 'Favorites' }).click();
+    await page.getByRole('option', { name: 'Yes', exact: true }).click();
+    await expect(page.locator(`[data-asset-id="${other.id}"]`)).toHaveCount(0);
+
+    await toolbar.getByRole('button', { name: 'More library actions' }).click();
+    await page
+      .getByRole('dialog', { name: 'Collection actions' })
+      .getByRole('button', { name: 'Select all 2 matching items' })
+      .click();
+    await expect(
+      page.getByRole('region', { name: 'Selected items' }).getByText('Everything matching this view'),
+    ).toBeVisible();
+
+    await moreAction(page, 'Archive');
+    for (const asset of favorites) {
+      await expect.poll(() => visibilityOf(admin.accessToken, asset.id)).toBe('archive');
+    }
+    await expect(visibilityOf(admin.accessToken, other.id)).resolves.toBe('timeline');
   });
 });
