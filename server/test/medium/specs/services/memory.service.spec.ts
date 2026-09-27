@@ -9,27 +9,42 @@ import {
   AssetFileType,
   AssetLockReason,
   JobStatus,
+  MediaOperationDestination,
+  MediaOperationKind,
+  MemoryExportFormat,
   MemoryExportStatus,
   MemoryShowLessKind,
   MemoryType,
   PetObservationState,
   StorageFolder,
+  StudioExportScope,
+  StudioExportVersionState,
   SystemMetadataKey,
 } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
+import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
+import { DerivativePrivacyRepository } from 'src/repositories/derivative-privacy.repository.js';
+import { ForkEnrichmentRepository } from 'src/repositories/fork-enrichment.repository.js';
+import { ForkPrivacyRepository } from 'src/repositories/fork-privacy.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { MemoryRepository } from 'src/repositories/memory.repository.js';
 import { PartnerRepository } from 'src/repositories/partner.repository.js';
 import { PersonRepository } from 'src/repositories/person.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
+import { StudioExportRepository } from 'src/repositories/studio-export.repository.js';
+import { StudioProjectRepository } from 'src/repositories/studio-project.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { DB } from 'src/schema/index.js';
+import { MemoryHighlightService } from 'src/services/memory-highlight.service.js';
 import { MemoryService } from 'src/services/memory.service.js';
+import { StudioExportService } from 'src/services/studio-export.service.js';
 import { emptyHiddenContentFilter } from 'src/utils/hidden-content.js';
+import { studioExportProjectPath } from 'src/utils/studio-export.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { factory } from 'test/small.factory.js';
 import { getKyselyDB } from 'test/utils.js';
@@ -919,6 +934,300 @@ describe(MemoryService.name, () => {
       expect(existsSync(partial)).toBe(false);
       // a redelivered job cannot claim the failed run again
       await expect(sut.handleMemoryExport({ id: run.id })).resolves.toBe(JobStatus.Skipped);
+    });
+  });
+  describe('highlight video (FL-194)', () => {
+    let mediaLocation: string;
+
+    beforeEach(() => {
+      mediaLocation = mkdtempSync(join(tmpdir(), 'memory-highlight-'));
+      StorageCore.reset();
+      StorageCore.setMediaLocation(mediaLocation);
+    });
+
+    afterEach(() => {
+      StorageCore.reset();
+      rmSync(mediaLocation, { recursive: true, force: true });
+    });
+
+    /**
+     * The memory service with its highlight service over the real database. Studio's own export
+     * service is real for everything a highlight does after it starts (cancel, download, save);
+     * only the start, which needs a qualified render worker and Studio's resolver, is stood in for
+     * by writing the same project, render job and version rows the real start writes.
+     */
+    const setupHighlight = () => {
+      const services = newMediumService(MemoryService, {
+        database: defaultDatabase,
+        real: [
+          AccessRepository,
+          AssetRepository,
+          CryptoRepository,
+          DatabaseRepository,
+          MemoryRepository,
+          UserRepository,
+          SystemMetadataRepository,
+          PartnerRepository,
+          StorageRepository,
+        ],
+        mock: [JobRepository, LoggingRepository],
+      });
+      const { sut, ctx } = services;
+      ctx.getMock(JobRepository).queue.mockResolvedValue();
+      const logger = ctx.getMock(LoggingRepository);
+      const projects = new StudioProjectRepository(defaultDatabase);
+      const operations = new MediaOperationRepository(defaultDatabase);
+      const versions = new StudioExportRepository(
+        defaultDatabase,
+        new DerivativePrivacyRepository(defaultDatabase),
+        new ForkPrivacyRepository(defaultDatabase),
+        new ForkEnrichmentRepository(defaultDatabase),
+      );
+      const studioExports = new StudioExportService(
+        logger as never,
+        versions,
+        operations,
+        projects,
+        {} as never,
+        {} as never,
+        ctx.get(UserRepository),
+        ctx.get(AccessRepository),
+        ctx.get(StorageRepository),
+        ctx.get(CryptoRepository),
+        ctx.getMock(JobRepository) as never,
+        { getEnv: () => ({}) } as never,
+        ctx.get(SystemMetadataRepository),
+        {} as never,
+      );
+      vi.spyOn(studioExports, 'create').mockImplementation(async (auth, projectId, dto, options) => {
+        const settings = { format: dto.format, color: dto.color, resolution: dto.resolution };
+        const created = await versions.createWithRender(
+          {
+            ownerId: auth.user.id,
+            kind: MediaOperationKind.StudioExport,
+            destination: dto.destination,
+            destinationDetail: null,
+            label: 'highlight',
+            assetId: null,
+            resultAssetId: null,
+            retryOfId: null,
+            projectId,
+            revisionId: 'digest-1',
+            snapshot: { kind: 'studio-export', retain: options?.retainInProject ? 'project' : undefined },
+            settings,
+            estimate: null,
+            totalUnits: null,
+            maxAttempts: 3,
+          },
+          {
+            ownerId: auth.user.id,
+            projectId,
+            revision: 1,
+            revisionDigest: 'digest-1',
+            destination: dto.destination,
+            settings,
+          },
+        );
+        return { version: created.version, operation: created.operation } as never;
+      });
+      const studioProjects = {
+        create: (auth: { user: { id: string } }, dto: { name: string }) =>
+          projects.create({ ownerId: auth.user.id, name: dto.name, spaceId: null }),
+        update: () => Promise.resolve(),
+        forgetResolutions: () => {},
+      };
+      const highlights = new MemoryHighlightService(
+        logger as never,
+        ctx.get(MemoryRepository),
+        studioProjects as never,
+        studioExports,
+        projects,
+        versions,
+        operations,
+        ctx.get(AssetRepository),
+        ctx.get(AccessRepository),
+        ctx.get(StorageRepository),
+      );
+      (sut as unknown as { highlights: MemoryHighlightService }).highlights = highlights;
+      return { sut, ctx, projects, versions, operations };
+    };
+
+    const memoryWithItems = async (ctx: ReturnType<typeof setupHighlight>['ctx']) => {
+      const { user } = await ctx.newUser();
+      const { memory } = await ctx.newMemory({ ownerId: user.id });
+      for (let index = 0; index < 3; index++) {
+        const { asset } = await ctx.newAsset({ ownerId: user.id });
+        await ctx.newMemoryAsset({ memoryId: memory.id, assetId: asset.id });
+      }
+      return { user, memory, auth: factory.auth({ user }) };
+    };
+
+    /** What a render worker and publication leave: a published result kept with its project. */
+    const publishKept = async (context: ReturnType<typeof setupHighlight>, ownerId: string, versionId: string) => {
+      const path = studioExportProjectPath(ownerId, versionId, '.mp4');
+      mkdirSync(join(path, '..'), { recursive: true });
+      writeFileSync(path, 'a highlight video');
+      await defaultDatabase
+        .updateTable('studio_export_version')
+        .set({
+          state: StudioExportVersionState.Published,
+          scope: StudioExportScope.Project,
+          version: 1,
+          outputPath: path,
+          outputChecksum: Buffer.alloc(32, 1),
+          outputSizeInBytes: '17',
+          outputContentType: 'video/mp4',
+          privacy: { lockReason: null, scope: StudioExportScope.Project },
+          publishedAt: new Date(),
+        })
+        .where('id', '=', versionId)
+        .execute();
+      return path;
+    };
+
+    it('renders only when asked, follows the render, and only the owner can read or download it', async () => {
+      const context = setupHighlight();
+      const { sut, ctx } = context;
+      const { user, memory, auth } = await memoryWithItems(ctx);
+      const { user: stranger } = await ctx.newUser();
+      const strangerAuth = factory.auth({ user: stranger });
+
+      // nothing exists until the owner asks
+      await expect(sut.getExports(auth, memory.id)).resolves.toEqual([]);
+      expect(await defaultDatabase.selectFrom('studio_project').where('ownerId', '=', user.id).execute()).toEqual([]);
+
+      const started = await sut.createExport(auth, memory.id, {
+        format: MemoryExportFormat.Highlight,
+        highlight: { lengthSeconds: 30, resolution: '1080p' },
+      });
+      expect(started).toEqual(
+        expect.objectContaining({
+          status: MemoryExportStatus.Running,
+          format: MemoryExportFormat.Highlight,
+          highlight: expect.objectContaining({ lengthSeconds: 30, resolution: '1080p', progress: 0 }),
+        }),
+      );
+      const run = await ctx.get(MemoryRepository).getExport(started.id, user.id);
+      const version = await context.versions.getById(run!.studioExportVersionId!);
+      expect(version).toEqual(expect.objectContaining({ projectId: run!.studioProjectId }));
+
+      await defaultDatabase
+        .updateTable('media_operation')
+        .set({ progress: 40 })
+        .where('id', '=', version!.renderOperationId!)
+        .execute();
+      await expect(sut.getExport(auth, started.id)).resolves.toEqual(
+        expect.objectContaining({ highlight: expect.objectContaining({ progress: 40 }) }),
+      );
+
+      await publishKept(context, user.id, version!.id);
+      const ready = await sut.getExport(auth, started.id);
+      expect(ready).toEqual(expect.objectContaining({ status: MemoryExportStatus.Ready, isDownloadable: true }));
+      const download = await sut.downloadExport(auth, started.id);
+      download.stream.destroy();
+      expect(download.disposition).toContain('.mp4');
+
+      await expect(sut.getExport(strangerAuth, started.id)).rejects.toThrow();
+      await expect(sut.downloadExport(strangerAuth, started.id)).rejects.toThrow();
+      await expect(sut.saveExportToLibrary(strangerAuth, started.id)).rejects.toThrow();
+    });
+
+    it('cancels, lets the project go, and can be retried', async () => {
+      const context = setupHighlight();
+      const { sut, ctx } = context;
+      const { user, memory, auth } = await memoryWithItems(ctx);
+
+      const first = await sut.createExport(auth, memory.id, { format: MemoryExportFormat.Highlight });
+      const projectId = (await ctx.get(MemoryRepository).getExport(first.id, user.id))!.studioProjectId!;
+      await expect(sut.cancelExport(auth, first.id)).resolves.toEqual(
+        expect.objectContaining({ status: MemoryExportStatus.Cancelled }),
+      );
+      expect(await context.projects.getById(projectId)).toBeUndefined();
+
+      const retried = await sut.createExport(auth, memory.id, { format: MemoryExportFormat.Highlight });
+      expect(retried.id).not.toBe(first.id);
+      expect(retried.status).toBe(MemoryExportStatus.Running);
+    });
+
+    it('saves to the library only when asked, and the saved copy stays when the memory goes', async () => {
+      const context = setupHighlight();
+      const { sut, ctx } = context;
+      const { user, memory, auth } = await memoryWithItems(ctx);
+      const started = await sut.createExport(auth, memory.id, { format: MemoryExportFormat.Highlight });
+      const run = await ctx.get(MemoryRepository).getExport(started.id, user.id);
+      const kept = await publishKept(context, user.id, run!.studioExportVersionId!);
+      await sut.getExport(auth, started.id);
+
+      const saved = await sut.saveExportToLibrary(auth, started.id);
+      const assetId = saved.highlight!.savedAssetId!;
+      expect(assetId).toBeTruthy();
+      expect(existsSync(kept)).toBe(false);
+      const asset = await defaultDatabase
+        .selectFrom('asset')
+        .select(['ownerId', 'originalPath', 'deletedAt'])
+        .where('id', '=', assetId)
+        .executeTakeFirstOrThrow();
+      expect(asset).toEqual(expect.objectContaining({ ownerId: user.id, deletedAt: null }));
+      expect(existsSync(asset.originalPath)).toBe(true);
+
+      await sut.remove(auth, memory.id);
+      expect(existsSync(asset.originalPath)).toBe(true);
+    });
+
+    it('removes the render and its private result with the memory, and revokes the download', async () => {
+      const context = setupHighlight();
+      const { sut, ctx } = context;
+      const { user, memory, auth } = await memoryWithItems(ctx);
+      const started = await sut.createExport(auth, memory.id, { format: MemoryExportFormat.Highlight });
+      const run = await ctx.get(MemoryRepository).getExport(started.id, user.id);
+      const kept = await publishKept(context, user.id, run!.studioExportVersionId!);
+      await sut.getExport(auth, started.id);
+
+      await sut.remove(auth, memory.id);
+
+      expect(existsSync(kept)).toBe(false);
+      expect(await context.projects.getById(run!.studioProjectId!)).toBeUndefined();
+      await expect(sut.downloadExport(auth, started.id)).rejects.toThrow();
+    });
+
+    it('deletes the projects of memories the 30-day cleanup removes, and never fails a long render as abandoned', async () => {
+      const context = setupHighlight();
+      const { sut, ctx } = context;
+      const { user, memory, auth } = await memoryWithItems(ctx);
+      const kept = await memoryWithItems(ctx);
+      const expiring = await sut.createExport(auth, memory.id, { format: MemoryExportFormat.Highlight });
+      const long = await sut.createExport(kept.auth, kept.memory.id, { format: MemoryExportFormat.Highlight });
+      const expiringProject = (await ctx.get(MemoryRepository).getExport(expiring.id, user.id))!.studioProjectId!;
+
+      await defaultDatabase
+        .updateTable('memory')
+        .set({ createdAt: DateTime.now().minus({ days: 31 }).toJSDate(), isSaved: false })
+        .where('id', '=', memory.id)
+        .execute();
+      await defaultDatabase.updateTable('memory').set({ isSaved: true }).where('id', '=', kept.memory.id).execute();
+      await defaultDatabase
+        .updateTable('memory_export')
+        .set({ updatedAt: new Date(Date.now() - 3 * 60 * 60 * 1000) })
+        .where('id', '=', long.id)
+        .execute();
+
+      await sut.onMemoriesCleanup();
+
+      expect(await context.projects.getById(expiringProject)).toBeUndefined();
+      await expect(sut.getExport(auth, expiring.id)).rejects.toThrow();
+      await expect(sut.getExport(kept.auth, long.id)).resolves.toEqual(
+        expect.objectContaining({ status: MemoryExportStatus.Running }),
+      );
+    });
+
+    it('renders at home only', async () => {
+      const { sut, ctx } = setupHighlight();
+      const { memory, auth } = await memoryWithItems(ctx);
+      const started = await sut.createExport(auth, memory.id, {
+        format: MemoryExportFormat.Highlight,
+        highlight: { destination: MediaOperationDestination.Lan },
+      });
+      expect(started.highlight?.destination).toBe(MediaOperationDestination.Lan);
     });
   });
 });

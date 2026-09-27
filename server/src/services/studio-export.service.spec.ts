@@ -398,6 +398,22 @@ describe(StudioExportService.name, () => {
       expect(job.snapshot.studio).not.toHaveProperty('graph');
       expect(version).toEqual(expect.objectContaining({ ownerId: OWNER, projectId: PROJECT, revision: 3 }));
     });
+
+    it('keeps the result with its project when asked, for a render the owner saves to the library later (FL-194)', async () => {
+      studio.authorizeRevision.mockResolvedValue(authorized());
+      repository.createWithRender.mockResolvedValue({
+        operation: operation({ status: MediaOperationStatus.Queued }),
+        version: versionRow({ state: StudioExportVersionState.Rendering }),
+      });
+
+      await sut.create(auth(), PROJECT, dto, { retainInProject: true });
+      expect(repository.createWithRender.mock.calls[0][0].snapshot).toEqual(
+        expect.objectContaining({ retain: 'project' }),
+      );
+
+      await sut.create(auth(), PROJECT, dto);
+      expect(repository.createWithRender.mock.calls[1][0].snapshot).not.toHaveProperty('retain');
+    });
   });
 
   describe('render contract', () => {
@@ -491,6 +507,20 @@ describe(StudioExportService.name, () => {
       expect(repository.recordRemoteReference).toHaveBeenCalledWith(
         expect.objectContaining({ reason: StudioExportRemoteReason.Delete, remoteRef: 'worker-cache/out.mp4' }),
       );
+    });
+
+    it('carries a render that stays with its project into its publication (FL-194)', async () => {
+      repository.stage = vi.fn(() => Promise.resolve({ version: versionRow(), operation: { id: PUBLISH } }));
+
+      await sut.onRenderCompleted(operation({ snapshot: { kind: 'studio-export', retain: 'project' } }), 'worker-1', {
+        path: staged,
+        checksum: 'ab'.repeat(32),
+        sizeInBytes: '1024',
+        contentType: 'video/mp4',
+      });
+
+      const publish = repository.stage.mock.calls[0][3](versionRow());
+      expect(publish.snapshot).toEqual(expect.objectContaining({ retain: 'project' }));
     });
   });
 
@@ -639,6 +669,22 @@ describe(StudioExportService.name, () => {
       expect(input.expectedScope).toBe(StudioExportScope.Project);
       expect(input.path).toContain('/exports/');
       expect(input.path).not.toContain('/upload/');
+    });
+
+    it('keeps a result the owner asked to keep with its project out of the library (FL-194)', async () => {
+      repository.publish.mockResolvedValue(published({ createdAssetId: null }));
+      const kept = job();
+      kept.operation.snapshot = { ...kept.operation.snapshot, retain: 'project' };
+
+      await sut.run(kept);
+
+      const input = repository.publish.mock.calls[0][0];
+      expect(input).toEqual(
+        expect.objectContaining({ expectedScope: StudioExportScope.Project, retainInProject: true }),
+      );
+      expect(input.path).toContain('/exports/');
+      expect(input.path).not.toContain('/upload/');
+      expect(jobs.queue).not.toHaveBeenCalled();
     });
 
     it('cancels, without publishing, when the project went to the trash', async () => {
@@ -840,6 +886,98 @@ describe(StudioExportService.name, () => {
       await expect(sut.get(auth(), VERSION)).rejects.toBeInstanceOf(NotFoundException);
       const shown = await sut.get(elevated(), VERSION);
       expect(shown).toEqual(expect.objectContaining({ resultAssetId: 'asset-new', locked: true }));
+    });
+  });
+
+  describe('saveToLibrary', () => {
+    const kept = '/data/exports/o/studio-exports/versions/v.mp4';
+    const projectResult = (overrides: Partial<StudioExportVersion> = {}) =>
+      versionRow({
+        state: StudioExportVersionState.Published,
+        scope: StudioExportScope.Project,
+        outputPath: kept,
+        privacy: { lockReason: null },
+        ...overrides,
+      });
+    const saved = (assetId = 'asset-saved') => ({
+      version: projectResult({ scope: StudioExportScope.Library, resultAssetId: assetId }),
+      createdAssetId: assetId,
+      reusedAssetId: null,
+    });
+
+    beforeEach(() => {
+      repository.saveToLibrary = vi.fn();
+      storage.stat = vi.fn((path: string) =>
+        path === kept ? Promise.resolve({ size: 1024, isFile: () => true }) : Promise.reject(new Error('ENOENT')),
+      );
+    });
+
+    it('moves the kept file into the library as a new asset of the owner, only when asked', async () => {
+      repository.getForOwner.mockResolvedValue(projectResult());
+      repository.saveToLibrary.mockResolvedValue(saved());
+
+      const result = await sut.saveToLibrary(auth(), VERSION);
+
+      const input = repository.saveToLibrary.mock.calls[0][0];
+      expect(input).toEqual(
+        expect.objectContaining({
+          versionId: VERSION,
+          ownerId: OWNER,
+          nsfwHiding: true,
+          assetType: AssetType.Video,
+          originalFileName: 'Lake trip.mp4',
+          sources: [expect.objectContaining({ assetId: CLIP })],
+        }),
+      );
+      expect(input.path).toContain('/upload/');
+      expect(storage.rename).toHaveBeenCalledWith(kept, input.path);
+      expect(jobs.queue).toHaveBeenCalledWith({
+        name: JobName.AssetExtractMetadata,
+        data: { id: 'asset-saved', source: 'upload' },
+      });
+      expect(result).toEqual(
+        expect.objectContaining({ scope: StudioExportScope.Library, resultAssetId: 'asset-saved' }),
+      );
+    });
+
+    it('answers a result already in the library with it again', async () => {
+      repository.getForOwner.mockResolvedValue(
+        projectResult({ scope: StudioExportScope.Library, resultAssetId: 'asset-saved' }),
+      );
+      await expect(sut.saveToLibrary(auth(), VERSION)).resolves.toEqual(
+        expect.objectContaining({ resultAssetId: 'asset-saved' }),
+      );
+      expect(repository.saveToLibrary).not.toHaveBeenCalled();
+      expect(storage.rename).not.toHaveBeenCalled();
+    });
+
+    it('refuses a result that is not published or whose file is gone', async () => {
+      repository.getForOwner.mockResolvedValue(projectResult({ state: StudioExportVersionState.Staged }));
+      await expect(sut.saveToLibrary(auth(), VERSION)).rejects.toBeInstanceOf(ConflictException);
+      repository.getForOwner.mockResolvedValue(projectResult({ outputRemovedAt: new Date() } as never));
+      await expect(sut.saveToLibrary(auth(), VERSION)).rejects.toBeInstanceOf(ConflictException);
+      expect(repository.saveToLibrary).not.toHaveBeenCalled();
+    });
+
+    it('never makes media shared with the owner into a permanent copy', async () => {
+      repository.getForOwner.mockResolvedValue(projectResult());
+      repository.getSources.mockResolvedValue([
+        sourceRow(),
+        sourceRow({ key: 'shared', resourceId: SHARED_CLIP, assetId: SHARED_CLIP, ownerId: PARTNER }),
+      ]);
+      await expect(sut.saveToLibrary(auth(), VERSION)).rejects.toBeInstanceOf(ConflictException);
+      expect(storage.rename).not.toHaveBeenCalled();
+    });
+
+    it('returns the file to where it was when the library refuses it', async () => {
+      repository.getForOwner.mockResolvedValue(projectResult());
+      repository.saveToLibrary.mockRejectedValue(new StudioExportRefusal('quota-exceeded', 'full'));
+
+      await expect(sut.saveToLibrary(auth(), VERSION)).rejects.toBeInstanceOf(ConflictException);
+
+      const moved = repository.saveToLibrary.mock.calls[0][0].path;
+      expect(storage.rename).toHaveBeenLastCalledWith(moved, kept);
+      expect(jobs.queue).not.toHaveBeenCalled();
     });
   });
 

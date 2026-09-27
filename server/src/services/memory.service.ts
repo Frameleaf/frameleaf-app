@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { isUndefined, omitBy } from 'lodash-es';
 import { DateTime } from 'luxon';
 import { basename, parse } from 'node:path';
@@ -8,7 +8,7 @@ import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { MemoryCurationFilter, MemoryShowLessRow } from 'src/repositories/memory.repository.js';
 import type { JobOf } from 'src/types.js';
 import { StorageCore } from 'src/cores/storage.core.js';
-import { Memory } from 'src/database.js';
+import { Memory, MemoryExport } from 'src/database.js';
 import { OnJob } from 'src/decorators.js';
 import { BulkIdResponseDto, BulkIdsDto } from 'src/dtos/asset-ids.response.dto.js';
 import {
@@ -20,6 +20,7 @@ import {
   MemoryShowLessDto,
   MemoryShowLessResponseDto,
   MemoryUpdateDto,
+  applyMemoryAssetOrder,
   isTerminalExportStatus,
   mapMemory,
   mapMemoryExport,
@@ -40,6 +41,7 @@ import {
 } from 'src/enum.js';
 import { ImmichReadStream } from 'src/repositories/storage.repository.js';
 import { BaseService } from 'src/services/base.service.js';
+import { MemoryHighlightService } from 'src/services/memory-highlight.service.js';
 import { addAssets, removeAssets } from 'src/utils/asset.util.js';
 import {
   type HiddenContentQueryOptions,
@@ -149,6 +151,10 @@ const memorySubject = (memory: Memory): { kind: 'person' | 'pet'; id: string } |
 
 @Injectable()
 export class MemoryService extends BaseService {
+  /** FL-194: highlight videos, rendered through Studio's render pipeline. */
+  @Inject(MemoryHighlightService)
+  private highlights!: MemoryHighlightService;
+
   @OnJob({ name: JobName.MemoryGenerate, queue: QueueName.BackgroundTask })
   async onMemoriesCreate() {
     const users = await this.userRepository.getList({ withDeleted: false });
@@ -634,6 +640,12 @@ export class MemoryService extends BaseService {
 
   @OnJob({ name: JobName.MemoryCleanup, queue: QueueName.BackgroundTask })
   async onMemoriesCleanup() {
+    try {
+      // FL-194: the cleanup below takes highlight runs by cascade; their projects must go first
+      await this.highlights.removeForExpiredMemories();
+    } catch (error) {
+      this.logger.warn(`Unable to remove highlights of expiring memories: ${error}`);
+    }
     await this.memoryRepository.cleanup();
     try {
       await this.memoryRepository.cleanupCurations();
@@ -673,18 +685,33 @@ export class MemoryService extends BaseService {
 
     // One in-flight export per memory per owner. A second request returns the run already
     // running instead of writing the same archive twice.
-    const [inFlight] = await this.memoryRepository.searchExports(auth.user.id, {
-      memoryId: id,
-      status: [MemoryExportStatus.Pending, MemoryExportStatus.Running, MemoryExportStatus.Cancelling],
-    });
+    const format = dto.format ?? MemoryExportFormat.Archive;
+    const inFlight = (
+      await this.memoryRepository.searchExports(auth.user.id, {
+        memoryId: id,
+        status: [MemoryExportStatus.Pending, MemoryExportStatus.Running, MemoryExportStatus.Cancelling],
+      })
+    ).find((run) => run.format === format);
     if (inFlight) {
-      return mapMemoryExport(inFlight);
+      return mapMemoryExport(await this.currentExport(inFlight));
+    }
+
+    if (format === MemoryExportFormat.Highlight) {
+      // FL-194: the owner's own order and title, as the player shows them
+      const curation = (await this.memoryRepository.getCurations(auth.user.id, [id])).get(id);
+      const ordered = applyMemoryAssetOrder(assets, curation?.assetOrder);
+      const run = await this.highlights.create(
+        auth,
+        { id, title: curation?.title || buildExportTitle(memory), assets: ordered },
+        dto.highlight,
+      );
+      return mapMemoryExport(run);
     }
 
     const run = await this.memoryRepository.createExport({
       ownerId: auth.user.id,
       memoryId: id,
-      format: dto.format ?? MemoryExportFormat.Archive,
+      format,
       status: MemoryExportStatus.Pending,
       title: buildExportTitle(memory),
       // snapshot: what the memory held when the owner asked, so later membership edits
@@ -700,11 +727,31 @@ export class MemoryService extends BaseService {
 
   async getExports(auth: AuthDto, memoryId?: string): Promise<MemoryExportResponseDto[]> {
     const runs = await this.memoryRepository.searchExports(auth.user.id, { memoryId });
-    return runs.map((run) => mapMemoryExport(run));
+    const current = [];
+    for (const run of runs) {
+      current.push(mapMemoryExport(await this.currentExport(run)));
+    }
+    return current;
   }
 
   async getExport(auth: AuthDto, id: string): Promise<MemoryExportResponseDto> {
-    return mapMemoryExport(await this.findExportOrFail(auth, id));
+    return mapMemoryExport(await this.currentExport(await this.findExportOrFail(auth, id)));
+  }
+
+  /** FL-194: save a finished highlight video to the owner's library. */
+  async saveExportToLibrary(auth: AuthDto, id: string): Promise<MemoryExportResponseDto> {
+    const run = (await this.findExportOrFail(auth, id)) as MemoryExport;
+    if (run.format !== MemoryExportFormat.Highlight) {
+      throw new BadRequestException('Only a highlight video can be saved to the library');
+    }
+    return mapMemoryExport(await this.highlights.saveToLibrary(auth, run));
+  }
+
+  /** A highlight run follows its Studio export; an archive run is its own authority. */
+  private currentExport(run: { format: string }): Promise<MemoryExport> {
+    return run.format === MemoryExportFormat.Highlight
+      ? this.highlights.refresh(run as MemoryExport)
+      : Promise.resolve(run as MemoryExport);
   }
 
   /**
@@ -715,6 +762,9 @@ export class MemoryService extends BaseService {
    */
   async cancelExport(auth: AuthDto, id: string): Promise<MemoryExportResponseDto> {
     const run = await this.findExportOrFail(auth, id);
+    if (run.format === MemoryExportFormat.Highlight) {
+      return mapMemoryExport(await this.highlights.cancel(auth, run as MemoryExport));
+    }
     if (isTerminalExportStatus(run.status as MemoryExportStatus)) {
       return mapMemoryExport(run);
     }
@@ -738,6 +788,9 @@ export class MemoryService extends BaseService {
 
   async deleteExport(auth: AuthDto, id: string): Promise<void> {
     const run = await this.findExportOrFail(auth, id);
+    if (run.format === MemoryExportFormat.Highlight) {
+      return this.highlights.remove(auth, run as MemoryExport);
+    }
     if (!isTerminalExportStatus(run.status as MemoryExportStatus)) {
       await this.memoryRepository.requestExportCancel(id, auth.user.id);
     }
@@ -755,6 +808,9 @@ export class MemoryService extends BaseService {
    */
   async downloadExport(auth: AuthDto, id: string): Promise<ImmichReadStream> {
     const run = await this.findExportOrFail(auth, id);
+    if (run.format === MemoryExportFormat.Highlight) {
+      return this.highlights.download(auth, run as MemoryExport);
+    }
 
     if (run.status !== MemoryExportStatus.Ready || !run.path) {
       throw new BadRequestException('Export is not ready');
@@ -1209,6 +1265,10 @@ export class MemoryService extends BaseService {
     const exports = await this.memoryRepository.searchExports(auth.user.id, { memoryId: id });
     for (const run of exports) {
       await this.removeExportFiles(run);
+    }
+    // FL-194: a highlight's render stops, and its project and private result go with the memory
+    if (exports.some((run) => run.format === MemoryExportFormat.Highlight)) {
+      await this.highlights.removeForMemory(auth.user.id, id);
     }
     await this.memoryRepository.delete(id);
   }
