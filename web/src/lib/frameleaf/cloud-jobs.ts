@@ -5,7 +5,12 @@
  * every figure: an estimate is metered GPU time × rate + a start fee per worker, shown as a p50–p90
  * range; per-photo and per-minute figures are estimates, never prices. Amounts are always USD.
  */
-import { CloudMlJobActivityStage, Outcome, isHttpError, type CloudMlJobEstimateResponseDto } from '@immich/sdk';
+import {
+  CloudMlJobActivityStage,
+  CloudMlJobCostOutcome,
+  isHttpError,
+  type CloudMlJobEstimateResponseDto,
+} from '@immich/sdk';
 import type { Translations } from 'svelte-i18n';
 import type { ActivityCloudJob, ActivityStage } from '$lib/frameleaf/activity';
 import { formatRatePerMinute, formatUsd } from '$lib/frameleaf/cloud-ml';
@@ -70,11 +75,14 @@ export const estimateLive = (estimate: Pick<CloudMlJobEstimateResponseDto, 'expi
 export const runHeadKey = (stage: CloudMlJobActivityStage | ActivityStage): Translations =>
   `frameleaf_cloud_job_run_${stage}` as Translations;
 
+const ENDED_STAGES: ReadonlySet<CloudMlJobActivityStage | ActivityStage> = new Set([
+  CloudMlJobActivityStage.Done,
+  CloudMlJobActivityStage.Failed,
+  CloudMlJobActivityStage.Cancelled,
+]);
+
 /** Stages the dialog stops following at. */
-export const isEndedStage = (stage: CloudMlJobActivityStage | ActivityStage) =>
-  stage === CloudMlJobActivityStage.Done ||
-  stage === CloudMlJobActivityStage.Failed ||
-  stage === CloudMlJobActivityStage.Cancelled;
+export const isEndedStage = (stage: CloudMlJobActivityStage | ActivityStage) => ENDED_STAGES.has(stage);
 
 export type CloudCostFact = { labelKey: Translations; value: string | null; valueKey?: Translations };
 
@@ -91,12 +99,12 @@ export const cloudCostFacts = (cloud: ActivityCloudJob, stage: ActivityStage): C
       value: estimateRange(cloud.cost.estimatedUsd, cloud.cost.estimatedHighUsd),
     },
   ];
-  if (stage === 'done' || stage === 'failed' || stage === 'cancelled') {
+  if (isEndedStage(stage)) {
     const settled = cloud.cost.settledUsd;
     let valueKey: Translations | undefined;
     if (settled === null) {
       valueKey = 'frameleaf_activity_cloud_settling';
-    } else if (cloud.cost.outcome === Outcome.NotCharged) {
+    } else if (cloud.cost.outcome === CloudMlJobCostOutcome.NotCharged) {
       valueKey = 'frameleaf_activity_cloud_no_charge';
     }
     facts.push({

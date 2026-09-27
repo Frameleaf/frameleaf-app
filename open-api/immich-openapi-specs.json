@@ -53332,15 +53332,13 @@
             "type": "string"
           },
           "outcome": {
-            "description": "not_charged: the hold went back in full (a failure on the cloud side, or a job that never ran)",
-            "enum": [
-              "charged",
-              "not_charged",
-              "refunded",
-              null
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CloudMlJobCostOutcome"
+              }
             ],
-            "nullable": true,
-            "type": "string"
+            "description": "not_charged: the hold went back in full (a failure on the cloud side, or a job that never ran)",
+            "nullable": true
           },
           "settledUsd": {
             "description": "What the job was charged once settled, USD; null until then",
@@ -53365,6 +53363,14 @@
           "soFarUsd"
         ],
         "type": "object"
+      },
+      "CloudMlJobCostOutcome": {
+        "enum": [
+          "charged",
+          "not_charged",
+          "refunded"
+        ],
+        "type": "string"
       },
       "CloudMlJobCreateDto": {
         "properties": {

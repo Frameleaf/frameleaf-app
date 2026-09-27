@@ -182,6 +182,7 @@ const CloudMlJobCostSchema = z
       .describe('What the job was charged once settled, USD; null until then'),
     outcome: z
       .enum(['charged', 'not_charged', 'refunded'])
+      .meta({ id: 'CloudMlJobCostOutcome' })
       .nullable()
       .describe('not_charged: the hold went back in full (a failure on the cloud side, or a job that never ran)'),
     note: z.string().nullable().describe('Frameleaf Cloud’s note on the settlement'),
