@@ -129,7 +129,13 @@ import {
   offeredCatalogModels,
   pausedException,
 } from 'src/utils/frameleaf-cloud.js';
-import { STRIP_VIDEO_METADATA_OPTIONS, strippedStillFormat, strippedVideoStreams } from 'src/utils/media-privacy.js';
+import {
+  STRIP_VIDEO_METADATA_OPTIONS,
+  previewClipOutputOptions,
+  strippedStillFormat,
+  strippedVideoStreams,
+  uploadClipOutputOptions,
+} from 'src/utils/media-privacy.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import {
   MlDestinationNotFoundError,
@@ -2300,39 +2306,14 @@ export class CloudMlJobService {
     const beforePath = path.join(workDir, 'before.mp4');
     await this.mediaRepository.transcode(source.originalPath, beforePath, {
       inputOptions: ['-ss', start.toFixed(3), '-t', clip.toFixed(3)],
-      outputOptions: [
-        ...strippedVideoStreams(true),
-        ...crop,
-        '-c:v',
-        'libx264',
-        '-preset',
-        'veryfast',
-        '-crf',
-        '16',
-        '-pix_fmt',
-        'yuv420p',
-        '-c:a',
-        'aac',
-        '-b:a',
-        '192k',
-        ...STRIP_VIDEO_METADATA_OPTIONS,
-        '-movflags',
-        '+faststart',
-      ],
+      outputOptions: previewClipOutputOptions(crop),
       twoPass: false,
       progress: { frameCount: 0, percentInterval: 5 },
     });
     const file = path.join(workDir, 'input.mp4');
     await this.mediaRepository.transcode(beforePath, file, {
       inputOptions: [],
-      outputOptions: [
-        ...strippedVideoStreams(false),
-        '-c:v',
-        'copy',
-        ...STRIP_VIDEO_METADATA_OPTIONS,
-        '-movflags',
-        '+faststart',
-      ],
+      outputOptions: uploadClipOutputOptions(),
       twoPass: false,
       progress: { frameCount: 0, percentInterval: 5 },
     });

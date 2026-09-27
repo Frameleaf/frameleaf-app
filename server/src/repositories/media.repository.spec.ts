@@ -1,4 +1,5 @@
-import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import sharp from 'sharp';
@@ -6,7 +7,19 @@ import { AssetEditAction, MirrorAxis } from 'src/dtos/editing.dto.js';
 import { Colorspace, ImageFormat } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
+import { chunkClipOutputOptions, previewClipOutputOptions, uploadClipOutputOptions } from 'src/utils/media-privacy.js';
 import { automock } from 'test/utils.js';
+
+const hasFfmpeg = (() => {
+  try {
+    execFileSync('ffprobe', ['-version'], { stdio: 'ignore' });
+    execFileSync('ffmpeg', ['-version'], { stdio: 'ignore' });
+    return true;
+  } catch {
+    console.warn('[media.repository.spec] ffmpeg is not installed; the byte-level clip tests are skipped');
+    return false;
+  }
+})();
 
 const getPixelColor = async (buffer: Buffer, x: number, y: number) => {
   const metadata = await sharp(buffer).metadata();
@@ -408,6 +421,182 @@ describe(MediaRepository.name, () => {
       } finally {
         rmSync(dirPath, { recursive: true, force: true });
       }
+    });
+  });
+
+  /*
+   * FL-162: the clips cut from a video for another machine (the preview comparison clip, what is
+   * uploaded from it, and a chunk of a whole video) are made with real ffmpeg from a fixture that
+   * carries a location, a creation time, camera tags, a custom handler name and chapters, and then
+   * read back with ffprobe and as raw bytes. Skipped only where no ffmpeg is installed; CI installs
+   * the pinned jellyfin-ffmpeg through mise.
+   */
+  describe.skipIf(!hasFfmpeg)('video clips for another machine (FL-162)', () => {
+    const secrets = [
+      '+51.5007-000.1246/',
+      'FrameleafTestCamera',
+      'Private person',
+      'Birthday at home',
+      'SecretHandler',
+    ];
+    let dirPath: string;
+    let fixture: string;
+
+    const transcode = (input: string, output: string, inputOptions: string[], outputOptions: string[]) =>
+      sut.transcode(input, output, {
+        inputOptions,
+        outputOptions,
+        twoPass: false,
+        progress: { frameCount: 0, percentInterval: 5 },
+      });
+
+    beforeAll(() => {
+      dirPath = mkdtempSync(join(tmpdir(), 'media-repository-clips-'));
+      const chapters = join(dirPath, 'chapters.txt');
+      writeFileSync(
+        chapters,
+        ';FFMETADATA1\ntitle=Private person\n[CHAPTER]\nTIMEBASE=1/1000\nSTART=0\nEND=1500\ntitle=Birthday at home\n' +
+          '[CHAPTER]\nTIMEBASE=1/1000\nSTART=1500\nEND=3000\ntitle=Cake\n',
+      );
+      fixture = join(dirPath, 'located.mp4');
+      execFileSync(
+        'ffmpeg',
+        [
+          '-hide_banner',
+          '-loglevel',
+          'error',
+          '-y',
+          '-f',
+          'lavfi',
+          '-i',
+          'testsrc=size=160x120:rate=25:duration=3',
+          '-f',
+          'lavfi',
+          '-i',
+          'sine=frequency=440:duration=3',
+          '-i',
+          chapters,
+          '-map',
+          '0:v',
+          '-map',
+          '1:a',
+          '-map_metadata',
+          '2',
+          '-map_chapters',
+          '2',
+          '-metadata',
+          'location=+51.5007-000.1246/',
+          '-metadata',
+          'location-eng=+51.5007-000.1246/',
+          '-metadata',
+          'creation_time=2019-04-01T10:00:00Z',
+          '-metadata',
+          'make=FrameleafTestCamera',
+          '-metadata',
+          'model=FrameleafTestCamera Pro',
+          '-metadata:s:v',
+          'handler_name=SecretHandler',
+          '-metadata:s:a',
+          'handler_name=SecretHandler',
+          '-metadata:s:v',
+          'creation_time=2019-04-01T10:00:00Z',
+          '-c:v',
+          'libx264',
+          '-preset',
+          'ultrafast',
+          '-pix_fmt',
+          'yuv420p',
+          '-c:a',
+          'aac',
+          '-movflags',
+          'use_metadata_tags',
+          fixture,
+        ],
+        { stdio: 'pipe' },
+      );
+    });
+
+    afterAll(() => {
+      rmSync(dirPath, { recursive: true, force: true });
+    });
+
+    const ffprobe = (file: string) =>
+      JSON.parse(
+        execFileSync(
+          'ffprobe',
+          ['-v', 'error', '-print_format', 'json', '-show_format', '-show_streams', '-show_chapters', file],
+          { encoding: 'utf8' },
+        ),
+      ) as {
+        format: { tags?: Record<string, string> };
+        streams: { codec_type: string; tags?: Record<string, string> }[];
+        chapters: unknown[];
+      };
+
+    /** Tags an MP4 muxer writes by itself in bitexact mode; none of them describes the person or the place. */
+    const structural = new Set([
+      'major_brand',
+      'minor_version',
+      'compatible_brands',
+      'encoder',
+      'language',
+      'handler_name',
+      'vendor_id',
+    ]);
+
+    const expectNoMetadata = (file: string, streams: string[]) => {
+      const probe = ffprobe(file);
+      expect(probe.chapters).toEqual([]);
+      expect(probe.streams.map((stream) => stream.codec_type)).toEqual(streams);
+      const tags = [probe.format.tags ?? {}, ...probe.streams.map((stream) => stream.tags ?? {})];
+      for (const set of tags) {
+        expect(Object.keys(set).filter((key) => !structural.has(key))).toEqual([]);
+        expect(Object.values(set).join(' ')).not.toMatch(/SecretHandler|Frameleaf|2019/);
+      }
+      const bytes = readFileSync(file).toString('latin1');
+      for (const secret of secrets) {
+        expect(bytes).not.toContain(secret);
+      }
+      expect(bytes).not.toContain('2019-04-01');
+    };
+
+    it('starts from a fixture that really carries a location, dates, camera tags and chapters', () => {
+      const probe = ffprobe(fixture);
+      expect(probe.chapters).toHaveLength(2);
+      expect(probe.format.tags).toMatchObject({ location: '+51.5007-000.1246/', make: 'FrameleafTestCamera' });
+      expect(probe.format.tags?.creation_time).toMatch(/^2019-04-01/);
+      expect(readFileSync(fixture).toString('latin1')).toContain('Birthday at home');
+    });
+
+    it('cuts the preview comparison clip with its audio and none of that metadata', async () => {
+      const clip = join(dirPath, 'before.mp4');
+      await transcode(fixture, clip, ['-ss', '0.500', '-t', '1.500'], previewClipOutputOptions());
+      expectNoMetadata(clip, ['video', 'audio']);
+    });
+
+    it('cuts a cropped preview clip without metadata too', async () => {
+      const clip = join(dirPath, 'before-cropped.mp4');
+      await transcode(
+        fixture,
+        clip,
+        ['-ss', '0.000', '-t', '1.000'],
+        previewClipOutputOptions(['-vf', 'crop=80:60:0:0']),
+      );
+      expectNoMetadata(clip, ['video', 'audio']);
+    });
+
+    it('uploads the clip as its video stream alone, still without metadata', async () => {
+      const clip = join(dirPath, 'before-for-upload.mp4');
+      await transcode(fixture, clip, ['-ss', '0.500', '-t', '1.500'], previewClipOutputOptions());
+      const upload = join(dirPath, 'input.mp4');
+      await transcode(clip, upload, [], uploadClipOutputOptions());
+      expectNoMetadata(upload, ['video']);
+    });
+
+    it('cuts a chunk of the whole video with no audio and no metadata', async () => {
+      const chunk = join(dirPath, 'chunk-0-in.mp4');
+      await transcode(fixture, chunk, ['-ss', '1.000', '-t', '2.000'], chunkClipOutputOptions());
+      expectNoMetadata(chunk, ['video']);
     });
   });
 });
