@@ -93,6 +93,16 @@ describe('AssetService', () => {
       expect(assetActions.SharedLinkDownload.$if?.()).toStrictEqual(false);
     });
 
+    it('offers no Share inside a public link, even to a signed-in visitor (FL-56)', () => {
+      authManager.setUser(userAdminFactory.build({ id: 'visitor' }));
+      const asset = assetFactory.build({ ownerId });
+      expect(getAssetActions(() => '', asset).Share.$if?.()).toBe(true);
+
+      setSharedLink(sharedLinkFactory.build());
+
+      expect(getAssetActions(() => '', asset).Share.$if?.()).toBe(false);
+    });
+
     it('opens a shared album link for a signed-in visitor, whose album carries no members (FL-56)', () => {
       authManager.setUser(userAdminFactory.build({ id: 'visitor' }));
       setSharedLink(sharedLinkFactory.build({ allowDownload: false }));
