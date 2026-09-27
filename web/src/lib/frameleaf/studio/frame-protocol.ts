@@ -78,6 +78,11 @@ export type StudioFrameToHostMessage =
   | { type: 'dirty'; dirty: boolean }
   | { type: 'fatal'; error: string }
   | { type: 'playhead'; time: { num: number; den: number } }
+  /**
+   * The editor's transport (FL-96): sent when playback starts or stops and when the playhead jumps
+   * (`seek`), not for every frame played. The host drives the streamed server playback with it.
+   */
+  | { type: 'transport'; playing: boolean; time: { num: number; den: number }; seek: boolean }
   /** The editor's Export: the host opens its own export dialog (render workers, rights, Activity). */
   | { type: 'request-export'; kind: 'video' };
 

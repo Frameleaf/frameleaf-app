@@ -188,6 +188,12 @@ export interface StudioHostContext {
    * and the host chrome can both show the truth rather than an old frame passed off as current.
    */
   preview: StudioPreviewView;
+  /**
+   * The host shows the server preview in its own panel (FL-96): exact frames while paused and the
+   * streamed playback while playing. Present means the engine's own server preview panel stays out
+   * of sight and only asks for exact frames, while this is `true`, on the host's behalf.
+   */
+  serverPreviewOpen?: boolean;
   /** False when the browser reports no network; the engine must go read-only. */
   online: boolean;
   /**
@@ -350,6 +356,17 @@ export interface StudioHostServices {
    * the start of the sequence. Optional; fire and forget.
    */
   reportPlayhead?(time: { num: number; den: number }): void;
+  /**
+   * The editor's transport (FL-96): playback started or stopped, or the playhead jumped (`seek`).
+   * The host drives streamed server playback with it, so the editor's own controls play the server
+   * picture in browsers that cannot decode locally. Optional; fire and forget.
+   */
+  reportTransport?(state: { playing: boolean; time: { num: number; den: number }; seek: boolean }): void;
+  /**
+   * What this browser can preview locally (FL-96), as the editor measured it when it mounted. Without
+   * WebCodecs the host opens its server preview by itself. Optional.
+   */
+  reportLocalPreviewSupport?(support: { webCodecs: boolean; webGpu: boolean }): void;
   /**
    * The editor's own Export control. The host opens its export dialog, which queues a render-worker
    * job followed in Activity (FL-104, FL-106); the editor never renders or saves an export itself.

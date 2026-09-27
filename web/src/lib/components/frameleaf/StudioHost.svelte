@@ -87,6 +87,8 @@
     [StudioRestoredVersionUnavailable.Offline]: 'frameleaf_studio_restored_unavailable_offline',
     [StudioRestoredVersionUnavailable.HiddenContent]: 'frameleaf_studio_restored_unavailable_hidden',
   };
+  import { offStudioStreamView, type StudioStreamView } from '$lib/frameleaf/studio/preview-stream';
+  import StudioServerPreview from '$lib/components/frameleaf/StudioServerPreview.svelte';
 
   let {
     project,
@@ -119,6 +121,10 @@
      * engine as data; neither this component nor the engine ever fetches a frame itself.
      */
     preview = idleStudioPreviewView(),
+    /** Streamed playback (FL-96), shown with the exact frames in the host's server preview panel. */
+    stream = offStudioStreamView(),
+    serverPreviewOpen = $bindable(false),
+    onStreamVideoSize,
     session = null,
     saveStatus = 'saved',
     conflict = null,
@@ -195,6 +201,11 @@
      */
     unsupportedSources?: readonly StudioUnsupportedSourceDto[];
     preview?: StudioPreviewView;
+    stream?: StudioStreamView;
+    /** The server preview panel is open; the engine then asks for exact frames on its behalf. */
+    serverPreviewOpen?: boolean;
+    /** The streamed picture's size, so the route can hold the session to its bounds. */
+    onStreamVideoSize?: (width: number, height: number) => void;
     /** The project session (FL-89). When present the header offers history and review. */
     session?: StudioProjectSession | null;
     /** Persistence state from the session; drives the save indicator and the banner. */
@@ -249,6 +260,8 @@
     capabilities,
     renderEvidence,
     preview,
+    // FL-96: the host shows the server preview itself; the engine's own panel stays out of sight.
+    serverPreviewOpen,
     online,
     mode,
     workspace,
@@ -666,7 +679,18 @@
       produced it says that, with the stable code kept for diagnostics rather than shown as the
       message. There is deliberately no state here that presents an old frame as the live one.
     -->
-    {#if host.phase === 'ready' && previewNoticePhase}
+    {#if host.phase === 'ready'}
+      <StudioServerPreview
+        bind:open={serverPreviewOpen}
+        {preview}
+        {stream}
+        available={capabilities.renderWorker}
+        onVideoSize={onStreamVideoSize}
+      />
+    {/if}
+
+    <!-- With the panel open the panel says it; the notice covers the frame the engine asked for otherwise. -->
+    {#if host.phase === 'ready' && previewNoticePhase && !serverPreviewOpen}
       <div
         class="fl-studio-preview"
         data-testid="studio-preview-state"

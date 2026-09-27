@@ -257,6 +257,13 @@ export const createFrameStudioEngine = ({
       }
       switch (message.type) {
         case 'mounted': {
+          const support = (message as { support?: { webCodecs?: unknown; webGpu?: unknown } }).support;
+          if (support && typeof support === 'object') {
+            services.reportLocalPreviewSupport?.({
+              webCodecs: support.webCodecs === true,
+              webGpu: support.webGpu === true,
+            });
+          }
           settleMount?.resolve();
           break;
         }
@@ -327,6 +334,17 @@ export const createFrameStudioEngine = ({
           const { num, den } = message.time ?? {};
           if (Number.isSafeInteger(num) && Number.isSafeInteger(den) && den > 0) {
             services.reportPlayhead?.({ num, den });
+          }
+          break;
+        }
+        case 'transport': {
+          const { num, den } = message.time ?? {};
+          if (Number.isSafeInteger(num) && Number.isSafeInteger(den) && den > 0 && num >= 0) {
+            services.reportTransport?.({
+              playing: (message as { playing: unknown }).playing === true,
+              time: { num, den },
+              seek: (message as { seek: unknown }).seek === true,
+            });
           }
           break;
         }

@@ -130,6 +130,7 @@ describe('vocabulary', () => {
         MediaOperationKind.RestorationPreview,
         MediaOperationKind.StudioExport,
         MediaOperationKind.StudioPreview,
+        MediaOperationKind.StudioPreviewStream,
       ].sort(),
     );
     for (const kind of [

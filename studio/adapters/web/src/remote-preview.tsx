@@ -10,8 +10,11 @@
  * `context.preview` on the next update.
  *
  * The panel opens by itself when this browser cannot decode locally, and is one click away
- * otherwise. Frames are asked for only while paused: scrubbing and inspection need exact frames;
- * continuous playback is the WebRTC stream the render worker does not publish yet (FL-145).
+ * otherwise. Frames are asked for only while paused: scrubbing and inspection need exact frames.
+ * Continuous playback is the host's WebRTC stream (FL-96), driven by this editor's transport
+ * (`watchTransport` in `editor-frame.tsx`). A host that shows the server preview in its own panel
+ * says so with `context.serverPreviewOpen`: this component then draws nothing and only asks for
+ * the exact frames that panel shows, while it is open.
  */
 import { cadenceFromDecimal, timelineFrameTime } from '@frameleaf/host/studio-timing'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -52,7 +55,9 @@ export const frameToTime = (frame: number, fps: number): { num: number; den: num
 
 export function RemotePreview({ context, call }: { context: StudioHostContext; call: Call }) {
   const support = useMemo(localPreviewSupport, [])
-  const [open, setOpen] = useState(!support.webCodecs)
+  const [ownOpen, setOpen] = useState(!support.webCodecs)
+  const hostPanel = context.serverPreviewOpen !== undefined
+  const open = hostPanel ? context.serverPreviewOpen === true : ownOpen
   const frame = usePlaybackStore((playback) => (playback.isPlaying ? null : playback.currentFrame))
   const fps = useTimelineSettingsStore((settings) => settings.fps || 30)
   const panel = useRef<HTMLDivElement>(null)
@@ -129,6 +134,10 @@ export function RemotePreview({ context, call }: { context: StudioHostContext; c
     border: '1px solid var(--fl-viewer-border, #3a3a3c)',
     borderRadius: 14,
     boxShadow: 'var(--fl-shadow-2, 0 12px 32px rgba(0, 0, 0, 0.45))',
+  }
+
+  if (hostPanel) {
+    return null
   }
 
   if (!open) {

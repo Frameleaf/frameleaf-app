@@ -17,6 +17,7 @@ import {
   type StudioProjectHandle,
 } from '$lib/frameleaf/studio/host-contract';
 import { idleStudioPreviewView, type StudioPreviewView } from '$lib/frameleaf/studio/preview';
+import { offStudioStreamView, type StudioStreamView } from '$lib/frameleaf/studio/preview-stream';
 import { rational } from '$lib/frameleaf/studio/rational-time';
 
 /**
@@ -331,6 +332,8 @@ describe('Studio route, engine present', () => {
       'project',
       // FL-42: what qualified render workers verified, for the export sheet (no credentials).
       'renderEvidence',
+      // FL-96: whether the host shows the server preview itself; a boolean, never the stream.
+      'serverPreviewOpen',
       // FL-96: the adapter's own chrome speaks the host's language; words only.
       'strings',
       'theme',
@@ -400,6 +403,72 @@ describe('Studio route, engine present', () => {
       expect(screen.getByTestId('studio-state')).toHaveAttribute('data-phase', 'error');
     });
     expect(screen.getByText('frameleaf_studio_error_body')).toBeInTheDocument();
+  });
+});
+
+describe('Studio server preview panel (FL-96)', () => {
+  const frame = {
+    previewId: 'preview-1',
+    revision: 3,
+    time: rational(1, 1),
+    quality: 'standard' as const,
+    objectUrl: 'blob:exact',
+    framePts: null,
+    framePtsTimebase: null,
+    toneMapped: false,
+  };
+  const ready: StudioPreviewView = { ...idleStudioPreviewView(), phase: 'ready', frame };
+  const streamView = (overrides: Partial<StudioStreamView> = {}): StudioStreamView => ({
+    ...offStudioStreamView(),
+    ...overrides,
+  });
+
+  const mountedWith = async (props: Record<string, unknown>) => {
+    const engine = stubEngine();
+    render(StudioHost, { ...baseProps(), loadEngine: engine.load, ...props });
+    await waitFor(() => expect(engine.module.mount).toHaveBeenCalledTimes(1));
+    return engine;
+  };
+
+  it('offers the panel when a render worker is live, and tells the engine when it is open', async () => {
+    const engine = await mountedWith({});
+    expect(vi.mocked(engine.module.mount).mock.calls[0][1].serverPreviewOpen).toBe(false);
+
+    await fireEvent.click(screen.getByTestId('studio-server-preview-show'));
+    expect(screen.getByTestId('studio-server-preview')).toBeInTheDocument();
+    await waitFor(() => expect(engine.update).toHaveBeenCalledWith(expect.objectContaining({ serverPreviewOpen: true })));
+  });
+
+  it('shows the exact frame while paused and hides the stream picture', async () => {
+    await mountedWith({ serverPreviewOpen: true, preview: ready, stream: streamView({ phase: 'paused' }) });
+    expect(screen.getByTestId('studio-exact-frame')).toHaveAttribute('src', 'blob:exact');
+    expect(screen.getByTestId('studio-stream-video')).toHaveAttribute('data-live', 'false');
+    expect(screen.queryByTestId('studio-server-preview-status')).not.toBeInTheDocument();
+  });
+
+  it('shows the stream, not the exact frame, once the current seek is live', async () => {
+    await mountedWith({ serverPreviewOpen: true, preview: ready, stream: streamView({ phase: 'playing', live: true }) });
+    expect(screen.getByTestId('studio-stream-video')).toHaveAttribute('data-live', 'true');
+    expect(screen.queryByTestId('studio-exact-frame')).not.toBeInTheDocument();
+  });
+
+  it('says why playback stopped when the stream is revoked, and keeps no picture of it', async () => {
+    await mountedWith({
+      serverPreviewOpen: true,
+      stream: streamView({ phase: 'unavailable', reason: 'revoked' }),
+    });
+    expect(screen.getByTestId('studio-server-preview-status')).toHaveTextContent('frameleaf_studio_stream_revoked');
+    expect((screen.getByTestId('studio-stream-video') as HTMLVideoElement).srcObject ?? null).toBeNull();
+  });
+
+  it('falls back to exact frames with a plain reason when this browser cannot play from the server', async () => {
+    await mountedWith({
+      serverPreviewOpen: true,
+      preview: ready,
+      stream: streamView({ phase: 'unavailable', reason: 'unsupported' }),
+    });
+    expect(screen.getByTestId('studio-exact-frame')).toBeInTheDocument();
+    expect(screen.getByTestId('studio-server-preview-status')).toHaveTextContent('frameleaf_studio_stream_unsupported');
   });
 });
 

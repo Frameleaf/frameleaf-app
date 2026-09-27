@@ -43,6 +43,8 @@ const services = (): StudioHostServices => ({
   setDirty: vi.fn(),
   reportFatal: vi.fn(),
   reportPlayhead: vi.fn(),
+  reportTransport: vi.fn(),
+  reportLocalPreviewSupport: vi.fn(),
   requestExport: vi.fn(),
 });
 
@@ -189,6 +191,9 @@ describe('studio editor frame (FL-88)', () => {
     port.postMessage({ type: 'navigate', target: { kind: 'library' } });
     port.postMessage({ type: 'playhead', time: { num: 5, den: 2 } });
     port.postMessage({ type: 'playhead', time: { num: 1.5, den: 2 } });
+    port.postMessage({ type: 'transport', playing: true, time: { num: 3, den: 1 }, seek: false });
+    port.postMessage({ type: 'transport', playing: 'yes', time: { num: 4, den: 1 }, seek: 1 });
+    port.postMessage({ type: 'transport', playing: true, time: { num: -1, den: 1 }, seek: false });
     await tick();
 
     // The revision and the host graph version the editor's graph came from travel with the draft.
@@ -229,6 +234,12 @@ describe('studio editor frame (FL-88)', () => {
     // Only an exact rational crosses into the host.
     expect(host.reportPlayhead).toHaveBeenCalledTimes(1);
     expect(host.reportPlayhead).toHaveBeenCalledWith({ num: 5, den: 2 });
+    // FL-96: the editor's transport drives the streamed playback; only booleans and exact times cross.
+    expect(host.reportTransport).toHaveBeenCalledTimes(2);
+    expect(host.reportTransport).toHaveBeenNthCalledWith(1, { playing: true, time: { num: 3, den: 1 }, seek: false });
+    expect(host.reportTransport).toHaveBeenNthCalledWith(2, { playing: false, time: { num: 4, den: 1 }, seek: false });
+    // What the editor measured at mount reaches the host, so it can open the server preview itself.
+    expect(host.reportLocalPreviewSupport).toHaveBeenCalledWith({ webCodecs: true, webGpu: false });
     await instance.dispose();
   });
 

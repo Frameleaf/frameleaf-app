@@ -541,6 +541,36 @@ function watchPlayhead(state: Session) {
   )
 }
 
+/**
+ * The transport, for the host's streamed server playback (FL-96): playback starting and stopping,
+ * and the playhead jumping, as exact rational instants. Not every frame played: while playing, the
+ * playhead advancing by about the frame rate is playback, anything else is a seek. While paused
+ * every move is a seek.
+ */
+function watchTransport(state: Session) {
+  let playing = false
+  let lastFrame = -1
+  let lastAt = 0
+  state.unsubscribe.push(
+    usePlaybackStore.subscribe((playback) => {
+      const fps = useTimelineSettingsStore.getState().fps || 30
+      const now = performance.now()
+      const frame = playback.currentFrame
+      if (playback.isPlaying !== playing) {
+        playing = playback.isPlaying
+        post({ type: 'transport', playing, time: frameToTime(frame, fps), seek: false })
+      } else if (frame !== lastFrame && lastFrame >= 0) {
+        const expected = playing ? lastFrame + ((now - lastAt) / 1000) * fps : lastFrame
+        if (!playing || Math.abs(frame - expected) > Math.max(3, fps / 2)) {
+          post({ type: 'transport', playing, time: frameToTime(frame, fps), seek: true })
+        }
+      }
+      lastFrame = frame
+      lastAt = now
+    }),
+  )
+}
+
 async function mount(context: StudioHostContext): Promise<void> {
   applyTheme(context)
   await i18nReady
@@ -605,6 +635,7 @@ async function mount(context: StudioHostContext): Promise<void> {
   watchImports(state)
   watchDirty(state)
   watchPlayhead(state)
+  watchTransport(state)
   startAtHandoffPlayhead(state, context.handoffPlayhead ?? null)
 }
 
