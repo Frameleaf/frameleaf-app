@@ -685,6 +685,27 @@ describe('Studio route, capabilities that arrive after the probe', () => {
     expect(engine.dispose).toHaveBeenCalledTimes(1);
   });
 
+  it('hands the engine a context change made while it was still starting', async () => {
+    let finishMount: (instance: StudioEngineInstance) => void = () => {};
+    const instance: StudioEngineInstance = { update: vi.fn(), dispose: vi.fn() };
+    const module: StudioEngineModule = {
+      engineRevision: pinnedFreecutRevision,
+      features: [],
+      mount: vi.fn(() => new Promise<StudioEngineInstance>((resolve) => (finishMount = resolve))),
+    };
+    const load = async () => ({ status: 'available' as const, module });
+    const { rerender } = render(StudioHost, { ...baseProps(), loadEngine: load });
+    await waitFor(() => expect(module.mount).toHaveBeenCalledTimes(1));
+
+    // The engine reports it has no WebCodecs while mounting, so the route opens the server preview.
+    await rerender({ ...baseProps(), serverPreviewOpen: true, loadEngine: load });
+    finishMount(instance);
+
+    await waitFor(() =>
+      expect(instance.update).toHaveBeenLastCalledWith(expect.objectContaining({ serverPreviewOpen: true })),
+    );
+  });
+
   it('abandons a mount still starting when the workers go missing', async () => {
     let finishMount: (instance: StudioEngineInstance) => void = () => {};
     const instance: StudioEngineInstance = { update: vi.fn(), dispose: vi.fn() };

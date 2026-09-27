@@ -35,22 +35,9 @@ const panel = (page: Page) => page.getByTestId('studio-server-preview');
 const video = (page: Page) => page.getByTestId('studio-stream-video');
 const status = (page: Page) => page.getByTestId('studio-server-preview-status');
 
-/**
- * Load Studio. The route judges capabilities before its probe answers and does not remount when they
- * arrive (a known host issue outside FL-96), so the editor is started with Try again, as a person
- * would.
- */
-const loadStudio = async (page: Page) => {
-  await page.goto(studioPage);
-  await page.waitForResponse('**/api/ml-destinations/capabilities');
-  const retry = page.getByRole('button', { name: 'Try again' });
-  if (await retry.isVisible()) {
-    await retry.click();
-  }
-};
-
+/** Load Studio. The editor mounts on its own once the capability probe reports a render worker. */
 const open = async (page: Page, mock: StudioStreamMock) => {
-  await loadStudio(page);
+  await page.goto(studioPage);
   if (mock.webCodecs) {
     await page.getByTestId('studio-server-preview-show').click();
   }
@@ -177,7 +164,7 @@ test.describe('Studio streamed playback', () => {
     });
     mock = defaults({ webCodecs: false });
     await setupStudioStreamMocks(context, page, mock);
-    await loadStudio(page);
+    await page.goto(studioPage);
     await expect(panel(page)).toBeVisible();
     const editor = studioEditor(page);
 
