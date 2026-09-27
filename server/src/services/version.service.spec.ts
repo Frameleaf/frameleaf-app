@@ -149,7 +149,7 @@ describe(VersionService.name, () => {
       it('asks again once a day has passed on the daily schedule', async () => {
         given(checkedHoursAgo(24), withFrequency(VersionCheckFrequency.Daily));
         await expect(sut.handleVersionCheck()).resolves.toEqual(JobStatus.Success);
-        expect(mocks.serverInfo.getLatestRelease).toHaveBeenCalledWith(ReleaseChannel.Stable);
+        expect(mocks.serverInfo.getLatestRelease).toHaveBeenCalledWith(ReleaseChannel.Stable, expect.any(String));
       });
 
       it('does not drift an hour a day: the tick just short of 24 hours after the last check asks', async () => {
@@ -211,7 +211,7 @@ describe(VersionService.name, () => {
     });
 
     it('keeps the staged-rollout seed across checks (FL-142)', async () => {
-      given({ checkedAt: DateTime.utc().minus({ hours: 2 }).toISO(), releaseVersion: 'v3.0.0', rolloutSeed: 'seed-1' });
+      given({ checkedAt: DateTime.utc().minus({ days: 2 }).toISO(), releaseVersion: 'v3.0.0', rolloutSeed: 'seed-1' });
       mocks.serverInfo.getLatestRelease.mockResolvedValue(mockVersionResponse('v3.0.0'));
       await expect(sut.handleVersionCheck()).resolves.toEqual(JobStatus.Success);
       expect(mocks.serverInfo.getLatestRelease).toHaveBeenCalledWith(ReleaseChannel.Stable, 'seed-1');
