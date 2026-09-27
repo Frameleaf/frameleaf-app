@@ -1,2 +1,4 @@
 build/
 .docusaurus/
+# Byte-pinned by scripts/frameleaf-preservation-ledger.mjs (acceptedNative); do not reformat.
+docs/developer/frameleaf-plan/native-parity.json

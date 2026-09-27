@@ -48,11 +48,11 @@ All the services are packaged to run with a single Docker Compose command.
 mise dev
 ```
 
-5. Access the dev instance in your browser at http://localhost:3000, or connect via the mobile app.
+5. Access the dev instance in your browser at http://localhost:3000.
 
 All the services will be started with hot-reloading enabled for a quick feedback loop.
 
-You can access the web from `http://your-machine-ip:3000` or `http://localhost:3000` and access the server from the mobile app at `http://your-machine-ip:3000`
+You can access the web from `http://your-machine-ip:3000` or `http://localhost:3000` and point an API client at `http://your-machine-ip:3000`
 
 **Notes:**
 
@@ -91,61 +91,9 @@ To see local changes to `@immich/ui` in Frameleaf, do the following:
 6. Start up the stack via `mise dev`
 7. After making changes in `@immich/ui`, rebuild it (`pnpm run build`)
 
-### Mobile app
+### Mobile apps
 
-#### Setup
-
-1. Run `mise //mobile:install` to install Flutter dependencies.
-2. Run `mise //mobile:translation` to generate the translation file.
-3. Run `mise //mobile:checkout` to update the dependencies and codegen artifacts.
-4. Change to the `mobile/` directory and run `flutter run` to start the app.
-
-:::important Workflow
-Always run `mise //mobile:checkout` after switching branches.
-:::
-
-##### iOS Code Signing
-
-The Apple Team ID and bundle IDs are specified in `mobile/ios/Signing.xcconfig`. For local development, we provide an override mechanism.
-
-Create `mobile/ios/Signing.local.xcconfig` and populate it with the necessary values needed to build and sign the app yourself. This local override file is gitignored.
-
-```
-IMMICH_TEAM_ID = ABCDE12345
-IMMICH_BUNDLE_ID_PROD = com.customuniqueid.immich
-IMMICH_BUNDLE_ID_DEV = com.customuniqueid.immichdev
-IMMICH_GROUP_ID = group.com.customuniqueid.immich
-```
-
-The environment values are used across the app's targets and schemes to prevent redundant edits by contributors.
-
-#### Translation
-
-To add a new translation text, enter the key-value pair in the `i18n/en.json` in the root of the immich project. Then run:
-
-```bash
-mise //mobile:translation
-```
-
-The mobile app asks you what backend to connect to. Run the server yourself per the instructions above, or point it at an existing server you control.
-
-#### UI components and widget previews
-
-Shared design-system widgets (buttons, inputs, forms) live in the
-[`immich_ui` package](https://github.com/Frameleaf/frameleaf-app/tree/fork/main/mobile/packages/ui/)
-under `mobile/packages/ui/`. Components are defined in `lib/src/components/`
-and have matching previews in `lib/src/previews/`.
-
-To inspect a component in isolation with a light/dark toggle and hot reload,
-launch [Flutter's Widget Previewer](https://docs.flutter.dev/tools/widget-previewer):
-
-```bash
-cd mobile/packages/ui
-flutter widget-preview start
-```
-
-In VS Code or Android Studio with the Flutter plugin, the previewer
-auto-starts when you open the **Flutter Widget Preview** tab in the sidebar.
+Frameleaf is building its own native iOS and Android apps. The inherited Flutter app has been removed from this repository, so there is no mobile app to build here yet. The server API is unchanged, so existing mobile clients can still connect to a development server at `http://your-machine-ip:3000`.
 
 ## IDE setup
 
@@ -153,15 +101,9 @@ auto-starts when you open the **Flutter Widget Preview** tab in the sidebar.
 
 Setting these in the IDE give a better developer experience, auto-formatting code on save, and providing instant feedback on lint issues.
 
-### Dart Code Metrics
-
-The mobile app uses DCM (Dart Code Metrics) for linting and metrics calculation. Please refer to the [Getting Started](https://dcm.dev/docs/) page for more information on setting up DCM
-
-Note: Activating the license is not required.
-
 ### VSCode
 
-Install `Flutter`, `DCM`, `Prettier`, `ESLint` and `Svelte` extensions. These extensions are listed in the `extensions.json` file under `.vscode/` and should appear as workspace recommendations.
+Install the `Prettier`, `ESLint` and `Svelte` extensions. These extensions are listed in the `extensions.json` file under `.vscode/` and should appear as workspace recommendations.
 
 Here are the settings we use, they should be active as workspace settings (`settings.json`):
 
@@ -171,15 +113,6 @@ Here are the settings we use, they should be active as workspace settings (`sett
     "editor.defaultFormatter": "esbenp.prettier-vscode",
     "editor.formatOnSave": true,
     "editor.tabSize": 2
-  },
-  "[dart]": {
-    "editor.defaultFormatter": "Dart-Code.dart-code",
-    "editor.formatOnSave": true,
-    "editor.selectionHighlight": false,
-    "editor.suggest.snippetsPreventQuickSuggestions": false,
-    "editor.suggestSelection": "first",
-    "editor.tabCompletion": "onlySnippets",
-    "editor.wordBasedSuggestions": "off"
   },
   "[javascript]": {
     "editor.codeActionsOnSave": {
@@ -223,7 +156,6 @@ Here are the settings we use, they should be active as workspace settings (`sett
   "eslint.validate": ["javascript", "svelte"],
   "explorer.fileNesting.enabled": true,
   "explorer.fileNesting.patterns": {
-    "*.dart": "${capture}.g.dart,${capture}.gr.dart,${capture}.drift.dart",
     "*.ts": "${capture}.spec.ts,${capture}.mock.ts"
   },
   "svelte.enable-ts-plugin": true,

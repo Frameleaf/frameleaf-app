@@ -275,7 +275,6 @@ mise //web:checklist
 # API generation
 mise //:open-api             # Generate OpenAPI specs
 mise //:open-api-typescript  # Generate TypeScript SDK
-mise //:open-api-dart        # Generate Dart SDK
 
 # Database
 mise //server:sql            # Sync database schema
@@ -400,10 +399,7 @@ While the Dev Container focuses on server and web development, you can connect m
    - Server URL: `http://YOUR_IP:2283/api`
    - Ensure firewall allows port 2283
 
-3. **For full mobile development**, see the [mobile development guide](/developer/setup) which covers:
-   - Flutter setup
-   - Running on simulators/devices
-   - Mobile-specific debugging
+3. **Native app development**: Frameleaf is building its own native iOS and Android apps. The inherited Flutter app has been removed from this repository, so there is no mobile app to build in the Dev Container.
 
 ## Advanced Configuration
 

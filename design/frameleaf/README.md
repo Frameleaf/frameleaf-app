@@ -13,7 +13,7 @@ This is the reusable design handoff for implementation agents: the selected thre
 
 ## Use the template
 
-Read the interaction requirements and relevant reference screen, then inspect the matching component and styles in `template/src`. Preserve the complete source feature behavior when adapting the layout to production Svelte or native Flutter. Keep real permissions, owner scoping, API validation, persistence and recovery in their existing service boundaries.
+Read the interaction requirements and relevant reference screen, then inspect the matching component and styles in `template/src`. Preserve the complete source feature behavior when adapting the layout to production Svelte or the Frameleaf native apps. Keep real permissions, owner scoping, API validation, persistence and recovery in their existing service boundaries.
 
 Run the template independently using the instructions in [template/README.md](template/README.md). It includes local copies of its four source dependencies, so it does not need the uncommitted application changes, the main workspace's installed packages, Sites credentials or a running Frameleaf server. Serve it on a separate port from another active prototype to avoid replacing the user's preview.
 
@@ -25,11 +25,11 @@ Use the supplied `brand-kit/` SVGs for production branding. The generated `mark.
 
 The design is dark-first with charcoal surfaces, fine separators, compact SF Pro typography, continuous (squircle) corners, restrained frosted materials, spring motion and photography as its dominant content. Light mode receives equal care. Green, teal and blue convey identity, selection, focus or status. Preserve viewport fill, responsive panes, focus visibility and keyboard/touch alternatives.
 
-Sample media, names, quantities, hardware and job states are fictional. Search resolves curated sample data; the Studio/restoration preview does not render edited outputs or run AI. Account/PIN/sharing controls do not provide production authorization. A responsive tablet web page is not native Flutter Studio. The template is not complete feature parity, a migration baseline for the rest of the application, or release qualification.
+Sample media, names, quantities, hardware and job states are fictional. Search resolves curated sample data; the Studio/restoration preview does not render edited outputs or run AI. Account/PIN/sharing controls do not provide production authorization. A responsive tablet web page is not native tablet Studio. The template is not complete feature parity, a migration baseline for the rest of the application, or release qualification.
 
 ## September 22, 2026 template revision
 
-The template was revised in place to carry the full feature set the parity audit found missing and the polish directions from the product review: a media-aware full-screen editor with a develop module, a working Studio timeline, the complete viewer action set with in-place information editing, justified timeline and selection bar, an Albums page that groups albums into collections, shared links and a public viewer, people management, map, places, tags, folders and memories, authentication and system screens, upload and download panels, a command palette, and a Maintenance settings area. `template/README.md` lists the new source map and the revised interaction requirements record the decisions. The React source remains design evidence for the Svelte and Flutter ports, and the same production boundaries apply.
+The template was revised in place to carry the full feature set the parity audit found missing and the polish directions from the product review: a media-aware full-screen editor with a develop module, a working Studio timeline, the complete viewer action set with in-place information editing, justified timeline and selection bar, an Albums page that groups albums into collections, shared links and a public viewer, people management, map, places, tags, folders and memories, authentication and system screens, upload and download panels, a command palette, and a Maintenance settings area. `template/README.md` lists the new source map and the revised interaction requirements record the decisions. The React source remains design evidence for the Svelte port and the Frameleaf native apps, and the same production boundaries apply.
 
 ## September 24, 2026 refinements
 

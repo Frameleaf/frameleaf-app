@@ -1,11 +1,11 @@
 {
   "approvedReferences": [
     {
-      "bytes": 6159,
+      "bytes": 6186,
       "id": "reference:design/frameleaf/README.md",
       "path": "design/frameleaf/README.md",
       "role": "approved-design-handoff",
-      "sha256": "a315630a75974a8e28e7c401482f73b1bbef46accbb42457030020d1c2024a49",
+      "sha256": "49cd710a99c66846588645b13a38e73be5f4a1ac617209ac8095fa7878326a5a",
       "status": "reference-not-production-qualification"
     },
     {
@@ -95,7 +95,7 @@
     "suppliedVectors": 7
   },
   "digests": {
-    "approvedReferenceLedgerSha256": "ec604e7f112969b1b44bd29689acd1c4c90519458af47ae99b84eee46cf0eee5",
+    "approvedReferenceLedgerSha256": "81c3469f3fb11ebade049d75222326f9f64230c722ed89e32694fac88f9d41ad",
     "suppliedSourceLedgerSha256": "a317886619c3d450f81d91fb065ed698d3715e1bc537b95d2751becf59d6f488"
   },
   "expectedDuplicateContent": [
