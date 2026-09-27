@@ -10,7 +10,7 @@ import { setupBaseMockApiRoutes } from 'src/ui/mock-network/base-network.js';
  * history entry.
  */
 const KEY = 'FL-IC8Q-BT2Q-8EL6';
-const CODE = 'flc_ABCDEFGHJKMNPQRSTVWXYZ2345';
+const CODE = 'flc_jf23qnbc4wvmpnuogenclb2hyo';
 
 const products = (storeUrl: string | null) => ({
   currency: 'USD',
@@ -172,6 +172,35 @@ test.describe('Support Frameleaf', () => {
       }
     });
   }
+
+  test('never sends a link code that is not shaped like one, and asks for the key (CLD-004)', async ({
+    context,
+    page,
+  }) => {
+    await setupBaseMockApiRoutes(context, faker.string.uuid());
+    await serveLinkLikeTheServer(context);
+    const seen = watch(page);
+    const invalid = CODE.toUpperCase();
+    await context.route('**/api/license/products', (route) =>
+      route.fulfill({ json: products('https://frameleaf.cloud.test/store') }),
+    );
+
+    await page.goto(`/link?target=frameleaf_license&linkCode=${invalid}`);
+    await expect(page).toHaveURL(/\/buy$/);
+    await expect(
+      page.getByText(/This link from your Frameleaf account isn’t valid\. Paste your key below/),
+    ).toBeVisible();
+    expect(seen.requests.some(({ url }) => url.includes('/api/license/link-code'))).toBe(false);
+    const sent = seen.requests.filter(({ navigation }) => !navigation);
+    for (const { url, referer, body } of sent) {
+      expect(url).not.toContain(invalid);
+      expect(referer).not.toContain(invalid);
+      expect(body ?? '').not.toContain(invalid);
+    }
+    for (const entry of await historyEntries(page)) {
+      expect(entry).not.toContain(invalid);
+    }
+  });
 
   test('activates a pasted key through the request body only', async ({ context, page }) => {
     await setupBaseMockApiRoutes(context, faker.string.uuid());

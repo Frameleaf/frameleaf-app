@@ -3263,6 +3263,7 @@
   "frameleaf_buy_key_term": "Key",
   "frameleaf_buy_licensed_discount": "This server is licensed, so plan prices are {pct} lower. AI credit is priced the same for everyone.",
   "frameleaf_buy_link_activating": "Activating the licence from your Frameleaf account…",
+  "frameleaf_buy_link_code_invalid": "This link from your Frameleaf account isn’t valid. Paste your key below to activate it, or open the link again from My licences.",
   "frameleaf_buy_link_failed": "The licence from your Frameleaf account could not be activated. Paste the key instead.",
   "frameleaf_buy_list_price": "Regular price {price}",
   "frameleaf_buy_one_time": "one-time",

@@ -60825,8 +60825,8 @@
       "LicenseLinkCodeDto": {
         "properties": {
           "code": {
-            "description": "A one-time link code from the Frameleaf account site, flc_ and 26 symbols",
-            "pattern": "^flc_[A-Za-z0-9]{26}$",
+            "description": "A one-time link code from the Frameleaf account site: flc_ and 26 lower-case base32 symbols",
+            "pattern": "^flc_[a-z2-7]{26}$",
             "type": "string"
           }
         },

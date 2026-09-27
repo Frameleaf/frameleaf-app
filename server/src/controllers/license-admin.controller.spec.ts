@@ -60,13 +60,16 @@ describe(LicenseController.name, () => {
   });
 
   it('redeems a link code taken only from the body, never a key or a query string (CLD-004)', async () => {
-    const code = 'flc_ABCDEFGHJKMNPQRSTVWXYZ2345';
+    const code = 'flc_jf23qnbc4wvmpnuogenclb2hyo';
     service.redeemLinkCode.mockResolvedValue({ kind: 'individual', keyHint: '8EL6' });
 
     const query = await request(ctx.getHttpServer()).post(`/license/link-code?code=${code}`).send({});
     expect(query.status).toBe(400);
-    const key = await request(ctx.getHttpServer()).post('/license/link-code').send({ code: 'FL-IC8Q-BT2Q-8EL6' });
-    expect(key.status).toBe(400);
+    for (const invalid of ['FL-IC8Q-BT2Q-8EL6', 'flc_JF23QNBC4WVMPNUOGENCLB2HYO', `${code}x`]) {
+      const refused = await request(ctx.getHttpServer()).post('/license/link-code').send({ code: invalid });
+      expect(refused.status).toBe(400);
+      expect(JSON.stringify(refused.body)).toContain('Paste the key');
+    }
     expect(service.redeemLinkCode).not.toHaveBeenCalled();
 
     const { status, body } = await request(ctx.getHttpServer()).post('/license/link-code').send({ code });
