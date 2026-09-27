@@ -501,28 +501,48 @@ async function main(env = process.env) {
     database,
     "The release Compose file names no Frameleaf database image",
   );
-  try {
-    run("docker", ["pull", "--quiet", database]);
-    images.database = { source: database };
-  } catch {
-    console.log(
-      `::warning::${database} could not be pulled; building it from docker/postgres for the deployment test.`,
+  // Integration Image: the database archive built on this runner, so the digest it later pushes is the
+  // one this test ran. Unset everywhere else: the release database image is pulled, or built below.
+  if (env.DATABASE_ARCHIVE) {
+    const databaseArchive = await loadArchive(
+      env.DATABASE_ARCHIVE,
+      "database",
+      workDir,
     );
-    run(
-      "docker",
-      [
-        "build",
-        "--quiet",
-        "--tag",
-        database,
-        path.join(root, "docker/postgres"),
-      ],
-      {
-        stdio: ["ignore", "pipe", "inherit"],
-      },
-    );
-    images.database = { source: "built from docker/postgres" };
-  }
+    run("docker", ["tag", databaseArchive, database]);
+    images.database = {
+      source: `archive ${path.basename(env.DATABASE_ARCHIVE)}`,
+      id: run("docker", [
+        "image",
+        "inspect",
+        "--format",
+        "{{.Id}}",
+        databaseArchive,
+      ]).trim(),
+    };
+  } else
+    try {
+      run("docker", ["pull", "--quiet", database]);
+      images.database = { source: database };
+    } catch {
+      console.log(
+        `::warning::${database} could not be pulled; building it from docker/postgres for the deployment test.`,
+      );
+      run(
+        "docker",
+        [
+          "build",
+          "--quiet",
+          "--tag",
+          database,
+          path.join(root, "docker/postgres"),
+        ],
+        {
+          stdio: ["ignore", "pipe", "inherit"],
+        },
+      );
+      images.database = { source: "built from docker/postgres" };
+    }
 
   const composeArgs = [
     "compose",
