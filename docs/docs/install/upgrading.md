@@ -31,13 +31,41 @@ docker image prune
 - **Model downloads.** Smart search, face recognition and text recognition (OCR) models now download from the Frameleaf model mirror (`https://models.frameleaf.cloud`, `frameleaf/<model>`). If you already set `HF_ENDPOINT` to a mirror of your own, it is still used; `MACHINE_LEARNING_MODEL_SOURCE_URL` takes precedence over both. The order is `MACHINE_LEARNING_MODEL_SOURCE_URL`, then `HF_ENDPOINT`, then the Frameleaf mirror, and the machine learning log names the source at startup. A mirror must serve the models under the `frameleaf` organisation. See [environment variables](/install/environment-variables#machine-learning).
 - **After a certified handoff.** A database after the cutover does not receive new Frameleaf database changes. Frameleaf keeps working without them: workflows run as before, but a run interrupted by a worker restart starts again from its first step, and moving files is slower.
 
+## Verifying the images
+
+Every image of a Frameleaf release is signed. To check an image before you run it, install [cosign](https://docs.sigstore.dev/cosign/system_config/installation/), download Frameleaf's public key, [`cosign.pub`](https://github.com/Frameleaf/frameleaf-app/blob/fork/main/cosign.pub), and verify the image by the digest in the release's `release-manifest.json`, or by its tag:
+
+```bash title="Verify a Frameleaf image"
+cosign verify --key cosign.pub ghcr.io/frameleaf/frameleaf-server:<release tag>
+cosign verify-attestation --key cosign.pub --type https://frameleaf.app/attestations/release-manifest/v2 ghcr.io/frameleaf/frameleaf-server:<release tag>
+```
+
+The first command checks the image's signature; the second checks the attached release manifest, which names the source commit and the build and deployment runs that qualified it. Releases published before signing began carry no signature.
+
+## Staged releases and withdrawn releases
+
+A new release can be offered to servers in stages: the update notice in About reaches a growing share of servers over a few days, so one server may see it before another. Each server's place in the order is a random value it keeps to itself; nothing identifying is sent. You can always upgrade as soon as a release is published.
+
+If a serious problem is found, the release is **withdrawn**: servers stop offering it, its release notes start with `withdrawn:` and the reason, and the `release` and `latest` image tags point at the previous release again.
+
+### Going back to the previous release
+
+Frameleaf does not support running an older version on a database a newer version has upgraded. To go back after a withdrawn release:
+
+1. Stop Frameleaf: `docker compose down`.
+2. Restore the database backup taken before the upgrade (see [Backup and restore](/administration/backup-and-restore)). Photos and videos in the library are not changed by an upgrade.
+3. Set `IMMICH_VERSION` in `.env` to the release you ran before (for example `frameleaf-v3.2.0-15`), or use that release's installation files.
+4. Start Frameleaf: `docker compose pull && docker compose up -d`.
+
+Skip step 2 only when the withdrawal notice says the release did not change the database. Files uploaded between the upgrade and the restore stay in the library folder but are not in the restored database; upload them again.
+
 ## Versioning Policy
 
 Frameleaf follows [semantic versioning][semver], which tags releases in the format `<major>.<minor>.<patch>`.
 We intend for breaking changes, including those to the API or deployment, to be limited to major version releases.
 You can configure your Docker image to point to the current major version by using a metatag, such as `:v3`. These metatags do not follow release candidates.
 
-The mobile app is typically compatible with the current and prior major version. However, the server is only compatible with the matching major version.
+Frameleaf's native iOS and Android apps are built and released from their own repositories, not from the server's releases. The mobile app is typically compatible with the current and prior major version. However, the server is only compatible with the matching major version.
 Thus, we recommend upgrading all mobile clients before upgrading the server to ensure compatibility.
 
 We do not backport patches to earlier versions. We encourage all users to run the most recent stable release of Frameleaf.

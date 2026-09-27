@@ -10,6 +10,8 @@ This bounded FL-25 slice restores the native/release preservation contract, not 
 
 On 2026-09-27 the owner removed the inherited Flutter app (`mobile/`), its Dart client generator and the F-Droid `fastlane/` link from the repository: Frameleaf is building its own native iOS and Android apps. Flutter file names, paths, commands and toolchain pins below describe the removed app. They remain only as evidence of the features the native apps must preserve; do not rebuild or regenerate them. The parity inventory and the dirty-only evidence now live in [`native-parity.json`](native-parity.json) and [`native-preserved-dirty-evidence.json`](native-preserved-dirty-evidence.json) with unchanged bytes. The server API is unchanged, so installed mobile clients keep working.
 
+The native apps live in their own private repositories, which hold their signing keys as GitHub secrets there and build, sign and publish the app releases. This repository ships the server and its images only: its releases, **Deploy production** and its `production` environment sign container images, never a mobile app. The native identity, signing and store rows below apply in the app repositories (owner decision, 2026-09-27).
+
 :::
 
 ## Verified starting point
@@ -128,7 +130,7 @@ The aggregate `mise run open-api` already builds/synchronizes the server and the
 
 `packages/sdk/src/fetch-client.ts` and the OpenAPI specification are tracked. Keep compatibility adjustments in source schemas; never hand-edit the generated client. Test top-level/nested nulls, arrays, expressions, unknown edit actions, scalar enums, defaults and binary upload requests through real generated clients. The Dart client generator was removed with the Flutter app; how the native apps consume the API is decided with them.
 
-`REL-203` creates owner-controlled signing and publishing with exact-SHA artifacts, provenance/SBOM/license manifests, schema/spec hashes, qualified media results and rollback instructions. Separate untrusted validation from protected signing environments. Rehearse release channels without publishing, then obtain the final owner-authorized distribution action. Library releases may retain Studio disabled; they cannot be described as the complete Studio release. Remove old UI and preview flags only after their replacement evidence passes.
+`REL-203` creates owner-controlled signing and publishing (for the server images: **Deploy production** with the deployment test, cosign signing, staged rollout and withdrawal, see [Frameleaf development and delivery](../frameleaf-development.md#build-and-release-flow); for the native apps: their own repositories) with exact-SHA artifacts, provenance/SBOM/license manifests, schema/spec hashes, qualified media results and rollback instructions. Separate untrusted validation from protected signing environments. Rehearse release channels without publishing, then obtain the final owner-authorized distribution action. Library releases may retain Studio disabled; they cannot be described as the complete Studio release. Remove old UI and preview flags only after their replacement evidence passes.
 
 ## Qualification contract
 

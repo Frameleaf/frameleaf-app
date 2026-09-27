@@ -4720,7 +4720,7 @@
         ".github/workflows/fork-integration.yml",
         ".github/workflows/fork-roundtrip.yml",
         ".github/workflows/check-openapi.yml",
-        ".github/workflows/fork-release.yml",
+        ".github/workflows/deploy-production.yml",
         ".github/workflows/sdk.yml",
         ".github/workflows/docker.yml",
         ".github/workflows/docs-deploy.yml",
@@ -4796,7 +4796,7 @@
       "id": "REL-203",
       "objective": "Create Frameleaf release jobs for containers, native apps and approved SDK/docs artifacts using owner credentials and qualification evidence.",
       "paths": [
-        ".github/workflows/fork-release.yml",
+        ".github/workflows/deploy-production.yml",
         ".github/workflows/sdk.yml",
         "mobile/ios/fastlane",
         "mobile/android/fastlane",

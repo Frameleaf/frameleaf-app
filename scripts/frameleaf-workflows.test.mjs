@@ -24,7 +24,7 @@ const workflow = (name) =>
 const excluded = new Set([
   "docker.yml",
   "local-multi-runner-build.yml",
-  "fork-release.yml",
+  "deploy-production.yml",
   "fork-roundtrip.yml",
   "fork-integration.yml",
   "nsfw-unraid-docker.yml",
@@ -210,12 +210,7 @@ test("owned workflows have no upstream service secrets, write-trigger PR executi
         if (step.uses?.startsWith("actions/checkout@"))
           assert.equal(step.with["persist-credentials"], false);
       }
-      // integration-image.yml's build jobs push by digest; their own contract test below pins them.
-      if (
-        id !== "publish" &&
-        id !== "publish-results" &&
-        !(file === "integration-image.yml" && id === "build")
-      )
+      if (id !== "publish" && id !== "publish-results")
         assert.ok(
           Object.values(j.permissions ?? {}).every((value) => value === "read"),
           file,
@@ -492,11 +487,21 @@ test("integration image is a guarded manual pre-release that never writes releas
   assert.equal(w.on.workflow_dispatch, null);
   assert.deepEqual(w.permissions, {});
   assert.equal(w.env.IMAGE, "ghcr.io/frameleaf/frameleaf-server");
-  assert.deepEqual(Object.keys(w.jobs), ["guard", "build", "publish"]);
+  assert.deepEqual(Object.keys(w.jobs), [
+    "guard",
+    "build",
+    "deploy-test",
+    "publish",
+  ]);
   assert.deepEqual(w.jobs.guard.permissions, {});
-  for (const id of ["build", "publish"]) {
+  // FL-142: nothing is pushed before the deployment test; only publish can write packages.
+  for (const [id, packages] of [
+    ["build", "read"],
+    ["deploy-test", "read"],
+    ["publish", "write"],
+  ]) {
     const j = w.jobs[id];
-    assert.deepEqual(j.permissions, { contents: "read", packages: "write" });
+    assert.deepEqual(j.permissions, { contents: "read", packages });
     const dispatch = (repository, ref, event = "workflow_dispatch") =>
       admission(j.if, repository, "", event, {
         github: { repository, event_name: event, ref },
@@ -513,7 +518,16 @@ test("integration image is a guarded manual pre-release that never writes releas
       assert.equal(dispatch(repository, ref, event), false, `${id} ${ref}`);
   }
   assert.deepEqual(w.jobs.build.needs, "guard");
-  assert.deepEqual(w.jobs.publish.needs, "build");
+  assert.deepEqual(w.jobs["deploy-test"].needs, "build");
+  assert.deepEqual(w.jobs.publish.needs, "deploy-test");
+  assert.equal(
+    w.jobs["deploy-test"].steps.at(-1).run,
+    "node .github/frameleaf-deploy-test.cjs",
+  );
+  assert.deepEqual(w.jobs["deploy-test"].strategy.matrix.runner, [
+    "ubuntu-24.04",
+    "ubuntu-24.04-arm",
+  ]);
   const guard = w.jobs.guard.steps[0].run;
   const sha = "a".repeat(40);
   for (const [repository, ref, event, expected] of [
@@ -565,7 +579,12 @@ test("integration image is a guarded manual pre-release that never writes releas
     w.jobs.build.strategy.matrix.include.map((row) => row.platform).join(","),
     deploy.platforms,
   );
-  assert.match(build.outputs, /push-by-digest=true/);
+  assert.match(build.outputs, /^type=oci,dest=/);
+  assert.doesNotMatch(build.outputs, /push=true|type=image|type=registry/);
+  const push = w.jobs.publish.steps.find((s) =>
+    /oras cp --from-oci-layout/.test(s.run ?? ""),
+  ).run;
+  assert.match(push, /oras resolve/);
   assert.equal(
     build["cache-to"],
     undefined,
