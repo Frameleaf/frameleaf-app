@@ -63,26 +63,27 @@ Setting up the link itself, and the hosted Frameleaf Cloud service, are outside 
 
 When descriptions are allowed on Frameleaf Cloud (**Both** or **Cloud only** in **Where each job runs**) and routed to it, photos are never described one at a time. They are sent in batches: one owner's photos per batch, one cloud job per batch, and jobs of the same model carry the same pack key so they can share a started worker. Each batch shows in its owner's **Activity**; only an administrator can describe its photos again, from the estimate.
 
-**Not yet available.** Frameleaf Cloud has not published how a server uploads a batch's photos and reads its descriptions. Until it does, no description job is created: estimates work, but **Describe** is refused, new photos are not batched, and a batch stops before it is sent. This lifts only with the server version that implements that part of the Frameleaf Cloud contract, not when Frameleaf Cloud starts accepting jobs.
+A batch goes through these steps: Frameleaf Cloud seals an estimate for exactly its photos, the job is admitted with its pack key, the photos are uploaded to the job's storage (in parts for large files, resumed after a restart without sending a finished part again) and the job is started. The server then reads the job, using its ETag so an unchanged job costs nothing, at the interval Frameleaf Cloud asks for. When the job ends, each photo's result is downloaded, checked against its SHA-256 and written to that photo with the model that described it. A photo Frameleaf Cloud could not describe (too large, unreadable, unsupported) is marked failed with the reason, and the other photos of the batch are still written. Only then is the job released, so Frameleaf Cloud deletes the uploaded copies and results. What the job cost is recorded once for the batch, with each photo's share.
 
 - **Describe your library** in **Frameleaf Cloud processing** checks consent first, then estimates and queues nothing. The estimate is scaled from the model's measured GPU time for a sample of the photos: a likely and an at-most (p50–p90) cost, the cost per photo, the start fee each batch pays and the AI Wallet balance. It is refused when the wallet, the daily limit or the destination's budget (with what it already spent this period and what running batches hold) cannot cover it. **Describe** then queues exactly the photos of that estimate, at its prices, within 30 minutes; photos that became Locked or joined another batch meanwhile are left out, and asking twice queues once. Regenerating descriptions from the Job manager or the machine-learning settings queues nothing for Frameleaf Cloud and says to use this estimate instead.
 - **Describe new photos automatically** (off by default) collects new photos (written to its queue every 100 photos or 5 seconds) and batches them within its daily budget. The budget counts per calendar day in the server's time zone. When it is used up, no new batch starts that day, administrators are told once, and batching carries on the next day.
 - Before a batch is sent, Frameleaf Cloud seals an estimate for exactly its photos. The batch is sent only if the wallet can hold that amount, today's limit and the destination's budget (with running batches' holds) leave room for it and, for a batch you approved, the estimate is not more than 20% above what you saw. Otherwise nothing is sent. A batch that waited is checked again in full, its photos included, before it is sent.
 - Turning Frameleaf Cloud processing off, or setting descriptions to this server only, stops every batch: waiting ones fail with that reason, and a running cloud job is stopped. A description routed to Frameleaf Cloud while it is off is refused, not left waiting.
-- Locked photos are never sent. The copy that would leave the server is the preview written again without EXIF, XMP or IPTC and converted to sRGB (its own colour profile is not kept), so no location or camera data leaves it. Videos are not described on Frameleaf Cloud.
-- With a 72B-class description model, batches under about 200 photos pay mostly for the start fee; the estimate suggests a 27B/35B-class model instead.
+- Descriptions leave out people's names and health signals unless the Frameleaf Cloud processing terms were accepted with **people's names** or **health signals** allowed; the batch asks Frameleaf Cloud for exactly what was allowed. No prompt, name or other text from this server is sent.
+- Locked photos are never sent, including a photo Locked after its batch was estimated: the batch stops before uploading it. The copy that leaves the server is the preview written again without EXIF, XMP or IPTC and converted to sRGB (its own colour profile is not kept), so no location or camera data leaves it. Videos are not described on Frameleaf Cloud.
+- With a 72B-class description model (Qwen2.5-VL-72B or Qwen3.5-122B-A10B, which share the largest GPU class and its start fee), batches under about 200 photos pay mostly for the start fee; the estimate suggests a 27B/35B-class model instead.
 - A batch that Frameleaf Cloud cannot take right now (for example because it has no capacity) waits and tries once more, then fails. It is never described on this server or another destination instead.
 
-| Setting                                     | Value            |
-| ------------------------------------------- | ---------------- |
-| Photos per batch                            | 200              |
-| Photos per backfill run (newest first)      | 5,000            |
-| New photos an owner collects before a batch | 20, or 6 hours   |
-| New photos waiting at most                  | 10,000           |
-| How often batches move on                   | every minute     |
-| How often a running batch's job is read     | every minute     |
-| Batch size suggested for a 72B-class model  | about 200 photos |
-| Longest a batch may run in Frameleaf Cloud  | 24 hours         |
+| Setting                                     | Value                                                                       |
+| ------------------------------------------- | --------------------------------------------------------------------------- |
+| Photos per batch                            | 200                                                                         |
+| Photos per backfill run (newest first)      | 5,000                                                                       |
+| New photos an owner collects before a batch | 20, or 6 hours                                                              |
+| New photos waiting at most                  | 10,000                                                                      |
+| How often batches move on                   | every minute                                                                |
+| How often a running batch's job is read     | as Frameleaf Cloud asks, at least every 5 minutes (every minute by default) |
+| Batch size suggested for a 72B-class model  | about 200 photos                                                            |
+| Longest a batch may run in Frameleaf Cloud  | 24 hours                                                                    |
 
 ## Deployment: a separate restoration container
 
