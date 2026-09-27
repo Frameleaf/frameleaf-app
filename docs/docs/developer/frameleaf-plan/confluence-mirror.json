@@ -73,19 +73,19 @@
       "version": 4
     },
     {
-      "bytes": 47341,
+      "bytes": 48172,
       "category": "reference",
       "id": "64749620",
-      "readbackAt": "2026-09-27T12:30:00.000Z",
-      "readbackResult": "FL-159 / FC-62 (notices, intervals, paused new work, versioned terms): markdown read-back of version 12 begins with the header carrying SHA-256 c9777221, 47341 bytes, commit 4f7f2118f6 pushed on master/frameleaf-implementation (source-at-commit backlink 4f7f2118f6); \"Check-ins\" gives the 60-900 s interval and carries the new \"Messages from Frameleaf Cloud\" and \"When Frameleaf Cloud pauses new work\" sections, \"Licence certificates\" the staff-set refresh interval, and \"Restoration and Smooth motion on Frameleaf Cloud\" the versioned-terms paragraph; the rest matches version 10 and still ends with the unchanged job-in-Activity paragraph. Published as HTML (the page holds a Confluence smart link); version 11 was an intermediate publish of an earlier local commit, replaced by 12. The markdown export drops same-page anchor link markup (text kept) and table alignment, the known round-trip limitation; the search summary still shows an earlier excerpt until Confluence reindexes; no user-authored additions.",
+      "readbackAt": "2026-09-27T12:53:00.000Z",
+      "readbackResult": "FL-159 / FC-61 (heartbeat settings snapshot and entitlements.refresh): markdown and ADF read-back of version 13 begins with the header carrying SHA-256 611d074a, 48172 bytes, commit 3ee7ba7bc9 pushed on master/frameleaf-implementation (source-at-commit backlink 3ee7ba7bc9); \"Check-ins\" carries the settings summary (never a name, address, file name or error text; an own-bucket server leaves the backup summary out) and \"What Frameleaf Cloud may ask\" the plan refresh request; the 27 headings and the rest match version 12 (FC-62, 4f7f2118f6) and still end with the unchanged job-in-Activity paragraph. Published as HTML (the page holds a Confluence smart link). The markdown export drops same-page anchor link markup (text kept) and table alignment, and shows the shell code fence as bash, the known round-trip limitation; no user-authored additions.",
       "source": "docs/docs/administration/frameleaf-cloud.md",
       "sourceBranch": "master/frameleaf-implementation",
-      "sourceCommit": "4f7f2118f6594d1010776e8bd33a0f53ec0c732f",
-      "sourceSha256": "c977722100520d90741299a463caa0a431f2bb48ac12517579a898c6b9ec8a63",
-      "sourceState": "pushed-fl-159-fc-62-notices-intervals-paused-terms-2026-09-27",
+      "sourceCommit": "3ee7ba7bc9af24b738571f01790072bff14a295b",
+      "sourceSha256": "611d074a150e54d754932236899b73e183e1e8d57837da8b80486f9f40b2b532",
+      "sourceState": "pushed-fl-159-fc-61-heartbeat-settings-2026-09-27",
       "title": "Administration Reference — Frameleaf Cloud",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/64749620/Administration+Reference+Frameleaf+Cloud",
-      "version": 12
+      "version": 13
     },
     {
       "bytes": 12350,
