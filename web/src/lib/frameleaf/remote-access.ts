@@ -3,6 +3,7 @@
  * types (the prototype's `validateCustomHostname`, design/frameleaf/template/src/frameleaf-cloud-data.mjs).
  * The server checks the same rules again, and refuses the direct domain it actually uses too.
  */
+import type { Translations } from 'svelte-i18n';
 
 /** Frameleaf's own domains; a custom hostname under any of them is refused. */
 export const RESERVED_REMOTE_DOMAINS: readonly string[] = [
@@ -13,8 +14,7 @@ export const RESERVED_REMOTE_DOMAINS: readonly string[] = [
 ];
 
 export type HostnameCheck =
-  | { valid: true; host: string }
-  | { valid: false; host: string; reason: 'empty' | 'scheme' | 'subdomain' | 'reserved' };
+  { valid: true; host: string } | { valid: false; host: string; reason: 'empty' | 'scheme' | 'subdomain' | 'reserved' };
 
 const LABEL = /^[\da-z](?:[\da-z-]{0,61}[\da-z])?$/;
 
@@ -45,5 +45,5 @@ export const checkCustomHostname = (
 };
 
 /** The i18n key of a refusal's message. */
-export const hostnameMessageKey = (reason: Extract<HostnameCheck, { valid: false }>['reason']) =>
-  `frameleaf_remote_hostname_invalid_${reason}`;
+export const hostnameMessageKey = (reason: Extract<HostnameCheck, { valid: false }>['reason']): Translations =>
+  `frameleaf_remote_hostname_invalid_${reason}` as const;

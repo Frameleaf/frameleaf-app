@@ -193,8 +193,11 @@ describe('RemoteAccessSection (FL-165)', () => {
     render(RemoteAccessSection);
 
     const reason = 'Remote access is included with a Frameleaf Cloud plan.';
-    expect(await screen.findByText(reason, { exact: false })).toBeInTheDocument();
+    // As in the prototype, the reason is both the page's gate banner and the switch's own explanation.
+    const gate = await screen.findByRole('status', { name: '' });
+    expect(gate).toHaveTextContent(reason);
     const toggle = screen.getByRole('switch', { name: 'Allow remote access' });
+    expect(toggle).toHaveAccessibleDescription(expect.stringContaining(reason));
     await waitFor(() => expect(toggle).toBeDisabled());
     expect(toggle).not.toBeChecked();
     expect(screen.getByRole('button', { name: 'See plans' })).toBeInTheDocument();
