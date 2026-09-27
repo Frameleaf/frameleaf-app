@@ -33,21 +33,51 @@ describe('parseFrameleafFeedRelease', () => {
   it('reads the release feed answers the cloud publishes', () => {
     const stable = cloudContractFixture<FrameleafFeedRelease>('releases/latest-stable.json');
     const beta = cloudContractFixture<FrameleafFeedRelease>('releases/latest-beta.json');
+    // FC-70 staged rollout (frameleaf-cloud#83): stable is offered to 25% of servers, with a fallback.
     expect(parseFrameleafFeedRelease(stable, ReleaseChannel.Stable)).toEqual({
-      version: stable.version,
-      publishedAt: stable.publishedAt,
+      version: '3.2.1',
+      publishedAt: '2026-09-10T12:00:00Z',
       withdrawn: false,
-      rolloutPercent: null,
+      rolloutPercent: 25,
+      fallback: { version: '3.2.0', publishedAt: '2026-08-20T09:00:00Z', withdrawn: false, rolloutPercent: 100 },
     });
     expect(parseFrameleafFeedRelease(beta, ReleaseChannel.ReleaseCandidate)).toEqual({
-      version: beta.version,
-      publishedAt: beta.publishedAt,
+      version: '3.3.0-rc.1',
+      publishedAt: '2026-09-20T08:30:00Z',
       withdrawn: false,
-      rolloutPercent: null,
+      rolloutPercent: 100,
+      fallback: null,
     });
     expect(parseFrameleafFeedRelease(beta, ReleaseChannel.Stable)).toBeUndefined();
     expect(parseFrameleafReleaseTag(stable.tag)).toEqual({ version: stable.version, sequence: 4 });
     expect(parseFrameleafReleaseTag(beta.tag)).toEqual({ version: beta.version, sequence: 2 });
+  });
+
+  it('offers the published stable release to servers inside its 25% rollout and its fallback to the rest', () => {
+    const stable = parseFrameleafFeedRelease(
+      cloudContractFixture('releases/latest-stable.json'),
+      ReleaseChannel.Stable,
+    )!;
+    const seeds = Array.from({ length: 400 }, (_, i) => `seed-${i}`);
+    const inside: string[] = [];
+    for (const seed of seeds) {
+      const offered = isReleaseOffered(stable, seed, stable.version);
+      expect(offered).toBe(rolloutBucket(seed, stable.version) < 25);
+      if (offered) {
+        inside.push(seed);
+      } else {
+        // every server outside the rollout is offered the fully rolled-out 3.2.0
+        expect(isReleaseOffered(stable.fallback!, seed, stable.fallback!.version)).toBe(true);
+      }
+    }
+    // roughly a quarter of servers get 3.2.1
+    expect(inside.length).toBeGreaterThan(60);
+    expect(inside.length).toBeLessThan(140);
+    const beta = parseFrameleafFeedRelease(
+      cloudContractFixture('releases/latest-beta.json'),
+      ReleaseChannel.ReleaseCandidate,
+    )!;
+    expect(seeds.every((seed) => isReleaseOffered(beta, seed, beta.version))).toBe(true);
   });
 
   it('reads the version and publication time of a feed release', () => {
