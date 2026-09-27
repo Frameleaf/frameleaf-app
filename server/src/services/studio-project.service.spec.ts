@@ -654,6 +654,16 @@ describe(StudioProjectService.name, () => {
       expect(resources.resolveProjectResources).toHaveBeenCalledTimes(1);
     });
 
+    it('never shares a resolution between an unlocked and a locked session of the same account (FL-195)', async () => {
+      const unlocked = { ...owner, session: { id: 'session', hasElevatedPermission: true } } as typeof owner;
+      await sut.authorizeRevision(unlocked, { projectId: project.id });
+      const locked = await sut.authorizeRevision(owner, { projectId: project.id });
+
+      expect(locked.cached).toBe(false);
+      expect(resources.resolveProjectResources).toHaveBeenCalledTimes(2);
+      expect(vi.mocked(resources.resolveProjectResources).mock.calls[1][0]).toBe(owner);
+    });
+
     it('resolves again for another account and never caches a cloud destination', async () => {
       project = projectStub({ spaceId: newUuid() });
       memberOf(project.spaceId as string);
