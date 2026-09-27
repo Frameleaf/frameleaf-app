@@ -17,16 +17,21 @@ while read -r sum name capture; do
     exit 1
   }
   fetched=false
-  for url in "$primary/$name" "$capture"; do
-    if wget -nv --tries=3 --timeout=60 -O "$destination/$name.part" "$url" &&
-      echo "$sum  $destination/$name.part" | sha256sum --strict --quiet -c -; then
-      mv "$destination/$name.part" "$destination/$name"
-      echo "geodata: $name from $url"
-      fetched=true
-      break
-    fi
-    echo "geodata: $name is unavailable or has the wrong checksum at $url" >&2
-    rm -f "$destination/$name.part"
+  # The Internet Archive now and then answers a pinned capture with a neighbouring one (other bytes):
+  # a wrong checksum is tried again a few rounds later, never accepted.
+  for round in 1 2 3 4; do
+    for url in "$primary/$name" "$capture"; do
+      if wget -nv --tries=3 --timeout=60 -O "$destination/$name.part" "$url" &&
+        echo "$sum  $destination/$name.part" | sha256sum --strict --quiet -c -; then
+        mv "$destination/$name.part" "$destination/$name"
+        echo "geodata: $name from $url"
+        fetched=true
+        break 2
+      fi
+      echo "geodata: $name is unavailable or has the wrong checksum at $url (round $round)" >&2
+      rm -f "$destination/$name.part"
+    done
+    sleep $((round * 15))
   done
   [[ "$fetched" == true ]] || {
     echo "geodata: no source provided $name with sha256 $sum" >&2
