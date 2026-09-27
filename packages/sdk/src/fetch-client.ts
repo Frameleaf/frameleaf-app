@@ -5991,6 +5991,15 @@ export type ValidateLibraryResponseDto = {
     /** Validation results for import paths */
     importPaths?: ValidateLibraryImportPathResponseDto[];
 };
+export type LicenseLinkCodeDto = {
+    /** A one-time link code from the Frameleaf account site, flc_ and 26 symbols */
+    code: string;
+};
+export type LicenseLinkCodeResponseDto = {
+    /** Last four symbols of the key */
+    keyHint: string | null;
+    kind: LicenseLinkCodeKind;
+};
 export type LicenseProductDto = {
     id: string;
     kind: Kind3;
@@ -15599,6 +15608,21 @@ export function validate({ id, validateLibraryDto }: {
     })));
 }
 /**
+ * Redeem a Frameleaf account link code
+ */
+export function redeemLicenseLinkCode({ licenseLinkCodeDto }: {
+    licenseLinkCodeDto: LicenseLinkCodeDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: LicenseLinkCodeResponseDto;
+    }>("/license/link-code", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: licenseLinkCodeDto
+    })));
+}
+/**
  * Get Support Frameleaf prices
  */
 export function getLicenseProducts(opts?: Oazapfts.RequestOpts) {
@@ -22589,6 +22613,10 @@ export enum LibraryImportPathReason {
     Duplicate = "duplicate",
     Nested = "nested",
     OtherLibrary = "other_library"
+}
+export enum LicenseLinkCodeKind {
+    Server = "server",
+    Individual = "individual"
 }
 export enum Currency {
     Usd = "USD"
