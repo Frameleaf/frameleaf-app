@@ -212,6 +212,14 @@ describe('LibrarySessionStore', () => {
     expect(store.selection).toEqual([]);
   });
 
+  it('ends a select-everything-matching selection when the query changes, so a bulk action never runs the old query', () => {
+    store.dispatch({ type: 'selection', ids: ['a', 'b'], allMatching: true });
+    expect(store.session.selectionSnapshot?.query.text).toBe('');
+    store.setQuery({ ...emptyDiscoveryQuery(), text: 'narrower' });
+    expect(store.session.selectionSnapshot).toBeUndefined();
+    expect(store.selection).toEqual(['a', 'b']);
+  });
+
   it('counts active filters, deep-links into a section and removes chips', () => {
     store.setQuery({
       ...emptyDiscoveryQuery(),

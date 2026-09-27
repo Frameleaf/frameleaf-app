@@ -117,7 +117,10 @@ export type LibrarySession = {
   selection: string[];
   /** The last item a plain click landed on; the origin of the next shift-click range. */
   anchorId: string | null;
-  /** The view state a "select everything matching" selection was taken against. */
+  /**
+   * The view state a "select everything matching" selection was taken against. It lasts while the
+   * scope and query stay the same; a sort or presentation change keeps it, a query edit ends it.
+   */
   selectionSnapshot?: LibraryViewState;
   scrollAnchor?: string;
   /** The item open in the viewer. Opening an item does not select it. */
@@ -343,16 +346,19 @@ export const reduceLibrarySession = (session: LibrarySession, action: LibrarySes
       const state: LibraryViewState = { ...session.state, ...action.patch, version: 1 };
       const resultChanged = RESULT_KEYS.some((key) => !sameValue(state[key], session.state[key]));
       const scopeChanged = !sameValue(state.scope, session.state.scope);
+      // "All matching" is the set the person saw counted; another query is another set (FL-32).
+      const matchingChanged = scopeChanged || !sameValue(state.query, session.state.query);
       return {
         ...session,
         state,
         // Cumulative paging restarts only when the result set itself changes.
         page: resultChanged ? 1 : session.page,
         revision: resultChanged ? session.revision + 1 : session.revision,
-        // Selection is scope-bound: narrowing inside a scope keeps it, leaving the scope does not.
+        // Selection is scope-bound: narrowing inside a scope keeps the explicit ids, leaving the
+        // scope does not. An all-matching selection ends with its query and falls back to those ids.
         selection: scopeChanged ? [] : session.selection,
         anchorId: scopeChanged ? null : session.anchorId,
-        selectionSnapshot: scopeChanged ? undefined : session.selectionSnapshot,
+        selectionSnapshot: matchingChanged ? undefined : session.selectionSnapshot,
       };
     }
     case 'scope': {
@@ -512,17 +518,6 @@ export const reduceLibrarySession = (session: LibrarySession, action: LibrarySes
 /** Operations still doing work. Used to keep the progress strip and its cancel control on screen. */
 export const activeOperations = (session: LibrarySession): BulkOperationRecord[] =>
   session.operations.filter((operation) => operation.status === 'resolving' || operation.status === 'running');
-
-/**
- * True when a "select everything matching" snapshot still describes the session's current scope
- * and query. FL-31 clears the snapshot on a scope change; this also catches the case where the
- * query moved on while the snapshot was still on screen, so the bar can offer the stale snapshot's
- * count honestly or drop back to the resolved ids.
- */
-export const isSnapshotCurrent = (session: LibrarySession): boolean =>
-  !!session.selectionSnapshot &&
-  sameValue(session.selectionSnapshot.scope, session.state.scope) &&
-  sameValue(session.selectionSnapshot.query, session.state.query);
 
 /**
  * The view state a bulk operation must be submitted against: the snapshot when the user asked for

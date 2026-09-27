@@ -3,7 +3,6 @@ import { emptyDiscoveryQuery } from '$lib/components/discovery/query';
 import {
   activeOperations,
   createLibrarySession,
-  isSnapshotCurrent,
   operationScope,
   reduceLibrarySession,
   toStoredLibrarySession,
@@ -34,18 +33,19 @@ describe('scope-bound selection', () => {
     ).toEqual(session.state);
   });
 
-  it('keeps a snapshot while the query narrows inside the scope and drops it when the scope changes', () => {
+  it('ends a snapshot when the query changes inside the scope and drops the selection with the scope', () => {
     const snapshotted = run(
       createLibrarySession(),
       { type: 'view', patch: { scope: { kind: 'album', id: 'album-1' } } },
       { type: 'selection', ids: ['a', 'b'], allMatching: true },
     );
-    expect(isSnapshotCurrent(snapshotted)).toBe(true);
+    expect(snapshotted.selectionSnapshot).toEqual(snapshotted.state);
 
+    // A snapshot is the set the person saw counted. Another query is another set, so the selection
+    // falls back to the ids that were on the page and a bulk action never runs the old query.
     const narrowed = reduceLibrarySession(snapshotted, { type: 'view', patch: { query: favoriteQuery() } });
-    expect(narrowed.selectionSnapshot).toBeDefined();
-    // The snapshot is still the set the user asked for, which is no longer what the view shows.
-    expect(isSnapshotCurrent(narrowed)).toBe(false);
+    expect(narrowed.selectionSnapshot).toBeUndefined();
+    expect(narrowed.selection).toEqual(['a', 'b']);
 
     const moved = reduceLibrarySession(snapshotted, { type: 'scope', scope: { kind: 'library' } });
     expect(moved.selectionSnapshot).toBeUndefined();
