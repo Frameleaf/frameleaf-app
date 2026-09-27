@@ -374,18 +374,18 @@
       "version": 2
     },
     {
-      "bytes": 54875,
+      "bytes": 55441,
       "category": "features",
       "id": "61538534",
       "source": "docs/docs/features/descriptions-and-smart-albums.md",
-      "sourceCommit": "a3a40128152daf16b5466af04d4acc9a5eaa321a",
-      "sourceSha256": "a066e184b0fef5185370306b3e4ef0139b5a9ba9cf2fdac8bd3c3bd0901e2bc8",
+      "sourceCommit": "7a995eae7782a6483b891afdf3e7cb9aef1ea591",
+      "sourceSha256": "b0641cba0432d5370e18c384d2905d62021b695e8953684818a83e3fc2e3c5b0",
       "title": "Feature Reference \u2014 Descriptions And Smart Albums",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61538534/Feature+Reference+Descriptions+And+Smart+Albums",
-      "version": 4,
+      "version": 5,
       "verified": true,
-      "verification": "FL-190 Confluence page read back at version 4 with source hash a066e184, 54875 bytes and commit a3a4012815 on master/frameleaf-implementation in the header; compared with version 3, the only differences are the header (committed-at-commit statement, backlink and FL-190 link replacing the local-working-tree note) and the six FL-190 wording changes from commit 20289e0cf8 naming Frameleaf in the identity-injection text, the advanced-template text, the video-grid trade-off line and the related-reading Tags entry; the legacy-content extension and the in-page anchor links (dropped only by the markdown export) are kept; no user additions.",
-      "verifiedAt": "2026-09-26T16:53:55.000Z"
+      "verification": "FL-59: Confluence page read back at version 5 as HTML with source hash b0641cba, 55441 bytes and commit 7a995eae77 on master/frameleaf-implementation in the header; compared with the posted body the only difference is that Confluence nests the Facial Recognition link inside its bold mark in the setup-order table (same rendering). Compared with version 4, the only changes are the header (FL-59 update statement, backlink and FL-59 link, FL-190 kept as history) and the new 'Describe video moments' bullet closing the Video moments list; the legacy-content extension and in-page anchor links are kept; the live version 4 was unchanged since its FL-190 read-back; no user additions.",
+      "verifiedAt": "2026-09-27T03:40:00.000Z"
     },
     {
       "bytes": 2788,
