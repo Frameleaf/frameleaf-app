@@ -5,9 +5,12 @@ import {
   reduceStudioHost,
   shouldDisposeEngine,
   studioCapabilityLabelKey,
+  studioHostAbandonsMount,
   studioHostBlocksNavigation,
+  studioHostCanMount,
   studioHostCanRetry,
   studioHostHeadingKey,
+  studioHostNeedsMount,
   type StudioHostEvent,
   type StudioHostState,
 } from './host-state';
@@ -173,5 +176,188 @@ describe('studio host state', () => {
     expect(state.mounted).toBe(false);
     expect(state.messageKey).toBe('frameleaf_studio_error_body');
     expect(state.detail).toBe('WebGPU device lost');
+  });
+});
+
+/** Replays events and counts the transitions that would start a mount or abandon one. */
+const trace = (start: StudioHostState, ...events: StudioHostEvent[]) => {
+  let state = start;
+  let mounts = 0;
+  let abandons = 0;
+  for (const event of events) {
+    const next = reduceStudioHost(state, event);
+    mounts += studioHostNeedsMount(state, next) ? 1 : 0;
+    abandons += studioHostAbandonsMount(state, next) ? 1 : 0;
+    state = next;
+  }
+  return { state, mounts, abandons };
+};
+
+describe('studio host state, capabilities that arrive after the probe', () => {
+  it('judges nothing before the probe has answered', () => {
+    const initial = initialStudioHostState();
+    expect(initial.phase).toBe('loading');
+    expect(initial.capabilities).toBeNull();
+    expect(initial.missingCapabilities).toEqual([]);
+    expect(initial.unavailableReason).toBeNull();
+    // Nothing is mounted until the probe answers, either.
+    expect(studioHostCanMount(initial)).toBe(false);
+
+    const unanswered = reduceStudioHost(initial, { type: 'capabilities', capabilities: null });
+    expect(unanswered).toBe(initial);
+  });
+
+  it('mounts once when the probe answers with the required workers', () => {
+    const { state, mounts } = trace(
+      initialStudioHostState(),
+      { type: 'capabilities', capabilities: null },
+      { type: 'capabilities', capabilities: capable },
+      // The same answer again (a re-render) must not start a second mount.
+      { type: 'capabilities', capabilities: { ...capable } },
+    );
+
+    expect(state.phase).toBe('loading');
+    expect(mounts).toBe(1);
+  });
+
+  it('goes from missing to met back to loading and mounts, with no retry', () => {
+    const { state, mounts } = trace(
+      initialStudioHostState(),
+      { type: 'capabilities', capabilities: emptyStudioCapabilities() },
+      { type: 'capabilities', capabilities: capable },
+    );
+
+    expect(state.phase).toBe('loading');
+    expect(state.unavailableReason).toBeNull();
+    expect(state.missingCapabilities).toEqual([]);
+    expect(state.messageKey).toBeNull();
+    expect(mounts).toBe(1);
+
+    const ready = reduceStudioHost(state, { type: 'engine-mounted' });
+    expect(ready.phase).toBe('ready');
+  });
+
+  it('records why it is unavailable', () => {
+    const missing = run({ type: 'capabilities', capabilities: emptyStudioCapabilities() });
+    expect(missing.unavailableReason).toBe('capabilities');
+
+    const absent = run(
+      { type: 'capabilities', capabilities: capable },
+      { type: 'engine-absent', reason: 'not-built', messageKey: 'frameleaf_studio_engine_absent_body' },
+    );
+    expect(absent.unavailableReason).toBe('engine-absent');
+  });
+
+  it('keeps an absent engine unavailable when the capabilities change', () => {
+    const { state, mounts } = trace(
+      initialStudioHostState(),
+      { type: 'capabilities', capabilities: capable },
+      { type: 'engine-absent', reason: 'not-built', messageKey: 'frameleaf_studio_engine_absent_body' },
+      { type: 'capabilities', capabilities: emptyStudioCapabilities() },
+      { type: 'capabilities', capabilities: capable },
+    );
+
+    expect(state.phase).toBe('unavailable');
+    expect(state.unavailableReason).toBe('engine-absent');
+    expect(state.messageKey).toBe('frameleaf_studio_engine_absent_body');
+    // One mount for the probe's first answer; the absent engine is never tried again unasked.
+    expect(mounts).toBe(1);
+  });
+
+  it('keeps a fatal error as it is when the capabilities are met again', () => {
+    const state = run(
+      { type: 'capabilities', capabilities: capable },
+      { type: 'engine-mounted' },
+      { type: 'fatal', detail: 'boom' },
+      { type: 'capabilities', capabilities: { ...capable } },
+    );
+
+    expect(state.phase).toBe('error');
+  });
+
+  it('handles capabilities that flap: one teardown, one remount per recovery', () => {
+    const mounted = run({ type: 'capabilities', capabilities: capable }, { type: 'engine-mounted' });
+
+    const { state, mounts, abandons } = trace(
+      mounted,
+      { type: 'capabilities', capabilities: emptyStudioCapabilities() },
+      { type: 'capabilities', capabilities: emptyStudioCapabilities() },
+      { type: 'capabilities', capabilities: capable },
+      // The old engine's teardown lands after the recovery; it must not undo it.
+      { type: 'engine-disposed' },
+      { type: 'capabilities', capabilities: capable },
+    );
+
+    expect(abandons).toBe(1);
+    expect(mounts).toBe(1);
+    expect(state.phase).toBe('loading');
+    expect(state.mounted).toBe(false);
+
+    const again = trace(
+      reduceStudioHost(state, { type: 'engine-mounted' }),
+      { type: 'capabilities', capabilities: emptyStudioCapabilities() },
+      { type: 'capabilities', capabilities: capable },
+    );
+    expect(again.abandons).toBe(1);
+    expect(again.mounts).toBe(1);
+  });
+
+  it('abandons a mount that lands while the workers are missing', () => {
+    const { state, abandons } = trace(
+      reduceStudioHost(initialStudioHostState(), { type: 'capabilities', capabilities: capable }),
+      { type: 'capabilities', capabilities: emptyStudioCapabilities() },
+    );
+
+    expect(state.phase).toBe('unavailable');
+    expect(abandons).toBe(1);
+  });
+
+  it('returns to the capability state, not loading, when the connection comes back', () => {
+    const { state, mounts } = trace(
+      initialStudioHostState(),
+      { type: 'connectivity', online: false },
+      { type: 'capabilities', capabilities: emptyStudioCapabilities() },
+      { type: 'connectivity', online: true },
+    );
+
+    expect(state.phase).toBe('unavailable');
+    expect(state.unavailableReason).toBe('capabilities');
+    expect(mounts).toBe(0);
+  });
+
+  it('mounts when the connection comes back to a deployment that has the workers', () => {
+    const { state, mounts } = trace(
+      initialStudioHostState(),
+      { type: 'connectivity', online: false },
+      { type: 'capabilities', capabilities: capable },
+      { type: 'connectivity', online: true },
+    );
+
+    expect(state.phase).toBe('loading');
+    expect(mounts).toBe(1);
+  });
+
+  it('stays unavailable on retry while the probe still says the workers are missing', () => {
+    const { state, mounts } = trace(
+      initialStudioHostState(),
+      { type: 'capabilities', capabilities: emptyStudioCapabilities() },
+      { type: 'retry' },
+    );
+
+    expect(state.phase).toBe('unavailable');
+    expect(state.unavailableReason).toBe('capabilities');
+    expect(mounts).toBe(0);
+  });
+
+  it('mounts once on retry after an absent engine', () => {
+    const { state, mounts } = trace(
+      reduceStudioHost(initialStudioHostState(), { type: 'capabilities', capabilities: capable }),
+      { type: 'engine-absent', reason: 'load-failed', messageKey: 'frameleaf_studio_engine_failed_body' },
+      { type: 'retry' },
+    );
+
+    expect(state.phase).toBe('loading');
+    expect(state.unavailableReason).toBeNull();
+    expect(mounts).toBe(1);
   });
 });
