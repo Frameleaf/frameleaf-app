@@ -34,6 +34,7 @@ import { ForkSchemaCutoverService } from 'src/services/fork-schema-cutover.servi
 import { ForkSchemaMigrationService } from 'src/services/fork-schema-migration.service.js';
 import { FrameleafAuthService } from 'src/services/frameleaf-auth.service.js';
 import { FrameleafCloudService } from 'src/services/frameleaf-cloud.service.js';
+import { FrameleafCloudTourService } from 'src/services/frameleaf-cloud-tour.service.js';
 import { FrameleafLicenseService } from 'src/services/frameleaf-license.service.js';
 import { FrameleafRemoteAccessService } from 'src/services/frameleaf-remote-access.service.js';
 import { HardwareCheckService } from 'src/services/hardware-check.service.js';
@@ -124,6 +125,7 @@ export const services = [
   CloudMlJobService,
   FrameleafAuthService,
   FrameleafCloudService,
+  FrameleafCloudTourService,
   FrameleafLicenseService,
   FrameleafRemoteAccessService,
   HardwareCheckService,

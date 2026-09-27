@@ -833,6 +833,27 @@ export type CloudSignInUpdateDto = {
     /** Offer Sign in with Frameleaf on the login page at home */
     showOnLocalLogin?: boolean;
 };
+export type CloudTourResponseDto = {
+    /** Cloud backup is set up */
+    backupConfigured: boolean;
+    /** Remote access answers on a domain you own, and its DNS is verified */
+    customHostnameVerified: boolean;
+    /** How you first ended the tour; later endings keep this one */
+    ending: (CloudTourEnding) | null;
+    /** Open the tour now: this server is linked to a Frameleaf account and you have not seen it */
+    offer: boolean;
+    /** Frameleaf Cloud processing is switched on */
+    processingEnabled: boolean;
+    /** You have seen the tour (or were shown setup’s summary instead) */
+    seen: boolean;
+    /** When you first ended the tour */
+    seenAt: string | null;
+    /** AI Wallet credit available at the last read (US dollars, balance less holds); null before any read */
+    walletAvailableUsd: number | null;
+};
+export type CloudTourSeenDto = {
+    ending: CloudTourEnding;
+};
 export type AdminConfigAnalyticsDto = {
     /** Collect local analytics history every night */
     enabled: boolean;
@@ -11802,6 +11823,32 @@ export function getCloudStatus(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
+ * Get your linked-server tour
+ */
+export function getCloudTour(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CloudTourResponseDto;
+    }>("/admin/cloud/tour", {
+        ...opts
+    }));
+}
+/**
+ * Mark your linked-server tour as seen
+ */
+export function markCloudTourSeen({ cloudTourSeenDto }: {
+    cloudTourSeenDto: CloudTourSeenDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CloudTourResponseDto;
+    }>("/admin/cloud/tour", oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: cloudTourSeenDto
+    })));
+}
+/**
  * Get the admin configuration
  */
 export function getAdminConfig(opts?: Oazapfts.RequestOpts) {
@@ -21063,6 +21110,12 @@ export enum RemoteAccessState {
     Error = "error",
     Unknown = "unknown"
 }
+export enum CloudTourEnding {
+    Finished = "finished",
+    Skipped = "skipped",
+    OpenedSettings = "opened-settings",
+    Setup = "setup"
+}
 export enum TranscodeHWAccel {
     Nvenc = "nvenc",
     Qsv = "qsv",
@@ -23097,5 +23150,6 @@ export enum WorkflowRunErrorCode {
 export enum UserMetadataKey {
     Preferences = "preferences",
     License = "license",
-    Onboarding = "onboarding"
+    Onboarding = "onboarding",
+    FrameleafCloudTour = "frameleaf-cloud-tour"
 }

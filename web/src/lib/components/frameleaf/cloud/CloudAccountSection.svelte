@@ -5,10 +5,12 @@
    * States: not configured (no FRAMELEAF_CLOUD_URL), not linked, waiting for approval of a device
    * code (code, QR, countdown, key fingerprint), linked (account, dates, instance ID, "Manage on
    * frameleaf.cloud", apps card with "Set up remote access",
-   * permission toggles, "What this server sends", unlink) and revoked (the cloud's reason).
+   * permission toggles, "What this server sends", unlink, and FL-196's "Take the tour") and revoked
+   * (the cloud's reason).
    * Nothing is simulated: every change goes through `admin/cloud/*`.
    */
   import './cloud-account.css';
+  import { goto } from '$app/navigation';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import QrCode from '$lib/components/frameleaf/QrCode.svelte';
@@ -30,6 +32,7 @@
     mdiCloudOutline,
     mdiCloudSyncOutline,
     mdiCloudUploadOutline,
+    mdiCompassOutline,
     mdiEarth,
     mdiInformationOutline,
     mdiLinkOff,
@@ -349,6 +352,11 @@
             {$t('frameleaf_cloud_manage_on_site')}
           </a>
         {/if}
+        <!-- FL-196: reopen the linked-server tour (CloudTourHost opens it from the address). -->
+        <Button onclick={() => void goto(commandCenterUrl('cloud', 'cloud-account', { tour: 'cloud' }))}>
+          <Icon icon={mdiCompassOutline} size="18" />
+          {$t('frameleaf_cloud_tour_take')}
+        </Button>
       </div>
     </CloudCard>
     <CloudCard

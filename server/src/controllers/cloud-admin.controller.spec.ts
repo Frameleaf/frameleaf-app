@@ -1,5 +1,6 @@
 import request from 'supertest';
 import { CloudAdminController } from 'src/controllers/cloud-admin.controller.js';
+import { FrameleafCloudTourService } from 'src/services/frameleaf-cloud-tour.service.js';
 import { FrameleafCloudService } from 'src/services/frameleaf-cloud.service.js';
 import { FrameleafRemoteAccessService } from 'src/services/frameleaf-remote-access.service.js';
 import { ControllerContext, controllerSetup, mockBaseService } from 'test/utils.js';
@@ -8,11 +9,13 @@ describe(CloudAdminController.name, () => {
   let ctx: ControllerContext;
   const service = mockBaseService(FrameleafCloudService);
   const remote = mockBaseService(FrameleafRemoteAccessService);
+  const tour = mockBaseService(FrameleafCloudTourService);
 
   beforeAll(async () => {
     ctx = await controllerSetup(CloudAdminController, [
       { provide: FrameleafCloudService, useValue: service },
       { provide: FrameleafRemoteAccessService, useValue: remote },
+      { provide: FrameleafCloudTourService, useValue: tour },
     ]);
     return () => ctx.close();
   });
@@ -20,6 +23,7 @@ describe(CloudAdminController.name, () => {
   beforeEach(() => {
     service.resetAllMocks();
     remote.resetAllMocks();
+    tour.resetAllMocks();
     ctx.reset();
   });
 
@@ -40,6 +44,8 @@ describe(CloudAdminController.name, () => {
       ['put', '/admin/cloud/remote/hostname'],
       ['post', '/admin/cloud/remote/hostname/check'],
       ['delete', '/admin/cloud/remote/hostname'],
+      ['get', '/admin/cloud/tour'],
+      ['put', '/admin/cloud/tour'],
     ] as const) {
       await request(ctx.getHttpServer())[method](path);
       expect(ctx.authenticate).toHaveBeenCalled();
@@ -145,6 +151,30 @@ describe(CloudAdminController.name, () => {
       expect((await request(ctx.getHttpServer()).post('/admin/cloud/remote/hostname/check')).status).toBe(200);
       remote.removeCustomHostname.mockResolvedValue({} as never);
       expect((await request(ctx.getHttpServer()).delete('/admin/cloud/remote/hostname')).status).toBe(200);
+    });
+  });
+
+  describe('FL-196 linked-server tour', () => {
+    it('reads your tour', async () => {
+      tour.getTour.mockResolvedValue({ seen: false, offer: true } as never);
+      const { status, body } = await request(ctx.getHttpServer()).get('/admin/cloud/tour');
+      expect(status).toBe(200);
+      expect(body).toEqual({ seen: false, offer: true });
+    });
+
+    it('records how the tour ended', async () => {
+      tour.markSeen.mockResolvedValue({ seen: true } as never);
+      const { status } = await request(ctx.getHttpServer()).put('/admin/cloud/tour').send({ ending: 'skipped' });
+      expect(status).toBe(200);
+      expect(tour.markSeen).toHaveBeenCalledWith(undefined, { ending: 'skipped' });
+    });
+
+    it('accepts only the known endings', async () => {
+      for (const body of [{}, { ending: 'closed' }, { ending: 1 }]) {
+        const { status } = await request(ctx.getHttpServer()).put('/admin/cloud/tour').send(body);
+        expect(status).toBe(400);
+      }
+      expect(tour.markSeen).not.toHaveBeenCalled();
     });
   });
 });

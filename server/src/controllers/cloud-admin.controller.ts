@@ -7,6 +7,8 @@ import {
   CloudRemoteAccessUpdateDto,
   CloudSignInUpdateDto,
   CloudStatusResponseDto,
+  CloudTourResponseDto,
+  CloudTourSeenDto,
 } from 'src/dtos/frameleaf-cloud.dto.js';
 import {
   RemoteAccessStatusResponseDto,
@@ -17,6 +19,7 @@ import {
 import { ApiTag, Permission } from 'src/enum.js';
 import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
 import { RATE_LIMITS, RateLimited } from 'src/middleware/rate-limit.guard.js';
+import { FrameleafCloudTourService } from 'src/services/frameleaf-cloud-tour.service.js';
 import { FrameleafCloudService } from 'src/services/frameleaf-cloud.service.js';
 import { FrameleafRemoteAccessService } from 'src/services/frameleaf-remote-access.service.js';
 
@@ -31,7 +34,34 @@ export class CloudAdminController {
   constructor(
     private service: FrameleafCloudService,
     private remoteAccessService: FrameleafRemoteAccessService,
+    private tourService: FrameleafCloudTourService,
   ) {}
+
+  @Get('tour')
+  @Authenticated({ permission: Permission.AdminCloudRead, admin: true })
+  @Endpoint({
+    operationId: 'getCloudTour',
+    summary: 'Get your linked-server tour',
+    description:
+      'Whether you have seen the tour of what linking to Frameleaf Cloud unlocks, whether to open it now, and the status it shows for this server. Reads local state only; nothing is contacted.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  getTour(@Auth() auth: AuthDto): Promise<CloudTourResponseDto> {
+    return this.tourService.getTour(auth);
+  }
+
+  @Put('tour')
+  @Authenticated({ permission: Permission.AdminCloudRead, admin: true })
+  @Endpoint({
+    operationId: 'markCloudTourSeen',
+    summary: 'Mark your linked-server tour as seen',
+    description:
+      'Records how you ended the tour (finished, skipped, opened a settings page, or linked during first-run setup), so it is not offered to you again. The first ending is kept. Changes no settings and contacts nothing.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  markTourSeen(@Auth() auth: AuthDto, @Body() dto: CloudTourSeenDto): Promise<CloudTourResponseDto> {
+    return this.tourService.markSeen(auth, dto);
+  }
 
   @Get('status')
   @Authenticated({ permission: Permission.AdminCloudRead, admin: true })

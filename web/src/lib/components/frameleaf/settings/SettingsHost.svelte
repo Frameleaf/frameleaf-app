@@ -21,6 +21,7 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import AnalyticsArea from '$lib/components/frameleaf/analytics/AnalyticsArea.svelte';
+  import CloudTourHost from '$lib/components/frameleaf/cloud/CloudTourHost.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import CommandCenterOverview from '$lib/components/frameleaf/settings/CommandCenterOverview.svelte';
   import SettingsChangeHistory from '$lib/components/frameleaf/settings/SettingsChangeHistory.svelte';
@@ -77,6 +78,7 @@
     mdiChevronDoubleLeft,
     mdiChevronDoubleRight,
     mdiChevronRight,
+    mdiClose,
     mdiCloudOutline,
     mdiDesktopTowerMonitor,
     mdiFolderOutline,
@@ -108,6 +110,8 @@
   } = $props();
 
   const isAdmin = $derived(authManager.user.isAdmin);
+  /** FL-196: "Take the tour again …" after the linked-server tour was skipped. */
+  let tourNotice = $state('');
   const settingsDraft = getSystemConfigDraft();
 
   const areaCopy: Record<SettingsAreaId, { title: string; description: string; icon: string }> = $derived({
@@ -721,6 +725,14 @@
               <p>{selected?.subtitle ?? areaCopy[area].description}</p>
             </header>
           {/if}
+          {#if tourNotice}
+            <div class="cc-tour-notice" role="status">
+              <p>{tourNotice}</p>
+              <button type="button" aria-label={$t('frameleaf_cloud_tour_dismiss')} onclick={() => (tourNotice = '')}>
+                <Icon icon={mdiClose} size="1rem" aria-hidden />
+              </button>
+            </div>
+          {/if}
           {#if area === 'overview'}
             <CommandCenterOverview />
           {:else if area === 'history'}
@@ -777,6 +789,10 @@
     </main>
   </div>
 </div>
+
+{#if isAdmin}
+  <CloudTourHost {navigate} onNotice={(text) => (tourNotice = text)} />
+{/if}
 
 <style>
   /* The template's `command-center.css` shell. */
@@ -1112,6 +1128,34 @@
     font-size: 11px;
     line-height: 1.65;
     margin: 12px 0 0;
+  }
+  /* FL-196: the prototype's notice after skipping the tour (SettingsDraftNotices' look). */
+  .cc-tour-notice {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.625rem;
+    margin: 0 0 16px;
+    padding: 0.75rem 0.875rem;
+    background: var(--fl-raised);
+    border-inline-start: 2px solid var(--fl-accent);
+    font-size: var(--fl-font-small);
+    line-height: 1.6;
+  }
+  .cc-tour-notice p {
+    margin: 0;
+  }
+  .cc-tour-notice button {
+    margin-inline-start: auto;
+    display: inline-flex;
+    padding: 0.25rem;
+    color: var(--fl-muted);
+    background: transparent;
+    border: 0;
+    border-radius: var(--fl-radius);
+  }
+  .cc-tour-notice button:hover {
+    color: var(--fl-text);
+    background: var(--fl-panel);
   }
   .cc-notice {
     margin: 0 0 16px;

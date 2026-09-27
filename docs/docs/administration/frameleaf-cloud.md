@@ -48,6 +48,12 @@ Every access token Frameleaf Cloud gives this server is bound to that key (DPoP)
 
 Nothing from your library is uploaded by linking.
 
+### The tour of what linking unlocks
+
+When you link a server that is already set up, a short tour opens over Settings once the approval lands. Its six steps cover remote access, your server's own address, Sign in with Frameleaf, cloud AI and the AI Wallet (in US dollars), encrypted cloud backup, and your plan, licence and the Frameleaf Cloud area. Each step shows where that part stands **On this server** (for example **Needs a plan**, **Ready to turn on** or **On**) and has an **Open …** link to its settings page. Nothing is turned on by the tour, and it sends nothing to Frameleaf Cloud: the status comes from what your server already knows.
+
+Use **Next** and **Back**, the arrow keys, the page dots or a swipe to move between steps. **Done**, **Skip tour**, Escape or an **Open …** link each end the tour, and a link opens its page. The tour is shown once to each administrator: every other administrator sees it on their next visit to Settings, and people who are not administrators never do. Whether you have seen it is kept with your account on the server, so another browser does not show it again. A server linked during first-run setup does not show it, because setup already summarises what the link unlocks. To see it again, choose **Take the tour** on the **Linked to Frameleaf** card in **Account & link**, or search the settings for "tour". With Reduce Motion on, the steps fade instead of sliding; on a phone the tour is a sheet at the bottom of the screen.
+
 ### Linking without a browser
 
 Create a link token in your Frameleaf account under **Servers → Add server**, then start the server with `FRAMELEAF_LINK_TOKEN=fll_…`. The token works once and expires within an hour. The server links when it starts and never sends the same token again; remove it from the environment afterwards.

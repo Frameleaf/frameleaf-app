@@ -119,3 +119,46 @@ const CloudRemoteAccessUpdateSchema = z
 
 export class CloudRemoteAccessUpdateDto extends createZodDto(CloudRemoteAccessUpdateSchema) {}
 export class CloudPermissionsUpdateDto extends createZodDto(CloudPermissionsUpdateSchema) {}
+
+/**
+ * FL-196: the linked-server tour. Whether this administrator has seen it (kept per account on the
+ * server, so another browser never shows it again) and what the tour's "On this server" chips need
+ * that the link status does not carry. Everything is read from this server; nothing is contacted.
+ */
+export const CLOUD_TOUR_ENDINGS = ['finished', 'skipped', 'opened-settings', 'setup'] as const;
+
+export const CloudTourEndingSchema = z
+  .enum(CLOUD_TOUR_ENDINGS)
+  .describe(
+    'How the tour ended: finished (Done), skipped (Skip tour or Escape), opened-settings (an "Open …" link), setup (the server was linked during first-run setup, which has its own summary)',
+  )
+  .meta({ id: 'CloudTourEnding' });
+
+const CloudTourSeenSchema = z
+  .object({
+    ending: CloudTourEndingSchema,
+  })
+  .meta({ id: 'CloudTourSeenDto' });
+
+export class CloudTourSeenDto extends createZodDto(CloudTourSeenSchema) {}
+
+const CloudTourResponseSchema = z
+  .object({
+    seen: z.boolean().describe('You have seen the tour (or were shown setup’s summary instead)'),
+    seenAt: z.string().nullable().describe('When you first ended the tour'),
+    ending: CloudTourEndingSchema.nullable().describe('How you first ended the tour; later endings keep this one'),
+    offer: z
+      .boolean()
+      .describe('Open the tour now: this server is linked to a Frameleaf account and you have not seen it'),
+    customHostnameVerified: z.boolean().describe('Remote access answers on a domain you own, and its DNS is verified'),
+    processingEnabled: z.boolean().describe('Frameleaf Cloud processing is switched on'),
+    walletAvailableUsd: z
+      .number()
+      .meta({ format: 'double' })
+      .nullable()
+      .describe('AI Wallet credit available at the last read (US dollars, balance less holds); null before any read'),
+    backupConfigured: z.boolean().describe('Cloud backup is set up'),
+  })
+  .meta({ id: 'CloudTourResponseDto' });
+
+export class CloudTourResponseDto extends createZodDto(CloudTourResponseSchema) {}
