@@ -51,6 +51,13 @@
   } from '$lib/frameleaf/studio/preview';
   import { createStudioPreviewTransport } from '$lib/frameleaf/studio/preview-transport';
   import {
+    createStudioPreviewStream,
+    offStudioStreamView,
+    type StudioStreamView,
+  } from '$lib/frameleaf/studio/preview-stream';
+  import { createStudioPreviewStreamTransport } from '$lib/frameleaf/studio/preview-stream-transport';
+  import { rational } from '$lib/frameleaf/studio/rational-time';
+  import {
     createStudioProjectSession,
     STUDIO_DRAFT_PROJECT_ID,
     type StudioProjectSessionState,
@@ -230,6 +237,49 @@
   };
 
   let previewClient = createPreviewClient();
+
+  /**
+   * Streamed playback (FL-96). The host owns the WebRTC session as it owns the frame client: the
+   * editor's transport drives it (`reportTransport`), and the host's server preview panel shows it —
+   * the picture while playing, the exact frame while paused. It opens by itself when the editor
+   * cannot decode locally. Bound to the stored revision like every preview.
+   */
+  let stream = $state<StudioStreamView>(offStudioStreamView());
+  let serverPreviewOpen = $state(false);
+  const streamClient = createStudioPreviewStream({
+    transport: createStudioPreviewStreamTransport(),
+    onChange: (next) => {
+      stream = next;
+    },
+  });
+
+  $effect(() => {
+    const projectId = project.id;
+    const revision = storedRevision;
+    untrack(() =>
+      streamClient.setTarget(
+        revision === null
+          ? null
+          : {
+              projectId,
+              revision,
+              quality: 'standard',
+              viewportWidth: 1280,
+              viewportHeight: 720,
+            },
+      ),
+    );
+  });
+
+  $effect(() => {
+    const enabled = serverPreviewOpen && capabilities.renderWorker && !accessLost && !forbidden;
+    untrack(() => streamClient.setEnabled(enabled));
+  });
+
+  $effect(() => {
+    const next = online;
+    untrack(() => streamClient.setOnline(next));
+  });
 
   /** Retire the client and everything it cached, and start a fresh one. */
   const resetPreview = (): Promise<void> => {
@@ -508,6 +558,15 @@
     reportPlayhead: (time) => {
       playhead = { num: time.num, den: time.den };
     },
+    reportTransport: (state) => {
+      streamClient.setTransport({ playing: state.playing, time: rational(state.time.num, state.time.den), seek: state.seek });
+    },
+    reportLocalPreviewSupport: (support) => {
+      // Without WebCodecs the editor cannot show its own picture, so the server preview opens.
+      if (!support.webCodecs) {
+        serverPreviewOpen = true;
+      }
+    },
     saveWorkspace: (layout) => saveStudioWorkspaceLayout(layout, pinnedFreecutRevision),
     // The editor's own Export control opens the same dialog as the header's (FL-106).
     requestExport: () => {
@@ -724,6 +783,8 @@
       settleExportChoice(null);
       void previewClient.dispose();
       preview = idleStudioPreviewView();
+      // The streamed picture goes with the access, at once.
+      void streamClient.dispose();
       history.clear();
       releaseCommandEngine();
       void session.dispose();
@@ -741,6 +802,7 @@
     settleExportChoice(null);
     releaseCommandEngine();
     void previewClient.dispose();
+    void streamClient.dispose();
     void session.dispose();
   });
 
@@ -799,6 +861,9 @@
   dirty={dirty || (sessionState?.hasDraft ?? false)}
   accessLost={accessLost || forbidden}
   {preview}
+  {stream}
+  bind:serverPreviewOpen
+  onStreamVideoSize={(width, height) => streamClient.reportVideoSize(width, height)}
   droppedAssetCount={data.unavailableAssetCount}
   {unavailableRestorations}
   unsupportedSources={sessionState?.resources?.unsupportedSources ?? []}

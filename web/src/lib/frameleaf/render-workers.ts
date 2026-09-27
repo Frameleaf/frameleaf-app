@@ -153,6 +153,7 @@ export const destinationKey: Readonly<Record<MediaOperationDestination, Translat
 export const operationKindKey: Readonly<Record<MediaOperationKind, Translations>> = {
   [MediaOperationKind.StudioExport]: 'frameleaf_render_workers_kind_studio_export',
   [MediaOperationKind.StudioPreview]: 'frameleaf_render_workers_kind_studio_preview',
+  [MediaOperationKind.StudioPreviewStream]: 'frameleaf_render_workers_kind_studio_preview_stream',
   [MediaOperationKind.Restoration]: 'frameleaf_render_workers_kind_restoration',
   [MediaOperationKind.RestorationPreview]: 'frameleaf_render_workers_kind_restoration_preview',
   [MediaOperationKind.QuickEdit]: 'frameleaf_render_workers_kind_quick_edit',
@@ -187,6 +188,7 @@ export const operationKindKey: Readonly<Record<MediaOperationKind, Translations>
 export const RENDER_WORKER_KINDS: readonly MediaOperationKind[] = [
   MediaOperationKind.StudioExport,
   MediaOperationKind.StudioPreview,
+  MediaOperationKind.StudioPreviewStream,
   MediaOperationKind.Restoration,
   MediaOperationKind.RestorationPreview,
   MediaOperationKind.QuickEdit,
