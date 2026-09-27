@@ -390,7 +390,6 @@ COPY ./mise.lock ./mise.lock
 COPY ./packages/plugin-core/mise.toml ./packages/plugin-core/
 ENV MISE_TRUSTED_CONFIG_PATHS=/usr/src/app/mise.toml
 ENV MISE_DATA_DIR=/buildcache/mise
-ENV MISE_DISABLE_TOOLS=flutter
 # Harden `mise install` against transient GitHub API failures seen on the
 # self-hosted build runner. Two flavors observed: "HTTP timed out" while
 # fetching a version list, and "unexpected EOF" while downloading a release

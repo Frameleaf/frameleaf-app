@@ -38,7 +38,6 @@ export const ENGINE_REVISION = '4d62e8082c5eb387a96275bcbd323d28f6e41a62';
 export const GENERATOR = 'scripts/frameleaf-studio-commands.mjs';
 export const CATALOGUE_PATH = 'studio/frameleaf-studio-commands.json';
 export const SERVER_MIRROR_PATH = 'server/src/utils/studio-commands.generated.ts';
-export const NATIVE_CONTRACT_PATH = 'mobile/lib/frameleaf/studio_commands.g.dart';
 export const MANIFEST_PATH = 'studio/freecut-feature-manifest.json';
 export const ISSUE_MAP_PATH = 'docs/docs/developer/frameleaf-plan/freecut-issue-map.json';
 export const PROTOTYPE_PATH = 'design/frameleaf/template/src/studio-project.mjs';
@@ -86,8 +85,7 @@ export const CAPABILITIES = [
  * instant on the timeline, a length, and a cadence or speed multiplier. They travel as a
  * reduced `{ num, den }` pair of integers, which is the only representation in which an
  * NTSC boundary the person set is the boundary the encoder is asked for. The web side
- * types them `StudioTime`, `StudioDuration` and `StudioRate` over `Rational`; the native
- * contract spells the same pair with named integer fields.
+ * types them `StudioTime`, `StudioDuration` and `StudioRate` over `Rational`.
  *
  * `object` and `object[]` are deliberately opaque: a payload carries *intent*, and any
  * graph-shaped value inside it round-trips unread so an unknown Freecut field, a null, an
@@ -1736,7 +1734,6 @@ const sortedPayload = (payload) =>
     .map((name) => [name, payload[name]]);
 
 const fieldType = (declared) => (declared.endsWith('?') ? declared.slice(0, -1) : declared);
-const fieldRequired = (declared) => !declared.endsWith('?');
 
 /* ------------------------------------------------------------------ */
 /* Artifacts                                                            */
@@ -1873,141 +1870,6 @@ export function buildServerMirror(document) {
     'export type StudioCommandId = keyof typeof studioCommandMirror;',
     '',
     'export const studioCommandIds = Object.keys(studioCommandMirror) as StudioCommandId[];',
-    '',
-  );
-  return lines.join('\n');
-}
-
-const DART_HEADER = `// GENERATED CODE - DO NOT MODIFY BY HAND.
-//
-// Source: ${CATALOGUE_PATH}
-// Generator: ${GENERATOR}
-//
-// The native contract for the canonical Studio command vocabulary (FL-92, \`STU-205\`).
-// Native clients build command envelopes from this table instead of restating the
-// vocabulary, so a command the web host accepts and a command the phone or tablet sends
-// cannot drift. Payload values typed \`object\` are opaque maps that are carried through
-// unread, which is what keeps unknown graph fields, nulls, arrays and rational timing
-// extensions lossless on the way to the server.
-//
-// This file publishes the contract. It does not implement any command: every row names the
-// story that owns its semantics, and the server answers \`not-implemented\` until that
-// story lands.
-`;
-
-export function buildNativeContract(document) {
-  const lines = [DART_HEADER];
-  lines.push(
-    `const int frameleafStudioCommandSchemaVersion = ${document.schemaVersion};`,
-    '',
-    `const String frameleafStudioEngineRevision = '${document.engineRevision}';`,
-    '',
-    '/// The part of the project a command acts on.',
-    'enum FrameleafStudioScope {',
-    ...document.scopes.map((scope) => `  ${scope},`),
-    '}',
-    '',
-    '/// A worker capability a command needs before it may be offered or accepted.',
-    'enum FrameleafStudioCapability {',
-    ...document.capabilities.map((capability) => `  ${capability},`),
-    '}',
-    '',
-    '/// An exact rational: a reduced fraction of two integers, never a float.',
-    '///',
-    '/// A `time`, `duration` or `rate` field carries one of these (FL-93). On the wire it is',
-    '/// the pair the web host and the server use, `{"num": .., "den": ..}`; here the two',
-    '/// integers are named, so native code cannot mistake it for a double.',
-    'class FrameleafStudioRational {',
-    '  const FrameleafStudioRational(this.numerator, this.denominator);',
-    '',
-    '  factory FrameleafStudioRational.fromJson(Map<String, dynamic> json) {',
-    '    final Object? numerator = json[\'num\'];',
-    '    final Object? denominator = json[\'den\'];',
-    '    if (numerator is! int || denominator is! int || denominator <= 0) {',
-    '      throw const FormatException(\'a rational needs integer num and positive den\');',
-    '    }',
-    '    return FrameleafStudioRational(numerator, denominator);',
-    '  }',
-    '',
-    '  final int numerator;',
-    '  final int denominator;',
-    '',
-    '  Map<String, dynamic> toJson() => <String, dynamic>{',
-    '    \'num\': numerator,',
-    '    \'den\': denominator,',
-    '  };',
-    '',
-    '  @override',
-    '  String toString() => \'$numerator/$denominator\';',
-    '}',
-    '',
-    '/// The field types that carry a [FrameleafStudioRational].',
-    'const Set<String> frameleafStudioRationalFieldTypes = <String>{',
-    "  'time',",
-    "  'duration',",
-    "  'rate',",
-    '};',
-    '',
-    '/// One payload field: its name, its declared type and whether it must be present.',
-    'class FrameleafStudioField {',
-    '  const FrameleafStudioField(this.name, this.type, this.required);',
-    '',
-    '  final String name;',
-    '  final String type;',
-    '  final bool required;',
-    '}',
-    '',
-    '/// One published command.',
-    'class FrameleafStudioCommand {',
-    '  const FrameleafStudioCommand({',
-    '    required this.id,',
-    '    required this.scope,',
-    '    required this.mutatesGraph,',
-    '    required this.undoable,',
-    '    required this.capability,',
-    '    required this.owner,',
-    '    required this.payload,',
-    '  });',
-    '',
-    '  final String id;',
-    '  final FrameleafStudioScope scope;',
-    '  final bool mutatesGraph;',
-    '  final bool undoable;',
-    '  final FrameleafStudioCapability? capability;',
-    '  final String owner;',
-    '  final List<FrameleafStudioField> payload;',
-    '}',
-    '',
-    'const List<FrameleafStudioCommand> frameleafStudioCommands = <FrameleafStudioCommand>[',
-  );
-  for (const command of document.commands) {
-    lines.push(
-      '  FrameleafStudioCommand(',
-      `    id: '${command.id}',`,
-      `    scope: FrameleafStudioScope.${command.scope},`,
-      `    mutatesGraph: ${command.mutatesGraph},`,
-      `    undoable: ${command.undoable},`,
-      `    capability: ${
-        command.capability === null ? 'null' : `FrameleafStudioCapability.${command.capability}`
-      },`,
-      `    owner: '${command.owner}',`,
-      '    payload: <FrameleafStudioField>[',
-      ...sortedPayload(command.payload).map(
-        ([name, type]) => `      FrameleafStudioField('${name}', '${fieldType(type)}', ${fieldRequired(type)}),`,
-      ),
-      '    ],',
-      '  ),',
-    );
-  }
-  lines.push(
-    '];',
-    '',
-    '/// The same commands, keyed by id, for envelope validation.',
-    'final Map<String, FrameleafStudioCommand> frameleafStudioCommandsById =',
-    '    <String, FrameleafStudioCommand>{',
-    '      for (final FrameleafStudioCommand command in frameleafStudioCommands)',
-    '        command.id: command,',
-    '    };',
     '',
   );
   return lines.join('\n');
