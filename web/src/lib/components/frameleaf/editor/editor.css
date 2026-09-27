@@ -646,6 +646,14 @@
   backdrop-filter: var(--fl-material-blur);
   border-left: 1px solid var(--fl-material-edge);
 }
+/* Groups the video tools so they can be disabled together while the clip loads; adds no box. */
+.ed-panel-controls {
+  display: contents;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
 .ed-panel-body {
   animation: ed-rise var(--fl-duration) var(--fl-spring);
 }
