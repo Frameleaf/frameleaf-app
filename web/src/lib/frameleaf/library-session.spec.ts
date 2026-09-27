@@ -270,6 +270,36 @@ describe('selection is scope bound', () => {
     expect(session.selection).toEqual(day);
   });
 
+  /*
+   * FL-31's open question (Sep 22), answered from the prototype: "all matching" means the set the
+   * person saw counted. The prototype acts on selected ∩ visible, so after the query changes it never
+   * reaches items the old query matched but the new one hides, and never widens to new matches.
+   * Production cannot intersect an unloaded set, so a result-changing edit ends "all matching" and the
+   * selection falls back to the ids that were explicitly on the page; "Select all n" is offered again.
+   */
+  it('ends an all-matching selection when the query changes, keeping the explicit ids', () => {
+    const matching = run(createLibrarySession(), { type: 'selection', ids: day, allMatching: true });
+    const narrowed = reduceLibrarySession(matching, {
+      type: 'view',
+      patch: { query: withFilter({ isFavorite: { eq: true } }) },
+    });
+    expect(narrowed.selection).toEqual(day);
+    expect(narrowed.selectionSnapshot).toBeUndefined();
+  });
+
+  it('keeps an all-matching selection across sort and presentation changes', () => {
+    const matching = run(createLibrarySession(), { type: 'selection', ids: day, allMatching: true });
+    const frozen = matching.selectionSnapshot;
+    const session = run(
+      matching,
+      { type: 'view', patch: { sort: 'filename' } },
+      { type: 'view', patch: { grouping: 'days', view: 'list' } },
+      { type: 'layout', layout: 'browse' },
+    );
+    expect(session.selectionSnapshot).toBe(frozen);
+    expect(session.selection).toEqual(day);
+  });
+
   it('is dropped when the scope changes', () => {
     const session = run(
       createLibrarySession(),
