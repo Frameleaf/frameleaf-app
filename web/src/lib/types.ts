@@ -24,6 +24,8 @@ export type UploadAsset = {
   assetId?: string;
   isTrashed?: boolean;
   albumId?: string;
+  /** Sent to the Locked folder; a retry must go there again. */
+  isLockedAssets?: boolean;
   progress?: number;
   state?: UploadState;
   startDate?: number;

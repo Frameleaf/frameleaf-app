@@ -1,6 +1,6 @@
 <script lang="ts">
   import '$lib/frameleaf/tokens.css';
-  import { cancelRemainingUploads, fileUploadHandler, uploadExecutionQueue } from '$lib/utils/file-uploader';
+  import { cancelRemainingUploads, retryFailedUploads, uploadExecutionQueue } from '$lib/utils/file-uploader';
   import { locale } from '$lib/stores/preferences.store';
   import { uploadAssetsStore } from '$lib/stores/upload';
   import { UploadState, type UploadAsset } from '$lib/types';
@@ -122,18 +122,6 @@
       default: {
         return $t('frameleaf_transfer_status_pending');
       }
-    }
-  };
-
-  const retryItem = async (item: UploadAsset) => {
-    uploadAssetsStore.removeItem(item.id);
-    await fileUploadHandler({ files: [item.file], albumId: item.albumId });
-  };
-
-  const retryAllFailed = async () => {
-    const failed = $uploadAssetsStore.filter((item) => item.state === UploadState.ERROR);
-    for (const item of failed) {
-      await retryItem(item);
     }
   };
 
@@ -284,7 +272,7 @@
           </label>
           <div class="fl-panel-actions">
             {#if $stats.errors > 0}
-              <button type="button" class="fl-button" onclick={() => void retryAllFailed()}>
+              <button type="button" class="fl-button" onclick={() => void retryFailedUploads()}>
                 <Icon icon={mdiRefresh} size="16" aria-hidden="true" />
                 {$t('frameleaf_transfer_retry_failed')}
               </button>
