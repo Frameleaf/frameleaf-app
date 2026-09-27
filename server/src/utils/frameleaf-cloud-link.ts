@@ -48,8 +48,13 @@ export const HEARTBEAT_FIELDS = [
   'remoteAccess',
   'permissions',
   'licenseKid',
+  'capabilities',
 ] as const;
 export type HeartbeatField = (typeof HEARTBEAT_FIELDS)[number];
+
+/** The cloud's bounds on the check-in's `capabilities` (FC-50): at most 16 entries of 1 to 32 characters. */
+const HEARTBEAT_MAX_CAPABILITIES = 16;
+const HEARTBEAT_CAPABILITY_MAX_LENGTH = 32;
 
 export type HeartbeatPayload = {
   version: string;
@@ -62,8 +67,9 @@ export type HeartbeatPayload = {
   licenseKid: string | null;
   /**
    * CLD-201 (FC-50): the capabilities this build supports, so a server linked before it declared `dpop`
-   * turns per-instance DPoP enforcement on without relinking. Only present while
-   * `HEARTBEAT_REPORTS_CAPABILITIES` is on.
+   * turns per-instance DPoP enforcement on without relinking (FC-50, frameleaf-cloud PR #72: at most 16
+   * entries of 1 to 32 characters; only `dpop` is acted on, only over DPoP, and never turned off again).
+   * Present while `HEARTBEAT_REPORTS_CAPABILITIES` is on.
    */
   capabilities?: readonly string[];
 };
@@ -82,8 +88,12 @@ export const buildHeartbeat = (input: HeartbeatPayload): HeartbeatPayload => ({
   },
   permissions: { ...defaultPermissions(), ...pickPermissions(input.permissions) },
   licenseKid: input.licenseKid,
-  // CLD-201 (FC-50): additive and one-way on the cloud side; only sent once the cloud accepts it
-  ...(input.capabilities && { capabilities: [...input.capabilities] }),
+  // CLD-201 (FC-50): additive and one-way on the cloud side
+  ...(input.capabilities && {
+    capabilities: input.capabilities
+      .filter((value) => value.length > 0 && value.length <= HEARTBEAT_CAPABILITY_MAX_LENGTH)
+      .slice(0, HEARTBEAT_MAX_CAPABILITIES),
+  }),
 });
 
 /** What Frameleaf Cloud may ask this server to do, before an administrator changes it (prototype defaults). */

@@ -20836,7 +20836,8 @@ export enum CloudHeartbeatField {
     Endpoints = "endpoints",
     RemoteAccess = "remoteAccess",
     Permissions = "permissions",
-    LicenseKid = "licenseKid"
+    LicenseKid = "licenseKid",
+    Capabilities = "capabilities"
 }
 export enum CloudLinkRefusal {
     InstanceLimit = "instance-limit",

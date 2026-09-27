@@ -18,7 +18,7 @@ import {
   SET_ASIDE_MARK,
 } from 'src/repositories/instance-identity.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
-import { FrameleafCloudService } from 'src/services/frameleaf-cloud.service.js';
+import { FrameleafCloudService, INSTANCE_CAPABILITIES } from 'src/services/frameleaf-cloud.service.js';
 import { clearConfigCache } from 'src/utils/config.js';
 import {
   CloudConnectionState,
@@ -681,6 +681,11 @@ describe(FrameleafCloudService.name, () => {
       for (const key of ['health', 'remoteAccess', 'permissions'] as const) {
         expect(Object.keys(sent[key])).toEqual(Object.keys(golden[key]));
       }
+      // FC-50 (frameleaf-cloud PR #72): every check-in reports `dpop`, so a server linked before it
+      // declared the capability turns per-instance DPoP enforcement on without relinking
+      expect(golden.capabilities).toEqual(['dpop']);
+      expect(sent.capabilities).toContain('dpop');
+      expect(sent.capabilities).toEqual([...INSTANCE_CAPABILITIES]);
     });
 
     it('asks for a new link when every instance route answers key_retired, without revoking (FC-19)', async () => {
