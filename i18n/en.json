@@ -8613,7 +8613,7 @@
   "frameleaf_studio_bundle_review_copies": "{count, plural, one {# missing item has} other {# missing items have}} a copy in the bundle that can be added to your library later.",
   "frameleaf_studio_bundle_review_summary": "{kept} already here, {suggested} matched to your items, {missing} missing",
   "frameleaf_studio_bundle_save_first": "Save the project before exporting it.",
-  "frameleaf_studio_bundle_sequences_unavailable": "Exporting only some sequences needs the Studio editor, which is not part of this build.",
+  "frameleaf_studio_bundle_sequences_unavailable": "The saved project does not have every sequence you chose. Save the project and export again.",
   "frameleaf_studio_bundle_source_kept": "Already here",
   "frameleaf_studio_bundle_source_missing": "Missing",
   "frameleaf_studio_bundle_source_suggested": "Matched",

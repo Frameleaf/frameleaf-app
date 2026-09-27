@@ -12,12 +12,12 @@
  *   meaning as the project library's export dialog: owned media is copied, shared media travels
  *   as a reference and nothing Locked is ever copied (the server enforces all three). When the
  *   payload leaves the choice open, the host asks the person in its own export dialog before
- *   anything is queued; cancelling that dialog queues nothing.
+ *   anything is queued; cancelling that dialog queues nothing. `sequenceIds` limits the bundle to
+ *   those sequences and every sequence they nest (`main` names the Main timeline); the server cuts
+ *   them from the stored revision and refuses a sequence that revision does not have.
  * - An import always creates a *new* project, never overwrites the open one, and relinks sources
  *   only to items the server authorizes for this account.
  *
- * Exporting a subset of sequences needs the engine to cut the graph, and the engine is not part
- * of this build; that request is refused with a message rather than exporting everything instead.
  */
 import {
   exportStudioProjectBundle,
@@ -109,9 +109,7 @@ export const createStudioBundleHandlers = ({
   return {
     'project.exportBundle': async (envelope: StudioCommandEnvelope) => {
       const payload = envelope.payload as StudioCommandPayloads['project.exportBundle'];
-      if (payload.sequenceIds && payload.sequenceIds.length > 0) {
-        refuse('frameleaf_studio_bundle_sequences_unavailable');
-      }
+      const sequenceIds = payload.sequenceIds && payload.sequenceIds.length > 0 ? payload.sequenceIds : undefined;
 
       // Refusals come before the question: never ask about copies for an export that cannot run.
       const asked = project();
@@ -125,9 +123,17 @@ export const createStudioBundleHandlers = ({
       const current = project();
       let operation: MediaOperationDto;
       try {
-        operation = await api.exportProject(current.id, { includeMedia, requestKey: requestKeyOf(envelope) });
+        operation = await api.exportProject(current.id, {
+          includeMedia,
+          ...(sequenceIds && { sequenceIds }),
+          requestKey: requestKeyOf(envelope),
+        });
       } catch (error) {
-        onRefused('frameleaf_studio_bundle_export_failed');
+        // The stored revision lacks a chosen sequence, typically one the editor has not saved yet.
+        const missingSequence = sequenceIds && (error as { status?: unknown } | null)?.status === 400;
+        onRefused(
+          missingSequence ? 'frameleaf_studio_bundle_sequences_unavailable' : 'frameleaf_studio_bundle_export_failed',
+        );
         throw error;
       }
       onQueued(operation);
