@@ -6,6 +6,8 @@ import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { emptyDiscoveryQuery } from '$lib/components/discovery/query';
 import { libraryGridPreferences } from '$lib/frameleaf/library-grid-preferences.svelte';
 import { librarySession } from '$lib/frameleaf/library-session.svelte';
+import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
+import { assetFactory } from '@test-data/factories/asset-factory';
 import LibraryView from './LibraryView.svelte';
 
 vi.mock('$lib/managers/feature-flags-manager.svelte', () => ({
@@ -499,6 +501,75 @@ describe('LibraryView', () => {
       expect(screen.getByText('frameleaf_shortcuts_note')).toBeInTheDocument();
       await fireEvent.click(screen.getByRole('button', { name: 'done' }));
       await waitFor(() => expect(screen.queryByTestId('frameleaf-shortcuts-help')).not.toBeInTheDocument());
+    });
+  });
+
+  describe('the open item and the viewer (FL-31)', () => {
+    const viewerSnippet = createRawSnippet(() => ({ render: () => '<div data-testid="viewer-host">viewer</div>' }));
+
+    const setupWithViewer = async () => {
+      render(LibraryView, {
+        options: { albumId: 'album-1' },
+        destination: { kind: 'album', id: 'album-1' },
+        syncUrl: false,
+        noSelectionBar: true,
+        viewer: viewerSnippet,
+      });
+      await waitFor(() => expect(screen.getByTestId('frameleaf-library')).toBeInTheDocument());
+      librarySession.setLayout('work');
+      await tick();
+    };
+
+    afterEach(() => {
+      assetViewerManager.showAssetViewer(false);
+      librarySession.close();
+    });
+
+    it('gives the keys back to the library once the viewer has closed, though the item stays open', async () => {
+      await setupWithViewer();
+      librarySession.open('asset-1');
+      await tick();
+      expect(screen.getByTestId('frameleaf-work-inspector')).toBeInTheDocument();
+
+      await fireEvent.keyDown(document, { key: 'i' });
+      expect(screen.queryByTestId('frameleaf-work-inspector')).not.toBeInTheDocument();
+
+      // Escape is not swallowed by an item the viewer no longer shows.
+      const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+      document.dispatchEvent(escape);
+      expect(escape.defaultPrevented).toBe(false);
+      expect(librarySession.openAssetId).toBe('asset-1');
+    });
+
+    it('follows the viewer from item to item and leaves its keys to it', async () => {
+      await setupWithViewer();
+      const first = assetFactory.build({ id: 'viewer-1' });
+      assetViewerManager.setAsset(first);
+      await tick();
+      expect(librarySession.openAssetId).toBe('viewer-1');
+      expect(librarySession.session.scrollAnchor).toBe('viewer-1');
+      librarySession.recordPlayhead('viewer-1', 12);
+
+      assetViewerManager.setAsset(assetFactory.build({ id: 'viewer-2' }));
+      await tick();
+      expect(librarySession.openAssetId).toBe('viewer-2');
+      expect(librarySession.playbackPosition).toBe(0);
+
+      await fireEvent.keyDown(document, { key: 'i' });
+      expect(screen.getByTestId('frameleaf-work-inspector')).toBeInTheDocument();
+    });
+
+    it('keeps the viewer, and whatever it is editing, mounted across a layout switch', async () => {
+      await setupWithViewer();
+      assetViewerManager.setAsset(assetFactory.build({ id: 'viewer-1' }));
+      await tick();
+      const host = screen.getByTestId('viewer-host');
+      for (const layout of ['timeline', 'browse', 'work'] as const) {
+        librarySession.setLayout(layout);
+        await tick();
+        expect(screen.getByTestId('viewer-host')).toBe(host);
+      }
+      expect(librarySession.openAssetId).toBe('viewer-1');
     });
   });
 });

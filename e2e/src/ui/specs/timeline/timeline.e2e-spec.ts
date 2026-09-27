@@ -408,6 +408,22 @@ test.describe('Timeline', () => {
       }
     });
 
+    test('The library keys come back once the viewer has closed', async ({ page }) => {
+      await pageUtils.openPhotosPage(page);
+      const asset = assets[0];
+      await thumbnailUtils.clickAssetId(page, asset.id);
+      await assetViewerUtils.waitForViewerLoad(page, asset);
+      await page.goBack();
+      await timelineUtils.waitForTimelineLoad(page);
+      await expect(page.locator('#immich-asset-viewer')).toHaveCount(0);
+      const before = await tileWidth(page, asset.id);
+      await timelineUtils.locator(page).hover();
+      for (let step = 0; step < 3; step++) {
+        await page.keyboard.press('+');
+      }
+      await expect.poll(() => tileWidth(page, asset.id)).toBeGreaterThan(before);
+    });
+
     test('A link to an item that is gone opens the library without it', async ({ page }) => {
       const gone = assets[3];
       await page.route(`**/api/assets/${gone.id}`, (route) =>

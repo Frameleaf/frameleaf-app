@@ -871,6 +871,24 @@
     onOpen?.(asset);
   };
 
+  /**
+   * The session's open item follows the page's viewer, including its own previous/next, so Work's
+   * panel, the scroll anchor and the playhead describe what is actually shown (prototype
+   * `onNavigateAsset` → `open`). Closing the viewer leaves the item open: reopening it resumes it.
+   */
+  $effect(() => {
+    const id = assetViewerManager.isViewing ? assetViewerManager.asset?.id : undefined;
+    if (!id) {
+      return;
+    }
+    untrack(() => {
+      if (id !== session.openAssetId) {
+        session.open(id);
+      }
+      session.setScrollAnchor(id);
+    });
+  });
+
   /** The viewer opens straight into the quick editor, which edits this one item. */
   const editAsset = (asset: TimelineAsset) => {
     if (!viewer || asset.ownerId !== currentUserId || asset.isTrashed) {
@@ -1268,8 +1286,9 @@
    * handled here; the rest are handed to the owner of that action.
    */
   const handleKeyDown = (event: KeyboardEvent) => {
-    // While the viewer is open the keys belong to it.
-    const surface = session.openAssetId ? 'viewer' : 'timeline';
+    // While the viewer is open the keys belong to it. The session's open item outlives the viewer
+    // (reopening it resumes it), so it is the viewer itself that decides.
+    const surface = assetViewerManager.isViewing ? 'viewer' : 'timeline';
     const shortcut = matchLibraryShortcut(event, { surface });
     if (!shortcut) {
       return;
@@ -1318,9 +1337,8 @@
           session.patchView({ view: 'grid' });
           return;
         }
-        if (session.openAssetId) {
-          event.preventDefault();
-          session.close();
+        if (surface === 'viewer') {
+          // The viewer closes itself; the item stays open so reopening it resumes it.
           return;
         }
         if (selecting) {
@@ -1609,7 +1627,7 @@
 {/if}
 
 {#if helpOpen}
-  <ShortcutsHelp surface={session.openAssetId ? 'viewer' : 'timeline'} onClose={() => (helpOpen = false)} />
+  <ShortcutsHelp surface={assetViewerManager.isViewing ? 'viewer' : 'timeline'} onClose={() => (helpOpen = false)} />
 {/if}
 
 <style>

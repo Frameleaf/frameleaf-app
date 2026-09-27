@@ -355,9 +355,14 @@ export class LibrarySessionStore {
   /* Open item and playback                                                  */
   /* ---------------------------------------------------------------------- */
 
-  /** Open an asset in the viewer. Opening is not selecting; the multi-select state is untouched. */
+  /**
+   * Open an asset in the viewer. Opening is not selecting; the multi-select state is untouched.
+   * Without an explicit time, reopening the item already open resumes where it was left (prototype
+   * `App.jsx` `open`), and any other item starts at the beginning.
+   */
   open(id: string, time?: number) {
-    return this.dispatch({ type: 'open', id, time });
+    const resume = time === undefined && id === this.#session.openAssetId;
+    return this.dispatch({ type: 'open', id, time: resume ? this.#session.playbackPosition : time });
   }
 
   close() {
@@ -381,6 +386,19 @@ export class LibrarySessionStore {
 
   setPlayback(time: number) {
     return this.dispatch({ type: 'playback', time });
+  }
+
+  /**
+   * Where a video viewer showing `assetId` should start: the session's playhead, clamped into the
+   * media, when that is the item the session has open; otherwise null and the viewer starts as usual.
+   */
+  playheadFor(assetId: string, durationInSeconds?: number | null): number | null {
+    return assetId === this.#session.openAssetId ? this.restorePlayback(durationInSeconds) : null;
+  }
+
+  /** A video viewer reporting its position. Only the session's open item moves the playhead. */
+  recordPlayhead(assetId: string, time: number) {
+    return assetId === this.#session.openAssetId ? this.setPlayback(time) : this.#session;
   }
 
   setScrollAnchor(id: string) {
