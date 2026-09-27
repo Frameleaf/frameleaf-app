@@ -103,6 +103,8 @@ export type StudioExportPublication = {
   sources: ReadonlyArray<Pick<StudioExportVersionSource, 'key' | 'kind' | 'assetId' | 'checksum'>>;
   /** The scope the service prepared the file for. A different union refuses rather than guesses. */
   expectedScope: StudioExportScope;
+  /** Keep the result with its project even when every source is the owner's (FL-194). */
+  retainInProject?: boolean;
   nsfwHiding: boolean;
   /** Where the verified output now is: the asset's original for `library`, the project file otherwise. */
   path: string;
@@ -112,6 +114,26 @@ export type StudioExportPublication = {
   assetType: AssetType;
   originalFileName: string;
 };
+
+/** A `project` result the owner saves to their library (FL-194). */
+export type StudioExportLibrarySave = Pick<
+  StudioExportPublication,
+  | 'versionId'
+  | 'ownerId'
+  | 'sources'
+  | 'nsfwHiding'
+  | 'path'
+  | 'checksum'
+  | 'sizeInBytes'
+  | 'contentType'
+  | 'assetType'
+  | 'originalFileName'
+>;
+
+type StudioExportAssetInput = Pick<
+  StudioExportPublication,
+  'ownerId' | 'path' | 'checksum' | 'sizeInBytes' | 'assetType' | 'originalFileName'
+>;
 
 export type StudioExportPublished = {
   status: 'published';
@@ -472,67 +494,16 @@ export class StudioExportRepository {
         throw new StudioExportRefusal('project-unavailable', 'The project is gone or in the trash');
       }
 
-      const librarySources = input.sources.filter((source) => !!source.assetId);
-      const rows = await this.privacy.lockSources(tx, [...new Set(librarySources.map((source) => source.assetId!))]);
-      for (const source of librarySources) {
-        const row = rows.get(source.assetId!);
-        if (!row || row.deleted || row.offline) {
-          throw new StudioExportRefusal('source-unavailable', 'A source of this export was deleted or went offline');
-        }
-        if (source.checksum && this.checksumBearing(source.kind) && source.checksum !== row.checksum) {
-          throw new StudioExportRefusal('source-changed', 'A source of this export changed after it was rendered');
-        }
-      }
-
-      const evidence: LockedSourceRow[] = rows.values().toArray();
-      const foreign = evidence.filter((row) => row.ownerId !== input.ownerId);
-      if (foreign.length > 0) {
-        const reachable = await this.privacy.lockSharedAccess(tx, input.ownerId, foreign);
-        if (foreign.some((row) => !reachable.has(row.assetId))) {
-          throw new StudioExportRefusal('source-access-lost', 'A shared source of this export is no longer shared');
-        }
-      }
-
-      const privacy = unionDerivativePrivacy(
-        input.ownerId,
-        evidence.map((row): DerivativeSourceEvidence => ({
-          assetId: row.assetId,
-          ownerId: row.ownerId,
-          lockReason: row.lockReason,
-          sensitive: row.sensitive,
-        })),
-        { nsfwHiding: input.nsfwHiding },
-      );
-      if (privacy.scope !== input.expectedScope) {
+      const privacy = await this.lockSourcePrivacy(tx, input);
+      const scope = input.retainInProject ? StudioExportScope.Project : privacy.union.scope;
+      if (scope !== input.expectedScope) {
         throw new StudioExportRefusal('scope-changed', 'The sources of this export changed hands');
       }
 
-      let createdAssetId: string | null = null;
-      let reusedAssetId: string | null = null;
-      if (privacy.scope === StudioExportScope.Library) {
-        // Locks an asset lockIn may also be locking; should Postgres pick this transaction as a deadlock
-        // victim, the publication attempt fails and its automatic retry publishes it (FL-104).
-        const duplicate = await tx
-          .selectFrom('asset')
-          .select(['id', 'deletedAt'])
-          .where('ownerId', '=', input.ownerId)
-          .where('libraryId', 'is', null)
-          .where('checksum', '=', input.checksum)
-          .forUpdate()
-          .executeTakeFirst();
-        if (duplicate) {
-          const existing = await this.privacy.getEvidence(tx, duplicate.id);
-          if (duplicate.deletedAt || !existing || !satisfiesDerivativePrivacy(existing, privacy)) {
-            throw new StudioExportRefusal(
-              'duplicate-restricted',
-              'You already have this exact file with fewer restrictions than its sources need',
-            );
-          }
-          reusedAssetId = duplicate.id;
-        } else {
-          createdAssetId = await this.createAsset(tx, input, privacy);
-        }
-      }
+      const { createdAssetId, reusedAssetId } =
+        scope === StudioExportScope.Library
+          ? await this.adoptLibraryAsset(tx, input, privacy.union)
+          : { createdAssetId: null, reusedAssetId: null };
 
       const next = await tx
         .selectFrom('studio_export_version')
@@ -540,7 +511,7 @@ export class StudioExportRepository {
         .where('projectId', '=', project.id)
         .executeTakeFirstOrThrow();
 
-      for (const row of evidence) {
+      for (const row of privacy.evidence) {
         await tx
           .updateTable('studio_export_version_source')
           .set({ locked: row.lockReason !== null, lockReason: row.lockReason, sensitive: row.sensitive })
@@ -554,10 +525,10 @@ export class StudioExportRepository {
         .set({
           state: StudioExportVersionState.Published,
           version: Number(next.next),
-          scope: privacy.scope,
+          scope,
           resultAssetId: createdAssetId ?? reusedAssetId,
           outputPath: reusedAssetId ? null : input.path,
-          privacy: privacy as unknown as Record<string, unknown>,
+          privacy: { ...privacy.union, scope } as unknown as Record<string, unknown>,
           publishedAt: sql<Date>`now()`,
           updatedAt: sql<Date>`now()`,
           errorCode: null,
@@ -570,11 +541,142 @@ export class StudioExportRepository {
       return {
         status: 'published',
         version: published as unknown as StudioExportVersion,
-        privacy,
+        privacy: { ...privacy.union, scope },
         createdAssetId,
         reusedAssetId,
       };
     });
+  }
+
+  /**
+   * Save a published `project` result to its owner's library (FL-194), atomically: the version is
+   * locked, the database must not be handed over, every library source is re-checked under locks
+   * as at publication and must still make a `library` result (the owner's own, none gone), and the
+   * file becomes an asset with the sources' privacy installed — or the owner's existing asset with
+   * the same bytes, restricted at least as much, is referenced. A version already in the library
+   * answers with itself.
+   */
+  async saveToLibrary(
+    input: StudioExportLibrarySave,
+  ): Promise<{ version: StudioExportVersion; createdAssetId: string | null; reusedAssetId: string | null }> {
+    return this.db.transaction().execute(async (tx) => {
+      await lockPublicForkWrites(tx, STUDIO_EXPORT_HANDOFF_REFUSAL);
+      const version = (await tx
+        .selectFrom('studio_export_version')
+        .selectAll()
+        .where('id', '=', input.versionId)
+        .where('ownerId', '=', input.ownerId)
+        .forUpdate()
+        .executeTakeFirst()) as StudioExportVersion | undefined;
+      if (version?.state === StudioExportVersionState.Published && version.scope === StudioExportScope.Library) {
+        return { version, createdAssetId: null, reusedAssetId: null };
+      }
+      if (
+        !version ||
+        version.state !== StudioExportVersionState.Published ||
+        version.scope !== StudioExportScope.Project ||
+        !version.outputPath ||
+        version.outputRemovedAt
+      ) {
+        throw new StudioExportRefusal('not-staged', 'This export has no file to save');
+      }
+
+      await this.assertNoHandoff(tx);
+      const privacy = await this.lockSourcePrivacy(tx, input);
+      if (privacy.union.scope !== StudioExportScope.Library) {
+        throw new StudioExportRefusal('source-access-lost', 'A result made with shared media stays with its project');
+      }
+
+      const { createdAssetId, reusedAssetId } = await this.adoptLibraryAsset(tx, input, privacy.union);
+      const saved = await tx
+        .updateTable('studio_export_version')
+        .set({
+          scope: StudioExportScope.Library,
+          resultAssetId: createdAssetId ?? reusedAssetId,
+          outputPath: reusedAssetId ? null : input.path,
+          privacy: privacy.union as unknown as Record<string, unknown>,
+          updatedAt: sql<Date>`now()`,
+        })
+        .where('id', '=', version.id)
+        .returningAll()
+        .executeTakeFirstOrThrow();
+      return { version: saved as unknown as StudioExportVersion, createdAssetId, reusedAssetId };
+    });
+  }
+
+  /**
+   * Share-lock every library source and read the union of their Locked and sensitive evidence. A
+   * source gone, in the trash, offline or with another checksum refuses; a source of somebody
+   * else's must still be shared with the owner.
+   */
+  private async lockSourcePrivacy(
+    tx: Kysely<DB>,
+    input: Pick<StudioExportPublication, 'ownerId' | 'sources' | 'nsfwHiding'>,
+  ): Promise<{ union: DerivativePrivacy; evidence: LockedSourceRow[] }> {
+    const librarySources = input.sources.filter((source) => !!source.assetId);
+    const rows = await this.privacy.lockSources(tx, [...new Set(librarySources.map((source) => source.assetId!))]);
+    for (const source of librarySources) {
+      const row = rows.get(source.assetId!);
+      if (!row || row.deleted || row.offline) {
+        throw new StudioExportRefusal('source-unavailable', 'A source of this export was deleted or went offline');
+      }
+      if (source.checksum && this.checksumBearing(source.kind) && source.checksum !== row.checksum) {
+        throw new StudioExportRefusal('source-changed', 'A source of this export changed after it was rendered');
+      }
+    }
+
+    const evidence: LockedSourceRow[] = rows.values().toArray();
+    const foreign = evidence.filter((row) => row.ownerId !== input.ownerId);
+    if (foreign.length > 0) {
+      const reachable = await this.privacy.lockSharedAccess(tx, input.ownerId, foreign);
+      if (foreign.some((row) => !reachable.has(row.assetId))) {
+        throw new StudioExportRefusal('source-access-lost', 'A shared source of this export is no longer shared');
+      }
+    }
+
+    const union = unionDerivativePrivacy(
+      input.ownerId,
+      evidence.map((row): DerivativeSourceEvidence => ({
+        assetId: row.assetId,
+        ownerId: row.ownerId,
+        lockReason: row.lockReason,
+        sensitive: row.sensitive,
+      })),
+      { nsfwHiding: input.nsfwHiding },
+    );
+    return { union, evidence };
+  }
+
+  /**
+   * The result as an asset of the owner's: an existing asset with the same bytes and at least the
+   * same restrictions, or a new one.
+   */
+  private async adoptLibraryAsset(
+    tx: Kysely<DB>,
+    input: StudioExportAssetInput,
+    privacy: DerivativePrivacy,
+  ): Promise<{ createdAssetId: string | null; reusedAssetId: string | null }> {
+    // Locks an asset lockIn may also be locking; should Postgres pick this transaction as a deadlock
+    // victim, the publication attempt fails and its automatic retry publishes it (FL-104).
+    const duplicate = await tx
+      .selectFrom('asset')
+      .select(['id', 'deletedAt'])
+      .where('ownerId', '=', input.ownerId)
+      .where('libraryId', 'is', null)
+      .where('checksum', '=', input.checksum)
+      .forUpdate()
+      .executeTakeFirst();
+    if (duplicate) {
+      const existing = await this.privacy.getEvidence(tx, duplicate.id);
+      if (duplicate.deletedAt || !existing || !satisfiesDerivativePrivacy(existing, privacy)) {
+        throw new StudioExportRefusal(
+          'duplicate-restricted',
+          'You already have this exact file with fewer restrictions than its sources need',
+        );
+      }
+      return { createdAssetId: null, reusedAssetId: duplicate.id };
+    }
+    return { createdAssetId: await this.createAsset(tx, input, privacy), reusedAssetId: null };
   }
 
   /** Library and audio-of-asset sources carry the asset checksum; an edited master carries its own. */
@@ -615,7 +717,7 @@ export class StudioExportRepository {
    * of going over. The asset is never linked to another account's physical file: publication only
    * adds a file, it never changes what an existing original or a deduplication reference points at.
    */
-  private async createAsset(tx: Kysely<DB>, input: StudioExportPublication, privacy: DerivativePrivacy) {
+  private async createAsset(tx: Kysely<DB>, input: StudioExportAssetInput, privacy: DerivativePrivacy) {
     const quota = await tx
       .updateTable('user')
       .set({ quotaUsageInBytes: sql`"quotaUsageInBytes" + ${input.sizeInBytes}` })

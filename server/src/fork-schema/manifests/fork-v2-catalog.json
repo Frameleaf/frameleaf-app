@@ -4029,6 +4029,10 @@
       "identity": "public.memory_export.processedAssets"
     },
     {
+      "definition": "jsonb|nullable|||",
+      "identity": "public.memory_export.settings"
+    },
+    {
       "definition": "bigint|nullable|||",
       "identity": "public.memory_export.sizeInBytes"
     },
@@ -4039,6 +4043,14 @@
     {
       "definition": "character varying|not null|'pending'::character varying||",
       "identity": "public.memory_export.status"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "public.memory_export.studioExportVersionId"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "public.memory_export.studioProjectId"
     },
     {
       "definition": "character varying|not null|||",
@@ -8279,6 +8291,14 @@
       "identity": "public.memory_export.memory_export_pkey"
     },
     {
+      "definition": "FOREIGN KEY (\"studioExportVersionId\") REFERENCES studio_export_version(id) ON UPDATE CASCADE ON DELETE SET NULL",
+      "identity": "public.memory_export.memory_export_studioExportVersionId_fkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"studioProjectId\") REFERENCES studio_project(id) ON UPDATE CASCADE ON DELETE SET NULL",
+      "identity": "public.memory_export.memory_export_studioProjectId_fkey"
+    },
+    {
       "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
       "identity": "public.memory.memory_ownerId_fkey"
     },
@@ -11873,6 +11893,14 @@
     {
       "definition": "CREATE INDEX memory_export_status_idx ON public.memory_export USING btree (status)",
       "identity": "public.memory_export.memory_export_status_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"memory_export_studioExportVersionId_idx\" ON public.memory_export USING btree (\"studioExportVersionId\")",
+      "identity": "public.memory_export.memory_export_studioExportVersionId_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"memory_export_studioProjectId_idx\" ON public.memory_export USING btree (\"studioProjectId\")",
+      "identity": "public.memory_export.memory_export_studioProjectId_idx"
     },
     {
       "definition": "CREATE INDEX \"memory_ownerId_idx\" ON public.memory USING btree (\"ownerId\")",
