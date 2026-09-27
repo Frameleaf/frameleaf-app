@@ -216,6 +216,10 @@ export type CloudBackupGeneratedKeyDto = {
     /** The key as the recovery kit writes it */
     recoveryCode: string;
 };
+export type CloudBackupUnlockDto = {
+    /** The key file, the base64 key or the recovery code. Kept in memory only */
+    key: string;
+};
 export type CloudBackupManifestDto = {
     assets: number;
     bytes: number;
@@ -270,10 +274,6 @@ export type CloudBackupRestoreDto = {
     /** The backup run’s manifest in the bucket */
     manifestKey: string;
     scope: CloudBackupRestoreScope;
-};
-export type CloudBackupUnlockDto = {
-    /** The key file, the base64 key or the recovery code. Kept in memory only */
-    key: string;
 };
 export type CloudBackupSetupDto = {
     /** own-memory only: "I understand" that a lost key makes every backup permanently unreadable */
@@ -584,167 +584,6 @@ export type CloudMlDescriptionEstimateResponseDto = {
     /** More photos need a description than one backfill covers; run another afterwards for the rest */
     truncated: boolean;
 };
-export type CloudMlJobCostDto = {
-    /** The likely total the owner confirmed, USD */
-    estimatedP50Usd: number;
-    /** The high end the owner confirmed, USD */
-    estimatedP90Usd: number;
-    /** What the AI Wallet holds for the job, USD */
-    holdUsd: number;
-    /** Frameleaf Cloud’s note on the settlement */
-    note: string | null;
-    /** not_charged: the hold went back in full (a failure on the cloud side, or a job that never ran) */
-    outcome: Outcome | null;
-    /** What the job was charged once settled, USD; null until then */
-    settledUsd: number | null;
-    /** Metered so far, never above the hold, USD; null before a worker starts */
-    soFarUsd: number | null;
-};
-export type CloudMlJobActivityDto = {
-    activityStage: CloudMlJobActivityStage;
-    /** Frameleaf Cloud’s own state of the job, or null before it was sent */
-    cloudStatus: string | null;
-    cost: CloudMlJobCostDto;
-    /** The catalogue name of the model the job runs */
-    model: string;
-    modelSku: string;
-    plannedWorkers: number;
-    /** items, seconds or segments, when Frameleaf Cloud reports progress */
-    progressUnit: string | null;
-    purpose: CloudMlJobPurpose;
-    stage: CloudMlJobStage;
-    /** Workers started so far */
-    workers: number;
-};
-export type CloudMlJobCreateDto = {
-    /** The owner confirmed that the preview or file leaves this server for Frameleaf Cloud */
-    acknowledgeDataLeaves: true;
-    /** The consent version shown with the estimate */
-    consentVersion: string;
-    /** The estimate the owner saw and confirmed */
-    estimateId: string;
-};
-export type CloudMlJobResponseDto = {
-    /** The job in Activity; cancel it there */
-    operationId: string;
-    /** The restoration or Smooth motion version it renders */
-    restorationId: string;
-    stage: CloudMlJobStage;
-};
-export type CloudMlJobEstimateRequestDto = {
-    /** The photo or video */
-    assetId: string;
-    /** The Frameleaf Cloud processing destination; never inferred */
-    destinationId: string;
-    /** Smooth motion preview: how many frames each frame becomes (2×, 4× or 8×) */
-    factor?: 2 | 4 | 8;
-    /** Restoration preview: keep fine film grain */
-    keepGrain?: boolean;
-    /** Restoration preview: faithful or creative */
-    mode?: AssetRestorationMode;
-    /** The model chosen on the slider; omitted, the chosen or recommended model for this work */
-    modelSku?: string;
-    purpose: CloudMlJobPurpose;
-    /** Preview: the part of the frame to preview */
-    region?: AssetRestorationRegionDto;
-    /** For the full stage: the reviewed preview it renders in full, with the same model and settings */
-    restorationId?: string;
-    stage: CloudMlJobStage;
-    /** Restoration preview: 2× or 4×, capped at 4K */
-    upscale?: 2 | 4;
-};
-export type CloudMlJobConsentDto = {
-    /** The full text, when Frameleaf Cloud links one */
-    documentUrl: string | null;
-    /** What leaves this server and what is kept, as Frameleaf Cloud words it */
-    summary: string;
-    /** The consent version this job is confirmed under; send it back with the job */
-    version: string;
-};
-export type CloudMlJobModelDto = {
-    /** The GPU class it runs on, for people only */
-    gpu: string;
-    /** The catalogue name */
-    label: string;
-    /** The GPU rate per metered second, USD */
-    perSecondUsd: number;
-    /** Position on the model slider, 1 = lightest */
-    rank: number;
-    /** The model revision the estimate is bound to */
-    rev: string;
-    /** The catalogue model SKU */
-    sku: string;
-    /** One start fee, USD */
-    startFeeUsd: number;
-};
-export type CloudMlJobPerUnitDto = {
-    /** Likely cost per unit, start fees included, USD; an estimate, never a price */
-    p50Usd: number;
-    /** Cost per unit at most, in nine cases out of ten, start fees included, USD */
-    p90Usd: number;
-    /** How many units the job has */
-    quantity: number;
-    /** What one unit is */
-    unit: Unit;
-};
-export type CloudMlJobPermissionDto = {
-    /** Whether this person may confirm the job; administrators always may */
-    canConfirm: boolean;
-    /** This person's monthly Frameleaf Cloud limit, USD, or null when none applies */
-    monthlyCapUsd: number | null;
-    /** not-allowed (an administrator has not allowed this person) or monthly-cap, when they may not */
-    reason: string | null;
-    /** Settled this month plus the holds of their running jobs, USD, or null when no limit applies */
-    spentThisMonthUsd: number | null;
-};
-export type CloudMlJobRefusalDto = {
-    /** insufficient-credits, daily-cap or budget-exceeded; nothing is sent and the model is never changed */
-    code: string;
-    message: string;
-};
-export type CloudMlJobEstimateResponseDto = {
-    /** AI Wallet balance minus holds, USD */
-    availableUsd: number;
-    /** measured: from the model's measured GPU time; modelled: from its expected GPU time */
-    basis: string;
-    /** Expected time to start a worker */
-    coldStartSeconds: number;
-    consent: CloudMlJobConsentDto;
-    /** The daily AI Wallet limit, USD, or null */
-    dailyCapUsd: number | null;
-    /** What confirming the job names; the server keeps everything else */
-    estimateId: string;
-    /** After this, estimate again; it is never reused */
-    expiresAt: string;
-    /** What the AI Wallet holds while the job runs, USD; released when it settles */
-    holdUsd: number;
-    /** The least the job can cost once a worker starts (one start fee), USD */
-    minimumUsd: number;
-    model: CloudMlJobModelDto;
-    /** Every model Frameleaf Cloud offers for this work here, light to heavy, for the model slider */
-    models: CloudMlJobModelDto[];
-    /** Likely total: GPU time × rate + start fees, USD */
-    p50Usd: number;
-    /** High end, in nine cases out of ten, USD */
-    p90Usd: number;
-    /** The GPU rate per metered second, USD */
-    perSecondUsd: number;
-    perUnit: CloudMlJobPerUnitDto;
-    permission: CloudMlJobPermissionDto;
-    /** Serverless workers the job is planned on, at most 5; each adds a start fee */
-    plannedWorkers: number;
-    /** Why the job cannot be sent now, or null when it can */
-    refusal: (CloudMlJobRefusalDto) | null;
-    /** Expected GPU time once running (p50) */
-    runSeconds: number;
-    /** Spent today, USD */
-    spentTodayUsd: number;
-    /** One start fee, USD */
-    startFeeUsd: number;
-    /** Start fees: one start fee per planned worker, USD */
-    startupUsd: number;
-    workload: MlWorkload;
-};
 export type CloudMlDestinationCreateDto = {
     budgetLimitUsd?: number | null;
     name?: string;
@@ -806,18 +645,6 @@ export type CloudPermissionsUpdateDto = {
     /** Frameleaf Cloud may turn remote access on or off */
     allowRemoteEnable?: boolean;
 };
-export type CloudRemoteAccessUpdateDto = {
-    /** Allow original downloads, archives and database backups through the relay */
-    allowOriginalsOverRelay?: boolean;
-    /** Allow password sign-in away from home */
-    allowPasswordOverRelay?: boolean;
-};
-export type CloudSignInUpdateDto = {
-    /** The Sign in with Frameleaf button text */
-    buttonText?: string;
-    /** Offer Sign in with Frameleaf on the login page at home */
-    showOnLocalLogin?: boolean;
-};
 export type RemoteConnectionDto = {
     /** Host name or address, without brackets for IPv6 */
     address: string;
@@ -866,7 +693,7 @@ export type RemoteAccessStatusResponseDto = {
     customHostnameProblem: string | null;
     /** The two records to add at the DNS provider; empty until enrolled */
     customHostnameRecords: RemoteDnsRecordDto[];
-    customHostnameStatus: RemoteHostnameStatus | null;
+    customHostnameStatus: (RemoteHostnameStatus) | null;
     directListening: boolean;
     /** External port for direct connections */
     directPort: number;
@@ -901,17 +728,21 @@ export type RemoteAccessUpdateDto = {
     portMapping?: boolean;
     publicUrl?: RemoteAccessPublicUrl;
 };
+export type CloudRemoteAccessUpdateDto = {
+    /** Allow original downloads, archives and database backups through the relay */
+    allowOriginalsOverRelay?: boolean;
+    /** Allow password sign-in away from home */
+    allowPasswordOverRelay?: boolean;
+};
 export type RemoteHostnameUpdateDto = {
     /** A subdomain of a domain you own, such as photos.example.com */
     hostname: string;
 };
-export type RemoteConnectionsResponseDto = {
-    /** Ordered local, wan, ipv6, custom hostname, relay */
-    connections: RemoteConnectionDto[];
-    /** This server’s Frameleaf instance ID while it is linked */
-    instanceId: string | null;
-    /** The address this server publishes for remote access */
-    publicUrl: string | null;
+export type CloudSignInUpdateDto = {
+    /** The Sign in with Frameleaf button text */
+    buttonText?: string;
+    /** Offer Sign in with Frameleaf on the login page at home */
+    showOnLocalLogin?: boolean;
 };
 export type AdminConfigAnalyticsDto = {
     /** Collect local analytics history every night */
@@ -983,6 +814,14 @@ export type AdminConfigFrameleafCloudBackupIncludeDto = {
     /** Also back up thumbnails and previews */
     thumbs: boolean;
 };
+export type AdminConfigFrameleafCloudBackupRetentionDto = {
+    /** Daily runs kept, in days */
+    keepDaily: number;
+    /** Monthly runs kept, in months */
+    keepMonthly: number;
+    /** Weekly runs kept, in weeks */
+    keepWeekly: number;
+};
 export type AdminConfigFrameleafCloudBackupS3Dto = {
     /** Access key ID */
     accessKeyId: string;
@@ -996,14 +835,6 @@ export type AdminConfigFrameleafCloudBackupS3Dto = {
     secretAccessKey: string;
     /** Read-only indicator that a secret access key is stored. Set by the server; ignored on write. */
     secretAccessKeyConfigured?: boolean;
-};
-export type AdminConfigFrameleafCloudBackupRetentionDto = {
-    /** Daily runs kept, in days */
-    keepDaily: number;
-    /** Monthly runs kept, in months */
-    keepMonthly: number;
-    /** Weekly runs kept, in weeks */
-    keepWeekly: number;
 };
 export type AdminConfigFrameleafCloudBackupScheduleDto = {
     /** When scheduled backup runs start */
@@ -1971,6 +1802,38 @@ export type MediaOperationBulkSummaryDto = {
     skipped: number;
     snapshotTruncated: boolean;
     succeeded: number;
+};
+export type CloudMlJobCostDto = {
+    /** The likely total the owner confirmed, USD */
+    estimatedP50Usd: number;
+    /** The high end the owner confirmed, USD */
+    estimatedP90Usd: number;
+    /** What the AI Wallet holds for the job, USD */
+    holdUsd: number;
+    /** Frameleaf Cloud’s note on the settlement */
+    note: string | null;
+    /** not_charged: the hold went back in full (a failure on the cloud side, or a job that never ran) */
+    outcome: (CloudMlJobCostOutcome) | null;
+    /** What the job was charged once settled, USD; null until then */
+    settledUsd: number | null;
+    /** Metered so far, never above the hold, USD; null before a worker starts */
+    soFarUsd: number | null;
+};
+export type CloudMlJobActivityDto = {
+    activityStage: CloudMlJobActivityStage;
+    /** Frameleaf Cloud’s own state of the job, or null before it was sent */
+    cloudStatus: string | null;
+    cost: CloudMlJobCostDto;
+    /** The catalogue name of the model the job runs */
+    model: string;
+    modelSku: string;
+    plannedWorkers: number;
+    /** items, seconds or segments, when Frameleaf Cloud reports progress */
+    progressUnit: string | null;
+    purpose: CloudMlJobPurpose;
+    stage: CloudMlJobStage;
+    /** Workers started so far */
+    workers: number;
 };
 export type MediaOperationEstimateDto = {
     /** Configured cloud rate detail, when one applies */
@@ -4700,6 +4563,135 @@ export type ClassificationSettingsDto = {
     visualCategories: boolean;
     /** Whether visual phrases can be compared right now */
     visualSearchAvailable: boolean;
+};
+export type CloudMlJobCreateDto = {
+    /** The owner confirmed that the preview or file leaves this server for Frameleaf Cloud */
+    acknowledgeDataLeaves: true;
+    /** The consent version shown with the estimate */
+    consentVersion: string;
+    /** The estimate the owner saw and confirmed */
+    estimateId: string;
+};
+export type CloudMlJobResponseDto = {
+    /** The job in Activity; cancel it there */
+    operationId: string;
+    /** The restoration or Smooth motion version it renders */
+    restorationId: string;
+    stage: CloudMlJobStage;
+};
+export type CloudMlJobEstimateRequestDto = {
+    /** The photo or video */
+    assetId: string;
+    /** The Frameleaf Cloud processing destination; never inferred */
+    destinationId: string;
+    /** Smooth motion preview: how many frames each frame becomes (2×, 4× or 8×) */
+    factor?: 2 | 4 | 8;
+    /** Restoration preview: keep fine film grain */
+    keepGrain?: boolean;
+    /** Restoration preview: faithful or creative */
+    mode?: AssetRestorationMode;
+    /** The model chosen on the slider; omitted, the chosen or recommended model for this work */
+    modelSku?: string;
+    purpose: CloudMlJobPurpose;
+    /** Preview: the part of the frame to preview */
+    region?: AssetRestorationRegionDto;
+    /** For the full stage: the reviewed preview it renders in full, with the same model and settings */
+    restorationId?: string;
+    stage: CloudMlJobStage;
+    /** Restoration preview: 2× or 4×, capped at 4K */
+    upscale?: 2 | 4;
+};
+export type CloudMlJobConsentDto = {
+    /** The full text, when Frameleaf Cloud links one */
+    documentUrl: string | null;
+    /** What leaves this server and what is kept, as Frameleaf Cloud words it */
+    summary: string;
+    /** The consent version this job is confirmed under; send it back with the job */
+    version: string;
+};
+export type CloudMlJobModelDto = {
+    /** The GPU class it runs on, for people only */
+    gpu: string;
+    /** The catalogue name */
+    label: string;
+    /** The GPU rate per metered second, USD */
+    perSecondUsd: number;
+    /** Position on the model slider, 1 = lightest */
+    rank: number;
+    /** The model revision the estimate is bound to */
+    rev: string;
+    /** The catalogue model SKU */
+    sku: string;
+    /** One start fee, USD */
+    startFeeUsd: number;
+};
+export type CloudMlJobPerUnitDto = {
+    /** Likely cost per unit, start fees included, USD; an estimate, never a price */
+    p50Usd: number;
+    /** Cost per unit at most, in nine cases out of ten, start fees included, USD */
+    p90Usd: number;
+    /** How many units the job has */
+    quantity: number;
+    /** What one unit is */
+    unit: Unit;
+};
+export type CloudMlJobPermissionDto = {
+    /** Whether this person may confirm the job; administrators always may */
+    canConfirm: boolean;
+    /** This person's monthly Frameleaf Cloud limit, USD, or null when none applies */
+    monthlyCapUsd: number | null;
+    /** not-allowed (an administrator has not allowed this person) or monthly-cap, when they may not */
+    reason: string | null;
+    /** Settled this month plus the holds of their running jobs, USD, or null when no limit applies */
+    spentThisMonthUsd: number | null;
+};
+export type CloudMlJobRefusalDto = {
+    /** insufficient-credits, daily-cap or budget-exceeded; nothing is sent and the model is never changed */
+    code: string;
+    message: string;
+};
+export type CloudMlJobEstimateResponseDto = {
+    /** AI Wallet balance minus holds, USD */
+    availableUsd: number;
+    /** measured: from the model's measured GPU time; modelled: from its expected GPU time */
+    basis: string;
+    /** Expected time to start a worker */
+    coldStartSeconds: number;
+    consent: CloudMlJobConsentDto;
+    /** The daily AI Wallet limit, USD, or null */
+    dailyCapUsd: number | null;
+    /** What confirming the job names; the server keeps everything else */
+    estimateId: string;
+    /** After this, estimate again; it is never reused */
+    expiresAt: string;
+    /** What the AI Wallet holds while the job runs, USD; released when it settles */
+    holdUsd: number;
+    /** The least the job can cost once a worker starts (one start fee), USD */
+    minimumUsd: number;
+    model: CloudMlJobModelDto;
+    /** Every model Frameleaf Cloud offers for this work here, light to heavy, for the model slider */
+    models: CloudMlJobModelDto[];
+    /** Likely total: GPU time × rate + start fees, USD */
+    p50Usd: number;
+    /** High end, in nine cases out of ten, USD */
+    p90Usd: number;
+    /** The GPU rate per metered second, USD */
+    perSecondUsd: number;
+    perUnit: CloudMlJobPerUnitDto;
+    permission: CloudMlJobPermissionDto;
+    /** Serverless workers the job is planned on, at most 5; each adds a start fee */
+    plannedWorkers: number;
+    /** Why the job cannot be sent now, or null when it can */
+    refusal: (CloudMlJobRefusalDto) | null;
+    /** Expected GPU time once running (p50) */
+    runSeconds: number;
+    /** Spent today, USD */
+    spentTodayUsd: number;
+    /** One start fee, USD */
+    startFeeUsd: number;
+    /** Start fees: one start fee per planned worker, USD */
+    startupUsd: number;
+    workload: MlWorkload;
 };
 export type ClusterGroupRequestResponseDto = {
     /** Cluster group the user is invited to join */
@@ -8598,6 +8590,14 @@ export type ServerConfigDto = {
     trashDays: number;
     /** Delay in days before deleted users are permanently removed */
     userDeleteDelay: number;
+};
+export type RemoteConnectionsResponseDto = {
+    /** Ordered local, wan, ipv6, custom hostname, relay */
+    connections: RemoteConnectionDto[];
+    /** This server’s Frameleaf instance ID while it is linked */
+    instanceId: string | null;
+    /** The address this server publishes for remote access */
+    publicUrl: string | null;
 };
 export type ServerFeaturesDto = {
     /** Whether Ask Search (natural-language questions about the library) is enabled and can answer */
@@ -20588,15 +20588,42 @@ export enum CloudBackupRestoreScope {
     Database = "database",
     Library = "library"
 }
-export enum CloudBackupRestoreStatus {
-    Completed = "completed",
-    Failed = "failed",
-    Cancelled = "cancelled"
+export enum CloudBackupRunState {
+    Queued = "queued",
+    Running = "running",
+    Pausing = "pausing",
+    Paused = "paused",
+    Cancelling = "cancelling"
+}
+export enum CloudBackupRunPhase {
+    Database = "database",
+    Reconcile = "reconcile",
+    Assets = "assets",
+    Profiles = "profiles",
+    Manifest = "manifest",
+    Done = "done"
 }
 export enum CloudBackupTask {
     Backup = "backup",
     Verify = "verify",
     Prune = "prune"
+}
+export enum CloudBackupKeyMode {
+    Server = "server",
+    OwnStored = "own-stored",
+    OwnMemory = "own-memory"
+}
+export enum CloudBackupRestoreStatus {
+    Completed = "completed",
+    Failed = "failed",
+    Cancelled = "cancelled"
+}
+export enum CloudBackupLastRunStatus {
+    Running = "running",
+    WaitingForKey = "waiting-for-key",
+    Completed = "completed",
+    Failed = "failed",
+    Cancelled = "cancelled"
 }
 export enum CloudBackupVerifyDepth {
     Sample = "sample",
@@ -20607,33 +20634,6 @@ export enum CloudBackupVerifyStatus {
     Degraded = "degraded",
     Failed = "failed"
 }
-export enum CloudBackupRunPhase {
-    Database = "database",
-    Reconcile = "reconcile",
-    Assets = "assets",
-    Profiles = "profiles",
-    Manifest = "manifest",
-    Done = "done"
-}
-export enum CloudBackupRunState {
-    Queued = "queued",
-    Running = "running",
-    Pausing = "pausing",
-    Paused = "paused",
-    Cancelling = "cancelling"
-}
-export enum CloudBackupKeyMode {
-    Server = "server",
-    OwnStored = "own-stored",
-    OwnMemory = "own-memory"
-}
-export enum CloudBackupLastRunStatus {
-    Running = "running",
-    WaitingForKey = "waiting-for-key",
-    Completed = "completed",
-    Failed = "failed",
-    Cancelled = "cancelled"
-}
 export enum CloudBackupTargetSetting {
     Off = "off",
     Managed = "managed",
@@ -20643,10 +20643,6 @@ export enum CloudBackupBucketState {
     Empty = "empty",
     Claimed = "claimed",
     NotEmpty = "not-empty"
-}
-export enum CloudBackupTarget {
-    Managed = "managed",
-    ByoS3 = "byo-s3"
 }
 export enum CloudBackupManifestStatus {
     Complete = "complete",
@@ -20661,6 +20657,10 @@ export enum CloudBackupItemState {
     Active = "active",
     Trashed = "trashed",
     Deleted = "deleted"
+}
+export enum CloudBackupTarget {
+    Managed = "managed",
+    ByoS3 = "byo-s3"
 }
 export enum CloudHeartbeatField {
     Version = "version",
@@ -20690,32 +20690,6 @@ export enum CloudLinkState {
     Pending = "pending",
     Linked = "linked",
     Revoked = "revoked"
-}
-export enum CloudMlJobActivityStage {
-    Queued = "queued",
-    Starting = "starting",
-    Running = "running",
-    Paused = "paused",
-    Done = "done",
-    Failed = "failed",
-    Cancelled = "cancelled"
-}
-export enum CloudMlJobPurpose {
-    Restoration = "restoration",
-    SmoothMotion = "smooth-motion"
-}
-export enum CloudMlJobStage {
-    Preview = "preview",
-    Full = "full"
-}
-export enum Outcome {
-    Charged = "charged",
-    NotCharged = "not_charged",
-    Refunded = "refunded"
-}
-export enum Unit {
-    Photo = "photo",
-    Minute = "minute"
 }
 export enum CloudMlConnection {
     NotConfigured = "not-configured",
@@ -20782,6 +20756,39 @@ export enum CloudMlModelGroup {
     Transcription = "transcription",
     Tts = "tts"
 }
+export enum RemoteConnectionKind {
+    Local = "local",
+    Wan = "wan",
+    Relay = "relay",
+    Ipv6 = "ipv6"
+}
+export enum RemoteConnectionProtocol {
+    Http = "http",
+    Https = "https"
+}
+export enum RemoteDnsRecordType {
+    Cname = "CNAME"
+}
+export enum RemoteHostnameStatus {
+    Pending = "pending",
+    Verified = "verified"
+}
+export enum RemoteAccessMode {
+    Relay = "relay",
+    RelayAndDirect = "relay-and-direct"
+}
+export enum RemoteAccessPublicUrl {
+    Frameleaf = "frameleaf",
+    Custom = "custom"
+}
+export enum RemoteAccessState {
+    Off = "off",
+    Idle = "idle",
+    Starting = "starting",
+    Ready = "ready",
+    Error = "error",
+    Unknown = "unknown"
+}
 export enum TranscodeHWAccel {
     Nvenc = "nvenc",
     Qsv = "qsv",
@@ -20837,39 +20844,6 @@ export enum CloudRouteMode {
     Local = "local",
     Both = "both",
     Cloud = "cloud"
-}
-export enum RemoteHostnameStatus {
-    Pending = "pending",
-    Verified = "verified"
-}
-export enum RemoteAccessMode {
-    Relay = "relay",
-    RelayAndDirect = "relay-and-direct"
-}
-export enum RemoteAccessPublicUrl {
-    Frameleaf = "frameleaf",
-    Custom = "custom"
-}
-export enum RemoteConnectionKind {
-    Local = "local",
-    Wan = "wan",
-    Relay = "relay",
-    Ipv6 = "ipv6"
-}
-export enum RemoteConnectionProtocol {
-    Http = "http",
-    Https = "https"
-}
-export enum RemoteDnsRecordType {
-    Cname = "CNAME"
-}
-export enum RemoteAccessState {
-    Off = "off",
-    Idle = "idle",
-    Starting = "starting",
-    Ready = "ready",
-    Error = "error",
-    Unknown = "unknown"
 }
 export enum StartWith {
     Local = "local",
@@ -21044,6 +21018,28 @@ export enum MediaOperationBulkAction {
     RecoverDamagedMedia = "recover-damaged-media",
     TrashDamagedMedia = "trash-damaged-media",
     ApplyClassificationRule = "apply-classification-rule"
+}
+export enum CloudMlJobActivityStage {
+    Queued = "queued",
+    Starting = "starting",
+    Running = "running",
+    Paused = "paused",
+    Done = "done",
+    Failed = "failed",
+    Cancelled = "cancelled"
+}
+export enum CloudMlJobCostOutcome {
+    Charged = "charged",
+    NotCharged = "not_charged",
+    Refunded = "refunded"
+}
+export enum CloudMlJobPurpose {
+    Restoration = "restoration",
+    SmoothMotion = "smooth-motion"
+}
+export enum CloudMlJobStage {
+    Preview = "preview",
+    Full = "full"
 }
 export enum MediaOperationDestination {
     Local = "local",
@@ -21767,6 +21763,10 @@ export enum ClassificationMediaType {
 export enum ClassificationReviewDecision {
     Accepted = "accepted",
     Rejected = "rejected"
+}
+export enum Unit {
+    Photo = "photo",
+    Minute = "minute"
 }
 export enum DocumentField {
     Date = "date",
