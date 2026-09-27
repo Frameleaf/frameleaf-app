@@ -1,5 +1,5 @@
 import { LoginResponseDto, getSessions, login, signUpAdmin } from '@immich/sdk';
-import { loginDto, signupDto, uuidDto } from 'src/fixtures.js';
+import { createUserDto, loginDto, signupDto, uuidDto } from 'src/fixtures.js';
 import { errorDto } from 'src/responses.js';
 import { app, asBearerAuth, utils } from 'src/utils.js';
 import request from 'supertest';
@@ -88,6 +88,19 @@ describe('/sessions', () => {
       expect(response.body).toEqual(errorDto.badRequest('Invalid user token'));
 
       const stillSignedIn = await request(app).get('/users/me').set('Authorization', `Bearer ${other.accessToken}`);
+      expect(stillSignedIn.status).toBe(200);
+    });
+    // FL-67: an account cannot sign out another account's device
+    it("should refuse to sign out another account's session", async () => {
+      const user = await utils.userSetup(admin.accessToken, createUserDto.user1);
+      const [adminSession] = await getSessions({ headers: asBearerAuth(admin.accessToken) });
+      const { status, body } = await request(app)
+        .delete(`/sessions/${adminSession.id}`)
+        .set('Authorization', `Bearer ${user.accessToken}`);
+      expect(status).toBe(400);
+      expect(body).toEqual(errorDto.badRequest('Not found or no authDevice.delete access'));
+
+      const stillSignedIn = await request(app).get('/users/me').set('Authorization', `Bearer ${admin.accessToken}`);
       expect(stillSignedIn.status).toBe(200);
     });
   });
