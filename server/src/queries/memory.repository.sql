@@ -88,6 +88,66 @@ where
         )
     )
   )
+  and not exists (
+    select
+      1
+    from
+      memory_asset as hidden_memory_asset
+      inner join asset as hidden_memory_item on hidden_memory_item.id = hidden_memory_asset."assetId"
+    where
+      hidden_memory_asset."memoriesId" = "memory"."id"
+      and (
+        not not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "hidden_memory_item"."id"
+        )
+        or (
+          case
+            when "hidden_memory_item"."id" is null then false
+            when coalesce(
+              (
+                select
+                  phase
+                from
+                  immich_fork.state
+                where
+                  id = 1
+              ),
+              'inactive'
+            ) in ('legacy', 'dual-write', 'ready') then exists (
+              select
+                1
+              from
+                asset as nsfw_asset
+              where
+                nsfw_asset.id = "hidden_memory_item"."id"
+                and nsfw_asset.is_nsfw = true
+            )
+            when (
+              select
+                phase
+              from
+                immich_fork.state
+              where
+                id = 1
+            ) = 'active' then not exists (
+              select
+                1
+              from
+                immich_fork.asset_privacy as privacy_asset
+              where
+                privacy_asset."assetId" = "hidden_memory_item"."id"
+                and privacy_asset."isNsfw" = false
+            )
+            else false
+          end
+        )
+      )
+  )
 
 -- MemoryRepository.statistics (date filter)
 select
@@ -184,6 +244,66 @@ where
           end
         )
     )
+  )
+  and not exists (
+    select
+      1
+    from
+      memory_asset as hidden_memory_asset
+      inner join asset as hidden_memory_item on hidden_memory_item.id = hidden_memory_asset."assetId"
+    where
+      hidden_memory_asset."memoriesId" = "memory"."id"
+      and (
+        not not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "hidden_memory_item"."id"
+        )
+        or (
+          case
+            when "hidden_memory_item"."id" is null then false
+            when coalesce(
+              (
+                select
+                  phase
+                from
+                  immich_fork.state
+                where
+                  id = 1
+              ),
+              'inactive'
+            ) in ('legacy', 'dual-write', 'ready') then exists (
+              select
+                1
+              from
+                asset as nsfw_asset
+              where
+                nsfw_asset.id = "hidden_memory_item"."id"
+                and nsfw_asset.is_nsfw = true
+            )
+            when (
+              select
+                phase
+              from
+                immich_fork.state
+              where
+                id = 1
+            ) = 'active' then not exists (
+              select
+                1
+              from
+                immich_fork.asset_privacy as privacy_asset
+              where
+                privacy_asset."assetId" = "hidden_memory_item"."id"
+                and privacy_asset."isNsfw" = false
+            )
+            else false
+          end
+        )
+      )
   )
 
 -- MemoryRepository.search
@@ -393,6 +513,66 @@ where
           end
         )
     )
+  )
+  and not exists (
+    select
+      1
+    from
+      memory_asset as hidden_memory_asset
+      inner join asset as hidden_memory_item on hidden_memory_item.id = hidden_memory_asset."assetId"
+    where
+      hidden_memory_asset."memoriesId" = "memory"."id"
+      and (
+        not not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "hidden_memory_item"."id"
+        )
+        or (
+          case
+            when "hidden_memory_item"."id" is null then false
+            when coalesce(
+              (
+                select
+                  phase
+                from
+                  immich_fork.state
+                where
+                  id = 1
+              ),
+              'inactive'
+            ) in ('legacy', 'dual-write', 'ready') then exists (
+              select
+                1
+              from
+                asset as nsfw_asset
+              where
+                nsfw_asset.id = "hidden_memory_item"."id"
+                and nsfw_asset.is_nsfw = true
+            )
+            when (
+              select
+                phase
+              from
+                immich_fork.state
+              where
+                id = 1
+            ) = 'active' then not exists (
+              select
+                1
+              from
+                immich_fork.asset_privacy as privacy_asset
+              where
+                privacy_asset."assetId" = "hidden_memory_item"."id"
+                and privacy_asset."isNsfw" = false
+            )
+            else false
+          end
+        )
+      )
   )
 order by
   "showAt" desc nulls last,
@@ -614,6 +794,66 @@ where
         )
     )
   )
+  and not exists (
+    select
+      1
+    from
+      memory_asset as hidden_memory_asset
+      inner join asset as hidden_memory_item on hidden_memory_item.id = hidden_memory_asset."assetId"
+    where
+      hidden_memory_asset."memoriesId" = "memory"."id"
+      and (
+        not not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "hidden_memory_item"."id"
+        )
+        or (
+          case
+            when "hidden_memory_item"."id" is null then false
+            when coalesce(
+              (
+                select
+                  phase
+                from
+                  immich_fork.state
+                where
+                  id = 1
+              ),
+              'inactive'
+            ) in ('legacy', 'dual-write', 'ready') then exists (
+              select
+                1
+              from
+                asset as nsfw_asset
+              where
+                nsfw_asset.id = "hidden_memory_item"."id"
+                and nsfw_asset.is_nsfw = true
+            )
+            when (
+              select
+                phase
+              from
+                immich_fork.state
+              where
+                id = 1
+            ) = 'active' then not exists (
+              select
+                1
+              from
+                immich_fork.asset_privacy as privacy_asset
+              where
+                privacy_asset."assetId" = "hidden_memory_item"."id"
+                and privacy_asset."isNsfw" = false
+            )
+            else false
+          end
+        )
+      )
+  )
 order by
   "showAt" desc nulls last,
   "memoryAt" desc
@@ -826,6 +1066,66 @@ where
           end
         )
     )
+  )
+  and not exists (
+    select
+      1
+    from
+      memory_asset as hidden_memory_asset
+      inner join asset as hidden_memory_item on hidden_memory_item.id = hidden_memory_asset."assetId"
+    where
+      hidden_memory_asset."memoriesId" = "memory"."id"
+      and (
+        not not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "hidden_memory_item"."id"
+        )
+        or (
+          case
+            when "hidden_memory_item"."id" is null then false
+            when coalesce(
+              (
+                select
+                  phase
+                from
+                  immich_fork.state
+                where
+                  id = 1
+              ),
+              'inactive'
+            ) in ('legacy', 'dual-write', 'ready') then exists (
+              select
+                1
+              from
+                asset as nsfw_asset
+              where
+                nsfw_asset.id = "hidden_memory_item"."id"
+                and nsfw_asset.is_nsfw = true
+            )
+            when (
+              select
+                phase
+              from
+                immich_fork.state
+              where
+                id = 1
+            ) = 'active' then not exists (
+              select
+                1
+              from
+                immich_fork.asset_privacy as privacy_asset
+              where
+                privacy_asset."assetId" = "hidden_memory_item"."id"
+                and privacy_asset."isNsfw" = false
+            )
+            else false
+          end
+        )
+      )
   )
 order by
   "showAt" desc nulls last,
@@ -1043,6 +1343,66 @@ where
         )
     )
   )
+  and not exists (
+    select
+      1
+    from
+      memory_asset as hidden_memory_asset
+      inner join asset as hidden_memory_item on hidden_memory_item.id = hidden_memory_asset."assetId"
+    where
+      hidden_memory_asset."memoriesId" = "memory"."id"
+      and (
+        not not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "hidden_memory_item"."id"
+        )
+        or (
+          case
+            when "hidden_memory_item"."id" is null then false
+            when coalesce(
+              (
+                select
+                  phase
+                from
+                  immich_fork.state
+                where
+                  id = 1
+              ),
+              'inactive'
+            ) in ('legacy', 'dual-write', 'ready') then exists (
+              select
+                1
+              from
+                asset as nsfw_asset
+              where
+                nsfw_asset.id = "hidden_memory_item"."id"
+                and nsfw_asset.is_nsfw = true
+            )
+            when (
+              select
+                phase
+              from
+                immich_fork.state
+              where
+                id = 1
+            ) = 'active' then not exists (
+              select
+                1
+              from
+                immich_fork.asset_privacy as privacy_asset
+              where
+                privacy_asset."assetId" = "hidden_memory_item"."id"
+                and privacy_asset."isNsfw" = false
+            )
+            else false
+          end
+        )
+      )
+  )
 order by
   "showAt" desc nulls last,
   "memoryAt" desc
@@ -1254,6 +1614,66 @@ where
           end
         )
     )
+  )
+  and not exists (
+    select
+      1
+    from
+      memory_asset as hidden_memory_asset
+      inner join asset as hidden_memory_item on hidden_memory_item.id = hidden_memory_asset."assetId"
+    where
+      hidden_memory_asset."memoriesId" = "memory"."id"
+      and (
+        not not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "hidden_memory_item"."id"
+        )
+        or (
+          case
+            when "hidden_memory_item"."id" is null then false
+            when coalesce(
+              (
+                select
+                  phase
+                from
+                  immich_fork.state
+                where
+                  id = 1
+              ),
+              'inactive'
+            ) in ('legacy', 'dual-write', 'ready') then exists (
+              select
+                1
+              from
+                asset as nsfw_asset
+              where
+                nsfw_asset.id = "hidden_memory_item"."id"
+                and nsfw_asset.is_nsfw = true
+            )
+            when (
+              select
+                phase
+              from
+                immich_fork.state
+              where
+                id = 1
+            ) = 'active' then not exists (
+              select
+                1
+              from
+                immich_fork.asset_privacy as privacy_asset
+              where
+                privacy_asset."assetId" = "hidden_memory_item"."id"
+                and privacy_asset."isNsfw" = false
+            )
+            else false
+          end
+        )
+      )
   )
 
 -- MemoryRepository.update
@@ -1470,6 +1890,66 @@ where
         )
     )
   )
+  and not exists (
+    select
+      1
+    from
+      memory_asset as hidden_memory_asset
+      inner join asset as hidden_memory_item on hidden_memory_item.id = hidden_memory_asset."assetId"
+    where
+      hidden_memory_asset."memoriesId" = "memory"."id"
+      and (
+        not not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "hidden_memory_item"."id"
+        )
+        or (
+          case
+            when "hidden_memory_item"."id" is null then false
+            when coalesce(
+              (
+                select
+                  phase
+                from
+                  immich_fork.state
+                where
+                  id = 1
+              ),
+              'inactive'
+            ) in ('legacy', 'dual-write', 'ready') then exists (
+              select
+                1
+              from
+                asset as nsfw_asset
+              where
+                nsfw_asset.id = "hidden_memory_item"."id"
+                and nsfw_asset.is_nsfw = true
+            )
+            when (
+              select
+                phase
+              from
+                immich_fork.state
+              where
+                id = 1
+            ) = 'active' then not exists (
+              select
+                1
+              from
+                immich_fork.asset_privacy as privacy_asset
+              where
+                privacy_asset."assetId" = "hidden_memory_item"."id"
+                and privacy_asset."isNsfw" = false
+            )
+            else false
+          end
+        )
+      )
+  )
 
 -- MemoryRepository.delete
 delete from "memory"
@@ -1490,3 +1970,62 @@ insert into
   "memory_asset" ("memoriesId", "assetId")
 values
   ($1, $2)
+
+-- MemoryRepository.getHiddenItemIds
+select
+  "asset"."id"
+from
+  "asset"
+where
+  "asset"."id" in ($1)
+  and (
+    not not exists (
+      select
+        1
+      from
+        asset_lock
+      where
+        asset_lock."assetId" = "asset"."id"
+    )
+    or (
+      case
+        when "asset"."id" is null then false
+        when coalesce(
+          (
+            select
+              phase
+            from
+              immich_fork.state
+            where
+              id = 1
+          ),
+          'inactive'
+        ) in ('legacy', 'dual-write', 'ready') then exists (
+          select
+            1
+          from
+            asset as nsfw_asset
+          where
+            nsfw_asset.id = "asset"."id"
+            and nsfw_asset.is_nsfw = true
+        )
+        when (
+          select
+            phase
+          from
+            immich_fork.state
+          where
+            id = 1
+        ) = 'active' then not exists (
+          select
+            1
+          from
+            immich_fork.asset_privacy as privacy_asset
+          where
+            privacy_asset."assetId" = "asset"."id"
+            and privacy_asset."isNsfw" = false
+        )
+        else false
+      end
+    )
+  )

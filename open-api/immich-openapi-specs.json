@@ -81577,6 +81577,15 @@
             "description": "Every referenced source resolved for the acting account",
             "type": "boolean"
           },
+          "hiddenSources": {
+            "description": "FL-195 follow-up: the owner's own library items this project places that are hidden from this session (Locked, or matched by a Locked rule, while the session is locked). The project keeps them; the editor hides their clips rather than showing missing media. The owner's only; empty for a reviewer",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "type": "array"
+          },
           "refusedCount": {
             "description": "References that were refused for the acting account",
             "maximum": 9007199254740991,
@@ -81594,6 +81603,7 @@
         "required": [
           "checkedAt",
           "complete",
+          "hiddenSources",
           "refusedCount",
           "unsupportedSources"
         ],

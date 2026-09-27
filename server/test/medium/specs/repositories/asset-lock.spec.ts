@@ -271,7 +271,7 @@ describe('asset lock (FL-34)', () => {
   });
 
   describe(AssetRepository.prototype.getTimeBuckets.name, () => {
-    it('lists the Locked view for its owner, by reason, and reveals only marks in the timeline', async () => {
+    it('lists the Locked view for its owner, by reason, and reveals every lock in the timeline', async () => {
       const { ctx, sut } = setup();
       const { user } = await ctx.newUser();
       const auth = factory.auth({ user, session: { hasElevatedPermission: true } });
@@ -297,8 +297,8 @@ describe('asset lock (FL-34)', () => {
         count({ visibility: AssetVisibility.Locked, lockReasons: [AssetLockReason.ImmichLockedFolder] }),
       ).resolves.toBe(1);
       await expect(count({ visibility: AssetVisibility.Timeline })).resolves.toBe(1);
-      // "Revealed for this session": the mark, never the item from the old Locked folder
-      await expect(count({ visibility: AssetVisibility.Timeline, revealLockedOwnerId: user.id })).resolves.toBe(2);
+      // "Revealed for this session": the mark and, since the FL-195 follow-up, the old Locked folder item too
+      await expect(count({ visibility: AssetVisibility.Timeline, revealLockedOwnerId: user.id })).resolves.toBe(3);
     });
   });
 });

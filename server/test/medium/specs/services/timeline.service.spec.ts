@@ -432,6 +432,55 @@ describe(TimelineService.name, () => {
     });
   });
 
+  describe('items moved from the old Locked folder (FL-195 follow-up)', () => {
+    it("reveals them in every ordinary view of their owner's unlocked session, like any other item", async () => {
+      const { sut, ctx } = setup();
+      const { user: owner } = await ctx.newUser();
+      const localDateTime = new Date('1970-02-12');
+      const newItem = async (visibility = AssetVisibility.Timeline) => {
+        const { asset } = await ctx.newAsset({ ownerId: owner.id, localDateTime, visibility });
+        await ctx.newExif({ assetId: asset.id, make: 'Canon' });
+        return asset;
+      };
+      const plain = await newItem();
+      const moved = await newItem();
+      const movedArchived = await newItem(AssetVisibility.Archive);
+      await ctx.database
+        .insertInto('asset_lock')
+        .values(
+          [moved.id, movedArchived.id].map((assetId) => ({
+            assetId,
+            reason: AssetLockReason.ImmichLockedFolder,
+            previousVisibility: AssetVisibility.Locked,
+          })),
+        )
+        .execute();
+      const ordinary = factory.auth({ user: { id: owner.id } });
+      const elevated = factory.auth({ user: { id: owner.id }, session: { hasElevatedPermission: true } });
+      const { user: other } = await ctx.newUser();
+      const otherElevated = factory.auth({ user: { id: other.id }, session: { hasElevatedPermission: true } });
+      await ctx.newPartner({ sharedById: owner.id, sharedWithId: other.id });
+
+      const bucket = async (auth: typeof ordinary, dto: Record<string, unknown>) =>
+        JSON.parse(await sut.getTimeBucket(auth, { timeBucket: '1970-02-01', ...dto }));
+
+      expect((await bucket(ordinary, { visibility: AssetVisibility.Timeline })).id).toEqual([plain.id]);
+      const timeline = await bucket(elevated, { visibility: AssetVisibility.Timeline });
+      expect(new Set(timeline.id)).toEqual(new Set([plain.id, moved.id]));
+      expect(timeline.lockReason[timeline.id.indexOf(moved.id)]).toBe(AssetLockReason.ImmichLockedFolder);
+      expect((await bucket(elevated, { visibility: AssetVisibility.Archive })).id).toEqual([movedArchived.id]);
+      await expect(sut.getTimeBuckets(elevated, { visibility: AssetVisibility.Timeline })).resolves.toEqual([
+        { count: 2, timeBucket: '1970-02-01' },
+      ]);
+      // never to anybody else, whatever their own session
+      const partnerView = await bucket(otherElevated, {
+        userId: owner.id,
+        visibility: AssetVisibility.Timeline,
+      });
+      expect(partnerView.id).toEqual([plain.id]);
+    });
+  });
+
   describe('getTimelineOrdered (FL-30, S-15)', () => {
     const newItem = async (
       ctx: ReturnType<typeof setup>['ctx'],

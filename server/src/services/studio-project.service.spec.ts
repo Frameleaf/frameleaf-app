@@ -51,7 +51,10 @@ describe(StudioProjectService.name, () => {
   let repository: Record<keyof StudioProjectRepository, AnyMock>;
   let access: {
     album: { checkOwnerAccess: AnyMock; checkSharedAlbumAccess: AnyMock };
+    asset: { checkOwnerAccess: AnyMock; checkAlbumAccess: AnyMock; checkPartnerAccess: AnyMock };
   };
+  /** The owner's items the session may not see (Locked while locked, or hidden by a rule). */
+  let hiddenFromSession: Set<string>;
   let resources: { resolveProjectResources: AnyMock };
   let owner: AuthDto;
   let reviewer: AuthDto;
@@ -154,10 +157,19 @@ describe(StudioProjectService.name, () => {
       updateComment: vi.fn(),
       deleteComment: vi.fn().mockResolvedValue(true),
     } as never;
+    hiddenFromSession = new Set();
     access = {
       album: {
         checkOwnerAccess: vi.fn().mockResolvedValue(new Set()),
         checkSharedAlbumAccess: vi.fn().mockResolvedValue(new Set()),
+      },
+      asset: {
+        // every id is the owner's; an elevated lookup (`true`) sees them all, a session check not the hidden ones
+        checkOwnerAccess: vi.fn((_userId: string, ids: Set<string>, elevated?: boolean) =>
+          Promise.resolve(new Set([...ids].filter((id) => elevated === true || !hiddenFromSession.has(id)))),
+        ),
+        checkAlbumAccess: vi.fn().mockResolvedValue(new Set()),
+        checkPartnerAccess: vi.fn().mockResolvedValue(new Set()),
       },
     };
     resources = { resolveProjectResources: vi.fn().mockResolvedValue(manifest(true)) };
@@ -797,6 +809,51 @@ describe(StudioProjectService.name, () => {
         owner,
         expect.objectContaining({ graph: { poster: { assetId } }, destination: StudioDestination.Local }),
       );
+    });
+
+    it('keeps a poster whose item is hidden, but shows it only to a session that may see it (FL-195)', async () => {
+      const poster = newUuid();
+      project = projectStub({ thumbnailAssetId: poster } as never);
+      repository.listVisible.mockResolvedValue({ items: [project], total: 1 });
+
+      await expect(sut.get(owner, project.id)).resolves.toMatchObject({ thumbnailAssetId: poster });
+
+      hiddenFromSession.add(poster);
+      await expect(sut.get(owner, project.id)).resolves.toMatchObject({ thumbnailAssetId: null });
+      const listed = await sut.search(owner, {});
+      expect(listed.items.map((item) => item.thumbnailAssetId)).toEqual([null]);
+      // the poster stays set: nothing was written
+      expect(repository.update).not.toHaveBeenCalled();
+    });
+
+    it('tells the owner which placed items are hidden from the session, and a reviewer nothing (FL-195)', async () => {
+      const hidden = newUuid();
+      const missing = newUuid();
+      resources.resolveProjectResources.mockResolvedValue({
+        ...manifest(false),
+        refused: [hidden, missing].map((id) => ({
+          key: `library-asset:${id}`,
+          kind: StudioResourceKind.LibraryAsset,
+          id,
+          graphPath: '$.sequences[0]',
+          reason: StudioRefusalReason.NotFound,
+          detail: 'No such asset.',
+        })),
+      });
+      hiddenFromSession.add(hidden);
+      // the missing one is not the owner's (it does not exist)
+      access.asset.checkOwnerAccess.mockImplementation((_userId: string, ids: Set<string>, elevated?: boolean) =>
+        Promise.resolve(new Set([...ids].filter((id) => id !== missing && (elevated === true || id !== hidden)))),
+      );
+
+      const seen = await sut.get(owner, project.id);
+      expect(seen.resources?.hiddenSources).toEqual([hidden]);
+
+      sut.forgetResolutions([project.id]);
+      project = projectStub({ spaceId: newUuid() });
+      memberOf(project.spaceId as string);
+      const reviewed = await sut.get(reviewer, project.id);
+      expect(reviewed.resources?.hiddenSources).toEqual([]);
     });
 
     it('duplicates the head byte for byte into a new project of the owner, unshared', async () => {

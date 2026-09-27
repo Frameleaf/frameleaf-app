@@ -55,15 +55,19 @@ export const notLockedOrOwnedBy = (lockedOwnerId: string | undefined, assetAlias
     : isNotLocked(assetAlias);
 
 /**
- * The locks every ordinary view reveals to the owner's elevated session: their sensitive marks and
- * detections ("Revealed for this session"). Owner decision, September 27, 2026 (FL-195): once unlocked
- * they behave like any other item everywhere — timeline, search, Explore, memories, people, albums,
- * the map, tags, folders, Studio, bulk actions and downloads — and while locked they keep their places
- * and associations but show nowhere. Items moved over from the old Locked folder stay in the Locked
- * view only, as the upstream folder kept them out of the library (the prototype's `visibleAssets`).
+ * The locks every ordinary view reveals to the owner's elevated session: every reason. Owner decisions,
+ * September 27, 2026 (FL-195 and its follow-up): once unlocked, the owner's Locked items — their
+ * sensitive marks, detections and the items moved over from the old Locked folder — behave like any
+ * other item everywhere: timeline, search, Explore, memories, people, albums, the map, tags, folders,
+ * Studio, bulk actions and downloads. While locked they keep their places and associations but show
+ * nowhere. (Locked-rule matches are not lock records; they are hidden content, revealed the same way.)
  * This list is the one switch for that rule.
  */
-export const REVEALED_LOCK_REASONS: readonly AssetLockReason[] = [AssetLockReason.Marked, AssetLockReason.Detected];
+export const REVEALED_LOCK_REASONS: readonly AssetLockReason[] = [
+  AssetLockReason.Marked,
+  AssetLockReason.Detected,
+  AssetLockReason.ImmichLockedFolder,
+];
 
 /** In memory: whether a lock of this reason is one an ordinary view reveals (`REVEALED_LOCK_REASONS`). */
 export const isRevealedLockReason = (reason: AssetLockReason | string | null | undefined): boolean =>
@@ -96,6 +100,15 @@ export const isDefaultVisible = (assetAlias = 'asset', revealOwnerId?: string) =
  */
 export const isTimelineVisible = (assetAlias = 'asset', revealOwnerId?: string) =>
   visibilityIs(AssetVisibility.Timeline, assetAlias, revealOwnerId);
+
+/**
+ * What memory generation reads (FL-195 follow-up, owner decision, September 27, 2026: "memories
+ * should be generated"): the owner's items on the timeline, Locked or not. It never serves a read
+ * by itself: a memory holding an item a session may not see is hidden from that session entirely
+ * (`memoryHasNoHiddenItem`), so a generated title or place never describes a Locked item to it.
+ */
+export const isOnTimelineWhateverLock = (assetAlias = 'asset') =>
+  sql<boolean>`${assetRef(assetAlias, 'visibility')} = ${sql.lit(AssetVisibility.Timeline)}`;
 
 /**
  * A requested visibility as an API caller means it: `locked` is a locked asset that is not the hidden
@@ -158,14 +171,3 @@ export const getLockedOwnerId = (auth: AuthDto): string | undefined => {
 
   return auth.session?.hasElevatedPermission ? auth.user.id : undefined;
 };
-
-/**
- * FL-195: the same account as it would be with its session locked — not elevated, and with its own
- * Locked rules applied. For choices that persist and show while locked (a project poster, an album
- * cover): only what a locked session could see may become one, so nothing hidden shows through it.
- */
-export const asLockedSession = (auth: AuthDto): AuthDto => ({
-  ...auth,
-  session: auth.session && { ...auth.session, hasElevatedPermission: false },
-  ...(auth.suppressedContent && { hiddenContent: auth.suppressedContent, hideNsfwAssets: true }),
-});

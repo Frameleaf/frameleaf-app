@@ -49,6 +49,7 @@ import {
   StudioExportSourceInput,
   StudioExportVersion,
   StudioExportVersionSource,
+  StudioExportVisibility,
   StudioSourceMediaFacts,
   isLibrarySource,
 } from 'src/repositories/studio-export.repository.js';
@@ -61,6 +62,7 @@ import { StudioProjectService } from 'src/services/studio-project.service.js';
 import { StudioAuthorizedEntry, StudioResourceService } from 'src/services/studio-resource.service.js';
 import { getConfig } from 'src/utils/config.js';
 import { ImmichFileResponse } from 'src/utils/file.js';
+import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { getLockedOwnerId } from 'src/utils/locked.js';
 import { isNsfwHidingEnabled } from 'src/utils/misc.js';
 import { evaluateRenderOutput, isQualifiedRenderSession } from 'src/utils/render-admission.js';
@@ -456,7 +458,7 @@ export class StudioExportService {
     const { items, total } = await this.repository.listForProject(projectId, auth.user.id, {
       take: dto.take ?? 50,
       skip: dto.skip ?? 0,
-      includeLocked: !!getLockedOwnerId(auth),
+      visibility: this.visibility(auth),
     });
     const sources = await this.repository.getSourcesFor(items.map((item) => item.id));
     return {
@@ -1253,16 +1255,19 @@ export class StudioExportService {
   }
 
   private async findOwned(auth: AuthDto, id: string): Promise<StudioExportVersion> {
-    const version = await this.repository.getForOwner(id, auth.user.id);
-    if (!version) {
-      throw new NotFoundException('Studio export not found');
-    }
-    const privacy = (version.privacy ?? {}) as { lockReason?: string | null };
-    if (privacy.lockReason && !getLockedOwnerId(auth)) {
-      // A Locked result exists only for its owner's unlocked session (FL-34).
+    // A Locked result, or one whose source is hidden from the session now, exists only for a session
+    // that may see it (FL-34, FL-195 follow-up): its file, download, library save and share with it.
+    const version = await this.repository.getForOwner(id, auth.user.id, this.visibility(auth));
+    const privacy = (version?.privacy ?? {}) as { lockReason?: string | null };
+    if (!version || (privacy.lockReason && !getLockedOwnerId(auth))) {
       throw new NotFoundException('Studio export not found');
     }
     return version;
+  }
+
+  /** How a version is judged for this session (`StudioExportVisibility`). */
+  private visibility(auth: AuthDto): StudioExportVisibility {
+    return { ...getHiddenContentQueryOptions(auth), revealed: !!getLockedOwnerId(auth) };
   }
 
   private async nsfwHiding(): Promise<boolean> {

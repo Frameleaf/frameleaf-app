@@ -58,6 +58,7 @@ import {
   isNotLocked,
   lockedAssetIdExists,
   notLockedOrOwnedBy,
+  revealedLockScope,
   visibilityIn,
   visibilityIs,
 } from 'src/utils/locked.js';
@@ -1502,6 +1503,34 @@ export const hiddenContentAssetIdExists = (assetId: Expression<unknown>, filter:
     where hidden_content_asset.id = ${assetId}
       and ${hiddenContentAssetExists(filter, 'hidden_content_asset')}
   )`;
+
+/**
+ * True when the asset under `assetAlias` is hidden from a session with these options: locked and not
+ * revealed to it (`revealedLockScope`), or matched by its hidden-content filter (the Locked rules,
+ * sensitive content). A suppressed-only view (`onlyHiddenContent`) is an unlocked session's, which
+ * hides nothing of its own.
+ */
+export const hiddenFromSession = (options: HiddenContentQueryOptions = {}, assetAlias = 'asset') => {
+  const notRevealed = sql<boolean>`not ${revealedLockScope(options.revealLockedOwnerId, assetAlias)}`;
+  const filter = options.onlyHiddenContent ? undefined : getHiddenContentFilter(options);
+  return filter ? sql<boolean>`(${notRevealed} or ${hiddenContentAssetExists(filter, assetAlias)})` : notRevealed;
+};
+
+/**
+ * FL-195 follow-up (owner decision, September 27, 2026: "Memories that have locked photos should be
+ * hidden unless unlocked"): a memory with even one item hidden from the session (`hiddenFromSession`)
+ * is hidden entirely — its title, date, cover, places and counts — not only its hidden items. Any item
+ * counts, trashed or archived ones included, since a generated title or place may describe it. Once
+ * the session may see every item (the owner's unlocked session), the memory shows normally.
+ */
+export const memoryHasNoHiddenItem = (memoryId: Expression<unknown>, options: HiddenContentQueryOptions = {}) =>
+  sql<boolean>`not exists (
+      select 1
+      from memory_asset as hidden_memory_asset
+      inner join asset as hidden_memory_item on hidden_memory_item.id = hidden_memory_asset."assetId"
+      where hidden_memory_asset."memoriesId" = ${memoryId}
+        and ${hiddenFromSession(options, 'hidden_memory_item')}
+    )`;
 
 export function withHiddenContentOnly<QDB, TB extends keyof QDB, O>(
   qb: SelectQueryBuilder<QDB, TB, O>,

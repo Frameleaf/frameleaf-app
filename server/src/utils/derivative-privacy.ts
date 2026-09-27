@@ -39,10 +39,9 @@ export type DerivativePrivacy = {
 };
 
 /**
- * How strongly each reason hides. An item from the old Locked folder stays in the Locked view only;
- * an owner's mark and a detection are revealed to the owner's unlocked session on the timeline
- * (`REVEALED_LOCK_REASONS`). The result keeps the strongest reason any source had, so it is never
- * revealed anywhere a source would not be.
+ * How strongly each reason hides. Every reason is revealed to the owner's unlocked session
+ * (`REVEALED_LOCK_REASONS`, FL-195); the order is kept so a result records the strongest reason any
+ * source had, and is never revealed anywhere a source would not be.
  */
 const LOCK_REASON_STRENGTH: Readonly<Record<AssetLockReason, number>> = {
   [AssetLockReason.Detected]: 1,

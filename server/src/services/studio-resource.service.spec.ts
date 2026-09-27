@@ -245,7 +245,7 @@ describe(StudioResourceService.name, () => {
       expect(mocks.access.asset.checkOwnerAccess).toHaveBeenCalledWith(auth.user.id, new Set([locked.id]), true);
     });
 
-    it("places the owner's own marks and detections in an unlocked session, never old Locked folder items (FL-195)", async () => {
+    it("places the owner's own marks, detections and old Locked folder items in an unlocked session (FL-195)", async () => {
       const marked = ownedVideo({ visibility: AssetVisibility.Timeline });
       const detected = ownedVideo({ visibility: AssetVisibility.Timeline });
       const legacy = ownedVideo({ visibility: AssetVisibility.Timeline });
@@ -267,8 +267,8 @@ describe(StudioResourceService.name, () => {
         context(sequenceWith({ assetId: marked.id }, { assetId: detected.id }, { assetId: legacy.id })),
       );
 
-      expect(manifest.entries.map((entry) => entry.id)).toEqual([marked.id, detected.id]);
-      expect(refused.map(({ id, reason }) => [id, reason])).toEqual([[legacy.id, StudioRefusalReason.Locked]]);
+      expect(manifest.entries.map((entry) => entry.id)).toEqual([marked.id, detected.id, legacy.id]);
+      expect(refused).toEqual([]);
     });
 
     it('keeps a revealed lock in the project but resolves it as missing once the session locks (FL-195)', async () => {

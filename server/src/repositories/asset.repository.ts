@@ -87,6 +87,7 @@ import {
   effectiveVisibility,
   isLocked,
   isNotLocked,
+  isOnTimelineWhateverLock,
   isTimelineVisible,
   lockReasonOf,
   lockedForReason,
@@ -848,33 +849,36 @@ export class AssetRepository {
   // No @GenerateSql: the committed snapshots under server/src/queries are generated against
   // a live database, which this slice could not run.
   getEventStoryCandidates(ownerId: string, from: Date, to: Date) {
-    return this.db
-      .selectFrom('asset')
-      .innerJoin('asset_job_status', 'asset.id', 'asset_job_status.assetId')
-      .leftJoin('asset_exif', 'asset.id', 'asset_exif.assetId')
-      .select([
-        'asset.id as id',
-        'asset.localDateTime as localDateTime',
-        'asset_exif.city as city',
-        'asset_exif.state as state',
-        'asset_exif.country as country',
-      ])
-      .where('asset.ownerId', '=', ownerId)
-      .where(isTimelineVisible('asset'))
-      .where('asset.deletedAt', 'is', null)
-      .where('asset.localDateTime', '>=', from)
-      .where('asset.localDateTime', '<=', to)
-      .where((eb) =>
-        eb.exists((qb) =>
-          qb
-            .selectFrom('asset_file')
-            .whereRef('asset_file.assetId', '=', 'asset.id')
-            .where('asset_file.type', '=', AssetFileType.Preview),
-        ),
-      )
-      .orderBy('asset.localDateTime', 'asc')
-      .orderBy('asset.id', 'asc')
-      .execute();
+    return (
+      this.db
+        .selectFrom('asset')
+        .innerJoin('asset_job_status', 'asset.id', 'asset_job_status.assetId')
+        .leftJoin('asset_exif', 'asset.id', 'asset_exif.assetId')
+        .select([
+          'asset.id as id',
+          'asset.localDateTime as localDateTime',
+          'asset_exif.city as city',
+          'asset_exif.state as state',
+          'asset_exif.country as country',
+        ])
+        .where('asset.ownerId', '=', ownerId)
+        // FL-195 follow-up: Locked items make memories too; the memory is then hidden while locked
+        .where(isOnTimelineWhateverLock('asset'))
+        .where('asset.deletedAt', 'is', null)
+        .where('asset.localDateTime', '>=', from)
+        .where('asset.localDateTime', '<=', to)
+        .where((eb) =>
+          eb.exists((qb) =>
+            qb
+              .selectFrom('asset_file')
+              .whereRef('asset_file.assetId', '=', 'asset.id')
+              .where('asset_file.type', '=', AssetFileType.Preview),
+          ),
+        )
+        .orderBy('asset.localDateTime', 'asc')
+        .orderBy('asset.id', 'asc')
+        .execute()
+    );
   }
 
   /**
@@ -901,7 +905,7 @@ export class AssetRepository {
             )`.as('dayRank'),
           ])
           .where('asset.ownerId', '=', ownerId)
-          .where(isTimelineVisible('asset'))
+          .where(isOnTimelineWhateverLock('asset'))
           .where('asset.deletedAt', 'is', null)
           .where(sql`date_part('year', (asset."localDateTime" at time zone 'UTC')::date)::int`, '=', year)
           .where((eb) =>
@@ -958,7 +962,8 @@ export class AssetRepository {
                 .innerJoin('asset_job_status', 'asset.id', 'asset_job_status.assetId')
                 .where(sql`(asset."localDateTime" at time zone 'UTC')::date`, '=', sql`today.date`)
                 .where('asset.ownerId', '=', anyUuid(ownerIds))
-                .where(isTimelineVisible('asset'))
+                // memory generation only (FL-195 follow-up): Locked items too; see memoryHasNoHiddenItem
+                .where(isOnTimelineWhateverLock('asset'))
                 .where((eb) =>
                   eb.exists((qb) =>
                     qb

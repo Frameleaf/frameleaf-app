@@ -164,7 +164,7 @@ describe(StudioBundleService.name, () => {
   let projects: Record<string, ReturnType<typeof vi.fn>>;
   let assets: { getByIds: ReturnType<typeof vi.fn>; getByChecksums: ReturnType<typeof vi.fn> };
   let resources: { resolveProjectResources: ReturnType<typeof vi.fn> };
-  let studio: { authorizeRevision: ReturnType<typeof vi.fn> };
+  let studio: { authorizeRevision: ReturnType<typeof vi.fn>; hiddenOwnedItems: ReturnType<typeof vi.fn> };
   let users: { get: ReturnType<typeof vi.fn> };
   /** Asset ids FL-90 authorizes for the acting account, and the file behind each. */
   let allowed: Map<string, { path: string; ownerId: string }>;
@@ -284,7 +284,7 @@ describe(StudioBundleService.name, () => {
     };
     assets = { getByIds: vi.fn().mockResolvedValue([]), getByChecksums: vi.fn().mockResolvedValue([]) };
     resources = { resolveProjectResources: resolveLikeFl90() };
-    studio = { authorizeRevision: vi.fn() };
+    studio = { authorizeRevision: vi.fn(), hiddenOwnedItems: vi.fn().mockResolvedValue(new Set()) };
     users = { get: vi.fn().mockResolvedValue({ ...owner.user }) };
 
     sut = new StudioBundleService(
@@ -440,6 +440,61 @@ describe(StudioBundleService.name, () => {
     });
   });
 
+  describe('revealed items (FL-195 follow-up)', () => {
+    const lockedExport = () => {
+      const project = { id: newUuidV7(), ownerId: owner.user.id, name: 'Lake trip', deletedAt: null } as StudioProject;
+      const digest = studioEnvelopeDigest(envelope);
+      projects.getById.mockResolvedValue(project);
+      projects.getRevision.mockResolvedValue({ id: newUuidV7(), revision: 4, digest, envelope });
+      fs.files.set('/library/b.jpg', Buffer.from('locked photo bytes'));
+      allowed = new Map([[assetB, { path: '/library/b.jpg', ownerId: owner.user.id }]]);
+      assets.getByIds.mockResolvedValue([
+        {
+          id: assetB,
+          ownerId: owner.user.id,
+          visibility: AssetVisibility.Locked,
+          originalFileName: 'secret.jpg',
+          checksum: sha256('locked photo bytes'),
+        },
+      ]);
+      return operationOf({
+        kind: MediaOperationKind.StudioBundleExport,
+        snapshot: {
+          kind: 'studio-bundle-export',
+          projectId: project.id,
+          revision: 4,
+          digest,
+          includeMedia: true,
+          // what the owner's unlocked session authorized at submit
+          embed: [{ key: `library-asset:${assetB}`, kind: 'library-asset', id: assetB }],
+          sequenceIds: null,
+          requestKey: null,
+        },
+      } as never);
+    };
+
+    it("embeds the owner's revealed item when their unlocked session asked for it", async () => {
+      await sut.run({ operation: lockedExport(), claimToken: 'token' });
+
+      expect(operations.fail).not.toHaveBeenCalled();
+      // the other two sources of the stored graph are not named by this snapshot, so they stay references
+      expect(lastResult()).toMatchObject({ embedded: 1, referenced: 2 });
+    });
+
+    it('hides that bundle from a session that may not see the item, and shows it to one that may', async () => {
+      const job = lockedExport();
+      operations.getForOwner.mockResolvedValue({ ...job, status: MediaOperationStatus.Completed, result: null });
+
+      studio.hiddenOwnedItems.mockResolvedValue(new Set([assetB]));
+      await expect(sut.getOperation(owner, job.id)).rejects.toBeInstanceOf(NotFoundException);
+      await expect(sut.downloadExport(owner, job.id)).rejects.toBeInstanceOf(NotFoundException);
+      expect(studio.hiddenOwnedItems).toHaveBeenCalledWith(owner, [assetB]);
+
+      studio.hiddenOwnedItems.mockResolvedValue(new Set());
+      await expect(sut.getOperation(owner, job.id)).resolves.toMatchObject({ operationId: job.id });
+    });
+  });
+
   describe('a bundle round trip', () => {
     it('exports the stored revision with verified copies of owned media, and imports it with relinks', async () => {
       // --- The exporting server -------------------------------------------------------------
@@ -477,8 +532,9 @@ describe(StudioBundleService.name, () => {
           revision: 4,
           digest,
           includeMedia: true,
-          // Even if a snapshot named them, the Locked and the shared item are never copied.
-          embed: [assetA, assetB, assetC].map((id) => ({ key: `library-asset:${id}`, kind: 'library-asset', id })),
+          // A locked session's snapshot never names the Locked item (FL-195), and a shared item is never
+          // copied even when named.
+          embed: [assetA, assetC].map((id) => ({ key: `library-asset:${id}`, kind: 'library-asset', id })),
           sequenceIds: null,
           requestKey: null,
         },

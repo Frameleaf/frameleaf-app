@@ -12,6 +12,7 @@ import {
   hiddenContentAssetIdExists,
   isMotionOfLockedStill,
   isNotLockedAsset,
+  memoryHasNoHiddenItem,
   tagHasVisibleAssetOrNoAssets,
   tagIsSuppressed,
   withDefaultVisibility,
@@ -547,19 +548,35 @@ class TimelineAccess {
 class MemoryAccess {
   constructor(private db: Kysely<DB>) {}
 
+  /**
+   * The owner's memories this session may reach. FL-195 follow-up (owner decision, September 27,
+   * 2026): a memory with even one item hidden from the session — locked and not revealed to it
+   * (`revealLockedOwnerId`, the owner's unlocked session only), or matched by the Locked rules — is
+   * out of reach entirely, like one that does not exist.
+   */
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID_SET, true] })
   @ChunkedSet({ paramIndex: 1 })
-  async checkOwnerAccess(userId: string, memoryIds: Set<string>, hideNsfwAssets?: AccessPrivacy) {
+  async checkOwnerAccess(
+    userId: string,
+    memoryIds: Set<string>,
+    hideNsfwAssets?: AccessPrivacy,
+    revealLockedOwnerId?: string,
+  ) {
     if (memoryIds.size === 0) {
       return new Set<string>();
     }
 
+    const options: HiddenContentQueryOptions = {
+      ...privacyOptions(hideNsfwAssets),
+      ...(revealLockedOwnerId && { revealLockedOwnerId }),
+    };
     return this.db
       .selectFrom('memory')
       .select('memory.id')
       .where('memory.id', 'in', [...memoryIds])
       .where('memory.ownerId', '=', userId)
       .where('memory.deletedAt', 'is', null)
+      .where(memoryHasNoHiddenItem(sql.ref('memory.id'), options))
       .$if(!!getHiddenContentFilter(privacyOptions(hideNsfwAssets)), (qb) =>
         qb.where((eb) =>
           eb.or([
@@ -577,7 +594,7 @@ class MemoryAccess {
                 .innerJoin('asset', 'asset.id', 'memory_asset.assetId')
                 .select('memory_asset.memoriesId')
                 .whereRef('memory_asset.memoriesId', '=', 'memory.id')
-                .where(isTimelineVisible('asset'))
+                .where(isTimelineVisible('asset', revealLockedOwnerId))
                 .where('asset.deletedAt', 'is', null)
                 .$call((qb) => withHiddenContentFilter(qb, privacyOptions(hideNsfwAssets))),
             ),

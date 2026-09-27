@@ -32,7 +32,7 @@ import {
   StudioProjectTrashEmptyResponseDto,
   StudioProjectUpdateDto,
 } from 'src/dtos/studio-project.dto.js';
-import { AlbumKind, AlbumUserRole } from 'src/enum.js';
+import { AlbumKind, AlbumUserRole, Permission } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import {
@@ -47,7 +47,8 @@ import {
   StudioRefusedReference,
   StudioResourceService,
 } from 'src/services/studio-resource.service.js';
-import { asLockedSession, getLockedOwnerId } from 'src/utils/locked.js';
+import { checkAccess } from 'src/utils/access.js';
+import { getLockedOwnerId } from 'src/utils/locked.js';
 import { checkStudioCommandBatch, studioCommandMirror } from 'src/utils/studio-commands.js';
 import {
   STUDIO_AUTOSAVE_DEBOUNCE_MS,
@@ -64,7 +65,12 @@ import {
   studioProjectShelf,
   studioPurgeAfter,
 } from 'src/utils/studio-project.js';
-import { StudioDestination, StudioRefusalReason, StudioResourceKind } from 'src/utils/studio-resources.js';
+import {
+  StudioDestination,
+  StudioRefusalReason,
+  StudioResourceKind,
+  isStudioUuid,
+} from 'src/utils/studio-resources.js';
 
 const DEFAULT_TAKE = 50;
 const MANIFEST_CACHE_LIMIT = 2000;
@@ -274,9 +280,10 @@ export class StudioProjectService {
       sort: dto.sort ?? 'updated',
     });
 
+    const posters = await this.visiblePosters(auth, items);
     return {
       items: items.map((project) =>
-        this.mapProject(project, project.ownerId === auth.user.id ? 'owner' : 'reviewer', auth.user.id, null),
+        this.mapProject(project, project.ownerId === auth.user.id ? 'owner' : 'reviewer', auth.user.id, null, posters),
       ),
       total,
     };
@@ -317,9 +324,10 @@ export class StudioProjectService {
     const head =
       project.currentRevision > 0 ? await this.repository.getRevision(project.id, project.currentRevision) : undefined;
 
+    const posters = await this.visiblePosters(auth, [project]);
     if (!head) {
       return {
-        ...this.mapProject(project, access, auth.user.id, clientId),
+        ...this.mapProject(project, access, auth.user.id, clientId, posters),
         envelope: null,
         digest: null,
         withheld: false,
@@ -329,7 +337,7 @@ export class StudioProjectService {
 
     const exposure = await this.decideExposure(auth, project, access, head);
     return {
-      ...this.mapProject(project, access, auth.user.id, clientId),
+      ...this.mapProject(project, access, auth.user.id, clientId, posters),
       envelope: exposure.withheld ? null : (envelopeOf(head) as StudioProjectDetailDto['envelope']),
       digest: exposure.withheld ? null : head.digest,
       withheld: exposure.withheld,
@@ -384,7 +392,7 @@ export class StudioProjectService {
       this.forgetManifests(project.id);
     }
 
-    return this.mapProject(after, 'owner', auth.user.id, null);
+    return this.mapProject(after, 'owner', auth.user.id, null, await this.visiblePosters(auth, [after]));
   }
 
   /**
@@ -412,14 +420,14 @@ export class StudioProjectService {
   async restoreFromTrash(auth: AuthDto, id: string): Promise<StudioProjectDto> {
     const { project } = await this.requireOwner(auth, id);
     if (!project.deletedAt) {
-      return this.mapProject(project, 'owner', auth.user.id, null);
+      return this.mapProject(project, 'owner', auth.user.id, null, await this.visiblePosters(auth, [project]));
     }
     const restored = (await this.repository.untrash(project.id)) ?? (await this.repository.getById(project.id));
     if (!restored) {
       throw new NotFoundException('Studio project not found');
     }
     this.logger.log(`Studio project ${project.id} restored from the trash`);
-    return this.mapProject(restored, 'owner', auth.user.id, null);
+    return this.mapProject(restored, 'owner', auth.user.id, null, await this.visiblePosters(auth, [restored]));
   }
 
   /** Delete every project in the account's trash for good. Library media is never touched. */
@@ -449,7 +457,7 @@ export class StudioProjectService {
     if (!head) {
       const created = await this.repository.create({ ownerId: auth.user.id, name });
       const linked = (await this.repository.update(created.id, { duplicatedFromId: project.id })) ?? created;
-      return this.mapProject(linked, 'owner', auth.user.id, null);
+      return this.mapProject(linked, 'owner', auth.user.id, null, await this.visiblePosters(auth, [linked]));
     }
 
     const { project: copy } = await this.repository.createWithRevision({
@@ -467,7 +475,7 @@ export class StudioProjectService {
     });
 
     this.logger.log(`Studio project ${project.id} duplicated as ${copy.id}`);
-    return this.mapProject(copy, 'owner', auth.user.id, null);
+    return this.mapProject(copy, 'owner', auth.user.id, null, await this.visiblePosters(auth, [copy]));
   }
 
   /* ------------------------------------------------------------------ */
@@ -881,12 +889,13 @@ export class StudioProjectService {
 
   /**
    * A poster must be library media the owner could place in the project right now, decided by the
-   * FL-90 resolver: Locked, trashed, offline and hidden media are all refused. The poster shows in the
-   * project list whatever the session, so it is decided as a locked session would see it (FL-195): an
-   * unlocked owner may place their revealed locks in the project, but never make one its poster.
+   * FL-90 resolver for this session: trashed, offline and hidden media are refused, and Locked media
+   * unless it is revealed to the owner's unlocked session, where it behaves like any other item
+   * (FL-195). The poster stays set whatever happens to its item later, but it is only ever shown to a
+   * session that may see that item (`visiblePosters`), so a Locked poster never shows while locked.
    */
   private async assertPosterUsable(auth: AuthDto, project: StudioProject, assetId: string): Promise<void> {
-    const { manifest } = await this.resources.resolveProjectResources(asLockedSession(auth), {
+    const { manifest } = await this.resources.resolveProjectResources(auth, {
       projectId: project.id,
       ownerId: project.ownerId,
       revision: project.currentRevision,
@@ -1074,9 +1083,44 @@ export class StudioProjectService {
                 : [],
             )
           : [],
+      hiddenSources: access === 'owner' ? await this.hiddenSources(auth, resolution.refused) : [],
       checkedAt: resolution.manifest.issuedAt,
     };
     return { withheld: access === 'reviewer' && !resolution.manifest.complete, resources };
+  }
+
+  /**
+   * FL-195 follow-up (owner decision, September 27, 2026): the refused library items that are the
+   * owner's own and hidden from this session — Locked while it is locked, or matched by a Locked rule.
+   * The project keeps them, and the owner's editor hides those clips entirely rather than show them as
+   * missing media. The graph already names these ids; nothing else about them (name, thumbnail, file)
+   * is served. An item that is gone, trashed or someone else's stays ordinary missing media.
+   */
+  private async hiddenSources(auth: AuthDto, refused: readonly StudioRefusedReference[]): Promise<string[]> {
+    const candidates = new Set(
+      refused
+        .filter((item) => item.kind === StudioResourceKind.LibraryAsset && isStudioUuid(item.id))
+        .map((item) => item.id),
+    );
+    return [...(await this.hiddenOwnedItems(auth, candidates))].toSorted();
+  }
+
+  /**
+   * Which of these library items are the account's own and hidden from this session: Locked while it
+   * is locked, or matched by a Locked rule (FL-195 follow-up). Decided by the library's own access
+   * checks as the items stand now. An item that is gone or someone else's is never reported.
+   */
+  async hiddenOwnedItems(auth: AuthDto, ids: Iterable<string>): Promise<Set<string>> {
+    const candidates = new Set([...ids].filter((id) => isStudioUuid(id)));
+    if (candidates.size === 0 || auth.sharedLink) {
+      return new Set();
+    }
+    const owned = await this.access.asset.checkOwnerAccess(auth.user.id, candidates, true);
+    if (owned.size === 0) {
+      return new Set();
+    }
+    const visible = await checkAccess(this.access, { auth, permission: Permission.AssetView, ids: owned });
+    return owned.difference(visible);
   }
 
   /**
@@ -1198,14 +1242,35 @@ export class StudioProjectService {
     };
   }
 
+  /**
+   * The posters among these projects that this session may see (FL-195 follow-up, owner decision,
+   * September 27, 2026): a poster whose item got locked, or is hidden by the owner's Locked rules,
+   * keeps its place on the project but is not shown while the session is locked — the project shows
+   * its neutral placeholder — and shows again once unlocked. Decided through the library's own
+   * access check, so the poster never reveals more than the item's own thumbnail would.
+   */
+  private async visiblePosters(auth: AuthDto, projects: readonly StudioProject[]): Promise<ReadonlySet<string>> {
+    const ids = new Set(
+      projects
+        .filter((project) => project.ownerId === auth.user.id && project.thumbnailAssetId)
+        .map((project) => project.thumbnailAssetId!),
+    );
+    if (ids.size === 0) {
+      return ids;
+    }
+    return checkAccess(this.access, { auth, permission: Permission.AssetView, ids });
+  }
+
   private mapProject(
     project: StudioProject,
     access: StudioProjectAccess,
     userId: string,
     clientId: string | null,
+    posters: ReadonlySet<string>,
   ): StudioProjectDto {
     // Lineage, recents and the poster are the owner's library furniture; a reviewer sees none of it.
     const isOwner = access === 'owner';
+    const poster = isOwner && project.thumbnailAssetId && posters.has(project.thumbnailAssetId);
     return {
       id: project.id,
       ownerId: project.ownerId,
@@ -1219,7 +1284,7 @@ export class StudioProjectService {
       deletedAt: asIso(project.deletedAt),
       purgeAfter: asIso(project.purgeAfter),
       lastOpenedAt: isOwner ? asIso(project.lastOpenedAt) : null,
-      thumbnailAssetId: isOwner ? project.thumbnailAssetId : null,
+      thumbnailAssetId: poster ? project.thumbnailAssetId : null,
       duplicatedFromId: isOwner ? project.duplicatedFromId : null,
       importedFromBundle: isOwner && !!project.importedFromDigest,
       createdAt: asRequiredIso(project.createdAt),

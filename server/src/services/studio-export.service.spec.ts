@@ -1386,7 +1386,7 @@ describe(StudioExportService.name, () => {
       expect(repository.listForProject).toHaveBeenLastCalledWith(PROJECT, OWNER, {
         take: 50,
         skip: 0,
-        includeLocked: false,
+        visibility: { revealed: false },
       });
       expect(ordinary.total).toBe(1);
 
@@ -1394,7 +1394,18 @@ describe(StudioExportService.name, () => {
       expect(repository.listForProject).toHaveBeenLastCalledWith(PROJECT, OWNER, {
         take: 50,
         skip: 0,
-        includeLocked: true,
+        visibility: { revealed: true, revealLockedOwnerId: OWNER },
+      });
+    });
+
+    it('judges a version by its sources as they stand now, for this session (FL-195)', async () => {
+      repository.getForOwner.mockResolvedValue(undefined);
+      await expect(sut.get(auth(), VERSION)).rejects.toBeInstanceOf(NotFoundException);
+      expect(repository.getForOwner).toHaveBeenLastCalledWith(VERSION, OWNER, { revealed: false });
+      await expect(sut.download(elevated(), VERSION)).rejects.toBeInstanceOf(NotFoundException);
+      expect(repository.getForOwner).toHaveBeenLastCalledWith(VERSION, OWNER, {
+        revealed: true,
+        revealLockedOwnerId: OWNER,
       });
     });
 

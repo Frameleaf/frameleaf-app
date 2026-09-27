@@ -3,6 +3,7 @@ import { Insertable, Kysely, Selectable, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { randomUUID } from 'node:crypto';
 import type { VideoPacketInfo } from 'src/types.js';
+import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import {
   AssetType,
   AssetVisibility,
@@ -25,12 +26,36 @@ import {
   StudioExportVersionSourceTable,
   StudioExportVersionTable,
 } from 'src/schema/tables/studio-export.table.js';
+import { hiddenFromSession } from 'src/utils/database.js';
 import {
   DerivativePrivacy,
   DerivativeSourceEvidence,
   satisfiesDerivativePrivacy,
   unionDerivativePrivacy,
 } from 'src/utils/derivative-privacy.js';
+
+/**
+ * FL-195 follow-up (owner decision, September 27, 2026): which sessions a version is hidden from. A
+ * result carries the lock its sources had when it was published, and any source lock added later
+ * (`lockDerivedResults`); on top of that it is judged by its sources as they stand at read time, so a
+ * version with a source that is now hidden from the session — Locked while the session is locked, or
+ * matched by the owner's Locked rules — is hidden too, whenever it was rendered. `revealed` is the
+ * owner's unlocked session, which sees their stored locks.
+ */
+export type StudioExportVisibility = HiddenContentQueryOptions & { revealed: boolean };
+
+const versionHiddenFrom = (visibility: StudioExportVisibility) => {
+  const hiddenSource = sql<boolean>`exists (
+    select 1
+    from studio_export_version_source as hidden_source
+    inner join asset as hidden_source_asset on hidden_source_asset.id = hidden_source."assetId"
+    where hidden_source."versionId" = studio_export_version.id
+      and ${hiddenFromSession(visibility, 'hidden_source_asset')}
+  )`;
+  return visibility.revealed
+    ? hiddenSource
+    : sql<boolean>`(coalesce(studio_export_version."privacy" ->> 'lockReason', '') <> '' or ${hiddenSource})`;
+};
 
 /** FL-44 (FN-304): what every write here answers while a database handoff holds the schema. */
 export const STUDIO_EXPORT_HANDOFF_REFUSAL = 'Studio exports are unavailable during database handoff';
@@ -272,12 +297,17 @@ export class StudioExportRepository {
   }
 
   /** Owner-scoped. Somebody else's version answers like one that does not exist. */
-  getForOwner(id: string, ownerId: string): Promise<StudioExportVersion | undefined> {
+  getForOwner(
+    id: string,
+    ownerId: string,
+    visibility?: StudioExportVisibility,
+  ): Promise<StudioExportVersion | undefined> {
     return this.db
       .selectFrom('studio_export_version')
       .selectAll()
       .where('id', '=', id)
       .where('ownerId', '=', ownerId)
+      .$if(!!visibility, (qb) => qb.where(sql<boolean>`not ${versionHiddenFrom(visibility!)}`))
       .executeTakeFirst() as Promise<StudioExportVersion | undefined>;
   }
 
@@ -301,15 +331,15 @@ export class StudioExportRepository {
   async listForProject(
     projectId: string,
     ownerId: string,
-    page: { take: number; skip: number; includeLocked: boolean },
+    page: { take: number; skip: number; visibility: StudioExportVisibility },
   ): Promise<{ items: StudioExportVersion[]; total: number }> {
-    // A result that inherited a lock exists only for its owner's unlocked session (FL-34): outside it
-    // the row is not listed and not counted, like any Locked media.
+    // A result that inherited a lock, or whose source is hidden from the session now, exists only for
+    // a session that may see it (FL-34, FL-195): elsewhere the row is not listed and not counted.
     const query = this.db
       .selectFrom('studio_export_version')
       .where('projectId', '=', projectId)
       .where('ownerId', '=', ownerId)
-      .$if(!page.includeLocked, (qb) => qb.where(sql<boolean>`coalesce("privacy" ->> 'lockReason', '') = ''`));
+      .where(sql<boolean>`not ${versionHiddenFrom(page.visibility)}`);
     const [items, total] = await Promise.all([
       query.selectAll().orderBy('createdAt', 'desc').orderBy('id', 'desc').limit(page.take).offset(page.skip).execute(),
       query

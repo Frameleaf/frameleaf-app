@@ -48,7 +48,6 @@ import {
   getHiddenContentQueryOptions,
   isSuppressedWhileLocked,
 } from 'src/utils/hidden-content.js';
-import { isLockedRow } from 'src/utils/locked.js';
 import {
   birthdayAge,
   birthdayOn,
@@ -726,7 +725,10 @@ export class MemoryService extends BaseService {
   }
 
   async getExports(auth: AuthDto, memoryId?: string): Promise<MemoryExportResponseDto[]> {
-    const runs = await this.memoryRepository.searchExports(auth.user.id, { memoryId });
+    const runs = await this.withoutHiddenExports(
+      auth,
+      await this.memoryRepository.searchExports(auth.user.id, { memoryId }),
+    );
     const current = [];
     for (const run of runs) {
       current.push(mapMemoryExport(await this.currentExport(run)));
@@ -855,7 +857,9 @@ export class MemoryService extends BaseService {
 
       // The worker has no `AuthDto`. Owner scoping is therefore enforced against the row's
       // own `ownerId`: an asset that is not the owner's, is trashed, or is no longer on the
-      // timeline is skipped rather than written into the archive.
+      // timeline is skipped rather than written into the archive. The owner's Locked items stay
+      // in (FL-195 follow-up): only a session that saw them could ask for this export, and the
+      // export is hidden from every session that may not see them (`withoutHiddenExports`).
       const assets = await this.assetRepository.getByIds(assetIds);
       const byId = new Map(assets.map((asset) => [asset.id, asset]));
 
@@ -893,8 +897,7 @@ export class MemoryService extends BaseService {
           !asset ||
           asset.ownerId !== claimed.ownerId ||
           asset.deletedAt !== null ||
-          asset.visibility !== AssetVisibility.Timeline ||
-          isLockedRow(asset)
+          asset.visibility !== AssetVisibility.Timeline
         ) {
           continue;
         }
@@ -1035,7 +1038,29 @@ export class MemoryService extends BaseService {
   }
 
   private async findExportOrFail(auth: AuthDto, id: string) {
-    return findOrFail(() => this.memoryRepository.getExport(id, auth.user.id), 'MemoryExport');
+    const run = await findOrFail(() => this.memoryRepository.getExport(id, auth.user.id), 'MemoryExport');
+    const [visible] = await this.withoutHiddenExports(auth, [run]);
+    if (!visible) {
+      throw new NotFoundException('MemoryExport not found');
+    }
+    return visible;
+  }
+
+  /**
+   * FL-195 follow-up: an export made while the session was unlocked carries what its memory held,
+   * Locked items included. Like its memory, it is hidden entirely — listing, progress, download and
+   * every change — from a session that may not see one of those items, decided as the items stand
+   * now, so a lock added after the export was made hides it too.
+   */
+  private async withoutHiddenExports<T extends { assetIds: unknown }>(auth: AuthDto, runs: T[]): Promise<T[]> {
+    const ids = [...new Set(runs.flatMap((run) => normalizeAssetIds(run.assetIds)))];
+    if (ids.length === 0) {
+      return runs;
+    }
+    const hidden = await this.memoryRepository.getHiddenItemIds(ids, getHiddenContentQueryOptions(auth));
+    return hidden.size === 0
+      ? runs
+      : runs.filter((run) => normalizeAssetIds(run.assetIds).every((id) => !hidden.has(id)));
   }
 
   async search(auth: AuthDto, dto: MemorySearchDto) {
@@ -1211,7 +1236,8 @@ export class MemoryService extends BaseService {
       allowedAssetIds,
     );
 
-    return mapMemory(memory, auth);
+    // read back as this session sees it (FL-195 follow-up): the same rules as any other read
+    return mapMemory((await this.findOrFail(memory.id, await this.readOptions(auth))) as Memory, auth);
   }
 
   async update(auth: AuthDto, id: string, dto: MemoryUpdateDto): Promise<MemoryResponseDto> {

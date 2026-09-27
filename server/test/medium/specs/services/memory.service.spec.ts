@@ -110,9 +110,10 @@ describe(MemoryService.name, () => {
 
       await ctx.get(MemoryRepository).cleanup();
 
-      // FL-195: a memory whose every item is locked shows nowhere while the session is locked, not even
-      // as an empty memory; the owner's unlocked session sees it with its item, like any other memory
-      await expect(sut.get(auth, memory.id)).rejects.toThrow('Memory not found');
+      // FL-195: a memory holding a locked item shows nowhere while the session is locked, not even as
+      // an empty memory, and is out of reach like one that does not exist; the owner's unlocked session
+      // sees it with its item, like any other memory
+      await expect(sut.get(auth, memory.id)).rejects.toThrow('Not found or no memory.read access');
       await expect(sut.search(auth, {})).resolves.not.toEqual(
         expect.arrayContaining([expect.objectContaining({ id: memory.id })]),
       );
@@ -482,6 +483,101 @@ describe(MemoryService.name, () => {
 
       const memoriesAfter = await memoryRepo.search(user.id, {});
       expect(memoriesAfter.length).toBe(1);
+    });
+  });
+
+  describe('memories holding hidden items (FL-195 follow-up)', () => {
+    const withPreview = async (ctx: ReturnType<typeof setup>['ctx'], assetId: string) => {
+      await Promise.all([
+        ctx.newExif({ assetId, make: 'Canon' }),
+        ctx.newJobStatus({ assetId }),
+        ctx.get(AssetRepository).upsertFiles([
+          { assetId, type: AssetFileType.Preview, path: `/path/to/${assetId}-preview.jpg` },
+          { assetId, type: AssetFileType.Thumbnail, path: `/path/to/${assetId}-thumbnail.jpg` },
+        ]),
+      ]);
+    };
+
+    it('hides a memory with even one locked item entirely while locked, and shows all of it unlocked', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const ordinary = factory.auth({ user });
+      const elevated = { ...ordinary, session: { id: 'session', hasElevatedPermission: true } } as typeof ordinary;
+      const { memory: mixed } = await ctx.newMemory({ ownerId: user.id });
+      const { memory: open } = await ctx.newMemory({ ownerId: user.id });
+      const { asset: plain } = await ctx.newAsset({ ownerId: user.id });
+      const { asset: moved } = await ctx.newAsset({ ownerId: user.id });
+      await ctx.newMemoryAsset({ memoryId: mixed.id, assetId: plain.id });
+      await ctx.newMemoryAsset({ memoryId: mixed.id, assetId: moved.id });
+      await ctx.newMemoryAsset({ memoryId: open.id, assetId: plain.id });
+      // an item moved from the old Locked folder, revealed like any other lock once unlocked
+      await ctx.database
+        .insertInto('asset_lock')
+        .values({ assetId: moved.id, reason: AssetLockReason.ImmichLockedFolder })
+        .execute();
+
+      const ids = (memories: { id: string }[]) => memories.map(({ id }) => id).toSorted();
+      await expect(sut.search(ordinary, {}).then(ids)).resolves.toEqual([open.id]);
+      await expect(sut.statistics(ordinary, {})).resolves.toEqual({ total: 1 });
+      await expect(sut.get(ordinary, mixed.id)).rejects.toThrow();
+      await expect(sut.update(ordinary, mixed.id, { isSaved: true })).rejects.toThrow();
+
+      await expect(sut.search(elevated, {}).then(ids)).resolves.toEqual([mixed.id, open.id].toSorted());
+      await expect(sut.statistics(elevated, {})).resolves.toEqual({ total: 2 });
+      const shown = await sut.get(elevated, mixed.id);
+      expect(shown.assets.map(({ id }) => id).toSorted()).toEqual([plain.id, moved.id].toSorted());
+
+      // another account's unlocked session never reaches it
+      const { user: other } = await ctx.newUser();
+      const otherElevated = { ...factory.auth({ user: other }), session: { id: 's2', hasElevatedPermission: true } };
+      await expect(sut.get(otherElevated as never, mixed.id)).rejects.toThrow();
+    });
+
+    it("hides a memory holding an item the owner's Locked rules match while locked", async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const { memory } = await ctx.newMemory({ ownerId: user.id });
+      const { asset: plain } = await ctx.newAsset({ ownerId: user.id });
+      const { asset: matched } = await ctx.newAsset({ ownerId: user.id });
+      await ctx.newMemoryAsset({ memoryId: memory.id, assetId: plain.id });
+      await ctx.newMemoryAsset({ memoryId: memory.id, assetId: matched.id });
+      const { tag } = await ctx.newTag({ userId: user.id, value: 'Private' });
+      await ctx.newTagAsset({ tagIds: [tag.id], assetIds: [matched.id] });
+      const locked = factory.auth({ user });
+      locked.hiddenContent = {
+        userId: user.id,
+        includeNsfw: false,
+        tagIds: [tag.id],
+        personIds: [],
+        petIds: [],
+        scope: 'owned',
+      };
+
+      await expect(sut.search(locked, {})).resolves.toEqual([]);
+      await expect(sut.get(locked, memory.id)).rejects.toThrow();
+      const unlocked = { ...factory.auth({ user }), session: { id: 'session', hasElevatedPermission: true } };
+      await expect(sut.get(unlocked as never, memory.id)).resolves.toEqual(
+        expect.objectContaining({ assets: expect.arrayContaining([expect.objectContaining({ id: matched.id })]) }),
+      );
+    });
+
+    it('generates memories from locked items too, shown only to the unlocked session', async () => {
+      const { sut, ctx } = setup();
+      const now = DateTime.fromObject({ year: 2025, month: 3, day: 12 }, { zone: 'utc' }) as DateTime<true>;
+      const { user } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ ownerId: user.id, localDateTime: now.minus({ years: 1 }).toISO() });
+      await withPreview(ctx, asset.id);
+      await ctx.get(AssetRepository).lock([asset.id], AssetLockReason.Marked, user.id);
+
+      vi.setSystemTime(now.toJSDate());
+      await sut.onMemoriesCreate();
+
+      const ordinary = factory.auth({ user });
+      const elevated = { ...ordinary, session: { id: 'session', hasElevatedPermission: true } } as typeof ordinary;
+      await expect(sut.search(ordinary, {})).resolves.toEqual([]);
+      const memories = await sut.search(elevated, {});
+      expect(memories).toHaveLength(1);
+      expect(memories[0].assets.map(({ id }) => id)).toEqual([asset.id]);
     });
   });
 

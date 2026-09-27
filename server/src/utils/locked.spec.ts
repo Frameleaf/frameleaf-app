@@ -1,6 +1,7 @@
 import { DummyDriver, Kysely, PostgresAdapter, PostgresIntrospector, PostgresQueryCompiler, RawBuilder } from 'kysely';
 import { AssetLockReason, AssetVisibility } from 'src/enum.js';
 import {
+  REVEALED_LOCK_REASONS,
   effectiveVisibility,
   effectiveVisibilityOf,
   getLockedOwnerId,
@@ -8,6 +9,7 @@ import {
   isLocked,
   isLockedRow,
   isNotLocked,
+  isRevealedLockReason,
   lockedForReason,
   notLockedOrOwnedBy,
   revealedLockScope,
@@ -64,16 +66,22 @@ describe('the one Locked predicate (FL-34)', () => {
     expect(compile(visibilityIn([], 'asset')).sql).toBe('false');
   });
 
-  it("reveals only the owner's sensitive marks and detections in an ordinary view, never the old folder", () => {
+  it("reveals the owner's own locks of every reason in an ordinary view, the old folder's included", () => {
+    expect(REVEALED_LOCK_REASONS).toEqual([
+      AssetLockReason.Marked,
+      AssetLockReason.Detected,
+      AssetLockReason.ImmichLockedFolder,
+    ]);
+    expect(isRevealedLockReason(AssetLockReason.ImmichLockedFolder)).toBe(true);
+    expect(isRevealedLockReason(null)).toBe(false);
     const revealed = compile(revealedLockScope('owner-1', 'asset'));
-    expect(revealed.sql).toContain(`asset_lock.reason in ('marked', 'detected')`);
-    expect(revealed.sql).not.toContain('immich-locked-folder');
+    expect(revealed.sql).toContain(`asset_lock.reason in ('marked', 'detected', 'immich-locked-folder')`);
     expect(revealed.parameters).toEqual(['owner-1']);
     expect(compile(revealedLockScope(undefined, 'asset')).sql).toBe(compile(isNotLocked('asset')).sql);
 
     const timeline = compile(visibilityIs(AssetVisibility.Timeline, 'asset', 'owner-1')).sql;
     expect(timeline).toContain(`"asset"."visibility" = 'timeline'`);
-    expect(timeline).toContain(`asset_lock.reason in ('marked', 'detected')`);
+    expect(timeline).toContain(`asset_lock.reason in ('marked', 'detected', 'immich-locked-folder')`);
   });
 
   it('shows ordinary reads only unlocked Timeline and Archive media', () => {

@@ -434,6 +434,66 @@ where
   "memory"."id" in ($1)
   and "memory"."ownerId" = $2
   and "memory"."deletedAt" is null
+  and not exists (
+    select
+      1
+    from
+      memory_asset as hidden_memory_asset
+      inner join asset as hidden_memory_item on hidden_memory_item.id = hidden_memory_asset."assetId"
+    where
+      hidden_memory_asset."memoriesId" = "memory"."id"
+      and (
+        not not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "hidden_memory_item"."id"
+        )
+        or (
+          case
+            when "hidden_memory_item"."id" is null then false
+            when coalesce(
+              (
+                select
+                  phase
+                from
+                  immich_fork.state
+                where
+                  id = 1
+              ),
+              'inactive'
+            ) in ('legacy', 'dual-write', 'ready') then exists (
+              select
+                1
+              from
+                asset as nsfw_asset
+              where
+                nsfw_asset.id = "hidden_memory_item"."id"
+                and nsfw_asset.is_nsfw = true
+            )
+            when (
+              select
+                phase
+              from
+                immich_fork.state
+              where
+                id = 1
+            ) = 'active' then not exists (
+              select
+                1
+              from
+                immich_fork.asset_privacy as privacy_asset
+              where
+                privacy_asset."assetId" = "hidden_memory_item"."id"
+                and privacy_asset."isNsfw" = false
+            )
+            else false
+          end
+        )
+      )
+  )
   and (
     not exists (
       select
