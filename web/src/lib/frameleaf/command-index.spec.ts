@@ -23,6 +23,7 @@ const context = (overrides: Partial<CommandIndexContext> = {}): CommandIndexCont
 const everything = (): CommandIndexContext =>
   context({
     capabilities: {
+      recentlyAdded: true,
       search: true,
       map: true,
       trash: true,
