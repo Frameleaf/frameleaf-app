@@ -74,9 +74,8 @@ tested against what the cloud publishes (FL-177).
   `remote/hostname-put-request.json`, `remote/hostnames-list.json` and `remote/label-vectors.json` are
   byte-identical to `origin/main` at `39488a50b176ea0778ee138d202bc8eda8376a70`. The contracts are
   `packages/contracts/src/remote/{enroll,dns-txt,certs,caa,hostnames}.ts`; `server/src/utils/frameleaf-remote-access.ts`
-  reads and builds them. These fixtures still name the earlier direct domain `frameleaf-direct.net`; the server
-  takes the domain from the enrolment answer (or discovery's `remote.directDomain`) and only documents
-  `frameleaf.net` as the default. The relay fixtures (`remote/relay-*.json`, `remote/wan-probe-*.json`,
+  reads and builds them. The server takes the domain from the enrolment answer (or discovery's
+  `remote.directDomain`) and falls back to `frameleaf.net`; `frameleaf-direct.net` is retired (cloud FC-29). The relay fixtures (`remote/relay-*.json`, `remote/wan-probe-*.json`,
   `remote/remote-usage.json`) belong to CLD-103/CLD-104 and are not copied yet.
 - FL-165: `instance/discovery.json` and `instance/discovery-instance.json` are byte-identical to
   `daa22f68296bc5a897b40b3af34b750fd6586e2f` (the `frameleaf.net` rename): both gained the optional
