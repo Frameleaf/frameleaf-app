@@ -4,7 +4,9 @@
    * (design/frameleaf/template/src/FrameleafCloud.jsx). The administrator chooses the backup to restore
    * from; the item's files go back where the library expects them, each checked against its fingerprint
    * before it touches the library, and a file in the way moves to `frameleaf/restore/replaced` and is
-   * never deleted. In own-memory mode the key file is asked for first, once per server start.
+   * never deleted. Details (FL-164): keep the item's current details, fill in the missing ones, or replace
+   * the ones that differ from the backup. In own-memory mode the key file is asked for first, once per
+   * server start.
    */
   import './frameleaf-cloud.css';
   import Button from '$lib/components/frameleaf/Button.svelte';
@@ -12,6 +14,7 @@
   import { readBackupKeyFile } from '$lib/frameleaf/cloud-backup';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
   import {
+    CloudBackupRestoreDetails,
     CloudBackupRestoreScope,
     restoreCloudBackup,
     unlockCloudBackupKey,
@@ -50,11 +53,30 @@
   let chosen = $state(manifestKey);
   // svelte-ignore state_referenced_locally
   let keyReady = $state(!needsKey);
+  let details = $state<CloudBackupRestoreDetails>(CloudBackupRestoreDetails.Keep);
   let keyValue = $state('');
   let keyError = $state<Translations | null>(null);
   let failure = $state('');
   let busy = $state(false);
   let fileInput = $state<HTMLInputElement>();
+
+  const DETAILS_OPTIONS: Array<[CloudBackupRestoreDetails, Translations, Translations]> = [
+    [
+      CloudBackupRestoreDetails.Keep,
+      'frameleaf_cloud_restore_details_keep',
+      'frameleaf_cloud_restore_details_keep_help',
+    ],
+    [
+      CloudBackupRestoreDetails.Fill,
+      'frameleaf_cloud_restore_details_fill',
+      'frameleaf_cloud_restore_details_fill_help',
+    ],
+    [
+      CloudBackupRestoreDetails.Replace,
+      'frameleaf_cloud_restore_details_replace',
+      'frameleaf_cloud_restore_details_replace_help',
+    ],
+  ];
 
   const readKeyFile = async (file: File | undefined) => {
     if (!file) {
@@ -92,6 +114,7 @@
           manifestKey: chosen,
           scope: CloudBackupRestoreScope.Asset,
           assetIds: [item.assetId],
+          ...(details !== CloudBackupRestoreDetails.Keep && { details }),
         },
       });
       onDone(status);
@@ -120,6 +143,16 @@
         {/each}
       </select>
     </label>
+    <fieldset class="fc-choices fc-restore-details">
+      <legend>{$t('frameleaf_cloud_restore_details_legend')}</legend>
+      {#each DETAILS_OPTIONS as [id, titleKey, helpKey] (id)}
+        <label class:is-selected={details === id}>
+          <input type="radio" name="fc-restore-details" checked={details === id} onchange={() => (details = id)} />
+          <strong>{$t(titleKey)}</strong>
+          <span>{$t(helpKey)}</span>
+        </label>
+      {/each}
+    </fieldset>
     <p class="fc-ok">
       <Icon icon={mdiShieldCheckOutline} size="18" />
       <span>{$t('frameleaf_cloud_restore_verified_note', { values: { folder: 'frameleaf/restore/replaced' } })}</span>
@@ -180,3 +213,9 @@
     {/snippet}
   </Dialog>
 {/if}
+
+<style>
+  .fc-restore-details {
+    margin-top: 16px;
+  }
+</style>
