@@ -1,3 +1,4 @@
+import hashlib
 import json
 import os
 import sys
@@ -29,12 +30,13 @@ from immich_ml.models.base import InferenceModel, ModelUnavailableError
 from immich_ml.models.cache import ModelCache
 from immich_ml.models.clip.textual import MClipTextualEncoder, OpenClipTextualEncoder
 from immich_ml.models.clip.visual import OpenClipVisualEncoder
+from immich_ml.models.constants import _PADDLE_MODELS, get_model_source, get_ocr_model_file
 from immich_ml.models.facial_recognition.detection import FaceDetector
 from immich_ml.models.facial_recognition.recognition import FaceRecognizer
 from immich_ml.models.image_description import IMAGE_DESCRIPTION_PROMPT, ImageDescriptionModel
 from immich_ml.models.ocr.detection import TextDetector
 from immich_ml.models.ocr.recognition import TextRecognizer
-from immich_ml.schemas import ModelFormat, ModelPrecision, ModelTask, ModelType
+from immich_ml.schemas import ModelFormat, ModelPrecision, ModelSource, ModelTask, ModelType
 from immich_ml.sessions.ann import AnnSession
 from immich_ml.sessions.ort import OrtSession
 from immich_ml.sessions.rknn import RknnSession, run_inference
@@ -1908,6 +1910,95 @@ class TestFaceRecognition:
 
 
 class TestOcr:
+    @staticmethod
+    def _serve(snapshot_download: mock.Mock, content: bytes) -> None:
+        """Make the mocked model source 'serve' `content` for whichever file was requested."""
+
+        def fake(repo_id: str, *, local_dir: Path, allow_patterns: list[str], **kwargs: Any) -> str:
+            target = Path(local_dir) / allow_patterns[0].removesuffix("/*") / "model.onnx"
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(content)
+            return str(local_dir)
+
+        snapshot_download.side_effect = fake
+
+    @pytest.mark.parametrize(
+        ("model_class", "model_name", "repo"),
+        [
+            (TextDetector, "PP-OCRv5_mobile", "frameleaf/PP-OCRv5_mobile"),
+            (TextRecognizer, "PP-OCRv5_mobile", "frameleaf/PP-OCRv5_mobile"),
+            (TextDetector, "PP-OCRv5_server", "frameleaf/PP-OCRv5_server"),
+            (TextRecognizer, "CH__PP-OCRv5_server", "frameleaf/PP-OCRv5_server"),
+            (TextDetector, "LATIN__PP-OCRv5_mobile", "frameleaf/PP-OCRv5_mobile"),
+            (TextRecognizer, "LATIN__PP-OCRv5_mobile", "frameleaf/LATIN__PP-OCRv5_mobile"),
+            (TextRecognizer, "KOREAN__PP-OCRv5_mobile", "frameleaf/KOREAN__PP-OCRv5_mobile"),
+        ],
+    )
+    def test_download_goes_to_model_source(
+        self,
+        snapshot_download: mock.Mock,
+        mocker: MockerFixture,
+        tmp_path: Path,
+        model_class: type[InferenceModel],
+        model_name: str,
+        repo: str,
+    ) -> None:
+        mocker.patch.object(settings, "model_source_url", "https://models.example.com/")
+        rapidocr_download = mocker.patch("rapidocr.utils.download_file.DownloadFile.run")
+        content = b"onnx bytes"
+        source = get_ocr_model_file(model_name, model_class.identity[0])
+        mocker.patch(
+            "immich_ml.models.ocr.source.get_ocr_model_file",
+            return_value=source._replace(sha256=hashlib.sha256(content).hexdigest()),
+        )
+        self._serve(snapshot_download, content)
+        model = model_class(model_name, cache_dir=tmp_path)
+
+        model.download()
+
+        snapshot_download.assert_called_once_with(
+            repo,
+            cache_dir=tmp_path,
+            local_dir=tmp_path,
+            allow_patterns=[f"{model.model_type.value}/*"],
+            endpoint="https://models.example.com",
+            token=False,
+        )
+        assert model.model_path == tmp_path / model.model_type.value / "model.onnx"
+        assert model.model_path.read_bytes() == content
+        rapidocr_download.assert_not_called()
+
+    @pytest.mark.parametrize("model_class", [TextDetector, TextRecognizer])
+    def test_download_rejects_checksum_mismatch(
+        self, snapshot_download: mock.Mock, tmp_path: Path, model_class: type[InferenceModel]
+    ) -> None:
+        self._serve(snapshot_download, b"not the pinned export")
+        model = model_class("PP-OCRv5_mobile", cache_dir=tmp_path)
+
+        with pytest.raises(ModelUnavailableError, match="checksum") as raised:
+            model.download()
+
+        assert "frameleaf/PP-OCRv5_mobile" in str(raised.value)
+        assert not model.model_path.exists()
+
+    def test_download_names_missing_file(self, snapshot_download: mock.Mock, tmp_path: Path) -> None:
+        model = TextRecognizer("EN__PP-OCRv5_mobile", cache_dir=tmp_path)
+
+        with pytest.raises(ModelUnavailableError, match="recognition/model.onnx") as raised:
+            model.download()
+
+        assert "frameleaf/EN__PP-OCRv5_mobile" in str(raised.value)
+        assert "https://models.frameleaf.cloud" in str(raised.value)
+
+    def test_every_ocr_model_has_pinned_files(self) -> None:
+        for model_name in _PADDLE_MODELS:
+            assert get_model_source(model_name) == ModelSource.PADDLE
+            for model_type in (ModelType.DETECTION, ModelType.RECOGNITION):
+                source = get_ocr_model_file(model_name, model_type)
+                assert source.repo.endswith("PP-OCRv5_mobile") or source.repo.endswith("PP-OCRv5_server")
+                assert len(source.sha256) == 64
+                int(source.sha256, 16)
+
     def test_det_min_score_is_per_request(self, path: mock.Mock) -> None:
         path.return_value.__truediv__.return_value.__truediv__.return_value.suffix = ".onnx"
         text_detector = TextDetector("PP-OCRv5_mobile", cache_dir="test_cache")
