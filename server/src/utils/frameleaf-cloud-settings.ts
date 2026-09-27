@@ -48,11 +48,11 @@ export type CloudMlSettings = z.infer<typeof cloudMlSettingsSchema>;
 const BACKUP_SCHEDULE = /^[\d*/,-]+(?: [\d*/,-]+){4}$/;
 
 /**
- * FC-61: whether a server backing up to its own bucket reports `target: own-bucket`. Off until Frameleaf
- * Cloud confirms the value is live (it rides with the consent query); until then such a server leaves the
- * cloudBackup block out, since `off` would be misleading.
+ * FC-61: whether a server backing up to its own bucket reports `target: own-bucket` (live since
+ * frameleaf-cloud PR #78). Off, such a server leaves the cloudBackup block out, since `off` would be
+ * misleading.
  */
-export const CLOUD_BACKUP_REPORTS_OWN_BUCKET: boolean = false;
+export const CLOUD_BACKUP_REPORTS_OWN_BUCKET: boolean = true;
 
 const backupSettingsSchema = (ownBucket: boolean) =>
   z.strictObject({
@@ -173,8 +173,8 @@ const RUN_RESULTS: Record<string, BackupRunResult> = {
 /**
  * Cloud backup as the administrator set it up, and how the last run ended (a fixed code, never the error
  * text). `keyMode` is this server's encryption key, and `escrow` is true only while a copy of it is held by
- * Frameleaf Cloud. A server backing up to its own bucket reports `own-bucket` once
- * `CLOUD_BACKUP_REPORTS_OWN_BUCKET` is on, and leaves the block out until then.
+ * Frameleaf Cloud. A server backing up to its own bucket reports `own-bucket` (never the bucket's name,
+ * endpoint or keys) while `CLOUD_BACKUP_REPORTS_OWN_BUCKET` is on, and leaves the block out otherwise.
  */
 export const cloudBackupSettingsOf = (
   settings: FrameleafCloudConfig['cloudBackup'] | undefined,

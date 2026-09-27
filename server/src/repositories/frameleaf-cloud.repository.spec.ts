@@ -418,16 +418,16 @@ describe('Frameleaf Cloud client against a fake cloud (FL-159)', () => {
       requiredVersion: '2026-09-26.1',
       recordedVersion: null,
     });
-    // FC-62: the terms for chosen features are asked for only once the cloud's query is confirmed live
+    // FC-62 (frameleaf-cloud PR #78): the terms are asked for with the features the admin chose
+    expect(CONSENT_TERMS_FOR_FEATURES).toBe(true);
     await expect(
       ml.getConsent(resolution.gateway, { identityNames: true, medicalSignals: false }),
     ).resolves.toMatchObject({ requiredVersion: '2026-09-26.1' });
     const consentReads = cloud.requests.filter((request) => request.path.startsWith('/ml-eu/v2/consent/current'));
-    expect(consentReads.at(-1)?.path).toBe(
-      CONSENT_TERMS_FOR_FEATURES
-        ? '/ml-eu/v2/consent/current?identityNames=true&medicalSignals=false'
-        : '/ml-eu/v2/consent/current',
-    );
+    expect(consentReads.at(-1)?.path).toBe('/ml-eu/v2/consent/current?identityNames=true&medicalSignals=false');
+    // without chosen features, the record's own terms, as before
+    await ml.getConsent(resolution.gateway);
+    expect(cloud.requests.at(-1)?.path).toBe('/ml-eu/v2/consent/current');
     const consent = cloudContractFixture<{
       version: string;
       features: { identityNames: boolean; medicalSignals: boolean; ocrAddon: boolean };
