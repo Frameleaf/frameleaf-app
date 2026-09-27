@@ -5299,6 +5299,8 @@
   "frameleaf_jobs_name_audit_table_cleanup": "Clean up change records",
   "frameleaf_jobs_name_best_photos_score": "Score a photo for Best Photos",
   "frameleaf_jobs_name_best_photos_score_queue_all": "Find photos to score for Best Photos",
+  "frameleaf_jobs_name_cloud_backup_schedule": "Start a scheduled Frameleaf Cloud backup",
+  "frameleaf_jobs_name_cloud_backup_verify": "Check whether a Frameleaf Cloud backup verification is due",
   "frameleaf_jobs_name_cloud_ml_description_batch": "Describe photos with Frameleaf Cloud",
   "frameleaf_jobs_name_database_backup": "Back up the database",
   "frameleaf_jobs_name_facial_recognition": "Recognize a face",
