@@ -145,6 +145,8 @@ describe(AssetRestorationService.name, () => {
       mocks.machineLearning as never,
       mocks.job as never,
       mocks.storage as never,
+      mocks.config as never,
+      mocks.systemMetadata as never,
     );
   });
 
@@ -326,11 +328,93 @@ describe(AssetRestorationService.name, () => {
       expect(mocks.machineLearning.probe).not.toHaveBeenCalled();
     });
 
-    it('refuses Smooth motion as a restoration request: it is its own Frameleaf Cloud job (FL-162)', async () => {
-      await expect(
-        sut.requestPreview(authStub.user1, asset.id, { ...request, mode: AssetRestorationMode.SmoothMotion }),
-      ).rejects.toBeInstanceOf(BadRequestException);
-      expect(restorations.create).not.toHaveBeenCalled();
+    describe('local Smooth motion (FL-162)', () => {
+      const video = AssetFactory.from({ ownerId: authStub.user1.user.id, type: AssetType.Video, duration: 12_000 })
+        .exif({ exifImageWidth: 1920, exifImageHeight: 1080, orientation: '1', fileSizeInByte: 40_000_000 })
+        .build();
+      const smooth = {
+        ...request,
+        mode: AssetRestorationMode.SmoothMotion,
+        upscale: 1 as const,
+        smoothMotionFactor: 4 as const,
+      };
+
+      beforeEach(() => {
+        mocks.access.asset.checkOwnerAccess.mockImplementation((_userId, ids) => Promise.resolve(new Set(ids)));
+        mocks.asset.getById.mockResolvedValue(video as never);
+        mocks.mlDestination.getById.mockResolvedValue({
+          ...mlDestinationStub.lan,
+          workloads: [MlWorkload.Interpolation],
+        });
+        mocks.machineLearning.probe.mockResolvedValue({
+          ...mlProbeStub.healthy,
+          workloads: [MlWorkload.Interpolation],
+        });
+        restorations.update.mockImplementation((id: string, patch: Partial<AssetRestoration>) =>
+          Promise.resolve(row({ id, status: AssetRestorationStatus.PreviewQueued, ...patch })),
+        );
+      });
+
+      it('queues an interpolation preview on the named home worker, keeping the size and the original', async () => {
+        await sut.requestPreview(authStub.user1, video.id, smooth);
+
+        expect(restorations.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            mode: AssetRestorationMode.SmoothMotion,
+            workload: MlWorkload.Interpolation,
+            // the factor is kept where a restoration keeps its upscale
+            upscale: 4,
+            destinationKind: MlDestinationKind.Lan,
+          }),
+        );
+        expect(operations.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            kind: MediaOperationKind.RestorationPreview,
+            snapshot: expect.objectContaining({
+              mode: AssetRestorationMode.SmoothMotion,
+              upscale: 1,
+              interpolationFactor: 4,
+              output: expect.objectContaining({ width: 1920, height: 1080 }),
+            }),
+          }),
+        );
+      });
+
+      it('never sends it to Frameleaf Cloud from here, and refuses a photo', async () => {
+        mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.frameleafCloudConsented);
+        await expect(sut.requestPreview(authStub.user1, video.id, smooth)).rejects.toThrow(
+          'Frameleaf Cloud work is estimated and confirmed first',
+        );
+        mocks.mlDestination.getById.mockResolvedValue({
+          ...mlDestinationStub.lan,
+          workloads: [MlWorkload.Interpolation],
+        });
+        mocks.asset.getById.mockResolvedValue(asset as never);
+        await expect(sut.requestPreview(authStub.user1, asset.id, smooth)).rejects.toThrow(
+          'Smooth motion needs a video',
+        );
+        expect(restorations.create).not.toHaveBeenCalled();
+      });
+
+      it('follows Where each job runs: Cloud only refuses this server and the home network', async () => {
+        mocks.systemMetadata.get.mockResolvedValue({
+          frameleafCloud: { cloudMl: { routing: { interpolation: 'cloud' } } },
+        } as never);
+        const error = await sut.requestPreview(authStub.user1, video.id, smooth).catch((error_: unknown) => error_);
+
+        expect(error).toBeInstanceOf(MlDestinationRefusedError);
+        expect((error as MlDestinationRefusedError).refusal).toBe(MlAdmissionRefusal.WorkloadNotAllowed);
+        expect(restorations.create).not.toHaveBeenCalled();
+
+        const options = await sut.getOptions(authStub.user1, video.id, { mode: AssetRestorationMode.SmoothMotion });
+        expect(options.upscale).toBe(1);
+        expect(options.route).toBe('cloud');
+        expect(options.outputWidth).toBe(1920);
+        expect(options.destinations.find((item) => item.kind === MlDestinationKind.Lan)).toMatchObject({
+          available: false,
+          refusal: MlAdmissionRefusal.WorkloadNotAllowed,
+        });
+      });
     });
 
     it('creates the next revision and a preview job bound to the named destination', async () => {

@@ -25,11 +25,13 @@ from immich_ml.video_restoration.gpu import parse_gpu_query, parse_memory_used
 from immich_ml.video_restoration.models import (
     REQUIRED_EVIDENCE,
     AdapterRun,
+    Manifest,
     ModelSpec,
     QualificationRecord,
     RealBasicVsrAdapter,
     RestorationFailure,
     RestorationRegistry,
+    RifeAdapter,
     RuntimeInvocation,
     RuntimeJob,
     RuntimeOutcome,
@@ -39,6 +41,7 @@ from immich_ml.video_restoration.models import (
     WeightVerifier,
     classify_runtime_failure,
     evaluate_model,
+    fetch_weights,
     model_fingerprint,
     render_argv,
 )
@@ -80,6 +83,7 @@ def make_spec(
     min_vram: int = 8 * 1024**3,
     dynamic_ranges: list[str] | None = None,
     argv: list[str] | None = None,
+    requires_gpu: bool = True,
 ) -> ModelSpec:
     weights = weights or {"generator": sha(b"generator"), "spynet": sha(b"spynet")}
     return ModelSpec.model_validate(
@@ -107,6 +111,7 @@ def make_spec(
             "weights": [{"role": role, "path": f"{role}.pth", "sha256": value} for role, value in weights.items()],
             "limits": {"maxInputLongEdge": 1280, "maxFrames": 300, "maxFramesPerChunk": 30, "minVramBytes": min_vram},
             "dynamicRanges": dynamic_ranges or ["sdr"],
+            "requiresGpu": requires_gpu,
         }
     )
 
@@ -192,9 +197,7 @@ class TestQualificationGate:
                     "records": [
                         passing_record(
                             spec,
-                            evidence=[
-                                {"item": item, "result": "pending"} for item in REQUIRED_EVIDENCE[spec.family]
-                            ],
+                            evidence=[{"item": item, "result": "pending"} for item in REQUIRED_EVIDENCE[spec.family]],
                         )
                     ]
                 },
@@ -316,7 +319,7 @@ class TestManifest:
         report = registry.refresh()
 
         assert report.configurationProblems == []
-        assert {model.id for model in report.models} == {"realbasicvsr-x4", "seedvr2-3b"}
+        assert {model.id for model in report.models} == {"realbasicvsr-x4", "seedvr2-3b", "rife-4-25"}
         assert all(model.state == ModelState.NOT_PINNED for model in report.models)
         assert all(model.fingerprint is None for model in report.models)
         assert report.workloads == []
@@ -879,3 +882,166 @@ def test_reviewed_dates_parse_as_dates(tmp_path: Path) -> None:
     record = passing_record(make_spec(tmp_path))
 
     assert record.reviewedAt == date(2026, 9, 1)
+
+
+def rife_spec(tmp_path: Path, **overrides: Any) -> ModelSpec:
+    return make_spec(
+        tmp_path,
+        family="rife",
+        mode="smooth_motion",
+        weights={"generator": sha(b"generator"), "spynet": sha(b"spynet")},
+        argv=["{python}", "interpolate.py", "--img", "{input_dir}", "--output", "{output_dir}", "--exp", "{exp}"],
+        **overrides,
+    )
+
+
+class TestSmoothMotion:
+    """FL-162: local frame interpolation (RIFE) behind the same qualification gate as restoration."""
+
+    def test_request_contract(self) -> None:
+        smooth = request_payload(mode="smooth_motion", scale=1, interpolationFactor=4)
+        assert RestorationRequest.model_validate(smooth).interpolationFactor == 4
+        assert RestorationRequest.model_validate({**smooth, "trailingContextFrame": True}).trailingContextFrame
+        for broken in (
+            {**smooth, "interpolationFactor": None},
+            {**smooth, "interpolationFactor": 3},
+            {**smooth, "scale": 2},
+            {**smooth, "kind": "image", "source": {"width": 640, "height": 360}},
+            request_payload(interpolationFactor=2),
+            request_payload(trailingContextFrame=True),
+        ):
+            with pytest.raises(ValidationError):
+                RestorationRequest.model_validate(broken)
+
+    def test_only_rife_serves_smooth_motion(self, tmp_path: Path) -> None:
+        assert rife_spec(tmp_path).mode == RestorationMode.SMOOTH_MOTION
+        with pytest.raises(ValidationError, match="only the rife family"):
+            make_spec(tmp_path, family="rife", mode="faithful")
+        with pytest.raises(ValidationError, match="only the rife family"):
+            make_spec(tmp_path, mode="smooth_motion")
+
+    def test_needs_its_own_evidence(self) -> None:
+        required = {str(item) for item in REQUIRED_EVIDENCE["rife"]}
+        assert {"frame-count", "interpolation-artifacts", "timing-preserved", "audio-preserved"} <= required
+        assert {"fault-nan", "fault-changed-weights", "chunk-seams"} <= required
+
+    def test_serves_the_interpolation_workload_once_qualified(self, tmp_path: Path) -> None:
+        spec = rife_spec(tmp_path)
+        registry = TestRegistry().write_config(tmp_path, spec, passing_record(spec))
+
+        assert registry.refresh().workloads == ["interpolation"]
+        assert registry.select(RestorationMode.SMOOTH_MOTION, None, None).spec.family == "rife"
+
+    def test_unqualified_rife_serves_nothing(self, tmp_path: Path) -> None:
+        spec = rife_spec(tmp_path)
+        assert evaluate(spec, records=[]).state == ModelState.UNQUALIFIED
+        assert TestRegistry().write_config(tmp_path, spec, None).refresh().workloads == []
+
+    def test_a_model_qualified_on_the_processor_needs_no_gpu(self, tmp_path: Path) -> None:
+        on_cpu = rife_spec(tmp_path, requires_gpu=False)
+        assert evaluate(on_cpu, gpus=[]).state == ModelState.AVAILABLE
+        assert evaluate(rife_spec(tmp_path), gpus=[]).state == ModelState.NO_GPU
+
+    def test_rife_adapter_passes_the_factor_and_keeps_the_size(self, tmp_path: Path) -> None:
+        spec = rife_spec(tmp_path)
+        source_frames = tmp_path / "work" / "source-frames"
+        write_frames(source_frames, 3, (8, 6))
+        calls: list[RuntimeInvocation] = []
+
+        def runner(invocation: RuntimeInvocation) -> RuntimeOutcome:
+            calls.append(invocation)
+            write_frames(Path(invocation.argv[5]), 9, (8, 6))
+            return RuntimeOutcome(duration_ms=200, peak_vram_bytes=None)
+
+        job = RuntimeJob(
+            work_dir=tmp_path / "work",
+            source_frames=source_frames,
+            frame_count=3,
+            frame_rate="30/1",
+            source_size=(8, 6),
+            target_size=(8, 6),
+            seed=0,
+            interpolation_factor=4,
+        )
+        run = RifeAdapter(spec, tmp_path / "weights", runner).run(job)
+
+        assert run.expected_size == (8, 6)
+        assert calls[0].argv[3] == str(source_frames)
+        assert calls[0].argv[-1] == "2"
+        assert calls[0].env["HF_HUB_OFFLINE"] == "1"
+        with pytest.raises(RestorationFailure):
+            RifeAdapter(spec, tmp_path / "weights", runner).run(
+                RuntimeJob(**{**job.__dict__, "interpolation_factor": 3, "work_dir": tmp_path / "other"})
+            )
+
+    def test_validates_the_interpolated_frame_count_size_and_content(self, tmp_path: Path) -> None:
+        source = write_frames(tmp_path / "source", 3, (8, 6))
+        good = write_frames(tmp_path / "good", 5, (8, 6))
+        assert media.validate_interpolated_frames(source, good, factor=2, expected_size=(8, 6)) == (8, 6)
+        with pytest.raises(media.MediaError, match="expected 5"):
+            media.validate_interpolated_frames(source, good[:4], factor=2, expected_size=(8, 6))
+        with pytest.raises(media.MediaError, match="keeps the source size"):
+            media.validate_interpolated_frames(
+                source, write_frames(tmp_path / "big", 5, (16, 12)), factor=2, expected_size=(8, 6)
+            )
+        with pytest.raises(media.MediaError, match="blank"):
+            media.validate_interpolated_frames(
+                source, write_frames(tmp_path / "nan", 5, (8, 6), blank_at=3), factor=2, expected_size=(8, 6)
+            )
+
+    def test_conforms_the_length_to_the_source(self, tmp_path: Path) -> None:
+        # 3 source frames at 4x: 9 made frames, held to 12 so the clip keeps its length
+        write_frames(tmp_path / "held", 9, (8, 6))
+        assert media.conform_interpolated_frames(tmp_path / "held", factor=4, trailing_context=False) == 12
+        assert media.count_frames(tmp_path / "held") == 12
+        # a chunk with the next chunk's first frame as context: that frame is not returned
+        write_frames(tmp_path / "chunk", 9, (8, 6))
+        assert media.conform_interpolated_frames(tmp_path / "chunk", factor=4, trailing_context=True) == 8
+        assert media.multiply_rate(Fraction(30000, 1001), 2) == "60000/1001"
+
+    def test_fetches_weights_from_the_model_source_only_when_they_match(self, tmp_path: Path) -> None:
+        manifest = Manifest.model_validate(
+            {
+                "schemaVersion": 1,
+                "weightsRoot": str(tmp_path / "weights"),
+                "models": [
+                    {
+                        **rife_spec(tmp_path).model_dump(mode="json"),
+                        "weights": [
+                            {
+                                "role": "flownet",
+                                "path": "rife/flownet.pkl",
+                                "sha256": sha(b"flownet"),
+                                "source": {"repo": "rife-4.25", "file": "flownet.pkl"},
+                            }
+                        ],
+                        "runtime": {
+                            "root": str(tmp_path / "runtime"),
+                            "python": str(tmp_path / "python"),
+                            "argv": ["{python}", "{weight:flownet}"],
+                        },
+                    }
+                ],
+            }
+        )
+        (tmp_path / "weights" / "rife").mkdir(parents=True)
+        asked: list[tuple[str, str]] = []
+
+        def download(content: bytes) -> Callable[[str, str, Path], Path]:
+            def fake(repo_id: str, filename: str, directory: Path) -> Path:
+                asked.append((repo_id, filename))
+                path = directory / filename
+                path.write_bytes(content)
+                return path
+
+            return fake
+
+        with pytest.raises(RestorationFailure, match="hashes to"):
+            fetch_weights(manifest, download=download(b"tampered"))
+        assert not (tmp_path / "weights" / "rife" / "flownet.pkl").exists()
+
+        assert fetch_weights(manifest, download=download(b"flownet")) == ["rife-test flownet: downloaded and verified"]
+        assert (tmp_path / "weights" / "rife" / "flownet.pkl").read_bytes() == b"flownet"
+        assert asked[-1] == ("frameleaf/rife-4.25", "flownet.pkl")
+        assert fetch_weights(manifest, download=download(b"flownet")) == ["rife-test flownet: already present"]
+        assert list((tmp_path / "weights" / "rife").iterdir()) == [tmp_path / "weights" / "rife" / "flownet.pkl"]

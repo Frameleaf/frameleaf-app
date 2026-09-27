@@ -33,6 +33,9 @@ class RestorationMode(StrEnum):
 
     FAITHFUL = "faithful"
     CREATIVE = "creative"
+    # FL-162 Smooth motion: frame interpolation (RIFE) that adds in-between frames, so a clip plays
+    # slower without stutter or at a higher frame rate. It changes timing, never size.
+    SMOOTH_MOTION = "smooth_motion"
 
 
 # The server's ``MlWorkload`` values for each mode. A worker lists a workload in
@@ -40,7 +43,11 @@ class RestorationMode(StrEnum):
 WORKLOAD_BY_MODE: dict[RestorationMode, str] = {
     RestorationMode.FAITHFUL: "restoration-faithful",
     RestorationMode.CREATIVE: "restoration-creative",
+    RestorationMode.SMOOTH_MOTION: "interpolation",
 }
+
+# How many frames each source frame becomes with Smooth motion.
+SUPPORTED_INTERPOLATION_FACTORS = (2, 4, 8)
 
 
 class DynamicRange(StrEnum):
@@ -136,6 +143,12 @@ class RestorationRequest(WireModel):
     segment: TimeSegment | None = None
     seed: int = Field(default=0, ge=0, le=2**31 - 1)
     source: SourceDescription
+    # Smooth motion only: each source frame becomes this many frames, at this many times the frame
+    # rate, so the clip keeps its length and its audio.
+    interpolationFactor: Literal[2, 4, 8] | None = None
+    # Smooth motion only: the last uploaded frame is the first frame of the next chunk, sent so the
+    # frames between the two chunks are made too. It is used as context and not returned.
+    trailingContextFrame: bool = False
 
     @model_validator(mode="after")
     def _kind_fields(self) -> "RestorationRequest":
@@ -143,6 +156,15 @@ class RestorationRequest(WireModel):
             raise ValueError("a video request needs source.durationMs")
         if self.kind == "image" and self.segment is not None:
             raise ValueError("a still has no segment")
+        if self.mode == RestorationMode.SMOOTH_MOTION:
+            if self.interpolationFactor is None:
+                raise ValueError("a smooth_motion request needs interpolationFactor")
+            if self.kind != "video":
+                raise ValueError("smooth_motion needs a video")
+            if self.scale != 1:
+                raise ValueError("smooth_motion keeps the size; scale must be 1")
+        elif self.interpolationFactor is not None or self.trailingContextFrame:
+            raise ValueError("interpolationFactor and trailingContextFrame are for smooth_motion only")
         return self
 
 

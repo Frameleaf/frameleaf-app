@@ -48,6 +48,13 @@ import {
  * 5. The inference seam `MachineLearningRepository.restore` implements (FL-114).
  */
 
+/** How many frames each source frame becomes with Smooth motion (FL-162). */
+export const SMOOTH_MOTION_FACTORS = [2, 4, 8] as const;
+export type SmoothMotionFactor = (typeof SMOOTH_MOTION_FACTORS)[number];
+
+export const isSmoothMotionFactor = (value: unknown): value is SmoothMotionFactor =>
+  (SMOOTH_MOTION_FACTORS as readonly unknown[]).includes(value);
+
 /** 4K: the longest edge of a full result never exceeds this, whatever the upscale asked for. */
 export const RESTORATION_OUTPUT_CAP = { long: 3840, short: 2160 } as const;
 
@@ -56,6 +63,12 @@ export const RESTORATION_PREVIEW_EDGE = 1024;
 
 /** Length of a video preview clip. Fixed so previews stay cheap and comparable. */
 export const RESTORATION_PREVIEW_SECONDS = 5;
+
+/**
+ * Length of a Smooth motion preview (FL-162): a short clip interpolated and shown before the whole
+ * video is confirmed. Matches the web's `INTERPOLATION_PREVIEW_SECONDS`.
+ */
+export const INTERPOLATION_PREVIEW_SECONDS = 5;
 
 /** Full video renders are cut into chunks of this length; each chunk is a reusable checkpoint. */
 export const RESTORATION_CHUNK_SECONDS = 20;
@@ -435,6 +448,8 @@ export const RestorationSnapshotSchema = z.object({
    * and on jobs queued before the binding existed.
    */
   model: z.object({ name: z.string().min(1), version: z.string().nullable() }).optional(),
+  /** Smooth motion (FL-162): frames per source frame; the upscale is then 1 and the size is kept. */
+  interpolationFactor: z.union([z.literal(2), z.literal(4), z.literal(8)]).optional(),
 });
 
 export type RestorationSnapshot = z.infer<typeof RestorationSnapshotSchema>;
@@ -496,6 +511,7 @@ export const restorationChunkIdentity = (snapshot: RestorationSnapshot, chunk: R
       destinationId: snapshot.destinationId,
       output: snapshot.output,
       ...(snapshot.model && { model: snapshot.model }),
+      ...(snapshot.interpolationFactor && { interpolationFactor: snapshot.interpolationFactor }),
     }),
   );
   const startTicks = BigInt(Math.round(chunk.startSeconds * 1000));
@@ -614,6 +630,10 @@ export type RestorationInferenceOptions = {
   mode: AssetRestorationMode;
   upscale: 1 | 2 | 4;
   keepGrain: boolean;
+  /** Smooth motion (FL-162): frames per source frame. Absent for a restoration. */
+  interpolationFactor?: SmoothMotionFactor;
+  /** Smooth motion: the input's last frame is the next chunk's first, sent as context only. */
+  trailingContextFrame?: boolean;
   /** The adapter must not produce an output larger than this on either edge. */
   maxWidth: number;
   maxHeight: number;

@@ -32,6 +32,7 @@ import {
   StorageFolder,
 } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
+import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { AssetRestoration, AssetRestorationRepository } from 'src/repositories/asset-restoration.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
@@ -40,7 +41,9 @@ import { MachineLearningRepository } from 'src/repositories/machine-learning.rep
 import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { MlDestinationRepository, MlDestinationRow } from 'src/repositories/ml-destination.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
+import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { requireAccess } from 'src/utils/access.js';
+import { getConfig } from 'src/utils/config.js';
 import { asDateTimeString } from 'src/utils/date.js';
 import { ImmichFileResponse } from 'src/utils/file.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
@@ -55,6 +58,7 @@ import {
   storedAdmission,
 } from 'src/utils/ml-destination.js';
 import {
+  INTERPOLATION_PREVIEW_SECONDS,
   RESTORATION_PREVIEW_SECONDS,
   RestorationSnapshot,
   canAcceptRestoration,
@@ -63,6 +67,7 @@ import {
   canSelectRestoration,
   cappedOutputSize,
   isActiveRestoration,
+  isSmoothMotionFactor,
   mediaOperationDestinationOf,
   previewExpiryAfterDecision,
   previewInputBytes,
@@ -71,6 +76,10 @@ import {
   restorationWorkDir,
   workloadForMode,
 } from 'src/utils/restoration.js';
+
+/** Why a local Smooth motion is refused while the administrator routes interpolation to the cloud only. */
+const CLOUD_ONLY_DETAIL =
+  'Smooth motion is set to Frameleaf Cloud only under Where each job runs; confirm it as a Frameleaf Cloud job';
 
 /** Window over which a destination's measured throughput is averaged for estimates. */
 const ESTIMATE_WINDOW_DAYS = 30;
@@ -161,6 +170,8 @@ export class AssetRestorationService {
     private machineLearningRepository: MachineLearningRepository,
     private jobRepository: JobRepository,
     private storageRepository: StorageRepository,
+    private configRepository: ConfigRepository,
+    private systemMetadataRepository: SystemMetadataRepository,
   ) {
     this.logger.setContext(AssetRestorationService.name);
   }
@@ -184,9 +195,14 @@ export class AssetRestorationService {
     await requireAccess(this.accessRepository, { auth, permission: Permission.AssetEditGet, ids: [assetId] });
     const source = await this.requireSource(assetId);
     const mode = dto.mode ?? AssetRestorationMode.Faithful;
-    const upscale = (dto.upscale ?? 2) as 1 | 2 | 4;
+    const smooth = mode === AssetRestorationMode.SmoothMotion;
+    // Smooth motion keeps the size; only a restoration upscales.
+    const upscale = smooth ? 1 : ((dto.upscale ?? 2) as 1 | 2 | 4);
     const workload = workloadForMode(mode);
     const output = cappedOutputSize(source.width, source.height, upscale);
+    const routing = await this.routing();
+    const route = smooth ? routing.interpolation : routing.restoration;
+    const cloudOnly = smooth && route === 'cloud';
     const rows = await this.mlDestinationRepository.getAll();
     const since = windowStart(ESTIMATE_WINDOW_DAYS);
     // FL-186: Frameleaf Cloud is judged with the model an administrator chose for this mode
@@ -208,6 +224,10 @@ export class AssetRestorationService {
             : await this.mlDestinationRepository.getSpend(row.id, windowStart(ML_BUDGET_WINDOW_DAYS)),
         choices,
       });
+      if (verdict.admitted && cloudOnly && row.kind !== MlDestinationKind.FrameleafCloud) {
+        // FL-162: Smooth motion is set to Frameleaf Cloud only under Where each job runs.
+        verdict = { admitted: false, refusal: MlAdmissionRefusal.WorkloadNotAllowed, detail: CLOUD_ONLY_DETAIL };
+      }
       if (verdict.admitted) {
         // FL-72: the rule requestPreview and accept apply before anything is created, so the
         // picker never offers an endpoint library analysis uses.
@@ -240,6 +260,7 @@ export class AssetRestorationService {
           this.inputBytes(source, DEFAULT_RESTORATION_REGION),
           ESTIMATE_WINDOW_DAYS,
         ),
+        gpu: row.lastProbeHardware?.gpus?.[0] ?? null,
       });
     }
 
@@ -254,10 +275,16 @@ export class AssetRestorationService {
       upscale,
       outputWidth: output.width,
       outputHeight: output.height,
-      previewSeconds: source.sourceType === AssetRestorationSourceType.Video ? RESTORATION_PREVIEW_SECONDS : null,
+      previewSeconds:
+        source.sourceType === AssetRestorationSourceType.Video
+          ? smooth
+            ? INTERPOLATION_PREVIEW_SECONDS
+            : RESTORATION_PREVIEW_SECONDS
+          : null,
       // The adapter ships with the server (FL-114); whether a model can run is per destination.
       adapterInstalled: true,
       destinations,
+      route,
     };
   }
 
@@ -272,18 +299,33 @@ export class AssetRestorationService {
     dto: AssetRestorationRequestDto,
   ): Promise<AssetRestorationResponseDto> {
     await requireAccess(this.accessRepository, { auth, permission: Permission.AssetEditCreate, ids: [assetId] });
-    if (dto.mode === AssetRestorationMode.SmoothMotion) {
-      throw new BadRequestException('Smooth motion runs as its own Frameleaf Cloud job; estimate it first');
-    }
     await this.refuseCloudRequest(dto.destinationId);
     const source = await this.requireSource(assetId);
+    const smooth = dto.mode === AssetRestorationMode.SmoothMotion;
+    if (smooth) {
+      // FL-162: local Smooth motion (RIFE) on this server or a home-network restoration worker.
+      if (source.sourceType !== AssetRestorationSourceType.Video) {
+        throw new BadRequestException('Smooth motion needs a video');
+      }
+      if (!dto.smoothMotionFactor) {
+        throw new BadRequestException('Smooth motion needs a factor of 2, 4 or 8');
+      }
+      if ((await this.routing()).interpolation === 'cloud') {
+        throw new MlDestinationRefusedError(
+          MlAdmissionRefusal.WorkloadNotAllowed,
+          MlWorkload.Interpolation,
+          dto.destinationId,
+          CLOUD_ONLY_DETAIL,
+        );
+      }
+    }
     const workload = workloadForMode(dto.mode);
     const region = dto.region ?? DEFAULT_RESTORATION_REGION;
 
     // Consent, allow-list, budget, health and the worker's role are all decided here, before a row exists.
     await this.admitRestoration(workload, dto.destinationId, MediaOperationKind.RestorationPreview);
     const destination = await this.requireDestination(dto.destinationId);
-    const output = cappedOutputSize(source.width, source.height, dto.upscale);
+    const output = cappedOutputSize(source.width, source.height, smooth ? 1 : dto.upscale);
     const sample = await this.mlDestinationRepository.getThroughput(
       destination.id,
       windowStart(ESTIMATE_WINDOW_DAYS),
@@ -296,7 +338,8 @@ export class AssetRestorationService {
       ownerId: source.ownerId,
       status: AssetRestorationStatus.PreviewQueued,
       mode: dto.mode,
-      upscale: dto.upscale,
+      // A Smooth motion row keeps its frame-rate factor where a restoration keeps its upscale (FL-162).
+      upscale: smooth ? dto.smoothMotionFactor! : dto.upscale,
       keepGrain: dto.keepGrain,
       workload,
       destinationId: destination.id,
@@ -373,7 +416,11 @@ export class AssetRestorationService {
       MediaOperationKind.Restoration,
     );
     const destination = await this.requireDestination(restoration.destinationId);
-    const output = cappedOutputSize(restoration.sourceWidth, restoration.sourceHeight, restoration.upscale);
+    const output = cappedOutputSize(
+      restoration.sourceWidth,
+      restoration.sourceHeight,
+      restoration.mode === AssetRestorationMode.SmoothMotion ? 1 : restoration.upscale,
+    );
     const sample = await this.mlDestinationRepository.getThroughput(
       destination.id,
       windowStart(ESTIMATE_WINDOW_DAYS),
@@ -629,6 +676,15 @@ export class AssetRestorationService {
     }
   }
 
+  /** Where each job runs: Local only, Both or Cloud only for each kind of work (FL-159, FL-162). */
+  private async routing() {
+    const config = await getConfig(
+      { configRepo: this.configRepository, metadataRepo: this.systemMetadataRepository, logger: this.logger },
+      { withCache: true },
+    );
+    return config.frameleafCloud.cloudMl.routing;
+  }
+
   private async requireDestination(id: string): Promise<MlDestinationRow> {
     const destination = await this.mlDestinationRepository.getById(id);
     if (!destination) {
@@ -732,6 +788,7 @@ export class AssetRestorationService {
     stage: RestorationSnapshot['stage'],
     output: { width: number; height: number },
   ): RestorationSnapshot {
+    const smooth = restoration.mode === AssetRestorationMode.SmoothMotion;
     return {
       version: 1,
       stage,
@@ -744,7 +801,8 @@ export class AssetRestorationService {
       sourceHeight: restoration.sourceHeight,
       sourceDurationSeconds: restoration.sourceDurationSeconds ?? source.durationSeconds,
       mode: restoration.mode as AssetRestorationMode,
-      upscale: restoration.upscale as 1 | 2 | 4,
+      upscale: smooth ? 1 : (restoration.upscale as 1 | 2 | 4),
+      ...(smooth && isSmoothMotionFactor(restoration.upscale) && { interpolationFactor: restoration.upscale }),
       keepGrain: restoration.keepGrain,
       workload: restoration.workload as MlWorkload,
       destinationId: restoration.destinationId as string,

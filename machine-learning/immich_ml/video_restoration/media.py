@@ -8,6 +8,7 @@ frames and the restored file are new files in the job's working directory.
 
 import json
 import os
+import shutil
 import subprocess
 from dataclasses import dataclass
 from fractions import Fraction
@@ -365,6 +366,59 @@ def validate_output_frames(
     return size
 
 
+def validate_interpolated_frames(
+    source_frames: list[Path],
+    output_frames: list[Path],
+    *,
+    factor: int,
+    expected_size: tuple[int, int],
+) -> tuple[int, int]:
+    """Check a Smooth motion runtime's output (FL-162): exactly ``(n - 1) * factor + 1`` frames at
+    the source size, and no blank frame where the nearest source frame had content. Returns the size."""
+    expected_count = (len(source_frames) - 1) * factor + 1
+    if len(output_frames) != expected_count:
+        raise MediaError(
+            f"the runtime returned {len(output_frames)} frames for {len(source_frames)} source frames at "
+            f"{factor}x; expected {expected_count}"
+        )
+    for index, output_frame in enumerate(output_frames):
+        width, height, out_std = frame_statistics(output_frame)
+        if (width, height) != expected_size:
+            raise MediaError(
+                f"frame {index + 1} is {width}x{height}; smooth motion keeps the source size "
+                f"{expected_size[0]}x{expected_size[1]}"
+            )
+        if out_std < BLANK_OUTPUT_STD:
+            _, _, source_std = frame_statistics(source_frames[min(len(source_frames) - 1, round(index / factor))])
+            if source_std >= SOURCE_CONTENT_STD:
+                raise MediaError(f"frame {index + 1} is blank although its source has content (suspected NaN output)")
+    return expected_size
+
+
+def conform_interpolated_frames(frames_dir: Path, *, factor: int, trailing_context: bool) -> int:
+    """Give interpolated frames the length of their source (FL-162). With a trailing context frame
+    (the next chunk's first frame) the last output frame belongs to the next chunk and is dropped;
+    otherwise the last frame is held for ``factor - 1`` more frames, as a source frame lasts that
+    long at the new rate. Either way ``n`` source frames become ``n * factor`` frames, minus the
+    context frame's. Returns the frame count."""
+    frames = list_frames(frames_dir)
+    if not frames:
+        raise MediaError("the runtime returned no frames")
+    if trailing_context:
+        frames[-1].unlink()
+        return len(frames) - 1
+    last = frames[-1]
+    for extra in range(1, factor):
+        shutil.copyfile(last, frames_dir / (FRAME_PATTERN % (len(frames) + extra)))
+    return len(frames) + factor - 1
+
+
+def multiply_rate(rate: Fraction, factor: int) -> str:
+    """A frame rate ``factor`` times faster, as ffmpeg's ``num/den`` text."""
+    value = rate * factor
+    return f"{value.numerator}/{value.denominator}"
+
+
 def encode_output(
     frames_dir: Path,
     output: Path,
@@ -375,10 +429,12 @@ def encode_output(
     start_ms: int | None,
     end_ms: int | None,
     timeout: float,
+    frame_rate: str | None = None,
 ) -> Literal["copied", "transcoded", "none"]:
     """Resize restored frames to the target with a conventional Lanczos filter and encode
-    them at the source's exact frame rate with every source audio stream for the same
-    segment, so timing and audio are preserved. Returns how the audio was carried."""
+    them at the source's exact frame rate (or, for Smooth motion, ``frame_rate``) with every
+    source audio stream for the same segment, so timing and audio are preserved. Returns how
+    the audio was carried."""
     audio: Literal["copied", "transcoded", "none"] = "none"
     audio_input: list[str] = []
     audio_map: list[str] = []
@@ -407,7 +463,7 @@ def encode_output(
             "-v",
             "error",
             "-framerate",
-            source_probe.frame_rate_text,
+            frame_rate or source_probe.frame_rate_text,
             "-start_number",
             "1",
             "-i",

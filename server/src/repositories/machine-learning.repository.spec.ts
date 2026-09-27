@@ -584,7 +584,11 @@ describe(MachineLearningRepository.name, () => {
       });
 
     /** A selection admitted the only way restore accepts: through selectRestorationDestination. */
-    const admit = async (destination: MlDestinationRow = mlDestinationStub.lan, confirmed = false) => {
+    const admit = async (
+      destination: MlDestinationRow = mlDestinationStub.lan,
+      confirmed = false,
+      mode: AssetRestorationMode = AssetRestorationMode.Faithful,
+    ) => {
       recordAccounting = vi.fn().mockResolvedValue(undefined);
       const mlDestinationRepository = {
         getById: vi.fn().mockResolvedValue(destination),
@@ -606,7 +610,7 @@ describe(MachineLearningRepository.name, () => {
       } as unknown as MachineLearningRepository;
       return selectRestorationDestination(
         { mlDestinationRepository, machineLearningRepository },
-        { mode: AssetRestorationMode.Faithful, destinationId: destination.id, acknowledgeCloudUpload: confirmed },
+        { mode, destinationId: destination.id, acknowledgeCloudUpload: confirmed },
       );
     };
 
@@ -690,6 +694,52 @@ describe(MachineLearningRepository.name, () => {
         maxWidth: 3840,
         maxHeight: 2880,
         source: { width: 1024, height: 768, durationMs: null },
+      });
+    });
+
+    it('asks a home restoration worker for Smooth motion at the chosen factor and size (FL-162)', async () => {
+      const fetch = vi.fn().mockResolvedValue(
+        answer(
+          result({
+            mode: 'smooth_motion',
+            model: {
+              id: 'rife-4-25',
+              family: 'rife',
+              mode: 'smooth_motion',
+              revision: '0123456789abcdef0123456789abcdef01234567',
+              fingerprint: 'a'.repeat(64),
+              weights: [{ role: 'flownet', sha256: 'b'.repeat(64) }],
+              qualificationId: 'rife-4-25-2026-09',
+            },
+          }),
+        ),
+      );
+      vi.stubGlobal('fetch', fetch);
+      const selection = await admit(
+        { ...mlDestinationStub.lan, workloads: [MlWorkload.Interpolation] },
+        false,
+        AssetRestorationMode.SmoothMotion,
+      );
+
+      await sut.restore(
+        selection,
+        input(),
+        options({
+          mode: AssetRestorationMode.SmoothMotion,
+          upscale: 1,
+          interpolationFactor: 8,
+          trailingContextFrame: true,
+          maxWidth: 640,
+          maxHeight: 360,
+        }),
+      );
+
+      const form = fetch.mock.calls[0][1].body as FormData;
+      expect(JSON.parse(String(form.get('request')))).toMatchObject({
+        mode: 'smooth_motion',
+        scale: 1,
+        interpolationFactor: 8,
+        trailingContextFrame: true,
       });
     });
 
