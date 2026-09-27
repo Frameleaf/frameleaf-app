@@ -42448,6 +42448,11 @@
               "sentenceCountTarget": 3,
               "style": "balanced"
             }
+          },
+          "videoMomentCaptions": {
+            "default": false,
+            "description": "Describe video moments: after a video is described, caption each of its reusable frames (one more model request per frame). Off by default; plans choose captions separately.",
+            "type": "boolean"
           }
         },
         "required": [
@@ -43051,7 +43056,8 @@
                 ],
                 "sentenceCountTarget": 3,
                 "style": "balanced"
-              }
+              },
+              "videoMomentCaptions": false
             }
           },
           "nsfwDetection": {
@@ -53330,7 +53336,8 @@
             "enum": [
               "charged",
               "not_charged",
-              "refunded"
+              "refunded",
+              null
             ],
             "nullable": true,
             "type": "string"
@@ -58746,6 +58753,7 @@
           "Ocr",
           "ImageDescriptionQueueAll",
           "ImageDescription",
+          "VideoMomentCaptions",
           "NsfwDetectionQueueAll",
           "NsfwDetection",
           "PetRecognitionQueueAll",

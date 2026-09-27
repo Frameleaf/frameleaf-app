@@ -795,6 +795,9 @@
       "rich"
     ]
   },
+  "machineLearning.imageDescription.videoMomentCaptions": {
+    "type": "boolean"
+  },
   "machineLearning.nsfwDetection.device": {
     "type": "string"
   },

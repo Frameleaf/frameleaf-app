@@ -1243,6 +1243,12 @@ export class ImageEnrichmentService extends BaseService {
     // The owner's own classification rules (FL-60) see the new description tags. Never throws.
     await this.classificationService.evaluateAsset(asset.id, asset.ownerId);
 
+    // "Describe video moments" (FL-59): the video's reusable frames are captioned next, one more model
+    // request per frame. A plan picks its own stages instead.
+    if (asset.type === AssetType.Video && !options.planRun && machineLearning.imageDescription.videoMomentCaptions) {
+      await this.jobRepository.queue({ name: JobName.VideoMomentCaptions, data: { id } });
+    }
+
     return { status: JobStatus.Success };
   }
 

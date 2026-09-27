@@ -2252,6 +2252,7 @@ export enum JobName {
   // Image enrichment
   ImageDescriptionQueueAll = 'ImageDescriptionQueueAll',
   ImageDescription = 'ImageDescription',
+  VideoMomentCaptions = 'VideoMomentCaptions',
   NsfwDetectionQueueAll = 'NsfwDetectionQueueAll',
   NsfwDetection = 'NsfwDetection',
 
