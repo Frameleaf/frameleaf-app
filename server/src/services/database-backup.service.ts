@@ -395,7 +395,13 @@ export class DatabaseBackupService {
 
   async listBackups(): Promise<DatabaseBackupListResponseDto> {
     const backupsFolder = StorageCore.getBaseFolder(StorageFolder.Backups);
-    const files = await this.storageRepository.readdir(backupsFolder);
+    // FL-81: no backups folder yet (nothing was ever backed up) is no backups, not an error.
+    const files = await this.storageRepository.readdir(backupsFolder).catch((error: NodeJS.ErrnoException) => {
+      if (error?.code === 'ENOENT') {
+        return [];
+      }
+      throw error;
+    });
     const timezone = DateTime.local().zoneName;
 
     const validFiles = files

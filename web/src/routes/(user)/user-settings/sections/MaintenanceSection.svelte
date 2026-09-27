@@ -50,17 +50,23 @@
       });
   let backups: DatabaseBackupDto[] | undefined = $state();
   let expectedVersion = $state('');
-  let failed = $state(false);
+  let integrityFailed = $state(false);
+  let backupsFailed = $state(false);
+  const failed = $derived(section === 'integrity' ? integrityFailed : section === 'backups' && backupsFailed);
 
-  // What the old page loaded with it: the integrity summary, the server version and the backups.
+  // What the old page loaded with it: the integrity summary, the server version and the backups. Each
+  // section waits only for its own data, so backups that cannot be listed do not hide the integrity
+  // checks (FL-81).
   onMount(() => {
-    void Promise.all([getIntegrityReportSummary(), getServerVersion(), listDatabaseBackups()])
-      .then(([summary, { major, minor, patch }, result]) => {
-        integrityReport = summary;
+    void getIntegrityReportSummary()
+      .then((summary) => (integrityReport = summary))
+      .catch(() => (integrityFailed = true));
+    void Promise.all([getServerVersion(), listDatabaseBackups()])
+      .then(([{ major, minor, patch }, result]) => {
         expectedVersion = `${major}.${minor}.${patch}`;
         backups = result.backups;
       })
-      .catch(() => (failed = true));
+      .catch(() => (backupsFailed = true));
     void loadRuns();
   });
 

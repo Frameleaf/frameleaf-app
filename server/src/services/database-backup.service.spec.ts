@@ -676,6 +676,20 @@ describe(DatabaseBackupService.name, () => {
         ],
       });
     });
+
+    // FL-81: a server that never made a backup has no backups folder yet; that is an empty list,
+    // not an error that hides the Maintenance area or the emergency restore flow.
+    it('should list no backups when the backups folder does not exist yet', async () => {
+      mocks.storage.readdir.mockRejectedValue(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }));
+
+      await expect(sut.listBackups()).resolves.toEqual({ backups: [] });
+    });
+
+    it('should still fail when the backups folder cannot be read', async () => {
+      mocks.storage.readdir.mockRejectedValue(Object.assign(new Error('EACCES'), { code: 'EACCES' }));
+
+      await expect(sut.listBackups()).rejects.toThrow('EACCES');
+    });
   });
 
   describe('deleteBackup', () => {
