@@ -47,7 +47,7 @@ const item = (overrides: Partial<CloudBackupManifestItemDto> = {}): CloudBackupM
 const renderSection = (overrides: Partial<CloudBackupStatusResponseDto> = {}) => {
   const onStatus = vi.fn();
   render(CloudBackupRestoreSection, {
-    props: { status: status(overrides), formatWhen: (value) => value ?? '—', onStatus },
+    props: { status: status(overrides), formatWhen: (value: string | null | undefined) => value ?? '—', onStatus },
   });
   return { onStatus };
 };
