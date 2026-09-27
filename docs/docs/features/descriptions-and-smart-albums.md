@@ -533,6 +533,7 @@ A video's **Moments** section in the information panel shows its reusable frames
 - **Your moments** — add a moment at any time with a title and an optional typed transcript. There is no automatic speech recognition. Your moments are never removed by a refresh, a replaced original or a face correction.
 - **Find moments / Refresh moments** — queues a plan that cuts the frames and builds the moment search index. **Add captions** queues the optional captions stage.
 - **Search** — a search shows _Moments in your videos_ above the results: frames that match by meaning, and moments whose caption or transcript contains the words. Only your own videos are searched.
+- **Describe video moments** — a setting under **Descriptions & tags**, off by default. When it is on, every video described automatically also has its reusable frames captioned right after, one more model request per frame, on the routed destination. It changes no description, so turning it on or off never asks for descriptions to be redone. Videos whose descriptions go to Frameleaf Cloud are not captioned this way; use a plan's captions stage for those. **Frames looked at per video** beside it shows the current sampling policy (six) and cannot be changed.
 
 ### What makes a result out of date
 
