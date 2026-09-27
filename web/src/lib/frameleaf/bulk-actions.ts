@@ -412,13 +412,14 @@ export const bulkActions = (context: BulkActionContext = {}): BulkAction[] => {
     },
     {
       // Unmark Sensitive is Unlock: each item goes back exactly where it was. Offered in the Locked view
-      // and wherever an unlocked session shows a marked item.
+      // and wherever an unlocked session shows a marked item; a Locked-rule match the Locked view also
+      // lists has no lock to remove, so it alone never offers it.
       id: 'unmark-sensitive',
       labelKey: 'frameleaf_bulk_unmark_sensitive',
       icon: 'mdiShieldOutline',
       group: 'visibility',
       undoable: true,
-      available: !readOnly && has && (locked || (live && (unknown || any((asset) => !!asset.isLocked)))),
+      available: !readOnly && has && (locked || live) && (unknown || any((asset) => !!asset.isLocked)),
     },
     {
       id: 'remove-from-album',

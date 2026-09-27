@@ -64,13 +64,23 @@ describe('bulk action descriptors', () => {
   it('narrows the Locked folder to its own actions', () => {
     // FL-33: the Locked destination replaces the legacy select bar, which offered moving items
     // back out, the download, date and location, and the permanent delete — nothing else.
-    const ids = available({ assets: [photo('a')], locked: true });
+    const ids = available({ assets: [photo('a', { isLocked: true })], locked: true });
     expect(ids).toEqual(
       expect.arrayContaining(['unmark-sensitive', 'download', 'change-date', 'change-location', 'delete-permanently']),
     );
     for (const id of ['favorite', 'create-shared-link', 'delete', 'archive', 'mark-sensitive', 'tag']) {
       expect(ids).not.toContain(id);
     }
+  });
+
+  it('offers no Unmark for Locked-rule matches, which have no lock to remove (FL-34)', () => {
+    // the Locked view also lists what the owner's Locked rules hide; only changing the rules shows them
+    const ruleMatch = photo('a', { isLocked: false });
+    expect(available({ assets: [ruleMatch], locked: true })).not.toContain('unmark-sensitive');
+    expect(available({ assets: [ruleMatch], locked: true })).toContain('download');
+    expect(available({ assets: [ruleMatch, photo('b', { isLocked: true })], locked: true })).toContain(
+      'unmark-sensitive',
+    );
   });
 
   it('lets the unlocked Locked folder add its items to an album (owner decision, September 22, 2026)', () => {

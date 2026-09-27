@@ -28,9 +28,9 @@ A locked photo is never an album, collection or space cover, a person's or pet's
 
 ## The Locked view
 
-Open **Locked** after unlocking. It lists every locked item, newest first, with a filter: **All** (the default), **Moved from old Locked folder**, **Marked** and **Detected**. Each tile is badged **Locked** (moved from the old folder) or **Sensitive** (marked or detected).
+Open **Locked** after unlocking. It lists every locked item, newest first, together with the items your Locked rules hide (the people, pets and tags you chose in the Locked rules of your security settings), with a filter: **All** (the default), **Moved from old Locked folder**, **Marked** and **Detected**. The three reasons narrow the view to locks, so rule matches are listed under **All** only. Each tile is badged **Locked** (moved from the old folder) or **Sensitive** (marked, detected or matched by a rule).
 
-Select items and choose **Unmark Sensitive** to unlock them. Unlocking also records your review as safe, so running detection again never locks the item again. You can still add locked items to albums, download them, change their date or location, or delete them permanently from Locked.
+Select items and choose **Unmark Sensitive** to unlock them. A rule match has no lock to remove: it leaves Locked when you change your Locked rules. Unlocking also records your review as safe, so running detection again never locks the item again. You can still add locked items to albums, download them, change their date or location, or delete them permanently from Locked.
 
 ## Upgrading from an upstream library
 
@@ -49,6 +49,7 @@ Going back to a release without lock records restores the upstream Locked folder
 
 - `POST /assets/lock` and `POST /assets/unlock` (body `{ "ids": [...] }`) lock and unlock. Unlock needs a PIN-unlocked session; lock does not, since it only hides.
 - `visibility: locked` is never stored. In requests it still means "lock" (`PUT /assets`, uploads), and asking for `visibility: locked` in timeline and search requests lists the Locked view. Responses report `visibility: locked` for a locked item.
+- Time bucket requests with `visibility: locked` and no `lockReason` also list the caller's Locked-rule matches; those keep their stored visibility (`timeline` or `archive`) and have no `lockReason`.
 - Time bucket requests with `visibility: locked` accept `lockReason` (`marked`, `detected` or `immich-locked-folder`). The `lockReason` array comes back with them, and with the timeline of a PIN-unlocked session, which reveals your marked and detected items.
 - Setting any other visibility never unlocks: the item stays locked and only its stored visibility changes. Only `POST /assets/unlock` unlocks.
 - Partner sync keeps sending a partner's locked item with `visibility: locked` and its details blanked, so a device that already had it hides it.
