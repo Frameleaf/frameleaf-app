@@ -853,6 +853,151 @@ export const validateVideoMaster = ({
   }
 };
 
+/**
+ * Samples in one coded frame, for the codecs a master or export carries. An encoder can only end a
+ * track on a whole frame, so a track may legitimately run up to one frame past the picture.
+ */
+const AUDIO_SAMPLES_PER_FRAME: Readonly<Record<string, number>> = {
+  aac: 1024,
+  ac3: 1536,
+  eac3: 1536,
+  mp3: 1152,
+  opus: 960,
+  vorbis: 2048,
+  flac: 4608,
+  alac: 4096,
+};
+/** Uncompressed and unknown codecs: an allowance no real frame exceeds, rather than zero. */
+const DEFAULT_AUDIO_SAMPLES_PER_FRAME = 4608;
+
+/** How long one coded audio frame lasts, in seconds, or null when the rate is unknown. */
+export const audioFrameSeconds = (audio: Pick<AudioStreamInfo, 'codecName' | 'sampleRate'>): number | null => {
+  if (!audio.sampleRate || audio.sampleRate <= 0) {
+    return null;
+  }
+  const codec = (audio.codecName ?? '').toLowerCase();
+  const samples = codec.startsWith('pcm_') ? 1 : (AUDIO_SAMPLES_PER_FRAME[codec] ?? DEFAULT_AUDIO_SAMPLES_PER_FRAME);
+  return samples / audio.sampleRate;
+};
+
+/** How long one picture lasts, in seconds, from the exact cadence when there is one. */
+export const videoFrameSeconds = (video: Pick<VideoStreamInfo, 'frameRate' | 'frameRateRational'>): number | null => {
+  const exact = video.frameRateRational;
+  if (exact && exact.num > 0 && exact.den > 0) {
+    return exact.den / exact.num;
+  }
+  return video.frameRate && video.frameRate > 0 ? 1 / video.frameRate : null;
+};
+
+/** The audio a delivery must carry: the source's layout, or an explicitly chosen stereo downmix. */
+export type AudioDeliveryExpectation = {
+  policy: AudioChannelPolicy;
+  channels: number | null;
+  channelLayout: string | null;
+  sampleRate: number | null;
+};
+
+/**
+ * FL-102: why a delivered audio track does not honour its expectation, or null when it does.
+ *
+ * Every fact the expectation states is compared; a fact it leaves null (the source never said) is
+ * not invented. A stereo downmix is accepted only when it was the chosen policy, and then it must
+ * really be two channels.
+ */
+export const findAudioLayoutMismatch = (
+  expected: AudioDeliveryExpectation,
+  output: Pick<AudioStreamInfo, 'channels' | 'channelLayout' | 'sampleRate'> | undefined,
+): string | null => {
+  if (!output) {
+    return 'the source audio track is missing from the result';
+  }
+  if (expected.policy === AudioChannelPolicy.DownmixStereo) {
+    if (output.channels !== 2) {
+      return `a stereo downmix was chosen but the result has ${output.channels ?? 'an unknown number of'} channels`;
+    }
+  } else {
+    if (expected.channels && output.channels !== expected.channels) {
+      return `the result has ${output.channels ?? 'an unknown number of'} audio channels instead of ${expected.channels}`;
+    }
+    if (expected.channelLayout && output.channelLayout !== expected.channelLayout) {
+      return `the result's channel layout is ${output.channelLayout ?? 'unknown'} instead of ${expected.channelLayout}`;
+    }
+  }
+  if (expected.sampleRate && output.sampleRate !== expected.sampleRate) {
+    return `the result's sample rate is ${output.sampleRate ?? 'unknown'} Hz instead of ${expected.sampleRate} Hz`;
+  }
+  return null;
+};
+
+/**
+ * FL-102: why the result's audio and picture do not end together, or null when they do.
+ *
+ * The two streams quantise independently, so they may differ by at most one audio frame plus one
+ * video frame. A duration the container does not state cannot be checked, and an unchecked
+ * alignment is not accepted as a good one.
+ */
+export const findAvAlignmentMismatch = (
+  video: Pick<VideoStreamInfo, 'duration' | 'frameRate' | 'frameRateRational'> | undefined,
+  audio: Pick<AudioStreamInfo, 'duration' | 'codecName' | 'sampleRate'> | undefined,
+): string | null => {
+  if (!video || !audio) {
+    return null;
+  }
+  const videoDuration = video.duration;
+  const audioDuration = audio.duration;
+  if (typeof videoDuration !== 'number' || typeof audioDuration !== 'number') {
+    return 'the durations of its audio and video streams could not be measured';
+  }
+  const tolerance = (videoFrameSeconds(video) ?? 0) + (audioFrameSeconds(audio) ?? 0);
+  const drift = Math.abs(audioDuration - videoDuration);
+  if (drift > tolerance + 1e-6) {
+    return (
+      `its audio (${audioDuration.toFixed(3)} s) and video (${videoDuration.toFixed(3)} s) drift apart by ` +
+      `${drift.toFixed(3)} s, more than one audio and one video frame`
+    );
+  }
+  return null;
+};
+
+/**
+ * FL-102: probe-backed validation of a rendered master's audio against its source.
+ *
+ * - A source with audio, not muted by the recipe, must still have an audio track.
+ * - The channel count, layout and sample rate the source stated survive, unless a stereo downmix
+ *   was explicitly chosen.
+ * - The master's audio and video end together, within one audio frame and one video frame.
+ */
+export const validateAudioMaster = ({
+  source,
+  output,
+  outputVideo,
+  muted = false,
+  policy = AudioChannelPolicy.Preserve,
+}: {
+  source?: Pick<AudioStreamInfo, 'channels' | 'channelLayout' | 'sampleRate'>;
+  output?: Pick<AudioStreamInfo, 'channels' | 'channelLayout' | 'sampleRate' | 'duration' | 'codecName'>;
+  outputVideo?: Pick<VideoStreamInfo, 'duration' | 'frameRate' | 'frameRateRational'>;
+  muted?: boolean;
+  policy?: AudioChannelPolicy;
+}): void => {
+  if (!source || muted) {
+    return;
+  }
+  const mismatch =
+    findAudioLayoutMismatch(
+      {
+        policy,
+        channels: source.channels ?? null,
+        channelLayout: source.channelLayout ?? null,
+        sampleRate: source.sampleRate ?? null,
+      },
+      output,
+    ) ?? findAvAlignmentMismatch(outputVideo, output);
+  if (mismatch) {
+    throw new MediaPolicyError(MediaPolicyViolation.MasterValidationFailed, `Edited-master audio: ${mismatch}`);
+  }
+};
+
 /** The sidecar that carries an edited master's lineage, beside the master itself. */
 export const getEditedMasterLineagePath = (masterPath: string): string =>
   `${masterPath}${EDITED_MASTER_LINEAGE_SUFFIX}`;

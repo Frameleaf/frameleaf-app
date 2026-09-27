@@ -482,6 +482,7 @@ export class MediaRepository {
             // reconstruct 30000/1001 or 1/30000 out of a float.
             timeBaseRational: tryParseRational(stream.time_base),
             frameRateRational: tryParseRational(stream.avg_frame_rate ?? stream.r_frame_rate),
+            duration: this.parseStreamDuration(stream),
             rotation: this.parseInt(stream.rotation),
             bitrate: this.parseInt(stream.bit_rate),
             pixelFormat: stream.pix_fmt || 'yuv420p',
@@ -508,8 +509,9 @@ export class MediaRepository {
           // FL-102: the channel layout and sample rate are facts about the source, kept so a
           // render can preserve them instead of falling back to a stereo downmix.
           channels: this.parseOptionalInt(stream.channels),
-          channelLayout: stream.channel_layout ?? null,
+          channelLayout: this.parseChannelLayout(stream.channel_layout),
           sampleRate: this.parseOptionalInt(stream.sample_rate),
+          duration: this.parseStreamDuration(stream),
         })),
     };
   }
@@ -727,6 +729,36 @@ export class MediaRepository {
 
   private parseInt(value: string | number | undefined): number {
     return Number.parseInt(value as string) || 0;
+  }
+
+  /**
+   * FL-102: the channel layout as ffmpeg names it, or null. The ffprobe parser turns `5.1` and
+   * `7.1` into numbers, which would be stored and compared as something other than a layout name;
+   * and `unknown` means only the count is known, which is not a layout: passed back as
+   * `-channel_layout unknown` it makes ffmpeg refuse the whole render.
+   */
+  private parseChannelLayout(value: unknown): string | null {
+    const layout = value === undefined || value === null ? '' : String(value);
+    return ['', 'unknown'].includes(layout) ? null : layout;
+  }
+
+  /**
+   * FL-102: a stream's own duration in seconds, or null when the container does not state one.
+   * MP4 and MOV report `duration`; Matroska and WebM carry it only as a `DURATION` tag
+   * (`00:00:05.005000000`). Compared per stream, it is what shows audio drifting from video.
+   */
+  private parseStreamDuration(stream: FfprobeStream): number | null {
+    const stated = stream.duration === undefined || stream.duration === 'N/A' ? NaN : Number(stream.duration);
+    if (Number.isFinite(stated) && stated >= 0) {
+      return stated;
+    }
+    const tags = (stream.tags ?? {}) as Record<string, unknown>;
+    const tag = tags.DURATION ?? tags.duration;
+    const match = typeof tag === 'string' ? /^(\d+):(\d{2}):(\d{2}(?:\.\d+)?)$/.exec(tag.trim()) : null;
+    if (!match) {
+      return null;
+    }
+    return Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3]);
   }
 
   private parseFloat(value: string | number | undefined): number {
