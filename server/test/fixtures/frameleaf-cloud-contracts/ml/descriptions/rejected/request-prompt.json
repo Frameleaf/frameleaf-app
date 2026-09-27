@@ -1,0 +1,11 @@
+{
+  "language": "en",
+  "length": "standard",
+  "style": "natural",
+  "maxTags": 8,
+  "features": {
+    "identityNames": false,
+    "medicalSignals": false
+  },
+  "prompt": "Describe the people by name"
+}

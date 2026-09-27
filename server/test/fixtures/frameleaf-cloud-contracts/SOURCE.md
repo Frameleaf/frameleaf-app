@@ -98,6 +98,13 @@ tested against what the cloud publishes (FL-177).
   (`jobViewSchema`, `jobCostSchema`, `uploadTargetSchema`, `jobResultSchema`, and `jobAdmittedSchema.uploads`) reads
   them.
 
+- FL-163 (cloud description batches): every file of `ml/descriptions/` and `ml/descriptions/rejected/` is
+  byte-identical to `origin/main` at `62637ca6b77cccf0b68bac2b19c50b14242a6830` (FC-44 descriptions request options
+  and result contract, `d17af58`). The contract is `packages/contracts/src/ml/descriptions.ts` (with
+  `DescriptionsRequest` in `ml/workloads.ts`); `server/src/utils/frameleaf-cloud.ts` (`CLOUD_WORKLOAD_REQUESTS.descriptions`,
+  `descriptionsResultSchema`) sends and reads them. Every other copied `ml/` and `errors/` file was compared with that
+  commit (git blob hashes) and is unchanged.
+
 Do not edit these files by hand. When the cloud changes a fixture, copy the new version and update the commit
 above.
 - FL-166: `remote/relay-token-response.json`, `remote/relay-token-claims.json`, `remote/relay-token-header.json`,
