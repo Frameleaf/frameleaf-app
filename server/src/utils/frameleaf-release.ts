@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { SemVer, valid } from 'semver';
+import { SemVer, lt, valid } from 'semver';
 import { ReleaseChannel } from 'src/enum.js';
 
 /**
@@ -31,6 +31,20 @@ export type FrameleafFeedRelease = {
   withdrawn?: boolean | null;
   /** Staged rollout (FL-142): the percentage of servers (0-100) offered this release. Absent or null means all. */
   rolloutPercent?: number | null;
+  /**
+   * The newest earlier release that is fully rolled out and not withdrawn, in the same shape without its own
+   * `fallback`, or null when there is none. Absent from feeds that predate it.
+   */
+  fallback?: Omit<FrameleafFeedRelease, 'fallback'> | null;
+};
+
+/** A validated feed release. `fallback` is undefined when the feed did not send the field at all. */
+export type ParsedFeedRelease = {
+  version: string;
+  publishedAt: string;
+  withdrawn: boolean;
+  rolloutPercent: number | null;
+  fallback?: Omit<ParsedFeedRelease, 'fallback'> | null;
 };
 
 /**
@@ -72,13 +86,8 @@ export const parseReleaseBodyFlags = (body: string | null = ''): ReleaseOffer =>
   return { withdrawn, rolloutPercent };
 };
 
-/**
- * The version, publication time, kill switch and rollout from a release feed response, or undefined when the
- * body is not a release in the feed's shape. A prerelease on the stable channel is rejected as well, and so is
- * a malformed `withdrawn` or `rolloutPercent` (the GitHub fallback is asked instead).
- */
-export const parseFrameleafFeedRelease = (body: unknown, channel: ReleaseChannel) => {
-  if (!body || typeof body !== 'object') {
+const parseFeedEntry = (body: unknown, channel: ReleaseChannel): Omit<ParsedFeedRelease, 'fallback'> | undefined => {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
     return;
   }
   const { version, publishedAt, withdrawn, rolloutPercent } = body as Partial<FrameleafFeedRelease>;
@@ -105,6 +114,32 @@ export const parseFrameleafFeedRelease = (body: unknown, channel: ReleaseChannel
     withdrawn: withdrawn === true,
     rolloutPercent: rolloutPercent ?? null,
   };
+};
+
+/**
+ * The version, publication time, kill switch, rollout and fallback from a release feed response, or undefined
+ * when the body is not a release in the feed's shape (the GitHub fallback is asked instead). A prerelease on the
+ * stable channel is rejected, and so is a malformed `withdrawn` or `rolloutPercent`. `fallback` (FL-142) is
+ * validated by the same rules and must be an earlier version than the release; a malformed one rejects the
+ * whole answer. Unknown keys are ignored.
+ */
+export const parseFrameleafFeedRelease = (body: unknown, channel: ReleaseChannel): ParsedFeedRelease | undefined => {
+  const release = parseFeedEntry(body, channel);
+  if (!release) {
+    return;
+  }
+  const { fallback } = body as Partial<FrameleafFeedRelease>;
+  if (fallback === undefined) {
+    return release;
+  }
+  if (fallback === null) {
+    return { ...release, fallback: null };
+  }
+  const parsed = parseFeedEntry(fallback, channel);
+  if (!parsed || !lt(parsed.version, release.version)) {
+    return;
+  }
+  return { ...release, fallback: parsed };
 };
 
 const TAG = /^frameleaf-v(\d+\.\d+\.\d+(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?)-(\d+)$/;
