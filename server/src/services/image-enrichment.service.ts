@@ -890,7 +890,8 @@ export class ImageEnrichmentService extends BaseService {
    * - generated video captions are withdrawn (their text removed, so moment search no longer finds old
    *   names) and made again by the next enrichment plan that includes captions, which stay opt-in
    *   because each one is a model request. Manual moments and transcripts are never touched.
-   * Memories carry no person names (titles are places or years), so they need nothing.
+   * Birthdays and recaps need nothing here: every read gives them the person's current name and only
+   * the photos that still show that person, and leaves them out once the person is gone or hidden.
    */
   @OnJob({ name: JobName.PersonIdentityRefresh, queue: QueueName.BackgroundTask })
   async handlePersonIdentityRefresh({

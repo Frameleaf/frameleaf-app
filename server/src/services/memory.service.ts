@@ -131,6 +131,22 @@ const normalizeAssetIds = (value: unknown): string[] => {
   return value.filter((entry): entry is string => typeof entry === 'string');
 };
 
+/** FL-57: the memory types whose data names one person or pet */
+const SUBJECT_MEMORY_TYPES = [MemoryType.PetStory, MemoryType.Birthday, MemoryType.PersonRecap] as const;
+
+/** The person or pet a pet story, birthday or recap names, if any. */
+const memorySubject = (memory: Memory): { kind: 'person' | 'pet'; id: string } | undefined => {
+  const data = (memory.data ?? {}) as { petId?: unknown; subject?: unknown; subjectId?: unknown };
+  if (memory.type === MemoryType.PetStory) {
+    return typeof data.petId === 'string' ? { kind: 'pet', id: data.petId } : undefined;
+  }
+  if (memory.type !== MemoryType.Birthday && memory.type !== MemoryType.PersonRecap) {
+    return undefined;
+  }
+  const kind = data.subject === 'person' || data.subject === 'pet' ? data.subject : undefined;
+  return kind && typeof data.subjectId === 'string' ? { kind, id: data.subjectId } : undefined;
+};
+
 @Injectable()
 export class MemoryService extends BaseService {
   @OnJob({ name: JobName.MemoryGenerate, queue: QueueName.BackgroundTask })
@@ -385,34 +401,52 @@ export class MemoryService extends BaseService {
   }
 
   /**
-   * A pet story reads as its pet is now (FL-58): renamed pets show the new name, and a story about
-   * a pet that was deleted, hidden, or is suppressed in a session that is not unlocked is left out,
-   * as the pet itself is.
+   * A memory that names a person or pet reads as they are now: a pet story (FL-58), a birthday or a
+   * recap (FL-57). A renamed person or pet shows the new name, so a memory made before a rename never
+   * shows the old one, and one about a person or pet that was deleted or merged away, hidden, or is
+   * suppressed in a session that is not unlocked is left out, as they are themselves.
    */
-  private async withCurrentPets(auth: AuthDto, memories: Memory[]): Promise<Memory[]> {
-    const petIdOf = (memory: Memory) =>
-      memory.type === MemoryType.PetStory
-        ? ((memory.data as { petId?: unknown }).petId as string | undefined)
-        : undefined;
-    const petIds = [
-      ...new Set(memories.map((memory) => petIdOf(memory)).filter((id): id is string => typeof id === 'string')),
-    ];
-    if (petIds.length === 0) {
+  private async withCurrentSubjects(auth: AuthDto, memories: Memory[]): Promise<Memory[]> {
+    const subjects = new Map(
+      memories.flatMap((memory) => {
+        const subject = memorySubject(memory);
+        return subject ? [[memory.id, subject] as const] : [];
+      }),
+    );
+    if (subjects.size === 0) {
       return memories;
     }
-    const pets = new Map(
-      (await this.memoryRepository.getStoryPets(auth.user.id, petIds)).map((pet) => [pet.id, pet] as const),
-    );
+    const idsOf = (kind: 'person' | 'pet') => [
+      ...new Set(
+        subjects
+          .values()
+          .filter((subject) => subject.kind === kind)
+          .map(({ id }) => id),
+      ),
+    ];
+    const [personIds, petIds] = [idsOf('person'), idsOf('pet')];
+    const [people, pets] = await Promise.all([
+      personIds.length > 0 ? this.memoryRepository.getStoryPeople(auth.user.id, personIds) : [],
+      petIds.length > 0 ? this.memoryRepository.getStoryPets(auth.user.id, petIds) : [],
+    ]);
+    const current = {
+      person: new Map(people.map((person) => [person.id, person] as const)),
+      pet: new Map(pets.map((pet) => [pet.id, pet] as const)),
+    };
     return memories.flatMap((memory) => {
-      if (memory.type !== MemoryType.PetStory) {
+      const subject = subjects.get(memory.id);
+      if (!subject) {
         return [memory];
       }
-      const petId = petIdOf(memory);
-      const pet = petId ? pets.get(petId) : undefined;
-      if (!pet || pet.isHidden || isSuppressedWhileLocked(auth, 'pet', pet.id)) {
+      const found = current[subject.kind].get(subject.id);
+      if (!found || found.isHidden || isSuppressedWhileLocked(auth, subject.kind, found.id)) {
         return [];
       }
-      return [{ ...memory, data: { ...(memory.data as object), name: pet.name, species: pet.species } } as Memory];
+      if (memory.type !== MemoryType.PetStory && !found.name) {
+        return [];
+      }
+      const species = 'species' in found ? { species: found.species } : {};
+      return [{ ...memory, data: { ...(memory.data as object), name: found.name, ...species } } as Memory];
     });
   }
 
@@ -956,7 +990,7 @@ export class MemoryService extends BaseService {
     const options = { ...this.nsfwOptions(auth), ...curation };
     const memories = await this.memoryRepository.search(auth.user.id, dto, options);
     // FL-58: pet stories read as their pet is now, and leave when it is gone, hidden or suppressed
-    const current = await this.withCurrentPets(auth, memories as Memory[]);
+    const current = await this.withCurrentSubjects(auth, memories as Memory[]);
     const visible = current.filter((memory: Memory) => memory.assets && memory.assets.length > 0);
     const curations = await this.memoryRepository.getCurations(
       auth.user.id,
@@ -972,14 +1006,17 @@ export class MemoryService extends BaseService {
     }
     const options = { ...this.nsfwOptions(auth), ...curation };
     const counted = await this.memoryRepository.statistics(auth.user.id, dto, options);
-    if (dto.type !== undefined && dto.type !== MemoryType.PetStory) {
-      return counted;
+    // FL-58, FL-57: a pet story, birthday or recap whose pet or person is gone, hidden or suppressed
+    // while locked does not exist here, as in search and get, so it is not counted either
+    let excluded = 0;
+    for (const type of SUBJECT_MEMORY_TYPES) {
+      if (dto.type !== undefined && dto.type !== type) {
+        continue;
+      }
+      const subjectDto = { ...dto, type, size: undefined, page: undefined };
+      const named = (await this.memoryRepository.search(auth.user.id, subjectDto, options)) as Memory[];
+      excluded += named.length - (await this.withCurrentSubjects(auth, named)).length;
     }
-    // FL-58: a pet story whose pet is gone, hidden or suppressed while locked does not exist here,
-    // as in search and get, so it is not counted either
-    const petDto = { ...dto, type: MemoryType.PetStory, size: undefined, page: undefined };
-    const stories = (await this.memoryRepository.search(auth.user.id, petDto, options)) as Memory[];
-    const excluded = stories.length - (await this.withCurrentPets(auth, stories)).length;
     return excluded > 0 ? { ...counted, total: Math.max(0, counted.total - excluded) } : counted;
   }
 
@@ -1017,7 +1054,7 @@ export class MemoryService extends BaseService {
   async get(auth: AuthDto, id: string): Promise<MemoryResponseDto> {
     await this.requireAccess({ auth, permission: Permission.MemoryRead, ids: [id] });
     const memory = await this.findOrFail(id, await this.readOptions(auth));
-    const [current] = await this.withCurrentPets(auth, [memory as Memory]);
+    const [current] = await this.withCurrentSubjects(auth, [memory as Memory]);
     if (!current) {
       throw new NotFoundException('Memory not found');
     }
@@ -1126,7 +1163,7 @@ export class MemoryService extends BaseService {
 
     const options = await this.readOptions(auth);
     // FL-58: a pet story whose pet is gone, hidden or suppressed while locked answers 404, as get does
-    const [visible] = await this.withCurrentPets(auth, [(await this.findOrFail(id, options)) as Memory]);
+    const [visible] = await this.withCurrentSubjects(auth, [(await this.findOrFail(id, options)) as Memory]);
     if (!visible) {
       throw new NotFoundException('Memory not found');
     }
@@ -1162,7 +1199,7 @@ export class MemoryService extends BaseService {
         : await this.findOrFail(id, options);
 
     const curations = await this.memoryRepository.getCurations(auth.user.id, [id]);
-    const [current] = await this.withCurrentPets(auth, [memory as Memory]);
+    const [current] = await this.withCurrentSubjects(auth, [memory as Memory]);
     return mapMemory(current ?? (memory as Memory), auth, curations.get(id));
   }
 
