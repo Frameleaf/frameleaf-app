@@ -73,19 +73,19 @@
       "version": 4
     },
     {
-      "bytes": 49844,
+      "bytes": 51306,
       "category": "reference",
       "id": "64749620",
-      "readbackAt": "2026-09-27T17:28:00.000Z",
-      "readbackResult": "FL-196 (linked-server tour): markdown read-back of version 17 begins with the header carrying SHA-256 999f633d, 49844 bytes, commit a00dc07080 pushed on master/frameleaf-implementation (source-at-commit backlink a00dc07080, FL-196 link added); \"Linking the server\" carries the new \"The tour of what linking unlocks\" subsection (six steps, On this server status, Open links, shown once per administrator, not after first-run setup, Take the tour and settings search to reopen, Reduce Motion and phone sheet) before \"Linking without a browser\"; the rest matches version 16 (9649641e1c) and still ends with the unchanged job-in-Activity paragraph. Published as HTML (the page holds a Confluence smart link). The markdown export drops same-page anchor link markup (text kept), table alignment and nested list indentation, and shows the shell code fence as bash, the known round-trip limitation; no user-authored additions.",
+      "readbackAt": "2026-09-27T18:45:00.000Z",
+      "readbackResult": "CLD-004 / FL-157 (licence link codes, no key in any address): HTML read-back of version 18 is byte-identical to the published body (55349 characters). It begins with the header carrying SHA-256 02ac1b68, 51306 bytes, commit 8449489540 pushed on master/frameleaf-implementation (source-at-commit backlink 8449489540, FL-157 link added); \"Plan and licence\" now says a key never travels in an address and describes \"Use on your server\" with a one-time link code redeemed by the server, old key links stripped and never used, no licence address in the logs and no referrer from /link; the rate-limit table lists /api/license/link-code under licence activation; everything else is unchanged from version 17 (a00dc07080). Published as HTML (the page holds a Confluence smart link); no user-authored additions.",
       "source": "docs/docs/administration/frameleaf-cloud.md",
       "sourceBranch": "master/frameleaf-implementation",
-      "sourceCommit": "a00dc0708084bf6355ebfa539e91e71cbcd044d3",
-      "sourceSha256": "999f633db4d83646ccae7b8f2946b83ef81a45805a502f828db315a650f8496f",
-      "sourceState": "pushed-fl-196-linked-server-tour-2026-09-27",
+      "sourceCommit": "8449489540c139cb9b143be4404d87a074d90e12",
+      "sourceSha256": "02ac1b68cae2a91e2273a263cdc69481c9e1b5cbd098f94922bc5bb3a5822024",
+      "sourceState": "pushed-cld-004-license-link-codes-2026-09-27",
       "title": "Administration Reference — Frameleaf Cloud",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/64749620/Administration+Reference+Frameleaf+Cloud",
-      "version": 17
+      "version": 18
     },
     {
       "bytes": 12350,
