@@ -22052,6 +22052,12 @@ export enum MemoryHighlightDestination {
     Local = "local",
     Lan = "lan"
 }
+export enum StudioExportResolution {
+    $720P = "720p",
+    $1080P = "1080p",
+    $1440P = "1440p",
+    $2160P = "2160p"
+}
 export enum MemoryExportStatus {
     Pending = "pending",
     Running = "running",
@@ -22637,12 +22643,6 @@ export enum StudioExportFormat {
     Mp4H264 = "mp4-h264",
     WebmAv1 = "webm-av1",
     Prores422Hq = "prores-422-hq"
-}
-export enum StudioExportResolution {
-    $720P = "720p",
-    $1080P = "1080p",
-    $1440P = "1440p",
-    $2160P = "2160p"
 }
 export enum StudioExportVersionState {
     Rendering = "rendering",
