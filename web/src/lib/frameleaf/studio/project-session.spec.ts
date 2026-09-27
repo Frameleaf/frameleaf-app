@@ -46,7 +46,13 @@ const detail = (overrides: Partial<StudioProjectDetailDto> = {}): StudioProjectD
   envelope: { schemaVersion: 1, engine: 'freecut', engineRevision: 'rev', graph: { tracks: ['t1'] } },
   digest: 'd3',
   withheld: false,
-  resources: { complete: true, refusedCount: 0, unsupportedSources: [], checkedAt: '2026-09-22T10:05:00.000Z' },
+  resources: {
+    complete: true,
+    refusedCount: 0,
+    unsupportedSources: [],
+    hiddenSources: [],
+    checkedAt: '2026-09-22T10:05:00.000Z',
+  },
   shelf: StudioProjectShelf.Active,
   archivedAt: null,
   deletedAt: null,
@@ -258,13 +264,70 @@ describe('studio project session', () => {
       expect(last()).toMatchObject({ status: 'saved', hasDraft: false, lastSavedAt: 1000, project: { revision: 4 } });
     });
 
+    it("hides a locked session's hidden clips from the editor and keeps them in every save (FL-195)", async () => {
+      const graph = {
+        timeline: {
+          items: [
+            { id: 'c-plain', mediaId: 'a-plain' },
+            { id: 'c-locked', mediaId: 'a-locked' },
+          ],
+          transitions: [{ id: 'x-1', leftClipId: 'c-plain', rightClipId: 'c-locked' }],
+        },
+      };
+      api.get.mockResolvedValue(
+        detail({
+          envelope: { schemaVersion: 1, engine: 'freecut', engineRevision: 'rev', graph },
+          resources: {
+            complete: false,
+            refusedCount: 1,
+            unsupportedSources: [],
+            hiddenSources: ['a-locked'],
+            checkedAt: '2026-09-22T10:05:00.000Z',
+          },
+        }),
+      );
+      api.save.mockResolvedValue(saved(4));
+      const session = create();
+      await session.open();
+
+      // the editor never meets the hidden clip, nor the transition into it
+      expect(last().project.graph).toEqual({
+        timeline: { items: [{ id: 'c-plain', mediaId: 'a-plain' }], transitions: [] },
+      });
+
+      session.stage({ timeline: { items: [{ id: 'c-plain', mediaId: 'a-plain', from: 30 }], transitions: [] } }, [
+        'clip.move',
+      ]);
+      await timers.fire((timer) => timer.ms === 1500);
+
+      expect(api.save.mock.calls[0][1].envelope.graph).toEqual({
+        timeline: {
+          items: [
+            { id: 'c-plain', mediaId: 'a-plain', from: 30 },
+            { id: 'c-locked', mediaId: 'a-locked' },
+          ],
+          transitions: [{ id: 'x-1', leftClipId: 'c-plain', rightClipId: 'c-locked' }],
+        },
+      });
+      // what the editor shows stays its own graph
+      expect(last().project.graph).toEqual({
+        timeline: { items: [{ id: 'c-plain', mediaId: 'a-plain', from: 30 }], transitions: [] },
+      });
+    });
+
     it('takes how the new revision’s sources resolved from the save, so an undecodable video shows now (FL-101)', async () => {
       const unsupportedSources = [
         { assetId: 'v-7', refusal: DecodeRefusal.DolbyVisionEnhancementLayer, reason: 'Dolby Vision profile 7' },
       ];
       api.save.mockResolvedValue({
         ...saved(4),
-        resources: { complete: false, refusedCount: 1, unsupportedSources, checkedAt: '2026-09-22T10:06:00.000Z' },
+        resources: {
+          complete: false,
+          refusedCount: 1,
+          unsupportedSources,
+          hiddenSources: [],
+          checkedAt: '2026-09-22T10:06:00.000Z',
+        },
       });
       const session = create();
       await session.open();

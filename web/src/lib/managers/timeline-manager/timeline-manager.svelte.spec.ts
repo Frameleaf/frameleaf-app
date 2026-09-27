@@ -963,7 +963,7 @@ describe('TimelineManager', () => {
       expect(timelineManager.assetCount).toEqual(0);
     });
 
-    it("keeps an unlocked session's revealed sensitive marks in the timeline, and nothing else locked (FL-34)", async () => {
+    it("keeps an unlocked session's revealed locks in the timeline, old Locked folder items included (FL-34, FL-195)", async () => {
       await timelineManager.updateOptions({ visibility: AssetVisibility.Timeline });
       const at = fromISODateTimeUTCToObject('2024-01-20T12:00:00.000Z');
       const revealed = deriveLocalDateTimeFromFileCreatedAt(
@@ -981,8 +981,13 @@ describe('TimelineManager', () => {
         }),
       );
 
+      const withoutReason = deriveLocalDateTimeFromFileCreatedAt(
+        timelineAssetFactory.build({ fileCreatedAt: at, visibility: AssetVisibility.Locked, lockReason: null }),
+      );
+
       expect(timelineManager.isExcluded(revealed)).toBe(false);
-      expect(timelineManager.isExcluded(fromOldFolder)).toBe(true);
+      expect(timelineManager.isExcluded(fromOldFolder)).toBe(false);
+      expect(timelineManager.isExcluded(withoutReason)).toBe(true);
     });
 
     it("keeps a newly marked asset in an unlocked session's timeline, which reveals it (FL-34)", async () => {
