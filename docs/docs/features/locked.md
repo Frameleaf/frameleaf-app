@@ -17,32 +17,35 @@ Stacks and live photos lock and unlock as a whole: locking one photo of a stack 
 ## Who sees a locked item
 
 - **You, while your session is locked**: nothing. The item is left out of the timeline, albums, search, the map, memories, people, pets and downloads. Your own devices still sync it, marked locked.
-- **You, after unlocking with your PIN**: **Locked** lists every locked item. Everywhere else, the items you marked, the ones detection locked and the ones your Locked rules hide behave exactly like any other item ("Revealed for this session", see below). Items moved from the old Locked folder stay in Locked only. Albums show their locked members.
+- **You, after unlocking with your PIN**: **Locked** lists every locked item. Everywhere else, every locked item (marked, detected or moved from the old Locked folder) and every item your Locked rules hide behaves exactly like any other item ("Revealed for this session", see below). Albums show their locked members.
 - **Partners, album and space members**: never, whatever their own session. A partner's device that already had the item is told it is now locked and hides it; it keeps only the item's id and dates, never its file name, thumbnail, location or other details.
 - **Shared links**: never.
 - **Server jobs** (thumbnails, machine learning, backups, restorations): always. Background work is never skipped because an item is locked. A bulk change you queue without unlocking skips any item that was locked after you queued it.
 
 ## Revealed for this session
 
-Once you unlock with your PIN, the items you marked, the ones detection locked and the ones your Locked rules hide behave like any other item, everywhere, for you:
+Once you unlock with your PIN, the items you marked, the ones detection locked, the ones moved from the old Locked folder and the ones your Locked rules hide behave like any other item, everywhere, for you:
 
 - **Search**: smart, metadata, text-in-photo (OCR) and Ask search find them, and facets, counts, the histogram and the places and suggestions lists include them.
 - **Library views**: the timeline, the archive, Explore, memories, people and pets, Best Photos, duplicates, albums, the map, tags and folders show and count them.
-- **Actions**: bulk actions (favorite, archive, add to album, change date or location, delete) and downloads work on them, and **Studio** can place them in a project and export them.
+- **Actions**: bulk actions (favorite, archive, add to album, change date or location, delete) and downloads work on them, and **Studio** can place them in a project, use one as a project's poster and export them.
 
-They still never reach anybody else: partners, album and space members, administrators and shared links never see them, whatever their own session. Sharing a revealed item is not offered, and a revealed item never becomes a cover, a featured photo, a profile picture or a Studio project's poster, because those show whatever the session.
+They still never reach anybody else: partners, album and space members, administrators and shared links never see them, whatever their own session. Sharing a revealed item is not offered, and a revealed item never becomes an album cover, a featured photo or a profile picture, because those show whatever the session.
 
-When the session locks again, they keep every place and association they have (albums, stacks, tags, people, memories, Studio projects) but show nowhere, as before.
+When the session locks again, they keep every place and association they have (albums, stacks, tags, people, memories, Studio projects and posters) but show nowhere, as before.
 
-A locked item keeps its place in your memories as it does in albums: it is left out of them while it is locked and is back once you unlock it. A memory whose every item is locked is left out entirely while the session is locked, so its title and date never show. New memories are still made only from items that are not locked.
+### Memories
+
+Memories are made from locked items too, like any other item. A memory that holds even one item hidden from your session (locked, or hidden by your Locked rules) is hidden entirely while the session is locked: its title, date, cover, places and counts, in the memories list, Explore's "Days to revisit" and the memories rail, and so are its exports. Once you unlock, it shows normally with all its photos. Because the whole memory is hidden, a title or place made from a locked photo never shows while locked.
 
 ### Studio
 
-With the session unlocked you can place your marked and detected items in a Studio project like any other item, preview it and export it. Items moved from the old Locked folder are refused. When the session locks:
+With the session unlocked you can place any of your locked items in a Studio project like any other item, preview it, export it and make one the project's poster. When the session locks:
 
-- The project keeps its references. Opening it resolves those clips exactly like missing media, and they come back when you unlock.
-- An export made from a locked item is itself locked, with the strongest reason among its sources, so it is hidden with them and revealed with them.
-- A Studio bundle (the project file you download) carries a locked item as a bare reference, never its file, even when made while unlocked.
+- The project keeps its references. Your editor hides those clips entirely, rather than showing them as missing media, and saving keeps them in the project; they come back when you unlock.
+- A poster whose item is locked stays set, but the project shows its placeholder instead, and the item is not served through it. It shows again when you unlock.
+- An export is judged by its sources as they are now: one made from a locked item, or from an item locked after the export was rendered, is hidden, with its library item, its download and any share of it, and it shows again when you unlock. Its library item takes the lock of its sources.
+- A Studio bundle (the project file you download) made while unlocked carries your revealed items' files when you include media. Such a bundle is hidden, like those items, while the session is locked. Made while locked, it carries a locked item as a bare reference only.
 
 A locked photo is never an album, collection or space cover, a person's or pet's featured photo, a face thumbnail or a profile picture source. Locking one releases every such use; each falls back to another photo (Best Photos first), or to none.
 

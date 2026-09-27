@@ -534,6 +534,49 @@ export const utils = {
     );
   },
 
+  /**
+   * FL-195 follow-up: a published Studio export in the owner's library, made from these sources before
+   * any of them was locked, as a render and its publication write it. Rendering needs a render worker,
+   * which the API e2e stack does not run.
+   */
+  seedStudioExport: async ({
+    ownerId,
+    projectId,
+    resultAssetId,
+    sourceAssetIds,
+    version,
+  }: {
+    ownerId: string;
+    projectId: string;
+    resultAssetId: string;
+    sourceAssetIds: string[];
+    version: number;
+  }) => {
+    if (!client) {
+      return '';
+    }
+
+    const { rows } = await client.query(
+      `INSERT INTO studio_export_version
+         ("ownerId", "projectId", revision, "revisionDigest", state, version, scope, destination, settings,
+          "resultAssetId", privacy, "publishedAt")
+       VALUES ($1, $2, 1, 'e2e', 'published', $5, 'library', 'local', '{}'::jsonb, $3,
+          jsonb_build_object('lockReason', null, 'sourceCount', $4::int), now())
+       RETURNING id`,
+      [ownerId, projectId, resultAssetId, sourceAssetIds.length, version],
+    );
+    const [row] = rows;
+    for (const assetId of sourceAssetIds) {
+      await client.query(
+        `INSERT INTO studio_export_version_source
+           ("versionId", key, kind, "resourceId", "assetId", "ownerId", "sourceAccess", locked)
+         VALUES ($1, $2, 'library-asset', $3::text, $3::uuid, $4, 'owner', false)`,
+        [row.id, `library-asset:${assetId}`, assetId, ownerId],
+      );
+    }
+    return row.id as string;
+  },
+
   createFace: async ({ assetId, personGroupId }: { assetId: string; personGroupId: string }) => {
     if (!client) {
       return;

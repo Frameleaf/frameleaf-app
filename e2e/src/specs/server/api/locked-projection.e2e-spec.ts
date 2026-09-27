@@ -6,6 +6,8 @@ import { beforeAll, describe, expect, it } from 'vitest';
 
 const bearer = (token: string) => ({ Authorization: `Bearer ${token}` });
 
+const byId = (a: string, b: string) => a.localeCompare(b);
+
 type Read = { name: string; method?: 'get' | 'post'; path: string; query?: object; body?: object };
 
 /** Every read, and what it answered; a read that refuses (4xx) is not a leak either. */
@@ -45,9 +47,10 @@ const lock = (token: string) => request(app).post('/auth/session/lock').set(bear
  * the map, albums, stacks, duplicates, Trash, downloads — as the owner locked, the owner unlocked,
  * a partner, an album member, an elevated administrator and a shared link.
  *
- * FL-195 (owner decision, September 27, 2026): unlocked, the owner's marks, detections and rule
- * matches behave like any other item in every one of those reads; items from the old Locked folder
- * stay in the Locked view. Locked, they keep their places and associations but show nowhere.
+ * FL-195 (owner decisions, September 27, 2026): unlocked, the owner's marks, detections, rule matches
+ * and items moved from the old Locked folder behave like any other item in every one of those reads.
+ * Locked, they keep their places and associations but show nowhere: a memory holding one of them is
+ * hidden entirely, and a Studio poster showing one falls back to its placeholder.
  */
 describe('Locked projection over the API (FL-34, FL-195)', () => {
   const pinCode = '975310';
@@ -63,6 +66,7 @@ describe('Locked projection over the API (FL-34, FL-195)', () => {
   let albumId: string;
   let memoryId: string;
   let lockedOnlyMemoryId: string;
+  let plainMemoryId: string;
   let personId: string;
   let tripTagId: string;
   let projectId: string;
@@ -148,6 +152,11 @@ describe('Locked projection over the API (FL-34, FL-195)', () => {
     detected = await newAsset('detected-secret');
     legacy = await newAsset('legacy-secret');
     ruleMatch = await newAsset('rule-secret');
+    // The date and place written above go to each item's sidecar and are read back by metadata
+    // extraction; let that settle before tagging, so no extraction pass races the tags added below.
+    for (const queue of ['sidecar', 'metadataExtraction'] as const) {
+      await utils.waitForQueueFinish(admin.accessToken, queue);
+    }
     const { body: plainInfo } = await request(app).get(`/assets/${plain.id}`).set(bearer(owner.accessToken));
     folderPath = plainInfo.originalPath.replace(/\/[^/]+$/, '');
 
@@ -201,6 +210,18 @@ describe('Locked projection over the API (FL-34, FL-195)', () => {
       })
       .expect(201);
     lockedOnlyMemoryId = lockedOnlyMemory.id;
+    // the control: a memory of visible items only shows whatever the session
+    const { body: plainMemory } = await request(app)
+      .post('/memories')
+      .set(bearer(owner.accessToken))
+      .send({
+        type: 'on_this_day',
+        data: { year: 2019 },
+        memoryAt: '2019-06-15T00:00:00.000Z',
+        assetIds: [plain.id],
+      })
+      .expect(201);
+    plainMemoryId = plainMemory.id;
     const link = await utils.createSharedLink(owner.accessToken, { type: SharedLinkType.Album, albumId });
     sharedKey = link.key;
 
@@ -282,9 +303,11 @@ describe('Locked projection over the API (FL-34, FL-195)', () => {
     }
   });
 
-  it("finds the owner's marks, detections and rule matches everywhere once unlocked, like any other item (FL-195)", async () => {
+  it("finds the owner's marks, detections, rule matches and old-folder items everywhere once unlocked (FL-195)", async () => {
     await unlock(owner.accessToken);
+    // in the album, the memory and the person; the old-folder item is in none of them
     const revealed = [plain.id, locked.id, detected.id, ruleMatch.id];
+    const library = [...revealed, legacy.id];
     const timeline = { visibility: 'timeline' };
     const reads: Read[] = [
       ...ownerReads(),
@@ -327,28 +350,27 @@ describe('Locked projection over the API (FL-34, FL-195)', () => {
     const answer = (name: string) => answers.find((read) => read.name === name)!;
     const json = (name: string) => JSON.parse(answer(name).text);
 
-    // every read that lists items lists all four, and never the item from the old Locked folder
+    // every library-wide read lists all five, the item moved from the old Locked folder included
     for (const name of [
       'timeline bucket',
-      'album timeline bucket',
       'search metadata',
       'search timeline',
       'search filter',
       'search random timeline',
       'map markers',
-      'memory',
-      'album bucket',
-      'download info',
     ]) {
+      for (const id of library) {
+        expect(answer(name).text, `${name} finds ${id}`).toContain(id);
+      }
+    }
+    // and every read of the album or the memory lists its four
+    for (const name of ['album timeline bucket', 'memory', 'album bucket', 'download info']) {
       for (const id of revealed) {
         expect(answer(name).text, `${name} finds ${id}`).toContain(id);
       }
-      if (name !== 'search metadata') {
-        expect(answer(name).text, `${name} keeps the old Locked folder item in Locked`).not.toContain(legacy.id);
-      }
     }
 
-    // each item's own folder lists it (originals sit in per-asset folders); the old-folder item's does not
+    // each item's own folder lists it (originals sit in per-asset folders), the old-folder item's too
     for (const { id } of [locked, detected, ruleMatch, legacy]) {
       const { body: info } = await request(app).get(`/assets/${id}`).set(bearer(owner.accessToken)).expect(200);
       const { text } = await request(app)
@@ -356,25 +378,20 @@ describe('Locked projection over the API (FL-34, FL-195)', () => {
         .query({ path: info.originalPath.replace(/\/[^/]+$/, '') })
         .set(bearer(owner.accessToken))
         .expect(200);
-      if (id === legacy.id) {
-        expect(text, 'the folder keeps the old Locked folder item in Locked').not.toContain(id);
-      } else {
-        expect(text, `folder of ${id}`).toContain(id);
-      }
+      expect(text, `folder of ${id}`).toContain(id);
     }
 
     // and every count counts them
-    const month = [{ timeBucket: '2021-06-01', count: 4 }];
-    expect(json('timeline buckets')).toEqual(month);
-    expect(json('person buckets')).toEqual(month);
+    expect(json('timeline buckets')).toEqual([{ timeBucket: '2021-06-01', count: 5 }]);
+    expect(json('person buckets')).toEqual([{ timeBucket: '2021-06-01', count: 4 }]);
     expect(json('tag buckets')).toEqual([{ timeBucket: '2021-06-01', count: 3 }]);
     for (const id of [locked.id, detected.id, ruleMatch.id]) {
       expect(answer('search tag filter').text, `tag filter finds ${id}`).toContain(id);
     }
-    expect(json('search statistics timeline').total).toBe(4);
-    expect(json('search statistics filter').total).toBe(4);
-    expect(json('asset statistics').total).toBe(4);
-    expect(json('timeline asset statistics').total).toBe(4);
+    expect(json('search statistics timeline').total).toBe(5);
+    expect(json('search statistics filter').total).toBe(5);
+    expect(json('asset statistics').total).toBe(5);
+    expect(json('timeline asset statistics').total).toBe(5);
     expect(json('album').assetCount).toBe(4);
     expect(json('memory').assets).toHaveLength(4);
     expect(json('person statistics').assets).toBe(4);
@@ -382,25 +399,27 @@ describe('Locked projection over the API (FL-34, FL-195)', () => {
     expect(people.people.find((row: { id: string }) => row.id === personId)?.assetCount).toBe(4);
     const tagStats = json('tag statistics');
     expect(tagStats.find((row: { id: string }) => row.id === tripTagId)?.count).toBe(3);
-    expect(json('search histogram timeline').total).toBe(4);
-    expect(json('memories').map((memory: { id: string }) => memory.id)).toContain(lockedOnlyMemoryId);
+    expect(json('search histogram timeline').total).toBe(5);
+    // memories holding locked items show normally once unlocked, with all their photos
+    const memories = json('memories').map((memory: { id: string }) => memory.id);
+    for (const id of [memoryId, lockedOnlyMemoryId, plainMemoryId]) {
+      expect(memories, `memories list ${id}`).toContain(id);
+    }
+    expect(json('memory statistics').total).toBe(3);
 
     // Studio: the project holds the mark and the detection and every source resolves
     const project = json('studio project');
     expect(project.resources, JSON.stringify(project)).toEqual(
       expect.objectContaining({ complete: true, refusedCount: 0 }),
     );
-    // a poster shows whatever the session, so a revealed lock never becomes one
-    await request(app)
+    expect(project.resources.hiddenSources).toEqual([]);
+    // a revealed lock can be the poster, like any other item; it is hidden again while locked
+    const { body: posted } = await request(app)
       .put(`/studio/projects/${projectId}`)
       .set(bearer(owner.accessToken))
       .send({ thumbnailAssetId: locked.id })
-      .expect(400);
-    await request(app)
-      .put(`/studio/projects/${projectId}`)
-      .set(bearer(owner.accessToken))
-      .send({ thumbnailAssetId: plain.id })
       .expect(200);
+    expect(posted.thumbnailAssetId).toBe(locked.id);
   });
 
   it('leaves no trace of a lock or a rule match in any projection of a locked session', async () => {
@@ -416,6 +435,7 @@ describe('Locked projection over the API (FL-34, FL-195)', () => {
         },
         { name: 'person statistics', path: `/people/${personId}/statistics` },
         { name: 'locked-only memory', path: `/memories/${lockedOnlyMemoryId}` },
+        { name: 'studio projects', path: '/studio/projects' },
       ],
       bearer(owner.accessToken),
     );
@@ -427,6 +447,8 @@ describe('Locked projection over the API (FL-34, FL-195)', () => {
       'rule-secret',
       hiddenTag,
       lockedOnlyMemoryId,
+      // FL-195 follow-up: a memory holding even one hidden photo is hidden entirely while locked
+      memoryId,
       tripTag,
       tripTagId,
       lockedOnlyTag,
@@ -441,14 +463,32 @@ describe('Locked projection over the API (FL-34, FL-195)', () => {
     expect(count('asset statistics').total).toBe(1);
     expect(count('album').assetCount).toBe(1);
     expect(count('timeline buckets')).toEqual([{ timeBucket: '2021-06-01', count: 1 }]);
-    expect(count('memory').assets).toHaveLength(1);
+    expect(answers.find((answer) => answer.name === 'memory')!.status).toBeGreaterThanOrEqual(400);
+    expect(count('memories').map((memory: { id: string }) => memory.id)).toEqual([plainMemoryId]);
+    expect(count('memory statistics').total).toBe(1);
     expect(count('person statistics').assets).toBe(1);
-    // FL-195: the project keeps its references; while locked they resolve like missing media
+    // FL-195: the project keeps its references; while locked they are refused, and the owner is told
+    // which to hide in the editor rather than show as missing media
     const { body: project } = await request(app)
       .get(`/studio/projects/${projectId}`)
       .set(bearer(owner.accessToken))
       .expect(200);
     expect(project.resources).toEqual(expect.objectContaining({ complete: false, refusedCount: 2 }));
+    expect(project.resources.hiddenSources).toEqual([locked.id, detected.id].toSorted((a, b) => a.localeCompare(b)));
+    // the poster keeps its place but shows the placeholder while locked, and shows again once unlocked
+    expect(project.thumbnailAssetId).toBeNull();
+    for (const path of [`/memories/${memoryId}`, `/memories/${lockedOnlyMemoryId}`]) {
+      const { status } = await request(app).get(path).set(bearer(owner.accessToken));
+      expect(status, path).toBeGreaterThanOrEqual(400);
+    }
+    await unlock(owner.accessToken);
+    const { body: unlockedProject } = await request(app)
+      .get(`/studio/projects/${projectId}`)
+      .set(bearer(owner.accessToken))
+      .expect(200);
+    expect(unlockedProject.thumbnailAssetId).toBe(locked.id);
+    await request(app).get(`/memories/${memoryId}`).set(bearer(owner.accessToken)).expect(200);
+    await lock(owner.accessToken);
 
     for (const { name, status } of await readAll(
       [...oneItemReads(locked.id), ...oneItemReads(detected.id), ...oneItemReads(ruleMatch.id)],
@@ -621,5 +661,182 @@ describe('Locked projection over the API (FL-34, FL-195)', () => {
     }
     const { body: server } = await request(app).get('/server/statistics').set(bearer(admin.accessToken)).expect(200);
     expect(server.photos).toBe(2);
+  });
+});
+
+/**
+ * FL-195 follow-up (owner decision, September 27, 2026): an export rendered before its source was
+ * locked is hidden while the session is locked — its version, its library item and anything shared
+ * of it — and shows again once unlocked. Exports are judged by their sources as they stand now.
+ */
+describe('Studio exports rendered before their source was locked (FL-195 follow-up)', () => {
+  const pinCode = '975310';
+  let admin: LoginResponseDto;
+  let owner: LoginResponseDto;
+  let partner: LoginResponseDto;
+  let member: LoginResponseDto;
+  let source: { id: string };
+  let result: { id: string };
+  let laterSource: { id: string };
+  let laterResult: { id: string };
+  let projectId: string;
+  let versionId: string;
+  let laterVersionId: string;
+  let albumId: string;
+  let sharedKey: string;
+
+  const unlock = (token: string) =>
+    request(app).post('/auth/session/unlock').set(bearer(token)).send({ pinCode }).expect(204);
+
+  const newAsset = (name: string) =>
+    utils.createAsset(owner.accessToken, {
+      assetData: { filename: `${name}.png` },
+      fileCreatedAt: '2021-06-15T10:00:00.000Z',
+      fileModifiedAt: '2021-06-15T10:00:00.000Z',
+    });
+
+  const exportReads = (): Read[] => [
+    { name: 'exports', path: `/studio/projects/${projectId}/exports` },
+    { name: 'export', path: `/studio/exports/${versionId}` },
+    { name: 'later export', path: `/studio/exports/${laterVersionId}` },
+    { name: 'timeline bucket', path: '/timeline/bucket', query: { visibility: 'timeline', timeBucket: '2021-06-01' } },
+    { name: 'search', method: 'post', path: '/search/metadata', body: {} },
+    { name: 'album', path: `/albums/${albumId}` },
+    ...oneItemReads(result.id),
+  ];
+
+  beforeAll(async () => {
+    await utils.resetDatabase();
+    admin = await utils.adminSetup({ onboarding: false });
+    owner = await utils.userSetup(admin.accessToken, createUserDto.user1);
+    partner = await utils.userSetup(admin.accessToken, createUserDto.user2);
+    member = await utils.userSetup(admin.accessToken, createUserDto.user3);
+
+    source = await newAsset('export-source');
+    result = await newAsset('export-render');
+    laterSource = await newAsset('later-source');
+    laterResult = await newAsset('later-render');
+
+    const { body: project } = await request(app)
+      .post('/studio/projects')
+      .set(bearer(owner.accessToken))
+      .send({ name: 'FL-195 export', clientId: 'fl-195-export' })
+      .expect(201);
+    projectId = project.id;
+    // rendered and published while every source was visible
+    versionId = await utils.seedStudioExport({
+      ownerId: owner.userId,
+      projectId,
+      resultAssetId: result.id,
+      sourceAssetIds: [source.id],
+      version: 1,
+    });
+    laterVersionId = await utils.seedStudioExport({
+      ownerId: owner.userId,
+      projectId,
+      resultAssetId: laterResult.id,
+      sourceAssetIds: [laterSource.id],
+      version: 2,
+    });
+
+    const album = await utils.createAlbum(owner.accessToken, {
+      albumName: 'Renders',
+      assetIds: [result.id],
+      albumUsers: [{ userId: member.userId, role: 'viewer' as never }],
+    });
+    albumId = album.id;
+    const link = await utils.createSharedLink(owner.accessToken, { type: SharedLinkType.Album, albumId });
+    sharedKey = link.key;
+    await utils.createPartner(owner.accessToken, partner.userId);
+    for (const user of [owner, admin]) {
+      await request(app).post('/auth/pin-code').set(bearer(user.accessToken)).send({ pinCode }).expect(204);
+    }
+
+    // the source is locked after the render: its export follows it
+    await request(app)
+      .post('/assets/lock')
+      .set(bearer(owner.accessToken))
+      .send({ ids: [source.id] })
+      .expect(204);
+    // a lock that reached the other source without going through a lock request: judged at read time
+    await utils.setAssetLock(laterSource.id, 'detected');
+  });
+
+  it('hides the export, its library item and its share while the session is locked', async () => {
+    await lock(owner.accessToken);
+    const answers = await readAll(exportReads(), bearer(owner.accessToken));
+    expectNoTrace(answers, [versionId, laterVersionId, result.id, 'export-render']);
+    const answer = (name: string) => answers.find((read) => read.name === name)!;
+    expect(JSON.parse(answer('exports').text)).toEqual(expect.objectContaining({ items: [], total: 0 }));
+    for (const name of ['export', 'later export', `asset ${result.id}`, `thumbnail ${result.id}`]) {
+      expect(answer(name).status, name).toBeGreaterThanOrEqual(400);
+    }
+    expect(JSON.parse(answer('album').text).assetCount).toBe(0);
+  });
+
+  it('shows it normally once the session is unlocked', async () => {
+    await unlock(owner.accessToken);
+    const answers = await readAll(exportReads(), bearer(owner.accessToken));
+    const answer = (name: string) => answers.find((read) => read.name === name)!;
+    const listed = JSON.parse(answer('exports').text);
+    expect(listed.total).toBe(2);
+    expect(listed.items.map((item: { id: string }) => item.id).toSorted(byId)).toEqual(
+      [versionId, laterVersionId].toSorted(byId),
+    );
+    const version = JSON.parse(answer('export').text);
+    expect(version).toEqual(expect.objectContaining({ id: versionId, resultAssetId: result.id, locked: true }));
+    expect(answer('later export').status).toBe(200);
+    expect(answer('timeline bucket').text).toContain(result.id);
+    expect(answer(`asset ${result.id}`).status).toBe(200);
+    await lock(owner.accessToken);
+  });
+
+  it('never shows it to a partner, an album member, a shared link or an unlocked administrator', async () => {
+    await unlock(owner.accessToken);
+    const secrets = [versionId, laterVersionId, result.id, 'export-render'];
+
+    const partnerAnswers = await readAll(
+      [
+        { name: 'partner bucket', path: '/timeline/bucket', query: { userId: owner.userId, timeBucket: '2021-06-01' } },
+        { name: 'partner search', method: 'post', path: '/search/metadata', body: { withPartners: true } },
+        { name: 'partner export', path: `/studio/exports/${versionId}` },
+        { name: 'partner exports', path: `/studio/projects/${projectId}/exports` },
+        ...oneItemReads(result.id),
+      ],
+      bearer(partner.accessToken),
+    );
+    expectNoTrace(partnerAnswers, secrets);
+
+    const memberAnswers = await readAll(
+      [
+        { name: 'member album', path: `/albums/${albumId}` },
+        { name: 'member bucket', path: '/timeline/bucket', query: { albumId, timeBucket: '2021-06-01' } },
+        { name: 'member export', path: `/studio/exports/${versionId}` },
+        ...oneItemReads(result.id),
+      ],
+      bearer(member.accessToken),
+    );
+    expectNoTrace(memberAnswers, secrets);
+
+    const linkAnswers = await readAll(
+      [
+        { name: 'link album', path: `/albums/${albumId}`, query: { key: sharedKey } },
+        { name: 'link bucket', path: '/timeline/bucket', query: { albumId, key: sharedKey, timeBucket: '2021-06-01' } },
+        { name: 'link thumbnail', path: `/assets/${result.id}/thumbnail`, query: { key: sharedKey } },
+      ],
+      {},
+    );
+    expectNoTrace(linkAnswers, secrets);
+
+    await unlock(admin.accessToken);
+    const adminAnswers = await readAll(
+      [
+        { name: 'admin export', path: `/studio/exports/${versionId}` },
+        { name: 'admin exports', path: `/studio/projects/${projectId}/exports` },
+        ...oneItemReads(result.id),
+      ],
+      bearer(admin.accessToken),
+    );
+    expectNoTrace(adminAnswers, secrets);
   });
 });
