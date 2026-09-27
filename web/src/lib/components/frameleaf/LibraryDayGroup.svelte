@@ -45,6 +45,8 @@
     showFileNames?: boolean;
     /** Rating override for an asset; by default each tile shows the asset's own rating. */
     ratingFor?: (asset: TimelineAsset) => number | null;
+    /** FL-34: tiles that carry the Sensitive badge without a lock (the Locked view's rule matches). */
+    sensitiveFor?: (asset: TimelineAsset) => boolean;
     onOpen?: (asset: TimelineAsset, event: MouseEvent | KeyboardEvent) => void;
     onToggleSelect?: (asset: TimelineAsset, event: MouseEvent | KeyboardEvent) => void;
     onSelectGroup?: (ids: string[], checked: boolean) => void;
@@ -79,6 +81,7 @@
     captionBelow = false,
     showFileNames = false,
     ratingFor,
+    sensitiveFor,
     onOpen,
     onToggleSelect,
     onSelectGroup,
@@ -169,6 +172,7 @@
             {selecting}
             {layout}
             rating={ratingFor?.(asset)}
+            sensitive={sensitiveFor?.(asset) ?? false}
             {captionHeight}
             showFileName={showFileNames}
             {onOpen}

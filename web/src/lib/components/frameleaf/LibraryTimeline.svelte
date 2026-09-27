@@ -57,6 +57,8 @@
     session: LibrarySessionStore;
     /** Rating override for an asset; by default each tile shows the asset's own rating. */
     ratingFor?: (asset: TimelineAsset) => number | null;
+    /** FL-34: tiles that carry the Sensitive badge without a lock (the Locked view's rule matches). */
+    sensitiveFor?: (asset: TimelineAsset) => boolean;
     /** Only the Timeline layout draws the sticky day headers; the Browse and Work grids have none. */
     showDayHeaders?: boolean;
     /**
@@ -115,6 +117,7 @@
     timelineManager,
     session,
     ratingFor,
+    sensitiveFor,
     showDayHeaders = true,
     tileLayout = 'timeline',
     thumbnailSize = THUMBNAIL_SIZE_DEFAULT,
@@ -1258,6 +1261,7 @@
                   {selection}
                   {selecting}
                   {ratingFor}
+                  {sensitiveFor}
                   layout={tileLayout}
                   captionHeight={cells ? cells.captionHeight : rowCaptionHeight}
                   captionBelow={!cells}
@@ -1279,6 +1283,7 @@
                   {selection}
                   {selecting}
                   {ratingFor}
+                  {sensitiveFor}
                   layout={tileLayout}
                   captionHeight={cells ? cells.captionHeight : rowCaptionHeight}
                   captionBelow={!cells}

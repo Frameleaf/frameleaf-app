@@ -6,7 +6,8 @@ import type { Translations } from 'svelte-i18n';
  *
  * Locked is one lock record per item. It keeps the item's albums and organisation and hides it from
  * every view except this one, which only opens after the PIN. The filter narrows by why the item is
- * locked; All is the default, so items moved over from the old Locked folder show straight away.
+ * locked; All is the default, so items moved over from the old Locked folder show straight away. All
+ * also lists the owner's Locked-rule matches, which have no lock and so no reason to filter by.
  */
 
 /** `all`, or one of the lock reasons. */

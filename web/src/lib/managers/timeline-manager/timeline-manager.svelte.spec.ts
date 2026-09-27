@@ -1022,6 +1022,25 @@ describe('TimelineManager', () => {
       eventManager.emit('AssetsMarkNsfw', [asset.id]);
       expect(timelineManager.assetCount).toEqual(1);
     });
+
+    it('keeps the Locked-rule matches the server lists in the Locked view, never a live-event guess (FL-34)', async () => {
+      await timelineManager.updateOptions({ visibility: AssetVisibility.Locked });
+      const at = fromISODateTimeUTCToObject('2024-01-20T12:00:00.000Z');
+      const ruleMatch = deriveLocalDateTimeFromFileCreatedAt(
+        timelineAssetFactory.build({ fileCreatedAt: at, visibility: AssetVisibility.Timeline }),
+      );
+      expect(timelineManager.isExcluded(ruleMatch)).toBe(false);
+      expect(timelineManager.isExcluded({ ...ruleMatch, visibility: AssetVisibility.Hidden })).toBe(true);
+
+      // a live event cannot tell whether an ordinary item matches a rule, so it never adds one
+      timelineManager.upsertAssetsFromLiveEvent([ruleMatch]);
+      expect(timelineManager.assetCount).toEqual(0);
+      const locked = deriveLocalDateTimeFromFileCreatedAt(
+        timelineAssetFactory.build({ fileCreatedAt: at, visibility: AssetVisibility.Locked }),
+      );
+      timelineManager.upsertAssetsFromLiveEvent([locked]);
+      expect(timelineManager.assetCount).toEqual(1);
+    });
   });
 
   describe('firstAsset', () => {

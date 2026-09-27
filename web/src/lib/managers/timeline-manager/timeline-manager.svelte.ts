@@ -907,14 +907,22 @@ export class TimelineManager extends VirtualScrollManager {
   /**
    * FL-34: an unlocked session reveals the owner's own sensitive marks and detections in the timeline
    * ("Revealed for this session"); the server sends them with visibility `locked` and their reason.
-   * Anything else locked never belongs to a timeline view.
+   * Anything else locked never belongs to a timeline view. The Locked view also lists the owner's
+   * Locked-rule matches (the prototype's `classifyLocked`), which keep their stored visibility.
    */
   #isVisibilityMismatch(asset: TimelineAsset) {
     const revealed =
       this.#options.visibility === AssetVisibility.Timeline &&
       asset.visibility === AssetVisibility.Locked &&
       (asset.lockReason === AssetLockReason.Marked || asset.lockReason === AssetLockReason.Detected);
-    return !revealed && isMismatched(this.#options.visibility, asset.visibility);
+    return !revealed && !this.#isLockedRuleMatch(asset) && isMismatched(this.#options.visibility, asset.visibility);
+  }
+
+  #isLockedRuleMatch(asset: TimelineAsset) {
+    return (
+      this.#options.visibility === AssetVisibility.Locked &&
+      (asset.visibility === AssetVisibility.Timeline || asset.visibility === AssetVisibility.Archive)
+    );
   }
 
   isExcluded(asset: TimelineAsset) {
@@ -930,6 +938,10 @@ export class TimelineManager extends VirtualScrollManager {
 
   canInsertAssetFromLiveEvent(asset: TimelineAsset) {
     if (this.isExcluded(asset)) {
+      return false;
+    }
+    // only the server knows what the owner's Locked rules match; the next load brings those in
+    if (this.#isLockedRuleMatch(asset)) {
       return false;
     }
     if (this.#options.albumId || this.#options.personId || this.#options.timelineAlbumId) {

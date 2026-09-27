@@ -258,6 +258,9 @@
    * always draws it; the device's own layout choice is left alone for every other page.
    */
   const lockedView = $derived(!!bulkContext?.locked || options?.visibility === AssetVisibility.Locked);
+  // FL-34: the Locked view also lists what the owner's Locked rules hide; those carry no lock, and the
+  // prototype badges them Sensitive (`AssetTile.jsx`)
+  const isLockedRuleMatch = (asset: TimelineAsset) => asset.visibility !== AssetVisibility.Locked;
   const gridLayout = $derived(publicView ? 'browse' : lockedView ? 'timeline' : session.layout);
   /**
    * The information panel (prototype `inspector`): the results toolbar's toggle and I show or hide it
@@ -1434,6 +1437,7 @@
         timelineManager={manager}
         {session}
         {ratingFor}
+        sensitiveFor={lockedView ? isLockedRuleMatch : undefined}
         {tileLayout}
         thumbnailSize={libraryGridPreferences.thumbnailSize}
         showFileNames={libraryGridPreferences.showFileNames}
