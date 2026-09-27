@@ -225,6 +225,7 @@ export function FrameleafCloud({
   section = "cloud-account",
   onNavigate,
   onBuy,
+  onTour,
   draft = {},
   onSettingChange,
   fields = [],
@@ -232,7 +233,7 @@ export function FrameleafCloud({
 }) {
   const [state, commit] = useCloudState();
   const actions = useActions(commit);
-  const context = { state, onNavigate, onBuy, draft, onSettingChange, fields, errors, ...actions };
+  const context = { state, onNavigate, onBuy, onTour, draft, onSettingChange, fields, errors, ...actions };
   return (
     <div className="frameleaf-cloud" data-section={section}>
       {actions.messages}
@@ -445,7 +446,7 @@ function useNow(active, interval = 1000) {
 
 // ------------------------------------------------------------------ account & link
 
-function AccountLink({ state, run, onNavigate }) {
+function AccountLink({ state, run, onNavigate, onTour }) {
   const { link } = state;
   const [unlinking, setUnlinking] = useState(false);
   const [understood, setUnderstood] = useState(false);
@@ -640,6 +641,11 @@ function AccountLink({ state, run, onNavigate }) {
           <a className="button" href={`${STORE_URL}/servers`} target="_blank" rel="noopener noreferrer">
             <Icon name="mdiOpenInNew" /> Manage on frameleaf.cloud
           </a>
+          {onTour && (
+            <Button icon="mdiCompassOutline" onClick={onTour}>
+              Take the tour
+            </Button>
+          )}
         </div>
       </Card>
       <Card

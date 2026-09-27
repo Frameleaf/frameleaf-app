@@ -7,6 +7,7 @@ import { Checklist, ErrorNote, PasswordField, StrengthMeter, SwitchRow, TextFiel
 import { languages } from "./system-data.mjs";
 import { formatUsd, loadCloudState, saveCloudState } from "./frameleaf-cloud-data.mjs";
 import { SAMPLE_ACCOUNT, SAMPLE_USER_CODE, linkAccount, unlinkAccount } from "./cloud-account.mjs";
+import { loadCloudTour, markCloudTourSeen, saveCloudTour } from "./cloud-tour.mjs";
 import {
   CLOUD_BACKUP_PER_TB,
   KEEP_LAYOUT,
@@ -375,6 +376,8 @@ function FrameleafLink({ linked, onLinked, compact }) {
         setPhase("waiting");
         later(() => {
           saveCloudState(linkAccount(loadCloudState()));
+          // Setup has its own summary, so the linked-server tour is not offered afterwards.
+          saveCloudTour(markCloudTourSeen(loadCloudTour(), "taylor", "setup"));
           setPhase("linked");
           onLinked?.();
         }, 1800);
