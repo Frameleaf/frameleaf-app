@@ -51,6 +51,13 @@ describe('LibraryRail', () => {
     expect(headings()).toEqual(['Explore', 'Albums', 'Shared spaces', 'Tools']);
   });
 
+  it('is the "Library navigation" landmark, as LibraryRail.jsx names it, not a second "Primary"', () => {
+    render(LibraryRail);
+
+    expect(screen.getByRole('navigation', { name: 'Library navigation' })).toBeInTheDocument();
+    expect(screen.queryByRole('navigation', { name: 'Primary' })).toBeNull();
+  });
+
   it('lists saved searches in Albums, after the album tree and before Shared links', async () => {
     authManager.setPreferences(preferencesFactory.build({ sharedLinks: { enabled: true, sidebarWeb: true } } as never));
     sdkMock.getAlbumTree.mockResolvedValue({
