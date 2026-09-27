@@ -78,7 +78,7 @@
     agreed = false;
     try {
       const next = await estimateCloudMlJob({
-        cloudMlJobEstimateRequestDto: { ...request, ...(sku ? { modelSku: sku } : {}) },
+        cloudMlJobEstimateRequestDto: { ...request, ...(sku && { modelSku: sku }) },
       });
       if (turn !== estimateTurn) {
         return;
