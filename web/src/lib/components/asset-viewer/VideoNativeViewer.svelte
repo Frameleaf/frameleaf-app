@@ -3,6 +3,7 @@
   import { assetViewerFadeDuration } from '$lib/constants';
   import { librarySession } from '$lib/frameleaf/library-session.svelte';
   import { bindMediaSession, MEDIA_SESSION_ARTIST } from '$lib/frameleaf/media-session';
+  import { describeVideoFailure, type VideoFailure } from '$lib/frameleaf/video-failure';
   import { videoSeek } from '$lib/frameleaf/video-seek.svelte';
   import '$lib/frameleaf/tokens.css';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
@@ -71,6 +72,8 @@
     onVideoEnded?: () => void;
     onVideoStarted?: () => void;
     onClose?: () => void;
+    /** Switches an original that cannot play to the encoded rendition (FL-35). */
+    onPlayEncoded?: () => void;
   }
 
   let {
@@ -85,12 +88,14 @@
     onVideoEnded = () => {},
     onVideoStarted = () => {},
     onClose = () => {},
+    onPlayEncoded,
   }: Props = $props();
 
   let videoPlayer: HTMLVideoElement | undefined = $state();
   let isLoading = $state(true);
   let hasLoadedMetadata = $state(false);
   let playbackFailed = $state(false);
+  let playbackFailure = $state<VideoFailure>('load');
   let retryCount = $state(0);
   let playbackController: AbortController | undefined;
   const useHls = $derived(featureFlagsManager.value.realtimeTranscoding && !playOriginalVideo);
@@ -405,6 +410,13 @@
     if (event && event.currentTarget !== videoPlayer) {
       return;
     }
+    // The original's type is only known for the asset's own file, not a Live Photo's clip.
+    const player = event?.currentTarget as HTMLVideoElement | undefined;
+    const originalType = playOriginalVideo && assetId === asset.id ? asset.originalMimeType : undefined;
+    playbackFailure = describeVideoFailure(
+      player?.error,
+      originalType && player ? player.canPlayType(originalType) : 'maybe',
+    );
     playbackFailed = true;
     isLoading = false;
     videoPlayer?.pause();
@@ -714,10 +726,22 @@
 
       {#if playbackFailed}
         <div class="frameleaf playback-error" data-theme="dark" role="alert">
-          <span>{$t('errors.failed_to_load_asset')}</span>
-          <button type="button" class="playback-retry" onclick={() => retryCount++}>
-            {$t('retry')}
-          </button>
+          {#if playbackFailure === 'format'}
+            <span>{$t('frameleaf_viewer_video_format_unsupported')}</span>
+          {:else if playbackFailure === 'decode'}
+            <span>{$t('frameleaf_viewer_video_decode_failed')}</span>
+          {:else}
+            <span>{$t('errors.failed_to_load_asset')}</span>
+          {/if}
+          {#if playOriginalVideo && onPlayEncoded && playbackFailure !== 'load'}
+            <button type="button" class="playback-retry" onclick={onPlayEncoded}>
+              {$t('frameleaf_viewer_play_encoded')}
+            </button>
+          {:else}
+            <button type="button" class="playback-retry" onclick={() => retryCount++}>
+              {$t('retry')}
+            </button>
+          {/if}
         </div>
       {:else if isLoading}
         <div role="status" aria-label={$t('loading')} class="absolute flex place-content-center place-items-center">

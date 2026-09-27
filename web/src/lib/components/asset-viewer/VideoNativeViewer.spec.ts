@@ -225,6 +225,54 @@ describe('VideoNativeViewer component', () => {
     expect(viewer.queryByRole('alert')).not.toBeInTheDocument();
   });
 
+  // FL-35: an unsupported codec is reported as such, never as a missing file or a generic failure.
+  const failWith = async (video: HTMLVideoElement, code: number) => {
+    Object.defineProperty(video, 'error', { configurable: true, value: { code } });
+    await fireEvent.error(video);
+  };
+
+  it('says the browser cannot play the original format and offers the encoded rendition', async () => {
+    const onPlayEncoded = vi.fn();
+    const props = { ...videoProps(), playOriginalVideo: true, onPlayEncoded };
+    const viewer = renderViewer(props);
+    const video = viewer.container.querySelector('video')!;
+    vi.spyOn(video, 'canPlayType').mockReturnValue('');
+    await failWith(video, 4);
+    expect(viewer.getByRole('alert')).toHaveTextContent('frameleaf_viewer_video_format_unsupported');
+    expect(viewer.queryByRole('button', { name: 'retry' })).not.toBeInTheDocument();
+    await fireEvent.click(viewer.getByRole('button', { name: 'frameleaf_viewer_play_encoded' }));
+    expect(onPlayEncoded).toHaveBeenCalledOnce();
+  });
+
+  it('does not blame the format when the browser might play the original type', async () => {
+    const props = { ...videoProps(), playOriginalVideo: true, onPlayEncoded: vi.fn() };
+    const viewer = renderViewer(props);
+    const video = viewer.container.querySelector('video')!;
+    vi.spyOn(video, 'canPlayType').mockReturnValue('maybe');
+    await failWith(video, 4);
+    expect(viewer.getByRole('alert')).toHaveTextContent('errors.failed_to_load_asset');
+    expect(viewer.getByRole('button', { name: 'retry' })).toBeInTheDocument();
+  });
+
+  it("does not judge a Live Photo clip by its still's file type", async () => {
+    const props = { ...videoProps(), assetId: 'live-clip-id', playOriginalVideo: true, onPlayEncoded: vi.fn() };
+    const viewer = renderViewer(props);
+    const video = viewer.container.querySelector('video')!;
+    vi.spyOn(video, 'canPlayType').mockReturnValue('');
+    await failWith(video, 4);
+    expect(viewer.getByRole('alert')).toHaveTextContent('errors.failed_to_load_asset');
+  });
+
+  it('reports an encoded rendition the browser cannot decode, and keeps Retry', async () => {
+    const props = { ...videoProps(), onPlayEncoded: vi.fn() };
+    const viewer = renderViewer(props);
+    const video = viewer.container.querySelector('video')!;
+    await failWith(video, 3);
+    expect(viewer.getByRole('alert')).toHaveTextContent('frameleaf_viewer_video_decode_failed');
+    expect(viewer.getByRole('button', { name: 'retry' })).toBeInTheDocument();
+    expect(viewer.queryByRole('button', { name: 'frameleaf_viewer_play_encoded' })).not.toBeInTheDocument();
+  });
+
   it('keeps the encoded playback URL when realtime transcoding is disabled', () => {
     const props = videoProps();
     const viewer = renderViewer(props);
