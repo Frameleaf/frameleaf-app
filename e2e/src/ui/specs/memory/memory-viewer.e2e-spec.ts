@@ -73,6 +73,9 @@ test.describe('Memory Viewer - Gallery Asset Viewer Navigation', () => {
     memoryChanges.memoryDeletions = [];
     memoryChanges.assetRemovals.clear();
     memoryChanges.hiddenMemories = [];
+    memoryChanges.curations?.clear();
+    memoryChanges.exports = [];
+    memoryChanges.holdExports = false;
   });
 
   test.describe('Asset viewer navigation from gallery', () => {
@@ -339,6 +342,66 @@ test.describe('Memory Viewer - Gallery Asset Viewer Navigation', () => {
 
       await page.getByRole('button', { name: 'Make a movie in Studio' }).click();
       await expect(page).toHaveURL(new RegExp(String.raw`/studio\?.*${firstMemory.assets[0].id}`));
+    });
+  });
+
+  // FL-62 acceptance: edit, reorder and save a memory, and find it that way when it is reopened.
+  test.describe('Memory curation', () => {
+    test('renames, reorders and favorites a memory, and keeps them when reopened', async ({ page }) => {
+      const memory = memories[2];
+      const [first, second] = memory.assets;
+      await memoryViewerUtils.openMemoryPageWithAsset(page, memory.id, second.id);
+
+      await page.keyboard.press('g');
+      const gallery = page.getByRole('region', { name: 'All items in this memory' });
+      await gallery.getByRole('button', { name: 'Rename memory' }).click();
+      await page.getByRole('textbox', { name: 'Title' }).fill('Lake weekend');
+      await page.getByRole('button', { name: 'Save', exact: true }).click();
+
+      await gallery.getByRole('button', { name: 'Reorder' }).click();
+      await gallery.getByRole('button', { name: `Move ${first.originalFileName} later` }).click();
+      await expect(gallery.getByRole('button', { name: new RegExp('^Item 1: ') })).toHaveAccessibleName(
+        new RegExp(second.originalFileName.replaceAll('.', String.raw`\.`)),
+      );
+      await gallery.getByRole('button', { name: 'Favorite memory' }).click();
+
+      await page.reload();
+      await memoryViewerUtils.waitForMemoryLoad(page);
+      await expect(memoryViewerUtils.locator(page).locator('.fmp-heading strong')).toHaveText('Lake weekend');
+      await page.keyboard.press('g');
+      const reopened = page.getByRole('region', { name: 'All items in this memory' });
+      await expect(reopened.getByRole('button', { name: new RegExp('^Item 1: ') })).toHaveAccessibleName(
+        new RegExp(second.originalFileName.replaceAll('.', String.raw`\.`)),
+      );
+      await expect(reopened.getByRole('button', { name: 'Remove memory from favorites' })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      );
+    });
+  });
+
+  // FL-62 acceptance: the private export is a job the owner starts, can cancel and retry, then downloads.
+  test.describe('Private highlight export', () => {
+    test('starts, cancels, retries and downloads an export only when asked', async ({ page }) => {
+      const memory = memories[0];
+      memoryChanges.holdExports = true;
+      await memoryViewerUtils.openMemoryPageWithAsset(page, memory.id, memory.assets[1].id);
+      // nothing is exported until the owner asks
+      expect(memoryChanges.exports ?? []).toHaveLength(0);
+
+      await page.getByRole('button', { name: 'Export this memory' }).click();
+      await expect(page.getByRole('status', { name: `Exporting 1 of ${memory.assets.length}` })).toBeVisible();
+
+      await page.getByRole('button', { name: 'Cancel export' }).click();
+      await expect(page.getByRole('button', { name: 'Export this memory' })).toBeVisible();
+
+      memoryChanges.holdExports = false;
+      await page.getByRole('button', { name: 'Export this memory' }).click();
+      const download = page.waitForEvent('download');
+      await page.getByRole('button', { name: 'Download export' }).click();
+      const file = await download;
+      expect(file.suggestedFilename()).toBe('Memory.zip');
+      expect(memoryChanges.exports!.map((run) => run.status)).toEqual(['ready', 'cancelled']);
     });
   });
 
