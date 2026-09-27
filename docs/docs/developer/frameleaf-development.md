@@ -95,9 +95,7 @@ PR workflows use GitHub-hosted runners and read-only tokens, including contribut
 - Test Web
 - Lint Web
 - Medium Tests (Server)
-- Unit Test Mobile
 - Unit Test CLI
-- Run Dart Code Analysis
 - SQL Schema Checks
 - ShellCheck
 - Docs Build
