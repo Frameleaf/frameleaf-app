@@ -24,7 +24,13 @@ const revokeLater = async (accessToken: string, albumId: string) => {
  * API requests a public page may make without the link's key: the server's own public description
  * and the signed-in visitor's own session. Everything about the share goes through the link.
  */
-const unscopedAllowed = [/^\/api\/server\//, /^\/api\/users\/me(\/preferences)?$/, /^\/api\/auth\/status$/];
+const unscopedAllowed = [
+  /^\/api\/server\//,
+  /^\/api\/users\/me(\/preferences)?$/,
+  /^\/api\/auth\/status$/,
+  // The visitor's own event socket, opened for any signed-in page.
+  /^\/api\/socket\.io\//,
+];
 
 /** Records every API request that reaches the server without the link's key or slug. */
 const recordUnscoped = (page: Page) => {
