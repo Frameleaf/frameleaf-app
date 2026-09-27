@@ -96,19 +96,98 @@ set
 where
   "id" = $2
 
--- CloudBackupIndexRepository.getLatestManifestDatabaseKey
+-- CloudBackupIndexRepository.getKeptDatabaseKeys
 select
   "databaseKey"
 from
   "cloud_backup_manifest"
 where
   "bucket" = $1
-  and "status" = $2
+  and "status" in ($2, $3)
   and "databaseKey" is not null
+
+-- CloudBackupIndexRepository.getManifestKeys
+select
+  "key"
+from
+  "cloud_backup_manifest"
+where
+  "bucket" = $1
+  and "key" in ($2)
+
+-- CloudBackupIndexRepository.adoptManifests
+select
+  "key"
+from
+  "cloud_backup_manifest"
+where
+  "bucket" = $1
+  and "key" in ($2)
+
+-- CloudBackupIndexRepository.listKeptManifests
+select
+  "key",
+  "status",
+  "databaseKey",
+  "createdAt",
+  "finishedAt",
+  "assetCount",
+  "fileCount",
+  "bytes"
+from
+  "cloud_backup_manifest"
+where
+  "bucket" = $1
+  and "status" in ($2, $3)
 order by
   "createdAt" desc
-limit
-  $3
+
+-- CloudBackupIndexRepository.markManifests
+update "cloud_backup_manifest"
+set
+  "status" = $1
+where
+  "bucket" = $2
+  and "key" in ($3)
+  and "status" in ($4, $5)
+
+-- CloudBackupIndexRepository.forget
+delete from "cloud_backup_object"
+where
+  "bucket" = $1
+  and "sha256" in ($2)
+
+-- CloudBackupIndexRepository.getLibraryState
+select
+  "id",
+  "status",
+  "deletedAt",
+  "originalFileName",
+  "originalPath",
+  "ownerId",
+  "isExternal",
+  exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
+  ) as "locked"
+from
+  "asset"
+where
+  "id" = any ($1::uuid[])
+  and "status" in ($2, $3)
+
+-- CloudBackupIndexRepository.getOwnerNames
+select
+  "id",
+  "name"
+from
+  "user"
+where
+  "id" in ($1)
 
 -- CloudBackupIndexRepository.endAbandonedManifests
 update "cloud_backup_manifest"
