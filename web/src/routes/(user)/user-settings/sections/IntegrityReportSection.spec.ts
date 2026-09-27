@@ -11,7 +11,14 @@ vi.mock('$lib/services/job.service', () => ({ handleCreateJob: (...args: unknown
 
 const finding = (id: string) => ({ id, path: `/data/upload/${id}.png`, type: IntegrityReport.UntrackedFile });
 
-const idle = { integrityCheck: { queueStatus: { isActive: false, isPaused: false } } } as never;
+const queue = (waiting = 0) =>
+  ({
+    integrityCheck: {
+      jobCounts: { active: 0, waiting, delayed: 0, paused: 0, completed: 0, failed: 0 },
+      queueStatus: { isActive: false, isPaused: false },
+    },
+  }) as never;
+const idle = queue();
 
 describe('IntegrityReportSection (FL-81)', () => {
   beforeAll(() => {
@@ -35,6 +42,21 @@ describe('IntegrityReportSection (FL-81)', () => {
     expect(handleCreateJob).toHaveBeenCalledWith({ name: ManualJobName.IntegrityUntrackedFilesRefresh });
     await waitFor(() => expect(screen.queryByText('/data/upload/a.png')).not.toBeInTheDocument());
     expect(sdkMock.getIntegrityReport).toHaveBeenLastCalledWith({ $type: IntegrityReport.UntrackedFile });
+  });
+
+  it('waits while the refresh is still queued behind other work', async () => {
+    sdkMock.getIntegrityReport.mockResolvedValueOnce({ items: [finding('a')] }).mockResolvedValue({ items: [] });
+    sdkMock.getQueuesLegacy.mockResolvedValue(queue(1));
+    handleCreateJob.mockResolvedValue(true);
+
+    render(IntegrityReportSection, { type: IntegrityReport.UntrackedFile, pollMs: 5 });
+    expect(await screen.findByText('/data/upload/a.png')).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole('button', { name: en.admin.frameleaf_maintenance_report_recheck }));
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(sdkMock.getIntegrityReport).toHaveBeenCalledTimes(1);
+
+    sdkMock.getQueuesLegacy.mockResolvedValue(idle);
+    await waitFor(() => expect(screen.queryByText('/data/upload/a.png')).not.toBeInTheDocument());
   });
 
   it('keeps the loaded findings when the refresh job could not be created', async () => {
