@@ -262,15 +262,17 @@ describe('LibraryTimeline grid zoom', () => {
     expect(atMax).not.toHaveBeenCalled();
   });
 
-  it('leaves + and − alone in the Timeline, and while an item is open', async () => {
+  it('leaves + and − alone in the Timeline', async () => {
     const timeline = renderLayout('timeline');
     await press('+');
     expect(timeline).not.toHaveBeenCalled();
-    cleanup();
+  });
+
+  it('zooms again once the viewer has closed, though its item stays open to resume (FL-31)', async () => {
     const browse = renderLayout('browse');
     session.open('asset-1');
     await press('+');
-    expect(browse).not.toHaveBeenCalled();
+    expect(browse).toHaveBeenCalled();
   });
 
   it('scales the Timeline row height with the Thumbnail size, keeping the default at the default size', async () => {

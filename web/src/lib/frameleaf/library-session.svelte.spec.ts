@@ -159,6 +159,34 @@ describe('LibrarySessionStore', () => {
     expect(store.restorePlayback(NaN)).toBe(30);
   });
 
+  it('reopening the open item resumes its playhead; opening another item starts at the beginning', () => {
+    store.open('asset-1');
+    store.recordPlayhead('asset-1', 42);
+    store.setLayout('work');
+    store.open('asset-1');
+    expect(store.playbackPosition).toBe(42);
+    expect(store.playheadFor('asset-1', 120)).toBe(42);
+
+    store.open('asset-2');
+    expect(store.playbackPosition).toBe(0);
+    expect(store.playheadFor('asset-2', 120)).toBe(0);
+    // An explicit time still wins, as a moment chosen in the viewer does.
+    store.open('asset-2', 7);
+    expect(store.playbackPosition).toBe(7);
+  });
+
+  it('records and restores the playhead only for the item the session has open', () => {
+    store.open('asset-1');
+    store.recordPlayhead('asset-9', 30);
+    expect(store.playbackPosition).toBe(0);
+    expect(store.playheadFor('asset-9', 60)).toBeNull();
+
+    store.recordPlayhead('asset-1', 90);
+    expect(store.playheadFor('asset-1', 60)).toBe(60);
+    store.recordPlayhead('asset-1', Number.NaN);
+    expect(store.playbackPosition).toBe(60);
+  });
+
   it('selects ranges and whole day groups from one ordered list', () => {
     const ordered = ['a', 'b', 'c', 'd', 'e'];
     store.select('b');

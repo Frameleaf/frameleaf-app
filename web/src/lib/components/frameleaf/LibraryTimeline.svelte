@@ -241,7 +241,7 @@
     }
     return bindGridZoom(element, {
       onZoom: zoomGrid,
-      enabled: () => !session.openAssetId && !assetViewerManager.isViewing,
+      enabled: () => !assetViewerManager.isViewing,
     });
   });
 
