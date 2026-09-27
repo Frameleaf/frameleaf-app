@@ -521,14 +521,16 @@ export class StudioPreviewStreamService {
   }
 
   private assertOpen(operation: MediaOperation) {
-    if (!isOpenStream(operation) || operation.cancelRequestedAt) {
-      const signal = readStreamSignal(operation.result);
-      throw new GoneException({
-        message: 'This preview stream has ended',
-        code: 'studio_preview_stream_closed',
-        closeReason: signal.closeReason ?? impliedCloseReason(operation),
-      });
+    if (isOpenStream(operation) && !operation.cancelRequestedAt) {
+      return;
     }
+
+    const signal = readStreamSignal(operation.result);
+    throw new GoneException({
+      message: 'This preview stream has ended',
+      code: 'studio_preview_stream_closed',
+      closeReason: signal.closeReason ?? impliedCloseReason(operation),
+    });
   }
 
   private parseTime(time: { numerator: string; denominator: string }) {

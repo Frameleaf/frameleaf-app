@@ -71,15 +71,18 @@ class FakeOperations {
 
   listOpenStreams = vi.fn((ownerId: string) =>
     Promise.resolve(
-      [...this.rows.values()]
+      this.rows
+        .values()
         .filter((row) => row.ownerId === ownerId && this.open(row) && !row.cancelRequestedAt)
-        .map(({ id, projectId }) => ({ id, projectId })),
+        .map(({ id, projectId }) => ({ id, projectId }))
+        .toArray(),
     ),
   );
 
   listUnfinishedForProjects = vi.fn((projectIds: string[], kinds: string[], ownerId?: string) =>
     Promise.resolve(
-      [...this.rows.values()]
+      this.rows
+        .values()
         .filter(
           (row) =>
             projectIds.includes(row.projectId!) &&
@@ -87,7 +90,8 @@ class FakeOperations {
             (ownerId === undefined || row.ownerId === ownerId) &&
             this.open(row, true),
         )
-        .map(({ id, ownerId, kind, projectId }) => ({ id, ownerId, kind, projectId })),
+        .map(({ id, ownerId, kind, projectId }) => ({ id, ownerId, kind, projectId }))
+        .toArray(),
     ),
   );
 
