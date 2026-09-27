@@ -4,7 +4,9 @@ import {
   RemoteAccessMode,
   RemoteAccessPublicUrl,
   RemoteAccessState,
+  RemoteDirectGuidance,
   RemoteDnsRecordType,
+  RemoteMappingMethod,
   RemoteHostnameStatus,
   type CloudStatusResponseDto,
   type RemoteAccessStatusResponseDto,
@@ -89,6 +91,13 @@ const remote = (overrides: Partial<RemoteAccessStatusResponseDto> = {}): RemoteA
   relayRevoked: false,
   directListening: false,
   cgnatSuspected: false,
+  mappingMethod: null,
+  mappingError: null,
+  directGuidance: null,
+  directExternalIp: null,
+  wanAddress: null,
+  wanVerified: false,
+  wanProblem: null,
   customHostname: null,
   customHostnameStatus: null,
   customHostnameCheckedAt: null,
@@ -347,6 +356,57 @@ describe('RemoteAccessSection (FL-165)', () => {
     );
     expect(await screen.findByText('Port forwarding')).toBeInTheDocument();
     expect(screen.getByRole('switch', { name: 'I forward the port myself' })).toBeInTheDocument();
+  });
+
+  it('shows how the router opened the port and that Frameleaf Cloud reached it (FL-167)', async () => {
+    sdkMock.getRemoteAccess.mockResolvedValue(
+      remote({
+        enabled: true,
+        status: RemoteAccessState.Ready,
+        mode: RemoteAccessMode.RelayAndDirect,
+        directListening: true,
+        mappingMethod: RemoteMappingMethod.Upnp,
+        directExternalIp: '203.0.113.7',
+        wanAddress: 'https://203-0-113-7.u225vlzhsdlhwh4l.frameleaf.net:2443',
+        wanVerified: true,
+      }),
+    );
+    render(RemoteAccessSection);
+    expect(await screen.findByText('UPnP')).toBeInTheDocument();
+    expect(screen.getByText('203.0.113.7')).toBeInTheDocument();
+    expect(
+      screen.getByText('Reachable from the internet at 203-0-113-7.u225vlzhsdlhwh4l.frameleaf.net:2443'),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Ready')).toBeInTheDocument();
+  });
+
+  it('explains bridge networking, a router that refused, and CGNAT (FL-167)', async () => {
+    sdkMock.getRemoteAccess.mockResolvedValue(
+      remote({
+        enabled: true,
+        mode: RemoteAccessMode.RelayAndDirect,
+        directGuidance: RemoteDirectGuidance.Bridge,
+        mappingError: 'No router answered UPnP or NAT-PMP.',
+      }),
+    );
+    const { unmount } = render(RemoteAccessSection);
+    expect(await screen.findByText('The router can’t be reached from this container')).toBeInTheDocument();
+    expect(screen.getByText(/host networking/)).toBeInTheDocument();
+    unmount();
+
+    sdkMock.getRemoteAccess.mockResolvedValue(
+      remote({ enabled: true, mode: RemoteAccessMode.RelayAndDirect, mappingError: 'UPnP: not allowed' }),
+    );
+    const second = render(RemoteAccessSection);
+    expect(await screen.findByText('The router did not open the port: UPnP: not allowed')).toBeInTheDocument();
+    second.unmount();
+
+    sdkMock.getRemoteAccess.mockResolvedValue(
+      remote({ enabled: true, mode: RemoteAccessMode.RelayAndDirect, cgnatSuspected: true, wanProblem: null }),
+    );
+    render(RemoteAccessSection);
+    expect(await screen.findByText('Your internet provider shares one public address')).toBeInTheDocument();
+    expect(screen.getByText('Unavailable')).toBeInTheDocument();
   });
 
   it('shows the connected relay, its round trip, since when and what it carried (FL-166)', async () => {

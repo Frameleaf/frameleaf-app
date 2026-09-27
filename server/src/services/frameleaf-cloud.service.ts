@@ -954,6 +954,7 @@ export class FrameleafCloudService extends BaseService {
         lastFailureAt: undefined,
         cloneSuspected: response.cloneSuspected,
         nextAt: this.after(now, nextHeartbeatDelay(response.nextHeartbeatSec)),
+        observedIp: response.observedIp ?? null,
         ...(keyRelinkResolved && { relinkRequested: undefined, relinkReason: undefined }),
       },
     };

@@ -433,6 +433,55 @@ describe(FrameleafAuthService.name, () => {
       await expect(sut.redeemHandoff({ code }, loginDetails)).rejects.toThrow('not valid');
     });
 
+    it('returns only to a home address this server published (FL-167)', async () => {
+      const LAN = 'https://192-168-1-10.u225vlzhsdlhwh4l.frameleaf.net:2443';
+      const auth = AuthFactory.from(UserFactory.create()).session({ id: 'session-3' }).build();
+      mocks.frameleafAccount.getSession.mockResolvedValue({ sessionId: 'session-3', sub: 'fl-sub' } as never);
+      mocks.frameleafAccount.getLinkByUser.mockResolvedValue({ sub: 'fl-sub' } as never);
+      mocks.crypto.randomBytesAsText.mockReturnValue('handoff-code');
+      metadata.set(SystemMetadataKey.SystemConfig, { frameleafCloud: { remoteAccess: { enabled: true } } });
+      metadata.set(SystemMetadataKey.FrameleafRemoteAccess, {
+        status: 'ready',
+        updatedAt: new Date().toISOString(),
+        names: {
+          instanceId: INSTANCE,
+          label: 'u225vlzhsdlhwh4l',
+          domain: 'frameleaf.net',
+          names: { relay: 'r.u225vlzhsdlhwh4l.frameleaf.net' },
+        },
+        relay: { connected: true },
+        direct: { listening: true, port: 2443, cgnatSuspected: false },
+        candidates: [
+          { kind: 'local', uri: LAN, local: true, relay: false },
+          { kind: 'relay', uri: 'https://r.u225vlzhsdlhwh4l.frameleaf.net', local: false, relay: true },
+        ],
+      });
+
+      await expect(sut.createHandoff(auth, { returnTo: `${LAN}/photos` })).resolves.toMatchObject({
+        code: 'handoff-code',
+        url: `${LAN}/auth/login#frameleafHandoff=handoff-code`,
+      });
+      for (const returnTo of [
+        'https://evil.example.com',
+        'https://r.u225vlzhsdlhwh4l.frameleaf.net',
+        LAN.replace('https:', 'http:'),
+        'https://user@192-168-1-10.u225vlzhsdlhwh4l.frameleaf.net:2443',
+        'javascript:alert(1)',
+        'not a url',
+      ]) {
+        await expect(sut.createHandoff(auth, { returnTo })).rejects.toThrow('home addresses');
+      }
+      // no code is made for a refused address
+      expect(mocks.frameleafAccount.setHandoff).toHaveBeenCalledTimes(1);
+
+      // an edge worker that stopped reporting published nothing
+      metadata.set(SystemMetadataKey.FrameleafRemoteAccess, {
+        ...(metadata.get(SystemMetadataKey.FrameleafRemoteAccess) as object),
+        updatedAt: new Date(Date.now() - 10 * 60 * 1000).toISOString(),
+      });
+      await expect(sut.createHandoff(auth, { returnTo: LAN })).rejects.toThrow('home addresses');
+    });
+
     it('refuses an expired code and a session Frameleaf did not create', async () => {
       const auth = AuthFactory.from().session({ id: 'session-2' }).build();
       mocks.frameleafAccount.getSession.mockResolvedValue(void 0);

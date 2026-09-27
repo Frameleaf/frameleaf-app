@@ -35,6 +35,43 @@ import {
 /** Relay use is metered every minute, so a newer answer is never asked for sooner. */
 const USAGE_FRESH_MS = 60_000;
 
+/** The direct connection as the edge worker last saw it: the router, the address and Frameleaf Cloud's probe. */
+const directCheck = (
+  settings: { portMapping: boolean; directPort: number },
+  state: FrameleafRemoteAccess | null,
+  listening: boolean,
+): ProbeResult => {
+  const direct = state?.direct;
+  if (!listening || !direct) {
+    return { ok: false, detail: 'Not tried: the HTTPS listener is not running.' };
+  }
+  if (direct.cgnatSuspected) {
+    return {
+      ok: false,
+      detail:
+        'Your internet provider shares one public address between customers, so direct connections cannot reach this server. The relay is used instead.',
+    };
+  }
+  if (direct.wan?.verified) {
+    return { ok: true, detail: `Frameleaf Cloud reached this server directly at ${direct.wan.uri}` };
+  }
+  if (settings.portMapping && !direct.mapping) {
+    return {
+      ok: false,
+      detail:
+        direct.guidance === 'bridge'
+          ? 'The router could not be reached from this container. Use host networking, or forward the port yourself.'
+          : `The router did not open port ${settings.directPort}${direct.mappingError ? ` (${direct.mappingError})` : ''}.`,
+    };
+  }
+  return {
+    ok: false,
+    detail: direct.wan
+      ? `Frameleaf Cloud could not reach port ${settings.directPort} from the internet (${direct.wan.reason ?? 'unreachable'}).`
+      : `Waiting for Frameleaf Cloud to test port ${settings.directPort}.`,
+  };
+};
+
 /** The self-check gives the edge worker this long to answer through the direct listener. */
 const PROBE_TIMEOUT_MS = 5000;
 
@@ -105,6 +142,13 @@ export class FrameleafRemoteAccessService extends BaseService {
       relayRevoked: !!state?.relay.revoked,
       directListening: current && !!state?.direct.listening,
       cgnatSuspected: !!state?.direct.cgnatSuspected,
+      mappingMethod: (current && state?.direct.mapping?.method) || null,
+      mappingError: (current && state?.direct.mappingError) || null,
+      directGuidance: (current && state?.direct.guidance) || null,
+      directExternalIp: (current && state?.direct.externalIp) || null,
+      wanAddress: (current && state?.direct.wan?.uri) || null,
+      wanVerified: current && !!state?.direct.wan?.verified,
+      wanProblem: (current && !state?.direct.wan?.verified && state?.direct.wan?.reason) || null,
       customHostname: host,
       customHostnameStatus: host ? settings.customHostname.status : null,
       customHostnameCheckedAt: host ? settings.customHostname.checkedAt : null,
@@ -397,14 +441,7 @@ export class FrameleafRemoteAccessService extends BaseService {
     });
 
     if (settings.mode === 'relay-and-direct') {
-      checks.push({
-        id: 'direct',
-        // listening only: reachability from the internet is not tested from here
-        ok: listening,
-        detail: settings.portMapping
-          ? `Listening; waiting for the router to open port ${settings.directPort}`
-          : `Listening; forward external port ${settings.directPort} on your router to port ${state?.direct.port} here`,
-      });
+      checks.push({ id: 'direct', ...directCheck(settings, state, listening) });
     }
 
     const result: FrameleafRemoteAccessTest = {

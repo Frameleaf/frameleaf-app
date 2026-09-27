@@ -17,6 +17,10 @@ const FrameleafHandoffResponseSchema = z
   .object({
     code: z.string().describe('A single-use code for signing in on another address of this server'),
     expiresAt: z.string(),
+    url: z
+      .string()
+      .nullable()
+      .describe('Where to continue with the code: the home address asked for, when this server published it'),
   })
   .meta({ id: 'FrameleafHandoffResponseDto' });
 
@@ -27,6 +31,17 @@ const FrameleafHandoffRedeemSchema = z
   })
   .meta({ id: 'FrameleafHandoffRedeemDto' });
 
+const FrameleafHandoffCreateSchema = z
+  .object({
+    returnTo: z
+      .string()
+      .max(2048)
+      .optional()
+      .describe('The home address to sign in on; only an address this server published for its home network'),
+  })
+  .meta({ id: 'FrameleafHandoffCreateDto' });
+
 export class FrameleafAccountLinkResponseDto extends createZodDto(FrameleafAccountLinkResponseSchema) {}
 export class FrameleafHandoffResponseDto extends createZodDto(FrameleafHandoffResponseSchema) {}
+export class FrameleafHandoffCreateDto extends createZodDto(FrameleafHandoffCreateSchema) {}
 export class FrameleafHandoffRedeemDto extends createZodDto(FrameleafHandoffRedeemSchema) {}

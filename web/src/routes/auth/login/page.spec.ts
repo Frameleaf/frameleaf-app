@@ -1,4 +1,10 @@
-import { finishFrameleafSignIn, login, startFrameleafSignIn } from '@immich/sdk';
+import {
+  createFrameleafHandoff,
+  finishFrameleafSignIn,
+  login,
+  redeemFrameleafHandoff,
+  startFrameleafSignIn,
+} from '@immich/sdk';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -20,6 +26,8 @@ vi.mock('@immich/sdk', () => ({
   isHttpError: () => false,
   startFrameleafSignIn: vi.fn(),
   finishFrameleafSignIn: vi.fn(),
+  createFrameleafHandoff: vi.fn(),
+  redeemFrameleafHandoff: vi.fn(),
 }));
 vi.mock('$lib/utils', () => ({
   oauth: {
@@ -44,6 +52,7 @@ const frameleafOff = {
   relayHost: null as string | null,
   localUrl: null as string | null,
   sameNetwork: false,
+  signInOrigin: null as string | null,
 };
 const data = (oauthEnabled: boolean) => ({
   continueUrl: '/photos',
@@ -162,6 +171,7 @@ describe('Sign in with Frameleaf (FL-158)', () => {
       relayHost: 'r.label.frameleaf.net',
       localUrl: 'http://192.168.1.10:2283',
       sameNetwork: false,
+      signInOrigin: null,
     };
     return pageData;
   };
@@ -243,6 +253,128 @@ describe('Sign in with Frameleaf (FL-158)', () => {
       }),
     );
     expect(oauth.login).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+});
+
+describe('Sign in with Frameleaf from a home address (FL-167)', () => {
+  const LAN = 'https://192-168-1-10.u225vlzhsdlhwh4l.frameleaf.net:2443';
+  const RELAY = 'https://r.u225vlzhsdlhwh4l.frameleaf.net';
+  const at = (href: string, assign = vi.fn()) => {
+    const url = new URL(href);
+    vi.stubGlobal('location', {
+      ...location,
+      assign,
+      href,
+      origin: url.origin,
+      pathname: url.pathname,
+      search: url.search,
+      hash: url.hash,
+    });
+    return assign;
+  };
+  const home = () => {
+    const pageData = data(false);
+    pageData.publicConfig.frameleafCloud.signIn = { buttonText: 'Sign in with Frameleaf', showOnLocalLogin: true };
+    pageData.publicConfig.frameleaf = { ...frameleafOff, signInAvailable: true, via: 'lan', signInOrigin: RELAY };
+    return pageData;
+  };
+  const remote = () => {
+    const pageData = data(false);
+    pageData.publicConfig.frameleaf = { ...frameleafOff, signInAvailable: true, signInRequired: true, via: 'relay' };
+    return pageData;
+  };
+
+  it('signs in on the public address and comes back to the home address with a tagged session', async () => {
+    // 1. on the home address: off to the public address, with where to come back to
+    let assign = at(`${LAN}/auth/login`);
+    render(Page, { data: home() } as never);
+    await fireEvent.click(await screen.findByRole('button', { name: 'Sign in with Frameleaf' }));
+    const bounced = new URL(assign.mock.calls[0][0] as string);
+    const nonce = bounced.searchParams.get('frameleafNonce')!;
+    expect(bounced.origin + bounced.pathname).toBe(`${RELAY}/auth/login`);
+    expect(bounced.searchParams.get('frameleafReturn')).toBe(LAN);
+    expect(bounced.searchParams.get('frameleafRemember')).toBe('1');
+    expect(nonce).toMatch(/^[\w-]{16,64}$/);
+    expect(startFrameleafSignIn).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+
+    // 2. on the public address: straight on to Frameleaf, remembering the home address
+    assign = at(
+      `${RELAY}/auth/login?frameleafReturn=${encodeURIComponent(LAN)}&frameleafNonce=${nonce}&frameleafRemember=1`,
+    );
+    vi.mocked(startFrameleafSignIn).mockResolvedValue({ url: 'https://id.frameleaf.cloud/auth?state=bounce' });
+    render(Page, { data: remote() } as never);
+    await waitFor(() => expect(assign).toHaveBeenCalledWith('https://id.frameleaf.cloud/auth?state=bounce'));
+    vi.unstubAllGlobals();
+
+    // 3. back from Frameleaf on the public address: the session is handed to the home address
+    assign = at(`${RELAY}/auth/login?code=abc&state=bounce`);
+    vi.mocked(oauth.isCallback).mockReturnValue(true);
+    vi.mocked(finishFrameleafSignIn).mockResolvedValue({ ...forced, shouldChangePassword: false } as never);
+    vi.mocked(createFrameleafHandoff).mockResolvedValue({
+      code: 'one-time',
+      expiresAt: new Date().toISOString(),
+      url: `${LAN}/auth/login#frameleafHandoff=one-time`,
+    });
+    render(Page, { data: remote() } as never);
+    await waitFor(() =>
+      expect(assign).toHaveBeenCalledWith(`${LAN}/auth/login#frameleafHandoff=one-time&frameleafNonce=${nonce}`),
+    );
+    expect(createFrameleafHandoff).toHaveBeenCalledWith({ frameleafHandoffCreateDto: { returnTo: LAN } });
+    expect(goto).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+
+    // 4. on the home address: the code signs in here, once
+    vi.mocked(oauth.isCallback).mockReturnValue(false);
+    at(`${LAN}/auth/login#frameleafHandoff=one-time&frameleafNonce=${nonce}`);
+    vi.mocked(redeemFrameleafHandoff).mockResolvedValue({ ...forced, shouldChangePassword: false } as never);
+    render(Page, { data: home() } as never);
+    await waitFor(() =>
+      expect(redeemFrameleafHandoff).toHaveBeenCalledWith({
+        frameleafHandoffRedeemDto: { code: 'one-time', rememberMe: true },
+      }),
+    );
+    await waitFor(() => expect(goto).toHaveBeenCalled());
+    vi.unstubAllGlobals();
+  });
+
+  it('never redeems a code this tab did not ask for (login CSRF)', async () => {
+    sessionStorage.clear();
+    at(`${LAN}/auth/login#frameleafHandoff=attackers-code&frameleafNonce=${'a'.repeat(32)}`);
+    render(Page, { data: home() } as never);
+    await screen.findByRole('button', { name: 'Sign in with Frameleaf' });
+    expect(redeemFrameleafHandoff).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+
+  it('never bounces to a return address that is not https', async () => {
+    const assign = at(`${RELAY}/auth/login?frameleafReturn=${encodeURIComponent('javascript:alert(1)')}`);
+    render(Page, { data: remote() } as never);
+    await screen.findByRole('button', { name: 'Sign in with Frameleaf' });
+    expect(startFrameleafSignIn).not.toHaveBeenCalled();
+    expect(assign).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+
+  it('stays signed in on the public address when the home address is refused', async () => {
+    at(`${RELAY}/auth/login?code=abc&state=refused`);
+    localStorage.setItem(
+      'frameleaf.auth.frameleafRequest.refused',
+      JSON.stringify({
+        purpose: 'sign-in',
+        expiresAt: Date.now() + 60_000,
+        returnTo: 'https://evil.example.com',
+        nonce: 'n'.repeat(32),
+      }),
+    );
+    vi.mocked(oauth.isCallback).mockReturnValue(true);
+    vi.mocked(finishFrameleafSignIn).mockResolvedValue({ ...forced, shouldChangePassword: false } as never);
+    vi.mocked(createFrameleafHandoff).mockRejectedValue(
+      new Error('This address is not one of this server’s home addresses'),
+    );
+    render(Page, { data: remote() } as never);
+    await waitFor(() => expect(goto).toHaveBeenCalled());
     vi.unstubAllGlobals();
   });
 });

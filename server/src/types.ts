@@ -841,6 +841,11 @@ export type FrameleafCloudLink = {
      * server must be linked again.
      */
     keyRecovery?: { nextAttemptAt?: string; closed?: boolean };
+    /**
+     * FL-167: the address the last check-in came from, as Frameleaf Cloud saw it; the edge worker
+     * compares it with the router's public address to tell carrier-grade NAT.
+     */
+    observedIp?: string | null;
   };
   /** FL-155: sha256 of headless link tokens already used, so a token never links twice. */
   usedLinkTokens?: string[];
@@ -1245,6 +1250,14 @@ export type FrameleafRemoteAccess = {
     port: number;
     mapping?: { externalPort: number; method: 'manual' | 'upnp' | 'nat-pmp' } | null;
     cgnatSuspected: boolean;
+    /** FL-167: the router's public address (automatic mapping) or the check-in's (manual port). */
+    externalIp?: string | null;
+    /** FL-167: why the router did not open the port. */
+    mappingError?: string | null;
+    /** FL-167: `bridge`: in a container no router answered (use host networking or a manual port). */
+    guidance?: 'bridge' | null;
+    /** FL-167: Frameleaf Cloud's reachability probe of the WAN candidate (`POST /v1/remote/wan-probe`). */
+    wan?: { key: string; uri: string | null; verified: boolean; reason: string | null; checkedAt: string } | null;
   };
   candidates: FrameleafRemoteConnection[];
 };

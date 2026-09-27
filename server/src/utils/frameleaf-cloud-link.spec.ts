@@ -147,7 +147,10 @@ describe('frameleaf-cloud-link (FL-155)', () => {
       cloneSuspected: false,
       notices: [{ id: 'maintenance-2026-10-01', level: 'info' }],
       pricing: { pricesVersion: '2026-09-25.1', licensedDiscountPercent: 20, effectiveFrom: '2026-09-25T00:00:00Z' },
+      observedIp: '203.0.113.7',
     });
+    // FL-167: an observed address that is not one is dropped, never failing the check-in
+    expect(heartbeatResponseSchema.parse({ observedIp: 'not-an-ip' }).observedIp).toBeNull();
     expect(commandPermission(answer.commands[0].type)).toBe('allowBackupTrigger');
     const polled = heartbeatResponseSchema.shape.commands.parse(
       cloudContractFixture('instance/commands-poll-response.json').commands,

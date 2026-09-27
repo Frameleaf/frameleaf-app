@@ -7,6 +7,7 @@ import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import { LoginResponseDto, OAuthAuthorizeResponseDto, OAuthCallbackDto, OAuthConfigDto } from 'src/dtos/auth.dto.js';
 import {
   FrameleafAccountLinkResponseDto,
+  FrameleafHandoffCreateDto,
   FrameleafHandoffRedeemDto,
   FrameleafHandoffResponseDto,
 } from 'src/dtos/frameleaf-auth.dto.js';
@@ -84,11 +85,11 @@ export class FrameleafAuthController {
     operationId: 'createFrameleafHandoff',
     summary: 'Hand a Sign in with Frameleaf session to another address',
     description:
-      'A single-use code, valid for a minute, that signs you in on another address of this server (for example your home address). Only a Sign in with Frameleaf session can be handed over.',
+      'A single-use code, valid for a minute, that signs you in on another address of this server (for example your home address). Only a Sign in with Frameleaf session can be handed over, and only to a home address this server published.',
     history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
   })
-  createHandoff(@Auth() auth: AuthDto): Promise<FrameleafHandoffResponseDto> {
-    return this.service.createHandoff(auth);
+  createHandoff(@Auth() auth: AuthDto, @Body() dto: FrameleafHandoffCreateDto): Promise<FrameleafHandoffResponseDto> {
+    return this.service.createHandoff(auth, dto);
   }
 
   @Post('handoff/redeem')

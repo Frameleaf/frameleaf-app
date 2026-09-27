@@ -728,6 +728,9 @@ export type RemoteAccessStatusResponseDto = {
     /** The two records to add at the DNS provider; empty until enrolled */
     customHostnameRecords: RemoteDnsRecordDto[];
     customHostnameStatus: (RemoteHostnameStatus) | null;
+    /** The public address direct connections reach */
+    directExternalIp: string | null;
+    directGuidance: (RemoteDirectGuidance) | null;
     directListening: boolean;
     /** External port for direct connections */
     directPort: number;
@@ -738,6 +741,10 @@ export type RemoteAccessStatusResponseDto = {
     lastTestAt: string | null;
     lastTestChecks: RemoteAccessTestCheckDto[];
     lastTestOk: boolean | null;
+    /** Why the router did not open the direct port */
+    mappingError: string | null;
+    /** How the direct port is open right now; null when it is not */
+    mappingMethod: (RemoteMappingMethod) | null;
     mode: RemoteAccessMode;
     /** The router is asked to open the direct port automatically */
     portMapping: boolean;
@@ -765,6 +772,12 @@ export type RemoteAccessStatusResponseDto = {
     status: RemoteAccessState;
     /** Why remote access cannot be turned on (not set up, not linked, no plan); null when it can */
     unavailableReason: string | null;
+    /** The direct address Frameleaf Cloud tested */
+    wanAddress: string | null;
+    /** Why Frameleaf Cloud could not reach it: unreachable, timeout, certificate or not_public */
+    wanProblem: string | null;
+    /** Frameleaf Cloud reached this server directly at wanAddress */
+    wanVerified: boolean;
 };
 export type RemoteAccessUpdateDto = {
     /** External port for direct connections */
@@ -6763,10 +6776,16 @@ export type OAuthCallbackDto = {
     /** OAuth callback URL */
     url: string;
 };
+export type FrameleafHandoffCreateDto = {
+    /** The home address to sign in on; only an address this server published for its home network */
+    returnTo?: string;
+};
 export type FrameleafHandoffResponseDto = {
     /** A single-use code for signing in on another address of this server */
     code: string;
     expiresAt: string;
+    /** Where to continue with the code: the home address asked for, when this server published it */
+    url: string | null;
 };
 export type FrameleafHandoffRedeemDto = {
     /** The code from POST oauth/frameleaf/handoff */
@@ -7634,6 +7653,8 @@ export type FrameleafPublicConfigDto = {
     sameNetwork: boolean;
     /** Whether Sign in with Frameleaf is available (the server is linked) */
     signInAvailable: boolean;
+    /** Where a visitor on a home address signs in with Frameleaf before returning (the relay address or the verified custom domain) */
+    signInOrigin: string | null;
     /** Whether this visitor arrived through remote access, where only Sign in with Frameleaf is offered */
     signInRequired: boolean;
     /** How the request arrived; null when the edge worker did not vouch for it */
@@ -16355,14 +16376,17 @@ export function finishFrameleafSignIn({ oAuthCallbackDto }: {
 /**
  * Hand a Sign in with Frameleaf session to another address
  */
-export function createFrameleafHandoff(opts?: Oazapfts.RequestOpts) {
+export function createFrameleafHandoff({ frameleafHandoffCreateDto }: {
+    frameleafHandoffCreateDto: FrameleafHandoffCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 201;
         data: FrameleafHandoffResponseDto;
-    }>("/oauth/frameleaf/handoff", {
+    }>("/oauth/frameleaf/handoff", oazapfts.json({
         ...opts,
-        method: "POST"
-    }));
+        method: "POST",
+        body: frameleafHandoffCreateDto
+    })));
 }
 /**
  * Sign in with a handoff code
@@ -20914,6 +20938,14 @@ export enum RemoteDnsRecordType {
 export enum RemoteHostnameStatus {
     Pending = "pending",
     Verified = "verified"
+}
+export enum RemoteDirectGuidance {
+    Bridge = "bridge"
+}
+export enum RemoteMappingMethod {
+    Upnp = "upnp",
+    NatPmp = "nat-pmp",
+    Manual = "manual"
 }
 export enum RemoteAccessMode {
     Relay = "relay",

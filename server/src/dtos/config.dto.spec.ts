@@ -33,6 +33,7 @@ const FRAMELEAF_PUBLIC = [
   'frameleaf.relayHost',
   'frameleaf.sameNetwork',
   'frameleaf.signInAvailable',
+  'frameleaf.signInOrigin',
   'frameleaf.signInRequired',
   'frameleaf.via',
 ];

@@ -40,6 +40,7 @@
     "email:dev": "email dev -p 3050 --dir src/emails"
   },
   "dependencies": {
+    "@achingbrain/nat-port-mapper": "4.0.5",
     "@extism/extism": "2.0.0-rc13",
     "@immich/plugin-sdk": "workspace:*",
     "@immich/sql-tools": "^0.6.3",

@@ -4,9 +4,10 @@ import { join } from 'node:path';
 import type { FrameleafLicense, FrameleafLicenseClaims, FrameleafRemoteAccess } from 'src/types.js';
 import { EdgeCertificateRepository } from 'src/edge/edge-certificate.repository.js';
 import { EdgeDirectService } from 'src/edge/edge-direct.service.js';
+import { EdgePortMappingService } from 'src/edge/edge-port-mapping.service.js';
 import { EdgeProxyService } from 'src/edge/edge-proxy.service.js';
 import { EdgeRelayService } from 'src/edge/edge-relay.service.js';
-import { EdgeStateService } from 'src/edge/edge-state.service.js';
+import { EdgeStateService, carrierGradeNat } from 'src/edge/edge-state.service.js';
 import { SystemMetadataKey } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { cloudContractFixture } from 'test/fixtures/frameleaf-cloud-contracts.js';
@@ -54,6 +55,8 @@ describe(EdgeStateService.name, () => {
   let direct: { listening: boolean; configure: any; start: any; stop: any };
   let proxy: { destroy: any };
   let relay: { configure: any; ensure: any; stop: any; status: any; state: Record<string, unknown> };
+  let portMapping: { keep: any; release: any; result: Record<string, unknown> };
+  let wanProbe: Record<string, unknown>;
   let env: { url: string | null; secret: string | null };
   let calls: Array<{ method: string; url: string; body: unknown }>;
   let lockHeld: boolean;
@@ -114,6 +117,9 @@ describe(EdgeStateService.name, () => {
       if (request.url === `${API}/v1/remote/dns/txt` && request.method === 'PUT') {
         return Promise.resolve(schema.parse(cloudContractFixture('remote/dns-txt-put-response.json')));
       }
+      if (request.url === `${API}/v1/remote/wan-probe`) {
+        return Promise.resolve(schema.parse(wanProbe));
+      }
       return Promise.resolve({});
     });
     mocks.user.getAdmins.mockResolvedValue([{ id: 'admin-1' }] as never);
@@ -146,6 +152,19 @@ describe(EdgeStateService.name, () => {
       stop: vi.fn(() => Promise.resolve()),
       status: vi.fn(() => relay.state),
     };
+    wanProbe = cloudContractFixture('remote/wan-probe-response.json');
+    portMapping = {
+      result: {
+        method: 'upnp',
+        externalPort: 2443,
+        externalIp: '203.0.113.7',
+        leaseUntil: null,
+        error: null,
+        noGateway: false,
+      },
+      keep: vi.fn(() => Promise.resolve(portMapping.result)),
+      release: vi.fn(() => Promise.resolve()),
+    };
     sut = new EdgeStateService(
       logger,
       mocks.config as never,
@@ -160,6 +179,7 @@ describe(EdgeStateService.name, () => {
       direct as unknown as EdgeDirectService,
       proxy as unknown as EdgeProxyService,
       relay as unknown as EdgeRelayService,
+      portMapping as unknown as EdgePortMappingService,
     );
     sut.wait = () => Promise.resolve();
     sut.inContainer = () => true;
@@ -258,6 +278,133 @@ describe(EdgeStateService.name, () => {
       // no key or secret is ever part of the state
       expect(JSON.stringify(state)).not.toContain('PRIVATE KEY');
       expect(JSON.stringify(state)).not.toContain(SECRET);
+    });
+
+    describe('direct connect (FL-167)', () => {
+      const WAN = 'https://203-0-113-7.u225vlzhsdlhwh4l.frameleaf.net:2443';
+      const linkWith = (observedIp: string | null) =>
+        metadata.set(SystemMetadataKey.FrameleafCloudLink, {
+          status: 'linked',
+          cloudUrl: CLOUD,
+          instanceId: INSTANCE_ID,
+          heartbeat: { failures: 0, observedIp },
+        });
+      const probes = () => calls.filter((call) => call.url === `${API}/v1/remote/wan-probe`);
+
+      beforeEach(() => {
+        issueWith(wildcard);
+        linkWith('203.0.113.7');
+        setSettings({ enabled: true, mode: 'relay-and-direct' });
+      });
+
+      it('has the router forward the direct port and publishes the WAN name only once the cloud reached it', async () => {
+        await sut.tick(now);
+        expect(portMapping.keep).toHaveBeenCalledWith({
+          internalHost: '192.168.1.10',
+          internalPort: 2443,
+          externalPort: 2443,
+          now,
+        });
+        expect(probes()).toEqual([expect.objectContaining({ method: 'POST', body: { port: 2443 } })]);
+        const state = remoteState()!;
+        expect(state.direct).toMatchObject({
+          mapping: { externalPort: 2443, method: 'upnp' },
+          externalIp: '203.0.113.7',
+          cgnatSuspected: false,
+          guidance: null,
+          wan: { verified: true, uri: WAN },
+        });
+        expect(state.candidates.find((candidate) => candidate.kind === 'wan')).toMatchObject({
+          uri: WAN,
+          verified: true,
+        });
+      });
+
+      it('publishes an unreached WAN name as unverified and asks again only after an hour', async () => {
+        wanProbe = { verified: false, uri: null, reason: 'timeout' };
+        await sut.tick(now);
+        expect(remoteState()!.candidates.find((candidate) => candidate.kind === 'wan')).toMatchObject({
+          uri: WAN,
+          verified: false,
+        });
+        await sut.tick(now + 30 * 60 * 1000);
+        expect(probes()).toHaveLength(1);
+        await sut.tick(now + 61 * 60 * 1000);
+        expect(probes()).toHaveLength(2);
+      });
+
+      it('suspects carrier-grade NAT when the router’s address is not the one the cloud sees, and uses the relay', async () => {
+        linkWith('198.51.100.20');
+        await sut.tick(now);
+        expect(remoteState()!.direct.cgnatSuspected).toBe(true);
+        expect(remoteState()!.candidates.some((candidate) => candidate.kind === 'wan')).toBe(false);
+        expect(probes()).toHaveLength(0);
+      });
+
+      it('tells a container with bridge networking what to do when no router answers', async () => {
+        portMapping.result = {
+          ...portMapping.result,
+          method: null,
+          externalPort: null,
+          externalIp: null,
+          noGateway: true,
+          error: 'No router answered UPnP or NAT-PMP.',
+        };
+        await sut.tick(now);
+        expect(remoteState()!.direct).toMatchObject({
+          mapping: null,
+          guidance: 'bridge',
+          mappingError: 'No router answered UPnP or NAT-PMP.',
+        });
+        expect(remoteState()!.candidates.some((candidate) => candidate.kind === 'wan')).toBe(false);
+        // the relay is the baseline path and is untouched
+        expect(relay.ensure).toHaveBeenCalled();
+      });
+
+      it('probes and publishes the port the router gave when it is not the one asked for', async () => {
+        portMapping.result = { ...portMapping.result, method: 'nat-pmp', externalPort: 40_000 };
+        wanProbe = { verified: true, uri: 'https://203-0-113-7.u225vlzhsdlhwh4l.frameleaf.net:40000', reason: null };
+        await sut.tick(now);
+        expect(probes()[0].body).toEqual({ port: 40_000 });
+        expect(remoteState()!.candidates.find((candidate) => candidate.kind === 'wan')).toMatchObject({
+          uri: 'https://203-0-113-7.u225vlzhsdlhwh4l.frameleaf.net:40000',
+          verified: true,
+        });
+      });
+
+      it('publishes the manual port without touching the router', async () => {
+        setSettings({ enabled: true, mode: 'relay-and-direct', portMapping: false, directPort: 8443 });
+        await sut.tick(now);
+        expect(portMapping.keep).not.toHaveBeenCalled();
+        expect(portMapping.release).toHaveBeenCalled();
+        expect(remoteState()!.direct).toMatchObject({
+          mapping: { externalPort: 8443, method: 'manual' },
+          externalIp: '203.0.113.7',
+        });
+        expect(probes()[0].body).toEqual({ port: 8443 });
+      });
+
+      it('removes the mapping when direct connections or remote access are turned off', async () => {
+        await sut.tick(now);
+        setSettings({ enabled: true, mode: 'relay' });
+        await sut.tick(now + 10_000);
+        expect(portMapping.release).toHaveBeenCalledTimes(1);
+        expect(remoteState()!.direct.mapping).toBeNull();
+        setSettings({ enabled: false, mode: 'relay-and-direct' });
+        await sut.tick(now + 20_000);
+        expect(portMapping.release).toHaveBeenCalledTimes(2);
+      });
+
+      it.each([
+        ['100.64.3.4', null, true],
+        ['192.168.0.2', null, true],
+        ['203.0.113.7', '203.0.113.7', false],
+        ['203.0.113.7', '203.0.113.8', true],
+        ['203.0.113.7', null, false],
+        [null, '203.0.113.8', false],
+      ])('carrier-grade NAT for router %s and check-in %s: %s', (router, observed, expected) => {
+        expect(carrierGradeNat(router, observed)).toBe(expected);
+      });
     });
 
     describe('relay tunnel', () => {

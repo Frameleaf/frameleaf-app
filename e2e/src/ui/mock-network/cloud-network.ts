@@ -22,6 +22,11 @@ export type RemoteMockState = {
   tested: boolean;
   /** FL-166: the relay tunnel is READY (the edge worker's report). */
   relayConnected?: boolean;
+  /** FL-167: how the direct port is open, and what the router and Frameleaf Cloud reported. */
+  mapping?: 'upnp' | 'nat-pmp' | 'manual' | null;
+  bridge?: boolean;
+  cgnat?: boolean;
+  wanVerified?: boolean;
 };
 
 const RELAY = 'https://r.u225vlzhsdlhwh4l.frameleaf.net';
@@ -63,7 +68,14 @@ export const remoteStatus = (mock: CloudMockState) => {
     relayLastErrorAt: on && !remote.relayConnected ? '2026-09-26T12:01:00.000Z' : null,
     relayRevoked: false,
     directListening: on,
-    cgnatSuspected: false,
+    cgnatSuspected: on && !!remote.cgnat,
+    mappingMethod: on ? (remote.mapping ?? null) : null,
+    mappingError: on && remote.bridge ? 'No router answered UPnP or NAT-PMP.' : null,
+    directGuidance: on && remote.bridge ? 'bridge' : null,
+    directExternalIp: on && remote.mapping ? '203.0.113.7' : null,
+    wanAddress: on && remote.wanVerified ? 'https://203-0-113-7.u225vlzhsdlhwh4l.frameleaf.net:2443' : null,
+    wanVerified: on && !!remote.wanVerified,
+    wanProblem: null,
     customHostname: host,
     customHostnameStatus: host ? remote.customHostnameStatus : null,
     customHostnameCheckedAt: host ? '2026-09-26T12:00:00.000Z' : null,

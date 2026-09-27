@@ -142,6 +142,66 @@ describe(FrameleafRemoteAccessService.name, () => {
     });
   });
 
+  describe('direct connect (FL-167)', () => {
+    const direct = (overrides: Record<string, unknown>) =>
+      edgeState({ direct: { listening: true, port: 2443, cgnatSuspected: false, ...overrides } } as never);
+
+    beforeEach(() => {
+      metadata.set(SystemMetadataKey.SystemConfig, {
+        frameleafCloud: { remoteAccess: { enabled: true, mode: 'relay-and-direct' } },
+      });
+    });
+
+    it('shows the router mapping, the public address and whether Frameleaf Cloud reached it', async () => {
+      metadata.set(
+        SystemMetadataKey.FrameleafRemoteAccess,
+        direct({
+          mapping: { externalPort: 2443, method: 'upnp' },
+          externalIp: '203.0.113.7',
+          wan: {
+            key: '203.0.113.7:2443',
+            uri: 'https://203-0-113-7.u225vlzhsdlhwh4l.frameleaf.net:2443',
+            verified: true,
+            reason: null,
+            checkedAt: new Date().toISOString(),
+          },
+        }),
+      );
+      await expect(sut.getStatus()).resolves.toMatchObject({
+        mappingMethod: 'upnp',
+        directExternalIp: '203.0.113.7',
+        wanAddress: 'https://203-0-113-7.u225vlzhsdlhwh4l.frameleaf.net:2443',
+        wanVerified: true,
+        wanProblem: null,
+        directGuidance: null,
+      });
+    });
+
+    it('explains bridge networking and CGNAT in the connection test', async () => {
+      vi.spyOn(sut as unknown as { probeEdge: () => Promise<unknown> }, 'probeEdge').mockResolvedValue({
+        ok: true,
+        detail: 'ok',
+      });
+      metadata.set(
+        SystemMetadataKey.FrameleafRemoteAccess,
+        direct({ mapping: null, guidance: 'bridge', mappingError: 'No router answered UPnP or NAT-PMP.' }),
+      );
+      const bridged = await sut.test(authStub.admin);
+      expect(bridged.directGuidance).toBe('bridge');
+      expect(bridged.lastTestChecks.find((check) => check.id === 'direct')).toMatchObject({
+        ok: false,
+        detail: expect.stringContaining('host networking'),
+      });
+
+      metadata.set(SystemMetadataKey.FrameleafRemoteAccess, direct({ cgnatSuspected: true }));
+      const shared = await sut.test(authStub.admin);
+      expect(shared.cgnatSuspected).toBe(true);
+      expect(shared.lastTestChecks.find((check) => check.id === 'direct')?.detail).toContain(
+        'The relay is used instead',
+      );
+    });
+  });
+
   describe('update', () => {
     it('turns remote access on only on a linked, entitled server, and keeps the link in step', async () => {
       metadata.set(SystemMetadataKey.FrameleafLicense, { key: null, plan: license(['CLOUD']) });

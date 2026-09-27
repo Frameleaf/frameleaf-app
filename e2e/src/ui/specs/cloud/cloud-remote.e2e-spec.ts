@@ -6,7 +6,8 @@ import { CloudMockState, setupCloudMockApiRoutes } from 'src/ui/mock-network/clo
 /**
  * Settings → Frameleaf Cloud → Remote access (FL-165) against a mocked server: why it cannot be turned
  * on, turning it on with the public address, the custom hostname from its records to verified and
- * "Use my domain", the connection test, direct connections, and the relay status panel (FL-166).
+ * "Use my domain", the connection test, direct connections, the relay status panel (FL-166) and
+ * router mapping states (FL-167).
  */
 const remotePage = '/user-settings?area=cloud&section=cloud-remote';
 
@@ -127,5 +128,23 @@ test.describe('Frameleaf Cloud remote access', () => {
     await expect(page.getByText('Link this server to a Frameleaf account first.').first()).toBeVisible();
     await expect(page.getByRole('meter', { name: 'Relay use this month' })).toHaveCount(0);
     expect(mock.requests.some(({ path }) => path === 'admin/cloud/remote/usage')).toBe(false);
+  });
+
+  test('shows the router mapping states (FL-167)', async ({ page }) => {
+    mock.remote = { ...defaults(), enabled: true, mode: 'relay-and-direct', mapping: 'upnp', wanVerified: true };
+    await page.goto(remotePage);
+    await expect(page.getByText('UPnP', { exact: true })).toBeVisible();
+    await expect(page.getByText('203.0.113.7')).toBeVisible();
+    await expect(
+      page.getByText('Reachable from the internet at 203-0-113-7.u225vlzhsdlhwh4l.frameleaf.net:2443'),
+    ).toBeVisible();
+
+    mock.remote = { ...defaults(), enabled: true, mode: 'relay-and-direct', bridge: true };
+    await page.reload();
+    await expect(page.getByText('The router can’t be reached from this container')).toBeVisible();
+
+    mock.remote = { ...defaults(), enabled: true, mode: 'relay-and-direct', cgnat: true };
+    await page.reload();
+    await expect(page.getByText('Your internet provider shares one public address')).toBeVisible();
   });
 });

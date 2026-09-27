@@ -49,7 +49,13 @@ import {
 import { SYSTEM_CONFIG_CHANGED_MESSAGE, clearConfigCache, getConfigRevision } from 'src/utils/config.js';
 import { readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
 import { remoteAccessUnavailable, verifiedCustomHost } from 'src/utils/frameleaf-remote-access.js';
-import { type FrameleafVia, isHomeAddress, isRemoteVia, signInClient } from 'src/utils/frameleaf-sign-in.js';
+import {
+  type FrameleafVia,
+  httpsOrigin,
+  isHomeAddress,
+  isRemoteVia,
+  signInClient,
+} from 'src/utils/frameleaf-sign-in.js';
 import { isImageDescriptionEnabled } from 'src/utils/misc.js';
 import { resolveEndpoint } from 'src/utils/ml-destination.js';
 import { toPlainObject } from 'src/utils/object.js';
@@ -181,6 +187,19 @@ export class SystemConfigService extends BaseService {
       relayHost = null;
     }
     const sameNetwork = remote && !!env.localUrl && isHomeAddress(arrival?.clientIp, env.trustedLanCidrs);
+    // FL-167: on a home address (not a registered sign-in address) Sign in with Frameleaf goes through
+    // the public address and hands the session back: offered only while the relay answers there and
+    // this server published home addresses to come back to
+    let signInOrigin: string | null = null;
+    if (via === 'lan' && linked) {
+      const publication = await remoteAccessPublication(config.frameleafCloud.remoteAccess, {
+        configRepository: this.configRepository,
+        systemMetadataRepository: this.systemMetadataRepository,
+      });
+      const relayUp = publication.connections.some((connection) => connection.relay);
+      const homeNames = publication.connections.some((connection) => connection.kind === 'local');
+      signInOrigin = relayUp && homeNames ? httpsOrigin(publication.publicUrl) : null;
+    }
     return mapPublicConfig(config, {
       signInAvailable: !!signInClient(link, linked),
       signInRequired,
@@ -189,6 +208,7 @@ export class SystemConfigService extends BaseService {
       // the home address is told only to a visitor who is already on the home network
       localUrl: sameNetwork ? env.localUrl : null,
       sameNetwork,
+      signInOrigin: signInOrigin ?? null,
     });
   }
 

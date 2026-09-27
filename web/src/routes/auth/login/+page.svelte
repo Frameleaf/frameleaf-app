@@ -21,13 +21,21 @@
     setOAuthContinue,
     setRememberMePreference,
   } from '$lib/frameleaf/auth-session-preference';
-  import { startFrameleaf, takeFrameleafCallback } from '$lib/frameleaf/frameleaf-sign-in';
+  import {
+    REMEMBER_PARAM,
+    bounceReturn,
+    bounceUrl,
+    handBack,
+    startFrameleaf,
+    takeFrameleafCallbackRequest,
+    takeHandoffCode,
+  } from '$lib/frameleaf/frameleaf-sign-in';
   import { eventManager } from '$lib/managers/event-manager.svelte';
   import { serverConfigManager } from '$lib/managers/server-config-manager.svelte';
   import { Route } from '$lib/route';
   import { oauth } from '$lib/utils';
   import { getServerErrorMessage, handleError } from '$lib/utils/handle-error';
-  import { finishFrameleafSignIn, login, type LoginResponseDto } from '@immich/sdk';
+  import { finishFrameleafSignIn, login, redeemFrameleafHandoff, type LoginResponseDto } from '@immich/sdk';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
   import type { PageData } from './$types';
@@ -84,15 +92,48 @@
   };
 
   onMount(async () => {
-    const frameleafCallback = oauth.isCallback(location) ? takeFrameleafCallback(location.href) : null;
+    const frameleafRequest = oauth.isCallback(location) ? takeFrameleafCallbackRequest(location.href) : null;
+    const frameleafCallback = frameleafRequest?.purpose ?? null;
     if (oauth.isCallback(location)) {
       // FL-80: a callback that lands in another tab takes the choices its sign-in started with
       restoreOAuthRequest(location.href);
     }
     rememberMe = rememberMePreference();
+
+    // FL-167: back on the home address with a code from the public address's sign-in
+    const handoff = takeHandoffCode(location);
+    if (handoff) {
+      try {
+        await finishUser(await redeemFrameleafHandoff({ frameleafHandoffRedeemDto: { code: handoff, rememberMe } }));
+        return;
+      } catch (error) {
+        frameleafError = getServerErrorMessage(error) || $t('frameleaf_auth_frameleaf_failed');
+        oauthLoading = false;
+        return;
+      }
+    }
+
+    // FL-167: sent here from a home address to sign in with Frameleaf, then to go back there
+    const bounce = bounceReturn(location);
+    if (bounce && frameleaf.signInAvailable && !oauth.isCallback(location)) {
+      rememberMe = new URLSearchParams(location.search).get(REMEMBER_PARAM) !== '0';
+      await startFrameleafFrom(bounce);
+      oauthLoading = false;
+      return;
+    }
+
     if (frameleafCallback === 'sign-in') {
       try {
-        await finishUser(await finishFrameleafSignIn({ oAuthCallbackDto: { url: location.href, rememberMe } }));
+        const user = await finishFrameleafSignIn({ oAuthCallbackDto: { url: location.href, rememberMe } });
+        if (frameleafRequest?.bounce) {
+          try {
+            await handBack(frameleafRequest.bounce);
+            return;
+          } catch {
+            // the home address is not published any more: stay signed in here
+          }
+        }
+        await finishUser(user);
         return;
       } catch (error) {
         clearOAuthContinue();
@@ -206,7 +247,7 @@
     }
   };
 
-  const handleFrameleafLogin = async () => {
+  const startFrameleafFrom = async (bounce?: { returnTo: string; nonce: string }) => {
     frameleafLoading = true;
     frameleafError = '';
     if (!setRememberMePreference(rememberMe) || !setOAuthContinue(data.continueUrl)) {
@@ -215,12 +256,23 @@
       return;
     }
     try {
-      await startFrameleaf('sign-in', location);
+      await startFrameleaf('sign-in', location, bounce);
     } catch (error) {
       clearOAuthContinue();
       frameleafLoading = false;
       frameleafError = getServerErrorMessage(error) || $t('frameleaf_auth_frameleaf_failed');
     }
+  };
+
+  // FL-167: a home address is not a registered sign-in address: sign in on the public one, then come back
+  const handleFrameleafLogin = async () => {
+    const signInOrigin = frameleaf.signInOrigin;
+    if (signInOrigin && new URL(signInOrigin).origin !== location.origin) {
+      frameleafLoading = true;
+      location.assign(bounceUrl(signInOrigin, location, rememberMe));
+      return;
+    }
+    await startFrameleafFrom();
   };
 
   const continueAtHome = () => {

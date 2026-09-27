@@ -22359,9 +22359,19 @@
     },
     "/oauth/frameleaf/handoff": {
       "post": {
-        "description": "A single-use code, valid for a minute, that signs you in on another address of this server (for example your home address). Only a Sign in with Frameleaf session can be handed over.",
+        "description": "A single-use code, valid for a minute, that signs you in on another address of this server (for example your home address). Only a Sign in with Frameleaf session can be handed over, and only to a home address this server published.",
         "operationId": "createFrameleafHandoff",
         "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FrameleafHandoffCreateDto"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "201": {
             "content": {
@@ -57449,6 +57459,16 @@
         ],
         "type": "object"
       },
+      "FrameleafHandoffCreateDto": {
+        "properties": {
+          "returnTo": {
+            "description": "The home address to sign in on; only an address this server published for its home network",
+            "maxLength": 2048,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "FrameleafHandoffRedeemDto": {
         "properties": {
           "code": {
@@ -57474,11 +57494,17 @@
           },
           "expiresAt": {
             "type": "string"
+          },
+          "url": {
+            "description": "Where to continue with the code: the home address asked for, when this server published it",
+            "nullable": true,
+            "type": "string"
           }
         },
         "required": [
           "code",
-          "expiresAt"
+          "expiresAt",
+          "url"
         ],
         "type": "object"
       },
@@ -57502,6 +57528,11 @@
             "description": "Whether Sign in with Frameleaf is available (the server is linked)",
             "type": "boolean"
           },
+          "signInOrigin": {
+            "description": "Where a visitor on a home address signs in with Frameleaf before returning (the relay address or the verified custom domain)",
+            "nullable": true,
+            "type": "string"
+          },
           "signInRequired": {
             "description": "Whether this visitor arrived through remote access, where only Sign in with Frameleaf is offered",
             "type": "boolean"
@@ -57521,6 +57552,7 @@
           "relayHost",
           "sameNetwork",
           "signInAvailable",
+          "signInOrigin",
           "signInRequired",
           "via"
         ],
@@ -71022,6 +71054,19 @@
             ],
             "nullable": true
           },
+          "directExternalIp": {
+            "description": "The public address direct connections reach",
+            "nullable": true,
+            "type": "string"
+          },
+          "directGuidance": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RemoteDirectGuidance"
+              }
+            ],
+            "nullable": true
+          },
           "directListening": {
             "type": "boolean"
           },
@@ -71053,6 +71098,20 @@
           "lastTestOk": {
             "nullable": true,
             "type": "boolean"
+          },
+          "mappingError": {
+            "description": "Why the router did not open the direct port",
+            "nullable": true,
+            "type": "string"
+          },
+          "mappingMethod": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RemoteMappingMethod"
+              }
+            ],
+            "description": "How the direct port is open right now; null when it is not",
+            "nullable": true
           },
           "mode": {
             "$ref": "#/components/schemas/RemoteAccessMode"
@@ -71126,6 +71185,20 @@
             "description": "Why remote access cannot be turned on (not set up, not linked, no plan); null when it can",
             "nullable": true,
             "type": "string"
+          },
+          "wanAddress": {
+            "description": "The direct address Frameleaf Cloud tested",
+            "nullable": true,
+            "type": "string"
+          },
+          "wanProblem": {
+            "description": "Why Frameleaf Cloud could not reach it: unreachable, timeout, certificate or not_public",
+            "nullable": true,
+            "type": "string"
+          },
+          "wanVerified": {
+            "description": "Frameleaf Cloud reached this server directly at wanAddress",
+            "type": "boolean"
           }
         },
         "required": [
@@ -71139,6 +71212,8 @@
           "customHostnameProblem",
           "customHostnameRecords",
           "customHostnameStatus",
+          "directExternalIp",
+          "directGuidance",
           "directListening",
           "directPort",
           "enabled",
@@ -71146,6 +71221,8 @@
           "lastTestAt",
           "lastTestChecks",
           "lastTestOk",
+          "mappingError",
+          "mappingMethod",
           "mode",
           "portMapping",
           "publicUrl",
@@ -71161,7 +71238,10 @@
           "relayRegion",
           "relayRevoked",
           "status",
-          "unavailableReason"
+          "unavailableReason",
+          "wanAddress",
+          "wanProblem",
+          "wanVerified"
         ],
         "type": "object"
       },
@@ -71371,6 +71451,13 @@
         ],
         "type": "object"
       },
+      "RemoteDirectGuidance": {
+        "description": "bridge: running in a container whose network cannot reach the router",
+        "enum": [
+          "bridge"
+        ],
+        "type": "string"
+      },
       "RemoteDnsRecordDto": {
         "properties": {
           "name": {
@@ -71422,6 +71509,15 @@
           "hostname"
         ],
         "type": "object"
+      },
+      "RemoteMappingMethod": {
+        "description": "How the direct port is opened: by the router (UPnP, NAT-PMP) or forwarded by hand",
+        "enum": [
+          "upnp",
+          "nat-pmp",
+          "manual"
+        ],
+        "type": "string"
       },
       "RenderWorkerAdmissionDto": {
         "properties": {
