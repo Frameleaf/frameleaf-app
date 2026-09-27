@@ -63,6 +63,8 @@ export type MemoryCurationRow = {
 
 const hasItems = (values?: string[]): values is string[] => !!values && values.length > 0;
 
+const isUuid = (id: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+
 /**
  * FL-62: which of a memory's items any read of it may return: the viewer's hidden-content filter,
  * never a photo of a person or pet the owner hid, and never one of a person or pet the owner asked to
@@ -107,6 +109,27 @@ const withMemoryAssetFilters = <O>(
             .where('pet.isHidden', 'is', true),
         ),
       ),
+    )
+    // FL-57: a birthday or recap shows only the photos that still show its person or pet, so a face
+    // moved to someone else leaves it and comes back when the move is undone. Other memories are
+    // untouched. Literals keep the parameter list unchanged.
+    .where(
+      sql<boolean>`(
+        "memory"."type" not in (${sql.lit(MemoryType.Birthday)}, ${sql.lit(MemoryType.PersonRecap)})
+        or ("memory"."data"->>'subject' = ${sql.lit('person')} and exists (
+          select from "asset_face"
+          where "asset_face"."assetId" = "asset"."id"
+            and "asset_face"."deletedAt" is null
+            and "asset_face"."isVisible" = true
+            and "asset_face"."personGroupId"::text = "memory"."data"->>'subjectId'
+        ))
+        or ("memory"."data"->>'subject' = ${sql.lit('pet')} and exists (
+          select from "pet_observation"
+          where "pet_observation"."assetId" = "asset"."id"
+            and "pet_observation"."state" = ${sql.lit(PetObservationState.Confirmed)}
+            and "pet_observation"."petId"::text = "memory"."data"->>'subjectId'
+        ))
+      )`,
     )
     // FL-62: people and pets the owner asked to see less of leave every memory's photos.
     .$if(hasItems(options.excludePersonIds), (qb) =>
@@ -421,7 +444,8 @@ export class MemoryRepository implements IBulkAsset {
   }
 
   /** The owner's pets a set of pet stories name, as they are now. */
-  getStoryPets(ownerId: string, petIds: string[]) {
+  getStoryPets(ownerId: string, ids: string[]) {
+    const petIds = ids.filter((id) => isUuid(id));
     if (petIds.length === 0) {
       return Promise.resolve([]);
     }
@@ -430,6 +454,20 @@ export class MemoryRepository implements IBulkAsset {
       .select(['pet.id', 'pet.name', 'pet.species', 'pet.isHidden'])
       .where('pet.ownerId', '=', ownerId)
       .where('pet.id', 'in', petIds)
+      .execute();
+  }
+
+  /** FL-57: the owner's people a set of birthdays and recaps name, as they are now. */
+  getStoryPeople(ownerId: string, ids: string[]) {
+    const personGroupIds = ids.filter((id) => isUuid(id));
+    if (personGroupIds.length === 0) {
+      return Promise.resolve([]);
+    }
+    return this.db
+      .selectFrom('person')
+      .select(['person.personGroupId as id', 'person.name', 'person.isHidden'])
+      .where('person.ownerId', '=', ownerId)
+      .where('person.personGroupId', 'in', personGroupIds)
       .execute();
   }
 
@@ -832,7 +870,7 @@ export class MemoryRepository implements IBulkAsset {
 
   /** FL-62: names of the owner's own people or pets among these ids; another owner's never match. */
   async getOwnSubjectNames(ownerId: string, subject: 'person' | 'pet', ids: string[]): Promise<Map<string, string>> {
-    const valid = ids.filter((id) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id));
+    const valid = ids.filter((id) => isUuid(id));
     if (valid.length === 0) {
       return new Map();
     }

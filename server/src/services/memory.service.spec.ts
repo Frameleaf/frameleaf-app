@@ -154,11 +154,13 @@ describe(MemoryService.name, () => {
       it('does not count a story about a suppressed or deleted pet in the statistics', async () => {
         const [userId, suppressedId, deletedId, shownId] = newUuids();
         mocks.memory.statistics.mockResolvedValue({ total: 5 });
-        mocks.memory.search.mockResolvedValue([
-          petStory(userId, suppressedId),
-          petStory(userId, deletedId),
-          petStory(userId, shownId),
-        ]);
+        mocks.memory.search.mockImplementation((_, dto) =>
+          Promise.resolve(
+            dto.type === MemoryType.PetStory
+              ? [petStory(userId, suppressedId), petStory(userId, deletedId), petStory(userId, shownId)]
+              : [],
+          ),
+        );
         mocks.memory.getStoryPets.mockResolvedValue([
           { id: suppressedId, name: 'Secret', species: PetSpecies.Cat, isHidden: false },
           { id: shownId, name: 'Biscuit', species: PetSpecies.Cat, isHidden: false },

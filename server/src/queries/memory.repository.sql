@@ -260,6 +260,34 @@ select
               and "pet_observation"."state" = 'confirmed'
               and "pet"."isHidden" is true
           )
+        and (
+          "memory"."type" not in ('birthday', 'person_recap')
+          or (
+            "memory"."data" ->> 'subject' = 'person'
+            and exists (
+              select
+              from
+                "asset_face"
+              where
+                "asset_face"."assetId" = "asset"."id"
+                and "asset_face"."deletedAt" is null
+                and "asset_face"."isVisible" = true
+                and "asset_face"."personGroupId"::text = "memory"."data" ->> 'subjectId'
+            )
+          )
+          or (
+            "memory"."data" ->> 'subject' = 'pet'
+            and exists (
+              select
+              from
+                "pet_observation"
+              where
+                "pet_observation"."assetId" = "asset"."id"
+                and "pet_observation"."state" = 'confirmed'
+                and "pet_observation"."petId"::text = "memory"."data" ->> 'subjectId'
+            )
+          )
+        )
         order by
           "asset"."fileCreatedAt" asc
       ) as agg
@@ -436,6 +464,34 @@ select
               and "pet_observation"."state" = 'confirmed'
               and "pet"."isHidden" is true
           )
+        and (
+          "memory"."type" not in ('birthday', 'person_recap')
+          or (
+            "memory"."data" ->> 'subject' = 'person'
+            and exists (
+              select
+              from
+                "asset_face"
+              where
+                "asset_face"."assetId" = "asset"."id"
+                and "asset_face"."deletedAt" is null
+                and "asset_face"."isVisible" = true
+                and "asset_face"."personGroupId"::text = "memory"."data" ->> 'subjectId'
+            )
+          )
+          or (
+            "memory"."data" ->> 'subject' = 'pet'
+            and exists (
+              select
+              from
+                "pet_observation"
+              where
+                "pet_observation"."assetId" = "asset"."id"
+                and "pet_observation"."state" = 'confirmed'
+                and "pet_observation"."petId"::text = "memory"."data" ->> 'subjectId'
+            )
+          )
+        )
         order by
           "asset"."fileCreatedAt" asc
       ) as agg
@@ -620,6 +676,34 @@ select
               and "pet_observation"."state" = 'confirmed'
               and "pet"."isHidden" is true
           )
+        and (
+          "memory"."type" not in ('birthday', 'person_recap')
+          or (
+            "memory"."data" ->> 'subject' = 'person'
+            and exists (
+              select
+              from
+                "asset_face"
+              where
+                "asset_face"."assetId" = "asset"."id"
+                and "asset_face"."deletedAt" is null
+                and "asset_face"."isVisible" = true
+                and "asset_face"."personGroupId"::text = "memory"."data" ->> 'subjectId'
+            )
+          )
+          or (
+            "memory"."data" ->> 'subject' = 'pet'
+            and exists (
+              select
+              from
+                "pet_observation"
+              where
+                "pet_observation"."assetId" = "asset"."id"
+                and "pet_observation"."state" = 'confirmed'
+                and "pet_observation"."petId"::text = "memory"."data" ->> 'subjectId'
+            )
+          )
+        )
         order by
           "asset"."fileCreatedAt" asc
       ) as agg
@@ -797,6 +881,34 @@ select
               and "pet_observation"."state" = 'confirmed'
               and "pet"."isHidden" is true
           )
+        and (
+          "memory"."type" not in ('birthday', 'person_recap')
+          or (
+            "memory"."data" ->> 'subject' = 'person'
+            and exists (
+              select
+              from
+                "asset_face"
+              where
+                "asset_face"."assetId" = "asset"."id"
+                and "asset_face"."deletedAt" is null
+                and "asset_face"."isVisible" = true
+                and "asset_face"."personGroupId"::text = "memory"."data" ->> 'subjectId'
+            )
+          )
+          or (
+            "memory"."data" ->> 'subject' = 'pet'
+            and exists (
+              select
+              from
+                "pet_observation"
+              where
+                "pet_observation"."assetId" = "asset"."id"
+                and "pet_observation"."state" = 'confirmed'
+                and "pet_observation"."petId"::text = "memory"."data" ->> 'subjectId'
+            )
+          )
+        )
         order by
           "asset"."fileCreatedAt" asc
       ) as agg
@@ -978,6 +1090,34 @@ select
               and "pet_observation"."state" = 'confirmed'
               and "pet"."isHidden" is true
           )
+        and (
+          "memory"."type" not in ('birthday', 'person_recap')
+          or (
+            "memory"."data" ->> 'subject' = 'person'
+            and exists (
+              select
+              from
+                "asset_face"
+              where
+                "asset_face"."assetId" = "asset"."id"
+                and "asset_face"."deletedAt" is null
+                and "asset_face"."isVisible" = true
+                and "asset_face"."personGroupId"::text = "memory"."data" ->> 'subjectId'
+            )
+          )
+          or (
+            "memory"."data" ->> 'subject' = 'pet'
+            and exists (
+              select
+              from
+                "pet_observation"
+              where
+                "pet_observation"."assetId" = "asset"."id"
+                and "pet_observation"."state" = 'confirmed'
+                and "pet_observation"."petId"::text = "memory"."data" ->> 'subjectId'
+            )
+          )
+        )
         order by
           "asset"."fileCreatedAt" asc
       ) as agg
@@ -1157,6 +1297,34 @@ select
               and "pet_observation"."state" = 'confirmed'
               and "pet"."isHidden" is true
           )
+        and (
+          "memory"."type" not in ('birthday', 'person_recap')
+          or (
+            "memory"."data" ->> 'subject' = 'person'
+            and exists (
+              select
+              from
+                "asset_face"
+              where
+                "asset_face"."assetId" = "asset"."id"
+                and "asset_face"."deletedAt" is null
+                and "asset_face"."isVisible" = true
+                and "asset_face"."personGroupId"::text = "memory"."data" ->> 'subjectId'
+            )
+          )
+          or (
+            "memory"."data" ->> 'subject' = 'pet'
+            and exists (
+              select
+              from
+                "pet_observation"
+              where
+                "pet_observation"."assetId" = "asset"."id"
+                and "pet_observation"."state" = 'confirmed'
+                and "pet_observation"."petId"::text = "memory"."data" ->> 'subjectId'
+            )
+          )
+        )
         order by
           "asset"."fileCreatedAt" asc
       ) as agg
