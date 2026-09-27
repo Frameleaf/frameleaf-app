@@ -1,0 +1,175 @@
+# Pre-release integration image for the Frameleaf Cloud cross-repository e2e.
+#
+# Builds the server image (API, microservices and the edge worker) from the tip of
+# master/frameleaf-implementation with the same Dockerfile, target, build arguments and native
+# per-architecture runners as Deploy (docker.yml -> local-multi-runner-build.yml), and pushes it
+# to ghcr.io/frameleaf/frameleaf-server under integration-<sha> tags only. It never writes the
+# release pipeline's tags (latest, release, edge, frameleaf-v*, commit-*) or its build cache,
+# and it is not a release: nothing promotes, qualifies or advertises this image.
+name: Integration Image
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: frameleaf-integration-image-${{ github.sha }}
+  cancel-in-progress: false
+
+permissions: {}
+
+env:
+  IMAGE: ghcr.io/frameleaf/frameleaf-server
+
+jobs:
+  guard:
+    name: Refuse anything but master/frameleaf-implementation
+    runs-on: ubuntu-24.04
+    permissions: {}
+    steps:
+      - name: Require the Frameleaf repository, the integration branch and a manual dispatch
+        env:
+          REPOSITORY: ${{ github.repository }}
+          REF: ${{ github.ref }}
+          EVENT: ${{ github.event_name }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$REPOSITORY" == Frameleaf/frameleaf-app ]] || { echo "::error::Wrong repository: $REPOSITORY"; exit 1; }
+          [[ "$REF" == refs/heads/master/frameleaf-implementation ]] || { echo "::error::Integration images build only from master/frameleaf-implementation, not $REF"; exit 1; }
+          [[ "$EVENT" == workflow_dispatch ]] || { echo "::error::Manual dispatch only, not $EVENT"; exit 1; }
+          [[ "$SHA" =~ ^[a-f0-9]{40}$ ]] || { echo "::error::Invalid source SHA"; exit 1; }
+
+  build:
+    name: Build ${{ matrix.platform }}
+    needs: guard
+    if: github.repository == 'Frameleaf/frameleaf-app' && github.ref == 'refs/heads/master/frameleaf-implementation' && github.event_name == 'workflow_dispatch'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: true
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+        include:
+          - runner: ubuntu-24.04
+            platform: linux/amd64
+            architecture: amd64
+            cache: linux-amd64-cpu-prod
+          - runner: ubuntu-24.04-arm
+            platform: linux/arm64
+            architecture: arm64
+            cache: linux-arm64-cpu-prod
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+      - uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Build the server image by digest
+        id: build
+        uses: docker/build-push-action@d08e5c354a6adb9ed34480a06d141179aa583294 # v7.0.0
+        with:
+          context: .
+          file: server/Dockerfile
+          target: prod
+          platforms: ${{ matrix.platform }}
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          provenance: mode=min
+          sbom: true
+          labels: |
+            org.opencontainers.image.source=https://github.com/Frameleaf/frameleaf-app
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=integration-${{ github.sha }}
+            org.opencontainers.image.description=Pre-release integration build, not a release
+            org.frameleaf.build.variant=cpu
+            org.frameleaf.build.channel=integration
+          # Read the Deploy build cache; never write it.
+          cache-from: type=registry,ref=ghcr.io/frameleaf/frameleaf-server-build-cache:${{ matrix.cache }}
+          secrets: |
+            mise_github_token=${{ github.token }}
+          build-args: |
+            DEVICE=cpu
+            BUILD_ID=${{ github.run_id }}
+            BUILD_IMAGE=integration-${{ github.sha }}
+            BUILD_SOURCE_REF=${{ github.ref_name }}
+            BUILD_SOURCE_COMMIT=${{ github.sha }}
+            BUILD_SOURCE_REPOSITORY=${{ github.repository }}
+            BUILD_IMAGE_NAME=frameleaf-server
+      - name: Record the platform digest
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          ARCHITECTURE: ${{ matrix.architecture }}
+        run: |
+          set -euo pipefail
+          [[ "$DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]] || { echo "::error::Invalid digest"; exit 1; }
+          mkdir -p "$RUNNER_TEMP/digests"
+          printf '%s\n' "$DIGEST" > "$RUNNER_TEMP/digests/$ARCHITECTURE"
+      - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: integration-digest-${{ matrix.architecture }}
+          path: ${{ runner.temp }}/digests/${{ matrix.architecture }}
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Tag integration-<sha>
+    needs: build
+    if: github.repository == 'Frameleaf/frameleaf-app' && github.ref == 'refs/heads/master/frameleaf-implementation' && github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      digest: ${{ steps.manifest.outputs.digest }}
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          path: ${{ runner.temp }}/digests
+          pattern: integration-digest-*
+          merge-multiple: true
+      - uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+      - uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Publish the multi-architecture manifest under integration tags only
+        id: manifest
+        env:
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$SHA" =~ ^[a-f0-9]{40}$ ]] || { echo "::error::Invalid source SHA"; exit 1; }
+          sources=()
+          for architecture in amd64 arm64; do
+            digest="$(cat "$RUNNER_TEMP/digests/$architecture")"
+            [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]] || { echo "::error::Invalid $architecture digest"; exit 1; }
+            sources+=("${IMAGE}@${digest}")
+          done
+          full="integration-${SHA}"
+          short="integration-${SHA:0:12}"
+          docker buildx imagetools create \
+            --tag "${IMAGE}:${full}" \
+            --tag "${IMAGE}:${short}" \
+            --annotation "index:org.opencontainers.image.source=https://github.com/Frameleaf/frameleaf-app" \
+            --annotation "index:org.opencontainers.image.revision=${SHA}" \
+            --annotation "index:org.opencontainers.image.version=${full}" \
+            --annotation "index:org.opencontainers.image.description=Pre-release integration build, not a release" \
+            "${sources[@]}"
+          digest="$(docker buildx imagetools inspect "${IMAGE}:${full}" --format '{{json .Manifest}}' | jq -r .digest)"
+          [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]] || { echo "::error::Could not read the published digest"; exit 1; }
+          echo "digest=${digest}" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Pre-release integration image (not a release)"
+            echo
+            echo "- \`${IMAGE}:${full}\`"
+            echo "- \`${IMAGE}:${short}\`"
+            echo "- \`${IMAGE}@${digest}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
