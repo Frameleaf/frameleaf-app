@@ -1,5 +1,5 @@
 import { AssetVisibility, type TimeBucketAssetResponseDto } from '@immich/sdk';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import LibraryTimeline from '$lib/components/frameleaf/LibraryTimeline.svelte';

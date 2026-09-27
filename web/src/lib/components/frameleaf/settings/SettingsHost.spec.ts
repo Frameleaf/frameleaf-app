@@ -183,7 +183,7 @@ describe('the Command Center (FL-71)', () => {
     // The section's own icon and the chevron; no area icon repeated on every row.
     for (const row of within(directory).getAllByRole('button')) {
       expect(row.querySelectorAll('svg')).toHaveLength(2);
-      expect(row.querySelector('.row-icon path')).toHaveAttribute('d', ICON);
+      expect(row.querySelector(':scope .row-icon path')).toHaveAttribute('d', ICON);
     }
     // Every row is a server setting, like the area, so none carries a scope tag.
     expect(directory.querySelector('.cc-directory-scope')).toBeNull();

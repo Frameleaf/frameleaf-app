@@ -43,7 +43,7 @@
   const candidates = $derived(
     users
       .filter((user) => !user.isAdmin && !user.deletedAt && spenders.every((entry) => entry.userId !== user.id))
-      .toSorted((a, b) => a.name.localeCompare(b.name)),
+      .sort((a, b) => a.name.localeCompare(b.name)),
   );
 
   const nameOf = (userId: string) => {

@@ -48,7 +48,7 @@ const prose = (source: string) =>
     .replaceAll(/https?:\/\/\S+/g, '');
 
 /** The documentation FL-168 covers: Frameleaf Cloud, its settings, workers, remote access and FAQ. */
-export const CLOUD_DOCUMENTS = [
+const CLOUD_DOCUMENTS = [
   'docs/docs/administration/frameleaf-cloud.md',
   'docs/docs/administration/system-settings.md',
   'docs/docs/administration/workers-and-endpoints.md',
@@ -74,7 +74,7 @@ describe('customer-facing copy (FL-168 naming rule)', () => {
   it('keeps i18n/en.json sorted', () => {
     const check = (value: Record<string, unknown>, path: string) => {
       const keys = Object.keys(value);
-      expect(keys, path || 'top level').toEqual(keys.toSorted());
+      expect(keys, path || 'top level').toEqual([...keys].sort());
       for (const [key, entry] of Object.entries(value)) {
         if (entry && typeof entry === 'object') {
           check(entry as Record<string, unknown>, `${path}${key}.`);

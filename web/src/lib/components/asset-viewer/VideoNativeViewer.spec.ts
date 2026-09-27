@@ -236,9 +236,11 @@ describe('VideoNativeViewer component', () => {
 
   describe('the library session playhead (FL-31)', () => {
     const loaded = (video: HTMLVideoElement, { duration = 120, currentTime = 0, ended = false } = {}) => {
-      Object.defineProperty(video, 'duration', { configurable: true, value: duration });
-      Object.defineProperty(video, 'readyState', { configurable: true, value: 1 });
-      Object.defineProperty(video, 'ended', { configurable: true, value: ended });
+      Object.defineProperties(video, {
+        duration: { configurable: true, value: duration },
+        readyState: { configurable: true, value: 1 },
+        ended: { configurable: true, value: ended },
+      });
       video.currentTime = currentTime;
     };
 

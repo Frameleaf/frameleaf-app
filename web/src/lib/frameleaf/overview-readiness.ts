@@ -56,6 +56,9 @@ export type CloudGlanceLink = 'linked' | 'pending' | 'unlinked';
 /** Its plan part: the plan when there is one, else a supporter key, else none. */
 export type CloudGlancePlan = 'none' | 'supporter' | 'active' | 'grace' | 'expired' | 'invalid';
 
+/** Plans the Overview flags for the administrator's attention. */
+const ATTENTION_PLANS: ReadonlySet<CloudGlancePlan> = new Set(['grace', 'expired', 'invalid']);
+
 export type CloudGlance =
   | { configured: false; attention: false }
   | { configured: true; link: CloudGlanceLink; remote: boolean; plan: CloudGlancePlan; attention: boolean };
@@ -80,9 +83,7 @@ export const cloudGlance = (
         ? 'pending'
         : 'unlinked';
   let plan: CloudGlancePlan;
-  if (!license?.plan) {
-    plan = license?.entitlements?.supporter ? 'supporter' : 'none';
-  } else {
+  if (license?.plan) {
     switch (license.state) {
       case LicenseState.Active: {
         plan = 'active';
@@ -104,13 +105,15 @@ export const cloudGlance = (
         plan = 'none';
       }
     }
+  } else {
+    plan = license?.entitlements?.supporter ? 'supporter' : 'none';
   }
   return {
     configured: true,
     link,
     remote: status.remoteAccessEnabled,
     plan,
-    attention: plan === 'grace' || plan === 'expired' || plan === 'invalid',
+    attention: ATTENTION_PLANS.has(plan),
   };
 };
 
