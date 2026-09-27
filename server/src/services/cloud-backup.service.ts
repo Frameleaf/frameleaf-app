@@ -111,8 +111,11 @@ import {
   CLOUD_BACKUP_DB_PREFIX,
   CLOUD_BACKUP_MANIFEST_FORMAT,
   CLOUD_BACKUP_MANIFEST_PREFIX,
+  CLOUD_BACKUP_MANIFEST_VERSION,
   CLOUD_BACKUP_OBJECT_PREFIX,
   CLOUD_BACKUP_OWN_MEMORY_ACKNOWLEDGEMENT,
+  CloudBackupAssetDetails,
+  CloudBackupAssetRecord,
   CloudBackupManifest,
   CloudBackupManifestFile,
   CloudBackupRunResult,
@@ -1851,7 +1854,7 @@ export class CloudBackupService {
   ): AsyncGenerator<string> {
     const header = {
       format: CLOUD_BACKUP_MANIFEST_FORMAT,
-      version: 1,
+      version: CLOUD_BACKUP_MANIFEST_VERSION,
       instanceId: run.metadata.instanceId,
       createdAt: new Date().toISOString(),
       database: run.progress.result.database,
@@ -1862,8 +1865,29 @@ export class CloudBackupService {
     type ManifestAsset = { id: string; owner: string | null; files: CloudBackupManifestFile[] };
     // held in an object: the asset in hand changes inside the loop, which narrowing a local cannot follow
     const pending: { asset: ManifestAsset | null } = { asset: null };
+    // manifest v2 (FL-164): each item's record and details, read a page at a time, and the albums and
+    // people they name, listed once at the end
+    const details = new Map<string, { record: CloudBackupAssetRecord; details: CloudBackupAssetDetails }>();
+    const albumIds = new Set<string>();
+    const people = new Map<string, { ownerId: string; personId: string }>();
     const assetJson = (current: ManifestAsset) => {
-      const body = JSON.stringify({ owner: current.owner, files: current.files });
+      const known = details.get(current.id);
+      details.delete(current.id);
+      if (known) {
+        for (const album of known.details.albums) {
+          albumIds.add(album.id);
+        }
+        for (const face of known.details.faces) {
+          if (face.personId && current.owner) {
+            people.set(`${current.owner}:${face.personId}`, { ownerId: current.owner, personId: face.personId });
+          }
+        }
+      }
+      const body = JSON.stringify({
+        owner: current.owner,
+        files: current.files,
+        ...(known && { ...known.record, details: known.details }),
+      });
       const text = `${counts.assets > 0 ? ',' : ''}${JSON.stringify(current.id)}:${body}`;
       counts.assets += 1;
       return text;
@@ -1873,6 +1897,12 @@ export class CloudBackupService {
     let more = true;
     while (more) {
       const page = await this.index.getEntriesPage(manifestId, after, CLOUD_BACKUP_MANIFEST_PAGE);
+      const unread = [
+        ...new Set(page.map(({ assetId }) => assetId).filter((id): id is string => !!id && !details.has(id))),
+      ];
+      for (const [id, found] of await this.index.getAssetDetails(unread)) {
+        details.set(id, found);
+      }
       for (const entry of page) {
         counts.files += 1;
         counts.bytes += entry.size;
@@ -1905,7 +1935,9 @@ export class CloudBackupService {
     if (pending.asset) {
       yield assetJson(pending.asset);
     }
-    yield `},"profiles":{${profiles.join(',')}}}`;
+    const albums = await this.index.getAlbumRecords([...albumIds]);
+    const persons = await this.index.getPersonRecords(people.values().toArray());
+    yield `},"profiles":{${profiles.join(',')}},"albums":${JSON.stringify(Object.fromEntries(albums))},"people":${JSON.stringify(Object.fromEntries(persons))}}`;
   }
 
   private async finish(run: Run) {

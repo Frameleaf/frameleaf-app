@@ -51,6 +51,8 @@ const manifest: CloudBackupManifest = {
   profiles: {
     'owner-1': { role: 'profile', path: '/data/profile/owner-1/p.jpg', sha256: hex('p'), size: 7, mtime: null },
   },
+  albums: {},
+  people: {},
 };
 
 const plan = (scope: CloudBackupRestoreScope, assetIds: string[] | null = null, current = new Map<string, string>()) =>

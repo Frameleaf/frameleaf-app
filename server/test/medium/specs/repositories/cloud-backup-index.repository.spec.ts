@@ -1,6 +1,7 @@
 import { Kysely, sql } from 'kysely';
 import { createHash, randomUUID } from 'node:crypto';
-import { AssetFileType, AssetStatus, AssetVisibility } from 'src/enum.js';
+import { AssetEditAction } from 'src/dtos/editing.dto.js';
+import { AlbumUserRole, AssetFileType, AssetStatus, AssetVisibility } from 'src/enum.js';
 import { getCatalogEvidence } from 'src/fork-schema/catalog.js';
 import manifest from 'src/fork-schema/manifests/fork-v2-catalog.json' with { type: 'json' };
 import { CloudBackupIndexRepository } from 'src/repositories/cloud-backup-index.repository.js';
@@ -342,6 +343,115 @@ describe(CloudBackupIndexRepository.name, () => {
       expect(state.has(deleted.id)).toBe(false);
       expect(state.size).toBe(2);
       await expect(sut.getOwnerNames([user.id])).resolves.toEqual(new Map([[user.id, user.name]]));
+    });
+
+    it('reads each item’s record and details, its albums and the people its faces name (manifest v2)', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { user: friend } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({
+        ownerId: user.id,
+        isFavorite: true,
+        visibility: AssetVisibility.Archive,
+        originalFileName: 'IMG_1.jpg',
+      });
+      const { asset: second } = await ctx.newAsset({ ownerId: user.id });
+      const { asset: locked } = await ctx.newAsset({ ownerId: user.id, visibility: AssetVisibility.Locked });
+      await ctx.newExif({
+        assetId: asset.id,
+        description: 'Lake morning',
+        rating: 4,
+        dateTimeOriginal: new Date('2026-08-14T09:12:00.000Z'),
+        latitude: 46.5,
+        longitude: 7.9,
+      });
+      const { tag } = await ctx.newTag({ userId: user.id, value: 'Trips' });
+      await ctx.newTagAsset({ tagIds: [tag.id], assetIds: [asset.id] });
+      const { album } = await ctx.newAlbum(
+        { ownerId: user.id, albumName: 'Lake house', albumThumbnailAssetId: second.id },
+        [asset.id, second.id],
+      );
+      await ctx.newAlbumUser({ albumId: album.id, userId: friend.id, role: AlbumUserRole.Viewer });
+      const { person } = await ctx.newPerson({ ownerId: user.id, name: 'Jamie' });
+      await ctx.newAssetFace({
+        assetId: asset.id,
+        personGroupId: person.personGroupId,
+        boundingBoxX1: 1,
+        boundingBoxY1: 2,
+        boundingBoxX2: 30,
+        boundingBoxY2: 40,
+        imageWidth: 100,
+        imageHeight: 80,
+      });
+      await ctx.newStack({ ownerId: user.id }, [asset.id, second.id]);
+      await ctx.newEdits(asset.id, {
+        edits: [{ action: AssetEditAction.Crop, parameters: { x: 0, y: 0, width: 50, height: 40 } }],
+      } as never);
+
+      const details = await sut.getAssetDetails([asset.id, second.id, locked.id, randomUUID()]);
+
+      expect(details.size).toBe(3);
+      expect(details.get(asset.id)).toEqual({
+        record: {
+          type: asset.type,
+          originalFileName: 'IMG_1.jpg',
+          fileCreatedAt: expect.any(String),
+          fileModifiedAt: expect.any(String),
+          localDateTime: expect.any(String),
+          duration: null,
+        },
+        details: {
+          isFavorite: true,
+          visibility: 'archive',
+          rating: 4,
+          description: 'Lake morning',
+          dateTimeOriginal: '2026-08-14T09:12:00.000Z',
+          timeZone: null,
+          latitude: 46.5,
+          longitude: 7.9,
+          tags: ['Trips'],
+          albums: [{ id: album.id, name: 'Lake house' }],
+          faces: [
+            { personId: person.personGroupId, box: [1, 2, 30, 40], imageWidth: 100, imageHeight: 80, isHidden: false },
+          ],
+          stack: { id: expect.any(String), isPrimary: true },
+          edits: [{ action: 'crop', parameters: { x: 0, y: 0, width: 50, height: 40 } }],
+        },
+      });
+      expect(details.get(second.id)?.details).toMatchObject({
+        isFavorite: false,
+        rating: null,
+        description: '',
+        tags: [],
+        faces: [],
+        stack: { isPrimary: false },
+        edits: [],
+      });
+      expect(details.get(locked.id)?.details.visibility).toBe('locked');
+
+      await expect(sut.getAlbumRecords([album.id, randomUUID()])).resolves.toEqual(
+        new Map([
+          [
+            album.id,
+            {
+              name: 'Lake house',
+              description: '',
+              ownerId: user.id,
+              coverAssetId: second.id,
+              order: 'desc',
+              sharedUsers: [{ userId: friend.id, role: 'viewer' }],
+            },
+          ],
+        ]),
+      );
+      await expect(sut.getPersonRecords([{ ownerId: user.id, personId: person.personGroupId! }])).resolves.toEqual(
+        new Map([
+          [
+            person.personGroupId,
+            { ownerId: user.id, name: 'Jamie', birthDate: null, isHidden: false, isFavorite: false },
+          ],
+        ]),
+      );
     });
   });
 });

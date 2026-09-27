@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import z from 'zod';
 import type { CloudBackupKeyMode } from 'src/types.js';
 
 /**
@@ -286,15 +287,124 @@ export type CloudBackupManifestFile = {
   mtime: string | null;
 };
 
+/** The manifest version a run writes now. Version 1 manifests (files only) stay readable. */
+export const CLOUD_BACKUP_MANIFEST_VERSION = 2;
+
+const isoText = z.string().max(64);
+
+/**
+ * Manifest v2 (FL-164, cloud-backup.md "Item metadata in the manifest"): the details that live in the
+ * database rather than in the file, so a deleted item comes back as it was and a restore can put an
+ * item's details back. `faces[].personId` names the person (this server's person group).
+ */
+export const cloudBackupAssetDetailsSchema = z.object({
+  isFavorite: z.boolean(),
+  visibility: z.enum(['timeline', 'archive', 'hidden', 'locked']),
+  rating: z.number().int().min(-1).max(5).nullable(),
+  description: z.string(),
+  dateTimeOriginal: isoText.nullable(),
+  timeZone: z.string().max(64).nullable(),
+  latitude: z.number().min(-90).max(90).nullable(),
+  longitude: z.number().min(-180).max(180).nullable(),
+  tags: z.array(z.string().min(1)),
+  albums: z.array(z.object({ id: z.string().min(1), name: z.string() })),
+  faces: z.array(
+    z.object({
+      personId: z.string().min(1).nullable(),
+      box: z.tuple([z.number(), z.number(), z.number(), z.number()]),
+      imageWidth: z.number().int().min(0),
+      imageHeight: z.number().int().min(0),
+      isHidden: z.boolean(),
+    }),
+  ),
+  stack: z.object({ id: z.string().min(1), isPrimary: z.boolean() }).nullable(),
+  edits: z.array(z.object({ action: z.string().min(1), parameters: z.record(z.string(), z.unknown()) })),
+});
+export type CloudBackupAssetDetails = z.infer<typeof cloudBackupAssetDetailsSchema>;
+
+/** What a deleted item's record is made from again (manifest v2). */
+const cloudBackupAssetRecordSchema = z.object({
+  type: z.string().min(1),
+  originalFileName: z.string().min(1),
+  fileCreatedAt: isoText,
+  fileModifiedAt: isoText,
+  localDateTime: isoText,
+  duration: z.number().int().min(0).nullable(),
+});
+export type CloudBackupAssetRecord = z.infer<typeof cloudBackupAssetRecordSchema>;
+
+/** An album as the manifest lists it (v2), so a deleted album can be made again. */
+export const cloudBackupAlbumSchema = z.object({
+  name: z.string(),
+  description: z.string(),
+  ownerId: z.string().min(1),
+  coverAssetId: z.string().min(1).nullable(),
+  order: z.enum(['asc', 'desc']),
+  sharedUsers: z.array(z.object({ userId: z.string().min(1), role: z.enum(['editor', 'viewer']) })),
+});
+export type CloudBackupAlbum = z.infer<typeof cloudBackupAlbumSchema>;
+
+/** A person as the manifest lists it (v2), keyed by this server's person id (its person group). */
+export const cloudBackupPersonSchema = z.object({
+  ownerId: z.string().min(1),
+  name: z.string(),
+  birthDate: z.string().max(32).nullable(),
+  isHidden: z.boolean(),
+  isFavorite: z.boolean(),
+});
+export type CloudBackupPerson = z.infer<typeof cloudBackupPersonSchema>;
+
+/** One item in a manifest: its files, and in v2 its record and details. */
+export type CloudBackupManifestAsset = {
+  owner: string | null;
+  files: CloudBackupManifestFile[];
+  details?: CloudBackupAssetDetails;
+} & Partial<CloudBackupAssetRecord>;
+
+/**
+ * An item's record and details as the manifest reads them back: each part only when it is well formed,
+ * so a malformed detail never stops the files from coming back.
+ */
+export const readManifestAsset = (asset: CloudBackupManifestAsset): CloudBackupManifestAsset => {
+  const { owner, files, details, ...rest } = asset as CloudBackupManifestAsset & Record<string, unknown>;
+  const record = cloudBackupAssetRecordSchema.safeParse(rest);
+  const parsedDetails = details === undefined ? undefined : cloudBackupAssetDetailsSchema.safeParse(details);
+  return {
+    owner,
+    files,
+    ...(record.success && record.data),
+    ...(parsedDetails?.success && { details: parsedDetails.data }),
+  };
+};
+
+/** Entries of a keyed manifest section that are well formed; the rest are left out. */
+export const readManifestSection = <T>(section: unknown, schema: z.ZodType<T>): Record<string, T> => {
+  if (!section || typeof section !== 'object' || Array.isArray(section)) {
+    return {};
+  }
+  const read: Record<string, T> = {};
+  for (const [id, value] of Object.entries(section)) {
+    const parsed = schema.safeParse(value);
+    if (parsed.success) {
+      read[id] = parsed.data;
+    }
+  }
+  return read;
+};
+
 /** The manifest written to `m/<ISO>.json.gz`: asset id → its files, plus profile images and the dump. */
 export type CloudBackupManifest = {
   format: typeof CLOUD_BACKUP_MANIFEST_FORMAT;
-  version: 1;
+  version: 1 | 2;
   instanceId: string;
   createdAt: string;
   database: { key: string; sha256: string; size: number } | null;
-  assets: Record<string, { owner: string | null; files: CloudBackupManifestFile[] }>;
+  assets: Record<string, CloudBackupManifestAsset>;
   profiles: Record<string, CloudBackupManifestFile>;
+  /** v2: every album an item in the manifest belongs to; empty for v1. */
+  albums: Record<string, CloudBackupAlbum>;
+  /** v2: every person a face in the manifest names; empty for v1. */
+  people: Record<string, CloudBackupPerson>;
 };
 
 /** What a run has done so far, kept on the `media_operation` row as its result. */

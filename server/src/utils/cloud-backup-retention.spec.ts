@@ -154,9 +154,91 @@ describe('cloud backup retention (FL-164)', () => {
       expect(references.database).toBe('db/cloud-backup-immich-db-backup-1.sql.gz');
     });
 
+    it('reads a version 2 manifest with each item’s details, the albums and the people (FL-164)', () => {
+      const details = {
+        isFavorite: true,
+        visibility: 'archive',
+        rating: 4,
+        description: 'Lake',
+        dateTimeOriginal: '2026-08-14T09:12:00.000Z',
+        timeZone: 'UTC+2',
+        latitude: 46.5,
+        longitude: 7.9,
+        tags: ['Trips/Lake'],
+        albums: [{ id: 'album-1', name: 'Lake house' }],
+        faces: [{ personId: 'person-1', box: [1, 2, 3, 4], imageWidth: 10, imageHeight: 10, isHidden: false }],
+        stack: { id: 'stack-1', isPrimary: true },
+        edits: [{ action: 'crop', parameters: { x: 0, y: 0, width: 5, height: 5 } }],
+      };
+      const manifest = readManifest(
+        manifestBody({
+          version: 2,
+          assets: {
+            'asset-1': {
+              owner: 'owner-1',
+              files: [{ role: 'original', path: '/data/a.jpg', sha256: hex('a'), size: 100, mtime: null }],
+              type: 'IMAGE',
+              originalFileName: 'a.jpg',
+              fileCreatedAt: '2026-08-14T07:12:00.000Z',
+              fileModifiedAt: '2026-08-14T07:12:00.000Z',
+              localDateTime: '2026-08-14T09:12:00.000Z',
+              duration: null,
+              details,
+            },
+          },
+          albums: {
+            'album-1': {
+              name: 'Lake house',
+              description: '',
+              ownerId: 'owner-1',
+              coverAssetId: 'asset-1',
+              order: 'desc',
+              sharedUsers: [{ userId: 'user-2', role: 'viewer' }],
+            },
+          },
+          people: {
+            'person-1': { ownerId: 'owner-1', name: 'Jamie', birthDate: null, isHidden: false, isFavorite: false },
+          },
+        }),
+      );
+
+      expect(manifest.version).toBe(2);
+      expect(manifest.assets['asset-1'].details).toEqual(details);
+      expect(manifest.assets['asset-1'].type).toBe('IMAGE');
+      expect(manifest.albums['album-1']).toMatchObject({ name: 'Lake house', ownerId: 'owner-1' });
+      expect(manifest.people['person-1']).toMatchObject({ name: 'Jamie' });
+    });
+
+    it('reads a version 1 manifest as one without details, albums or people', () => {
+      const manifest = readManifest(manifestBody());
+      expect(manifest.version).toBe(1);
+      expect(manifest.assets['asset-1'].details).toBeUndefined();
+      expect(manifest.albums).toEqual({});
+      expect(manifest.people).toEqual({});
+    });
+
+    it('drops malformed details instead of failing the manifest, so its files can still come back', () => {
+      const manifest = readManifest(
+        manifestBody({
+          version: 2,
+          assets: {
+            'asset-1': {
+              owner: 'owner-1',
+              files: [{ role: 'original', path: '/data/a.jpg', sha256: hex('a'), size: 100, mtime: null }],
+              details: { isFavorite: 'yes', tags: 'none' },
+            },
+          },
+          albums: { 'album-1': { name: 3 } },
+        }),
+      );
+      expect(manifest.assets['asset-1'].details).toBeUndefined();
+      expect(manifest.albums).toEqual({});
+    });
+
     it('refuses anything it could not read in full', () => {
       expect(() => readManifest(Buffer.from('not gzip'))).toThrow('could not be read');
       expect(() => readManifest(manifestBody({ format: 'other' }))).toThrow('not a Frameleaf backup manifest');
+      expect(() => readManifest(manifestBody({ version: 3 }))).toThrow('not a Frameleaf backup manifest');
       expect(() =>
         readManifest(
           manifestBody({
