@@ -4,8 +4,8 @@ import {
   AssetVisibility,
   getAlbumTree,
   getAllPeople,
-  getAssetStatistics,
   getBestPhotos,
+  getTimeBuckets,
   MemorySearchOrder,
   searchAssetStatistics,
   searchAssets,
@@ -52,7 +52,7 @@ export const load = (async ({ url }) => {
     people,
     albums,
     memories,
-    favoriteStatistics,
+    favoriteCount,
     photoStatistics,
     videoStatistics,
     withoutPeopleStatistics,
@@ -64,9 +64,12 @@ export const load = (async ({ url }) => {
     getAlbumTree(),
     memoryManager.refresh().then(() => memoryManager.memories),
     // Card counts share the same scope/archive/privacy rules as the destinations they link to.
-    // Favorites: with no visibility, statistics and the Favorites timeline (time buckets scoped by
-    // `isFavorite`) both take the server's default visibility, Timeline and Archive, never Locked.
-    getAssetStatistics({ isFavorite: true }).catch(() => null),
+    // Favorites: the Favorites timeline's own query (its `options`), summed over its buckets, so the
+    // count is what that page shows: Timeline and Archive, never Locked, and a stack once, as the
+    // timeline draws it (asset statistics would count every item in a stack).
+    getTimeBuckets({ isFavorite: true, withStacked: true })
+      .then((buckets) => buckets.reduce((total, { count }) => total + count, 0))
+      .catch(() => null),
     // Photos/Videos/Without-people route to the search page, so their counts are taken with the
     // body that page sends: a flat body gets the Timeline visibility the search session adds to
     // every flat search (`library-search-session.svelte.ts`), so nothing archived, Locked or a
@@ -94,7 +97,7 @@ export const load = (async ({ url }) => {
   const $t = await getFormatter();
 
   const shortcutCounts: ExploreShortcutCounts = {
-    favorites: favoriteStatistics ? favoriteStatistics.images + favoriteStatistics.videos : null,
+    favorites: favoriteCount,
     photos: photoStatistics ? photoStatistics.total : null,
     videos: videoStatistics ? videoStatistics.total : null,
     withoutPeople: withoutPeopleStatistics ? withoutPeopleStatistics.total : null,

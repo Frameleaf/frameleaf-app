@@ -1,6 +1,8 @@
 import {
   AssetTypeEnum,
   AssetVisibility,
+  getAssetStatistics,
+  getTimeBuckets,
   searchAssets,
   searchAssetStatistics,
   searchFacets,
@@ -15,6 +17,10 @@ vi.mock('@immich/sdk', async (original) => {
     getAllPeople: vi.fn(async () => ({ people: [], total: 0, hidden: 0 })),
     getAlbumTree: vi.fn(async () => ({ albums: [], collections: [], spaces: [] })),
     getAssetStatistics: vi.fn(async () => ({ images: 0, videos: 0, total: 0 })),
+    getTimeBuckets: vi.fn(async () => [
+      { timeBucket: '2026-08-01', count: 3 },
+      { timeBucket: '2026-07-01', count: 2 },
+    ]),
     searchAssetStatistics: vi.fn(async () => ({ total: 0 })),
     getBestPhotos: vi.fn(async () => ({ total: 0, count: 0, items: [], nextPage: null })),
     searchFacets: vi.fn(async () => ({
@@ -65,6 +71,14 @@ describe('the Explore loader', () => {
     for (const type of [AssetTypeEnum.Image, AssetTypeEnum.Video]) {
       expect(bodies).toContainEqual({ type, visibility: AssetVisibility.Timeline });
     }
+  });
+
+  it('counts Favorites with the Favorites timeline query, so a stack counts once as it shows', async () => {
+    const data = await open();
+
+    expect(getTimeBuckets).toHaveBeenCalledWith({ isFavorite: true, withStacked: true });
+    expect(getAssetStatistics).not.toHaveBeenCalled();
+    expect(data.shortcutCounts.favorites).toBe(5);
   });
 
   it('takes recent captures with Timeline visibility and makes no per-card cover search', async () => {
