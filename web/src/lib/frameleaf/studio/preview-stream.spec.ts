@@ -184,7 +184,9 @@ describe('studio preview stream', () => {
     views = [];
     client = createStudioPreviewStream({
       transport: server.transport,
-      onChange: (view) => views.push(view),
+      onChange: (view) => {
+        views.push(view);
+      },
       createPeer: () => {
         const peer = new FakePeer();
         peers.push(peer);
@@ -351,7 +353,9 @@ describe('studio preview stream', () => {
   it('is unavailable without WebRTC, so the panel falls back to exact frames', async () => {
     const bare = createStudioPreviewStream({
       transport: server.transport,
-      onChange: (view) => views.push(view),
+      onChange: (view) => {
+        views.push(view);
+      },
       createPeer: () => null,
     });
     bare.setTarget(TARGET);
@@ -379,7 +383,7 @@ describe('studio preview stream', () => {
     expect(latest().phase).toBe('off');
     client.setTransport({ playing: true, time: rational(2, 1) });
     await flush();
-    expect(server.calls.filter((call) => call.startsWith('open')).at(-1)).toBe('open r3@2/1');
+    expect(server.calls.findLast((call) => call.startsWith('open'))).toBe('open r3@2/1');
   });
 
   it('closes the session and clears everything on dispose', async () => {

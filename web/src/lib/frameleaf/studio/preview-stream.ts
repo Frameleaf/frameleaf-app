@@ -237,7 +237,7 @@ export const STUDIO_STREAM_HIGH_WATER = 16 * 1024;
 const REOPEN_BUDGET = 2;
 
 const defaultPeer = (): RTCPeerConnection | null =>
-  typeof globalThis.RTCPeerConnection === 'function'
+  typeof RTCPeerConnection === 'function'
     ? // Host candidates only: render workers are on the home network (FL-161), and no TURN relay
       // carries a private picture through somebody else's server.
       new RTCPeerConnection({ iceServers: [] })
@@ -407,7 +407,7 @@ export const createStudioPreviewStream = (options: StudioPreviewStreamOptions): 
       teardownPeer();
       const connection = createPeer();
       if (!connection) {
-        await giveUp('unsupported');
+        giveUp('unsupported');
         return;
       }
       peer = connection;
@@ -489,7 +489,7 @@ export const createStudioPreviewStream = (options: StudioPreviewStreamOptions): 
     }
   };
 
-  const giveUp = async (reason: StudioStreamUnavailableReason) => {
+  const giveUp = (reason: StudioStreamUnavailableReason): void => {
     dropSession(reason !== 'revoked');
     publish({ phase: 'unavailable', reason, position: null });
   };
@@ -501,7 +501,7 @@ export const createStudioPreviewStream = (options: StudioPreviewStreamOptions): 
       return;
     }
     if (next.state === 'queued' && Date.now() - openedAt > noWorkerTimeoutMs) {
-      await giveUp('no-worker');
+      giveUp('no-worker');
       return;
     }
     if (next.state === 'offered' && next.negotiation > answeredNegotiation) {
@@ -568,11 +568,11 @@ export const createStudioPreviewStream = (options: StudioPreviewStreamOptions): 
   const handleFailure = async (failure: StudioStreamFailure) => {
     switch (failure.kind) {
       case 'revoked': {
-        await giveUp('revoked');
+        giveUp('revoked');
         return;
       }
       case 'stale-revision': {
-        await giveUp('stale-revision');
+        giveUp('stale-revision');
         return;
       }
       case 'worker-lost':
@@ -581,7 +581,7 @@ export const createStudioPreviewStream = (options: StudioPreviewStreamOptions): 
         return;
       }
       case 'limit': {
-        await giveUp('limit');
+        giveUp('limit');
         return;
       }
       case 'offline': {
@@ -590,7 +590,7 @@ export const createStudioPreviewStream = (options: StudioPreviewStreamOptions): 
         return;
       }
       default: {
-        await giveUp('failed');
+        giveUp('failed');
       }
     }
   };
@@ -599,7 +599,7 @@ export const createStudioPreviewStream = (options: StudioPreviewStreamOptions): 
     if (session || opening || disposed || !enabled || !target || !transportState) {
       return;
     }
-    if (typeof globalThis.RTCPeerConnection !== 'function' && !options.createPeer) {
+    if (typeof RTCPeerConnection !== 'function' && !options.createPeer) {
       publish({ phase: 'unavailable', reason: 'unsupported' });
       return;
     }
@@ -766,20 +766,20 @@ export const createStudioPreviewStream = (options: StudioPreviewStreamOptions): 
       }
       // A little slack for encoder alignment (16-pixel macroblocks).
       if (width > session.bounds.maxWidth + 16 || height > session.bounds.maxHeight + 16) {
-        void giveUp('bounds');
+        giveUp('bounds');
       }
     },
 
     view: () => view,
 
-    async dispose() {
-      if (disposed) {
-        return;
+    dispose() {
+      if (!disposed) {
+        dropSession(true);
+        disposed = true;
+        intent = null;
+        publish({ phase: 'off', reason: null, position: null });
       }
-      dropSession(true);
-      disposed = true;
-      intent = null;
-      publish({ phase: 'off', reason: null, position: null });
+      return Promise.resolve();
     },
   };
 };
