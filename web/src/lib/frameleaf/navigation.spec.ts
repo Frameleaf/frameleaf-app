@@ -18,6 +18,7 @@ import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
 import { Route } from '$lib/route';
 
 const allCapabilities = (): RailCapabilities => ({
+  recentlyAdded: true,
   search: true,
   map: true,
   trash: true,
@@ -59,6 +60,18 @@ describe('Frameleaf rail destinations', () => {
     ]);
   });
 
+  it('drops Recently added when the account or an administrator hid it (FL-146)', () => {
+    const [library] = buildRailSections({ ...allCapabilities(), recentlyAdded: false });
+
+    expect(library.destinations.map((destination) => destination.id)).toEqual([
+      'library',
+      'favorites',
+      'bestPhotos',
+      'archive',
+      'locked',
+    ]);
+  });
+
   it('points Locked at the one Locked view, not the legacy suppressed-content page', () => {
     const locked = find(allCapabilities(), 'locked');
 
@@ -94,7 +107,6 @@ describe('Frameleaf rail destinations', () => {
     expect([...ids]).toEqual([
       'library',
       'favorites',
-      'recentlyAdded',
       'bestPhotos',
       'archive',
       'locked',

@@ -229,6 +229,8 @@ export interface RailSection {
  * data or API access).
  */
 export interface RailCapabilities {
+  /** FL-146: the account's "Recently added in navigation" choice (on by default, as in the prototype). */
+  recentlyAdded: boolean;
   search: boolean;
   map: boolean;
   trash: boolean;
@@ -240,6 +242,7 @@ export interface RailCapabilities {
 }
 
 export const defaultRailCapabilities = (): RailCapabilities => ({
+  recentlyAdded: false,
   search: false,
   map: false,
   trash: false,
@@ -267,7 +270,10 @@ export const buildRailSections = (capabilities: RailCapabilities): RailSection[]
       destinations: [
         destination('library', 'library', mdiImageMultipleOutline, Route.photos()),
         destination('favorites', 'favorites', mdiHeartOutline, Route.favorites()),
-        destination('recentlyAdded', 'recently_added', mdiClockOutline, Route.recentlyAdded()),
+        ...keep(
+          capabilities.recentlyAdded,
+          destination('recentlyAdded', 'recently_added', mdiClockOutline, Route.recentlyAdded()),
+        ),
         destination('bestPhotos', 'best_photos', mdiStarOutline, Route.bestPhotos()),
         // S-26: the rail icons are LibraryRail.jsx's (Archive `mdiArchiveOutline`, Trash `mdiDeleteOutline`).
         destination('archive', 'archive', mdiArchiveOutline, Route.archive()),
