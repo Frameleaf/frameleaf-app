@@ -436,7 +436,9 @@ describe('Studio server preview panel (FL-96)', () => {
 
     await fireEvent.click(screen.getByTestId('studio-server-preview-show'));
     expect(screen.getByTestId('studio-server-preview')).toBeInTheDocument();
-    await waitFor(() => expect(engine.update).toHaveBeenCalledWith(expect.objectContaining({ serverPreviewOpen: true })));
+    await waitFor(() =>
+      expect(engine.update).toHaveBeenCalledWith(expect.objectContaining({ serverPreviewOpen: true })),
+    );
   });
 
   it('shows the exact frame while paused and hides the stream picture', async () => {
@@ -447,7 +449,11 @@ describe('Studio server preview panel (FL-96)', () => {
   });
 
   it('shows the stream, not the exact frame, once the current seek is live', async () => {
-    await mountedWith({ serverPreviewOpen: true, preview: ready, stream: streamView({ phase: 'playing', live: true }) });
+    await mountedWith({
+      serverPreviewOpen: true,
+      preview: ready,
+      stream: streamView({ phase: 'playing', live: true }),
+    });
     expect(screen.getByTestId('studio-stream-video')).toHaveAttribute('data-live', 'true');
     expect(screen.queryByTestId('studio-exact-frame')).not.toBeInTheDocument();
   });

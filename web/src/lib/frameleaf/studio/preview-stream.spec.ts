@@ -146,7 +146,13 @@ const fakeServer = () => {
   };
 };
 
-const TARGET = { projectId: 'project-1', revision: 3, quality: 'standard' as const, viewportWidth: 1280, viewportHeight: 720 };
+const TARGET = {
+  projectId: 'project-1',
+  revision: 3,
+  quality: 'standard' as const,
+  viewportWidth: 1280,
+  viewportHeight: 720,
+};
 
 describe('studio preview stream', () => {
   let server: ReturnType<typeof fakeServer>;
@@ -385,10 +391,12 @@ describe('studio preview stream', () => {
   });
 
   it('parses only well formed worker reports', () => {
-    expect(parseStudioStreamReport('{"type":"frame","seekGeneration":1,"revision":3,"pts":"1","timebase":"1/90000"}')).toEqual(
-      { type: 'frame', seekGeneration: 1, revision: 3, pts: '1', timebase: '1/90000' },
-    );
-    expect(parseStudioStreamReport('{"type":"frame","seekGeneration":1,"revision":3,"pts":1.5,"timebase":"1/90000"}')).toBeNull();
+    expect(
+      parseStudioStreamReport('{"type":"frame","seekGeneration":1,"revision":3,"pts":"1","timebase":"1/90000"}'),
+    ).toEqual({ type: 'frame', seekGeneration: 1, revision: 3, pts: '1', timebase: '1/90000' });
+    expect(
+      parseStudioStreamReport('{"type":"frame","seekGeneration":1,"revision":3,"pts":1.5,"timebase":"1/90000"}'),
+    ).toBeNull();
     expect(parseStudioStreamReport('{"type":"frame","seekGeneration":-1,"revision":3}')).toBeNull();
     expect(parseStudioStreamReport('not json')).toBeNull();
     expect(parseStudioStreamReport({})).toBeNull();
