@@ -61,6 +61,7 @@ import { EditOperationTracker } from 'src/utils/edit-operation-tracker.js';
 import { EditOperationEdit } from 'src/utils/edit-operation.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
+import { DecodeSupport, qualifySourceDecode } from 'src/utils/media-decode.js';
 import { EditedMasterColorPolicy, MediaPolicyError, resolveEditedMasterColorPolicy } from 'src/utils/media-policy.js';
 import { batched, findOrFail, isNsfwHidingEnabled } from 'src/utils/misc.js';
 import { deriveIsNsfwFromMetadata } from 'src/utils/nsfw.js';
@@ -993,7 +994,23 @@ export class AssetService extends BaseService {
       throw new BadRequestException('Original video metadata is not available for editing');
     }
     const rotated = Math.abs(video.rotation) % 180 === 90;
+    const width = rotated ? video.height : video.width;
+    const height = rotated ? video.width : video.height;
     const { ffmpeg } = await this.getConfig({ withCache: true });
+    // FL-101: a source the renderer cannot decode (a Dolby Vision profile outside the qualified matrix,
+    // more than 12 bits per component, an undescribable pixel format) is refused here, before any editing,
+    // by the same qualification the render runs. Unusable geometry has already been refused above.
+    const decode = qualifySourceDecode(video, ffmpeg);
+    if (decode.support === DecodeSupport.Refused) {
+      return {
+        width,
+        height,
+        durationMs,
+        colorPolicy: 'unsupported',
+        colorReason: decode.reason,
+        ...(decode.refusal && { decodeRefusal: decode.refusal }),
+      };
+    }
     // FL-113: the editor says up front what an edited version will do with HDR and Dolby Vision
     // sources, from the same decision the render makes (media-policy rule 7).
     let colorPolicy: 'preserve' | 'tone-map' | 'unsupported';
@@ -1009,13 +1026,7 @@ export class AssetService extends BaseService {
       colorPolicy = 'unsupported';
       colorReason = error.message;
     }
-    return {
-      width: rotated ? video.height : video.width,
-      height: rotated ? video.width : video.height,
-      durationMs,
-      colorPolicy,
-      colorReason,
-    };
+    return { width, height, durationMs, colorPolicy, colorReason };
   }
 
   async editAsset(
@@ -1069,8 +1080,8 @@ export class AssetService extends BaseService {
 
     const originalDurationMs = originalVideo?.durationMs ?? null;
 
-    // FL-113: an edited version that cannot be rendered honestly is refused here, before anything is
-    // queued, with the reason; the original is never touched. Reverting to the original stays allowed.
+    // FL-113/FL-101: an edited version that cannot be decoded or rendered honestly is refused here, before
+    // anything is queued, with the reason; the original is never touched. Reverting to the original stays allowed.
     if (originalVideo?.colorPolicy === 'unsupported' && purpose === 'save' && edits.length > 0) {
       throw new BadRequestException(originalVideo.colorReason ?? 'This video cannot be edited on this server');
     }

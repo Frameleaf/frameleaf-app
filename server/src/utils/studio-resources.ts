@@ -223,6 +223,12 @@ export enum StudioRefusalReason {
   RestorationExpired = 'restoration-expired',
   /** The restoration has no finished result to place: it is a preview, still running, or failed. */
   RestorationNotReady = 'restoration-not-ready',
+  /**
+   * FL-101: the video cannot be decoded by this renderer (a Dolby Vision profile outside the
+   * qualified matrix, more than 12 bits per component, an undescribable pixel format or no usable
+   * geometry), so it is refused when it is placed rather than failing later on the worker.
+   */
+  UnsupportedSource = 'unsupported-source',
 }
 
 /* ------------------------------------------------------------------ */

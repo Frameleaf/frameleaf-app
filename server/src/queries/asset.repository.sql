@@ -193,6 +193,19 @@ from
 where
   "asset"."id" = any ($1::uuid[])
 
+-- AssetRepository.getVideoStreamsForDecode
+select
+  "assetId",
+  "codecName",
+  "pixelFormat",
+  "colorTransfer",
+  "dvProfile",
+  "dvBlSignalCompatibilityId"
+from
+  "asset_video"
+where
+  "assetId" = any ($1::uuid[])
+
 -- AssetRepository.getByIdsWithAllRelationsButStacks
 select
   "asset".*,
