@@ -37,6 +37,7 @@ import {
   parseFfprobeColorRange,
   qualifyMetadataOnlyRotation,
   resolveEditedMasterColorPolicy,
+  validateAudioMaster,
   validateVideoMaster,
 } from 'src/utils/media-policy.js';
 import { FRAME_RATE_NTSC_30 } from 'src/utils/rational-time.js';
@@ -732,5 +733,72 @@ describe('validateVideoMaster (FL-39)', () => {
 
     expect(check({ pixelFormat: 'yuv420p', colorTransfer: ColorTransfer.Bt709 })).not.toThrow();
     expectViolation(check({ pixelFormat: 'yuv420p' }), 'HDR');
+  });
+});
+
+describe('validateAudioMaster (FL-102)', () => {
+  const layouts = {
+    mono: { codecName: 'aac', channels: 1, channelLayout: 'mono', sampleRate: 48_000 },
+    stereo: { codecName: 'aac', channels: 2, channelLayout: 'stereo', sampleRate: 48_000 },
+    surround: { codecName: 'eac3', channels: 6, channelLayout: '5.1(side)', sampleRate: 48_000 },
+  };
+  const video = { duration: 10, frameRate: 30_000 / 1001, frameRateRational: FRAME_RATE_NTSC_30 };
+  const check =
+    (
+      source: (typeof layouts)[keyof typeof layouts] | undefined,
+      output: Record<string, unknown> | undefined,
+      options: { muted?: boolean; policy?: AudioChannelPolicy } = {},
+    ) =>
+    () =>
+      validateAudioMaster({ source, output: output as never, outputVideo: video, ...options });
+  const expectViolation = (run: () => void, message: string) => {
+    expect(run).toThrow(MediaPolicyError);
+    expect(run).toThrow(message);
+  };
+
+  for (const [name, layout] of Object.entries(layouts)) {
+    it(`accepts a ${name} master that keeps the source layout and ends with the picture`, () => {
+      expect(check(layout, { ...layout, duration: 10.02 })).not.toThrow();
+    });
+
+    it(`refuses a ${name} master that lost its audio`, () => {
+      expectViolation(check(layout, undefined), 'missing');
+    });
+  }
+
+  it('refuses a silent stereo downmix of a 5.1 source', () => {
+    expectViolation(check(layouts.surround, { ...layouts.stereo, duration: 10 }), 'audio channels instead of 6');
+  });
+
+  it('accepts a downmix only when it was explicitly chosen, and then only real stereo', () => {
+    const policy = AudioChannelPolicy.DownmixStereo;
+    expect(check(layouts.surround, { ...layouts.stereo, duration: 10 }, { policy })).not.toThrow();
+    expectViolation(check(layouts.surround, { ...layouts.surround, duration: 10 }, { policy }), 'stereo downmix');
+  });
+
+  it('refuses a changed channel layout or sample rate', () => {
+    expectViolation(check(layouts.surround, { ...layouts.surround, channelLayout: '5.1', duration: 10 }), 'layout');
+    expectViolation(check(layouts.stereo, { ...layouts.stereo, sampleRate: 44_100, duration: 10 }), 'sample rate');
+  });
+
+  it('does not invent a layout the source never stated', () => {
+    const unknown = { codecName: 'aac', channels: null, channelLayout: null, sampleRate: null };
+    expect(check(unknown as never, { ...layouts.stereo, duration: 10 })).not.toThrow();
+  });
+
+  it('refuses audio that drifts from the picture by more than one audio and one video frame', () => {
+    // one AAC frame at 48 kHz (21.3 ms) plus one 29.97 fps frame (33.4 ms) is the allowance
+    expect(check(layouts.stereo, { ...layouts.stereo, duration: 10.054 })).not.toThrow();
+    expectViolation(check(layouts.stereo, { ...layouts.stereo, duration: 10.06 }), 'drift apart');
+    expectViolation(check(layouts.stereo, { ...layouts.stereo, duration: 9.9 }), 'drift apart');
+  });
+
+  it('refuses an alignment it cannot measure', () => {
+    expectViolation(check(layouts.stereo, { ...layouts.stereo, duration: null }), 'could not be measured');
+  });
+
+  it('leaves a muted recipe and a silent source alone', () => {
+    expect(check(layouts.stereo, undefined, { muted: true })).not.toThrow();
+    expect(check(undefined, undefined)).not.toThrow();
   });
 });
