@@ -1,3 +1,4 @@
+import { HttpException, HttpStatus } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { isIP } from 'node:net';
 import z from 'zod';
@@ -86,6 +87,19 @@ export const discoverySchema = z.object({
   remote: remoteSchema
     .optional()
     // eslint-disable-next-line unicorn/no-useless-undefined -- a bad remote block is dropped, keeping the optional type
+    .catch(() => undefined),
+  /**
+   * FC-62: the check-in and entitlement refresh intervals, set by staff (60–900 s and 3,600–86,400 s)
+   * and read per request. Each is clamped where it is used; a bad value is dropped on its own, so the
+   * contract default applies, and never fails discovery.
+   */
+  intervals: z
+    .object({
+      heartbeatSec: z.number().positive().optional().catch(undefined),
+      entitlementRefreshSec: z.number().positive().optional().catch(undefined),
+    })
+    .optional()
+    // eslint-disable-next-line unicorn/no-useless-undefined -- a bad intervals block is dropped, keeping the optional type
     .catch(() => undefined),
 });
 export type FrameleafDiscoveryDocument = z.infer<typeof discoverySchema>;
@@ -1165,6 +1179,14 @@ export enum CloudErrorCode {
   RegionMismatch = 'region-mismatch',
   /** 403 (FC-19, FC-34): the cloud suspects this server's identity was copied. */
   CloneSuspected = 'clone_suspected',
+  /**
+   * 503 (FC-62): Frameleaf staff paused new work of this kind (sign-ups, links, backup grants, top-ups);
+   * retryable with `Retry-After`, and `message` is the status message customers see. Running work
+   * carries on.
+   */
+  ServicePaused = 'service-paused',
+  /** 503 (FC-31, FC-62): no relay tunnel now; also what a paused relay region answers. */
+  RelayUnavailable = 'relay-unavailable',
 }
 
 /**
@@ -1296,6 +1318,48 @@ export class FrameleafCloudError extends Error {
     this.name = 'FrameleafCloudError';
   }
 }
+
+/**
+ * FC-62: Frameleaf Cloud refused to START new work because staff paused it: `service-paused` (links,
+ * backup grants, top-ups), or the codes a paused relay region (`relay-unavailable`) and ML region
+ * (`capacity`) keep. Always a 503, retryable, and never a reason to stop work already running.
+ */
+export const isNewWorkPaused = (error: unknown): error is FrameleafCloudError =>
+  error instanceof FrameleafCloudError &&
+  error.status === 503 &&
+  [CloudErrorCode.ServicePaused, CloudErrorCode.RelayUnavailable, CloudErrorCode.Capacity].includes(
+    error.envelope?.code as CloudErrorCode,
+  );
+
+/** What Frameleaf Cloud has paused, in its own words when it gave any (the status message staff wrote). */
+export const pausedMessageOf = (error: unknown): string | null => {
+  if (!isNewWorkPaused(error)) {
+    return null;
+  }
+  return error.envelope?.message.trim() || 'Frameleaf Cloud has paused this for now. Try again later.';
+};
+
+/**
+ * FC-62: a paused refusal as the answer an administrator's request gets: 503 with Frameleaf Cloud's own
+ * message (never shortened by the web app), its `code` and `retryAfterSeconds`; null for anything else.
+ */
+export const pausedException = (error: unknown): HttpException | null => {
+  const message = pausedMessageOf(error);
+  if (!message) {
+    return null;
+  }
+  const { envelope, retryAfterSeconds } = error as FrameleafCloudError;
+  return new HttpException(
+    {
+      message,
+      error: 'Service Unavailable',
+      statusCode: HttpStatus.SERVICE_UNAVAILABLE,
+      code: envelope?.code ?? CloudErrorCode.ServicePaused,
+      retryAfterSeconds,
+    },
+    HttpStatus.SERVICE_UNAVAILABLE,
+  );
+};
 
 /** The error code of a failed cloud call: the envelope's `code`, else the OAuth `error`. */
 export const cloudErrorCode = (error: unknown): string | null =>

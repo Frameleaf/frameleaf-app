@@ -1,5 +1,5 @@
 import z from 'zod';
-import { FrameleafCloudError, cloudErrorCode } from 'src/utils/frameleaf-cloud.js';
+import { FrameleafCloudError, cloudErrorCode, pausedMessageOf } from 'src/utils/frameleaf-cloud.js';
 
 /**
  * Frameleaf Cloud's managed backup contract (FL-164, CLD-302), as the cloud publishes it in
@@ -209,6 +209,15 @@ export const managedBackupRefusal = (
         message: 'Frameleaf Cloud asked this server to wait before it requests backup storage again.',
         retry: true,
         retryAfterSeconds: retryAfterSeconds ?? (Number.isFinite(fromData) && fromData > 0 ? fromData : null),
+        cloneSuspected: false,
+      };
+    }
+    case 'service-paused': {
+      // FC-62: new backup grants are paused for now; existing grants, reads and rotations carry on
+      return {
+        message: pausedMessageOf(error) ?? 'Frameleaf Cloud has paused new backup storage for now. Try again later.',
+        retry: true,
+        retryAfterSeconds,
         cloneSuspected: false,
       };
     }

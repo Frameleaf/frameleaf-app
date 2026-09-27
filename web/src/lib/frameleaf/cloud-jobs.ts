@@ -14,6 +14,7 @@ import {
 import type { Translations } from 'svelte-i18n';
 import type { ActivityCloudJob, ActivityStage } from '$lib/frameleaf/activity';
 import { formatRatePerMinute, formatUsd } from '$lib/frameleaf/cloud-ml';
+import { pausedRefusalMessage } from '$lib/frameleaf/cloud-paused';
 
 /** "$1.20–$1.60": the typical to high-end range, start fees included. */
 export const estimateRange = (low: number, high: number) => `${formatUsd(low)}–${formatUsd(high)}`;
@@ -34,10 +35,11 @@ export const billingValues = (
  * What an estimate or confirmation refusal asks of the person (FL-162). `model` goes back to the
  * model slider (409 `model-mismatch`), `estimate` estimates again (409 `estimate-expired`, or the
  * terms changed), `preparing` asks again shortly (409 `input-preparing`: a whole video is being
- * prepared in the background), `money` shows the refusal as it is (402: never a lighter model), and
+ * prepared in the background), `money` shows the refusal as it is (402: never a lighter model),
+ * `paused` shows Frameleaf Cloud's own message (FC-62: new jobs are paused in this region), and
  * anything else is shown as an error.
  */
-export type CloudJobRefusal = 'model' | 'estimate' | 'preparing' | 'money' | 'other';
+export type CloudJobRefusal = 'model' | 'estimate' | 'preparing' | 'money' | 'paused' | 'other';
 
 /** How long to wait before asking again for an estimate whose video is being prepared. */
 export const preparingRetryMs = (error: unknown): number => {
@@ -63,6 +65,9 @@ export const cloudJobRefusal = (error: unknown): CloudJobRefusal => {
   }
   if (error.status === 409 && (code === 'estimate-expired' || code === 'consent-version-outdated')) {
     return 'estimate';
+  }
+  if (pausedRefusalMessage(error)) {
+    return 'paused';
   }
   return 'other';
 };

@@ -32,6 +32,7 @@ import {
   CloudCatalogEntry,
   FrameleafCloudError,
   catalogSchema,
+  errorEnvelopeSchema,
   estimateResponseSchema,
   jobAdmittedSchema,
   jobViewSchema,
@@ -959,6 +960,63 @@ describe(CloudMlJobService.name, () => {
       );
       expect(written().uploads.v1.parts).toHaveLength(2);
       expect(mocks.frameleafCloudMl.startJob).toHaveBeenCalledWith(expect.anything(), JOB_ID);
+    });
+
+    it('waits to be admitted while the region takes no new jobs, then fails with the cloud’s own words (FC-62)', async () => {
+      const paused = () =>
+        new FrameleafCloudError(
+          MlAdmissionRefusal.DestinationUnhealthy,
+          503,
+          'Processing in the EU is paused until 18:00 UTC.',
+          errorEnvelopeSchema.parse({
+            code: 'capacity',
+            message: 'Processing in the EU is paused until 18:00 UTC.',
+            retryable: true,
+          }),
+          null,
+          300,
+        );
+      mocks.frameleafCloudMl.createJob.mockRejectedValue(paused());
+
+      await sut.step(claimed(), 'claim', now);
+
+      expect(mocks.mediaOperation.fail).not.toHaveBeenCalled();
+      expect(mocks.mediaOperation.requeue).toHaveBeenLastCalledWith(OPERATION_ID, 'claim', {
+        delayMs: 300_000,
+        returnAttempt: true,
+      });
+      expect(written()).toMatchObject({
+        transientFailures: 1,
+        waiting: { detail: 'Processing in the EU is paused until 18:00 UTC.' },
+      });
+
+      // the waits are limited: then the job fails with the message, and gets its automatic retry
+      await sut.step(claimed({ transientFailures: 8 }), 'claim', now);
+      expect(mocks.mediaOperation.fail).toHaveBeenCalledWith(
+        OPERATION_ID,
+        'claim',
+        { error: 'Processing in the EU is paused until 18:00 UTC.', errorCode: 'cloud_ml_destination_unhealthy' },
+        { retry: true },
+      );
+    });
+
+    it('answers an estimate refused while new jobs are paused with a 503 and the cloud’s message (FC-62)', async () => {
+      mocks.frameleafCloudMl.createEstimate.mockRejectedValue(
+        new FrameleafCloudError(
+          MlAdmissionRefusal.CloudUnavailable,
+          503,
+          'Processing is paused.',
+          errorEnvelopeSchema.parse({ code: 'service-paused', message: 'Processing is paused.', retryable: true }),
+          null,
+          300,
+        ),
+      );
+      const error = await sut.estimate(owner, preview(), now).catch((error_: unknown) => error_);
+      expect((error as HttpException).getStatus()).toBe(503);
+      expect((error as HttpException).getResponse()).toMatchObject({
+        message: 'Processing is paused.',
+        code: 'service-paused',
+      });
     });
 
     it('refuses a 402 as it is: nothing sent again, and never a lighter model', async () => {
