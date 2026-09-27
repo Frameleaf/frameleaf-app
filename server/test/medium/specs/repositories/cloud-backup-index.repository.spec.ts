@@ -453,5 +453,20 @@ describe(CloudBackupIndexRepository.name, () => {
         ]),
       );
     });
+
+    it('tells which items each album holds now, leaving out an album that is gone', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      const { album } = await ctx.newAlbum({ ownerId: user.id }, [asset.id]);
+      const { album: empty } = await ctx.newAlbum({ ownerId: user.id }, []);
+
+      await expect(sut.getAlbumMembers([album.id, empty.id, randomUUID()])).resolves.toEqual(
+        new Map([
+          [album.id, new Set([asset.id])],
+          [empty.id, new Set()],
+        ]),
+      );
+    });
   });
 });

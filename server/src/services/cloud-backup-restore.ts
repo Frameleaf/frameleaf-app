@@ -2,6 +2,7 @@ import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import type { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import type { LoggingRepository } from 'src/repositories/logging.repository.js';
 import type { StorageRepository } from 'src/repositories/storage.repository.js';
+import type { RestoreDetailsMode } from 'src/utils/cloud-backup-details.js';
 import { CloudBackupStoreError, CloudBackupStoreRepository } from 'src/repositories/cloud-backup-store.repository.js';
 import { CloudBackupBucket, CloudBackupCheckpoint } from 'src/services/cloud-backup-maintenance.js';
 import { CloudBackupManifest, objectKey } from 'src/utils/cloud-backup.js';
@@ -14,11 +15,15 @@ import { isValidDatabaseBackupName } from 'src/utils/database-backups.js';
  *   `<media>/frameleaf/restore/<operation>`, where Library Care's search for missing originals finds them.
  *   Nothing in the library is touched.
  * - `asset`: one asset's files back where the library expects them. A file already there that is not the
- *   backed-up one is moved to `<media>/frameleaf/restore/replaced/<operation>` first, never deleted.
+ *   backed-up one is moved to `<media>/frameleaf/restore/replaced/<operation>` first, never deleted. A
+ *   deleted asset is made again from its manifest record, and one still in the library gets its details
+ *   back as the snapshot's `details` says (manifest v2).
+ * - `album`: the album's members as `asset` does for one, then the album itself made again, or its lost
+ *   members added back (manifest v2).
  * - `database`: the manifest's database dump into `<media>/backups`, where the maintenance restore lists it.
  * - `library`: every file back in its place, as `asset` does for one, and the database dump as `database`.
  */
-export type CloudBackupRestoreScope = 'files' | 'asset' | 'database' | 'library';
+export type CloudBackupRestoreScope = 'files' | 'asset' | 'album' | 'database' | 'library';
 
 export type CloudBackupRestoreSnapshot = {
   version: 1;
@@ -27,12 +32,17 @@ export type CloudBackupRestoreSnapshot = {
   manifestKey: string;
   scope: CloudBackupRestoreScope;
   assetIds: string[] | null;
+  /** `album`: the album the members in `assetIds` belong to. */
+  albumId?: string | null;
+  /** `asset` and `album`: how the details of items still in the library come back; `keep` when absent. */
+  details?: RestoreDetailsMode;
 };
 
 /** Where a restore has got to, kept on the operation row as its result. */
 export type CloudBackupRestoreResult = {
   task: 'restore';
-  phase: 'files' | 'database' | 'done';
+  /** `library`: the files are back; items, details and the album are being put back. */
+  phase: 'files' | 'library' | 'database' | 'done';
   /** The last file written, in the plan's order: a resumed restore carries on after it. */
   cursor: string | null;
   files: number;
@@ -49,17 +59,26 @@ export type CloudBackupRestoreResult = {
   databaseFile: string | null;
   /** Assets whose files went back in place: their thumbnails and previews are made again. */
   restoredAssetIds: string[];
+  /** Deleted items made again from their manifest record. */
+  recreated: number;
+  /** Items still in the library whose details came back. */
+  detailsRestored: number;
 };
 
 /** One file a restore writes, verified against `sha256` before it lands at `target`. */
 export type CloudBackupRestoreFile = {
   fileKey: string;
   assetId: string | null;
+  /** The manifest's role for the file: `original`, `sidecar`, a thumbnail, or `profile`. */
+  role: string;
   sha256: string;
   size: number;
   target: string;
   inPlace: boolean;
 };
+
+/** Scopes that put files back where the library expects them rather than into a restore folder. */
+export const IN_PLACE_SCOPES: ReadonlySet<CloudBackupRestoreScope> = new Set(['asset', 'album', 'library']);
 
 export const RESTORE_FOLDER = join('frameleaf', 'restore');
 export const RESTORE_REPLACED_FOLDER = join('frameleaf', 'restore', 'replaced');
@@ -81,6 +100,8 @@ export const emptyRestoreResult = (): CloudBackupRestoreResult => ({
   destination: null,
   databaseFile: null,
   restoredAssetIds: [],
+  recreated: 0,
+  detailsRestored: 0,
 });
 
 /** Whether `path` is inside `folder`, after resolving `..` and the like. */
@@ -124,7 +145,7 @@ export const restorePlan = (options: {
     return { files: [], destination: null };
   }
   const restoreRoot = join(mediaLocation, RESTORE_FOLDER, operationId);
-  const inPlace = scope === 'asset' || scope === 'library';
+  const inPlace = IN_PLACE_SCOPES.has(scope);
   const chosen = options.assetIds ? new Set(options.assetIds) : null;
   const files: CloudBackupRestoreFile[] = [];
 
@@ -145,6 +166,7 @@ export const restorePlan = (options: {
       files.push({
         fileKey,
         assetId,
+        role: file.role,
         sha256: file.sha256,
         size: file.size,
         target,
@@ -159,6 +181,7 @@ export const restorePlan = (options: {
       files.push({
         fileKey: `~profile:${userId}`,
         assetId: null,
+        role: 'profile',
         sha256: file.sha256,
         size: file.size,
         target,
@@ -198,6 +221,8 @@ export class CloudBackupRestorer {
     operationId: string;
     start: CloudBackupRestoreResult;
     checkpoint: CloudBackupCheckpoint<CloudBackupRestoreResult>;
+    /** After the files: puts items, details and albums back (`asset` and `album`). Safe to run again. */
+    library?: (result: CloudBackupRestoreResult) => Promise<CloudBackupRestoreResult>;
   }): Promise<CloudBackupRestoreResult | null> {
     const { bucket, manifest, scope, files, checkpoint } = options;
     const database = scope === 'database' || scope === 'library' ? manifest.database : null;
@@ -238,6 +263,16 @@ export class CloudBackupRestorer {
           return null;
         }
       }
+      result = { ...result, phase: 'library' };
+      if (!(await checkpoint(result))) {
+        return null;
+      }
+    }
+
+    if (result.phase === 'library') {
+      if (options.library) {
+        result = await options.library(result);
+      }
       result = { ...result, phase: database ? 'database' : 'done' };
     }
 
@@ -247,7 +282,15 @@ export class CloudBackupRestorer {
       const outcome = await this.restoreFile(
         bucket,
         database.key,
-        { fileKey: '~database', assetId: null, sha256: database.sha256, size: database.size, target, inPlace: true },
+        {
+          fileKey: '~database',
+          assetId: null,
+          role: 'database',
+          sha256: database.sha256,
+          size: database.size,
+          target,
+          inPlace: true,
+        },
         options,
       );
       result = {

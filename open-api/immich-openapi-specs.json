@@ -735,6 +735,63 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/admin/cloud/backup/manifests/albums": {
+      "post": {
+        "description": "The albums one kept backup records that are deleted or no longer hold every item they held then. Reads the backup’s manifest from the bucket.",
+        "operationId": "listCloudBackupManifestAlbums",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CloudBackupManifestAlbumsDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudBackupManifestAlbumsResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List the albums a backup can bring back",
+        "tags": [
+          "Frameleaf Cloud backup (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloudBackup.read",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/cloud/backup/manifests/items": {
       "post": {
         "description": "The items one kept backup holds, found by file name, and whether each is still in the library. Reads the backup’s manifest from the bucket.",
@@ -51851,6 +51908,15 @@
         ],
         "type": "object"
       },
+      "CloudBackupAlbumState": {
+        "description": "deleted: the album is gone; missing-items: some of its items are no longer in it; complete: nothing to bring back",
+        "enum": [
+          "deleted",
+          "missing-items",
+          "complete"
+        ],
+        "type": "string"
+      },
       "CloudBackupBucketState": {
         "description": "empty: ready to claim; claimed: holds a Frameleaf claim; not-empty: holds other files",
         "enum": [
@@ -52049,6 +52115,12 @@
             "nullable": true,
             "type": "string"
           },
+          "detailsRestored": {
+            "description": "Items still in the library whose details came back",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
           "error": {
             "nullable": true,
             "type": "string"
@@ -52063,6 +52135,12 @@
           },
           "operationId": {
             "type": "string"
+          },
+          "recreated": {
+            "description": "Deleted items made again",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
           },
           "replaced": {
             "maximum": 9007199254740991,
@@ -52086,10 +52164,12 @@
           "bytes",
           "databaseFile",
           "destination",
+          "detailsRestored",
           "error",
           "files",
           "manifestKey",
           "operationId",
+          "recreated",
           "replaced",
           "scope",
           "skipped",
@@ -52279,6 +52359,85 @@
         ],
         "type": "object"
       },
+      "CloudBackupManifestAlbumDto": {
+        "properties": {
+          "albumId": {
+            "type": "string"
+          },
+          "items": {
+            "description": "Items the album held in this backup",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "missing": {
+            "description": "Of those, items no longer in the album",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "ownerId": {
+            "type": "string"
+          },
+          "ownerName": {
+            "nullable": true,
+            "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/CloudBackupAlbumState"
+          }
+        },
+        "required": [
+          "albumId",
+          "items",
+          "missing",
+          "name",
+          "ownerId",
+          "ownerName",
+          "state"
+        ],
+        "type": "object"
+      },
+      "CloudBackupManifestAlbumsDto": {
+        "properties": {
+          "manifestKey": {
+            "description": "The backup run’s manifest in the bucket",
+            "pattern": "^m\\/\\d{8}T\\d{6}Z\\.json\\.gz$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "manifestKey"
+        ],
+        "type": "object"
+      },
+      "CloudBackupManifestAlbumsResponseDto": {
+        "properties": {
+          "albums": {
+            "description": "Deleted albums and albums missing items, by name",
+            "items": {
+              "$ref": "#/components/schemas/CloudBackupManifestAlbumDto"
+            },
+            "type": "array"
+          },
+          "hasDetails": {
+            "description": "The backup records albums; false for a backup made before they were recorded",
+            "type": "boolean"
+          },
+          "manifestKey": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "albums",
+          "hasDetails",
+          "manifestKey"
+        ],
+        "type": "object"
+      },
       "CloudBackupManifestDto": {
         "properties": {
           "assets": {
@@ -52342,6 +52501,10 @@
             "minimum": -9007199254740991,
             "type": "integer"
           },
+          "hasDetails": {
+            "description": "The backup holds the item’s details, so a deleted item comes back as it was, not only as a file",
+            "type": "boolean"
+          },
           "locked": {
             "description": "A Locked item: never named in this list",
             "type": "boolean"
@@ -52371,6 +52534,7 @@
           "assetId",
           "bytes",
           "files",
+          "hasDetails",
           "locked",
           "modifiedAt",
           "name",
@@ -52466,8 +52630,23 @@
         ],
         "type": "object"
       },
+      "CloudBackupRestoreDetails": {
+        "description": "How the details of an item still in the library come back. keep: only the file; fill: backed-up values fill empty fields; replace: fields that differ go back to the backup’s values",
+        "enum": [
+          "keep",
+          "fill",
+          "replace"
+        ],
+        "type": "string"
+      },
       "CloudBackupRestoreDto": {
         "properties": {
+          "albumId": {
+            "description": "album: the album to restore",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
           "assetIds": {
             "description": "files: the items to restore (every item when absent); asset: exactly one item",
             "items": {
@@ -52477,6 +52656,10 @@
             },
             "maxItems": 10000,
             "type": "array"
+          },
+          "details": {
+            "$ref": "#/components/schemas/CloudBackupRestoreDetails",
+            "description": "asset and album: how details of items still in the library come back; keep when absent"
           },
           "manifestKey": {
             "description": "The backup run’s manifest in the bucket",
@@ -52494,10 +52677,11 @@
         "type": "object"
       },
       "CloudBackupRestoreScope": {
-        "description": "files: into a restore folder for Library Care; asset: one item back in place; database: the dump for the maintenance restore; library: every file back in place and the dump",
+        "description": "files: into a restore folder for Library Care; asset: one item back in place (made again when it was deleted); album: an album and its members (made again when deleted); database: the dump for the maintenance restore; library: every file back in place and the dump",
         "enum": [
           "files",
           "asset",
+          "album",
           "database",
           "library"
         ],

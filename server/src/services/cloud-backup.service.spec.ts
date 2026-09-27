@@ -126,6 +126,7 @@ const entry = (fileKey: string, overrides: Partial<CloudBackupEntry> = {}): Clou
 });
 
 const dumpKey = 'db/cloud-backup-immich-db-backup-dump.sql.gz';
+const ALBUM_ID = '5b0c4e8a-1d2f-4a3b-9c8d-7e6f5a4b3c2d';
 
 describe(CloudBackupService.name, () => {
   let sut: CloudBackupService;
@@ -137,6 +138,7 @@ describe(CloudBackupService.name, () => {
   let keys: Record<string, ReturnType<typeof vi.fn>>;
   let databaseBackup: Record<string, ReturnType<typeof vi.fn>>;
   let cloudBackup: Record<string, ReturnType<typeof vi.fn>>;
+  let details: Record<string, ReturnType<typeof vi.fn>>;
   /** What each streamed upload sent (the gzipped manifests). */
   let streamed: Buffer[];
 
@@ -162,6 +164,7 @@ describe(CloudBackupService.name, () => {
       mocks.user as never,
       mocks.cron as never,
       mocks.job as never,
+      details as never,
     );
 
   const uploadedKeys = () => store.uploadFile.mock.calls.map(([, objectKey]) => objectKey as string);
@@ -190,6 +193,12 @@ describe(CloudBackupService.name, () => {
       Promise.resolve(Buffer.from(hex(String(path).includes('dump') ? 'dump' : String(path)), 'hex')),
     );
 
+    details = {
+      putBack: vi.fn().mockResolvedValue(true),
+      recreate: vi.fn().mockImplementation(({ assetId }) => Promise.resolve({ status: 'created', assetId })),
+      restoreAlbum: vi.fn().mockResolvedValue('created'),
+      restoreStacks: vi.fn().mockResolvedValue(undefined),
+    };
     operations = {
       getActiveOfKind: vi.fn().mockResolvedValue(undefined),
       getOfKind: vi.fn().mockResolvedValue(undefined),
@@ -265,6 +274,7 @@ describe(CloudBackupService.name, () => {
       getAssetDetails: vi.fn().mockResolvedValue(new Map()),
       getAlbumRecords: vi.fn().mockResolvedValue(new Map()),
       getPersonRecords: vi.fn().mockResolvedValue(new Map()),
+      getAlbumMembers: vi.fn().mockResolvedValue(new Map()),
     };
     keys = {
       read: vi.fn().mockResolvedValue(null),
@@ -1714,7 +1724,243 @@ describe(CloudBackupService.name, () => {
       expect(found).toEqual({
         manifestKey,
         total: 1,
-        items: [expect.objectContaining({ assetId: 'asset-1', name: 'IMG_1.jpg', state: 'deleted', bytes: 100 })],
+        items: [
+          expect.objectContaining({
+            assetId: 'asset-1',
+            name: 'IMG_1.jpg',
+            state: 'deleted',
+            bytes: 100,
+            hasDetails: false,
+          }),
+        ],
+      });
+    });
+
+    it('brings details back only for an item or an album', async () => {
+      await expect(
+        sut.startRestore(authStub.admin, { manifestKey, scope: 'files', details: 'fill' }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      await expect(sut.startRestore(authStub.admin, { manifestKey, scope: 'album' })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+    });
+
+    it('asks for a newer backup when this one was made before albums were recorded', async () => {
+      await expect(
+        sut.startRestore(authStub.admin, { manifestKey, scope: 'album', albumId: ALBUM_ID }),
+      ).rejects.toThrow('made before albums were recorded');
+    });
+
+    describe('albums and details (manifest v2)', () => {
+      const record = {
+        type: 'IMAGE',
+        originalFileName: 'IMG_1.jpg',
+        fileCreatedAt: '2026-08-14T07:12:00.000Z',
+        fileModifiedAt: '2026-08-14T07:12:00.000Z',
+        localDateTime: '2026-08-14T09:12:00.000Z',
+        duration: null,
+      };
+      const detailsOf = (stack: { id: string; isPrimary: boolean } | null = null) => ({
+        isFavorite: true,
+        visibility: 'timeline',
+        rating: 5,
+        description: 'Lake',
+        dateTimeOriginal: null,
+        timeZone: null,
+        latitude: null,
+        longitude: null,
+        tags: [],
+        albums: [{ id: ALBUM_ID, name: 'Lake house' }],
+        faces: [],
+        stack,
+        edits: [],
+      });
+      const album = {
+        name: 'Lake house',
+        description: '',
+        ownerId: 'owner-1',
+        coverAssetId: 'asset-1',
+        order: 'desc',
+        sharedUsers: [],
+      };
+      const v2Body = gzipSync(
+        JSON.stringify({
+          format: 'frameleaf-backup-manifest',
+          version: 2,
+          instanceId: 'instance-1',
+          createdAt: '2026-09-26T03:00:00.000Z',
+          database: null,
+          assets: {
+            'asset-1': {
+              owner: 'owner-1',
+              files: [
+                { role: 'original', path: '/data/library/IMG_1.jpg', sha256: SHA_A, size: 100, mtime: null },
+                { role: 'sidecar', path: '/data/library/IMG_1.jpg.xmp', sha256: SHA_SIDECAR, size: 5, mtime: null },
+              ],
+              ...record,
+              details: detailsOf({ id: 'stack-1', isPrimary: true }),
+            },
+            'asset-2': {
+              owner: 'owner-1',
+              files: [{ role: 'original', path: '/data/library/IMG_2.jpg', sha256: SHA_B, size: 100, mtime: null }],
+              ...record,
+              originalFileName: 'IMG_2.jpg',
+              details: detailsOf(),
+            },
+            'asset-3': {
+              owner: 'owner-1',
+              files: [{ role: 'original', path: '/data/library/IMG_3.jpg', sha256: SHA_C, size: 100, mtime: null }],
+              ...record,
+              details: { ...detailsOf(), albums: [] },
+            },
+          },
+          profiles: {},
+          albums: { [ALBUM_ID]: album },
+          people: {},
+        }),
+      );
+      const libraryAsset = {
+        status: 'active',
+        ownerId: 'owner-1',
+        originalPath: '/data/library/IMG_2.jpg',
+        isExternal: false,
+        locked: false,
+      };
+
+      beforeEach(() => {
+        store.get = vi.fn().mockResolvedValue(v2Body);
+      });
+
+      it('queues an album restore with the album’s items from the backup and how their details come back', async () => {
+        await sut.startRestore(authStub.admin, { manifestKey, scope: 'album', albumId: ALBUM_ID, details: 'fill' });
+
+        expect(operations.createExclusive).toHaveBeenCalledWith(
+          expect.objectContaining({
+            label: 'Restore an album from cloud backup',
+            snapshot: expect.objectContaining({
+              scope: 'album',
+              albumId: ALBUM_ID,
+              assetIds: ['asset-1', 'asset-2'],
+              details: 'fill',
+            }),
+          }),
+          DatabaseLock.FrameleafCloudBackup,
+          { alsoKinds: [MediaOperationKind.CloudBackup] },
+        );
+        await expect(
+          sut.startRestore(authStub.admin, {
+            manifestKey,
+            scope: 'album',
+            albumId: '0f0d1e2c-3b4a-4c5d-8e6f-7a8b9c0d1e2f',
+          }),
+        ).rejects.toThrow('does not hold the album');
+      });
+
+      it('restores an album: its deleted items made again, the others’ details back, then the album', async () => {
+        index.getLibraryState = vi
+          .fn()
+          .mockImplementation((ids: string[]) =>
+            Promise.resolve(new Map(ids.includes('asset-2') ? [['asset-2', libraryAsset]] : [])),
+          );
+        const current = { record, details: { ...detailsOf(), isFavorite: false, albums: [] } };
+        index.getAssetDetails.mockResolvedValue(new Map([['asset-2', current]]));
+        const operation = operationOf({
+          id: 'restore-1',
+          kind: MediaOperationKind.CloudRestore,
+          snapshot: {
+            version: 1,
+            bucketRef: ref,
+            keyFingerprint: fingerprint,
+            manifestKey,
+            scope: 'album',
+            assetIds: ['asset-1', 'asset-2'],
+            albumId: ALBUM_ID,
+            details: 'replace',
+          },
+        });
+
+        await sut.run(operation, 'claim-1');
+
+        expect(details.recreate).toHaveBeenCalledOnce();
+        expect(details.recreate).toHaveBeenCalledWith(
+          expect.objectContaining({
+            assetId: 'asset-1',
+            ownerId: 'owner-1',
+            record,
+            sha256: SHA_A,
+            originalPath: '/data/library/IMG_1.jpg',
+            sidecarPath: '/data/library/IMG_1.jpg.xmp',
+          }),
+        );
+        expect(details.putBack).toHaveBeenCalledWith(
+          expect.objectContaining({ assetId: 'asset-2', mode: 'replace', current: current.details }),
+        );
+        expect(details.restoreStacks).toHaveBeenCalledWith([
+          { assetId: 'asset-1', ownerId: 'owner-1', stack: { id: 'stack-1', isPrimary: true } },
+        ]);
+        expect(details.restoreAlbum).toHaveBeenCalledWith({
+          albumId: ALBUM_ID,
+          album,
+          memberIds: ['asset-1', 'asset-2'],
+        });
+        expect(operations.complete).toHaveBeenCalledWith('restore-1', 'claim-1', { resultAssetId: null });
+        expect(metadata[SystemMetadataKey.FrameleafCloudBackup]).toMatchObject({
+          lastRestore: { scope: 'album', status: 'completed', recreated: 1, detailsRestored: 1 },
+        });
+      });
+
+      it('keeps current details when asked, and gives a deleted item back as its owner’s copy of the same file', async () => {
+        details.recreate.mockResolvedValue({ status: 'duplicate', assetId: 'asset-9' });
+        const operation = operationOf({
+          id: 'restore-1',
+          kind: MediaOperationKind.CloudRestore,
+          snapshot: {
+            version: 1,
+            bucketRef: ref,
+            keyFingerprint: fingerprint,
+            manifestKey,
+            scope: 'album',
+            assetIds: ['asset-1'],
+            albumId: ALBUM_ID,
+            details: 'keep',
+          },
+        });
+
+        await sut.run(operation, 'claim-1');
+
+        expect(details.putBack).not.toHaveBeenCalled();
+        expect(details.restoreAlbum).toHaveBeenCalledWith(expect.objectContaining({ memberIds: ['asset-9'] }));
+      });
+
+      it('lists deleted albums and albums missing items, by name', async () => {
+        index.getAlbumMembers.mockResolvedValue(new Map());
+        index.getOwnerNames.mockResolvedValue(new Map([['owner-1', 'Taylor']]));
+
+        await expect(sut.listManifestAlbums({ manifestKey })).resolves.toEqual({
+          manifestKey,
+          hasDetails: true,
+          albums: [
+            {
+              albumId: ALBUM_ID,
+              name: 'Lake house',
+              ownerId: 'owner-1',
+              ownerName: 'Taylor',
+              items: 2,
+              missing: 2,
+              state: 'deleted',
+            },
+          ],
+        });
+
+        index.getAlbumMembers.mockResolvedValue(new Map([[ALBUM_ID, new Set(['asset-1'])]]));
+        sut['manifestCache'] = undefined;
+        await expect(sut.listManifestAlbums({ manifestKey })).resolves.toMatchObject({
+          albums: [{ state: 'missing-items', missing: 1 }],
+        });
+
+        index.getAlbumMembers.mockResolvedValue(new Map([[ALBUM_ID, new Set(['asset-1', 'asset-2'])]]));
+        sut['manifestCache'] = undefined;
+        await expect(sut.listManifestAlbums({ manifestKey })).resolves.toMatchObject({ albums: [] });
       });
     });
   });
