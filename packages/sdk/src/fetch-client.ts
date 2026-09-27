@@ -4324,6 +4324,8 @@ export type AssetRestorationRequestDto = {
     keepGrain?: boolean;
     mode: AssetRestorationMode;
     region?: AssetRestorationRegionDto;
+    /** Smooth motion only (FL-162): how many frames each frame becomes. Required for smooth_motion, refused otherwise. */
+    smoothMotionFactor?: 2 | 4 | 8;
     /** Upscale factor. Output is additionally capped at 4K. */
     upscale?: 1 | 2 | 4;
 };
@@ -4338,6 +4340,11 @@ export type AssetRestorationDestinationDto = {
     consentGranted: boolean;
     consentRequired: boolean;
     estimate: AssetRestorationEstimateDto;
+    /** The GPU a home restoration worker reported at its last check, for the model slider (FL-159); null otherwise */
+    gpu: {
+        memoryTotalBytes: number;
+        name: string;
+    } | null;
     health: MlDestinationHealth;
     id: string;
     kind: MlDestinationKind;
@@ -4362,6 +4369,8 @@ export type AssetRestorationOptionsDto = {
     outputWidth: number;
     /** Length of a video preview clip; null for stills */
     previewSeconds: number | null;
+    /** Where each job runs for this kind of work: Local only, Both or Cloud only (FL-159). Frameleaf Cloud is never chosen silently. */
+    route: AssetRestorationRoute;
     sourceHeight: number;
     sourceType: AssetRestorationSourceType;
     sourceWidth: number;
@@ -22165,6 +22174,11 @@ export enum AssetRestorationStatus {
     Rejected = "rejected",
     Discarded = "discarded",
     Expired = "expired"
+}
+export enum AssetRestorationRoute {
+    Local = "local",
+    Both = "both",
+    Cloud = "cloud"
 }
 export enum AssetRestorationFileKind {
     Before = "before",

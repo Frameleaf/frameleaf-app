@@ -137,6 +137,19 @@ const AssetRestorationRequestSchema = z
       .uuidv4()
       .describe('The processing destination this restoration runs on. Required; never inferred.'),
     region: AssetRestorationRegionSchema.default(DEFAULT_RESTORATION_REGION),
+    smoothMotionFactor: z
+      .union([
+        z.literal(2).meta({ format: 'double' }),
+        z.literal(4).meta({ format: 'double' }),
+        z.literal(8).meta({ format: 'double' }),
+      ])
+      .optional()
+      .describe(
+        'Smooth motion only (FL-162): how many frames each frame becomes. Required for smooth_motion, refused otherwise.',
+      ),
+  })
+  .refine((dto) => (dto.mode === AssetRestorationMode.SmoothMotion) === (dto.smoothMotionFactor !== undefined), {
+    message: 'smoothMotionFactor is required for smooth_motion and only for it',
   })
   .meta({ id: 'AssetRestorationRequestDto' });
 
@@ -198,6 +211,15 @@ const AssetRestorationDestinationSchema = z
     refusal: MlAdmissionRefusalSchema.nullable().describe('Why the destination cannot be chosen, or null'),
     refusalDetail: z.string().nullable(),
     estimate: AssetRestorationEstimateSchema,
+    gpu: z
+      .object({
+        name: z.string(),
+        memoryTotalBytes: z.number().meta({ format: 'double' }),
+      })
+      .nullable()
+      .describe(
+        'The GPU a home restoration worker reported at its last check, for the model slider (FL-159); null otherwise',
+      ),
   })
   .meta({ id: 'AssetRestorationDestinationDto' });
 
@@ -224,6 +246,12 @@ const AssetRestorationOptionsSchema = z
         'Always true since the restoration adapter ships with the server; whether a model can run is reported per destination.',
       ),
     destinations: z.array(AssetRestorationDestinationSchema),
+    route: z
+      .enum(['local', 'both', 'cloud'])
+      .meta({ id: 'AssetRestorationRoute' })
+      .describe(
+        'Where each job runs for this kind of work: Local only, Both or Cloud only (FL-159). Frameleaf Cloud is never chosen silently.',
+      ),
   })
   .meta({ id: 'AssetRestorationOptionsDto' });
 

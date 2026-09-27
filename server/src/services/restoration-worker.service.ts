@@ -717,6 +717,10 @@ export class RestorationWorkerService {
       }
     }
 
+    // FL-162 Smooth motion: every chunk but the last also carries the next chunk's first frame, so the
+    // in-between frames across the join are made too; the worker uses it as context and drops it.
+    const frameSeconds = snapshot.interpolationFactor ? await this.sourceFrameSeconds(source.originalPath) : 0;
+
     let processed = 2;
     const outputs: string[] = [];
     // Every chunk reused from a checkpoint ran the reviewed model, so it names the result.
@@ -755,7 +759,11 @@ export class RestorationWorkerService {
           '-ss',
           plan.chunk.startSeconds.toFixed(3),
           '-t',
-          (plan.chunk.endSeconds - plan.chunk.startSeconds).toFixed(3),
+          (
+            plan.chunk.endSeconds -
+            plan.chunk.startSeconds +
+            (plan.sequence < planned.length - 1 ? frameSeconds : 0)
+          ).toFixed(3),
         ],
         // FL-162: every chunk goes to another machine; it carries no metadata or chapters
         outputOptions: chunkClipOutputOptions(),
@@ -781,7 +789,7 @@ export class RestorationWorkerService {
           height: stream.height,
           durationSeconds: probe.format.duration,
         },
-        this.inferenceOptions(ctx, chunkOut, cap),
+        this.inferenceOptions(ctx, chunkOut, cap, frameSeconds > 0 && plan.sequence < planned.length - 1),
       );
       this.check(ctx);
       this.assertReviewedModel(ctx, result);
@@ -1120,17 +1128,34 @@ export class RestorationWorkerService {
     return StorageCore.getNestedFolder(StorageFolder.Thumbnails, ctx.restoration.ownerId, ctx.restoration.assetId);
   }
 
-  private inferenceOptions(ctx: RunContext, outputPath: string, cap: { width: number; height: number }) {
+  private inferenceOptions(
+    ctx: RunContext,
+    outputPath: string,
+    cap: { width: number; height: number },
+    trailingContextFrame = false,
+  ) {
     return {
       mode: ctx.snapshot.mode,
       upscale: ctx.snapshot.upscale,
       keepGrain: ctx.snapshot.keepGrain,
+      // FL-162 Smooth motion: frames per source frame, and whether the chunk carries the next one's first frame
+      ...(ctx.snapshot.interpolationFactor && {
+        interpolationFactor: ctx.snapshot.interpolationFactor,
+        trailingContextFrame,
+      }),
       maxWidth: cap.width,
       maxHeight: cap.height,
       outputPath,
       jobId: ctx.operation.id,
       signal: ctx.signal,
     };
+  }
+
+  /** How long one frame of the source lasts, from its measured frame rate (FL-162 Smooth motion chunks). */
+  private async sourceFrameSeconds(file: string): Promise<number> {
+    const probe = await this.mediaRepository.probe(file);
+    const fps = probe.videoStreams[0]?.frameRate ?? 0;
+    return 1 / (fps > 0 ? fps : 30);
   }
 
   /** A restored still must exist, decode, and fit inside the cap the adapter was given. */

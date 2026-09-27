@@ -30,6 +30,7 @@ from .schemas import (
     ModelIdentity,
     OutputDescription,
     RestorationErrorCode,
+    RestorationMode,
     RestorationRequest,
     RestorationResult,
     RestorationTiming,
@@ -156,6 +157,14 @@ def restore(
         raise RestorationFailure(code, str(error), model_id=model_id)
     start_ms, end_ms, _ = check_source(request, source, selected)
     target = media.target_geometry(source.width, source.height, request.scale, request.maxWidth, request.maxHeight)
+    smooth = request.mode == RestorationMode.SMOOTH_MOTION
+    factor = request.interpolationFactor or 1
+    if smooth and target != (source.width, source.height):
+        raise _unsupported(
+            f"smooth motion keeps the size; the {source.width}x{source.height} source does not fit the "
+            f"{request.maxWidth}x{request.maxHeight} box",
+            model_id,
+        )
 
     decode_started = time.monotonic()
     source_frames = work_dir / "source-frames"
@@ -187,14 +196,31 @@ def restore(
         target_size=target,
         seed=request.seed,
         yuv_matrix=source.yuv_matrix,
+        interpolation_factor=factor,
     )
+    if smooth and frame_count < 2:
+        raise _unsupported("smooth motion needs at least two frames", model_id)
     run = adapter_factory(selected).run(job)
 
+    output_count = frame_count
+    output_rate = source.frame_rate_text
     try:
         media.normalize_frame_names(run.frames_dir)
-        restored_size = media.validate_output_frames(
-            media.list_frames(source_frames), media.list_frames(run.frames_dir), expected_size=run.expected_size
-        )
+        if smooth:
+            restored_size = media.validate_interpolated_frames(
+                media.list_frames(source_frames),
+                media.list_frames(run.frames_dir),
+                factor=factor,
+                expected_size=(source.width, source.height),
+            )
+            output_count = media.conform_interpolated_frames(
+                run.frames_dir, factor=factor, trailing_context=request.trailingContextFrame
+            )
+            output_rate = media.multiply_rate(source.frame_rate, factor)
+        else:
+            restored_size = media.validate_output_frames(
+                media.list_frames(source_frames), media.list_frames(run.frames_dir), expected_size=run.expected_size
+            )
     except media.MediaError as error:
         raise RestorationFailure(RestorationErrorCode.INVALID_OUTPUT, str(error), model_id=model_id)
     warnings = list(run.warnings)
@@ -222,6 +248,7 @@ def restore(
                 start_ms=start_ms,
                 end_ms=end_ms,
                 timeout=MEDIA_TIMEOUT_S,
+                frame_rate=output_rate if smooth else None,
             )
         restored = media.probe(output_path, still=still)
     except media.MediaError as error:
@@ -230,7 +257,8 @@ def restore(
     if audio == "transcoded":
         warnings.append(f"audio ({', '.join(source.audio_codecs)}) was transcoded to AAC because MP4 cannot carry it")
 
-    expected_ms = 0.0 if still else frame_count * 1000 / float(source.frame_rate)
+    out_rate = float(source.frame_rate) * factor
+    expected_ms = 0.0 if still else output_count * 1000 / out_rate
     duration_off = not still and abs(restored.duration_ms - expected_ms) > max(
         DURATION_TOLERANCE_MS, 1000 / float(source.frame_rate)
     )
@@ -261,8 +289,8 @@ def restore(
         output=OutputDescription(
             width=restored.width,
             height=restored.height,
-            frameRate=None if still else source.frame_rate_text,
-            frameCount=frame_count,
+            frameRate=None if still else output_rate,
+            frameCount=output_count,
             durationMs=None if still else restored.duration_ms,
             container="png" if still else "mp4",
             codec="png" if still else "h264",

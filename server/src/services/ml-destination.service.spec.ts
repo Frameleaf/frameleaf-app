@@ -658,7 +658,11 @@ describe(MlDestinationService.name, () => {
         url: mlDestinationStub.lan.url,
         authToken: 'lan-token',
       });
-      expect(result.servedWorkloads).toEqual([MlWorkload.RestorationFaithful, MlWorkload.RestorationCreative]);
+      expect(result.servedWorkloads).toEqual([
+        MlWorkload.RestorationFaithful,
+        MlWorkload.RestorationCreative,
+        MlWorkload.Interpolation,
+      ]);
       expect(result.status).toBe(MlDestinationHealth.Healthy);
     });
 
