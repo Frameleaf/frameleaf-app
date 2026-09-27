@@ -357,6 +357,8 @@ describe(MlDestinationService.name, () => {
         url: 'https://ml.eu.cloud.test',
         token: { accessToken: 'instance-token', signer: identitySigner },
         onCloneSuspected: expect.any(Function),
+        onRegionMismatch: expect.any(Function),
+        onRegionMismatchUnresolved: expect.any(Function),
       };
       expect(mocks.frameleafCloud.accessToken).toHaveBeenCalledWith(
         expect.objectContaining({ issuer: 'https://id.cloud.test' }),
@@ -461,6 +463,8 @@ describe(MlDestinationService.name, () => {
         url: 'https://ml.eu.cloud.test',
         token: { accessToken: 'instance-token', signer: identitySigner },
         onCloneSuspected: expect.any(Function),
+        onRegionMismatch: expect.any(Function),
+        onRegionMismatchUnresolved: expect.any(Function),
       });
       expect(mocks.mlDestination.update).not.toHaveBeenCalled();
     });

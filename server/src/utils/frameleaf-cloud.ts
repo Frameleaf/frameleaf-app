@@ -1311,6 +1311,19 @@ export const isGatewayCloneSuspected = (error: unknown): error is FrameleafCloud
   error.envelope?.code === CloudErrorCode.CloneSuspected;
 
 /**
+ * FC-50: Frameleaf Cloud refused this server's ML region. The regional gateway answers 403
+ * `region-mismatch` for a valid token minted for another region's gateway (only after the DPoP proof
+ * and the key binding passed) and for an account or server of another region; the token endpoint
+ * answers 400 `invalid_target` for an ML resource that is not the account's own region. Either way the
+ * gateway this server chose does not match the owner's `dataRegion`: a configuration or discovery
+ * problem, never a transient one.
+ */
+export const isRegionMismatch = (error: unknown): error is FrameleafCloudError =>
+  error instanceof FrameleafCloudError &&
+  ((error.status === 403 && error.envelope?.code === CloudErrorCode.RegionMismatch) ||
+    (error.status === 400 && error.oauth?.error === 'invalid_target'));
+
+/**
  * The account-app page a `403 step-up-required` answer links to (`data.url`), when it is an https
  * address on the configured cloud (`cloudAddressProblem`); otherwise null.
  */

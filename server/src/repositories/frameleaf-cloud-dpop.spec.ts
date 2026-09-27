@@ -33,6 +33,10 @@ const answerOf = (golden: GoldenExchange): FakeCloudAnswer => ({
   headers: golden.headers,
 });
 
+/** A request sent past `FrameleafCloudRepository`, to show what the fake cloud refuses. */
+const rawPost = (url: string, init: { headers: Record<string, string>; body: string }) =>
+  fetch(url, { method: 'POST', ...init });
+
 describe('Frameleaf Cloud DPoP-bound instance tokens (FL-178)', () => {
   let cloud: FakeCloud;
   let dirs: string[];
@@ -351,21 +355,19 @@ describe('Frameleaf Cloud DPoP-bound instance tokens (FL-178)', () => {
   describe('the fake cloud is as strict as FC-66', () => {
     it('refuses a token request or a registration without a proof', async () => {
       cloud.on('POST /api/v1/instances', () => ({ status: 200, body: {} }));
-      await expect(
-        repository.requestJson(z.unknown(), {
-          method: 'POST',
-          url: `${cloud.url}/id/token`,
-          form: { grant_type: 'client_credentials', client_id: 'instance-1' },
-        }),
-      ).rejects.toMatchObject({ status: 400, oauth: { error: 'invalid_dpop_proof' } });
-      await expect(
-        repository.requestJson(z.unknown(), {
-          method: 'POST',
-          url: `${cloud.url}/api/v1/instances`,
-          bearer: 'link-token',
-          body: {},
-        }),
-      ).rejects.toMatchObject({ status: 401, envelope: { code: 'invalid_dpop_proof' } });
+      // sent raw: FrameleafCloudRepository never sends an unproofed call (FC-50, see below)
+      const token = await rawPost(`${cloud.url}/id/token`, {
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'grant_type=client_credentials&client_id=instance-1',
+      });
+      expect(token.status).toBe(400);
+      expect(await token.json()).toMatchObject({ error: 'invalid_dpop_proof' });
+      const registration = await rawPost(`${cloud.url}/api/v1/instances`, {
+        headers: { Authorization: 'Bearer link-token', 'Content-Type': 'application/json' },
+        body: '{}',
+      });
+      expect(registration.status).toBe(401);
+      expect(await registration.json()).toMatchObject({ code: 'invalid_dpop_proof' });
     });
 
     it('refuses a proof whose key is not the client assertion’s', async () => {
@@ -386,14 +388,12 @@ describe('Frameleaf Cloud DPoP-bound instance tokens (FL-178)', () => {
 
     it('refuses an instance token presented as a bearer, and a token it never minted', async () => {
       const token = await mint();
-      await expect(
-        repository.requestJson(z.unknown(), {
-          method: 'POST',
-          url: `${cloud.url}/api/v1/instance/thing`,
-          bearer: token.accessToken,
-          body: {},
-        }),
-      ).rejects.toMatchObject({ status: 401, envelope: { code: 'invalid_token' } });
+      const bearer = await rawPost(`${cloud.url}/api/v1/instance/thing`, {
+        headers: { Authorization: `Bearer ${token.accessToken}`, 'Content-Type': 'application/json' },
+        body: '{}',
+      });
+      expect(bearer.status).toBe(401);
+      expect(await bearer.json()).toMatchObject({ code: 'invalid_token' });
       await expect(
         repository.requestJson(z.unknown(), {
           method: 'POST',
@@ -488,18 +488,29 @@ describe('Frameleaf Cloud DPoP-bound instance tokens (FL-178)', () => {
       expect(cloud.requests.filter(({ path }) => path === '/api/v1/instance/thing')).toHaveLength(1);
     });
 
-    it('refuses the golden api-bearer-refused.json exchange (a token sent without a DPoP proof)', async () => {
+    it('maps the golden api-bearer-refused.json answer, and never sends a token without a DPoP proof (FC-50)', async () => {
       const token = await mint();
       cloud.on('POST /api/v1/instance/thing', () => answerOf(exchange('api-bearer-refused.json')));
       const error = await repository
         .requestJson(z.unknown(), {
           method: 'POST',
           url: `${cloud.url}/api/v1/instance/thing`,
-          bearer: token.accessToken,
+          dpop: token,
           body: {},
         })
         .catch((error_: unknown) => error_);
       expect(error).toMatchObject({ status: 401, envelope: { code: 'invalid_token' } });
+
+      cloud.requests.length = 0;
+      await expect(
+        repository.requestJson(z.unknown(), {
+          method: 'POST',
+          url: `${cloud.url}/api/v1/instance/thing`,
+          bearer: token.accessToken,
+          body: {},
+        }),
+      ).rejects.toThrow('carries no DPoP proof');
+      expect(cloud.requests).toEqual([]);
     });
   });
 });
