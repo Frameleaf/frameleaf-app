@@ -73,19 +73,19 @@
       "version": 4
     },
     {
-      "bytes": 44951,
+      "bytes": 47341,
       "category": "reference",
       "id": "64749620",
-      "readbackAt": "2026-09-27T10:20:00.000Z",
-      "readbackResult": "FL-159 / CLD-201 (FC-50, heartbeat capabilities): markdown read-back of version 10 begins with the header carrying SHA-256 dbc37451, 44951 bytes, commit b322e9f90c pushed on master/frameleaf-implementation (source-at-commit backlink b322e9f90c); the \"This server's identity\" DPoP paragraph says an earlier link switches to the stricter check at its first check-in, and \"Check-ins\" lists the capabilities; the rest matches version 9 and still ends with the unchanged job-in-Activity paragraph. Published as HTML (the page holds a Confluence smart link). The markdown export drops same-page anchor link markup (text kept) and table alignment, the known round-trip limitation; the search summary still shows an earlier excerpt until Confluence reindexes; no user-authored additions.",
+      "readbackAt": "2026-09-27T12:30:00.000Z",
+      "readbackResult": "FL-159 / FC-62 (notices, intervals, paused new work, versioned terms): markdown read-back of version 12 begins with the header carrying SHA-256 c9777221, 47341 bytes, commit 4f7f2118f6 pushed on master/frameleaf-implementation (source-at-commit backlink 4f7f2118f6); \"Check-ins\" gives the 60-900 s interval and carries the new \"Messages from Frameleaf Cloud\" and \"When Frameleaf Cloud pauses new work\" sections, \"Licence certificates\" the staff-set refresh interval, and \"Restoration and Smooth motion on Frameleaf Cloud\" the versioned-terms paragraph; the rest matches version 10 and still ends with the unchanged job-in-Activity paragraph. Published as HTML (the page holds a Confluence smart link); version 11 was an intermediate publish of an earlier local commit, replaced by 12. The markdown export drops same-page anchor link markup (text kept) and table alignment, the known round-trip limitation; the search summary still shows an earlier excerpt until Confluence reindexes; no user-authored additions.",
       "source": "docs/docs/administration/frameleaf-cloud.md",
       "sourceBranch": "master/frameleaf-implementation",
-      "sourceCommit": "b322e9f90c72d6022f7e6749a23f5f6cca0b2257",
-      "sourceSha256": "dbc374511212301d85fff66bba1e3e54737ba72c1bc6c6d789bd1757f1b9f3bd",
-      "sourceState": "pushed-fl-159-cld-201-heartbeat-capabilities-2026-09-27",
+      "sourceCommit": "4f7f2118f6594d1010776e8bd33a0f53ec0c732f",
+      "sourceSha256": "c977722100520d90741299a463caa0a431f2bb48ac12517579a898c6b9ec8a63",
+      "sourceState": "pushed-fl-159-fc-62-notices-intervals-paused-terms-2026-09-27",
       "title": "Administration Reference — Frameleaf Cloud",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/64749620/Administration+Reference+Frameleaf+Cloud",
-      "version": 10
+      "version": 12
     },
     {
       "bytes": 12350,
