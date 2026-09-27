@@ -194,6 +194,13 @@ describe('/map', () => {
         return body as { count: number }[];
       };
 
+      // the timeline (and so its bounds) shows a partner only once the viewer turns them on
+      const { status: shown } = await request(app)
+        .put(`/partners/${partner.userId}`)
+        .set('Authorization', `Bearer ${admin.accessToken}`)
+        .send({ inTimeline: true });
+      expect(shown).toBe(200);
+
       expect(await markerIds()).toContain(partnerLocatedId);
       expect(await statistics()).toEqual(expect.objectContaining({ partner: 1 }));
       // the whole world holds the admin's two located timeline items and the partner's one; an empty
