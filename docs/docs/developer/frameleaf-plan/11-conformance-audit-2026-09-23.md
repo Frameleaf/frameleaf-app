@@ -370,10 +370,10 @@ On `codex/FL-37-complete-people` (from `master/frameleaf-implementation` @ `a29b
 - **Pets (FL-58).**
   - Named cat and dog profiles can be created, renamed and hidden. Regions are drawn from the viewer.
   - Review answers (accept, reassign, ignore) carry the photo's checksum and can be undone.
-  - Recognition uses CLIP. It runs only on the routed destination (this server, a computer on the network or Frameleaf Cloud) and states the server's refusal as an actionable sentence. Runs are durable, and can be started, stopped and resumed after a reload (`immich_fork.pet_recognition_run`, fork migration `0000000000176`).
+  - Recognition uses CLIP. It runs only on the routed destination (this server or a computer on the network) and states the server's refusal as an actionable sentence. It compares smart-search embeddings, which stay on this network, so it never runs on Frameleaf Cloud: the server refuses a cloud route (`workload-not-allowed`), and the Pets page says so ("Pet recognition never runs on Frameleaf Cloud…") and offers no start (FL-58, September 26). Runs are durable, and can be started, stopped and resumed after a reload (`immich_fork.pet_recognition_run`, fork migration `0000000000176`).
   - Pet stories join Memories, and `/pets/:id` lists the pet's confirmed photos through the `petIds` filter.
   - With FL-62's curation (integration merge): pet stories have their own headline, and "show less" of a pet or of pet stories hides the existing stories and stops new ones.
-- **Deviations.** The Pets screens are not in the prototype (only the rail entry, `LibraryRail.jsx`). They are composed from the People grid, grouped lists and capsule buttons.
+- **Deviations.** The Pets screens are not in the prototype (only the rail entry, `LibraryRail.jsx`). They are composed from the People grid, grouped lists and capsule buttons. The prototype has no pet recognition copy and no pet workload in `mlWorkloads` (`frameleaf-cloud-data.mjs`); the never-on-cloud sentence follows that list's wording for work that stays home ("Faces never leave this server."), and replaces the earlier "Recognition runs on Frameleaf Cloud" line, which described behaviour the server never had.
 
 Validation: server unit and medium specs for person, face correction, face history, pets, pet recognition and memories, plus the fork-schema suites (catalog 180 tables, 43 fork tables). Web specs cover the people components and routes, pets and the viewer. New e2e specs (`people/face-history`, `pets/pet-recognition`, `api/face-correction`) were not run.
 
