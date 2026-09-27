@@ -1609,6 +1609,22 @@ export type DatabaseBackupUploadDto = {
     /** Database backup file */
     file?: Blob;
 };
+export type HardwareWorkloadBenchmarkDto = {
+    error: string | null;
+    /** Units per hour */
+    perHour: number | null;
+    runsOn: (HardwareRunsOn) | null;
+    secondsPerUnit: number | null;
+    /** benchmark: timed now; qualification: measured on this GPU when the worker was qualified */
+    source: (HardwareBenchmarkSource) | null;
+    /** Why there is no throughput, or null */
+    unavailable: (HardwareWorkloadUnavailable) | null;
+    unit: (HardwareBenchmarkUnit) | null;
+    /** The worker that ran it */
+    worker: string | null;
+    /** The kind of work (routing key; studio is transcription) */
+    workload: HardwareBenchmarkWorkload;
+};
 export type HardwareBenchmarkDto = {
     /** Median time of a search embedding */
     embeddingMs: number | null;
@@ -1619,6 +1635,30 @@ export type HardwareBenchmarkDto = {
     serverFactor: number | null;
     /** 1080p test transcode, × real time */
     transcodeSpeed: number | null;
+    /** Throughput per kind of work, or why there is none */
+    workloads: HardwareWorkloadBenchmarkDto[];
+};
+export type HardwareFindingDto = {
+    /** nvidia-bf16: the card's CUDA compute capability */
+    computeCapability: string | null;
+    /** The container the problem was found in */
+    container: HardwareFindingContainer;
+    /** rocm-gfx: the HSA_OVERRIDE_GFX_VERSION the card needs */
+    gfxVersion: string | null;
+    /** render-group: the group number that owns the render node */
+    gid: number | null;
+    /** Problem id (web catalogue `gpuProblems`) */
+    id: string;
+    /** wrong-gpu: the PCI address of the graphics card to pass in */
+    pciAddress: string | null;
+};
+export type HardwareGpuFactsDto = {
+    /** A GPU is on the host; null when the container cannot tell */
+    present: boolean | null;
+    /** The runtime actually used the GPU; null when not reported */
+    usable: boolean | null;
+    /** The container can see the GPU; null when not reported */
+    visible: boolean | null;
 };
 export type HardwareContainerTestDto = {
     /** What failed, as the container reported it */
@@ -1636,6 +1676,7 @@ export type HardwareContainerCheckDto = {
     backend: HardwareBackend;
     /** Driver and runtime, or what the driver reported instead */
     driver: string | null;
+    gpu: HardwareGpuFactsDto;
     model: string | null;
     /** The container answered the check */
     reachable: boolean;
@@ -1643,10 +1684,24 @@ export type HardwareContainerCheckDto = {
     vendor: string | null;
     vramGb: number | null;
 };
+export type HardwareWorkerCheckDto = {
+    gpu: HardwareGpuFactsDto;
+    /** Render worker ID or ML destination ID */
+    id: string;
+    /** An enrolled Studio render worker or a restoration worker */
+    kind: HardwareWorkerKind;
+    model: string | null;
+    name: string;
+    /** It has a live session (render) or answered its report (restoration) */
+    reachable: boolean;
+    vramGb: number | null;
+};
 export type HardwareCheckResponseDto = {
     /** The last benchmark on this hardware, if any */
     benchmark: (HardwareBenchmarkDto) | null;
     checkedAt: string;
+    /** The same problems per container, with what their fix names */
+    findings: HardwareFindingDto[];
     /** Set-up problems the check found, by problem id */
     issues: string[];
     /** The ML container: search, faces, descriptions and restoration */
@@ -1655,6 +1710,8 @@ export type HardwareCheckResponseDto = {
     mlImage: string | null;
     /** The server container: video playback and Studio export */
     server: HardwareContainerCheckDto;
+    /** Render and restoration workers, from their reported evidence */
+    workers: HardwareWorkerCheckDto[];
 };
 export type IntegrityReportResponseDto = {
     items: {
@@ -21117,6 +21174,36 @@ export enum SystemConfigHistoryKind {
     Credential = "credential",
     Review = "review"
 }
+export enum HardwareRunsOn {
+    Gpu = "gpu",
+    Cpu = "cpu"
+}
+export enum HardwareBenchmarkSource {
+    Benchmark = "benchmark",
+    Qualification = "qualification"
+}
+export enum HardwareWorkloadUnavailable {
+    NoLocalRunner = "no-local-runner",
+    NoLocalWorker = "no-local-worker",
+    MachineLearningOff = "machine-learning-off",
+    NotMeasured = "not-measured",
+    Failed = "failed"
+}
+export enum HardwareBenchmarkUnit {
+    Photo = "photo",
+    Frame = "frame"
+}
+export enum HardwareBenchmarkWorkload {
+    Descriptions = "descriptions",
+    Upscale = "upscale",
+    Restoration = "restoration",
+    Studio = "studio",
+    Interpolation = "interpolation"
+}
+export enum HardwareFindingContainer {
+    Server = "server",
+    Ml = "ml"
+}
 export enum HardwareBackend {
     Cuda = "CUDA",
     RoCm = "ROCm",
@@ -21129,6 +21216,10 @@ export enum HardwareBackend {
 export enum Kind {
     Transcode = "transcode",
     Embedding = "embedding"
+}
+export enum HardwareWorkerKind {
+    Render = "render",
+    Restoration = "restoration"
 }
 export enum IntegrityReport {
     UntrackedFile = "untracked_file",
