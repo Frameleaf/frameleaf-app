@@ -137,8 +137,8 @@ export const verificationDue = (
     return null;
   }
   const since = (value?: string | null) => {
-    const at = value ? Date.parse(value) : Number.NaN;
-    return Number.isNaN(at) ? Number.POSITIVE_INFINITY : now.getTime() - at;
+    const at = value ? Date.parse(value) : NaN;
+    return Number.isNaN(at) ? Infinity : now.getTime() - at;
   };
   if (since(options.lastFullAt) >= CLOUD_BACKUP_FULL_VERIFY_INTERVAL_MS) {
     return 'full';
@@ -160,6 +160,8 @@ const isFile = (value: unknown): value is CloudBackupManifestFile => {
     isSha256Hex(file.sha256) &&
     typeof file.size === 'number' &&
     Number.isFinite(file.size) &&
+    // `file` is untrusted manifest data, not a Map or Set: its `size` can be negative
+    // eslint-disable-next-line unicorn/no-impossible-length-comparison
     file.size >= 0
   );
 };
@@ -189,12 +191,12 @@ export const readManifest = (body: Buffer): CloudBackupManifest => {
     throw new Error('This is not a Frameleaf backup manifest.');
   }
   for (const asset of Object.values(manifest.assets)) {
-    if (!asset || !Array.isArray(asset.files) || !asset.files.every((file) => isFile(file))) {
+    if (!asset || !Array.isArray(asset.files) || asset.files.some((file) => !isFile(file))) {
       throw new Error('This backup manifest names a file without a valid checksum.');
     }
   }
   const profiles = manifest.profiles ?? {};
-  if (typeof profiles !== 'object' || !Object.values(profiles).every((file) => isFile(file))) {
+  if (typeof profiles !== 'object' || Object.values(profiles).some((file) => !isFile(file))) {
     throw new Error('This backup manifest names a file without a valid checksum.');
   }
   const database = manifest.database ?? null;

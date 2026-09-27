@@ -789,7 +789,7 @@ export class EdgeStateService {
     const names = new Set<string>();
     try {
       for (const line of readFileSync('/proc/net/route', 'utf8').split('\n').slice(1)) {
-        const [name, destination] = line.trim().split(/\s+/);
+        const [name, destination] = line.trim().split(/\s+/, 2);
         if (destination === '00000000' && name) {
           names.add(name);
         }

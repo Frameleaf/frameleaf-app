@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { type Mock, describe, expect, it, vi } from 'vitest';
 import { MlAdmissionRefusal } from 'src/enum.js';
 import { CloudTransferError, FrameleafCloudMlRepository } from 'src/repositories/frameleaf-cloud-ml.repository.js';
 import { CloudJobInputError, FrameleafCloudJobClient } from 'src/utils/frameleaf-cloud-job-client.js';
@@ -165,7 +165,13 @@ describe(FrameleafCloudJobClient.name, () => {
   it('resumes a re-signed upload from the parts recorded before it was refused', async () => {
     const repo = repository();
     const client = new FrameleafCloudJobClient(repo as unknown as FrameleafCloudMlRepository, gateway);
-    repo.uploadInput.mockImplementationOnce(async (_gateway, _target, _file, options) => {
+    type UploadInput = (
+      gateway: unknown,
+      target: unknown,
+      file: unknown,
+      options: { onPart: (part: { partNumber: number; etag: string }) => Promise<void> },
+    ) => Promise<void>;
+    (repo.uploadInput as Mock<UploadInput>).mockImplementationOnce(async (_gateway, _target, _file, options) => {
       await options.onPart({ partNumber: 1, etag: '"p1"' });
       throw new CloudTransferError('target-expired', 'expired');
     });

@@ -7,9 +7,9 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import type { Kysely } from 'kysely';
 import { createHash, randomUUID } from 'node:crypto';
 import path from 'node:path';
+import type { Kysely } from 'kysely';
 import type { SystemConfig } from 'src/config.js';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { MediaOperation } from 'src/repositories/media-operation.repository.js';
@@ -232,10 +232,11 @@ const failureOf = (error: unknown): CloudMlJobFailure | null => {
   if (!refusal) {
     return null;
   }
-  const transient =
-    refusal === MlAdmissionRefusal.CloudUnavailable ||
-    refusal === MlAdmissionRefusal.DestinationUnhealthy ||
-    refusal === MlAdmissionRefusal.QuotaExceeded;
+  const transient = [
+    MlAdmissionRefusal.CloudUnavailable,
+    MlAdmissionRefusal.DestinationUnhealthy,
+    MlAdmissionRefusal.QuotaExceeded,
+  ].includes(refusal);
   return new CloudMlJobFailure(`cloud_ml_${refusal.replaceAll('-', '_')}`, errorMessage(error), transient);
 };
 
@@ -2861,7 +2862,7 @@ export class CloudMlJobService {
         typeof copy?.file !== 'string' ||
         path.dirname(copy.file) !== dir ||
         typeof copy.contentType !== 'string' ||
-        !Number.isInteger(copy.bytes) ||
+        !Number.isSafeInteger(copy.bytes) ||
         !/^[\da-f]{64}$/.test(copy.sha256)
       ) {
         return null;

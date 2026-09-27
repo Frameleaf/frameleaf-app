@@ -203,7 +203,7 @@ export const defaultGateways = (read: (file: string) => string = (file) => readF
   const gateways: string[] = [];
   try {
     for (const line of read('/proc/net/route').split('\n').slice(1)) {
-      const [, destination, gateway] = line.trim().split(/\s+/);
+      const [, destination, gateway] = line.trim().split(/\s+/, 3);
       if (destination === '00000000' && gateway && gateway !== '00000000') {
         gateways.push(hexIpv4(gateway));
       }

@@ -285,10 +285,14 @@ export class CloudBackupRestorer {
       await this.store.download(bucket.connection, key, bucket.bucketKey, file.target, file.sha256);
     } catch (error) {
       if (error instanceof CloudBackupStoreError && error.status === 404) {
-        throw new Error(`The backup copy of ${key} is missing from the bucket. The restore stopped before it.`);
+        throw new Error(`The backup copy of ${key} is missing from the bucket. The restore stopped before it.`, {
+          cause: error,
+        });
       }
       if (error instanceof CloudBackupStoreError && error.code === 'ChecksumMismatch') {
-        throw new Error(`The backup copy of ${key} does not match its checksum. The restore stopped before it.`);
+        throw new Error(`The backup copy of ${key} does not match its checksum. The restore stopped before it.`, {
+          cause: error,
+        });
       }
       throw error;
     }

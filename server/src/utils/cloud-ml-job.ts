@@ -610,7 +610,7 @@ export const outputsComplete = (
   if (shards.every((match) => match === null)) {
     return outputs.length === 1;
   }
-  if (shards.some((match) => match === null)) {
+  if (shards.includes(null)) {
     return false;
   }
   const numbers = shards.map((match) => Number(match![1])).toSorted((a, b) => a - b);

@@ -385,11 +385,13 @@ export class FrameleafRemoteAccessService extends BaseService {
       const socket = tls.connect({ host, port, servername, rejectUnauthorized: false, ALPNProtocols: ['http/1.1'] });
       let settled = false;
       const done = (result: ProbeResult) => {
-        if (!settled) {
-          settled = true;
-          socket.destroy();
-          resolve(result);
+        if (settled) {
+          return;
         }
+
+        settled = true;
+        socket.destroy();
+        resolve(result);
       };
       socket.setTimeout(PROBE_TIMEOUT_MS, () => {
         done({ ok: false, detail: 'The HTTPS listener did not answer in time.' });

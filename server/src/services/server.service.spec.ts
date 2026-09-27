@@ -53,10 +53,11 @@ describe(ServerService.name, () => {
       { kind: 'local', uri: 'https://192-168-1-10.u225vlzhsdlhwh4l.frameleaf.net:2443', relay: false },
       { kind: 'relay', uri: 'https://r.u225vlzhsdlhwh4l.frameleaf.net', relay: true },
     ];
+    const RELAY_CONNECTED = { connected: true };
     const setup = (
       remoteAccess: Record<string, unknown>,
       updatedAt = new Date().toISOString(),
-      relay = { connected: true },
+      relay: { connected: boolean } = RELAY_CONNECTED,
     ) => {
       const env = mockEnvData({});
       mocks.config.getEnv.mockReturnValue({ ...env, frameleafCloud: { ...env.frameleafCloud, url: CLOUD } });

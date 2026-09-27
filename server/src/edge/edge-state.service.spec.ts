@@ -122,7 +122,7 @@ describe(EdgeStateService.name, () => {
     metadata.set(SystemMetadataKey.FrameleafLicense, { key: null, plan: license(['CLOUD', 'REMOTE_ACCESS'], now) });
     setSettings({ enabled: true });
 
-    const logger = automock(LoggingRepository, { args: [, { getEnv: () => ({}) }], strict: false });
+    const logger = automock(LoggingRepository, { args: [undefined, { getEnv: () => ({}) }], strict: false });
     certificates = new EdgeCertificateRepository(logger);
     direct = {
       listening: false,

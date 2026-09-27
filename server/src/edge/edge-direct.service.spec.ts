@@ -54,7 +54,7 @@ describe(EdgeDirectService.name, () => {
       }),
       closeAll: vi.fn(() => Promise.resolve()),
     };
-    const logger = automock(LoggingRepository, { args: [, { getEnv: () => ({}) }], strict: false });
+    const logger = automock(LoggingRepository, { args: [undefined, { getEnv: () => ({}) }], strict: false });
     sut = new EdgeDirectService(logger, config, proxy as unknown as EdgeProxyService);
     sut.configure({
       contexts: {
