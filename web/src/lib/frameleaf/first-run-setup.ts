@@ -165,7 +165,12 @@ export type SetupState = {
 };
 
 /** What the screens know that isn't saved: the live storage check. */
-export type SetupContext = { secrets?: { password?: string; confirm?: string }; storageWritable?: boolean | null };
+export type SetupContext = {
+  secrets?: { password?: string; confirm?: string };
+  storageWritable?: boolean | null;
+  /** FL-168: the server is already linked with Sign in with Frameleaf, so the Frameleaf path signs in. */
+  frameleafSignIn?: boolean;
+};
 
 export const createSetup = (flow: SetupFlow = 'new'): SetupState => {
   const existing = flow === 'existing';
@@ -215,7 +220,9 @@ export const validateStep = (state: SetupState, stepId: SetupStepId, context: Se
   const { choices } = state;
   const secrets = context.secrets ?? {};
   if (stepId === 'account' && state.flow === 'new') {
-    if (choices.signIn === 'frameleaf') {
+    // FL-168: the Frameleaf path signs in with Frameleaf on an already linked server; anywhere else it
+    // creates the administrator first and then needs the link
+    if (choices.signIn === 'frameleaf' && (context.frameleafSignIn || choices.accountCreated)) {
       if (!choices.linked) {
         errors.link = 'frameleaf_setup_error_link';
       }
@@ -389,10 +396,8 @@ export const resumeSetup = (
   if (!signedIn) {
     return state;
   }
+  // FL-168: a signed-in administrator on the Frameleaf path who has not linked yet carries on linking
   const choices = { ...state.choices };
-  if (flow === 'new' && choices.signIn === 'frameleaf' && !choices.linked) {
-    choices.signIn = 'local';
-  }
   const step = flow === 'existing' ? Math.max(1, state.step) : state.step;
   return { ...state, choices, step, reached: Math.max(state.reached, step) };
 };

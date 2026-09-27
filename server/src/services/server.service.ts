@@ -225,6 +225,8 @@ export class ServerService extends BaseService {
       minFaces: config.machineLearning.facialRecognition.minFaces,
       frameleaf: {
         via,
+        // FL-168: first-run setup features linking only where the deployment set up Frameleaf Cloud
+        cloudConfigured: !!this.configRepository.getEnv().frameleafCloud.url,
         signInAvailable: !!signInClient(link, linked),
         signInRequired: isRemoteVia(via) && !config.frameleafCloud.remoteAccess.allowPasswordOverRelay,
         publicUrl,

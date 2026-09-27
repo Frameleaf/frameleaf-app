@@ -72,7 +72,7 @@
     getFrameleafSetupLibrary,
     getFrameleafSetupStorage,
     getHardwareCheck,
-    getPublicConfig,
+    getServerConfig,
     getSummary,
     HardwareBackend,
     login,
@@ -150,11 +150,13 @@
   let users = $state<UserAdminResponseDto[]>([]);
   let backup = $state<FoundCloudBackup | null>(null);
 
+  /** FL-168: whether the server is already linked with Sign in with Frameleaf (a headless link token). */
+  let frameleafSignIn = $state(false);
   const steps = $derived(flowSteps(setup.flow));
   const current = $derived(steps[setup.step]);
   const choices = $derived(setup.choices);
   const linked = $derived(choices.linked);
-  const context = $derived({ secrets, storageWritable: storage ? storage.writable : null });
+  const context = $derived({ secrets, storageWritable: storage ? storage.writable : null, frameleafSignIn });
   const chapterAt = $derived(chapterIndex(current.chapter));
   const last = $derived(setup.step === steps.length - 1);
   const blocked = $derived(!validateStep(setup, current.id, context).ok);
@@ -188,11 +190,17 @@
    */
   let frameleafAvailable = $state<boolean | null>(null);
 
-  // Any failure, including a server that answers without the Frameleaf block, reads as unavailable.
+  /**
+   * FL-168 (owner decision): linking to Frameleaf Cloud is the featured path wherever the deployment
+   * names Frameleaf Cloud (`FRAMELEAF_CLOUD_URL`); reading that contacts nothing. A server already
+   * linked (a headless link token) signs the administrator in with Frameleaf; any other server creates
+   * the administrator and then links, and nothing is sent until the administrator starts the link.
+   */
   const probeFrameleafSignIn = async () => {
     try {
-      const config = await getPublicConfig();
-      frameleafAvailable = config.frameleaf.signInAvailable;
+      const config = await getServerConfig();
+      frameleafAvailable = config.frameleaf.cloudConfigured;
+      frameleafSignIn = config.frameleaf.signInAvailable;
     } catch {
       frameleafAvailable = false;
     }
@@ -290,7 +298,10 @@
       choose({ signedIn: true });
       await loadServerData();
     }
-    if (current.id === 'account' && setup.flow === 'new' && choices.signIn === 'local' && !choices.accountCreated) {
+    // FL-168: the Frameleaf path on a server not linked yet creates the administrator first, then links
+    const createsAdmin = choices.signIn === 'local' || !frameleafSignIn;
+    if (current.id === 'account' && setup.flow === 'new' && createsAdmin && !choices.accountCreated) {
+      const linkNext = choices.signIn === 'frameleaf';
       const email = choices.adminEmail.trim();
       await signUpAdmin({ signUpDto: { email, password: secrets.password, name: choices.adminName.trim() } });
       await login({ loginCredentialDto: { email, password: secrets.password } });
@@ -299,9 +310,10 @@
       // The administrator exists, so this step is passed. Save the step after it before loading the
       // session: signing in re-verifies the session and redraws the page (SessionPrivacyGuard), and
       // setup then resumes from the saved copy at the library, not at the account form.
+      // On the Frameleaf path the step stays open for the link that follows.
       const created = goToStep(
         { ...setup, choices: { ...setup.choices, accountCreated: true } },
-        setup.step + 1,
+        linkNext ? setup.step : setup.step + 1,
         context,
       );
       saveLocalSetup(created);
@@ -504,11 +516,15 @@
   });
 
   const headingText = $derived(
-    current.id === 'account' && !existing && choices.signIn === 'local'
+    current.id === 'account' &&
+      !existing &&
+      (choices.signIn === 'local' || (!frameleafSignIn && !choices.accountCreated))
       ? $t('frameleaf_setup_account_create_title')
-      : current.id === 'account' && !existing
-        ? $t('frameleaf_setup_sign_in_frameleaf')
-        : $t(current.title),
+      : current.id === 'account' && !existing && !frameleafSignIn
+        ? $t('frameleaf_cloud_link_action')
+        : current.id === 'account' && !existing
+          ? $t('frameleaf_setup_sign_in_frameleaf')
+          : $t(current.title),
   );
   const people = $derived(users.filter((user) => user.id !== (authManager.authenticated ? authManager.user.id : '')));
 </script>
@@ -800,7 +816,36 @@
                     onFallback={() => choose({ signIn: 'local' })}
                   />
                 {/if}
-              {:else if current.id === 'account' && choices.signIn === 'frameleaf'}
+              {:else if current.id === 'account' && choices.signIn === 'frameleaf' && !frameleafSignIn && choices.accountCreated}
+                <!-- FL-168: the administrator exists; now this server is linked to their Frameleaf account -->
+                <p class="frs-lead">{$t('frameleaf_setup_frameleaf_link_lead')}</p>
+                {#if errors.link}
+                  <p class="auth-error" role="alert">
+                    <Icon icon={mdiAlertCircleOutline} size="16" /><span>{errors.link}</span>
+                  </p>
+                {/if}
+                <SetupFrameleafLink
+                  mode="link"
+                  {linked}
+                  onLinked={() => link(true)}
+                  onFallback={() => {
+                    link(false);
+                    choose({ signIn: 'local' });
+                  }}
+                />
+                {#if !linked}
+                  <button
+                    type="button"
+                    class="auth-link frs-local-fallback"
+                    onclick={() => {
+                      link(false);
+                      choose({ signIn: 'local' });
+                    }}
+                  >
+                    {$t('frameleaf_setup_continue_local')}
+                  </button>
+                {/if}
+              {:else if current.id === 'account' && choices.signIn === 'frameleaf' && frameleafSignIn}
                 <p class="frs-lead">{$t('frameleaf_setup_frameleaf_lead')}</p>
                 {#if errors.link}
                   <p class="auth-error" role="alert">
@@ -858,6 +903,9 @@
                   </section>
                 {/if}
               {:else if current.id === 'account'}
+                {#if choices.signIn === 'frameleaf' && !choices.accountCreated}
+                  <p class="frs-lead">{$t('frameleaf_setup_frameleaf_admin_lead')}</p>
+                {/if}
                 <div class="frs-form">
                   {#if choices.accountCreated}
                     <p class="frs-quiet">
