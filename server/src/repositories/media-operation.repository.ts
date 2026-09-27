@@ -513,6 +513,30 @@ export class MediaOperationRepository {
   }
 
   /** Any unfinished job of one kind, whoever owns it (FL-73), with the plan it is applying. */
+  /**
+   * FL-168: every unfinished job of these kinds, whoever submitted it (queued, paused, running or
+   * already cancelling), oldest first. For a server-wide stop such as turning cloud processing off.
+   */
+  async listUnfinishedOfKinds(
+    kinds: readonly MediaOperationKind[],
+  ): Promise<Array<{ id: string; ownerId: string; kind: MediaOperationKind; status: MediaOperationStatus }>> {
+    if (kinds.length === 0) {
+      return [];
+    }
+    return (await this.db
+      .selectFrom('media_operation')
+      .select(['id', 'ownerId', 'kind', 'status'])
+      .where('kind', 'in', [...kinds])
+      .where('status', 'not in', [...TERMINAL_MEDIA_OPERATION_STATUSES])
+      .orderBy('createdAt', 'asc')
+      .execute()) as unknown as Array<{
+      id: string;
+      ownerId: string;
+      kind: MediaOperationKind;
+      status: MediaOperationStatus;
+    }>;
+  }
+
   async getActiveOfKind(kind: MediaOperationKind): Promise<{ id: string; fingerprint: string | null } | undefined> {
     return this.db
       .selectFrom('media_operation')

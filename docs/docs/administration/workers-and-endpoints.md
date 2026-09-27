@@ -53,6 +53,8 @@ Frameleaf Cloud is an optional processing destination. Nothing is contacted unti
 4. **Consent** is versioned. You review the version Frameleaf Cloud requires, choose each optional feature (people names in descriptions, medical signals, the text-recognition add-on; all off by default) and accept. When Frameleaf Cloud asks for a newer version, its work is refused until you accept again.
 5. **AI Wallet.** Cloud work is paid from a prepaid AI Wallet, shown in US dollars with the amount held by running jobs. An empty wallet refuses the work; it never lowers quality or moves the work elsewhere. The destination's budget and the wallet's daily limit also refuse work once reached. Settled costs are recorded against the jobs that incurred them.
 
+Turning **Use Frameleaf Cloud for chosen jobs** off cancels every waiting cloud job and description batch: one not sent yet ends at once, and one already running on Frameleaf Cloud is cancelled there, which releases what the AI Wallet held for it and charges only the GPU time already used. Nothing moves to this server by itself.
+
 Admission refuses with a reason you can act on: Frameleaf Cloud not configured, not linked or unavailable; no cloud processing on the account; consent missing or out of date; wallet empty; limit reached; model no longer offered.
 
 Setting up the link itself, and the hosted Frameleaf Cloud service, are outside this page.

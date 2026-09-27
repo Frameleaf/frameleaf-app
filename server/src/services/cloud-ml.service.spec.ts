@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { defaults } from 'src/config.js';
 import {
   ImmichWorker,
+  MediaOperationKind,
+  MediaOperationStatus,
   MlAdmissionRefusal,
   MlDestinationKind,
   MlWorkload,
@@ -843,6 +845,56 @@ describe(CloudMlService.name, () => {
           },
         ],
       });
+    });
+  });
+
+  describe('turning cloud processing off (FL-168)', () => {
+    const config = (enabled: boolean) =>
+      ({
+        ...defaults,
+        frameleafCloud: { ...defaults.frameleafCloud, cloudMl: { ...defaults.frameleafCloud.cloudMl, enabled } },
+      }) as typeof defaults;
+
+    it('cancels every unfinished cloud job and description batch, once each', async () => {
+      mocks.mediaOperation.listUnfinishedOfKinds.mockResolvedValue([
+        {
+          id: 'job-queued',
+          ownerId: 'user-1',
+          kind: MediaOperationKind.CloudMlJob,
+          status: MediaOperationStatus.Queued,
+        },
+        {
+          id: 'batch-running',
+          ownerId: 'admin-1',
+          kind: MediaOperationKind.CloudDescriptionBatch,
+          status: MediaOperationStatus.Preparing,
+        },
+        {
+          id: 'job-cancelling',
+          ownerId: 'user-2',
+          kind: MediaOperationKind.CloudMlJob,
+          status: MediaOperationStatus.Cancelling,
+        },
+      ]);
+      mocks.mediaOperation.requestCancel.mockResolvedValue({ id: 'x' } as never);
+
+      await sut.onConfigUpdate({ oldConfig: config(true), newConfig: config(false) });
+
+      expect(mocks.mediaOperation.listUnfinishedOfKinds).toHaveBeenCalledWith([
+        MediaOperationKind.CloudMlJob,
+        MediaOperationKind.CloudDescriptionBatch,
+      ]);
+      expect(mocks.mediaOperation.requestCancel).toHaveBeenCalledTimes(2);
+      expect(mocks.mediaOperation.requestCancel).toHaveBeenCalledWith('job-queued', 'user-1');
+      expect(mocks.mediaOperation.requestCancel).toHaveBeenCalledWith('batch-running', 'admin-1');
+    });
+
+    it('does nothing when processing stays on, stays off or is turned on', async () => {
+      await sut.onConfigUpdate({ oldConfig: config(true), newConfig: config(true) });
+      await sut.onConfigUpdate({ oldConfig: config(false), newConfig: config(false) });
+      await sut.onConfigUpdate({ oldConfig: config(false), newConfig: config(true) });
+      expect(mocks.mediaOperation.listUnfinishedOfKinds).not.toHaveBeenCalled();
+      expect(mocks.mediaOperation.requestCancel).not.toHaveBeenCalled();
     });
   });
 
