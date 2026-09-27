@@ -244,6 +244,8 @@ export const heartbeatResponseSchema = z.object({
   nextHeartbeatSec: z.number().int().positive().max(86_400).optional(),
   cloneSuspected: z.boolean().default(false),
   notices: z.array(noticeSchema).max(20).default([]),
+  /** FL-167: the address this check-in came from (null when the cloud did not say, or it is not an address). */
+  observedIp: z.union([z.ipv4(), z.ipv6()]).nullable().optional().catch(null),
   // validated on its own by acceptPublishedPricing, so a bad value never fails the check-in
   pricing: z.unknown().optional(),
 });

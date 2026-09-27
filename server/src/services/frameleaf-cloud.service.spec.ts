@@ -672,6 +672,8 @@ describe(FrameleafCloudService.name, () => {
       );
       // the golden pricing is the bundled 2026-09-25.1: the bundle stays in force, nothing new is kept
       expect(metadata.get(SystemMetadataKey.FrameleafPricing)).toBeUndefined();
+      // FL-167: the edge worker compares the check-in's address with the router's
+      expect(storedLink()).toMatchObject({ heartbeat: { observedIp: '203.0.113.7' } });
       const sent = cloud.requests.find(({ path }) => path === '/api/v1/instance/heartbeat')!.json();
       const golden = cloudContractFixture('instance/heartbeat-request.json');
       expect(Object.keys(sent)).toEqual(Object.keys(golden));

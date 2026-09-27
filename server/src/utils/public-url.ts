@@ -89,3 +89,14 @@ export const remoteAccessPublication = async (
     connections: state?.candidates ?? [],
   };
 };
+
+/**
+ * FL-167: the home-network origins this server published (its LAN names, `https://<ip>.<label>.<domain>:<port>`),
+ * the only places a Sign in with Frameleaf handoff may return to, so it can never be an open redirect.
+ */
+export const publishedLocalOrigins = async (remote: RemoteSettings, deps: PublicUrlDeps): Promise<string[]> => {
+  const { connections } = await remoteAccessPublication(remote, deps);
+  return connections
+    .filter((connection) => connection.kind === 'local')
+    .map((connection) => new URL(connection.uri).origin);
+};

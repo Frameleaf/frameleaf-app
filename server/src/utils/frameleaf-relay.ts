@@ -288,6 +288,16 @@ export const relaySelectResponseSchema = z.object({ relay: relayCandidateSchema,
 
 export type RelayMeasurement = { relayId: string; rttMs: number; ok: boolean };
 
+/** `POST /v1/remote/wan-probe` answer (FL-167): whether the cloud reached this server's WAN name. */
+export const wanProbeResponseSchema = z.object({
+  verified: z.boolean(),
+  uri: z
+    .url({ protocol: /^https$/ })
+    .max(2048)
+    .nullable(),
+  reason: z.enum(['unreachable', 'timeout', 'certificate', 'not_public']).nullable().catch('unreachable'),
+});
+
 /** The relay token's claims this server checks before it dials (never its signature: the relay checks that). */
 const relayTokenClaimsSchema = z.object({
   sub: z.string(),

@@ -38,7 +38,9 @@
     RemoteAccessMode,
     RemoteAccessPublicUrl,
     RemoteAccessState,
+    RemoteDirectGuidance,
     RemoteHostnameStatus,
+    RemoteMappingMethod,
     checkRemoteHostname,
     getRemoteAccess,
     getRemoteAccessUsage,
@@ -155,10 +157,41 @@
     if (remote?.cgnatSuspected && remote.portMapping) {
       return { label: $t('frameleaf_remote_direct_unavailable'), tone: 'warning' as const };
     }
+    // FL-167: Frameleaf Cloud reached this server directly
+    if (remote?.wanVerified) {
+      return { label: $t('frameleaf_remote_direct_listening'), tone: 'ok' as const };
+    }
     const tested = remote?.lastTestChecks.find((check) => check.id === 'direct');
     return tested?.ok
       ? { label: $t('frameleaf_remote_direct_listening'), tone: 'ok' as const }
       : { label: $t('frameleaf_remote_direct_not_tested'), tone: 'muted' as const };
+  });
+
+  // FL-167: how the router opens the port, and what Frameleaf Cloud's probe found
+  const mappingLabel = $derived.by(() => {
+    switch (remote?.mappingMethod) {
+      case RemoteMappingMethod.Upnp: {
+        return $t('frameleaf_remote_mapping_upnp');
+      }
+      case RemoteMappingMethod.NatPmp: {
+        return $t('frameleaf_remote_mapping_nat_pmp');
+      }
+      case RemoteMappingMethod.Manual: {
+        return $t('frameleaf_remote_mapping_manual');
+      }
+      default: {
+        return remote?.portMapping ? $t('frameleaf_remote_mapping_auto') : $t('frameleaf_remote_mapping_manual');
+      }
+    }
+  });
+  const directResult = $derived.by(() => {
+    if (remote?.wanVerified && remote.wanAddress) {
+      return $t('frameleaf_remote_wan_verified', { values: { address: new URL(remote.wanAddress).host } });
+    }
+    if (remote?.wanProblem) {
+      return $t('frameleaf_remote_wan_unreachable');
+    }
+    return remote?.lastTestChecks.find((check) => check.id === 'direct')?.detail ?? $t('frameleaf_remote_run_test');
   });
 
   const domainStatus = $derived(
@@ -518,12 +551,23 @@
           <dt>{$t('frameleaf_remote_port')}</dt>
           <dd>{remote.directPort}</dd>
           <dt>{$t('frameleaf_remote_router_mapping')}</dt>
-          <dd>{remote.portMapping ? $t('frameleaf_remote_mapping_auto') : $t('frameleaf_remote_mapping_manual')}</dd>
+          <dd>{mappingLabel}</dd>
+          {#if remote.directExternalIp}
+            <dt>{$t('frameleaf_remote_public_address')}</dt>
+            <dd>{remote.directExternalIp}</dd>
+          {/if}
           <dt>{$t('frameleaf_remote_last_result')}</dt>
-          <dd>
-            {remote.lastTestChecks.find((check) => check.id === 'direct')?.detail ?? $t('frameleaf_remote_run_test')}
-          </dd>
+          <dd>{directResult}</dd>
         </dl>
+        {#if remote.directGuidance === RemoteDirectGuidance.Bridge}
+          <CloudBanner tone="warning" title={$t('frameleaf_remote_bridge_title')}>
+            {$t('frameleaf_remote_bridge_body')}
+          </CloudBanner>
+        {:else if remote.portMapping && remote.mappingError && !remote.cgnatSuspected}
+          <p class="fc-muted" role="status">
+            {$t('frameleaf_remote_mapping_failed', { values: { problem: remote.mappingError } })}
+          </p>
+        {/if}
         {#if remote.cgnatSuspected}
           <CloudBanner tone="warning" title={$t('frameleaf_remote_cgnat_title')}>
             {$t('frameleaf_remote_cgnat_body')}

@@ -6,6 +6,7 @@ import { IWorker } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { EdgeCertificateRepository } from 'src/edge/edge-certificate.repository.js';
 import { EdgeDirectService } from 'src/edge/edge-direct.service.js';
+import { EdgePortMappingService } from 'src/edge/edge-port-mapping.service.js';
 import { EdgeProxyService } from 'src/edge/edge-proxy.service.js';
 import { EdgeRelayService } from 'src/edge/edge-relay.service.js';
 import { EdgeStateService } from 'src/edge/edge-state.service.js';
@@ -58,6 +59,7 @@ export const detectMediaLocation = (configRepository: ConfigRepository): string 
     EdgeProxyService,
     EdgeDirectService,
     EdgeRelayService,
+    EdgePortMappingService,
     EdgeStateService,
     { provide: IWorker, useValue: ImmichWorker.Edge },
   ],

@@ -8,6 +8,7 @@ import type { OAuthConfig } from 'src/repositories/oauth.repository.js';
 import { OnEvent } from 'src/decorators.js';
 import {
   FrameleafAccountLinkResponseDto,
+  FrameleafHandoffCreateDto,
   FrameleafHandoffRedeemDto,
   FrameleafHandoffResponseDto,
 } from 'src/dtos/frameleaf-auth.dto.js';
@@ -21,6 +22,7 @@ import {
   frameleafRedirectUri,
   frameleafRole,
 } from 'src/utils/frameleaf-sign-in.js';
+import { publishedLocalOrigins } from 'src/utils/public-url.js';
 import { createSession } from 'src/utils/session.js';
 
 /** How long a handoff code may be used. */
@@ -142,9 +144,29 @@ export class FrameleafAuthService extends BaseService {
    * this server (for example from the relay address to the home address). Only a session Frameleaf
    * created can hand itself over.
    */
-  async createHandoff(auth: AuthDto): Promise<FrameleafHandoffResponseDto> {
+  async createHandoff(auth: AuthDto, dto: FrameleafHandoffCreateDto = {}): Promise<FrameleafHandoffResponseDto> {
     if (!auth.session) {
       throw new BadRequestException('Only a signed-in session can be handed over');
+    }
+    // FL-167: a return address must be a home address this server published, never anywhere else
+    let returnTo: string | null = null;
+    if (dto.returnTo !== undefined) {
+      let origin: string | null;
+      try {
+        const url = new URL(dto.returnTo);
+        origin = url.protocol === 'https:' && !url.username && !url.password ? url.origin : null;
+      } catch {
+        origin = null;
+      }
+      const config = await this.getConfig({ withCache: false });
+      const published = await publishedLocalOrigins(config.frameleafCloud.remoteAccess, {
+        configRepository: this.configRepository,
+        systemMetadataRepository: this.systemMetadataRepository,
+      });
+      if (!origin || !published.includes(origin)) {
+        throw new BadRequestException('This address is not one of this server’s home addresses');
+      }
+      returnTo = origin;
     }
     const tagged = await this.frameleafAccountRepository.getSession(auth.session.id);
     const link = tagged ? await this.frameleafAccountRepository.getLinkByUser(auth.user.id) : undefined;
@@ -154,7 +176,12 @@ export class FrameleafAuthService extends BaseService {
     const code = this.cryptoRepository.randomBytesAsText(32);
     const expiresAt = new Date(Date.now() + HANDOFF_TTL_SECONDS * 1000);
     await this.frameleafAccountRepository.setHandoff(auth.session.id, this.hashCode(code), expiresAt);
-    return { code, expiresAt: expiresAt.toISOString() };
+    return {
+      code,
+      expiresAt: expiresAt.toISOString(),
+      // in the fragment: never sent to a server, never in a log or a Referer
+      url: returnTo ? `${returnTo}/auth/login#frameleafHandoff=${encodeURIComponent(code)}` : null,
+    };
   }
 
   /** `POST oauth/frameleaf/handoff/redeem`: exchange a handoff code for a new, tagged session. */
