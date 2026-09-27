@@ -140,6 +140,8 @@ jobs:
           ML_RELEASE: ${{ needs.changes.outputs['machine-learning-release'] }}
           GITHUB_TOKEN: ${{ github.token }}
         run: node .github/frameleaf-release.cjs deploy-test-images
+      - name: Install ORAS (checksum-pinned)
+        run: .github/install-oras.sh
       - name: Deploy the unpushed images and test the installation
         env:
           SOURCE_SHA: ${{ github.sha }}

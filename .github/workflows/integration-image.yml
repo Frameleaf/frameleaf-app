@@ -159,6 +159,8 @@ jobs:
           ML_BUILT: released
           GITHUB_TOKEN: ${{ github.token }}
         run: node .github/frameleaf-release.cjs deploy-test-images
+      - name: Install ORAS (checksum-pinned)
+        run: .github/install-oras.sh
       - name: Deploy the unpushed server image and test the installation
         env:
           SOURCE_SHA: ${{ github.sha }}
@@ -179,15 +181,12 @@ jobs:
         with:
           path: ${{ runner.temp }}/archives
           pattern: integration-archive-*
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
       - name: Install ORAS (checksum-pinned)
-        run: |
-          set -euo pipefail
-          file=oras_1.3.4_linux_amd64.tar.gz
-          curl -fsSLo "$RUNNER_TEMP/$file" "https://github.com/oras-project/oras/releases/download/v1.3.4/${file}"
-          echo "f27adb935022d94df8dc77719c322dda592c78a0d57a6f7dcdd8d900b248c454  $RUNNER_TEMP/$file" | sha256sum -c -
-          mkdir -p "$RUNNER_TEMP/oras"
-          tar -xzf "$RUNNER_TEMP/$file" -C "$RUNNER_TEMP/oras" oras
-          echo "$RUNNER_TEMP/oras" >> "$GITHUB_PATH"
+        run: .github/install-oras.sh
       - name: Push each tested archive by digest, byte for byte
         env:
           REGISTRY_TOKEN: ${{ github.token }}

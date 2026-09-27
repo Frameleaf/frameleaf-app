@@ -352,14 +352,75 @@ function run(command, args, options = {}) {
   });
 }
 
-/** The image reference `docker load` reported, loaded from an OCI or Docker archive. */
-function loadArchive(file) {
-  const output = run("docker", ["load", "--input", file]);
-  const named = /Loaded image: (\S+)/.exec(output);
-  if (named) return named[1];
-  const id = /Loaded image ID: (sha256:[a-f0-9]{64})/.exec(output);
-  assert(id, `docker load reported no image for ${file}`);
-  return id[1];
+// A throwaway registry on this runner's loopback interface only. Docker's classic image store cannot
+// `docker load` an OCI archive whose index carries attestations, so an archive is copied into it
+// unchanged (same digest) and pulled from there. Nothing leaves the runner.
+const LOCAL_REGISTRY = "127.0.0.1:5000";
+const REGISTRY_IMAGE =
+  "docker.io/library/registry:2@sha256:a3d8aaa63ed8681a604f1dea0aa03f100d5895b6a58ace528858a7b332415373";
+const REGISTRY_CONTAINER = "frameleaf-deploy-test-registry";
+let registryStarted = false;
+async function startLocalRegistry() {
+  if (registryStarted) return;
+  run("docker", ["rm", "--force", REGISTRY_CONTAINER], { stdio: "ignore" });
+  run("docker", [
+    "run",
+    "--detach",
+    "--rm",
+    "--name",
+    REGISTRY_CONTAINER,
+    "--publish",
+    `${LOCAL_REGISTRY}:5000`,
+    REGISTRY_IMAGE,
+  ]);
+  for (let attempt = 0; attempt < 60; attempt++) {
+    try {
+      if ((await fetch(`http://${LOCAL_REGISTRY}/v2/`)).ok) {
+        registryStarted = true;
+        return;
+      }
+    } catch {
+      // not listening yet
+    }
+    await sleep(1_000);
+  }
+  throw new Error("The local test registry did not start");
+}
+
+/** The archive's single image index digest, from its OCI layout. */
+function archiveDigest(indexJson) {
+  const index = JSON.parse(indexJson);
+  assert.equal(
+    index.manifests?.length,
+    1,
+    "The archive must hold exactly one image index",
+  );
+  const { digest } = index.manifests[0];
+  assert.match(digest, /^sha256:[a-f0-9]{64}$/, "Invalid archive digest");
+  return digest;
+}
+
+/** Load an OCI archive built on this runner (never pushed anywhere) and return a pullable reference. */
+async function loadArchive(file, name, workDir) {
+  const layout = path.join(workDir, `layout-${name}`);
+  await fs.rm(layout, { recursive: true, force: true });
+  await fs.mkdir(layout, { recursive: true });
+  run("tar", ["-xf", file, "-C", layout]);
+  const digest = archiveDigest(
+    await fs.readFile(path.join(layout, "index.json"), "utf8"),
+  );
+  await startLocalRegistry();
+  const reference = `${LOCAL_REGISTRY}/deploy-test/${name}@${digest}`;
+  run("oras", [
+    "cp",
+    "--to-plain-http",
+    "--from-oci-layout",
+    `${layout}@${digest}`,
+    reference,
+  ]);
+  run("docker", ["pull", "--quiet", reference]);
+  await fs.rm(layout, { recursive: true, force: true });
+  return reference;
 }
 
 async function main(env = process.env) {
@@ -388,7 +449,7 @@ async function main(env = process.env) {
       `Give exactly one of ${key.toUpperCase()}_ARCHIVE or ${key.toUpperCase()}_IMAGE`,
     );
     let source = reference;
-    if (archive) source = loadArchive(archive);
+    if (archive) source = await loadArchive(archive, key, workDir);
     else {
       assert.match(
         reference,
@@ -512,6 +573,8 @@ async function main(env = process.env) {
         console.log(`Could not collect diagnostics: ${error.message}`);
       }
     }
+    if (registryStarted)
+      run("docker", ["rm", "--force", REGISTRY_CONTAINER], { stdio: "ignore" });
     if (env.KEEP_STACK !== "1") {
       try {
         docker("down", "--volumes", "--remove-orphans");
@@ -552,6 +615,8 @@ async function main(env = process.env) {
 
 module.exports = {
   Api,
+  archiveDigest,
+  loadArchive,
   checkInstallation,
   environmentFile,
   listeningOn,
