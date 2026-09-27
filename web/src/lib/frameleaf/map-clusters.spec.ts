@@ -115,6 +115,26 @@ describe('map clusters (MapView.jsx clusterRadius, FL-147)', () => {
     expect(map.addLayer).toHaveBeenCalledTimes(2);
   });
 
+  it('adds the obstacle layer once when adding its image re-enters from a style event (FL-51)', () => {
+    const { map, layers } = fakeMap();
+    // MapLibre fires "styledata" synchronously from addImage, and the screen calls this again from it
+    map.addImage.mockImplementationOnce((id: string) => {
+      map.hasImage = (image: string) => image === id;
+      applyClusterLabelLayout(map as unknown as MapLibreMap, 'geojson');
+      return true;
+    });
+    // like MapLibre, a second add of the same layer is an error event
+    map.addLayer.mockImplementation((layer: LayerSpecification) => {
+      if (layers.has(layer.id)) {
+        throw new Error(`Layer "${layer.id}" already exists on this map.`);
+      }
+      return layers.add(layer.id);
+    });
+
+    expect(() => applyClusterLabelLayout(map as unknown as MapLibreMap, 'geojson')).not.toThrow();
+    expect(map.addLayer).toHaveBeenCalledOnce();
+  });
+
   it('waits for the markers source', () => {
     const { map } = fakeMap();
     applyClusterLabelLayout(map as unknown as MapLibreMap, 'missing');

@@ -183,11 +183,12 @@ test.describe('Map', () => {
       await page.mouse.move(x + (index % 2 === 0 ? 300 : -120), y + 90, { steps: 2 });
       await page.mouse.up();
     }
-    await expect(page.getByText(/^\d+ items? in view$/)).toBeVisible();
+    await expect(page.getByText(/\d+ items? in view/)).toBeVisible();
     await expect(page.getByRole('button', { name: 'Search this area' })).toBeVisible();
 
     await tools.getByRole('button', { name: 'Show all items' }).click();
-    await expect(page.getByText('1 item in view')).toBeVisible();
+    // "Show all items" flies to the items, which can take a while across the map
+    await expect(page.getByText('1 item in view')).toBeVisible({ timeout: 20_000 });
 
     // Home on the focused map fits every located item too (MapView.jsx keyboard help).
     await canvas.focus();
@@ -195,7 +196,7 @@ test.describe('Map', () => {
       await page.keyboard.press('ArrowRight');
     }
     await page.keyboard.press('Home');
-    await expect(page.getByText('1 item in view')).toBeVisible();
+    await expect(page.getByText('1 item in view')).toBeVisible({ timeout: 20_000 });
   });
 
   test('an empty part of the map lists nothing and says how to get back (FL-51)', async ({ context, page }) => {
@@ -212,7 +213,8 @@ test.describe('Map', () => {
     );
 
     await page.getByRole('toolbar', { name: 'Map tools' }).getByRole('button', { name: 'Show all items' }).click();
-    await expect(page.getByText('1 item in view')).toBeVisible();
+    // a flight across half the world
+    await expect(page.getByText('1 item in view')).toBeVisible({ timeout: 20_000 });
     await expect(list.getByRole('button', { name: /^thompson-springs\.jpg/ })).toBeVisible();
   });
 

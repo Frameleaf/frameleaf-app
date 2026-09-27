@@ -100,6 +100,11 @@ export const applyClusterLabelLayout = (map: MapLibreMap, source: string) => {
   if (!map.hasImage(CLUSTER_OBSTACLE_IMAGE)) {
     const size = CLUSTER_OBSTACLE_IMAGE_SIZE;
     map.addImage(CLUSTER_OBSTACLE_IMAGE, { width: size, height: size, data: new Uint8Array(size * size * 4) });
+    // FL-51: addImage fires "styledata" synchronously, which calls this again and may already have
+    // applied everything; adding the layer twice is a map error the screen would read as failed tiles.
+    if (map.getLayer(CLUSTER_OBSTACLE_LAYER)) {
+      return;
+    }
   }
   map.addLayer(clusterObstacleLayer(source));
   for (const layer of style.layers) {
