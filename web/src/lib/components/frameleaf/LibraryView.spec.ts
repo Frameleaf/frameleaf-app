@@ -559,6 +559,29 @@ describe('LibraryView', () => {
       expect(screen.getByTestId('frameleaf-work-inspector')).toBeInTheDocument();
     });
 
+    it('returns from editing to the same page: query, selection, layout and the edited item', async () => {
+      await setupWithViewer();
+      librarySession.setQuery({ ...emptyDiscoveryQuery(), filter: { isFavorite: { eq: true } } });
+      librarySession.select('asset-a');
+      librarySession.select('asset-b');
+      const before = { state: librarySession.state, selection: [...librarySession.selection] };
+
+      assetViewerManager.setAsset(assetFactory.build({ id: 'edited' }));
+      assetViewerManager.openEditor();
+      await tick();
+      assetViewerManager.closeEditor();
+      assetViewerManager.showAssetViewer(false);
+      await tick();
+
+      expect(librarySession.state).toEqual(before.state);
+      expect(librarySession.selection).toEqual(before.selection);
+      expect(librarySession.layout).toBe('work');
+      expect(librarySession.openAssetId).toBe('edited');
+      expect(librarySession.session.scrollAnchor).toBe('edited');
+      librarySession.clearSelection();
+      librarySession.setQuery(emptyDiscoveryQuery());
+    });
+
     it('keeps the viewer, and whatever it is editing, mounted across a layout switch', async () => {
       await setupWithViewer();
       assetViewerManager.setAsset(assetFactory.build({ id: 'viewer-1' }));
