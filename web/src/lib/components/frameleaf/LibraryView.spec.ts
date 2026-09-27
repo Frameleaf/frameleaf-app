@@ -7,7 +7,10 @@ import { emptyDiscoveryQuery } from '$lib/components/discovery/query';
 import { libraryGridPreferences } from '$lib/frameleaf/library-grid-preferences.svelte';
 import { librarySession } from '$lib/frameleaf/library-session.svelte';
 import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
+import { authManager } from '$lib/managers/auth-manager.svelte';
 import { assetFactory } from '@test-data/factories/asset-factory';
+import { preferencesFactory } from '@test-data/factories/preferences-factory';
+import { userAdminFactory } from '@test-data/factories/user-factory';
 import LibraryView from './LibraryView.svelte';
 
 vi.mock('$lib/managers/feature-flags-manager.svelte', () => ({
@@ -382,6 +385,29 @@ describe('LibraryView', () => {
       expect(screen.queryByTestId('selection-leading-compare')).not.toBeInTheDocument();
       expect(screen.queryByTestId('selection-leading-studio')).not.toBeInTheDocument();
       expect(screen.queryByTestId('library-status-bar')).not.toBeInTheDocument();
+    });
+
+    it('neither reads nor writes a signed-in visitor’s stored library view on a public share (FL-56)', async () => {
+      authManager.setUser(userAdminFactory.build({ id: 'visitor' }));
+      authManager.setPreferences(preferencesFactory.build());
+      const restore = vi.spyOn(librarySession, 'restore');
+      const persist = vi.spyOn(librarySession, 'persist');
+      try {
+        render(LibraryView, {
+          options: { albumId: 'album-1' },
+          destination: { kind: 'album', id: 'album-1' },
+          syncUrl: false,
+          publicView: true,
+        });
+        await waitFor(() => expect(persist).toHaveBeenCalled());
+
+        expect(restore).toHaveBeenCalledWith(expect.anything(), undefined);
+        expect(persist.mock.calls.every(([userId]) => userId === undefined)).toBe(true);
+      } finally {
+        restore.mockRestore();
+        persist.mockRestore();
+        authManager.reset();
+      }
     });
 
     it('draws no status bar for a picking step', async () => {
