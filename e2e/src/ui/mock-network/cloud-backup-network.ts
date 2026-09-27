@@ -55,6 +55,7 @@ export const MANIFEST_ITEMS = [
     bytes: 5_100_000,
     modifiedAt: '2026-08-14T09:12:00.000Z',
     state: 'active',
+    hasDetails: true,
   },
   {
     assetId: '1d7c9e02-5b1a-4c3e-9f7d-2a6b8c0d1e2f',
@@ -66,6 +67,42 @@ export const MANIFEST_ITEMS = [
     bytes: 3_200_000,
     modifiedAt: '2026-08-14T09:12:00.000Z',
     state: 'deleted',
+    // backed up before item details were recorded: it comes back into the restore folder
+    hasDetails: false,
+  },
+  {
+    assetId: '3e9a1c55-7d2b-4f6a-8c1e-5b4d3a2f1e0d',
+    name: 'Campfire evening.jpg',
+    locked: false,
+    ownerId: 'owner-1',
+    ownerName: 'Taylor',
+    files: 1,
+    bytes: 5_100_000,
+    modifiedAt: '2026-07-22T21:05:00.000Z',
+    state: 'deleted',
+    hasDetails: true,
+  },
+];
+
+/** FL-164: the albums the newest backup can bring back. */
+export const MANIFEST_ALBUMS = [
+  {
+    albumId: '5b0c4e8a-1d2f-4a3b-9c8d-7e6f5a4b3c2d',
+    name: 'Lake house weekend',
+    ownerId: 'owner-1',
+    ownerName: 'Taylor',
+    items: 84,
+    missing: 84,
+    state: 'deleted',
+  },
+  {
+    albumId: '0f0d1e2c-3b4a-4c5d-8e6f-7a8b9c0d1e2f',
+    name: 'Moraine Lake',
+    ownerId: 'owner-1',
+    ownerName: 'Taylor',
+    items: 212,
+    missing: 3,
+    state: 'missing-items',
   },
 ];
 
@@ -173,6 +210,12 @@ export const setupCloudBackupMockApiRoutes = async (context: BrowserContext, moc
           (filter === 'all' || (filter === 'deleted' ? item.state === 'deleted' : item.state !== 'deleted')),
       );
       return route.fulfill({ status: 200, json: { manifestKey: MANIFESTS[0].key, total: items.length, items } });
+    }
+    if (method === 'POST' && path === 'admin/cloud/backup/manifests/albums') {
+      return route.fulfill({
+        status: 200,
+        json: { manifestKey: MANIFESTS[0].key, hasDetails: true, albums: MANIFEST_ALBUMS },
+      });
     }
     if (method === 'POST' && path === 'admin/cloud/backup/restore') {
       mock.restoring = { scope: (body as { scope: string }).scope };

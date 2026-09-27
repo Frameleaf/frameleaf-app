@@ -3,8 +3,9 @@
    * Settings › Frameleaf Cloud › Cloud backup › Restore (FL-164): the prototype's `BackupRestore`
    * (design/frameleaf/template/src/FrameleafCloud.jsx). The kept backups with the newest one, its paired
    * database backup and how far back deleted items can come from; the backup picker; Items (search a
-   * backup by file name, see whether each item is still in the library, restore it) and Whole library
-   * (every file back in place and the database dump for the maintenance restore, after typing RESTORE).
+   * backup by file name, see whether each item is still in the library, restore it), Albums (deleted
+   * albums and albums missing items, restored or repaired with their items) and Whole library (every file
+   * back in place and the database dump for the maintenance restore, after typing RESTORE).
    * Restores run on the server as `cloud_restore` jobs, shown here and in Activity; every file is checked
    * against its fingerprint before it touches the library.
    */
@@ -18,6 +19,7 @@
   import { getByteUnitString } from '$lib/utils/byte-units';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
   import {
+    CloudBackupAlbumState,
     CloudBackupItemFilter,
     CloudBackupItemState,
     CloudBackupKeyMode,
@@ -25,14 +27,16 @@
     CloudBackupRestoreStatus,
     CloudBackupRunState,
     getCloudBackupManifests,
+    listCloudBackupManifestAlbums,
     restoreCloudBackup,
     searchCloudBackupManifestItems,
+    type CloudBackupManifestAlbumsResponseDto,
     type CloudBackupManifestDto,
     type CloudBackupManifestItemDto,
     type CloudBackupStatusResponseDto,
   } from '@immich/sdk';
   import { Icon } from '@immich/ui';
-  import { mdiBackupRestore } from '@mdi/js';
+  import { mdiBackupRestore, mdiRestore, mdiWrenchOutline } from '@mdi/js';
   import { onMount } from 'svelte';
   import { t, type Translations } from 'svelte-i18n';
 
@@ -44,9 +48,10 @@
 
   let { status, formatWhen, onStatus }: Props = $props();
 
-  type Mode = 'items' | 'library';
+  type Mode = 'items' | 'albums' | 'library';
   const MODES: Array<[Mode, Translations]> = [
     ['items', 'frameleaf_cloud_restore_mode_items'],
+    ['albums', 'frameleaf_cloud_restore_mode_albums'],
     ['library', 'frameleaf_cloud_restore_mode_library'],
   ];
   const FILTERS: Array<[CloudBackupItemFilter, Translations]> = [
@@ -75,6 +80,7 @@
   let busy = $state(false);
   let confirm = $state('');
   let dialogItem = $state<CloudBackupManifestItemDto | null>(null);
+  let albums = $state<CloudBackupManifestAlbumsResponseDto | null>(null);
   let dialogOpen = $state(false);
 
   const chosen = $derived(manifests?.find((manifest) => manifest.key === manifestKey) ?? manifests?.[0] ?? null);
@@ -111,6 +117,26 @@
     return () => clearTimeout(timer);
   });
 
+  // The chosen backup's albums are read when the Albums view opens or the backup changes.
+  $effect(() => {
+    const key = manifestKey;
+    if (!key || mode !== 'albums' || needsKey) {
+      return;
+    }
+    void listAlbums(key);
+  });
+
+  const listAlbums = async (key: string) => {
+    albums = null;
+    failure = '';
+    try {
+      albums = await listCloudBackupManifestAlbums({ cloudBackupManifestAlbumsDto: { manifestKey: key } });
+    } catch (error) {
+      albums = { manifestKey: key, hasDetails: true, albums: [] };
+      failure = getServerErrorMessage(error) ?? $t('frameleaf_cloud_restore_albums_failed');
+    }
+  };
+
   const search = async (key: string, text: string, show: CloudBackupItemFilter) => {
     searching = true;
     failure = '';
@@ -129,14 +155,14 @@
     }
   };
 
-  const start = async (scope: CloudBackupRestoreScope, assetIds?: string[]) => {
+  const start = async (scope: CloudBackupRestoreScope, target: { assetIds?: string[]; albumId?: string } = {}) => {
     if (!chosen) {
       return;
     }
     busy = true;
     failure = '';
     try {
-      onStatus(await restoreCloudBackup({ cloudBackupRestoreDto: { manifestKey: chosen.key, scope, assetIds } }));
+      onStatus(await restoreCloudBackup({ cloudBackupRestoreDto: { manifestKey: chosen.key, scope, ...target } }));
       notice = $t('frameleaf_cloud_restore_queued');
       confirm = '';
     } catch (error) {
@@ -147,10 +173,13 @@
   };
 
   const restoreItem = (item: CloudBackupManifestItemDto) => {
-    // An item still in the library comes back in place, after the administrator chooses the backup; a
-    // deleted one comes back into the restore folder, where Library Care finds it.
+    // An item still in the library comes back in place, after the administrator chooses the backup and
+    // how its details come back. A deleted one comes back as it was when the backup holds its details,
+    // otherwise into the restore folder, where Library Care finds it.
     if (item.state === CloudBackupItemState.Deleted) {
-      void start(CloudBackupRestoreScope.Files, [item.assetId]);
+      void start(item.hasDetails ? CloudBackupRestoreScope.Asset : CloudBackupRestoreScope.Files, {
+        assetIds: [item.assetId],
+      });
       return;
     }
     dialogItem = item.locked ? { ...item, name: $t('frameleaf_cloud_restore_locked_item') } : item;
@@ -312,6 +341,62 @@
           <p class="fc-muted">{$t('frameleaf_cloud_restore_no_match')}</p>
         {/if}
         <p class="fc-note">{$t('frameleaf_cloud_restore_items_note')}</p>
+      {:else if mode === 'albums'}
+        {#if needsKey}
+          <p class="fc-muted">{$t('frameleaf_cloud_restore_needs_key')}</p>
+        {:else if albums === null}
+          <p class="fc-muted" role="status">{$t('frameleaf_cloud_loading')}</p>
+        {:else if !albums.hasDetails}
+          <p class="fc-muted">{$t('frameleaf_cloud_restore_albums_old_backup')}</p>
+        {:else if albums.albums.length > 0}
+          <div class="fc-table-wrap">
+            <table class="fc-table">
+              <thead>
+                <tr>
+                  <th scope="col">{$t('frameleaf_cloud_restore_column_album')}</th>
+                  <th scope="col">{$t('frameleaf_cloud_restore_column_owner')}</th>
+                  <th scope="col">{$t('frameleaf_cloud_restore_column_state')}</th>
+                  <th scope="col">
+                    <span class="fc-visually-hidden">{$t('frameleaf_cloud_restore_column_action')}</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {#each albums.albums as album (album.albumId)}
+                  {@const deleted = album.state === CloudBackupAlbumState.Deleted}
+                  <tr>
+                    <th scope="row">
+                      {album.name}
+                      <small>{$t('frameleaf_cloud_restore_album_items', { values: { count: album.items } })}</small>
+                    </th>
+                    <td>{album.ownerName ?? '—'}</td>
+                    <td>
+                      <span class="fc-status is-warning">
+                        {deleted
+                          ? $t('frameleaf_cloud_restore_album_deleted')
+                          : $t('frameleaf_cloud_restore_album_missing', { values: { count: album.missing } })}
+                      </span>
+                    </td>
+                    <td>
+                      <Button
+                        disabled={busy || busyBucket}
+                        onclick={() => void start(CloudBackupRestoreScope.Album, { albumId: album.albumId })}
+                      >
+                        <Icon icon={deleted ? mdiRestore : mdiWrenchOutline} size="18" />
+                        {deleted
+                          ? $t('frameleaf_cloud_restore_album_restore')
+                          : $t('frameleaf_cloud_restore_album_repair')}
+                      </Button>
+                    </td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          </div>
+        {:else}
+          <p class="fc-muted">{$t('frameleaf_cloud_restore_albums_none')}</p>
+        {/if}
+        <p class="fc-note">{$t('frameleaf_cloud_restore_albums_note')}</p>
       {:else}
         <CloudBanner tone="warning" title={$t('frameleaf_cloud_restore_library_banner_title')}>
           {$t('frameleaf_cloud_restore_library_banner_body', {
@@ -387,6 +472,16 @@
           {#if lastRestore.destination}
             <p class="fc-muted">
               {$t('frameleaf_cloud_restore_destination', { values: { folder: lastRestore.destination } })}
+            </p>
+          {/if}
+          {#if lastRestore.recreated > 0}
+            <p class="fc-muted">
+              {$t('frameleaf_cloud_restore_recreated', { values: { count: lastRestore.recreated } })}
+            </p>
+          {/if}
+          {#if lastRestore.detailsRestored > 0}
+            <p class="fc-muted">
+              {$t('frameleaf_cloud_restore_details_restored', { values: { count: lastRestore.detailsRestored } })}
             </p>
           {/if}
           {#if lastRestore.replaced > 0}

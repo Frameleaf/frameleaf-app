@@ -4,6 +4,7 @@ import { setupBaseMockApiRoutes } from 'src/ui/mock-network/base-network.js';
 import {
   CloudBackupMockState,
   MANIFESTS,
+  MANIFEST_ALBUMS,
   MANIFEST_ITEMS,
   RESTORE_ID,
   RUN_ID,
@@ -14,8 +15,10 @@ import { CloudMockState, setupCloudMockApiRoutes } from 'src/ui/mock-network/clo
 /**
  * Settings → Frameleaf Cloud → Cloud backup → Restore (FL-164) against a mocked server: the kept backups,
  * a search of the newest one, and an item still in the library restored in place through the restore
- * dialog, after choosing the backup; a deleted item comes back into the restore folder; the whole library
- * needs RESTORE typed first. Every restore is queued on the server and shown as restoring.
+ * dialog, after choosing the backup and how its details come back; a deleted item comes back as it was, or
+ * into the restore folder from a backup made before details were recorded; a deleted album is restored and
+ * an album missing items repaired; the whole library needs RESTORE typed first. Every restore is queued on
+ * the server and shown as restoring.
  */
 const backupPage = '/user-settings?area=cloud&section=cloud-backup';
 
@@ -70,6 +73,59 @@ test.describe('Frameleaf Cloud backup restore', () => {
       .poll(() => backup.requests.find(({ path }) => path === 'admin/cloud/backup/restore')?.body)
       .toEqual({ manifestKey: MANIFESTS[0].key, scope: 'files', assetIds: [MANIFEST_ITEMS[1].assetId] });
     await expect(page.getByRole('dialog')).toBeHidden();
+  });
+
+  test('fills in an item’s missing details when asked', async ({ page }) => {
+    await page.goto(backupPage);
+    const restore = page.locator('#fc-restore-title');
+    await restore
+      .getByRole('row', { name: /Elk\.jpg/ })
+      .getByRole('button', { name: 'Restore…' })
+      .click();
+
+    const dialog = page.getByRole('dialog', { name: 'Restore “Elk.jpg”' });
+    const details = dialog.getByRole('group', { name: 'Details' });
+    await expect(details.getByRole('radio', { name: /Keep current details/ })).toBeChecked();
+    await details.getByRole('radio', { name: /Fill in missing details/ }).check();
+    await dialog.getByRole('button', { name: 'Restore', exact: true }).click();
+
+    await expect
+      .poll(() => backup.requests.find(({ path }) => path === 'admin/cloud/backup/restore')?.body)
+      .toEqual({
+        manifestKey: MANIFESTS[0].key,
+        scope: 'asset',
+        assetIds: [MANIFEST_ITEMS[0].assetId],
+        details: 'fill',
+      });
+  });
+
+  test('brings a deleted item back as it was when the backup holds its details', async ({ page }) => {
+    await page.goto(backupPage);
+    const restore = page.locator('#fc-restore-title');
+    await restore
+      .getByRole('row', { name: /Campfire evening\.jpg/ })
+      .getByRole('button', { name: 'Restore', exact: true })
+      .click();
+
+    await expect
+      .poll(() => backup.requests.find(({ path }) => path === 'admin/cloud/backup/restore')?.body)
+      .toEqual({ manifestKey: MANIFESTS[0].key, scope: 'asset', assetIds: [MANIFEST_ITEMS[2].assetId] });
+  });
+
+  test('restores a deleted album and repairs one missing items', async ({ page }) => {
+    await page.goto(backupPage);
+    const restore = page.locator('#fc-restore-title');
+    await restore.getByRole('radio', { name: 'Albums' }).click();
+
+    const deleted = restore.getByRole('row', { name: /Lake house weekend/ });
+    await expect(deleted.getByText('84 items')).toBeVisible();
+    await expect(restore.getByRole('row', { name: /Moraine Lake/ }).getByText('3 items missing')).toBeVisible();
+    await deleted.getByRole('button', { name: 'Restore album' }).click();
+
+    await expect
+      .poll(() => backup.requests.find(({ path }) => path === 'admin/cloud/backup/restore')?.body)
+      .toEqual({ manifestKey: MANIFESTS[0].key, scope: 'album', albumId: MANIFEST_ALBUMS[0].albumId });
+    await expect(restore.getByText('Restore queued. Follow it here or in Activity.')).toBeVisible();
   });
 
   test('restores the whole library only after RESTORE is typed', async ({ page }) => {
