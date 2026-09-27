@@ -845,6 +845,322 @@ async function mergeCandidate(env = process.env) {
     }),
   );
 }
+// FL-142: the images the deployment test runs on this runner. A built image is the OCI archive its
+// build job left (never pushed); an unchanged image is the digest a published release qualified, verified
+// exactly as reuse-candidate verifies it. Writes SERVER_*/ML_* for frameleaf-deploy-test.cjs to GITHUB_ENV.
+async function deployTestImages(
+  env = process.env,
+  registry = new Registry(env),
+) {
+  assert.equal(env.GITHUB_REPOSITORY, REPOSITORY);
+  assert(SHA.test(env.GITHUB_SHA), "Invalid source SHA");
+  const lines = [];
+  for (const [key, image, built, release, directory] of [
+    [
+      "SERVER",
+      "frameleaf-server",
+      env.SERVER_BUILT,
+      env.SERVER_RELEASE,
+      "server",
+    ],
+    ["ML", "frameleaf-machine-learning", env.ML_BUILT, env.ML_RELEASE, "ml"],
+  ]) {
+    if (built === "true") {
+      const archive = path.join(env.RUNNER_TEMP, directory, "image.tar");
+      await fs.access(archive);
+      lines.push(`${key}_ARCHIVE=${archive}`);
+      continue;
+    }
+    if (built === "released") {
+      // The integration image pairs its server with the machine-learning image of the latest
+      // published release, as recorded in that release's verified manifest (never a rolling tag).
+      const manifest = await releaseEvidence();
+      const spec = variant(image, "");
+      const records = manifest.images.filter(
+        (r) => r.image === imageName(spec) && r.suffix === spec.suffix,
+      );
+      assert.equal(records.length, 1, "Missing or duplicate released image");
+      const verified = await verifyImage(
+        registry,
+        spec,
+        records[0].buildSourceCommit || records[0].sourceCommit,
+        records[0].digest,
+      );
+      lines.push(`${key}_IMAGE=${verified.image}@${verified.digest}`);
+      if (key === "SERVER")
+        lines.push(
+          `SERVER_SOURCE_SHA=${records[0].buildSourceCommit || records[0].sourceCommit}`,
+        );
+      continue;
+    }
+    assert.equal(built, "false", `Unknown ${key} build plan`);
+    assert(/^frameleaf-v/.test(release || ""), `Missing ${key} reuse release`);
+    const reused = await verifyReuse(
+      registry,
+      variant(image, ""),
+      env.GITHUB_SHA,
+      await releaseEvidence(release),
+    );
+    lines.push(`${key}_IMAGE=${reused.image}@${reused.buildDigest}`);
+    if (key === "SERVER")
+      lines.push(`SERVER_SOURCE_SHA=${reused.buildSourceCommit}`);
+  }
+  await fs.appendFile(env.GITHUB_ENV, lines.join("\n") + "\n");
+  console.log(lines.filter((line) => !line.includes("ARCHIVE")).join("\n"));
+}
+
+// FL-146 "Deploy production": the qualified candidate a dispatch names, by its exact fork/main commit or
+// by the digest of its frameleaf-server candidate. Only the current fork/main head with a successful
+// same-SHA Deploy run qualifies (the release rules below); rolling tags are never evidence.
+async function resolveCandidate(
+  env = process.env,
+  registry = new Registry(env),
+) {
+  assert.equal(env.GITHUB_REPOSITORY, REPOSITORY);
+  const input = (env.CANDIDATE || "").trim();
+  let sha = input;
+  const server = variant("frameleaf-server", "");
+  if (DIGEST.test(input)) {
+    const index = await registry.read(server.image, input);
+    sha =
+      index.json.annotations?.["org.frameleaf.qualification.revision"] ||
+      index.json.annotations?.["org.opencontainers.image.revision"];
+    assert(SHA.test(sha || ""), "The digest names no source revision");
+    const tagged = await registry.read(server.image, commitTag(sha, server));
+    assert.equal(
+      tagged.digest,
+      input,
+      "The digest is not the qualified server candidate of its commit",
+    );
+  }
+  assert(
+    SHA.test(sha),
+    "Give the exact 40-character commit SHA or a sha256 digest",
+  );
+  assert(await currentMainline(sha), `${sha} is not the current ${MAIN} head`);
+  const { workflow_runs: runs } = await github(
+    `actions/workflows/docker.yml/runs?head_sha=${sha}&status=success&per_page=100`,
+  );
+  const run = (Array.isArray(runs) ? runs : []).find((r) => trustedRun(r, sha));
+  assert(run, "No successful same-SHA Deploy run qualifies this commit");
+  const images = [];
+  for (const spec of VARIANTS)
+    images.push(await candidateImage(registry, spec, sha));
+  const [serverImage, mlImage] = images;
+  const outputs = {
+    sha,
+    run: String(run.id),
+    "server-image": `${serverImage.image}@${serverImage.digest}`,
+    "server-source": serverImage.buildSourceCommit,
+    "ml-image": `${mlImage.image}@${mlImage.digest}`,
+  };
+  if (env.GITHUB_OUTPUT)
+    await fs.appendFile(
+      env.GITHUB_OUTPUT,
+      Object.entries(outputs)
+        .map(([key, value]) => `${key}=${value}`)
+        .join("\n") + "\n",
+    );
+  console.log(JSON.stringify({ ...outputs, images }, null, 2));
+  return outputs;
+}
+
+// FL-145: every promoted image digest is signed with the Frameleaf cosign key (the production
+// environment's COSIGN_PRIVATE_KEY/COSIGN_PASSWORD; cosign reads them from the environment and they are
+// never passed on a command line or printed), the release manifest is attached as an attestation, and
+// both are verified against the committed public key before anything is promoted.
+const COSIGN_PUBLIC_KEY = "cosign.pub";
+const ATTESTATION_TYPE =
+  "https://frameleaf.app/attestations/release-manifest/v2";
+function cosign(args, run = execFileSync) {
+  return run("cosign", args, {
+    stdio: ["ignore", "pipe", "inherit"],
+    encoding: "utf8",
+  });
+}
+function signImages(images, manifestFile, run = execFileSync) {
+  const signed = [];
+  for (const image of images) {
+    assert(DIGEST.test(image.digest), "Invalid image digest to sign");
+    const reference = `${image.image}@${image.digest}`;
+    cosign(
+      [
+        "sign",
+        "--yes",
+        "--recursive",
+        "--key",
+        "env://COSIGN_PRIVATE_KEY",
+        reference,
+      ],
+      run,
+    );
+    cosign(
+      [
+        "attest",
+        "--yes",
+        "--key",
+        "env://COSIGN_PRIVATE_KEY",
+        "--type",
+        ATTESTATION_TYPE,
+        "--predicate",
+        manifestFile,
+        reference,
+      ],
+      run,
+    );
+    cosign(["verify", "--key", COSIGN_PUBLIC_KEY, reference], run);
+    cosign(
+      [
+        "verify-attestation",
+        "--key",
+        COSIGN_PUBLIC_KEY,
+        "--type",
+        ATTESTATION_TYPE,
+        reference,
+      ],
+      run,
+    );
+    signed.push(reference);
+  }
+  return signed;
+}
+
+// FL-142 staged rollout and kill switch: lines in the GitHub release body that servers read
+// (server/src/utils/frameleaf-release.ts parseReleaseBodyFlags) and the release feed passes on.
+function releaseFlagsBody(body, { rolloutPercent, withdrawnReason } = {}) {
+  let text = (body || "")
+    .split("\n")
+    .filter((line) => !/^[ \t]*(?:rollout|withdrawn):/i.test(line))
+    .join("\n")
+    .replace(/^\n+|\n+$/g, "");
+  const flags = [];
+  if (withdrawnReason !== undefined) {
+    const reason = String(withdrawnReason).replace(/\s+/g, " ").trim();
+    assert(
+      reason.length > 0 && reason.length <= 300,
+      "A withdrawal needs a reason of at most 300 characters",
+    );
+    flags.push(`withdrawn: ${reason}`);
+  }
+  if (rolloutPercent !== undefined && rolloutPercent !== null) {
+    assert(
+      Number.isInteger(rolloutPercent) &&
+        rolloutPercent >= 0 &&
+        rolloutPercent <= 100,
+      "Rollout must be a whole percentage from 0 to 100",
+    );
+    if (rolloutPercent < 100) flags.push(`rollout: ${rolloutPercent}%`);
+  }
+  return flags.length
+    ? `${flags.join("\n")}\n\n${text}`.trim() + "\n"
+    : text + "\n";
+}
+function parsePercent(value) {
+  if (value === undefined || value === "") return undefined;
+  assert(
+    /^\d{1,3}$/.test(String(value).trim()),
+    "Rollout must be a whole percentage from 0 to 100",
+  );
+  return Number(value);
+}
+
+// Deploy production's rollout and withdraw actions. Withdraw marks the release withdrawn and a
+// prerelease (servers stop offering it), and restores an earlier published release: its qualified image
+// digests are re-verified from its manifest, signed if they predate signing, and become `release` and
+// `latest` again; the GitHub release is marked latest. Nothing is rebuilt or deleted.
+async function releaseFlags(
+  env = process.env,
+  registry = new Registry(env),
+  run = execFileSync,
+) {
+  assert.equal(env.GITHUB_REPOSITORY, REPOSITORY);
+  const tag = env.RELEASE_TAG;
+  assert(
+    /^frameleaf-v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?-\d+$/.test(tag || ""),
+    "Invalid release tag",
+  );
+  const record = await github(`releases/tags/${encodeURIComponent(tag)}`);
+  assert(!record.draft, "The release is still a draft");
+  const dryRun = env.DRY_RUN === "true";
+  if (env.ACTION === "rollout") {
+    const body = releaseFlagsBody(record.body, {
+      rolloutPercent: parsePercent(env.ROLLOUT_PERCENT),
+    });
+    console.log(
+      `${dryRun ? "Would set" : "Setting"} ${tag} rollout to ${env.ROLLOUT_PERCENT}%`,
+    );
+    if (!dryRun)
+      await github(`releases/${record.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ body }),
+      });
+    return;
+  }
+  assert.equal(env.ACTION, "withdraw", "Expected rollout or withdraw");
+  const restoreTag = env.RESTORE_TAG;
+  assert.notEqual(
+    restoreTag,
+    tag,
+    "Restore another release than the one withdrawn",
+  );
+  const evidence = await releaseEvidence(restoreTag);
+  const restore = [];
+  for (const spec of VARIANTS) {
+    const records = evidence.images.filter(
+      (r) => r.image === imageName(spec) && r.suffix === spec.suffix,
+    );
+    assert.equal(
+      records.length,
+      1,
+      `${restoreTag}: missing or duplicate ${spec.image}${spec.suffix}`,
+    );
+    const digest = records[0].digest;
+    const verified = await verifyImage(
+      registry,
+      spec,
+      records[0].buildSourceCommit || records[0].sourceCommit,
+      digest,
+    );
+    assert.equal(verified.digest, digest, "Restored digest differs");
+    restore.push({ spec, record: verified });
+  }
+  const body = releaseFlagsBody(record.body, { withdrawnReason: env.REASON });
+  console.log(
+    `${dryRun ? "Would withdraw" : "Withdrawing"} ${tag} and restore ${restoreTag} (${restore.length} verified images)`,
+  );
+  if (dryRun) return;
+  await github(`releases/${record.id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ body, prerelease: true, make_latest: "false" }),
+  });
+  for (const { spec, record: image } of restore) {
+    const reference = `${image.image}@${image.digest}`;
+    try {
+      cosign(["verify", "--key", COSIGN_PUBLIC_KEY, reference], run);
+    } catch {
+      cosign(
+        [
+          "sign",
+          "--yes",
+          "--recursive",
+          "--key",
+          "env://COSIGN_PRIVATE_KEY",
+          reference,
+        ],
+        run,
+      );
+    }
+    await tagImage(registry, spec, image, "release");
+    await tagImage(registry, spec, image, "latest");
+  }
+  run("gh", ["release", "edit", restoreTag, "--repo", REPOSITORY, "--latest"], {
+    stdio: "inherit",
+  });
+  console.log(`Withdrew ${tag}; ${restoreTag} is release and latest again.`);
+}
+
 async function createBundle(
   directory,
   root,
@@ -1000,10 +1316,17 @@ async function release(env = process.env) {
       digest,
     })),
     certification:
-      "Integration and all three official-container roundtrip lanes passed in the referenced build run.",
+      "Integration and all three official-container roundtrip lanes passed in the referenced build run; Deploy production's deployment test of this exact candidate passed before promotion.",
     provenance:
-      "Image/index revision labels and SHA-256 content verified; BuildKit metadata/SBOM are not a signed provenance claim.",
+      env.SIGN === "1"
+        ? `Image/index revision labels and SHA-256 content verified; every image digest is signed with the Frameleaf cosign key (${COSIGN_PUBLIC_KEY}) and carries this manifest as a ${ATTESTATION_TYPE} attestation.`
+        : "Image/index revision labels and SHA-256 content verified; BuildKit metadata/SBOM are not a signed provenance claim.",
   };
+  if (env.DEPLOY_RUN_ID) {
+    assert(/^\d+$/.test(env.DEPLOY_RUN_ID), "Invalid deployment run");
+    manifest.deploymentRun = `${SOURCE}/actions/runs/${env.DEPLOY_RUN_ID}`;
+  }
+  const rolloutPercent = parsePercent(env.ROLLOUT_PERCENT);
   assert(
     await currentMainline(env.SOURCE_SHA),
     "Mainline changed during candidate verification",
@@ -1020,7 +1343,10 @@ async function release(env = process.env) {
         name: tag,
         draft: true,
         generate_release_notes: true,
-        body: `Certified source: ${env.SOURCE_SHA}\n\nBuild and compatibility evidence: ${manifest.certifiedBuildRun}\n\nUse the attached version-matched installation files and release-manifest.json.`,
+        body: releaseFlagsBody(
+          `Certified source: ${env.SOURCE_SHA}\n\nBuild and compatibility evidence: ${manifest.certifiedBuildRun}\n\nUse the attached version-matched installation files and release-manifest.json. Verify an image with: cosign verify --key ${COSIGN_PUBLIC_KEY} <image>@<digest>`,
+          { rolloutPercent },
+        ),
       };
       return github("releases", {
         method: "POST",
@@ -1050,6 +1376,13 @@ async function release(env = process.env) {
     manifest,
     dependencies,
   );
+  if (env.SIGN === "1") {
+    const signed = signImages(
+      images,
+      path.join(directory, "release-manifest.json"),
+    );
+    console.log(`Signed and verified ${signed.length} image digests.`);
+  }
   assert(
     await currentMainline(env.SOURCE_SHA),
     "Mainline changed before promotion; draft/version tags retained for inspection",
@@ -1098,6 +1431,13 @@ module.exports = {
   verifyReuse,
   candidateImage,
   planReuse,
+  deployTestImages,
+  resolveCandidate,
+  releaseFlagsBody,
+  releaseFlags,
+  signImages,
+  parsePercent,
+  ATTESTATION_TYPE,
 };
 if (require.main === module) {
   (async () => {
@@ -1111,7 +1451,13 @@ if (require.main === module) {
     else if (process.argv[2] === "release") await release();
     else if (process.argv[2] === "plan-reuse") await planReuse();
     else if (process.argv[2] === "reuse-candidate") await reuseCandidate();
-    else throw new Error("Expected build-matrix, merge-candidate or release");
+    else if (process.argv[2] === "deploy-test-images") await deployTestImages();
+    else if (process.argv[2] === "resolve-candidate") await resolveCandidate();
+    else if (process.argv[2] === "release-flags") await releaseFlags();
+    else
+      throw new Error(
+        "Expected build-matrix, merge-candidate, plan-reuse, reuse-candidate, deploy-test-images, resolve-candidate, release or release-flags",
+      );
   })().catch((error) => {
     console.error(error.message);
     process.exitCode = 1;
