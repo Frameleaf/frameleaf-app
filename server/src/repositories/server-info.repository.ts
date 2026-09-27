@@ -8,9 +8,12 @@ import { ReleaseChannel } from 'src/enum.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import {
+  type FrameleafReleaseTag,
   GitHubRelease,
+  isReleaseOffered,
   newestFrameleafRelease,
   parseFrameleafFeedRelease,
+  parseReleaseBodyFlags,
   releaseFeedChannel,
 } from 'src/utils/frameleaf-release.js';
 
@@ -63,18 +66,32 @@ export class ServerInfoRepository {
   }
 
   /**
-   * The newest Frameleaf release on the channel (FL-80 S-4 / O-8, FL-192). Only Frameleaf is asked; no
-   * Immich service is contacted, and no instance identifier is sent to either source.
+   * The newest Frameleaf release on the channel that is offered to this server (FL-80 S-4 / O-8, FL-192,
+   * FL-142). Only Frameleaf is asked; no Immich service is contacted, and no instance identifier is sent to
+   * either source.
    *
    * The Frameleaf Cloud release feed (`versionCheck.url`, FC-70) is asked first with the channel
    * (`stable` or `beta`). If it fails or answers with something that is not a release, Frameleaf's
    * GitHub releases (`versionCheck.fallbackUrl`) are asked instead. The version is returned with a
    * leading "v".
+   *
+   * Kill switch and staged rollout (FL-142): a release marked withdrawn, or staged to a share of servers this
+   * one is not in (`rolloutSeed` places it, and never leaves the server), is not offered. When the feed's
+   * release is not offered, GitHub releases are asked for the newest earlier release that is, never the same
+   * version again. `null` means no release is offered to this server now.
    */
-  async getLatestRelease(channel: ReleaseChannel): Promise<VersionResponse> {
+  async getLatestRelease(channel: ReleaseChannel, rolloutSeed: string): Promise<VersionResponse | null> {
     const { versionCheck } = this.configRepository.getEnv();
+    let excluded: string | undefined;
     try {
-      return await this.getFeedRelease(versionCheck.url, channel);
+      const release = await this.getFeedRelease(versionCheck.url, channel);
+      if (isReleaseOffered(release, rolloutSeed, release.version)) {
+        return { version: `v${release.version}`, published_at: release.publishedAt };
+      }
+      excluded = release.version;
+      this.logger.log(
+        `Frameleaf release ${release.version} is ${release.withdrawn ? 'withdrawn' : 'not yet offered to this server'}; looking for an earlier release`,
+      );
     } catch (error) {
       this.logger.warn(
         `Frameleaf release feed unavailable, asking GitHub releases instead: ${error instanceof Error ? error.message : String(error)}`,
@@ -82,13 +99,17 @@ export class ServerInfoRepository {
     }
 
     try {
-      return await this.getGitHubRelease(versionCheck.fallbackUrl, channel);
+      return await this.getGitHubRelease(versionCheck.fallbackUrl, channel, rolloutSeed, excluded);
     } catch (error) {
+      if (excluded) {
+        // the feed answered: its release is not offered here, and nothing earlier could be found
+        return null;
+      }
       throw new Error('Failed to fetch latest release', { cause: error });
     }
   }
 
-  private async getFeedRelease(url: string, channel: ReleaseChannel): Promise<VersionResponse> {
+  private async getFeedRelease(url: string, channel: ReleaseChannel) {
     const feedUrl = new URL(url);
     feedUrl.searchParams.set('channel', releaseFeedChannel(channel));
     const body = await this.fetchJson(feedUrl.href, { Accept: 'application/json' });
@@ -96,7 +117,7 @@ export class ServerInfoRepository {
     if (!release) {
       throw new Error('Release feed returned no release');
     }
-    return { version: `v${release.version}`, published_at: release.publishedAt };
+    return release;
   }
 
   /**
@@ -104,16 +125,30 @@ export class ServerInfoRepository {
    * includes prereleases. The version is parsed from the `frameleaf-v<semver>-<n>` tag.
    *
    * Our release script never marks a GitHub release as a prerelease, so `/releases/latest` can be a
-   * release-candidate tag; Stable then falls back to the release list and its newest stable tag.
+   * release-candidate tag; Stable then falls back to the release list and its newest stable tag. A withdrawn
+   * release is marked a prerelease as well as withdrawn, so Stable skips it either way. Releases whose body
+   * withdraws them or stages them past this server, and the `excluded` version, are skipped; when Frameleaf
+   * releases exist but none is offered, the answer is `null`.
    */
-  private async getGitHubRelease(url: string, channel: ReleaseChannel): Promise<VersionResponse> {
+  private async getGitHubRelease(
+    url: string,
+    channel: ReleaseChannel,
+    rolloutSeed: string,
+    excluded?: string,
+  ): Promise<VersionResponse | null> {
     const includePrerelease = channel === ReleaseChannel.ReleaseCandidate;
+    const offered = (release: GitHubRelease, tag: FrameleafReleaseTag) =>
+      tag.version !== excluded && isReleaseOffered(parseReleaseBodyFlags(release.body), rolloutSeed, tag.version);
     let newest = includePrerelease
       ? undefined
-      : newestFrameleafRelease([(await this.fetchReleases(`${url}/latest`)) as GitHubRelease], false);
+      : newestFrameleafRelease([(await this.fetchReleases(`${url}/latest`)) as GitHubRelease], false, offered);
     if (!newest) {
       const releases = await this.fetchReleases(`${url}?per_page=30`);
-      newest = newestFrameleafRelease(Array.isArray(releases) ? releases : [releases], includePrerelease);
+      const list = Array.isArray(releases) ? releases : [releases];
+      newest = newestFrameleafRelease(list, includePrerelease, offered);
+      if (!newest && newestFrameleafRelease(list, true)) {
+        return null;
+      }
     }
     if (!newest) {
       throw new Error('No Frameleaf release tag found');

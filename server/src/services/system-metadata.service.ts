@@ -166,6 +166,7 @@ export class SystemMetadataService extends BaseService {
 
   async getVersionCheckState(): Promise<VersionCheckStateResponseDto> {
     const value = await this.systemMetadataRepository.get(SystemMetadataKey.VersionCheckState);
-    return { checkedAt: null, releaseVersion: null, ...value };
+    // the staged-rollout seed (FL-142) stays on the server
+    return { checkedAt: value?.checkedAt ?? null, releaseVersion: value?.releaseVersion ?? null };
   }
 }

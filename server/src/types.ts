@@ -740,7 +740,12 @@ export interface MemoryData {
   [MemoryType.OnThisDay]: OnThisDayData;
 }
 
-export type VersionCheckMetadata = { checkedAt: string; releaseVersion: string };
+export type VersionCheckMetadata = {
+  checkedAt: string;
+  releaseVersion: string;
+  /** FL-142: this server's random, never-sent place in staged rollouts; kept across checks. */
+  rolloutSeed?: string;
+};
 export type SystemFlags = { mountChecks: Record<StorageFolder, boolean> };
 export type PhysicalDeduplicationMigrationState = {
   mode: 'dry-run' | 'apply';
