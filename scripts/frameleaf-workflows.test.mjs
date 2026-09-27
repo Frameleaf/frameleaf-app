@@ -210,7 +210,12 @@ test("owned workflows have no upstream service secrets, write-trigger PR executi
         if (step.uses?.startsWith("actions/checkout@"))
           assert.equal(step.with["persist-credentials"], false);
       }
-      if (id !== "publish" && id !== "publish-results")
+      // integration-image.yml's build jobs push by digest; their own contract test below pins them.
+      if (
+        id !== "publish" &&
+        id !== "publish-results" &&
+        !(file === "integration-image.yml" && id === "build")
+      )
         assert.ok(
           Object.values(j.permissions ?? {}).every((value) => value === "read"),
           file,
@@ -479,4 +484,113 @@ test("all inline bash steps remain syntactically valid", () => {
       }
     }
   }
+});
+
+test("integration image is a guarded manual pre-release that never writes release-pipeline tags", () => {
+  const w = workflow("integration-image.yml");
+  assert.deepEqual(Object.keys(w.on), ["workflow_dispatch"]);
+  assert.equal(w.on.workflow_dispatch, null);
+  assert.deepEqual(w.permissions, {});
+  assert.equal(w.env.IMAGE, "ghcr.io/frameleaf/frameleaf-server");
+  assert.deepEqual(Object.keys(w.jobs), ["guard", "build", "publish"]);
+  assert.deepEqual(w.jobs.guard.permissions, {});
+  for (const id of ["build", "publish"]) {
+    const j = w.jobs[id];
+    assert.deepEqual(j.permissions, { contents: "read", packages: "write" });
+    const dispatch = (repository, ref, event = "workflow_dispatch") =>
+      admission(j.if, repository, "", event, {
+        github: { repository, event_name: event, ref },
+      });
+    const branch = "refs/heads/master/frameleaf-implementation";
+    assert.equal(dispatch("Frameleaf/frameleaf-app", branch), true, id);
+    for (const [repository, ref, event] of [
+      ["Frameleaf/frameleaf-app", "refs/heads/fork/main"],
+      ["Frameleaf/frameleaf-app", "refs/heads/feature"],
+      ["Frameleaf/frameleaf-app", "refs/tags/frameleaf-v1"],
+      ["someone/frameleaf-app", branch],
+      ["Frameleaf/frameleaf-app", branch, "push"],
+    ])
+      assert.equal(dispatch(repository, ref, event), false, `${id} ${ref}`);
+  }
+  assert.deepEqual(w.jobs.build.needs, "guard");
+  assert.deepEqual(w.jobs.publish.needs, "build");
+  const guard = w.jobs.guard.steps[0].run;
+  const sha = "a".repeat(40);
+  for (const [repository, ref, event, expected] of [
+    [
+      "Frameleaf/frameleaf-app",
+      "refs/heads/master/frameleaf-implementation",
+      "workflow_dispatch",
+      0,
+    ],
+    ["Frameleaf/frameleaf-app", "refs/heads/fork/main", "workflow_dispatch", 1],
+    [
+      "attacker/frameleaf-app",
+      "refs/heads/master/frameleaf-implementation",
+      "workflow_dispatch",
+      1,
+    ],
+    [
+      "Frameleaf/frameleaf-app",
+      "refs/heads/master/frameleaf-implementation",
+      "push",
+      1,
+    ],
+  ])
+    assert.equal(
+      spawnSync("bash", ["-c", guard], {
+        env: {
+          ...process.env,
+          REPOSITORY: repository,
+          REF: ref,
+          EVENT: event,
+          SHA: sha,
+        },
+      }).status,
+      expected,
+      `${repository} ${ref} ${event}`,
+    );
+
+  // Same build as Deploy's server image: Dockerfile, target, device, native platforms.
+  const deploy = workflow("docker.yml").jobs.server.with;
+  const build = w.jobs.build.steps.find((s) => s.id === "build").with;
+  assert.equal(build.file, deploy.dockerfile);
+  assert.equal(build.context, deploy.context);
+  assert.equal(build.target, deploy.target);
+  assert.match(
+    build["build-args"],
+    new RegExp(`^DEVICE=${deploy.device}$`, "m"),
+  );
+  assert.deepEqual(
+    w.jobs.build.strategy.matrix.include.map((row) => row.platform).join(","),
+    deploy.platforms,
+  );
+  assert.match(build.outputs, /push-by-digest=true/);
+  assert.equal(
+    build["cache-to"],
+    undefined,
+    "must not write the Deploy build cache",
+  );
+  assert.match(
+    build.labels,
+    /^org\.opencontainers\.image\.version=integration-\$\{\{ github\.sha \}\}$/m,
+  );
+  assert.match(
+    build.labels,
+    /^org\.opencontainers\.image\.description=Pre-release integration build, not a release$/m,
+  );
+  assert.match(
+    build["build-args"],
+    /^BUILD_IMAGE=integration-\$\{\{ github\.sha \}\}$/m,
+  );
+
+  const publish = w.jobs.publish.steps.find((s) => s.id === "manifest").run;
+  const tags = [...publish.matchAll(/--tag "([^"]+)"/g)].map((m) => m[1]);
+  assert.deepEqual(tags, ["${IMAGE}:${full}", "${IMAGE}:${short}"]);
+  assert.match(publish, /full="integration-\$\{SHA\}"/);
+  assert.match(publish, /short="integration-\$\{SHA:0:12\}"/);
+  assert.doesNotMatch(
+    JSON.stringify(w),
+    /:latest|:release|:edge|frameleaf-v|commit-\$|type=registry[^"]*mode=max/,
+  );
 });

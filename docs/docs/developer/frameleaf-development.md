@@ -164,6 +164,18 @@ Keep distinct evidence for (1) merged source and current checks, (2) complete im
 
 Use Frameleaf's existing release sequence and runtime-version contract. Do not create HeroNet-style Jira Versions or adopt another repository's tag format. If release tracking is later added to Jira, explicitly map it to the qualified Frameleaf artifacts without substituting it for release evidence.
 
+## Integration image (pre-release)
+
+The **Integration Image** workflow (`.github/workflows/integration-image.yml`) builds a pre-release server image, API, microservices and edge worker together, so the Frameleaf Cloud repository's cross-repository end-to-end tests can run against unreleased work. It is not a release: nothing qualifies, promotes or advertises it, and it must not be installed. It runs only on a manual dispatch of `master/frameleaf-implementation` in `Frameleaf/frameleaf-app` and refuses any other branch or repository. It builds with Deploy's Dockerfile, target and native `linux/amd64` and `linux/arm64` runners, reads but never writes Deploy's build cache, and pushes to `ghcr.io/frameleaf/frameleaf-server` under `integration-<full-SHA>` and `integration-<first 12 characters>` only, never `latest`, `release`, `edge`, `frameleaf-v*` or `commit-*`. Its labels and index annotations carry `org.opencontainers.image.version=integration-<SHA>` and the description "Pre-release integration build, not a release".
+
+```sh
+gh workflow run integration-image.yml --ref master/frameleaf-implementation -R Frameleaf/frameleaf-app
+gh run watch -R Frameleaf/frameleaf-app "$(gh run list -R Frameleaf/frameleaf-app --workflow integration-image.yml --limit 1 --json databaseId --jq '.[0].databaseId')"
+docker pull ghcr.io/frameleaf/frameleaf-server:integration-<full-SHA>
+```
+
+The run summary lists both tags and the manifest digest; pin the digest in the consuming test. The package is private, so pulling needs a GitHub token with `read:packages` (`docker login ghcr.io`), and a workflow in another repository can pull only after an organization owner grants that repository Read access under the package's **Manage Actions access**.
+
 ## Validation and activation
 
 Offline checks include workflow YAML/action validation, trigger/admission fixtures, release provenance and manifest fixtures, Jira policy fixtures, and Compose/image metadata checks. Run the checked-in helpers with the repository's configured Node runtime and installed workspace dependencies:
