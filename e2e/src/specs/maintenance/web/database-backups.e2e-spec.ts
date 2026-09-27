@@ -66,6 +66,34 @@ test.describe('Database Backups', () => {
     await page.waitForURL(backToMaintenance, { timeout: 60_000 });
   });
 
+  // FL-81: the restore runs on the server, so a dropped connection or a reload mid-restore picks the
+  // progress back up (status is re-read on load) and still returns to the app when the restore ends.
+  test('a restore survives a dropped connection and a reload', async ({ context, page }) => {
+    test.setTimeout(90_000);
+
+    await utils.resetBackups(admin.accessToken);
+    const filename = await utils.createBackup(admin.accessToken);
+    await utils.setAuthCookies(context, admin.accessToken);
+    await utils.move(
+      `/data/backups/${filename}`,
+      '/data/backups/immich-db-backup-20260114T184016-v2.5.0-pg14.19.sql.gz',
+    );
+
+    await page.goto(databaseBackups);
+    await page.getByRole('button', { name: 'Restore', exact: true }).click();
+    await confirmRestore(page);
+    await page.waitForURL('/maintenance?**');
+    // The sign-in token is stripped from the address, so a reload relies on the maintenance cookie.
+    expect(new URL(page.url()).searchParams.has('token')).toBe(false);
+
+    await context.setOffline(true);
+    await page.waitForTimeout(1000);
+    await context.setOffline(false);
+    await page.reload();
+
+    await page.waitForURL(backToMaintenance, { timeout: 60_000 });
+  });
+
   // FL-81: a backup from a newer server cannot be migrated down, so Restore stays disabled.
   test('a backup from a newer server cannot be restored', async ({ context, page }) => {
     await utils.resetBackups(admin.accessToken);
