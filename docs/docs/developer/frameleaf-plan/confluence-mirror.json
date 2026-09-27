@@ -73,19 +73,19 @@
       "version": 4
     },
     {
-      "bytes": 48172,
+      "bytes": 48361,
       "category": "reference",
       "id": "64749620",
-      "readbackAt": "2026-09-27T12:53:00.000Z",
-      "readbackResult": "FL-159 / FC-61 (heartbeat settings snapshot and entitlements.refresh): markdown and ADF read-back of version 13 begins with the header carrying SHA-256 611d074a, 48172 bytes, commit 3ee7ba7bc9 pushed on master/frameleaf-implementation (source-at-commit backlink 3ee7ba7bc9); \"Check-ins\" carries the settings summary (never a name, address, file name or error text; an own-bucket server leaves the backup summary out) and \"What Frameleaf Cloud may ask\" the plan refresh request; the 27 headings and the rest match version 12 (FC-62, 4f7f2118f6) and still end with the unchanged job-in-Activity paragraph. Published as HTML (the page holds a Confluence smart link). The markdown export drops same-page anchor link markup (text kept) and table alignment, and shows the shell code fence as bash, the known round-trip limitation; no user-authored additions.",
+      "readbackAt": "2026-09-27T16:17:00.000Z",
+      "readbackResult": "FL-159 / FC-61 / FC-62 (own-bucket reporting and terms per chosen feature, frameleaf-cloud PR #78): markdown read-back of version 15 begins with the header carrying SHA-256 29b3e7de, 48361 bytes, commit 4e72a07b71 pushed on master/frameleaf-implementation (source-at-commit backlink 4e72a07b71); \"Check-ins\" says backup goes to Frameleaf-managed storage or your own bucket (never the bucket's name, address or keys), and the terms paragraph says an optional feature can need a newer version, shown to read first; the rest matches version 13 (version 14 named the pre-rebase commit and was replaced by 15) and still ends with the unchanged job-in-Activity paragraph. Published as HTML (the page holds a Confluence smart link). The markdown export drops same-page anchor link markup (text kept), table alignment and nested list indentation, the known round-trip limitation; no user-authored additions.",
       "source": "docs/docs/administration/frameleaf-cloud.md",
       "sourceBranch": "master/frameleaf-implementation",
-      "sourceCommit": "3ee7ba7bc9af24b738571f01790072bff14a295b",
-      "sourceSha256": "611d074a150e54d754932236899b73e183e1e8d57837da8b80486f9f40b2b532",
-      "sourceState": "pushed-fl-159-fc-61-heartbeat-settings-2026-09-27",
+      "sourceCommit": "4e72a07b713fd1b316063bd77a363303ee7720e3",
+      "sourceSha256": "29b3e7deadb878f8becafe9f246c40ad30e5933131243607ef758034a9c764df",
+      "sourceState": "pushed-fl-159-fc-61-fc-62-own-bucket-feature-terms-2026-09-27",
       "title": "Administration Reference — Frameleaf Cloud",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/64749620/Administration+Reference+Frameleaf+Cloud",
-      "version": 13
+      "version": 15
     },
     {
       "bytes": 12350,
