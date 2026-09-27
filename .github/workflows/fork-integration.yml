@@ -37,7 +37,7 @@ jobs:
           node .github/check-jira.cjs
           node --test docker/frameleaf-delivery.test.mjs
           node --test .github/frameleaf-release.test.cjs .github/frameleaf-deploy-test.test.cjs
-      - name: Install plugin WASM and API generation tools
+      - name: Install plugin WASM, API generation and ffmpeg tools
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
@@ -45,11 +45,13 @@ jobs:
           docker cp fork-integration-mise:/usr/local/bin/mise "$RUNNER_TEMP/mise"
           docker rm fork-integration-mise
           "$RUNNER_TEMP/mise" trust mise.toml
-          "$RUNNER_TEMP/mise" install --locked node github:extism/js-pdk github:webassembly/binaryen npm:oazapfts
+          "$RUNNER_TEMP/mise" install --locked node github:extism/js-pdk github:webassembly/binaryen npm:oazapfts github:jellyfin/jellyfin-ffmpeg
           {
             "$RUNNER_TEMP/mise" where github:extism/js-pdk
             echo "$("$RUNNER_TEMP/mise" where github:webassembly/binaryen)/bin"
             "$RUNNER_TEMP/mise" bin-paths npm:oazapfts
+            # the server unit tests' byte-level clip checks (FL-162) run real ffmpeg and ffprobe
+            "$RUNNER_TEMP/mise" bin-paths github:jellyfin/jellyfin-ffmpeg
           } >> "$GITHUB_PATH"
       - name: Build SDK and core plugin WASM
         run: |
