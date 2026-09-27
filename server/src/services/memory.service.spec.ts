@@ -46,6 +46,7 @@ describe(MemoryService.name, () => {
     mocks.memory.cleanupCurations.mockResolvedValue();
     mocks.memory.searchExports.mockResolvedValue([]);
     mocks.memory.getExistingExportIds.mockResolvedValue(new Set());
+    mocks.memory.getHiddenItemIds.mockResolvedValue(new Set());
   });
 
   it('should be defined', () => {
@@ -311,7 +312,12 @@ describe(MemoryService.name, () => {
       });
 
       expect(mocks.memory.get).toHaveBeenCalledWith(memory.id);
-      expect(mocks.access.memory.checkOwnerAccess).toHaveBeenCalledWith(memory.ownerId, new Set([memory.id]));
+      expect(mocks.access.memory.checkOwnerAccess).toHaveBeenCalledWith(
+        memory.ownerId,
+        new Set([memory.id]),
+        undefined,
+        undefined,
+      );
     });
 
     it('should hide private NSFW memory assets when requested', async () => {
@@ -332,7 +338,12 @@ describe(MemoryService.name, () => {
         excludePersonIds: [],
         excludePetIds: [],
       });
-      expect(mocks.access.memory.checkOwnerAccess).toHaveBeenCalledWith(memory.ownerId, new Set([memory.id]), true);
+      expect(mocks.access.memory.checkOwnerAccess).toHaveBeenCalledWith(
+        memory.ownerId,
+        new Set([memory.id]),
+        true,
+        undefined,
+      );
     });
   });
 
@@ -342,6 +353,7 @@ describe(MemoryService.name, () => {
       const memory = MemoryFactory.create({ ownerId: userId });
 
       mocks.memory.create.mockResolvedValue(getForMemory(memory));
+      mocks.memory.get.mockResolvedValue(getForMemory(memory));
 
       await expect(
         sut.create(factory.auth({ user: { id: userId } }), {
@@ -372,6 +384,7 @@ describe(MemoryService.name, () => {
 
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
       mocks.memory.create.mockResolvedValue(getForMemory(memory));
+      mocks.memory.get.mockResolvedValue(getForMemory(memory));
 
       await expect(
         sut.create(factory.auth({ user: { id: userId } }), {
@@ -392,6 +405,7 @@ describe(MemoryService.name, () => {
       const memory = MemoryFactory.create();
 
       mocks.memory.create.mockResolvedValue(getForMemory(memory));
+      mocks.memory.get.mockResolvedValue(getForMemory(memory));
 
       await expect(
         sut.create(factory.auth(), {
@@ -845,6 +859,39 @@ describe(MemoryService.name, () => {
     });
   });
 
+  describe('exports holding hidden items (FL-195 follow-up)', () => {
+    it('hides an export from a session that may not see one of its items, as they stand now', async () => {
+      const userId = newUuid();
+      const [shown, hidden] = newUuids();
+      const auth = factory.auth({ user: { id: userId } });
+      const open = exportRun({ ownerId: userId, assetIds: [shown] });
+      const withLocked = exportRun({
+        ownerId: userId,
+        assetIds: [shown, hidden],
+        status: MemoryExportStatus.Ready,
+        path: '/data/exports/a.zip',
+        expiresAt: new Date(Date.now() + 60_000),
+      });
+      mocks.memory.searchExports.mockResolvedValue([open, withLocked] as never);
+      mocks.memory.getExport.mockResolvedValue(withLocked as never);
+      mocks.memory.getHiddenItemIds.mockResolvedValue(new Set([hidden]));
+
+      await expect(sut.getExports(auth)).resolves.toEqual([expect.objectContaining({ id: open.id })]);
+      await expect(sut.downloadExport(auth, withLocked.id)).rejects.toBeInstanceOf(NotFoundException);
+      await expect(sut.deleteExport(auth, withLocked.id)).rejects.toBeInstanceOf(NotFoundException);
+      expect(mocks.memory.getHiddenItemIds).toHaveBeenCalledWith(expect.arrayContaining([shown, hidden]), {});
+      expect(mocks.storage.createReadStream).not.toHaveBeenCalled();
+
+      // the owner's unlocked session sees it
+      mocks.memory.getHiddenItemIds.mockResolvedValue(new Set());
+      const elevated = { ...auth, session: { id: 'session', hasElevatedPermission: true } } as typeof auth;
+      await expect(sut.getExports(elevated)).resolves.toHaveLength(2);
+      expect(mocks.memory.getHiddenItemIds).toHaveBeenLastCalledWith(expect.any(Array), {
+        revealLockedOwnerId: userId,
+      });
+    });
+  });
+
   describe('downloadExport', () => {
     it('should refuse an export that is not ready', async () => {
       const userId = newUuid();
@@ -951,6 +998,21 @@ describe(MemoryService.name, () => {
         run.id,
         expect.objectContaining({ status: MemoryExportStatus.Ready, sizeInBytes: 42 }),
       );
+    });
+
+    it("writes the owner's revealed Locked items too: only a session that saw them could ask (FL-195)", async () => {
+      const ownerId = newUuid();
+      const locked = { ...AssetFactory.create({ ownerId }), isLocked: true };
+      const run = exportRun({ ownerId, assetIds: [locked.id], assetCount: 1 });
+
+      mocks.memory.claimExport.mockResolvedValue({ ...run, status: MemoryExportStatus.Running } as never);
+      mocks.memory.getExportForJob.mockResolvedValue({ ...run, cancelRequestedAt: null } as never);
+      mocks.asset.getByIds.mockResolvedValue([locked] as never);
+      mocks.storage.stat.mockResolvedValue({ size: 1 } as never);
+      const { addFile } = givenZip();
+
+      await expect(sut.handleMemoryExport({ id: run.id })).resolves.toBe(JobStatus.Success);
+      expect(addFile).toHaveBeenCalledWith(locked.originalPath, expect.any(String));
     });
 
     it('should rename the archive into place only once it is complete', async () => {

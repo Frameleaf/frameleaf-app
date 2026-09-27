@@ -773,7 +773,7 @@ describe(StudioExportRepository.name, () => {
       const ordinary = await context.sut.listForProject(first.projectId, user.id, {
         take: 10,
         skip: 0,
-        includeLocked: false,
+        visibility: { revealed: false },
       });
       expect(ordinary.total).toBe(1);
       expect(ordinary.items.map((item) => item.id)).toEqual([first.version.id]);
@@ -781,7 +781,7 @@ describe(StudioExportRepository.name, () => {
       const unlocked = await context.sut.listForProject(first.projectId, user.id, {
         take: 10,
         skip: 0,
-        includeLocked: true,
+        visibility: { revealed: true, revealLockedOwnerId: user.id },
       });
       expect(unlocked.total).toBe(2);
 
@@ -790,6 +790,62 @@ describe(StudioExportRepository.name, () => {
       expect(sources.get(second.version.id)).toEqual([
         expect.objectContaining({ assetId: locked[0].id, locked: true }),
       ]);
+    });
+
+    it('hides a result from a locked session once a source is hidden, whenever it was rendered (FL-195)', async () => {
+      const context = setup();
+      const { user } = await context.ctx.newUser();
+      const sources = [await ownSource(context.ctx, user.id)];
+      const staged = await stagedExport(context, user.id, sources);
+      await context.sut.publish(publication(staged, sources));
+      const id = staged.version.id;
+      const locked = { revealed: false };
+      const unlocked = { revealed: true, revealLockedOwnerId: user.id };
+      const list = (visibility: typeof locked | typeof unlocked) =>
+        context.sut.listForProject(staged.projectId, user.id, { take: 10, skip: 0, visibility });
+
+      await expect(context.sut.getForOwner(id, user.id, locked)).resolves.toEqual(expect.objectContaining({ id }));
+
+      // a lock written after the render, by a path that does not propagate it: judged at read time
+      await sql`INSERT INTO asset_lock ("assetId", reason) VALUES (${sources[0].id}::uuid, 'immich-locked-folder')`.execute(
+        defaultDatabase,
+      );
+      await expect(context.sut.getForOwner(id, user.id, locked)).resolves.toBeUndefined();
+      await expect(list(locked)).resolves.toEqual({ items: [], total: 0 });
+      await expect(context.sut.getForOwner(id, user.id, unlocked)).resolves.toEqual(expect.objectContaining({ id }));
+      await expect(list(unlocked)).resolves.toEqual(expect.objectContaining({ total: 1 }));
+      // another account's unlocked session never reveals it
+      const { user: other } = await context.ctx.newUser();
+      await expect(
+        context.sut.getForOwner(id, user.id, { revealed: true, revealLockedOwnerId: other.id }),
+      ).resolves.toBeUndefined();
+
+      // a Locked rule hides it the same way while the session is locked
+      await sql`DELETE FROM asset_lock WHERE "assetId" = ${sources[0].id}::uuid`.execute(defaultDatabase);
+      await expect(context.sut.getForOwner(id, user.id, locked)).resolves.toEqual(expect.objectContaining({ id }));
+      const [tag] = await sql<{ id: string }>`
+        INSERT INTO tag ("userId", value) VALUES (${user.id}::uuid, 'FL-195 rule') RETURNING id
+      `
+        .execute(defaultDatabase)
+        .then(({ rows }) => rows);
+      await sql`INSERT INTO tag_closure (id_ancestor, id_descendant) VALUES (${tag.id}::uuid, ${tag.id}::uuid)`.execute(
+        defaultDatabase,
+      );
+      await sql`INSERT INTO tag_asset ("tagId", "assetId") VALUES (${tag.id}::uuid, ${sources[0].id}::uuid)`.execute(
+        defaultDatabase,
+      );
+      const rule = {
+        revealed: false,
+        hiddenContent: {
+          userId: user.id,
+          includeNsfw: false,
+          tagIds: [tag.id],
+          personIds: [],
+          petIds: [],
+          scope: 'owned' as const,
+        },
+      };
+      await expect(context.sut.getForOwner(id, user.id, rule)).resolves.toBeUndefined();
     });
 
     it('offers only unreferenced files to retention', async () => {

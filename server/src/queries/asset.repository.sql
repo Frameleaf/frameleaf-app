@@ -138,17 +138,7 @@ with
         where
           (asset."localDateTime" at time zone 'UTC')::date = today.date
           and "asset"."ownerId" = any ($4::uuid[])
-          and (
-            "asset"."visibility" = 'timeline'
-            and not exists (
-              select
-                1
-              from
-                asset_lock
-              where
-                asset_lock."assetId" = "asset"."id"
-            )
-          )
+          and "asset"."visibility" = 'timeline'
           and exists (
             select
             from

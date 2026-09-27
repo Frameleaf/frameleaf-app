@@ -9661,6 +9661,8 @@ export type StudioProjectResourcesDto = {
     checkedAt: string;
     /** Every referenced source resolved for the acting account */
     complete: boolean;
+    /** FL-195 follow-up: the owner's own library items this project places that are hidden from this session (Locked, or matched by a Locked rule, while the session is locked). The project keeps them; the editor hides their clips rather than showing missing media. The owner's only; empty for a reviewer */
+    hiddenSources: string[];
     /** References that were refused for the acting account */
     refusedCount: number;
     /** FL-101: placed videos this server cannot decode, refused as 'unsupported-source' when admitted. The owner's only; empty for a reviewer */

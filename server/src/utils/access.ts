@@ -92,10 +92,9 @@ const checkDuplicateOwnerAccess = (access: AccessRepository, auth: AuthDto, ids:
     ? access.duplicate.checkOwnerAccess(auth.user.id, ids, accessPrivacy(auth))
     : access.duplicate.checkOwnerAccess(auth.user.id, ids);
 
+// FL-195 follow-up: a memory with an item hidden from the session is out of reach while locked
 const checkMemoryOwnerAccess = (access: AccessRepository, auth: AuthDto, ids: Set<string>) =>
-  accessPrivacy(auth)
-    ? access.memory.checkOwnerAccess(auth.user.id, ids, accessPrivacy(auth))
-    : access.memory.checkOwnerAccess(auth.user.id, ids);
+  access.memory.checkOwnerAccess(auth.user.id, ids, accessPrivacy(auth), getLockedOwnerId(auth));
 
 const checkStackOwnerAccess = (access: AccessRepository, auth: AuthDto, ids: Set<string>) =>
   accessPrivacy(auth)
