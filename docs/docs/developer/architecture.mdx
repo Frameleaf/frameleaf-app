@@ -2,8 +2,6 @@
 sidebar_position: 1
 ---
 
-import MobileArchitecture from './img/mobile-architecture.svg';
-
 # Architecture
 
 Frameleaf uses a traditional client-server design, with a dedicated database for data persistence. The frontend clients communicate with backend services over HTTP using REST APIs. Below is a high level diagram of the architecture.
@@ -14,7 +12,6 @@ Frameleaf uses a traditional client-server design, with a dedicated database for
 graph LR
     subgraph Clients
         W["Web app (SvelteKit)"]
-        M["Mobile app (Flutter)"]
         C["Frameleaf CLI (TypeScript)"]
     end
     subgraph Server
@@ -25,7 +22,6 @@ graph LR
         JOBS[Jobs]
     end
     W -- "HTTP (OpenAPI)" --> API
-    M -- "HTTP (OpenAPI)" --> API
     C -- "HTTP (OpenAPI)" --> API
     API --> CORE
     CRON --> CORE
@@ -42,26 +38,16 @@ The diagram shows clients communicating with the server's API via REST. The serv
 
 ## Clients
 
-Frameleaf has three main clients:
+Frameleaf has two clients in this repository:
 
-1. Mobile app - Android, iOS
-2. Web app - Responsive website
-3. CLI - Command-line utility for bulk upload
+1. Web app - Responsive website
+2. CLI - Command-line utility for bulk upload
+
+Frameleaf is building its own native iOS and Android apps; the inherited Flutter app has been removed from this repository. The server API is unchanged, so existing mobile clients can still connect.
 
 :::info
-All three clients use [OpenAPI](/api.md) to auto-generate rest clients for easy integration. For more information about this process, see [OpenAPI](/api.md).
+Both clients use [OpenAPI](/api.md) to auto-generate rest clients for easy integration. For more information about this process, see [OpenAPI](/api.md).
 :::
-
-### Mobile App
-
-The mobile app is written in [Dart](https://dart.dev/) using [Flutter](https://flutter.dev/). Below is an architecture overview:
-
-<MobileArchitecture className="p-4 dark:bg-immich-dark-primary my-4" />
-
-The diagrams shows the target architecture, the current state of the code-base is not always following the architecture yet. New code and contributions should follow this architecture.
-Currently, it uses [Isar Database](https://isar.dev/) for a local database and [Riverpod](https://riverpod.dev/) for state management (providers).
-Entities and Models are the two types of data classes used. While entities are stored in the on-device database, models are ephemeral and only kept in memory.
-The Repositories should be the only place where other data classes are used internally (such as OpenAPI DTOs). However, their interfaces must not use foreign data classes!
 
 ### Web Client
 

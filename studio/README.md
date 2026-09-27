@@ -99,20 +99,17 @@ to reach.
 Payload fields typed `time`, `duration` and `rate` are exact rationals, never floats
 (FL-93 / `VID-102`): an instant on the timeline, a length, and a cadence or speed
 multiplier. They travel as a reduced `{ num, den }` pair of integers — `StudioTime`,
-`StudioDuration` and `StudioRate` on the web side, `isRational` on the server, and
-`FrameleafStudioRational` with named integer fields on native. `object` and `object[]`
-fields are opaque and travel unread.
+`StudioDuration` and `StudioRate` on the web side and `isRational` on the server.
+`object` and `object[]` fields are opaque and travel unread.
 
-The catalogue is the single source for three checked-in contracts:
+The catalogue is the single source for two checked-in contracts:
 
 - `web/src/lib/frameleaf/studio/commands.ts` — the typed web vocabulary FL-88's bridge routes.
 - `server/src/utils/studio-commands.generated.ts` — the server mirror used by
   `server/src/utils/studio-commands.ts` to validate an envelope without trusting a client.
-- `mobile/lib/frameleaf/studio_commands.g.dart` — the native contract, so a tablet cannot
-  express a command the web host and the server do not know.
 
-`scripts/frameleaf-studio-commands.mjs` writes all three and, with no arguments, verifies
-them. It fails when a checked-in file is stale, when the web vocabulary drifts from the
+`scripts/frameleaf-studio-commands.mjs` writes the catalogue and the server mirror and,
+with no arguments, verifies them. It fails when a checked-in file is stale, when the web vocabulary drifts from the
 catalogue, when a mutating function of the prototype project model
 (`design/frameleaf/template/src/studio-project.mjs`) has no command id, or when a row of
 `freecut-feature-manifest.json` is neither mapped to a command nor listed in
