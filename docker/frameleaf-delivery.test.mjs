@@ -124,7 +124,6 @@ test("local builds retain projects/storage and build ordinary ML from the prod s
   const dev = compose("docker/docker-compose.dev.yml");
   for (const path of [
     ".devcontainer/server/container-compose-overrides.yml",
-    ".devcontainer/mobile/container-compose-overrides.yml",
   ]) {
     assert.equal(
       compose(path).services["immich-server"].image,

@@ -1,15 +1,14 @@
 #!/usr/bin/env node
 // FL-135: the single Frameleaf logo/icon generator. Renders every raster/ICO export for web
-// (favicons, apple-touch and maskable manifest icons, email header), docs and, on request, mobile
-// from the supplied brand kit (design/frameleaf/brand-kit, never modified), records each output's
+// (favicons, apple-touch and maskable manifest icons, email header) and docs from the supplied
+// brand kit (design/frameleaf/brand-kit, never modified), records each output's
 // provenance in design/frameleaf/derivatives/exports.json, and re-copies the verbatim SVG copies
 // the web app ships so they cannot drift from the kit.
 //
 // `sharp` is resolved from server/node_modules (it is a server dependency, not a web one), so run
 // this from a checkout where `pnpm install` has been done:
 //
-//   node scripts/frameleaf-logo-exports.mjs            # web + docs
-//   node scripts/frameleaf-logo-exports.mjs --mobile   # also mobile/ assets and native resources
+//   node scripts/frameleaf-logo-exports.mjs   # web + docs
 //
 // Visually qualify outputs against light/dark chrome before committing, per
 // docs/docs/developer/frameleaf-plan/06-brand-assets.md. The only non-kit source is
@@ -17,28 +16,19 @@
 // frameleaf-logo-dark.svg ("Frame" lettering filled with the kit's #111D26 canvas colour) that
 // light surfaces (README, docs, email) need because the kit ships no light-background wordmark.
 import { createHash } from "node:crypto";
-import {
-  copyFileSync,
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-  writeFileSync,
-} from "node:fs";
+import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 
 const root = join(dirname(new URL(import.meta.url).pathname), "..");
-const includeMobile = process.argv.includes("--mobile");
 const sharp = createRequire(join(root, "server/package.json"))("sharp");
 const kit = "design/frameleaf/brand-kit";
 const src = {
   symbol: `${kit}/frameleaf-symbol.svg`,
-  symbolWhite: `${kit}/frameleaf-symbol-white.svg`,
   appIcon: `${kit}/frameleaf-app-icon.svg`,
   logoDark: `${kit}/frameleaf-logo-dark.svg`,
   logoLight: "design/frameleaf/derivatives/frameleaf-logo-light.svg",
 };
-const CANVAS = "#111d26";
 const sha = (buffer) => createHash("sha256").update(buffer).digest("hex");
 const read = (path) => readFileSync(join(root, path));
 
@@ -208,131 +198,6 @@ for (const size of [192, 512]) {
 await png("docs/static/img/favicon.png", src.symbol, 180, 180);
 copy(src.logoLight, "docs/static/img/frameleaf-logo-inline-light.svg");
 copy(src.logoDark, "docs/static/img/frameleaf-logo-inline-dark.svg");
-
-if (includeMobile) {
-  // Mobile (Flutter assets)
-  await png("mobile/assets/frameleaf-symbol.png", src.symbol, 1024, 1024);
-  await png(
-    "mobile/assets/frameleaf-logo-inline-light.png",
-    src.logoLight,
-    3038,
-    742,
-  );
-  await png(
-    "mobile/assets/frameleaf-logo-inline-dark.png",
-    src.logoDark,
-    3038,
-    742,
-  );
-  await png(
-    "mobile/assets/frameleaf-wordmark-light.png",
-    src.logoLight,
-    0,
-    400,
-    {
-      trimLeft: 280 / 1080,
-    },
-  );
-  await png("mobile/assets/frameleaf-wordmark-dark.png", src.logoDark, 0, 400, {
-    trimLeft: 280 / 1080,
-  });
-  await png("mobile/assets/frameleaf-app-icon.png", src.appIcon, 1024, 1024);
-  await png(
-    "mobile/assets/frameleaf-app-icon-ios.png",
-    src.appIcon,
-    1024,
-    1024,
-    { note: "square full-bleed tile" },
-    fullBleed(),
-  );
-  await png("mobile/assets/frameleaf-splash.png", src.symbol, 320, 320, {
-    pad: 0.1,
-  });
-  await png(
-    "mobile/assets/frameleaf-splash-android12.png",
-    src.symbol,
-    1152,
-    1152,
-    { pad: 0.28 },
-  );
-
-  // Mobile (generated native resources; flutter_launcher_icons / flutter_native_splash equivalents)
-  const res = "mobile/android/app/src/main/res";
-  const densities = { mdpi: 1, hdpi: 1.5, xhdpi: 2, xxhdpi: 3, xxxhdpi: 4 };
-  for (const [density, scale] of Object.entries(densities)) {
-    await png(
-      `${res}/mipmap-${density}/ic_launcher.png`,
-      src.appIcon,
-      48 * scale,
-      48 * scale,
-    );
-    await png(
-      `${res}/drawable-${density}/notification_icon.png`,
-      src.symbolWhite,
-      24 * scale,
-      24 * scale,
-      { pad: 0.08 },
-    );
-    await png(
-      `${res}/drawable-${density}/splash.png`,
-      src.symbol,
-      80 * scale,
-      80 * scale,
-      { pad: 0.1 },
-    );
-    for (const prefix of ["drawable", "drawable-night"]) {
-      await png(
-        `${res}/${prefix}-${density}/android12splash.png`,
-        src.symbol,
-        288 * scale,
-        288 * scale,
-        { pad: 0.28 },
-      );
-    }
-  }
-  for (const images of [
-    "mobile/android/fastlane/metadata/android/en-US/images",
-    "mobile/android/metadata/en-US/images",
-  ]) {
-    await png(
-      `${images}/icon.png`,
-      src.appIcon,
-      512,
-      512,
-      { note: "square full-bleed tile" },
-      fullBleed(),
-    );
-    await png(
-      `${images}/featureGraphic.png`,
-      `${kit}/frameleaf-logo-dark-tagline.svg`,
-      1024,
-      500,
-      { pad: 0.12, background: CANVAS },
-    );
-  }
-  const appIconSet = "mobile/ios/Runner/Assets.xcassets/AppIcon.appiconset";
-  for (const file of readdirSync(join(root, appIconSet)).filter((name) =>
-    name.endsWith(".png"),
-  )) {
-    const size = Number.parseInt(file, 10);
-    await png(
-      `${appIconSet}/${file}`,
-      src.appIcon,
-      size,
-      size,
-      { background: CANVAS, note: "square full-bleed tile, opaque" },
-      fullBleed(),
-    );
-  }
-  const launch = "mobile/ios/Runner/Assets.xcassets/LaunchImage.imageset";
-  for (const [file, size] of [
-    ["LaunchImage.png", 80],
-    ["LaunchImage@2x.png", 160],
-    ["LaunchImage@3x.png", 240],
-  ]) {
-    await png(`${launch}/${file}`, src.symbol, size, size, { pad: 0.1 });
-  }
-}
 
 writeFileSync(
   join(root, "design/frameleaf/derivatives/exports.json"),

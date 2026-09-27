@@ -18,12 +18,10 @@ node = "24.21.0"
 pnpm = "11.24.0"
 terragrunt = "1.1.1"
 opentofu = "1.12.6"
-"npm:@openapitools/openapi-generator-cli" = "2.41.0"
 "npm:oazapfts" = "7.5.0"
 "github:extism/cli" = "1.6.3"
 "github:webassembly/binaryen" = "version_124"
 "github:extism/js-pdk" = "v1.7.0"
-java = "21.0.2"
 
 [tools."github:jellyfin/jellyfin-ffmpeg"]
 version = "7.1.3-6"
@@ -58,18 +56,6 @@ run = [
   { task = "//:sdk:install" },
   { task = "//:sdk:build" },
 ]
-
-[tasks.open-api-dart]
-dir = "open-api"
-sources = [
-  "immich-openapi-specs.json",
-  "openapitools.json",
-  "templates/**/*",
-  "patch/*",
-  "bin/generate-dart-sdk.sh",
-]
-outputs = ["../mobile/generated/openapi/"]
-run = "bash ./bin/generate-dart-sdk.sh"
 
 [tasks.open-api]
 run = [

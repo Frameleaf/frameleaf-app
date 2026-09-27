@@ -27,11 +27,6 @@ const Files = {
     Env: join(root, 'docs/docs/install/environment-variables.md'),
     Upgrading: join(root, 'docs/docs/install/upgrading.md'),
   },
-  Mobile: {
-    Pubspec: join(root, 'mobile/pubspec.yaml'),
-    Fastfile: join(root, 'mobile/android/fastlane/Fastfile'),
-    InfoPlist: join(root, 'mobile/ios/Runner/Info.plist'),
-  },
 };
 
 export const handleRelease = ({ type }: ReleaseOptions) => {
@@ -41,8 +36,6 @@ export const handleRelease = ({ type }: ReleaseOptions) => {
   if (!newVersion) {
     throw new ReleaseInputError();
   }
-  const newVersionNoRc = `${newVersion.major}.${newVersion.minor}.${newVersion.patch}`;
-  const newMobileBuild = getMobileBuild(newVersion);
 
   // pump versions everywhere
 
@@ -56,30 +49,6 @@ export const handleRelease = ({ type }: ReleaseOptions) => {
     cwd: root,
     stdio: 'inherit',
   });
-
-  // mobile
-  pump(
-    Files.Mobile.Fastfile,
-    /"android\.injected\.version\.name" => ".*",/g,
-    `"android.injected.version.name" => "${newVersionRaw}",`,
-  );
-  pump(
-    Files.Mobile.Fastfile,
-    /"android\.injected\.version\.code" => \d+,/g,
-    `"android.injected.version.code" => ${newMobileBuild},`,
-  );
-  pump(
-    Files.Mobile.Pubspec,
-    /^version: .*\+\d+$/m,
-    `version: ${newVersionRaw}+${newMobileBuild}`,
-  );
-  // strip prerelease from CFBundleShortVersionString
-  // (deploying to testflight _is_ the prerelease)
-  pump(
-    Files.Mobile.InfoPlist,
-    /(<key>CFBundleShortVersionString<\/key>\s*<string>).*?(<\/string>)/s,
-    `$1${newVersionNoRc}$2`,
-  );
 
   if (type === 'release') {
     // docker tag references (v2, :v2, etc) in docs
@@ -183,34 +152,6 @@ export const getNewVersion = (versionRaw: string, type: string) => {
   }
 
   return newVersionRaw;
-};
-
-const RADIX = 100;
-const STABLE = RADIX - 1;
-
-export const getMobileBuild = (version: SemVer) => {
-  const { major, minor, patch, prerelease } = version;
-  const candidate = prerelease[1];
-  const digit = typeof candidate === 'number' ? candidate : STABLE;
-
-  const valid =
-    major < RADIX &&
-    minor < RADIX &&
-    patch < RADIX &&
-    (prerelease.length === 0 || digit < STABLE);
-
-  if (!valid) {
-    throw new Error(
-      `Cannot derive a mobile build number from ${version.format()}`,
-    );
-  }
-
-  return (
-    major * Math.pow(RADIX, 3) +
-    minor * Math.pow(RADIX, 2) +
-    patch * RADIX +
-    digit
-  );
 };
 
 const pump = (path: string, pattern: RegExp, replacement: string) => {

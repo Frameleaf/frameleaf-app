@@ -204,7 +204,7 @@ ENTRYPOINT ["tini", "--", "/bin/bash", "-c"]
 FROM dev AS dev-container-server
 
 RUN apt-update-strict --allow-releaseinfo-change && \
-  apt-get install inetutils-ping openjdk-21-jre-headless libraw-bin \
+  apt-get install inetutils-ping libraw-bin \
   vim nano curl \
   -y --no-install-recommends --fix-missing
 
@@ -214,44 +214,3 @@ RUN mkdir -p /workspaces && \
 COPY --chmod=755 ../.devcontainer/server/*.sh /immich-devcontainer/
 
 WORKDIR /workspaces/immich
-
-FROM dev-container-server AS dev-container-mobile
-USER root
-# Enable multiarch for arm64 if necessary
-RUN if [ "$(dpkg --print-architecture)" = "arm64" ]; then \
-  dpkg --add-architecture amd64 && \
-  apt-get update && \
-  apt-get install -y --no-install-recommends \
-  gnupg \
-  qemu-user-static \
-  libc6:amd64 \
-  libstdc++6:amd64 \
-  libgcc1:amd64; \
-  else \
-  apt-get update && \
-  apt-get install -y --no-install-recommends \
-  gnupg; \
-  fi
-
-# Flutter SDK
-# https://flutter.dev/docs/development/tools/sdk/releases?tab=linux
-ENV FLUTTER_CHANNEL="stable"
-ENV FLUTTER_VERSION="3.35.7"
-ENV FLUTTER_HOME=/flutter
-ENV PATH=${PATH}:${FLUTTER_HOME}/bin
-
-# Flutter SDK
-RUN mkdir -p ${FLUTTER_HOME} \
-  && curl -C - --output flutter.tar.xz https://storage.googleapis.com/flutter_infra_release/releases/${FLUTTER_CHANNEL}/linux/flutter_linux_${FLUTTER_VERSION}-${FLUTTER_CHANNEL}.tar.xz \
-  && tar -xf flutter.tar.xz --strip-components=1 -C ${FLUTTER_HOME} \
-  && rm flutter.tar.xz \
-  && chown -R node ${FLUTTER_HOME} \
-  && git config --global --add safe.directory ${FLUTTER_HOME}
-
-
-RUN wget -qO- https://dcm.dev/pgp-key.public | gpg --dearmor -o /usr/share/keyrings/dcm.gpg \
-  && echo 'deb [signed-by=/usr/share/keyrings/dcm.gpg arch=amd64] https://dcm.dev/debian stable main' | tee /etc/apt/sources.list.d/dart_stable.list \
-  && apt-get update \
-  && apt-get install dcm -y
-
-RUN dart --disable-analytics

@@ -12,9 +12,8 @@ import type { Translations } from 'svelte-i18n';
  *
  * FL-92 published the complete catalogue: the file is generated-adjacent, not free-form.
  * `studio/frameleaf-studio-commands.json` is the single source, `scripts/frameleaf-studio-commands.mjs`
- * writes it together with the server mirror (`server/src/utils/studio-commands.generated.ts`)
- * and the native contract (`mobile/lib/frameleaf/studio_commands.g.dart`), and the same
- * script fails CI when the ids, scopes, flags, capabilities, owners or prototype sources
+ * writes it together with the server mirror (`server/src/utils/studio-commands.generated.ts`),
+ * and the same script fails CI when the ids, scopes, flags, capabilities, owners or prototype sources
  * here drift from it. Add a command there first, then mirror the row and its payload type
  * here; a row that exists in only one of the two is a build failure, not a surprise at
  * runtime.

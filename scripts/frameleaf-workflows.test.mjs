@@ -165,11 +165,13 @@ test("retired mobile workflows and jobs remain absent", () => {
   );
   assert.match(apiGeneration, /\/\/server:sync-open-api/u);
   assert.match(apiGeneration, /\/\/:open-api-typescript/u);
+  const mise = readFileSync(path.join(root, "mise.toml"), "utf8");
+  assert.doesNotMatch(mise, /open-api-dart|openapi-generator-cli|^java\s*=/mu);
 });
 
-test("locked Java and media tools include artifact URLs and checksums for hosted platforms", () => {
+test("locked media tools include artifact URLs and checksums for hosted platforms", () => {
   const lockfile = readFileSync(path.join(root, "mise.lock"), "utf8");
-  for (const tool of ["java", '"github:jellyfin/jellyfin-ffmpeg"']) {
+  for (const tool of ['"github:jellyfin/jellyfin-ffmpeg"']) {
     for (const platform of ["linux-x64", "linux-arm64", "windows-x64"]) {
       const section = `[tools.${tool}."platforms.${platform}"]`;
       assert.ok(
