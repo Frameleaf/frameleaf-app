@@ -3,7 +3,8 @@
    * Settings → Frameleaf Cloud → Account & link (FL-154, FL-155): the prototype's `AccountLink`
    * (design/frameleaf/template/src/FrameleafCloud.jsx:438-782, effd05ffb7) on real server state.
    * States: not configured (no FRAMELEAF_CLOUD_URL), not linked, waiting for approval of a device
-   * code (code, QR, countdown, key fingerprint), linked (account, dates, instance ID, apps card,
+   * code (code, QR, countdown, key fingerprint), linked (account, dates, instance ID, "Manage on
+   * frameleaf.cloud", apps card with "Set up remote access",
    * permission toggles, "What this server sends", unlink) and revoked (the cloud's reason).
    * Nothing is simulated: every change goes through `admin/cloud/*`.
    */
@@ -33,6 +34,7 @@
     mdiInformationOutline,
     mdiLinkOff,
     mdiLinkVariant,
+    mdiOpenInNew,
     mdiProgressClock,
     mdiQrcode,
     mdiRefresh,
@@ -341,6 +343,12 @@
           <Icon icon={mdiRefresh} size="18" />
           {$t('frameleaf_cloud_check_in')}
         </Button>
+        {#if status.manageUrl}
+          <a class="fc-button" href={status.manageUrl} target="_blank" rel="noopener noreferrer">
+            <Icon icon={mdiOpenInNew} size="18" />
+            {$t('frameleaf_cloud_manage_on_site')}
+          </a>
+        {/if}
       </div>
     </CloudCard>
     <CloudCard
@@ -355,6 +363,14 @@
           ? $t('frameleaf_cloud_apps_anywhere_help')
           : $t('frameleaf_cloud_apps_at_home_help')}
       </p>
+      {#if !status.remoteAccessEnabled}
+        <div class="fc-actions">
+          <a class="fc-button" href={commandCenterUrl('cloud', 'cloud-remote')}>
+            <Icon icon={mdiEarth} size="18" />
+            {$t('frameleaf_cloud_apps_set_up_remote')}
+          </a>
+        </div>
+      {/if}
     </CloudCard>
     <CloudCard
       title={$t('frameleaf_cloud_permissions_title')}
@@ -413,6 +429,8 @@
       <a class="fc-link" href={commandCenterUrl('cloud', 'cloud-plan')}>{$t('frameleaf_cloud_next_plan')}</a>
       ·
       <a class="fc-link" href={commandCenterUrl('cloud', 'cloud-license')}>{$t('frameleaf_cloud_next_license')}</a>
+      ·
+      <a class="fc-link" href={commandCenterUrl('cloud', 'cloud-remote')}>{$t('frameleaf_cloud_next_remote')}</a>
     </p>
   {/if}
 </div>

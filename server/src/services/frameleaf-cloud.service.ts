@@ -66,6 +66,7 @@ import {
   CloudErrorCode,
   FrameleafCloudError,
   FrameleafDiscoveryDocument,
+  accountServerUrl,
   cloudAddressProblem,
   cloudErrorCode,
   storeAddress,
@@ -164,6 +165,8 @@ export class FrameleafCloudService extends BaseService {
       relinkRequested: !!link?.heartbeat?.relinkRequested,
       linkTokenConfigured: !!this.configRepository.getEnv().frameleafCloud.linkToken,
       remoteAccessEnabled: linked && !!link.desired?.remoteAccess,
+      // "Manage on frameleaf.cloud": the account site is another origin than the API (never contacted here)
+      manageUrl: linked && cloudUrl && link.instanceId ? accountServerUrl(cloudUrl, link.store, link.instanceId) : null,
       signInClientId: linked ? (link.oidc?.clientId ?? null) : null,
       signInIssuer: linked ? (link.oidc?.issuer ?? null) : null,
     };

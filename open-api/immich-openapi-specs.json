@@ -54351,6 +54351,11 @@
             "nullable": true,
             "type": "string"
           },
+          "manageUrl": {
+            "description": "This server’s page on the Frameleaf account site, while linked; opened in a new tab",
+            "nullable": true,
+            "type": "string"
+          },
           "pending": {
             "allOf": [
               {
@@ -54431,6 +54436,7 @@
           "linkResult",
           "linkTokenConfigured",
           "linkedAt",
+          "manageUrl",
           "pending",
           "permissions",
           "relinkRequested",

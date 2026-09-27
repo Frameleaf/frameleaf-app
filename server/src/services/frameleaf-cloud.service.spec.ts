@@ -248,6 +248,7 @@ describe(FrameleafCloudService.name, () => {
         configured: true,
         heartbeatFields: [...HEARTBEAT_FIELDS],
         permissions: { allowRemoteEnable: false, allowBackupTrigger: true, allowEntitlementRefresh: true },
+        manageUrl: null,
       });
       await expect(sut.getLink()).resolves.toMatchObject({ state: 'unlinked' });
       await expect(sut.handleHeartbeat()).resolves.toBe(JobStatus.Skipped);
@@ -761,6 +762,11 @@ describe(FrameleafCloudService.name, () => {
       makeDue();
       await sut.handleHeartbeat();
       expect(storedLink()?.store).toBe(`${cloud.url}/account/store`);
+      // "Manage on frameleaf.cloud": this server's page on the account site discovery names
+      const instanceId = storedLink()!.instanceId!;
+      await expect(sut.getStatus()).resolves.toMatchObject({
+        manageUrl: `${new URL(cloud.url).origin}/servers/${instanceId}`,
+      });
 
       cloud.discovery = original;
       sutForgetTokens();
