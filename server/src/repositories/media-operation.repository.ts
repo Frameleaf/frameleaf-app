@@ -1457,20 +1457,18 @@ export class MediaOperationRepository {
    * since `since` are asked about at all.
    */
   listCloudMlJobsAwaitingCost(options: { limit: number; maxReads: number; since: Date }): Promise<MediaOperation[]> {
-    return (
-      this.db
-        .selectFrom('media_operation')
-        .selectAll()
-        .where('kind', '=', MediaOperationKind.CloudMlJob)
-        .where('status', 'in', [...TERMINAL_MEDIA_OPERATION_STATUSES])
-        .where('remoteJobId', 'is not', null)
-        .where('finishedAt', '>=', options.since)
-        .where(sql<string>`"result" ->> 'cost'`, 'is', null)
-        .where(sql<number>`coalesce(("result" ->> 'costReads')::int, 0)`, '<', options.maxReads)
-        .orderBy('finishedAt', 'asc')
-        .limit(options.limit)
-        .execute() as unknown as Promise<MediaOperation[]>
-    );
+    return this.db
+      .selectFrom('media_operation')
+      .selectAll()
+      .where('kind', '=', MediaOperationKind.CloudMlJob)
+      .where('status', 'in', [...TERMINAL_MEDIA_OPERATION_STATUSES])
+      .where('remoteJobId', 'is not', null)
+      .where('finishedAt', '>=', options.since)
+      .where(sql<string>`"result" ->> 'cost'`, 'is', null)
+      .where(sql<number>`coalesce(("result" ->> 'costReads')::int, 0)`, '<', options.maxReads)
+      .orderBy('finishedAt', 'asc')
+      .limit(options.limit)
+      .execute() as unknown as Promise<MediaOperation[]>;
   }
 
   /**
@@ -1544,19 +1542,17 @@ export class MediaOperationRepository {
    * prepared files are reconciled afterwards.
    */
   listUnreconciledCancelledCloudMlJobs(options: { limit: number; since: Date }): Promise<MediaOperation[]> {
-    return (
-      this.db
-        .selectFrom('media_operation')
-        .selectAll()
-        .where('kind', '=', MediaOperationKind.CloudMlJob)
-        .where('status', '=', MediaOperationStatus.Cancelled)
-        .where('remoteJobId', 'is', null)
-        .where('finishedAt', '>=', options.since)
-        .where(sql<string>`coalesce("result" ->> 'reconciled', 'false')`, '=', 'false')
-        .orderBy('finishedAt', 'asc')
-        .limit(options.limit)
-        .execute() as unknown as Promise<MediaOperation[]>
-    );
+    return this.db
+      .selectFrom('media_operation')
+      .selectAll()
+      .where('kind', '=', MediaOperationKind.CloudMlJob)
+      .where('status', '=', MediaOperationStatus.Cancelled)
+      .where('remoteJobId', 'is', null)
+      .where('finishedAt', '>=', options.since)
+      .where(sql<string>`coalesce("result" ->> 'reconciled', 'false')`, '=', 'false')
+      .orderBy('finishedAt', 'asc')
+      .limit(options.limit)
+      .execute() as unknown as Promise<MediaOperation[]>;
   }
 
   /**

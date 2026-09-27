@@ -1316,10 +1316,7 @@ export class CloudMlJobService {
    * Seal the job's estimate again (the queue held it past 15 minutes). Sent only while the new high end
    * stays within `CLOUD_ML_JOB_PRICE_TOLERANCE` of what the owner confirmed.
    */
-  private async reestimate(
-    run: JobRun,
-    gateway: CloudMlGateway,
-  ): Promise<NonNullable<CloudMlJobResult['submission']>> {
+  private async reestimate(run: JobRun, gateway: CloudMlGateway): Promise<NonNullable<CloudMlJobResult['submission']>> {
     const { snapshot, operation } = run;
     if (run.result.estimates >= CLOUD_ML_JOB_MAX_ESTIMATES) {
       throw new CloudMlJobFailure(

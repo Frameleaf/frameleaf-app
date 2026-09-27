@@ -796,7 +796,9 @@ describe(CloudMlJobService.name, () => {
         },
         job: { ...runningRecord(), holdUsd: 2.15 },
       };
-      expect(cloudMlJobSpentUsd([{ ...settledLater, status: MediaOperationStatus.Rendering, result: sent }])).toBe(2.15);
+      expect(cloudMlJobSpentUsd([{ ...settledLater, status: MediaOperationStatus.Rendering, result: sent }])).toBe(
+        2.15,
+      );
     });
   });
 

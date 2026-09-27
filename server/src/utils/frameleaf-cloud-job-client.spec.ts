@@ -2,7 +2,12 @@ import { describe, expect, it, vi } from 'vitest';
 import { MlAdmissionRefusal } from 'src/enum.js';
 import { CloudTransferError, FrameleafCloudMlRepository } from 'src/repositories/frameleaf-cloud-ml.repository.js';
 import { CloudJobInputError, FrameleafCloudJobClient } from 'src/utils/frameleaf-cloud-job-client.js';
-import { CloudUploadTarget, FrameleafCloudError, jobViewSchema, uploadTargetSchema } from 'src/utils/frameleaf-cloud.js';
+import {
+  CloudUploadTarget,
+  FrameleafCloudError,
+  jobViewSchema,
+  uploadTargetSchema,
+} from 'src/utils/frameleaf-cloud.js';
 import { cloudContractFixture } from 'test/fixtures/frameleaf-cloud-contracts.js';
 
 const gateway = { url: 'https://ml.eu.frameleaf.cloud', token: {} as never };
