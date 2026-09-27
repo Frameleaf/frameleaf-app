@@ -2782,7 +2782,17 @@ def test_hardware_report_falls_back_to_the_processor_and_lists_render_nodes(
     (sys_drm / "renderD128" / "device" / "vendor").write_text("0x8086\n")
 
     nodes = hardware_report._render_nodes(dev, sys_drm)
-    assert nodes == [{"node": "renderD128", "vendor": "Intel", "accessible": True, "memoryTotalBytes": None}]
+    assert nodes == [
+        {
+            "node": "renderD128",
+            "vendor": "Intel",
+            "accessible": True,
+            "memoryTotalBytes": None,
+            "gid": (dev / "renderD128").stat().st_gid,
+            # Not a device node, so no host node can be named.
+            "hostNode": None,
+        }
+    ]
 
     monkeypatch.setattr(hardware_report, "_torch_gpus", lambda: ([], None, None))
     monkeypatch.setattr(hardware_report, "_nvidia_smi", lambda: None)
@@ -2791,3 +2801,80 @@ def test_hardware_report_falls_back_to_the_processor_and_lists_render_nodes(
     assert report["backend"] == "CPU"
     assert report["gpus"] == []
     assert report["devices"]["renderNodes"] == nodes
+    assert report["computeCapability"] is None
+    assert set(report["host"]) == {"kernel", "gpus", "dxg", "groups", "root"}
+
+
+def test_hardware_report_lists_the_host_gpus_from_the_pci_list(tmp_path: Path) -> None:
+    from immich_ml import hardware_report
+
+    pci = tmp_path / "pci"
+    for address, vendor, device_class, vram, render in [
+        ("0000:00:02.0", "0x8086", "0x030000", None, "renderD128"),
+        ("0000:03:00.0", "0x1002", "0x030000", str(16 * 1024**3), "renderD129"),
+        ("0000:00:1f.3", "0x8086", "0x040300", None, None),  # audio: not a GPU
+        ("0000:05:00.0", "0x1a03", "0x030000", None, None),  # a server's BMC display: not a GPU
+    ]:
+        device = pci / address
+        device.mkdir(parents=True)
+        (device / "vendor").write_text(vendor + "\n")
+        (device / "class").write_text(device_class + "\n")
+        if vram:
+            (device / "mem_info_vram_total").write_text(vram + "\n")
+        if render:
+            (device / "drm" / render).mkdir(parents=True)
+
+    assert hardware_report._host_gpus(pci) == [
+        {
+            "pciAddress": "0000:00:02.0",
+            "vendor": "Intel",
+            "renderNode": "renderD128",
+            "integrated": True,
+            "memoryTotalBytes": None,
+        },
+        {
+            "pciAddress": "0000:03:00.0",
+            "vendor": "AMD",
+            "renderNode": "renderD129",
+            "integrated": False,
+            "memoryTotalBytes": 16 * 1024**3,
+        },
+    ]
+    assert hardware_report._host_gpus(tmp_path / "missing") is None
+
+
+def test_hardware_report_names_rocm_gfx_targets_and_the_override(tmp_path: Path, monkeypatch: MonkeyPatch) -> None:
+    from immich_ml import hardware_report
+
+    topology = tmp_path / "nodes"
+    (topology / "0").mkdir(parents=True)
+    (topology / "0" / "properties").write_text("cpu_cores_count 16\ngfx_target_version 0\n")
+    (topology / "1").mkdir()
+    (topology / "1" / "properties").write_text("simd_count 64\ngfx_target_version 100302\n")
+    (topology / "2").mkdir()
+    (topology / "2" / "properties").write_text("gfx_target_version 90010\n")
+    monkeypatch.delenv("HSA_OVERRIDE_GFX_VERSION", raising=False)
+
+    assert hardware_report.rocm_facts(topology) == {"gfxTargets": ["gfx1032", "gfx90a"], "hsaOverride": None}
+
+    monkeypatch.setenv("HSA_OVERRIDE_GFX_VERSION", "10.3.0")
+    assert hardware_report.rocm_facts(topology)["hsaOverride"] == "10.3.0"
+
+
+def test_hardware_report_reads_the_compute_capability_for_cuda(monkeypatch: MonkeyPatch) -> None:
+    from immich_ml import hardware_report
+
+    monkeypatch.setattr(
+        hardware_report,
+        "_torch_gpus",
+        lambda: ([{"name": "NVIDIA GeForce GTX 1650", "vendor": "NVIDIA", "memoryTotalBytes": 1}], "CUDA 12.4", "CUDA"),
+    )
+    monkeypatch.setattr(hardware_report, "_nvidia_smi", lambda: None)
+    monkeypatch.setattr(hardware_report, "_render_nodes", lambda: [])
+    monkeypatch.setattr(hardware_report, "_compute_capability", lambda: "7.5")
+    monkeypatch.setenv("DEVICE", "cuda")
+
+    report = hardware_report.container_report(["CUDAExecutionProvider"], [])
+
+    assert report["computeCapability"] == "7.5"
+    assert report["rocm"] is None
