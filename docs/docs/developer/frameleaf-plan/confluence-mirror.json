@@ -73,19 +73,19 @@
       "version": 4
     },
     {
-      "bytes": 48361,
+      "bytes": 49844,
       "category": "reference",
       "id": "64749620",
-      "readbackAt": "2026-09-27T16:28:00.000Z",
-      "readbackResult": "FL-159 / FC-61 / FC-62 (own-bucket reporting and terms per chosen feature, frameleaf-cloud PR #78): markdown read-back of version 16 begins with the header carrying SHA-256 29b3e7de, 48361 bytes, commit 9649641e1c pushed on master/frameleaf-implementation (source-at-commit backlink 9649641e1c); \"Check-ins\" says backup goes to Frameleaf-managed storage or your own bucket (never the bucket's name, address or keys), and the terms paragraph says an optional feature can need a newer version, shown to read first; the rest matches version 13 (versions 14 and 15 named pre-rebase commits and were replaced by 16) and still ends with the unchanged job-in-Activity paragraph. Published as HTML (the page holds a Confluence smart link). The markdown export drops same-page anchor link markup (text kept), table alignment and nested list indentation, the known round-trip limitation; no user-authored additions.",
+      "readbackAt": "2026-09-27T17:28:00.000Z",
+      "readbackResult": "FL-196 (linked-server tour): markdown read-back of version 17 begins with the header carrying SHA-256 999f633d, 49844 bytes, commit a00dc07080 pushed on master/frameleaf-implementation (source-at-commit backlink a00dc07080, FL-196 link added); \"Linking the server\" carries the new \"The tour of what linking unlocks\" subsection (six steps, On this server status, Open links, shown once per administrator, not after first-run setup, Take the tour and settings search to reopen, Reduce Motion and phone sheet) before \"Linking without a browser\"; the rest matches version 16 (9649641e1c) and still ends with the unchanged job-in-Activity paragraph. Published as HTML (the page holds a Confluence smart link). The markdown export drops same-page anchor link markup (text kept), table alignment and nested list indentation, and shows the shell code fence as bash, the known round-trip limitation; no user-authored additions.",
       "source": "docs/docs/administration/frameleaf-cloud.md",
       "sourceBranch": "master/frameleaf-implementation",
-      "sourceCommit": "9649641e1c7a268f0218d513857e83ef6ebf3af9",
-      "sourceSha256": "29b3e7deadb878f8becafe9f246c40ad30e5933131243607ef758034a9c764df",
-      "sourceState": "pushed-fl-159-fc-61-fc-62-own-bucket-feature-terms-2026-09-27",
+      "sourceCommit": "a00dc0708084bf6355ebfa539e91e71cbcd044d3",
+      "sourceSha256": "999f633db4d83646ccae7b8f2946b83ef81a45805a502f828db315a650f8496f",
+      "sourceState": "pushed-fl-196-linked-server-tour-2026-09-27",
       "title": "Administration Reference — Frameleaf Cloud",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/64749620/Administration+Reference+Frameleaf+Cloud",
-      "version": 16
+      "version": 17
     },
     {
       "bytes": 12350,
