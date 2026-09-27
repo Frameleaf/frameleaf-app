@@ -168,6 +168,8 @@ const RATE_LIMITED_ROUTES: Record<string, RateLimitRule> = {
   'PUT admin/license/activate': RATE_LIMITS.licenseActivation,
   'PUT admin/license/certificate': RATE_LIMITS.licenseActivation,
   'PUT users/me/license': RATE_LIMITS.licenseActivation,
+  // CLD-004: a one-time link code from the account site is limited like a key
+  'POST license/link-code': RATE_LIMITS.licenseActivation,
   'POST admin/cloud/link': RATE_LIMITS.linkStart,
 };
 

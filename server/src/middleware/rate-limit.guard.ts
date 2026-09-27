@@ -110,7 +110,7 @@ export const RATE_LIMITS = Object.freeze({
     principalLimit: 60,
     principalCounts: 'failures',
   },
-  /** Licence activation: `PUT admin/license/activate`, `PUT admin/license/certificate`, `PUT users/me/license`. */
+  /** Licence activation: `PUT admin/license/activate`, `PUT admin/license/certificate`, `PUT users/me/license`, `POST license/link-code`. */
   licenseActivation: {
     bucket: 'license-activation',
     limit: 10,

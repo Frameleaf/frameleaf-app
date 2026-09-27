@@ -78,6 +78,32 @@ const LicenseActivateSchema = z
   })
   .meta({ id: 'LicenseActivateDto' });
 
+/**
+ * CLD-004: a one-time link code from the Frameleaf account site (`flc_` and 26 base32 symbols). It
+ * is not a key: it is single use, expires after ten minutes and only this server can redeem it.
+ */
+export const LINK_CODE_PATTERN = /^flc_[A-Za-z0-9]{26}$/;
+
+const LicenseLinkCodeSchema = z
+  .object({
+    code: z
+      .string()
+      .trim()
+      .regex(LINK_CODE_PATTERN, 'This is not a Frameleaf link code')
+      .describe('A one-time link code from the Frameleaf account site, flc_ and 26 symbols'),
+  })
+  .meta({ id: 'LicenseLinkCodeDto' });
+
+const LicenseLinkCodeResponseSchema = z
+  .object({
+    kind: z
+      .enum(['server', 'individual'])
+      .describe('A server key (this server) or a personal key (this account)')
+      .meta({ id: 'LicenseLinkCodeKind' }),
+    keyHint: z.string().nullable().describe('Last four symbols of the key'),
+  })
+  .meta({ id: 'LicenseLinkCodeResponseDto' });
+
 const LicenseCertificateSchema = z
   .object({
     certificate: z
@@ -130,5 +156,7 @@ const LicenseProductsResponseSchema = z
 
 export class LicenseStatusResponseDto extends createZodDto(LicenseStatusResponseSchema) {}
 export class LicenseActivateDto extends createZodDto(LicenseActivateSchema) {}
+export class LicenseLinkCodeDto extends createZodDto(LicenseLinkCodeSchema) {}
+export class LicenseLinkCodeResponseDto extends createZodDto(LicenseLinkCodeResponseSchema) {}
 export class LicenseCertificateDto extends createZodDto(LicenseCertificateSchema) {}
 export class LicenseProductsResponseDto extends createZodDto(LicenseProductsResponseSchema) {}
