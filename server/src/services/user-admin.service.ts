@@ -88,7 +88,7 @@ export class UserAdminService extends BaseService {
     }
 
     if (dto.email) {
-      const duplicate = await this.userRepository.getByEmail(dto.email);
+      const duplicate = await this.userRepository.getByEmail(dto.email, { withDeleted: true });
       if (duplicate && duplicate.id !== id) {
         this.logger.debug('Email already in use by another account');
         throw new BadRequestException('Email is not available');

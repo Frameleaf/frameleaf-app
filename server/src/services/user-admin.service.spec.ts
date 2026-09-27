@@ -147,6 +147,17 @@ describe(UserAdminService.name, () => {
       expect(mocks.user.create).not.toHaveBeenCalled();
     });
 
+    it('should reject an email held by a soft-deleted account with a 400, not a 500 (FL-76)', async () => {
+      mocks.user.getByEmail.mockResolvedValue({ ...userStub.user1, deletedAt: new Date() });
+
+      await expect(
+        sut.create(authStub.admin, { email: userStub.user1.email, name: 'New', password: 'password' }),
+      ).rejects.toThrow('Email is not available');
+
+      expect(mocks.user.getByEmail).toHaveBeenCalledWith(userStub.user1.email, { withDeleted: true });
+      expect(mocks.user.create).not.toHaveBeenCalled();
+    });
+
     it('should reject a duplicate storage label (FL-76)', async () => {
       mocks.user.getByEmail.mockResolvedValue(void 0);
       mocks.user.getAdmin.mockResolvedValue(userStub.admin);
@@ -210,7 +221,7 @@ describe(UserAdminService.name, () => {
 
       await sut.update(authStub.user1, userStub.user1.id, update);
 
-      expect(mocks.user.getByEmail).toHaveBeenCalledWith(update.email);
+      expect(mocks.user.getByEmail).toHaveBeenCalledWith(update.email, { withDeleted: true });
       expect(mocks.user.getByStorageLabel).toHaveBeenCalledWith(update.storageLabel, true);
       expect(mocks.session.lockAll).not.toHaveBeenCalled();
       expect(mocks.websocket.clientSend).not.toHaveBeenCalled();
@@ -233,6 +244,18 @@ describe(UserAdminService.name, () => {
 
       await expect(sut.update(authStub.admin, userStub.user1.id, dto)).rejects.toBeInstanceOf(BadRequestException);
 
+      expect(mocks.user.update).not.toHaveBeenCalled();
+    });
+
+    it('should not change an email to one a soft-deleted account holds (FL-76)', async () => {
+      mocks.user.get.mockResolvedValue(userStub.user1);
+      mocks.user.getByEmail.mockResolvedValue({ ...userStub.admin, deletedAt: new Date() });
+
+      await expect(sut.update(authStub.admin, userStub.user1.id, { email: userStub.admin.email })).rejects.toThrow(
+        'Email is not available',
+      );
+
+      expect(mocks.user.getByEmail).toHaveBeenCalledWith(userStub.admin.email, { withDeleted: true });
       expect(mocks.user.update).not.toHaveBeenCalled();
     });
 
