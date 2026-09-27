@@ -3943,6 +3943,8 @@
   "frameleaf_cloud_revoked_title": "Frameleaf Cloud ended this link",
   "frameleaf_cloud_sends_bootId": "Start marker",
   "frameleaf_cloud_sends_bootId_help": "A random value that changes each time the server starts",
+  "frameleaf_cloud_sends_capabilities": "Capabilities",
+  "frameleaf_cloud_sends_capabilities_help": "What this version supports, such as signing every request with this server’s key",
   "frameleaf_cloud_sends_endpoints": "Endpoints",
   "frameleaf_cloud_sends_endpoints_help": "Local and public addresses used for remote access",
   "frameleaf_cloud_sends_footer": "Check-ins happen every few minutes. They never include media, faces, albums or anything about the people who use this server.",
