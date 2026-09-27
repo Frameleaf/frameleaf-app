@@ -140,7 +140,21 @@ const RemoteHostnameUpdateSchema = z
   })
   .meta({ id: 'RemoteHostnameUpdateDto' });
 
+const RemoteAccessUsageResponseSchema = z
+  .object({
+    period: z.string().describe('The month, YYYY-MM (UTC)'),
+    periodStart: z.string(),
+    periodEnd: z.string(),
+    bytes: z.int().describe('Bytes through the relay this month, in and out, custom hostnames included'),
+    limitBytes: z.int().describe('The relay allowance the plan includes each month'),
+    throttled: z.boolean().describe('The allowance is used up: the relay is slowed down, never cut off'),
+    throttleBps: z.int().nullable().describe('The slowed-down speed in bits per second, while throttled'),
+    throttleUntil: z.string().nullable().describe('When the slowdown lifts, while throttled'),
+  })
+  .meta({ id: 'RemoteAccessUsageResponseDto' });
+
 export class RemoteConnectionsResponseDto extends createZodDto(RemoteConnectionsResponseSchema) {}
+export class RemoteAccessUsageResponseDto extends createZodDto(RemoteAccessUsageResponseSchema) {}
 export class RemoteAccessStatusResponseDto extends createZodDto(RemoteAccessStatusResponseSchema) {}
 export class RemoteAccessUpdateDto extends createZodDto(RemoteAccessUpdateSchema) {}
 export class RemoteHostnameUpdateDto extends createZodDto(RemoteHostnameUpdateSchema) {}

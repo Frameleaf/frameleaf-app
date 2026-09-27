@@ -6,6 +6,7 @@ import type { FrameleafCloudLink, FrameleafRemoteAccess, FrameleafRemoteAccessTe
 import {
   RemoteAccessStatusResponseDto,
   RemoteAccessUpdateDto,
+  RemoteAccessUsageResponseDto,
   RemoteHostnameUpdateDto,
 } from 'src/dtos/frameleaf-remote-access.dto.js';
 import { DatabaseLock, SystemMetadataKey } from 'src/enum.js';
@@ -26,9 +27,13 @@ import {
   remoteHostnameSchema,
   remoteLabel,
   remotePublicUrl,
+  remoteUsageSchema,
   validateCustomHostname,
   verifiedCustomHost,
 } from 'src/utils/frameleaf-remote-access.js';
+
+/** Relay use is metered every minute, so a newer answer is never asked for sooner. */
+const USAGE_FRESH_MS = 60_000;
 
 /** The self-check gives the edge worker this long to answer through the direct listener. */
 const PROBE_TIMEOUT_MS = 5000;
@@ -43,6 +48,9 @@ type ProbeResult = { ok: boolean; detail: string };
  */
 @Injectable()
 export class FrameleafRemoteAccessService extends BaseService {
+  /** The last relay use Frameleaf Cloud reported, for the instance it was asked for. */
+  private usageCache?: { instanceId: string; at: number; usage: RemoteAccessUsageResponseDto };
+
   private get linkDeps() {
     return { configRepository: this.configRepository, systemMetadataRepository: this.systemMetadataRepository };
   }
@@ -295,6 +303,41 @@ export class FrameleafRemoteAccessService extends BaseService {
       };
     });
     await this.eventRepository.emit('ConfigUpdate', { oldConfig, newConfig });
+  }
+
+  // ------------------------------------------------------------------ relay use
+
+  /**
+   * `GET admin/cloud/remote/usage`: this month's relay use and the plan's allowance, as Frameleaf Cloud
+   * meters them (the "Relay use this month" meter). Asked for only on a linked server with a remote
+   * access plan, and at most once a minute.
+   */
+  async getUsage(auth: AuthDto, now = Date.now()): Promise<RemoteAccessUsageResponseDto> {
+    const { cloudUrl, link } = await this.requireAvailable();
+    const cached = this.usageCache;
+    if (cached?.instanceId === link.instanceId && now - cached.at < USAGE_FRESH_MS) {
+      return cached.usage;
+    }
+    const answer = await this.cloudCall(async () => {
+      const { document, token } = await this.session(cloudUrl, link);
+      return this.frameleafCloudRepository.requestJson(remoteUsageSchema, {
+        url: remoteEndpoints(document).usage,
+        dpop: token,
+      });
+    });
+    const usage: RemoteAccessUsageResponseDto = {
+      period: answer.period,
+      periodStart: answer.periodStart,
+      periodEnd: answer.periodEnd,
+      bytes: answer.bytes,
+      limitBytes: answer.limitBytes,
+      throttled: !!answer.throttle,
+      throttleBps: answer.throttle?.bps ?? null,
+      throttleUntil: answer.throttle?.until ?? null,
+    };
+    this.usageCache = { instanceId: link.instanceId, at: now, usage };
+    this.logger.debug(`Relay use read by ${auth.user.id}: ${usage.bytes} of ${usage.limitBytes} bytes`);
+    return usage;
   }
 
   // ------------------------------------------------------------------ self-check

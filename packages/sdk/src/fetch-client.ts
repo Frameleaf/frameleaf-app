@@ -786,6 +786,22 @@ export type RemoteHostnameUpdateDto = {
     /** A subdomain of a domain you own, such as photos.example.com */
     hostname: string;
 };
+export type RemoteAccessUsageResponseDto = {
+    /** Bytes through the relay this month, in and out, custom hostnames included */
+    bytes: number;
+    /** The relay allowance the plan includes each month */
+    limitBytes: number;
+    /** The month, YYYY-MM (UTC) */
+    period: string;
+    periodEnd: string;
+    periodStart: string;
+    /** The slowed-down speed in bits per second, while throttled */
+    throttleBps: number | null;
+    /** When the slowdown lifts, while throttled */
+    throttleUntil: string | null;
+    /** The allowance is used up: the relay is slowed down, never cut off */
+    throttled: boolean;
+};
 export type CloudSignInUpdateDto = {
     /** The Sign in with Frameleaf button text */
     buttonText?: string;
@@ -11630,6 +11646,17 @@ export function testRemoteAccess(opts?: Oazapfts.RequestOpts) {
     }>("/admin/cloud/remote/test", {
         ...opts,
         method: "POST"
+    }));
+}
+/**
+ * Get relay use this month
+ */
+export function getRemoteAccessUsage(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: RemoteAccessUsageResponseDto;
+    }>("/admin/cloud/remote/usage", {
+        ...opts
     }));
 }
 /**

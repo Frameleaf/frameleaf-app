@@ -2545,6 +2545,53 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/admin/cloud/remote/usage": {
+      "get": {
+        "description": "How much has gone through the Frameleaf relay this month and the allowance the plan includes, as Frameleaf Cloud meters them. Only on a linked server with remote access in its plan.",
+        "operationId": "getRemoteAccessUsage",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemoteAccessUsageResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get relay use this month",
+        "tags": [
+          "Frameleaf Cloud (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloud.read",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/cloud/sign-in": {
       "put": {
         "description": "Remote access always requires Sign in with Frameleaf. This also offers it on the login page at home, once the server is linked, and sets its button text.",
@@ -71161,6 +71208,59 @@
             "$ref": "#/components/schemas/RemoteAccessPublicUrl"
           }
         },
+        "type": "object"
+      },
+      "RemoteAccessUsageResponseDto": {
+        "properties": {
+          "bytes": {
+            "description": "Bytes through the relay this month, in and out, custom hostnames included",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "limitBytes": {
+            "description": "The relay allowance the plan includes each month",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "period": {
+            "description": "The month, YYYY-MM (UTC)",
+            "type": "string"
+          },
+          "periodEnd": {
+            "type": "string"
+          },
+          "periodStart": {
+            "type": "string"
+          },
+          "throttleBps": {
+            "description": "The slowed-down speed in bits per second, while throttled",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          },
+          "throttleUntil": {
+            "description": "When the slowdown lifts, while throttled",
+            "nullable": true,
+            "type": "string"
+          },
+          "throttled": {
+            "description": "The allowance is used up: the relay is slowed down, never cut off",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "bytes",
+          "limitBytes",
+          "period",
+          "periodEnd",
+          "periodStart",
+          "throttleBps",
+          "throttleUntil",
+          "throttled"
+        ],
         "type": "object"
       },
       "RemoteConnectionDto": {

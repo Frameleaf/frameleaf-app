@@ -103,6 +103,18 @@ const defaultRemote = (): RemoteMockState => ({
   tested: false,
 });
 
+/** FL-166: `GET admin/cloud/remote/usage`, 160 of 200 GiB through the relay this month. */
+export const RELAY_USAGE = {
+  period: '2026-09',
+  periodStart: '2026-09-01T00:00:00.000Z',
+  periodEnd: '2026-10-01T00:00:00.000Z',
+  bytes: 171_798_691_840,
+  limitBytes: 214_748_364_800,
+  throttled: false,
+  throttleBps: null,
+  throttleUntil: null,
+};
+
 /** What a remote access route does to the mocked state (FL-165). */
 const applyRemote = (mock: CloudMockState, method: string, path: string, body: unknown) => {
   const remote = (mock.remote ??= defaultRemote());
@@ -200,6 +212,10 @@ export const setupCloudMockApiRoutes = async (context: BrowserContext, mock: Clo
     const method = request.method();
     const body = request.postDataJSON?.() ?? undefined;
     mock.requests.push({ method, path, body });
+    // FL-166: relay use this month, as Frameleaf Cloud meters it (the contract's remote-usage fixture)
+    if (method === 'GET' && path === 'admin/cloud/remote/usage') {
+      return route.fulfill({ status: 200, json: RELAY_USAGE });
+    }
     if (path === 'admin/cloud/remote' || path.startsWith('admin/cloud/remote/')) {
       applyRemote(mock, method, path, body);
       return route.fulfill({ status: 200, json: remoteStatus(mock) });

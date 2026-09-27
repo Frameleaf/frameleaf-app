@@ -263,6 +263,32 @@ export const remoteHostnameSchema = z.object({
 export type RemoteHostname = z.infer<typeof remoteHostnameSchema>;
 export const remoteHostnameListSchema = z.object({ hostnames: z.array(remoteHostnameSchema).max(100) });
 
+/**
+ * This server's relay use this month (contract `remote/relay.ts` `RemoteUsageResponse`, `GET
+ * /v1/remote/usage`): the UTC calendar month, bytes in and out (custom hostnames included), the
+ * allowance the owner's plan gives (`limitBytes`), and the slowdown the cloud applies once it is used up
+ * (never a cut-off) with when it lifts.
+ */
+export const remoteUsageSchema = z.object({
+  period: z.string().regex(/^\d{4}-\d{2}$/),
+  periodStart: z.iso.datetime({ offset: true }),
+  periodEnd: z.iso.datetime({ offset: true }),
+  bytes: z.number().int().min(0),
+  limitBytes: z.number().int().min(0),
+  throttle: z.object({ bps: z.number().int().min(0), until: z.iso.datetime({ offset: true }) }).nullable(),
+  days: z
+    .array(
+      z.object({
+        date: z.string(),
+        bytesIn: z.number().int().min(0),
+        bytesOut: z.number().int().min(0),
+        connectionSeconds: z.number().min(0),
+      }),
+    )
+    .max(31),
+});
+export type RemoteUsage = z.infer<typeof remoteUsageSchema>;
+
 /** Remote access endpoints of the cloud API, from discovery. */
 export const remoteEndpoints = (document: { api: string }) => {
   const api = document.api.replace(/\/+$/, '');
@@ -277,6 +303,7 @@ export const remoteEndpoints = (document: { api: string }) => {
     relayCandidates: `${api}/v1/remote/relays/candidates`,
     relaySelect: `${api}/v1/remote/relays/select`,
     wanProbe: `${api}/v1/remote/wan-probe`,
+    usage: `${api}/v1/remote/usage`,
   };
 };
 

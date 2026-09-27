@@ -109,4 +109,23 @@ test.describe('Frameleaf Cloud remote access', () => {
     await expect(page.getByText('5 MiB in, 50 MiB out')).toBeVisible();
     await expect(page.getByText(/^Last problem/)).toHaveCount(0);
   });
+
+  test('shows relay use this month against the plan’s allowance (FL-166)', async ({ page }) => {
+    mock.remote = { ...defaults(), enabled: true, relayConnected: true };
+    await page.goto(remotePage);
+    const meter = page.getByRole('meter', { name: 'Relay use this month' });
+    await expect(meter).toHaveAttribute('aria-valuenow', '171798691840');
+    await expect(page.getByText('160 GiB of 200 GiB')).toBeVisible();
+    expect(mock.requests.some(({ method, path }) => method === 'GET' && path === 'admin/cloud/remote/usage')).toBe(
+      true,
+    );
+  });
+
+  test('asks for no relay use before the server is linked (FL-166)', async ({ page }) => {
+    mock.state = 'unlinked';
+    await page.goto(remotePage);
+    await expect(page.getByText('Link this server to a Frameleaf account first.').first()).toBeVisible();
+    await expect(page.getByRole('meter', { name: 'Relay use this month' })).toHaveCount(0);
+    expect(mock.requests.some(({ path }) => path === 'admin/cloud/remote/usage')).toBe(false);
+  });
 });

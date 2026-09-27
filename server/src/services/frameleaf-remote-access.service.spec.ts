@@ -99,6 +99,9 @@ describe(FrameleafRemoteAccessService.name, () => {
       if (request.url === `${API}/v1/remote/hostnames`) {
         return Promise.resolve(schema.parse(list));
       }
+      if (request.url === `${API}/v1/remote/usage`) {
+        return Promise.resolve(schema.parse(cloudContractFixture('remote/remote-usage.json')));
+      }
       return Promise.resolve({});
     });
 
@@ -261,6 +264,65 @@ describe(FrameleafRemoteAccessService.name, () => {
       await expect(sut.setCustomHostname(authStub.admin, { hostname: 'photos.example.com' })).rejects.toThrow(
         'Frameleaf Cloud did not complete the request: maintenance',
       );
+    });
+  });
+
+  describe('relay use this month', () => {
+    it('asks Frameleaf Cloud for this month’s relay use and the allowance with the instance token', async () => {
+      const usage = await sut.getUsage(authStub.admin);
+
+      expect(calls).toEqual([{ method: undefined, url: `${API}/v1/remote/usage`, body: undefined }]);
+      expect(mocks.frameleafCloud.requestJson).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ dpop: expect.objectContaining({ accessToken: 'token' }) }),
+      );
+      expect(usage).toEqual({
+        period: '2026-09',
+        periodStart: '2026-09-01T00:00:00.000Z',
+        periodEnd: '2026-10-01T00:00:00.000Z',
+        bytes: 171_798_691_840,
+        limitBytes: 214_748_364_800,
+        throttled: false,
+        throttleBps: null,
+        throttleUntil: null,
+      });
+    });
+
+    it('says when the relay is slowed down for the rest of the month', async () => {
+      mocks.frameleafCloud.requestJson.mockImplementation((schema: any) =>
+        Promise.resolve(
+          schema.parse({
+            ...cloudContractFixture('remote/remote-usage.json'),
+            bytes: 214_748_364_800,
+            throttle: { bps: 1_000_000, until: '2026-10-01T00:00:00.000Z' },
+          }),
+        ),
+      );
+      await expect(sut.getUsage(authStub.admin)).resolves.toMatchObject({
+        throttled: true,
+        throttleBps: 1_000_000,
+        throttleUntil: '2026-10-01T00:00:00.000Z',
+      });
+    });
+
+    it('contacts nothing before the server is linked', async () => {
+      metadata.delete(SystemMetadataKey.FrameleafCloudLink);
+      await expect(sut.getUsage(authStub.admin)).rejects.toThrow('Link this server to a Frameleaf account first.');
+      expect(calls).toEqual([]);
+      expect(mocks.frameleafCloud.discovery).not.toHaveBeenCalled();
+    });
+
+    it('asks Frameleaf Cloud at most once a minute', async () => {
+      await sut.getUsage(authStub.admin);
+      await sut.getUsage(authStub.admin);
+      expect(calls).toHaveLength(1);
+    });
+
+    it('refuses an answer that does not match the contract', async () => {
+      mocks.frameleafCloud.requestJson.mockImplementation((schema: any) =>
+        Promise.resolve(schema.parse({ period: '2026-09', bytes: -1 })),
+      );
+      await expect(sut.getUsage(authStub.admin)).rejects.toThrow();
     });
   });
 

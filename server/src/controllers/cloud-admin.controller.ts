@@ -11,6 +11,7 @@ import {
 import {
   RemoteAccessStatusResponseDto,
   RemoteAccessUpdateDto,
+  RemoteAccessUsageResponseDto,
   RemoteHostnameUpdateDto,
 } from 'src/dtos/frameleaf-remote-access.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
@@ -147,6 +148,19 @@ export class CloudAdminController {
   })
   getRemoteAccess(): Promise<RemoteAccessStatusResponseDto> {
     return this.remoteAccessService.getStatus();
+  }
+
+  @Get('remote/usage')
+  @Authenticated({ permission: Permission.AdminCloudRead, admin: true })
+  @Endpoint({
+    operationId: 'getRemoteAccessUsage',
+    summary: 'Get relay use this month',
+    description:
+      'How much has gone through the Frameleaf relay this month and the allowance the plan includes, as Frameleaf Cloud meters them. Only on a linked server with remote access in its plan.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  getRemoteAccessUsage(@Auth() auth: AuthDto): Promise<RemoteAccessUsageResponseDto> {
+    return this.remoteAccessService.getUsage(auth);
   }
 
   @Put('remote')
