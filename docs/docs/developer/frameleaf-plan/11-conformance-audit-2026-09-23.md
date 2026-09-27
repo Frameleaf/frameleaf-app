@@ -513,6 +513,16 @@ On `claude/FL-31-goals`, based on `master/frameleaf-implementation` @ `249c37a3e
 
 Validation: web unit specs `library-session.svelte`, `LibraryView`, `LibraryTimeline.svelte` and `VideoNativeViewer`; a new mocked-API Playwright case (`timeline.e2e-spec.ts`, "The library keys come back once the viewer has closed") with the timeline keyboard, viewer-media and video-moments UI specs run against this worktree's Vite server.
 
+### September 27 selection boundary (FL-32)
+
+On `claude/FL-32-goals`, based on `master/frameleaf-implementation` @ `b0d7950a0f`. It answers FL-31's September 22 question: when a selection is kept and when it is "all matching".
+
+- **Kept**: an explicit selection (clicks, shift-click ranges, day headers) survives layout, view, grouping and sort changes and a query edit inside the scope. Items the new query hides stay selected and the status bar counts them as outside these results, as `App.jsx` does. A scope change and a reload clear it.
+- **All matching**: only "Select all n" (the bar or Collection actions) makes one. It freezes the scope and query the person saw counted, and a sort or presentation change keeps it. The prototype acts on the selected items still in the results (`selectedVisible`), so it never runs an old query over items the view no longer shows and never widens to new matches. Production cannot intersect a set it has not loaded, so a result-changing query edit now ends the snapshot and the selection falls back to the explicit ids on the page; "Select all n" is offered again for the new query. Before, the snapshot survived the edit, and a bulk action ran the old query while reporting the new count as its submitted total.
+- **Submitted**: once an action starts, its scope is a deep copy, so later edits cannot change a running operation (unchanged).
+
+Validation: web unit specs `library-session`, `library-session.svelte` and `library-session.operations`; real-server Playwright `bulk-actions.e2e-spec.ts` "Everything matching" (server-counted archive leaves a partner's Timeline item and undoes; a filter active when the set was chosen bounds what is archived).
+
 ### September 26 integrity reports and restore evidence (FL-81)
 
 On `claude/FL-81-goals`, based on `master/frameleaf-implementation` @ `5d08c44999`. Earlier FL-81 work (restore guard, newer-backup refusal, refused sign-in links, log redaction, "Last run", report file) was already on integration; this closes the gaps found when the integrity and restore flows ran against the real server.
