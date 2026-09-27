@@ -89,8 +89,8 @@ assert(
 for (const name of ["server", "machine-learning"])
   assert.deepEqual(
     docker.jobs[name].needs,
-    ["integration", "certification"],
-    "Both quality gates must precede publishing",
+    ["changes", "integration", "certification"],
+    "Build selection and both quality gates must precede publishing",
   );
 assert.equal(
   docker.jobs.integration.uses,
