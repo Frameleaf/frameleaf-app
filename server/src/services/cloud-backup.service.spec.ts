@@ -30,6 +30,9 @@ import { cloudContractFixture } from 'test/fixtures/frameleaf-cloud-contracts.js
 import { mockEnvData } from 'test/repositories/config.repository.mock.js';
 import { getMocks } from 'test/utils.js';
 
+/** Each escrow open or wrap runs the real scrypt (N = 2^17, 128 MiB); a busy runner needs more than 5 s. */
+const SCRYPT_TEST_TIMEOUT_MS = 30_000;
+
 const hex = (text: string) => createHash('sha256').update(text).digest('hex');
 const SHA_A = hex('a');
 const SHA_B = hex('b');
@@ -1447,22 +1450,26 @@ describe(CloudBackupService.name, () => {
       mocks.frameleafCloud.accessToken.mockResolvedValue({ accessToken: 'token' } as never);
     });
 
-    it('sends only the scrypt-wrapped key, never the key or the passphrase (server key mode)', async () => {
-      const passphrase = 'correct horse battery staple';
+    it(
+      'sends only the scrypt-wrapped key, never the key or the passphrase (server key mode)',
+      { timeout: SCRYPT_TEST_TIMEOUT_MS },
+      async () => {
+        const passphrase = 'correct horse battery staple';
 
-      const status = await sut.storeEscrow(authStub.admin, { passphrase });
+        const status = await sut.storeEscrow(authStub.admin, { passphrase });
 
-      const [, blob] = cloudBackup.putEscrow.mock.calls[0];
-      expect(keyEscrowBlobSchema.safeParse(blob).success).toBe(true);
-      await expect(unwrapBucketKey(blob, passphrase)).resolves.toEqual(key);
-      const sent = JSON.stringify([cloudBackup.putEscrow.mock.calls, cloudBackup.putSettings.mock.calls]);
-      expect(sent).not.toContain(key.toString('base64'));
-      expect(sent).not.toContain(passphrase);
-      expect(status.escrow).toMatchObject({ stored: true });
-      expect(mocks.forkSchema.persistConfig.mock.calls.at(-1)![1]).toMatchObject({
-        frameleafCloud: { cloudBackup: { escrow: true } },
-      });
-    });
+        const [, blob] = cloudBackup.putEscrow.mock.calls[0];
+        expect(keyEscrowBlobSchema.safeParse(blob).success).toBe(true);
+        await expect(unwrapBucketKey(blob, passphrase)).resolves.toEqual(key);
+        const sent = JSON.stringify([cloudBackup.putEscrow.mock.calls, cloudBackup.putSettings.mock.calls]);
+        expect(sent).not.toContain(key.toString('base64'));
+        expect(sent).not.toContain(passphrase);
+        expect(status.escrow).toMatchObject({ stored: true });
+        expect(mocks.forkSchema.persistConfig.mock.calls.at(-1)![1]).toMatchObject({
+          frameleafCloud: { cloudBackup: { escrow: true } },
+        });
+      },
+    );
 
     it('is never offered for your own key', async () => {
       metadata[SystemMetadataKey.FrameleafCloudBackup] = claim({ keyMode: 'own-stored' });

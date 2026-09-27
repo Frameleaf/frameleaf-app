@@ -12,6 +12,9 @@ import { commandsAndQuestions } from 'src/commands/index.js';
 import { CloudBackupService } from 'src/services/cloud-backup.service.js';
 import { wrapBucketKey } from 'src/utils/cloud-backup-escrow.js';
 
+/** Each escrow open or wrap runs the real scrypt (N = 2^17, 128 MiB); a busy runner needs more than 5 s. */
+const SCRYPT_TEST_TIMEOUT_MS = 30_000;
+
 const key = Buffer.alloc(32, 7);
 const options = {
   bucket: 'family-backup',
@@ -50,7 +53,7 @@ describe('cloud-backup CLI (FL-164)', () => {
     });
   });
 
-  it('opens an escrow copy with the passphrase from the environment', async () => {
+  it('opens an escrow copy with the passphrase from the environment', { timeout: SCRYPT_TEST_TIMEOUT_MS }, async () => {
     const passphrase = 'correct horse battery staple';
     const escrowFile = join(directory, 'escrow.json');
     await writeFile(
