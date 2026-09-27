@@ -5,6 +5,12 @@ import { app, asBearerAuth, dockerExec, testAssetDir, testAssetDirInternal, util
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+/** Whether a file exists in the server container's volume, where originals live (not on the test host). */
+const onDisk = async (path: string) => {
+  const { exitCode } = await dockerExec([`test -f '${path}'`]).promise;
+  return exitCode === 0;
+};
+
 describe('/trash', () => {
   let admin: LoginResponseDto;
   let ws: Socket;
@@ -524,8 +530,6 @@ describe('/trash', () => {
       // another item still references the removed item's original (a deduplicated file)
       const client = await utils.connectDatabase();
       await client.query(`UPDATE "asset" SET "originalPath" = $1 WHERE "id" = $2`, [originalPath, removed]);
-      // originals live in the server container's volume, not on the test host
-      const onDisk = async (path: string) => (await dockerExec([`test -f '${path}'`]).promise).exitCode === 0;
       expect(await onDisk(originalPath)).toBe(true);
       expect(await onDisk(soloPath)).toBe(true);
 
