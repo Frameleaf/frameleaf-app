@@ -634,14 +634,34 @@ describe(MetadataService.name, () => {
       });
     });
 
-    it('should remove existing tags', async () => {
+    it('should remove the tags the file no longer lists', async () => {
+      const asset = AssetFactory.create();
+      mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+      mocks.asset.getForMetadataExtractionTags
+        .mockResolvedValueOnce({ tags: ['Parent/Child', 'Kept'] })
+        .mockResolvedValueOnce({ tags: ['Kept'] });
+      mockReadTags({ TagsList: ['Kept'] });
+      mocks.tag.upsertValue.mockResolvedValue(tagStub.parentUpsert);
+
+      await sut.handleMetadataExtraction({ id: asset.id });
+
+      expect(mocks.tag.removeAssetTagValues).toHaveBeenCalledWith(asset.id, asset.ownerId, ['Parent/Child']);
+      expect(mocks.tag.upsertAssetIds).toHaveBeenCalledWith([{ tagId: tagStub.parentUpsert.id, assetId: asset.id }]);
+      expect(mocks.tag.replaceAssetTags).not.toHaveBeenCalled();
+    });
+
+    it('should keep a tag added while the file was read', async () => {
+      // A tag added through the API is on the asset but was never in the file's list, so the
+      // extraction that races it has nothing of its own to remove.
       const asset = AssetFactory.create();
       mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
       mockReadTags({});
 
       await sut.handleMetadataExtraction({ id: asset.id });
 
-      expect(mocks.tag.replaceAssetTags).toHaveBeenCalledWith(asset.id, []);
+      expect(mocks.tag.removeAssetTagValues).toHaveBeenCalledWith(asset.id, asset.ownerId, []);
+      expect(mocks.tag.upsertAssetIds).toHaveBeenCalledWith([]);
+      expect(mocks.tag.replaceAssetTags).not.toHaveBeenCalled();
     });
 
     it('should not apply motion photos if asset is video', async () => {

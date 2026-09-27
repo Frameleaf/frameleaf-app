@@ -152,6 +152,33 @@ describe(TagRepository.name, () => {
     });
   });
 
+  describe('removeAssetTagValues', () => {
+    it('removes only the named values of the owner from the asset', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { user: other } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      const { tag: fromFile } = await ctx.newTag({ userId: user.id, value: 'fromFile' });
+      const { tag: addedLater } = await ctx.newTag({ userId: user.id, value: 'addedLater' });
+      const { tag: othersTag } = await ctx.newTag({ userId: other.id, value: 'fromFile' });
+      await sut.upsertAssetIds([
+        { tagId: fromFile.id, assetId: asset.id },
+        { tagId: addedLater.id, assetId: asset.id },
+        { tagId: othersTag.id, assetId: asset.id },
+      ]);
+
+      await sut.removeAssetTagValues(asset.id, user.id, ['fromFile']);
+      await sut.removeAssetTagValues(asset.id, user.id, []);
+
+      const remaining = await ctx.database
+        .selectFrom('tag_asset')
+        .select('tagId')
+        .where('assetId', '=', asset.id)
+        .execute();
+      expect(remaining.map(({ tagId }) => tagId).toSorted()).toEqual([addedLater.id, othersTag.id].toSorted());
+    });
+  });
+
   describe('delete', () => {
     it('should delete top-level tag without descendants', async () => {
       const { ctx, sut } = setup();

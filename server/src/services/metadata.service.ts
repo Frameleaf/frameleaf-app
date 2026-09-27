@@ -36,7 +36,7 @@ import { mergeTimeZone } from 'src/utils/date.js';
 import { isLockedRow } from 'src/utils/locked.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { batched, isFaceImportEnabled } from 'src/utils/misc.js';
-import { upsertTags } from 'src/utils/tag.js';
+import { normalizeTagValue, upsertTags } from 'src/utils/tag.js';
 import { Tasks } from 'src/utils/tasks.js';
 
 const POSTGRES_INT_MAX = 2_147_483_647;
@@ -379,6 +379,8 @@ export class MetadataService extends BaseService {
           height: !asset.isEdited || asset.height === null ? assetHeight : undefined,
         }),
       async () => {
+        // The tags the last extraction (or a tag edit) left on the asset, before this one overwrites them.
+        const previous = await this.assetRepository.getForMetadataExtractionTags(asset.id);
         await this.assetRepository.upsertExif({
           exif: exifData,
           audio: audioData,
@@ -386,7 +388,7 @@ export class MetadataService extends BaseService {
           keyframes: keyframeData,
           lockedPropertiesBehavior: 'skip',
         });
-        await this.applyTagList(asset);
+        await this.applyTagList(asset, previous?.tags ?? []);
       },
     );
 
@@ -722,16 +724,23 @@ export class MetadataService extends BaseService {
     return tags;
   }
 
-  private async applyTagList({ id, ownerId }: { id: string; ownerId: string }) {
+  /**
+   * Applies the file's tag list as a change, not a replacement: the tags it lists are added, and only
+   * those it listed before (`previousTags`) and no longer does are removed. Replacing the asset's whole
+   * tag set here dropped a tag added through the API between this job reading the list and writing it
+   * (a photo tagged right after upload lost the tag, and with it any Locked rule that matched it).
+   */
+  private async applyTagList({ id, ownerId }: { id: string; ownerId: string }, previousTags: string[]) {
     const asset = await this.assetRepository.getForMetadataExtractionTags(id);
-    const results = await upsertTags(this.tagRepository, {
-      userId: ownerId,
-      tags: asset?.tags ?? [],
-    });
-    await this.tagRepository.replaceAssetTags(
-      id,
-      results.map((tag) => tag.id),
+    const tags = asset?.tags ?? [];
+    const results = await upsertTags(this.tagRepository, { userId: ownerId, tags });
+
+    const current = new Set(tags.map((tag) => normalizeTagValue(tag)));
+    const dropped = [...new Set(previousTags.map((tag) => normalizeTagValue(tag)))].filter(
+      (value) => value && !current.has(value),
     );
+    await this.tagRepository.removeAssetTagValues(id, ownerId, dropped);
+    await this.tagRepository.upsertAssetIds(results.map((tag) => ({ tagId: tag.id, assetId: id })));
   }
 
   private isMotionPhoto(asset: { type: AssetType }, tags: ImmichTags): boolean {
