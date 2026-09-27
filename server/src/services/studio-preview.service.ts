@@ -16,6 +16,7 @@ import {
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaOperation, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
+import { StudioExportRepository } from 'src/repositories/studio-export.repository.js';
 import { StudioPreviewFrame, StudioPreviewRepository } from 'src/repositories/studio-preview.repository.js';
 import { StudioProjectService, StudioRevisionEvent } from 'src/services/studio-project.service.js';
 import {
@@ -25,6 +26,7 @@ import {
 } from 'src/services/studio-resource.service.js';
 import { ImmichFileResponse } from 'src/utils/file.js';
 import { rational } from 'src/utils/rational-time.js';
+import { StudioExportTiming, declareStudioTiming, studioMediaSources } from 'src/utils/studio-export-contract.js';
 import { isInsideFolder } from 'src/utils/studio-export.js';
 import {
   PREVIEW_CONTENT_TYPES,
@@ -45,6 +47,7 @@ import {
   previewTimeKey,
 } from 'src/utils/studio-preview.js';
 import { StudioDestination } from 'src/utils/studio-resources.js';
+import { StudioTimingError } from 'src/utils/studio-timing.js';
 
 /** The frame-identity part of a request: everything but the project and revision it names. */
 export type StudioPreviewFrameRequest = Omit<StudioPreviewRequestDto, 'projectId' | 'revision'>;
@@ -125,6 +128,7 @@ export class StudioPreviewService {
     private resources: StudioResourceService,
     private projects: StudioProjectService,
     private storage: StorageRepository,
+    private sourceMedia: StudioExportRepository,
   ) {
     this.logger.setContext(StudioPreviewService.name);
 
@@ -174,13 +178,43 @@ export class StudioPreviewService {
       });
     }
 
-    return this.requestForManifest(auth, authorization.manifest, {
-      time: dto.time,
-      quality: dto.quality,
-      viewportWidth: dto.viewportWidth,
-      viewportHeight: dto.viewportHeight,
-      seekGeneration: dto.seekGeneration,
-    });
+    // FL-93: the frame is placed with the same mapping the export and its audio use — the project's
+    // exact cadence and each source's own timestamps — so a preview never shows a picture the
+    // export would not.
+    const timing = await this.declareTiming(authorization.envelope.graph, authorization.manifest, current);
+
+    return this.requestForManifest(
+      auth,
+      authorization.manifest,
+      {
+        time: dto.time,
+        quality: dto.quality,
+        viewportWidth: dto.viewportWidth,
+        viewportHeight: dto.viewportHeight,
+        seekGeneration: dto.seekGeneration,
+      },
+      timing,
+    );
+  }
+
+  private async declareTiming(
+    graph: unknown,
+    manifest: StudioAuthorizedManifest,
+    currentRevision: number,
+  ): Promise<StudioExportTiming> {
+    const facts = await this.sourceMedia.getSourceMediaFacts(studioMediaSources(manifest.entries).ids);
+    try {
+      return declareStudioTiming(graph, manifest.entries, facts);
+    } catch (error) {
+      if (error instanceof StudioTimingError) {
+        throw new ConflictException({
+          message: error.message,
+          code: 'studio_preview_timing_unknown',
+          currentRevision,
+        });
+      }
+      throw error;
+    }
   }
 
   /**
@@ -195,6 +229,7 @@ export class StudioPreviewService {
     auth: AuthDto,
     manifest: StudioAuthorizedManifest,
     dto: StudioPreviewFrameRequest,
+    timing: StudioExportTiming | null = null,
   ): Promise<StudioPreviewResponseDto> {
     const now = new Date();
     const time = this.parseTime(dto);
@@ -225,6 +260,7 @@ export class StudioPreviewService {
       now,
       manifest,
       grant: { token: grantToken, sessionId: grantSessionId },
+      timing,
     });
   }
 
@@ -580,9 +616,10 @@ export class StudioPreviewService {
       now: Date;
       manifest: StudioAuthorizedManifest;
       grant: { token: string; sessionId: string };
+      timing?: StudioExportTiming | null;
     },
   ): Promise<StudioPreviewResponseDto> {
-    const { time, dto, now, manifest, grant } = request;
+    const { time, dto, now, manifest, grant, timing = null } = request;
     const ownerId = auth.user.id;
     const projectId = manifest.projectId;
     const revisionDigest = manifest.digest;
@@ -628,7 +665,7 @@ export class StudioPreviewService {
       expiresAt: previewExpiry(now),
     });
 
-    const recorded = created ? await this.enqueue(frame, binding, manifest) : frame;
+    const recorded = created ? await this.enqueue(frame, binding, manifest, timing) : frame;
 
     await this.evict(projectId, ownerId, revisionDigest, now);
 
@@ -643,6 +680,7 @@ export class StudioPreviewService {
     frame: StudioPreviewFrame,
     binding: PreviewBinding,
     manifest: StudioAuthorizedManifest,
+    timing: StudioExportTiming | null,
   ): Promise<StudioPreviewFrame> {
     const operation = await this.operations.create({
       ownerId: binding.ownerId,
@@ -681,6 +719,8 @@ export class StudioPreviewService {
         manifestDigest: manifest.digest,
         projectRevision: manifest.revision,
         resourceCacheKey: this.resources.cacheKey(manifest),
+        // FL-93: the cadence and source timing maps, identical to what an export declares.
+        ...(timing && { timing }),
         studio: {
           stored: true,
           revision: manifest.revision,

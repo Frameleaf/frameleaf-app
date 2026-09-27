@@ -159,6 +159,63 @@ const liveSession = (
   },
 });
 
+/** A Freecut graph at 30000/1001 with one clip of CLIP and its linked audio. */
+const clipGraph = (overrides: { items?: Record<string, unknown>[]; transitions?: unknown[] } = {}) => ({
+  id: 'project',
+  metadata: { fps: 30_000 / 1001, frameRate: { num: 30_000, den: 1001 } },
+  timeline: {
+    tracks: [{ id: 'v1' }, { id: 'a1' }],
+    items: overrides.items ?? [
+      { id: 'clip-v', type: 'video', trackId: 'v1', mediaId: CLIP, from: 0, durationInFrames: 300 },
+      { id: 'clip-a', type: 'audio', trackId: 'a1', mediaId: CLIP, from: 0, durationInFrames: 300 },
+    ],
+    transitions: overrides.transitions ?? [],
+    keyframes: [],
+  },
+});
+
+/** What the library knows about a source: a time base, a packet scan and its audio. */
+const facts = (
+  assetId: string,
+  overrides: { ownDuration?: number[]; startPts?: number; audio?: Record<string, unknown> | null } = {},
+) => ({
+  assetId,
+  video: { timeBase: 30_000, pixelFormat: 'yuv420p', colorTransfer: 1 },
+  packets: {
+    keyframePts: [overrides.startPts ?? 0, 30_030],
+    keyframeAccDuration: [1001, 31_031],
+    keyframeOwnDuration: overrides.ownDuration ?? [1001, 1001],
+    totalDuration: 300_300,
+    packetCount: 300,
+    outputFrames: 300,
+  },
+  audio:
+    overrides.audio === undefined
+      ? { codecName: 'aac', channels: 2, channelLayout: 'stereo', sampleRate: 48_000 }
+      : overrides.audio,
+});
+
+/** What the production probe reports for a rendered 8-bit SDR export with stereo audio. */
+const renderedOutput = (overrides: { video?: Record<string, unknown>; audio?: Record<string, unknown>[] } = {}) => ({
+  format: { duration: 10, bitrate: 0 },
+  videoStreams: [
+    {
+      index: 0,
+      width: 1920,
+      height: 1080,
+      pixelFormat: 'yuv420p',
+      colorTransfer: 1,
+      duration: 10,
+      frameRate: 30,
+      frameRateRational: { num: 30, den: 1 },
+      ...overrides.video,
+    },
+  ],
+  audioStreams: overrides.audio ?? [
+    { index: 1, codecName: 'aac', channels: 2, channelLayout: 'stereo', sampleRate: 48_000, duration: 10 },
+  ],
+});
+
 describe(StudioExportService.name, () => {
   let sut: StudioExportService;
   let repository: Record<string, ReturnType<typeof vi.fn>>;
@@ -174,6 +231,7 @@ describe(StudioExportService.name, () => {
   let crypto: Record<string, ReturnType<typeof vi.fn>>;
   let jobs: Record<string, ReturnType<typeof vi.fn>>;
   let renderWorkers: { listLiveSessions: ReturnType<typeof vi.fn> };
+  let media: { probe: ReturnType<typeof vi.fn> };
   let staged: string;
 
   beforeAll(() => StorageCore.setMediaLocation('/data'));
@@ -186,6 +244,7 @@ describe(StudioExportService.name, () => {
       getForOwner: vi.fn(),
       getByRenderOperation: vi.fn(),
       getSources: vi.fn().mockResolvedValue([sourceRow()]),
+      getSourceMediaFacts: vi.fn().mockResolvedValue([]),
       getSourcesFor: vi.fn((ids: string[]) =>
         Promise.resolve(new Map(ids.map((id) => [id, [sourceRow({ versionId: id })]]))),
       ),
@@ -255,6 +314,7 @@ describe(StudioExportService.name, () => {
     crypto = { hashFile: vi.fn().mockResolvedValue(Buffer.from('ab'.repeat(32), 'hex')) };
     jobs = { queue: vi.fn().mockResolvedValue(undefined) };
     renderWorkers = { listLiveSessions: vi.fn().mockResolvedValue([liveSession()]) };
+    media = { probe: vi.fn().mockResolvedValue(renderedOutput()) };
 
     sut = new StudioExportService(
       { setContext: vi.fn(), log: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } as never,
@@ -271,6 +331,7 @@ describe(StudioExportService.name, () => {
       {} as never,
       {} as never,
       renderWorkers as never,
+      media as never,
     );
   });
 
@@ -279,6 +340,7 @@ describe(StudioExportService.name, () => {
       project: { id: PROJECT, name: 'Lake trip' },
       access: 'owner',
       revision: { id: 'rev-row', revision: 3, digest: 'digest-3' },
+      envelope: { graph: clipGraph() },
       manifest: { complete: true, refusedCount: 0, digest: 'm', entries: [entry()] },
       ...overrides,
     });
@@ -413,6 +475,151 @@ describe(StudioExportService.name, () => {
 
       await sut.create(auth(), PROJECT, dto);
       expect(repository.createWithRender.mock.calls[1][0].snapshot).not.toHaveProperty('retain');
+    });
+  });
+
+  describe('declared timing and output contract (FL-93, FL-102)', () => {
+    const authorizedWith = (graph: unknown, entries = [entry()]) => ({
+      project: { id: PROJECT, name: 'Lake trip' },
+      access: 'owner',
+      revision: { id: 'rev-row', revision: 3, digest: 'digest-3' },
+      envelope: { graph },
+      manifest: { complete: true, refusedCount: 0, digest: 'm', entries },
+    });
+    const dto = {
+      destination: MediaOperationDestination.Lan,
+      format: 'mp4-h264',
+      color: 'preserve',
+      resolution: '1080p',
+    };
+    const snapshotOf = async (graph: unknown, overrides: Record<string, unknown> = {}, entries = [entry()]) => {
+      studio.authorizeRevision.mockResolvedValue(authorizedWith(graph, entries));
+      repository.createWithRender.mockResolvedValue({
+        operation: operation({ status: MediaOperationStatus.Queued }),
+        version: versionRow({ state: StudioExportVersionState.Rendering }),
+      });
+      await sut.create(auth(), PROJECT, { ...dto, ...overrides } as never);
+      const [job, version] = repository.createWithRender.mock.calls.at(-1)!;
+      return { snapshot: job.snapshot, version };
+    };
+
+    it('keeps the presentation timestamps of one variable-rate source the edit does not retime', async () => {
+      repository.getSourceMediaFacts.mockResolvedValue([facts(CLIP, { ownDuration: [1001, 1502], startPts: 2002 })]);
+      const { snapshot } = await snapshotOf(clipGraph());
+      expect(snapshot.timing).toEqual({
+        cadence: '30000/1001',
+        decision: expect.objectContaining({ mode: 'passthrough', cadence: null }),
+        timeBase: '1/30000',
+        sources: [
+          {
+            key: `library-asset:${CLIP}`,
+            assetId: CLIP,
+            timeBase: '1/30000',
+            originTicks: 2002,
+            cadence: null,
+            variableFrameRate: true,
+            trackTimescale: 30_000,
+            audio: { sampleRate: 48_000, channels: 2, channelLayout: 'stereo' },
+          },
+        ],
+      });
+    });
+
+    it('records a conversion onto the declared cadence for a composition, with one tick per frame', async () => {
+      repository.getSourceMediaFacts.mockResolvedValue([
+        facts(CLIP),
+        {
+          ...facts(SHARED_CLIP, { ownDuration: [1, 1] }),
+          video: { timeBase: 25, pixelFormat: 'yuv420p', colorTransfer: 1 },
+        },
+      ]);
+      const graph = clipGraph({
+        items: [
+          { id: 'a', type: 'video', trackId: 'v1', mediaId: CLIP, from: 0, durationInFrames: 30 },
+          { id: 'b', type: 'video', trackId: 'v1', mediaId: SHARED_CLIP, from: 30, durationInFrames: 30 },
+        ],
+      });
+      const entries = [entry(), entry({ key: `library-asset:${SHARED_CLIP}`, id: SHARED_CLIP })];
+      const { snapshot } = await snapshotOf(graph, {}, entries);
+      expect(snapshot.timing.decision).toEqual(
+        expect.objectContaining({
+          mode: 'convert',
+          cadence: '30000/1001',
+          reason: expect.stringContaining('2 sources'),
+        }),
+      );
+      expect(snapshot.timing.timeBase).toBe('1001/30000');
+      expect(snapshot.timing.sources.map((source: { cadence: string }) => source.cadence)).toEqual([
+        '30000/1001',
+        '25/1',
+      ]);
+    });
+
+    it('records a retimed single source as a conversion even at its own cadence', async () => {
+      repository.getSourceMediaFacts.mockResolvedValue([facts(CLIP)]);
+      const graph = clipGraph({
+        items: [{ id: 'a', type: 'video', trackId: 'v1', mediaId: CLIP, from: 0, durationInFrames: 150, speed: 2 }],
+      });
+      const { snapshot } = await snapshotOf(graph);
+      expect(snapshot.timing.decision).toEqual(
+        expect.objectContaining({ mode: 'convert', cadence: '30000/1001', reason: expect.stringContaining('retimes') }),
+      );
+    });
+
+    it('refuses a project whose frame rate has no exact reading, and a source never scanned', async () => {
+      repository.getSourceMediaFacts.mockResolvedValue([facts(CLIP)]);
+      studio.authorizeRevision.mockResolvedValue(authorizedWith({ ...clipGraph(), metadata: { fps: 27.3 } }));
+      await expect(sut.create(auth(), PROJECT, dto as never)).rejects.toMatchObject({
+        response: expect.objectContaining({ code: 'studio_export_timing_unknown' }),
+      });
+
+      repository.getSourceMediaFacts.mockResolvedValue([{ ...facts(CLIP), packets: null }]);
+      studio.authorizeRevision.mockResolvedValue(authorizedWith(clipGraph()));
+      await expect(sut.create(auth(), PROJECT, dto as never)).rejects.toMatchObject({
+        response: expect.objectContaining({ code: 'studio_export_timing_unknown' }),
+      });
+      expect(repository.createWithRender).not.toHaveBeenCalled();
+    });
+
+    it('promises the widest source layout, or a stereo downmix only when asked for', async () => {
+      const surround = { codecName: 'eac3', channels: 6, channelLayout: '5.1(side)', sampleRate: 48_000 };
+      repository.getSourceMediaFacts.mockResolvedValue([facts(CLIP, { audio: surround })]);
+      renderWorkers.listLiveSessions.mockResolvedValue([
+        liveSession({
+          codecs: ['hevc_nvenc', 'h264_nvenc'],
+          colorPrecision: { maxBitDepth: 10, hdr10: false, dolbyVision: false },
+        }),
+      ]);
+
+      const preserved = await snapshotOf(clipGraph(), { format: 'mp4-hevc-main10' });
+      expect(preserved.snapshot.contract).toEqual({
+        video: { minBitDepth: 10, transfer: null },
+        audio: { policy: 'preserve', channels: 6, channelLayout: '5.1(side)', sampleRate: 48_000 },
+      });
+      expect(preserved.version.settings).toEqual(expect.objectContaining({ audio: 'preserve' }));
+
+      const stereo = await snapshotOf(clipGraph(), { audio: 'stereo' });
+      expect(stereo.snapshot.contract.audio).toEqual({
+        policy: 'stereo',
+        channels: 2,
+        channelLayout: 'stereo',
+        sampleRate: 48_000,
+      });
+    });
+
+    it('promises no audio when every audio clip is muted, and 10-bit PQ for HDR10', async () => {
+      repository.getSourceMediaFacts.mockResolvedValue([facts(CLIP)]);
+      renderWorkers.listLiveSessions.mockResolvedValue([
+        liveSession({ codecs: ['hevc_nvenc'], colorPrecision: { maxBitDepth: 10, hdr10: true, dolbyVision: false } }),
+      ]);
+      const graph = clipGraph({
+        items: [
+          { id: 'v', type: 'video', trackId: 'v1', mediaId: CLIP, from: 0, durationInFrames: 30 },
+          { id: 'a', type: 'audio', trackId: 'a1', mediaId: CLIP, from: 0, durationInFrames: 30, muted: true },
+        ],
+      });
+      const { snapshot } = await snapshotOf(graph, { format: 'mp4-hevc-main10', color: 'hdr10' });
+      expect(snapshot.contract).toEqual({ video: { minBitDepth: 10, transfer: 'smpte2084' }, audio: null });
     });
   });
 
@@ -638,6 +845,85 @@ describe(StudioExportService.name, () => {
       });
       expect(operations.complete).toHaveBeenCalledWith(PUBLISH, 'claim-p', { resultAssetId: 'asset-new' });
       expect(operations.fail).not.toHaveBeenCalled();
+    });
+
+    describe('holds the rendered file to its contract (FL-102)', () => {
+      const contracted = (contract: Record<string, unknown>) => {
+        const run = job();
+        (run.operation.snapshot as Record<string, unknown>).contract = contract;
+        return run;
+      };
+      const tenBitSurround = {
+        video: { minBitDepth: 10, transfer: null },
+        audio: { policy: 'preserve', channels: 6, channelLayout: '5.1(side)', sampleRate: 48_000 },
+      };
+      const surroundTrack = {
+        index: 1,
+        codecName: 'eac3',
+        channels: 6,
+        channelLayout: '5.1(side)',
+        sampleRate: 48_000,
+        duration: 10,
+      };
+
+      it('publishes a result that kept its precision and its 5.1 audio', async () => {
+        repository.publish.mockResolvedValue(published());
+        media.probe.mockResolvedValue(
+          renderedOutput({ video: { pixelFormat: 'yuv420p10le' }, audio: [surroundTrack] }),
+        );
+        await sut.run(contracted(tenBitSurround));
+        expect(media.probe).toHaveBeenCalledWith(staged);
+        expect(repository.publish).toHaveBeenCalledOnce();
+      });
+
+      it.each([
+        ['an 8-bit result for a Main10 export', { audio: [surroundTrack] }, 'below the 10-bit'],
+        ['a stereo downmix nobody chose', { video: { pixelFormat: 'yuv420p10le' } }, 'audio channels instead of 6'],
+        [
+          'audio that stops early',
+          { video: { pixelFormat: 'yuv420p10le' }, audio: [{ ...surroundTrack, duration: 8 }] },
+          'misaligned',
+        ],
+        ['a result with no audio', { video: { pixelFormat: 'yuv420p10le' }, audio: [] }, 'missing'],
+      ])('refuses %s instead of publishing it', async (_, output, reason) => {
+        media.probe.mockResolvedValue(renderedOutput(output));
+        await sut.run(contracted(tenBitSurround));
+        expect(repository.publish).not.toHaveBeenCalled();
+        expect(operations.fail).toHaveBeenCalledWith(
+          PUBLISH,
+          'claim-p',
+          expect.objectContaining({
+            errorCode: 'studio_export_output_rejected',
+            error: expect.stringContaining(reason),
+          }),
+        );
+        expect(storage.rename).not.toHaveBeenCalled();
+      });
+
+      it('refuses a missing HDR transfer', async () => {
+        media.probe.mockResolvedValue(renderedOutput({ video: { pixelFormat: 'yuv420p10le' } }));
+        await sut.run(contracted({ video: { minBitDepth: 10, transfer: 'smpte2084' }, audio: null }));
+        expect(operations.fail).toHaveBeenCalledWith(
+          PUBLISH,
+          'claim-p',
+          expect.objectContaining({ error: expect.stringContaining('smpte2084') }),
+        );
+      });
+
+      it('holds an export from before the contract to the precision of its settings', async () => {
+        repository.getById.mockResolvedValue(
+          versionRow({
+            outputPath: staged,
+            settings: { format: 'mp4-hevc-main10', color: 'preserve', resolution: '1080p' },
+          }),
+        );
+        await sut.run(job());
+        expect(operations.fail).toHaveBeenCalledWith(
+          PUBLISH,
+          'claim-p',
+          expect.objectContaining({ errorCode: 'studio_export_output_rejected' }),
+        );
+      });
     });
 
     it('keeps a result made with shared media with the project', async () => {

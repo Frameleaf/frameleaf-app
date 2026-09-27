@@ -79273,6 +79273,14 @@
         },
         "type": "object"
       },
+      "StudioExportAudio": {
+        "description": "Audio of the result: `preserve` keeps the widest source channel layout at its sample rate; `stereo` is an explicit downmix",
+        "enum": [
+          "preserve",
+          "stereo"
+        ],
+        "type": "string"
+      },
       "StudioExportColor": {
         "description": "Colour handling; Dolby Vision needs a qualified worker",
         "enum": [
@@ -79284,6 +79292,10 @@
       },
       "StudioExportCreateDto": {
         "properties": {
+          "audio": {
+            "$ref": "#/components/schemas/StudioExportAudio",
+            "description": "Defaults to `preserve`; a stereo downmix happens only when asked for"
+          },
           "cloudConsent": {
             "description": "You agree to the media leaving your network for this export",
             "type": "boolean"
@@ -79396,6 +79408,10 @@
       },
       "StudioExportSettingsDto": {
         "properties": {
+          "audio": {
+            "$ref": "#/components/schemas/StudioExportAudio",
+            "description": "Absent on exports made before audio was a choice"
+          },
           "color": {
             "$ref": "#/components/schemas/StudioExportColor"
           },

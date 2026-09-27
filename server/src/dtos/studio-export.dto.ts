@@ -2,6 +2,7 @@ import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 import { MediaOperationSchema } from 'src/dtos/media-operation.dto.js';
 import { MediaOperationDestinationSchema, StudioExportScopeSchema, StudioExportVersionStateSchema } from 'src/enum.js';
+import { STUDIO_EXPORT_AUDIO } from 'src/utils/studio-export-contract.js';
 import { STUDIO_EXPORT_COLORS, STUDIO_EXPORT_FORMATS, STUDIO_EXPORT_RESOLUTIONS } from 'src/utils/studio-export.js';
 
 /**
@@ -27,6 +28,13 @@ const StudioExportColorSchema = z
   .describe('Colour handling; Dolby Vision needs a qualified worker')
   .meta({ id: 'StudioExportColor' });
 
+const StudioExportAudioSchema = z
+  .enum(STUDIO_EXPORT_AUDIO)
+  .describe(
+    'Audio of the result: `preserve` keeps the widest source channel layout at its sample rate; `stereo` is an explicit downmix',
+  )
+  .meta({ id: 'StudioExportAudio' });
+
 export const StudioExportResolutionSchema = z
   .enum(STUDIO_EXPORT_RESOLUTIONS)
   .describe('Output resolution')
@@ -44,6 +52,9 @@ const StudioExportCreateSchema = z
     format: StudioExportFormatSchema,
     color: StudioExportColorSchema,
     resolution: StudioExportResolutionSchema,
+    audio: StudioExportAudioSchema.optional().describe(
+      'Defaults to `preserve`; a stereo downmix happens only when asked for',
+    ),
     requestKey: IdentifierSchema.optional().describe(
       'Idempotency key; a repeated submit answers with the first export',
     ),
@@ -55,6 +66,7 @@ const StudioExportSettingsSchema = z
     format: StudioExportFormatSchema,
     color: StudioExportColorSchema,
     resolution: StudioExportResolutionSchema,
+    audio: StudioExportAudioSchema.optional().describe('Absent on exports made before audio was a choice'),
   })
   .meta({ id: 'StudioExportSettingsDto' });
 
