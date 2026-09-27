@@ -73,19 +73,19 @@
       "version": 4
     },
     {
-      "bytes": 44769,
+      "bytes": 44951,
       "category": "reference",
       "id": "64749620",
-      "readbackAt": "2026-09-27T10:05:00.000Z",
-      "readbackResult": "FL-159 / CLD-201 (FC-50): markdown read-back of version 9 begins with the header carrying SHA-256 b2792bfb, 44769 bytes, commit f31df537cd pushed on master/frameleaf-implementation (source-at-commit backlink f31df537cd); \"This server's identity\" carries the new DPoP paragraph and \"Restoration and Smooth motion on Frameleaf Cloud\" the new processing-region paragraph (eu/na, Canada under na, one re-read and retry, the wrong-region notice); the page still ends with the unchanged job-in-Activity paragraph. Published as HTML (a markdown body was refused because the page holds a Confluence smart link). The markdown export drops same-page anchor link markup (text kept) and table alignment, the known round-trip limitation; the search summary still shows the version 8 excerpt until Confluence reindexes; no user-authored additions.",
+      "readbackAt": "2026-09-27T10:20:00.000Z",
+      "readbackResult": "FL-159 / CLD-201 (FC-50, heartbeat capabilities): markdown read-back of version 10 begins with the header carrying SHA-256 dbc37451, 44951 bytes, commit b322e9f90c pushed on master/frameleaf-implementation (source-at-commit backlink b322e9f90c); the \"This server's identity\" DPoP paragraph says an earlier link switches to the stricter check at its first check-in, and \"Check-ins\" lists the capabilities; the rest matches version 9 and still ends with the unchanged job-in-Activity paragraph. Published as HTML (the page holds a Confluence smart link). The markdown export drops same-page anchor link markup (text kept) and table alignment, the known round-trip limitation; the search summary still shows an earlier excerpt until Confluence reindexes; no user-authored additions.",
       "source": "docs/docs/administration/frameleaf-cloud.md",
       "sourceBranch": "master/frameleaf-implementation",
-      "sourceCommit": "f31df537cdec40ee4716a28288a287c5eba8d69a",
-      "sourceSha256": "b2792bfb38cf953979be60be397633ad950debf478f764dab2049ff93ddf3110",
-      "sourceState": "pushed-fl-159-cld-201-dpop-region-2026-09-27",
+      "sourceCommit": "b322e9f90c72d6022f7e6749a23f5f6cca0b2257",
+      "sourceSha256": "dbc374511212301d85fff66bba1e3e54737ba72c1bc6c6d789bd1757f1b9f3bd",
+      "sourceState": "pushed-fl-159-cld-201-heartbeat-capabilities-2026-09-27",
       "title": "Administration Reference — Frameleaf Cloud",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/64749620/Administration+Reference+Frameleaf+Cloud",
-      "version": 9
+      "version": 10
     },
     {
       "bytes": 12350,
