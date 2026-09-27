@@ -26,9 +26,10 @@
    * Locked is one lock per item, metadata that never relocates it: the item keeps its albums and
    * organisation and is hidden from every other view. Items that were in the old Locked folder when
    * the library was upgraded were moved into the lock, so they are here from the start; so are the
-   * items locked by hand and the ones sensitive-content detection locked. The filter narrows by why
-   * an item is locked (All by default), each tile says why, and Unlock returns an item exactly where
-   * it was.
+   * items locked by hand and the ones sensitive-content detection locked. All also lists what the
+   * owner's Locked rules hide (people, pets and tags), as the prototype's `classifyLocked` does; those
+   * carry no lock and leave when the rules change. The filter narrows by why an item is locked (All by
+   * default), each tile says why, and Unlock returns an item exactly where it was.
    *
    * `locked` in the bulk context keeps this destination's own action set — Unlock, add to album,
    * download, change date and location, and the permanent delete. An unlocked person may put locked

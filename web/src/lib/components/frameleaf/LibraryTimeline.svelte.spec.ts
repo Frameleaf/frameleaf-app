@@ -396,3 +396,31 @@ describe('LibraryTimeline curated Years and Months', () => {
     expect(await screen.findByText('frameleaf_timeline_cards_failed')).toBeTruthy();
   });
 });
+
+// FL-34: the Locked view lists the owner's Locked-rule matches with the locks; the prototype badges a
+// match Sensitive (`AssetTile.jsx`), though it carries no lock.
+describe('LibraryTimeline badges in the Locked view', () => {
+  it('badges a Locked-rule match Sensitive and a lock Locked', async () => {
+    vi.resetAllMocks();
+    const [locked, ruleMatch] = inMonth('2024-03', 2);
+    locked.visibility = AssetVisibility.Locked;
+    ruleMatch.visibility = AssetVisibility.Timeline;
+    sdkMock.getTimeBuckets.mockResolvedValue([{ timeBucket: '2024-03-01', count: 2 }]);
+    sdkMock.getTimeBucket.mockResolvedValue(toResponseDto(locked, ruleMatch));
+    const manager = new TimelineManager();
+    await manager.updateOptions({ visibility: AssetVisibility.Locked });
+    await manager.updateViewport({ width: 1000, height: 400 });
+    const session = new LibrarySessionStore({ userId: 'user-1', pageSize: 10 });
+
+    render(LibraryTimeline, {
+      timelineManager: manager,
+      session,
+      grouping: 'days',
+      onGroupingChange: vi.fn(),
+      sensitiveFor: (asset: TimelineAsset) => asset.visibility !== AssetVisibility.Locked,
+    });
+
+    await waitFor(() => expect(screen.getAllByText('frameleaf_library_badge_locked')).toHaveLength(1));
+    expect(screen.getAllByText('frameleaf_library_badge_sensitive')).toHaveLength(1);
+  });
+});
