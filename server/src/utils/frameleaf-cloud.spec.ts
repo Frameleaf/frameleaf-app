@@ -40,6 +40,7 @@ import {
   isFinalCloudJobStatus,
   isGatewayCloneSuspected,
   isLocalOnlyModel,
+  isNewWorkPaused,
   jobAdmittedSchema,
   jobCreateRequestSchema,
   jobResultSchema,
@@ -48,6 +49,8 @@ import {
   jobViewSchema,
   knownWorkloads,
   offeredCatalogModels,
+  pausedException,
+  pausedMessageOf,
   refusalFromCloudError,
   stepUpUrl,
   storeAddress,
@@ -1299,5 +1302,43 @@ describe('Frameleaf Cloud descriptions contract (FC-44, FL-163)', () => {
     expect(descriptionsResultSchema.safeParse(cloudContractFixture(`ml/descriptions/rejected/${name}`)).success).toBe(
       false,
     );
+  });
+});
+
+describe('paused new work (FC-62)', () => {
+  const refused = (status: number, code: string, message = 'Paused for maintenance until 18:00 UTC.') =>
+    new FrameleafCloudError(
+      MlAdmissionRefusal.CloudUnavailable,
+      status,
+      message,
+      errorEnvelopeSchema.parse({ code, message, retryable: true }),
+      null,
+      300,
+    );
+
+  it('knows a paused refusal by its 503 code and keeps the cloud’s own message', () => {
+    for (const code of ['service-paused', 'capacity', 'relay-unavailable']) {
+      expect(isNewWorkPaused(refused(503, code))).toBe(true);
+      expect(pausedMessageOf(refused(503, code))).toBe('Paused for maintenance until 18:00 UTC.');
+    }
+    expect(pausedMessageOf(refused(503, 'service-paused', '  '))).toBe(
+      'Frameleaf Cloud has paused this for now. Try again later.',
+    );
+    expect(isNewWorkPaused(refused(503, 'down'))).toBe(false);
+    expect(isNewWorkPaused(refused(403, 'service-paused'))).toBe(false);
+    expect(pausedMessageOf(new Error('offline'))).toBeNull();
+  });
+
+  it('answers the administrator with a 503 carrying the message, the code and Retry-After', () => {
+    const answer = pausedException(refused(503, 'service-paused'))!;
+    expect(answer.getStatus()).toBe(503);
+    expect(answer.getResponse()).toEqual({
+      message: 'Paused for maintenance until 18:00 UTC.',
+      error: 'Service Unavailable',
+      statusCode: 503,
+      code: 'service-paused',
+      retryAfterSeconds: 300,
+    });
+    expect(pausedException(refused(500, 'internal'))).toBeNull();
   });
 });

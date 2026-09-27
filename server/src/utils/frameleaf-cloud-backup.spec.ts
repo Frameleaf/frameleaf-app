@@ -86,6 +86,27 @@ describe('Frameleaf Cloud managed backup contract (FL-164)', () => {
       expect(refusal.message).toContain('copy of another one');
     });
 
+    it('waits while new backup grants are paused, with Frameleaf Cloud’s own message (FC-62)', () => {
+      const paused = new FrameleafCloudError(
+        MlAdmissionRefusal.CloudUnavailable,
+        503,
+        'New backup storage is paused while we add capacity.',
+        errorEnvelopeSchema.parse({
+          code: 'service-paused',
+          message: 'New backup storage is paused while we add capacity.',
+          retryable: true,
+        }),
+        null,
+        300,
+      );
+      expect(managedBackupRefusal(paused)).toEqual({
+        message: 'New backup storage is paused while we add capacity.',
+        retry: true,
+        retryAfterSeconds: 300,
+        cloneSuspected: false,
+      });
+    });
+
     it('waits out a rate limit for as long as Frameleaf Cloud asks', () => {
       expect(managedBackupRefusal(cloudError(429, 'errors/rate-limited.json'))).toMatchObject({
         retry: true,

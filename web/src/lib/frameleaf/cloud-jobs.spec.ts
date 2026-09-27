@@ -63,6 +63,11 @@ describe('Frameleaf Cloud job helpers (FL-162)', () => {
     expect(cloudJobRefusal(httpError(409, 'consent-version-outdated'))).toBe('estimate');
     expect(cloudJobRefusal(httpError(402))).toBe('money');
     expect(cloudJobRefusal(httpError(500))).toBe('other');
+    // FC-62: a paused region answers 503 with the cloud's own message
+    expect(cloudJobRefusal(httpError(503, 'capacity', { message: 'New jobs are paused in the EU for now.' }))).toBe(
+      'paused',
+    );
+    expect(cloudJobRefusal(httpError(503, 'capacity'))).toBe('other');
     expect(cloudJobRefusal(new Error('offline'))).toBe('other');
   });
 

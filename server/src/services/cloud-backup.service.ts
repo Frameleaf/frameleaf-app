@@ -150,7 +150,7 @@ import {
   loadInstanceIdentity,
   readCloudLink,
 } from 'src/utils/frameleaf-cloud-gateway.js';
-import { FrameleafCloudError, errorEnvelopeSchema } from 'src/utils/frameleaf-cloud.js';
+import { FrameleafCloudError, errorEnvelopeSchema, pausedException } from 'src/utils/frameleaf-cloud.js';
 import { handlePromiseError } from 'src/utils/misc.js';
 
 const KIND = MediaOperationKind.CloudBackup;
@@ -672,7 +672,8 @@ export class CloudBackupService {
       const grant = await this.cloudBackup.grant(api);
       issued = 'credentials' in grant ? grant : await this.cloudBackup.rotate(api);
     } catch (error) {
-      throw new ConflictException(this.refusalOf(error).message);
+      // FC-62: new backup grants are paused; the cloud's own message, as a 503 the page shows whole
+      throw pausedException(error) ?? new ConflictException(this.refusalOf(error).message);
     }
     const problem = backupGrantProblem(issued);
     if (problem) {

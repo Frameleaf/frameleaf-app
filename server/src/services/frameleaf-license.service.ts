@@ -44,6 +44,7 @@ import {
   effectivePricing,
   entitlementFlags,
   isLicensed,
+  isRefreshDue,
   licenseKeyProblem,
   licenseStatus,
   nextRefreshAt,
@@ -324,12 +325,20 @@ export class FrameleafLicenseService extends BaseService {
    */
   private async refresh(force: boolean, now = Date.now()) {
     const store = await this.readStore();
-    const due = (license: FrameleafLicense | null) =>
-      !license?.nextRefreshAt || Date.parse(license.nextRefreshAt) <= now;
-    if (!force && !due(store.key) && !due(store.plan) && (store.key || store.plan)) {
+    const { cloudUrl, link } = await readCloudLink(this.gatewayDeps());
+    // FC-62: the staff-set interval in the discovery document this process holds (read again within the hour)
+    const interval = cloudUrl
+      ? this.frameleafCloudRepository.peekDiscovery(cloudUrl)?.intervals?.entitlementRefreshSec
+      : null;
+    // only a certificate this server holds can be due (FC-62: one held alone no longer refreshes every tick)
+    const heldCertificates = [store.key, store.plan].filter((license): license is FrameleafLicense => !!license);
+    if (
+      !force &&
+      heldCertificates.length > 0 &&
+      heldCertificates.every((license) => !isRefreshDue(license, now, interval))
+    ) {
       return;
     }
-    const { cloudUrl, link } = await readCloudLink(this.gatewayDeps());
     if (!cloudUrl || !link?.instanceId) {
       return;
     }
@@ -384,8 +393,14 @@ export class FrameleafLicenseService extends BaseService {
           'Frameleaf Cloud no longer lists the key activation on this server; its certificate is removed',
         );
       }
+      const refreshEvery = document.intervals?.entitlementRefreshSec;
       const stamp = (license: FrameleafLicense | null) =>
-        license && { ...license, refreshedAt: new Date(now).toISOString(), lastRefreshError: undefined };
+        license && {
+          ...license,
+          refreshedAt: new Date(now).toISOString(),
+          lastRefreshError: undefined,
+          nextRefreshAt: nextRefreshAt(license.claims, Math.random, refreshEvery, Math.floor(now / 1000)).toISOString(),
+        };
       await this.writeStore({ ...store, key: stamp(key), plan: stamp(plan) });
     } catch (error) {
       const message =

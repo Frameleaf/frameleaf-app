@@ -12,8 +12,10 @@ import {
   effectivePricing,
   entitlementFlags,
   isLicensed,
+  isRefreshDue,
   licenseStatus,
   nextRefreshAt,
+  refreshIntervalSeconds,
   verifyLicenseCertificate,
 } from 'src/utils/frameleaf-license.js';
 import { cloudContractFixture } from 'test/fixtures/frameleaf-cloud-contracts.js';
@@ -232,6 +234,33 @@ describe('frameleaf-license (FL-156)', () => {
     const claims = stored({ iat: nowSeconds, upd: { after: 86_400 } }).claims;
     expect(nextRefreshAt(claims, () => 0).getTime()).toBe((nowSeconds + 86_400) * 1000);
     expect(nextRefreshAt(claims, () => 0.9999).getTime()).toBeLessThan((nowSeconds + 86_400 + 3600) * 1000);
+  });
+
+  it('refreshes after discovery’s entitlementRefreshSec, else upd.after, else a day, clamped to 1–24 hours (FC-62)', () => {
+    const claims = stored({ iat: nowSeconds, upd: { after: 43_200 } }).claims;
+    expect(refreshIntervalSeconds(claims, 7200)).toBe(7200);
+    expect(refreshIntervalSeconds(claims)).toBe(43_200);
+    expect(refreshIntervalSeconds(claims, null)).toBe(43_200);
+    expect(refreshIntervalSeconds({}, undefined)).toBe(86_400);
+    expect(refreshIntervalSeconds(claims, 60)).toBe(3600);
+    expect(refreshIntervalSeconds(claims, 1_000_000)).toBe(86_400);
+    expect(refreshIntervalSeconds(claims, NaN)).toBe(43_200);
+    expect(refreshIntervalSeconds(claims, -1)).toBe(43_200);
+    expect(refreshIntervalSeconds(stored({ upd: { after: 5 } }).claims)).toBe(3600);
+    // the jitter stays within a tenth of the interval, so an hourly refresh stays hourly
+    expect(nextRefreshAt(claims, () => 0, 3600).getTime()).toBe((nowSeconds + 3600) * 1000);
+    expect(nextRefreshAt(claims, () => 0.9999, 3600).getTime()).toBeLessThan((nowSeconds + 3600 + 360) * 1000);
+  });
+
+  it('refreshes a certificate early when staff shortened the interval, but keeps a failed refresh’s retry (FC-62)', () => {
+    const issued = stored({ iat: nowSeconds - 2 * 3600 });
+    const license = { ...issued, nextRefreshAt: new Date(NOW + 20 * 3600 * 1000).toISOString() };
+    expect(isRefreshDue(license, NOW)).toBe(false);
+    expect(isRefreshDue(license, NOW, 86_400)).toBe(false);
+    expect(isRefreshDue(license, NOW, 3600)).toBe(true);
+    expect(isRefreshDue({ ...license, lastRefreshError: 'down' }, NOW, 3600)).toBe(false);
+    expect(isRefreshDue({ ...license, nextRefreshAt: new Date(NOW - 1000).toISOString() }, NOW)).toBe(true);
+    expect(isRefreshDue(null, NOW)).toBe(true);
   });
 
   describe(checkLicenseKey.name, () => {

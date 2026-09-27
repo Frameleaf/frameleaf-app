@@ -348,6 +348,46 @@ describe(FrameleafLicenseService.name, () => {
       expect(store()?.plan?.claims.jti).toBe('jti-2');
     });
 
+    it('schedules the next refresh after discovery’s entitlementRefreshSec and refreshes early when it shrinks (FC-62)', async () => {
+      const discovery = cloud.discovery;
+      let entitlementRefreshSec = 7200;
+      cloud.discovery = () => ({ ...discovery(), intervals: { heartbeatSec: 300, entitlementRefreshSec } });
+      link();
+      serveToken();
+      cloud.on('POST /api/v1/licenses/refresh', () => ({
+        status: 200,
+        body: { certificates: [certificate({ jti: 'jti-2' })] },
+      }));
+      await sut.refreshNow();
+      const plan = store()!.plan!;
+      const due = Date.parse(plan.nextRefreshAt!) - Date.parse(plan.refreshedAt!);
+      expect(due).toBeGreaterThanOrEqual(7200 * 1000);
+      expect(due).toBeLessThan(7920 * 1000);
+
+      // not due yet: the hourly tick asks nothing
+      const refreshes = () => cloud.requests.filter(({ path }) => path === '/api/v1/licenses/refresh').length;
+      await sut.handleRefresh();
+      expect(refreshes()).toBe(1);
+
+      // staff shorten the interval below the certificate's age: the next tick refreshes
+      entitlementRefreshSec = 3600;
+      (sut as unknown as { frameleafCloudRepository: { forget(): void } }).frameleafCloudRepository.forget();
+      metadata.set(SystemMetadataKey.FrameleafLicense, {
+        ...store()!,
+        plan: {
+          ...plan,
+          claims: { ...plan.claims, iat: plan.claims.iat - 5000 },
+          refreshedAt: new Date(Date.now() - 5000 * 1000).toISOString(),
+        },
+      });
+      // the discovery copy this process holds is read when the tick runs
+      await (
+        sut as unknown as { frameleafCloudRepository: { discovery(url: string): Promise<unknown> } }
+      ).frameleafCloudRepository.discovery(cloud.url);
+      await sut.handleRefresh();
+      expect(refreshes()).toBe(2);
+    });
+
     describe('the answer replaces every certificate held (FL-185)', () => {
       const keyCertificate = (claims: Record<string, unknown> = {}) =>
         certificate({

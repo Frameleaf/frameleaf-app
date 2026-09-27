@@ -57,6 +57,19 @@ describe('handleError', () => {
     expect(toastManager.danger).not.toHaveBeenCalled();
   });
 
+  it('shows Frameleaf Cloud’s whole message when it paused new work (FC-62), and shortens others', () => {
+    const message =
+      'Linking new servers is paused while we move to new hardware. Servers already linked keep working; try again this evening.';
+    handleError(
+      { name: 'HttpError', message, status: 503, data: { message, code: 'service-paused' } },
+      'Could not link',
+    );
+    expect(toastManager.danger).toHaveBeenLastCalledWith(message);
+
+    handleError(httpError(503, message), 'Could not link');
+    expect(toastManager.danger).toHaveBeenLastCalledWith(`${message.slice(0, 75)}\n(Frameleaf Server Error)`);
+  });
+
   it('keeps an ordinary 403 a toast', () => {
     handleError(httpError(403, 'Forbidden'), 'Unable to load');
 

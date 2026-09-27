@@ -100,6 +100,9 @@ type Exchange = {
   nonceReceived?: string;
 };
 
+/** Discovery is served with `Cache-Control: max-age=3600`; this process keeps it no longer. */
+export const DISCOVERY_CACHE_MAX_SECONDS = 3600;
+
 /**
  * The HTTP side of Frameleaf Cloud (FL-159; the part of FL-155's `frameleaf-cloud.repository.ts`
  * cloud processing needs): service discovery, short-lived access tokens from a signed client
@@ -124,7 +127,11 @@ export class FrameleafCloudRepository {
     this.logger.setContext(FrameleafCloudRepository.name);
   }
 
-  /** `GET <cloud>/.well-known/frameleaf-services`, cached for its `validFor`. */
+  /**
+   * `GET <cloud>/.well-known/frameleaf-services`, cached for its `validFor` but at most an hour (the
+   * answer's `Cache-Control: max-age=3600`): staff-set intervals (FC-62) are read per request, so a
+   * change reaches this server within the hour.
+   */
   async discovery(cloudUrl: string, now = Date.now()): Promise<FrameleafDiscoveryDocument> {
     if (this.discoveryCache?.cloudUrl === cloudUrl && this.discoveryCache.validUntil > now) {
       return this.discoveryCache.document;
@@ -146,7 +153,11 @@ export class FrameleafCloudRepository {
     if (problem) {
       throw new FrameleafCloudError(MlAdmissionRefusal.CloudUnavailable, null, `Frameleaf Cloud refused: ${problem}`);
     }
-    this.discoveryCache = { cloudUrl, document, validUntil: now + document.validFor * 1000 };
+    this.discoveryCache = {
+      cloudUrl,
+      document,
+      validUntil: now + Math.min(document.validFor, DISCOVERY_CACHE_MAX_SECONDS) * 1000,
+    };
     return document;
   }
 

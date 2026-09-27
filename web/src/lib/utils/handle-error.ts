@@ -1,5 +1,6 @@
 import { isHttpError } from '@immich/sdk';
 import { toastManager } from '@immich/ui';
+import { pausedRefusalMessage } from '$lib/frameleaf/cloud-paused';
 import { revokeSessionView } from '$lib/utils/session-privacy';
 
 /**
@@ -69,8 +70,10 @@ export const setUnauthorizedHandler = (handler: UnauthorizedHandler | undefined)
 
 const notifyError = (error: unknown, localizedMessage: string, notify: boolean) => {
   try {
-    let serverMessage = getServerErrorMessage(error);
-    if (serverMessage) {
+    // FC-62: Frameleaf Cloud paused new work of this kind; its own message is shown whole
+    const paused = pausedRefusalMessage(error);
+    let serverMessage = paused ?? getServerErrorMessage(error);
+    if (serverMessage && !paused) {
       serverMessage = `${serverMessage.slice(0, 75)}\n(Frameleaf Server Error)`;
     }
 

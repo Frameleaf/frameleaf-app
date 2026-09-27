@@ -539,6 +539,54 @@ describe(FrameleafCloudService.name, () => {
       expect(registers[1].dpop!.claims.nonce).toBe('register-nonce-2');
     });
 
+    it('keeps a link token the cloud refused while links are paused, and tries it at the next start (FC-62)', async () => {
+      serveLinking(() => ({ status: 400, body: { error: 'authorization_pending' } }));
+      let paused = true;
+      const register = (request: FakeCloudRequest) => {
+        const { instanceId } = request.json();
+        const answer = cloudContractFixture('instance/register-response.json');
+        return {
+          status: 200,
+          body: {
+            ...answer,
+            instanceId,
+            oidc: { ...answer.oidc, issuer: `${cloud.url}/id`, clientId: instanceId },
+            owner: { accountId: 'account-1', email: 'owner@example.test', dataRegion: 'eu' },
+          },
+        };
+      };
+      cloud.on('POST /api/v1/instances', (request) =>
+        paused
+          ? {
+              status: 503,
+              headers: { 'Retry-After': '300' },
+              body: { code: 'service-paused', message: 'Linking is paused until 18:00 UTC.', retryable: true },
+            }
+          : register(request),
+      );
+      linkToken = 'fll_headless_token_paused';
+      await sut.onBootstrap();
+      expect(storedLink()).toMatchObject({ status: 'unlinked', lastError: 'Linking is paused until 18:00 UTC.' });
+      expect(storedLink()?.usedLinkTokens ?? []).toHaveLength(0);
+
+      paused = false;
+      await sut.onBootstrap();
+      expect(storedLink()?.status).toBe('linked');
+    });
+
+    it('ends an approved code with the cloud’s own message while links are paused (FC-62)', async () => {
+      serveLinking(() => ({ status: 200, body: { access_token: 'link-token', expires_in: 600 } }));
+      cloud.on('POST /api/v1/instances', () => ({
+        status: 503,
+        body: { code: 'service-paused', message: 'Linking is paused until 18:00 UTC.', retryable: true },
+      }));
+      await sut.startLink(authStub.admin);
+      makeDue();
+      await sut.getLink();
+      expect(storedLink()).toMatchObject({ status: 'unlinked', lastError: 'Linking is paused until 18:00 UTC.' });
+      expect(storedLink()?.pending).toBeUndefined();
+    });
+
     it('records a token the cloud refuses and does not retry it', async () => {
       serveLinking(() => ({ status: 400, body: { error: 'authorization_pending' } }));
       cloud.on('POST /api/v1/instances', () => ({
@@ -582,6 +630,93 @@ describe(FrameleafCloudService.name, () => {
       const nextAt = Date.parse(storedLink()!.heartbeat!.nextAt!);
       expect(nextAt - Date.now()).toBeGreaterThan(110_000);
       expect(nextAt - Date.now()).toBeLessThan(151_000);
+    });
+
+    it('checks in again after discovery’s heartbeatSec when the answer names none, clamped to 60–900 s (FC-62)', async () => {
+      const discovery = cloud.discovery;
+      let heartbeatSec: unknown = 600;
+      cloud.discovery = () => ({ ...discovery(), intervals: { heartbeatSec, entitlementRefreshSec: 3600 } });
+      let body: Record<string, unknown> = {};
+      cloud.on('POST /api/v1/instance/heartbeat', () => ({ status: 200, body }));
+      const waitSeconds = () => (Date.parse(storedLink()!.heartbeat!.nextAt!) - Date.now()) / 1000;
+      const forgetDiscovery = () =>
+        (sut as unknown as { frameleafCloudRepository: FrameleafCloudRepository }).frameleafCloudRepository.forget();
+
+      forgetDiscovery();
+      makeDue();
+      await expect(sut.handleHeartbeat()).resolves.toBe(JobStatus.Success);
+      expect(waitSeconds()).toBeGreaterThan(595);
+      expect(waitSeconds()).toBeLessThanOrEqual(630);
+
+      // the answer's own hint wins, and an out-of-range one is clamped instead of failing the check-in
+      body = { nextHeartbeatSec: 5000 };
+      makeDue();
+      await expect(sut.handleHeartbeat()).resolves.toBe(JobStatus.Success);
+      expect(waitSeconds()).toBeGreaterThan(895);
+      expect(waitSeconds()).toBeLessThanOrEqual(930);
+
+      body = { nextHeartbeatSec: 10 };
+      makeDue();
+      await expect(sut.handleHeartbeat()).resolves.toBe(JobStatus.Success);
+      expect(waitSeconds()).toBeLessThanOrEqual(90);
+
+      // staff changed discovery: read again (the in-process copy is kept an hour at most)
+      heartbeatSec = 20_000;
+      body = {};
+      forgetDiscovery();
+      makeDue();
+      await expect(sut.handleHeartbeat()).resolves.toBe(JobStatus.Success);
+      expect(waitSeconds()).toBeGreaterThan(895);
+      expect(waitSeconds()).toBeLessThanOrEqual(930);
+
+      heartbeatSec = 'often';
+      forgetDiscovery();
+      makeDue();
+      await expect(sut.handleHeartbeat()).resolves.toBe(JobStatus.Success);
+      expect(waitSeconds()).toBeGreaterThan(295);
+      expect(waitSeconds()).toBeLessThanOrEqual(330);
+    });
+
+    it('shows each notice once by its exact id, and one that cannot be dismissed once a day (FC-62)', async () => {
+      const uuid = '0192f1a4-7c3e-7b21-9d4e-2a6f8c0b1e53';
+      let notices: unknown[] = [
+        { id: `fc-notice-${uuid}`, level: 'error', message: 'Maintenance\n\nOn Sunday.' },
+        { id: `fc-notice-${uuid.replace('0192', '0193')}-20260927`, level: 'info', message: 'Accept the new terms' },
+      ];
+      cloud.on('POST /api/v1/instance/heartbeat', () => ({ status: 200, body: { notices } }));
+      const noticeKeys = () =>
+        vi
+          .mocked(mocks.event.emit)
+          .mock.calls.filter(([name]) => name === 'AdminNotify')
+          .map(([, notice]) => (notice as { dedupeKey: string }).dedupeKey)
+          .filter((key) => key.startsWith('frameleaf-cloud:notice:'));
+
+      makeDue();
+      await sut.handleHeartbeat();
+      expect(noticeKeys()).toEqual([
+        `frameleaf-cloud:notice:fc-notice-${uuid}`,
+        `frameleaf-cloud:notice:fc-notice-${uuid.replace('0192', '0193')}-20260927`,
+      ]);
+
+      // later check-ins repeat both: nothing more is shown, even after the notifications were cleaned up
+      for (let beat = 0; beat < 5; beat++) {
+        makeDue();
+        await sut.handleHeartbeat();
+      }
+      expect(noticeKeys()).toHaveLength(2);
+
+      // the next UTC day the notice that cannot be dismissed comes back once under its new daily id
+      notices = [notices[0], { ...(notices[1] as object), id: `fc-notice-${uuid.replace('0192', '0193')}-20260928` }];
+      makeDue();
+      await sut.handleHeartbeat();
+      makeDue();
+      await sut.handleHeartbeat();
+      expect(noticeKeys()).toEqual([
+        `frameleaf-cloud:notice:fc-notice-${uuid}`,
+        `frameleaf-cloud:notice:fc-notice-${uuid.replace('0192', '0193')}-20260927`,
+        `frameleaf-cloud:notice:fc-notice-${uuid.replace('0192', '0193')}-20260928`,
+      ]);
+      expect(Object.keys(storedLink()!.heartbeat!.shownNotices!)).toHaveLength(3);
     });
 
     it('keeps the plan pricing a check-in publishes, holds a future one, and keeps the last good one through a bad value', async () => {

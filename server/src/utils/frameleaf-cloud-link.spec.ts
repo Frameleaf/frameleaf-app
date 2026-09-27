@@ -14,6 +14,7 @@ import {
   linkRefusalOf,
   nextHeartbeatDelay,
   permissionsOf,
+  rememberNotices,
 } from 'src/utils/frameleaf-cloud-link.js';
 import { FrameleafCloudError } from 'src/utils/frameleaf-cloud.js';
 import { cloudContractFixture } from 'test/fixtures/frameleaf-cloud-contracts.js';
@@ -70,11 +71,90 @@ describe('frameleaf-cloud-link (FL-155)', () => {
     expect(commandPermission('data.delete')).toBeNull();
   });
 
-  it('clamps the cloud’s interval hint and adds up to 30 seconds of jitter', () => {
+  it('clamps the cloud’s interval hint to 60–900 s (FC-62) and adds up to 30 seconds of jitter', () => {
     expect(nextHeartbeatDelay(undefined, () => 0)).toBe(300);
     expect(nextHeartbeatDelay(5, () => 0)).toBe(60);
-    expect(nextHeartbeatDelay(999_999, () => 0)).toBe(3600);
+    expect(nextHeartbeatDelay(999_999, () => 0)).toBe(900);
+    expect(nextHeartbeatDelay(901, () => 0)).toBe(900);
+    expect(nextHeartbeatDelay(59, () => 0)).toBe(60);
     expect(nextHeartbeatDelay(120, () => 0.999)).toBe(149);
+  });
+
+  it('uses the answer’s nextHeartbeatSec, else discovery’s heartbeatSec, else 300 s (FC-62)', () => {
+    expect(nextHeartbeatDelay(120, () => 0, 600)).toBe(120);
+    expect(nextHeartbeatDelay(undefined, () => 0, 600)).toBe(600);
+    expect(nextHeartbeatDelay(null, () => 0, 30)).toBe(60);
+    expect(nextHeartbeatDelay(null, () => 0, 86_400)).toBe(900);
+    expect(nextHeartbeatDelay(null, () => 0, NaN)).toBe(300);
+    expect(nextHeartbeatDelay(null, () => 0, -5)).toBe(300);
+    expect(nextHeartbeatDelay(0, () => 0, 450)).toBe(450);
+  });
+
+  it('reads an out-of-range or malformed nextHeartbeatSec as absent instead of failing the check-in (FC-62)', () => {
+    expect(heartbeatResponseSchema.parse({ nextHeartbeatSec: 100_000 }).nextHeartbeatSec).toBe(100_000);
+    expect(
+      nextHeartbeatDelay(heartbeatResponseSchema.parse({ nextHeartbeatSec: 100_000 }).nextHeartbeatSec, () => 0),
+    ).toBe(900);
+    expect(heartbeatResponseSchema.parse({ nextHeartbeatSec: -1 }).nextHeartbeatSec).toBeUndefined();
+    expect(heartbeatResponseSchema.parse({ nextHeartbeatSec: 'soon' }).nextHeartbeatSec).toBeUndefined();
+  });
+
+  describe(rememberNotices.name, () => {
+    const uuid = '0192f1a4-7c3e-7b21-9d4e-2a6f8c0b1e53';
+    const day = 24 * 60 * 60 * 1000;
+    const start = Date.parse('2026-09-27T08:00:00Z');
+
+    it('shows a notice once by its exact id, for as long as the cloud keeps sending it (90 days)', () => {
+      const first = rememberNotices(undefined, [`fc-notice-${uuid}`], start);
+      expect(first.fresh).toEqual([`fc-notice-${uuid}`]);
+      let shown = first.shown;
+      for (let at = start + 300_000; at < start + 90 * day; at += day / 2) {
+        const next = rememberNotices(shown, [`fc-notice-${uuid}`], at);
+        expect(next.fresh).toEqual([]);
+        shown = next.shown;
+      }
+    });
+
+    it('shows a notice that cannot be dismissed once a UTC day under its daily id, never more often', () => {
+      let shown: Record<string, string> | undefined;
+      const seen: string[] = [];
+      for (let beat = 0; beat < 3 * 288; beat++) {
+        const at = start + beat * 300_000;
+        const date = new Date(at).toISOString().slice(0, 10).replaceAll('-', '');
+        const next = rememberNotices(shown, [`fc-notice-${uuid}-${date}`], at);
+        seen.push(...next.fresh);
+        shown = next.shown;
+      }
+      // three days of five-minute check-ins from 08:00 UTC touch four UTC days
+      expect(seen).toEqual([
+        `fc-notice-${uuid}-20260927`,
+        `fc-notice-${uuid}-20260928`,
+        `fc-notice-${uuid}-20260929`,
+        `fc-notice-${uuid}-20260930`,
+      ]);
+      // a daily id is forgotten after two days, so the memory stays small
+      expect(Object.keys(shown!)).not.toContain(`fc-notice-${uuid}-20260927`);
+    });
+
+    it('shows an FC-61 notice again once under its new fc-notice id, then never again', () => {
+      const legacy = rememberNotices(undefined, [uuid], start);
+      const moved = rememberNotices(legacy.shown, [`fc-notice-${uuid}`], start + 300_000);
+      expect(moved.fresh).toEqual([`fc-notice-${uuid}`]);
+      expect(rememberNotices(moved.shown, [`fc-notice-${uuid}`], start + 600_000).fresh).toEqual([]);
+    });
+
+    it('dedupes within one answer, forgets after 91 days and keeps at most 500 ids', () => {
+      expect(rememberNotices(undefined, ['a', 'a', 'b'], start).fresh).toEqual(['a', 'b']);
+      const old = rememberNotices(undefined, ['a'], start).shown;
+      expect(rememberNotices(old, ['a'], start + 92 * day).fresh).toEqual(['a']);
+      const many = rememberNotices(
+        undefined,
+        Array.from({ length: 600 }, (_, index) => `n-${index}`),
+        start,
+      );
+      expect(Object.keys(many.shown)).toHaveLength(500);
+      expect(rememberNotices({ a: 'not a date' }, ['a'], start).fresh).toEqual(['a']);
+    });
   });
 
   it('reads the golden registration answer: the cloud registered the client, no initial access token', () => {

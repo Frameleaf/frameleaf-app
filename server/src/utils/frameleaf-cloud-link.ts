@@ -20,10 +20,14 @@ export const DEVICE_CODE_GRANT = 'urn:ietf:params:oauth:grant-type:device_code';
 export const USER_CODE_ALPHABET = 'BCDFGHJKLMNPQRSTVWXZ';
 const USER_CODE_PATTERN = /^[BCDFGHJKLMNPQRSTVWXZ]{4}-[BCDFGHJKLMNPQRSTVWXZ]{4}$/;
 
-/** Heartbeat interval when the cloud names none, and the bounds a named one is clamped to. */
+/**
+ * The check-in interval when neither the heartbeat answer nor discovery names one (the contract's
+ * default), and the bounds a named one is clamped to: staff set it on Platform controls within 60–900 s
+ * (FC-62, frameleaf-cloud `docs/instance-contract.md`).
+ */
 export const HEARTBEAT_DEFAULT_SECONDS = 300;
 export const HEARTBEAT_MIN_SECONDS = 60;
-export const HEARTBEAT_MAX_SECONDS = 3600;
+export const HEARTBEAT_MAX_SECONDS = 900;
 /** At most this much random delay is added to each check-in, so servers never arrive together. */
 export const HEARTBEAT_JITTER_SECONDS = 30;
 /** Consecutive failed check-ins before administrators are told. */
@@ -120,13 +124,66 @@ export const permissionsOf = (link: FrameleafCloudLink | null | undefined): Fram
 
 export const isUserCode = (value: string): boolean => USER_CODE_PATTERN.test(value);
 
-/** Seconds until the next check-in, from the cloud's hint clamped to sane bounds, plus jitter. */
-export const nextHeartbeatDelay = (hintSeconds: number | null | undefined, random = Math.random): number => {
+const usableSeconds = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isFinite(value) && value > 0;
+
+/**
+ * Seconds until the next check-in (FC-62): the answer's `nextHeartbeatSec`, else discovery's
+ * `intervals.heartbeatSec`, else the contract default, clamped to 60–900 s, plus jitter. Both are
+ * staff-set and read each time, so a change applies from the next check-in.
+ */
+export const nextHeartbeatDelay = (
+  hintSeconds: number | null | undefined,
+  random = Math.random,
+  discoverySeconds?: number | null,
+): number => {
+  const named = usableSeconds(hintSeconds) ? hintSeconds : usableSeconds(discoverySeconds) ? discoverySeconds : null;
   const base =
-    typeof hintSeconds === 'number' && Number.isFinite(hintSeconds)
-      ? Math.min(HEARTBEAT_MAX_SECONDS, Math.max(HEARTBEAT_MIN_SECONDS, Math.round(hintSeconds)))
-      : HEARTBEAT_DEFAULT_SECONDS;
+    named === null
+      ? HEARTBEAT_DEFAULT_SECONDS
+      : Math.min(HEARTBEAT_MAX_SECONDS, Math.max(HEARTBEAT_MIN_SECONDS, Math.round(named)));
   return base + Math.floor(random() * HEARTBEAT_JITTER_SECONDS);
+};
+
+/**
+ * FC-62: how long a shown notice id is remembered. A notice lives at most 90 days after its start, so
+ * one the cloud keeps sending is shown once for its whole life; the cloud's own rule assumes at least
+ * 30 days.
+ */
+export const NOTICE_MEMORY_DAYS = 91;
+/** At most this many remembered ids are kept, the newest first. */
+export const NOTICE_MEMORY_MAX = 500;
+/** A notice that cannot be dismissed comes back once a UTC day under its own daily id. */
+const DAILY_NOTICE_ID = /^fc-notice-[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}-\d{8}$/i;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * FC-62: which of a check-in's notice keys (the notice `id`, exactly as sent) are new, and the ids to
+ * remember. Dedupe is by exact id: `fc-notice-<uuid>` is shown once; `fc-notice-<uuid>-<yyyymmdd>` is a
+ * new id each UTC day, so a notice that cannot be dismissed comes back once a day and never more often.
+ * Ids are forgotten after `NOTICE_MEMORY_DAYS`, a daily id after two days (it never recurs).
+ */
+export const rememberNotices = (
+  shown: Record<string, string> | undefined,
+  keys: readonly string[],
+  now: number,
+): { fresh: string[]; shown: Record<string, string> } => {
+  const kept = Object.entries(shown ?? {}).filter(([id, at]) => {
+    const age = now - Date.parse(at);
+    return Number.isFinite(age) && age < (DAILY_NOTICE_ID.test(id) ? 2 : NOTICE_MEMORY_DAYS) * DAY_MS;
+  });
+  const next = new Map(kept);
+  const fresh: string[] = [];
+  const stamp = new Date(now).toISOString();
+  for (const key of keys) {
+    if (next.has(key)) {
+      continue;
+    }
+    next.set(key, stamp);
+    fresh.push(key);
+  }
+  const newest = [...next].sort(([, a], [, b]) => Date.parse(b) - Date.parse(a)).slice(0, NOTICE_MEMORY_MAX);
+  return { fresh, shown: Object.fromEntries(newest) };
 };
 
 export enum CloudCommandType {
@@ -259,7 +316,8 @@ export const heartbeatResponseSchema = z.object({
   commands: z.array(commandSchema).max(50).default([]),
   entitlementsChanged: z.boolean().default(false),
   servicesChanged: z.boolean().default(false),
-  nextHeartbeatSec: z.number().int().positive().max(86_400).optional(),
+  // clamped to 60–900 s when used (nextHeartbeatDelay); an unusable value falls back to discovery
+  nextHeartbeatSec: z.number().positive().optional().catch(undefined),
   cloneSuspected: z.boolean().default(false),
   notices: z.array(noticeSchema).max(20).default([]),
   /** FL-167: the address this check-in came from (null when the cloud did not say, or it is not an address). */

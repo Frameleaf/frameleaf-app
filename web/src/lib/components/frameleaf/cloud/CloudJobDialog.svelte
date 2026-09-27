@@ -27,6 +27,7 @@
     preparingRetryMs,
     runHeadKey,
   } from '$lib/frameleaf/cloud-jobs';
+  import { pausedRefusalMessage } from '$lib/frameleaf/cloud-paused';
   import { formatUsd } from '$lib/frameleaf/cloud-ml';
   import { handleError } from '$lib/utils/handle-error';
   import {
@@ -59,6 +60,8 @@
   let modelSku = $state<string | null>(null);
   let estimating = $state(false);
   let estimateError = $state(false);
+  /** FC-62: Frameleaf Cloud paused new jobs in this region; its own message is shown in place of the error. */
+  let pausedMessage = $state<string | null>(null);
   let agreed = $state(false);
   let submitting = $state(false);
   let notice = $state('');
@@ -75,6 +78,7 @@
     clearTimeout(retryTimer);
     estimating = true;
     estimateError = false;
+    pausedMessage = null;
     agreed = false;
     try {
       const next = await estimateCloudMlJob({
@@ -103,7 +107,10 @@
       }
       preparing = false;
       estimateError = true;
-      handleError(error, $t('frameleaf_cloud_job_estimate_error'));
+      pausedMessage = pausedRefusalMessage(error);
+      if (!pausedMessage) {
+        handleError(error, $t('frameleaf_cloud_job_estimate_error'));
+      }
     } finally {
       if (turn === estimateTurn) {
         estimating = false;
@@ -185,6 +192,10 @@
           await runEstimate(modelSku);
           break;
         }
+        case 'paused': {
+          notice = pausedRefusalMessage(error) ?? '';
+          break;
+        }
         default: {
           handleError(error, $t('frameleaf_cloud_job_submit_error'));
         }
@@ -255,7 +266,7 @@
       {:else if estimateError && !estimate}
         <p class="fcj-refusal" role="alert">
           <Icon icon={mdiAlertCircleOutline} size="16" aria-hidden={true} />
-          <span>{$t('frameleaf_cloud_job_estimate_error')}</span>
+          <span>{pausedMessage ?? $t('frameleaf_cloud_job_estimate_error')}</span>
         </p>
       {:else if estimate}
         <dl class="fcj-facts" aria-busy={estimating}>

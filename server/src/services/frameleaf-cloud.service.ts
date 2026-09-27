@@ -62,6 +62,7 @@ import {
   linkTokenSchema,
   nextHeartbeatDelay,
   permissionsOf,
+  rememberNotices,
 } from 'src/utils/frameleaf-cloud-link.js';
 import {
   CloudErrorCode,
@@ -70,6 +71,8 @@ import {
   accountServerUrl,
   cloudAddressProblem,
   cloudErrorCode,
+  pausedException,
+  pausedMessageOf,
   storeAddress,
 } from 'src/utils/frameleaf-cloud.js';
 import { BoundTokenRefusedError, USE_DPOP_NONCE } from 'src/utils/frameleaf-dpop.js';
@@ -270,18 +273,23 @@ export class FrameleafCloudService extends BaseService {
       if (current?.status === 'pending' && current.pending) {
         const approved =
           current.pending.deviceCode === link.pending?.deviceCode && error instanceof FrameleafCloudError;
+        // FC-62: new links are paused. The approved code is spent, so the link ends with the cloud's own
+        // message; the administrator links again once it lifts
+        const paused = pausedMessageOf(error);
         await this.saveLink(
-          approved && error.status !== null && error.status < 500
-            ? {
-                ...emptyLink(cloudUrl, current),
-                lastError: `Linking did not finish: ${message}`,
-                lastLinkRefusal: linkRefusalOf(error) ?? undefined,
-              }
-            : {
-                ...current,
-                lastError: message,
-                pending: { ...current.pending, nextPollAt: this.after(Date.now(), current.pending.intervalSeconds) },
-              },
+          approved && paused
+            ? { ...emptyLink(cloudUrl, current), lastError: paused }
+            : approved && error.status !== null && error.status < 500
+              ? {
+                  ...emptyLink(cloudUrl, current),
+                  lastError: `Linking did not finish: ${message}`,
+                  lastLinkRefusal: linkRefusalOf(error) ?? undefined,
+                }
+              : {
+                  ...current,
+                  lastError: message,
+                  pending: { ...current.pending, nextPollAt: this.after(Date.now(), current.pending.intervalSeconds) },
+                },
           'link',
         );
       }
@@ -293,6 +301,11 @@ export class FrameleafCloudService extends BaseService {
     try {
       return await call();
     } catch (error) {
+      // FC-62: staff paused this for now; the cloud's own words say so
+      const paused = pausedException(error);
+      if (paused) {
+        throw paused;
+      }
       if (error instanceof FrameleafCloudError) {
         throw new ServiceUnavailableException(`Frameleaf Cloud did not complete the request: ${error.message}`);
       }
@@ -472,7 +485,10 @@ export class FrameleafCloudService extends BaseService {
       services: registration.services,
       store: storeAddress(cloudUrl, document.store) ?? undefined,
       desired: { remoteAccess: false, cloudBackup: false },
-      heartbeat: { failures: 0, nextAt: this.after(Date.now(), nextHeartbeatDelay(null)) },
+      heartbeat: {
+        failures: 0,
+        nextAt: this.after(Date.now(), nextHeartbeatDelay(null, Math.random, document.intervals?.heartbeatSec)),
+      },
       usedLinkTokens: previous?.usedLinkTokens,
     };
     this.frameleafCloudRepository.forget();
@@ -724,12 +740,21 @@ export class FrameleafCloudService extends BaseService {
         const message = error instanceof Error ? error.message : String(error);
         this.logger.warn(`FRAMELEAF_LINK_TOKEN did not link this server: ${message}`);
         const current = (await this.readLink(cloudUrl)) ?? emptyLink(cloudUrl);
+        const paused = pausedMessageOf(error);
         await this.saveLink(
-          {
-            ...current,
-            lastError: `The link token did not work: ${message}`,
-            lastLinkRefusal: linkRefusalOf(error) ?? undefined,
-          },
+          paused
+            ? {
+                // FC-62: new links are paused and the cloud refused before spending the token, so it is
+                // tried again at the next start
+                ...current,
+                usedLinkTokens: current.usedLinkTokens?.filter((used) => used !== hash),
+                lastError: paused,
+              }
+            : {
+                ...current,
+                lastError: `The link token did not work: ${message}`,
+                lastLinkRefusal: linkRefusalOf(error) ?? undefined,
+              },
           'link',
         );
       }
@@ -971,7 +996,10 @@ export class FrameleafCloudService extends BaseService {
         failures: 0,
         lastFailureAt: undefined,
         cloneSuspected: response.cloneSuspected,
-        nextAt: this.after(now, nextHeartbeatDelay(response.nextHeartbeatSec)),
+        nextAt: this.after(
+          now,
+          nextHeartbeatDelay(response.nextHeartbeatSec, Math.random, document.intervals?.heartbeatSec),
+        ),
         observedIp: response.observedIp ?? null,
         ...(keyRelinkResolved && { relinkRequested: undefined, relinkReason: undefined }),
       },
@@ -980,7 +1008,20 @@ export class FrameleafCloudService extends BaseService {
       this.frameleafCloudRepository.forget();
     }
     await this.followCloneSuspicion(cloudUrl, document, link, response);
+    // FC-62: dedupe by the exact id, remembered for the life of a notice; the notification's own
+    // 30-day dedupe key stays as a second guard (two check-ins at once)
+    const keyOf = (notice: HeartbeatResponse['notices'][number]) => notice.id ?? sha256(notice.message);
+    const remembered = rememberNotices(
+      link.heartbeat?.shownNotices,
+      response.notices.map((notice) => keyOf(notice)),
+      now,
+    );
+    next = { ...next, heartbeat: { ...next.heartbeat!, shownNotices: remembered.shown } };
+    const fresh = new Set(remembered.fresh);
     for (const notice of response.notices) {
+      if (!fresh.has(keyOf(notice))) {
+        continue;
+      }
       this.notify({
         level:
           notice.level === 'error'
@@ -990,7 +1031,7 @@ export class FrameleafCloudService extends BaseService {
               : NotificationLevel.Info,
         title: 'Message from Frameleaf Cloud',
         description: notice.message,
-        dedupeKey: `frameleaf-cloud:notice:${notice.id ?? sha256(notice.message)}`,
+        dedupeKey: `frameleaf-cloud:notice:${keyOf(notice)}`,
         dedupeDays: 30,
       });
     }
@@ -1109,7 +1150,14 @@ export class FrameleafCloudService extends BaseService {
           ...link.heartbeat,
           failures,
           lastFailureAt: new Date().toISOString(),
-          nextAt: this.after(Date.now(), nextHeartbeatDelay(null)),
+          nextAt: this.after(
+            Date.now(),
+            nextHeartbeatDelay(
+              null,
+              Math.random,
+              this.frameleafCloudRepository.peekDiscovery(link.cloudUrl)?.intervals?.heartbeatSec,
+            ),
+          ),
         },
       },
       'link',
