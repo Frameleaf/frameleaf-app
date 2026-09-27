@@ -17,7 +17,8 @@ export const memoryViewerUtils = {
 
   async waitForMemoryLoad(page: Page) {
     await expect(this.locator(page)).toBeVisible();
-    await expect(page.locator('#memory-viewer img').first()).toBeVisible();
+    // A photo shows as an image; a video's poster image gives way to the playing video.
+    await expect(page.locator('#memory-viewer').locator('img, video').filter({ visible: true }).first()).toBeVisible();
   },
 
   async openMemoryPageWithAsset(page: Page, memoryId: string, assetId: string) {

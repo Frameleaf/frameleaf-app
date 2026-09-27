@@ -1,6 +1,6 @@
 import { faker } from '@faker-js/faker';
-import type { MemoryResponseDto } from '@immich/sdk';
-import { expect, test } from '@playwright/test';
+import { AssetTypeEnum, type MemoryResponseDto } from '@immich/sdk';
+import { expect, test, type Page } from '@playwright/test';
 import { generateMemoriesFromTimeline } from 'src/ui/generators/memory.js';
 import {
   Changes,
@@ -15,6 +15,21 @@ import { setupTimelineMockApiRoutes, TimelineTestContext } from 'src/ui/mock-net
 import { memoryAssetViewerUtils, memoryGalleryUtils, memoryViewerUtils } from './utils';
 
 test.describe.configure({ mode: 'parallel' });
+
+/**
+ * The last item of a memory whose last item is a photo, paused there: a video's own end (the
+ * first memory's last item is a clip that ends in a moment) or a photo's timer would reach the
+ * end card on its own, and a Next pressed after that goes on to the next memory.
+ */
+const openLastItemPaused = async (page: Page, list: MemoryResponseDto[]) => {
+  const memory = list.find(({ assets }) => assets.at(-1)!.type === AssetTypeEnum.Image)!;
+  const lastAsset = memory.assets.at(-1)!;
+  await memoryViewerUtils.openMemoryPageWithAsset(page, memory.id, lastAsset.id);
+  const progress = memoryViewerUtils.locator(page).getByRole('group', { name: 'Memory progress' });
+  await progress.getByRole('button', { name: 'Pause' }).click();
+  await expect(progress.getByRole('button', { name: 'Play' })).toBeVisible();
+  return { memory, lastAsset };
+};
 
 test.describe('Memory Viewer - Gallery Asset Viewer Navigation', () => {
   let adminUserId: string;
@@ -254,10 +269,7 @@ test.describe('Memory Viewer - Gallery Asset Viewer Navigation', () => {
 
     // MPY-4 (MemoryPlayer.jsx:403-446): the end card closes the memory after its last item.
     test('ends a memory on its end card, and Previous returns to the last item', async ({ page }) => {
-      const firstMemory = memories[0];
-      const lastAsset = firstMemory.assets.at(-1)!;
-
-      await memoryViewerUtils.openMemoryPageWithAsset(page, firstMemory.id, lastAsset.id);
+      const { lastAsset } = await openLastItemPaused(page, memories);
       const viewer = memoryViewerUtils.locator(page);
       await page.keyboard.press('ArrowRight');
 
@@ -276,9 +288,7 @@ test.describe('Memory Viewer - Gallery Asset Viewer Navigation', () => {
     });
 
     test('Play again starts the memory from its first item', async ({ page }) => {
-      const firstMemory = memories[0];
-
-      await memoryViewerUtils.openMemoryPageWithAsset(page, firstMemory.id, firstMemory.assets.at(-1)!.id);
+      const { memory } = await openLastItemPaused(page, memories);
       await page.keyboard.press('ArrowRight');
       await memoryViewerUtils
         .locator(page)
@@ -286,7 +296,7 @@ test.describe('Memory Viewer - Gallery Asset Viewer Navigation', () => {
         .getByRole('button', { name: 'Play again' })
         .click();
 
-      await memoryAssetViewerUtils.expectCurrentAssetId(page, firstMemory.assets[0].id);
+      await memoryAssetViewerUtils.expectCurrentAssetId(page, memory.assets[0].id);
     });
 
     test('does not show the title card when opened part way through', async ({ page }) => {
