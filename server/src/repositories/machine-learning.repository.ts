@@ -293,6 +293,27 @@ const renderNodeSchema = z.object({
   vendor: z.string().max(40).nullable(),
   accessible: z.boolean(),
   memoryTotalBytes: z.number().int().min(0).nullable(),
+  gid: z.number().int().min(0).nullable().optional(),
+  hostNode: z.string().max(40).nullable().optional(),
+});
+
+const hostSchema = z.object({
+  kernel: z.string().max(200).nullable(),
+  gpus: z
+    .array(
+      z.object({
+        pciAddress: z.string().max(40),
+        vendor: z.string().max(40),
+        renderNode: z.string().max(40).nullable(),
+        integrated: z.boolean(),
+        memoryTotalBytes: z.number().int().min(0).nullable(),
+      }),
+    )
+    .max(16)
+    .nullable(),
+  dxg: z.boolean(),
+  groups: z.array(z.number().int()).max(64),
+  root: z.boolean(),
 });
 
 /** FL-159: what the container reached for AI work (`machine-learning/immich_ml/hardware_report.py`). */
@@ -317,6 +338,13 @@ const mlContainerSchema = z.object({
     nvidia: z.boolean(),
     nvidiaRequested: z.boolean(),
   }),
+  // Absent from an older ML image; the check then reports those facts as not known.
+  host: hostSchema.nullable().optional(),
+  computeCapability: z.string().max(10).nullable().optional(),
+  rocm: z
+    .object({ gfxTargets: z.array(z.string().max(20)).max(16), hsaOverride: z.string().max(20).nullable() })
+    .nullable()
+    .optional(),
 });
 
 const diagnosticHardwareSchema = MachineLearningHardwareResponseDto.schema.extend({
