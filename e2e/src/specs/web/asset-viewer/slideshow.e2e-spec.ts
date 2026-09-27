@@ -18,6 +18,9 @@ test.describe('Slideshow', () => {
   const openSlideshow = async (page: Page) => {
     await page.goto(`/photos/${asset.id}`);
     await page.waitForSelector('#immich-asset-viewer');
+    // Play slideshow is offered once the viewer knows the item it moves to. Opened before that, the
+    // More menu grows by that entry while it is open and the entries under the pointer move.
+    await expect(page.getByTestId('viewer-footer').getByRole('button', { name: 'Play slideshow' })).toBeEnabled();
     await page.getByRole('button', { name: /^More( actions)?$/ }).click();
     await page.getByRole('menuitem', { name: 'Play slideshow' }).click();
   };
