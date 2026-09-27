@@ -142,6 +142,12 @@ export type StudioBundleManifest = {
     digest: string;
     /** The project id on the exporting server, for lineage; never reused on import. */
     sourceProjectId: string;
+    /**
+     * Present only in a partial bundle: the sequences `project.json` carries, which are the ones
+     * the exporter chose plus every sequence they nest (see {@link selectStudioSequences}). A
+     * whole-project bundle leaves it out.
+     */
+    sequenceIds?: string[];
   };
   engine: { engine: string; engineRevision: string };
   /** Every entry except the manifest itself, by entry name. */
@@ -294,6 +300,21 @@ export const checkStudioBundleManifest = (value: unknown): StudioBundleManifestC
     return { ok: false, detail: 'project must carry a name, a revision, a digest and the source project id' };
   }
 
+  let sequenceIds: string[] | undefined;
+  if (project.sequenceIds !== undefined && project.sequenceIds !== null) {
+    const ids = project.sequenceIds;
+    if (
+      !Array.isArray(ids) ||
+      ids.length === 0 ||
+      ids.length > STUDIO_BUNDLE_MAX_ENTRIES ||
+      ids.some((id) => typeof id !== 'string' || !identifier.test(id)) ||
+      new Set(ids).size !== ids.length
+    ) {
+      return { ok: false, detail: 'project.sequenceIds must be a non-empty list of distinct sequence ids' };
+    }
+    sequenceIds = ids as string[];
+  }
+
   const engine = value.engine;
   if (
     !isPlainObject(engine) ||
@@ -343,6 +364,7 @@ export const checkStudioBundleManifest = (value: unknown): StudioBundleManifestC
         revision: project.revision,
         digest: project.digest,
         sourceProjectId: project.sourceProjectId.slice(0, 128),
+        ...(sequenceIds && { sequenceIds }),
       },
       engine: { engine: engine.engine.slice(0, 64), engineRevision: engine.engineRevision.slice(0, 200) },
       files,
@@ -1102,6 +1124,162 @@ export const studioBundleSourceKeys = (graph: unknown): StudioBundleSourceKey[] 
     .sort((a, b) => compareCodeUnits(a.key, b.key));
 };
 
+/* ------------------------------------------------------------------ */
+/* Sequence subsets                                                     */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The id that names a Freecut project's Main timeline. Main is implicit in Freecut: its clips live
+ * in the flat `timeline.items` and it has no id of its own, so a bundle request names it this way.
+ */
+export const STUDIO_MAIN_SEQUENCE_ID = 'main';
+
+/**
+ * The sequences a graph defines, in graph order, with the sequences each one nests. Two shapes are
+ * understood, and only these two:
+ *
+ * - **A Freecut project** (`timeline` with `items`): Main, then every entry of
+ *   `timeline.compositions`. Freecut treats a standalone timeline tab and an embedded compound clip
+ *   as the same primitive, so each composition is a sequence; an item's `compositionId` nests one.
+ * - **Explicit sequences** (`sequences: [{ id, tracks }]`, as Frameleaf writes for a highlight):
+ *   nesting is whatever FL-90's reference walker records for a `sequence` or `composition` clip.
+ *
+ * Anything else defines no sequences, so a subset of it cannot be asked for.
+ */
+type SequenceLayout =
+  | { shape: 'freecut'; timeline: Record<string, unknown>; nests: Map<string, string[]> }
+  | { shape: 'explicit'; nests: Map<string, string[]> }
+  | { shape: 'none'; nests: Map<string, string[]> };
+
+const nestedCompositions = (items: unknown): string[] =>
+  Array.isArray(items)
+    ? items
+        .filter(isPlainObject)
+        .flatMap((item) => (typeof item.compositionId === 'string' ? [item.compositionId] : []))
+    : [];
+
+const sequenceLayout = (graph: unknown): SequenceLayout => {
+  if (isPlainObject(graph) && isPlainObject(graph.timeline) && Array.isArray(graph.timeline.items)) {
+    const timeline = graph.timeline;
+    const nests = new Map<string, string[]>([[STUDIO_MAIN_SEQUENCE_ID, nestedCompositions(timeline.items)]]);
+    for (const composition of Array.isArray(timeline.compositions) ? timeline.compositions : []) {
+      if (isPlainObject(composition) && typeof composition.id === 'string' && !nests.has(composition.id)) {
+        nests.set(composition.id, nestedCompositions(composition.items));
+      }
+    }
+    return { shape: 'freecut', timeline, nests };
+  }
+  if (isPlainObject(graph) && Array.isArray(graph.sequences)) {
+    return { shape: 'explicit', nests: extractStudioResourceReferences(graph).sequences };
+  }
+  return { shape: 'none', nests: new Map() };
+};
+
+/** The chosen sequences and everything they nest, in graph order. Unknown nesting targets are skipped. */
+const sequenceClosure = (nests: ReadonlyMap<string, readonly string[]>, chosen: readonly string[]): Set<string> => {
+  const reached = new Set<string>();
+  const pending = [...chosen];
+  while (pending.length > 0) {
+    const id = pending.pop()!;
+    if (reached.has(id) || !nests.has(id)) {
+      continue;
+    }
+    reached.add(id);
+    pending.push(...nests.get(id)!);
+  }
+  return new Set(nests.keys().filter((id) => reached.has(id)));
+};
+
+/** `sequenceIds` is null when the choice covers every sequence and the graph is returned as is. */
+export type StudioSequenceSelection =
+  { ok: true; graph: unknown; sequenceIds: string[] | null } | { ok: false; unknown: string[] };
+
+/**
+ * Cut a graph down to the chosen sequences and the sequences they nest, for a partial bundle.
+ *
+ * Nothing is rewritten: sequences that stay are copied byte for byte, fields no Frameleaf release
+ * knows about survive, and the input is never mutated. What leaves is only the sequences nobody
+ * chose, so every nested reference in the result still resolves. When Main is not chosen its clips,
+ * transitions, keyframes, markers and in/out points go, and its tracks stay as empty lanes, because
+ * a Freecut project always has a Main. A choice that covers every sequence is the whole graph.
+ */
+export const selectStudioSequences = (graph: unknown, chosen: readonly string[]): StudioSequenceSelection => {
+  const layout = sequenceLayout(graph);
+  const unknown = [...new Set(chosen)].filter((id) => !layout.nests.has(id));
+  if (unknown.length > 0 || layout.shape === 'none') {
+    return { ok: false, unknown: unknown.length > 0 ? unknown : [...new Set(chosen)] };
+  }
+
+  const kept = sequenceClosure(layout.nests, chosen);
+  if (kept.size === layout.nests.size) {
+    return { ok: true, graph, sequenceIds: null };
+  }
+  const sequenceIds = [...kept];
+  const source = graph as Record<string, unknown>;
+
+  if (layout.shape === 'explicit') {
+    const sequences = (source.sequences as unknown[]).filter(
+      (sequence) => !(isPlainObject(sequence) && typeof sequence.id === 'string') || kept.has(sequence.id),
+    );
+    return { ok: true, graph: { ...source, sequences }, sequenceIds };
+  }
+
+  const timeline: Record<string, unknown> = { ...layout.timeline };
+  if (!kept.has(STUDIO_MAIN_SEQUENCE_ID)) {
+    for (const key of ['items', 'transitions', 'keyframes', 'markers']) {
+      if (key in timeline) {
+        timeline[key] = [];
+      }
+    }
+    delete timeline.inPoint;
+    delete timeline.outPoint;
+  }
+  if (Array.isArray(timeline.compositions)) {
+    timeline.compositions = timeline.compositions.filter(
+      (composition) => isPlainObject(composition) && typeof composition.id === 'string' && kept.has(composition.id),
+    );
+  }
+  if (Array.isArray(timeline.topLevelSequenceIds)) {
+    // A tab stays a tab only when it was chosen; a sequence kept because another one nests it is
+    // carried as that one's compound clip.
+    const chosenIds = new Set(chosen);
+    timeline.topLevelSequenceIds = timeline.topLevelSequenceIds.filter(
+      (id) => typeof id === 'string' && chosenIds.has(id),
+    );
+  }
+  return { ok: true, graph: { ...source, timeline }, sequenceIds };
+};
+
+/**
+ * Why a partial bundle's graph does not hold exactly the sequences its manifest names, or null.
+ * The import refuses such a bundle rather than create a project with a dangling compound clip.
+ */
+export const studioSequenceSubsetProblem = (graph: unknown, sequenceIds: readonly string[]): string | null => {
+  const layout = sequenceLayout(graph);
+  const listed = new Set(sequenceIds);
+  for (const id of sequenceIds) {
+    if (!layout.nests.has(id)) {
+      return `The bundle names sequence ${id.slice(0, 128)} but does not carry it`;
+    }
+  }
+  for (const [id, targets] of layout.nests) {
+    if (layout.shape === 'freecut' && id === STUDIO_MAIN_SEQUENCE_ID) {
+      // Main always exists in a Freecut project; left out, it must be empty.
+      if (!listed.has(id) && Array.isArray(layout.timeline.items) && layout.timeline.items.length > 0) {
+        return 'The bundle leaves out Main but still carries its clips';
+      }
+    } else if (!listed.has(id)) {
+      return `The bundle carries sequence ${id.slice(0, 128)} without naming it`;
+    }
+    for (const target of targets) {
+      if (!layout.nests.has(target)) {
+        return `Sequence ${id.slice(0, 128)} nests ${target.slice(0, 128)}, which the bundle does not carry`;
+      }
+    }
+  }
+  return null;
+};
+
 /**
  * A library checksum as the SHA-256 hex a manifest records, or null. This server stores SHA-256
  * for new uploads and SHA-1 for older ones; only a 32-byte digest is a SHA-256, and a SHA-1 is
@@ -1122,6 +1300,8 @@ export type StudioBundleManifestInput = {
   revision: number;
   digest: string;
   sourceProjectId: string;
+  /** The sequences a partial bundle carries; null for the whole project. */
+  sequenceIds?: string[] | null;
   engineRevision: string;
   engine: string;
   project: Buffer;
@@ -1141,6 +1321,7 @@ export const buildStudioBundleManifest = (input: StudioBundleManifestInput): Stu
     revision: input.revision,
     digest: input.digest,
     sourceProjectId: input.sourceProjectId,
+    ...(input.sequenceIds && { sequenceIds: input.sequenceIds }),
   },
   engine: { engine: input.engine, engineRevision: input.engineRevision },
   files: {
@@ -1201,8 +1382,8 @@ export type StudioBundleExportSnapshot = {
    */
   embed: Array<{ key: string; kind: StudioResourceKind; id: string }>;
   /**
-   * Reserved for exporting a subset of sequences. Choosing sequences inside the graph is the
-   * engine's job, so until the editor is part of the build this is always null.
+   * The sequences the owner asked for, or null for the whole project. The runner cuts the stored
+   * revision down to these and the sequences they nest ({@link selectStudioSequences}).
    */
   sequenceIds: string[] | null;
   /** The client's idempotency key, so a repeated submit answers with the first job. */

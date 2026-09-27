@@ -82,15 +82,33 @@ describe('studio bundle commands', () => {
     expect(onQueued).toHaveBeenCalledWith(operation);
   });
 
-  it('refuses to export a subset of sequences, which needs the editor, instead of exporting everything', async () => {
-    const { api, onRefused, bridge } = setup();
+  it('exports only the sequences the payload names', async () => {
+    const { api, onQueued, bridge } = setup();
     const [result] = await bridge.submit([
-      createStudioCommandEnvelope('project.exportBundle', { sequenceIds: ['seq-2'] }, 4),
+      createStudioCommandEnvelope('project.exportBundle', { sequenceIds: ['seq-2', 'main'], includeMedia: true }, 4, {
+        idempotencyKey: 'subset',
+      }),
+    ]);
+
+    expect(result.status).toBe('accepted');
+    expect(api.exportProject).toHaveBeenCalledWith('p-1', {
+      includeMedia: true,
+      sequenceIds: ['seq-2', 'main'],
+      requestKey: 'subset',
+    });
+    expect(onQueued).toHaveBeenCalledWith(operation);
+  });
+
+  it('says the saved project lacks a chosen sequence when the server refuses it', async () => {
+    const { api, onRefused, bridge } = setup();
+    // The SDK's HttpError, by the shape the handler reads.
+    vi.mocked(api.exportProject).mockRejectedValue({ status: 400, data: { message: 'This project has no sequence' } });
+    const [result] = await bridge.submit([
+      createStudioCommandEnvelope('project.exportBundle', { sequenceIds: ['unsaved'], includeMedia: false }, 4),
     ]);
 
     expect(result.status).toBe('rejected');
     expect(onRefused).toHaveBeenCalledWith('frameleaf_studio_bundle_sequences_unavailable');
-    expect(api.exportProject).not.toHaveBeenCalled();
   });
 
   it('asks for a save before exporting a project that has none, without asking about copies', async () => {

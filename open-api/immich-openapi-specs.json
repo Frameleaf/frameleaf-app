@@ -78377,6 +78377,17 @@
             "description": "Idempotency key; a repeated submit answers with the first job",
             "pattern": "^[\\w.:-]{1,128}$",
             "type": "string"
+          },
+          "sequenceIds": {
+            "description": "Export only these sequences, with every sequence they nest. `main` names the Main timeline. Leave out for the whole project.",
+            "items": {
+              "description": "Client-chosen identifier; letters, digits, `_ . : -`, up to 128 characters",
+              "pattern": "^[\\w.:-]{1,128}$",
+              "type": "string"
+            },
+            "maxItems": 1000,
+            "minItems": 1,
+            "type": "array"
           }
         },
         "type": "object"

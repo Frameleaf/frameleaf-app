@@ -22,11 +22,13 @@ import {
   readZipDirectory,
   readZipEntry,
   relinkStudioGraph,
+  selectStudioSequences,
   serializeStudioBundleProject,
   sha256Of,
   studioBundleFileName,
   studioBundleSourceKeys,
   studioChecksumSha256,
+  studioSequenceSubsetProblem,
   zipEntryNameProblem,
 } from 'src/utils/studio-bundle.js';
 import { STUDIO_ENGINE, STUDIO_ENVELOPE_SCHEMA_VERSION, studioEnvelopeDigest } from 'src/utils/studio-project.js';
@@ -484,6 +486,27 @@ describe('checkStudioBundleManifest', () => {
     }
   });
 
+  it('carries the sequences a partial bundle holds, and refuses a malformed list', () => {
+    const base = manifestOf(project);
+    const partial = { ...base, project: { ...base.project, sequenceIds: ['seq-b', 'comp-nested'] } };
+    const checked = checkStudioBundleManifest(partial);
+    expect(checked).toMatchObject({ ok: true, manifest: { project: { sequenceIds: ['seq-b', 'comp-nested'] } } });
+
+    // A whole-project bundle does not name its sequences at all.
+    const whole = checkStudioBundleManifest(base);
+    expect(whole.ok && whole.manifest.project).not.toHaveProperty('sequenceIds');
+    expect(checkStudioBundleManifest({ ...base, project: { ...base.project, sequenceIds: null } })).toMatchObject({
+      ok: true,
+    });
+
+    for (const sequenceIds of [[], ['a', 'a'], ['../x'], 'seq-b', [3]]) {
+      expect(checkStudioBundleManifest({ ...base, project: { ...base.project, sequenceIds } })).toMatchObject({
+        ok: false,
+        detail: expect.stringContaining('sequenceIds'),
+      });
+    }
+  });
+
   it('refuses another format, another schema version and a manifest that digests itself', () => {
     expect(checkStudioBundleManifest({ ...manifestOf(project), format: 'zip' })).toMatchObject({ ok: false });
     expect(checkStudioBundleManifest({ ...manifestOf(project), schemaVersion: 2 })).toMatchObject({ ok: false });
@@ -714,6 +737,123 @@ describe('studioBundleSourceKeys', () => {
   });
 });
 
+describe('selectStudioSequences', () => {
+  /** A Freecut project: the implicit Main timeline plus compositions, some of them standalone tabs. */
+  const freecut = {
+    id: 'fc-1',
+    name: 'Trip',
+    future: { keep: 'me' },
+    timeline: {
+      tracks: [{ id: 't1', name: 'V1' }],
+      items: [
+        { id: 'm1', type: 'video', mediaId: assetA },
+        { id: 'm2', type: 'composition', compositionId: 'comp-intro' },
+      ],
+      transitions: [{ id: 'tr1', leftClipId: 'm1', rightClipId: 'm2' }],
+      keyframes: [{ itemId: 'm1' }],
+      markers: [{ id: 'mk', frame: 3, color: '#fff' }],
+      inPoint: 1,
+      outPoint: 9,
+      topLevelSequenceIds: ['seq-b', 'seq-c'],
+      compositions: [
+        { id: 'comp-intro', name: 'Intro', tracks: [], items: [{ id: 'i1', type: 'image', mediaId: assetB }] },
+        {
+          id: 'seq-b',
+          name: 'B',
+          tracks: [],
+          items: [
+            { id: 'b1', type: 'video', mediaId: assetB },
+            { id: 'b2', type: 'composition', compositionId: 'comp-nested' },
+          ],
+        },
+        {
+          id: 'comp-nested',
+          name: 'Nested',
+          tracks: [],
+          items: [{ id: 'n1', type: 'video', mediaId: assetB, future: 1 }],
+        },
+        { id: 'seq-c', name: 'C', tracks: [], items: [{ id: 'c1', type: 'video', mediaId: assetA }] },
+      ],
+    },
+  };
+
+  it('keeps a chosen sequence with the sequences it nests, and empties Main when Main was not chosen', () => {
+    const selected = selectStudioSequences(freecut, ['seq-b']);
+    expect(selected).toMatchObject({ ok: true, sequenceIds: ['seq-b', 'comp-nested'] });
+    const graph = (selected as { graph: typeof freecut }).graph;
+
+    expect(graph.timeline.compositions.map((composition) => composition.id)).toEqual(['seq-b', 'comp-nested']);
+    expect(graph.timeline.topLevelSequenceIds).toEqual(['seq-b']);
+    expect(graph.timeline.items).toEqual([]);
+    expect(graph.timeline.transitions).toEqual([]);
+    expect(graph.timeline.keyframes).toEqual([]);
+    expect(graph.timeline.markers).toEqual([]);
+    expect(graph.timeline).not.toHaveProperty('inPoint');
+    expect(graph.timeline).not.toHaveProperty('outPoint');
+    // Tracks and every field this release has never heard of are carried through untouched.
+    expect(graph.timeline.tracks).toEqual(freecut.timeline.tracks);
+    expect(graph.future).toEqual({ keep: 'me' });
+    expect(graph.timeline.compositions[1].items[0]).toEqual({ id: 'n1', type: 'video', mediaId: assetB, future: 1 });
+    // Only the media of what was kept is referenced, and the input is never mutated.
+    expect(studioBundleSourceKeys(graph).map((key) => key.id)).toEqual([assetB]);
+    expect(freecut.timeline.compositions).toHaveLength(4);
+  });
+
+  it('keeps Main with the compositions it nests when Main is chosen', () => {
+    const selected = selectStudioSequences(freecut, ['main', 'seq-c']);
+    expect(selected).toMatchObject({ ok: true, sequenceIds: ['main', 'comp-intro', 'seq-c'] });
+    const graph = (selected as { graph: typeof freecut }).graph;
+    expect(graph.timeline.items).toEqual(freecut.timeline.items);
+    expect(graph.timeline.inPoint).toBe(1);
+    expect(graph.timeline.topLevelSequenceIds).toEqual(['seq-c']);
+    expect(studioSequenceSubsetProblem(graph, ['main', 'comp-intro', 'seq-c'])).toBeNull();
+  });
+
+  it('answers with the whole graph, untouched, when the choice covers every sequence', () => {
+    const selected = selectStudioSequences(freecut, ['main', 'seq-b', 'seq-c', 'comp-intro']);
+    expect(selected).toEqual({ ok: true, graph: freecut, sequenceIds: null });
+  });
+
+  it('refuses sequence ids the graph does not define rather than exporting something else', () => {
+    expect(selectStudioSequences(freecut, ['seq-b', 'seq-z'])).toEqual({ ok: false, unknown: ['seq-z'] });
+    expect(selectStudioSequences({ name: 'no sequences' }, ['main'])).toEqual({ ok: false, unknown: ['main'] });
+  });
+
+  it('cuts a graph of explicit sequences with their nested sequences', () => {
+    const generic = {
+      sequences: [
+        { id: 'seq-1', tracks: [{ clips: [{ kind: 'sequence', sequenceId: 'seq-3' }, { assetId: assetA }] }] },
+        { id: 'seq-2', tracks: [{ clips: [{ assetId: assetB }] }] },
+        { id: 'seq-3', tracks: [{ clips: [{ editedMasterOf: assetB }] }] },
+      ],
+      unknownTopLevel: { keep: 'me' },
+    };
+    const selected = selectStudioSequences(generic, ['seq-1']);
+    expect(selected).toMatchObject({ ok: true, sequenceIds: ['seq-1', 'seq-3'] });
+    const graph = (selected as { graph: typeof generic }).graph;
+    expect(graph.sequences.map((sequence) => sequence.id)).toEqual(['seq-1', 'seq-3']);
+    expect(graph.unknownTopLevel).toEqual({ keep: 'me' });
+    expect(studioBundleSourceKeys(graph).map((key) => key.key)).toEqual([
+      `edited-master:${assetB}`,
+      `library-asset:${assetA}`,
+    ]);
+  });
+
+  it('finds a partial graph that names a sequence it does not carry, or carries one it was not said to', () => {
+    const selected = selectStudioSequences(freecut, ['seq-b']);
+    const graph = (selected as { graph: typeof freecut }).graph;
+    expect(studioSequenceSubsetProblem(graph, ['seq-b', 'comp-nested'])).toBeNull();
+
+    const dangling = {
+      ...graph,
+      timeline: { ...graph.timeline, compositions: graph.timeline.compositions.filter((c) => c.id !== 'comp-nested') },
+    };
+    expect(studioSequenceSubsetProblem(dangling, ['seq-b'])).toContain('comp-nested');
+    expect(studioSequenceSubsetProblem(graph, ['seq-b'])).toContain('comp-nested');
+    expect(studioSequenceSubsetProblem(graph, ['seq-b', 'comp-nested', 'seq-c'])).toContain('seq-c');
+  });
+});
+
 describe('studioChecksumSha256', () => {
   it('passes a SHA-256 through as hex and never a SHA-1', () => {
     const sha256 = createHash('sha256').update('x').digest();
@@ -781,6 +921,17 @@ describe('snapshots and results', () => {
     expect(snapshot.requestKey).toBe('export-1');
     expect(snapshot.sequenceIds).toBeNull();
     expect(() => parseBundleExportSnapshot({ kind: 'other' })).toThrow(StudioBundleArchiveError);
+  });
+
+  it('keeps the sequences an export snapshot was limited to', () => {
+    const snapshot = parseBundleExportSnapshot({
+      kind: 'studio-bundle-export',
+      projectId: 'p',
+      revision: 3,
+      digest: 'd',
+      sequenceIds: ['seq-b', 4, 'main'],
+    });
+    expect(snapshot.sequenceIds).toEqual(['seq-b', 'main']);
   });
 
   it('parses an import snapshot and keeps only string mappings', () => {

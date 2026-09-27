@@ -9530,6 +9530,8 @@ export type StudioBundleExportCreateDto = {
     includeMedia?: boolean;
     /** Idempotency key; a repeated submit answers with the first job */
     requestKey?: string;
+    /** Export only these sequences, with every sequence they nest. `main` names the Main timeline. Leave out for the whole project. */
+    sequenceIds?: string[];
 };
 export type StudioTimeDto = {
     /** Denominator */
