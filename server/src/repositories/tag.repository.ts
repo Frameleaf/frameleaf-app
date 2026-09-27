@@ -291,9 +291,11 @@ export class TagRepository {
       return;
     }
 
+    // Metadata extraction adds the asset's tags as well, so a row may already be there: it is kept.
     await this.db
       .insertInto('tag_asset')
       .values(assetIds.map((assetId) => ({ tagId, assetId })))
+      .onConflict((oc) => oc.doNothing())
       .execute();
   }
 
