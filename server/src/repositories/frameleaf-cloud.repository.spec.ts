@@ -346,6 +346,38 @@ describe('Frameleaf Cloud client against a fake cloud (FL-159)', () => {
     expect(cloud.requests.map((request) => request.path)).toEqual(['/.well-known/frameleaf-services']);
   });
 
+  it('drops a bad remote.directDomain from discovery and says so in the log, keeping the delegated zone it accepts (FL-165)', async () => {
+    const logger = LoggingRepository.create();
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+    const repository = new FrameleafCloudRepository(logger);
+    let directDomain = 'Frameleaf.NET';
+    cloud.respond = ({ path }) =>
+      path === '/.well-known/frameleaf-services'
+        ? {
+            status: 200,
+            body: {
+              version: 1,
+              validFor: 60,
+              issuer: `${cloud.url}/id`,
+              api: `${cloud.url}/api`,
+              ml: { eu: `${cloud.url}/ml-eu` },
+              remote: { directDomain },
+            },
+          }
+        : undefined;
+
+    const dropped = await repository.discovery(cloud.url);
+    expect(dropped.remote).toBeUndefined();
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('remote.directDomain "Frameleaf.NET"'));
+
+    warn.mockClear();
+    directDomain = 'direct.example.com';
+    // after the first document's validFor, so it is asked again
+    const delegated = await repository.discovery(cloud.url, Date.now() + 120_000);
+    expect(delegated.remote).toEqual({ directDomain: 'direct.example.com' });
+    expect(warn).not.toHaveBeenCalled();
+  });
+
   it('refuses a region discovery does not offer, never choosing another one', async () => {
     metadata.set(SystemMetadataKey.FrameleafCloudLink, link({ dataRegion: 'ca' }));
     await expect(resolveCloudGateway(deps)).resolves.toMatchObject({

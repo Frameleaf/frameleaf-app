@@ -11,6 +11,7 @@ import {
   FrameleafCloudError,
   FrameleafDiscoveryDocument,
   discoveryProblem,
+  discoveryRemoteProblem,
   discoverySchema,
   errorEnvelopeSchema,
   oauthErrorSchema,
@@ -109,7 +110,15 @@ export class FrameleafCloudRepository {
     if (this.discoveryCache?.cloudUrl === cloudUrl && this.discoveryCache.validUntil > now) {
       return this.discoveryCache.document;
     }
-    const document = await this.requestJson(discoverySchema, {
+    // a bad remote block is dropped, never failing discovery, but said in the log (FL-165)
+    const schema = z.preprocess((raw) => {
+      const remoteProblem = discoveryRemoteProblem(raw);
+      if (remoteProblem) {
+        this.logger.warn(`Frameleaf Cloud discovery: ${remoteProblem}; remote access uses the default direct domain`);
+      }
+      return raw;
+    }, discoverySchema);
+    const document = await this.requestJson(schema, {
       url: `${cloudUrl}/.well-known/frameleaf-services`,
     });
     // No token request or assertion ever goes to an address outside the configured cloud.

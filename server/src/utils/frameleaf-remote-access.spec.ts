@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { FrameleafRemoteEnrollment } from 'src/types.js';
-import { discoverySchema } from 'src/utils/frameleaf-cloud.js';
+import { discoveryRemoteProblem, discoverySchema } from 'src/utils/frameleaf-cloud.js';
 import {
   DEFAULT_DIRECT_DOMAIN,
   addressOfName,
@@ -94,8 +94,13 @@ describe('frameleaf remote access (FL-165)', () => {
       expect(bad.remote).toBeUndefined();
     });
 
-    it('builds every name under the zone discovery provides, including the cloud dev and test zones', () => {
-      for (const zone of ['frameleaf.net', 'frameleaf-direct.localhost', 'frameleaf-direct.test']) {
+    it('builds every name under the zone discovery provides: the cloud dev and test zones and a delegated subdomain', () => {
+      for (const zone of [
+        'frameleaf.net',
+        'frameleaf-direct.localhost',
+        'frameleaf-direct.test',
+        'direct.example.com',
+      ]) {
         const document = discoverySchema.parse({
           ...cloudContractFixture<object>('instance/discovery.json'),
           remote: { directDomain: zone },
@@ -108,26 +113,31 @@ describe('frameleaf remote access (FL-165)', () => {
       }
     });
 
-    it('falls back to frameleaf.net when discovery gives no zone, or one that is not a lowercase registrable domain', () => {
+    it('falls back to frameleaf.net when discovery gives no zone, or one that is not a lowercase domain name', () => {
       const golden = cloudContractFixture('instance/discovery.json');
       for (const directDomain of [
         '',
         'Frameleaf.NET',
         'frameleaf.net.',
-        'r.u225vlzhsdlhwh4l.frameleaf.net',
+        '.frameleaf.net',
+        'frameleaf..net',
         '*.frameleaf.net',
         'frameleaf',
-        '192.168.1.10',
         'https://frameleaf.net',
+        `${'a'.repeat(64)}.net`,
+        `${'a.'.repeat(126)}net`,
         'frame_leaf.net',
         '-frameleaf.net',
       ]) {
         const document = discoverySchema.parse({ ...golden, remote: { directDomain } });
         expect(document.remote, directDomain).toBeUndefined();
+        expect(discoveryRemoteProblem({ ...golden, remote: { directDomain } })).toContain('remote.directDomain');
         expect(directDomainOf(null, document)).toBe('frameleaf.net');
       }
       expect(directDomainOf(null, discoverySchema.parse({ ...golden, remote: 'frameleaf.net' }))).toBe('frameleaf.net');
       expect(directDomainOf(null, null)).toBe('frameleaf.net');
+      expect(discoveryRemoteProblem(golden)).toBeNull();
+      expect(discoveryRemoteProblem({ ...golden, remote: undefined })).toBeNull();
     });
 
     it('refuses an answer for another server or with names its label does not make', () => {
