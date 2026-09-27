@@ -106,7 +106,7 @@ export const fileUploadHandler = async ({
     const name = file.name.toLowerCase();
     if (extensions.some((extension) => name.endsWith(extension))) {
       const deviceAssetId = getDeviceAssetId(file);
-      uploadAssetsStore.addItem({ id: deviceAssetId, file, albumId });
+      uploadAssetsStore.addItem({ id: deviceAssetId, file, albumId, isLockedAssets });
       promises.push(
         uploadExecutionQueue.addTask(() => fileUploader({ deviceAssetId, assetFile: file, albumId, isLockedAssets })),
       );
@@ -122,6 +122,20 @@ export const fileUploadHandler = async ({
   // out of the queue before it starts, so one cancelled file never fails the whole batch.
   const results = await Promise.all(promises.map((promise) => promise.catch(() => undefined)));
   return results.filter((result): result is string => !!result);
+};
+
+/**
+ * Re-runs every failed upload with the album and Locked destination it was first sent to. The
+ * files join the shared queue together, so the panel's parallel uploads setting applies.
+ */
+export const retryFailedUploads = async () => {
+  const failed = get(uploadAssetsStore).filter((item) => item.state === UploadState.ERROR);
+  await Promise.all(
+    failed.map(({ id, file, albumId, isLockedAssets }) => {
+      uploadAssetsStore.removeItem(id);
+      return fileUploadHandler({ files: [file], albumId, isLockedAssets });
+    }),
+  );
 };
 
 /**
