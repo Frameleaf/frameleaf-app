@@ -1234,6 +1234,44 @@ export class MediaOperationRepository {
       .execute();
   }
 
+  /**
+   * Merge into an open preview stream's signalling record (FL-96). Guarded in the WHERE clause:
+   * only an unfinished `studio_preview_stream`, and with `negotiation` only while the record is
+   * still on that round, so an offer, an answer and a reconnect racing each other resolve in
+   * Postgres and the loser updates nothing.
+   */
+  async mergeStreamSignal(
+    id: string,
+    patch: Record<string, unknown>,
+    expect: { negotiation?: number } = {},
+  ): Promise<MediaOperation | undefined> {
+    return (await this.write((db) =>
+      db
+        .updateTable('media_operation')
+        .set({ result: sql<Record<string, unknown>>`coalesce("result", '{}'::jsonb) || ${JSON.stringify(patch)}::jsonb` })
+        .where('id', '=', id)
+        .where('kind', '=', MediaOperationKind.StudioPreviewStream)
+        .where('status', 'not in', [...TERMINAL_MEDIA_OPERATION_STATUSES])
+        .$if(expect.negotiation !== undefined, (qb) =>
+          qb.where(sql<boolean>`coalesce(("result"->>'negotiation')::int, 0) = ${expect.negotiation!}`),
+        )
+        .returningAll()
+        .executeTakeFirst())) as unknown as MediaOperation | undefined;
+  }
+
+  /** An account's open preview streams, oldest first (FL-96 session limits). */
+  async listOpenStreams(ownerId: string): Promise<Array<{ id: string; projectId: string | null }>> {
+    return this.db
+      .selectFrom('media_operation')
+      .select(['id', 'projectId'])
+      .where('ownerId', '=', ownerId)
+      .where('kind', '=', MediaOperationKind.StudioPreviewStream)
+      .where('status', 'not in', [...TERMINAL_MEDIA_OPERATION_STATUSES])
+      .where('cancelRequestedAt', 'is', null)
+      .orderBy('createdAt', 'asc')
+      .execute();
+  }
+
   async requestCancel(id: string, ownerId: string, claimToken?: string): Promise<MediaOperation | undefined> {
     const row = (await this.write((db) =>
       db

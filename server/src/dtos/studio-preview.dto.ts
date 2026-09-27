@@ -16,7 +16,7 @@ const safeIntegerString = (label: string) =>
     .regex(/^-?\d{1,16}$/)
     .refine((value) => Number.isSafeInteger(Number(value)), { message: `${label} must be a safe integer` });
 
-const PreviewTimeSchema = z
+export const PreviewTimeSchema = z
   .object({
     numerator: safeIntegerString('numerator').describe('Time numerator, in seconds over the denominator'),
     denominator: safeIntegerString('denominator')
