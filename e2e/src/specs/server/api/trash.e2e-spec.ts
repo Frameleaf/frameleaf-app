@@ -1,7 +1,7 @@
-import { LoginResponseDto, getAssetInfo, getAssetStatistics } from '@immich/sdk';
+import { AssetVisibility, LoginResponseDto, getAssetInfo, getAssetStatistics } from '@immich/sdk';
 import { existsSync } from 'node:fs';
 import { Socket } from 'socket.io-client';
-import { app, asBearerAuth, testAssetDir, testAssetDirInternal, utils } from 'src/utils.js';
+import { app, asBearerAuth, dockerExec, testAssetDir, testAssetDirInternal, utils } from 'src/utils.js';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -352,9 +352,10 @@ describe('/trash', () => {
       await expect(utils.getAssetInfo(admin.accessToken, id)).resolves.toMatchObject({ isTrashed: false });
     });
 
-    it('should keep albums and favourites when restoring', async () => {
+    it('should keep albums, favourites and the archive when restoring', async () => {
       const { id } = await utils.createAsset(admin.accessToken, { isFavorite: true });
       const album = await utils.createAlbum(admin.accessToken, { albumName: 'Kept', assetIds: [id] });
+      await utils.archiveAssets(admin.accessToken, [id]);
       await utils.deleteAssets(admin.accessToken, [id]);
 
       const reviewed = await review({ action: 'restore', ids: [id] });
@@ -365,8 +366,12 @@ describe('/trash', () => {
       await expect(utils.getAssetInfo(admin.accessToken, id)).resolves.toMatchObject({
         isTrashed: false,
         isFavorite: true,
+        isArchived: true,
       });
-      const { assets } = await utils.searchAssets(admin.accessToken, { albumIds: [album.id] });
+      const { assets } = await utils.searchAssets(admin.accessToken, {
+        albumIds: [album.id],
+        visibility: AssetVisibility.Archive,
+      });
       expect(assets.items.map((asset) => asset.id)).toContain(id);
     });
 
@@ -482,6 +487,61 @@ describe('/trash', () => {
         .query({ tool: 'duplicates' })
         .set('Authorization', bearer())
         .expect(400);
+    });
+
+    it('should keep the hidden part of a Live Photo out of every trash review', async () => {
+      const open = await trashed();
+      const hidden = await trashed();
+      const before = await review({ action: 'empty' });
+      const client = await utils.connectDatabase();
+      await client.query(`UPDATE "asset" SET "visibility" = 'hidden' WHERE "id" = $1`, [hidden]);
+
+      const items = await request(app).get('/trash/items').set('Authorization', bearer());
+      const listed = items.body.items.map((item: { id: string }) => item.id);
+      expect(listed).toContain(open);
+      expect(listed).not.toContain(hidden);
+
+      const chosen = await review({ action: 'delete', ids: [hidden] });
+      expect(chosen.status).toBe(400);
+
+      // emptying no longer covers the item once it is the hidden part of a Live Photo
+      const reviewed = await review({ action: 'empty' });
+      expect(reviewed.body).toMatchObject({ action: 'empty', count: before.body.count - 1 });
+      await apply({ action: 'empty', token: reviewed.body.token }).expect(200);
+      await utils.waitForWebsocketEvent({ event: 'assetDelete', id: open });
+
+      const { rows } = await client.query(`SELECT "status" FROM "asset" WHERE "id" = $1`, [hidden]);
+      expect(rows).toEqual([{ status: 'trashed' }]);
+    });
+
+    it('should report a shared original as retained and keep it on disk after the delete', async () => {
+      await emptyVisibleTrash();
+      const { id: keeper } = await utils.createAsset(admin.accessToken);
+      const removed = await trashed();
+      const solo = await trashed();
+      const { originalPath } = await utils.getAssetInfo(admin.accessToken, keeper);
+      const { originalPath: soloPath } = await utils.getAssetInfo(admin.accessToken, solo);
+      // another item still references the removed item's original (a deduplicated file)
+      const client = await utils.connectDatabase();
+      await client.query(`UPDATE "asset" SET "originalPath" = $1 WHERE "id" = $2`, [originalPath, removed]);
+      // originals live in the server container's volume, not on the test host
+      const onDisk = async (path: string) => (await dockerExec([`test -f '${path}'`]).promise).exitCode === 0;
+      expect(await onDisk(originalPath)).toBe(true);
+      expect(await onDisk(soloPath)).toBe(true);
+
+      const reviewed = await review({ action: 'delete', ids: [removed, solo] });
+      expect(reviewed.status).toBe(200);
+      expect(reviewed.body).toMatchObject({ count: 2, retainedOriginals: 1 });
+      expect(reviewed.body.retainedBytes).toBeLessThan(reviewed.body.bytes);
+
+      await apply({ action: 'delete', ids: [removed, solo], token: reviewed.body.token }).expect(200);
+      await utils.waitForWebsocketEvent({ event: 'assetDelete', id: removed });
+      await utils.waitForWebsocketEvent({ event: 'assetDelete', id: solo });
+      await utils.waitForQueueFinish(admin.accessToken, 'backgroundTask');
+
+      await expect(utils.getAssetInfo(admin.accessToken, keeper)).resolves.toMatchObject({ isTrashed: false });
+      expect(await onDisk(originalPath)).toBe(true);
+      expect(await onDisk(soloPath)).toBe(false);
     });
 
     it("should not review another account's items", async () => {
