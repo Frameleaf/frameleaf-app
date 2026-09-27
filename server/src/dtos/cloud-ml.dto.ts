@@ -3,6 +3,7 @@ import z from 'zod';
 import { MlDestinationResponseSchema } from 'src/dtos/ml-destination.dto.js';
 import { MlWorkloadSchema } from 'src/enum.js';
 import { CLOUD_MODEL_GROUPS } from 'src/utils/frameleaf-cloud.js';
+import { stringToBool } from 'src/validation.js';
 
 /**
  * Frameleaf Cloud processing administration (FL-159, CLD-201). Customer copy says "Frameleaf Cloud";
@@ -35,6 +36,26 @@ const CloudMlConsentStateSchema = z
     outdated: z.boolean().describe('Consent was given, but for an older version; processing is refused until renewed'),
   })
   .meta({ id: 'CloudMlConsentStateDto' });
+
+const CloudMlConsentTermsQuerySchema = z
+  .object({
+    identityNames: stringToBool.optional().describe('The names-in-photos feature as the administrator chose it'),
+    medicalSignals: stringToBool.optional().describe('The medical-signals feature as the administrator chose it'),
+  })
+  .meta({ id: 'CloudMlConsentTermsQueryDto' });
+
+const CloudMlConsentTermsSchema = z
+  .object({
+    requiredVersion: z.string().describe('The consent version the chosen features need now'),
+    recordedVersion: z.string().nullable().describe('The version Frameleaf Cloud has on record for this server'),
+    summary: z.string().describe('What that version covers, as Frameleaf Cloud words it'),
+    textSha256: z
+      .string()
+      .nullable()
+      .describe('SHA-256 of that version’s text; sent back when accepting, so only the terms shown are recorded'),
+    documentUrl: z.string().nullable().describe('The full consent text, when Frameleaf Cloud links one'),
+  })
+  .meta({ id: 'CloudMlConsentTermsDto' });
 
 const CloudMlWalletSchema = z
   .object({
@@ -253,6 +274,8 @@ const CloudMlDescriptionBatchesResponseSchema = z
   })
   .meta({ id: 'CloudMlDescriptionBatchesResponseDto' });
 
+export class CloudMlConsentTermsQueryDto extends createZodDto(CloudMlConsentTermsQuerySchema) {}
+export class CloudMlConsentTermsDto extends createZodDto(CloudMlConsentTermsSchema) {}
 export class CloudMlStatusResponseDto extends createZodDto(CloudMlStatusResponseSchema) {}
 export class CloudMlWalletDto extends createZodDto(CloudMlWalletSchema) {}
 export class CloudMlCatalogResponseDto extends createZodDto(CloudMlCatalogResponseSchema) {}
