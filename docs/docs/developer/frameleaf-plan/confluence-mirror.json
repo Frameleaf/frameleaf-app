@@ -73,19 +73,19 @@
       "version": 4
     },
     {
-      "bytes": 42535,
+      "bytes": 43190,
       "category": "reference",
       "id": "64749620",
-      "readbackAt": "2026-09-27T03:40:30.000Z",
-      "readbackResult": "FL-168: markdown read-back of version 7 begins with the header carrying SHA-256 fa9bbc92, 42535 bytes, the FL-168 commit a2b1b11c14 pushed on master/frameleaf-implementation (the source-at-commit backlink) and the FL-168/FL-162/FL-164/FL-165/FL-160/FL-161 links; it contains the new 'Environment variables and secrets' section and ends with the unchanged 'Restoration and Smooth motion on Frameleaf Cloud' section. Published as HTML. The markdown export drops same-page anchor link markup (text kept) and table alignment, the same known round-trip limitation as prior read-backs; no user-authored additions.",
+      "readbackAt": "2026-09-27T05:02:00.000Z",
+      "readbackResult": "FL-168: markdown read-back of version 8 begins with the header carrying SHA-256 78542b2a, 43190 bytes, the FL-168 commits a2b1b11c14, 8c1c11d0ef and f5a3e2ee0d pushed on master/frameleaf-implementation (source-at-commit backlink f5a3e2ee0d); the introduction describes first-run setup linking and the Turn off backup paragraph says where to delete the bucket; the page still ends with the unchanged Restoration and Smooth motion section. Published as HTML. The markdown export drops same-page anchor link markup (text kept) and table alignment, the known round-trip limitation; no user-authored additions.",
       "source": "docs/docs/administration/frameleaf-cloud.md",
       "sourceBranch": "master/frameleaf-implementation",
-      "sourceCommit": "a2b1b11c1452e3a3eee87e430e199182827c6f33",
-      "sourceSha256": "fa9bbc9227a42a305d92b8e04b1e92d94fec3bf13cb961ab5a39a900ab9f78ea",
-      "sourceState": "pushed-fl-168-cloud-polish-2026-09-27",
+      "sourceCommit": "f5a3e2ee0dfaa3cc90a82e12882e917938659556",
+      "sourceSha256": "78542b2abaea8824bdd44a0259f4f93cb013aa70b0bb0da88aba68e0f1548467",
+      "sourceState": "pushed-fl-168-first-run-linking-2026-09-27",
       "title": "Administration Reference — Frameleaf Cloud",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/64749620/Administration+Reference+Frameleaf+Cloud",
-      "version": 7
+      "version": 8
     },
     {
       "bytes": 12350,
