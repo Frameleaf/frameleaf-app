@@ -149,6 +149,38 @@
       ]
     },
     {
+      "kind": "restored-version",
+      "label": "Restored version",
+      "description": "An accepted AI restoration of a library original (FL-115), placed by the person choosing Use in Studio. Owner only, like the restoration itself; never inherited from the playback choice and never a replacement for the original. A discarded or expired restoration is refused, not swapped for the original. In the editor bin it is the media id `restored-<restoration id>`.",
+      "owner": "asset-owner",
+      "accessCheck": "asset-restoration-owner-read",
+      "egress": {
+        "local": "allowed",
+        "lan": "allowed",
+        "frameleaf-cloud": "explicit-consent"
+      },
+      "retention": "derived-replaceable",
+      "fileBacked": true,
+      "carriesPersonalData": true,
+      "graphKeys": [
+        "restorationId"
+      ],
+      "refusals": [
+        "invalid-id",
+        "not-found",
+        "no-access",
+        "locked",
+        "trashed",
+        "offline",
+        "hidden-content",
+        "shared-link-session",
+        "destination-not-permitted",
+        "restoration-discarded",
+        "restoration-expired",
+        "restoration-not-ready"
+      ]
+    },
+    {
       "kind": "project-import",
       "label": "Project import",
       "description": "Media uploaded into the project rather than the library: voiceover recordings, music files, stills. Declared by the project with a checksum; stored with the project, not in the library.",
@@ -437,5 +469,5 @@
       ]
     }
   ],
-  "digest": "85388d4da279f6c418d0847cf09e71540aac3861a8390ab93a5e9d5857088f58"
+  "digest": "bf16d099819025bb0fe25ec33f1735daca0cb8165255e683c696397e16705432"
 }

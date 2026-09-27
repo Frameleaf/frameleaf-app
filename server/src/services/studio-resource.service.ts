@@ -37,14 +37,17 @@
  * plan requires anyway. The project repository (FL-89) is not present in this checkout, so the
  * caller supplies the project's declared imports and generated intermediates in the context.
  */
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Selectable } from 'kysely';
 import { createHmac } from 'node:crypto';
+import { AssetRestorationMode, AssetRestorationSourceType } from 'src/dtos/asset-restoration.dto.js';
 import { AuthDto } from 'src/dtos/auth.dto.js';
+import { StudioRestoredVersionDto, StudioRestoredVersionUnavailable } from 'src/dtos/studio-source.dto.js';
 import { AssetFileType, AssetType, Permission } from 'src/enum.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
 import { BaseService } from 'src/services/base.service.js';
 import { getLockedOwnerId, isLockedAssetRow } from 'src/utils/locked-visibility.js';
+import { restoredVersionState } from 'src/utils/restoration.js';
 import {
   STUDIO_MAX_GRAPH_BYTES,
   StudioAudioSource,
@@ -61,6 +64,7 @@ import {
   isStudioUuid,
   measureStudioGraph,
   studioReferenceKey,
+  studioRestoredMediaId,
 } from 'src/utils/studio-resources.js';
 import {
   type StudioRightsCatalog,
@@ -174,6 +178,8 @@ export type StudioAuthorizedEntry = {
   sourceAccess: StudioSourceAccess;
   /** `render` entries receive a worker read grant; nothing ever receives an original-download grant. */
   grant: 'render' | 'none';
+  /** A restored version's library original (FL-115), whose access every preview frame re-checks. */
+  assetId?: string;
 };
 
 export type StudioRefusedReference = {
@@ -249,6 +255,11 @@ export type StudioReadGrantPayload = {
    * the preview at the next frame instead of serving a cached one.
    */
   assetIds?: string[];
+  /**
+   * Preview grants only: the restored versions the previewed revision places (FL-115). Every frame
+   * read re-checks each one, so discarding or expiring it stops the preview like losing access.
+   */
+  restorationIds?: string[];
 };
 
 export type StudioReadGrant = {
@@ -281,6 +292,25 @@ type AssetDecision =
   | { ok: true; asset: AssetRow; sourceAccess: 'owner' | 'shared' }
   | { ok: false; reason: StudioRefusalReason; detail: string };
 
+type RestoredVersionDecision =
+  | { ok: true; ownerId: string; assetId: string; path: string }
+  | { ok: false; reason: StudioRefusalReason; detail: string };
+
+const restorationRefusals = {
+  discarded: {
+    reason: StudioRefusalReason.RestorationDiscarded,
+    detail: 'The restored version was discarded; choose the original or another version.',
+  },
+  expired: {
+    reason: StudioRefusalReason.RestorationExpired,
+    detail: 'The restored version has expired and its file was removed.',
+  },
+  'not-ready': {
+    reason: StudioRefusalReason.RestorationNotReady,
+    detail: 'The restoration has no finished result to place.',
+  },
+} as const;
+
 const timelineTypes = new Set<AssetType>([AssetType.Image, AssetType.Video]);
 const editedMasterTypes = new Set<AssetFileType>([AssetFileType.EncodedVideo, AssetFileType.FullSize]);
 const vectorContentTypes = new Set([
@@ -289,6 +319,17 @@ const vectorContentTypes = new Set([
   'application/zip',
   'application/x-lottie+json',
 ]);
+
+/** What the owner is told about a restored version the bin cannot place; `undefined` is a 404. */
+const restoredVersionUnavailable: Partial<Record<StudioRefusalReason, StudioRestoredVersionUnavailable>> = {
+  [StudioRefusalReason.RestorationDiscarded]: StudioRestoredVersionUnavailable.Discarded,
+  [StudioRefusalReason.RestorationExpired]: StudioRestoredVersionUnavailable.Expired,
+  [StudioRefusalReason.RestorationNotReady]: StudioRestoredVersionUnavailable.NotReady,
+  [StudioRefusalReason.Locked]: StudioRestoredVersionUnavailable.Locked,
+  [StudioRefusalReason.Trashed]: StudioRestoredVersionUnavailable.Trashed,
+  [StudioRefusalReason.Offline]: StudioRestoredVersionUnavailable.Offline,
+  [StudioRefusalReason.HiddenContent]: StudioRestoredVersionUnavailable.HiddenContent,
+};
 
 @Injectable()
 export class StudioResourceService extends BaseService {
@@ -366,7 +407,7 @@ export class StudioResourceService extends BaseService {
 
     const authorize = (
       reference: StudioResourceReference,
-      fields: Pick<StudioAuthorizedEntry, 'ownerId' | 'checksum' | 'path' | 'sourceAccess' | 'grant'>,
+      fields: Pick<StudioAuthorizedEntry, 'ownerId' | 'checksum' | 'path' | 'sourceAccess' | 'grant' | 'assetId'>,
     ) => {
       entries.push({
         key: studioReferenceKey(reference),
@@ -453,6 +494,7 @@ export class StudioResourceService extends BaseService {
     };
 
     const editedMasterReferences: StudioResourceReference[] = [];
+    const restoredReferences: StudioResourceReference[] = [];
     const generatedReferences: StudioResourceReference[] = [];
 
     for (const reference of references) {
@@ -479,6 +521,13 @@ export class StudioResourceService extends BaseService {
         case StudioResourceKind.EditedMaster: {
           if (!destinationRefusal(reference)) {
             editedMasterReferences.push(reference);
+          }
+          break;
+        }
+
+        case StudioResourceKind.RestoredVersion: {
+          if (!destinationRefusal(reference)) {
+            restoredReferences.push(reference);
           }
           break;
         }
@@ -779,6 +828,26 @@ export class StudioResourceService extends BaseService {
       });
     }
 
+    // Restored versions (FL-115): the owner's own accepted restorations, never anybody else's, and
+    // never the playback choice by implication. The original's decision applies to them as well.
+    for (const reference of restoredReferences) {
+      const decision = await this.decideRestoredVersion(auth, reference.id, {
+        backgroundRunner: context.backgroundRunner,
+      });
+      if (!decision.ok) {
+        refuse(reference, decision.reason, decision.detail);
+        continue;
+      }
+      authorize(reference, {
+        ownerId: decision.ownerId,
+        checksum: null,
+        path: decision.path,
+        sourceAccess: 'owner',
+        grant: 'render',
+        assetId: decision.assetId,
+      });
+    }
+
     // Generated intermediates last, and to a fixed point, because one may derive from another.
     let pending = generatedReferences;
     let progressed = true;
@@ -948,9 +1017,12 @@ export class StudioResourceService extends BaseService {
         ...new Set(
           manifest.entries
             .filter((entry) => entry.sourceAccess === 'owner' || entry.sourceAccess === 'shared')
-            .map((entry) => entry.id),
+            .map((entry) => entry.assetId ?? entry.id),
         ),
       ],
+      restorationIds: manifest.entries
+        .filter((entry) => entry.kind === StudioResourceKind.RestoredVersion)
+        .map((entry) => entry.id),
     };
     return this.cryptoRepository.signJwt(payload, this.secret, { expiresIn: ttlSeconds });
   }
@@ -1009,7 +1081,22 @@ export class StudioResourceService extends BaseService {
           }
         }
       }
+      for (const restorationId of grant.restorationIds ?? []) {
+        const decision = await this.decideRestoredVersion(auth, restorationId, { backgroundRunner });
+        if (!decision.ok) {
+          return { valid: false, reason: decision.reason, detail: decision.detail };
+        }
+      }
       return { valid: true, grant, path: '' };
+    }
+
+    if (grant.kind === StudioResourceKind.RestoredVersion) {
+      // Re-decided on every open: a discarded, expired, relocked or trashed restoration stops here.
+      const decision = await this.decideRestoredVersion(auth, grant.id, { backgroundRunner });
+      if (!decision.ok) {
+        return { valid: false, reason: decision.reason, detail: decision.detail };
+      }
+      return { valid: true, grant, path: decision.path };
     }
 
     if (LIBRARY_BACKED_KINDS.has(grant.kind)) {
@@ -1068,6 +1155,88 @@ export class StudioResourceService extends BaseService {
   }
 
   /* ------------------------------------------------------------------ */
+
+  /**
+   * An accepted restoration as a media bin entry (FL-115): what the person chose with Use in Studio,
+   * or what a reopened project places. Decided by exactly the rules a clip of it is resolved with. The
+   * owner hears why it cannot be placed (discarded, expired, Locked, …); anyone else, and every
+   * restoration that does not exist, is a 404.
+   */
+  async getRestoredVersion(auth: AuthDto, restorationId: string): Promise<StudioRestoredVersionDto> {
+    const decision = await this.decideRestoredVersion(auth, restorationId);
+    const unavailable = decision.ok ? null : restoredVersionUnavailable[decision.reason];
+    if (unavailable === undefined) {
+      throw new NotFoundException('Restored version not found');
+    }
+    const row = await this.assetRestorationRepository.get(restorationId);
+    const asset = row && (await this.assetRepository.getById(row.assetId));
+    if (!row || !asset) {
+      throw new NotFoundException('Restored version not found');
+    }
+    const smoothMotion = row.mode === AssetRestorationMode.SmoothMotion;
+    return {
+      restorationId: row.id,
+      assetId: row.assetId,
+      mediaId: studioRestoredMediaId(row.id),
+      available: unavailable === null,
+      unavailable,
+      sourceType: row.sourceType as AssetRestorationSourceType,
+      mode: row.mode as AssetRestorationMode,
+      upscale: smoothMotion ? 1 : row.upscale,
+      smoothMotionFactor: smoothMotion ? row.upscale : null,
+      width: row.outputWidth,
+      height: row.outputHeight,
+      durationSeconds: row.sourceDurationSeconds,
+      originalFileName: asset.originalFileName,
+      restoredAt: row.restoredAt ? new Date(row.restoredAt).toISOString() : null,
+      expiresAt: row.resultExpiresAt ? new Date(row.resultExpiresAt).toISOString() : null,
+    };
+  }
+
+  /**
+   * Whether the acting user may place this restoration in Studio (FL-115): it must be theirs, its
+   * original must pass the same decision a library clip does (Locked, trashed, offline and hidden
+   * originals refuse it, and an interactive session never places a Locked one), and it must be a
+   * finished result that was neither discarded nor expired. Someone else's restoration and one that
+   * never existed give the same answer.
+   */
+  async decideRestoredVersion(
+    auth: AuthDto,
+    restorationId: string,
+    { backgroundRunner = false, now = new Date() }: { backgroundRunner?: boolean; now?: Date } = {},
+  ): Promise<RestoredVersionDecision> {
+    const notFound: RestoredVersionDecision = {
+      ok: false,
+      reason: StudioRefusalReason.NotFound,
+      detail: 'No such restored version.',
+    };
+    if (!isStudioUuid(restorationId)) {
+      return { ok: false, reason: StudioRefusalReason.InvalidId, detail: 'Restoration ids are UUIDs.' };
+    }
+    if (auth.sharedLink) {
+      return {
+        ok: false,
+        reason: StudioRefusalReason.SharedLinkSession,
+        detail: 'Shared links cannot resolve Studio resources.',
+      };
+    }
+    const row = await this.assetRestorationRepository.get(restorationId);
+    if (!row || row.ownerId !== auth.user.id) {
+      return notFound;
+    }
+    const asset = (await this.decideAssets(auth, new Set([row.assetId]), { backgroundRunner })).get(row.assetId);
+    if (!asset || (asset.ok && asset.sourceAccess !== 'owner')) {
+      return notFound;
+    }
+    if (!asset.ok) {
+      return asset.reason === StudioRefusalReason.NotFound ? notFound : asset;
+    }
+    const state = restoredVersionState(row, now);
+    if (!state.usable) {
+      return { ok: false, ...restorationRefusals[state.reason] };
+    }
+    return { ok: true, ownerId: row.ownerId, assetId: row.assetId, path: state.path };
+  }
 
   private async decideAssets(
     auth: AuthDto,

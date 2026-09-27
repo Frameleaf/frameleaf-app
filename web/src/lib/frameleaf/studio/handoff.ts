@@ -26,6 +26,11 @@ export interface StudioHandoff {
   /** Asset ids to start from, in the order the person selected them. */
   assetIds: string[];
   /**
+   * Accepted restorations the person chose with Use in Studio (FL-115), `?restored=<id>,<id>`. Each
+   * enters the bin as its own version beside, never instead of, its original.
+   */
+  restorationIds: string[];
+  /**
    * The asset whose quick editor opened Studio (FL-113). Studio offers the way back to it, and the
    * draft the person left there is waiting for them.
    */
@@ -34,22 +39,28 @@ export interface StudioHandoff {
   at: { num: number; den: number } | null;
 }
 
-export const parseStudioHandoff = (params: URLSearchParams): StudioHandoff => {
-  const projectId = params.get('project');
-
+/** Plain identifiers from a comma list, in order, deduplicated and capped. */
+const identifierList = (value: string | null): string[] => {
   const seen = new Set<string>();
-  const assetIds: string[] = [];
-  for (const raw of (params.get('assets') ?? '').split(',')) {
+  const ids: string[] = [];
+  for (const raw of (value ?? '').split(',')) {
     const id = raw.trim();
     if (!identifier.test(id) || seen.has(id)) {
       continue;
     }
     seen.add(id);
-    assetIds.push(id);
-    if (assetIds.length >= maxStudioHandoffAssets) {
+    ids.push(id);
+    if (ids.length >= maxStudioHandoffAssets) {
       break;
     }
   }
+  return ids;
+};
+
+export const parseStudioHandoff = (params: URLSearchParams): StudioHandoff => {
+  const projectId = params.get('project');
+  const assetIds = identifierList(params.get('assets'));
+  const restorationIds = identifierList(params.get('restored'));
 
   const returnTo = params.get('from');
   const at = params.get('at');
@@ -58,6 +69,7 @@ export const parseStudioHandoff = (params: URLSearchParams): StudioHandoff => {
   return {
     projectId: projectId && identifier.test(projectId) ? projectId : null,
     assetIds,
+    restorationIds,
     returnTo: returnTo && identifier.test(returnTo) ? returnTo : null,
     at: num !== undefined && den !== undefined && Number.isSafeInteger(num) ? { num, den } : null,
   };
@@ -67,11 +79,13 @@ export const parseStudioHandoff = (params: URLSearchParams): StudioHandoff => {
 export const studioHandoffQuery = ({
   projectId,
   assetIds = [],
+  restorationIds = [],
   returnTo,
   at,
 }: {
   projectId?: string | null;
   assetIds?: readonly string[];
+  restorationIds?: readonly string[];
   returnTo?: string | null;
   at?: { num: number; den: number } | null;
 }): string => {
@@ -82,6 +96,10 @@ export const studioHandoffQuery = ({
   const ids = assetIds.filter((id) => identifier.test(id)).slice(0, maxStudioHandoffAssets);
   if (ids.length > 0) {
     params.set('assets', ids.join(','));
+  }
+  const restored = restorationIds.filter((id) => identifier.test(id)).slice(0, maxStudioHandoffAssets);
+  if (restored.length > 0) {
+    params.set('restored', restored.join(','));
   }
   if (returnTo && identifier.test(returnTo)) {
     params.set('from', returnTo);

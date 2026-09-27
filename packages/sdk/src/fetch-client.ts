@@ -9789,6 +9789,35 @@ export type StudioProjectDiffDto = {
     /** More paths changed than are listed */
     truncated: boolean;
 };
+export type StudioRestoredVersionDto = {
+    /** The library original it was made from; never replaced by it */
+    assetId: string;
+    /** Whether it can be placed and rendered now */
+    available: boolean;
+    /** Length of a video, in seconds */
+    durationSeconds: number | null;
+    /** When the result will be removed, when it has a retention date */
+    expiresAt: string | null;
+    /** Pixel height of the restored file */
+    height: number | null;
+    /** The media id a clip of this version carries: `restored-<restorationId>` */
+    mediaId: string;
+    mode: AssetRestorationMode;
+    /** The original’s file name, for the bin label */
+    originalFileName: string;
+    /** The restoration */
+    restorationId: string;
+    /** When the full result finished */
+    restoredAt: string | null;
+    /** Frame-rate factor of a Smooth motion version */
+    smoothMotionFactor: number | null;
+    sourceType: AssetRestorationSourceType;
+    unavailable: (StudioRestoredVersionUnavailable) | null;
+    /** Upscale factor of a restoration; 1 for Smooth motion */
+    upscale: number;
+    /** Pixel width of the restored file */
+    width: number | null;
+};
 export type StudioWorkspaceDto = {
     /** The engine revision that wrote the layout */
     engineRevision: string | null;
@@ -19456,6 +19485,19 @@ export function restoreStudioProjectFromTrash({ id }: {
     }));
 }
 /**
+ * Get a restored version for Studio
+ */
+export function getStudioRestoredVersion({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioRestoredVersionDto;
+    }>(`/studio/restored-versions/${encodeURIComponent(id)}`, {
+        ...opts
+    }));
+}
+/**
  * Get your Studio workspace layout
  */
 export function getStudioWorkspace(opts?: Oazapfts.RequestOpts) {
@@ -22904,6 +22946,15 @@ export enum StudioProjectSort {
 export enum StudioProjectAccess {
     Owner = "owner",
     Reviewer = "reviewer"
+}
+export enum StudioRestoredVersionUnavailable {
+    Discarded = "discarded",
+    Expired = "expired",
+    NotReady = "not-ready",
+    Locked = "locked",
+    Trashed = "trashed",
+    Offline = "offline",
+    HiddenContent = "hidden-content"
 }
 export enum SyncEntityType {
     AuthUserV1 = "AuthUserV1",

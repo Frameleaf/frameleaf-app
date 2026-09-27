@@ -1,6 +1,8 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
+import type { AssetRestoration } from 'src/repositories/asset-restoration.repository.js';
 import type { StudioResourceRights } from 'src/utils/studio-rights.generated.js';
 import { AuthSession } from 'src/database.js';
+import { AssetRestorationStatus } from 'src/dtos/asset-restoration.dto.js';
 import { AuthDto } from 'src/dtos/auth.dto.js';
 import { AssetFileType, AssetType, AssetVisibility } from 'src/enum.js';
 import {
@@ -15,6 +17,7 @@ import {
   StudioDestination,
   StudioRefusalReason,
   StudioResourceKind,
+  studioRestoredMediaId,
 } from 'src/utils/studio-resources.js';
 import { studioProducerModels } from 'src/utils/studio-rights.js';
 import { AssetFileFactory } from 'test/factories/asset-file.factory.js';
@@ -522,6 +525,294 @@ describe(StudioResourceService.name, () => {
       expect(refused).toEqual([
         expect.objectContaining({ kind: StudioResourceKind.EditedMaster, reason: StudioRefusalReason.NotFound }),
       ]);
+    });
+  });
+
+  describe('restored versions (FL-115)', () => {
+    const restoration = (overrides: Partial<AssetRestoration> = {}) =>
+      ({
+        id: newUuid(),
+        assetId: newUuid(),
+        ownerId: auth.user.id,
+        status: AssetRestorationStatus.Restored,
+        resultPath: '/thumbs/restorations/result.mp4',
+        resultExpiresAt: null,
+        isCurrent: false,
+        ...overrides,
+      }) as AssetRestoration;
+
+    const withRestoration = (overrides: Partial<AssetRestoration> = {}, assetOverrides = {}) => {
+      const asset = ownedVideo(assetOverrides);
+      const row = restoration({ assetId: asset.id, ...overrides });
+      mocks.asset.getByIds.mockResolvedValue([asset]);
+      allowOwned(asset.id);
+      mocks.assetRestoration.get.mockImplementation((id) => Promise.resolve(id === row.id ? row : undefined));
+      return { asset, row };
+    };
+
+    it('places the owner’s finished restoration named by its bin id, reading the restored file', async () => {
+      const { asset, row } = withRestoration();
+
+      const { manifest, refused } = await sut.resolveProjectResources(
+        auth,
+        context(sequenceWith({ kind: 'video', mediaId: studioRestoredMediaId(row.id) })),
+      );
+
+      expect(refused).toEqual([]);
+      expect(manifest.complete).toBe(true);
+      expect(mocks.assetRestoration.get).toHaveBeenCalledWith(row.id);
+      expect(manifest.entries).toEqual([
+        expect.objectContaining({
+          key: `restored-version:${row.id}`,
+          kind: StudioResourceKind.RestoredVersion,
+          id: row.id,
+          ownerId: auth.user.id,
+          path: row.resultPath,
+          sourceAccess: 'owner',
+          grant: 'render',
+          assetId: asset.id,
+        }),
+      ]);
+    });
+
+    it('places it by an explicit restorationId too', async () => {
+      const { row } = withRestoration();
+      const { manifest } = await sut.resolveProjectResources(auth, context(sequenceWith({ restorationId: row.id })));
+      expect(manifest.entries).toEqual([expect.objectContaining({ kind: StudioResourceKind.RestoredVersion })]);
+    });
+
+    it('never replaces the original: both can sit in one project, each reading its own file', async () => {
+      const { asset, row } = withRestoration();
+
+      const { manifest } = await sut.resolveProjectResources(
+        auth,
+        context(sequenceWith({ mediaId: asset.id }, { mediaId: studioRestoredMediaId(row.id) })),
+      );
+
+      expect(manifest.entries.map((entry) => [entry.kind, entry.path])).toEqual([
+        [StudioResourceKind.LibraryAsset, asset.originalPath],
+        [StudioResourceKind.RestoredVersion, row.resultPath],
+      ]);
+    });
+
+    it('never inherits the playback choice: a clip of the original stays the original', async () => {
+      withRestoration({ isCurrent: true });
+      const asset = (await mocks.asset.getByIds([]))[0];
+
+      const { manifest } = await sut.resolveProjectResources(auth, context(sequenceWith({ mediaId: asset.id })));
+
+      expect(manifest.entries).toEqual([
+        expect.objectContaining({ kind: StudioResourceKind.LibraryAsset, path: asset.originalPath }),
+      ]);
+      expect(mocks.assetRestoration.get).not.toHaveBeenCalled();
+      expect(mocks.assetRestoration.listRestoredForPlayback).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['discarded', AssetRestorationStatus.Discarded, {}, StudioRefusalReason.RestorationDiscarded],
+      ['expired', AssetRestorationStatus.Expired, {}, StudioRefusalReason.RestorationExpired],
+      [
+        'past-retention',
+        AssetRestorationStatus.Restored,
+        { resultExpiresAt: new Date('2020-01-01') },
+        StudioRefusalReason.RestorationExpired,
+      ],
+      ['file-removed', AssetRestorationStatus.Restored, { resultPath: null }, StudioRefusalReason.RestorationExpired],
+      ['preview-only', AssetRestorationStatus.PreviewReady, {}, StudioRefusalReason.RestorationNotReady],
+      ['still-rendering', AssetRestorationStatus.Restoring, {}, StudioRefusalReason.RestorationNotReady],
+    ])('fails visibly for a %s restoration and never falls back to the original', async (_, status, extra, reason) => {
+      const { row } = withRestoration({ status, ...extra });
+
+      const { manifest, refused } = await sut.resolveProjectResources(
+        auth,
+        context(sequenceWith({ mediaId: studioRestoredMediaId(row.id) })),
+      );
+
+      expect(refused).toEqual([
+        expect.objectContaining({ kind: StudioResourceKind.RestoredVersion, id: row.id, reason }),
+      ]);
+      expect(manifest.complete).toBe(false);
+      expect(manifest.entries).toEqual([]);
+      expect(() => sut.assertAuthorizedManifest(manifest)).toThrow(BadRequestException);
+    });
+
+    it('answers someone else’s restoration exactly like a missing one, even with album access to the original', async () => {
+      const theirs = AssetFactory.create({ ownerId: newUuid(), type: AssetType.Video });
+      const row = restoration({ assetId: theirs.id, ownerId: theirs.ownerId });
+      mocks.asset.getByIds.mockResolvedValue([theirs]);
+      mocks.access.asset.checkAlbumAccess.mockResolvedValue(new Set([theirs.id]));
+      mocks.assetRestoration.get.mockResolvedValue(row);
+
+      const { refused } = await sut.resolveProjectResources(
+        auth,
+        context(sequenceWith({ mediaId: studioRestoredMediaId(row.id) })),
+      );
+
+      expect(refused).toEqual([
+        expect.objectContaining({ kind: StudioResourceKind.RestoredVersion, reason: StudioRefusalReason.NotFound }),
+      ]);
+      expect(mocks.asset.getByIds).not.toHaveBeenCalled();
+    });
+
+    it('keeps a shared project private: a reviewer is refused the owner’s restored version', async () => {
+      const { row } = withRestoration();
+      const reviewer = AuthFactory.create();
+
+      const { manifest, refused } = await sut.resolveProjectResources(reviewer, {
+        ...context(sequenceWith({ mediaId: studioRestoredMediaId(row.id) })),
+        ownerId: auth.user.id,
+      });
+
+      expect(manifest.complete).toBe(false);
+      expect(manifest.entries).toEqual([]);
+      expect(refused).toEqual([
+        expect.objectContaining({ reason: StudioRefusalReason.NotFound, detail: 'No such restored version.' }),
+      ]);
+    });
+
+    it('applies the original’s Locked, trashed and hidden decisions to its restored versions', async () => {
+      const { row } = withRestoration({}, { visibility: AssetVisibility.Locked });
+      const elevated: AuthDto = { ...auth, session: { id: 'sid', hasElevatedPermission: true } as AuthSession };
+      const graph = sequenceWith({ mediaId: studioRestoredMediaId(row.id) });
+
+      // an ordinary session does not learn that the original is Locked
+      expect((await sut.resolveProjectResources(auth, context(graph))).refused).toEqual([
+        expect.objectContaining({ reason: StudioRefusalReason.NotFound }),
+      ]);
+      expect((await sut.resolveProjectResources(elevated, context(graph))).refused).toEqual([
+        expect.objectContaining({ reason: StudioRefusalReason.Locked }),
+      ]);
+      // a render the owner already submitted still reads it
+      expect(
+        (await sut.resolveProjectResources(elevated, context(graph, { backgroundRunner: true }))).manifest.complete,
+      ).toBe(true);
+
+      mocks.asset.getByIds.mockResolvedValue([ownedVideo({ id: row.assetId, deletedAt: new Date() })]);
+      expect((await sut.resolveProjectResources(auth, context(graph))).refused).toEqual([
+        expect.objectContaining({ reason: StudioRefusalReason.Trashed }),
+      ]);
+
+      mocks.asset.getByIds.mockResolvedValue([ownedVideo({ id: row.assetId })]);
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set());
+      expect((await sut.resolveProjectResources(auth, context(graph))).refused).toEqual([
+        expect.objectContaining({ reason: StudioRefusalReason.HiddenContent }),
+      ]);
+    });
+
+    it('refuses a malformed restored id instead of guessing', async () => {
+      const { refused } = await sut.resolveProjectResources(auth, context(sequenceWith({ mediaId: 'restored-nope' })));
+      expect(refused).toEqual([expect.objectContaining({ reason: StudioRefusalReason.InvalidId })]);
+      expect(mocks.assetRestoration.get).not.toHaveBeenCalled();
+    });
+
+    it('refuses every reference for a shared-link session', async () => {
+      const { row } = withRestoration();
+      const shared = AuthFactory.from().sharedLink().build();
+      const { refused } = await sut.resolveProjectResources(
+        shared,
+        context(sequenceWith({ mediaId: studioRestoredMediaId(row.id) })),
+      );
+      expect(refused).toEqual([expect.objectContaining({ reason: StudioRefusalReason.SharedLinkSession })]);
+    });
+
+    it('issues a render grant for the restored file and re-decides it on every open', async () => {
+      const { asset, row } = withRestoration();
+      const { manifest } = await sut.resolveProjectResources(
+        auth,
+        context(sequenceWith({ mediaId: studioRestoredMediaId(row.id) })),
+      );
+      const [grant] = sut.issueReadGrants(manifest, { workerId: 'worker-1' });
+      expect(grant).toEqual(
+        expect.objectContaining({ kind: StudioResourceKind.RestoredVersion, id: row.id, path: row.resultPath }),
+      );
+
+      const payload = (mocks.crypto.signJwt.mock.calls.at(-1)?.[0] ?? {}) as StudioReadGrantPayload;
+      mocks.crypto.verifyJwt.mockReturnValue(payload);
+      await expect(sut.verifyReadGrant('token', { workerId: 'worker-1', auth })).resolves.toEqual({
+        valid: true,
+        grant: payload,
+        path: row.resultPath,
+      });
+
+      // discarded after the grant was issued: the next open is refused, the original is not served
+      mocks.assetRestoration.get.mockResolvedValue({
+        ...row,
+        status: AssetRestorationStatus.Discarded,
+        resultPath: null,
+      });
+      await expect(sut.verifyReadGrant('token', { workerId: 'worker-1', auth })).resolves.toEqual(
+        expect.objectContaining({ valid: false, reason: StudioRefusalReason.RestorationDiscarded }),
+      );
+      expect(asset.originalPath).not.toBe(row.resultPath);
+    });
+
+    describe('getRestoredVersion (the media bin entry)', () => {
+      it('describes the owner’s finished restoration as its own version with its bin media id', async () => {
+        const { asset, row } = withRestoration({
+          outputWidth: 3840,
+          outputHeight: 2160,
+          sourceDurationSeconds: 12.5,
+          sourceType: 'video',
+          mode: 'faithful',
+          upscale: 2,
+        });
+        mocks.asset.getById.mockResolvedValue(asset as never);
+
+        await expect(sut.getRestoredVersion(auth, row.id)).resolves.toEqual(
+          expect.objectContaining({
+            restorationId: row.id,
+            assetId: asset.id,
+            mediaId: `restored-${row.id}`,
+            available: true,
+            unavailable: null,
+            width: 3840,
+            height: 2160,
+            durationSeconds: 12.5,
+            upscale: 2,
+            smoothMotionFactor: null,
+            originalFileName: asset.originalFileName,
+          }),
+        );
+      });
+
+      it('tells the owner why a discarded or expired one cannot be placed', async () => {
+        const { asset, row } = withRestoration({ status: AssetRestorationStatus.Discarded, resultPath: null });
+        mocks.asset.getById.mockResolvedValue(asset as never);
+        await expect(sut.getRestoredVersion(auth, row.id)).resolves.toEqual(
+          expect.objectContaining({ available: false, unavailable: 'discarded' }),
+        );
+        mocks.assetRestoration.get.mockResolvedValue({ ...row, status: AssetRestorationStatus.Expired });
+        await expect(sut.getRestoredVersion(auth, row.id)).resolves.toEqual(
+          expect.objectContaining({ available: false, unavailable: 'expired' }),
+        );
+      });
+
+      it('is not found for anyone else, and for a Locked original outside an elevated session', async () => {
+        const { row } = withRestoration({}, { visibility: AssetVisibility.Locked });
+        await expect(sut.getRestoredVersion(AuthFactory.create(), row.id)).rejects.toBeInstanceOf(NotFoundException);
+        await expect(sut.getRestoredVersion(auth, row.id)).rejects.toBeInstanceOf(NotFoundException);
+        await expect(sut.getRestoredVersion(auth, newUuid())).rejects.toBeInstanceOf(NotFoundException);
+      });
+    });
+
+    it('binds the preview to the original and to the restoration, and stops it once it expires', async () => {
+      const { asset, row } = withRestoration();
+      const { manifest } = await sut.resolveProjectResources(
+        auth,
+        context(sequenceWith({ mediaId: studioRestoredMediaId(row.id) })),
+      );
+      sut.issuePreviewGrant(manifest, { workerId: 'worker-1' });
+      const preview = mocks.crypto.signJwt.mock.calls.at(-1)?.[0] as StudioReadGrantPayload;
+      expect(preview).toEqual(expect.objectContaining({ assetIds: [asset.id], restorationIds: [row.id] }));
+
+      mocks.crypto.verifyJwt.mockReturnValue(preview);
+      await expect(sut.verifyReadGrant('token', { workerId: 'worker-1', auth })).resolves.toEqual(
+        expect.objectContaining({ valid: true }),
+      );
+      mocks.assetRestoration.get.mockResolvedValue({ ...row, status: AssetRestorationStatus.Expired });
+      await expect(sut.verifyReadGrant('token', { workerId: 'worker-1', auth })).resolves.toEqual(
+        expect.objectContaining({ valid: false, reason: StudioRefusalReason.RestorationExpired }),
+      );
     });
   });
 

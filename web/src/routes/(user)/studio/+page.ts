@@ -1,4 +1,9 @@
-import { getAssetInfo, type AssetResponseDto } from '@immich/sdk';
+import {
+  getAssetInfo,
+  getStudioRestoredVersion,
+  type AssetResponseDto,
+  type StudioRestoredVersionDto,
+} from '@immich/sdk';
 import { parseStudioHandoff } from '$lib/frameleaf/studio/handoff';
 import { authenticate } from '$lib/utils/auth';
 import { getFormatter } from '$lib/utils/i18n';
@@ -29,14 +34,26 @@ export const load = (async ({ url }) => {
     .filter((result): result is PromiseFulfilledResult<AssetResponseDto> => result.status === 'fulfilled')
     .map((result) => result.value);
 
+  // FL-115: restorations chosen with Use in Studio. The server decides each with the rules a clip of it
+  // is resolved by; one that is not the person's is dropped like an unreadable asset, and one that was
+  // discarded or expired comes back marked unavailable so Studio says so instead of hiding it.
+  const restoredSettled = await Promise.allSettled(
+    handoff.restorationIds.map((id) => getStudioRestoredVersion({ id })),
+  );
+  const restoredVersions = restoredSettled
+    .filter((result): result is PromiseFulfilledResult<StudioRestoredVersionDto> => result.status === 'fulfilled')
+    .map((result) => result.value);
+
   return {
     projectId: handoff.projectId,
     assets,
+    restoredVersions,
     /** FL-113: the quick editor that opened Studio, and where its playhead was. */
     returnTo: handoff.returnTo,
     at: handoff.at,
     /** Ids the handoff asked for that this session could not read, for the honest count. */
-    unavailableAssetCount: handoff.assetIds.length - assets.length,
+    unavailableAssetCount:
+      handoff.assetIds.length - assets.length + handoff.restorationIds.length - restoredVersions.length,
     meta: {
       title: $t('frameleaf_studio_title'),
     },

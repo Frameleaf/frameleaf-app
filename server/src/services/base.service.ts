@@ -20,6 +20,7 @@ import { AppRepository } from 'src/repositories/app.repository.js';
 import { AssetEditRepository } from 'src/repositories/asset-edit.repository.js';
 import { AssetFileRepository } from 'src/repositories/asset-file.repository.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
+import { AssetRestorationRepository } from 'src/repositories/asset-restoration.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { ClassificationRepository } from 'src/repositories/classification.repository.js';
 import { ClusterGroupRepository } from 'src/repositories/cluster-group.repository.js';
@@ -101,6 +102,7 @@ export const BASE_SERVICE_DEPENDENCIES = [
   AssetEditRepository,
   AssetFileRepository,
   AssetJobRepository,
+  AssetRestorationRepository,
   ClassificationRepository,
   ClusterGroupRepository,
   ConfigRepository,
@@ -177,6 +179,7 @@ export class BaseService {
     protected assetEditRepository: AssetEditRepository,
     protected assetFileRepository: AssetFileRepository,
     protected assetJobRepository: AssetJobRepository,
+    protected assetRestorationRepository: AssetRestorationRepository,
     protected classificationRepository: ClassificationRepository,
     protected clusterGroupRepository: ClusterGroupRepository,
     protected configRepository: ConfigRepository,
@@ -262,6 +265,7 @@ export class BaseService {
       ctx.assetEditRepository,
       ctx.assetFileRepository,
       ctx.assetJobRepository,
+      ctx.assetRestorationRepository,
       ctx.classificationRepository,
       ctx.clusterGroupRepository,
       ctx.configRepository,
