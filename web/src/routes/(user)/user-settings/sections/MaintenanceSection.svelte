@@ -143,12 +143,15 @@
   });
 
   const onJobCreate = ({ dto }: { dto: JobCreateDto }) => {
-    if (!((Object.values(jobNames).includes(dto.name) || Object.values(refreshJobNames).includes(dto.name)) && jobs)) {
+    if (!(Object.values(jobNames).includes(dto.name) || Object.values(refreshJobNames).includes(dto.name))) {
       return;
     }
 
+    // A check started before the first poll still counts, or a quick run would never be re-read.
     activeJobs.add(dto.name);
-    jobs.integrityCheck.queueStatus.isActive = true;
+    if (jobs) {
+      jobs.integrityCheck.queueStatus.isActive = true;
+    }
   };
 </script>
 
