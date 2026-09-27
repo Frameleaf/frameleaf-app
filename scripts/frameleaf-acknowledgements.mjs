@@ -42,12 +42,17 @@ const STATUS = new Set(['recorded', 'looked-up', 'to-confirm']);
 const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
 
 /** Quoted strings in one Python set/dict literal, e.g. `_INSIGHTFACE_MODELS = { ... }`. */
-const pythonCollection = (source, name, keysOnly = false) => {
-  const match = new RegExp(`^${name} = \\{([\\s\\S]*?)^\\}`, 'm').exec(source);
+/**
+ * The string members of a module-level Python set or dict literal (`NAME = {` or an annotated
+ * `NAME: dict[...] = {`). A dict yields its keys; a set yields its members.
+ */
+const pythonCollection = (source, name, keysOnly) => {
+  const match = new RegExp(`^${name}(?::[^=\\n]*)? = \\{([\\s\\S]*?)^\\}`, 'm').exec(source);
   if (!match) {
     throw new Error(`${name} was not found`);
   }
-  const pattern = keysOnly ? /^\s*"([^"]+)":/gm : /^\s*"([^"]+)",?\s*$/gm;
+  const isDict = keysOnly ?? /^\s*"[^"]+"\s*:/m.test(match[1]);
+  const pattern = isDict ? /^\s*"([^"]+)"\s*:/gm : /^\s*"([^"]+)",?\s*$/gm;
   return [...match[1].matchAll(pattern)].map((entry) => entry[1]);
 };
 
