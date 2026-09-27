@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/svelte';
+import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
@@ -74,5 +74,19 @@ describe('MaintenanceSection integrity polling (FL-81)', () => {
     render(MaintenanceSection, { section: 'backups' });
 
     expect(await screen.findByRole('alert')).toHaveTextContent(en.frameleaf_cc_load_failed);
+  });
+
+  it('re-reads the summary after a check started before the first poll finishes', async () => {
+    sdkMock.getQueuesLegacy.mockResolvedValue(queue(false));
+    sdkMock.createJob.mockResolvedValue(undefined as never);
+
+    render(MaintenanceSection, { section: 'integrity' });
+    const card = await screen.findByRole('article', { name: 'Untracked Files' });
+    await fireEvent.click(within(card).getByRole('button', { name: en.admin.frameleaf_maintenance_run_check }));
+    await vi.waitFor(() => expect(sdkMock.createJob).toHaveBeenCalled());
+    expect(sdkMock.getIntegrityReportSummary).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(sdkMock.getIntegrityReportSummary).toHaveBeenCalledTimes(2);
   });
 });
