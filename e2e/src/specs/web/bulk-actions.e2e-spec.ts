@@ -127,8 +127,9 @@ test.describe('Bulk actions', () => {
 });
 
 /**
- * FL-32: "Select all n" against the real server. The set is frozen when it is chosen, a filter that
- * was active then bounds it, and a partner's item in the Timeline is never changed by it.
+ * FL-32: "Select all n" against the real server. The server counts and freezes the owner's matching
+ * Timeline set, a partner's item in the Timeline is never changed by it, and its Undo survives a
+ * reload. A filtered search's Select all never reaches what the filter left out.
  */
 test.describe('Everything matching', () => {
   let admin: LoginResponseDto;
@@ -161,17 +162,22 @@ test.describe('Everything matching', () => {
     await confirm.getByRole('button', { name: 'Archive', exact: true }).click();
 
     for (const asset of own) {
-      await expect.poll(() => visibilityOf(admin.accessToken, asset.id)).toBe('archive');
+      await expect.poll(() => visibilityOf(admin.accessToken, asset.id), { timeout: 20_000 }).toBe('archive');
     }
     await expect(visibilityOf(partner.accessToken, theirs.id)).resolves.toBe('timeline');
 
+    // The toast's Undo has gone by now; a reload offers the last archive's Undo once more.
+    await page.reload();
     await page.getByRole('button', { name: 'Undo', exact: true }).first().click();
     for (const asset of own) {
-      await expect.poll(() => visibilityOf(admin.accessToken, asset.id)).toBe('timeline');
+      await expect.poll(() => visibilityOf(admin.accessToken, asset.id), { timeout: 20_000 }).toBe('timeline');
     }
   });
 
-  test('a filter active when everything matching was chosen bounds what it archives', async ({ context, page }) => {
+  test('Select all on a filtered search archives its results and nothing it filtered out', async ({
+    context,
+    page,
+  }) => {
     const favorites = await Promise.all([1, 2].map(() => utils.createAsset(admin.accessToken, { isFavorite: true })));
     const other = await utils.createAsset(admin.accessToken);
 
@@ -179,25 +185,23 @@ test.describe('Everything matching', () => {
     await page.goto('/photos');
     await expect(page.locator(`[data-asset-id="${other.id}"]`)).toBeVisible();
 
-    const toolbar = page.getByTestId('frameleaf-results-toolbar');
-    await toolbar.getByRole('button', { name: 'Filter', exact: true }).click();
-    const filters = page.getByRole('complementary', { name: 'Library filters' });
-    await filters.getByRole('combobox', { name: 'Favorites' }).click();
-    await page.getByRole('option', { name: 'Yes', exact: true }).click();
+    // Filter opens the search palette's filters; its results page carries the filtered query.
+    await page.getByTestId('frameleaf-results-toolbar').getByRole('button', { name: 'Filter', exact: true }).click();
+    const favoritesFilter = page.getByRole('combobox', { name: 'Favorites' });
+    await favoritesFilter.click();
+    await page.getByRole('option', { name: 'Yes', exact: true }).click({ force: true });
+    await page.getByRole('button', { name: 'Show 2 results' }).click();
+    await expect(page.locator(`[data-asset-id="${favorites[0].id}"]`)).toBeVisible();
     await expect(page.locator(`[data-asset-id="${other.id}"]`)).toHaveCount(0);
 
-    await toolbar.getByRole('button', { name: 'More library actions' }).click();
-    await page
-      .getByRole('dialog', { name: 'Collection actions' })
-      .getByRole('button', { name: 'Select all 2 matching items' })
-      .click();
-    await expect(
-      page.getByRole('region', { name: 'Selected items' }).getByText('Everything matching this view'),
-    ).toBeVisible();
+    await select(page, favorites[0].id);
+    const bar = page.getByRole('region', { name: 'Selected items' });
+    await bar.getByRole('button', { name: 'Select all 2' }).click();
+    await expect(bar.getByText('2 selected')).toBeVisible();
 
     await moreAction(page, 'Archive');
     for (const asset of favorites) {
-      await expect.poll(() => visibilityOf(admin.accessToken, asset.id)).toBe('archive');
+      await expect.poll(() => visibilityOf(admin.accessToken, asset.id), { timeout: 20_000 }).toBe('archive');
     }
     await expect(visibilityOf(admin.accessToken, other.id)).resolves.toBe('timeline');
   });

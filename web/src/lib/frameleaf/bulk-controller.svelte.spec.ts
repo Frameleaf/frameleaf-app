@@ -287,6 +287,12 @@ describe('the bulk controller', () => {
         archiveOperationConfirmDto: { requestKey: prepared.requestKey },
       });
       expect(controller.undo).not.toBeNull();
+      // Confirming clears the selection, so the bar and its Undo close: the toast's Undo must stay
+      // as long as every other undo toast, not the 3 s default.
+      expect(toastManager.primary).toHaveBeenCalledWith(
+        expect.objectContaining({ description: 'frameleaf_bulk_queued', button: expect.any(Function) }),
+        { timeout: 8000 },
+      );
     });
 
     it('starts nothing when the prepared selection expired before it was confirmed', async () => {
@@ -312,6 +318,7 @@ describe('the bulk controller', () => {
       // shown once as the prototype's toast, with Undo on it, without a selection
       expect(toastManager.primary).toHaveBeenCalledWith(
         expect.objectContaining({ description: 'frameleaf_bulk_archive_undo_available', button: expect.any(Function) }),
+        { timeout: 8000 },
       );
       vi.mocked(toastManager.primary).mockClear();
       controller.undo = null;

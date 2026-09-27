@@ -551,9 +551,15 @@ export class BulkController {
 
   /** A toast in the prototype's shape (`setToast({ text, action })`): the message, and Undo on it. */
   #toastArchive(description: string, undo: BulkUndoEntry | null, undoLabel: string) {
-    toastManager.primary({
-      description,
-      ...(undo && {
+    if (!undo) {
+      toastManager.primary({ description });
+      return;
+    }
+    // Confirming clears the selection and closes the bar's Undo, so the toast keeps its Undo as
+    // long as every other undo toast does.
+    toastManager.primary(
+      {
+        description,
         button: (close: () => void) => ({
           label: undoLabel,
           onclick: () => {
@@ -561,8 +567,9 @@ export class BulkController {
             void undo.run();
           },
         }),
-      }),
-    });
+      },
+      { timeout: UNDO_TOAST_TIMEOUT_MS },
+    );
   }
 
   async #archiveUndo(operation: ArchiveOperationResponseDto): Promise<BulkUndoEntry> {
