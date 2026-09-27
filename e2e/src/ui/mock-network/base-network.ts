@@ -165,7 +165,13 @@ export const setupBaseMockApiRoutes = async (context: BrowserContext, adminUserI
         mapDarkStyleUrl: 'https://tiles.frameleaf.cloud/v1/style/dark.json',
         mapLightStyleUrl: 'https://tiles.frameleaf.cloud/v1/style/light.json',
         maintenanceMode: false,
-        frameleaf: { via: null, cloudConfigured: false, signInAvailable: false, signInRequired: false, publicUrl: null },
+        frameleaf: {
+          via: null,
+          cloudConfigured: false,
+          signInAvailable: false,
+          signInRequired: false,
+          publicUrl: null,
+        },
       },
     });
   });
