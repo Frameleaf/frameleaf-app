@@ -50,9 +50,9 @@ import { AssetFileType, AssetType, DecodeRefusal, Permission } from 'src/enum.js
 import { AssetTable } from 'src/schema/tables/asset.table.js';
 import { BaseService } from 'src/services/base.service.js';
 import { getLockedOwnerId, isLockedAssetRow } from 'src/utils/locked-visibility.js';
+import { isRevealedLockReason } from 'src/utils/locked.js';
 import { DecodeSupport, qualifySourceDecode } from 'src/utils/media-decode.js';
 import { restoredVersionState } from 'src/utils/restoration.js';
-import { isRevealedLockReason } from 'src/utils/locked.js';
 import {
   STUDIO_MAX_GRAPH_BYTES,
   StudioAudioSource,
@@ -1309,7 +1309,7 @@ export class StudioResourceService extends BaseService {
     }
 
     const [streams, { ffmpeg }] = await Promise.all([
-      this.assetRepository.getVideoStreamsForDecode([...videos.keys()]),
+      this.assetRepository.getVideoStreamsForDecode(videos.keys().toArray()),
       this.getConfig({ withCache: true }),
     ]);
     for (const stream of streams) {
