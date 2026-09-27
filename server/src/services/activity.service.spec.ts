@@ -97,7 +97,12 @@ describe(ActivityService.name, () => {
       const elevated = AuthFactory.from({ id: userId }).session({ hasElevatedPermission: true }).build();
       await sut.getStatistics(elevated, { albumId });
 
-      expect(mocks.activity.getStatistics).toHaveBeenCalledWith({ albumId, assetId: undefined, lockedOwnerId: userId });
+      expect(mocks.activity.getStatistics).toHaveBeenCalledWith({
+        albumId,
+        assetId: undefined,
+        lockedOwnerId: userId,
+        revealLockedOwnerId: userId,
+      });
     });
 
     it("keeps Locked items in view for the duplicate-like check of the caller's own reactions", async () => {

@@ -14,9 +14,12 @@
  * - Access is decided for the acting user, never inherited from the project owner. A project
  *   shared with a reviewer resolves the reviewer's access; sources they cannot see are refused.
  *   Project sharing therefore never grants original access.
- * - Locked media never enters Studio through the interactive path, even for an elevated session.
- *   A background runner (FL-95) resolving a job the owner already submitted says so explicitly
- *   with `backgroundRunner` and reads the Locked sources that job references. Trashed and offline originals
+ * - Locked media enters Studio interactively only as its owner's revealed lock (a mark or a
+ *   detection, `REVEALED_LOCK_REASONS`) in their elevated session, where it behaves like any other
+ *   item (owner decision, September 27, 2026, FL-195). Items moved from the old Locked folder never
+ *   do. While the session is locked the project keeps its references, and they resolve exactly
+ *   like missing media. A background runner (FL-95) resolving a job the owner already submitted
+ *   says so explicitly with `backgroundRunner` and reads the Locked sources that job references. Trashed and offline originals
  *   are refused. The acting user's sensitive and suppressed content settings apply through the
  *   same `checkAccess` the library uses.
  * - Nothing about an asset is reported before its access check. An asset the acting user cannot
@@ -49,6 +52,7 @@ import { BaseService } from 'src/services/base.service.js';
 import { getLockedOwnerId, isLockedAssetRow } from 'src/utils/locked-visibility.js';
 import { DecodeSupport, qualifySourceDecode } from 'src/utils/media-decode.js';
 import { restoredVersionState } from 'src/utils/restoration.js';
+import { isRevealedLockReason } from 'src/utils/locked.js';
 import {
   STUDIO_MAX_GRAPH_BYTES,
   StudioAudioSource,
@@ -144,7 +148,8 @@ export type StudioProjectResourceContext = {
    * Set only by background runners (FL-95 render workers) resolving a job its owner already
    * authorized: Locked sources the graph references are resolved instead of refused, because a
    * backend task must be able to read every asset the job names. The interactive Studio path
-   * never sets it, so nothing Locked is shown to, or placed by, a person through Studio.
+   * never sets it, so a person only ever places Locked media that is their own revealed lock, in
+   * their unlocked session (FL-195).
    */
   backgroundRunner?: boolean;
 };
@@ -1223,7 +1228,8 @@ export class StudioResourceService extends BaseService {
   /**
    * Whether the acting user may place this restoration in Studio (FL-115): it must be theirs, its
    * original must pass the same decision a library clip does (Locked, trashed, offline and hidden
-   * originals refuse it, and an interactive session never places a Locked one), and it must be a
+   * originals refuse it, and an interactive session places a Locked one only as its owner's revealed
+   * lock in an unlocked session, FL-195), and it must be a
    * finished result that was neither discarded nor expired. Someone else's restoration and one that
    * never existed give the same answer.
    */
@@ -1323,6 +1329,15 @@ export class StudioResourceService extends BaseService {
     return refused;
   }
 
+  /** FL-195: which of these (the elevated owner's own Locked assets) are locked for a revealed reason. */
+  private async getRevealedLockIds(ids: string[]): Promise<Set<string>> {
+    if (ids.length === 0) {
+      return new Set();
+    }
+    const locks = await this.assetRepository.getLockReasons(ids);
+    return new Set(locks.filter(({ reason }) => isRevealedLockReason(reason)).map(({ assetId }) => assetId));
+  }
+
   private async decideAssets(
     auth: AuthDto,
     ids: Set<string>,
@@ -1343,6 +1358,12 @@ export class StudioResourceService extends BaseService {
     // exists only for its owner's elevated session; a background runner's owner auth carries one.
     const allowed = await this.checkAccess({ auth, permission: Permission.AssetRead, ids: new Set(byId.keys()) });
     const elevatedOwnerId = getLockedOwnerId(auth);
+    // FL-195: why each of the elevated owner's own Locked rows is locked; only their revealed locks place
+    const revealedIds = await this.getRevealedLockIds(
+      elevatedOwnerId && !backgroundRunner
+        ? rows.filter((row) => row.ownerId === elevatedOwnerId && isLockedAssetRow(row)).map((row) => row.id)
+        : [],
+    );
     const notFound: AssetDecision = { ok: false, reason: StudioRefusalReason.NotFound, detail: 'No such asset.' };
 
     for (const id of ids) {
@@ -1364,12 +1385,13 @@ export class StudioResourceService extends BaseService {
               }
             : notFound,
         );
-      } else if (isLocked && !backgroundRunner) {
-        // only the owner's elevated session reaches this: Locked media never enters Studio interactively
+      } else if (isLocked && !backgroundRunner && !revealedIds.has(id)) {
+        // only the owner's elevated session reaches this: their marks and detections are revealed to it
+        // and place like any other item (FL-195); items from the old Locked folder never enter Studio
         decisions.set(id, {
           ok: false,
           reason: StudioRefusalReason.Locked,
-          detail: 'Locked media never enters Studio.',
+          detail: 'Items from the old Locked folder never enter Studio.',
         });
       } else if (asset.deletedAt) {
         // only the owner reaches a trashed asset: album and partner access never include the trash

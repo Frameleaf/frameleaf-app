@@ -259,8 +259,10 @@ interface AssetBuilderOptions extends HiddenContentQueryOptions {
   /** FL-34: with `visibility: locked`, only assets locked for one of these reasons. */
   lockReasons?: AssetLockReason[];
   /**
-   * FL-34: the owner whose own sensitive marks and detections an ordinary timeline reveals — the viewer,
-   * in an elevated session ("Revealed for this session"). Never set for albums or the Locked view.
+   * FL-34/FL-195: the owner whose own sensitive marks and detections every ordinary view reveals — the
+   * viewer, in an elevated session ("Revealed for this session"). It applies to a requested visibility
+   * other than `locked` (`visibilityIs`); the Locked view and an album read without a visibility have
+   * their own rules.
    */
   revealLockedOwnerId?: string;
   /**
@@ -2063,20 +2065,23 @@ export class AssetRepository {
 
   getStatistics(ownerId: string, options: AssetStatsOptions): Promise<AssetStats> {
     const { visibility, isFavorite, isTrashed } = options;
-    return this.db
-      .selectFrom('asset')
-      .select((eb) => eb.fn.countAll<number>().filterWhere('type', '=', AssetType.Audio).as(AssetType.Audio))
-      .select((eb) => eb.fn.countAll<number>().filterWhere('type', '=', AssetType.Image).as(AssetType.Image))
-      .select((eb) => eb.fn.countAll<number>().filterWhere('type', '=', AssetType.Video).as(AssetType.Video))
-      .select((eb) => eb.fn.countAll<number>().filterWhere('type', '=', AssetType.Other).as(AssetType.Other))
-      .where('ownerId', '=', asUuid(ownerId))
-      .$if(visibility === undefined, withDefaultVisibility)
-      .$if(!!visibility, (qb) => qb.where(visibilityIs(visibility!, 'asset')))
-      .$if(isFavorite !== undefined, (qb) => qb.where('isFavorite', '=', isFavorite!))
-      .$if(!!isTrashed, (qb) => qb.where('asset.status', '!=', AssetStatus.Deleted))
-      .$call((qb) => withHiddenContentFilter(qb, options))
-      .where('deletedAt', isTrashed ? 'is not' : 'is', null)
-      .executeTakeFirstOrThrow();
+    return (
+      this.db
+        .selectFrom('asset')
+        .select((eb) => eb.fn.countAll<number>().filterWhere('type', '=', AssetType.Audio).as(AssetType.Audio))
+        .select((eb) => eb.fn.countAll<number>().filterWhere('type', '=', AssetType.Image).as(AssetType.Image))
+        .select((eb) => eb.fn.countAll<number>().filterWhere('type', '=', AssetType.Video).as(AssetType.Video))
+        .select((eb) => eb.fn.countAll<number>().filterWhere('type', '=', AssetType.Other).as(AssetType.Other))
+        .where('ownerId', '=', asUuid(ownerId))
+        // FL-195: the owner's own revealed locks count in an unlocked session, like any other item
+        .$if(visibility === undefined, (qb) => withDefaultVisibility(qb, options.revealLockedOwnerId))
+        .$if(!!visibility, (qb) => qb.where(visibilityIs(visibility!, 'asset', options.revealLockedOwnerId)))
+        .$if(isFavorite !== undefined, (qb) => qb.where('isFavorite', '=', isFavorite!))
+        .$if(!!isTrashed, (qb) => qb.where('asset.status', '!=', AssetStatus.Deleted))
+        .$call((qb) => withHiddenContentFilter(qb, options))
+        .where('deletedAt', isTrashed ? 'is not' : 'is', null)
+        .executeTakeFirstOrThrow()
+    );
   }
 
   @GenerateSql({
@@ -2578,7 +2583,7 @@ export class AssetRepository {
       .select(['assetId as data', 'asset_exif.city as value'])
       .$narrowType<{ value: NotNull }>()
       .where('ownerId', '=', asUuid(ownerId))
-      .where(isTimelineVisible('asset'))
+      .where(isTimelineVisible('asset', options.revealLockedOwnerId))
       .where('type', '=', AssetType.Image)
       .where('deletedAt', 'is', null)
       .$call((qb) => withHiddenContentFilter(qb, options))
@@ -2595,7 +2600,7 @@ export class AssetRepository {
       .selectFrom('asset')
       .select(['id as data', 'createdAt as value'])
       .where('ownerId', '=', asUuid(ownerId))
-      .where(isTimelineVisible('asset'))
+      .where(isTimelineVisible('asset', options.revealLockedOwnerId))
       .where('type', '=', AssetType.Image)
       .where('deletedAt', 'is', null)
       .$call((qb) => withHiddenContentFilter(qb, options))

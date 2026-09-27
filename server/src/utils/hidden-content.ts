@@ -1,5 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import { getLockedOwnerId } from 'src/utils/locked.js';
 
 export type SuppressionScope = 'owned' | 'visible';
 
@@ -20,6 +21,12 @@ export type HiddenContentQueryOptions = {
   excludeNsfw?: boolean;
   hiddenContent?: HiddenContentFilter;
   onlyHiddenContent?: HiddenContentFilter;
+  /**
+   * FL-195: the viewer, in an elevated (PIN-unlocked) session, whose own revealed locks (marks and
+   * detections, `REVEALED_LOCK_REASONS`) an ordinary read shows like any other item. Server derived;
+   * never set for a shared link or an ordinary session, and it never reveals anyone else's media.
+   */
+  revealLockedOwnerId?: string;
 };
 
 export const emptySuppressionPreferences = (): SuppressionPreferences => ({
@@ -45,12 +52,18 @@ export const hasSuppressionPreferences = (
   );
 };
 
+/** FL-195: the reveal half of the privacy options, for an elevated session only. */
+export const getRevealQueryOptions = (auth: AuthDto): Pick<HiddenContentQueryOptions, 'revealLockedOwnerId'> => {
+  const revealLockedOwnerId = getLockedOwnerId(auth);
+  return revealLockedOwnerId ? { revealLockedOwnerId } : {};
+};
+
 export const getHiddenContentQueryOptions = (auth: AuthDto): HiddenContentQueryOptions => {
   if (auth.hiddenContent) {
     return { hiddenContent: auth.hiddenContent };
   }
 
-  return auth.hideNsfwAssets ? { excludeNsfw: true } : {};
+  return auth.hideNsfwAssets ? { excludeNsfw: true } : getRevealQueryOptions(auth);
 };
 
 export type SuppressibleEntity = 'person' | 'pet' | 'tag';
@@ -69,7 +82,10 @@ export const isSuppressedWhileLocked = (auth: AuthDto, entity: SuppressibleEntit
 };
 
 export const getSuppressedOnlyQueryOptions = (auth: AuthDto): HiddenContentQueryOptions => {
-  return { onlyHiddenContent: auth.suppressedContent ?? emptyHiddenContentFilter(auth.user.id) };
+  return {
+    onlyHiddenContent: auth.suppressedContent ?? emptyHiddenContentFilter(auth.user.id),
+    ...getRevealQueryOptions(auth),
+  };
 };
 
 export const requireSuppressedOnlyAccess = (auth: AuthDto, suppressedOnly?: boolean) => {

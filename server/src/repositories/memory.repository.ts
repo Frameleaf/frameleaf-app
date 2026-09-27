@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import {
+  type ExpressionBuilder,
   type Insertable,
   type Kysely,
   type OrderByDirection,
@@ -28,7 +29,7 @@ import { DB } from 'src/schema/index.js';
 import { MemoryExportTable } from 'src/schema/tables/memory-export.table.js';
 import { MemoryTable } from 'src/schema/tables/memory.table.js';
 import { asUuid, getHiddenContentFilter, withHiddenContentFilter } from 'src/utils/database.js';
-import { isTimelineVisible } from 'src/utils/locked.js';
+import { isTimelineVisible, revealedLockScope } from 'src/utils/locked.js';
 
 /**
  * FL-62: the owner's own curation narrows what a search returns — memories they hid, and their
@@ -72,6 +73,39 @@ const isUuid = (id: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}
  * see less of. Search and every single-memory read (get, update, create) share it, so hiding,
  * restoring or renaming a memory can never bring such an item back.
  */
+/**
+ * FL-195: a memory keeps its Locked items (they hold their place), but one whose every item is hidden
+ * from this session — locked and not revealed to it, or hidden content — is left out entirely, so its
+ * title, date and count never show while the session is locked. With a hidden-content filter an item
+ * must also be on the timeline and not trashed to count, as before; otherwise a memory of only trashed
+ * or archived items is unaffected.
+ */
+const withoutPrivateOnlyMemories = (eb: ExpressionBuilder<DB, 'memory'>, options: MemoryPrivacyOptions) => {
+  const strict = !!getHiddenContentFilter(options);
+  return eb.or([
+    eb.not((eb) =>
+      eb.exists(
+        eb
+          .selectFrom('memory_asset')
+          .select('memory_asset.memoriesId')
+          .whereRef('memory_asset.memoriesId', '=', 'memory.id'),
+      ),
+    ),
+    eb.exists(
+      eb
+        .selectFrom('memory_asset')
+        .innerJoin('asset', 'asset.id', 'memory_asset.assetId')
+        .select('memory_asset.memoriesId')
+        .whereRef('memory_asset.memoriesId', '=', 'memory.id')
+        .where(revealedLockScope(options.revealLockedOwnerId, 'asset'))
+        .$if(strict, (qb) =>
+          qb.where(isTimelineVisible('asset', options.revealLockedOwnerId)).where('asset.deletedAt', 'is', null),
+        )
+        .$call((qb) => withHiddenContentFilter(qb, options)),
+    ),
+  ]);
+};
+
 const withMemoryAssetFilters = <O>(
   qb: SelectQueryBuilder<DB, 'asset' | 'memory_asset', O>,
   options: MemoryPrivacyOptions,
@@ -235,30 +269,7 @@ export class MemoryRepository implements IBulkAsset {
           ]),
         ),
       )
-      .$if(!!getHiddenContentFilter(options), (qb) =>
-        qb.where((eb) =>
-          eb.or([
-            eb.not((eb) =>
-              eb.exists(
-                eb
-                  .selectFrom('memory_asset')
-                  .select('memory_asset.memoriesId')
-                  .whereRef('memory_asset.memoriesId', '=', 'memory.id'),
-              ),
-            ),
-            eb.exists(
-              eb
-                .selectFrom('memory_asset')
-                .innerJoin('asset', 'asset.id', 'memory_asset.assetId')
-                .select('memory_asset.memoriesId')
-                .whereRef('memory_asset.memoriesId', '=', 'memory.id')
-                .where(isTimelineVisible('asset'))
-                .where('asset.deletedAt', 'is', null)
-                .$call((qb) => withHiddenContentFilter(qb, options)),
-            ),
-          ]),
-        ),
-      );
+      .where((eb) => withoutPrivateOnlyMemories(eb, options));
   }
 
   @GenerateSql(
@@ -286,7 +297,7 @@ export class MemoryRepository implements IBulkAsset {
             .selectAll('asset')
             .innerJoin('memory_asset', 'asset.id', 'memory_asset.assetId')
             .whereRef('memory_asset.memoriesId', '=', 'memory.id')
-            .where(isTimelineVisible('asset'))
+            .where(isTimelineVisible('asset', options.revealLockedOwnerId))
             .where('asset.deletedAt', 'is', null)
             .$call((qb) => withMemoryAssetFilters(qb, options))
             .orderBy('asset.fileCreatedAt', 'asc'),
@@ -611,37 +622,14 @@ export class MemoryRepository implements IBulkAsset {
             .innerJoin('memory_asset', 'asset.id', 'memory_asset.assetId')
             .whereRef('memory_asset.memoriesId', '=', 'memory.id')
             .orderBy('asset.fileCreatedAt', 'asc')
-            .where(isTimelineVisible('asset'))
+            .where(isTimelineVisible('asset', options.revealLockedOwnerId))
             .where('asset.deletedAt', 'is', null)
             .$call((qb) => withMemoryAssetFilters(qb, options)),
         ).as('assets'),
       )
       .where('id', '=', id)
       .where('deletedAt', 'is', null)
-      .$if(!!getHiddenContentFilter(options), (qb) =>
-        qb.where((eb) =>
-          eb.or([
-            eb.not((eb) =>
-              eb.exists(
-                eb
-                  .selectFrom('memory_asset')
-                  .select('memory_asset.memoriesId')
-                  .whereRef('memory_asset.memoriesId', '=', 'memory.id'),
-              ),
-            ),
-            eb.exists(
-              eb
-                .selectFrom('memory_asset')
-                .innerJoin('asset', 'asset.id', 'memory_asset.assetId')
-                .select('memory_asset.memoriesId')
-                .whereRef('memory_asset.memoriesId', '=', 'memory.id')
-                .where(isTimelineVisible('asset'))
-                .where('asset.deletedAt', 'is', null)
-                .$call((qb) => withHiddenContentFilter(qb, options)),
-            ),
-          ]),
-        ),
-      );
+      .where((eb) => withoutPrivateOnlyMemories(eb, options));
   }
 
   /**

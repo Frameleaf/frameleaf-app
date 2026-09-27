@@ -121,9 +121,12 @@ export const isAssetChecksumConstraint = (error: unknown) =>
 export const isVideoStreamSessionPkConstraint = (error: unknown) =>
   (error as PostgresError)?.constraint_name === VIDEO_STREAM_SESSION_PK_CONSTRAINT;
 
-/** Timeline and Archive media that is not locked (FL-34, `src/utils/locked.ts`). */
-export function withDefaultVisibility<O>(qb: SelectQueryBuilder<DB, 'asset', O>) {
-  return qb.where(isDefaultVisible('asset'));
+/**
+ * Timeline and Archive media that is not locked (FL-34, `src/utils/locked.ts`). With `revealOwnerId`
+ * (the viewer, elevated) that owner's own revealed locks show too (FL-195).
+ */
+export function withDefaultVisibility<O>(qb: SelectQueryBuilder<DB, 'asset', O>, revealOwnerId?: string) {
+  return qb.where(isDefaultVisible('asset', revealOwnerId));
 }
 
 /**
@@ -576,7 +579,8 @@ export function searchAssetBuilderLegacy(kysely: Kysely<DB>, options: AssetSearc
       .$if(!!options.visibility, (qb) =>
         options.visibility === 'not-locked'
           ? qb.where(isNotLocked('asset'))
-          : qb.where(visibilityIs(options.visibility!, 'asset')),
+          : // FL-195: an elevated owner's own marks and detections match an ordinary visibility too
+            qb.where(visibilityIs(options.visibility!, 'asset', options.revealLockedOwnerId)),
       )
       // any read that could still match Locked media (no visibility asked, or Locked itself) is narrowed
       // to the viewer's own Locked media: partners and album members never contribute theirs
@@ -932,34 +936,43 @@ function existsPredicates(
 
 /**
  * A visibility condition as the caller means it (FL-34): `locked` is the lock record, and any other
- * value is that stored visibility on an asset that is not locked (`visibilityIs`).
+ * value is that stored visibility on an asset that is not locked (`visibilityIs`) — or, with
+ * `revealOwnerId` (the viewer, elevated), one of that owner's own revealed locks (FL-195).
  */
-function visibilityPredicates(filter: ComparisonFilter<AssetVisibility> = {}): Expression<SqlBool>[] {
+function visibilityPredicates(
+  filter: ComparisonFilter<AssetVisibility> = {},
+  revealOwnerId?: string,
+): Expression<SqlBool>[] {
   const predicates: Expression<SqlBool>[] = [];
   if (filter.eq !== undefined && filter.eq !== null) {
-    predicates.push(visibilityIs(filter.eq, 'asset'));
+    predicates.push(visibilityIs(filter.eq, 'asset', revealOwnerId));
   }
   if (filter.ne !== undefined && filter.ne !== null) {
-    predicates.push(sql<SqlBool>`not ${visibilityIs(filter.ne, 'asset')}`);
+    predicates.push(sql<SqlBool>`not ${visibilityIs(filter.ne, 'asset', revealOwnerId)}`);
   }
   if (filter.in !== undefined) {
-    predicates.push(visibilityIn(filter.in, 'asset'));
+    predicates.push(visibilityIn(filter.in, 'asset', revealOwnerId));
   }
   if (filter.notIn !== undefined) {
-    predicates.push(sql<SqlBool>`not ${visibilityIn(filter.notIn, 'asset')}`);
+    predicates.push(sql<SqlBool>`not ${visibilityIn(filter.notIn, 'asset', revealOwnerId)}`);
   }
   return predicates;
 }
 
 // predicates are collected as expressions rather than chained `where` calls so the same
 // helpers can build each `or` branch, which must compose into eb.and/eb.or
-function branchPredicates(eb: AssetExpressionBuilder, branch: SearchFilterBranch, viewerId: string | undefined) {
+function branchPredicates(
+  eb: AssetExpressionBuilder,
+  branch: SearchFilterBranch,
+  viewerId: string | undefined,
+  revealOwnerId?: string,
+) {
   const { encodedVideoPath } = branch;
   return [
     ...comparisonPredicates(eb, 'asset.id', branch.id),
     ...comparisonPredicates(eb, 'asset.libraryId', branch.libraryId),
     ...comparisonPredicates(eb, 'asset.type', branch.type),
-    ...visibilityPredicates(branch.visibility),
+    ...visibilityPredicates(branch.visibility, revealOwnerId),
     ...(branch.isFavorite ? [eb('asset.isFavorite', '=', branch.isFavorite.eq)] : []),
     ...(branch.isOffline ? [eb('asset.isOffline', '=', branch.isOffline.eq)] : []),
     ...(branch.isMotion ? [eb('asset.livePhotoVideoId', branch.isMotion.eq ? 'is not' : 'is', null)] : []),
@@ -1054,13 +1067,13 @@ export function searchAssetBuilder(kysely: Kysely<DB>, options: AssetSearchBuild
       )
       .$if(options.withStacked === false, (qb) => qb.where('asset.stackId', 'is', null))
       .where((eb) => {
-        const predicates = branchPredicates(eb, filter, viewerId);
+        const predicates = branchPredicates(eb, filter, viewerId, options.revealLockedOwnerId);
         if (branches.length > 0) {
           predicates.push(
             eb.or(
               branches.map((branch) =>
                 eb.and([
-                  ...branchPredicates(eb, branch, viewerId),
+                  ...branchPredicates(eb, branch, viewerId, options.revealLockedOwnerId),
                   ...(scopePerBranch && !isAlbumConfined(branch) ? [ownershipPredicate(eb)] : []),
                 ]),
               ),

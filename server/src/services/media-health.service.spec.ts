@@ -207,7 +207,10 @@ describe(MediaHealthService.name, () => {
 
       // No owner filter; the Locked scope admits only the administrator's own Locked media.
       expect(mediaHealthRepository.list).toHaveBeenCalledWith(
-        expect.objectContaining({ ownerId: undefined, privacy: { lockedOwnerId: authStub.admin.user.id } }),
+        expect.objectContaining({
+          ownerId: undefined,
+          privacy: { lockedOwnerId: authStub.admin.user.id, revealLockedOwnerId: authStub.admin.user.id },
+        }),
       );
     });
 
@@ -230,7 +233,7 @@ describe(MediaHealthService.name, () => {
       await sut.list(elevatedOwner, { size: 10 });
       await sut.dismiss(elevatedOwner, { ids: ['health-1'] });
 
-      const privacy = { lockedOwnerId: authStub.user1.user.id };
+      const privacy = { lockedOwnerId: authStub.user1.user.id, revealLockedOwnerId: authStub.user1.user.id };
       expect(mediaHealthRepository.list).toHaveBeenCalledWith(expect.objectContaining({ privacy }));
       expect(mediaHealthRepository.count).toHaveBeenCalledWith(expect.objectContaining({ privacy }));
       expect(mediaHealthRepository.getAssets).toHaveBeenCalledWith([], authStub.user1.user.id, privacy);
@@ -439,7 +442,7 @@ describe(MediaHealthService.name, () => {
         importReview: 7,
         enrichmentPending: 8,
       });
-      const privacy = { lockedOwnerId: authStub.user1.user.id };
+      const privacy = { lockedOwnerId: authStub.user1.user.id, revealLockedOwnerId: authStub.user1.user.id };
       expect(mediaHealthRepository.countByStatus).toHaveBeenCalledWith({ ownerId: authStub.user1.user.id, privacy });
       expect(mediaHealthRepository.countDuplicateGroups).toHaveBeenCalledWith({
         ownerId: authStub.user1.user.id,

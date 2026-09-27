@@ -136,6 +136,7 @@ describe(AlbumService.name, () => {
       expect(mocks.album.getMetadataForIds).toHaveBeenCalledWith([album.id], {
         onlyHiddenContent: suppressedContent,
         lockedOwnerId: owner.id,
+        revealLockedOwnerId: owner.id,
       });
     });
 
@@ -2463,10 +2464,13 @@ describe(AlbumService.name, () => {
 
       expect(mocks.album.getById).toHaveBeenCalledWith(
         album.id,
-        { withAssets: false, lockedOwnerId: owner.id },
+        { withAssets: false, lockedOwnerId: owner.id, revealLockedOwnerId: owner.id },
         owner.id,
       );
-      expect(mocks.album.getMetadataForIds).toHaveBeenCalledWith([album.id], { lockedOwnerId: owner.id });
+      expect(mocks.album.getMetadataForIds).toHaveBeenCalledWith([album.id], {
+        lockedOwnerId: owner.id,
+        revealLockedOwnerId: owner.id,
+      });
     });
 
     it('reads an album without a Locked owner for an ordinary session', async () => {

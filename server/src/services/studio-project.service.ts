@@ -47,6 +47,7 @@ import {
   StudioRefusedReference,
   StudioResourceService,
 } from 'src/services/studio-resource.service.js';
+import { asLockedSession } from 'src/utils/locked.js';
 import { checkStudioCommandBatch, studioCommandMirror } from 'src/utils/studio-commands.js';
 import {
   STUDIO_AUTOSAVE_DEBOUNCE_MS,
@@ -880,10 +881,12 @@ export class StudioProjectService {
 
   /**
    * A poster must be library media the owner could place in the project right now, decided by the
-   * FL-90 resolver for this session: Locked, trashed, offline and hidden media are all refused.
+   * FL-90 resolver: Locked, trashed, offline and hidden media are all refused. The poster shows in the
+   * project list whatever the session, so it is decided as a locked session would see it (FL-195): an
+   * unlocked owner may place their revealed locks in the project, but never make one its poster.
    */
   private async assertPosterUsable(auth: AuthDto, project: StudioProject, assetId: string): Promise<void> {
-    const { manifest } = await this.resources.resolveProjectResources(auth, {
+    const { manifest } = await this.resources.resolveProjectResources(asLockedSession(auth), {
       projectId: project.id,
       ownerId: project.ownerId,
       revision: project.currentRevision,

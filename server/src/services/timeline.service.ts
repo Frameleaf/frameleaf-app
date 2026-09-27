@@ -16,14 +16,8 @@ import { requireElevatedPermission } from 'src/utils/access.js';
 import { getMyPartnerIds } from 'src/utils/asset.util.js';
 import { getPrivacyQueryOptions, requireSuppressedOnlyAccess } from 'src/utils/hidden-content.js';
 import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
-import { getLockedOwnerId } from 'src/utils/locked.js';
 import { getLocationHiddenOwnerIdsForView } from 'src/utils/partner-location.js';
 import { requirePetFilterAllowed } from 'src/utils/search-filter.js';
-
-const getRevealOptions = (auth: AuthDto) => {
-  const revealLockedOwnerId = getLockedOwnerId(auth);
-  return revealLockedOwnerId ? { revealLockedOwnerId } : {};
-};
 
 @Injectable()
 export class TimelineService extends BaseService {
@@ -110,6 +104,10 @@ export class TimelineService extends BaseService {
 
     return {
       ...options,
+      // FL-195: for an elevated session this carries `revealLockedOwnerId`, so the owner's own marks
+      // and detections show in every ordinary view (timeline, archive, a person, a tag, an album
+      // filtered by visibility) like any other item ("Revealed for this session"); items from the old
+      // Locked folder do not
       ...getPrivacyQueryOptions(auth, suppressedOnly),
       // An album shows the viewer their own Locked members in an elevated session (owner decision,
       // September 22, 2026). The main timeline never does: the Locked view is its own view.
@@ -121,9 +119,6 @@ export class TimelineService extends BaseService {
       ...(dto.visibility === AssetVisibility.Locked &&
         !lockReason &&
         auth.suppressedContent && { lockedRuleMatches: auth.suppressedContent }),
-      // FL-34: the owner's own sensitive marks and detections show in their ordinary timeline once the
-      // session is unlocked ("Revealed for this session"); items from the old Locked folder do not
-      ...(!dto.albumId && dto.visibility === AssetVisibility.Timeline && getRevealOptions(auth)),
       ...(locationHiddenOwnerIds.length > 0 && { locationHiddenOwnerIds }),
     };
   }
