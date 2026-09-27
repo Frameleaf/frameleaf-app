@@ -29,6 +29,7 @@ import {
   VideoDevelopPreset,
   VideoTrimMode,
   type AssetEditActionItemDto,
+  type DecodeRefusal,
 } from '@immich/sdk';
 import {
   ASPECT_IDS,
@@ -133,6 +134,8 @@ export type VideoSource = {
   /** FL-113: what an edited version does with the original's colour, from the server's render policy. */
   colorPolicy?: 'preserve' | 'tone-map' | 'unsupported';
   colorReason?: string;
+  /** FL-101: why the server cannot decode the original at all; `colorPolicy` is then `unsupported`. */
+  decodeRefusal?: DecodeRefusal;
 };
 
 const secondsOf = (source: VideoSource) => Math.max(MIN_SPAN, source.durationMs / 1000);

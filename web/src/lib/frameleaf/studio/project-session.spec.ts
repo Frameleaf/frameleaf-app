@@ -1,4 +1,5 @@
 import {
+  DecodeRefusal,
   StudioProjectAccess,
   StudioProjectShelf,
   type StudioProjectDetailDto,
@@ -45,7 +46,7 @@ const detail = (overrides: Partial<StudioProjectDetailDto> = {}): StudioProjectD
   envelope: { schemaVersion: 1, engine: 'freecut', engineRevision: 'rev', graph: { tracks: ['t1'] } },
   digest: 'd3',
   withheld: false,
-  resources: { complete: true, refusedCount: 0, checkedAt: '2026-09-22T10:05:00.000Z' },
+  resources: { complete: true, refusedCount: 0, unsupportedSources: [], checkedAt: '2026-09-22T10:05:00.000Z' },
   shelf: StudioProjectShelf.Active,
   archivedAt: null,
   deletedAt: null,
@@ -255,6 +256,23 @@ describe('studio project session', () => {
         summary: { counts: { 'clip.add': 2, 'clip.move': 1 }, total: 3 },
       });
       expect(last()).toMatchObject({ status: 'saved', hasDraft: false, lastSavedAt: 1000, project: { revision: 4 } });
+    });
+
+    it('takes how the new revision’s sources resolved from the save, so an undecodable video shows now (FL-101)', async () => {
+      const unsupportedSources = [
+        { assetId: 'v-7', refusal: DecodeRefusal.DolbyVisionEnhancementLayer, reason: 'Dolby Vision profile 7' },
+      ];
+      api.save.mockResolvedValue({
+        ...saved(4),
+        resources: { complete: false, refusedCount: 1, unsupportedSources, checkedAt: '2026-09-22T10:06:00.000Z' },
+      });
+      const session = create();
+      await session.open();
+
+      session.stage({ tracks: ['t1', 'v-7'] }, ['clip.add']);
+      await timers.fire((timer) => timer.ms === 1500);
+
+      expect(last()).toMatchObject({ status: 'saved', resources: { complete: false, unsupportedSources } });
     });
 
     it('sends the canonical commands behind a draft so the server can check and count them (FL-92)', async () => {

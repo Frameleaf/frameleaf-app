@@ -1,4 +1,4 @@
-import { StudioRestoredVersionUnavailable } from '@immich/sdk';
+import { DecodeRefusal, StudioRestoredVersionUnavailable } from '@immich/sdk';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import StudioHost from '$lib/components/frameleaf/StudioHost.svelte';
@@ -236,6 +236,30 @@ describe('Studio route, engine absent', () => {
   it('shows no restored-version notice when every version can be used', () => {
     render(StudioHost, { ...baseProps(), loadEngine: loadStudioEngine });
     expect(screen.queryByTestId('studio-restored-unavailable')).not.toBeInTheDocument();
+  });
+
+  it('says which placed videos the server cannot decode, once per reason (FL-101)', () => {
+    render(StudioHost, {
+      ...baseProps(),
+      loadEngine: loadStudioEngine,
+      unsupportedSources: [
+        { assetId: 'a', refusal: DecodeRefusal.DolbyVisionEnhancementLayer, reason: 'profile 7' },
+        { assetId: 'b', refusal: DecodeRefusal.DolbyVisionEnhancementLayer, reason: 'profile 7' },
+        { assetId: 'c', refusal: DecodeRefusal.UnsupportedBitDepth, reason: '16 bits' },
+      ],
+    });
+
+    const banner = screen.getByTestId('studio-unsupported-sources');
+    expect(banner).toHaveAttribute('role', 'status');
+    expect(banner).toHaveTextContent('frameleaf_studio_sources_unsupported');
+    expect(banner.textContent?.match(/frameleaf_video_editor_decode_dolby_vision_enhancement_layer/g)).toHaveLength(1);
+    expect(banner).toHaveTextContent('frameleaf_video_editor_decode_bit_depth');
+  });
+
+  it('shows no decode notice when every placed video can be decoded', () => {
+    render(StudioHost, { ...baseProps(), loadEngine: loadStudioEngine, unsupportedSources: [] });
+
+    expect(screen.queryByTestId('studio-unsupported-sources')).not.toBeInTheDocument();
   });
 
   it('offers no Activity link while there is no Activity route to open', () => {
