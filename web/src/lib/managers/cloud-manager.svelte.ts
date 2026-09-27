@@ -1,6 +1,7 @@
 import {
   activateLicense,
   cancelCloudLink,
+  continueCloudLink,
   checkInCloud,
   getCloudLink,
   getCloudStatus,
@@ -129,6 +130,8 @@ export class CloudManager {
 
   startLink = () => this.#run(() => startCloudLink());
   cancelLink = () => this.#run(() => cancelCloudLink());
+  /** FC-18: link again in the account's region with the approval the cloud kept after `region-mismatch`. */
+  continueLink = () => this.#run(() => continueCloudLink());
   unlink = () => this.#run(() => unlinkCloud());
   checkIn = () => this.#run(() => checkInCloud());
   setPermissions = (dto: CloudPermissionsUpdateDto) =>

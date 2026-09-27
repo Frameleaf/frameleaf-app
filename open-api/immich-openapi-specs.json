@@ -1482,6 +1482,53 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/admin/cloud/link/continue": {
+      "post": {
+        "description": "After Frameleaf Cloud refused an approved link because the account keeps its data in another region (409 region-mismatch), links again with the same, unspent approval in the account’s region. No new code is needed.",
+        "operationId": "continueCloudLink",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudStatusResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Link in the Frameleaf account’s data region",
+        "tags": [
+          "Frameleaf Cloud (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloud.link",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/cloud/link/pending": {
       "delete": {
         "description": "Stops waiting for the current code. Nothing changes on this server.",
@@ -53886,12 +53933,13 @@
         "type": "object"
       },
       "CloudLinkRefusal": {
-        "description": "Why Frameleaf Cloud refused the last link: instance-limit: the plan has no room for another server; server-refused: the server was removed from the account or the account is suspended; instance-id-taken: this server, or another one with its ID, is still registered; key-already-linked: this server’s key is already linked (a copied identity directory)",
+        "description": "Why Frameleaf Cloud refused the last link: instance-limit: the plan has no room for another server; server-refused: the server was removed from the account or the account is suspended; instance-id-taken: this server, or another one with its ID, is still registered; key-already-linked: this server’s key is already linked (a copied identity directory); region-mismatch: the account keeps its data in another region than the one this server asked for (FC-18)",
         "enum": [
           "instance-limit",
           "server-refused",
           "instance-id-taken",
-          "key-already-linked"
+          "key-already-linked",
+          "region-mismatch"
         ],
         "type": "string"
       },
@@ -55462,6 +55510,31 @@
           "permissions": {
             "$ref": "#/components/schemas/CloudPermissionsDto"
           },
+          "regionMismatch": {
+            "description": "FC-18: Frameleaf Cloud refused the link because the account keeps its data in another region; lastError carries its message",
+            "nullable": true,
+            "properties": {
+              "accountRegion": {
+                "description": "The data region the Frameleaf account keeps its data in (eu, na)",
+                "type": "string"
+              },
+              "canContinue": {
+                "description": "The approved link is kept: linking again in the account’s region needs no new code",
+                "type": "boolean"
+              },
+              "requestedRegion": {
+                "description": "The data region this server asked for",
+                "nullable": true,
+                "type": "string"
+              }
+            },
+            "required": [
+              "accountRegion",
+              "requestedRegion",
+              "canContinue"
+            ],
+            "type": "object"
+          },
           "relinkRequested": {
             "description": "Frameleaf Cloud asked an administrator to link again",
             "type": "boolean"
@@ -55534,6 +55607,7 @@
           "manageUrl",
           "pending",
           "permissions",
+          "regionMismatch",
           "relinkRequested",
           "remoteAccessEnabled",
           "revoked",

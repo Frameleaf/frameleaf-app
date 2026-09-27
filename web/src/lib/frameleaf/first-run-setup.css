@@ -1564,6 +1564,26 @@
   color: var(--fl-muted);
   font-size: var(--fl-font-small);
 }
+/* FC-18: Frameleaf Cloud refused the link because the account keeps its data in another region */
+.frs-region-mismatch {
+  display: grid;
+  gap: 6px;
+  padding: 16px;
+  border: 1px solid var(--fl-border);
+  border-radius: var(--fl-radius-card);
+  background: var(--fl-panel);
+}
+.frs-region-mismatch span {
+  color: var(--fl-muted);
+  font-size: var(--fl-font-small);
+}
+.frs-region-mismatch > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  margin-top: 6px;
+}
 .frs-cloud-backup > .auth-link {
   display: inline-block;
   margin-top: 12px;

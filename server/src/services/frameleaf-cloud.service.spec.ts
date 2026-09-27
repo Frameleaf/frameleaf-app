@@ -495,6 +495,136 @@ describe(FrameleafCloudService.name, () => {
       expect(cloud.refusals).toEqual([{ path: '/api/v1/instances', status: 401, code: 'use_dpop_nonce' }]);
     });
 
+    describe('region-mismatch (FC-18)', () => {
+      const REGION_MESSAGE =
+        "This Frameleaf account keeps its data in the EU, not North America. Link this server to an account in that region, or change the server's region setting to the EU and link again.";
+      /** The cloud's 409 (instances.service.ts) until `refuse` is turned off, then the golden answer. */
+      const serveRegionMismatch = () => {
+        const state = { refuse: true };
+        const original = cloud.routes.get('POST /api/v1/instances')!;
+        cloud.on('POST /api/v1/instances', (request) =>
+          state.refuse
+            ? {
+                status: 409,
+                body: {
+                  code: 'region-mismatch',
+                  message: REGION_MESSAGE,
+                  retryable: false,
+                  data: { accountRegion: 'eu', requestedRegion: 'na' },
+                  requestId: 'req_01J8ZK3M4N5P6Q7R',
+                },
+              }
+            : original(request),
+        );
+        return state;
+      };
+      const registers = () => cloud.requests.filter(({ path }) => path === '/api/v1/instances');
+
+      it('sends no dataRegion when no region was chosen (nothing offers a choice)', async () => {
+        await linkNow();
+        await sut.unlink(authStub.admin);
+        cloud.requests.length = 0;
+        serveLinking(() => ({ status: 200, body: { access_token: 'link-token', expires_in: 600 } }));
+        await sut.startLink(authStub.admin);
+        makeDue();
+        await sut.getLink();
+        expect(registers()).toHaveLength(1);
+        expect(registers()[0].json()).not.toHaveProperty('dataRegion');
+      });
+
+      it('shows the cloud’s message, keeps the unspent link token and links in the account’s region', async () => {
+        serveLinking(() => ({ status: 200, body: { access_token: 'link-token', expires_in: 600 } }));
+        const state = serveRegionMismatch();
+        await sut.startLink(authStub.admin);
+        makeDue();
+
+        const status = await sut.getLink();
+        expect(status).toMatchObject({
+          state: 'unlinked',
+          pending: null,
+          linkRefusal: 'region-mismatch',
+          lastError: REGION_MESSAGE,
+          regionMismatch: { accountRegion: 'eu', requestedRegion: 'na', canContinue: true },
+        });
+        // the held token is never returned
+        expect(JSON.stringify(status)).not.toContain('link-token');
+        expect(storedLink()?.heldLink).toMatchObject({ linkToken: 'link-token', accountRegion: 'eu' });
+        expect(mocks.adminAudit.create).not.toHaveBeenCalled();
+
+        // the device code is not polled again: the approval it gave is the held token
+        cloud.requests.length = 0;
+        makeDue();
+        await sut.getLink();
+        expect(cloud.requests).toHaveLength(0);
+
+        state.refuse = false;
+        await expect(sut.continueLink(authStub.admin)).resolves.toMatchObject({
+          state: 'linked',
+          dataRegion: 'eu',
+          linkRefusal: null,
+          regionMismatch: null,
+        });
+        expect(pathsCalled()).not.toContain('POST /id/device/auth');
+        const [retry] = registers();
+        expect(retry.headers.authorization).toBe('Bearer link-token');
+        expectRegistrationProof(retry);
+        expect(retry.json()).toMatchObject({ dataRegion: 'eu' });
+        expect(storedLink()).not.toHaveProperty('heldLink');
+        expect(JSON.stringify(storedLink())).not.toContain('link-token');
+        expect(mocks.adminAudit.create).toHaveBeenCalledWith([
+          expect.objectContaining({ action: AdminAuditAction.CloudLinked, actorId: authStub.admin.user.id }),
+        ]);
+      });
+
+      it('keeps holding the token when the cloud refuses the region again', async () => {
+        serveLinking(() => ({ status: 200, body: { access_token: 'link-token', expires_in: 600 } }));
+        serveRegionMismatch();
+        await sut.startLink(authStub.admin);
+        makeDue();
+        await sut.getLink();
+
+        await expect(sut.continueLink(authStub.admin)).rejects.toThrow(REGION_MESSAGE);
+        expect(storedLink()).toMatchObject({
+          status: 'unlinked',
+          lastLinkRefusal: 'region-mismatch',
+          heldLink: { linkToken: 'link-token' },
+        });
+      });
+
+      it('drops the held token when the cloud refuses it otherwise, on cancel and on a new attempt', async () => {
+        serveLinking(() => ({ status: 200, body: { access_token: 'link-token', expires_in: 600 } }));
+        serveRegionMismatch();
+        await sut.startLink(authStub.admin);
+        makeDue();
+        await sut.getLink();
+
+        await expect(sut.cancelLink()).resolves.toMatchObject({ state: 'unlinked', regionMismatch: null });
+        expect(storedLink()).not.toHaveProperty('heldLink');
+        await expect(sut.continueLink(authStub.admin)).rejects.toThrow('no refused link');
+
+        await sut.startLink(authStub.admin);
+        makeDue();
+        await sut.getLink();
+        expect(storedLink()?.heldLink).toBeDefined();
+        serveLinking(() => ({ status: 400, body: { error: 'authorization_pending' } }));
+        await expect(sut.startLink(authStub.admin)).resolves.toMatchObject({ state: 'pending', regionMismatch: null });
+        expect(storedLink()).not.toHaveProperty('heldLink');
+
+        serveLinking(() => ({ status: 200, body: { access_token: 'link-token', expires_in: 600 } }));
+        serveRegionMismatch();
+        makeDue();
+        await sut.getLink();
+        expect(storedLink()?.heldLink).toBeDefined();
+        cloud.on('POST /api/v1/instances', () => ({
+          status: 401,
+          body: { code: 'invalid_token', message: 'This link token was already used.' },
+        }));
+        await expect(sut.continueLink(authStub.admin)).rejects.toThrow();
+        expect(storedLink()).toMatchObject({ status: 'unlinked' });
+        expect(storedLink()).not.toHaveProperty('heldLink');
+      });
+    });
+
     it('cancels a pending code', async () => {
       serveLinking(() => ({ status: 400, body: { error: 'authorization_pending' } }));
       await sut.startLink(authStub.admin);
@@ -589,6 +719,54 @@ describe(FrameleafCloudService.name, () => {
       await sut.getLink();
       expect(storedLink()).toMatchObject({ status: 'unlinked', lastError: 'Linking is paused until 18:00 UTC.' });
       expect(storedLink()?.pending).toBeUndefined();
+    });
+
+    it('logs a region-mismatch clearly and does not burn the token (FC-18)', async () => {
+      serveLinking(() => ({ status: 400, body: { error: 'authorization_pending' } }));
+      const message = 'This Frameleaf account keeps its data in the EU, not North America.';
+      let refuse = true;
+      const original = cloud.routes.get('POST /api/v1/instances')!;
+      cloud.on('POST /api/v1/instances', (request) =>
+        refuse
+          ? {
+              status: 409,
+              body: {
+                code: 'region-mismatch',
+                message,
+                retryable: false,
+                data: { accountRegion: 'eu', requestedRegion: 'na' },
+              },
+            }
+          : original(request),
+      );
+      linkToken = 'fll_headless_token_region';
+      await sut.onBootstrap();
+
+      const register = cloud.requests.find(({ path }) => path === '/api/v1/instances')!;
+      expect(register.json()).not.toHaveProperty('dataRegion');
+      expect(mocks.logger.error).toHaveBeenCalledWith(expect.stringContaining('keeps its data in region eu'));
+      expect(mocks.logger.error).toHaveBeenCalledWith(expect.stringContaining(message));
+      expect(storedLink()).toMatchObject({
+        status: 'unlinked',
+        lastError: message,
+        lastLinkRefusal: 'region-mismatch',
+      });
+      expect(storedLink()?.usedLinkTokens ?? []).toHaveLength(0);
+      expect(JSON.stringify(storedLink())).not.toContain('fll_headless_token_region');
+      await expect(sut.getStatus()).resolves.toMatchObject({
+        linkRefusal: 'region-mismatch',
+        lastError: message,
+        regionMismatch: { accountRegion: 'eu', requestedRegion: 'na', canContinue: false },
+      });
+
+      // the same token is tried again at the next start
+      refuse = false;
+      cloud.requests.length = 0;
+      await sut.onBootstrap();
+      expect(cloud.requests.find(({ path }) => path === '/api/v1/instances')!.headers['x-frameleaf-link-token']).toBe(
+        'fll_headless_token_region',
+      );
+      expect(storedLink()?.status).toBe('linked');
     });
 
     it('records a token the cloud refuses and does not retry it', async () => {

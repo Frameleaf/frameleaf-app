@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { MlAdmissionRefusal } from 'src/enum.js';
 import {
+  DATA_REGIONS,
   HEARTBEAT_FIELDS,
   LINK_REFUSAL_MESSAGES,
   accountLabelOf,
@@ -14,6 +15,7 @@ import {
   linkRefusalOf,
   nextHeartbeatDelay,
   permissionsOf,
+  regionMismatchOf,
   rememberNotices,
 } from 'src/utils/frameleaf-cloud-link.js';
 import { FrameleafCloudError } from 'src/utils/frameleaf-cloud.js';
@@ -215,6 +217,9 @@ describe('frameleaf-cloud-link (FL-155)', () => {
     expect(linkRefusalOf(refused(403, 'forbidden'))).toBe('server-refused');
     expect(linkRefusalOf(refused(409, 'instance-id-taken'))).toBe('instance-id-taken');
     expect(linkRefusalOf(refused(409, 'jwk_already_bound'))).toBe('key-already-linked');
+    expect(linkRefusalOf(refused(409, 'region-mismatch'))).toBe('region-mismatch');
+    // the ML gateway's 403 region-mismatch is not a link refusal of this kind
+    expect(linkRefusalOf(refused(403, 'region-mismatch'))).toBe('server-refused');
     expect(linkRefusalOf(refused(402, 'insufficient-credits'))).toBeNull();
     expect(linkRefusalOf(refused(409, 'conflict'))).toBeNull();
     expect(linkRefusalOf(refused(503, 'internal'))).toBeNull();
@@ -222,6 +227,35 @@ describe('frameleaf-cloud-link (FL-155)', () => {
     for (const message of Object.values(LINK_REFUSAL_MESSAGES)) {
       expect(message).not.toMatch(/please|successfully|simply/i);
     }
+  });
+
+  it('reads a 409 region-mismatch with the cloud’s message and both regions (FC-18)', () => {
+    const refused = (status: number, data: Record<string, unknown> | null, message = 'Keeps its data in the EU.') =>
+      new FrameleafCloudError(MlAdmissionRefusal.CloudUnavailable, status, 'x', {
+        code: 'region-mismatch',
+        message,
+        retryable: false,
+        refusal: null,
+        detail: null,
+        data,
+        requestId: null,
+      });
+    expect(regionMismatchOf(refused(409, { accountRegion: 'eu', requestedRegion: 'na' }))).toEqual({
+      accountRegion: 'eu',
+      requestedRegion: 'na',
+      message: 'Keeps its data in the EU.',
+    });
+    expect(regionMismatchOf(refused(409, { accountRegion: 'na' }, ' '))).toEqual({
+      accountRegion: 'na',
+      requestedRegion: undefined,
+      message: LINK_REFUSAL_MESSAGES['region-mismatch'],
+    });
+    // no usable account region, or the ML gateway's 403: nothing to link in
+    expect(regionMismatchOf(refused(409, { accountRegion: 'mars' }))).toBeNull();
+    expect(regionMismatchOf(refused(409, null))).toBeNull();
+    expect(regionMismatchOf(refused(403, { accountRegion: 'eu' }))).toBeNull();
+    expect(regionMismatchOf(new Error('x'))).toBeNull();
+    expect(DATA_REGIONS).toEqual(['eu', 'na']);
   });
 
   it('builds the golden heartbeat request exactly (FC-19 fixtures)', () => {
