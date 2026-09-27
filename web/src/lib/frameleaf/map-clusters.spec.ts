@@ -121,7 +121,7 @@ describe('map clusters (MapView.jsx clusterRadius, FL-147)', () => {
     map.addImage.mockImplementationOnce((id: string) => {
       map.hasImage = (image: string) => image === id;
       applyClusterLabelLayout(map as unknown as MapLibreMap, 'geojson');
-      return true;
+      return new Set([id]);
     });
     // like MapLibre, a second add of the same layer is an error event
     map.addLayer.mockImplementation((layer: LayerSpecification) => {
