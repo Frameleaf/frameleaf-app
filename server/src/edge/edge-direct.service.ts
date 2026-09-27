@@ -215,7 +215,12 @@ export const defaultGateways = (read: (file: string) => string = (file) => readF
     for (const line of read('/proc/net/ipv6_route').split('\n')) {
       const fields = line.trim().split(/\s+/);
       if (fields[0] === '0'.repeat(32) && fields[1] === '00' && fields[4] && /[1-9a-f]/.test(fields[4])) {
-        gateways.push(fields[4].match(/.{4}/g)!.join(':').replaceAll(/(^|:)0{1,3}/g, '$1'));
+        gateways.push(
+          fields[4]
+            .match(/.{4}/g)!
+            .join(':')
+            .replaceAll(/(^|:)0{1,3}/g, '$1'),
+        );
       }
     }
   } catch {
