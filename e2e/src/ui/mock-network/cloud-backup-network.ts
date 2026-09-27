@@ -11,8 +11,13 @@ export type CloudBackupMockState = {
   keyMode: 'server' | 'own-stored' | 'own-memory' | null;
   requests: Array<{ method: string; path: string; body?: unknown }>;
   /** FL-164: a restore queued through `POST admin/cloud/backup/restore`, shown as the active restore. */
-  restoring?: { scope: string } | null;
+  restoring?: { scope: string; state?: string } | null;
+  /** FL-164: a backup run in progress, which Pause, Resume and Cancel change. */
+  running?: { state: string } | null;
 };
+
+export const RUN_ID = '0195e2a0-0000-7000-8000-00000000beef';
+export const RESTORE_ID = '0195e2a0-0000-7000-8000-00000000abcd';
 
 /** FL-164: the kept backups the Restore section lists, newest first. */
 export const MANIFESTS = [
@@ -87,11 +92,23 @@ export const cloudBackupStatus = (mock: CloudBackupMockState) => ({
   lastSuccessAt: null,
   lastManifestKey: null,
   usage: mock.configured ? { objects: 0, bytes: 0 } : null,
-  activeRun: null,
+  activeRun: mock.running
+    ? {
+        operationId: RUN_ID,
+        state: mock.running.state,
+        task: 'backup',
+        phase: 'assets',
+        progress: 40,
+        checked: 0,
+        uploaded: 12,
+        skipped: 30,
+        bytesUploaded: 48_000_000,
+      }
+    : null,
   activeRestore: mock.restoring
     ? {
-        operationId: '0195e2a0-0000-7000-8000-00000000abcd',
-        state: 'queued',
+        operationId: RESTORE_ID,
+        state: mock.restoring.state ?? 'queued',
         scope: mock.restoring.scope,
         progress: 0,
         files: 0,
@@ -159,6 +176,24 @@ export const setupCloudBackupMockApiRoutes = async (context: BrowserContext, moc
     }
     if (method === 'POST' && path === 'admin/cloud/backup/restore') {
       mock.restoring = { scope: (body as { scope: string }).scope };
+    }
+    // FL-164: pause, resume and cancel a backup run or a restore
+    const control = path.match(/^admin\/cloud\/backup\/runs\/([^/]+)\/(pause|resume|cancel)$/);
+    if (method === 'POST' && control) {
+      const [, id, action] = control;
+      const target = id === RUN_ID ? mock.running : id === RESTORE_ID ? mock.restoring : null;
+      if (!target) {
+        return route.fulfill({ status: 404, json: { message: 'Backup run not found' } });
+      }
+      if (action === 'cancel') {
+        if (id === RUN_ID) {
+          mock.running = null;
+        } else {
+          mock.restoring = null;
+        }
+      } else {
+        target.state = action === 'pause' ? 'paused' : 'running';
+      }
     }
     if (method === 'POST' && path === 'admin/cloud/backup/setup') {
       mock.configured = true;

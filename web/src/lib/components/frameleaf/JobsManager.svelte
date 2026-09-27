@@ -27,6 +27,7 @@
   import { page } from '$app/state';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
+  import CloudBackgroundWork from '$lib/components/frameleaf/cloud/CloudBackgroundWork.svelte';
   import SettingsOverline from '$lib/components/frameleaf/settings/SettingsOverline.svelte';
   import JobsConcurrencyDialog from '$lib/components/frameleaf/jobs/JobsConcurrencyDialog.svelte';
   import JobsCreateDialog from '$lib/components/frameleaf/jobs/JobsCreateDialog.svelte';
@@ -946,6 +947,8 @@
   {/if}
 
   {#if !selected}
+    <!-- FL-164: Frameleaf Cloud backup and restore work, with pause, resume and cancel -->
+    <CloudBackgroundWork />
     <!-- svelte-ignore a11y_no_noninteractive_tabindex (a scrollable region must be reachable by keyboard to scroll it) -->
     <div class="jm-table-wrap" tabindex="0" role="region" aria-label={$t('frameleaf_jobs_queues_label')}>
       <table class="jm-queues">

@@ -10,6 +10,7 @@ import { describe, expect, it } from 'vitest';
 import {
   backupKeyFile,
   bucketSettingsErrors,
+  cloudWorkActions,
   cloudWorkRows,
   createBackupKey,
   endpointHost,
@@ -172,5 +173,16 @@ describe('cloud backup schedule, retention, escrow and activity (FL-164)', () =>
       }),
     ]);
     expect(cloudWorkRows(null)).toEqual([]);
+  });
+});
+
+describe('cloudWorkActions (FL-164)', () => {
+  it('offers what the server allows in each state', () => {
+    expect(cloudWorkActions(CloudBackupRunState.Queued)).toEqual({ pause: true, resume: false, cancel: true });
+    expect(cloudWorkActions(CloudBackupRunState.Running)).toEqual({ pause: true, resume: false, cancel: true });
+    // resuming a run that is still pausing withdraws the pause
+    expect(cloudWorkActions(CloudBackupRunState.Pausing)).toEqual({ pause: false, resume: true, cancel: true });
+    expect(cloudWorkActions(CloudBackupRunState.Paused)).toEqual({ pause: false, resume: true, cancel: true });
+    expect(cloudWorkActions(CloudBackupRunState.Cancelling)).toEqual({ pause: false, resume: false, cancel: false });
   });
 });

@@ -325,3 +325,26 @@ export const cloudWorkRows = (status: CloudBackupStatusResponseDto | null): Clou
   }
   return rows;
 };
+
+/**
+ * FL-164: what an administrator can do with a backup operation or restore in progress, as the server
+ * allows it (media-operation.repository `requestPause`, `resume`, `requestCancel`): pause while queued
+ * or running, resume while paused or pausing (which withdraws the pause), and cancel until cancelling.
+ */
+export type CloudWorkActions = { pause: boolean; resume: boolean; cancel: boolean };
+
+export const cloudWorkActions = (state: CloudBackupRunState): CloudWorkActions => {
+  switch (state) {
+    case CloudBackupRunState.Queued:
+    case CloudBackupRunState.Running: {
+      return { pause: true, resume: false, cancel: true };
+    }
+    case CloudBackupRunState.Pausing:
+    case CloudBackupRunState.Paused: {
+      return { pause: false, resume: true, cancel: true };
+    }
+    case CloudBackupRunState.Cancelling: {
+      return { pause: false, resume: false, cancel: false };
+    }
+  }
+};

@@ -54,6 +54,8 @@ vi.mock('@immich/sdk', async (importOriginal) => ({
   getImageDescriptionRequeueEstimate: vi.fn(),
   triggerSmartAlbumReevaluate: vi.fn(),
   getMachineLearningHardware: vi.fn(),
+  // FL-164: the Frameleaf Cloud group reads the backup status; nothing is in progress here
+  getCloudBackupStatus: vi.fn().mockResolvedValue({ activeRun: null, activeRestore: null }),
 }));
 vi.mock('$lib/frameleaf/job-history', async (importOriginal) => {
   const original = await importOriginal<typeof import('$lib/frameleaf/job-history')>();

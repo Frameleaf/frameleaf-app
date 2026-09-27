@@ -15,6 +15,7 @@
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import CloudBackupRestoreSection from '$lib/components/frameleaf/cloud/CloudBackupRestoreSection.svelte';
   import CloudBackupSetupDialog from '$lib/components/frameleaf/cloud/CloudBackupSetupDialog.svelte';
+  import CloudWorkControls from '$lib/components/frameleaf/cloud/CloudWorkControls.svelte';
   import CloudBanner from '$lib/components/frameleaf/cloud/CloudBanner.svelte';
   import CloudCard from '$lib/components/frameleaf/cloud/CloudCard.svelte';
   import SettingToggle from '$lib/components/frameleaf/settings/SettingToggle.svelte';
@@ -134,6 +135,13 @@
     [CloudBackupTask.Backup]: 'frameleaf_cloud_backup_run_running',
     [CloudBackupTask.Verify]: 'frameleaf_cloud_backup_run_verifying',
     [CloudBackupTask.Prune]: 'frameleaf_cloud_backup_run_pruning',
+  };
+
+  /** The operation's name, as Activity and Background work name it. */
+  const workTitle: Record<CloudBackupTask, Translations> = {
+    [CloudBackupTask.Backup]: 'frameleaf_cloud_work_backup',
+    [CloudBackupTask.Verify]: 'frameleaf_cloud_work_verify',
+    [CloudBackupTask.Prune]: 'frameleaf_cloud_work_prune',
   };
 
   const runWords: Record<CloudBackupRunState, Translations> = {
@@ -474,6 +482,12 @@
               {Math.round(active.progress)}%
             </progress>
           {/if}
+          <CloudWorkControls
+            operationId={active.operationId}
+            runState={active.state}
+            title={$t(workTitle[active.task])}
+            onStatus={(next) => (status = next)}
+          />
         {/if}
       </div>
       <div class="fc-actions">
