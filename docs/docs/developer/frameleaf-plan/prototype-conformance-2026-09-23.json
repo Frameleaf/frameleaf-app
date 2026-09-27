@@ -19,11 +19,11 @@
     "webActions": 153,
     "routes": 83,
     "byStatus": {
-      "match": 58,
+      "match": 60,
       "partial": 11,
       "missing": 0,
       "fixed": 146,
-      "in-flight": 6,
+      "in-flight": 4,
       "studio-parked": 2,
       "retained-live-route": 8,
       "intentional-product-change": 5
@@ -1099,9 +1099,9 @@
         "design/frameleaf/template/src/search.mjs"
       ],
       "production": ["web/src/lib/components/frameleaf/VideoMomentsPanel.svelte"],
-      "status": "in-flight",
+      "status": "match",
       "gaps": [],
-      "followUp": "FL-59 video moments (beyond the prototype)"
+      "followUp": "FL-59 video moments (beyond the prototype): frame, caption and transcript matches, frame-to-moment search, playback from the moment"
     },
     {
       "requirementId": "action:search-discovery:people-filter-with-face-avatars-and-matching-choices",
@@ -1141,9 +1141,9 @@
         "design/frameleaf/template/src/search.mjs"
       ],
       "production": ["web/src/lib/components/frameleaf/VideoMomentResults.svelte"],
-      "status": "in-flight",
+      "status": "match",
       "gaps": [],
-      "followUp": "FL-59 video moments (beyond the prototype)"
+      "followUp": "FL-59 video moments (beyond the prototype): play from the moment, the owner's own moments and typed transcripts"
     },
     {
       "requirementId": "action:search-discovery:rating-favorites-archive-not-in-album-untagged",
