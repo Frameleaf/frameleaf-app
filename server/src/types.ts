@@ -114,6 +114,11 @@ export interface VideoStreamInfo {
    * fraction already flattened into a float, which is not a cadence a timeline can be built on.
    */
   frameRateRational?: Rational | null;
+  /**
+   * FL-102: this stream's own duration in seconds, when the container states one. Optional and
+   * additive, like the fields above: persisted metadata does not carry it.
+   */
+  duration?: number | null;
   bitrate: number;
   pixelFormat: string;
   colorPrimaries: ColorPrimaries;
@@ -145,6 +150,8 @@ export interface AudioStreamInfo {
   channels?: number | null;
   channelLayout?: string | null;
   sampleRate?: number | null;
+  /** FL-102: this stream's own duration in seconds, when the container states one. */
+  duration?: number | null;
 }
 
 /** Packet-derived video data needed for accurate HLS playlists. */

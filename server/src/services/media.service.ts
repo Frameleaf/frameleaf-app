@@ -88,6 +88,7 @@ import {
   qualifyStreamCopyTrim,
   resolveEditedMasterColorPolicy,
   serializeEditedMasterLineage,
+  validateAudioMaster,
   validateVideoMaster,
 } from 'src/utils/media-policy.js';
 import { BaseConfig, ThumbnailConfig } from 'src/utils/media.js';
@@ -1459,6 +1460,13 @@ export class MediaService extends BaseService {
         expectedRotation: metadataRotation?.displayRotation ?? 0,
         colorDecision,
         packetCopy: !!metadataRotation,
+      });
+      // FL-102: the audio survives too — present, same layout and rate, and ending with the picture.
+      validateAudioMaster({
+        source: audioStream,
+        output: masterInfo.audioStreams[0],
+        outputVideo: masterVideo,
+        muted: edits.some((edit) => edit.action === AssetEditAction.Audio && !!edit.parameters.muted),
       });
 
       await this.writeEditedMasterLineage({

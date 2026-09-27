@@ -3426,6 +3426,69 @@ describe(MediaService.name, () => {
       expect(mocks.storage.unlink).not.toHaveBeenCalled();
     });
 
+    describe('audio validation of the master (FL-102)', () => {
+      const surround = {
+        index: 1,
+        codecName: 'eac3',
+        profile: null,
+        bitrate: 640_000,
+        channels: 6,
+        channelLayout: '5.1(side)',
+        sampleRate: 48_000,
+      };
+      const setup = (masterAudio: Record<string, unknown>[]) => {
+        const videoStream = { ...probeStub.videoStreamH264.videoStream, width: 300, height: 200, rotation: 0 };
+        const asset = {
+          ...AssetFactory.create({ type: AssetType.Video }),
+          videoStream,
+          audioStream: surround,
+          format: probeStub.videoStreamH264.format,
+          files: [],
+        };
+        const version = versionFor(asset, 'export');
+        mocks.systemMetadata.get.mockResolvedValue({ ffmpeg: { accel: TranscodeHardwareAcceleration.Disabled } });
+        mocks.assetJob.getForVideoConversion.mockResolvedValue(asset);
+        mocks.assetEdit.getVideoVersion.mockResolvedValue(version as any);
+        mocks.assetEdit.publishVideoVersion.mockResolvedValue({ published: true, releasedPaths: [] });
+        mocks.assetEdit.failVideoVersion.mockResolvedValue(undefined);
+        mocks.media.transcode.mockResolvedValue(undefined);
+        const master = { ...videoStream, width: 200, height: 100, duration: 30, frameRate: 30 };
+        mocks.media.probe
+          .mockResolvedValueOnce({
+            videoStreams: [videoStream],
+            audioStreams: [surround],
+            format: { ...asset.format, duration: 30 },
+          })
+          .mockResolvedValue({
+            videoStreams: [master],
+            audioStreams: masterAudio as never,
+            format: { ...asset.format, duration: 30 },
+          });
+        return { asset, version };
+      };
+
+      it('publishes a master whose 5.1 track survives and ends with the picture', async () => {
+        const { asset, version } = setup([{ ...surround, duration: 30.01 }]);
+        await expect(sut.handleAssetVideoEditGeneration({ id: asset.id, versionId: version.id })).resolves.toBe(
+          JobStatus.Success,
+        );
+        expect(mocks.assetEdit.publishVideoVersion).toHaveBeenCalledOnce();
+      });
+
+      it.each([
+        ['lost its audio', []],
+        ['was folded to stereo', [{ ...surround, channels: 2, channelLayout: 'stereo', duration: 30 }]],
+        ['drifted from the picture', [{ ...surround, duration: 29.5 }]],
+      ])('never publishes a master whose audio %s', async (_, masterAudio) => {
+        const { asset, version } = setup(masterAudio);
+        await expect(sut.handleAssetVideoEditGeneration({ id: asset.id, versionId: version.id })).resolves.toBe(
+          JobStatus.Failed,
+        );
+        expect(mocks.assetEdit.publishVideoVersion).not.toHaveBeenCalled();
+        expect(mocks.storage.unlink).toHaveBeenCalledWith(expect.stringMatching(/\.master\.mp4$/));
+      });
+    });
+
     describe('as a job in Activity (FL-43)', () => {
       const exportSetup = () => {
         const videoStream = { ...probeStub.videoStreamH264.videoStream, width: 300, height: 200, rotation: 0 };
