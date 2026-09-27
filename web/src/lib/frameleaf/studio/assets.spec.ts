@@ -1,12 +1,31 @@
-import { AssetTypeEnum, AssetVisibility, type AssetResponseDto } from '@immich/sdk';
+import {
+  AssetRestorationMode,
+  AssetRestorationSourceType,
+  AssetTypeEnum,
+  AssetVisibility,
+  StudioRestoredVersionUnavailable,
+  type AssetResponseDto,
+  type StudioRestoredVersionDto,
+} from '@immich/sdk';
 import { describe, expect, it, vi } from 'vitest';
 
+vi.mock('$lib/frameleaf/restoration', () => ({
+  restorationFileUrl: (assetId: string, restorationId: string, kind: string) =>
+    `/api/assets/${assetId}/restorations/${restorationId}/file?kind=${kind}`,
+}));
 vi.mock('$lib/utils', () => ({
   getAssetMediaUrl: ({ id, size }: { id: string; size?: string }) => `/api/assets/${id}/thumbnail?size=${size}`,
   getAssetPlaybackUrl: ({ id }: { id: string }) => `/api/assets/${id}/video/playback`,
 }));
 
-const { isStudioEligibleAsset, toStudioAsset, toStudioAssets } = await import('./assets');
+const {
+  isStudioEligibleAsset,
+  restorationIdOfMedia,
+  restoredVersionIdsIn,
+  toStudioAsset,
+  toStudioAssets,
+  toStudioRestoredAsset,
+} = await import('./assets');
 
 const asset = (overrides: Partial<AssetResponseDto> = {}): AssetResponseDto =>
   ({
@@ -97,5 +116,79 @@ describe('studio asset projection', () => {
     ]);
 
     expect(projected.map((item) => item.id)).toEqual(['c', 'a']);
+  });
+});
+
+describe('restored versions in the bin (FL-115)', () => {
+  const restorationId = '0199aaaa-bbbb-7ccc-8ddd-eeeeffff0001';
+  const version = (overrides: Partial<StudioRestoredVersionDto> = {}): StudioRestoredVersionDto => ({
+    restorationId,
+    assetId: 'asset-1',
+    mediaId: `restored-${restorationId}`,
+    available: true,
+    unavailable: null,
+    sourceType: AssetRestorationSourceType.Video,
+    mode: AssetRestorationMode.Faithful,
+    upscale: 2,
+    smoothMotionFactor: null,
+    width: 3840,
+    height: 2160,
+    durationSeconds: 12.5,
+    originalFileName: 'summit.mp4',
+    restoredAt: '2026-09-27T10:00:00.000Z',
+    expiresAt: null,
+    ...overrides,
+  });
+
+  it('is its own bin entry: its media id names the restoration, and it plays the restored file', () => {
+    expect(toStudioRestoredAsset(version(), 'summit.mp4 (restored)')).toEqual({
+      id: `restored-${restorationId}`,
+      kind: 'video',
+      name: 'summit.mp4 (restored)',
+      duration: { num: 25, den: 2 },
+      thumbnailUrl: '/api/assets/asset-1/thumbnail?size=thumbnail',
+      previewUrl: '/api/assets/asset-1/thumbnail?size=preview',
+      playbackUrl: `/api/assets/asset-1/restorations/${restorationId}/file?kind=result`,
+      isOffline: false,
+      width: 3840,
+      height: 2160,
+      mimeType: 'video/mp4',
+    });
+  });
+
+  it('shows a restored photo from its restored preview', () => {
+    const photo = toStudioRestoredAsset(
+      version({ sourceType: AssetRestorationSourceType.Image, durationSeconds: null }),
+      'scan.jpg (restored)',
+    );
+    expect(photo).toMatchObject({
+      kind: 'image',
+      duration: null,
+      playbackUrl: null,
+      previewUrl: `/api/assets/asset-1/restorations/${restorationId}/file?kind=result_preview`,
+    });
+  });
+
+  it('marks a discarded or expired version unusable rather than falling back to the original', () => {
+    const gone = toStudioRestoredAsset(
+      version({ available: false, unavailable: StudioRestoredVersionUnavailable.Discarded }),
+      'x',
+    );
+    expect(gone.isOffline).toBe(true);
+    expect(gone.id).toBe(`restored-${restorationId}`);
+  });
+
+  it('reads the restored versions a stored project places, and nothing else', () => {
+    const other = '0199aaaa-bbbb-7ccc-8ddd-eeeeffff0002';
+    const graph = {
+      tracks: [
+        { items: [{ mediaId: `restored-${restorationId}` }, { mediaId: 'asset-1' }, { assetId: 'restored-bad' }] },
+        { items: [{ restorationId: other }, { restorationId: 'not-a-uuid' }] },
+      ],
+    };
+    expect(new Set(restoredVersionIdsIn(graph))).toEqual(new Set([restorationId, other]));
+    expect(restoredVersionIdsIn(null)).toEqual([]);
+    expect(restorationIdOfMedia('asset-1')).toBeNull();
+    expect(restorationIdOfMedia(`restored-${restorationId}`)).toBe(restorationId);
   });
 });

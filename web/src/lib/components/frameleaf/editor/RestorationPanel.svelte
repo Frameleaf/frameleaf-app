@@ -61,6 +61,7 @@
   } from '$lib/frameleaf/restoration';
   import { mlRefusalLabelKey } from '$lib/frameleaf/ml-destinations';
   import { isVideoAsset } from '$lib/frameleaf/viewer-media';
+  import { Route } from '$lib/route';
   import { getAssetMediaUrl, getAssetPlaybackUrl } from '$lib/utils';
   import { handleError } from '$lib/utils/handle-error';
   import {
@@ -92,6 +93,7 @@
     mdiDeleteOutline,
     mdiDownload,
     mdiMagnify,
+    mdiMovieOpenOutline,
     mdiPlayCircleOutline,
     mdiRefresh,
     mdiStop,
@@ -112,6 +114,11 @@
     onLoupeChange?: (loupe: boolean) => void;
     /** Video only: the stage's playhead, for "Use current frame" (prototype `Studio.jsx:1637`). */
     currentFrameSeconds?: () => number | null;
+    /**
+     * FL-115: inside Studio, Use in Studio puts the restored version in the open project's bin. Without
+     * it the action opens Studio with that version, beside the original and never instead of it.
+     */
+    onUseInStudio?: (item: AssetRestorationResponseDto) => void;
   };
 
   let {
@@ -122,6 +129,7 @@
     loupe = false,
     onLoupeChange,
     currentFrameSeconds,
+    onUseInStudio,
   }: Props = $props();
 
   const isVideo = isVideoAsset(asset);
@@ -910,6 +918,28 @@
           </button>
         {/if}
         {#if item.hasResult}
+          <!-- FL-115: an explicit choice; the playback version never becomes a Studio source by itself. -->
+          {#if onUseInStudio}
+            <button
+              type="button"
+              class="ed-chip"
+              data-testid="restoration-use-in-studio"
+              disabled={busyId !== null}
+              onclick={() => onUseInStudio(item)}
+            >
+              <Icon icon={mdiMovieOpenOutline} size="16" />
+              {$t('frameleaf_restoration_use_in_studio')}
+            </button>
+          {:else}
+            <a
+              class="ed-chip"
+              data-testid="restoration-use-in-studio"
+              href={Route.studio({ restorationIds: [item.id], returnTo: asset.id })}
+            >
+              <Icon icon={mdiMovieOpenOutline} size="16" />
+              {$t('frameleaf_restoration_use_in_studio')}
+            </a>
+          {/if}
           <a
             class="ed-chip"
             href={restorationFileUrl(asset.id, item.id, AssetRestorationFileKind.Result, item.restoredAt)}
