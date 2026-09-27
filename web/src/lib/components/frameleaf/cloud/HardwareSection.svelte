@@ -22,10 +22,12 @@
   import {
     composeFixes,
     fixStepKey,
+    fixYaml,
     gpuProblems,
     problemById,
     problemExplainKey,
     type ComposeFixId,
+    type FixValues,
   } from '$lib/frameleaf/gpu-model-catalog';
   import { Route } from '$lib/route';
   import { copyToClipboard } from '$lib/utils';
@@ -36,6 +38,8 @@
     runHardwareCheck,
     type HardwareCheckResponseDto,
     type HardwareContainerCheckDto,
+    type HardwareGpuFactsDto,
+    type HardwareWorkloadBenchmarkDto,
   } from '@immich/sdk';
   import { Icon } from '@immich/ui';
   import {
@@ -88,10 +92,23 @@
 
   const worker = $derived(workerFromHardware(check));
   const benchmark = $derived(benchmarkFor(check));
-  const issues = $derived((check?.issues ?? []).map((id) => problemById(id)).filter((problem) => !!problem));
-  const fixes = $derived([
-    ...new Set(issues.map((problem) => problem.fix).filter((fix): fix is ComposeFixId => !!fix)),
-  ]);
+  const found = $derived((check?.issues ?? []).map((id) => problemById(id)).filter((problem) => !!problem));
+  /** Set-up problems to fix; a limit of the card (`note`) is shown as a note instead. */
+  const issues = $derived(found.filter((problem) => !problem.note));
+  const notes = $derived(found.filter((problem) => problem.note));
+  /** One fix per snippet: the values the check found (a group number, a PCI path) make it copy-ready. */
+  const fixes = $derived.by(() => {
+    const entries = new Map<string, { id: ComposeFixId; values: FixValues }>();
+    for (const problem of issues) {
+      if (!problem.fix) {
+        continue;
+      }
+      const values = check?.findings?.find((finding) => finding.id === problem.id) ?? {};
+      const yaml = fixYaml(problem.fix, values) ?? '';
+      entries.set(`${problem.fix}:${yaml}`, { id: problem.fix, values });
+    }
+    return [...entries.values()];
+  });
   const status = $derived(
     issues.length > 0
       ? { key: 'frameleaf_hardware_status_attention', tone: 'warning' }
@@ -151,7 +168,54 @@
   };
 
   const workloadName = (workload: string) => $t(workloadNameKey(workload as WorkloadRowId));
+
+  const FACTS: Array<{ key: keyof HardwareGpuFactsDto; label: Translations }> = [
+    { key: 'present', label: 'frameleaf_hardware_fact_present' },
+    { key: 'visible', label: 'frameleaf_hardware_fact_visible' },
+    { key: 'usable', label: 'frameleaf_hardware_fact_usable' },
+  ];
+  const factText = (value: boolean | null | undefined) =>
+    value === true
+      ? $t('frameleaf_hardware_fact_yes')
+      : value === false
+        ? $t('frameleaf_hardware_fact_no')
+        : $t('frameleaf_hardware_fact_unknown');
+
+  const throughputText = (row: HardwareWorkloadBenchmarkDto) => {
+    if (row.unavailable) {
+      if (row.unavailable === 'failed') {
+        return row.error
+          ? $t('frameleaf_hardware_throughput_failed', { values: { error: row.error } })
+          : $t('frameleaf_hardware_throughput_failed_unknown');
+      }
+      return $t(`frameleaf_hardware_throughput_${row.unavailable.replaceAll('-', '_')}` as Translations);
+    }
+    const where =
+      row.runsOn === 'cpu'
+        ? $t('frameleaf_hardware_throughput_where_cpu')
+        : $t('frameleaf_hardware_throughput_where_gpu');
+    const amount =
+      row.unit === 'photo'
+        ? $t('frameleaf_hardware_throughput_photo', {
+            values: { perHour: row.perHour ?? 0, seconds: row.secondsPerUnit ?? 0, where },
+          })
+        : $t('frameleaf_hardware_throughput_frame', { values: { perHour: row.perHour ?? 0, where } });
+    const source = $t(
+      row.source === 'qualification'
+        ? 'frameleaf_hardware_throughput_source_qualification'
+        : 'frameleaf_hardware_throughput_source_benchmark',
+      { values: { worker: row.worker ?? '' } },
+    );
+    return `${amount}. ${source}`;
+  };
 </script>
+
+{#snippet facts(gpu: HardwareGpuFactsDto | undefined)}
+  {#each FACTS as fact (fact.key)}
+    <dt>{$t(fact.label)}</dt>
+    <dd data-fact={fact.key}>{factText(gpu?.[fact.key])}</dd>
+  {/each}
+{/snippet}
 
 {#snippet container(titleKey: Translations, purposeKey: Translations, result: HardwareContainerCheckDto)}
   {@const state = containerStatus(result)}
@@ -176,6 +240,7 @@
       <dd>{result.driver ?? '—'}</dd>
       <dt>{$t('frameleaf_hardware_backend')}</dt>
       <dd>{$t(BACKEND_KEY[result.backend])}</dd>
+      {@render facts(result.gpu)}
     </dl>
     <p class="hw-test" class:is-ok={result.test?.ok} class:is-bad={!result.test?.ok}>
       <Icon icon={result.test?.ok ? mdiCheckCircleOutline : mdiAlertOutline} size="16" aria-hidden={true} />
@@ -184,8 +249,9 @@
   </section>
 {/snippet}
 
-{#snippet fix(fixId: ComposeFixId)}
+{#snippet fix(fixId: ComposeFixId, values: FixValues = {})}
   {@const entry = composeFixes[fixId]}
+  {@const yaml = fixYaml(fixId, values)}
   <div class="hw-fix">
     <strong>{$t('frameleaf_hardware_fix_for', { values: { vendor: entry.title } })}</strong>
     <ol>
@@ -193,17 +259,19 @@
         <li>{$t(fixStepKey(fixId, step) as Translations)}</li>
       {/each}
     </ol>
-    <div class="hw-code">
-      <pre aria-label={$t('frameleaf_hardware_fix_code', { values: { vendor: entry.title } })}><code>{entry.yaml}</code
-        ></pre>
-      <Button
-        label={$t('frameleaf_hardware_copy_fix', { values: { vendor: entry.title } })}
-        onclick={() => void copyToClipboard(entry.yaml)}
-      >
-        <Icon icon={mdiContentCopy} size="16" aria-hidden={true} />
-        {$t('frameleaf_hardware_copy')}
-      </Button>
-    </div>
+    {#if yaml}
+      <div class="hw-code">
+        <pre aria-label={$t('frameleaf_hardware_fix_code', { values: { vendor: entry.title } })}><code>{yaml}</code
+          ></pre>
+        <Button
+          label={$t('frameleaf_hardware_copy_fix', { values: { vendor: entry.title } })}
+          onclick={() => void copyToClipboard(yaml)}
+        >
+          <Icon icon={mdiContentCopy} size="16" aria-hidden={true} />
+          {$t('frameleaf_hardware_copy')}
+        </Button>
+      </div>
+    {/if}
   </div>
 {/snippet}
 
@@ -247,6 +315,9 @@
       {#if worker.gpu && worker.gpu.vramGb <= 4}
         <p class="fc-muted">{$t('frameleaf_hardware_small_gpu_note')}</p>
       {/if}
+      {#each notes as note (note.id)}
+        <p class="fc-muted">{$t(problemExplainKey(note.id) as Translations)}</p>
+      {/each}
     {/if}
     {#if busy}
       <p class="hw-running fc-waiting" role="status">
@@ -281,6 +352,15 @@
         <dt>{$t('frameleaf_hardware_benchmark_ran')}</dt>
         <dd>{formatDateTime(check.benchmark.ranAt, $locale)}</dd>
       </dl>
+      {#if check.benchmark.workloads?.length}
+        <h3 class="hw-subtitle">{$t('frameleaf_hardware_benchmark_workloads')}</h3>
+        <dl class="fc-facts hw-benchmark" aria-label={$t('frameleaf_hardware_benchmark_workloads')}>
+          {#each check.benchmark.workloads as row (row.workload)}
+            <dt>{workloadName(row.workload)}</dt>
+            <dd>{throughputText(row)}</dd>
+          {/each}
+        </dl>
+      {/if}
     {/if}
   </section>
 
@@ -301,10 +381,50 @@
           <p>{$t('frameleaf_hardware_issue_log')} <code>{issue.symptom}</code></p>
         </div>
       {/each}
-      {#each fixes as fixId (fixId)}
-        {@render fix(fixId)}
+      {#each fixes as entry, index (index)}
+        {@render fix(entry.id, entry.values)}
       {/each}
       <p class="fc-muted">{$t('frameleaf_hardware_after_fix')}</p>
+    </section>
+  {/if}
+
+  {#if check?.workers?.length}
+    <section class="fc-card fl-continuous-corners" aria-labelledby="hw-workers-title">
+      <div class="fc-card-title">
+        <span class="fc-card-icon"><Icon icon={mdiExpansionCard} size="20" aria-hidden={true} /></span>
+        <div>
+          <h2 id="hw-workers-title">{$t('frameleaf_hardware_workers_title')}</h2>
+          <p>{$t('frameleaf_hardware_workers_description')}</p>
+        </div>
+      </div>
+      <div class="hw-containers">
+        {#each check.workers as entry (entry.id)}
+          <section class="hw-container" aria-label={entry.name}>
+            <header>
+              <div>
+                <h3>{entry.name}</h3>
+                <p>
+                  {$t(
+                    entry.kind === 'render'
+                      ? 'frameleaf_hardware_worker_render'
+                      : 'frameleaf_hardware_worker_restoration',
+                  )}
+                </p>
+              </div>
+              {#if !entry.reachable}
+                <span class="fc-status is-warning">{$t('frameleaf_hardware_worker_offline')}</span>
+              {/if}
+            </header>
+            <dl class="fc-facts">
+              <dt>{$t('frameleaf_hardware_model')}</dt>
+              <dd>{entry.model ?? '—'}</dd>
+              <dt>{$t('frameleaf_hardware_memory')}</dt>
+              <dd>{entry.vramGb ? $t('frameleaf_hardware_memory_value', { values: { gb: entry.vramGb } }) : '—'}</dd>
+              {@render facts(entry.gpu)}
+            </dl>
+          </section>
+        {/each}
+      </div>
     </section>
   {/if}
 

@@ -138,7 +138,16 @@ const localStopsOf = (picker: HTMLElement) =>
 const hardwareCheck = (ml: Partial<HardwareCheckResponseDto['ml']>) =>
   ({
     checkedAt: '2026-09-26T09:00:00.000Z',
-    server: { reachable: true, vendor: null, model: null, vramGb: null, driver: null, backend: 'CPU', test: null },
+    server: {
+      reachable: true,
+      vendor: null,
+      model: null,
+      vramGb: null,
+      driver: null,
+      backend: 'CPU',
+      test: null,
+      gpu: { present: null, visible: null, usable: null },
+    },
     ml: {
       reachable: true,
       vendor: 'NVIDIA',
@@ -147,10 +156,13 @@ const hardwareCheck = (ml: Partial<HardwareCheckResponseDto['ml']>) =>
       driver: '550',
       backend: 'CUDA',
       test: null,
+      gpu: { present: null, visible: null, usable: null },
       ...ml,
     },
     mlImage: 'cuda',
     issues: [],
+    findings: [],
+    workers: [],
     benchmark: null,
   }) as HardwareCheckResponseDto;
 
