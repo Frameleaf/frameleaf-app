@@ -29,7 +29,7 @@ import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { getConfig } from 'src/utils/config.js';
 import { StoredChunk, mediaOperationProgress, planChunkResume } from 'src/utils/media-operation.js';
-import { STRIP_VIDEO_METADATA_OPTIONS, strippedStillFormat, strippedVideoStreams } from 'src/utils/media-privacy.js';
+import { chunkClipOutputOptions, previewClipOutputOptions, strippedStillFormat } from 'src/utils/media-privacy.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { MlDestinationNotFoundError, MlDestinationRefusedError } from 'src/utils/ml-destination.js';
 import {
@@ -603,26 +603,8 @@ export class RestorationWorkerService {
     const beforeTmp = this.scratch(ctx, path.join(workDir, `before-${operation.id}.mp4`));
     await this.mediaRepository.transcode(source.originalPath, beforeTmp, {
       inputOptions: ['-ss', start.toFixed(3), '-t', clipSeconds.toFixed(3)],
-      outputOptions: [
-        ...strippedVideoStreams(true),
-        ...crop,
-        '-c:v',
-        'libx264',
-        '-preset',
-        'veryfast',
-        '-crf',
-        '16',
-        '-pix_fmt',
-        'yuv420p',
-        '-c:a',
-        'aac',
-        '-b:a',
-        '192k',
-        // FL-162: the clip goes to another machine; it carries no metadata or chapters
-        ...STRIP_VIDEO_METADATA_OPTIONS,
-        '-movflags',
-        '+faststart',
-      ],
+      // FL-162: the clip goes to another machine; it carries no metadata or chapters
+      outputOptions: previewClipOutputOptions(crop),
       twoPass: false,
       progress: { frameCount: 0, percentInterval: 5 },
     });
@@ -775,19 +757,8 @@ export class RestorationWorkerService {
           '-t',
           (plan.chunk.endSeconds - plan.chunk.startSeconds).toFixed(3),
         ],
-        outputOptions: [
-          ...strippedVideoStreams(false),
-          '-c:v',
-          'libx264',
-          '-preset',
-          'veryfast',
-          '-crf',
-          '10',
-          '-pix_fmt',
-          'yuv420p',
-          // FL-162: every chunk goes to another machine; it carries no metadata or chapters
-          ...STRIP_VIDEO_METADATA_OPTIONS,
-        ],
+        // FL-162: every chunk goes to another machine; it carries no metadata or chapters
+        outputOptions: chunkClipOutputOptions(),
         twoPass: false,
         progress: { frameCount: 0, percentInterval: 5 },
       });

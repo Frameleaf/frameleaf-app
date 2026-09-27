@@ -32,6 +32,54 @@ export const STRIP_VIDEO_METADATA_OPTIONS: readonly string[] = [
 export const strippedVideoStreams = (audio: boolean): string[] =>
   audio ? ['-map', '0:v:0', '-map', '0:a:0?'] : ['-map', '0:v:0', '-an'];
 
+/**
+ * The comparison clip of a video preview: the first video and audio streams re-encoded (H.264 CRF 16
+ * and AAC) so the before and after previews play in step, optionally cropped, with no metadata.
+ */
+export const previewClipOutputOptions = (crop: readonly string[] = []): string[] => [
+  ...strippedVideoStreams(true),
+  ...crop,
+  '-c:v',
+  'libx264',
+  '-preset',
+  'veryfast',
+  '-crf',
+  '16',
+  '-pix_fmt',
+  'yuv420p',
+  '-c:a',
+  'aac',
+  '-b:a',
+  '192k',
+  ...STRIP_VIDEO_METADATA_OPTIONS,
+  '-movflags',
+  '+faststart',
+];
+
+/** What is uploaded from a preview clip: its video stream copied, without audio or metadata. */
+export const uploadClipOutputOptions = (): string[] => [
+  ...strippedVideoStreams(false),
+  '-c:v',
+  'copy',
+  ...STRIP_VIDEO_METADATA_OPTIONS,
+  '-movflags',
+  '+faststart',
+];
+
+/** One chunk of a whole video for a restoration worker: near-lossless H.264, no audio, no metadata. */
+export const chunkClipOutputOptions = (): string[] => [
+  ...strippedVideoStreams(false),
+  '-c:v',
+  'libx264',
+  '-preset',
+  'veryfast',
+  '-crf',
+  '10',
+  '-pix_fmt',
+  'yuv420p',
+  ...STRIP_VIDEO_METADATA_OPTIONS,
+];
+
 /** Whether ffmpeg options carry every metadata-stripping option above, in order (FL-162 checks). */
 export const stripsVideoMetadata = (options: readonly string[]): boolean => {
   const joined = options.join(' ');
