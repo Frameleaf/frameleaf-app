@@ -47,7 +47,10 @@ describe(FrameleafCloudBackupRepository.name, () => {
 
     await expect(sut.reportRun(target, { ...report, manifestKey: '/data/library/secret.jpg' })).rejects.toThrow();
     await expect(
-      sut.putEscrow(target, { ...cloudContractFixture('backup/escrow-blob.json'), key: 'plaintext' } as never),
+      sut.putEscrow(target, {
+        ...cloudContractFixture<Record<string, unknown>>('backup/escrow-blob.json'),
+        key: 'plaintext',
+      } as never),
     ).rejects.toThrow();
     expect(requestJson).not.toHaveBeenCalled();
 
