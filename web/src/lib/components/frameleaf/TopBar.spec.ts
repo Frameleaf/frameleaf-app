@@ -1,5 +1,5 @@
 import { modalManager } from '@immich/ui';
-import { render, screen, waitFor } from '@testing-library/svelte';
+import { render, screen, waitFor, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import {
@@ -258,6 +258,18 @@ describe('TopBar chrome (September 24)', () => {
     const view = render(TopBarTestHarness);
 
     expect(screen.getByRole('link', { name: 'Frameleaf' })).toHaveAttribute('href', '/photos');
+    await waitFor(() => expect(sdkMock.getAuthStatus).toHaveBeenCalled());
+    view.unmount();
+  });
+
+  it('is the page banner holding the one "Primary" navigation, as App.jsx\'s header is', async () => {
+    sdkMock.getAuthStatus.mockResolvedValue(authStatus(false) as never);
+    const view = render(TopBarTestHarness);
+
+    const banner = screen.getByRole('banner');
+    expect(banner).toHaveAttribute('id', 'dashboard-navbar');
+    expect(within(banner).getByRole('navigation', { name: 'Primary' })).toBeInTheDocument();
+    expect(screen.getAllByRole('navigation')).toHaveLength(1);
     await waitFor(() => expect(sdkMock.getAuthStatus).toHaveBeenCalled());
     view.unmount();
   });

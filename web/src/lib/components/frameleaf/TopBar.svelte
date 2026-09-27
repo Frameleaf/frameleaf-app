@@ -237,7 +237,7 @@
   };
 </script>
 
-<nav
+<header
   id="dashboard-navbar"
   class="frameleaf fl-topbar fl-material h-(--fl-topbar-height) w-dvw text-sm max-md:h-(--fl-topbar-height-phone)"
   class:fl-no-border={noBorder}
@@ -399,7 +399,7 @@
       />
     </section>
   </div>
-</nav>
+</header>
 
 <!-- Outside the frosted bar: a backdrop filter would make the bar the fixed tab bar's containing block. -->
 {#if hasRail}

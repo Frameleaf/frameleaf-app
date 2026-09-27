@@ -216,7 +216,7 @@
   </div>
 {/snippet}
 
-<Sidebar ariaLabel={$t('primary')} header={railHeader}>
+<Sidebar ariaLabel={$t('frameleaf_rail_navigation')} header={railHeader}>
   <div class="frameleaf fl-rail" class:fl-icon-only={iconOnly} data-theme={appTheme}>
     {#each sections as section (section.id)}
       {#if section.id === 'footer'}
