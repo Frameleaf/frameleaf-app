@@ -72,8 +72,8 @@ import { StudioProjectRepository } from 'src/repositories/studio-project.reposit
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { RENDER_WORKER_LIMIT_INSTANCE_SUBJECT } from 'src/schema/tables/render-worker.table.js';
 import { StudioExportService } from 'src/services/studio-export.service.js';
-import { StudioPreviewService } from 'src/services/studio-preview.service.js';
 import { StudioPreviewStreamService } from 'src/services/studio-preview-stream.service.js';
+import { StudioPreviewService } from 'src/services/studio-preview.service.js';
 import { StudioAuthorizedManifest, StudioResourceService } from 'src/services/studio-resource.service.js';
 import { ImmichFileResponse } from 'src/utils/file.js';
 import {

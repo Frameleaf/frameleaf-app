@@ -62,7 +62,7 @@ describe('studio preview stream rules', () => {
       expect(capped).toContain('c=IN IP4 0.0.0.0\r\nb=AS:6000\r\nb=TIAS:6000000\r\na=mid:0');
       expect(capped).not.toContain('b=AS:50000');
       // The data channel section is left alone.
-      expect(capped.split('m=application')[1]).not.toContain('b=AS');
+      expect(capped.split('m=application', 2)[1]).not.toContain('b=AS');
     });
 
     it('adds the bound when the section had none', () => {
@@ -83,7 +83,7 @@ describe('studio preview stream rules', () => {
     });
 
     it('refuses an offer without the control channel', () => {
-      expect(isValidOfferSdp(offer.split('m=application')[0])).toBe(false);
+      expect(isValidOfferSdp(offer.split('m=application', 1)[0])).toBe(false);
     });
 
     it('accepts a receive-only answer and refuses one that sends', () => {

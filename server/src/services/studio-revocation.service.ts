@@ -5,8 +5,8 @@ import { MediaOperationKind } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { StudioProjectRepository } from 'src/repositories/studio-project.repository.js';
-import { StudioPreviewService } from 'src/services/studio-preview.service.js';
 import { StudioPreviewStreamService } from 'src/services/studio-preview-stream.service.js';
+import { StudioPreviewService } from 'src/services/studio-preview.service.js';
 import { StudioProjectService } from 'src/services/studio-project.service.js';
 
 /** The Studio jobs a source leaving the library stops. */
