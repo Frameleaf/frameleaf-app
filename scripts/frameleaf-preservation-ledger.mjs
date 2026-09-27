@@ -587,7 +587,7 @@ async function importEvidence(sourceRoot) {
     root,
     "docs/docs/developer/frameleaf-library-action-parity.md",
   );
-  const nativePath = resolve(root, "mobile/frameleaf-parity.json");
+  const nativePath = resolve(root, "docs/docs/developer/frameleaf-plan/native-parity.json");
   const actionRegistryRaw = await readFile(actionRegistryPath, "utf8");
   const actionRegistry = await readJson(actionRegistryPath);
   const actionRegistryByKey = new Map(
@@ -659,7 +659,7 @@ async function importEvidence(sourceRoot) {
         sha256: sha256(acceptedActionRaw),
       },
       acceptedNative: {
-        path: "mobile/frameleaf-parity.json",
+        path: "docs/docs/developer/frameleaf-plan/native-parity.json",
         sha256: sha256(nativeRaw),
       },
       acceptedFreecut: {

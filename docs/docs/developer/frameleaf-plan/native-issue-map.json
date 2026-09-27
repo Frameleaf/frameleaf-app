@@ -3561,9 +3561,9 @@
       "runtimeQualification": "not-device-qualified"
     }
   ],
-  "mappingPolicy": "Committed entry fields are regenerated from the clean source tree. Dirty-only rows retain their reviewed source identity and hash in mobile/frameleaf-preserved-dirty-evidence.json; original implementation or nativeEvidence fields describe only that uncommitted checkout and are superseded by sourceAvailability and qualification. Primary stories own native behavior or identity integration; secondary stories own interacting workflows and qualification.",
+  "mappingPolicy": "Committed entry fields are regenerated from the clean source tree. Dirty-only rows retain their reviewed source identity and hash in docs/docs/developer/frameleaf-plan/native-preserved-dirty-evidence.json; original implementation or nativeEvidence fields describe only that uncommitted checkout and are superseded by sourceAvailability and qualification. Primary stories own native behavior or identity integration; secondary stories own interacting workflows and qualification.",
   "preservedEvidence": {
-    "path": "mobile/frameleaf-preserved-dirty-evidence.json",
+    "path": "docs/docs/developer/frameleaf-plan/native-preserved-dirty-evidence.json",
     "preservedCheckoutHead": "91d5dfe0f829d15d122c1a8b2bbc474fc195dbaf",
     "reviewedCleanBaseline": "7cfa62336f394189c0450533c30618c66366d868",
     "dirtyInventorySha256": "16ee3645c24a3a09b7735d5f6199f6f12e217281548a0ba40ba8f0b0200e89e4",
@@ -3571,7 +3571,7 @@
   },
   "schemaVersion": 2,
   "scope": "Every committed native source-inventory entry plus the 16 hashed dirty-only preservation requirements. Ownership is not committed implementation, runtime availability, authorization, or device qualification.",
-  "sourceInventory": "mobile/frameleaf-parity.json",
+  "sourceInventory": "docs/docs/developer/frameleaf-plan/native-parity.json",
   "sourceSha256": "0e980c2fc45b41d6644491ed654dc9ced63a0bc0c19c2a90be451e726efa22ee",
   "status": "planned-not-qualified"
 }

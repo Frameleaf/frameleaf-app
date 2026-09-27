@@ -167,6 +167,16 @@ test("retired mobile workflows and jobs remain absent", () => {
   assert.match(apiGeneration, /\/\/:open-api-typescript/u);
   const mise = readFileSync(path.join(root, "mise.toml"), "utf8");
   assert.doesNotMatch(mise, /open-api-dart|openapi-generator-cli|^java\s*=/mu);
+  for (const retired of [
+    "mobile",
+    "fastlane",
+    ".devcontainer/mobile",
+    "open-api/openapitools.json",
+    "open-api/templates",
+    "open-api/bin/generate-dart-sdk.sh",
+  ]) {
+    assert.equal(existsSync(path.join(root, retired)), false, retired);
+  }
 });
 
 test("locked media tools include artifact URLs and checksums for hosted platforms", () => {

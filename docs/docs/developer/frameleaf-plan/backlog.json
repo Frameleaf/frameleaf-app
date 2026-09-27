@@ -3693,8 +3693,6 @@
       "objective": "Deliver full native viewing and asset actions with source-faithful quick edits and the manual People Add workflow.",
       "paths": [
         "mobile/lib/presentation",
-        "mobile/lib/widgets/asset_grid",
-        "mobile/lib/widgets/asset_viewer",
         "mobile/lib/utils/editor.utils.dart",
         "mobile/lib/presentation/actions/edit_asset.action.dart",
         "mobile/lib/domain/models/asset_edit.model.dart",
@@ -3732,9 +3730,6 @@
       "id": "MOB-103",
       "objective": "Use the shared structured query for native timeline/albums/maps/smart albums/Spaces and timestamped video discovery.",
       "paths": [
-        "mobile/lib/providers/search",
-        "mobile/lib/pages/search",
-        "mobile/lib/infrastructure/repositories/search_api.repository.dart",
         "server/src/controllers/search.controller.ts",
         "server/src/dtos/discovery.dto.ts",
         "mobile/frameleaf-parity.json"
@@ -3769,8 +3764,6 @@
       "id": "MOB-104",
       "objective": "Implement native nested organization, Shared Spaces and durable recognition correction with the same semantics as web.",
       "paths": [
-        "mobile/lib/providers/infrastructure/album.provider.dart",
-        "mobile/lib/infrastructure/repositories/remote_album.repository.dart",
         "server/src/controllers/shared-space.controller.ts",
         "server/src/controllers/face-review.controller.ts",
         "server/src/controllers/pet.controller.ts",
@@ -3806,8 +3799,6 @@
       "id": "MOB-105",
       "objective": "Deliver the remaining recognition, ranking, classification, OCR and story workflows as usable native tasks.",
       "paths": [
-        "mobile/lib/infrastructure/repositories/memory.repository.dart",
-        "mobile/lib/widgets/memories",
         "server/src/controllers/classification.controller.ts",
         "server/src/controllers/culling.controller.ts",
         "server/src/controllers/document.controller.ts",
@@ -3860,8 +3851,6 @@
         "server/src/controllers/library-care.controller.ts",
         "server/src/controllers/preservation.controller.ts",
         "server/src/controllers/photo-tools.controller.ts",
-        "mobile/lib/repositories/share_handler.repository.dart",
-        "mobile/lib/repositories/download.repository.dart",
         "mobile/frameleaf-parity.json"
       ],
       "phase": 4,
@@ -3894,8 +3883,6 @@
       "id": "MOB-107",
       "objective": "Translate the complete source-mapped settings and operational resource surfaces into Flutter phone/tablet screens.",
       "paths": [
-        "mobile/lib/pages/common/settings.page.dart",
-        "mobile/lib/widgets/settings",
         "docs/docs/developer/frameleaf-settings-inventory.md",
         "docs/docs/developer/frameleaf-settings-coverage.md",
         "docs/docs/developer/frameleaf-account-settings-audit.md",
@@ -4126,13 +4113,7 @@
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
       "id": "MOB-300",
       "objective": "Carry the existing native strengths through the redesign and separate-app transition without losing originals or privacy.",
-      "paths": [
-        "mobile/lib/providers/backup",
-        "mobile/lib/infrastructure/repositories/backup.repository.dart",
-        "mobile/lib/providers/background_sync.provider.dart",
-        "mobile/android/app/src/main",
-        "mobile/ios"
-      ],
+      "paths": ["mobile/android/app/src/main", "mobile/ios"],
       "phase": 4,
       "priority": "Medium",
       "risks": ["Platform scheduling and permission behavior cannot be certified by widget tests alone."],
@@ -4160,10 +4141,8 @@
       "objective": "Retain useful offline browsing while making account, source and revocation boundaries explicit.",
       "paths": [
         "mobile/lib/infrastructure/repositories/sync_stream.repository.dart",
-        "mobile/lib/infrastructure/repositories/sync_migration.repository.dart",
         "mobile/lib/infrastructure/repositories/remote_asset.repository.dart",
-        "mobile/lib/data/db",
-        "mobile/lib/providers/background_sync.provider.dart"
+        "mobile/lib/data/db"
       ],
       "phase": 4,
       "priority": "Medium",
@@ -4194,14 +4173,7 @@
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
       "id": "MOB-302",
       "objective": "Keep backup reliable across OS lifecycle limits and migration from the existing Immich client.",
-      "paths": [
-        "mobile/lib/providers/backup",
-        "mobile/lib/infrastructure/repositories/backup.repository.dart",
-        "mobile/lib/pages/backup",
-        "mobile/android/app/src/main/kotlin/app/alextran/immich/background",
-        "mobile/ios/Runner",
-        "mobile/test/providers/backup/backup_provider_test.dart"
-      ],
+      "paths": ["mobile/ios/Runner"],
       "phase": 4,
       "priority": "Medium",
       "risks": [
@@ -4232,12 +4204,7 @@
       "id": "MOB-303",
       "objective": "Deliver native OS surfaces with distinct Frameleaf identity and current authorization.",
       "paths": [
-        "mobile/lib/widgets/settings/notification_setting.dart",
-        "mobile/lib/repositories/widget.repository.dart",
-        "mobile/lib/repositories/share_handler.repository.dart",
         "mobile/android/app/src/main/AndroidManifest.xml",
-        "mobile/android/app/src/main/kotlin/app/alextran/immich/widget",
-        "mobile/ios/ShareExtension",
         "mobile/ios/WidgetExtension",
         "mobile/lib/frameleaf/frameleaf_links.dart"
       ],
@@ -4270,15 +4237,7 @@
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
       "id": "MOB-304",
       "objective": "Preserve phone/tablet media ownership through imports, exports and device-space cleanup.",
-      "paths": [
-        "mobile/lib/infrastructure/repositories/local_asset.repository.dart",
-        "mobile/lib/infrastructure/repositories/local_album.repository.dart",
-        "mobile/lib/infrastructure/repositories/trashed_local_asset.repository.dart",
-        "mobile/lib/repositories/download.repository.dart",
-        "mobile/lib/services/download.service.dart",
-        "mobile/lib/widgets/settings/free_up_space_settings.dart",
-        "mobile/lib/models/download/livephotos_medatada.model.dart"
-      ],
+      "paths": ["docs/docs/developer/frameleaf-plan/native-parity.json"],
       "phase": 4,
       "priority": "Medium",
       "risks": [
@@ -4390,8 +4349,6 @@
       "paths": [
         "mobile/lib/services/oauth.service.dart",
         "mobile/lib/widgets/forms/login/login_form.dart",
-        "mobile/lib/services/auth.service.dart",
-        "mobile/lib/providers/auth.provider.dart",
         "server/src/services/auth.service.ts",
         "server/src/controllers/oauth.controller.ts",
         "server/src/dtos/config.dto.ts",
@@ -4434,11 +4391,7 @@
         "design/frameleaf",
         "mobile/assets/frameleaf-mark.png",
         "mobile/pubspec.yaml",
-        "mobile/android/fastlane/metadata",
-        "mobile/ios/Runner/Assets.xcassets",
-        "mobile/ios/ShareExtension",
         "mobile/ios/WidgetExtension",
-        "mobile/lib/utils/licenses.dart",
         "mobile/lib/frameleaf/frameleaf_links.dart",
         "web/src/lib/components/frameleaf",
         "design/frameleaf/brand-kit",
@@ -4627,7 +4580,6 @@
       "objective": "Set measured native/web budgets and close accessibility/device gaps before removing the previous UI.",
       "paths": [
         "mobile/lib/frameleaf",
-        "mobile/packages/ui",
         "mobile/lib/widgets",
         "i18n",
         "web/src/lib/frameleaf/tokens.css",
@@ -4736,7 +4688,7 @@
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
       "id": "REL-200",
       "objective": "Move automation to Frameleaf-owned infrastructure with additive API compatibility, reproducible SDKs and release checks tied to the exact candidate.",
-      "paths": [".github/workflows", "mise.toml", "open-api", "packages/sdk", "mobile/mise.toml"],
+      "paths": [".github/workflows", "mise.toml", "open-api", "packages/sdk"],
       "phase": 6,
       "priority": "Medium",
       "risks": [
@@ -4809,10 +4761,8 @@
         "server/src/bin/sync-open-api.ts",
         "open-api/immich-openapi-specs.json",
         "open-api/bin/generate-dart-sdk.sh",
-        "open-api/openapitools.json",
         "open-api/patch/studio_document.dart.patch",
         "packages/sdk/src/fetch-client.ts",
-        "mobile/test/generated_api_defaults_test.dart",
         "mobile/test/frameleaf/studio_document_roundtrip_test.dart",
         ".github/workflows/fork-integration.yml"
       ],

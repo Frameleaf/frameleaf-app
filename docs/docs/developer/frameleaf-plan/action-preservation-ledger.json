@@ -13,7 +13,7 @@
       "sha256": "b6a4dd66d641441ed3bb3913c95f5a160b0c4fb8ec25b7626294cf02f9005154"
     },
     "acceptedNative": {
-      "path": "mobile/frameleaf-parity.json",
+      "path": "docs/docs/developer/frameleaf-plan/native-parity.json",
       "sha256": "7433d51fd0112b7e99e812647f0f7113b7a20b46e7ab0034e7085a179cc60bc6"
     },
     "acceptedFreecut": {
@@ -43,7 +43,7 @@
       "sha256": "e47a54cab6c3010d4727eb4ca0d6f06e3bb6b313657a82fa0c4300eb9ba246c7"
     }
   },
-  "sourceEvidenceSha256": "fb91b84e36a2a9b20f581d6ef5c9fe31b5eeb48a171a4cf40adb9fdee4208e66",
+  "sourceEvidenceSha256": "7b7a2f495ec101d305c47b2df69d96d3a13f73061172291c5ecf79688f59e6a7",
   "securityInvariants": [
     {
       "id": "public-loader-is-not-resource-authorization",
