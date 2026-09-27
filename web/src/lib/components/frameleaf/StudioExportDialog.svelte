@@ -4,6 +4,11 @@
     color: StudioExportColor;
     resolution: StudioExportResolution;
     destination: MediaOperationDestination;
+    /**
+     * FL-162 Smooth motion of the exported video, as its own job once it is in the library. The export
+     * still renders at home; a Frameleaf Cloud Smooth motion is confirmed and billed separately.
+     */
+    smoothMotion?: { factor: 2 | 4 | 8; destinationId: string };
   };
 </script>
 
@@ -24,10 +29,16 @@
   import { t } from 'svelte-i18n';
   import {
     MediaOperationDestination,
+    MlDestinationKind,
+    MlWorkload,
     StudioExportColor,
     StudioExportFormat,
     StudioExportResolution,
+    getMlCapabilities,
+    type MlCapabilityDestinationDto,
   } from '@immich/sdk';
+  import ModelSlider from '$lib/components/frameleaf/cloud/ModelSlider.svelte';
+  import { resolvePosition, type DetectedGpu, type RouteMode } from '$lib/frameleaf/gpu-model-catalog';
   import { Icon } from '@immich/ui';
   import { mdiAlertOutline, mdiExportVariant } from '@mdi/js';
   import type { Translations } from 'svelte-i18n';
@@ -85,6 +96,60 @@
   let destination = $state(MediaOperationDestination.Local);
   const fieldId = $props.id();
 
+  /* Smooth motion after export (FL-162; prototype ExportDialog frame-rate conversion and FrameMethod). */
+  const SMOOTH_FACTORS = [2, 4, 8] as const;
+  let smoothFactor = $state<2 | 4 | 8 | null>(null);
+  let smoothModelId = $state<string | null>(null);
+  let smoothRunsOn = $state<'local' | 'cloud' | null>(null);
+  let interpolationDestinations = $state<MlCapabilityDestinationDto[] | null>(null);
+  let capabilitiesFailed = $state(false);
+
+  const smoothLocal = $derived(
+    interpolationDestinations?.find(
+      (candidate) => candidate.kind !== MlDestinationKind.FrameleafCloud && candidate.available,
+    ) ?? null,
+  );
+  const smoothCloud = $derived(
+    interpolationDestinations?.find(
+      (candidate) => candidate.kind === MlDestinationKind.FrameleafCloud && candidate.available,
+    ) ?? null,
+  );
+  const smoothGpu = $derived<DetectedGpu | null>(
+    smoothLocal?.gpuMemoryBytes
+      ? { name: smoothLocal.name, vramGb: smoothLocal.gpuMemoryBytes / 1024 ** 3, backend: 'CUDA', profile: null }
+      : null,
+  );
+  /** What can run the work right now decides the slider's route; the server still decides each job. */
+  const smoothRoute = $derived<RouteMode>(smoothLocal && smoothCloud ? 'both' : smoothCloud ? 'cloud' : 'local');
+  const smoothDestination = $derived(
+    smoothRunsOn === 'cloud' ? smoothCloud : smoothRunsOn === 'local' ? smoothLocal : null,
+  );
+
+  // The destinations are read once Smooth motion is asked for, and the slider starts where it fits.
+  $effect(() => {
+    if (smoothFactor === null || interpolationDestinations !== null || capabilitiesFailed) {
+      return;
+    }
+    void getMlCapabilities()
+      .then((capabilities) => {
+        interpolationDestinations =
+          capabilities.workloads.find((row) => row.workload === MlWorkload.Interpolation)?.destinations ?? [];
+      })
+      .catch(() => {
+        capabilitiesFailed = true;
+      });
+  });
+  $effect(() => {
+    if (!interpolationDestinations || smoothModelId) {
+      return;
+    }
+    const start = resolvePosition('interpolation', null, { gpu: smoothGpu, route: smoothRoute });
+    if (start) {
+      smoothModelId = start.item.id;
+      smoothRunsOn = start.runsOn;
+    }
+  });
+
   // Every opening starts from the prototype's defaults.
   $effect(() => {
     if (!open) {
@@ -95,17 +160,25 @@
     color = StudioExportColor.Preserve;
     resolution = StudioExportResolution.$2160P;
     destination = MediaOperationDestination.Local;
+    smoothFactor = null;
   });
 
   const choices = $derived(studioRenderChoices(renderEvidence, destination, { format, color, resolution }));
   const verdict = $derived(evaluateStudioRender(renderEvidence, destination, { format, color, resolution }));
-  const canExport = $derived(!busy && verdict.supported);
+  const canExport = $derived(!busy && verdict.supported && (smoothFactor === null || !!smoothDestination));
   const unsupported = (list: { value: string; verdict: StudioRenderVerdict }[], value: string) =>
     list.find((entry) => entry.value === value)?.verdict.supported === false;
 
   const submit = () => {
     if (canExport) {
-      onExport({ format, color, resolution, destination });
+      onExport({
+        format,
+        color,
+        resolution,
+        destination,
+        ...(smoothFactor !== null &&
+          smoothDestination && { smoothMotion: { factor: smoothFactor, destinationId: smoothDestination.id } }),
+      });
     }
   };
 </script>
@@ -166,6 +239,56 @@
     {/if}
     <p class="note">{$t('frameleaf_studio_export_on_network')}</p>
 
+    <!-- FL-162: Smooth motion is its own job on the exported video; the export itself renders at home. -->
+    <fieldset class="smooth" data-testid="studio-export-smooth-motion">
+      <legend>{$t('frameleaf_studio_export_smooth_motion')}</legend>
+      <div class="segmented" role="radiogroup" aria-label={$t('frameleaf_studio_export_smooth_motion')}>
+        <button type="button" role="radio" aria-checked={smoothFactor === null} onclick={() => (smoothFactor = null)}>
+          {$t('frameleaf_studio_export_smooth_motion_off')}
+        </button>
+        {#each SMOOTH_FACTORS as factor (factor)}
+          <button
+            type="button"
+            role="radio"
+            aria-checked={smoothFactor === factor}
+            onclick={() => (smoothFactor = factor)}
+          >
+            {$t('frameleaf_restoration_smooth_motion_factor', { values: { factor } })}
+          </button>
+        {/each}
+      </div>
+      {#if smoothFactor !== null}
+        {#if interpolationDestinations}
+          <ModelSlider
+            workload="interpolation"
+            value={smoothModelId}
+            gpu={smoothGpu}
+            route={smoothRoute}
+            label={$t('frameleaf_restoration_smooth_motion_model')}
+            hideLegend
+            localDisabledReason={smoothLocal ? '' : $t('frameleaf_restoration_smooth_motion_no_local')}
+            onChange={(id, state) => {
+              smoothModelId = id;
+              smoothRunsOn = state.runsOn;
+            }}
+          />
+          <p class="note" role="status">
+            {#if smoothRunsOn === 'cloud' && smoothCloud}
+              {$t('frameleaf_studio_export_smooth_motion_cloud')}
+            {:else if smoothRunsOn === 'local' && smoothLocal}
+              {$t('frameleaf_studio_export_smooth_motion_local', { values: { name: smoothLocal.name } })}
+            {:else}
+              {$t('frameleaf_studio_export_smooth_motion_unavailable')}
+            {/if}
+          </p>
+        {:else if capabilitiesFailed}
+          <p class="note warning" role="status">{$t('frameleaf_studio_export_smooth_motion_unavailable')}</p>
+        {:else}
+          <p class="note" aria-busy="true">{$t('loading')}</p>
+        {/if}
+      {/if}
+    </fieldset>
+
     <footer>
       <Button onclick={() => (open = false)}>{$t('cancel')}</Button>
       <Button variant="primary" disabled={!canExport} onclick={submit}>
@@ -214,6 +337,45 @@
   }
   .note.warning {
     color: var(--fl-warning);
+  }
+  .smooth {
+    display: grid;
+    gap: 0.5rem;
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+  .smooth legend {
+    margin-bottom: 0.3rem;
+    font-size: var(--fl-font-small);
+    color: var(--fl-muted);
+  }
+  /* studio.css `.fls-segmented` */
+  .segmented {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 2px;
+    padding: 2px;
+    border: 1px solid var(--fl-border);
+    border-radius: 999px;
+    background: var(--fl-canvas);
+    justify-self: start;
+  }
+  .segmented button {
+    min-height: 28px;
+    padding: 0 0.75rem;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--fl-muted);
+    font: inherit;
+    font-size: var(--fl-font-small);
+    cursor: pointer;
+  }
+  .segmented button[aria-checked='true'] {
+    background: var(--fl-panel);
+    color: var(--fl-text);
+    box-shadow: var(--fl-shadow-1);
   }
   footer {
     display: flex;

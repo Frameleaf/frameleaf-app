@@ -322,7 +322,11 @@ export interface StudioCommandPayloads {
     quality?: string;
   };
   'job.enqueueFillerRemoval': { sequenceId: string; clipIds?: string[]; destinationId: string };
-  'job.enqueueInterpolation': { clipId: string; targetFps: StudioRate; destinationId: string };
+  /**
+   * FL-162 Smooth motion for the clip's source, previewed first and saved as a new version. `factor`
+   * (2, 4 or 8) is the frames per source frame; without it the host derives it from `targetFps`.
+   */
+  'job.enqueueInterpolation': { clipId: string; targetFps: StudioRate; destinationId: string; factor?: number };
   'job.enqueueMusicGeneration': {
     prompt: string;
     duration: StudioDuration;
@@ -330,11 +334,18 @@ export interface StudioCommandPayloads {
     destinationId: string;
   };
   'job.enqueueProxy': { assetIds: string[]; destinationId: string };
+  /**
+   * FL-115: a restoration preview of `assetId` (`preview: true`), or the full render of the reviewed
+   * `restorationId` (`preview: false`), on an explicit destination.
+   */
   'job.enqueueRestoration': {
     mode: string;
     upscale: number;
     preview: boolean;
     destinationId: string;
+    assetId?: string;
+    restorationId?: string;
+    keepGrain?: boolean;
   };
   'job.enqueueReverseConform': { clipId: string; destinationId: string };
   'job.enqueueSceneDetection': {

@@ -530,6 +530,7 @@ export const studioCommandMirror = {
     payload: {
       clipId: 'string',
       destinationId: 'string',
+      factor: 'number?',
       targetFps: 'rate',
     },
   },
@@ -564,9 +565,12 @@ export const studioCommandMirror = {
     capability: 'restorationWorker',
     owner: 'FL-110',
     payload: {
+      assetId: 'string?',
       destinationId: 'string',
+      keepGrain: 'boolean?',
       mode: 'string',
       preview: 'boolean',
+      restorationId: 'string?',
       upscale: 'number',
     },
   },

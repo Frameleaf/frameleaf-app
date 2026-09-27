@@ -9749,6 +9749,12 @@ export type StudioExportListResponseDto = {
     /** Matching versions, before paging */
     total: number;
 };
+export type StudioExportSmoothMotionDto = {
+    /** Where the Smooth motion job runs; Frameleaf Cloud is confirmed separately */
+    destinationId: string;
+    /** How many frames each frame becomes */
+    factor: 2 | 4 | 8;
+};
 export type StudioExportCreateDto = {
     /** Defaults to `preserve`; a stereo downmix happens only when asked for */
     audio?: StudioExportAudio;
@@ -9763,6 +9769,7 @@ export type StudioExportCreateDto = {
     /** Idempotency key; a repeated submit answers with the first export */
     requestKey?: string;
     resolution: StudioExportResolution;
+    smoothMotion?: StudioExportSmoothMotionDto;
 };
 export type StudioExportCreateResponseDto = {
     /** The render job; follow it in Activity */

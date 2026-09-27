@@ -840,7 +840,7 @@ export const catalogue = [
     prototypeFunctions: [],
     prototypeSource: 'beyond the prototype: RIFE frame interpolation',
     manifestIds: ['extra.interpolation-rife'],
-    payload: { clipId: 'string', targetFps: 'rate', destinationId: 'string' },
+    payload: { clipId: 'string', targetFps: 'rate', destinationId: 'string', factor: 'number?' },
     description: 'Queue frame interpolation for a clip to an explicit destination.',
   },
   {
@@ -889,6 +889,9 @@ export const catalogue = [
       upscale: 'number',
       preview: 'boolean',
       destinationId: 'string',
+      assetId: 'string?',
+      restorationId: 'string?',
+      keepGrain: 'boolean?',
     },
     description: 'Queue a Frameleaf restoration pass with an explicit, never implicit, destination.',
   },

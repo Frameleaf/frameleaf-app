@@ -80144,6 +80144,9 @@
           },
           "resolution": {
             "$ref": "#/components/schemas/StudioExportResolution"
+          },
+          "smoothMotion": {
+            "$ref": "#/components/schemas/StudioExportSmoothMotionDto"
           }
         },
         "required": [
@@ -80247,6 +80250,48 @@
           "color",
           "format",
           "resolution"
+        ],
+        "type": "object"
+      },
+      "StudioExportSmoothMotionDto": {
+        "description": "FL-162: Smooth motion of the exported video as its own job after it is published. The export itself always renders at home; a Frameleaf Cloud job is confirmed and billed on its own.",
+        "properties": {
+          "destinationId": {
+            "description": "Where the Smooth motion job runs; Frameleaf Cloud is confirmed separately",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "factor": {
+            "anyOf": [
+              {
+                "type": "number",
+                "format": "double",
+                "enum": [
+                  2
+                ]
+              },
+              {
+                "type": "number",
+                "format": "double",
+                "enum": [
+                  4
+                ]
+              },
+              {
+                "type": "number",
+                "format": "double",
+                "enum": [
+                  8
+                ]
+              }
+            ],
+            "description": "How many frames each frame becomes"
+          }
+        },
+        "required": [
+          "destinationId",
+          "factor"
         ],
         "type": "object"
       },
