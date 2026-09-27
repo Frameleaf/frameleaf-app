@@ -410,7 +410,7 @@ Recorded deviations: the selection lives in the address, not in component state 
 
 Residue: creating a tag with a suppressed tag's exact name still reveals that it exists, because tag values are unique per owner. This stays an FL-146 owner question.
 
-Validation: unit specs for `discovery-tree.ts`, `tag-tree.ts`, `folder-tree.ts`, `foldersStore`, both route loaders, both panels and the `AssetGrid` file grid; server unit specs for `TagService.getStatistics` and `ViewService`; medium cases for the statistics (not run here); API e2e for `GET /tags/statistics` and `GET /view/folder/summary`; web e2e `tags-folders.e2e-spec.ts` for the keyboard trees, Back, a hidden descendant item, rename, move, delete and hidden rail entries (e2e not run here).
+Validation: unit specs for `discovery-tree.ts`, `tag-tree.ts`, `folder-tree.ts`, `foldersStore`, both route loaders, both panels and the `AssetGrid` file grid; server unit specs for `TagService.getStatistics` and `ViewService`; medium cases for the statistics; API e2e for `GET /tags/statistics` and `GET /view/folder/summary`; web e2e `tags-folders.e2e-spec.ts` for the keyboard trees, Back, a hidden descendant item, rename, move, delete and hidden rail entries. On September 27 the medium `TagService` spec (24), the `tag` and `view` API e2e (31) and the web e2e (5) passed against the e2e stack built from the integration head.
 
 ### September 25 administration completion (FL-67, FL-71, FL-76, FL-78, FL-80, FL-81, FL-131, FL-135, FL-83)
 
