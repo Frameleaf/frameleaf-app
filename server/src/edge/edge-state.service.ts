@@ -17,6 +17,7 @@ import type {
 import { type EdgeCertificateKind, EdgeCertificateRepository } from 'src/edge/edge-certificate.repository.js';
 import { EdgeDirectService } from 'src/edge/edge-direct.service.js';
 import { EdgeProxyService } from 'src/edge/edge-proxy.service.js';
+import { type EdgeCloudSession, EdgeRelayService } from 'src/edge/edge-relay.service.js';
 import { DatabaseLock, NotificationLevel, NotificationType, SystemMetadataKey } from 'src/enum.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { DatabaseRepository, type HeldLock } from 'src/repositories/database.repository.js';
@@ -29,9 +30,8 @@ import { SystemMetadataRepository } from 'src/repositories/system-metadata.repos
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { getConfig } from 'src/utils/config.js';
 import { identityDirectory, loadInstanceIdentity, readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
-import { FrameleafDiscoveryDocument } from 'src/utils/frameleaf-cloud.js';
-import { FrameleafInstanceToken } from 'src/utils/frameleaf-dpop.js';
 import { entitlementFlags } from 'src/utils/frameleaf-license.js';
+import { RELAY_NOTICE_AFTER_MS } from 'src/utils/frameleaf-relay.js';
 import {
   ACME_ACCOUNT_URI,
   DNS_TXT_TIMEOUT_MS,
@@ -58,8 +58,7 @@ import { isHomeAddress } from 'src/utils/frameleaf-sign-in.js';
 
 type RemoteSettings = SystemConfig['frameleafCloud']['remoteAccess'];
 
-/** Discovery and an instance token, fetched only when a pass needs the cloud. */
-type CloudSession = { document: FrameleafDiscoveryDocument; token: FrameleafInstanceToken };
+type CloudSession = EdgeCloudSession;
 
 /** What remote access should be doing right now, decided without any network call. */
 export type EdgeDesired =
@@ -85,6 +84,8 @@ const PROPAGATION_WAIT_MS = 30 * 1000;
 const STATE_REFRESH_MS = 20 * 1000;
 /** The notice administrators get when a certificate cannot be issued or renewed. */
 const CERTIFICATE_NOTICE_KEY = 'frameleaf-remote:certificate';
+/** The notice administrators get when the relay tunnel is down for 15 minutes (FL-166). */
+const RELAY_NOTICE_KEY = 'frameleaf-remote:relay';
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
@@ -101,6 +102,8 @@ const message = (error: unknown) => (error instanceof Error ? error.message : St
  *   custom hostname's) issued and renewed through ACME DNS-01 and the cloud's TXT API, reports each
  *   certificate's facts (`POST /v1/remote/certs`), pins the CAA record to its ACME account, and serves
  *   the direct listener.
+ * - It keeps the blind relay tunnel up (FL-166, `EdgeRelayService`) and tells administrators when there
+ *   has been no tunnel for 15 minutes (once a day at most).
  * - It writes what it is doing to `SystemMetadataKey.FrameleafRemoteAccess` for the API: never a key.
  * - On shutdown every socket closes within 5 seconds.
  */
@@ -115,6 +118,7 @@ export class EdgeStateService {
   private lastWritten: { state: Omit<FrameleafRemoteAccess, 'updatedAt'>; at: number } | null = null;
   private enrollRetry: { at: number; failures: number } | null = null;
   private reportAttempts = new Map<EdgeCertificateKind, number>();
+  private relayNoticeAt = 0;
   /** Specs replace the waits. */
   wait = (ms: number) => sleep(ms);
 
@@ -131,6 +135,7 @@ export class EdgeStateService {
     private certificates: EdgeCertificateRepository,
     private direct: EdgeDirectService,
     private proxy: EdgeProxyService,
+    private relay: EdgeRelayService,
   ) {
     this.logger.setContext(EdgeStateService.name);
   }
@@ -148,7 +153,7 @@ export class EdgeStateService {
     const started = Date.now();
     // a tick in progress (an ACME order can take a while) is not waited for past the deadline
     await Promise.race([this.running, sleep(Math.max(0, timeoutMs / 2)).then(() => {})]);
-    await this.direct.stop(Math.max(250, timeoutMs - (Date.now() - started)));
+    await Promise.all([this.direct.stop(Math.max(250, timeoutMs - (Date.now() - started))), this.relay.stop()]);
     this.proxy.destroy();
     await this.lock?.release();
     this.lock = null;
@@ -274,6 +279,7 @@ export class EdgeStateService {
       await this.direct.stop();
       this.served = null;
     }
+    await this.relay.stop();
     if (desired.removeCertificates) {
       // every pass: removing files that are already gone costs nothing, and a pair left by a crash goes too
       await this.certificates.remove(identityDirectory(this.configRepository));
@@ -436,8 +442,19 @@ export class EdgeStateService {
           allowWan: settings.mode === 'relay-and-direct',
           advertised,
         });
+        this.relay.configure({ contexts: { wildcard: wildcard.pair, custom }, enrollment });
         this.served = signature;
       }
+      // the relay is the baseline path: it runs whatever the direct listener does
+      await this.relay.ensure(
+        {
+          instanceId: desired.link.instanceId,
+          linkKey: `${desired.link.instanceId}|${desired.link.linkedAt ?? ''}`,
+          enrollment,
+          cloud,
+        },
+        now,
+      );
       try {
         await this.direct.start();
       } catch (error) {
@@ -453,7 +470,10 @@ export class EdgeStateService {
     }
 
     state.direct = { ...state.direct, listening: this.direct.listening };
+    state.relay = this.relay.status();
+    await this.noticeRelayDown(state.relay, now);
     state.candidates = buildCandidates({
+      relayConnected: state.relay.connected,
       enrollment,
       settings,
       listenPort: this.listenPort(),
@@ -471,7 +491,30 @@ export class EdgeStateService {
     if (this.direct.listening) {
       await this.direct.stop();
     }
+    await this.relay.stop();
     this.served = null;
+  }
+
+  /** "Relay disconnected": after 15 minutes without a tunnel while serving, once a day at most. */
+  private async noticeRelayDown(relay: FrameleafRemoteAccess['relay'], now: number) {
+    const since = relay.disconnectedSince ? Date.parse(relay.disconnectedSince) : NaN;
+    if (relay.connected || !(now - since >= RELAY_NOTICE_AFTER_MS) || now - this.relayNoticeAt < 60 * 60 * 1000) {
+      return;
+    }
+    // the stored notices are deduplicated for 24 hours; this only spares the lookup on every pass
+    this.relayNoticeAt = now;
+    const problem = relay.lastError ? ` The last problem was: ${relay.lastError}` : '';
+    try {
+      await this.notifyAdmins({
+        title: 'Remote access relay disconnected',
+        description:
+          `This server has not been connected to the Frameleaf relay since ${relay.disconnectedSince}. ` +
+          `It keeps trying; at home it works as before.${problem}`,
+        dedupeKey: RELAY_NOTICE_KEY,
+      });
+    } catch (error) {
+      this.logger.warn(`Could not notify administrators: ${message(error)}`);
+    }
   }
 
   // ------------------------------------------------------------------ cloud
@@ -494,10 +537,12 @@ export class EdgeStateService {
     current: FrameleafRemoteEnrollment | undefined,
     now: number,
   ): Promise<FrameleafRemoteEnrollment | null> {
+    // linked again: enrol again at once, which also gives the new sign-in client its relay address
     const fresh =
       current &&
       current.instanceId === desired.link.instanceId &&
       current.cloudUrl === desired.cloudUrl &&
+      current.linkedAt === desired.link.linkedAt &&
       now - Date.parse(current.enrolledAt) < ENROLL_REFRESH_MS;
     if (fresh) {
       return current;
@@ -536,6 +581,7 @@ export class EdgeStateService {
         certProfile: answer.certProfile,
         renewBeforeDays: answer.renewBeforeDays,
         cloneSuspected: answer.cloneSuspected,
+        linkedAt: desired.link.linkedAt,
         enrolledAt: new Date(now).toISOString(),
       };
     } catch (error) {

@@ -32,6 +32,7 @@
   import { cloudManager } from '$lib/managers/cloud-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { copyToClipboard } from '$lib/utils';
+  import { getByteUnitString } from '$lib/utils/byte-units';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
   import {
     RemoteAccessMode,
@@ -419,10 +420,38 @@
         <dt>{$t('frameleaf_remote_region')}</dt>
         <dd>{remote?.relayRegion ?? '—'}</dd>
         <dt>{$t('frameleaf_remote_latency')}</dt>
-        <dd>—</dd>
+        <dd>
+          {remote?.enabled && remote.relayConnected && remote.relayLatencyMs !== null
+            ? $t('frameleaf_remote_latency_value', { values: { ms: remote.relayLatencyMs } })
+            : '—'}
+        </dd>
         <dt>{$t('frameleaf_remote_speed')}</dt>
         <dd>{$t('frameleaf_remote_speed_value')}</dd>
+        {#if remote?.enabled && remote.relayConnected && remote.relayConnectedAt}
+          <dt>{$t('frameleaf_remote_relay_connected_since')}</dt>
+          <dd>{formatDateTime(remote.relayConnectedAt, $locale)}</dd>
+        {/if}
+        {#if remote?.enabled && remote.relayBytesIn + remote.relayBytesOut > 0}
+          <dt>{$t('frameleaf_remote_relay_traffic')}</dt>
+          <dd>
+            {$t('frameleaf_remote_relay_traffic_value', {
+              values: {
+                received: getByteUnitString(remote.relayBytesIn, $locale ?? undefined),
+                sent: getByteUnitString(remote.relayBytesOut, $locale ?? undefined),
+              },
+            })}
+          </dd>
+        {/if}
       </dl>
+      {#if remote?.enabled && remote.relayRevoked}
+        <CloudBanner tone="warning" title={$t('frameleaf_remote_relay_revoked_title')}>
+          {$t('frameleaf_remote_relay_revoked_body')}
+        </CloudBanner>
+      {:else if remote?.enabled && !remote.relayConnected && remote.relayLastError}
+        <p class="fc-muted" role="status">
+          {$t('frameleaf_remote_relay_last_problem', { values: { problem: remote.relayLastError } })}
+        </p>
+      {/if}
     </CloudCard>
     <CloudCard title={$t('frameleaf_remote_direct_title')} status={directStatus.label} tone={directStatus.tone}>
       {#if direct && remote}

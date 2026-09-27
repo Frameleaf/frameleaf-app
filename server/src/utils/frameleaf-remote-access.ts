@@ -273,6 +273,10 @@ export const remoteEndpoints = (document: { api: string }) => {
     certs: `${api}/v1/remote/certs`,
     hostnames: `${api}/v1/remote/hostnames`,
     hostname: (host: string) => `${api}/v1/remote/hostnames/${encodeURIComponent(host)}`,
+    relayToken: `${api}/v1/remote/relay-token`,
+    relayCandidates: `${api}/v1/remote/relays/candidates`,
+    relaySelect: `${api}/v1/remote/relays/select`,
+    wanProbe: `${api}/v1/remote/wan-probe`,
   };
 };
 
@@ -538,6 +542,8 @@ export const buildCandidates = (input: {
   ipv6Listening?: boolean;
   publicIpv4?: string | null;
   trustedLanCidrs?: string[];
+  /** The relay tunnel is READY: only then are the relay name and the custom hostname published (FL-166). */
+  relayConnected?: boolean;
 }): FrameleafRemoteConnection[] => {
   const { enrollment, settings } = input;
   const direct = settings.mode === 'relay-and-direct';
@@ -562,6 +568,9 @@ export const buildCandidates = (input: {
         candidates.push(connection('ipv6', name, input.listenPort, { ipv6: true }));
       }
     }
+  }
+  if (input.relayConnected === false) {
+    return candidates.slice(0, MAX_CANDIDATES);
   }
   const custom = verifiedCustomHost(settings);
   if (custom) {

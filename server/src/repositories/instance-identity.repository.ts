@@ -735,6 +735,7 @@ export class InstanceIdentityRepository {
       kid: ed25519Thumbprint(publicJwk),
       publicJwk,
       sign: (header, payload) => this.jws(privateKey, header, payload),
+      signBytes: (data) => sign(null, data, privateKey),
     };
   }
 

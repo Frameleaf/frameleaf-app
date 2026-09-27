@@ -6,7 +6,7 @@ import { CloudMockState, setupCloudMockApiRoutes } from 'src/ui/mock-network/clo
 /**
  * Settings → Frameleaf Cloud → Remote access (FL-165) against a mocked server: why it cannot be turned
  * on, turning it on with the public address, the custom hostname from its records to verified and
- * "Use my domain", the connection test, and direct connections.
+ * "Use my domain", the connection test, direct connections, and the relay status panel (FL-166).
  */
 const remotePage = '/user-settings?area=cloud&section=cloud-remote';
 
@@ -93,5 +93,19 @@ test.describe('Frameleaf Cloud remote access', () => {
     await page.getByRole('combobox').selectOption('relay-and-direct');
     await expect(page.getByText('Port forwarding')).toBeVisible();
     await expect(page.getByRole('switch', { name: 'I forward the port myself' })).toBeVisible();
+  });
+
+  test('shows the relay status panel (FL-166)', async ({ page }) => {
+    mock.remote = { ...defaults(), enabled: true, relayConnected: false };
+    await page.goto(remotePage);
+    await expect(page.getByText('Last problem: The relay refused the tunnel: unavailable')).toBeVisible();
+    await expect(page.getByText('Not connected').first()).toBeVisible();
+
+    mock.remote = { ...defaults(), enabled: true, relayConnected: true };
+    await page.reload();
+    await expect(page.getByText('24 ms')).toBeVisible();
+    await expect(page.getByText('Connected since')).toBeVisible();
+    await expect(page.getByText('5 MiB in, 50 MiB out')).toBeVisible();
+    await expect(page.getByText(/^Last problem/)).toHaveCount(0);
   });
 });
