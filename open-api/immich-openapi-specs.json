@@ -20150,6 +20150,58 @@
         "x-immich-permission": "memory.read"
       }
     },
+    "/memories/exports/{id}/library": {
+      "post": {
+        "description": "Save a finished highlight video of one of the caller's own memories to their library. Until then it is kept with the memory, out of the library, and removed with it.",
+        "operationId": "saveMemoryExportToLibrary",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryExportResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Save a memory highlight to the library",
+        "tags": [
+          "Memories"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "memory.update"
+      }
+    },
     "/memories/show-less": {
       "delete": {
         "description": "Remove one of the caller's show-less rules, so its memories are generated and shown again, and return every rule.",
@@ -62350,6 +62402,16 @@
           "format": {
             "$ref": "#/components/schemas/MemoryExportFormat",
             "description": "Export format, defaults to an archive of the originals"
+          },
+          "highlight": {
+            "$ref": "#/components/schemas/MemoryHighlightOptionsDto",
+            "description": "Options for a `highlight` export",
+            "x-immich-history": [
+              {
+                "version": "v3",
+                "state": "Added"
+              }
+            ]
           }
         },
         "type": "object"
@@ -62357,7 +62419,8 @@
       "MemoryExportFormat": {
         "description": "Memory export format",
         "enum": [
-          "archive"
+          "archive",
+          "highlight"
         ],
         "type": "string"
       },
@@ -62399,6 +62462,21 @@
           },
           "format": {
             "$ref": "#/components/schemas/MemoryExportFormat"
+          },
+          "highlight": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MemoryHighlightResponseDto"
+              }
+            ],
+            "description": "The highlight video settings and render state, for a `highlight` export",
+            "nullable": true,
+            "x-immich-history": [
+              {
+                "version": "v3",
+                "state": "Added"
+              }
+            ]
           },
           "id": {
             "description": "Export ID",
@@ -62465,6 +62543,7 @@
           "expiresAt",
           "finishedAt",
           "format",
+          "highlight",
           "id",
           "isDownloadable",
           "memoryId",
@@ -62489,6 +62568,86 @@
           "cancelled"
         ],
         "type": "string"
+      },
+      "MemoryHighlightAudio": {
+        "description": "Sound of a memory highlight video",
+        "enum": [
+          "original",
+          "silent"
+        ],
+        "type": "string"
+      },
+      "MemoryHighlightDestination": {
+        "description": "Where the highlight renders: this server or another computer on your home network",
+        "enum": [
+          "local",
+          "lan"
+        ],
+        "type": "string"
+      },
+      "MemoryHighlightOptionsDto": {
+        "properties": {
+          "audio": {
+            "$ref": "#/components/schemas/MemoryHighlightAudio",
+            "description": "Sound policy, each video's own sound by default"
+          },
+          "destination": {
+            "$ref": "#/components/schemas/MemoryHighlightDestination",
+            "description": "Where it renders, this server by default"
+          },
+          "lengthSeconds": {
+            "description": "Target length in seconds, 60 by default",
+            "maximum": 300,
+            "minimum": 15,
+            "type": "integer"
+          },
+          "resolution": {
+            "$ref": "#/components/schemas/StudioExportResolution",
+            "description": "Output resolution, 2160p by default"
+          }
+        },
+        "type": "object"
+      },
+      "MemoryHighlightResponseDto": {
+        "properties": {
+          "audio": {
+            "$ref": "#/components/schemas/MemoryHighlightAudio"
+          },
+          "destination": {
+            "$ref": "#/components/schemas/MemoryHighlightDestination"
+          },
+          "lengthSeconds": {
+            "description": "Target length in seconds",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "progress": {
+            "description": "Render progress, 0 to 100",
+            "maximum": 100,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "resolution": {
+            "$ref": "#/components/schemas/StudioExportResolution"
+          },
+          "savedAssetId": {
+            "description": "The library asset the highlight was saved as, once saved",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "audio",
+          "destination",
+          "lengthSeconds",
+          "progress",
+          "resolution",
+          "savedAssetId"
+        ],
+        "type": "object"
       },
       "MemoryResponseDto": {
         "properties": {
