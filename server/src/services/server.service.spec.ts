@@ -405,7 +405,13 @@ describe(ServerService.name, () => {
         mapLightStyleUrl: 'https://tiles.frameleaf.cloud/v1/style/light.json',
         maintenanceMode: false,
         minFaces: 3,
-        frameleaf: { via: null, signInAvailable: false, signInRequired: false, publicUrl: null },
+        frameleaf: {
+          via: null,
+          cloudConfigured: false,
+          signInAvailable: false,
+          signInRequired: false,
+          publicUrl: null,
+        },
       });
       expect(defaultImageDescriptionRawPromptTemplate).toContain('{schema}');
       expect(defaultImageDescriptionRawPromptTemplate).toContain('{names}');
@@ -446,6 +452,8 @@ describe(ServerService.name, () => {
       await expect(sut.getSystemConfig('relay')).resolves.toMatchObject({
         frameleaf: {
           via: 'relay',
+          // FL-168: the deployment names Frameleaf Cloud, so setup can offer to link
+          cloudConfigured: true,
           signInAvailable: true,
           signInRequired: true,
           publicUrl: 'https://photos.example.com',

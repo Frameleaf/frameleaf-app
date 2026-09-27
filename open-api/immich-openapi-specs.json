@@ -74703,6 +74703,10 @@
       "ServerFrameleafConfigDto": {
         "description": "Frameleaf remote access and sign-in, for this request",
         "properties": {
+          "cloudConfigured": {
+            "description": "Whether the deployment names a Frameleaf Cloud address (FRAMELEAF_CLOUD_URL), so setup can offer to link; nothing is contacted",
+            "type": "boolean"
+          },
           "publicUrl": {
             "description": "The address Frameleaf Cloud published for this server, while it is linked",
             "nullable": true,
@@ -74727,6 +74731,7 @@
           }
         },
         "required": [
+          "cloudConfigured",
           "publicUrl",
           "signInAvailable",
           "signInRequired",

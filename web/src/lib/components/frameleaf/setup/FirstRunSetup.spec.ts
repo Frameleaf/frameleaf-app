@@ -8,6 +8,10 @@ import { createSetup, flowSteps } from '$lib/frameleaf/first-run-setup';
 
 vi.mock('$app/navigation', () => ({ goto: vi.fn(), invalidateAll: vi.fn() }));
 
+/** The server config's Frameleaf block, as `GET server/config` answers it before anyone signs in. */
+const serverConfig = (frameleaf: { cloudConfigured: boolean; signInAvailable: boolean }) =>
+  ({ frameleaf: { via: null, signInRequired: false, publicUrl: null, ...frameleaf } }) as never;
+
 describe('FirstRunSetup (FL-176)', () => {
   beforeAll(() => {
     addMessages('dev', en);
@@ -54,7 +58,9 @@ describe('FirstRunSetup (FL-176)', () => {
   });
 
   it('says when Frameleaf Cloud is not reachable and offers a local account', async () => {
-    // Sign-in is offered, but the hand-over to Frameleaf fails: setup says so and falls back.
+    // A server already linked (a headless link token): Sign in with Frameleaf is offered, but the
+    // hand-over to Frameleaf fails, so setup says so and falls back.
+    sdkMock.getServerConfig.mockResolvedValue(serverConfig({ cloudConfigured: true, signInAvailable: true }));
     sdkMock.getPublicConfig.mockResolvedValue({ frameleaf: { signInAvailable: true } } as never);
     sdkMock.startFrameleafSignIn.mockRejectedValue(new Error('unreachable'));
     const state = createSetup('new');
@@ -66,6 +72,59 @@ describe('FirstRunSetup (FL-176)', () => {
     expect(await screen.findByText("Frameleaf Cloud isn't reachable yet")).toBeInTheDocument();
     await fireEvent.click(screen.getByRole('button', { name: 'Use a local account instead' }));
     await waitFor(() => expect(screen.getByRole('heading', { name: 'Create the admin account' })).toBeInTheDocument());
+  });
+
+  describe('linking to Frameleaf Cloud is the featured path (FL-168)', () => {
+    const accountStep = (choices: Partial<ReturnType<typeof createSetup>['choices']> = {}) => {
+      const state = createSetup('new');
+      const step = flowSteps('new').findIndex((entry) => entry.id === 'account');
+      return { ...state, step, reached: step, choices: { ...state.choices, ...choices } };
+    };
+
+    it('on a server not linked yet, creates the administrator first and contacts nothing', async () => {
+      sdkMock.getServerConfig.mockResolvedValue(serverConfig({ cloudConfigured: true, signInAvailable: false }));
+      render(FirstRunSetup, { initial: accountStep(), authenticated: false });
+      await waitFor(() => expect(sdkMock.getServerConfig).toHaveBeenCalled());
+      expect(await screen.findByRole('heading', { name: 'Create the admin account' })).toBeInTheDocument();
+      expect(screen.getByText(/Nothing is sent to Frameleaf until you start linking/)).toBeInTheDocument();
+      expect(sdkMock.startCloudLink).not.toHaveBeenCalled();
+      expect(sdkMock.startFrameleafSignIn).not.toHaveBeenCalled();
+    });
+
+    it('then links only when asked, and offers to continue with a local account', async () => {
+      sdkMock.getServerConfig.mockResolvedValue(serverConfig({ cloudConfigured: true, signInAvailable: false }));
+      sdkMock.getCloudStatus.mockResolvedValue({ state: 'unlinked', configured: true, pending: null } as never);
+      sdkMock.getLicenseStatus.mockResolvedValue({} as never);
+      sdkMock.getLicenseProducts.mockResolvedValue({} as never);
+      sdkMock.startCloudLink.mockResolvedValue({
+        state: 'pending',
+        configured: true,
+        pending: {
+          userCode: 'BCDF-GHJK',
+          verificationUri: 'https://id.frameleaf.test/device',
+          verificationUriComplete: 'https://id.frameleaf.test/device?code=BCDF-GHJK',
+          expiresAt: '2026-09-27T12:00:00.000Z',
+          intervalSeconds: 5,
+        },
+      } as never);
+      render(FirstRunSetup, {
+        initial: accountStep({ accountCreated: true, adminEmail: 'ada@example.com' }),
+        authenticated: true,
+      });
+      expect(await screen.findByRole('heading', { name: 'Link to Frameleaf' })).toBeInTheDocument();
+      expect(sdkMock.startCloudLink).not.toHaveBeenCalled();
+      const start = await screen.findByRole('button', { name: /Sign in with Frameleaf/ });
+      await waitFor(() => expect(start).toBeEnabled());
+      await fireEvent.click(start);
+      await waitFor(() => expect(sdkMock.startCloudLink).toHaveBeenCalledTimes(1));
+      expect(await screen.findByText('BCDF-GHJK')).toBeInTheDocument();
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Continue with local account' }));
+      await waitFor(() =>
+        expect(screen.getByRole('heading', { name: 'Create the admin account' })).toBeInTheDocument(),
+      );
+      expect(screen.getByText(/ada@example.com/)).toBeInTheDocument();
+    });
   });
 
   it('offers a way out to a signed-in admin, but not at the sign-in gate', () => {
@@ -85,24 +144,26 @@ describe('FirstRunSetup (FL-176)', () => {
     };
     const card = (name: string) => screen.getByText(name).closest('label')!;
 
-    it('defaults to a local account and says why when Sign in with Frameleaf is unavailable', async () => {
-      sdkMock.getPublicConfig.mockResolvedValue({ frameleaf: { signInAvailable: false } } as never);
+    it('defaults to a local account and says why when Frameleaf Cloud is not set up here', async () => {
+      sdkMock.getServerConfig.mockResolvedValue(serverConfig({ cloudConfigured: false, signInAvailable: false }));
       render(FirstRunSetup, { initial: choiceStep(), authenticated: false });
-      expect(await screen.findByText(/Unavailable on this server for now/)).toBeInTheDocument();
+      expect(await screen.findByText(/Not set up on this server/)).toBeInTheDocument();
       await waitFor(() => expect(within(card('Local account only')).getByRole('radio')).toBeChecked());
       expect(within(card('Frameleaf account')).getByRole('radio')).toBeDisabled();
       expect(within(card('Frameleaf account')).queryByText('Recommended')).toBeNull();
       expect(within(card('Local account only')).getByText('Recommended')).toBeInTheDocument();
     });
 
-    it('keeps Frameleaf recommended and chosen when sign-in is available', async () => {
-      sdkMock.getPublicConfig.mockResolvedValue({ frameleaf: { signInAvailable: true } } as never);
+    it('keeps Frameleaf recommended and chosen wherever Frameleaf Cloud is set up, linked or not (FL-168)', async () => {
+      sdkMock.getServerConfig.mockResolvedValue(serverConfig({ cloudConfigured: true, signInAvailable: false }));
       render(FirstRunSetup, { initial: choiceStep(), authenticated: false });
-      await waitFor(() => expect(sdkMock.getPublicConfig).toHaveBeenCalled());
+      await waitFor(() => expect(sdkMock.getServerConfig).toHaveBeenCalled());
       expect(within(card('Frameleaf account')).getByRole('radio')).toBeChecked();
       expect(within(card('Frameleaf account')).getByRole('radio')).toBeEnabled();
       expect(within(card('Frameleaf account')).getByText('Recommended')).toBeInTheDocument();
-      expect(screen.queryByText(/Unavailable on this server for now/)).toBeNull();
+      expect(screen.queryByText(/Not set up on this server/)).toBeNull();
+      // choosing is not linking: nothing is contacted from this step
+      expect(sdkMock.startCloudLink).not.toHaveBeenCalled();
     });
   });
 });
