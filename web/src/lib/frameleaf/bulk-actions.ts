@@ -272,9 +272,10 @@ export const bulkActions = (context: BulkActionContext = {}): BulkAction[] => {
       group: 'primary',
       // The prototype never creates a public link silently: Share link opens the shared-link form
       // (expiry, password, permissions) over the selected items. A scope snapshot has no item list
-      // to hand the form, so the action waits until the selection is explicit.
+      // to hand the form, so the action waits until the selection is explicit. A revealed mark or
+      // detection (FL-195) is never shared: a link must never carry it to anybody else.
       dialog: true,
-      available: live && has && !snapshot,
+      available: live && has && !snapshot && !any((asset) => !!asset.isLocked),
     },
     {
       id: 'send-copy',
@@ -389,8 +390,9 @@ export const bulkActions = (context: BulkActionContext = {}): BulkAction[] => {
       icon: 'mdiArchiveOutline',
       group: 'visibility',
       undoable: true,
-      // storing another visibility would unlock a revealed sensitive item (FL-34); unmark it first
-      available: live && has && !any((asset) => !!asset.isLocked) && (unknown || any((asset) => !asset.isArchived)),
+      // FL-195: a revealed mark or detection archives like any other item; a visibility change never
+      // unlocks (FL-34), so it stays Locked in the archive
+      available: live && has && (unknown || any((asset) => !asset.isArchived)),
     },
     {
       id: 'unarchive',
@@ -398,7 +400,7 @@ export const bulkActions = (context: BulkActionContext = {}): BulkAction[] => {
       icon: 'mdiArchiveArrowUpOutline',
       group: 'visibility',
       undoable: true,
-      available: live && has && !any((asset) => !!asset.isLocked) && (unknown || any((asset) => !!asset.isArchived)),
+      available: live && has && (unknown || any((asset) => !!asset.isArchived)),
     },
     {
       // Mark Sensitive is the lock (FL-34, the prototype's `lock`): one lock record per item, metadata

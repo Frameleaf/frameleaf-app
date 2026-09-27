@@ -51,6 +51,7 @@ import { goto } from '$app/navigation';
 import ShareSheetModal from '$lib/components/frameleaf/ShareSheetModal.svelte';
 import { ProjectionType } from '$lib/constants';
 import { canSendCopies, isSendable, sendCopiesWithFeedback, sendCopyPermitted } from '$lib/frameleaf/send-copy';
+import { actsAsRegular } from '$lib/frameleaf/session-access.svelte';
 import { folderOf } from '$lib/frameleaf/viewer-headline';
 import { isPanorama } from '$lib/frameleaf/viewer-media';
 import { showFilmstrip } from '$lib/frameleaf/viewer-preferences';
@@ -68,13 +69,13 @@ import { handleError } from '$lib/utils/handle-error';
 import { getFormatter } from '$lib/utils/i18n';
 
 /**
- * Whether a slideshow may play from this item: never from a Locked item. The More menu, the shared
+ * Whether a slideshow may play from this item: never from a Locked item, unless it is the owner's
+ * revealed mark or detection in their unlocked session (FL-195). The More menu, the shared
  * link's bar and the viewer footer (V-13) all read this one rule. FL-56 (AL-37): a slideshow shows
  * only the previews a shared link already shows, so it no longer depends on the link allowing
  * downloads (FL-56 acceptance: the public viewer keeps its slideshow).
  */
-export const canPlaySlideshow = (asset: Pick<AssetResponseDto, 'visibility'>): boolean =>
-  asset.visibility !== AssetVisibility.Locked;
+export const canPlaySlideshow = (asset: Pick<AssetResponseDto, 'visibility'>): boolean => actsAsRegular(asset);
 
 export const getAssetActions = (
   $t: MessageFormatter,
@@ -275,15 +276,15 @@ export const getAssetActions = (
   const ViewInTimeline: ActionItem = {
     title: $t('view_in_timeline'),
     icon: mdiImageSearch,
-    $if: () => isOwner && asset.visibility !== AssetVisibility.Locked && !asset.isArchived && !asset.isTrashed,
+    // FL-195: a revealed mark or detection is in the unlocked timeline like any other item
+    $if: () => isOwner && actsAsRegular(asset) && !asset.isArchived && !asset.isTrashed,
     onAction: () => goto(Route.photos({ at: asset.stackPrimaryAssetId ?? asset.id })),
   };
 
   const ViewSimilar: ActionItem = {
     title: $t('view_similar_photos'),
     icon: mdiCompare,
-    $if: () =>
-      asset.visibility !== AssetVisibility.Locked && !asset.isArchived && !asset.isTrashed && smartSearchEnabled,
+    $if: () => actsAsRegular(asset) && !asset.isArchived && !asset.isTrashed && smartSearchEnabled,
     onAction: () => goto(Route.search({ queryAssetId: asset.stackPrimaryAssetId ?? asset.id })),
   };
 
@@ -297,7 +298,7 @@ export const getAssetActions = (
     $if: () =>
       typeof asset.exifInfo?.latitude === 'number' &&
       typeof asset.exifInfo?.longitude === 'number' &&
-      asset.visibility !== AssetVisibility.Locked,
+      actsAsRegular(asset),
     onAction: () => goto(Route.map({ zoom: 14, lat: asset.exifInfo!.latitude!, lng: asset.exifInfo!.longitude! })),
   };
 

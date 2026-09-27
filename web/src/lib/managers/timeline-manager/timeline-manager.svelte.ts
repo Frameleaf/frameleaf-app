@@ -691,8 +691,8 @@ export class TimelineManager extends VirtualScrollManager {
 
   /**
    * Whether an item whose lock just changed still belongs in this view (FL-34). A newly locked item
-   * stays in the Locked view and in an unlocked session's timeline, which reveals the owner's marks;
-   * a newly unlocked item leaves the Locked view only.
+   * stays in the Locked view and in every ordinary view of an unlocked session, which reveals the
+   * owner's marks (FL-195); a newly unlocked item leaves the Locked view only.
    */
   keepsAfterLockChange(locked: boolean): boolean {
     const isLockedView = this.#options.visibility === AssetVisibility.Locked;
@@ -700,8 +700,8 @@ export class TimelineManager extends VirtualScrollManager {
   }
 
   // Marking an item sensitive locks it (FL-34), so every view drops it except the Locked view, which
-  // is where it now lives, and an unlocked session's timeline, which reveals the owner's marks: there
-  // it stays, badged as sensitive, exactly as the server returns it on the next load.
+  // is where it now lives, and an unlocked session's ordinary views, which reveal the owner's marks
+  // (FL-195): there it stays, badged as sensitive, exactly as the server returns it on the next load.
   #handleMarkNsfw(ids: string[]) {
     if (this.#options.visibility === AssetVisibility.Locked) {
       return;
@@ -905,14 +905,17 @@ export class TimelineManager extends VirtualScrollManager {
   }
 
   /**
-   * FL-34: an unlocked session reveals the owner's own sensitive marks and detections in the timeline
-   * ("Revealed for this session"); the server sends them with visibility `locked` and their reason.
-   * Anything else locked never belongs to a timeline view. The Locked view also lists the owner's
-   * Locked-rule matches (the prototype's `classifyLocked`), which keep their stored visibility.
+   * FL-34/FL-195: an unlocked session reveals the owner's own sensitive marks and detections in every
+   * ordinary view — the timeline, the archive, a person, a tag ("Revealed for this session"); the
+   * server sends them with visibility `locked` and their reason, and only where their stored
+   * visibility matches the view. Anything else locked never belongs to an ordinary view. The Locked
+   * view also lists the owner's Locked-rule matches (the prototype's `classifyLocked`), which keep
+   * their stored visibility.
    */
   #isVisibilityMismatch(asset: TimelineAsset) {
     const revealed =
-      this.#options.visibility === AssetVisibility.Timeline &&
+      this.#options.visibility !== undefined &&
+      this.#options.visibility !== AssetVisibility.Locked &&
       asset.visibility === AssetVisibility.Locked &&
       (asset.lockReason === AssetLockReason.Marked || asset.lockReason === AssetLockReason.Detected);
     return !revealed && !this.#isLockedRuleMatch(asset) && isMismatched(this.#options.visibility, asset.visibility);

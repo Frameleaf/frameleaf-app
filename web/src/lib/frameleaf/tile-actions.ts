@@ -1,4 +1,5 @@
 import { AssetVisibility } from '@immich/sdk';
+import { isRevealedLock } from '$lib/frameleaf/session-access.svelte';
 import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
 
 /**
@@ -30,22 +31,25 @@ export type TileActionAvailability = { favorite: boolean; edit: boolean; share: 
 
 /**
  * What a tile may offer. Favorite, edit and share change the item, so they are the owner's alone,
- * as the selection bar's descriptors decide (`bulk-actions.ts`). A Locked item — on the Locked page
- * or revealed in an unlocked session — offers none of them: the bar offers no favorite for Locked
- * items, the editor would write a new version outside the Locked session, and a link would carry it
- * out of it. Only More (the viewer, which applies its own Locked rules) remains.
+ * as the selection bar's descriptors decide (`bulk-actions.ts`). A Locked item on the Locked page
+ * offers none of them. Revealed in an unlocked session (FL-195) it acts like any other item — favorite
+ * and edit (the editor keeps its copy Locked) — but is never shared: a link would carry it out to
+ * people who must never see it. More (the viewer, which applies its own Locked rules) always remains.
  */
 export const tileActionAvailability = (
-  asset: Pick<TimelineAsset, 'ownerId' | 'isTrashed' | 'visibility'>,
+  asset: Pick<TimelineAsset, 'ownerId' | 'isTrashed' | 'visibility' | 'lockReason'>,
   context: TileActionContext,
 ): TileActionAvailability => {
   const owned = !!context.currentUserId && asset.ownerId === context.currentUserId;
-  const locked = !!context.locked || asset.visibility === AssetVisibility.Locked;
+  // FL-195: a revealed mark or detection outside the Locked view behaves like any other item, except
+  // that it is never shared: a link would carry it out to people who must never see it
+  const revealed = !context.locked && isRevealedLock(asset);
+  const locked = !!context.locked || (asset.visibility === AssetVisibility.Locked && !revealed);
   const live = owned && !asset.isTrashed && !context.trash && !locked;
   return {
     favorite: live,
     edit: live && context.canEdit,
-    share: live && context.canShare,
+    share: live && !revealed && context.canShare,
     more: context.canOpen,
   };
 };

@@ -1,4 +1,4 @@
-import { AssetVisibility } from '@immich/sdk';
+import { AssetLockReason, AssetVisibility } from '@immich/sdk';
 import { browser } from '$app/environment';
 
 /**
@@ -150,9 +150,29 @@ export const waitForSessionLockRefreshes = async () => {
 
 /**
  * True when a view with these options reveals the owner's marked and detected items to an unlocked
- * session: the main timeline, as the server decides it (`TimelineService.getRevealOptions`).
+ * session: every ordinary view — the timeline, the archive, an album, a person, a tag — as the server
+ * decides it (FL-195, `revealLockedOwnerId`). The Locked view is its own view.
  */
 export const revealsLocks = (
   options: { visibility?: AssetVisibility; albumId?: string },
   isElevated = sessionAccess.isElevated,
-): boolean => isElevated && options.visibility === AssetVisibility.Timeline && !options.albumId;
+): boolean => isElevated && options.visibility !== AssetVisibility.Locked;
+
+/**
+ * FL-195 (owner decision, September 27, 2026): a Locked item this session is shown outside the Locked
+ * view is the owner's own mark or detection, revealed because the session is unlocked, and it behaves
+ * like any other item — search, Studio, bulk actions, downloads. The server only ever sends such an
+ * item to its owner's unlocked session. A known reason from the old Locked folder never counts; a
+ * response without a reason (the viewer) is trusted to the server, which refuses what it must.
+ */
+export const isRevealedLock = (
+  asset: { visibility?: AssetVisibility | string; lockReason?: AssetLockReason | null },
+  isElevated = sessionAccess.isElevated,
+): boolean =>
+  isElevated && asset.visibility === AssetVisibility.Locked && asset.lockReason !== AssetLockReason.ImmichLockedFolder;
+
+/** Whether an item acts like any other for this session: not Locked, or a revealed lock (FL-195). */
+export const actsAsRegular = (
+  asset: { visibility?: AssetVisibility | string; lockReason?: AssetLockReason | null },
+  isElevated = sessionAccess.isElevated,
+): boolean => asset.visibility !== AssetVisibility.Locked || isRevealedLock(asset, isElevated);
