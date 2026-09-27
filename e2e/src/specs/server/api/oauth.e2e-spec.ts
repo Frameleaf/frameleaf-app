@@ -166,10 +166,13 @@ describe(`/oauth`, () => {
     it(`should throw an error if the state mismatches`, async () => {
       const callbackParams = await loginWithOAuth('oauth-auto-register');
       const { state } = await loginWithOAuth('oauth-auto-register');
-      const { status } = await request(app)
+      const { status, body } = await request(app)
         .post('/oauth/callback')
         .send({ ...callbackParams, state });
-      expect(status).toBeGreaterThanOrEqual(400);
+      expect(status).toBe(400);
+      expect(body).toEqual(
+        errorDto.badRequest('This sign-in was started somewhere else or has expired. Sign in again.'),
+      );
     });
 
     it(`should throw an error if the codeVerifier is not provided`, async () => {
@@ -182,10 +185,52 @@ describe(`/oauth`, () => {
     it(`should throw an error if the codeVerifier doesn't match the challenge`, async () => {
       const callbackParams = await loginWithOAuth('oauth-auto-register');
       const { codeVerifier } = await loginWithOAuth('oauth-auto-register');
-      const { status } = await request(app)
+      const { status, body } = await request(app)
         .post('/oauth/callback')
         .send({ ...callbackParams, codeVerifier });
-      expect(status).toBeGreaterThanOrEqual(400);
+      expect(status).toBe(400);
+      expect(body).toEqual(errorDto.badRequest('This sign-in link has expired or was already used. Sign in again.'));
+    });
+
+    it('should refuse a callback link that was already used (FL-80)', async () => {
+      const callbackParams = await loginWithOAuth('oauth-auto-register');
+      const first = await request(app).post('/oauth/callback').send(callbackParams);
+      expect(first.status).toBe(201);
+
+      const { status, body } = await request(app).post('/oauth/callback').send(callbackParams);
+      expect(status).toBe(400);
+      expect(body).toEqual(errorDto.badRequest('This sign-in link has expired or was already used. Sign in again.'));
+    });
+
+    it('should answer a sign-in the provider refused with a 400, never signing anyone in (FL-80)', async () => {
+      const state = randomBytes(16).toString('base64url');
+      const codeVerifier = randomBytes(64).toString('base64url');
+      const { url: authorizeUrl } = await startOAuth({
+        oAuthConfigDto: {
+          redirectUri: `${baseUrl}/auth/login`,
+          state,
+          codeChallenge: await generateCodeChallenge(codeVerifier),
+        },
+      });
+      const discovery = await fetch(new URL('/.well-known/openid-configuration', authServer.external));
+      const { issuer } = (await discovery.json()) as { issuer: string };
+      expect(new URL(authorizeUrl).searchParams.get('state')).toBe(state);
+      const callback = new URL(`${baseUrl}/auth/login`);
+      callback.search = new URLSearchParams({
+        error: 'access_denied',
+        error_description: '<script>alert(1)</script>',
+        state,
+        iss: issuer,
+      }).toString();
+
+      const { status, body, headers } = await request(app)
+        .post('/oauth/callback')
+        .send({ url: callback.href, state, codeVerifier });
+      expect(status).toBe(400);
+      expect(body).toEqual(errorDto.badRequest('The identity provider did not approve the sign-in. Try again.'));
+      expect(headers['set-cookie'] ?? []).not.toEqual(
+        expect.arrayContaining([expect.stringContaining('immich_access_token=')]),
+      );
     });
 
     it('should auto register the user by default', async () => {
