@@ -671,7 +671,8 @@ describe(CloudMlJobService.name, () => {
         id: 'asset-2',
         checksum: Buffer.alloc(20, 9),
       } as never);
-      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1', 'asset-2']));
+      // the owner may edit the second video too; access answers with exactly the ids asked about
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-2']));
       rows.set(RESTORATION_ID, { ...rows.get(RESTORATION_ID)!, assetId: 'asset-2' });
 
       await expect(sut.estimate(owner, { ...full(), assetId: 'asset-2' }, now)).rejects.toMatchObject({
