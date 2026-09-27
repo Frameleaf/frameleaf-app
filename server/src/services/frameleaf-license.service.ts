@@ -9,6 +9,8 @@ import { OnEvent, OnJob } from 'src/decorators.js';
 import {
   LicenseActivateDto,
   LicenseCertificateDto,
+  LicenseLinkCodeDto,
+  LicenseLinkCodeResponseDto,
   LicenseProductsResponseDto,
   LicenseStatusResponseDto,
 } from 'src/dtos/frameleaf-license.dto.js';
@@ -21,12 +23,14 @@ import {
   JobStatus,
   NotificationLevel,
   NotificationType,
+  Permission,
   QueueName,
   SystemMetadataKey,
   UserMetadataKey,
 } from 'src/enum.js';
 import { FrameleafCloudPublicCall } from 'src/repositories/frameleaf-cloud.repository.js';
 import { BaseService } from 'src/services/base.service.js';
+import { isGranted } from 'src/utils/access.js';
 import { loadInstanceIdentity, readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
 import {
   CloudErrorCode,
@@ -107,6 +111,29 @@ const sha256 = (value: string) => createHash('sha256').update(value).digest('hex
  */
 export const IDENTITY_KEY_MISMATCH_MESSAGE =
   'This server’s identity key does not match the one Frameleaf Cloud has registered for it. Link this server again from Settings → Frameleaf Cloud → Account & link, then activate the key.';
+
+/**
+ * CLD-004: what the cloud's link-code refusals mean to the person on the Support Frameleaf screen.
+ * Each one ends by offering the way that always works: pasting the key.
+ */
+const LINK_CODE_REFUSALS: Record<string, string> = {
+  link_code_not_found:
+    'This link from your Frameleaf account is not valid. Open it again from My licenses, or paste the key.',
+  link_code_expired:
+    'This link from your Frameleaf account has expired. Open it again from My licenses, or paste the key.',
+  link_code_used:
+    'This link from your Frameleaf account was already used. Open it again from My licenses, or paste the key.',
+  link_code_wrong_account:
+    'This licence belongs to a different Frameleaf account than the one this server is linked to. Paste the key instead.',
+  link_code_kind_mismatch:
+    'This is a server key. An administrator activates it under Frameleaf Cloud → Licence, or pastes it on Support Frameleaf.',
+  activation_limit: 'This key is already active on another server. Deactivate it in your Frameleaf account first.',
+  'rate-limited': 'Too many attempts. Try again later, or paste the key.',
+};
+
+/** CLD-004: a link code cannot be redeemed here; the key can still be pasted. */
+export const LINK_CODE_UNAVAILABLE_MESSAGE =
+  'Link this server to Frameleaf Cloud to use links from your Frameleaf account, or paste the key instead.';
 
 /** How long a signed activation from an unlinked server may be used (the token assertions' limit). */
 const ACTIVATION_PROOF_TTL_SECONDS = 120;
@@ -497,6 +524,107 @@ export class FrameleafLicenseService extends BaseService {
       value: { kind: 'individual', keyHint: row.keyHint, activatedAt: new Date(row.activatedAt).toISOString() },
     });
     return { kind: 'individual', keyHint: row.keyHint, activatedAt: row.activatedAt };
+  }
+
+  // ------------------------------------------------------------------ link codes (CLD-004)
+
+  /**
+   * `POST license/link-code`: redeem a one-time link code from the Frameleaf account site. The cloud
+   * activates the licence for this server directly, so the key never reaches this server or the
+   * browser. Linked servers only (DPoP-bound instance token), and only while discovery advertises
+   * `features.licenseLinkCode`. A non-administrator can only redeem a personal key. The code is never
+   * logged or echoed.
+   */
+  async redeemLinkCode(auth: AuthDto, dto: LicenseLinkCodeDto): Promise<LicenseLinkCodeResponseDto> {
+    const { cloudUrl, linked, link } = await readCloudLink(this.gatewayDeps());
+    if (!cloudUrl || !linked || !link?.instanceId) {
+      throw new BadRequestException(LINK_CODE_UNAVAILABLE_MESSAGE);
+    }
+    // a server key needs what `PUT admin/license/activate` needs: an administrator, and an API key only
+    // when it also holds that permission
+    const isAdmin =
+      !!auth.user.isAdmin &&
+      (!auth.apiKey || isGranted({ requested: [Permission.ServerLicenseUpdate], current: auth.apiKey.permissions }));
+    const identity = await loadInstanceIdentity(this.gatewayDeps());
+    const binding = sha256(`${identity.instanceId}${auth.user.id}`);
+    const config = await this.getConfig({ withCache: true });
+    let answer: z.infer<typeof certificateResponseSchema>;
+    try {
+      const { document, token } = await this.apiToken(cloudUrl, link.instanceId);
+      if (document.features?.licenseLinkCode !== true) {
+        throw new BadRequestException(LINK_CODE_UNAVAILABLE_MESSAGE);
+      }
+      const url =
+        document.endpoints?.licenseLinkCode ?? `${document.api.replace(/\/+$/, '')}/v1/licenses/redeem-link-code`;
+      answer = await this.frameleafCloudRepository.requestJson(certificateResponseSchema, {
+        method: 'POST',
+        url,
+        dpop: token,
+        body: {
+          code: dto.code,
+          fingerprint: { instanceId: link.instanceId, jkt: token.signer.kid, user: binding },
+          instanceName: config.server.name?.trim() || 'Frameleaf server',
+          allowKinds: isAdmin ? ['server', 'individual'] : ['individual'],
+        },
+      });
+    } catch (error) {
+      throw this.linkCodeError(error);
+    }
+
+    const license = await this.verifyForStore(answer.certificate, 'key', { activationId: answer.activationId });
+    const keyHint = license.keyHint ?? null;
+    if (license.kind === 'server' && isAdmin) {
+      const store = await this.readStore();
+      await this.writeStore({ ...store, key: license });
+      await this.audit(auth, AdminAuditAction.LicenseActivated, keyHint);
+      return { kind: 'server', keyHint };
+    }
+    if (license.kind === 'individual') {
+      // the key itself never reaches this server: the licence id stands in for it in the uniqueness check
+      const keySha256 = sha256(`lic:${license.claims.lic?.id ?? license.claims.jti ?? answer.certificate}`);
+      const existing = await this.frameleafUserLicenseRepository.getByKeyHash(keySha256);
+      if (existing && existing.userId !== auth.user.id) {
+        throw new ConflictException('This key is already active for another account on this server.');
+      }
+      const row = await this.frameleafUserLicenseRepository.upsert({
+        userId: auth.user.id,
+        keyHint: keyHint ?? '',
+        keySha256,
+        binding,
+        certificate: answer.certificate,
+        activationId: answer.activationId ?? null,
+      });
+      await this.userRepository.upsertMetadata(auth.user.id, {
+        key: UserMetadataKey.License,
+        value: { kind: 'individual', keyHint: row.keyHint, activatedAt: new Date(row.activatedAt).toISOString() },
+      });
+      return { kind: 'individual', keyHint: row.keyHint };
+    }
+    // the cloud answered with a kind this person may not hold (it checks allowKinds too): keep nothing
+    throw new BadRequestException('Frameleaf Cloud returned a licence this account cannot activate here.');
+  }
+
+  /** The person-facing refusal for a failed redemption; the code is never part of it. */
+  private linkCodeError(error: unknown): Error {
+    if (error instanceof BadRequestException || error instanceof ConflictException) {
+      return error;
+    }
+    const code = cloudErrorCode(error);
+    if (code === CloudErrorCode.InstanceIdTaken) {
+      return new ConflictException(IDENTITY_KEY_MISMATCH_MESSAGE);
+    }
+    if (code && LINK_CODE_REFUSALS[code]) {
+      return new BadRequestException(LINK_CODE_REFUSALS[code]);
+    }
+    if (error instanceof FrameleafCloudError) {
+      if (error.status === 401) {
+        return new BadRequestException(LINK_CODE_UNAVAILABLE_MESSAGE);
+      }
+      return error.status !== null && error.status < 500
+        ? new BadRequestException('Frameleaf Cloud did not accept this link. Paste the key instead.')
+        : new ConflictException('Frameleaf Cloud could not be reached. Try again later, or paste the key.');
+    }
+    return error instanceof Error ? error : new Error(String(error));
   }
 
   /** `DELETE users/me/license`: remove the person's key; deactivated with the cloud when reachable. */

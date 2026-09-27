@@ -58,4 +58,21 @@ describe(LicenseController.name, () => {
     expect(status).toBe(200);
     expect(body).toEqual({ currency: 'USD' });
   });
+
+  it('redeems a link code taken only from the body, never a key or a query string (CLD-004)', async () => {
+    const code = 'flc_ABCDEFGHJKMNPQRSTVWXYZ2345';
+    service.redeemLinkCode.mockResolvedValue({ kind: 'individual', keyHint: '8EL6' });
+
+    const query = await request(ctx.getHttpServer()).post(`/license/link-code?code=${code}`).send({});
+    expect(query.status).toBe(400);
+    const key = await request(ctx.getHttpServer()).post('/license/link-code').send({ code: 'FL-IC8Q-BT2Q-8EL6' });
+    expect(key.status).toBe(400);
+    expect(service.redeemLinkCode).not.toHaveBeenCalled();
+
+    const { status, body } = await request(ctx.getHttpServer()).post('/license/link-code').send({ code });
+    expect(ctx.authenticate).toHaveBeenCalled();
+    expect(status).toBe(200);
+    expect(body).toEqual({ kind: 'individual', keyHint: '8EL6' });
+    expect(service.redeemLinkCode.mock.calls[0][1]).toEqual({ code });
+  });
 });

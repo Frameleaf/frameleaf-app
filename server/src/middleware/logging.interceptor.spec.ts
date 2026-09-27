@@ -23,6 +23,34 @@ describe('logging interceptor redaction (FL-81)', () => {
     );
   });
 
+  it('never records the query string of the /link page or the licence routes (CLD-004)', () => {
+    const key = 'FL-SABC-DEFG-HJK7';
+    for (const url of [
+      `/link?target=activate_license&licenseKey=${key}`,
+      `/link?key=${key}`,
+      '/link?target=frameleaf_license&linkCode=flc_ABCDEFGHJKMNPQRSTVWXYZ2345',
+      `/api/admin/license/activate?key=${key}`,
+      `/api/license/link-code?anything=${key}`,
+      `/api/users/me/license?x=${key}`,
+    ]) {
+      const logged = redactLogUrl(url);
+      expect(logged).toBe(`${url.slice(0, url.indexOf('?'))}?********`);
+      expect(logged).not.toContain(key);
+      expect(logged).not.toContain('flc_');
+    }
+  });
+
+  it('masks licence keys and link codes on any route', () => {
+    expect(redactLogUrl('/photos?licenseKey=FL-S&license_key=a&linkCode=flc_x&keep=1')).toBe(
+      '/photos?licenseKey=********&license_key=********&linkCode=********&keep=1',
+    );
+    expect(JSON.parse(JSON.stringify({ licenceKey: 'FL-S', linkCode: 'flc_x', code: 'flc_y' }, replacer))).toEqual({
+      licenceKey: '********',
+      linkCode: '********',
+      code: '********',
+    });
+  });
+
   it('leaves an address without credentials unchanged', () => {
     expect(redactLogUrl('/api/server/ping')).toBe('/api/server/ping');
     expect(redactLogUrl('/api/search?size=10&page=2')).toBe('/api/search?size=10&page=2');

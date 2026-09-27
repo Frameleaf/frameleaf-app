@@ -16,9 +16,11 @@ const REDACTED = '********';
  *   `codeVerifier`, `state` and `code`, and a shared link's `key` / `slug`.
  * - A body field named `url` keeps only its path: the OAuth callback and link bodies carry `code=` and
  *   `state=` in it, so its whole query string and fragment are masked.
+ * - CLD-004: licence keys and link codes (`licenseKey`, `linkCode`) are masked wherever they appear,
+ *   and the licence routes and the `/link` page never have their query string recorded at all.
  */
 const normalize = (name: string) => name.toLowerCase().replaceAll(/[_-]/g, '');
-const SECRET_PART = /password|pincode|token|secret|apikey|privatekey|sessionkey|codeverifier/;
+const SECRET_PART = /password|pincode|token|secret|apikey|privatekey|sessionkey|codeverifier|licen[cs]ekey|linkcode/;
 const SECRET_EXACT = new Set(['key', 'code', 'state', 'slug']);
 const isSecretName = (name: string) => {
   const normalized = normalize(name);
@@ -30,10 +32,16 @@ const redactUrlQuery = (url: string) => {
   return cut === -1 ? url : `${url.slice(0, cut)}?${REDACTED}`;
 };
 
+/** CLD-004: routes whose query string is never recorded, whatever its parameters are called. */
+const QUERYLESS_ROUTES = /^\/(?:link|api\/(?:admin\/license|license|users\/me\/license))(?:[/?#]|$)/;
+
 export const redactLogUrl = (url: string) => {
   const queryStart = url.indexOf('?');
   if (queryStart === -1) {
     return url;
+  }
+  if (QUERYLESS_ROUTES.test(url)) {
+    return redactUrlQuery(url);
   }
   const params = new URLSearchParams(url.slice(queryStart + 1));
   let changed = false;

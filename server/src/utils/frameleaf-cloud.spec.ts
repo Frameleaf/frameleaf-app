@@ -185,6 +185,22 @@ describe(discoveryProblem.name, () => {
       expect(storeAddress('https://api.frameleaf.cloud', 'http://frameleaf.cloud/store')).toBeNull();
     });
 
+    it('reads the licence link-code switch, off when absent or malformed, and accepts new endpoint names (CLD-004)', () => {
+      expect(discoverySchema.parse(production).features?.licenseLinkCode).toBeUndefined();
+      const on = discoverySchema.parse({
+        ...production,
+        features: { licenseLinkCode: true, somethingNew: 1 },
+        endpoints: { licenseLinkCode: 'https://api.frameleaf.cloud/v1/licenses/redeem-link-code' },
+        somethingElseNew: { a: 1 },
+      });
+      expect(on.features?.licenseLinkCode).toBe(true);
+      expect(on.endpoints?.licenseLinkCode).toBe('https://api.frameleaf.cloud/v1/licenses/redeem-link-code');
+      expect(
+        discoverySchema.parse({ ...production, features: { licenseLinkCode: 'yes' } }).features?.licenseLinkCode,
+      ).toBe(undefined);
+      expect(discoverySchema.parse({ ...production, features: 'on' }).features).toBeUndefined();
+    });
+
     describe('account site links (the store and a server page)', () => {
       it('takes the origin from the store discovery names', () => {
         const store = 'https://frameleaf.cloud/store';

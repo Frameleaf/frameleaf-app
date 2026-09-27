@@ -5,6 +5,8 @@ import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
   LicenseActivateDto,
   LicenseCertificateDto,
+  LicenseLinkCodeDto,
+  LicenseLinkCodeResponseDto,
   LicenseProductsResponseDto,
   LicenseStatusResponseDto,
 } from 'src/dtos/frameleaf-license.dto.js';
@@ -120,5 +122,20 @@ export class LicenseController {
   })
   getProducts(): Promise<LicenseProductsResponseDto> {
     return this.service.getProducts();
+  }
+
+  @Post('link-code')
+  @HttpCode(HttpStatus.OK)
+  @Authenticated({ permission: Permission.UserLicenseUpdate })
+  @RateLimited(RATE_LIMITS.licenseActivation)
+  @Endpoint({
+    operationId: 'redeemLicenseLinkCode',
+    summary: 'Redeem a Frameleaf account link code',
+    description:
+      'CLD-004: redeems a one-time link code from the Frameleaf account site. Frameleaf Cloud activates the licence for this server directly, so the key never reaches this server or a URL. An administrator can receive a server key; anyone else only a personal key. Needs a linked server; the code travels only in this request body.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  redeemLinkCode(@Auth() auth: AuthDto, @Body() dto: LicenseLinkCodeDto): Promise<LicenseLinkCodeResponseDto> {
+    return this.service.redeemLinkCode(auth, dto);
   }
 }
