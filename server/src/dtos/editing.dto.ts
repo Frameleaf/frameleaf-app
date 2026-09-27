@@ -1,5 +1,6 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
+import { DecodeRefusalSchema } from 'src/enum.js';
 
 export enum AssetEditAction {
   Crop = 'crop',
@@ -387,6 +388,9 @@ const AssetEditsResponseSchema = z
             "FL-113: what an edited version does with the original's colour. 'tone-map': an HDR original is rendered to SDR and kept as the reference; 'unsupported': this server cannot render an edited version (Dolby Vision profile 5), so saving is refused and the original stays unchanged",
           ),
         colorReason: z.string().optional().describe('Why, in plain words, for the person editing'),
+        decodeRefusal: DecodeRefusalSchema.optional().describe(
+          "FL-101: set when this server cannot decode the original at all (a Dolby Vision profile outside the qualified matrix, more than 12 bits per component, an undescribable pixel format). colorPolicy is then 'unsupported' and colorReason says why; saving an edited version is refused before any editing",
+        ),
       })
       .meta({ id: 'AssetEditsOriginalVideoDto' })
       .optional()

@@ -1634,7 +1634,7 @@ describe(AssetService.name, () => {
     it('returns the rotated original raster and timeline instead of current render metadata', async () => {
       mocks.media.probe.mockResolvedValue({
         format: { duration: 30 },
-        videoStreams: [{ width: 1920, height: 1080, rotation: -90 }],
+        videoStreams: [{ width: 1920, height: 1080, rotation: -90, pixelFormat: 'yuv420p' }],
       } as any);
       await expect(sut.getAssetEdits(authStub.admin, 'asset-1')).resolves.toMatchObject({
         originalVideo: { width: 1080, height: 1920, durationMs: 30_000 },
@@ -1656,7 +1656,7 @@ describe(AssetService.name, () => {
       });
       mocks.media.probe.mockResolvedValue({
         format: { duration: 30 },
-        videoStreams: [{ width: 1920, height: 1080, rotation: 0 }],
+        videoStreams: [{ width: 1920, height: 1080, rotation: 0, pixelFormat: 'yuv420p' }],
       } as any);
       const edits: AssetEditActionItem[] = [
         { action: AssetEditAction.Crop, parameters: { x: 0, y: 0, width: 1000, height: 600 } },
@@ -1674,8 +1674,8 @@ describe(AssetService.name, () => {
 
     it.each([
       { format: { duration: 30 }, videoStreams: [] },
-      { format: { duration: NaN }, videoStreams: [{ width: 1920, height: 1080, rotation: 0 }] },
-      { format: { duration: 30 }, videoStreams: [{ width: 0, height: 1080, rotation: 0 }] },
+      { format: { duration: NaN }, videoStreams: [{ width: 1920, height: 1080, rotation: 0, pixelFormat: 'yuv420p' }] },
+      { format: { duration: 30 }, videoStreams: [{ width: 0, height: 1080, rotation: 0, pixelFormat: 'yuv420p' }] },
     ])('omits unavailable original metadata when listing and refuses to save against it: %j', async (source) => {
       mocks.media.probe.mockResolvedValue(source as any);
       const listed = await sut.getAssetEdits(authStub.admin, 'asset-1');
@@ -1702,7 +1702,9 @@ describe(AssetService.name, () => {
     it('says what an edited version does with HDR and Dolby Vision originals (FL-113)', async () => {
       mocks.media.probe.mockResolvedValue({
         format: { duration: 30 },
-        videoStreams: [{ width: 1920, height: 1080, rotation: 0, colorTransfer: 16, dvProfile: null }],
+        videoStreams: [
+          { width: 1920, height: 1080, rotation: 0, pixelFormat: 'yuv420p', colorTransfer: 16, dvProfile: null },
+        ],
       } as any);
       await expect(sut.getAssetEdits(authStub.admin, 'asset-1')).resolves.toMatchObject({
         originalVideo: { colorPolicy: 'tone-map', colorReason: expect.stringContaining('HDR original is preserved') },
@@ -1710,7 +1712,9 @@ describe(AssetService.name, () => {
 
       mocks.media.probe.mockResolvedValue({
         format: { duration: 30 },
-        videoStreams: [{ width: 1920, height: 1080, rotation: 0, colorTransfer: 1, dvProfile: null }],
+        videoStreams: [
+          { width: 1920, height: 1080, rotation: 0, pixelFormat: 'yuv420p', colorTransfer: 1, dvProfile: null },
+        ],
       } as any);
       await expect(sut.getAssetEdits(authStub.admin, 'asset-1')).resolves.toMatchObject({
         originalVideo: { colorPolicy: 'preserve' },
@@ -1720,7 +1724,9 @@ describe(AssetService.name, () => {
     it('refuses to queue an edit of a Dolby Vision profile 5 original, and still allows reverting (FL-113)', async () => {
       mocks.media.probe.mockResolvedValue({
         format: { duration: 30 },
-        videoStreams: [{ width: 1920, height: 1080, rotation: 0, colorTransfer: 16, dvProfile: 5 }],
+        videoStreams: [
+          { width: 1920, height: 1080, rotation: 0, pixelFormat: 'yuv420p', colorTransfer: 16, dvProfile: 5 },
+        ],
       } as any);
       await expect(sut.getAssetEdits(authStub.admin, 'asset-1')).resolves.toMatchObject({
         originalVideo: { colorPolicy: 'unsupported', colorReason: expect.stringContaining('Dolby Vision profile 5') },
@@ -1744,10 +1750,107 @@ describe(AssetService.name, () => {
       expect(mocks.assetEdit.replaceAll).not.toHaveBeenCalled();
     });
 
+    it.each([
+      {
+        name: 'Dolby Vision profile 7',
+        stream: { dvProfile: 7, dvBlSignalCompatibilityId: 6 },
+        refusal: 'dolbyVisionEnhancementLayer',
+      },
+      {
+        name: 'Dolby Vision profile 4',
+        stream: { dvProfile: 4, dvBlSignalCompatibilityId: 2 },
+        refusal: 'dolbyVisionProfileUnqualified',
+      },
+      {
+        name: 'Dolby Vision profile 9',
+        stream: { dvProfile: 9, dvBlSignalCompatibilityId: 2 },
+        refusal: 'dolbyVisionProfileUnqualified',
+      },
+      {
+        name: 'Dolby Vision profile 10',
+        stream: { dvProfile: 10, dvBlSignalCompatibilityId: 1 },
+        refusal: 'dolbyVisionProfileUnqualified',
+      },
+      {
+        name: 'Dolby Vision profile 8 with no base layer',
+        stream: { dvProfile: 8, dvBlSignalCompatibilityId: 0 },
+        refusal: 'dolbyVisionBaseLayerUnknown',
+      },
+      { name: 'a 16-bit source', stream: { pixelFormat: 'yuv444p16le' }, refusal: 'unsupportedBitDepth' },
+      {
+        name: 'an undescribable pixel format',
+        stream: { pixelFormat: 'bayer_rggb16le' },
+        refusal: 'unknownPixelFormat',
+      },
+    ])(
+      'refuses $name before editing and refuses the save, but still allows reverting (FL-101)',
+      async ({ stream, refusal }) => {
+        mocks.media.probe.mockResolvedValue({
+          format: { duration: 30 },
+          videoStreams: [
+            {
+              width: 1920,
+              height: 1080,
+              rotation: 0,
+              pixelFormat: 'yuv420p10le',
+              colorTransfer: 16,
+              dvProfile: null,
+              ...stream,
+            },
+          ],
+        } as any);
+        await expect(sut.getAssetEdits(authStub.admin, 'asset-1')).resolves.toMatchObject({
+          originalVideo: { colorPolicy: 'unsupported', colorReason: expect.any(String), decodeRefusal: refusal },
+        });
+        mocks.asset.getForEdit.mockResolvedValue({
+          type: AssetType.Video,
+          duration: 30_000,
+          originalPath: '/original.mp4',
+          originalFileName: 'original.mp4',
+          livePhotoVideoId: null,
+          exifImageWidth: 1920,
+          exifImageHeight: 1080,
+          orientation: null,
+          projectionType: null,
+        });
+        await expect(
+          sut.editAsset(authStub.admin, 'asset-1', {
+            edits: [{ action: AssetEditAction.Trim, parameters: { startMs: 0, endMs: 10_000 } }],
+          }),
+        ).rejects.toThrow(BadRequestException);
+        expect(mocks.assetEdit.replaceAll).not.toHaveBeenCalled();
+
+        mocks.assetEdit.replaceAll.mockResolvedValue([]);
+        await expect(sut.editAsset(authStub.admin, 'asset-1', { edits: [] }, 'revert')).resolves.toMatchObject({
+          assetId: 'asset-1',
+        });
+      },
+    );
+
+    it('does not report a decode refusal for a qualified Dolby Vision 8.1 source (FL-101)', async () => {
+      mocks.media.probe.mockResolvedValue({
+        format: { duration: 30 },
+        videoStreams: [
+          {
+            width: 1920,
+            height: 1080,
+            rotation: 0,
+            pixelFormat: 'yuv420p10le',
+            colorTransfer: 16,
+            dvProfile: 8,
+            dvBlSignalCompatibilityId: 1,
+          },
+        ],
+      } as any);
+      const { originalVideo } = await sut.getAssetEdits(authStub.admin, 'asset-1');
+      expect(originalVideo?.colorPolicy).not.toBe('unsupported');
+      expect(originalVideo).not.toHaveProperty('decodeRefusal');
+    });
+
     it('swaps the raster for any quarter-turn display rotation', async () => {
       mocks.media.probe.mockResolvedValue({
         format: { duration: 30 },
-        videoStreams: [{ width: 1920, height: 1080, rotation: 270 }],
+        videoStreams: [{ width: 1920, height: 1080, rotation: 270, pixelFormat: 'yuv420p' }],
       } as any);
       await expect(sut.getAssetEdits(authStub.admin, 'asset-1')).resolves.toMatchObject({
         originalVideo: { width: 1080, height: 1920 },
@@ -1759,7 +1862,7 @@ describe(AssetService.name, () => {
     beforeEach(() => {
       mocks.media.probe.mockResolvedValue({
         format: { duration: 10 },
-        videoStreams: [{ width: 1920, height: 1080, rotation: 0 }],
+        videoStreams: [{ width: 1920, height: 1080, rotation: 0, pixelFormat: 'yuv420p' }],
         audioStreams: [],
       } as any);
     });

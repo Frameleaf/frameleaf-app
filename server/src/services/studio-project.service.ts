@@ -63,7 +63,7 @@ import {
   studioProjectShelf,
   studioPurgeAfter,
 } from 'src/utils/studio-project.js';
-import { StudioDestination, StudioResourceKind } from 'src/utils/studio-resources.js';
+import { StudioDestination, StudioRefusalReason, StudioResourceKind } from 'src/utils/studio-resources.js';
 
 const DEFAULT_TAKE = 50;
 const MANIFEST_CACHE_LIMIT = 2000;
@@ -994,6 +994,7 @@ export class StudioProjectService {
         replayed: false,
         unchanged: false,
         lease: this.mapLease(after, auth.user.id, clientId),
+        resources: await this.savedResources(auth, after, result.revision),
       };
     }
 
@@ -1060,9 +1061,38 @@ export class StudioProjectService {
     const resources: StudioProjectResourcesDto = {
       complete: resolution.manifest.complete,
       refusedCount: resolution.manifest.refusedCount,
+      // FL-101: the owner is told which placed videos cannot be decoded, and why. A reviewer's graph is
+      // withheld when anything is refused, so naming its sources would leak what was withheld.
+      unsupportedSources:
+        access === 'owner'
+          ? resolution.refused.flatMap((item) =>
+              item.reason === StudioRefusalReason.UnsupportedSource && item.decodeRefusal
+                ? [{ assetId: item.id, refusal: item.decodeRefusal, reason: item.detail }]
+                : [],
+            )
+          : [],
       checkedAt: resolution.manifest.issuedAt,
     };
     return { withheld: access === 'reviewer' && !resolution.manifest.complete, resources };
+  }
+
+  /**
+   * FL-101: what a newly saved revision's sources resolve to, so a video the renderer cannot decode
+   * is reported to the owner as soon as it is placed rather than when a preview or export fails. It
+   * is the same cached resolution preview and export use next. The revision is already stored, so a
+   * resolution that fails is logged and reported as unknown rather than failing the save.
+   */
+  private async savedResources(
+    auth: AuthDto,
+    project: StudioProject,
+    revision: StudioProjectRevision,
+  ): Promise<StudioProjectResourcesDto | null> {
+    try {
+      return (await this.decideExposure(auth, project, 'owner', revision)).resources;
+    } catch (error) {
+      this.logger.warn(`Could not resolve the sources of ${project.id} revision ${revision.revision}: ${error}`);
+      return null;
+    }
   }
 
   private async resolve(

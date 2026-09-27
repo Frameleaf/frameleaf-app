@@ -48666,6 +48666,10 @@
             "description": "Why, in plain words, for the person editing",
             "type": "string"
           },
+          "decodeRefusal": {
+            "$ref": "#/components/schemas/DecodeRefusal",
+            "description": "FL-101: set when this server cannot decode the original at all (a Dolby Vision profile outside the qualified matrix, more than 12 bits per component, an undescribable pixel format). colorPolicy is then 'unsupported' and colorReason says why; saving an edited version is refused before any editing"
+          },
           "durationMs": {
             "description": "Duration of the original in milliseconds",
             "exclusiveMinimum": true,
@@ -55536,6 +55540,19 @@
           }
         },
         "type": "object"
+      },
+      "DecodeRefusal": {
+        "description": "FL-101: why this server cannot decode a video source",
+        "enum": [
+          "dolbyVisionProfile5",
+          "dolbyVisionEnhancementLayer",
+          "dolbyVisionProfileUnqualified",
+          "dolbyVisionBaseLayerUnknown",
+          "unknownPixelFormat",
+          "unsupportedBitDepth",
+          "unusableGeometry"
+        ],
+        "type": "string"
       },
       "DevelopExportResponseDto": {
         "properties": {
@@ -80575,12 +80592,20 @@
             "maximum": 9007199254740991,
             "minimum": 0,
             "type": "integer"
+          },
+          "unsupportedSources": {
+            "description": "FL-101: placed videos this server cannot decode, refused as 'unsupported-source' when admitted. The owner's only; empty for a reviewer",
+            "items": {
+              "$ref": "#/components/schemas/StudioUnsupportedSourceDto"
+            },
+            "type": "array"
           }
         },
         "required": [
           "checkedAt",
           "complete",
-          "refusedCount"
+          "refusedCount",
+          "unsupportedSources"
         ],
         "type": "object"
       },
@@ -80802,6 +80827,15 @@
           "replayed": {
             "description": "This request key was already accepted; the earlier result is returned",
             "type": "boolean"
+          },
+          "resources": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StudioProjectResourcesDto"
+              }
+            ],
+            "description": "FL-101: how the sources of a newly written revision resolved; absent when nothing was written, null when the resolution could not run",
+            "nullable": true
           },
           "revision": {
             "description": "The head after this request",
@@ -81077,6 +81111,29 @@
         "required": [
           "den",
           "num"
+        ],
+        "type": "object"
+      },
+      "StudioUnsupportedSourceDto": {
+        "properties": {
+          "assetId": {
+            "description": "The library video placed in the project",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "reason": {
+            "description": "Why, in plain words",
+            "type": "string"
+          },
+          "refusal": {
+            "$ref": "#/components/schemas/DecodeRefusal"
+          }
+        },
+        "required": [
+          "assetId",
+          "reason",
+          "refusal"
         ],
         "type": "object"
       },

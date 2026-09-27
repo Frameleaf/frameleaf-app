@@ -992,6 +992,20 @@ export class AssetRepository {
       .execute();
   }
 
+  /**
+   * FL-101: the persisted picture stream of these assets, for the decode qualification. An asset
+   * whose metadata has not been extracted yet has no row and is left out.
+   */
+  @GenerateSql({ params: [[DummyValue.UUID]] })
+  @ChunkedArray()
+  getVideoStreamsForDecode(ids: string[]) {
+    return this.db
+      .selectFrom('asset_video')
+      .select(['assetId', 'codecName', 'pixelFormat', 'colorTransfer', 'dvProfile', 'dvBlSignalCompatibilityId'])
+      .where('assetId', '=', anyUuid(ids))
+      .execute();
+  }
+
   /** Which of these assets are locked (FL-34: the lock record), whoever owns them. */
   @ChunkedSet()
   async getLockedAssetIds(ids: string[]): Promise<Set<string>> {

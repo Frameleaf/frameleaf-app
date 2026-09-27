@@ -4109,6 +4109,8 @@ export type AssetEditsOriginalVideoDto = {
     colorPolicy?: AssetEditsColorPolicy;
     /** Why, in plain words, for the person editing */
     colorReason?: string;
+    /** FL-101: set when this server cannot decode the original at all (a Dolby Vision profile outside the qualified matrix, more than 12 bits per component, an undescribable pixel format). colorPolicy is then 'unsupported' and colorReason says why; saving an edited version is refused before any editing */
+    decodeRefusal?: DecodeRefusal;
     /** Duration of the original in milliseconds */
     durationMs: number;
     /** Displayed height of the original, after its rotation */
@@ -9549,6 +9551,13 @@ export type StudioProjectCreateDto = {
     /** Share the project with a shared space for review */
     spaceId?: string | null;
 };
+export type StudioUnsupportedSourceDto = {
+    /** The library video placed in the project */
+    assetId: string;
+    /** Why, in plain words */
+    reason: string;
+    refusal: DecodeRefusal;
+};
 export type StudioProjectResourcesDto = {
     /** When the resolution ran */
     checkedAt: string;
@@ -9556,6 +9565,8 @@ export type StudioProjectResourcesDto = {
     complete: boolean;
     /** References that were refused for the acting account */
     refusedCount: number;
+    /** FL-101: placed videos this server cannot decode, refused as 'unsupported-source' when admitted. The owner's only; empty for a reviewer */
+    unsupportedSources: StudioUnsupportedSourceDto[];
 };
 export type StudioProjectDetailDto = {
     access: StudioProjectAccess;
@@ -9700,6 +9711,8 @@ export type StudioProjectSaveResponseDto = {
     lease: StudioProjectLeaseDto;
     /** This request key was already accepted; the earlier result is returned */
     replayed: boolean;
+    /** FL-101: how the sources of a newly written revision resolved; absent when nothing was written, null when the resolution could not run */
+    resources?: (StudioProjectResourcesDto) | null;
     /** The head after this request */
     revision: number;
     /** The revision row; null when nothing was written */
@@ -22089,6 +22102,15 @@ export enum AssetEditsColorPolicy {
     Preserve = "preserve",
     ToneMap = "tone-map",
     Unsupported = "unsupported"
+}
+export enum DecodeRefusal {
+    DolbyVisionProfile5 = "dolbyVisionProfile5",
+    DolbyVisionEnhancementLayer = "dolbyVisionEnhancementLayer",
+    DolbyVisionProfileUnqualified = "dolbyVisionProfileUnqualified",
+    DolbyVisionBaseLayerUnknown = "dolbyVisionBaseLayerUnknown",
+    UnknownPixelFormat = "unknownPixelFormat",
+    UnsupportedBitDepth = "unsupportedBitDepth",
+    UnusableGeometry = "unusableGeometry"
 }
 export enum EnrichmentStaleReason {
     SourceChanged = "source-changed",
