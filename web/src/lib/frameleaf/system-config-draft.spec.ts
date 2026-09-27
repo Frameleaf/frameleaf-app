@@ -215,6 +215,14 @@ describe('importConfig (FL-66 unsupported imported leaves)', () => {
     expect(result.draft).not.toHaveProperty('futureFeature');
   });
 
+  it('takes the update-check frequency from an exported file (FL-71)', () => {
+    const result = importConfig(configFixture(), { newVersionCheck: { enabled: true, frequency: 'weekly' } });
+
+    expect(result.applied).toEqual(['newVersionCheck.enabled', 'newVersionCheck.frequency']);
+    expect(result.unsupported).toEqual([]);
+    expect(result.draft.newVersionCheck).toEqual({ enabled: true, channel: 'stable', frequency: 'weekly' });
+  });
+
   it('refuses values of the wrong kind', () => {
     const result = importConfig(configFixture(), {
       trash: { days: '12', enabled: 'yes' },

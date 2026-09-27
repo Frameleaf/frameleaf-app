@@ -1,4 +1,11 @@
-import { checkVersionNow, getVersionCheck, ReleaseChannel, ReleaseType, type AdminConfigDto } from '@immich/sdk';
+import {
+  checkVersionNow,
+  getVersionCheck,
+  ReleaseChannel,
+  ReleaseType,
+  VersionCheckFrequency,
+  type AdminConfigDto,
+} from '@immich/sdk';
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { SystemConfigDraftStore } from '$lib/frameleaf/system-config-draft.svelte';
@@ -22,7 +29,9 @@ vi.mock('$lib/frameleaf/system-config-draft.svelte', async (original) => ({
 }));
 
 const config = (enabled: boolean) =>
-  ({ newVersionCheck: { enabled, channel: ReleaseChannel.Stable } }) as unknown as AdminConfigDto;
+  ({
+    newVersionCheck: { enabled, channel: ReleaseChannel.Stable, frequency: VersionCheckFrequency.Daily },
+  }) as unknown as AdminConfigDto;
 
 const newStore = (enabled: boolean) =>
   new SystemConfigDraftStore(
@@ -49,6 +58,23 @@ describe('Versions & compatibility (FL-80 S-4)', () => {
     expect(await screen.findByText('Checks off')).toBeInTheDocument();
     await fireEvent.click(screen.getByRole('switch', { name: /Check for updates/ }));
     expect(store.draft.newVersionCheck.enabled).toBe(true);
+  });
+
+  it('edits the saved check frequency with the prototype choices (FL-71)', async () => {
+    const store = newStore(true);
+    draft.store = store;
+    render(NewVersionCheckSettings);
+
+    const select = screen.getByRole('combobox', { name: 'Check frequency' });
+    expect(screen.getByText('Choose how often to check when automatic update checks are enabled.')).toBeInTheDocument();
+    expect([...(select as HTMLSelectElement).options].map((option) => [option.value, option.text])).toEqual([
+      ['daily', 'Daily'],
+      ['weekly', 'Weekly'],
+    ]);
+    expect(select).toHaveValue('daily');
+
+    await fireEvent.change(select, { target: { value: 'weekly' } });
+    expect(store.draft.newVersionCheck.frequency).toBe(VersionCheckFrequency.Weekly);
   });
 
   it('checks now and links the release notes of a newer version', async () => {

@@ -869,6 +869,13 @@
   "newVersionCheck.enabled": {
     "type": "boolean"
   },
+  "newVersionCheck.frequency": {
+    "type": "string",
+    "enum": [
+      "daily",
+      "weekly"
+    ]
+  },
   "nightlyTasks.clusterNewFaces": {
     "type": "boolean"
   },

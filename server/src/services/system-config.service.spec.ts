@@ -20,6 +20,7 @@ import {
   ToneMapping,
   TranscodeHardwareAcceleration,
   TranscodePolicy,
+  VersionCheckFrequency,
   VideoCodec,
   VideoContainer,
 } from 'src/enum.js';
@@ -328,6 +329,7 @@ const updatedConfig = Object.freeze<SystemConfig>({
   newVersionCheck: {
     enabled: false,
     channel: ReleaseChannel.Stable,
+    frequency: VersionCheckFrequency.Daily,
   },
   trash: {
     enabled: true,
@@ -646,6 +648,33 @@ describe(SystemConfigService.name, () => {
       mocks.systemMetadata.readFile.mockResolvedValue(JSON.stringify({ newVersionCheck: { enabled: true } }));
       const config = await sut.getAdminConfig();
       expect(config.newVersionCheck.enabled).toBe(true);
+    });
+
+    it('keeps the saved update-check frequency and defaults it to daily (FL-71)', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({ newVersionCheck: { enabled: true } });
+      await expect(sut.getAdminConfig()).resolves.toMatchObject({
+        newVersionCheck: { enabled: true, frequency: VersionCheckFrequency.Daily },
+      });
+
+      mocks.systemMetadata.get.mockResolvedValue({ newVersionCheck: { frequency: VersionCheckFrequency.Weekly } });
+      await expect(sut.getAdminConfig()).resolves.toMatchObject({
+        newVersionCheck: { frequency: VersionCheckFrequency.Weekly },
+      });
+    });
+
+    it('reads the update-check frequency from file configuration (FL-71)', async () => {
+      mocks.config.getEnv.mockReturnValue(mockEnvData({ configFile: 'immich-config.json' }));
+      mocks.systemMetadata.readFile.mockResolvedValue(
+        JSON.stringify({ newVersionCheck: { enabled: true, frequency: 'weekly' } }),
+      );
+      const config = await sut.getAdminConfig();
+      expect(config.newVersionCheck.frequency).toBe(VersionCheckFrequency.Weekly);
+    });
+
+    it('rejects an update-check frequency the server does not offer (FL-71)', async () => {
+      mocks.config.getEnv.mockReturnValue(mockEnvData({ configFile: 'immich-config.json' }));
+      mocks.systemMetadata.readFile.mockResolvedValue(JSON.stringify({ newVersionCheck: { frequency: 'hourly' } }));
+      await expect(sut.getAdminConfig()).rejects.toThrow();
     });
 
     it('should merge the overrides', async () => {

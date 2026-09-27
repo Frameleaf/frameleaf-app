@@ -43368,6 +43368,10 @@
           "enabled": {
             "description": "Enabled",
             "type": "boolean"
+          },
+          "frequency": {
+            "$ref": "#/components/schemas/VersionCheckFrequency",
+            "default": "daily"
           }
         },
         "required": [
@@ -86309,6 +86313,14 @@
           }
         },
         "type": "object"
+      },
+      "VersionCheckFrequency": {
+        "description": "Check frequency",
+        "enum": [
+          "daily",
+          "weekly"
+        ],
+        "type": "string"
       },
       "VersionCheckStateResponseDto": {
         "properties": {

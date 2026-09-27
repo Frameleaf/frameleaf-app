@@ -26,6 +26,7 @@ export const adminConfigFixture = () =>
       imageDescription: { modelName: 'model-a', pendingRequeueAt: null, lastConfigChangeAt: null },
     },
     physicalDeduplication: { enabled: false, masterUserId: null },
+    newVersionCheck: { enabled: false, channel: 'stable', frequency: 'daily' },
   }) as unknown as AdminConfigDto;
 
 /** The fixture with a change applied. */

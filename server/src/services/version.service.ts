@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { DateTime } from 'luxon';
 import { SemVer, diff, intersects, lt } from 'semver';
 import type { ArgOf } from 'src/repositories/event.repository.js';
-import type { VersionCheckMetadata } from 'src/types.js';
+import type { IBaseJob, VersionCheckMetadata } from 'src/types.js';
 import { serverVersion } from 'src/constants.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import { ReleaseEventV1, ReleaseType, ServerVersionResponseDto } from 'src/dtos/server.dto.js';
@@ -15,6 +15,7 @@ import {
   QueueName,
   ReleaseChannel,
   SystemMetadataKey,
+  VersionCheckFrequency,
 } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
 import { handlePromiseError } from 'src/utils/misc.js';
@@ -37,6 +38,21 @@ const asNotification = (
 };
 
 const MANUAL_CHECK_INTERVAL_SECONDS = 60;
+const FORCED_CHECK_INTERVAL_SECONDS = 50;
+
+/**
+ * FL-71 "Check frequency": the least time between two automatic checks. The cron ticks hourly at a
+ * fixed minute and a check is recorded a few seconds after its tick, so the interval is shortened by
+ * a few minutes: otherwise the daily check would slip an hour later every day.
+ */
+const TICK_SLACK_SECONDS = 5 * 60;
+const FREQUENCY_SECONDS: Record<VersionCheckFrequency, number> = {
+  [VersionCheckFrequency.Daily]: 24 * 60 * 60,
+  [VersionCheckFrequency.Weekly]: 7 * 24 * 60 * 60,
+};
+const scheduledInterval = (frequency: VersionCheckFrequency | undefined) =>
+  (FREQUENCY_SECONDS[frequency ?? VersionCheckFrequency.Daily] ?? FREQUENCY_SECONDS[VersionCheckFrequency.Daily]) -
+  TICK_SLACK_SECONDS;
 
 const checkedWithin = (state: VersionCheckMetadata | null | undefined, seconds: number) =>
   !!state?.checkedAt && DateTime.now().diff(DateTime.fromISO(state.checkedAt)).as('seconds') < seconds;
@@ -55,8 +71,9 @@ const describeError = (error: unknown): string => {
 /**
  * Version history and the Frameleaf version check (FL-80 S-4 / O-8). The owner's privacy direction
  * applies to Immich-origin calls only (FL-146, 2026-09-25): the check asks Frameleaf's own GitHub
- * releases (`ServerInfoRepository.getLatestRelease`), hourly while `newVersionCheck.enabled` is on,
- * and on demand from About → "Check for updates". A release build is compared by its base version;
+ * releases (`ServerInfoRepository.getLatestRelease`) while `newVersionCheck.enabled` is on, as
+ * often as `newVersionCheck.frequency` says (daily or weekly; FL-71, owner decision 2026-09-27: the
+ * cron ticks hourly and a tick asks only once the interval has passed), and on demand from About → "Check for updates". A release build is compared by its base version;
  * a rebuild of the running version (a higher tag sequence) is not announced, because a running
  * server does not know its own sequence.
  */
@@ -114,7 +131,8 @@ export class VersionService extends BaseService {
   @OnEvent({ name: 'ConfigUpdate' })
   async onConfigUpdate({ oldConfig, newConfig }: ArgOf<'ConfigUpdate'>) {
     if (!oldConfig.newVersionCheck.enabled && newConfig.newVersionCheck.enabled) {
-      await this.handleQueueVersionCheck();
+      // switching checks on asks now; the schedule governs the checks after it
+      await this.jobRepository.queue({ name: JobName.VersionCheck, data: { force: true } });
     }
   }
 
@@ -123,7 +141,7 @@ export class VersionService extends BaseService {
   }
 
   @OnJob({ name: JobName.VersionCheck, queue: QueueName.BackgroundTask })
-  async handleVersionCheck(): Promise<JobStatus> {
+  async handleVersionCheck(job: IBaseJob = {}): Promise<JobStatus> {
     try {
       if (!this.configRepository.isProduction()) {
         return JobStatus.Skipped;
@@ -137,7 +155,8 @@ export class VersionService extends BaseService {
       }
 
       const versionCheck = await this.systemMetadataRepository.get(SystemMetadataKey.VersionCheckState);
-      if (checkedWithin(versionCheck, 50)) {
+      const interval = job.force ? FORCED_CHECK_INTERVAL_SECONDS : scheduledInterval(newVersionCheck.frequency);
+      if (checkedWithin(versionCheck, interval)) {
         return JobStatus.Skipped;
       }
 
