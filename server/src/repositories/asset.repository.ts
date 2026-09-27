@@ -17,7 +17,7 @@ import { InjectKysely } from 'nestjs-kysely';
 import type { Updateable } from 'kysely';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { ForkSchemaPhase } from 'src/repositories/fork-schema.repository.js';
-import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import type { HiddenContentFilter, HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { AssetFile, LockableProperty, Stack } from 'src/database.js';
 import { Chunked, ChunkedArray, ChunkedSet, DummyValue, GenerateSql } from 'src/decorators.js';
@@ -263,6 +263,12 @@ interface AssetBuilderOptions extends HiddenContentQueryOptions {
    * in an elevated session ("Revealed for this session"). Never set for albums or the Locked view.
    */
   revealLockedOwnerId?: string;
+  /**
+   * FL-34: with `visibility: locked` and no `lockReasons`, the viewer's Locked rules (suppressed people,
+   * tags and pets); their matches list in the Locked view with the locks, as the prototype's
+   * `classifyLocked` does. Set only for the owner's elevated session.
+   */
+  lockedRuleMatches?: HiddenContentFilter;
 }
 
 export interface TimeBucketOptions extends AssetBuilderOptions {
@@ -382,6 +388,22 @@ const withBoundingBox = <T>(qb: SelectQueryBuilder<DB, 'asset' | 'asset_exif', T
 /** FL-54: leaves out assets of owners who hide their locations from the viewer (no-op when there are none). */
 const withoutLocationHiddenOwners = <O>(qb: SelectQueryBuilder<DB, 'asset' | 'asset_exif', O>, ownerIds?: string[]) =>
   ownerIds && ownerIds.length > 0 ? qb.where('asset.ownerId', 'not in', ownerIds) : qb;
+
+/**
+ * The visibility a timeline request lists (see `visibilityIs`). FL-34: the Locked view is every locked
+ * item plus every timeline or archived item the owner's Locked rules match (`lockedRuleMatches`); a
+ * lock reason narrows it to locks alone.
+ */
+const timelineVisibility = (options: AssetBuilderOptions) => {
+  const visibility = visibilityIs(options.visibility!, 'asset', options.revealLockedOwnerId);
+  if (options.visibility !== AssetVisibility.Locked || !options.lockedRuleMatches || options.lockReasons) {
+    return visibility;
+  }
+
+  const listed = sql<boolean>`${sql.ref('asset.visibility')} in (${sql.lit(AssetVisibility.Timeline)}, ${sql.lit(AssetVisibility.Archive)})`;
+  const ruleMatch = hiddenContentAssetIdExists(sql.ref('asset.id'), options.lockedRuleMatches);
+  return sql<boolean>`(${visibility} or (${listed} and ${ruleMatch}))`;
+};
 
 @Injectable()
 export class AssetRepository {
@@ -2104,9 +2126,7 @@ export class AssetRepository {
           return withoutLocationHiddenOwners(withBoundingBox(withBoundingCircle, bbox), options.locationHiddenOwnerIds);
         })
         .$if(options.visibility === undefined, (qb) => withAlbumVisibility(qb, options.lockedOwnerId))
-        .$if(!!options.visibility, (qb) =>
-          qb.where(visibilityIs(options.visibility!, 'asset', options.revealLockedOwnerId)),
-        )
+        .$if(!!options.visibility, (qb) => qb.where(timelineVisibility(options)))
         .$if(options.visibility === AssetVisibility.Locked && !!options.lockReasons, (qb) =>
           qb.where(lockedForReason(options.lockReasons!, 'asset')),
         )
@@ -2368,9 +2388,7 @@ export class AssetRepository {
           )
           .where('asset.deletedAt', options.isTrashed ? 'is not' : 'is', null)
           .$if(options.visibility === undefined, (qb) => withAlbumVisibility(qb, options.lockedOwnerId))
-          .$if(!!options.visibility, (qb) =>
-            qb.where(visibilityIs(options.visibility!, 'asset', options.revealLockedOwnerId)),
-          )
+          .$if(!!options.visibility, (qb) => qb.where(timelineVisibility(options)))
           .$if(options.visibility === AssetVisibility.Locked && !!options.lockReasons, (qb) =>
             qb.where(lockedForReason(options.lockReasons!, 'asset')),
           )
