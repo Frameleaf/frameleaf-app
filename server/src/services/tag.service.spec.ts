@@ -31,7 +31,10 @@ describe(TagService.name, () => {
     it('should list tags only on locked items for an unlocked session', async () => {
       mocks.tag.getAll.mockResolvedValue([tagStub.tag]);
       await sut.getAll({ ...authStub.admin, session: { id: 'session-1', hasElevatedPermission: true } });
-      expect(mocks.tag.getAll).toHaveBeenCalledWith(authStub.admin.user.id, { hideLocked: false });
+      expect(mocks.tag.getAll).toHaveBeenCalledWith(authStub.admin.user.id, {
+        hideLocked: false,
+        revealLockedOwnerId: authStub.admin.user.id,
+      });
     });
 
     it('should request non-NSFW tags while hide mode is active', async () => {

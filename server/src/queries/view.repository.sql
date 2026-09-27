@@ -28,6 +28,14 @@ order by
 -- ViewRepository.getAssetsByOriginalPath
 select
   "asset".*,
+  exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
+  ) as "isLocked",
   to_json("asset_exif") as "exifInfo"
 from
   "asset"

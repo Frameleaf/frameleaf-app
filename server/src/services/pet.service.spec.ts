@@ -254,7 +254,11 @@ describe(PetService.name, () => {
       await sut.getObservations(elevated, petId);
       await sut.getCandidates(elevated, { size: 10 });
 
-      expect(petRepository.getAll).toHaveBeenCalledWith(ownerId, { withHidden: false, ...locked });
+      expect(petRepository.getAll).toHaveBeenCalledWith(ownerId, {
+        withHidden: false,
+        ...locked,
+        revealLockedOwnerId: ownerId,
+      });
       expect(petRepository.getById).toHaveBeenCalledWith(ownerId, petId, locked);
       expect(petRepository.getObservations).toHaveBeenCalledWith(ownerId, petId, locked);
       expect(petRepository.getCandidates).toHaveBeenCalledWith(ownerId, 10, locked);

@@ -136,17 +136,19 @@ export class MapRepository {
   @GenerateSql({ params: [DummyValue.UUID, [DummyValue.UUID], [DummyValue.UUID]] })
   getMapMarkers(authUserId: string, ownerIds: string[], albumIds: string[], options: MapMarkerSearchOptions = {}) {
     const { isArchived, isFavorite, fileCreatedAfter, fileCreatedBefore, locationHiddenOwnerIds } = options;
+    // FL-195: the viewer's own marks and detections, when their session is unlocked
+    const reveal = options.revealLockedOwnerId;
     return this.mapMarkersQuery()
       .$call((qb) => withHiddenContentFilter(qb, options))
       .$if(isArchived === true, (qb) =>
         qb.where((eb) =>
           eb.or([
-            isTimelineVisible('asset'),
-            eb.and([eb('asset.ownerId', '=', authUserId), visibilityIs(AssetVisibility.Archive, 'asset')]),
+            isTimelineVisible('asset', reveal),
+            eb.and([eb('asset.ownerId', '=', authUserId), visibilityIs(AssetVisibility.Archive, 'asset', reveal)]),
           ]),
         ),
       )
-      .$if(isArchived === false || isArchived === undefined, (qb) => qb.where(isTimelineVisible('asset')))
+      .$if(isArchived === false || isArchived === undefined, (qb) => qb.where(isTimelineVisible('asset', reveal)))
       .$if(isFavorite !== undefined, (q) => q.where('isFavorite', '=', isFavorite!))
       .$if(fileCreatedAfter !== undefined, (q) => q.where('fileCreatedAt', '>=', fileCreatedAfter!))
       .$if(fileCreatedBefore !== undefined, (q) => q.where('fileCreatedAt', '<=', fileCreatedBefore!))
@@ -204,6 +206,8 @@ export class MapRepository {
     options: MapMarkerSearchOptions = {},
   ): Promise<{ archived: number; partner: number; unlocated: number }> {
     const { isFavorite, fileCreatedAfter, fileCreatedBefore } = options;
+    // FL-195: the viewer's own marks and detections count when their session is unlocked; a partner's never
+    const reveal = options.revealLockedOwnerId;
     const base = () =>
       this.db
         .selectFrom('asset')
@@ -218,7 +222,7 @@ export class MapRepository {
       base()
         .select((eb) => eb.fn.countAll<number>().as('count'))
         .where('asset.ownerId', '=', authUserId)
-        .where(visibilityIs(AssetVisibility.Archive, 'asset'))
+        .where(visibilityIs(AssetVisibility.Archive, 'asset', reveal))
         .where('asset_exif.latitude', 'is not', null)
         .where('asset_exif.longitude', 'is not', null)
         .executeTakeFirst(),
@@ -234,7 +238,7 @@ export class MapRepository {
       base()
         .select((eb) => eb.fn.countAll<number>().as('count'))
         .where('asset.ownerId', '=', authUserId)
-        .where(isTimelineVisible('asset'))
+        .where(isTimelineVisible('asset', reveal))
         .where((eb) => eb.or([eb('asset_exif.latitude', 'is', null), eb('asset_exif.longitude', 'is', null)]))
         .executeTakeFirst(),
     ]);

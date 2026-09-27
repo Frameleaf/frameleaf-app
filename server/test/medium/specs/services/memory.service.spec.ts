@@ -99,17 +99,26 @@ describe(MemoryService.name, () => {
   });
 
   describe('cleanup', () => {
-    it('keeps a locked asset in its memory, hidden while locked and back once unlocked (FL-34)', async () => {
+    it('keeps a locked asset in its memory, hidden while locked and back once unlocked (FL-34, FL-195)', async () => {
       const { sut, ctx } = setup();
       const { memory, asset, user } = await create(ctx);
       const auth = factory.auth({ user });
+      const elevated = { ...auth, session: { id: 'session', hasElevatedPermission: true } } as typeof auth;
       await ctx.newMemoryAsset({ memoryId: memory.id, assetId: asset.id });
       const assetRepository = ctx.get(AssetRepository);
       await assetRepository.lock([asset.id], AssetLockReason.Marked, user.id);
 
       await ctx.get(MemoryRepository).cleanup();
 
-      await expect(sut.get(auth, memory.id)).resolves.toEqual(expect.objectContaining({ assets: [] }));
+      // FL-195: a memory whose every item is locked shows nowhere while the session is locked, not even
+      // as an empty memory; the owner's unlocked session sees it with its item, like any other memory
+      await expect(sut.get(auth, memory.id)).rejects.toThrow('Memory not found');
+      await expect(sut.search(auth, {})).resolves.not.toEqual(
+        expect.arrayContaining([expect.objectContaining({ id: memory.id })]),
+      );
+      await expect(sut.get(elevated, memory.id)).resolves.toEqual(
+        expect.objectContaining({ assets: [expect.objectContaining({ id: asset.id })] }),
+      );
 
       await assetRepository.unlock([asset.id]);
 

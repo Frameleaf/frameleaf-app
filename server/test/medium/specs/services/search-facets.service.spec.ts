@@ -289,10 +289,10 @@ describe('SearchService facets, histogram and smart counts (FL-49)', () => {
     expect(structured).toEqual({ total: 0, capped: false });
   });
 
-  it("covers each value with its newest match in the count's own scope, never an archived or Locked item (FL-50)", async () => {
+  it("covers each value with its newest match in the count's own scope, never an archived or Locked item (FL-50, FL-195)", async () => {
     const { sut, ctx } = setup();
     const { user } = await ctx.newUser();
-    const auth = factory.auth({ user, session: { hasElevatedPermission: true } });
+    const auth = factory.auth({ user });
 
     const older = await newItem(ctx, user.id, { city: 'Lisbon' }, { fileCreatedAt: new Date('2024-01-01T10:00:00Z') });
     const newer = await newItem(ctx, user.id, { city: 'Lisbon' }, { fileCreatedAt: new Date('2024-06-01T10:00:00Z') });
@@ -331,6 +331,19 @@ describe('SearchService facets, histogram and smart counts (FL-49)', () => {
     expect(await sut.searchStatistics(auth, { visibility: AssetVisibility.Timeline, city: 'Lisbon' })).toEqual({
       total: 2,
     });
+
+    // FL-195: the owner's unlocked session counts their own mark like any other item, and it may cover
+    const elevated = factory.auth({ user, session: { hasElevatedPermission: true } });
+    const revealed = await sut.searchFacets(elevated, {
+      visibility: AssetVisibility.Timeline,
+      facets: [SearchFacetField.City, SearchFacetField.Tags],
+      facetCovers: true,
+    });
+    expect(revealed.total).toBe(3);
+    expect(counts(revealed, SearchFacetField.City)).toEqual([{ value: 'Lisbon', count: 3, coverAssetId: locked.id }]);
+    expect(counts(revealed, SearchFacetField.Tags)).toEqual([
+      { value: beach.id, label: 'beach', count: 2, coverAssetId: locked.id },
+    ]);
 
     // covers are only returned when asked for
     const plain = await sut.searchFacets(auth, {

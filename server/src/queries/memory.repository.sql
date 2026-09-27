@@ -25,6 +25,14 @@ where
         inner join "asset" on "asset"."id" = "memory_asset"."assetId"
       where
         "memory_asset"."memoriesId" = "memory"."id"
+        and not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "asset"."id"
+        )
         and (
           "asset"."visibility" = 'timeline'
           and not exists (
@@ -114,6 +122,14 @@ where
         inner join "asset" on "asset"."id" = "memory_asset"."assetId"
       where
         "memory_asset"."memoriesId" = "memory"."id"
+        and not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "asset"."id"
+        )
         and (
           "asset"."visibility" = 'timeline'
           and not exists (
@@ -315,6 +331,14 @@ where
         inner join "asset" on "asset"."id" = "memory_asset"."assetId"
       where
         "memory_asset"."memoriesId" = "memory"."id"
+        and not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "asset"."id"
+        )
         and (
           "asset"."visibility" = 'timeline'
           and not exists (
@@ -527,6 +551,14 @@ where
         inner join "asset" on "asset"."id" = "memory_asset"."assetId"
       where
         "memory_asset"."memoriesId" = "memory"."id"
+        and not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "asset"."id"
+        )
         and (
           "asset"."visibility" = 'timeline'
           and not exists (
@@ -732,6 +764,14 @@ where
         inner join "asset" on "asset"."id" = "memory_asset"."assetId"
       where
         "memory_asset"."memoriesId" = "memory"."id"
+        and not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "asset"."id"
+        )
         and (
           "asset"."visibility" = 'timeline'
           and not exists (
@@ -940,6 +980,14 @@ where
         inner join "asset" on "asset"."id" = "memory_asset"."assetId"
       where
         "memory_asset"."memoriesId" = "memory"."id"
+        and not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "asset"."id"
+        )
         and (
           "asset"."visibility" = 'timeline'
           and not exists (
@@ -1144,6 +1192,14 @@ where
         inner join "asset" on "asset"."id" = "memory_asset"."assetId"
       where
         "memory_asset"."memoriesId" = "memory"."id"
+        and not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "asset"."id"
+        )
         and (
           "asset"."visibility" = 'timeline'
           and not exists (
@@ -1351,6 +1407,14 @@ where
         inner join "asset" on "asset"."id" = "memory_asset"."assetId"
       where
         "memory_asset"."memoriesId" = "memory"."id"
+        and not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "asset"."id"
+        )
         and (
           "asset"."visibility" = 'timeline'
           and not exists (

@@ -241,7 +241,7 @@ describe(TagService.name, () => {
   });
 
   describe('getStatistics (FL-46)', () => {
-    it('counts Timeline items per tag with and without subtags, never an archived, trashed or Locked one', async () => {
+    it('counts Timeline items per tag with and without subtags, never an archived, trashed or (while locked) Locked one', async () => {
       const { sut, ctx } = setup();
       const { user } = await ctx.newUser();
       const tags = await upsertTags(ctx.get(TagRepository), { userId: user.id, tags: ['trips/rockies', 'family'] });
@@ -267,23 +267,28 @@ describe(TagService.name, () => {
       await ctx.newTagAsset({ tagIds: [trips.id], assetIds: [onTrip.id, tripsOnly.id] });
 
       const statistics = await sut.getStatistics(factory.auth({ user }));
-      // the Locked item stays out even for a session unlocked to the Locked view
+      expect(statistics).toHaveLength(2);
+      expect(statistics).toEqual(
+        expect.arrayContaining([
+          // trips: two items tagged "trips" itself; three distinct items with "trips/rockies"
+          { id: trips.id, count: 2, total: 3 },
+          { id: rockies.id, count: 2, total: 2 },
+        ]),
+      );
+      expect(statistics.find(({ id }) => id === family.id)).toBeUndefined();
+
+      // FL-195: an unlocked session counts the owner's own mark like any other Timeline item
       const unlocked = await sut.getStatistics({
         ...factory.auth({ user }),
         session: { id: 'session-1', hasElevatedPermission: true },
       });
-
-      for (const result of [statistics, unlocked]) {
-        expect(result).toHaveLength(2);
-        expect(result).toEqual(
-          expect.arrayContaining([
-            // trips: two items tagged "trips" itself; three distinct items with "trips/rockies"
-            { id: trips.id, count: 2, total: 3 },
-            { id: rockies.id, count: 2, total: 2 },
-          ]),
-        );
-        expect(result.find(({ id }) => id === family.id)).toBeUndefined();
-      }
+      expect(unlocked).toHaveLength(2);
+      expect(unlocked).toEqual(
+        expect.arrayContaining([
+          { id: trips.id, count: 2, total: 4 },
+          { id: rockies.id, count: 3, total: 3 },
+        ]),
+      );
     });
 
     it('leaves out a suppressed tag, the tags under it and hidden items while the session is locked', async () => {

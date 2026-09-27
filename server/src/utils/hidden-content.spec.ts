@@ -155,7 +155,16 @@ describe('hidden content utils', () => {
           } as AuthDto,
           true,
         ),
-      ).toEqual({ onlyHiddenContent: hiddenContent });
+      ).toEqual({ onlyHiddenContent: hiddenContent, revealLockedOwnerId: user.id });
+    });
+
+    it("reveals the owner's own marks and detections to an elevated session only (FL-195)", () => {
+      const elevated = { user, session: { hasElevatedPermission: true } } as AuthDto;
+      expect(getHiddenContentQueryOptions(elevated)).toEqual({ revealLockedOwnerId: user.id });
+      expect(getHiddenContentQueryOptions({ user } as AuthDto)).toEqual({});
+      expect(getHiddenContentQueryOptions({ ...elevated, sharedLink: { id: 'link' } } as unknown as AuthDto)).toEqual(
+        {},
+      );
     });
   });
 
