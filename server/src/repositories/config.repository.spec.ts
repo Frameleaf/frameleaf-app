@@ -48,6 +48,7 @@ const resetEnv = () => {
     'FRAMELEAF_TRUSTED_LAN_CIDRS',
     'FRAMELEAF_EDGE_SECRET',
     'FRAMELEAF_LOCAL_URL',
+    'FRAMELEAF_LICENSE_EXTRA_JWKS_FILE',
   ]) {
     delete process.env[env];
   }
@@ -358,6 +359,7 @@ describe('getEnv', () => {
         edge: { port: 2443, bind: '0.0.0.0', secret: null, acmeDirectoryUrl: null },
         localUrl: null,
         trustedLanCidrs: [],
+        licenseExtraJwksFile: null,
       });
     });
 
@@ -371,6 +373,7 @@ describe('getEnv', () => {
       process.env.FRAMELEAF_EDGE_SECRET = 'edge-secret-0123456789';
       process.env.FRAMELEAF_LOCAL_URL = 'http://192.168.1.10:2283/photos';
       process.env.FRAMELEAF_ACME_DIRECTORY_URL = 'https://acme-staging-v02.api.letsencrypt.org/directory';
+      process.env.FRAMELEAF_LICENSE_EXTRA_JWKS_FILE = ' /run/secrets/frameleaf-dev-keys.json ';
       expect(getEnv().frameleafCloud).toEqual({
         url: 'https://frameleaf.cloud.test',
         identityDir: '/data/identity',
@@ -383,6 +386,7 @@ describe('getEnv', () => {
         },
         localUrl: 'http://192.168.1.10:2283',
         trustedLanCidrs: ['100.64.0.0/10', 'fd00:1234::/32'],
+        licenseExtraJwksFile: '/run/secrets/frameleaf-dev-keys.json',
       });
     });
 

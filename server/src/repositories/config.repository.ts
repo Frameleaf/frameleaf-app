@@ -142,6 +142,8 @@ export interface EnvData {
     localUrl: string | null;
     /** FL-154: networks treated as home besides RFC 1918 and ULA. */
     trustedLanCidrs: string[];
+    /** Integration builds only: the extra licence JWKS file (`FRAMELEAF_LICENSE_EXTRA_JWKS_FILE`), or null. */
+    licenseExtraJwksFile: string | null;
   };
 
   noColor: boolean;
@@ -364,6 +366,7 @@ const getEnv = (): EnvData => {
       },
       localUrl: dto.FRAMELEAF_LOCAL_URL ? new URL(dto.FRAMELEAF_LOCAL_URL).origin : null,
       trustedLanCidrs: parseTrustedLanCidrs(dto.FRAMELEAF_TRUSTED_LAN_CIDRS),
+      licenseExtraJwksFile: dto.FRAMELEAF_LICENSE_EXTRA_JWKS_FILE?.trim() || null,
     },
 
     storage: {

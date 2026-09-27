@@ -331,6 +331,22 @@ COPY ./server/package.json ./server/package.json
 RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store pnpm --filter immich install --frozen-lockfile
 
 COPY ./server ./server/
+# The build channel is compiled into the server (server/src/utils/frameleaf-build-channel.ts). Only
+# .github/workflows/integration-image.yml passes FRAMELEAF_BUILD_CHANNEL=integration; every release
+# build leaves it at release, and the source line is then checked unchanged. An integration build may
+# trust extra licence keys from FRAMELEAF_LICENSE_EXTRA_JWKS_FILE; a release build never does.
+ARG FRAMELEAF_BUILD_CHANNEL=release
+RUN set -eu; \
+  file=server/src/utils/frameleaf-build-channel.ts; \
+  release="export const FRAMELEAF_BUILD_CHANNEL: FrameleafBuildChannel = 'release' as FrameleafBuildChannel;"; \
+  integration="export const FRAMELEAF_BUILD_CHANNEL: FrameleafBuildChannel = 'integration' as FrameleafBuildChannel;"; \
+  [ "$(grep -c "^export const FRAMELEAF_BUILD_CHANNEL" "$file")" = 1 ] && grep -qxF "$release" "$file" || { echo "unexpected $file" >&2; exit 1; }; \
+  case "$FRAMELEAF_BUILD_CHANNEL" in \
+    release) ;; \
+    integration) grep -vxF "$release" "$file" > "$file.tmp"; printf '%s\n' "$integration" >> "$file.tmp"; mv "$file.tmp" "$file"; \
+      grep -qxF "$integration" "$file" && ! grep -qF "'release' as" "$file" ;; \
+    *) echo "FRAMELEAF_BUILD_CHANNEL must be release or integration, not $FRAMELEAF_BUILD_CHANNEL" >&2; exit 1 ;; \
+  esac
 RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store \
   pnpm --filter immich build && \
   pnpm --filter immich --prod --no-optional deploy /output/server-pruned

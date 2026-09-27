@@ -10,6 +10,12 @@
 # deployment test ran it with the release Compose file on both architectures. It never writes the
 # release pipeline's tags (latest, release, edge, frameleaf-v*, commit-*) or its build cache,
 # and it is not a release: nothing promotes, qualifies or advertises this image.
+#
+# Owner decision 2026-09-27: this is the only workflow that sets the build argument
+# FRAMELEAF_BUILD_CHANNEL=integration, which compiles the integration channel into the server so it
+# may trust extra licence-signing keys from a mounted JWKS (FRAMELEAF_LICENSE_EXTRA_JWKS_FILE) for
+# the Frameleaf Cloud e2e. Release builds never set it and ignore that variable
+# (scripts/frameleaf-workflows.test.mjs enforces both).
 name: Integration Image
 
 # A workflow that is not on the default branch (fork/main) cannot be dispatched, so pushes to
@@ -114,6 +120,7 @@ jobs:
             BUILD_SOURCE_COMMIT=${{ github.sha }}
             BUILD_SOURCE_REPOSITORY=${{ github.repository }}
             BUILD_IMAGE_NAME=frameleaf-server
+            FRAMELEAF_BUILD_CHANNEL=integration
       # The database image the Compose file names, from docker/postgres, as an archive the deployment test runs.
       - name: Build the database image to an OCI archive (not pushed)
         id: database
