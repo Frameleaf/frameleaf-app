@@ -62,6 +62,16 @@ An email address from the provider is used to link a sign-in to an existing acco
 Some providers (for example Microsoft Entra ID) do not send `email_verified`. With them, a person whose account is not yet linked to the provider cannot sign in by email, and automatic registration is refused, until you map an `email_verified` claim in the provider. Accounts already linked to the provider (by its account ID) are not affected and keep signing in as before.
 :::
 
+## Refused and expired sign-ins
+
+A sign-in only finishes in the browser (or app) that started it, within the provider's code lifetime. The server answers these callbacks with a `400` and a fixed message on the sign-in page, and nobody is signed in:
+
+- the person declined at the provider, or the provider refused (`error=` in the callback): "The identity provider did not approve the sign-in";
+- the callback's `state` (or `iss`) belongs to another sign-in: "This sign-in was started somewhere else or has expired";
+- the code was already used, has expired or does not match the sign-in's PKCE verifier (`invalid_grant`): "This sign-in link has expired or was already used".
+
+The provider's own error text is never shown, since anyone can put it in the address. The sign-in page offers the provider button again, and a `continue` address is only ever followed on this server. A callback that opens in another tab of the same browser (for example from an email link) still finishes, for 15 minutes.
+
 ## Enable OAuth
 
 Once you have a new OAuth client application configured, Frameleaf can be configured using the Administration Settings page, available on the web (Administration -> Settings).
