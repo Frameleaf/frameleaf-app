@@ -149,6 +149,9 @@ test.describe('Library Care', () => {
       )
       .toBe(MediaHealthStatus.Relinked);
     await page.getByRole('combobox', { name: 'Show' }).selectOption('all');
+    // Inspect opens on the row as the list last showed it, so wait for the list to show the settled
+    // finding: the row still reads Found until the reload for "all" has answered.
+    await expect(page.getByRole('row', { name: /Lake\.png/ })).toContainText('Relinked', { timeout: 30_000 });
     await page
       .getByRole('row', { name: /Lake\.png/ })
       .getByRole('button', { name: 'Inspect' })
