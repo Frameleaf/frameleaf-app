@@ -283,11 +283,6 @@ real regressions:
 - Ask-search service forwards query + respects NSFW filter flag
 - Mobile-nav advanced-search slider binds + emits
 
-**Mobile NSFW actions** ([mobile/lib/presentation/widgets/action_buttons/mark_nsfw_action_button.widget.dart](mobile/lib/presentation/widgets/action_buttons/mark_nsfw_action_button.widget.dart)):
-- Tapping invokes `ActionService.markNsfw` with current selection
-- `markNsfw` posts to `/nsfw` with selected asset ids + updates local store
-- `markSafe` inverse path removes asset from NSFW set
-
 ---
 
 ## P9 — Hash caching (LOW)

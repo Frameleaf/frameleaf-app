@@ -16,20 +16,20 @@ The preserved working tree at plan preparation contains extensive unfinished and
 
 ## Architecture map
 
-| Responsibility       | Authoritative source                                                                               | Integration instruction                                                                                                                      |
-| -------------------- | -------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| Production web       | `web/src/routes`, `web/src/lib/components`, `web/src/lib/managers`                                 | Keep SvelteKit/Svelte; new design components live under `components/frameleaf` while features retain their services                          |
-| Design prototype     | `prototypes/frameleaf/src`, its AGENTS/README/design-qa                                            | Reference behavior and visuals; replace sample/localStorage adapters with real typed services, never mount the whole prototype as production |
-| Shared query/session | `web/src/lib/frameleaf/library-session.ts`, `web/src/lib/components/discovery/query.ts`            | Preserve scope/query/selection/navigation/draft across layouts and mutations                                                                 |
-| Server endpoints     | `server/src/controllers`, `dtos`, `services`, `repositories`                                       | Follow existing controller→service→repository boundaries, auth decorators, access checks and DTO validation                                  |
-| Additive data        | `server/src/fork-schema`, `server/src/schema`, `server/src/queries`                                | Prefer existing fork-owned structures; released migrations/identities are append-only; preserve handoff and reference ownership              |
-| API clients          | `open-api/immich-openapi-specs.json`, `packages/sdk`, `mobile/generated/openapi`, `open-api/patch` | Change DTO/controller first, regenerate both clients; Dart output may be ignored, patches belong in generation inputs                        |
-| Native app           | `mobile/lib`, `mobile/lib/frameleaf`, `mobile/frameleaf-parity.json`                               | Real Flutter screens over shared APIs; retain offline/local/backup/sync services                                                             |
-| Studio baseline      | `studio/vendor/freecut`, provenance/feature manifests                                              | Pinned React engine; integration adapters outside vendored source where possible; record unavoidable patches and licensing                   |
-| Media/jobs           | `server/src/services/media.service.ts`, media-operation/restoration/project services               | Extend existing durable model; exact revision/destination/checkpoints, authorization and atomic publish                                      |
-| ML                   | `machine-learning/immich_ml`, `machine-learning/pyproject.toml`                                    | Separate capabilities and workloads; explicit local/LAN/RunPod; no silent cloud fallback                                                     |
-| Design identity      | `design/frameleaf`, `web/src/lib/frameleaf`, `mobile/lib/frameleaf`                                | Shared tokens with Svelte/Flutter implementations, customer copy and retained attribution                                                    |
-| Quality/release      | `.github/workflows`, `scripts`, `e2e`, `server/test`                                               | Distinguish unit/medium/browser/hardware/release evidence; isolate destructive fixtures                                                      |
+| Responsibility       | Authoritative source                                                                    | Integration instruction                                                                                                                      |
+| -------------------- | --------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| Production web       | `web/src/routes`, `web/src/lib/components`, `web/src/lib/managers`                      | Keep SvelteKit/Svelte; new design components live under `components/frameleaf` while features retain their services                          |
+| Design prototype     | `prototypes/frameleaf/src`, its AGENTS/README/design-qa                                 | Reference behavior and visuals; replace sample/localStorage adapters with real typed services, never mount the whole prototype as production |
+| Shared query/session | `web/src/lib/frameleaf/library-session.ts`, `web/src/lib/components/discovery/query.ts` | Preserve scope/query/selection/navigation/draft across layouts and mutations                                                                 |
+| Server endpoints     | `server/src/controllers`, `dtos`, `services`, `repositories`                            | Follow existing controller→service→repository boundaries, auth decorators, access checks and DTO validation                                  |
+| Additive data        | `server/src/fork-schema`, `server/src/schema`, `server/src/queries`                     | Prefer existing fork-owned structures; released migrations/identities are append-only; preserve handoff and reference ownership              |
+| API clients          | `open-api/immich-openapi-specs.json`, `packages/sdk`                                    | Change DTO/controller first, then regenerate the TypeScript client                                                                           |
+| Native app           | `docs/docs/developer/frameleaf-plan/native-parity.json`                                 | Frameleaf native apps (the inherited Flutter app was removed); preserve offline/local/backup/sync behaviour                                  |
+| Studio baseline      | `studio/vendor/freecut`, provenance/feature manifests                                   | Pinned React engine; integration adapters outside vendored source where possible; record unavoidable patches and licensing                   |
+| Media/jobs           | `server/src/services/media.service.ts`, media-operation/restoration/project services    | Extend existing durable model; exact revision/destination/checkpoints, authorization and atomic publish                                      |
+| ML                   | `machine-learning/immich_ml`, `machine-learning/pyproject.toml`                         | Separate capabilities and workloads; explicit local/LAN/RunPod; no silent cloud fallback                                                     |
+| Design identity      | `design/frameleaf`, `web/src/lib/frameleaf`                                             | Shared tokens with Svelte and native implementations, customer copy and retained attribution                                                 |
+| Quality/release      | `.github/workflows`, `scripts`, `e2e`, `server/test`                                    | Distinguish unit/medium/browser/hardware/release evidence; isolate destructive fixtures                                                      |
 
 Use the supplied originals under `design/frameleaf/brand-kit` for all identity work. Read the committed design handoff, `06-brand-assets.md` and the deterministic brand inventory before exporting platform assets. Do not redraw or overwrite the originals, infer font licensing from outlined lettering, put a white wordmark on an unqualified light surface, or globally replace compatibility-sensitive `immich` identities. Track derived exports separately; source preservation is not production/native qualification.
 
@@ -54,7 +54,7 @@ A task handoff must contain plan/Jira ID, source commit plus dirty-state caveat,
 
 The integration owner also owns Jira state, the PR, CI failures and closeout. For privacy/authorization, data integrity/migrations, concurrency/idempotency, cloud accounting or publication-authority changes, use one independent reviewer for the exact base/head and surrounding consumers before pushing a new risk-bearing change. Resolve P0/P1/P2 and recheck substantive deltas. Search reverse dependencies when narrowing or removing contracts. Read bot findings already present without waiting for optional bot responses; the reviewer does not become a second CI monitor.
 
-Recommended lanes: (A) contracts/schema/privacy; (B) Svelte library/settings; (C) Flutter/native; (D) Studio/worker/ML; (E) independent QA. Lanes are ownership boundaries, not fixed staffing or promised dates. Contract changes require explicit coordination across lanes.
+Recommended lanes: (A) contracts/schema/privacy; (B) Svelte library/settings; (C) native apps; (D) Studio/worker/ML; (E) independent QA. Lanes are ownership boundaries, not fixed staffing or promised dates. Contract changes require explicit coordination across lanes.
 
 ## Data and security invariants
 
@@ -69,7 +69,7 @@ Recommended lanes: (A) contracts/schema/privacy; (B) Svelte library/settings; (C
 
 ## Build and test commands
 
-Inspect the current package scripts and CI before running. GitHub Actions on the current candidate is authoritative for merge gates. Use focused local checks for implementation feedback; prefer hosted runners for full builds and integration suites, and do not duplicate full runs across agents or emulate CI on a home server. Local passes never replace Actions, physical-device evidence or media qualification. These are source-derived entry points, not a claim they all passed in this planning run. Install tool versions from `mise.toml`, `.nvmrc`, `mobile/mise.toml` and lockfiles; do not copy a machine-specific runtime path into CI.
+Inspect the current package scripts and CI before running. GitHub Actions on the current candidate is authoritative for merge gates. Use focused local checks for implementation feedback; prefer hosted runners for full builds and integration suites, and do not duplicate full runs across agents or emulate CI on a home server. Local passes never replace Actions, physical-device evidence or media qualification. These are source-derived entry points, not a claim they all passed in this planning run. Install tool versions from `mise.toml`, `.nvmrc` and lockfiles; do not copy a machine-specific runtime path into CI.
 
 ```sh
 # Root and shared packages; run installs only when needed
@@ -93,7 +93,7 @@ pnpm --dir web check:svelte
 pnpm --dir web test --run <changed-test-path>
 pnpm --dir web build
 
-# API generation from source contracts, both clients
+# API generation from source contracts (TypeScript client)
 mise run //:open-api
 pnpm --filter @immich/sdk build
 
@@ -103,14 +103,10 @@ pnpm --dir prototypes/frameleaf build
 
 # Inventories and Studio prerequisites
 node --test scripts/frameleaf-route-inventory.test.mjs
-python3 scripts/frameleaf-mobile-inventory.py --check
 pnpm --dir studio verify
 pnpm --dir studio test
 # preflight probes hardware/tool availability; it is not Studio certification
 pnpm --dir studio preflight
-
-# Native dependencies/generated code must already match pinned toolchain
-bash scripts/frameleaf-mobile-check.sh
 
 # ML mocked CPU suite, run from machine-learning/
 uv sync --frozen --extra cpu --group test --no-default-groups

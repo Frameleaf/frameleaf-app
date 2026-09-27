@@ -4,7 +4,7 @@ Status: implementation backlog, not a release or a claim of completed parity. Pr
 
 ## Read this first
 
-Frameleaf will be a complete photo and video library with a restrained, dark-first creative workspace and a full Freecut-based Studio. Existing upstream and fork capabilities must survive the redesign. The current React prototype is design evidence; production remains Svelte, NestJS/PostgreSQL, Python ML, and native Flutter. Rewriting production as the prototype is not approved.
+Frameleaf will be a complete photo and video library with a restrained, dark-first creative workspace and a full Freecut-based Studio. Existing upstream and fork capabilities must survive the redesign. The current React prototype is design evidence; production remains Svelte, NestJS/PostgreSQL and Python ML, plus the Frameleaf native apps (the inherited Flutter app has been removed). Rewriting production as the prototype is not approved.
 
 This plan supersedes chronological planning notes where they conflict. Explicit subsequent owner decisions take precedence. The source audits remain the preservation baseline; historical checkmarks are not release evidence. Read the [agent execution instructions](01-agent-execution.md), then the assigned issue and its source paths in the consolidated backlog.
 
@@ -28,7 +28,7 @@ This restoration worktree was created from freshly fetched `Frameleaf/frameleaf-
 The preserved dirty-checkout evidence includes the following unreviewed implementation. It is not present in a clean `fork/main` worktree unless separately reviewed and delivered:
 
 - A standalone interactive prototype with Timeline/Browse/Work, photographed People, improved filters, Explore, sample viewer/slideshow, settings command center, utilities and local manual face tagging. The last recorded gate is 400 prototype tests and a successful build, not production integration.
-- An opt-in Svelte shell and Flutter foundations. Existing application surfaces are retained; changing shell branding does not migrate their workflows.
+- An opt-in Svelte shell and Flutter foundations (the inherited Flutter app has since been removed from the repository; Frameleaf is building its own native apps). Existing application surfaces are retained; changing shell branding does not migrate their workflows.
 - Fork-owned Studio project/revision/lease structures and real project-review APIs. These are not a complete editor, renderer, preview service or export service.
 - Existing reliable-video/restoration/discovery/sharing/import/enrichment implementations from earlier work. Inspect and integrate them; do not duplicate them because their new UI is missing. Verify each acceptance criterion against real behavior.
 - Freecut provenance and the 210-row feature manifest pinned at `4d62e8082c5eb387a96275bcbd323d28f6e41a62` are restored as preservation metadata. The vendor source, dirty diagnostics and measured GPU/encoder claims remain outside the accepted clean slice; full Studio, restoration, HDR and Dolby Vision qualification remain false.
@@ -68,7 +68,7 @@ Keep utilities in Settings, including owner-only Trash and duplicates, large fil
 
 Keep quick Trim/Rotate/Crop/Adjust/Audio usable without a Studio GPU. Edited masters are independent of playback proxy settings, derive from originals and preserve resolution/timing/audio/color unless explicitly changed. Fast trim shows actual keyframe boundaries; precise trim is distinct. Save version, Export and Revert remain different actions.
 
-Full desktop/tablet Studio retains the complete pinned Freecut graph and every manifest feature, with React bundled into the Svelte app behind explicit platform adapters. Native tablets use native Flutter controls over shared project APIs, not a website wrapper. Phones receive library/admin, quick editing, restoration and project review.
+Full desktop/tablet Studio retains the complete pinned Freecut graph and every manifest feature, with React bundled into the Svelte app behind explicit platform adapters. Native tablets use native controls over shared project APIs, not a website wrapper. Phones receive library/admin, quick editing, restoration and project review.
 
 Projects have immutable revisions, idempotent optimistic commands, a renewable single-editor lease, review/comments and local pending-command recovery. A qualified local/LAN worker provides browser/native parity, authenticated preview sessions and durable exports. A CUDA ML endpoint alone is insufficient proof of render capability. Never silently upload a local job to RunPod; persist explicit destination selection.
 

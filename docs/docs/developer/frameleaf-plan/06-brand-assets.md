@@ -20,9 +20,9 @@ The source files live in [`design/frameleaf/brand-kit`](https://github.com/Frame
 
 Before writing files, the import checked ZIP paths, modes, expanded size, duplicate names and destination collisions. The archive contains no traversal paths, symlinks or executable files. Each imported file was compared byte-for-byte with its ZIP member. No instructions or scripts from the archive were executed.
 
-Do not run SVG formatters or optimizers over the original kit. Put any required platform exports or approved variants under separately named derivative paths, with source hash, export dimensions, background/mask changes, renderer/tool version and output hash. The existing `design/frameleaf/mark.png` and `mobile/assets/frameleaf-mark.png` remain historical inputs until the integration task replaces their consumers; their presence does not override this kit.
+Do not run SVG formatters or optimizers over the original kit. Put any required platform exports or approved variants under separately named derivative paths, with source hash, export dimensions, background/mask changes, renderer/tool version and output hash. The existing `design/frameleaf/mark.png` remains a historical input until the integration task replaces its consumers (the Flutter app's `mobile/assets/frameleaf-mark.png` was removed with the app); its presence does not override this kit.
 
-Do not globally replace `immich` while integrating visual branding. Compatibility-sensitive Dart package imports, SDK package names, ML modules, API and database identities, callbacks and released migration semantics retain their existing identities unless a separately reviewed migration changes them. The inventory keeps representative compatibility sentinels so a broad mechanical rebrand fails closed.
+Do not globally replace `immich` while integrating visual branding. Compatibility-sensitive SDK package names, ML modules, API and database identities, callbacks and released migration semantics retain their existing identities unless a separately reviewed migration changes them. The inventory keeps representative compatibility sentinels so a broad mechanical rebrand fails closed.
 
 ## Artwork inventory and placement
 
@@ -54,7 +54,7 @@ The supplied README and styleboard declare these base colors:
 
 The actual SVG gradients also use brighter green/cyan stops, including `#86F345`, `#00C4D6`, `#88F54A` and `#00ACC9`. Preserve those paths and gradients as supplied. The base palette is not a direction to flatten every stop to `#22C55E`. Exact per-file color values are recorded in the manifest.
 
-The existing [`design/frameleaf/tokens.json`](../../../../design/frameleaf/tokens.json), web tokens and Flutter tokens remain the starting point for accessible application surfaces. The luminous styleboard does not require gradients or glow behind every panel. Keep functional focus/selection/error contrast and photography-first layout intact.
+The existing [`design/frameleaf/tokens.json`](../../../../design/frameleaf/tokens.json), and the web tokens remain the starting point for accessible application surfaces. The luminous styleboard does not require gradients or glow behind every panel. Keep functional focus/selection/error contrast and photography-first layout intact.
 
 There is **no supplied dark-ink wordmark for a light background**. The dark-background logo and both white variants lose their white lettering on a white canvas. For light-mode integration, use the gradient symbol where contrast is adequate, or place an original wordmark on a deliberate dark brand surface. If a full dark-ink wordmark is required, create a separately tracked approved derivative; do not silently recolor or overwrite the authoritative source.
 
@@ -71,7 +71,7 @@ All seven SVGs parse as SVG XML and contain shapes, paths, groups, gradients and
 
 Prefer referencing original artwork as static image resources where appropriate. If a component inlines multiple SVGs, namespace all IDs and their references in a derived component to prevent cross-instance collisions; do not alter the archived originals. Provide the correct accessible name at the application boundary, or hide decorative duplication when adjacent text already names Frameleaf.
 
-Test the actual Flutter SVG/vector or raster-export path for gradients and `use` support. Record any platform conversion in the derivative manifest. Favicon/PWA and Android/iOS exports need visual checks at their real display sizes, with light/dark backgrounds, masks and extension/widget contexts. The supplied app tile already has rounded corners; avoid accidentally applying a second incompatible mask or treating transparent corners as a complete platform-specific store export.
+Test the native apps' actual SVG/vector or raster-export path for gradients and `use` support. Record any platform conversion in the derivative manifest. Favicon/PWA and Android/iOS exports need visual checks at their real display sizes, with light/dark backgrounds, masks and extension/widget contexts. The supplied app tile already has rounded corners; avoid accidentally applying a second incompatible mask or treating transparent corners as a complete platform-specific store export.
 
 ## Backlog integration and completion evidence
 

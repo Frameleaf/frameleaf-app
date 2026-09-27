@@ -6,13 +6,19 @@ Read the [main plan](00-implementation-plan.md), [agent execution contract](01-a
 
 This bounded FL-25 slice restores the native/release preservation contract, not native application code. The consolidated backlog now points its native workstream rows to this guide and no longer marks the restored guide as pending. The library, Studio, delivery, brand and feature-ownership narratives remain independently reviewed or pending according to their own source records; this slice does not silently restore them.
 
+:::note The inherited Flutter app has been removed
+
+On 2026-09-27 the owner removed the inherited Flutter app (`mobile/`), its Dart client generator and the F-Droid `fastlane/` link from the repository: Frameleaf is building its own native iOS and Android apps. Flutter file names, paths, commands and toolchain pins below describe the removed app. They remain only as evidence of the features the native apps must preserve; do not rebuild or regenerate them. The parity inventory and the dirty-only evidence now live in [`native-parity.json`](native-parity.json) and [`native-preserved-dirty-evidence.json`](native-preserved-dirty-evidence.json) with unchanged bytes. The server API is unchanged, so installed mobile clients keep working.
+
+:::
+
 ## Verified starting point
 
-The committed Flutter app is a substantial existing application, but the Frameleaf-specific native foundation remains outside this clean baseline:
+The committed Flutter app was a substantial existing application (removed on 2026-09-27), but the Frameleaf-specific native foundation remained outside this clean baseline:
 
-- `mobile/frameleaf-parity.json` deterministically inventories 211 committed entrypoints: 59 native routes, 24 asset actions, 26 settings components, 64 web pages and 38 administrator settings. Source presence is not redesigned parity or device qualification.
-- `mobile/frameleaf-preserved-dirty-evidence.json` separately records 16 hashed source rows found only in the preserved checkout: two Frameleaf Studio preview routes and 14 fork web routes. Those rows keep their requirements and issue ownership, but are explicitly `not-committed-not-qualified`.
-- The combined preservation contract therefore has 227 rows without claiming that all 227 are committed, distinct screens, implemented, or available at runtime. `scripts/frameleaf-mobile-inventory.py --check` requires exact committed-source regeneration, exact ownership-map coverage, and continued separation of the 16 dirty-only rows.
+- [`native-parity.json`](native-parity.json) (formerly `mobile/frameleaf-parity.json`) deterministically inventoried 211 committed entrypoints: 59 native routes, 24 asset actions, 26 settings components, 64 web pages and 38 administrator settings. Source presence is not redesigned parity or device qualification.
+- [`native-preserved-dirty-evidence.json`](native-preserved-dirty-evidence.json) (formerly `mobile/frameleaf-preserved-dirty-evidence.json`) separately records 16 hashed source rows found only in the preserved checkout: two Frameleaf Studio preview routes and 14 fork web routes. Those rows keep their requirements and issue ownership, but are explicitly `not-committed-not-qualified`.
+- The combined preservation contract therefore has 227 rows without claiming that all 227 are committed, distinct screens, implemented, or available at runtime. The inventory was generated from the Flutter source, so it is no longer regenerated; `scripts/frameleaf-preservation-ledger.mjs --check` pins its hash.
 - The inventory retains 16 migration gaps: unified discovery, guided faces, Shared Spaces, Takeout, classification, culling, memory stories, pets, enrichment, Library Care, preservation, documents, photo tools, AI video, native Studio and administration. All remain in scope.
 - The preserved checkout also contains unreviewed shell, token, Studio-review, edit-round-trip, OAuth and transition-guide work. None of that app code is restored by this slice, and its historical tests do not establish committed behavior or readiness.
 - Identity validators and a blank example contract are restored. They fail closed for upstream, example, debug or incomplete release identities; they do not provision signing, callbacks, store records, domains, credentials or a release build.
@@ -24,7 +30,7 @@ The user-supplied SVG kit under `design/frameleaf/brand-kit` is the committed ar
 | Epic    | Scope                                                                 | Stories     | Main prerequisites                                                            |
 | ------- | --------------------------------------------------------------------- | ----------- | ----------------------------------------------------------------------------- |
 | MOB-100 | Complete native library, settings and administration                  | MOB-101–107 | Shared tokens/session and additive contracts: FN-201, FN-203, FN-301          |
-| MOB-200 | Full Flutter tablet Studio; phone review and restoration              | MOB-201–204 | STU-202/203/205 contracts; VID-090 proof before broad full-Studio integration |
+| MOB-200 | Full native tablet Studio; phone review and restoration               | MOB-201–204 | STU-202/203/205 contracts; VID-090 proof before broad full-Studio integration |
 | MOB-300 | Offline data, backup and operating-system integration                 | MOB-301–304 | Native session, discovery scope, separate identity and auth                   |
 | REL-100 | Owned native identities, branding, attribution and rights             | REL-101–104 | Repository ownership plus explicit signing, domain and tool inputs            |
 | QA-100  | Access, media, migration, accessibility and performance qualification | QA-101–105  | Implemented vertical slices and exact-candidate evidence                      |
@@ -46,13 +52,13 @@ Stage numbers describe delivery position, not permission to bypass dependencies.
 
 `MOB-107` implements the full settings command center for phones and tablets. Audit `mobile/lib/pages/common/settings.page.dart`, `mobile/lib/widgets/settings/` and the server's user preferences/config DTOs. The preserved checkout also contains the dirty-only `docs/docs/developer/frameleaf-settings-coverage.md` ledger; it is pending separate review and is not restored or linked as committed evidence by this slice. Include profile, password/PIN, API keys, sessions, OAuth, protected content, notifications, sharing/recognition groups, supporter/attribution, local-device settings, and the complete authorized administrator surface: accounts/quotas/libraries, queues/concurrency, ML endpoints/RunPod, workflows, storage, backup/recovery, utilities and configuration transfer. Personal preferences are separate from device and server settings; hiding a navigation item is not authorization. Server-wide operations must not appear scoped merely because an administrator is inspecting one user's usage.
 
-### MOB-200: full Studio in Flutter on tablets
+### MOB-200: full native Studio on tablets
 
-The tablet application is a native Flutter editor over shared project and command contracts. It must not embed the web editor in a WebView or accept reduced tool parity because the controls are native. Phones retain library/admin, quick editing, restoration jobs and project review; full workspace controls are tablet/desktop work.
+The tablet application is a native editor over shared project and command contracts. It must not embed the web editor in a WebView or accept reduced tool parity because the controls are native. Phones retain library/admin, quick editing, restoration jobs and project review; full workspace controls are tablet/desktop work.
 
 `MOB-201` implements the client of immutable revisions, optimistic/idempotent commands, renewable single-editor leases, review and pending-command recovery. Preserve the entire pinned Freecut envelope including compositions, expressions, keyframes and unknown graph fields. Assets/resources use server-derived authorized manifests; client filesystem paths and URLs cannot become worker inputs. Moving from quick editing to a project and back preserves source, active revision, playhead and recoverable draft history. A second editor, expired lease, revoked source or failed response must not silently overwrite a project.
 
-`MOB-202` and `MOB-203` deliver native counterparts for every relevant row in `studio/freecut-feature-manifest.json`: multitrack timeline operations, nested compositions, preview layouts/scopes, effects, masks, transitions, text/fonts, transforms, keyframes/Compose/expressions, channel-aware audio, captions, import/export and baseline AI tools. Map each row to Flutter control, canonical command, preview/export implementation and tests. Pencil/touch gestures need discoverable keyboard and accessible alternatives. Ordinary Flutter layout tests alone cannot prove rendered tool parity.
+`MOB-202` and `MOB-203` deliver native counterparts for every relevant row in `studio/freecut-feature-manifest.json`: multitrack timeline operations, nested compositions, preview layouts/scopes, effects, masks, transitions, text/fonts, transforms, keyframes/Compose/expressions, channel-aware audio, captions, import/export and baseline AI tools. Map each row to native control, canonical command, preview/export implementation and tests. Pencil/touch gestures need discoverable keyboard and accessible alternatives. Ordinary Flutter layout tests alone cannot prove rendered tool parity.
 
 `MOB-204` connects authenticated remote previews and durable render/restoration operations. Destination selection persists with the job: compatible local or LAN ML GPU first, explicit RunPod selection when wanted, and no silent cloud fallback. Show model/VRAM availability, queue/preparation/render/validation states, cancellation, reconnection and recovery. Faithful/Creative five-second comparisons retain original audio/timing; interpolation remains separate. Local compute availability does not imply full-Studio worker qualification.
 
@@ -70,7 +76,7 @@ Full Studio remains capability-gated until `STU-401–405`, `VID-202–204`, the
 
 ## Native identity and guided transition
 
-`REL-101` uses `scripts/frameleaf-mobile-identity.py` and `mobile/frameleaf-identity.example.json` as a fail-closed verification contract for future Android manifests/Gradle and iOS targets/entitlements. The validator writes no build configuration and does not make the current application identities effective. The owner must supply:
+`REL-101` uses `scripts/frameleaf-mobile-identity.py` as a fail-closed verification contract for future Android manifests/Gradle and iOS targets/entitlements. The validator writes no build configuration and does not make the current application identities effective. The owner must supply:
 
 | Input                                                                              | Why it is required                                      | Acceptance evidence                                                                                                                |
 | ---------------------------------------------------------------------------------- | ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
@@ -108,7 +114,7 @@ The canonical GitHub repository is **Frameleaf/frameleaf-app**, whose default br
 - Container publication, GHCR pullability, release assets, deployment health, native signing, store submission and runtime/media qualification are separate evidence. Do not infer them from a merged workflow change or a passing job whose substantive path skipped.
 - PR #112's administrator-review bypass and GitHub-authored merge committer remain governance findings for future merge controls; they are not rewritten or treated as native-release acceptance.
 
-`REL-202` makes API generation serial and reproducible. Current pins are Node 24.21.0, pnpm 11.24.0, Java 21.0.2, OpenAPI Generator Java 7.25.0, its npm launcher 2.41.0, oazapfts 7.5.0 and Flutter 3.47.2. Use the checked-in `mise.toml`, `mobile/mise.toml` and `open-api/openapitools.json` as authority if pins change. Do not run parallel server builds that delete `dist` during API/SQL generation.
+`REL-202` makes API generation serial and reproducible. Current pins are Node 24.21.0, pnpm 11.24.0 and oazapfts 7.5.0; use the checked-in `mise.toml` as authority if pins change. Do not run parallel server builds that delete `dist` during API/SQL generation.
 
 Existing commands from repository root, run sequentially after dependencies are installed:
 
@@ -116,20 +122,11 @@ Existing commands from repository root, run sequentially after dependencies are 
 pnpm --filter immich build
 pnpm --filter immich exec node dist/bin/sync-open-api.js
 mise run open-api-typescript
-mise run open-api-dart
 ```
 
-Then from `mobile/`:
+The aggregate `mise run open-api` already builds/synchronizes the server and the TypeScript SDK. The narrower commands above make the checkpoint order explicit.
 
-```sh
-mise run codegen
-dart analyze --fatal-infos
-flutter test
-```
-
-The aggregate `mise run open-api` already builds/synchronizes the server and both SDKs. The narrower commands above make the checkpoint order explicit. Flutter code generation also includes Drift migration/schema fixtures, Pigeon, translations and build_runner; inspect generated migration changes before accepting them.
-
-`packages/sdk/src/fetch-client.ts` and the OpenAPI specification are tracked. `mobile/generated/openapi/` is ignored and regenerated using `open-api/bin/generate-dart-sdk.sh`. Keep compatibility adjustments in source schemas or checked-in generator patches, including `open-api/patch/studio_document.dart.patch`; never hand-edit generated Dart. Test top-level/nested nulls, arrays, expressions, unknown edit actions, scalar enums, defaults and binary upload requests through real generated clients. A warning-free schema generator does not replace Flutter compilation or transport testing.
+`packages/sdk/src/fetch-client.ts` and the OpenAPI specification are tracked. Keep compatibility adjustments in source schemas; never hand-edit the generated client. Test top-level/nested nulls, arrays, expressions, unknown edit actions, scalar enums, defaults and binary upload requests through real generated clients. The Dart client generator was removed with the Flutter app; how the native apps consume the API is decided with them.
 
 `REL-203` creates owner-controlled signing and publishing with exact-SHA artifacts, provenance/SBOM/license manifests, schema/spec hashes, qualified media results and rollback instructions. Separate untrusted validation from protected signing environments. Rehearse release channels without publishing, then obtain the final owner-authorized distribution action. Library releases may retain Studio disabled; they cannot be described as the complete Studio release. Remove old UI and preview flags only after their replacement evidence passes.
 
@@ -149,8 +146,6 @@ Performance stories first record current baselines on named devices and represen
 The focused contract commands restored by this slice are:
 
 ```sh
-python3 scripts/frameleaf-mobile-inventory.py --check
-python3 scripts/frameleaf-mobile-inventory.py --check --preserved-source-root /path/to/read-only/preserved-checkout
 python3 scripts/frameleaf-mobile-identity-test.py
 node --test scripts/test-fork-roundtrip.test.mjs
 ```
@@ -159,6 +154,6 @@ For compatibility, `scripts/test-fork-roundtrip.sh`, `e2e/docker-compose.fork-ro
 
 Keep active-state guards, lease/job pausing, private schema catalog integrity, original/reference ownership, privacy snapshots and physical deduplication intact. Rebranding must not rename compatibility-sensitive public database/API identities. Extending the supported official version requires new certification fixtures and a verified catalog/digest, not merely editing a version string.
 
-The preserved-source-root command is an audit-time check for the recorded 16 source hashes; ordinary clean CI runs the first command without requiring the dirty checkout. Identity unit tests validate the fail-closed configuration contract only. Full Flutter checks become applicable after reviewed Frameleaf app code is committed; this slice deliberately does not restore a script that names absent implementation tests.
+Identity unit tests validate the fail-closed configuration contract only. Native app checks become applicable once the Frameleaf native apps are committed.
 
 Final evidence is attached to the exact candidate, not a moving branch: workflow runs that actually executed, source/SDK/catalog hashes, signed-identity inspection, browser and device journeys, privacy/race fixtures, media output probes plus visual/audio comparison, accessibility/performance measurements, and owner-reviewed distribution inputs. Historical prototype tests, synthetic hardware checks and inventory counts remain useful context, but cannot substitute for any of those gates.

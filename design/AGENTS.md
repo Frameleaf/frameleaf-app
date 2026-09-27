@@ -1,7 +1,7 @@
 # Design work
 
 - Read `frameleaf/README.md` and `frameleaf/INTERACTION-REQUIREMENTS.md` before using the template. Recent written user decisions take precedence over historical screenshots.
-- `frameleaf/template` is a self-contained React design reference. Production web remains Svelte and native applications remain Flutter. Port behavior through real services; do not mount the demo or treat sample state as production authority.
+- `frameleaf/template` is a self-contained React design reference. Production web remains Svelte; Frameleaf is building its own native iOS and Android apps (the inherited Flutter app has been removed). Port behavior through real services; do not mount the demo or treat sample state as production authority.
 - Preserve the original SVG files and hashes in `frameleaf/brand-kit`. Create separately named derivatives when needed; do not redraw the supplied brand or silently overwrite originals.
 - Keep the dark-first, restrained three-pane workspace, equal-quality light mode, photographic people imagery, contextual inspectors and compact controls. Avoid decorative gradients/glows outside brand artwork.
 - Follow the September 24 Apple-style language in `frameleaf/template/src/apple-style.css` and `frameleaf/tokens.json`:

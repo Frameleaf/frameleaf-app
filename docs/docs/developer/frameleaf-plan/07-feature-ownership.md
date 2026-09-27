@@ -48,7 +48,6 @@ Run:
 node scripts/frameleaf-preservation-ledger.mjs --check
 node --test scripts/frameleaf-preservation-ledger.test.mjs
 node --test scripts/frameleaf-route-inventory.test.mjs
-python3 scripts/frameleaf-mobile-inventory.py --check
 node --test scripts/frameleaf-studio-contracts.test.mjs
 ```
 

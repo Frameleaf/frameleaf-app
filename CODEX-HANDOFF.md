@@ -19,7 +19,7 @@ For the Codex agent picking up this work. You will not have the original machine
 - Never push to `origin` or `upstream`; push to the `frameleaf` remote (`Frameleaf/frameleaf-app`). The default branch is literally `fork/main`. Do not merge, publish or deploy without the owner's authorization. Merging to `fork/main` can trigger Docker publication.
 - **The September 22 prototype in `design/frameleaf/template/src` is authoritative for product design.** Match its screens, navigation, labels, controls, states and flows. A difference from it is a bug to fix, not a question. Only behaviour it does not cover is a product question. Its React code is a specification, not code to mount; port it into Svelte (`web/src`) and NestJS (`server/src`).
 - The Frameleaf UI is the **only** UI. No feature flags, no legacy fallback. Delete legacy components that lose their last caller.
-- **Never touch the iOS or Android apps** (`mobile/`, `mobile/openapi`). They are being removed and rebuilt natively. Mobile CI checks were removed. Do not regenerate the Dart client.
+- The inherited Flutter app (`mobile/`), its Dart client generator and the F-Droid `fastlane/` link have been removed; Frameleaf is building its own native iOS and Android apps. Do not bring them back. Keep the server API unchanged so installed mobile clients keep working.
 - Customer copy never says "fork" or uses "Immich" as the product name.
 - Vocabulary: an album holds photos; a collection groups albums one level deep (`kind: "collection"`); a shared space stays top level. Never "subcollection".
 - Every icon picker offers the full Material Design Icons catalogue with a categorised suggested set first.
