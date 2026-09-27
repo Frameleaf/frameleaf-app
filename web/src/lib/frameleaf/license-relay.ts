@@ -1,10 +1,25 @@
 /**
- * The Frameleaf store's key relay (FL-157). A licence key reaches this server only in the address
- * fragment (`/link#target=frameleaf_license&key=…`, which browsers never send to a server or put in
- * a referrer), in `sessionStorage` for the hop to Support Frameleaf, and in a request body. It is
- * never written to a query string, a history entry or a log.
+ * The Frameleaf account site's hand-over to this server (CLD-004, replacing the FL-157 key relay).
+ *
+ * A licence key never travels in an address, not even in the fragment: "Use on your server" opens
+ * `/link?target=frameleaf_license&linkCode=flc_…`, a one-time code that is useless without this
+ * server's key. The page moves the code into `sessionStorage`, clears the address with
+ * `history.replaceState` before anything else happens, and Support Frameleaf hands it to this server
+ * in a request body. The server redeems it with Frameleaf Cloud, which activates the licence directly.
+ *
+ * An old link that still carries a key (`?licenseKey=…`, `#key=…`, …) is never used: the address is
+ * cleared the same way and Support Frameleaf asks for the key to be pasted.
  */
-export const PENDING_LICENSE_KEY = 'frameleaf:license:pending';
+export const PENDING_LINK_CODE = 'frameleaf:license:link-code';
+export const KEY_IN_LINK_NOTICE = 'frameleaf:license:key-in-link';
+/** The FL-157 relay's storage slot; anything left in it is dropped, never used. */
+const LEGACY_PENDING_KEY = 'frameleaf:license:pending';
+
+const LINK_CODE = /^flc_[A-Za-z0-9]{26}$/;
+/** A parameter whose name says it holds a key: `key`, `licenseKey`, `license_key`, `licenceKey`, … */
+const KEY_PARAMETER = /^(?:key|licen[cs]e_?key|product_?key)$/i;
+/** Anything shaped like a Frameleaf or upstream product key, wherever it sits in the address. */
+const KEY_SHAPE = /FL-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}|IM[A-Z]{2}-[A-Z0-9]{4}-/i;
 
 const storage = (): Storage | null => {
   try {
@@ -14,34 +29,84 @@ const storage = (): Storage | null => {
   }
 };
 
-/** Read the relay targets from a fragment such as `#target=frameleaf_license&key=FL-…`. */
-export const parseLinkFragment = (hash: string) => {
-  const params = new URLSearchParams(hash.replace(/^#/, ''));
-  return { target: params.get('target'), key: params.get('key') };
+export type LinkAddress = {
+  /** The `target` query parameter. */
+  target: string | null;
+  /** A well-formed one-time link code from the account site, else null. */
+  linkCode: string | null;
+  /** The address carried a licence key (query or fragment); it must not be used. */
+  carriedKey: boolean;
 };
 
-/** Keep a relayed key for Support Frameleaf; returns whether it was kept. */
-export const holdPendingLicenseKey = (key: string): boolean => {
-  const value = key.trim().toUpperCase();
-  if (!/^FL-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(value)) {
+/** Read what `/link` was opened with. Keys are detected, never returned. */
+export const readLinkAddress = (href: string): LinkAddress => {
+  const url = new URL(href, 'https://local.invalid');
+  const fragment = new URLSearchParams(url.hash.replace(/^#/, ''));
+  const names = [...url.searchParams.keys(), ...fragment.keys()];
+  let decoded = href;
+  try {
+    decoded = decodeURIComponent(href);
+  } catch {
+    // keep the raw address
+  }
+  const carriedKey = names.some((name) => KEY_PARAMETER.test(name)) || KEY_SHAPE.test(decoded);
+  const code = url.searchParams.get('linkCode')?.trim() ?? '';
+  return {
+    target: url.searchParams.get('target'),
+    linkCode: LINK_CODE.test(code) ? code : null,
+    carriedKey,
+  };
+};
+
+/** Whether `/link` was opened with anything this relay has to take out of the address. */
+export const isLicenseRelay = (href: string) => {
+  const { target, linkCode, carriedKey } = readLinkAddress(href);
+  return carriedKey || !!linkCode || target === 'frameleaf_license' || target === 'activate_license';
+};
+
+/** Keep a link code for Support Frameleaf; returns whether it was kept. */
+export const holdPendingLinkCode = (code: string): boolean => {
+  if (!LINK_CODE.test(code)) {
     return false;
   }
   try {
-    storage()?.setItem(PENDING_LICENSE_KEY, value);
+    storage()?.setItem(PENDING_LINK_CODE, code);
     return true;
   } catch {
     return false;
   }
 };
 
-/** Take (and forget) the key waiting for Support Frameleaf, if any. */
-export const takePendingLicenseKey = (): string | null => {
+/** Take (and forget) the link code waiting for Support Frameleaf, if any. */
+export const takePendingLinkCode = (): string | null => {
   try {
     const store = storage();
-    const value = store?.getItem(PENDING_LICENSE_KEY) ?? null;
-    store?.removeItem(PENDING_LICENSE_KEY);
-    return value;
+    const value = store?.getItem(PENDING_LINK_CODE) ?? null;
+    store?.removeItem(PENDING_LINK_CODE);
+    store?.removeItem(LEGACY_PENDING_KEY);
+    return value && LINK_CODE.test(value) ? value : null;
   } catch {
     return null;
+  }
+};
+
+/** Remember to tell the person that a key in a link is not accepted (the key itself is not kept). */
+export const holdKeyInLinkNotice = () => {
+  try {
+    storage()?.setItem(KEY_IN_LINK_NOTICE, '1');
+  } catch {
+    // the notice is a courtesy
+  }
+};
+
+/** Take (and forget) the "paste the key instead" notice. */
+export const takeKeyInLinkNotice = (): boolean => {
+  try {
+    const store = storage();
+    const value = store?.getItem(KEY_IN_LINK_NOTICE) === '1';
+    store?.removeItem(KEY_IN_LINK_NOTICE);
+    return value;
+  } catch {
+    return false;
   }
 };

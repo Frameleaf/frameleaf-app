@@ -1,8 +1,10 @@
 <script lang="ts">
   /**
-   * FL-157: the Frameleaf store's key relay. The key is read from the fragment, kept in session
-   * storage for Support Frameleaf, and the fragment is cleared with `history.replaceState` before
-   * leaving, so it never stays in the address bar or the history.
+   * CLD-004: the Frameleaf account site's hand-over. The address is cleared with
+   * `history.replaceState` before anything else happens, so nothing in it stays in the address bar or
+   * the history. A one-time link code (`?linkCode=flc_…`) is kept in session storage for Support
+   * Frameleaf, which has this server redeem it. A key in the address (an old link) is never used:
+   * Support Frameleaf asks for it to be pasted instead.
    *
    * FL-158: Frameleaf's return from linking an account (`/link?code=…&state=…`, recorded when the
    * link started): the account is linked here and the person lands back on Your preferences →
@@ -10,7 +12,7 @@
    */
   import { goto } from '$app/navigation';
   import { takeFrameleafCallback } from '$lib/frameleaf/frameleaf-sign-in';
-  import { holdPendingLicenseKey, parseLinkFragment } from '$lib/frameleaf/license-relay';
+  import { holdKeyInLinkNotice, holdPendingLinkCode, readLinkAddress } from '$lib/frameleaf/license-relay';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { Route } from '$lib/route';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
@@ -31,14 +33,21 @@
 
   onMount(() => {
     const href = location.href;
-    const { target, key } = parseLinkFragment(location.hash);
     history.replaceState(history.state, '', location.pathname);
+    // the address is clean now: requests may carry the default referrer again (see app.html)
+    document.querySelector('#link-referrer-policy')?.setAttribute('content', 'strict-origin-when-cross-origin');
     if (takeFrameleafCallback(href) === 'link') {
       void finishAccountLink(href);
       return;
     }
-    if (target === 'frameleaf_license' && key) {
-      holdPendingLicenseKey(key);
+    const { linkCode, carriedKey } = readLinkAddress(href);
+    if (carriedKey) {
+      // an old link with the key in it: never used, and a code beside it is not trusted either
+      holdKeyInLinkNotice();
+      void goto(Route.buy(), { replaceState: true });
+      return;
+    }
+    if (linkCode && holdPendingLinkCode(linkCode)) {
       void goto(Route.buy(), { replaceState: true });
       return;
     }

@@ -1,10 +1,13 @@
 import { getMaintenanceStatus, MaintenanceAction, maintenanceLogin } from '@immich/sdk';
+import { isLicenseRelay } from '$lib/frameleaf/license-relay';
 import { Route } from '$lib/route';
 import { maintenanceStore } from '$lib/stores/maintenance.store';
 import { websocketStore } from '$lib/stores/websocket';
 
 export function maintenanceCreateUrl(url: URL) {
-  return new URL(Route.maintenanceMode({ continue: url.pathname + url.search }), url.origin).href;
+  // CLD-004: a licence link code (or an old key) is never carried on into another address
+  const target = isLicenseRelay(url.pathname + url.search) ? url.pathname : url.pathname + url.search;
+  return new URL(Route.maintenanceMode({ continue: target }), url.origin).href;
 }
 
 export function maintenanceReturnUrl(searchParams: URLSearchParams) {

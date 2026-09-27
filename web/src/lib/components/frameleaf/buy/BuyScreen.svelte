@@ -14,6 +14,9 @@
    *   purchasing is not available yet (FL-172). Keys travel only in request bodies (FL-170): a server
    *   key goes to `admin/license/activate`, an individual key to `users/me/license`, and the upstream
    *   licence server is never contacted.
+   * - CLD-004: a one-time link code from the Frameleaf account site ("Use on your server") is handed to
+   *   `license/link-code` once; Frameleaf Cloud activates the licence directly, so the key never
+   *   reaches this page. An old link that carried a key only asks for the key to be pasted.
    */
   import './buy.css';
   import Button from '$lib/components/frameleaf/Button.svelte';
@@ -42,6 +45,7 @@
     getLicenseProducts,
     getLicenseStatus,
     getMyUser,
+    redeemLicenseLinkCode,
     removeLicenseKey,
     setUserLicense,
     updateMyPreferences,
@@ -51,17 +55,19 @@
     type LicenseStatusResponseDto,
   } from '@immich/sdk';
   import { Icon } from '@immich/ui';
-  import { mdiArrowLeft, mdiCheckCircleOutline, mdiOpenInNew } from '@mdi/js';
+  import { mdiArrowLeft, mdiCheckCircleOutline, mdiInformationOutline, mdiOpenInNew } from '@mdi/js';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
 
   type Props = {
-    /** A key relayed from the Frameleaf store (fragment or session storage), pre-filled once. */
-    pendingKey?: string | null;
+    /** A one-time link code from the Frameleaf account site, redeemed once by this server. */
+    linkCode?: string | null;
+    /** The page was opened from an old link that carried a key; the key was not used. */
+    keyInLink?: boolean;
     onBack?: () => void;
   };
 
-  let { pendingKey = null, onBack }: Props = $props();
+  let { linkCode = null, keyInLink = false, onBack }: Props = $props();
 
   let products = $state<LicenseProductsResponseDto | null>(null);
   let serverLicense = $state<LicenseStatusResponseDto | null>(null);
@@ -70,6 +76,8 @@
   let keyError = $state('');
   let busy = $state(false);
   let success = $state('');
+  let linkError = $state('');
+  let redeeming = $state(false);
   let checkout = $state<{ product: LicenseProductDto; title: string } | null>(null);
 
   const isAdmin = $derived(authManager.user.isAdmin);
@@ -84,11 +92,29 @@
   const serverKey = $derived(serverLicense?.key ?? null);
 
   onMount(() => {
-    if (pendingKey) {
-      key = pendingKey;
-    }
     void load();
+    if (linkCode) {
+      void redeem(linkCode);
+    }
   });
+
+  const redeem = async (code: string) => {
+    redeeming = true;
+    busy = true;
+    try {
+      const { kind } = await redeemLicenseLinkCode({ licenseLinkCodeDto: { code } });
+      if (kind === 'server' && isAdmin) {
+        serverLicense = await getLicenseStatus().catch(() => serverLicense);
+      }
+      await reloadUser();
+      success = $t('frameleaf_buy_activated');
+    } catch (error) {
+      linkError = getServerErrorMessage(error) ?? $t('frameleaf_buy_link_failed');
+    } finally {
+      redeeming = false;
+      busy = false;
+    }
+  };
 
   const discount = $derived(licensedDiscount({ serverLicensed: serverSupporter, personalKey: !!personal }));
   // the share Frameleaf Cloud published (license/products), for a viewer who gets the discount
@@ -210,6 +236,18 @@
 
   {#if success}
     <p class="auth-success" role="status"><Icon icon={mdiCheckCircleOutline} size="16" /><span>{success}</span></p>
+  {/if}
+  {#if redeeming}
+    <p class="auth-note" role="status">{$t('frameleaf_buy_link_activating')}</p>
+  {/if}
+  {#if linkError}
+    <p class="auth-error" role="alert">{linkError}</p>
+  {/if}
+  {#if keyInLink}
+    <p class="auth-note" role="status">
+      <Icon icon={mdiInformationOutline} size="16" />
+      <span>{$t('frameleaf_buy_key_in_link')}</span>
+    </p>
   {/if}
 
   {#if !products}

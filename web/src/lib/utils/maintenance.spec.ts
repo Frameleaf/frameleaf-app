@@ -1,4 +1,4 @@
-import { maintenanceReturnUrl } from '$lib/utils/maintenance';
+import { maintenanceCreateUrl, maintenanceReturnUrl } from '$lib/utils/maintenance';
 
 describe('maintenance', () => {
   describe(maintenanceReturnUrl.name, () => {
@@ -22,6 +22,26 @@ describe('maintenance', () => {
 
     it('should reject a cross-origin continue url', () => {
       expect(maintenanceReturnUrl(new URLSearchParams({ continue: 'https://malicious.site/evil' }))).toBe('/');
+    });
+  });
+
+  describe(maintenanceCreateUrl.name, () => {
+    it('keeps an ordinary address to continue to', () => {
+      expect(maintenanceCreateUrl(new URL('https://photos.example.com/albums?x=1'))).toContain(
+        encodeURIComponent('/albums?x=1'),
+      );
+    });
+
+    it('never carries a licence link code or key on into the maintenance address (CLD-004)', () => {
+      for (const address of [
+        'https://photos.example.com/link?target=frameleaf_license&linkCode=flc_ABCDEFGHJKMNPQRSTVWXYZ2345',
+        'https://photos.example.com/link?target=activate_license&licenseKey=FL-S8NL-49G8-J583',
+      ]) {
+        const url = maintenanceCreateUrl(new URL(address));
+        expect(url).not.toContain('flc_');
+        expect(url).not.toContain('FL-S8NL');
+        expect(decodeURIComponent(url)).toMatch(/continue=\/link$/);
+      }
     });
   });
 });
