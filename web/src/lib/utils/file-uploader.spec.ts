@@ -8,7 +8,7 @@ import { uploadAssetsStore } from '$lib/stores/upload';
 import { UploadState } from '$lib/types';
 import * as utils from '$lib/utils';
 import { preferencesFactory } from '@test-data/factories/preferences-factory';
-import { cancelRemainingUploads, fileUploadHandler, uploadExecutionQueue } from './file-uploader';
+import { cancelRemainingUploads, fileUploadHandler, retryFailedUploads, uploadExecutionQueue } from './file-uploader';
 
 describe('fileUploader error handling', () => {
   const mockFile = new File(['content'], 'test.jpg', { type: 'image/jpeg' });
@@ -186,5 +186,57 @@ describe('fileUploader error handling', () => {
     expect(items.find((item) => item.file === secondFile)?.state).toBe(UploadState.ERROR);
 
     concurrencySpy.mockRestore();
+  });
+
+  it('retrying a failed Locked upload sends it to the Locked folder again', async () => {
+    authManager.setUser(mockUserObject);
+    const uploadRequestSpy = vi
+      .spyOn(utils, 'uploadRequest')
+      .mockRejectedValueOnce(mockError)
+      .mockResolvedValueOnce({ status: 200, data: mockUploadResponse });
+
+    await fileUploadHandler({ files: [mockFile], isLockedAssets: true });
+    expect(get(uploadAssetsStore)[0].state).toBe(UploadState.ERROR);
+
+    await retryFailedUploads();
+
+    expect(uploadRequestSpy).toHaveBeenCalledTimes(2);
+    const retried = uploadRequestSpy.mock.calls[1][0].data as FormData;
+    expect(retried.get('visibility')).toBe('locked');
+    expect(get(uploadAssetsStore)[0].state).toBe(UploadState.DONE);
+  });
+
+  it('retries every failed upload through the queue together, each into its own album', async () => {
+    authManager.setUser(mockUserObject);
+    const addSpy = vi.spyOn(albumService, 'addAssetsToAlbums').mockResolvedValue(true);
+    const secondFile = new File(['content-2'], 'test-2.jpg', { type: 'image/jpeg' });
+    const uploadRequestSpy = vi
+      .spyOn(utils, 'uploadRequest')
+      .mockRejectedValueOnce(mockError)
+      .mockRejectedValueOnce(mockError);
+
+    await fileUploadHandler({ files: [mockFile], albumId: 'album-a' });
+    await fileUploadHandler({ files: [secondFile], albumId: 'album-b' });
+    expect(get(uploadAssetsStore).every((item) => item.state === UploadState.ERROR)).toBe(true);
+
+    const releases: Array<() => void> = [];
+    uploadRequestSpy.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          releases.push(() => resolve({ status: 200, data: mockUploadResponse }));
+        }),
+    );
+
+    const retried = retryFailedUploads();
+    // Both requests are in flight at once: the queue's concurrency applies, not one file at a time.
+    await vi.waitFor(() => expect(releases).toHaveLength(2));
+    for (const release of releases) {
+      release();
+    }
+    await retried;
+
+    expect(addSpy).toHaveBeenCalledWith(['album-a'], [mockUploadResponse.id], { notify: false });
+    expect(addSpy).toHaveBeenCalledWith(['album-b'], [mockUploadResponse.id], { notify: false });
+    expect(get(uploadAssetsStore).every((item) => item.state === UploadState.DONE)).toBe(true);
   });
 });
