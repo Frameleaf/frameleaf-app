@@ -818,18 +818,18 @@
       "version": 2
     },
     {
-      "bytes": 30615,
+      "bytes": 30571,
       "category": "development",
       "id": "61407844",
       "source": "docs/docs/developer/frameleaf-development.md",
-      "sourceCommit": "a3a40128152daf16b5466af04d4acc9a5eaa321a",
-      "sourceSha256": "853c7c9d51c1ebf1cc0712a6cc74433ec246655cbe6b06fbef32d96e17a451b4",
+      "sourceCommit": "6faffc0a6205ec4faddb0b273cf98c405be2c1f3",
+      "sourceSha256": "90793b0383194b4a3f7961c1c4edef8815d2808cc8a0bdfc1af609c5b6c5bf20",
       "title": "Frameleaf Development and Delivery",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61407844",
-      "verification": "FL-191 Confluence page read back at version 13 with source hash 853c7c9d, 30615 bytes and commit a3a4012815 on master/frameleaf-implementation in the header (FL-191 commits 88122cf79b, a6c1c8709a and 8e099a682f named, FL-159 history kept, FL-191 linked); compared with version 12, the only differences are the header and the FL-191 changes under Container names and compatibility (the PostgreSQL image row, the paragraphs on Frameleaf-owned images, manual Postgres and CLI publication with the anonymous release check, the compatibility-target exception, and the revised CLI and Compose paragraphs); the page-only historical sections Earlier infrastructure checkpoint, Agent workflow update and PR 112 delivery checkpoint are kept.",
+      "verification": "Flutter app removal: Confluence page read back at version 14 as ADF (published as HTML to keep smart links); the header carries source hash 90793b03 and 30571 bytes and keeps the FL-191 and FL-159 history; compared with version 13, the only differences are the header and the retained branch-protection contexts, which no longer list Unit Test Mobile or Run Dart Code Analysis and now match the nine checks required on fork/main; the earlier delivery checkpoints are unchanged; no user additions.",
       "verified": true,
-      "verifiedAt": "2026-09-26T16:54:20.000Z",
-      "version": 13
+      "verifiedAt": "2026-09-27T07:46:36.937Z",
+      "version": 14
     },
     {
       "bytes": 411,
