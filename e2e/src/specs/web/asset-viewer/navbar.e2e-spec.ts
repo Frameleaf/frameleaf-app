@@ -63,9 +63,9 @@ test.describe('Asset Viewer Navbar', () => {
       await page.goto(`/share/${sharedLink.key}/photos/${asset.id}`);
       await page.waitForSelector('#immich-asset-viewer');
 
-      // The owner may share, but the item the link serves is stripped of its owner, so the owner sees the
-      // link's own rules: no Download on a link without metadata.
-      const expected = ['Share', 'Copy image'];
+      // FL-56: a public link offers no Share of its own, whoever is signed in, the owner included; and the
+      // item the link serves follows the link's own rules: no Download on a link without metadata.
+      const expected = ['Copy image'];
       const buttons = await page.getByTestId('asset-viewer-navbar-actions').getByRole('button').all();
       expect(buttons).toHaveLength(expected.length);
 
