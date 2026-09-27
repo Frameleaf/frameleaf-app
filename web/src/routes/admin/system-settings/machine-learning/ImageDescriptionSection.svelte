@@ -8,6 +8,7 @@
   import { getSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import ImageDescriptionRequeueModal from '$lib/modals/ImageDescriptionRequeueModal.svelte';
   import {
+    getEnrichmentOptions,
     getImageDescriptionRequeueEstimate,
     MachineLearningHardwareAcceleration,
     type AdminConfigImageDescriptionDto,
@@ -150,6 +151,16 @@
 
   let workbenchOpen = $state(false);
 
+  // FL-59: the frames each video is looked at in, fixed by the server's sampling policy.
+  let framesPerVideo = $state<number>();
+  const loadFramesPerVideo = async () => {
+    try {
+      ({ framesPerVideo } = await getEnrichmentOptions());
+    } catch {
+      // the locked row stays empty rather than showing a number the server did not give
+    }
+  };
+
   // Description status panel state ────────────────────────────────────────
 
   const settingsDraft = getSystemConfigDraft();
@@ -172,6 +183,7 @@
 
   onMount(() => {
     void loadDescriptionStats();
+    void loadFramesPerVideo();
     // Deep link from the Jobs manager's "Enrichment tasks" entry (FL-59): opens straight into
     // the sample-first workbench instead of only scrolling to this section.
     if (page.url.searchParams.get(QueryParameter.OPEN_SETTING) === 'workbench') {
@@ -317,6 +329,29 @@
       workingMlEnabled={workingConfig.enabled}
       {disabled}
     />
+
+    <!-- FL-59, the September 24 description section (settings-catalog.mjs:479-493, 1990-2003). -->
+    <SettingToggle
+      title={$t('frameleaf_video_moment_captions_title')}
+      subtitle={$t('frameleaf_video_moment_captions_description')}
+      bind:checked={imageDescription.videoMomentCaptions}
+      disabled={disabled || !workingConfig.enabled || !imageDescription.enabled}
+      isEdited={imageDescription.videoMomentCaptions !== savedImageDescription.videoMomentCaptions}
+    />
+
+    <SettingField
+      inputType={SettingInputFieldType.NUMBER}
+      label={$t('frameleaf_video_moment_frames_label')}
+      value={framesPerVideo}
+      disabled
+    >
+      {#snippet descriptionSnippet()}
+        <p>{$t('frameleaf_video_moment_frames_description')}</p>
+        <small class="text-[10px] text-immich-fg/60 dark:text-immich-dark-fg/60">
+          {$t('frameleaf_video_moment_frames_policy')}
+        </small>
+      {/snippet}
+    </SettingField>
 
     <!-- FL-59: try the model and prompt on a few samples before they reach the library. -->
     <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">

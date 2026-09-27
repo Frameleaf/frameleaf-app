@@ -592,6 +592,8 @@ export type JobItem =
       /** `onlyAffected`: a full rerun under Library care's "Reprocess only affected outputs" (FL-69). */
       data: IEntityJob & { onlyAffected?: boolean };
     }
+  /** FL-59: caption a newly described video's reusable frames, when "Describe video moments" is on. */
+  | { name: JobName.VideoMomentCaptions; data: IEntityJob }
   | { name: JobName.NsfwDetectionQueueAll; data: IBaseJob }
   | { name: JobName.NsfwDetection; data: IEntityJob }
 

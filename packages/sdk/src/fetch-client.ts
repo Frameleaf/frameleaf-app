@@ -1327,6 +1327,8 @@ export type AdminConfigImageDescriptionDto = {
     /** ISO timestamp set when an admin defers a re-queue from the cost modal. Cleared when the re-queue actually dispatches. Drives the persistent "re-queue pending" banner. */
     pendingRequeueAt?: string | null;
     prompt?: AdminConfigImageDescriptionPromptDto;
+    /** Describe video moments: after a video is described, caption each of its reusable frames (one more model request per frame). Off by default; plans choose captions separately. */
+    videoMomentCaptions?: boolean;
 };
 export type AdminConfigNsfwDetectionDto = {
     /** Hardware device to use */
@@ -22350,6 +22352,7 @@ export enum JobName {
     Ocr = "Ocr",
     ImageDescriptionQueueAll = "ImageDescriptionQueueAll",
     ImageDescription = "ImageDescription",
+    VideoMomentCaptions = "VideoMomentCaptions",
     NsfwDetectionQueueAll = "NsfwDetectionQueueAll",
     NsfwDetection = "NsfwDetection",
     PetRecognitionQueueAll = "PetRecognitionQueueAll",

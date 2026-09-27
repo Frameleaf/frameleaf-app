@@ -2094,6 +2094,59 @@ describe(ImageEnrichmentService.name, () => {
       expect(mocks.asset.upsertExif).not.toHaveBeenCalled();
     });
 
+    describe('Describe video moments (FL-59)', () => {
+      const withCaptions = (videoMomentCaptions: boolean) =>
+        mocks.systemMetadata.get.mockResolvedValue({
+          machineLearning: {
+            enabled: true,
+            nsfwDetection: { enabled: false },
+            imageDescription: { enabled: true, modelName: 'Qwen/Qwen2.5-VL-3B-Instruct', videoMomentCaptions },
+          },
+        });
+      const captionJobs = () =>
+        mocks.job.queue.mock.calls.filter(([job]) => (job as { name: JobName }).name === JobName.VideoMomentCaptions);
+
+      it('queues the captions of a described video when it is on', async () => {
+        withCaptions(true);
+        mocks.machineLearning.describeImage.mockResolvedValue(describedAs);
+
+        await expect(sut.handleImageDescription({ id: videoAssetId })).resolves.toBe(JobStatus.Success);
+
+        expect(captionJobs()).toEqual([[{ name: JobName.VideoMomentCaptions, data: { id: videoAssetId } }]]);
+      });
+
+      it('queues nothing while it is off, the default', async () => {
+        mocks.machineLearning.describeImage.mockResolvedValue(describedAs);
+
+        await sut.handleImageDescription({ id: videoAssetId });
+
+        expect(captionJobs()).toEqual([]);
+      });
+
+      it('leaves a plan to choose its own stages', async () => {
+        withCaptions(true);
+        mocks.machineLearning.describeImage.mockResolvedValue(describedAs);
+
+        await sut.describeAsset(videoAssetId, { planRun: true, enrichmentDestinationId: mlDestinationStub.local.id });
+
+        expect(captionJobs()).toEqual([]);
+      });
+
+      it('never queues captions for a photo', async () => {
+        withCaptions(true);
+        mocks.assetJob.getForImageEnrichment.mockResolvedValue({
+          ...baseVideoAsset,
+          id: assetId,
+          type: AssetType.Image,
+        });
+        mocks.machineLearning.describeImage.mockResolvedValue(describedAs);
+
+        await sut.handleImageDescription({ id: assetId });
+
+        expect(captionJobs()).toEqual([]);
+      });
+    });
+
     it('keeps the image-asset path unchanged (no grid compose, no video context)', async () => {
       mocks.assetJob.getForImageEnrichment.mockResolvedValue({
         id: assetId,

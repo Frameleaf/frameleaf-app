@@ -110,6 +110,7 @@ const imageDescriptionDefaults = {
   modelName: 'Qwen/Qwen2.5-VL-3B-Instruct',
   fallbackModelName: 'microsoft/Florence-2-base-ft',
   device: 'AUTO',
+  videoMomentCaptions: false,
   prompt: {
     style: 'balanced' as const,
     sentenceCountTarget: 3,
@@ -479,6 +480,12 @@ export const ImageDescriptionConfigSchema = AdminConfigMachineLearningModelSchem
   fallbackModelName: z.string().describe('Name of the fallback model to use'),
   device: z.string().describe('Hardware device to use'),
   prompt: ImageDescriptionPromptSchema.default(() => ImageDescriptionPromptSchema.parse({})),
+  videoMomentCaptions: z
+    .boolean()
+    .default(false)
+    .describe(
+      'Describe video moments: after a video is described, caption each of its reusable frames (one more model request per frame). Off by default; plans choose captions separately.',
+    ),
   pendingRequeueAt: z
     .string()
     .nullable()

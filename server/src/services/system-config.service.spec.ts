@@ -185,6 +185,7 @@ const updatedConfig = Object.freeze<SystemConfig>({
       modelName: 'Qwen/Qwen2.5-VL-3B-Instruct',
       fallbackModelName: 'microsoft/Florence-2-base-ft',
       device: 'AUTO',
+      videoMomentCaptions: false,
       prompt: {
         style: 'balanced',
         sentenceCountTarget: 3,
@@ -945,6 +946,26 @@ describe(SystemConfigService.name, () => {
         const bumpedTime = Date.parse(bumped!);
         expect(bumpedTime).toBeGreaterThanOrEqual(before);
         expect(bumpedTime).toBeLessThanOrEqual(after);
+      });
+
+      it('should NOT bump lastConfigChangeAt when only Describe video moments changes (FL-59)', async () => {
+        mocks.systemMetadata.get.mockResolvedValue({});
+
+        await sut.updateAdminConfig({
+          ...defaults,
+          machineLearning: {
+            ...defaults.machineLearning,
+            imageDescription: { ...baselineDescription, videoMomentCaptions: true },
+          },
+        });
+
+        const partial = mocks.forkSchema.persistConfig.mock.calls.at(-1)![0] as {
+          machineLearning?: {
+            imageDescription?: { lastConfigChangeAt?: string | null; videoMomentCaptions?: boolean };
+          };
+        };
+        expect(partial.machineLearning?.imageDescription?.videoMomentCaptions).toBe(true);
+        expect(partial.machineLearning?.imageDescription?.lastConfigChangeAt ?? null).toBeNull();
       });
 
       it('should NOT bump lastConfigChangeAt when only non-imageDescription fields change', async () => {

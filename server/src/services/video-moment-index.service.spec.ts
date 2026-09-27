@@ -1,6 +1,15 @@
 import { BadRequestException } from '@nestjs/common';
 import { defaults } from 'src/config.js';
-import { AssetStatus, AssetType, AssetVisibility, EnrichmentItemState, JobName, VideoMomentSource } from 'src/enum.js';
+import {
+  AssetStatus,
+  AssetType,
+  AssetVisibility,
+  EnrichmentItemState,
+  JobName,
+  JobStatus,
+  MlDestinationKind,
+  VideoMomentSource,
+} from 'src/enum.js';
 import { VideoMomentIndexService } from 'src/services/video-moment-index.service.js';
 import {
   VIDEO_MOMENT_EXTRACTOR_VERSION,
@@ -190,6 +199,60 @@ describe(VideoMomentIndexService.name, () => {
       expect(outcome).toEqual(expect.objectContaining({ state: EnrichmentItemState.Failed, reasonKey: 'model-error' }));
       expect(mocks.machineLearning.encodeImage).not.toHaveBeenCalled();
       expect(moments.publishIndex).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('handleVideoMomentCaptions (Describe video moments)', () => {
+    const turnedOn = () =>
+      mocks.systemMetadata.get.mockResolvedValue({
+        machineLearning: { imageDescription: { videoMomentCaptions: true } },
+      });
+
+    it('captions the reusable frames with the saved description settings when it is on', async () => {
+      turnedOn();
+      mocks.machineLearning.describeImage.mockResolvedValue({ description: 'Waves at dusk.' } as never);
+
+      await expect(sut.handleVideoMomentCaptions({ id: assetId })).resolves.toBe(JobStatus.Success);
+
+      expect(mocks.machineLearning.describeImage).toHaveBeenCalledTimes(frames.length);
+      expect(moments.publishCaptions).toHaveBeenCalledWith(
+        assetId,
+        expect.arrayContaining([{ frameId: frames[0].id, caption: 'Waves at dusk.' }]),
+        expect.anything(),
+        expect.anything(),
+        expect.any(Function),
+      );
+    });
+
+    it('does nothing once it has been turned off', async () => {
+      await expect(sut.handleVideoMomentCaptions({ id: assetId })).resolves.toBe(JobStatus.Skipped);
+
+      expect(mocks.machineLearning.describeImage).not.toHaveBeenCalled();
+    });
+
+    it('never sends frames one at a time to Frameleaf Cloud', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({
+        machineLearning: { imageDescription: { videoMomentCaptions: true } },
+      });
+      const cloud = { ...mlDestinationStub.local, id: newUuid(), kind: MlDestinationKind.FrameleafCloud };
+      mocks.mlDestination.getRoute.mockResolvedValue({ destinationId: cloud.id } as never);
+      mocks.mlDestination.getById.mockResolvedValue(cloud as never);
+
+      await expect(sut.handleVideoMomentCaptions({ id: assetId })).resolves.toBe(JobStatus.Skipped);
+
+      expect(mocks.machineLearning.describeImage).not.toHaveBeenCalled();
+    });
+
+    it('fails the job when a frame could not be captioned, keeping the captions made', async () => {
+      turnedOn();
+      mocks.machineLearning.describeImage
+        .mockResolvedValueOnce({ description: 'One.' } as never)
+        .mockRejectedValueOnce(new Error('timeout'))
+        .mockResolvedValueOnce({ description: 'Three.' } as never);
+
+      await expect(sut.handleVideoMomentCaptions({ id: assetId })).resolves.toBe(JobStatus.Failed);
+
+      expect(moments.publishCaptions).toHaveBeenCalled();
     });
   });
 
