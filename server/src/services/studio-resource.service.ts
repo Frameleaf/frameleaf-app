@@ -43,10 +43,11 @@ import { createHmac } from 'node:crypto';
 import { AssetRestorationMode, AssetRestorationSourceType } from 'src/dtos/asset-restoration.dto.js';
 import { AuthDto } from 'src/dtos/auth.dto.js';
 import { StudioRestoredVersionDto, StudioRestoredVersionUnavailable } from 'src/dtos/studio-source.dto.js';
-import { AssetFileType, AssetType, Permission } from 'src/enum.js';
+import { AssetFileType, AssetType, DecodeRefusal, Permission } from 'src/enum.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
 import { BaseService } from 'src/services/base.service.js';
 import { getLockedOwnerId, isLockedAssetRow } from 'src/utils/locked-visibility.js';
+import { DecodeSupport, qualifySourceDecode } from 'src/utils/media-decode.js';
 import { restoredVersionState } from 'src/utils/restoration.js';
 import {
   STUDIO_MAX_GRAPH_BYTES,
@@ -189,6 +190,8 @@ export type StudioRefusedReference = {
   graphPath: string;
   reason: StudioRefusalReason;
   detail: string;
+  /** FL-101: set with {@link StudioRefusalReason.UnsupportedSource}, the decode qualification's code. */
+  decodeRefusal?: DecodeRefusal;
 };
 
 export const STUDIO_MANIFEST_SCHEMA_VERSION = 1;
@@ -285,7 +288,16 @@ export type StudioGrantVerification =
 
 type AssetRow = Pick<
   Selectable<AssetTable>,
-  'id' | 'ownerId' | 'type' | 'visibility' | 'deletedAt' | 'isOffline' | 'originalPath' | 'checksum'
+  | 'id'
+  | 'ownerId'
+  | 'type'
+  | 'visibility'
+  | 'deletedAt'
+  | 'isOffline'
+  | 'originalPath'
+  | 'checksum'
+  | 'width'
+  | 'height'
 > & { isLocked?: boolean | null };
 
 type AssetDecision =
@@ -386,7 +398,12 @@ export class StudioResourceService extends BaseService {
       detail: violation.detail,
     }));
 
-    const refuse = (reference: StudioResourceReference, reason: StudioRefusalReason, detail: string) => {
+    const refuse = (
+      reference: StudioResourceReference,
+      reason: StudioRefusalReason,
+      detail: string,
+      decodeRefusal?: DecodeRefusal,
+    ) => {
       refused.push({
         key: studioReferenceKey(reference),
         kind: reference.kind,
@@ -394,6 +411,7 @@ export class StudioResourceService extends BaseService {
         graphPath: reference.graphPath,
         reason,
         detail,
+        ...(decodeRefusal && { decodeRefusal }),
       });
     };
     /** Refuses the reference by its rights row unless the reviewed decision admits the use. */
@@ -459,6 +477,8 @@ export class StudioResourceService extends BaseService {
       backgroundRunner: context.backgroundRunner,
     });
 
+    const undecodable = await this.findUndecodableVideos(references, assetDecisions);
+
     const decideAsset = (reference: StudioResourceReference): AssetDecision => {
       if (!isStudioUuid(reference.id)) {
         return { ok: false, reason: StudioRefusalReason.InvalidId, detail: 'Asset ids are UUIDs.' };
@@ -506,6 +526,13 @@ export class StudioResourceService extends BaseService {
           const decision = decideAsset(reference);
           if (!decision.ok) {
             refuse(reference, decision.reason, decision.detail);
+            break;
+          }
+          // FL-101: a video the renderer cannot decode is refused when it is placed, with the reason,
+          // rather than admitted and left to fail on the worker after the person has cut with it.
+          const decode = undecodable.get(reference.id);
+          if (decode) {
+            refuse(reference, StudioRefusalReason.UnsupportedSource, decode.reason, decode.refusal);
             break;
           }
           authorize(reference, {
@@ -1236,6 +1263,64 @@ export class StudioResourceService extends BaseService {
       return { ok: false, ...restorationRefusals[state.reason] };
     }
     return { ok: true, ownerId: row.ownerId, assetId: row.assetId, path: state.path };
+  }
+
+  /**
+   * FL-101: which of the readable videos placed as picture sources the decode qualification
+   * refuses, from the stream the library persisted at metadata extraction. A video whose metadata
+   * has not been extracted is not judged here; the render still qualifies the probed stream.
+   * Geometry is judged only when the library recorded a size, so an older row without one is not
+   * refused for it. Edited masters are not decoded as pictures here, and neither is a video whose
+   * library reference comes from an audio clip (the extractor records one reference per asset, at
+   * its first use), since only its sound is taken.
+   */
+  private async findUndecodableVideos(
+    references: readonly StudioResourceReference[],
+    decisions: Map<string, AssetDecision>,
+  ): Promise<Map<string, { reason: string; refusal: DecodeRefusal | undefined }>> {
+    const soundOnly = new Set(
+      references
+        .filter((reference) => reference.kind === StudioResourceKind.Audio && reference.source === 'asset')
+        .map((reference) => `${reference.id}\0${reference.graphPath}`),
+    );
+    const videos = new Map<string, AssetRow>();
+    for (const reference of references) {
+      if (
+        reference.kind !== StudioResourceKind.LibraryAsset ||
+        soundOnly.has(`${reference.id}\0${reference.graphPath}`)
+      ) {
+        continue;
+      }
+      const decision = decisions.get(reference.id);
+      if (decision?.ok && decision.asset.type === AssetType.Video) {
+        videos.set(decision.asset.id, decision.asset);
+      }
+    }
+
+    const refused = new Map<string, { reason: string; refusal: DecodeRefusal | undefined }>();
+    if (videos.size === 0) {
+      return refused;
+    }
+
+    const [streams, { ffmpeg }] = await Promise.all([
+      this.assetRepository.getVideoStreamsForDecode([...videos.keys()]),
+      this.getConfig({ withCache: true }),
+    ]);
+    for (const stream of streams) {
+      const asset = videos.get(stream.assetId);
+      if (!asset) {
+        continue;
+      }
+      const decode = qualifySourceDecode({ ...stream, width: asset.width ?? 0, height: asset.height ?? 0 }, ffmpeg);
+      const geometryUnknown = asset.width === null || asset.height === null;
+      if (
+        decode.support === DecodeSupport.Refused &&
+        !(decode.refusal === DecodeRefusal.UnusableGeometry && geometryUnknown)
+      ) {
+        refused.set(stream.assetId, { reason: decode.reason, refusal: decode.refusal ?? undefined });
+      }
+    }
+    return refused;
   }
 
   private async decideAssets(

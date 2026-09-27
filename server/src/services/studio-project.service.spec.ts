@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import type { Mock } from 'vitest';
 import { AuthDto } from 'src/dtos/auth.dto.js';
-import { AlbumKind } from 'src/enum.js';
+import { AlbumKind, DecodeRefusal } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import {
   StudioProject,
@@ -18,7 +18,7 @@ import {
   STUDIO_TRASH_RETENTION_DAYS,
   studioEnvelopeDigest,
 } from 'src/utils/studio-project.js';
-import { StudioDestination, StudioResourceKind } from 'src/utils/studio-resources.js';
+import { StudioDestination, StudioRefusalReason, StudioResourceKind } from 'src/utils/studio-resources.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
 import { newUuid, newUuidV7 } from 'test/small.factory.js';
 import { getMocks } from 'test/utils.js';
@@ -245,6 +245,45 @@ describe(StudioProjectService.name, () => {
       expect(seen.envelope).toEqual(head.envelope);
     });
 
+    it('names placed videos this server cannot decode to the owner only (FL-101)', async () => {
+      const assetId = newUuid();
+      resources.resolveProjectResources.mockResolvedValue({
+        ...manifest(false),
+        refused: [
+          {
+            key: `library-asset:${assetId}`,
+            kind: StudioResourceKind.LibraryAsset,
+            id: assetId,
+            graphPath: '$.sequences[0]',
+            reason: StudioRefusalReason.UnsupportedSource,
+            detail: 'Dolby Vision profile 7 carries a separate enhancement layer',
+            decodeRefusal: DecodeRefusal.DolbyVisionEnhancementLayer,
+          },
+          {
+            key: 'library-asset:other',
+            kind: StudioResourceKind.LibraryAsset,
+            id: newUuid(),
+            graphPath: '$.sequences[1]',
+            reason: StudioRefusalReason.Trashed,
+            detail: 'In the trash.',
+          },
+        ],
+      });
+
+      const seen = await sut.get(owner, project.id);
+      expect(seen.resources?.unsupportedSources).toEqual([
+        {
+          assetId,
+          refusal: DecodeRefusal.DolbyVisionEnhancementLayer,
+          reason: 'Dolby Vision profile 7 carries a separate enhancement layer',
+        },
+      ]);
+
+      sut.forgetResolutions([project.id]);
+      const reviewed = await sut.get(reviewer, project.id);
+      expect(reviewed.resources?.unsupportedSources).toEqual([]);
+    });
+
     it('omits digests from a reviewer’s history list and refuses their diff when withheld', async () => {
       repository.listRevisions.mockResolvedValue({ items: [head], total: 1 });
       const history = await sut.getHistory(reviewer, project.id, {});
@@ -407,6 +446,12 @@ describe(StudioProjectService.name, () => {
         }),
       );
       expect(result).toMatchObject({ revision: 4, revisionId: appended.id, digest, replayed: false, unchanged: false });
+      // FL-101: the new revision's sources are resolved and reported with the save.
+      expect(result.resources).toMatchObject({ complete: true, refusedCount: 0, unsupportedSources: [] });
+      expect(resources.resolveProjectResources).toHaveBeenLastCalledWith(
+        owner,
+        expect.objectContaining({ projectId: project.id, revision: 4, destination: StudioDestination.Local }),
+      );
       expect(events).toEqual([
         { projectId: project.id, ownerId: owner.user.id, revision: 4, digest, restoredFromRevision: null },
       ]);

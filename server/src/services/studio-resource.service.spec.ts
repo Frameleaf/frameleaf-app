@@ -394,6 +394,88 @@ describe(StudioResourceService.name, () => {
     });
   });
 
+  describe('decode qualification (FL-101)', () => {
+    const stream = (assetId: string, overrides: Record<string, unknown> = {}) => ({
+      assetId,
+      codecName: 'hevc',
+      pixelFormat: 'yuv420p10le',
+      colorTransfer: 16,
+      dvProfile: null,
+      dvBlSignalCompatibilityId: null,
+      ...overrides,
+    });
+
+    it('refuses a placed video the renderer cannot decode, with the code and reason, and admits a qualified one', async () => {
+      const profile7 = ownedVideo({ width: 3840, height: 2160 });
+      const deep = ownedVideo({ width: 1920, height: 1080 });
+      const qualified = ownedVideo({ width: 1920, height: 1080 });
+      mocks.asset.getByIds.mockResolvedValue([profile7, deep, qualified]);
+      allowOwned(profile7.id, deep.id, qualified.id);
+      mocks.asset.getVideoStreamsForDecode.mockResolvedValue([
+        stream(profile7.id, { dvProfile: 7, dvBlSignalCompatibilityId: 6 }),
+        stream(deep.id, { pixelFormat: 'yuv444p16le' }),
+        stream(qualified.id),
+      ] as never);
+
+      const { manifest, refused } = await sut.resolveProjectResources(
+        auth,
+        context(sequenceWith({ assetId: profile7.id }, { assetId: deep.id }, { assetId: qualified.id })),
+      );
+
+      expect(manifest.complete).toBe(false);
+      expect(manifest.entries.map((entry) => entry.id)).toEqual([qualified.id]);
+      expect(refused).toEqual([
+        expect.objectContaining({
+          kind: StudioResourceKind.LibraryAsset,
+          id: profile7.id,
+          reason: StudioRefusalReason.UnsupportedSource,
+          decodeRefusal: 'dolbyVisionEnhancementLayer',
+          detail: expect.stringContaining('Dolby Vision profile 7'),
+        }),
+        expect.objectContaining({
+          id: deep.id,
+          reason: StudioRefusalReason.UnsupportedSource,
+          decodeRefusal: 'unsupportedBitDepth',
+        }),
+      ]);
+      expect(mocks.asset.getVideoStreamsForDecode).toHaveBeenCalledWith(
+        expect.arrayContaining([profile7.id, deep.id, qualified.id]),
+      );
+    });
+
+    it('judges only what the library recorded: no stream row, or no recorded size, is not refused', async () => {
+      const unextracted = ownedVideo({ width: 1920, height: 1080 });
+      const sizeUnknown = ownedVideo({ width: null, height: null });
+      const noGeometry = ownedVideo({ width: 0, height: 0 });
+      mocks.asset.getByIds.mockResolvedValue([unextracted, sizeUnknown, noGeometry]);
+      allowOwned(unextracted.id, sizeUnknown.id, noGeometry.id);
+      mocks.asset.getVideoStreamsForDecode.mockResolvedValue([stream(sizeUnknown.id), stream(noGeometry.id)] as never);
+
+      const { manifest, refused } = await sut.resolveProjectResources(
+        auth,
+        context(sequenceWith({ assetId: unextracted.id }, { assetId: sizeUnknown.id }, { assetId: noGeometry.id })),
+      );
+
+      expect(manifest.entries.map((entry) => entry.id)).toEqual([unextracted.id, sizeUnknown.id]);
+      expect(refused).toEqual([expect.objectContaining({ id: noGeometry.id, decodeRefusal: 'unusableGeometry' })]);
+    });
+
+    it('does not decode stills, audio taken from a video, or sources the person cannot read', async () => {
+      const still = ownedVideo({ type: AssetType.Image });
+      const soundtrack = ownedVideo();
+      mocks.asset.getByIds.mockResolvedValue([still, soundtrack]);
+      allowOwned(still.id, soundtrack.id);
+
+      const { refused } = await sut.resolveProjectResources(
+        auth,
+        context(sequenceWith({ assetId: still.id }, { kind: 'audio', assetId: soundtrack.id }, { assetId: newUuid() })),
+      );
+
+      expect(mocks.asset.getVideoStreamsForDecode).not.toHaveBeenCalled();
+      expect(refused.map((item) => item.reason)).toEqual([StudioRefusalReason.NotFound]);
+    });
+  });
+
   describe('audio', () => {
     it('resolves an audio clip of a library video as that video and refuses a still', async () => {
       const video = ownedVideo();

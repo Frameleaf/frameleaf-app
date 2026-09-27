@@ -1,5 +1,6 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
+import { DecodeRefusalSchema } from 'src/enum.js';
 import { stringToBool } from 'src/validation.js';
 
 const JsonObjectSchema = z.record(z.string(), z.unknown());
@@ -62,6 +63,19 @@ const StudioProjectResourcesSchema = z
   .object({
     complete: z.boolean().describe('Every referenced source resolved for the acting account'),
     refusedCount: z.int().min(0).describe('References that were refused for the acting account'),
+    unsupportedSources: z
+      .array(
+        z
+          .object({
+            assetId: z.uuidv4().describe('The library video placed in the project'),
+            refusal: DecodeRefusalSchema,
+            reason: z.string().describe('Why, in plain words'),
+          })
+          .meta({ id: 'StudioUnsupportedSourceDto' }),
+      )
+      .describe(
+        "FL-101: placed videos this server cannot decode, refused as 'unsupported-source' when admitted. The owner's only; empty for a reviewer",
+      ),
     checkedAt: z.string().meta({ format: 'date-time' }).describe('When the resolution ran'),
   })
   .meta({ id: 'StudioProjectResourcesDto' });
@@ -254,6 +268,9 @@ const StudioProjectSaveResponseSchema = z
     replayed: z.boolean().describe('This request key was already accepted; the earlier result is returned'),
     unchanged: z.boolean().describe('The document equals the head, so no revision was written'),
     lease: StudioProjectLeaseSchema,
+    resources: StudioProjectResourcesSchema.nullish().describe(
+      'FL-101: how the sources of a newly written revision resolved; absent when nothing was written, null when the resolution could not run',
+    ),
   })
   .meta({ id: 'StudioProjectSaveResponseDto' });
 

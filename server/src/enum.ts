@@ -3108,3 +3108,26 @@ export const ConfigCredentialSchema = z
   .enum(ConfigCredential)
   .describe('A server secret that can be replaced or cleared but never read back')
   .meta({ id: 'ConfigCredential' });
+
+/** FL-101: why a video source was refused by the decode qualification (utils/media-decode.ts). */
+export enum DecodeRefusal {
+  /** Dolby Vision profile 5: no usable base layer, mandatory reshaping, no qualified path. */
+  DolbyVisionProfile5 = 'dolbyVisionProfile5',
+  /** Dolby Vision profile 7: the enhancement layer is not qualified in this renderer. */
+  DolbyVisionEnhancementLayer = 'dolbyVisionEnhancementLayer',
+  /** A Dolby Vision profile outside the advertised matrix. */
+  DolbyVisionProfileUnqualified = 'dolbyVisionProfileUnqualified',
+  /** Dolby Vision profile 8 whose base-layer compatibility id does not say what the base is. */
+  DolbyVisionBaseLayerUnknown = 'dolbyVisionBaseLayerUnknown',
+  /** The probed pixel format is not one this module can describe, so nothing is assumed. */
+  UnknownPixelFormat = 'unknownPixelFormat',
+  /** More than 12 bits per component; the encoders reachable from here cannot deliver it. */
+  UnsupportedBitDepth = 'unsupportedBitDepth',
+  /** The stream has no usable picture geometry. */
+  UnusableGeometry = 'unusableGeometry',
+}
+
+export const DecodeRefusalSchema = z
+  .enum(DecodeRefusal)
+  .describe('FL-101: why this server cannot decode a video source')
+  .meta({ id: 'DecodeRefusal' });

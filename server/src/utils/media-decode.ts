@@ -26,12 +26,16 @@ import type { ConfigFFmpegDto } from 'src/dtos/config.dto.js';
 import type { VideoStreamInfo } from 'src/types.js';
 import {
   ColorTransfer,
+  DecodeRefusal,
   DvProfile,
   DvSignalCompatibility,
   ToneMapping,
   TranscodeHardwareAcceleration,
 } from 'src/enum.js';
 import { MediaPolicyError, MediaPolicyViolation } from 'src/utils/media-policy.js';
+
+// Re-exported so existing callers keep importing it from here; it lives in enum.ts for the API.
+export { DecodeRefusal };
 
 /** How this renderer will treat a probed source. */
 export enum DecodeSupport {
@@ -41,24 +45,6 @@ export enum DecodeSupport {
   ToneMapped = 'toneMapped',
   /** Not decoded at all. The original is preserved and the caller must stop. */
   Refused = 'refused',
-}
-
-/** Why a source was refused. Stable identifiers; the prose lives in `reason`. */
-export enum DecodeRefusal {
-  /** Dolby Vision profile 5: no usable base layer, mandatory reshaping, no qualified path. */
-  DolbyVisionProfile5 = 'dolbyVisionProfile5',
-  /** Dolby Vision profile 7: the enhancement layer is not qualified in this renderer. */
-  DolbyVisionEnhancementLayer = 'dolbyVisionEnhancementLayer',
-  /** A Dolby Vision profile outside the advertised matrix. */
-  DolbyVisionProfileUnqualified = 'dolbyVisionProfileUnqualified',
-  /** Dolby Vision profile 8 whose base-layer compatibility id does not say what the base is. */
-  DolbyVisionBaseLayerUnknown = 'dolbyVisionBaseLayerUnknown',
-  /** The probed pixel format is not one this module can describe, so nothing is assumed. */
-  UnknownPixelFormat = 'unknownPixelFormat',
-  /** More than 12 bits per component; the encoders reachable from here cannot deliver it. */
-  UnsupportedBitDepth = 'unsupportedBitDepth',
-  /** The stream has no usable picture geometry. */
-  UnusableGeometry = 'unusableGeometry',
 }
 
 /** What the source's planes actually are, read from the pixel format. */
