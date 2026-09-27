@@ -101,6 +101,18 @@ export const discoverySchema = z.object({
     .optional()
     // eslint-disable-next-line unicorn/no-useless-undefined -- a bad intervals block is dropped, keeping the optional type
     .catch(() => undefined),
+  /**
+   * CLD-004: optional capability switches; a missing object or key means off, and a bad value is
+   * dropped on its own (off) without failing discovery. `licenseLinkCode` turns on
+   * `POST /v1/licenses/redeem-link-code` (the account site's one-time link codes).
+   */
+  features: z
+    .object({
+      licenseLinkCode: z.boolean().optional().catch(undefined),
+    })
+    .optional()
+    // eslint-disable-next-line unicorn/no-useless-undefined -- a bad features block is dropped, keeping the optional type
+    .catch(() => undefined),
 });
 export type FrameleafDiscoveryDocument = z.infer<typeof discoverySchema>;
 

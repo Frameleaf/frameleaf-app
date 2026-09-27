@@ -9,7 +9,11 @@ import { AdminAuditAction, JobStatus, NotificationLevel, SystemMetadataKey, User
 import { FrameleafCloudRepository } from 'src/repositories/frameleaf-cloud.repository.js';
 import { InstanceIdentityRepository } from 'src/repositories/instance-identity.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
-import { FrameleafLicenseService, IDENTITY_KEY_MISMATCH_MESSAGE } from 'src/services/frameleaf-license.service.js';
+import {
+  FrameleafLicenseService,
+  IDENTITY_KEY_MISMATCH_MESSAGE,
+  LINK_CODE_UNAVAILABLE_MESSAGE,
+} from 'src/services/frameleaf-license.service.js';
 import { ed25519Thumbprint } from 'src/utils/frameleaf-cloud.js';
 import { FakeCloud, FakeCloudRequest, startFakeCloud, tokenAnswer, tokenNameOf } from 'test/fake-frameleaf-cloud.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
@@ -594,6 +598,147 @@ describe(FrameleafLicenseService.name, () => {
       const products = await sut.getProducts();
       expect(products.storeUrl).toBeNull();
       expect(products.products.every(({ storeUrl }) => storeUrl === null)).toBe(true);
+    });
+  });
+
+  describe('link codes (CLD-004)', () => {
+    const CODE = 'flc_ABCDEFGHJKMNPQRSTVWXYZ2345';
+    const REDEEM = '/api/v1/licenses/redeem-link-code';
+    const enable = () => {
+      const base = cloud.discovery;
+      cloud.discovery = () => ({ ...base(), features: { licenseLinkCode: true } });
+    };
+    const serverCertificate = () =>
+      certificate({ ent: ['SUPPORTER_SERVER'], lic_exp: null, lic: { id: 'lic-s', kind: 'server', last4: 'J583' } });
+    const personalCertificate = () =>
+      certificate({
+        ent: ['SUPPORTER_INDIVIDUAL'],
+        lic_exp: null,
+        lic: { id: 'lic-i', kind: 'individual', last4: '8EL6' },
+      });
+
+    it('asks to link first, or paste the key, on an unlinked server and contacts nothing', async () => {
+      enable();
+      await expect(sut.redeemLinkCode(authStub.admin, { code: CODE })).rejects.toThrow(LINK_CODE_UNAVAILABLE_MESSAGE);
+      expect(cloud.requests.some(({ path }) => path === REDEEM)).toBe(false);
+    });
+
+    it('stays off until discovery advertises features.licenseLinkCode', async () => {
+      link();
+      serveToken();
+      await expect(sut.redeemLinkCode(authStub.admin, { code: CODE })).rejects.toThrow(LINK_CODE_UNAVAILABLE_MESSAGE);
+      expect(cloud.requests.some(({ path }) => path === REDEEM)).toBe(false);
+    });
+
+    it('redeems with the DPoP-bound instance token and installs a server key without ever holding the key', async () => {
+      link();
+      serveToken();
+      enable();
+      cloud.on(`POST ${REDEEM}`, () => ({
+        status: 200,
+        body: { certificate: serverCertificate(), activationId: 'act-1', kind: 'server', last4: 'J583' },
+      }));
+
+      await expect(sut.redeemLinkCode(authStub.admin, { code: CODE })).resolves.toEqual({
+        kind: 'server',
+        keyHint: 'J583',
+      });
+
+      const request = cloud.requests.find(({ path }) => path === REDEEM)!;
+      expect(tokenNameOf(request)).toBe('api-token');
+      expect(request.dpop).toMatchObject({ claims: { htm: 'POST', htu: `${cloud.url}${REDEEM}` } });
+      const identity = metadata.get(SystemMetadataKey.FrameleafInstance) as { kid: string };
+      expect(request.json()).toEqual({
+        code: CODE,
+        fingerprint: { instanceId: instanceId(), jkt: identity.kid, user: expect.stringMatching(/^[\da-f]{64}$/) },
+        instanceName: expect.any(String),
+        allowKinds: ['server', 'individual'],
+      });
+      // the code travels only in the body: never in any address the server called
+      for (const { path } of cloud.requests) {
+        expect(path).not.toContain(CODE);
+      }
+      expect(store()?.key).toMatchObject({ kind: 'server', keyHint: 'J583', activationId: 'act-1', source: 'key' });
+      expect(JSON.stringify(store())).not.toContain(CODE);
+      expect(mocks.adminAudit.create).toHaveBeenCalledWith([
+        expect.objectContaining({ action: AdminAuditAction.LicenseActivated, detail: 'J583' }),
+      ]);
+    });
+
+    it('uses endpoints.licenseLinkCode when discovery names one', async () => {
+      link();
+      serveToken();
+      const base = cloud.discovery;
+      cloud.discovery = () => ({
+        ...base(),
+        features: { licenseLinkCode: true },
+        endpoints: { licenseLinkCode: `${cloud.url}/api/v2/redeem` },
+      });
+      cloud.on('POST /api/v2/redeem', () => ({
+        status: 200,
+        body: { certificate: serverCertificate(), activationId: 'act-2' },
+      }));
+      await expect(sut.redeemLinkCode(authStub.admin, { code: CODE })).resolves.toMatchObject({ kind: 'server' });
+    });
+
+    it('lets anyone else redeem only a personal key, held for that person', async () => {
+      link();
+      serveToken();
+      enable();
+      cloud.on(`POST ${REDEEM}`, () => ({
+        status: 200,
+        body: { certificate: personalCertificate(), activationId: 'act-9' },
+      }));
+      mocks.frameleafUserLicense.getByKeyHash.mockResolvedValue(undefined);
+      mocks.frameleafUserLicense.upsert.mockImplementation((row) =>
+        Promise.resolve({ ...row, kind: 'individual', activatedAt: new Date('2026-09-25T12:00:00.000Z') }),
+      );
+
+      await expect(sut.redeemLinkCode(authStub.user1, { code: CODE })).resolves.toEqual({
+        kind: 'individual',
+        keyHint: '8EL6',
+      });
+      const body = cloud.requests.find(({ path }) => path === REDEEM)!.json() as Record<string, any>;
+      expect(body.allowKinds).toEqual(['individual']);
+      expect(mocks.frameleafUserLicense.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: authStub.user1.user.id,
+          keyHint: '8EL6',
+          binding: body.fingerprint.user,
+          activationId: 'act-9',
+        }),
+      );
+      expect(JSON.stringify(mocks.frameleafUserLicense.upsert.mock.calls)).not.toContain(CODE);
+      expect(store()?.key ?? null).toBeNull();
+    });
+
+    it.each([
+      [404, 'link_code_not_found', 'not valid'],
+      [410, 'link_code_expired', 'expired'],
+      [410, 'link_code_used', 'already used'],
+      [403, 'link_code_wrong_account', 'different Frameleaf account'],
+      [409, 'link_code_kind_mismatch', 'server key'],
+      [409, 'activation_limit', 'already active on another server'],
+      [429, 'rate-limited', 'Too many attempts'],
+      [409, 'instance-id-taken', 'identity key does not match'],
+    ])('explains a %s %s refusal without echoing the code', async (status, code, words) => {
+      link();
+      serveToken();
+      enable();
+      cloud.on(`POST ${REDEEM}`, () => ({ status, body: { code, message: `refused ${CODE}` } }));
+      const error = await sut.redeemLinkCode(authStub.admin, { code: CODE }).catch((error_: Error) => error_);
+      expect((error as Error).message).toContain(words);
+      expect((error as Error).message).not.toContain(CODE);
+      expect(store()?.key ?? null).toBeNull();
+    });
+
+    it('treats a 401 as a link that no longer works', async () => {
+      link();
+      serveToken();
+      enable();
+      cloud.on(`POST ${REDEEM}`, () => ({ status: 401, body: { code: 'instance_revoked', message: 'revoked' } }));
+      await expect(sut.redeemLinkCode(authStub.admin, { code: CODE })).rejects.toThrow();
+      expect(store()?.key ?? null).toBeNull();
     });
   });
 
