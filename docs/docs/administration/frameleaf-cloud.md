@@ -228,7 +228,7 @@ immich-admin cloud-backup restore \
 
 The command takes none of the server's locks: stop the server first, or at least make sure no backup operation is running. Files whose backed-up place is outside the media folder are restored into `<media>/frameleaf/restore/command-<time>` instead. The key must open the bucket's claim, or nothing is restored. Every file is checked against its checksum as it is written. Afterwards, start the server and set cloud backup up again with the same bucket and key: the bucket's claim and backups are kept. A Frameleaf-managed bucket's access keys are issued to the linked server only, so recover a managed bucket by restoring the database first (from a local backup, or with a key you were given for it) and then restoring from the Cloud backup page once the server is linked again.
 
-**Turn off backup…** stops backing up. The bucket, its backups and the key are kept, so the backups stay readable with the key file or recovery kit.
+**Turn off backup…** stops scheduled runs; a run, check, clean-up or restore in progress has to be cancelled first. The bucket, its backups and the key are kept, so the backups stay readable with the key file or recovery kit. Delete a Frameleaf-managed bucket in your Frameleaf account, or your own bucket at your storage provider, when you no longer need it.
 
 ## Restoration and Smooth motion on Frameleaf Cloud
 

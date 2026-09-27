@@ -4,6 +4,7 @@ import type { MachineLearningHardwareResponse, MlEndpointProbe } from 'src/repos
 import type { MlDestinationRow } from 'src/repositories/ml-destination.repository.js';
 import type { FrameleafMlWallet } from 'src/types.js';
 import { OnEvent } from 'src/decorators.js';
+import type { ArgOf } from 'src/repositories/event.repository.js';
 import {
   CloudMlCatalogResponseDto,
   CloudMlConsentHistoryResponseDto,
@@ -20,6 +21,8 @@ import {
   FRAMELEAF_CLOUD_ML_WORKLOADS,
   ImmichWorker,
   MachineLearningHardwareAcceleration,
+  MediaOperationKind,
+  MediaOperationStatus,
   MlAdmissionRefusal,
   MlDestinationKind,
   MlWorkload,
@@ -104,6 +107,37 @@ const refusedFacts = (refusal: MlAdmissionRefusal, detail: string, region: strin
 @Injectable()
 export class CloudMlService extends BaseService {
   private lastProbe?: { at: number; probe: MlEndpointProbe };
+
+  /**
+   * FL-168 (prototype: "Turning this off cancels waiting cloud jobs and returns their held credit"):
+   * turning Frameleaf Cloud processing off cancels every unfinished cloud job and description batch.
+   * One nobody holds yet (queued or paused, so never sent) ends at once and is reconciled like any
+   * other cancel; one a worker holds is stopped by it, which cancels the cloud job, so Frameleaf Cloud
+   * releases what the AI Wallet held for it and charges only GPU time already used. Every
+   * microservices worker hears the change; a cancel already asked for is not asked for again.
+   */
+  @OnEvent({ name: 'ConfigUpdate', workers: [ImmichWorker.Microservices], server: true })
+  async onConfigUpdate({ oldConfig, newConfig }: ArgOf<'ConfigUpdate'>) {
+    if (!oldConfig.frameleafCloud.cloudMl.enabled || newConfig.frameleafCloud.cloudMl.enabled) {
+      return;
+    }
+    const unfinished = await this.mediaOperationRepository.listUnfinishedOfKinds([
+      MediaOperationKind.CloudMlJob,
+      MediaOperationKind.CloudDescriptionBatch,
+    ]);
+    let cancelled = 0;
+    for (const operation of unfinished) {
+      if (operation.status === MediaOperationStatus.Cancelling) {
+        continue;
+      }
+      if (await this.mediaOperationRepository.requestCancel(operation.id, operation.ownerId)) {
+        cancelled++;
+      }
+    }
+    if (cancelled > 0) {
+      this.logger.log(`Frameleaf Cloud processing turned off: cancelled ${cancelled} unfinished cloud job(s)`);
+    }
+  }
 
   @OnEvent({ name: 'AppBootstrap' })
   async onBootstrap() {
