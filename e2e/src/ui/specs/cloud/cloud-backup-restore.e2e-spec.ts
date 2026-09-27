@@ -113,7 +113,7 @@ test.describe('Frameleaf Cloud backup run controls', () => {
 
   test('pauses, resumes and cancels a backup run on the Cloud backup page', async ({ page }) => {
     await page.goto(backupPage);
-    const controls = page.getByRole('group', { name: 'Cloud backup controls' });
+    const controls = page.getByRole('group', { name: 'Cloud backup controls', exact: true });
     await controls.getByRole('button', { name: 'Pause' }).click();
     await expect(controls.getByRole('button', { name: 'Resume' })).toBeVisible();
     expect(backup.requests.some(({ path }) => path === `admin/cloud/backup/runs/${RUN_ID}/pause`)).toBe(true);
@@ -125,7 +125,7 @@ test.describe('Frameleaf Cloud backup run controls', () => {
     const dialog = page.getByRole('dialog', { name: 'Cancel Cloud backup?' });
     await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
     await expect(dialog).toBeHidden();
-    await expect(page.getByRole('group', { name: 'Cloud backup controls' })).toBeHidden();
+    await expect(page.getByRole('group', { name: 'Cloud backup controls', exact: true })).toBeHidden();
     expect(backup.running).toBeNull();
   });
 
