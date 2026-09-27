@@ -41,7 +41,7 @@ const recordUnscoped = (page: Page) => {
       url.pathname.startsWith('/api/') &&
       !url.searchParams.has('key') &&
       !url.searchParams.has('slug') &&
-      !unscopedAllowed.some((allowed) => allowed.test(url.pathname))
+      unscopedAllowed.every((allowed) => !allowed.test(url.pathname))
     ) {
       unscoped.push(`${request.method()} ${url.pathname}`);
     }
@@ -295,7 +295,8 @@ test.describe('Shared Links', () => {
       await revoke();
       const chooser = page.waitForEvent('filechooser');
       await page.getByRole('button', { name: 'Add photos' }).click();
-      await (await chooser).setFiles({ name: 'late.png', mimeType: 'image/png', buffer: makeRandomImage() });
+      const fileChooser = await chooser;
+      await fileChooser.setFiles({ name: 'late.png', mimeType: 'image/png', buffer: makeRandomImage() });
 
       await page.getByRole('heading', { name: 'This link is not available' }).waitFor();
       await expect(page.getByRole('heading', { name: 'Test Album' })).toHaveCount(0);
