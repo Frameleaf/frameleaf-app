@@ -523,6 +523,15 @@ On `claude/FL-32-goals`, based on `master/frameleaf-implementation` @ `b0d7950a0
 
 Validation: web unit specs `library-session`, `library-session.svelte` and `library-session.operations`; real-server Playwright `bulk-actions.e2e-spec.ts` "Everything matching" (server-counted archive leaves a partner's Timeline item and undoes; a filter active when the set was chosen bounds what is archived).
 
+### September 27 shell navigation evidence (FL-30)
+
+On `claude/FL-30-goals`, based on `master/frameleaf-implementation` @ `53d91ab132`. FL-30's validation ("navigation and access-role tests across all registry families, deep links, browser back and disabled capabilities") had unit coverage only; it now has a real-server Playwright spec, and running it found one landmark gap.
+
+- **Landmarks** (`LibraryRail.jsx` `<nav aria-label="Library navigation">`, `App.jsx` `<header className="topbar">`): the rail was a second navigation named "Primary", next to the top bar's Library / Studio / Activity switcher, inside a top bar that was itself an unnamed `<nav>`. The rail is now "Library navigation" (`frameleaf_rail_navigation`) and the top bar is the page's `<header>` banner holding the one "Primary" navigation.
+- **Evidence** (`e2e/src/specs/web/shell-navigation.e2e-spec.ts`): every rail destination of an account with every family on, in the prototype order, opens without the error page and is marked current; Locked asks for the PIN and continues to `/locked`; Tools, Library Care and Settings open Command Center areas with their own navigation, and Support Frameleaf the full-page Buy screen (`App.jsx` `AUTH_SCREENS`), each with Back returning to the rail; a deep link and Back/Forward keep the rail in step; Library / Studio / Activity switch, Studio has no rail, and Back returns; the collapsed rail survives a reload; a hidden People and a disabled Memories leave the rail while `/people` still opens; the repair utilities are in Library care, not the rail; `/admin/*` refuses a non-administrator; an unknown address shows the Frameleaf error page; a signed-out deep link returns after sign-in.
+
+Recorded for the owner (FL-146): the rail honours the account's "show in sidebar" preferences, whose upstream defaults are off for People, Memories, Shared links, Tags and Folders (and Tags and Folders are disabled), so a new account's rail lists fewer Explore entries than `LibraryRail.jsx`, which ignores those preferences; the template's own `account-preferences.mjs` keeps the same off defaults. And a first sign-in through a deep link lands on the one-time "Set up your account" page (FL-176) and then the Library, not the deep link.
+
 ### September 26 integrity reports and restore evidence (FL-81)
 
 On `claude/FL-81-goals`, based on `master/frameleaf-implementation` @ `5d08c44999`. Earlier FL-81 work (restore guard, newer-backup refusal, refused sign-in links, log redaction, "Last run", report file) was already on integration; this closes the gaps found when the integrity and restore flows ran against the real server.
