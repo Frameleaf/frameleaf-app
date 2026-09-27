@@ -1,10 +1,16 @@
 import { Injectable } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
+import type {
+  CloudBackupAlbum,
+  CloudBackupAssetDetails,
+  CloudBackupAssetRecord,
+  CloudBackupPerson,
+} from 'src/utils/cloud-backup.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { AssetFileType, AssetStatus, MediaOperationStatus } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
-import { isLocked } from 'src/utils/locked.js';
+import { effectiveVisibilityOf, isLocked } from 'src/utils/locked.js';
 
 export type CloudBackupIndexedObject = { sha256: string; size: number; etag: string | null };
 
@@ -604,6 +610,222 @@ export class CloudBackupIndexRepository {
           .map(({ type, path }) => ({ type: type as AssetFileType, path })),
       };
     });
+  }
+
+  /**
+   * FL-164 (manifest v2): each item's record and the details that live in the database rather than in
+   * its file (favourite, visibility, rating, description, date and place, tags, albums, faces, stack and
+   * edits), for the manifest a run writes. Backend work: Locked items included.
+   */
+  // No @GenerateSql: several plain reads assembled here, each covered by the medium spec.
+  async getAssetDetails(
+    assetIds: string[],
+  ): Promise<Map<string, { record: CloudBackupAssetRecord; details: CloudBackupAssetDetails }>> {
+    const ids = [...new Set(assetIds)];
+    if (ids.length === 0) {
+      return new Map();
+    }
+    const [assets, tags, albums, faces, edits] = await Promise.all([
+      this.db
+        .selectFrom('asset')
+        .leftJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
+        .leftJoin('stack', 'stack.id', 'asset.stackId')
+        .select([
+          'asset.id',
+          'asset.type',
+          'asset.originalFileName',
+          'asset.fileCreatedAt',
+          'asset.fileModifiedAt',
+          'asset.localDateTime',
+          'asset.duration',
+          'asset.isFavorite',
+          'asset.visibility',
+          'asset.stackId',
+          'stack.primaryAssetId',
+          'asset_exif.rating',
+          'asset_exif.description',
+          'asset_exif.dateTimeOriginal',
+          'asset_exif.timeZone',
+          'asset_exif.latitude',
+          'asset_exif.longitude',
+        ])
+        .select(isLocked('asset').as('isLocked'))
+        .where('asset.id', '=', sql<string>`any(${ids}::uuid[])`)
+        .execute(),
+      this.db
+        .selectFrom('tag_asset')
+        .innerJoin('tag', 'tag.id', 'tag_asset.tagId')
+        .select(['tag_asset.assetId', 'tag.value'])
+        .where('tag_asset.assetId', '=', sql<string>`any(${ids}::uuid[])`)
+        .orderBy('tag.value')
+        .execute(),
+      this.db
+        .selectFrom('album_asset')
+        .innerJoin('album', 'album.id', 'album_asset.albumId')
+        .select(['album_asset.assetId', 'album.id', 'album.albumName'])
+        .where('album_asset.assetId', '=', sql<string>`any(${ids}::uuid[])`)
+        .where('album.deletedAt', 'is', null)
+        .orderBy('album.id')
+        .execute(),
+      this.db
+        .selectFrom('asset_face')
+        .select([
+          'assetId',
+          'personGroupId',
+          'boundingBoxX1',
+          'boundingBoxY1',
+          'boundingBoxX2',
+          'boundingBoxY2',
+          'imageWidth',
+          'imageHeight',
+          'isVisible',
+        ])
+        .where('assetId', '=', sql<string>`any(${ids}::uuid[])`)
+        .where('deletedAt', 'is', null)
+        .orderBy('id')
+        .execute(),
+      this.db
+        .selectFrom('asset_edit')
+        .select(['assetId', 'action', 'parameters'])
+        .where('assetId', '=', sql<string>`any(${ids}::uuid[])`)
+        .orderBy('sequence')
+        .execute(),
+    ]);
+    const iso = (value: unknown) => (value ? new Date(value as string).toISOString() : null);
+    const grouped = <T extends { assetId: string }>(rows: T[]) => {
+      const map = new Map<string, T[]>();
+      for (const row of rows) {
+        map.set(row.assetId, [...(map.get(row.assetId) ?? []), row]);
+      }
+      return map;
+    };
+    const tagsOf = grouped(tags);
+    const albumsOf = grouped(albums);
+    const facesOf = grouped(faces);
+    const editsOf = grouped(edits);
+    return new Map(
+      assets.map((asset) => [
+        asset.id,
+        {
+          record: {
+            type: asset.type,
+            originalFileName: asset.originalFileName,
+            fileCreatedAt: iso(asset.fileCreatedAt)!,
+            fileModifiedAt: iso(asset.fileModifiedAt)!,
+            localDateTime: iso(asset.localDateTime)!,
+            duration: asset.duration ?? null,
+          },
+          details: {
+            isFavorite: asset.isFavorite,
+            visibility: effectiveVisibilityOf({
+              visibility: asset.visibility,
+              isLocked: !!asset.isLocked,
+            }) as CloudBackupAssetDetails['visibility'],
+            rating: asset.rating ?? null,
+            description: asset.description ?? '',
+            dateTimeOriginal: iso(asset.dateTimeOriginal),
+            timeZone: asset.timeZone ?? null,
+            latitude: asset.latitude ?? null,
+            longitude: asset.longitude ?? null,
+            tags: (tagsOf.get(asset.id) ?? []).map(({ value }) => value),
+            albums: (albumsOf.get(asset.id) ?? []).map(({ id, albumName }) => ({ id, name: albumName })),
+            faces: (facesOf.get(asset.id) ?? []).map((face) => ({
+              personId: face.personGroupId,
+              box: [face.boundingBoxX1, face.boundingBoxY1, face.boundingBoxX2, face.boundingBoxY2] as [
+                number,
+                number,
+                number,
+                number,
+              ],
+              imageWidth: face.imageWidth,
+              imageHeight: face.imageHeight,
+              isHidden: !face.isVisible,
+            })),
+            stack: asset.stackId ? { id: asset.stackId, isPrimary: asset.primaryAssetId === asset.id } : null,
+            edits: (editsOf.get(asset.id) ?? []).map(({ action, parameters }) => ({
+              action,
+              parameters: parameters as unknown as Record<string, unknown>,
+            })),
+          },
+        },
+      ]),
+    );
+  }
+
+  /** FL-164 (manifest v2): these albums as a deleted one is made again: name, cover, order, owner, sharing. */
+  // No @GenerateSql: covered by the medium spec.
+  async getAlbumRecords(albumIds: string[]): Promise<Map<string, CloudBackupAlbum>> {
+    const ids = [...new Set(albumIds)];
+    if (ids.length === 0) {
+      return new Map();
+    }
+    const [albums, users] = await Promise.all([
+      this.db
+        .selectFrom('album')
+        .select(['id', 'albumName', 'description', 'albumThumbnailAssetId', 'order'])
+        .where('id', '=', sql<string>`any(${ids}::uuid[])`)
+        .where('deletedAt', 'is', null)
+        .execute(),
+      this.db
+        .selectFrom('album_user')
+        .select(['albumId', 'userId', 'role'])
+        .where('albumId', '=', sql<string>`any(${ids}::uuid[])`)
+        .orderBy('userId')
+        .execute(),
+    ]);
+    const records = new Map<string, CloudBackupAlbum>();
+    for (const album of albums) {
+      const members = users.filter(({ albumId }) => albumId === album.id);
+      const owner = members.find(({ role }) => role === 'owner');
+      if (!owner) {
+        continue;
+      }
+      records.set(album.id, {
+        name: album.albumName,
+        description: album.description ?? '',
+        ownerId: owner.userId,
+        coverAssetId: album.albumThumbnailAssetId,
+        order: album.order as CloudBackupAlbum['order'],
+        sharedUsers: members
+          .filter(({ role }) => role !== 'owner')
+          .map(({ userId, role }) => ({ userId, role: role as 'editor' | 'viewer' })),
+      });
+    }
+    return records;
+  }
+
+  /**
+   * FL-164 (manifest v2): the people these faces name, as each face's owner sees them (a person is one
+   * owner's name for a person group).
+   */
+  // No @GenerateSql: covered by the medium spec.
+  async getPersonRecords(pairs: Array<{ ownerId: string; personId: string }>): Promise<Map<string, CloudBackupPerson>> {
+    const groupIds = [...new Set(pairs.map(({ personId }) => personId))];
+    if (groupIds.length === 0) {
+      return new Map();
+    }
+    const wanted = new Set(pairs.map(({ ownerId, personId }) => `${ownerId}:${personId}`));
+    const rows = await this.db
+      .selectFrom('person')
+      .select(['ownerId', 'personGroupId', 'name', 'birthDate', 'isHidden', 'isFavorite'])
+      .where('personGroupId', '=', sql<string>`any(${groupIds}::uuid[])`)
+      .orderBy('personGroupId')
+      .orderBy('ownerId')
+      .execute();
+    const records = new Map<string, CloudBackupPerson>();
+    for (const row of rows) {
+      if (!wanted.has(`${row.ownerId}:${row.personGroupId}`) || records.has(row.personGroupId)) {
+        continue;
+      }
+      records.set(row.personGroupId, {
+        ownerId: row.ownerId,
+        name: row.name,
+        birthDate: row.birthDate ? new Date(row.birthDate as unknown as string).toISOString().slice(0, 10) : null,
+        isHidden: row.isHidden,
+        isFavorite: row.isFavorite,
+      });
+    }
+    return records;
   }
 
   /** Every account's profile image. */
