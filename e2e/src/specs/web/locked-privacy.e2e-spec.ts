@@ -98,7 +98,7 @@ test.describe('Locked content in the browser (FL-34)', () => {
     await expect(page.getByTitle('Sensitive')).toHaveCount(2);
   });
 
-  test('drops what the Locked rules hide from open search results when the session locks', async ({
+  test('finds marks and rule matches in unlocked search, and drops them when the session locks (FL-195)', async ({
     context,
     page,
   }) => {
@@ -109,14 +109,16 @@ test.describe('Locked content in the browser (FL-34)', () => {
     await utils.updateMyPreferences(user.accessToken, { privacy: { suppression: { tagIds: [tag.id] } } });
     await utils.setAuthCookies(context, user.accessToken);
 
-    // every name shares the suffix, so one search finds what this unlocked session may see
+    // every name shares the suffix, so one search finds what this unlocked session may see: FL-195, the
+    // owner's own mark as well as the rule match, like any other item
     await page.goto(`/search?query=${encodeURIComponent(JSON.stringify({ originalFileName: suffix }))}`);
     await expect(traces(page, plain.id).first()).toBeVisible();
     await expect(traces(page, ruleMatch.id).first()).toBeVisible();
-    await expect(traces(page, locked.id)).toHaveCount(0);
+    await expect(traces(page, locked.id).first()).toBeVisible();
 
     await lockAuthSession({ headers });
     await expect(traces(page, ruleMatch.id)).toHaveCount(0);
+    await expect(traces(page, locked.id)).toHaveCount(0);
     await expect(traces(page, plain.id).first()).toBeVisible();
     await expect(page.getByText(`rule-${suffix}`)).toHaveCount(0);
     await expect(page.getByText(`Private ${suffix}`)).toHaveCount(0);
