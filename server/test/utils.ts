@@ -587,7 +587,13 @@ export const getKyselyDB = async (suffix?: string): Promise<Kysely<DB>> => {
 
   const randomSuffix = Math.random().toString(36).slice(2, 7);
   const dbName = `immich_${suffix ?? randomSuffix}`;
-  await sql.unsafe(`CREATE DATABASE ${dbName} WITH TEMPLATE ${templateName} OWNER postgres;`);
+  try {
+    await sql.unsafe(`CREATE DATABASE ${dbName} WITH TEMPLATE ${templateName} OWNER postgres;`);
+  } finally {
+    // The admin connection is only needed to clone the template. Left open, every call leaked one
+    // connection for the rest of the test file, and the shared medium database ran out of clients.
+    await sql.end();
+  }
 
   return new Kysely<DB>(getKyselyConfig({ connectionType: 'url', url: withDatabase(testUrl, dbName) }));
 };
