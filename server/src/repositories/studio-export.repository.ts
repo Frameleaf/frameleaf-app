@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { Insertable, Kysely, Selectable, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { randomUUID } from 'node:crypto';
+import type { VideoPacketInfo } from 'src/types.js';
 import {
   AssetType,
   AssetVisibility,
@@ -43,6 +44,14 @@ export type StudioExportSourceInput = Omit<
   'versionId' | 'locked' | 'lockReason' | 'sensitive'
 >;
 
+/** One source's persisted stream facts (FL-93 / FL-102). */
+export type StudioSourceMediaFacts = {
+  assetId: string;
+  video: { timeBase: number; pixelFormat: string; colorTransfer: number } | null;
+  packets: VideoPacketInfo | null;
+  audio: { codecName: string; channels: number | null; channelLayout: string | null; sampleRate: number | null } | null;
+};
+
 /** Versions that are still somebody's pending work. */
 export const PENDING_STUDIO_EXPORT_STATES: readonly StudioExportVersionState[] = [
   StudioExportVersionState.Rendering,
@@ -69,7 +78,9 @@ export type StudioExportRefusalCode =
   | 'quota-exceeded'
   | 'duplicate-restricted'
   | 'not-staged'
-  | 'claim-lost';
+  | 'claim-lost'
+  /** FL-102: the rendered file does not have the precision or audio its export promised. */
+  | 'output-rejected';
 
 const CANCELLING_REFUSALS: ReadonlySet<StudioExportRefusalCode> = new Set([
   'owner-unavailable',
@@ -171,6 +182,68 @@ export class StudioExportRepository {
   /* ------------------------------------------------------------------ */
   /* Versions                                                            */
   /* ------------------------------------------------------------------ */
+
+  /**
+   * FL-93 / FL-102: what the library already knows about each source's streams — the video time
+   * base, colour, packet scan and the audio layout — so an export can declare its cadence, carry
+   * each source's timing map and state the audio and precision its result must have. Assets with
+   * no video or audio row come back with nulls rather than not at all.
+   */
+  async getSourceMediaFacts(assetIds: readonly string[]): Promise<StudioSourceMediaFacts[]> {
+    if (assetIds.length === 0) {
+      return [];
+    }
+    const rows = await this.db
+      .selectFrom('asset')
+      .leftJoin('asset_video', 'asset_video.assetId', 'asset.id')
+      .leftJoin('asset_keyframe', 'asset_keyframe.assetId', 'asset.id')
+      .leftJoin('asset_audio', 'asset_audio.assetId', 'asset.id')
+      .select([
+        'asset.id as assetId',
+        'asset_video.timeBase',
+        'asset_video.pixelFormat',
+        'asset_video.colorTransfer',
+        'asset_keyframe.pts as keyframePts',
+        'asset_keyframe.accDuration as keyframeAccDuration',
+        'asset_keyframe.ownDuration as keyframeOwnDuration',
+        'asset_keyframe.totalDuration',
+        'asset_keyframe.packetCount',
+        'asset_keyframe.outputFrames',
+        'asset_audio.codecName as audioCodecName',
+        'asset_audio.channels',
+        'asset_audio.channelLayout',
+        'asset_audio.sampleRate',
+      ])
+      .where('asset.id', 'in', [...assetIds])
+      .execute();
+    return rows.map((row) => ({
+      assetId: row.assetId,
+      video:
+        row.timeBase === null || row.pixelFormat === null
+          ? null
+          : { timeBase: row.timeBase, pixelFormat: row.pixelFormat, colorTransfer: row.colorTransfer as number },
+      packets:
+        row.keyframePts === null
+          ? null
+          : {
+              keyframePts: row.keyframePts,
+              keyframeAccDuration: row.keyframeAccDuration ?? [],
+              keyframeOwnDuration: row.keyframeOwnDuration ?? [],
+              totalDuration: Number(row.totalDuration ?? 0),
+              packetCount: Number(row.packetCount ?? 0),
+              outputFrames: Number(row.outputFrames ?? 0),
+            },
+      audio:
+        row.audioCodecName === null
+          ? null
+          : {
+              codecName: row.audioCodecName,
+              channels: row.channels ?? null,
+              channelLayout: row.channelLayout ?? null,
+              sampleRate: row.sampleRate ?? null,
+            },
+    }));
+  }
 
   /** The render job and the version it will become, together or not at all. */
   async createWithRender(

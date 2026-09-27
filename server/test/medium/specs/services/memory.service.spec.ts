@@ -998,6 +998,7 @@ describe(MemoryService.name, () => {
         { getEnv: () => ({}) } as never,
         ctx.get(SystemMetadataRepository),
         {} as never,
+        {} as never,
       );
       vi.spyOn(studioExports, 'create').mockImplementation(async (auth, projectId, dto, options) => {
         const settings = { format: dto.format, color: dto.color, resolution: dto.resolution };

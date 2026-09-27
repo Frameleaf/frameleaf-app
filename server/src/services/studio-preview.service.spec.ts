@@ -4,6 +4,7 @@ import { StorageCore } from 'src/cores/storage.core.js';
 import { MediaOperationKind, StudioPreviewQuality, StudioPreviewStatus } from 'src/enum.js';
 import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
+import { StudioExportRepository } from 'src/repositories/studio-export.repository.js';
 import { StudioPreviewFrame, StudioPreviewRepository } from 'src/repositories/studio-preview.repository.js';
 import { StudioPreviewService, studioPreviewFrameFolder } from 'src/services/studio-preview.service.js';
 import {
@@ -88,6 +89,7 @@ describe(StudioPreviewService.name, () => {
   let operations: MediaOperationRepository;
   let resources: StudioResourceService;
   let storage: { mkdirSync: AnyMock; stat: AnyMock; unlinkDir: AnyMock };
+  let sourceMedia: { getSourceMediaFacts: AnyMock };
   let projects: {
     registerRevisionListener: AnyMock;
     authorizeRevision: AnyMock;
@@ -121,7 +123,12 @@ describe(StudioPreviewService.name, () => {
       project: { id: 'project-1', ownerId: authStub.user1.user.id, spaceId: null, currentRevision: 7 },
       access: 'owner',
       revision: { projectId: 'project-1', revision: 7, digest: 'graph-digest' },
-      envelope: { schemaVersion: 1, engine: 'freecut', engineRevision: 'rev-1', graph: { tracks: [] } },
+      envelope: {
+        schemaVersion: 1,
+        engine: 'freecut',
+        engineRevision: 'rev-1',
+        graph: { metadata: { fps: 30_000 / 1001, frameRate: { num: 30_000, den: 1001 } }, tracks: [] },
+      },
       manifest: manifest(),
       refused: [],
       cached: false,
@@ -184,6 +191,8 @@ describe(StudioPreviewService.name, () => {
       getReadableRevision: vi.fn().mockResolvedValue(7),
     };
 
+    sourceMedia = { getSourceMediaFacts: vi.fn().mockResolvedValue([]) };
+
     sut = new StudioPreviewService(
       mocks.logger as never,
       previews,
@@ -191,6 +200,7 @@ describe(StudioPreviewService.name, () => {
       resources,
       projects as unknown as StudioProjectService,
       storage as unknown as StorageRepository,
+      sourceMedia as unknown as StudioExportRepository,
     );
   });
 
@@ -354,6 +364,44 @@ describe(StudioPreviewService.name, () => {
       const { snapshot } = vi.mocked(operations.create).mock.calls[0][0] as { snapshot: Record<string, any> };
       expect(snapshot.studio).not.toHaveProperty('graph');
       expect(JSON.stringify(snapshot)).not.toContain('tracks');
+    });
+
+    it('carries the same timing an export declares, and refuses a source whose timing is unread (FL-93)', async () => {
+      const asset = '0195e2a0-0000-4000-8000-000000000011';
+      projects.authorizeRevision.mockResolvedValue(
+        authorization({
+          manifest: manifest({
+            entries: [{ key: `library-asset:${asset}`, kind: 'library-asset', id: asset }] as never,
+          }) as never,
+        }),
+      );
+      const scanned = {
+        assetId: asset,
+        video: { timeBase: 90_000, pixelFormat: 'yuv420p', colorTransfer: 1 },
+        packets: {
+          keyframePts: [3003],
+          keyframeAccDuration: [3003],
+          keyframeOwnDuration: [3003, 1500],
+          totalDuration: 90_000,
+          packetCount: 40,
+          outputFrames: 30,
+        },
+        audio: null,
+      };
+      sourceMedia.getSourceMediaFacts.mockResolvedValue([scanned]);
+
+      await sut.request(authStub.user1, request());
+
+      const { snapshot } = vi.mocked(operations.create).mock.calls[0][0] as { snapshot: Record<string, any> };
+      expect(sourceMedia.getSourceMediaFacts).toHaveBeenCalledWith([asset]);
+      expect(snapshot.timing).toMatchObject({
+        cadence: '30000/1001',
+        sources: [{ assetId: asset, timeBase: '1/90000', originTicks: 3003, variableFrameRate: true }],
+      });
+
+      sourceMedia.getSourceMediaFacts.mockResolvedValue([{ ...scanned, packets: null }]);
+      const body = await conflictOf(sut.request(authStub.user1, request()));
+      expect(body).toEqual(expect.objectContaining({ code: 'studio_preview_timing_unknown', currentRevision: 7 }));
     });
 
     it('refuses a request naming a revision the project has moved past, with the current one', async () => {

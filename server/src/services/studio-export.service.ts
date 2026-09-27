@@ -35,6 +35,7 @@ import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaOperation, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
+import { MediaRepository } from 'src/repositories/media.repository.js';
 import { RenderWorkerRepository } from 'src/repositories/render-worker.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import {
@@ -46,6 +47,7 @@ import {
   StudioExportSourceInput,
   StudioExportVersion,
   StudioExportVersionSource,
+  StudioSourceMediaFacts,
   isLibrarySource,
 } from 'src/repositories/studio-export.repository.js';
 import { StudioProjectRepository } from 'src/repositories/studio-project.repository.js';
@@ -59,6 +61,15 @@ import { ImmichFileResponse } from 'src/utils/file.js';
 import { getLockedOwnerId } from 'src/utils/locked.js';
 import { isNsfwHidingEnabled } from 'src/utils/misc.js';
 import { evaluateRenderOutput, isQualifiedRenderSession } from 'src/utils/render-admission.js';
+import {
+  StudioExportContract,
+  buildStudioExportContract,
+  declareStudioTiming,
+  findStudioExportOutputMismatch,
+  parseStudioExportContract,
+  resolveStudioExportTiming,
+  studioMediaSources,
+} from 'src/utils/studio-export-contract.js';
 import {
   STUDIO_EXPORT_CONTENT_TYPES,
   STUDIO_EXPORT_LEASE_MS,
@@ -81,6 +92,7 @@ import {
   checkStudioRights,
   studioRightsUseFor,
 } from 'src/utils/studio-rights.js';
+import { StudioTimingError } from 'src/utils/studio-timing.js';
 
 type RunningJob = { operation: MediaOperation; claimToken: string };
 
@@ -198,6 +210,7 @@ export class StudioExportService {
     private configRepository: ConfigRepository,
     private systemMetadata: SystemMetadataRepository,
     private renderWorkers: RenderWorkerRepository,
+    private media: MediaRepository,
   ) {
     this.logger.setContext(StudioExportService.name);
   }
@@ -291,8 +304,18 @@ export class StudioExportService {
       });
     }
 
-    const settings = { format: dto.format, color: dto.color, resolution: dto.resolution };
+    const settings = {
+      format: dto.format,
+      color: dto.color,
+      resolution: dto.resolution,
+      audio: dto.audio ?? 'preserve',
+    };
     await this.requireRenderableOutput(dto.destination, settings);
+    const { timing, contract } = await this.declareOutput(
+      authorized.envelope.graph,
+      authorized.manifest.entries,
+      settings,
+    );
     const { operation, version } = await this.repository.createWithRender(
       {
         ownerId: auth.user.id,
@@ -318,6 +341,10 @@ export class StudioExportService {
           manifestDigest: authorized.manifest.digest,
           requestKey: dto.requestKey ?? null,
           studio: { stored: true, revision: authorized.revision.revision, cloudConsent: dto.cloudConsent === true },
+          // FL-93 / FL-102: the cadence and source timing the worker renders on, and the precision
+          // and audio its result must have. Publication holds the result to the contract.
+          timing,
+          contract,
           ...(options.retainInProject && { retain: 'project' }),
         },
         settings,
@@ -337,6 +364,30 @@ export class StudioExportService {
 
     this.logger.log(`Studio export ${version.id} queued as render ${operation.id} for project ${projectId}`);
     return { version: this.map(version, auth), operation: mapOperation(operation) };
+  }
+
+  /**
+   * FL-93 / FL-102: what the export declares before it renders. The project's exact cadence and the
+   * output cadence decision, every video source's timing map, and the precision and audio the
+   * result must have, all from the stored graph and what the library has read of each source. A
+   * project with no exact frame rate, or a video source whose timing has not been read yet, is
+   * refused rather than rendered onto a grid nobody chose.
+   */
+  private async declareOutput(
+    graph: unknown,
+    entries: readonly StudioAuthorizedEntry[],
+    settings: { format: string; color: string; audio: 'preserve' | 'stereo' },
+  ): Promise<{ timing: ReturnType<typeof resolveStudioExportTiming>; contract: StudioExportContract }> {
+    const facts: StudioSourceMediaFacts[] = await this.repository.getSourceMediaFacts(studioMediaSources(entries).ids);
+    try {
+      const timing = declareStudioTiming(graph, entries, facts);
+      return { timing, contract: buildStudioExportContract(settings, graph, facts) };
+    } catch (error) {
+      if (error instanceof StudioTimingError) {
+        throw new ConflictException({ message: error.message, code: 'studio_export_timing_unknown' });
+      }
+      throw error;
+    }
   }
 
   /**
@@ -630,6 +681,7 @@ export class StudioExportService {
           renderOperationId: operation.id,
           projectId: version.projectId as string,
           revision: version.revision,
+          contract: parseStudioExportContract((operation.snapshot as { contract?: unknown } | null)?.contract),
           ...(isRetainedInProject(operation.snapshot) && { retain: 'project' }),
         } satisfies StudioExportPublishSnapshot as unknown as Record<string, unknown>,
         settings: version.settings,
@@ -775,7 +827,7 @@ export class StudioExportService {
 
     let prepared: PreparedPublication | undefined;
     try {
-      prepared = await this.prepare(version, snapshot.retain === 'project');
+      prepared = await this.prepare(version, snapshot.retain === 'project', snapshot.contract ?? null);
       const published = await this.publishAcknowledged(version, operation, claimToken, prepared);
       await this.afterPublished(published, prepared);
       await this.finishJob(operation, claimToken, published.version.resultAssetId);
@@ -811,7 +863,11 @@ export class StudioExportService {
    * hashed again and moved to where the result will live. Every refusal here happens before any
    * write; the transaction re-checks what matters under locks.
    */
-  private async prepare(version: StudioExportVersion, retainInProject: boolean): Promise<PreparedPublication> {
+  private async prepare(
+    version: StudioExportVersion,
+    retainInProject: boolean,
+    contract: StudioExportContract | null,
+  ): Promise<PreparedPublication> {
     const owner = await this.ownerAuth(version.ownerId);
     if (!owner) {
       throw new StudioExportRefusal('owner-unavailable', 'The account this export belongs to is being deleted');
@@ -870,6 +926,7 @@ export class StudioExportService {
     const stagedPath = version.outputPath;
     const current = (await this.storage.checkFileExists(stagedPath)) ? stagedPath : finalPath;
     await this.verifyOutput(current, current === stagedPath ? staging : dirname(finalPath), version);
+    await this.verifyContract(current, version, contract);
 
     if (current !== finalPath) {
       this.storage.mkdirSync(dirname(finalPath));
@@ -926,6 +983,29 @@ export class StudioExportService {
     const checksum = await this.crypto.hashFile(real, 'sha256');
     if (!version.outputChecksum || !checksum.equals(Buffer.from(version.outputChecksum))) {
       throw invalid('The rendered file does not match the checksum its render reported');
+    }
+  }
+
+  /**
+   * FL-102: the file is probed here, on this server, and held to what the export promised: the bit
+   * depth and transfer of its format and colour, the source audio layout and rate (or the chosen
+   * stereo downmix), and audio that ends with the picture. An export submitted before the contract
+   * existed is still held to the precision its settings promise.
+   */
+  private async verifyContract(
+    path: string,
+    version: StudioExportVersion,
+    contract: StudioExportContract | null,
+  ): Promise<void> {
+    const settings = version.settings as { format: string; color: string };
+    const expected = contract ?? buildStudioExportContract(settings, null, []);
+    const probe = await this.media.probe(path).catch(() => null);
+    if (!probe) {
+      throw new StudioExportRefusal('output-rejected', 'The rendered file could not be read as video');
+    }
+    const mismatch = findStudioExportOutputMismatch(expected, probe);
+    if (mismatch) {
+      throw new StudioExportRefusal('output-rejected', mismatch);
     }
   }
 

@@ -1,0 +1,369 @@
+/**
+ * What a Studio export promises before it renders, and the check that its result kept the promise
+ * (FL-93 / `VID-102`, FL-102 / `VID-104`).
+ *
+ * At submit the server reads the stored graph and what the library knows about each source, and
+ * writes two things into the render job's snapshot, which is what the worker receives:
+ *
+ * - **Timing.** The declared project cadence, the output cadence decision (`passthrough` for a
+ *   single source the edit does not retime, otherwise a recorded `convert` onto the declared
+ *   cadence), the output tick grid chunks are planned on, and every video source's timing map:
+ *   time base, origin, variable-rate flag and track timescale.
+ * - **Contract.** The bit depth and transfer the chosen format and colour promise, and the audio
+ *   the result must carry: the widest source layout at the highest source rate, or a stereo
+ *   downmix only when the export asked for one.
+ *
+ * Publication probes the worker's file and refuses it when it does not honour the contract.
+ */
+import type { StudioSourceMediaFacts } from 'src/repositories/studio-export.repository.js';
+import type { AudioStreamInfo, VideoStreamInfo } from 'src/types.js';
+import { ColorTransfer } from 'src/enum.js';
+import {
+  AudioChannelPolicy,
+  findAudioLayoutMismatch,
+  findAvAlignmentMismatch,
+  isHdrTransfer,
+  isHighBitDepth,
+} from 'src/utils/media-policy.js';
+import {
+  type Rational,
+  equals,
+  formatRational,
+  fromInteger,
+  invert,
+  multiply,
+  tryParseRational,
+} from 'src/utils/rational-time.js';
+import {
+  type StudioSourceTiming,
+  StudioTimingError,
+  outputTimeBase,
+  projectCadenceOf,
+} from 'src/utils/studio-timing.js';
+import {
+  OutputCadenceMode,
+  VideoTimingMap,
+  buildVideoTimingMap,
+  resolveOutputCadence,
+  timingMapTrackTimescale,
+} from 'src/utils/video-timing.js';
+
+export const STUDIO_EXPORT_AUDIO = ['preserve', 'stereo'] as const;
+export type StudioExportAudio = (typeof STUDIO_EXPORT_AUDIO)[number];
+
+export type StudioExportTiming = {
+  /** The project cadence the graph declares, `num/den`. */
+  cadence: string;
+  decision: { mode: OutputCadenceMode; cadence: string | null; reason: string };
+  /** Seconds per tick of the output grid every chunk boundary is expressed in. */
+  timeBase: string;
+  sources: StudioSourceTiming[];
+};
+
+export type StudioExportContract = {
+  video: { minBitDepth: 8 | 10; transfer: 'smpte2084' | 'arib-std-b67' | null };
+  audio: {
+    policy: StudioExportAudio;
+    channels: number | null;
+    channelLayout: string | null;
+    sampleRate: number | null;
+  } | null;
+};
+
+type GraphItem = Record<string, unknown>;
+
+const asRecord = (value: unknown): Record<string, unknown> =>
+  value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+const asArray = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
+
+const timelineOf = (graph: unknown) => asRecord(asRecord(graph).timeline);
+const itemsOf = (graph: unknown): GraphItem[] => asArray(timelineOf(graph).items).map((value) => asRecord(value));
+
+/**
+ * True when the edit places one video source and does nothing to its timing: no second picture, no
+ * transition, no animation, no nested sequence, played forwards at its own speed. Such an export
+ * keeps the source's presentation timestamps, a variable rate included. A trim does not retime.
+ */
+export const isTimingUnchangedSingleSource = (graph: unknown): boolean => {
+  const timeline = timelineOf(graph);
+  if (
+    asArray(timeline.transitions).length > 0 ||
+    asArray(timeline.keyframes).length > 0 ||
+    asArray(timeline.compositions).length > 0 ||
+    asArray(asRecord(graph).compositions).length > 0
+  ) {
+    return false;
+  }
+  const pictures = itemsOf(graph).filter((item) => item.type !== 'audio');
+  if (pictures.length !== 1 || pictures[0].type !== 'video') {
+    return false;
+  }
+  const [clip] = pictures;
+  const speed = clip.speed === undefined ? 1 : clip.speed;
+  return speed === 1 && clip.isReversed !== true;
+};
+
+/** Media ids of the audible audio clips: not muted themselves, not on a muted track. */
+const audibleMediaIds = (graph: unknown): Set<string> => {
+  const muted = new Set(
+    asArray(timelineOf(graph).tracks)
+      .map((value) => asRecord(value))
+      .filter((track) => track.muted === true)
+      .map((track) => String(track.id)),
+  );
+  return new Set(
+    itemsOf(graph)
+      .filter((item) => item.type === 'audio' && item.muted !== true && !muted.has(String(item.trackId)))
+      .map((item) => String(item.mediaId ?? item.assetId ?? '')),
+  );
+};
+
+/**
+ * A constant-rate source's cadence recovered exactly from what was stored: every packet lasts the
+ * same `d` ticks of `1/timeBase`, so the rate is `timeBase / d`. A variable-rate source has none.
+ */
+const storedCadence = (map: VideoTimingMap): Rational | null => {
+  const [duration] = map.keyframeDurationTicks;
+  if (map.variableFrameRate || !duration || duration <= 0) {
+    return null;
+  }
+  return invert(multiply(fromInteger(duration), map.timeBase));
+};
+
+const sourceTimingOf = (key: string, facts: StudioSourceMediaFacts): VideoTimingMap | null => {
+  if (!facts.video || !facts.packets) {
+    return null;
+  }
+  const map = buildVideoTimingMap({ videoStream: { timeBase: facts.video.timeBase }, packets: facts.packets });
+  if (!map) {
+    throw new StudioTimingError(`Source ${key} has no usable time base.`);
+  }
+  return { ...map, cadence: map.cadence ?? storedCadence(map) };
+};
+
+/**
+ * The timing an export declares. Throws {@link StudioTimingError} for a graph with no exact
+ * cadence or a video source whose timing was never scanned: rendering either would place its
+ * frames on a grid nobody chose.
+ */
+export const resolveStudioExportTiming = (
+  graph: unknown,
+  sources: ReadonlyArray<{ key: string; facts: StudioSourceMediaFacts }>,
+): StudioExportTiming => {
+  const cadence = projectCadenceOf(asRecord(graph).metadata);
+  if (!cadence) {
+    throw new StudioTimingError('The project has no exact frame rate.');
+  }
+
+  const maps: Array<{ key: string; assetId: string; map: VideoTimingMap; facts: StudioSourceMediaFacts }> = [];
+  for (const { key, facts } of sources) {
+    if (!facts.video) {
+      continue;
+    }
+    const map = sourceTimingOf(key, facts);
+    if (!map) {
+      throw new StudioTimingError(`The timing of source ${key} has not been read yet.`);
+    }
+    maps.push({ key, assetId: facts.assetId, map, facts });
+  }
+
+  const declared = formatRational(cadence);
+  let decision: StudioExportTiming['decision'];
+  if (maps.length === 0) {
+    decision = {
+      mode: OutputCadenceMode.Convert,
+      cadence: declared,
+      reason: `No video source; frames are rendered on the declared cadence ${declared}.`,
+    };
+  } else if (maps.length === 1 && isTimingUnchangedSingleSource(graph)) {
+    const resolved = resolveOutputCadence({ sources: [maps[0].map] });
+    decision = { mode: resolved.mode, cadence: null, reason: resolved.reason };
+  } else {
+    const resolved = resolveOutputCadence({ sources: maps.map(({ map }) => map), declaredCadence: cadence });
+    decision =
+      resolved.mode === OutputCadenceMode.Passthrough
+        ? {
+            mode: OutputCadenceMode.Convert,
+            cadence: declared,
+            reason: `The edit retimes its source, so it is rendered on the declared cadence ${declared}, which is the source's own.`,
+          }
+        : { mode: resolved.mode, cadence: declared, reason: resolved.reason };
+  }
+
+  const timings: StudioSourceTiming[] = maps.map(({ key, assetId, map, facts }) => ({
+    key,
+    assetId,
+    timeBase: formatRational(map.timeBase),
+    originTicks: map.originTicks,
+    cadence: map.cadence ? formatRational(map.cadence) : null,
+    variableFrameRate: map.variableFrameRate,
+    trackTimescale: timingMapTrackTimescale(map),
+    audio: facts.audio
+      ? {
+          sampleRate: facts.audio.sampleRate,
+          channels: facts.audio.channels,
+          channelLayout: facts.audio.channelLayout,
+        }
+      : null,
+  }));
+
+  return {
+    cadence: declared,
+    decision,
+    timeBase: formatRational(outputTimeBase(decision, timings)),
+    sources: timings,
+  };
+};
+
+/** A manifest entry as {@link studioMediaSources} needs it. */
+type MediaEntry = { key: string; kind: string; id: string; source?: string };
+
+const UUID = /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i;
+
+/**
+ * The library assets a manifest reads media from: `ids` for every one (pictures and asset-backed
+ * audio), and `pictures`, each placed picture's manifest key, for the timing maps.
+ */
+export const studioMediaSources = (entries: readonly MediaEntry[]) => {
+  const ids = new Set<string>();
+  const pictures = new Map<string, string>();
+  for (const entry of entries) {
+    if (!UUID.test(entry.id)) {
+      continue;
+    }
+    if (entry.kind === 'library-asset' || entry.kind === 'edited-master') {
+      ids.add(entry.id);
+      if (!pictures.has(entry.id)) {
+        pictures.set(entry.id, entry.key);
+      }
+    } else if (entry.kind === 'audio' && entry.source === 'asset') {
+      ids.add(entry.id);
+    }
+  }
+  return { ids: [...ids], pictures };
+};
+
+/** The timing a Studio job declares, from its graph, its manifest and what the library knows. */
+export const declareStudioTiming = (
+  graph: unknown,
+  entries: readonly MediaEntry[],
+  facts: readonly StudioSourceMediaFacts[],
+): StudioExportTiming => {
+  const { pictures } = studioMediaSources(entries);
+  return resolveStudioExportTiming(
+    graph,
+    facts
+      .filter((fact) => pictures.has(fact.assetId))
+      .map((fact) => ({ key: pictures.get(fact.assetId)!, facts: fact })),
+  );
+};
+
+/* ------------------------------------------------------------------ */
+/* Contract                                                             */
+/* ------------------------------------------------------------------ */
+
+const TEN_BIT_FORMATS = new Set(['mp4-hevc-main10', 'prores-422-hq']);
+const HDR_TRANSFERS: Readonly<Record<number, 'smpte2084' | 'arib-std-b67'>> = {
+  [ColorTransfer.Smpte2084]: 'smpte2084',
+  [ColorTransfer.AribStdB67]: 'arib-std-b67',
+};
+
+/**
+ * The precision and audio an export promises.
+ *
+ * - An HEVC Main10 or ProRes export is 10-bit; HDR10 and Dolby Vision are 10-bit PQ. `preserve`
+ *   keeps an HDR transfer when every video source shares it.
+ * - The audio carries the widest layout any audible source has, at the highest rate any states,
+ *   unless a stereo downmix was chosen. With no audible source nothing is promised.
+ */
+export const buildStudioExportContract = (
+  settings: { format: string; color: string; audio?: StudioExportAudio },
+  graph: unknown,
+  sources: readonly StudioSourceMediaFacts[],
+): StudioExportContract => {
+  const hdrRequested = settings.color === 'hdr10' || settings.color === 'dolby-vision';
+  const videoTransfers = new Set(
+    sources.filter((facts) => facts.video).map((facts) => HDR_TRANSFERS[facts.video!.colorTransfer] ?? null),
+  );
+  const preservedTransfer =
+    settings.color === 'preserve' && videoTransfers.size === 1 ? ([...videoTransfers][0] ?? null) : null;
+  const transfer = hdrRequested ? 'smpte2084' : preservedTransfer;
+  const minBitDepth = TEN_BIT_FORMATS.has(settings.format) || transfer ? 10 : 8;
+
+  const audible = audibleMediaIds(graph);
+  const audio = sources.filter((facts) => facts.audio && audible.has(facts.assetId)).map((facts) => facts.audio!);
+  const policy = settings.audio ?? 'preserve';
+  let expectation: StudioExportContract['audio'] = null;
+  if (audio.length > 0) {
+    let widest = audio[0];
+    for (const stream of audio) {
+      if ((stream.channels ?? 0) > (widest.channels ?? 0)) {
+        widest = stream;
+      }
+    }
+    const rates = audio.map((stream) => stream.sampleRate ?? 0).filter((rate) => rate > 0);
+    const sampleRate = rates.length > 0 ? Math.max(...rates) : null;
+    expectation =
+      policy === 'stereo'
+        ? { policy, channels: 2, channelLayout: 'stereo', sampleRate }
+        : { policy, channels: widest.channels, channelLayout: widest.channelLayout, sampleRate };
+  }
+
+  return { video: { minBitDepth, transfer }, audio: expectation };
+};
+
+export const parseStudioExportContract = (value: unknown): StudioExportContract | null => {
+  const record = asRecord(value);
+  const video = asRecord(record.video);
+  if (video.minBitDepth !== 8 && video.minBitDepth !== 10) {
+    return null;
+  }
+  return value as StudioExportContract;
+};
+
+/**
+ * Why a rendered export does not honour its contract, or null when it does. `probe` is the
+ * production probe of the worker's file; nothing the worker reported about it is consulted.
+ */
+export const findStudioExportOutputMismatch = (
+  contract: StudioExportContract,
+  probe: { videoStreams: VideoStreamInfo[]; audioStreams: AudioStreamInfo[] },
+): string | null => {
+  const [video] = probe.videoStreams;
+  if (!video) {
+    return 'The result has no video stream';
+  }
+  if (contract.video.minBitDepth > 8 && !isHighBitDepth(video)) {
+    return `The result is ${video.pixelFormat}, below the ${contract.video.minBitDepth}-bit this export promises`;
+  }
+  if (
+    contract.video.transfer &&
+    (!isHdrTransfer(video) || HDR_TRANSFERS[video.colorTransfer] !== contract.video.transfer)
+  ) {
+    return `The result is not tagged with the ${contract.video.transfer} transfer this export promises`;
+  }
+  const [audio] = probe.audioStreams;
+  if (contract.audio) {
+    const mismatch = findAudioLayoutMismatch(
+      {
+        policy: contract.audio.policy === 'stereo' ? AudioChannelPolicy.DownmixStereo : AudioChannelPolicy.Preserve,
+        channels: contract.audio.channels,
+        channelLayout: contract.audio.channelLayout,
+        sampleRate: contract.audio.sampleRate,
+      },
+      audio,
+    );
+    if (mismatch) {
+      return `The result's audio does not match the export: ${mismatch}`;
+    }
+  }
+  const drift = findAvAlignmentMismatch(video, audio);
+  return drift ? `The result's audio and video are misaligned: ${drift}` : null;
+};
+
+/** Exact equality of two `num/den` spellings, so a worker's unreduced `2/60000` still matches `1/30000`. */
+export const sameTimeBase = (a: string, b: string): boolean => {
+  const left = tryParseRational(a);
+  const right = tryParseRational(b);
+  return !!left && !!right && equals(left, right);
+};

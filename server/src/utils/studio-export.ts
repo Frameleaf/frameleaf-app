@@ -1,4 +1,5 @@
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
+import type { StudioExportContract } from 'src/utils/studio-export-contract.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { AssetType, StorageFolder } from 'src/enum.js';
 
@@ -81,6 +82,8 @@ export type StudioExportPublishSnapshot = {
   revision: number;
   /** The result stays with its project until the owner saves it to the library (FL-194). */
   retain?: 'project';
+  /** FL-102: what the result must have, copied from the render's snapshot. */
+  contract?: StudioExportContract | null;
 };
 
 export const parseStudioExportPublishSnapshot = (value: unknown): StudioExportPublishSnapshot | null => {

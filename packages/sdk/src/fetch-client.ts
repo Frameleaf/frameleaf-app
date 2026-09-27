@@ -9360,6 +9360,8 @@ export type StudioBundleUploadDto = {
     sources: StudioBundleSourceDto[];
 };
 export type StudioExportSettingsDto = {
+    /** Absent on exports made before audio was a choice */
+    audio?: StudioExportAudio;
     color: StudioExportColor;
     format: StudioExportFormat;
     resolution: StudioExportResolution;
@@ -9636,6 +9638,8 @@ export type StudioExportListResponseDto = {
     total: number;
 };
 export type StudioExportCreateDto = {
+    /** Defaults to `preserve`; a stereo downmix happens only when asked for */
+    audio?: StudioExportAudio;
     /** You agree to the media leaving your network for this export */
     cloudConsent?: boolean;
     color: StudioExportColor;
@@ -22798,6 +22802,10 @@ export enum StudioBundleSourceResolution {
 export enum StudioExportScope {
     Library = "library",
     Project = "project"
+}
+export enum StudioExportAudio {
+    Preserve = "preserve",
+    Stereo = "stereo"
 }
 export enum StudioExportColor {
     Preserve = "preserve",
