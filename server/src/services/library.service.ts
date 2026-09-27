@@ -41,6 +41,7 @@ import {
   invalidExclusionPatterns,
   isSameOrInside,
   normalizeImportPath,
+  resolvesIntoMediaStorage,
 } from 'src/utils/library-paths.js';
 import { libraryAssetFromFile, libraryPathsFingerprint } from 'src/utils/library-scan.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
@@ -319,6 +320,10 @@ export class LibraryService extends BaseService {
       job.paths.map(async (filePath) => {
         const assetPath = path.normalize(filePath);
         try {
+          if (await resolvesIntoMediaStorage(this.storageRepository, assetPath)) {
+            this.logger.warn(`Skipping ${assetPath} for library ${job.libraryId}: it links into the media storage`);
+            return;
+          }
           const stat = await this.storageRepository.stat(assetPath);
           assetImports.push(
             libraryAssetFromFile(
