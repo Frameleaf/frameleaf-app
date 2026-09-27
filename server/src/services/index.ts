@@ -15,6 +15,7 @@ import { BestPhotosService } from 'src/services/best-photos.service.js';
 import { BulkOperationService } from 'src/services/bulk-operation.service.js';
 import { ClassificationService } from 'src/services/classification.service.js';
 import { CliService } from 'src/services/cli.service.js';
+import { CloudBackupDetailsService } from 'src/services/cloud-backup-details.service.js';
 import { CloudBackupService } from 'src/services/cloud-backup.service.js';
 import { CloudMlBatchService } from 'src/services/cloud-ml-batch.service.js';
 import { CloudMlJobService } from 'src/services/cloud-ml-job.service.js';
@@ -116,6 +117,7 @@ import { ZeroShotTaggingService } from 'src/services/zero-shot-tagging.service.j
 
 export const services = [
   CloudMlService,
+  CloudBackupDetailsService,
   CloudBackupService,
   CloudMlBatchService,
   CloudMlJobService,
