@@ -8026,6 +8026,45 @@ export type RenderWorkerProgressDto = {
     status: Status3;
     totalUnits: number | null;
 };
+export type RenderWorkerStreamSignalRequestDto = {
+    /** The claim token this operation was handed out with */
+    claimToken: string;
+};
+export type StudioPreviewStreamBoundsDto = {
+    /** Bitrate the worker may not exceed; the server writes it into the relayed answer */
+    maxBitrateKbps: number;
+    /** The session closes after this long; playing on opens a new one */
+    maxDurationSeconds: number;
+    maxFrameRate: number;
+    maxHeight: number;
+    maxWidth: number;
+};
+export type StudioPreviewTimeDto = {
+    /** Time denominator; must be positive */
+    denominator: string;
+    /** Time numerator, in seconds over the denominator */
+    numerator: string;
+};
+export type RenderWorkerStreamSignalDto = {
+    /** The browser's answer, with the server's bitrate bound written in */
+    answer: string | null;
+    bounds: StudioPreviewStreamBoundsDto;
+    close: boolean;
+    closeReason: (StudioPreviewStreamCloseReason) | null;
+    /** The round to offer on */
+    negotiation: number;
+    /** No offer from this claim for this round yet: create one (with an ICE restart) */
+    offerNeeded: boolean;
+    revision: number;
+    start: StudioPreviewTimeDto;
+};
+export type RenderWorkerStreamOfferDto = {
+    /** The claim token this operation was handed out with */
+    claimToken: string;
+    negotiation: number;
+    /** A complete session description (SDP) */
+    sdp: string;
+};
 export type RenderWorkerRemoteReferenceDto = {
     id: string;
     /** The render job */
@@ -9432,11 +9471,43 @@ export type StudioExportVersionDto = {
     /** The version number, once published */
     version: number | null;
 };
-export type StudioPreviewTimeDto = {
-    /** Time denominator; must be positive */
-    denominator: string;
-    /** Time numerator, in seconds over the denominator */
-    numerator: string;
+export type StudioPreviewStreamOpenDto = {
+    /** Studio project to play */
+    projectId: string;
+    quality: StudioPreviewQuality;
+    /** Stored project revision to play; a superseded revision is refused */
+    revision: number;
+    time: StudioPreviewTimeDto;
+    viewportHeight: number;
+    viewportWidth: number;
+};
+export type StudioPreviewStreamDto = {
+    bounds: StudioPreviewStreamBoundsDto;
+    closeReason: (StudioPreviewStreamCloseReason) | null;
+    /** The stored head, when the session closed as stale */
+    currentRevision: number | null;
+    /** The hard end of this session */
+    expiresAt: string;
+    /** Stream session ID */
+    id: string;
+    /** Poll at least this often, or the session is closed */
+    keepaliveMs: number;
+    /** The offer/answer round; an answer must name it */
+    negotiation: number;
+    /** The worker's offer for this round, while it waits for an answer */
+    offer: string | null;
+    projectId: string;
+    /** The stored project revision this session plays */
+    revision: number;
+    /** Where playback starts */
+    start: StudioPreviewTimeDto;
+    state: StudioPreviewStreamState;
+};
+export type StudioPreviewStreamAnswerDto = {
+    /** The round this answer answers */
+    negotiation: number;
+    /** A complete session description (SDP) */
+    sdp: string;
 };
 export type StudioPreviewRequestDto = {
     /** Studio project the frame belongs to */
@@ -17868,6 +17939,46 @@ export function reportRenderOperationProgress({ id, xFrameleafWorkerSession, ren
     })));
 }
 /**
+ * Read the signalling of a claimed preview stream
+ */
+export function getRenderStreamSignal({ id, xFrameleafWorkerSession, renderWorkerStreamSignalRequestDto }: {
+    id: string;
+    xFrameleafWorkerSession: string;
+    renderWorkerStreamSignalRequestDto: RenderWorkerStreamSignalRequestDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: RenderWorkerStreamSignalDto;
+    }>(`/render-workers/operations/${encodeURIComponent(id)}/stream`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: renderWorkerStreamSignalRequestDto,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "x-frameleaf-worker-session": xFrameleafWorkerSession
+        })
+    })));
+}
+/**
+ * Offer a claimed preview stream
+ */
+export function offerRenderStream({ id, xFrameleafWorkerSession, renderWorkerStreamOfferDto }: {
+    id: string;
+    xFrameleafWorkerSession: string;
+    renderWorkerStreamOfferDto: RenderWorkerStreamOfferDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: RenderWorkerWriteResultDto;
+    }>(`/render-workers/operations/${encodeURIComponent(id)}/stream/offer`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: renderWorkerStreamOfferDto,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "x-frameleaf-worker-session": xFrameleafWorkerSession
+        })
+    })));
+}
+/**
  * Begin validating a claimed operation
  */
 export function validateRenderOperation({ id, xFrameleafWorkerSession, renderWorkerCompleteDto }: {
@@ -19103,6 +19214,78 @@ export function downloadStudioExport({ id }: {
         data: Blob;
     }>(`/studio/exports/${encodeURIComponent(id)}/download`, {
         ...opts
+    }));
+}
+/**
+ * Open a Studio preview stream
+ */
+export function openStudioPreviewStream({ studioPreviewStreamOpenDto }: {
+    studioPreviewStreamOpenDto: StudioPreviewStreamOpenDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: StudioPreviewStreamDto;
+    }>("/studio/preview-streams", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: studioPreviewStreamOpenDto
+    })));
+}
+/**
+ * Close a Studio preview stream
+ */
+export function closeStudioPreviewStream({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioPreviewStreamDto;
+    }>(`/studio/preview-streams/${encodeURIComponent(id)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Get a Studio preview stream
+ */
+export function getStudioPreviewStream({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioPreviewStreamDto;
+    }>(`/studio/preview-streams/${encodeURIComponent(id)}`, {
+        ...opts
+    }));
+}
+/**
+ * Answer a Studio preview stream
+ */
+export function answerStudioPreviewStream({ id, studioPreviewStreamAnswerDto }: {
+    id: string;
+    studioPreviewStreamAnswerDto: StudioPreviewStreamAnswerDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioPreviewStreamDto;
+    }>(`/studio/preview-streams/${encodeURIComponent(id)}/answer`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: studioPreviewStreamAnswerDto
+    })));
+}
+/**
+ * Reconnect a Studio preview stream
+ */
+export function reconnectStudioPreviewStream({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioPreviewStreamDto;
+    }>(`/studio/preview-streams/${encodeURIComponent(id)}/reconnect`, {
+        ...opts,
+        method: "POST"
     }));
 }
 /**
@@ -21478,6 +21661,7 @@ export enum MediaOperationDestination {
 export enum MediaOperationKind {
     StudioExport = "studio_export",
     StudioPreview = "studio_preview",
+    StudioPreviewStream = "studio_preview_stream",
     Restoration = "restoration",
     RestorationPreview = "restoration_preview",
     QuickEdit = "quick_edit",
@@ -22839,6 +23023,15 @@ export enum Status3 {
     Preparing = "preparing",
     Rendering = "rendering"
 }
+export enum StudioPreviewStreamCloseReason {
+    Closed = "closed",
+    Superseded = "superseded",
+    Revoked = "revoked",
+    StaleRevision = "stale-revision",
+    Expired = "expired",
+    WorkerLost = "worker-lost",
+    Failed = "failed"
+}
 export enum StudioExportRemoteReason {
     Cancel = "cancel",
     Delete = "delete"
@@ -22960,6 +23153,13 @@ export enum StudioPreviewQuality {
     Draft = "draft",
     Standard = "standard",
     Full = "full"
+}
+export enum StudioPreviewStreamState {
+    Queued = "queued",
+    Negotiating = "negotiating",
+    Offered = "offered",
+    Answered = "answered",
+    Closed = "closed"
 }
 export enum StudioPreviewStatus {
     Pending = "pending",
