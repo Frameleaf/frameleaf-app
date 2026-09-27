@@ -1034,6 +1034,7 @@
         onVideoEnded={() => navigateAsset()}
         onVideoStarted={handleVideoStarted}
         playOriginalVideo={isPlayingOriginalVideo}
+        onPlayEncoded={() => setPlayOriginalVideo(false)}
       />
     {:else if viewerKind === 'LiveVideoViewer'}
       <VideoViewer
@@ -1064,6 +1065,7 @@
         onVideoEnded={() => navigateAsset()}
         onVideoStarted={handleVideoStarted}
         playOriginalVideo={isPlayingOriginalVideo}
+        onPlayEncoded={() => setPlayOriginalVideo(false)}
       />
     {/if}
 

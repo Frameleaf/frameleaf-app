@@ -125,6 +125,31 @@ test.describe('viewer media sources', () => {
     await expect(source.getByRole('button', { name: 'Play original' })).toHaveAttribute('aria-pressed', 'true');
   });
 
+  test('an original in a format the browser cannot play says so and offers the encoded rendition', async ({
+    context,
+    page,
+  }) => {
+    const video = selectRandom(
+      fixture.assets.filter((asset) => asset.isVideo),
+      rng,
+    );
+    const dto = { ...toAssetResponseDto(video), originalMimeType: 'video/x-msvideo' };
+    await serveAsset(context, dto);
+    await context.route(`**/api/assets/${dto.id}/original**`, (route) =>
+      route.fulfill({ status: 200, contentType: 'video/x-msvideo', body: 'RIFF not a playable file' }),
+    );
+    await page.goto(`/photos/${dto.id}`);
+    await assetViewerUtils.waitForViewerLoad(page, video);
+    const source = page.getByTestId('viewer-footer').getByRole('group', { name: 'Video source' });
+    await source.getByRole('button', { name: 'Play original' }).click();
+
+    const alert = page.getByRole('alert').filter({ hasText: "This browser can't play the original file's format." });
+    await expect(alert).toBeVisible();
+    await alert.getByRole('button', { name: 'Play encoded' }).click();
+    await expect(source.getByRole('button', { name: 'Play encoded' })).toHaveAttribute('aria-pressed', 'true');
+    await expect(alert).toHaveCount(0);
+  });
+
   test('an unavailable original says so and offers the relink route', async ({ context, page }) => {
     const dto = { ...fixture.primaryAssetDto, isOffline: true };
     await serveAsset(context, dto);
