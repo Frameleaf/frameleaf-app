@@ -85,14 +85,12 @@ test.describe('Sign in with the administrator’s OAuth provider (FL-80)', () =>
   test('finishes a deep-linked sign-in whose callback opens in another tab', async ({ context, page }) => {
     await page.goto('/auth/login?continue=' + encodeURIComponent('/albums'));
 
-    // the provider sends the browser back; hold that callback and open it in a new tab instead
-    let callback = '';
-    await page.route(/\/auth\/login\?.*code=/, async (route) => {
-      callback = route.request().url();
-      await route.abort();
-    });
+    // the provider sends the browser back; this tab never finishes it, a new tab does
+    await page.route('**/api/oauth/callback', (route) => route.abort());
+    const callbackRequest = page.waitForRequest(/\/auth\/login\?.*code=/);
     await providerSignIn(page);
-    await expect.poll(() => callback).toContain('code=');
+    const request = await callbackRequest;
+    const callback = request.url();
 
     const other = await context.newPage();
     await other.goto(callback);
@@ -130,13 +128,11 @@ test.describe('Sign in with the administrator’s OAuth provider (FL-80)', () =>
   });
 
   test('refuses a callback link that was already used', async ({ browser, page }) => {
-    let callback = '';
-    await page.route(/\/auth\/login\?.*code=/, async (route) => {
-      callback = route.request().url();
-      await route.continue();
-    });
+    const callbackRequest = page.waitForRequest(/\/auth\/login\?.*code=/);
     await page.goto('/auth/login');
     await providerSignIn(page);
+    const request = await callbackRequest;
+    const callback = request.url();
     await expect(page).toHaveURL(/\/photos(\?|$)/);
 
     // the same link, replayed from another browser
