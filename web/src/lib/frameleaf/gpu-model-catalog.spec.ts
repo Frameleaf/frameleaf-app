@@ -10,6 +10,7 @@ import {
   composeFixes,
   estimateCost,
   fixStepKey,
+  fixYaml,
   gpuClassLabelKey,
   gpuClasses,
   gpuProblems,
@@ -25,6 +26,7 @@ import {
   modelNoteKey,
   positionById,
   positionState,
+  problemById,
   problemExplainKey,
   quotedUnitCost,
   resolvePosition,
@@ -283,6 +285,21 @@ describe('gpu model catalogue (FL-159, CLD-201)', () => {
     expect(composeFixes.intel.yaml).toMatch(/group_add/);
     expect(composeFixes.amd.yaml).toMatch(/\/dev\/kfd/);
     expect(JSON.stringify({ composeFixes, gpuProblems, gpuClasses, modelLadders })).not.toMatch(/runpod|immich/i);
+  });
+
+  it('fills a fix with what the check found (FL-159)', () => {
+    expect(fixYaml('render-group', { gid: 107 })).toContain('- "107"');
+    expect(fixYaml('wrong-gpu', { pciAddress: '0000:0a:00.0' })).toContain(
+      '/dev/dri/by-path/pci-0000:0a:00.0-render:/dev/dri/renderD128',
+    );
+    expect(fixYaml('rocm-gfx', { gfxVersion: '11.0.0' })).toContain('HSA_OVERRIDE_GFX_VERSION=11.0.0');
+    // The reference list shows examples; the Mac has nothing to put in docker compose.
+    expect(fixYaml('render-group')).toContain('- "993"');
+    expect(fixYaml('macos')).toBeNull();
+    for (const id of ['wrong-gpu', 'unraid', 'macos', 'render-group', 'nvidia-bf16']) {
+      expect(problemById(id)).toBeTruthy();
+    }
+    expect(problemById('nvidia-bf16')?.note).toBe(true);
   });
 
   it('has copy for every model, GPU class and unit', () => {

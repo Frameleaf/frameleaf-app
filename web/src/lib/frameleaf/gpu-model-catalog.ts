@@ -891,14 +891,37 @@ export const resolvePosition = (
 
 // ------------------------------------------------------------------ problems & fixes
 
-export type ComposeFixId = 'nvidia' | 'intel' | 'amd' | 'wsl2';
-export type ComposeFix = { title: string; steps: number; yaml: string };
-export type GpuProblem = { id: string; vendor: string; symptom: string; fix: ComposeFixId | null };
+export type ComposeFixId =
+  'nvidia' | 'intel' | 'amd' | 'wsl2' | 'wrong-gpu' | 'render-group' | 'rocm-gfx' | 'unraid' | 'macos';
+/**
+ * A fix: its steps and, where docker compose can fix it, a copy-ready snippet. `{gid}`,
+ * `{pciAddress}` and `{gfxVersion}` are filled from what the check found (`fixYaml`).
+ */
+export type ComposeFix = { title: string; steps: number; yaml: string | null };
+/** `note`: a limit of the card rather than a set-up mistake; shown as a note, not as something to fix. */
+export type GpuProblem = { id: string; vendor: string; symptom: string; fix: ComposeFixId | null; note?: boolean };
+
+/** What the check found that a fix names (`HardwareFindingDto`). */
+export type FixValues = { gid?: number | null; pciAddress?: string | null; gfxVersion?: string | null };
+
+/** Example values for the reference list, where nothing was found. */
+const FIX_EXAMPLES = { gid: '993', pciAddress: '0000:03:00.0', gfxVersion: '10.3.0' };
+
+/** The snippet of a fix, with the values the check found (or the examples). */
+export const fixYaml = (id: ComposeFixId, values: FixValues = {}) => {
+  const filled: Record<string, string> = {
+    gid: String(values.gid ?? FIX_EXAMPLES.gid),
+    pciAddress: values.pciAddress ?? FIX_EXAMPLES.pciAddress,
+    gfxVersion: values.gfxVersion ?? FIX_EXAMPLES.gfxVersion,
+  };
+  return composeFixes[id].yaml?.replaceAll(/\{(gid|pciAddress|gfxVersion)\}/g, (_, key: string) => filled[key]) ?? null;
+};
 
 /** The plain-language explanation of a set-up problem (first sentence is its heading). */
 export const problemExplainKey = (id: string) => `frameleaf_hardware_problem_${id.replaceAll('-', '_')}`;
 /** One step of a compose fix, 1-based. */
-export const fixStepKey = (id: ComposeFixId, step: number) => `frameleaf_hardware_fix_${id}_step_${step}`;
+export const fixStepKey = (id: ComposeFixId, step: number) =>
+  `frameleaf_hardware_fix_${id.replaceAll('-', '_')}_step_${step}`;
 
 /**
  * Common GPU set-up problems with the log line people see and the fix that resolves them (from the
@@ -951,18 +974,36 @@ export const gpuProblems: readonly GpuProblem[] = Object.freeze([
     symptom: 'Permission denied opening /dev/dri/renderD128',
     fix: 'amd',
   },
+  {
+    id: 'render-group',
+    vendor: 'Intel / AMD',
+    symptom: "/dev/dri/renderD128 belongs to a group the container doesn't have",
+    fix: 'render-group',
+  },
   { id: 'openvino-cpu-only', vendor: 'Intel', symptom: 'OpenVINO devices: CPU only', fix: 'intel' },
   {
     id: 'wrong-gpu',
     vendor: 'Intel / AMD',
     symptom: 'The integrated GPU is used instead of the graphics card',
-    fix: null,
+    fix: 'wrong-gpu',
   },
   { id: 'kfd-missing', vendor: 'AMD', symptom: 'Unable to open /dev/kfd read-write', fix: 'amd' },
-  { id: 'rocm-gfx', vendor: 'AMD', symptom: 'hipErrorNoBinaryForGpu on RX 6000/7000', fix: 'amd' },
+  { id: 'rocm-gfx', vendor: 'AMD', symptom: 'hipErrorNoBinaryForGpu on RX 6000/7000', fix: 'rocm-gfx' },
   { id: 'wsl2', vendor: 'Windows', symptom: 'WSL2: /dev/dri missing or Quick Sync fails', fix: 'wsl2' },
-  { id: 'unraid', vendor: 'Unraid', symptom: 'The GPU plugin shows the card but the container does not', fix: null },
-  { id: 'macos', vendor: 'Apple', symptom: 'Docker Desktop on macOS shows no GPU', fix: null },
+  {
+    id: 'unraid',
+    vendor: 'Unraid',
+    symptom: 'The GPU plugin shows the card but the container does not',
+    fix: 'unraid',
+  },
+  { id: 'macos', vendor: 'Apple', symptom: 'Docker Desktop on macOS shows no GPU', fix: 'macos' },
+  {
+    id: 'nvidia-bf16',
+    vendor: 'NVIDIA',
+    symptom: 'bf16 and FlashAttention are not supported on compute capability 7.5 (Turing)',
+    fix: null,
+    note: true,
+  },
   {
     id: 'snap-docker',
     vendor: 'NVIDIA',
@@ -992,6 +1033,27 @@ export const composeFixes: Readonly<Record<ComposeFixId, ComposeFix>> = Object.f
     steps: 1,
     yaml: 'services:\n  frameleaf-server:\n    devices:\n      - /dev/dri:/dev/dri\n      - /dev/dxg:/dev/dxg\n    volumes:\n      - /usr/lib/wsl:/usr/lib/wsl\n    environment:\n      - LIBVA_DRIVER_NAME=d3d12\n\n  frameleaf-machine-learning:\n    devices:\n      - /dev/dxg:/dev/dxg\n    volumes:\n      - /usr/lib/wsl:/usr/lib/wsl',
   },
+  'wrong-gpu': {
+    title: 'a host with two GPUs',
+    steps: 2,
+    yaml: 'services:\n  frameleaf-server:\n    devices:\n      # the graphics card by its PCI path, so it is always the node the container uses\n      - /dev/dri/by-path/pci-{pciAddress}-render:/dev/dri/renderD128\n\n  frameleaf-machine-learning:\n    devices:\n      - /dev/dri/by-path/pci-{pciAddress}-render:/dev/dri/renderD128',
+  },
+  'render-group': {
+    title: 'the render group',
+    steps: 2,
+    yaml: 'services:\n  frameleaf-server:\n    group_add:\n      - "{gid}"   # owner of /dev/dri/renderD128 on the host\n\n  frameleaf-machine-learning:\n    group_add:\n      - "{gid}"',
+  },
+  'rocm-gfx': {
+    title: 'ROCm',
+    steps: 1,
+    yaml: 'services:\n  frameleaf-machine-learning:\n    environment:\n      - HSA_OVERRIDE_GFX_VERSION={gfxVersion}',
+  },
+  unraid: {
+    title: 'Unraid',
+    steps: 3,
+    yaml: "services:\n  frameleaf-server:\n    runtime: nvidia\n    environment:\n      - NVIDIA_VISIBLE_DEVICES=GPU-xxxxxxxx   # the card's UUID from the Nvidia Driver plugin\n      - NVIDIA_DRIVER_CAPABILITIES=all\n\n  frameleaf-machine-learning:\n    runtime: nvidia\n    environment:\n      - NVIDIA_VISIBLE_DEVICES=GPU-xxxxxxxx\n      - NVIDIA_DRIVER_CAPABILITIES=all",
+  },
+  macos: { title: 'Docker Desktop on a Mac', steps: 2, yaml: null },
 });
 export const problemById = (id: string) => gpuProblems.find((item) => item.id === id) ?? null;
 
