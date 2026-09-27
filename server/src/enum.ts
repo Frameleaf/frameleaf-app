@@ -612,6 +612,8 @@ export enum UserMetadataKey {
   Preferences = 'preferences',
   License = 'license',
   Onboarding = 'onboarding',
+  /** FL-196: when this administrator ended the linked-server tour, and how. */
+  FrameleafCloudTour = 'frameleaf-cloud-tour',
 }
 
 export const UserMetadataKeySchema = z

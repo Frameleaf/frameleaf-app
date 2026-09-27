@@ -66,6 +66,7 @@
   import { getServerErrorMessage } from '$lib/utils/handle-error';
   import { convertBCP47, langs } from '$lib/utils/i18n';
   import {
+    CloudTourEnding,
     finishFrameleafSetup,
     FrameleafSetupFlow,
     getConfig,
@@ -76,6 +77,7 @@
     getSummary,
     HardwareBackend,
     login,
+    markCloudTourSeen,
     QueueCommand,
     QueueName,
     runQueueCommandLegacy,
@@ -268,8 +270,23 @@
   const choose = (patch: Partial<SetupChoices>) => {
     setup = { ...setup, choices: { ...setup.choices, ...patch } };
   };
+  /**
+   * FL-196: setup has its own summary of what linking unlocks, so the linked-server tour is never
+   * offered to the administrator who linked here. Recorded as soon as the link lands (when signed
+   * in) and again when setup finishes, which covers a server linked before the administrator existed.
+   */
+  const coverCloudTour = async () => {
+    try {
+      await markCloudTourSeen({ cloudTourSeenDto: { ending: CloudTourEnding.Setup } });
+    } catch {
+      // not recorded: the tour may be offered once in Settings, which is harmless
+    }
+  };
   const link = (value: boolean) => {
     setup = setLinked(setup, value);
+    if (value && signedIn) {
+      void coverCloudTour();
+    }
   };
 
   const translateErrors = (raw: Record<string, string>) =>
@@ -389,6 +406,9 @@
         });
       }
       await finishFrameleafSetup();
+      if (linked) {
+        await coverCloudTour();
+      }
       await setUserOnboarding({ onboardingDto: { isOnboarded: true } });
       setup = { ...setup, completed: true };
       clearLocalSetup();
