@@ -1005,6 +1005,12 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
     evidence: 'newVersionCheck.enabled',
   },
   {
+    pattern: 'newVersionCheck.frequency',
+    kind: 'control',
+    file: 'src/routes/admin/system-settings/NewVersionCheckSettings.svelte',
+    evidence: 'newVersionCheck.frequency',
+  },
+  {
     pattern: 'nightlyTasks.clusterNewFaces',
     kind: 'control',
     file: 'src/routes/admin/system-settings/NightlyTasksSettings.svelte',

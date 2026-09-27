@@ -2938,6 +2938,17 @@ export enum ReleaseChannel {
 
 export const ReleaseChannelSchema = z.enum(ReleaseChannel).describe('Release channel').meta({ id: 'ReleaseChannel' });
 
+/** FL-71: how often the automatic Frameleaf update check asks (the prototype's "Check frequency"). */
+export enum VersionCheckFrequency {
+  Daily = 'daily',
+  Weekly = 'weekly',
+}
+
+export const VersionCheckFrequencySchema = z
+  .enum(VersionCheckFrequency)
+  .describe('Check frequency')
+  .meta({ id: 'VersionCheckFrequency' });
+
 export enum CronJob {
   LibraryScan = 'LibraryScan',
   NightlyJobs = 'NightlyJobs',

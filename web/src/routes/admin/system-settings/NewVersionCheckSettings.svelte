@@ -6,16 +6,16 @@
    * and no external fallback feed.
    *
    * - "Check for updates" is the saved `newVersionCheck.enabled`: the server asks Frameleaf's own
-   *   GitHub releases every hour (FL-80 S-4 / O-8; owner decision on FL-146, 2026-09-25 — the privacy
+   *   GitHub releases on the chosen schedule (FL-80 S-4 / O-8; owner decision on FL-146, 2026-09-25 — the privacy
    *   direction applied to Immich-origin calls only). The release panel shows the last check and
    *   offers "Check for updates" now (`CommandCenter.jsx:2253-2287` `ReleaseConnection`).
+   * - "Check frequency" is the saved `newVersionCheck.frequency` (the prototype's Daily or Weekly;
+   *   FL-71, owner decision 2026-09-27 "Build a real setting"): the server's hourly tick asks only
+   *   once that interval has passed since the last check.
    * - "Update channel" is the saved `newVersionCheck.channel` (Stable or Release candidate, the
    *   server's channels), kept for when checks are allowed.
    * - "Third-party release checks" is the template's locked privacy boundary.
    * - "Installed build channel" is read from the running version.
-   *
-   * The template's "Check frequency" has no server setting (the server checks hourly), so it is not
-   * drawn (recorded in the conformance audit; no API field is invented for it).
    */
   import SettingActions from '$lib/components/frameleaf/settings/SettingActions.svelte';
   import SettingSelect from '$lib/components/frameleaf/settings/SettingSelect.svelte';
@@ -28,7 +28,13 @@
   import { locale } from '$lib/stores/preferences.store';
   import { websocketStore } from '$lib/stores/websocket';
   import { semverToName } from '$lib/utils';
-  import { checkVersionNow, getVersionCheck, ReleaseChannel, type ReleaseEventV1 } from '@immich/sdk';
+  import {
+    checkVersionNow,
+    getVersionCheck,
+    ReleaseChannel,
+    VersionCheckFrequency,
+    type ReleaseEventV1,
+  } from '@immich/sdk';
   import { Icon } from '@immich/ui';
   import { mdiMagnify, mdiServerOutline, mdiShieldCheckOutline } from '@mdi/js';
   import { DateTime } from 'luxon';
@@ -45,6 +51,11 @@
   const channelOptions = $derived([
     { value: ReleaseChannel.Stable, text: $t('admin.release_channel_stable') },
     { value: ReleaseChannel.ReleaseCandidate, text: $t('admin.release_channel_release_candidate') },
+  ]);
+
+  const frequencyOptions = $derived([
+    { value: VersionCheckFrequency.Daily, text: $t('frameleaf_versions_frequency_daily') },
+    { value: VersionCheckFrequency.Weekly, text: $t('frameleaf_versions_frequency_weekly') },
   ]);
 
   // The last check the server recorded, and the result of "Check for updates" on this page.
@@ -145,6 +156,15 @@
     subtitle={$t('frameleaf_versions_check_body')}
     bind:checked={configToEdit.newVersionCheck.enabled}
     isEdited={configToEdit.newVersionCheck.enabled !== config.newVersionCheck.enabled}
+    {disabled}
+  />
+  <SettingSelect
+    label={$t('frameleaf_versions_frequency_title')}
+    desc={$t('frameleaf_versions_frequency_body')}
+    bind:value={configToEdit.newVersionCheck.frequency}
+    options={frequencyOptions}
+    name="release-check-frequency"
+    isEdited={configToEdit.newVersionCheck.frequency !== config.newVersionCheck.frequency}
     {disabled}
   />
   <SettingSelect

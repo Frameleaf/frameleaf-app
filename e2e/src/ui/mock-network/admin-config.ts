@@ -332,6 +332,7 @@ export const adminConfigDefaults = {
   newVersionCheck: {
     enabled: false,
     channel: 'stable',
+    frequency: 'daily',
   },
   nightlyTasks: {
     startTime: '00:00',
