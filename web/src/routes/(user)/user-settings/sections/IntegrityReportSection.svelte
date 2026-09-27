@@ -41,9 +41,11 @@
 
   type Props = {
     type: IntegrityReport;
+    /** How often the queue is polled for a finished check; tests shorten it. */
+    pollMs?: number;
   };
 
-  let { type }: Props = $props();
+  let { type, pollMs = 2000 }: Props = $props();
 
   const refreshJobs: Record<IntegrityReport, ManualJobName> = {
     [IntegrityReport.UntrackedFile]: ManualJobName.IntegrityUntrackedFilesRefresh,
@@ -114,9 +116,17 @@
         expectingUpdate = false;
       }
 
-      await asyncTimeout(2000);
+      await asyncTimeout(pollMs);
     }
   });
+
+  // A refresh can finish between two polls, so the queue is never seen active: re-read the findings
+  // on the next idle poll whenever the job was created.
+  const recheck = async () => {
+    if (await handleCreateJob({ name: refreshJobs[type] })) {
+      expectingUpdate = true;
+    }
+  };
 
   onDestroy(() => {
     running = false;
@@ -175,7 +185,7 @@
       </p>
     </div>
     <div class="actions">
-      <button type="button" class="button" onclick={() => void handleCreateJob({ name: refreshJobs[type] })}>
+      <button type="button" class="button" onclick={() => void recheck()}>
         <Icon icon={mdiRefresh} size="16" aria-hidden={true} />
         {$t('admin.frameleaf_maintenance_report_recheck')}
       </button>
