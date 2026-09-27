@@ -16,7 +16,6 @@ async function bootstrap() {
 
   // the supervisor went away: close everything rather than keep the direct port open
   process.on('disconnect', () => {
-    // eslint-disable-next-line unicorn/no-process-exit
     void app.close().finally(() => process.exit(0));
   });
 }

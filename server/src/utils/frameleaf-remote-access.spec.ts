@@ -154,7 +154,9 @@ describe('frameleaf remote access (FL-165)', () => {
           domain: 'frameleaf.cloud',
           names: {
             relay: `r.${answer.label}.frameleaf.cloud`,
+            // eslint-disable-next-line unicorn/no-incorrect-template-string-interpolation -- the contract's placeholder
             lanPattern: `{ipv4}.${answer.label}.frameleaf.cloud`,
+            // eslint-disable-next-line unicorn/no-incorrect-template-string-interpolation -- the contract's placeholder
             ipv6Pattern: `{ipv6}.${answer.label}.frameleaf.cloud`,
           },
         }),
@@ -412,6 +414,7 @@ describe('frameleaf remote access (FL-165)', () => {
       const none = { lanAddresses: [], ipv6Addresses: [] };
       // in a container: a hostname (or no) FRAMELEAF_LOCAL_URL advertises nothing, never the bridge
       const container = { interfaces, defaultInterfaces: ['eth0'], inContainer: true };
+      // eslint-disable-next-line unicorn/prefer-https -- a LAN address is plain http
       expect(hostAddresses({ ...container, localUrl: 'http://photos.home.arpa:2283' })).toEqual(none);
       expect(hostAddresses({ ...container, localUrl: null })).toEqual(none);
       expect(hostAddresses({ ...container, localUrl: 'http://192.168.1.10:2283' })).toEqual({

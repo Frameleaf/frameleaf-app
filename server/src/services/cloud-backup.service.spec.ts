@@ -1626,7 +1626,9 @@ describe(CloudBackupService.name, () => {
 
       const result = await sut.restoreFromBucket(
         { s3, key: key.toString('base64'), scope: 'files', restoreDatabase: false },
-        (line) => lines.push(line),
+        (line) => {
+          lines.push(line);
+        },
       );
 
       expect(store.readMarker).toHaveBeenCalledWith(expect.objectContaining({ bucket: s3.bucket }), key);

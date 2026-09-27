@@ -260,8 +260,8 @@ export class CloudBackupMaintenance {
 
     const hashes = named
       .keys()
-      .toArray()
       .filter((sha256) => start.depth === 'full' || inVerifySlice(sha256, start.slice))
+      .toArray()
       .toSorted(compareCodeUnits);
     let result: CloudBackupVerifyResult = {
       ...start,
@@ -294,7 +294,9 @@ export class CloudBackupMaintenance {
         }
         result = { ...result, checked: result.checked + 1, cursor: sha256 };
       }
-      await this.settleBad(bucket, bad.splice(0), degraded);
+      const settling = [...bad];
+      bad.length = 0;
+      await this.settleBad(bucket, settling, degraded);
       result = {
         ...result,
         degradedManifests: degradedCount(),

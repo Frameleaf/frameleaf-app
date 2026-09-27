@@ -68,9 +68,9 @@ describe(CloudBackupMaintenance.name, () => {
       listAll: vi.fn().mockImplementation((_connection, prefix: string, onPage: (page: unknown[]) => Promise<void>) => {
         const page = objects
           .entries()
-          .toArray()
           .filter(([key]) => key.startsWith(prefix))
-          .map(([key, body]) => ({ key, size: body.length, etag: null }));
+          .map(([key, body]) => ({ key, size: body.length, etag: null }))
+          .toArray();
         return (page.length > 0 ? onPage(page) : Promise.resolve()).then(() => page.length);
       }),
       get: vi.fn().mockImplementation((_connection, key: string) => {
