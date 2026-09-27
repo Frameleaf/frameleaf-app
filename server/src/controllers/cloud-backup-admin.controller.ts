@@ -7,6 +7,8 @@ import {
   CloudBackupCheckResponseDto,
   CloudBackupEscrowDto,
   CloudBackupGeneratedKeyDto,
+  CloudBackupManifestAlbumsDto,
+  CloudBackupManifestAlbumsResponseDto,
   CloudBackupManifestItemsDto,
   CloudBackupManifestItemsResponseDto,
   CloudBackupManifestsResponseDto,
@@ -217,6 +219,20 @@ export class CloudBackupAdminController {
   })
   searchManifestItems(@Body() dto: CloudBackupManifestItemsDto): Promise<CloudBackupManifestItemsResponseDto> {
     return this.service.listManifestItems(dto);
+  }
+
+  @Post('manifests/albums')
+  @HttpCode(HttpStatus.OK)
+  @Authenticated({ permission: Permission.AdminCloudBackupRead, admin: true })
+  @Endpoint({
+    operationId: 'listCloudBackupManifestAlbums',
+    summary: 'List the albums a backup can bring back',
+    description:
+      'The albums one kept backup records that are deleted or no longer hold every item they held then. Reads the backup’s manifest from the bucket.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  listManifestAlbums(@Body() dto: CloudBackupManifestAlbumsDto): Promise<CloudBackupManifestAlbumsResponseDto> {
+    return this.service.listManifestAlbums(dto);
   }
 
   @Post('restore')

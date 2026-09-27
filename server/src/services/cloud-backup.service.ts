@@ -20,6 +20,9 @@ import {
   CloudBackupCheckResponseDto,
   CloudBackupEscrowDto,
   CloudBackupGeneratedKeyDto,
+  CloudBackupManifestAlbum,
+  CloudBackupManifestAlbumsDto,
+  CloudBackupManifestAlbumsResponseDto,
   CloudBackupManifestItem,
   CloudBackupManifestItemsDto,
   CloudBackupManifestItemsResponseDto,
@@ -87,6 +90,7 @@ import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
+import { CloudBackupDetailsService } from 'src/services/cloud-backup-details.service.js';
 import {
   CloudBackupBucket,
   CloudBackupMaintenance,
@@ -95,10 +99,12 @@ import {
   emptyVerifyResult,
 } from 'src/services/cloud-backup-maintenance.js';
 import {
+  CloudBackupRestoreFile,
   CloudBackupRestoreResult,
   CloudBackupRestoreScope,
   CloudBackupRestoreSnapshot,
   CloudBackupRestorer,
+  IN_PLACE_SCOPES,
   RESTORE_REPLACED_FOLDER,
   emptyRestoreResult,
   restorePlan,
@@ -341,6 +347,7 @@ export class CloudBackupService {
     private userRepository: UserRepository,
     private cronRepository: CronRepository,
     private jobRepository: JobRepository,
+    private details: CloudBackupDetailsService,
   ) {
     this.logger.setContext(CloudBackupService.name);
     this.maintenance = new CloudBackupMaintenance(store, index, logger);
@@ -2288,7 +2295,7 @@ export class CloudBackupService {
         return;
       }
       const manifest = readManifest(await this.store.get(opened.connection, snapshot.manifestKey, opened.bucketKey));
-      const inPlace = snapshot.scope === 'asset' || snapshot.scope === 'library';
+      const inPlace = IN_PLACE_SCOPES.has(snapshot.scope);
       const library = inPlace
         ? await this.libraryState(snapshot.assetIds ?? Object.keys(manifest.assets))
         : new Map<string, CloudBackupLibraryAsset>();
@@ -2304,7 +2311,7 @@ export class CloudBackupService {
         mediaLocation,
         currentOriginals,
       });
-      if (snapshot.assetIds && plan.files.length === 0) {
+      if (snapshot.assetIds && plan.files.length === 0 && snapshot.scope !== 'album') {
         throw new Error('This backup does not hold the chosen items.');
       }
       const done = await this.restorer.restore({
@@ -2322,6 +2329,7 @@ export class CloudBackupService {
           stop = await this.checkpointTask(operation, claimToken, current, restoreUnits(current));
           return stop === 'continue';
         },
+        library: (current) => this.restoreLibrary(manifest, snapshot, plan.files, library, current),
       });
       if (done) {
         result = done;
@@ -2351,6 +2359,91 @@ export class CloudBackupService {
         await this.recordRestore(operation, snapshot, result, 'failed', message);
       }
     }
+  }
+
+  /**
+   * The library side of an `asset` or `album` restore once its files are back (manifest v2): a deleted
+   * item is made again from its record with its details, an item still in the library gets its details
+   * back as asked, stacks that are gone are made again, and an album is made again or gets its lost
+   * members back. Running it again finds the items it made in the library and changes nothing more.
+   */
+  private async restoreLibrary(
+    manifest: CloudBackupManifest,
+    snapshot: CloudBackupRestoreSnapshot,
+    files: CloudBackupRestoreFile[],
+    before: Map<string, CloudBackupLibraryAsset>,
+    result: CloudBackupRestoreResult,
+  ): Promise<CloudBackupRestoreResult> {
+    if (snapshot.scope !== 'asset' && snapshot.scope !== 'album') {
+      return result;
+    }
+    const mode = snapshot.details ?? 'keep';
+    const assetIds = snapshot.assetIds ?? [];
+    // read again: a resumed restore finds the items it already made in the library
+    const library = await this.libraryState(assetIds);
+    const current = mode === 'keep' ? new Map() : await this.index.getAssetDetails(library.keys().toArray());
+    const members: string[] = [];
+    const made: Array<{ assetId: string; ownerId: string; stack: CloudBackupAssetDetails['stack'] }> = [];
+    let { recreated, detailsRestored } = result;
+
+    for (const assetId of assetIds) {
+      const asset = manifest.assets[assetId];
+      const inLibrary = library.get(assetId);
+      if (!asset) {
+        continue;
+      }
+      if (inLibrary) {
+        members.push(assetId);
+        const now = current.get(assetId);
+        if (asset.details && now && before.has(assetId)) {
+          const changed = await this.details.putBack({
+            assetId,
+            ownerId: inLibrary.ownerId,
+            type: now.record.type,
+            current: now.details,
+            backup: asset.details,
+            mode,
+            people: manifest.people,
+          });
+          detailsRestored += changed ? 1 : 0;
+        }
+        continue;
+      }
+      const original = files.find((file) => file.assetId === assetId && file.role === 'original' && file.inPlace);
+      const record = asset.type ? readRecord(asset) : null;
+      if (!record || !asset.owner || !original) {
+        // a backup made before items were recorded: the file is back in place, without its record
+        continue;
+      }
+      const sidecar = files.find((file) => file.assetId === assetId && file.role === 'sidecar' && file.inPlace);
+      const outcome = await this.details.recreate({
+        assetId,
+        ownerId: asset.owner,
+        record,
+        details: asset.details,
+        sha256: original.sha256,
+        size: original.size,
+        originalPath: original.target,
+        sidecarPath: sidecar?.target ?? null,
+        people: manifest.people,
+      });
+      if (outcome.status === 'created') {
+        recreated += 1;
+        members.push(assetId);
+        made.push({ assetId, ownerId: asset.owner, stack: asset.details?.stack ?? null });
+      } else if (outcome.status === 'duplicate') {
+        members.push(outcome.assetId);
+      }
+    }
+    await this.details.restoreStacks(made);
+    if (snapshot.scope === 'album' && snapshot.albumId) {
+      await this.details.restoreAlbum({
+        albumId: snapshot.albumId,
+        album: manifest.albums[snapshot.albumId],
+        memberIds: members,
+      });
+    }
+    return { ...result, recreated, detailsRestored };
   }
 
   /** The library's current state of these assets (every one the library still has, trashed or not). */
@@ -2385,6 +2478,8 @@ export class CloudBackupService {
         replaced: result.replaced,
         ...(result.destination && { destination: result.destination }),
         ...(result.databaseFile && { databaseFile: result.databaseFile }),
+        ...(result.recreated > 0 && { recreated: result.recreated }),
+        ...(result.detailsRestored > 0 && { detailsRestored: result.detailsRestored }),
         ...(error && { error }),
       },
     }));
@@ -2466,8 +2561,50 @@ export class CloudBackupService {
       bytes: asset.files.reduce((total, file) => total + file.size, 0),
       modifiedAt: original.mtime,
       state: stateOf(assetId),
+      hasDetails: !!asset.details && !!asset.type,
     }));
     return { manifestKey: dto.manifestKey, total: matching.length, items };
+  }
+
+  /**
+   * The albums one kept backup records (manifest v2) that a restore can bring back: deleted ones, and
+   * ones that no longer hold every item they held then. By name; a backup made before albums were
+   * recorded lists none.
+   */
+  async listManifestAlbums(dto: CloudBackupManifestAlbumsDto): Promise<CloudBackupManifestAlbumsResponseDto> {
+    const metadata = await this.requireClaim();
+    const manifest = await this.readManifestForRequest(metadata, dto.manifestKey);
+    const members = albumMembersOf(manifest);
+    const held = await this.index.getAlbumMembers(Object.keys(manifest.albums));
+    const owners = await this.index.getOwnerNames(Object.values(manifest.albums).map(({ ownerId }) => ownerId));
+    const albums = Object.entries(manifest.albums).flatMap(([albumId, album]): CloudBackupManifestAlbum[] => {
+      const items = members.get(albumId) ?? [];
+      const now = held.get(albumId);
+      const missing = now ? items.filter((assetId) => !now.has(assetId)).length : items.length;
+      const state = now ? (missing > 0 ? 'missing-items' : 'complete') : 'deleted';
+      if (state === 'complete') {
+        return [];
+      }
+      return [
+        {
+          albumId,
+          name: album.name,
+          ownerId: album.ownerId,
+          ownerName: owners.get(album.ownerId) ?? null,
+          items: items.length,
+          missing,
+          state,
+        },
+      ];
+    });
+    return {
+      manifestKey: dto.manifestKey,
+      hasDetails: manifest.version >= 2,
+      albums: albums.toSorted(
+        (a, b) =>
+          compareCodeUnits(a.name.toLowerCase(), b.name.toLowerCase()) || compareCodeUnits(a.albumId, b.albumId),
+      ),
+    };
   }
 
   /**
@@ -2484,6 +2621,12 @@ export class CloudBackupService {
     if (dto.scope === 'asset' && dto.assetIds?.length !== 1) {
       throw new BadRequestException('Choose exactly one item to restore in place.');
     }
+    if (dto.scope === 'album' && (!dto.albumId || dto.assetIds?.length)) {
+      throw new BadRequestException('Choose one album to restore.');
+    }
+    if (dto.details && dto.scope !== 'asset' && dto.scope !== 'album') {
+      throw new BadRequestException('Only an item or an album restore brings details back.');
+    }
     if ((dto.scope === 'database' || dto.scope === 'library') && dto.assetIds?.length) {
       throw new BadRequestException('A database or whole-library restore does not take items.');
     }
@@ -2491,6 +2634,18 @@ export class CloudBackupService {
       throw new BadRequestException('This backup has no database dump to restore.');
     }
     await this.requireKeyForRequest(metadata);
+    let assetIds = dto.scope === 'files' || dto.scope === 'asset' ? (dto.assetIds ?? null) : null;
+    if (dto.scope === 'album') {
+      const backedUp = await this.readManifestForRequest(metadata, dto.manifestKey);
+      if (!backedUp.albums[dto.albumId!]) {
+        throw new NotFoundException(
+          backedUp.version >= 2
+            ? 'This backup does not hold the album.'
+            : 'This backup was made before albums were recorded in backups. Choose a newer backup.',
+        );
+      }
+      assetIds = albumMembersOf(backedUp).get(dto.albumId!) ?? [];
+    }
 
     const snapshot: CloudBackupRestoreSnapshot = {
       version: 1,
@@ -2498,7 +2653,9 @@ export class CloudBackupService {
       keyFingerprint: metadata.keyFingerprint,
       manifestKey: dto.manifestKey,
       scope: dto.scope,
-      assetIds: dto.scope === 'files' || dto.scope === 'asset' ? (dto.assetIds ?? null) : null,
+      assetIds,
+      ...(dto.scope === 'album' && { albumId: dto.albumId }),
+      ...((dto.scope === 'asset' || dto.scope === 'album') && { details: dto.details ?? 'keep' }),
     };
     const outcome = await this.operations.createExclusive(
       {
@@ -2968,6 +3125,8 @@ export class CloudBackupService {
       ...restore,
       destination: restore.destination ?? null,
       databaseFile: restore.databaseFile ?? null,
+      recreated: restore.recreated ?? 0,
+      detailsRestored: restore.detailsRestored ?? 0,
       error: restore.error ?? null,
     };
   }
@@ -3023,10 +3182,35 @@ const restoreUnits = (result: CloudBackupRestoreResult) => ({
   progress: result.bytesTotal > 0 ? (result.bytes / result.bytesTotal) * 100 : 0,
 });
 
+/** FL-164 (manifest v2): each album's items in a backup, in the manifest's order. */
+const albumMembersOf = (manifest: CloudBackupManifest) => {
+  const members = new Map<string, string[]>();
+  for (const [assetId, asset] of Object.entries(manifest.assets)) {
+    for (const { id } of asset.details?.albums ?? []) {
+      members.set(id, [...(members.get(id) ?? []), assetId]);
+    }
+  }
+  return members;
+};
+
+/** An item's record as the manifest holds it (manifest v2), or null for a backup without one. */
+const readRecord = (asset: CloudBackupManifest['assets'][string]): CloudBackupAssetRecord | null =>
+  asset.type && asset.originalFileName && asset.fileCreatedAt && asset.fileModifiedAt && asset.localDateTime
+    ? {
+        type: asset.type,
+        originalFileName: asset.originalFileName,
+        fileCreatedAt: asset.fileCreatedAt,
+        fileModifiedAt: asset.fileModifiedAt,
+        localDateTime: asset.localDateTime,
+        duration: asset.duration ?? null,
+      }
+    : null;
+
 /** FL-164: a restore's Activity label. Never an item's name, which a Locked item must not show. */
 const RESTORE_LABEL: Record<CloudBackupRestoreSnapshot['scope'], string> = {
   files: 'Restore from cloud backup',
   asset: 'Restore an item from cloud backup',
+  album: 'Restore an album from cloud backup',
   database: 'Restore the database from cloud backup',
   library: 'Restore the whole library from cloud backup',
 };

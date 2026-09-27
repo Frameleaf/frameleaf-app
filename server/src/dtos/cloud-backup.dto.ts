@@ -112,11 +112,25 @@ const CloudBackupVerifyDepthSchema = z
   .meta({ id: 'CloudBackupVerifyDepth' });
 
 const CloudBackupRestoreScopeSchema = z
-  .enum(['files', 'asset', 'database', 'library'])
+  .enum(['files', 'asset', 'album', 'database', 'library'])
   .describe(
-    'files: into a restore folder for Library Care; asset: one item back in place; database: the dump for the maintenance restore; library: every file back in place and the dump',
+    'files: into a restore folder for Library Care; asset: one item back in place (made again when it was deleted); album: an album and its members (made again when deleted); database: the dump for the maintenance restore; library: every file back in place and the dump',
   )
   .meta({ id: 'CloudBackupRestoreScope' });
+
+const CloudBackupRestoreDetailsSchema = z
+  .enum(['keep', 'fill', 'replace'])
+  .describe(
+    'How the details of an item still in the library come back. keep: only the file; fill: backed-up values fill empty fields; replace: fields that differ go back to the backup’s values',
+  )
+  .meta({ id: 'CloudBackupRestoreDetails' });
+
+const CloudBackupAlbumStateSchema = z
+  .enum(['deleted', 'missing-items', 'complete'])
+  .describe(
+    'deleted: the album is gone; missing-items: some of its items are no longer in it; complete: nothing to bring back',
+  )
+  .meta({ id: 'CloudBackupAlbumState' });
 
 const CloudBackupItemStateSchema = z
   .enum(['active', 'trashed', 'deleted'])
@@ -163,8 +177,16 @@ const CloudBackupRestoreSchema = z
       .max(10_000)
       .optional()
       .describe('files: the items to restore (every item when absent); asset: exactly one item'),
+    albumId: z.uuidv4().optional().describe('album: the album to restore'),
+    details: CloudBackupRestoreDetailsSchema.optional().describe(
+      'asset and album: how details of items still in the library come back; keep when absent',
+    ),
   })
   .meta({ id: 'CloudBackupRestoreDto' });
+
+const CloudBackupManifestAlbumsSchema = z
+  .object({ manifestKey: ManifestKeySchema })
+  .meta({ id: 'CloudBackupManifestAlbumsDto' });
 
 const CloudBackupManifestItemsSchema = z
   .object({
@@ -203,8 +225,31 @@ const CloudBackupManifestItemSchema = z
     bytes: z.int(),
     modifiedAt: z.string().nullable().describe('When the original was last written before the backup'),
     state: CloudBackupItemStateSchema,
+    hasDetails: z
+      .boolean()
+      .describe('The backup holds the item’s details, so a deleted item comes back as it was, not only as a file'),
   })
   .meta({ id: 'CloudBackupManifestItemDto' });
+
+const CloudBackupManifestAlbumSchema = z
+  .object({
+    albumId: z.string(),
+    name: z.string(),
+    ownerId: z.string(),
+    ownerName: z.string().nullable(),
+    items: z.int().describe('Items the album held in this backup'),
+    missing: z.int().describe('Of those, items no longer in the album'),
+    state: CloudBackupAlbumStateSchema,
+  })
+  .meta({ id: 'CloudBackupManifestAlbumDto' });
+
+const CloudBackupManifestAlbumsResponseSchema = z
+  .object({
+    manifestKey: z.string(),
+    hasDetails: z.boolean().describe('The backup records albums; false for a backup made before they were recorded'),
+    albums: z.array(CloudBackupManifestAlbumSchema).describe('Deleted albums and albums missing items, by name'),
+  })
+  .meta({ id: 'CloudBackupManifestAlbumsResponseDto' });
 
 const CloudBackupManifestItemsResponseSchema = z
   .object({
@@ -288,6 +333,8 @@ const CloudBackupLastRestoreSchema = z
     skipped: z.int(),
     replaced: z.int(),
     destination: z.string().nullable().describe('The folder a files restore wrote to'),
+    recreated: z.int().describe('Deleted items made again'),
+    detailsRestored: z.int().describe('Items still in the library whose details came back'),
     databaseFile: z.string().nullable().describe('The restored dump, listed by the maintenance restore'),
     error: z.string().nullable(),
   })
@@ -364,8 +411,11 @@ export class CloudBackupPruneDto extends createZodDto(CloudBackupPruneSchema) {}
 export class CloudBackupEscrowDto extends createZodDto(CloudBackupEscrowSchema) {}
 export class CloudBackupRestoreDto extends createZodDto(CloudBackupRestoreSchema) {}
 export class CloudBackupManifestItemsDto extends createZodDto(CloudBackupManifestItemsSchema) {}
+export class CloudBackupManifestAlbumsDto extends createZodDto(CloudBackupManifestAlbumsSchema) {}
+export class CloudBackupManifestAlbumsResponseDto extends createZodDto(CloudBackupManifestAlbumsResponseSchema) {}
 export class CloudBackupManifestsResponseDto extends createZodDto(CloudBackupManifestsResponseSchema) {}
 export class CloudBackupManifestItemsResponseDto extends createZodDto(CloudBackupManifestItemsResponseSchema) {}
 export type CloudBackupS3 = z.infer<typeof CloudBackupS3Schema>;
 export type CloudBackupManifestItem = z.infer<typeof CloudBackupManifestItemSchema>;
+export type CloudBackupManifestAlbum = z.infer<typeof CloudBackupManifestAlbumSchema>;
 export type CloudBackupRunState = z.infer<typeof CloudBackupRunStateSchema>;

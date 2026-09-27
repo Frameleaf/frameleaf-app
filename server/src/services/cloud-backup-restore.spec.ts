@@ -226,5 +226,50 @@ describe('cloud backup restore (FL-164)', () => {
       expect(store.download).toHaveBeenCalledTimes(1);
       expect(result).toMatchObject({ files: 2, bytes: 105 });
     });
+
+    it('puts items, details and albums back after the files and before the database, once, even after a pause', async () => {
+      const { files, destination } = plan('library');
+      const order: string[] = [];
+      store.download = vi
+        .fn()
+        .mockImplementation((_connection, key: string, _bucketKey, target: string, sha256: string) => {
+          order.push(key.startsWith('db/') ? 'database' : 'file');
+          present.set(target, sha256);
+          return Promise.resolve({ size: 1, sha256 });
+        });
+      const library = vi.fn().mockImplementation((result) => {
+        order.push('library');
+        return Promise.resolve({ ...result, recreated: 1 });
+      });
+      const options = {
+        bucket,
+        manifest,
+        scope: 'library' as const,
+        files,
+        destination,
+        mediaLocation: MEDIA,
+        backupsFolder: '/data/backups',
+        operationId: 'op-1',
+        library,
+      };
+
+      // paused as soon as the files are back
+      const paused = await sut.restore({
+        ...options,
+        start: emptyRestoreResult(),
+        checkpoint: (result) => Promise.resolve(result.phase !== 'library'),
+      });
+      expect(paused).toBeNull();
+      expect(library).not.toHaveBeenCalled();
+
+      const resumed = await sut.restore({
+        ...options,
+        start: { ...emptyRestoreResult(), phase: 'library' },
+        checkpoint: () => Promise.resolve(true),
+      });
+      expect(library).toHaveBeenCalledOnce();
+      expect(order.slice(-2)).toEqual(['library', 'database']);
+      expect(resumed).toMatchObject({ phase: 'done', recreated: 1 });
+    });
   });
 });
