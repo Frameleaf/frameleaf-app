@@ -93,6 +93,7 @@ import {
   tightestLimits,
   verifyInputGrant,
 } from 'src/utils/render-admission.js';
+import { sameTimeBase } from 'src/utils/studio-export-contract.js';
 import { StudioDestination, isStudioDestination } from 'src/utils/studio-resources.js';
 
 /** A session lives half a day; a worker that is still there re-admits with fresh evidence. */
@@ -918,6 +919,19 @@ export class RenderWorkerService {
   ): Promise<RenderWorkerWriteResultDto> {
     const { worker } = await this.authenticate(sessionToken);
     const operation = await this.requireClaimed(worker.id, operationId, dto.claimToken);
+
+    // FL-93: a Studio export's chunks are planned on the grid its snapshot declared, so every chunk
+    // boundary is a boundary the preview, the audio and the encoder all place at the same instant.
+    const declared = asObject(asObject(operation.snapshot).timing).timeBase;
+    if (
+      operation.kind === MediaOperationKind.StudioExport &&
+      typeof declared === 'string' &&
+      !sameTimeBase(dto.timebase, declared)
+    ) {
+      throw new BadRequestException(
+        `This export's chunks are planned in ticks of ${declared} seconds, the grid its snapshot declares`,
+      );
+    }
 
     /**
      * FL-104: reuse is the server's decision, not the worker's. A finished chunk is kept only when

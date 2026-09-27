@@ -1213,6 +1213,40 @@ describe(RenderWorkerService.name, () => {
       );
     });
 
+    it('plans a Studio export only on the output grid its snapshot declared (FL-93)', async () => {
+      const exportJob = {
+        ...claimedByA,
+        kind: MediaOperationKind.StudioExport,
+        snapshot: { kind: 'studio-export', timing: { timeBase: '1001/30000' } },
+      };
+      vi.mocked(workers.getClaimed).mockResolvedValue(exportJob as never);
+      const plan = (timebase: string) =>
+        ({
+          claimToken: 'claim-1',
+          sequence: 0,
+          chunkKey: 'k',
+          inputDigest: 'i',
+          historyDigest: 'h',
+          configDigest: 'c',
+          seed: null,
+          timebase,
+          startTicks: '0',
+          endTicks: '300',
+        }) as never;
+
+      await expect(sut.planCheckpoint(SESSION_A, claimedByA.id, plan('1/1000'))).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      await expect(sut.planCheckpoint(SESSION_A, claimedByA.id, plan('30000/1001'))).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(operations.upsertCheckpoint).not.toHaveBeenCalled();
+
+      // An unreduced spelling of the same grid is the same grid.
+      await sut.planCheckpoint(SESSION_A, claimedByA.id, plan('2002/60000'));
+      expect(operations.upsertCheckpoint).toHaveBeenCalledOnce();
+    });
+
     describe('server-validated chunk reuse (FL-104)', () => {
       const chunk = (sequence: number, overrides: Record<string, unknown> = {}) => ({
         id: `chunk-${sequence}`,
