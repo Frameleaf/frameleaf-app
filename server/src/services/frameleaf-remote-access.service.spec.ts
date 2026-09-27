@@ -195,7 +195,9 @@ describe(FrameleafRemoteAccessService.name, () => {
       expect(status.customHostnameRecords.map(({ type, name, value }) => ({ type, name, value }))).toEqual(
         hostnames[0].records,
       );
-      expect(remoteSettings().customHostname).toMatchObject({ host: 'photos.example.com', status: 'pending' });
+      // the stored config holds only what differs from the defaults, and `pending` is the default status
+      expect(remoteSettings().customHostname).toMatchObject({ host: 'photos.example.com' });
+      expect(remoteSettings().customHostname.status ?? 'pending').toBe('pending');
     });
 
     it('moves from pending to verified once Frameleaf Cloud sees both records', async () => {
