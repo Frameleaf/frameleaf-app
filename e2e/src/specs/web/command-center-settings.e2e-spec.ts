@@ -215,10 +215,16 @@ test.describe('Command Center settings', () => {
     await expect(select).toHaveValue('daily');
     await expect(select.locator('option')).toHaveText(['Daily', 'Weekly']);
     await select.selectOption('weekly');
-    expect((await readConfig(admin)).newVersionCheck.frequency).toBe('daily');
+    const unsaved = await readConfig(admin);
+    expect(unsaved.newVersionCheck.frequency).toBe('daily');
 
     await reviewAndSave(page);
-    await expect.poll(async () => (await readConfig(admin)).newVersionCheck.frequency).toBe('weekly');
+    await expect
+      .poll(async () => {
+        const config = await readConfig(admin);
+        return config.newVersionCheck.frequency;
+      })
+      .toBe('weekly');
     await page.reload();
     await expect(page.getByRole('combobox', { name: labels.checkFrequency })).toHaveValue('weekly');
 
@@ -251,7 +257,12 @@ test.describe('Command Center settings', () => {
     });
     await expect(page.getByText(labels.importedOne)).toBeVisible();
     await reviewAndSave(page);
-    await expect.poll(async () => (await readConfig(admin)).newVersionCheck.frequency).toBe('weekly');
+    await expect
+      .poll(async () => {
+        const config = await readConfig(admin);
+        return config.newVersionCheck.frequency;
+      })
+      .toBe('weekly');
   });
 
   // FL-71: an email template preview shows the rendered template and never claims an email was sent.
