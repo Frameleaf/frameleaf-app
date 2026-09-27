@@ -104,10 +104,9 @@ export class TimelineService extends BaseService {
 
     return {
       ...options,
-      // FL-195: for an elevated session this carries `revealLockedOwnerId`, so the owner's own marks
-      // and detections show in every ordinary view (timeline, archive, a person, a tag, an album
-      // filtered by visibility) like any other item ("Revealed for this session"); items from the old
-      // Locked folder do not
+      // FL-195: for an elevated session this carries `revealLockedOwnerId`, so the owner's own Locked
+      // items — marks, detections and those moved from the old Locked folder — show in every ordinary
+      // view (timeline, archive, a person, a tag, an album filtered by visibility) like any other item
       ...getPrivacyQueryOptions(auth, suppressedOnly),
       // An album shows the viewer their own Locked members in an elevated session (owner decision,
       // September 22, 2026). The main timeline never does: the Locked view is its own view.

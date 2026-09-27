@@ -285,6 +285,7 @@ export class StudioBundleService {
    */
   async downloadExport(auth: AuthDto, operationId: string): Promise<ImmichReadStream> {
     const operation = await this.findOwnedBundle(auth, operationId);
+    await this.requireCarriedItemsVisible(auth, operation);
     if (operation.kind !== MediaOperationKind.StudioBundleExport) {
       throw new NotFoundException('Studio bundle not found');
     }
@@ -306,6 +307,7 @@ export class StudioBundleService {
   /** One bundle job with what it produced, for the project library and Activity. */
   async getOperation(auth: AuthDto, operationId: string): Promise<StudioBundleOperationDto> {
     const operation = await this.findOwnedBundle(auth, operationId);
+    await this.requireCarriedItemsVisible(auth, operation);
     const isExport = operation.kind === MediaOperationKind.StudioBundleExport;
     const exported = isExport ? parseBundleExportResult(operation.result) : null;
     const completed = operation.status === MediaOperationStatus.Completed;
@@ -678,8 +680,11 @@ export class StudioBundleService {
     for (const key of keys) {
       const entry = entries.get(key.key);
       const asset = assets.get(key.id);
-      // Locked media never leaves in a download, not even by name: it travels as a bare reference.
-      const known = entry && asset && !isLockedRow(asset) ? { entry, asset } : null;
+      // Locked media leaves only as a file the owner's unlocked session asked this bundle to carry
+      // (FL-195 follow-up: revealed, it behaves like any other item, and the bundle is then hidden from
+      // every locked session). Otherwise it travels as a bare reference, not even by name.
+      const revealed = allowedEmbeds.has(key.key) && asset?.ownerId === operation.ownerId;
+      const known = entry && asset && (!isLockedRow(asset) || revealed) ? { entry, asset } : null;
       const fileName = known ? known.asset.originalFileName : null;
       const contentType = fileName ? mimeTypes.lookup(fileName) || null : null;
       const embedPath =
@@ -1154,6 +1159,22 @@ export class StudioBundleService {
   private requireInteractive(auth: AuthDto) {
     if (auth.sharedLink) {
       throw new ForbiddenException('Studio bundles are not available on a shared link');
+    }
+  }
+
+  /**
+   * FL-195 follow-up: a bundle an unlocked owner exported carries the files of their revealed items.
+   * It is hidden, like those items, from a session that may not see one of them — decided as the items
+   * stand now, so an item locked after the export hides the bundle too — and answers as not found.
+   */
+  private async requireCarriedItemsVisible(auth: AuthDto, operation: MediaOperation): Promise<void> {
+    if (operation.kind !== MediaOperationKind.StudioBundleExport) {
+      return;
+    }
+    const embed = (operation.snapshot as { embed?: Array<{ id?: unknown }> } | null)?.embed ?? [];
+    const ids = embed.map((item) => item.id).filter((id): id is string => typeof id === 'string');
+    if (ids.length > 0 && (await this.studio.hiddenOwnedItems(auth, ids)).size > 0) {
+      throw new NotFoundException('Studio bundle not found');
     }
   }
 

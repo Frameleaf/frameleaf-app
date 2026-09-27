@@ -28,8 +28,14 @@ import { lockForkWrites } from 'src/repositories/fork-write-guard.js';
 import { DB } from 'src/schema/index.js';
 import { MemoryExportTable } from 'src/schema/tables/memory-export.table.js';
 import { MemoryTable } from 'src/schema/tables/memory.table.js';
-import { asUuid, getHiddenContentFilter, withHiddenContentFilter } from 'src/utils/database.js';
-import { isTimelineVisible, revealedLockScope } from 'src/utils/locked.js';
+import {
+  asUuid,
+  getHiddenContentFilter,
+  hiddenFromSession,
+  memoryHasNoHiddenItem,
+  withHiddenContentFilter,
+} from 'src/utils/database.js';
+import { isOnTimelineWhateverLock, isTimelineVisible, revealedLockScope } from 'src/utils/locked.js';
 
 /**
  * FL-62: the owner's own curation narrows what a search returns — memories they hid, and their
@@ -269,7 +275,8 @@ export class MemoryRepository implements IBulkAsset {
           ]),
         ),
       )
-      .where((eb) => withoutPrivateOnlyMemories(eb, options));
+      .where((eb) => withoutPrivateOnlyMemories(eb, options))
+      .where(memoryHasNoHiddenItem(sql.ref('memory.id'), options));
   }
 
   @GenerateSql(
@@ -337,7 +344,8 @@ export class MemoryRepository implements IBulkAsset {
       return id;
     });
 
-    return this.getByIdBuilder(id).executeTakeFirstOrThrow();
+    // generation's own read-back: whatever the memory holds (FL-195 follow-up); sessions re-read it
+    return this.getByIdBuilder(id, {}, { system: true }).executeTakeFirstOrThrow();
   }
 
   @GenerateSql({ params: [DummyValue.UUID, { ownerId: DummyValue.UUID, isSaved: true }, { excludeNsfw: true }] })
@@ -413,33 +421,37 @@ export class MemoryRepository implements IBulkAsset {
 
   /**
    * Pet stories (FL-58): the photos the owner confirmed each of their named, visible pets in, captured
-   * (owner's local time) inside the window. Timeline photos only, so Locked, archived and hidden
-   * photos never reach a story; only the owner's own pets and own assets are read.
+   * (owner's local time) inside the window. Timeline photos only, so archived and hidden photos never
+   * reach a story; Locked ones do (FL-195 follow-up), and the story is then hidden while the session is
+   * locked. Only the owner's own pets and own assets are read.
    */
   // No @GenerateSql: like getEventStoryCandidates, the snapshot needs a live database.
   getPetStoryCandidates(ownerId: string, from: Date, to: Date) {
-    return this.db
-      .selectFrom('pet_observation')
-      .innerJoin('pet', 'pet.id', 'pet_observation.petId')
-      .innerJoin('asset', 'asset.id', 'pet_observation.assetId')
-      .select([
-        'pet.id as petId',
-        'pet.name as name',
-        'pet.species as species',
-        'asset.id as assetId',
-        'asset.localDateTime as localDateTime',
-      ])
-      .where('pet.ownerId', '=', ownerId)
-      .where('pet.isHidden', '=', false)
-      .where('pet.name', '!=', '')
-      .where('pet_observation.state', '=', PetObservationState.Confirmed)
-      .where('asset.ownerId', '=', ownerId)
-      .where(isTimelineVisible('asset'))
-      .where('asset.deletedAt', 'is', null)
-      .where('asset.localDateTime', '>=', from)
-      .where('asset.localDateTime', '<=', to)
-      .orderBy('asset.localDateTime', 'asc')
-      .execute();
+    return (
+      this.db
+        .selectFrom('pet_observation')
+        .innerJoin('pet', 'pet.id', 'pet_observation.petId')
+        .innerJoin('asset', 'asset.id', 'pet_observation.assetId')
+        .select([
+          'pet.id as petId',
+          'pet.name as name',
+          'pet.species as species',
+          'asset.id as assetId',
+          'asset.localDateTime as localDateTime',
+        ])
+        .where('pet.ownerId', '=', ownerId)
+        .where('pet.isHidden', '=', false)
+        .where('pet.name', '!=', '')
+        .where('pet_observation.state', '=', PetObservationState.Confirmed)
+        .where('asset.ownerId', '=', ownerId)
+        // FL-195 follow-up: Locked items make stories too; the story is then hidden while locked
+        .where(isOnTimelineWhateverLock('asset'))
+        .where('asset.deletedAt', 'is', null)
+        .where('asset.localDateTime', '>=', from)
+        .where('asset.localDateTime', '<=', to)
+        .orderBy('asset.localDateTime', 'asc')
+        .execute()
+    );
   }
 
   /** `petId:month` of every pet story the owner already has in the window, deleted ones included. */
@@ -481,6 +493,25 @@ export class MemoryRepository implements IBulkAsset {
       .where('person.ownerId', '=', ownerId)
       .where('person.personGroupId', 'in', personGroupIds)
       .execute();
+  }
+
+  /**
+   * FL-195 follow-up: which of these items are hidden from a session with these options
+   * (`hiddenFromSession`); an item that no longer exists is not.
+   */
+  @GenerateSql({ params: [[DummyValue.UUID], { excludeNsfw: true }] })
+  async getHiddenItemIds(assetIds: string[], options: HiddenContentQueryOptions = {}): Promise<Set<string>> {
+    const ids = assetIds.filter((id) => isUuid(id));
+    if (ids.length === 0) {
+      return new Set();
+    }
+    const rows = await this.db
+      .selectFrom('asset')
+      .select('asset.id')
+      .where('asset.id', 'in', ids)
+      .where(hiddenFromSession(options, 'asset'))
+      .execute();
+    return new Set(rows.map(({ id }) => id));
   }
 
   // Private highlight exports (FL-62). These live here rather than in their own repository
@@ -610,7 +641,11 @@ export class MemoryRepository implements IBulkAsset {
       .execute();
   }
 
-  private getByIdBuilder(id: string, options: MemoryPrivacyOptions = {}) {
+  /**
+   * One memory as a session sees it. `system` is the generator's own read-back of a memory it just
+   * wrote, with every item it holds, Locked or not; it never answers a session.
+   */
+  private getByIdBuilder(id: string, options: MemoryPrivacyOptions = {}, { system = false } = {}) {
     return this.db
       .selectFrom('memory')
       .selectAll('memory')
@@ -622,14 +657,18 @@ export class MemoryRepository implements IBulkAsset {
             .innerJoin('memory_asset', 'asset.id', 'memory_asset.assetId')
             .whereRef('memory_asset.memoriesId', '=', 'memory.id')
             .orderBy('asset.fileCreatedAt', 'asc')
-            .where(isTimelineVisible('asset', options.revealLockedOwnerId))
+            .where(system ? isOnTimelineWhateverLock('asset') : isTimelineVisible('asset', options.revealLockedOwnerId))
             .where('asset.deletedAt', 'is', null)
             .$call((qb) => withMemoryAssetFilters(qb, options)),
         ).as('assets'),
       )
       .where('id', '=', id)
       .where('deletedAt', 'is', null)
-      .where((eb) => withoutPrivateOnlyMemories(eb, options));
+      .$if(!system, (qb) =>
+        qb
+          .where((eb) => withoutPrivateOnlyMemories(eb, options))
+          .where(memoryHasNoHiddenItem(sql.ref('memory.id'), options)),
+      );
   }
 
   /**
@@ -762,8 +801,9 @@ export class MemoryRepository implements IBulkAsset {
 
   /**
    * FL-62: the owner's own timeline photos and videos of one of their people or pets, oldest
-   * first, optionally within a local-time window. Only items with a preview, never Locked,
-   * archived or trashed ones; a person counts only through the owner's own person row.
+   * first, optionally within a local-time window. Only items with a preview, never archived or
+   * trashed ones; Locked ones count too (FL-195 follow-up), and the memory is then hidden while the
+   * session is locked. A person counts only through the owner's own person row.
    */
   getSubjectAssets(
     ownerId: string,
@@ -775,7 +815,7 @@ export class MemoryRepository implements IBulkAsset {
       .selectFrom('asset')
       .select(['asset.id', 'asset.localDateTime'])
       .where('asset.ownerId', '=', ownerId)
-      .where(isTimelineVisible('asset'))
+      .where(isOnTimelineWhateverLock('asset'))
       .where('asset.deletedAt', 'is', null)
       .where((eb) =>
         eb.exists((qb) =>

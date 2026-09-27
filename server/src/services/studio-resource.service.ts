@@ -14,12 +14,12 @@
  * - Access is decided for the acting user, never inherited from the project owner. A project
  *   shared with a reviewer resolves the reviewer's access; sources they cannot see are refused.
  *   Project sharing therefore never grants original access.
- * - Locked media enters Studio interactively only as its owner's revealed lock (a mark or a
- *   detection, `REVEALED_LOCK_REASONS`) in their elevated session, where it behaves like any other
- *   item (owner decision, September 27, 2026, FL-195). Items moved from the old Locked folder never
- *   do. While the session is locked the project keeps its references, and they resolve exactly
- *   like missing media. A background runner (FL-95) resolving a job the owner already submitted
- *   says so explicitly with `backgroundRunner` and reads the Locked sources that job references. Trashed and offline originals
+ * - Locked media enters Studio interactively only as its owner's revealed lock
+ *   (`REVEALED_LOCK_REASONS`: marks, detections and items moved from the old Locked folder) in their
+ *   elevated session, where it behaves like any other item (owner decisions, September 27, 2026,
+ *   FL-195). While the session is locked the project keeps its references; they are refused, and
+ *   the owner's editor hides those clips rather than showing them as missing media. A background
+ *   runner (FL-95) resolving a job the owner already submitted says so explicitly with `backgroundRunner` and reads the Locked sources that job references. Trashed and offline originals
  *   are refused. The acting user's sensitive and suppressed content settings apply through the
  *   same `checkAccess` the library uses.
  * - Nothing about an asset is reported before its access check. An asset the acting user cannot
@@ -1386,12 +1386,12 @@ export class StudioResourceService extends BaseService {
             : notFound,
         );
       } else if (isLocked && !backgroundRunner && !revealedIds.has(id)) {
-        // only the owner's elevated session reaches this: their marks and detections are revealed to it
-        // and place like any other item (FL-195); items from the old Locked folder never enter Studio
+        // only the owner's elevated session reaches this: every lock reason in REVEALED_LOCK_REASONS is
+        // revealed to it and places like any other item (FL-195); a reason outside it never does
         decisions.set(id, {
           ok: false,
           reason: StudioRefusalReason.Locked,
-          detail: 'Items from the old Locked folder never enter Studio.',
+          detail: 'This Locked item is not revealed to this session.',
         });
       } else if (asset.deletedAt) {
         // only the owner reaches a trashed asset: album and partner access never include the trash
