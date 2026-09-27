@@ -97,12 +97,46 @@ const gateTimelinePersistence = () => ({
   },
 })
 
+/**
+ * Freecut's own lifecycle suites run in the adapter's test run against the adapter's workspace
+ * (FL-91). Their workspace double, `workspace-fs/__tests__/in-memory-handle`, is reached by relative
+ * imports, so every import that resolves to it is given the adapter's version, which answers the same
+ * API with `VirtualWorkspace`. Nothing in the engine is edited.
+ */
+const upstreamWorkspaceDouble = path.join(
+  engine,
+  'src/infrastructure/storage/workspace-fs/__tests__/in-memory-handle.ts',
+)
+const adapterWorkspaceDouble = path.join(here, 'test/upstream/in-memory-handle.ts')
+const useAdapterWorkspace = () => ({
+  name: 'frameleaf-upstream-tests-on-virtual-workspace',
+  apply: 'serve',
+  enforce: 'pre',
+  async resolveId(source, importer, options) {
+    if (!importer || !source.includes('in-memory-handle')) return null
+    const resolved = await this.resolve(source, importer, { ...options, skipSelf: true })
+    return resolved?.id === upstreamWorkspaceDouble ? adapterWorkspaceDouble : null
+  },
+})
+
+/**
+ * Freecut's suites for what the adapter replaces or runs on: the storage layer (workspace-fs
+ * primitives, projects, trash, media, caches), project lifecycle, and project bundles. Paths are
+ * relative to `studio/`, the test directory.
+ */
+const upstreamSuites = [
+  'engine/src/infrastructure/storage/workspace-fs/**/*.test.ts',
+  'engine/src/features/projects/**/*.test.{ts,tsx}',
+  'engine/src/features/project-bundle/**/*.test.ts',
+]
+
 const plugins = async () => {
   const react = engineRequire('@vitejs/plugin-react')
   const tailwind = await import(engineRequire.resolve('@tailwindcss/vite'))
   return [
     resolveFromEngine(),
     gateTimelinePersistence(),
+    useAdapterWorkspace(),
     (react.default ?? react)(),
     (tailwind.default ?? tailwind)(),
     frameManifest(),
@@ -152,9 +186,14 @@ export default async () => ({
   },
   test: {
     root: here,
+    // The adapter's tests and Freecut's own suites (`upstreamSuites`) share one run.
+    dir: studio,
     globals: true,
+    // The interleaving models in draft-sync are CPU-bound; sharing workers with Freecut's suites can
+    // push one past the default 5 s on a busy runner. A hang still fails.
+    testTimeout: 30_000,
     environment: 'jsdom',
     setupFiles: [path.join(engine, 'src/test/setup.ts')],
-    include: ['test/**/*.test.ts'],
+    include: ['adapters/web/test/**/*.test.ts', ...upstreamSuites],
   },
 })
