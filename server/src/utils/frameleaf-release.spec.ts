@@ -184,4 +184,47 @@ describe('kill switch and staged rollout (FL-142)', () => {
     expect(parseFrameleafFeedRelease({ ...feedRelease, rolloutPercent: 101 }, ReleaseChannel.Stable)).toBeUndefined();
     expect(parseFrameleafFeedRelease({ ...feedRelease, withdrawn: 'no' }, ReleaseChannel.Stable)).toBeUndefined();
   });
+
+  describe('fallback (the newest earlier fully rolled-out release)', () => {
+    const fallback = { ...feedRelease, version: '3.2.0', tag: 'frameleaf-v3.2.0-2', rolloutPercent: 100 };
+
+    it('reads a valid fallback with the same rules as the release', () => {
+      expect(
+        parseFrameleafFeedRelease({ ...feedRelease, rolloutPercent: 10, fallback }, ReleaseChannel.Stable),
+      ).toEqual({
+        version: '3.2.1',
+        publishedAt: '2026-09-25T12:00:00Z',
+        withdrawn: false,
+        rolloutPercent: 10,
+        fallback: { version: '3.2.0', publishedAt: '2026-09-25T12:00:00Z', withdrawn: false, rolloutPercent: 100 },
+      });
+    });
+
+    it('keeps an explicit null fallback apart from a feed that predates the field', () => {
+      expect(parseFrameleafFeedRelease({ ...feedRelease, fallback: null }, ReleaseChannel.Stable)?.fallback).toBeNull();
+      expect(parseFrameleafFeedRelease(feedRelease, ReleaseChannel.Stable)).not.toHaveProperty('fallback');
+    });
+
+    it.each([
+      ['a version with a leading "v"', { ...fallback, version: 'v3.2.0' }],
+      ['a prerelease on the stable channel', { ...fallback, version: '3.2.1-rc.1' }],
+      ['a version that is not earlier', { ...fallback, version: '3.2.1' }],
+      ['a later version', { ...fallback, version: '3.3.0' }],
+      ['a malformed rollout', { ...fallback, rolloutPercent: 101 }],
+      ['a malformed kill switch', { ...fallback, withdrawn: 'no' }],
+      ['a string', '3.2.0'],
+      ['an array', [fallback]],
+    ])('rejects the whole answer for a fallback with %s', (_, bad) => {
+      expect(parseFrameleafFeedRelease({ ...feedRelease, fallback: bad }, ReleaseChannel.Stable)).toBeUndefined();
+    });
+
+    it('ignores unknown keys and a nested fallback inside the fallback', () => {
+      expect(
+        parseFrameleafFeedRelease(
+          { ...feedRelease, cohort: 'b', fallback: { ...fallback, fallback: 'ignored', extra: 1 } },
+          ReleaseChannel.Stable,
+        )?.fallback,
+      ).toEqual({ version: '3.2.0', publishedAt: '2026-09-25T12:00:00Z', withdrawn: false, rolloutPercent: 100 });
+    });
+  });
 });

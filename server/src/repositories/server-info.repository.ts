@@ -77,8 +77,11 @@ export class ServerInfoRepository {
    *
    * Kill switch and staged rollout (FL-142): a release marked withdrawn, or staged to a share of servers this
    * one is not in (`rolloutSeed` places it, and never leaves the server), is not offered. When the feed's
-   * release is not offered, GitHub releases are asked for the newest earlier release that is, never the same
-   * version again. `null` means no release is offered to this server now.
+   * release is not offered, its `fallback` (the newest earlier fully rolled-out release) is offered instead;
+   * `fallback: null` means the feed has nothing to offer. A feed without the field sends the check to GitHub
+   * releases for the newest earlier offered release, never the same version again. An invalid `fallback`
+   * makes the whole feed answer invalid, so GitHub is asked as for any other bad answer. `null` means no
+   * release is offered to this server now.
    */
   async getLatestRelease(channel: ReleaseChannel, rolloutSeed: string): Promise<VersionResponse | null> {
     const { versionCheck } = this.configRepository.getEnv();
@@ -88,10 +91,22 @@ export class ServerInfoRepository {
       if (isReleaseOffered(release, rolloutSeed, release.version)) {
         return { version: `v${release.version}`, published_at: release.publishedAt };
       }
+      const reason = release.withdrawn ? 'withdrawn' : 'not yet offered to this server';
+      // FL-142: the feed names the newest earlier release that is fully rolled out; null means there is none
+      if (release.fallback) {
+        if (isReleaseOffered(release.fallback, rolloutSeed, release.fallback.version)) {
+          this.logger.log(`Frameleaf release ${release.version} is ${reason}; offering ${release.fallback.version}`);
+          return { version: `v${release.fallback.version}`, published_at: release.fallback.publishedAt };
+        }
+        return null;
+      }
+      if (release.fallback === null) {
+        this.logger.log(`Frameleaf release ${release.version} is ${reason}, and there is no earlier release to offer`);
+        return null;
+      }
+      // a feed that predates `fallback`: look for the earlier release on GitHub, never this version again
       excluded = release.version;
-      this.logger.log(
-        `Frameleaf release ${release.version} is ${release.withdrawn ? 'withdrawn' : 'not yet offered to this server'}; looking for an earlier release`,
-      );
+      this.logger.log(`Frameleaf release ${release.version} is ${reason}; looking for an earlier release`);
     } catch (error) {
       this.logger.warn(
         `Frameleaf release feed unavailable, asking GitHub releases instead: ${error instanceof Error ? error.message : String(error)}`,
