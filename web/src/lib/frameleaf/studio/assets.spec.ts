@@ -8,6 +8,7 @@ import {
   type StudioRestoredVersionDto,
 } from '@immich/sdk';
 import { describe, expect, it, vi } from 'vitest';
+import { sessionAccess } from '$lib/frameleaf/session-access.svelte';
 
 vi.mock('$lib/frameleaf/restoration', () => ({
   restorationFileUrl: (assetId: string, restorationId: string, kind: string) =>
@@ -93,8 +94,17 @@ describe('studio asset projection', () => {
     });
   });
 
-  it('never lets a Locked asset cross the boundary', () => {
+  it('never lets a Locked asset cross the boundary while the session is locked', () => {
     expect(isStudioEligibleAsset(asset({ visibility: AssetVisibility.Locked }))).toBe(false);
+  });
+
+  it("offers the owner's revealed marks and detections in an unlocked session (FL-195)", () => {
+    sessionAccess.isElevated = true;
+    try {
+      expect(isStudioEligibleAsset(asset({ visibility: AssetVisibility.Locked }))).toBe(true);
+    } finally {
+      sessionAccess.isElevated = false;
+    }
   });
 
   it('excludes trashed media and types a timeline cannot hold', () => {
