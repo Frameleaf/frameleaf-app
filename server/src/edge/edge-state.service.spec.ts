@@ -8,7 +8,7 @@ import { EdgePortMappingService } from 'src/edge/edge-port-mapping.service.js';
 import { EdgeProxyService } from 'src/edge/edge-proxy.service.js';
 import { EdgeRelayService } from 'src/edge/edge-relay.service.js';
 import { EdgeStateService, carrierGradeNat } from 'src/edge/edge-state.service.js';
-import { SystemMetadataKey } from 'src/enum.js';
+import { DatabaseLock, SystemMetadataKey } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { cloudContractFixture } from 'test/fixtures/frameleaf-cloud-contracts.js';
 import { mockEnvData } from 'test/repositories/config.repository.mock.js';
@@ -224,6 +224,26 @@ describe(EdgeStateService.name, () => {
       await sut.tick(now);
       expect(mocks.frameleafCloud.requestJson).not.toHaveBeenCalled();
       expect(remoteState()).toMatchObject({ status: 'off', reason: 'Remote access is off.' });
+    });
+
+    it('reads nothing until the migrations have run, waiting for a boot that is migrating', async () => {
+      setSettings({ enabled: false });
+      mocks.database.isSchemaReady.mockResolvedValue(false);
+      await sut.tick(now);
+      expect(mocks.database.withLock).toHaveBeenCalledWith(DatabaseLock.Migrations, expect.any(Function));
+      expect(mocks.systemMetadata.get).not.toHaveBeenCalled();
+      expect(mocks.systemMetadata.set).not.toHaveBeenCalled();
+      expect(mocks.database.holdLock).not.toHaveBeenCalled();
+      expect(mocks.frameleafCloud.requestJson).not.toHaveBeenCalled();
+
+      mocks.database.isSchemaReady.mockResolvedValue(true);
+      await sut.tick(now);
+      expect(remoteState()).toMatchObject({ status: 'off', reason: 'Remote access is off.' });
+
+      // once the schema is there it is not checked again
+      mocks.database.withLock.mockClear();
+      await sut.tick(now);
+      expect(mocks.database.withLock).not.toHaveBeenCalledWith(DatabaseLock.Migrations, expect.any(Function));
     });
 
     it('leaves remote access to the edge worker that holds the lock', async () => {

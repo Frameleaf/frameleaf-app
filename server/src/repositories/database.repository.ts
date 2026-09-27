@@ -1443,6 +1443,19 @@ export class DatabaseRepository extends ForkHandoffRepository {
     return res as R;
   }
 
+  /**
+   * Whether this server's migrations have been applied: the public schema and the Frameleaf
+   * `immich_fork` schema are both there. A worker that does not migrate (the edge worker) asks this
+   * while holding `DatabaseLock.Migrations`, so a boot that is still migrating is waited for.
+   */
+  async isSchemaReady(): Promise<boolean> {
+    const { rows } = await sql<{ ready: boolean }>`
+      SELECT to_regclass('public.system_metadata') IS NOT NULL
+        AND to_regclass('immich_fork.migrations') IS NOT NULL AS ready
+    `.execute(this.db);
+    return !!rows[0]?.ready;
+  }
+
   tryLock(lock: DatabaseLock): Promise<boolean> {
     return this.db.connection().execute(async (connection) => this.acquireTryLock(lock, connection));
   }
