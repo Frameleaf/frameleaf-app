@@ -891,6 +891,12 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
     evidence: 'prompt?.style',
   },
   {
+    pattern: 'machineLearning.imageDescription.videoMomentCaptions',
+    kind: 'control',
+    file: 'src/routes/admin/system-settings/machine-learning/ImageDescriptionSection.svelte',
+    evidence: 'imageDescription.videoMomentCaptions',
+  },
+  {
     pattern: 'machineLearning.nsfwDetection.device',
     kind: 'control',
     file: 'src/routes/admin/system-settings/MachineLearningSettings.svelte',

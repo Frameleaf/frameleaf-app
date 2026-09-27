@@ -460,10 +460,16 @@ export class SystemConfigService extends BaseService {
     // the timestamp on every save). The bump happens BEFORE updateConfig() so
     // the new timestamp is persisted along with the rest of the config in a
     // single round-trip.
-    const oldDescription = omit(oldConfig.machineLearning.imageDescription, ['pendingRequeueAt', 'lastConfigChangeAt']);
+    // Captioning video moments (FL-59) changes no description, so it asks for no re-describe either.
+    const oldDescription = omit(oldConfig.machineLearning.imageDescription, [
+      'pendingRequeueAt',
+      'lastConfigChangeAt',
+      'videoMomentCaptions',
+    ]);
     const newDescription = omit(dto.machineLearning?.imageDescription ?? {}, [
       'pendingRequeueAt',
       'lastConfigChangeAt',
+      'videoMomentCaptions',
     ]);
     const descriptionChanged =
       !!dto.machineLearning?.imageDescription && !isEqual(toPlainObject(oldDescription), toPlainObject(newDescription));

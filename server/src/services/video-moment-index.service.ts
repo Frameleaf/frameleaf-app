@@ -3,8 +3,9 @@ import { join } from 'node:path';
 import type { SystemConfig } from 'src/config.js';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
+import type { JobOf } from 'src/types.js';
 import { StorageCore } from 'src/cores/storage.core.js';
-import { OnEvent } from 'src/decorators.js';
+import { OnEvent, OnJob } from 'src/decorators.js';
 import {
   VideoMomentCoverDto,
   VideoMomentCreateDto,
@@ -21,8 +22,10 @@ import {
   EnrichmentStaleReason,
   ImmichWorker,
   JobName,
+  JobStatus,
   MlWorkload,
   Permission,
+  QueueName,
   StorageFolder,
   VideoMomentIndexState,
   VideoMomentMatch,
@@ -47,6 +50,7 @@ import {
 import { IdentityPostValidator } from 'src/services/identity-post-validator.service.js';
 import { ImageDescriptionPromptAssembler, KnownPerson } from 'src/services/prompt-assembler.service.js';
 import { requireAccess } from 'src/utils/access.js';
+import { cloudDescriptionDestination } from 'src/utils/cloud-description-batch.js';
 import { getConfig } from 'src/utils/config.js';
 import {
   VIDEO_MOMENT_EXTRACTOR_VERSION,
@@ -323,6 +327,37 @@ export class VideoMomentIndexService {
     return failure
       ? { state: EnrichmentItemState.Failed, reasonKey: 'model-error', message: failure }
       : { state: EnrichmentItemState.Completed };
+  }
+
+  /**
+   * "Describe video moments" (FL-59): after a video is described, its reusable frames are captioned
+   * with the saved description settings on the routed destination. Off by default; plans choose
+   * captions themselves. Frameleaf Cloud describes in batches, so frames are never sent there one at
+   * a time from here.
+   */
+  @OnJob({ name: JobName.VideoMomentCaptions, queue: QueueName.ImageDescription })
+  async handleVideoMomentCaptions({ id }: JobOf<JobName.VideoMomentCaptions>): Promise<JobStatus> {
+    const { machineLearning } = await this.config();
+    if (!machineLearning.imageDescription.videoMomentCaptions) {
+      return JobStatus.Skipped;
+    }
+    if (await cloudDescriptionDestination(this.mlDestinations, null)) {
+      return JobStatus.Skipped;
+    }
+
+    const outcome = await this.runCaptionStage(id, { imageDescription: machineLearning.imageDescription, jobId: id });
+    switch (outcome.state) {
+      case EnrichmentItemState.Completed: {
+        return JobStatus.Success;
+      }
+      case EnrichmentItemState.Failed: {
+        this.logger.warn(`Could not caption the moments of video ${id}: ${outcome.message ?? outcome.reasonKey}`);
+        return JobStatus.Failed;
+      }
+      default: {
+        return JobStatus.Skipped;
+      }
+    }
   }
 
   /* ------------------------------------------------------------------ */
