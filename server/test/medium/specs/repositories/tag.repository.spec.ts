@@ -152,6 +152,22 @@ describe(TagRepository.name, () => {
     });
   });
 
+  describe('addAssetIds', () => {
+    it('keeps a row that is already there instead of failing', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      const { tag } = await ctx.newTag({ userId: user.id, value: 'trip' });
+      // metadata extraction added it first
+      await sut.upsertAssetIds([{ tagId: tag.id, assetId: asset.id }]);
+
+      await expect(sut.addAssetIds(tag.id, [asset.id])).resolves.toBeUndefined();
+      await expect(
+        ctx.database.selectFrom('tag_asset').select('tagId').where('assetId', '=', asset.id).execute(),
+      ).resolves.toEqual([{ tagId: tag.id }]);
+    });
+  });
+
   describe('removeAssetTagValues', () => {
     it('removes only the named values of the owner from the asset', async () => {
       const { ctx, sut } = setup();

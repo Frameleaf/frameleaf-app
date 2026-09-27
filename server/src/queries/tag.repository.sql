@@ -224,6 +224,7 @@ insert into
   "tag_asset" ("tagId", "assetId")
 values
   ($1, $2)
+on conflict do nothing
 
 -- TagRepository.removeAssetIds
 delete from "tag_asset"
