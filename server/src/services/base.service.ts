@@ -488,7 +488,7 @@ export class BaseService {
   }
 
   async createUser(dto: Omit<Insertable<UserTable>, 'clusterGroupId'> & { email: string }): Promise<UserAdmin> {
-    const exists = await this.userRepository.getByEmail(dto.email);
+    const exists = await this.userRepository.getByEmail(dto.email, { withDeleted: true });
     if (exists) {
       this.logger.debug('User creation rejected: user already exists');
       throw new BadRequestException('Email is not available');

@@ -1,4 +1,12 @@
-import { createUserAdmin, getUserAdmin, getUserPinCodeStateAdmin, login, unlockAuthSession } from '@immich/sdk';
+import {
+  createUserAdmin,
+  getMyUser,
+  getUserAdmin,
+  getUserPinCodeStateAdmin,
+  login,
+  unlockAuthSession,
+  updateUserAdmin,
+} from '@immich/sdk';
 import { expect, test, type Page } from '@playwright/test';
 import { asBearerAuth, utils } from 'src/utils.js';
 
@@ -323,6 +331,103 @@ test.describe('User Administration', () => {
       await dialog.getByRole('button', { name: 'Reset PIN', exact: true }).click();
       await expect(dialog).toHaveCount(0);
       await expect.poll(() => pinState(admin.accessToken, created.id)).toBe(false);
+    });
+
+    // FL-76: an edit made against an account that changed meanwhile (here its role) is refused, so the
+    // whole-form save never silently puts back the role another administrator just changed.
+    test('refuse an edit when the account role changed since the form opened', async ({ context, page }) => {
+      const admin = await utils.adminSetup();
+      await utils.setAuthCookies(context, admin.accessToken);
+      const user = await utils.userSetup(admin.accessToken, {
+        name: 'Stale User',
+        email: 'stale-user@example.com',
+        password: 'password',
+      });
+
+      await page.goto(`${usersManager}&user=${user.userId}`);
+      await page.getByRole('button', { name: 'Edit account', exact: true }).click();
+      const dialog = page.getByRole('dialog', { name: 'Edit account' });
+      await expect(dialog.getByLabel('Role')).toHaveValue('user');
+
+      // another administrator promotes the account while this form is open
+      await updateUserAdmin(
+        { id: user.userId, userAdminUpdateDto: { isAdmin: true } },
+        { headers: asBearerAuth(admin.accessToken) },
+      );
+
+      await dialog.getByLabel('Name', { exact: true }).fill('Renamed User');
+      await dialog.getByRole('button', { name: 'Save account' }).click();
+      await expect(
+        dialog.getByText(
+          'This account changed since you opened it. Close the form and open it again to see the latest details.',
+        ),
+      ).toBeVisible();
+      await expect(dialog.getByRole('button', { name: 'Save account' })).toBeDisabled();
+
+      const after = await getUserAdmin({ id: user.userId }, { headers: asBearerAuth(admin.accessToken) });
+      expect({ name: after.name, isAdmin: after.isAdmin }).toEqual({ name: 'Stale User', isAdmin: true });
+    });
+
+    // FL-76: an administrator signs one of another account's devices out from its Security tab.
+    test("sign out another account's device", async ({ context, page }) => {
+      const admin = await utils.adminSetup();
+      await utils.setAuthCookies(context, admin.accessToken);
+      const user = await utils.userSetup(admin.accessToken, {
+        name: 'Device User',
+        email: 'device-user@example.com',
+        password: 'password',
+      });
+
+      await page.goto(`${usersManager}&user=${user.userId}`);
+      await openDetailTab(page, 'Security');
+      await page.locator('.account-security').getByRole('button', { name: 'Sign out', exact: true }).click();
+      const confirm = page.getByRole('dialog', { name: 'Sign out device' });
+      await confirm.getByRole('button', { name: 'Sign out', exact: true }).click();
+      await expect(confirm).toHaveCount(0);
+      await expect(page.getByText('No signed-in devices.', { exact: true })).toBeVisible();
+
+      await expect(getMyUser({ headers: asBearerAuth(user.accessToken) })).rejects.toThrow();
+      // the administrator's own session is untouched
+      await getMyUser({ headers: asBearerAuth(admin.accessToken) });
+    });
+
+    // FL-76: skipping recovery removes the account at once; it never shows up to be restored.
+    test('permanently delete an account, skipping recovery', async ({ context, page }) => {
+      const admin = await utils.adminSetup();
+      await utils.setAuthCookies(context, admin.accessToken);
+      const user = await utils.userSetup(admin.accessToken, {
+        name: 'Removed User',
+        email: 'removed-user@example.com',
+        password: 'password',
+      });
+
+      await page.goto(`${usersManager}&user=${user.userId}`);
+      await page.getByRole('button', { name: 'Delete account', exact: true }).click();
+      const dialog = page.getByRole('dialog', { name: 'Delete account' });
+      await dialog.getByLabel('Skip recovery and permanently remove this account').check();
+      await expect(
+        dialog.getByText(
+          'The account, its original photos and videos, and its owned library entries will be removed. This cannot be undone.',
+        ),
+      ).toBeVisible();
+      const confirm = dialog.getByRole('button', { name: 'Permanently delete', exact: true });
+      await expect(confirm).toBeDisabled();
+      await dialog.getByLabel('Type the account email to confirm').fill('removed-user@example.com');
+      await confirm.click();
+      await expect(dialog).toHaveCount(0);
+
+      // removal is queued at once: the account is either being removed or already gone
+      await expect
+        .poll(async () => {
+          try {
+            const { status } = await getUserAdmin({ id: user.userId }, { headers: asBearerAuth(admin.accessToken) });
+            return status;
+          } catch {
+            return 'gone';
+          }
+        })
+        .toMatch(/^(removing|gone)$/);
+      await expect(getMyUser({ headers: asBearerAuth(user.accessToken) })).rejects.toThrow();
     });
   });
 });
