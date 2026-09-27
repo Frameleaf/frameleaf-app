@@ -10,6 +10,26 @@ export type CloudMockState = {
   requests: Array<{ method: string; path: string; body?: unknown }>;
   /** FL-165: the remote access page (`admin/cloud/remote*`); a remote access plan by default once linked. */
   remote?: RemoteMockState;
+  /**
+   * FL-196: the linked-server tour (`admin/cloud/tour`). Seen by default, so specs about other pages are
+   * never interrupted by it; tour specs start with `{ seen: false }`.
+   */
+  tour?: { seen: boolean; ending?: string | null };
+};
+
+/** FL-196: `GET/PUT admin/cloud/tour`; the first ending is kept, and it is offered only once linked. */
+const tourResponse = (mock: CloudMockState) => {
+  const tour = mock.tour ?? { seen: true, ending: 'finished' };
+  return {
+    seen: tour.seen,
+    seenAt: tour.seen ? '2026-09-27T09:00:00.000Z' : null,
+    ending: tour.seen ? (tour.ending ?? 'finished') : null,
+    offer: mock.state === 'linked' && !tour.seen,
+    customHostnameVerified: false,
+    processingEnabled: false,
+    walletAvailableUsd: 12.5,
+    backupConfigured: false,
+  };
 };
 
 export type RemoteMockState = {
@@ -258,6 +278,12 @@ export const setupCloudMockApiRoutes = async (context: BrowserContext, mock: Clo
     const method = request.method();
     const body = request.postDataJSON?.() ?? undefined;
     mock.requests.push({ method, path, body });
+    if (path === 'admin/cloud/tour') {
+      if (method === 'PUT' && !(mock.tour ?? { seen: true }).seen) {
+        mock.tour = { seen: true, ending: (body as { ending?: string } | undefined)?.ending ?? null };
+      }
+      return route.fulfill({ status: 200, json: tourResponse(mock) });
+    }
     // FL-166: relay use this month, as Frameleaf Cloud meters it (the contract's remote-usage fixture)
     if (method === 'GET' && path === 'admin/cloud/remote/usage') {
       return route.fulfill({ status: 200, json: RELAY_USAGE });

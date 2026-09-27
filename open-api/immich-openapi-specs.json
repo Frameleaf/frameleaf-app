@@ -2762,6 +2762,108 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/admin/cloud/tour": {
+      "get": {
+        "description": "Whether you have seen the tour of what linking to Frameleaf Cloud unlocks, whether to open it now, and the status it shows for this server. Reads local state only; nothing is contacted.",
+        "operationId": "getCloudTour",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudTourResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get your linked-server tour",
+        "tags": [
+          "Frameleaf Cloud (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloud.read",
+        "x-immich-state": "Alpha"
+      },
+      "put": {
+        "description": "Records how you ended the tour (finished, skipped, opened a settings page, or linked during first-run setup), so it is not offered to you again. The first ending is kept. Changes no settings and contacts nothing.",
+        "operationId": "markCloudTourSeen",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CloudTourSeenDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudTourResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Mark your linked-server tour as seen",
+        "tags": [
+          "Frameleaf Cloud (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloud.read",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/config": {
       "get": {
         "description": "Retrieve admin configuration.",
@@ -54854,6 +54956,82 @@
         ],
         "type": "object"
       },
+      "CloudTourEnding": {
+        "description": "How the tour ended: finished (Done), skipped (Skip tour or Escape), opened-settings (an \"Open …\" link), setup (the server was linked during first-run setup, which has its own summary)",
+        "enum": [
+          "finished",
+          "skipped",
+          "opened-settings",
+          "setup"
+        ],
+        "type": "string"
+      },
+      "CloudTourResponseDto": {
+        "properties": {
+          "backupConfigured": {
+            "description": "Cloud backup is set up",
+            "type": "boolean"
+          },
+          "customHostnameVerified": {
+            "description": "Remote access answers on a domain you own, and its DNS is verified",
+            "type": "boolean"
+          },
+          "ending": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CloudTourEnding"
+              }
+            ],
+            "description": "How you first ended the tour; later endings keep this one",
+            "nullable": true
+          },
+          "offer": {
+            "description": "Open the tour now: this server is linked to a Frameleaf account and you have not seen it",
+            "type": "boolean"
+          },
+          "processingEnabled": {
+            "description": "Frameleaf Cloud processing is switched on",
+            "type": "boolean"
+          },
+          "seen": {
+            "description": "You have seen the tour (or were shown setup’s summary instead)",
+            "type": "boolean"
+          },
+          "seenAt": {
+            "description": "When you first ended the tour",
+            "nullable": true,
+            "type": "string"
+          },
+          "walletAvailableUsd": {
+            "description": "AI Wallet credit available at the last read (US dollars, balance less holds); null before any read",
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          }
+        },
+        "required": [
+          "backupConfigured",
+          "customHostnameVerified",
+          "ending",
+          "offer",
+          "processingEnabled",
+          "seen",
+          "seenAt",
+          "walletAvailableUsd"
+        ],
+        "type": "object"
+      },
+      "CloudTourSeenDto": {
+        "properties": {
+          "ending": {
+            "$ref": "#/components/schemas/CloudTourEnding"
+          }
+        },
+        "required": [
+          "ending"
+        ],
+        "type": "object"
+      },
       "ClusterGroupRequestCreateDto": {
         "properties": {
           "userId": {
@@ -85839,7 +86017,8 @@
         "enum": [
           "preferences",
           "license",
-          "onboarding"
+          "onboarding",
+          "frameleaf-cloud-tour"
         ],
         "type": "string"
       },

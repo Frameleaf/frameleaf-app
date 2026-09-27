@@ -1406,6 +1406,11 @@ export interface UserMetadata extends Record<UserMetadataKey, Record<string, any
   /** FL-156: a mirror of the person's supporter key summary (`immich_fork.frameleaf_user_license`). */
   [UserMetadataKey.License]: { kind: 'individual'; keyHint: string; activatedAt: string };
   [UserMetadataKey.Onboarding]: { isOnboarded: boolean };
+  /** FL-196: the first time this administrator ended the linked-server tour. */
+  [UserMetadataKey.FrameleafCloudTour]: {
+    seenAt: string;
+    ending: 'finished' | 'skipped' | 'opened-settings' | 'setup';
+  };
 }
 
 export type MaybeDehydrated<T> = T | ShallowDehydrateObject<T>;
