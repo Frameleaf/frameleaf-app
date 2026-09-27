@@ -3187,7 +3187,9 @@ const albumMembersOf = (manifest: CloudBackupManifest) => {
   const members = new Map<string, string[]>();
   for (const [assetId, asset] of Object.entries(manifest.assets)) {
     for (const { id } of asset.details?.albums ?? []) {
-      members.set(id, [...(members.get(id) ?? []), assetId]);
+      const items = members.get(id) ?? [];
+      items.push(assetId);
+      members.set(id, items);
     }
   }
   return members;
