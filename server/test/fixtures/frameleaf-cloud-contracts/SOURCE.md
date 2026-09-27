@@ -56,8 +56,10 @@ tested against what the cloud publishes (FL-177).
   `velocity-limit.json`), plus `errors/balance-cap.json` and `errors/top-up-minimum.json` (account API, noted
   above).
 - FC-70 release feed: `releases/latest-stable.json` and `releases/latest-beta.json` are byte-identical to
-  `origin/main` at `517cbd3da9e20b9248c4b975bf3a400a2bce37d1` (Frameleaf/frameleaf-cloud#54, which reads the app's
-  real `frameleaf-v<semver>-<sequence>` tags; first copied from #43 at `86adf20`). The contract is
+  `origin/main` at `cb8355d` (merge of Frameleaf/frameleaf-cloud#83, commit
+  `a2b668fae4b3b2752b92070bf2145e2f459dc934`, "FC-70 staged rollout and withdrawn releases in the release check"):
+  they gained `rolloutPercent` and `fallback` (FL-142). Earlier copies: #54 at `517cbd3da9`, which reads the app's
+  real `frameleaf-v<semver>-<sequence>` tags, and #43 at `86adf20`. The contract is
   `packages/contracts/src/releases/latest.ts`; `server/src/utils/frameleaf-release.ts` reads them (FL-192).
 - FL-164 managed backup (BAK-001 FC-33, BAK-002 FC-38): `backup/grant-response.json`,
   `backup/grant-rotate-response.json`, `backup/grant-metadata.json`, `backup/usage.json`, `backup/escrow-blob.json`,

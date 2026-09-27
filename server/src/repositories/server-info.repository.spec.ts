@@ -3,6 +3,7 @@ import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { ServerInfoRepository } from 'src/repositories/server-info.repository.js';
 import { FrameleafFeedRelease, rolloutBucket } from 'src/utils/frameleaf-release.js';
+import { cloudContractFixture } from 'test/fixtures/frameleaf-cloud-contracts.js';
 
 // Frameleaf Cloud release feed response (FC-70, `GET /v1/releases/latest`).
 // TODO(FC-70): replace with the shared fixture in packages/contracts/fixtures/releases/ when it lands.
@@ -236,6 +237,39 @@ describe('Frameleaf version check (FL-80 S-4 / O-8, FL-192)', () => {
       await expect(repository.getLatestRelease(ReleaseChannel.Stable, SEED)).resolves.toEqual(
         expect.objectContaining({ version: 'v3.2.0' }),
       );
+    });
+
+    describe('with the published feed answer (frameleaf-cloud#83)', () => {
+      const stable = cloudContractFixture<FrameleafFeedRelease>('releases/latest-stable.json');
+      const seeds = Array.from({ length: 200 }, (_, i) => `seed-${i}`);
+
+      it('offers 3.2.1 inside its 25% rollout and 3.2.0 outside it, with one request each', async () => {
+        for (const [seed, expected] of [
+          [
+            seeds.find((seed) => rolloutBucket(seed, '3.2.1') < 25)!,
+            { version: 'v3.2.1', published_at: '2026-09-10T12:00:00Z' },
+          ],
+          [
+            seeds.find((seed) => rolloutBucket(seed, '3.2.1') >= 25)!,
+            { version: 'v3.2.0', published_at: '2026-08-20T09:00:00Z' },
+          ],
+        ] as const) {
+          const fetch = respond(stable);
+          vitest.stubGlobal('fetch', fetch);
+          await expect(repository.getLatestRelease(ReleaseChannel.Stable, seed)).resolves.toEqual(expected);
+          expect(fetch).toHaveBeenCalledTimes(1);
+        }
+      });
+
+      it('offers the fully rolled-out release candidate to every server', async () => {
+        const fetch = respond(cloudContractFixture('releases/latest-beta.json'));
+        vitest.stubGlobal('fetch', fetch);
+        for (const seed of seeds.slice(0, 20)) {
+          await expect(repository.getLatestRelease(ReleaseChannel.ReleaseCandidate, seed)).resolves.toEqual(
+            expect.objectContaining({ version: 'v3.3.0-rc.1' }),
+          );
+        }
+      });
     });
 
     describe('with the feed fallback', () => {
