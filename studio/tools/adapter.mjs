@@ -4,7 +4,9 @@
  *
  *   node studio/tools/engine.mjs prepare [--archive FILE]
  *   npm --prefix studio/engine ci --ignore-scripts --no-audit --no-fund
- *   node studio/tools/adapter.mjs test     # adapter tests on the real engine stores (jsdom)
+ *   node studio/tools/adapter.mjs test     # adapter tests on the real engine stores, and Freecut's
+ *                                          # own storage, project and bundle suites on the adapter's
+ *                                          # workspace (jsdom; see vite.config.mjs)
  *   node studio/tools/adapter.mjs build    # web/static/studio-engine, served at /studio-engine/
  *
  * The adapter installs nothing: it runs the engine's own lockfile-pinned toolchain from

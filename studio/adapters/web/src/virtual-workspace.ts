@@ -78,6 +78,8 @@ export class VirtualWorkspace {
     children: new Map(),
   }
   private readonly listeners = new Set<WorkspaceWriteListener>()
+  /** The node and path behind each directory handle this workspace gave out, for `move`. */
+  private readonly directories = new WeakMap<object, { node: DirectoryNode; path: readonly string[] }>()
   private disposed = false
 
   onWrite(listener: WorkspaceWriteListener): () => void {
@@ -263,6 +265,7 @@ export class VirtualWorkspace {
         return handle.entries()
       },
     }
+    this.directories.set(handle, { node, path })
     return handle as unknown as FileSystemDirectoryHandle
   }
 
@@ -273,7 +276,7 @@ export class VirtualWorkspace {
   ): FileSystemFileHandle {
     const workspace = this
     let location = path
-    const owner = parent
+    let owner = parent
     const handle = {
       kind: 'file' as const,
       get name() {
@@ -350,13 +353,23 @@ export class VirtualWorkspace {
       },
       async move(target: FileSystemDirectoryHandle | string, newName?: string) {
         workspace.assertLive()
-        // Only moves within the same directory are needed (writeJsonAtomic's tmp → target rename).
+        // `move(name)` renames in place; `move(directory, name?)` moves into that directory.
+        const destination =
+          typeof target === 'string'
+            ? { node: owner, path: location.slice(0, -1) }
+            : workspace.directories.get(target)
+        if (!destination) {
+          throw new DOMException('The target folder is not in this workspace', 'NotFoundError')
+        }
         const name = typeof target === 'string' ? target : (newName ?? node.name)
         assertName(name)
+        const existing = destination.node.children.get(name)
+        if (existing && existing !== node && existing.kind === 'directory') throw typeMismatch(name)
         owner.children.delete(node.name)
         node.name = name
-        owner.children.set(name, node)
-        location = [...location.slice(0, -1), name]
+        destination.node.children.set(name, node)
+        owner = destination.node
+        location = [...destination.path, name]
         if (node.data) {
           workspace.emit(location, new File([node.data], name, { type: node.data.type }))
         }
