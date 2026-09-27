@@ -18302,6 +18302,62 @@
         "x-immich-state": "Stable"
       }
     },
+    "/license/link-code": {
+      "post": {
+        "description": "CLD-004: redeems a one-time link code from the Frameleaf account site. Frameleaf Cloud activates the licence for this server directly, so the key never reaches this server or a URL. An administrator can receive a server key; anyone else only a personal key. Needs a linked server; the code travels only in this request body.",
+        "operationId": "redeemLicenseLinkCode",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LicenseLinkCodeDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LicenseLinkCodeResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Redeem a Frameleaf account link code",
+        "tags": [
+          "Frameleaf licence"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "userLicense.update",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/license/products": {
       "get": {
         "description": "Bundled plan and supporter prices in US dollars, the licensed-server discount, cloud backup pricing and the store this server was deployed with. Makes no outbound call.",
@@ -60691,6 +60747,44 @@
           "plan"
         ],
         "type": "string"
+      },
+      "LicenseLinkCodeDto": {
+        "properties": {
+          "code": {
+            "description": "A one-time link code from the Frameleaf account site, flc_ and 26 symbols",
+            "pattern": "^flc_[A-Za-z0-9]{26}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "type": "object"
+      },
+      "LicenseLinkCodeKind": {
+        "description": "A server key (this server) or a personal key (this account)",
+        "enum": [
+          "server",
+          "individual"
+        ],
+        "type": "string"
+      },
+      "LicenseLinkCodeResponseDto": {
+        "properties": {
+          "keyHint": {
+            "description": "Last four symbols of the key",
+            "nullable": true,
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/LicenseLinkCodeKind"
+          }
+        },
+        "required": [
+          "keyHint",
+          "kind"
+        ],
+        "type": "object"
       },
       "LicenseProductDto": {
         "properties": {
