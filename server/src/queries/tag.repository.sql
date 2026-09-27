@@ -232,6 +232,20 @@ on conflict do nothing
 returning
   *
 
+-- TagRepository.removeAssetTagValues
+delete from "tag_asset"
+where
+  "assetId" = $1
+  and "tagId" in (
+    select
+      "tag"."id"
+    from
+      "tag"
+    where
+      "tag"."userId" = $2
+      and "tag"."value" in ($3)
+  )
+
 -- TagRepository.replaceAssetTags
 begin
 delete from "tag_asset"
