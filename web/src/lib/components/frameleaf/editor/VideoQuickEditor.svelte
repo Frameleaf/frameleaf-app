@@ -1409,480 +1409,337 @@
     </div>
 
     <div class="ed-panel" id="fl-video-editor-panel" role="tabpanel" aria-label={$t(activeTool.label)}>
-      {#if tool === 'adjust'}
-        <div class="ed-panel-body">
-          <div class="ed-panel-head">
-            <h2>{$t('frameleaf_editor_tool_adjust')}</h2>
-            <button
-              type="button"
-              class="ed-icon"
-              aria-label={$t('frameleaf_editor_reset_adjustments')}
-              title={$t('frameleaf_editor_reset_adjustments')}
-              disabled={allAdjustDefault}
-              onclick={() => change(developDefaults())}
-            >
-              <Icon icon={mdiRestore} size="18" />
-            </button>
-          </div>
-          <Histogram source={videoEl} approximation={filterInfo} fromServer={false} {tick} />
-          <div class="ed-row spread">
-            <button
-              type="button"
-              class="ed-button"
-              aria-pressed={autoToneApplied(values)}
-              onclick={() => change(autoToneApplied(values) ? autoToneCleared() : AUTO_TONE)}
-            >
-              <Icon icon={mdiAutoFix} size="18" />
-              {$t('frameleaf_editor_auto')}
-            </button>
-            <span class="muted" style="font-size: 11px">{$t('frameleaf_editor_double_click_reset')}</span>
-          </div>
-          {#if edit.legacy.length > 0}
-            <p class="ed-note" role="note">{$t('frameleaf_video_editor_legacy_adjustments')}</p>
-          {/if}
-          {#each DEVELOP_GROUPS as group (group.id)}
-            <DevelopGroup
-              group={group.id}
-              label={$t(group.label)}
-              {values}
-              bind:open={openGroups[group.id]}
-              onChange={(patch) => change(patch)}
-            />
-          {/each}
-        </div>
-      {:else if tool === 'crop'}
-        <div class="ed-panel-body">
-          <div class="ed-panel-head">
-            <h2>{$t('frameleaf_editor_crop_heading')}</h2>
-            <button
-              type="button"
-              class="ed-icon"
-              aria-label={$t('frameleaf_editor_reset_crop')}
-              title={$t('frameleaf_editor_reset_crop')}
-              disabled={geometryDefault}
-              onclick={resetCrop}
-            >
-              <Icon icon={mdiRestore} size="18" />
-            </button>
-          </div>
-          <h3>{$t('frameleaf_editor_aspect')}</h3>
-          <div class="ed-row" role="radiogroup" aria-label={$t('frameleaf_editor_aspect')}>
-            {#each ASPECTS as aspect (aspect.id)}
+      <!--
+        Every change is dropped until the clip's original metadata has loaded (`change` needs its
+        duration, and the load then replaces the draft), so the tools stay disabled until then rather
+        than take an edit that silently disappears.
+      -->
+      <fieldset class="ed-panel-controls" disabled={!source} aria-busy={!source && !loadFailed}>
+        {#if tool === 'adjust'}
+          <div class="ed-panel-body">
+            <div class="ed-panel-head">
+              <h2>{$t('frameleaf_editor_tool_adjust')}</h2>
               <button
                 type="button"
-                role="radio"
-                class="ed-chip"
-                aria-checked={edit.crop === aspect.id}
-                onclick={() => chooseAspect(aspect.id)}
+                class="ed-icon"
+                aria-label={$t('frameleaf_editor_reset_adjustments')}
+                title={$t('frameleaf_editor_reset_adjustments')}
+                disabled={allAdjustDefault}
+                onclick={() => change(developDefaults())}
               >
-                {aspect.label.startsWith('frameleaf_') ? $t(aspect.label as Translations) : aspect.label}
+                <Icon icon={mdiRestore} size="18" />
               </button>
-            {/each}
-          </div>
-          <h3>{$t('frameleaf_editor_straighten')}</h3>
-          <div class="ed-dial" style="--dial-x: {edit.straighten * 8}px">
-            <output aria-hidden="true">{edit.straighten > 0 ? '+' : ''}{edit.straighten.toFixed(1)}°</output>
-            <input
-              type="range"
-              aria-label={$t('frameleaf_editor_straighten')}
-              title={$t('frameleaf_editor_double_click_reset')}
-              min="-45"
-              max="45"
-              step="0.5"
-              value={edit.straighten}
-              aria-valuetext={$t('frameleaf_editor_degrees', { values: { degrees: edit.straighten.toFixed(1) } })}
-              oninput={(event) => change({ straighten: Number(event.currentTarget.value) })}
-              ondblclick={() => change({ straighten: 0 })}
-            />
-          </div>
-          <h3>{$t('editor_orientation')}</h3>
-          <div class="ed-grid-2">
-            <button type="button" class="ed-button" onclick={() => rotate(false)}>
-              <Icon icon={mdiRotateLeft} size="18" />
-              {$t('frameleaf_editor_rotate_left')}
-            </button>
-            <button type="button" class="ed-button" onclick={() => rotate(true)}>
-              <Icon icon={mdiRotateRight} size="18" />
-              {$t('frameleaf_editor_rotate_right')}
-            </button>
-            <button type="button" class="ed-button" aria-pressed={edit.flipH} onclick={() => flip('h')}>
-              <Icon icon={mdiFlipHorizontal} size="18" />
-              {$t('editor_flip_horizontal')}
-            </button>
-            <button type="button" class="ed-button" aria-pressed={edit.flipV} onclick={() => flip('v')}>
-              <Icon icon={mdiFlipVertical} size="18" />
-              {$t('editor_flip_vertical')}
-            </button>
-          </div>
-          <p class="ed-note">{$t('frameleaf_editor_crop_help')}</p>
-        </div>
-      {:else if tool === 'presets'}
-        <div class="ed-panel-body">
-          <div class="ed-panel-head">
-            <h2>{$t('frameleaf_editor_tool_presets')}</h2>
-          </div>
-          <PresetStrip
-            {thumbnailUrl}
-            {values}
-            kind="video"
-            preset={edit.preset}
-            onSelect={(preset) =>
-              change({ preset, presetStrength: edit.preset === preset ? edit.presetStrength : 100 })}
-          />
-          <EditorSlider
-            id="presetStrength"
-            label={$t('frameleaf_editor_preset_strength', { values: { preset: $t(lookLabel(edit.preset)) } })}
-            value={edit.presetStrength}
-            min={0}
-            max={100}
-            step={1}
-            defaultValue={100}
-            disabled={edit.preset === VideoDevelopPreset.Original}
-            format={(value) => `${value}%`}
-            onChange={(value) => change({ presetStrength: value })}
-          />
-          <h3>{$t('frameleaf_editor_social_formats')}</h3>
-          <div class="ed-row">
-            {#each SOCIAL_PRESETS as item (item.id)}
-              <button
-                type="button"
-                class="ed-chip"
-                aria-pressed={edit.crop === item.aspect}
-                onclick={() => chooseAspect(item.aspect)}
-              >
-                {$t(item.label)}
-                <small>{$t(item.note)}</small>
-              </button>
-            {/each}
-          </div>
-          <p>{$t('frameleaf_editor_social_help')}</p>
-        </div>
-      {:else if tool === 'trim'}
-        <div class="ed-panel-body">
-          <div class="ed-panel-head">
-            <h2>{$t('frameleaf_video_editor_tool_trim')}</h2>
-            <button
-              type="button"
-              class="ed-icon"
-              aria-label={$t('frameleaf_video_editor_reset_trim')}
-              title={$t('frameleaf_video_editor_reset_trim')}
-              disabled={edit.start === 0 && edit.end === round(duration, 3)}
-              onclick={() => change({ start: 0, end: duration })}
-            >
-              <Icon icon={mdiRestore} size="18" />
-            </button>
-          </div>
-          <div class="ed-row" role="radiogroup" aria-label={$t('frameleaf_video_editor_trim_mode')}>
-            <button
-              type="button"
-              role="radio"
-              class="ed-chip"
-              aria-checked={edit.trim === 'precise'}
-              onclick={() => change({ trim: 'precise' })}
-            >
-              {$t('frameleaf_video_editor_trim_precise')}
-            </button>
-            <button
-              type="button"
-              role="radio"
-              class="ed-chip"
-              aria-checked={edit.trim === 'fast'}
-              onclick={() => change({ trim: 'fast' })}
-            >
-              {$t('frameleaf_video_editor_trim_fast')}
-            </button>
-          </div>
-          <p>
-            {#if edit.trim === 'fast'}
-              {#if otherEdits}
-                {$t('frameleaf_video_editor_trim_fast_help', {
-                  values: {
-                    from: Math.floor(edit.start / 2) * 2,
-                    to: Math.min(Math.ceil(duration), Math.ceil(edit.end / 2) * 2),
-                  },
-                })}
-              {:else if fastBounds}
-                {$t('frameleaf_video_editor_trim_fast_actual', {
-                  values: { from: preciseTime(fastBounds.start), to: preciseTime(fastBounds.end) },
-                })}
-              {:else}
-                {$t('frameleaf_video_editor_trim_fast_help', {
-                  values: {
-                    from: Math.floor(edit.start / 2) * 2,
-                    to: Math.min(Math.ceil(duration), Math.ceil(edit.end / 2) * 2),
-                  },
-                })}
-              {/if}
-              {#if otherEdits}
-                {$t('frameleaf_video_editor_trim_fast_reencode')}
-              {/if}
-            {:else}
-              {$t('frameleaf_video_editor_trim_precise_help')}
-            {/if}
-          </p>
-          <div class="ed-grid-2">
-            <label class="ed-field">
-              {$t('frameleaf_video_editor_in_seconds')}
-              <input
-                type="number"
-                min="0"
-                max={round(edit.end - MIN_SPAN)}
-                step="0.1"
-                value={edit.start}
-                onchange={(event) => setIn(Number(event.currentTarget.value))}
-              />
-            </label>
-            <label class="ed-field">
-              {$t('frameleaf_video_editor_out_seconds')}
-              <input
-                type="number"
-                min={round(edit.start + MIN_SPAN)}
-                max={duration}
-                step="0.1"
-                value={edit.end}
-                onchange={(event) => setOut(Number(event.currentTarget.value))}
-              />
-            </label>
-            <button type="button" class="ed-button" onclick={() => setIn(time)}>
-              {$t('frameleaf_video_editor_set_in')}
-            </button>
-            <button type="button" class="ed-button" onclick={() => setOut(time)}>
-              {$t('frameleaf_video_editor_set_out')}
-            </button>
-          </div>
-          <p>
-            {$t('frameleaf_video_editor_trim_summary', {
-              values: {
-                start: preciseTime(edit.start),
-                end: preciseTime(edit.end),
-                length: preciseTime(trimmedLength),
-              },
-            })}{#if outputLength !== trimmedLength}{$t('frameleaf_video_editor_trim_after_speed', {
-                values: { length: preciseTime(outputLength) },
-              })}{/if}.
-            {$t('frameleaf_video_editor_mark_hint')}
-          </p>
-        </div>
-      {:else if tool === 'speed'}
-        <div class="ed-panel-body">
-          <div class="ed-panel-head">
-            <h2>{$t('frameleaf_video_editor_tool_speed')}</h2>
-            <button
-              type="button"
-              class="ed-icon"
-              aria-label={$t('frameleaf_video_editor_reset_speed')}
-              title={$t('frameleaf_video_editor_reset_speed')}
-              disabled={edit.speed === 1 && edit.speedSegments.length === 0}
-              onclick={() => change({ speed: 1, speedSegments: [] })}
-            >
-              <Icon icon={mdiRestore} size="18" />
-            </button>
-          </div>
-          <h3>{$t('frameleaf_video_editor_whole_clip')}</h3>
-          <div class="ed-row" role="radiogroup" aria-label={$t('frameleaf_video_editor_clip_speed')}>
-            {#each SPEEDS as value (value)}
-              <button
-                type="button"
-                role="radio"
-                class="ed-chip"
-                aria-checked={edit.speed === value}
-                onclick={() => change({ speed: value })}
-              >
-                {formatSpeed(value)}
-              </button>
-            {/each}
-          </div>
-          <div class="ed-row spread ed-ranges-head">
-            <h3>{$t('frameleaf_video_editor_ranges')}</h3>
-            <button
-              type="button"
-              class="ed-button"
-              disabled={edit.speedSegments.length >= MAX_SPEED_RANGES}
-              onclick={addRange}
-            >
-              <Icon icon={mdiPlus} size="18" />
-              {$t('frameleaf_video_editor_add_range')}
-            </button>
-          </div>
-          {#if edit.speedSegments.length === 0}
-            <p class="ed-empty">{$t('frameleaf_video_editor_ranges_empty')}</p>
-          {/if}
-          {#each edit.speedSegments as range, index (`${index}-${range.start}`)}
-            {@const number = index + 1}
-            <div class="ed-card">
-              <div class="ed-card-head">
-                <strong>{$t('frameleaf_video_editor_range', { values: { number } })}</strong>
-                <button
-                  type="button"
-                  class="ed-icon"
-                  aria-label={$t('frameleaf_video_editor_remove_range', { values: { number } })}
-                  onclick={() => change({ speedSegments: edit.speedSegments.filter((_, i) => i !== index) })}
-                >
-                  <Icon icon={mdiClose} size="18" />
-                </button>
-              </div>
-              <div class="ed-grid-2">
-                <label class="ed-field">
-                  {$t('frameleaf_video_editor_start')}
-                  <input
-                    type="number"
-                    step="0.1"
-                    min={edit.start}
-                    max={round(range.end - MIN_SPAN)}
-                    value={range.start}
-                    onchange={(event) =>
-                      updateRange(index, {
-                        start: clamp(Number(event.currentTarget.value), edit.start, range.end - MIN_SPAN),
-                      })}
-                  />
-                </label>
-                <label class="ed-field">
-                  {$t('frameleaf_video_editor_end')}
-                  <input
-                    type="number"
-                    step="0.1"
-                    min={round(range.start + MIN_SPAN)}
-                    max={edit.end}
-                    value={range.end}
-                    onchange={(event) =>
-                      updateRange(index, {
-                        end: clamp(Number(event.currentTarget.value), range.start + MIN_SPAN, edit.end),
-                      })}
-                  />
-                </label>
-              </div>
-              <div
-                class="ed-row"
-                role="radiogroup"
-                aria-label={$t('frameleaf_video_editor_range_speed', { values: { number } })}
-              >
-                {#each SPEEDS as value (value)}
-                  <button
-                    type="button"
-                    role="radio"
-                    class="ed-chip"
-                    aria-checked={range.speed === value}
-                    onclick={() => updateRange(index, { speed: value })}
-                  >
-                    {formatSpeed(value)}
-                  </button>
-                {/each}
-              </div>
             </div>
-          {/each}
-          <p>
-            {$t('frameleaf_video_editor_speed_summary', {
-              values: { length: preciseTime(outputLength), rate: speedAt(edit, time) },
-            })}
-          </p>
-        </div>
-      {:else if tool === 'audio'}
-        <div class="ed-panel-body">
-          <div class="ed-panel-head">
-            <h2>{$t('frameleaf_video_editor_tool_audio')}</h2>
-            <button
-              type="button"
-              class="ed-icon"
-              aria-label={$t('frameleaf_video_editor_reset_audio')}
-              title={$t('frameleaf_video_editor_reset_audio')}
-              disabled={edit.volume === 100}
-              onclick={() => change({ volume: 100 })}
-            >
-              <Icon icon={mdiRestore} size="18" />
-            </button>
+            <Histogram source={videoEl} approximation={filterInfo} fromServer={false} {tick} />
+            <div class="ed-row spread">
+              <button
+                type="button"
+                class="ed-button"
+                aria-pressed={autoToneApplied(values)}
+                onclick={() => change(autoToneApplied(values) ? autoToneCleared() : AUTO_TONE)}
+              >
+                <Icon icon={mdiAutoFix} size="18" />
+                {$t('frameleaf_editor_auto')}
+              </button>
+              <span class="muted" style="font-size: 11px">{$t('frameleaf_editor_double_click_reset')}</span>
+            </div>
+            {#if edit.legacy.length > 0}
+              <p class="ed-note" role="note">{$t('frameleaf_video_editor_legacy_adjustments')}</p>
+            {/if}
+            {#each DEVELOP_GROUPS as group (group.id)}
+              <DevelopGroup
+                group={group.id}
+                label={$t(group.label)}
+                {values}
+                bind:open={openGroups[group.id]}
+                onChange={(patch) => change(patch)}
+              />
+            {/each}
           </div>
-          <EditorSlider
-            id="volume"
-            label={$t('frameleaf_video_editor_clip_gain')}
-            value={edit.volume}
-            min={0}
-            max={150}
-            step={1}
-            defaultValue={100}
-            format={(value) => `${value}%`}
-            onChange={(value) => change({ volume: value })}
-          />
-          <div class="ed-toggle">
-            <strong>{$t('frameleaf_video_editor_mute')}</strong>
-            <button
-              type="button"
-              role="switch"
-              class="ed-switch"
-              aria-checked={edit.volume === 0}
-              aria-label={$t('frameleaf_video_editor_mute')}
-              onclick={() => change({ volume: edit.volume ? 0 : 100 })}
-            ></button>
-            <p>{$t('frameleaf_video_editor_mute_help')}</p>
-          </div>
-          <p>{$t('frameleaf_video_editor_channels_help')}</p>
-        </div>
-      {:else if tool === 'text'}
-        <div class="ed-panel-body">
-          <div class="ed-panel-head">
-            <h2>{$t('frameleaf_video_editor_tool_text')}</h2>
-            <button
-              type="button"
-              class="ed-button"
-              disabled={edit.textOverlays.length >= MAX_TEXT_OVERLAYS}
-              onclick={addOverlay}
-            >
-              <Icon icon={mdiPlus} size="18" />
-              {$t('frameleaf_video_editor_add_text')}
-            </button>
-          </div>
-          {#if edit.textOverlays.length === 0}
-            <p class="ed-empty">{$t('frameleaf_video_editor_text_empty')}</p>
-          {/if}
-          {#each edit.textOverlays as item, index (item.id)}
-            {@const number = index + 1}
-            <div class="ed-card">
-              <div class="ed-card-head">
-                <strong>{$t('frameleaf_video_editor_text_number', { values: { number } })}</strong>
+        {:else if tool === 'crop'}
+          <div class="ed-panel-body">
+            <div class="ed-panel-head">
+              <h2>{$t('frameleaf_editor_crop_heading')}</h2>
+              <button
+                type="button"
+                class="ed-icon"
+                aria-label={$t('frameleaf_editor_reset_crop')}
+                title={$t('frameleaf_editor_reset_crop')}
+                disabled={geometryDefault}
+                onclick={resetCrop}
+              >
+                <Icon icon={mdiRestore} size="18" />
+              </button>
+            </div>
+            <h3>{$t('frameleaf_editor_aspect')}</h3>
+            <div class="ed-row" role="radiogroup" aria-label={$t('frameleaf_editor_aspect')}>
+              {#each ASPECTS as aspect (aspect.id)}
                 <button
                   type="button"
-                  class="ed-icon"
-                  aria-label={$t('frameleaf_video_editor_remove_text', { values: { number } })}
-                  onclick={() => change({ textOverlays: edit.textOverlays.filter((other) => other.id !== item.id) })}
+                  role="radio"
+                  class="ed-chip"
+                  aria-checked={edit.crop === aspect.id}
+                  onclick={() => chooseAspect(aspect.id)}
                 >
-                  <Icon icon={mdiClose} size="18" />
+                  {aspect.label.startsWith('frameleaf_') ? $t(aspect.label as Translations) : aspect.label}
                 </button>
-              </div>
+              {/each}
+            </div>
+            <h3>{$t('frameleaf_editor_straighten')}</h3>
+            <div class="ed-dial" style="--dial-x: {edit.straighten * 8}px">
+              <output aria-hidden="true">{edit.straighten > 0 ? '+' : ''}{edit.straighten.toFixed(1)}°</output>
+              <input
+                type="range"
+                aria-label={$t('frameleaf_editor_straighten')}
+                title={$t('frameleaf_editor_double_click_reset')}
+                min="-45"
+                max="45"
+                step="0.5"
+                value={edit.straighten}
+                aria-valuetext={$t('frameleaf_editor_degrees', { values: { degrees: edit.straighten.toFixed(1) } })}
+                oninput={(event) => change({ straighten: Number(event.currentTarget.value) })}
+                ondblclick={() => change({ straighten: 0 })}
+              />
+            </div>
+            <h3>{$t('editor_orientation')}</h3>
+            <div class="ed-grid-2">
+              <button type="button" class="ed-button" onclick={() => rotate(false)}>
+                <Icon icon={mdiRotateLeft} size="18" />
+                {$t('frameleaf_editor_rotate_left')}
+              </button>
+              <button type="button" class="ed-button" onclick={() => rotate(true)}>
+                <Icon icon={mdiRotateRight} size="18" />
+                {$t('frameleaf_editor_rotate_right')}
+              </button>
+              <button type="button" class="ed-button" aria-pressed={edit.flipH} onclick={() => flip('h')}>
+                <Icon icon={mdiFlipHorizontal} size="18" />
+                {$t('editor_flip_horizontal')}
+              </button>
+              <button type="button" class="ed-button" aria-pressed={edit.flipV} onclick={() => flip('v')}>
+                <Icon icon={mdiFlipVertical} size="18" />
+                {$t('editor_flip_vertical')}
+              </button>
+            </div>
+            <p class="ed-note">{$t('frameleaf_editor_crop_help')}</p>
+          </div>
+        {:else if tool === 'presets'}
+          <div class="ed-panel-body">
+            <div class="ed-panel-head">
+              <h2>{$t('frameleaf_editor_tool_presets')}</h2>
+            </div>
+            <PresetStrip
+              {thumbnailUrl}
+              {values}
+              kind="video"
+              preset={edit.preset}
+              onSelect={(preset) =>
+                change({ preset, presetStrength: edit.preset === preset ? edit.presetStrength : 100 })}
+            />
+            <EditorSlider
+              id="presetStrength"
+              label={$t('frameleaf_editor_preset_strength', { values: { preset: $t(lookLabel(edit.preset)) } })}
+              value={edit.presetStrength}
+              min={0}
+              max={100}
+              step={1}
+              defaultValue={100}
+              disabled={edit.preset === VideoDevelopPreset.Original}
+              format={(value) => `${value}%`}
+              onChange={(value) => change({ presetStrength: value })}
+            />
+            <h3>{$t('frameleaf_editor_social_formats')}</h3>
+            <div class="ed-row">
+              {#each SOCIAL_PRESETS as item (item.id)}
+                <button
+                  type="button"
+                  class="ed-chip"
+                  aria-pressed={edit.crop === item.aspect}
+                  onclick={() => chooseAspect(item.aspect)}
+                >
+                  {$t(item.label)}
+                  <small>{$t(item.note)}</small>
+                </button>
+              {/each}
+            </div>
+            <p>{$t('frameleaf_editor_social_help')}</p>
+          </div>
+        {:else if tool === 'trim'}
+          <div class="ed-panel-body">
+            <div class="ed-panel-head">
+              <h2>{$t('frameleaf_video_editor_tool_trim')}</h2>
+              <button
+                type="button"
+                class="ed-icon"
+                aria-label={$t('frameleaf_video_editor_reset_trim')}
+                title={$t('frameleaf_video_editor_reset_trim')}
+                disabled={edit.start === 0 && edit.end === round(duration, 3)}
+                onclick={() => change({ start: 0, end: duration })}
+              >
+                <Icon icon={mdiRestore} size="18" />
+              </button>
+            </div>
+            <div class="ed-row" role="radiogroup" aria-label={$t('frameleaf_video_editor_trim_mode')}>
+              <button
+                type="button"
+                role="radio"
+                class="ed-chip"
+                aria-checked={edit.trim === 'precise'}
+                onclick={() => change({ trim: 'precise' })}
+              >
+                {$t('frameleaf_video_editor_trim_precise')}
+              </button>
+              <button
+                type="button"
+                role="radio"
+                class="ed-chip"
+                aria-checked={edit.trim === 'fast'}
+                onclick={() => change({ trim: 'fast' })}
+              >
+                {$t('frameleaf_video_editor_trim_fast')}
+              </button>
+            </div>
+            <p>
+              {#if edit.trim === 'fast'}
+                {#if otherEdits}
+                  {$t('frameleaf_video_editor_trim_fast_help', {
+                    values: {
+                      from: Math.floor(edit.start / 2) * 2,
+                      to: Math.min(Math.ceil(duration), Math.ceil(edit.end / 2) * 2),
+                    },
+                  })}
+                {:else if fastBounds}
+                  {$t('frameleaf_video_editor_trim_fast_actual', {
+                    values: { from: preciseTime(fastBounds.start), to: preciseTime(fastBounds.end) },
+                  })}
+                {:else}
+                  {$t('frameleaf_video_editor_trim_fast_help', {
+                    values: {
+                      from: Math.floor(edit.start / 2) * 2,
+                      to: Math.min(Math.ceil(duration), Math.ceil(edit.end / 2) * 2),
+                    },
+                  })}
+                {/if}
+                {#if otherEdits}
+                  {$t('frameleaf_video_editor_trim_fast_reencode')}
+                {/if}
+              {:else}
+                {$t('frameleaf_video_editor_trim_precise_help')}
+              {/if}
+            </p>
+            <div class="ed-grid-2">
               <label class="ed-field">
-                {$t('frameleaf_video_editor_text_content')}
+                {$t('frameleaf_video_editor_in_seconds')}
                 <input
-                  value={item.text}
-                  maxlength="200"
-                  oninput={(event) => updateOverlay(item.id, { text: event.currentTarget.value })}
+                  type="number"
+                  min="0"
+                  max={round(edit.end - MIN_SPAN)}
+                  step="0.1"
+                  value={edit.start}
+                  onchange={(event) => setIn(Number(event.currentTarget.value))}
                 />
               </label>
-              <div class="ed-row spread">
-                <div
-                  class="ed-nine"
-                  role="radiogroup"
-                  aria-label={$t('frameleaf_video_editor_text_position', { values: { number } })}
+              <label class="ed-field">
+                {$t('frameleaf_video_editor_out_seconds')}
+                <input
+                  type="number"
+                  min={round(edit.start + MIN_SPAN)}
+                  max={duration}
+                  step="0.1"
+                  value={edit.end}
+                  onchange={(event) => setOut(Number(event.currentTarget.value))}
+                />
+              </label>
+              <button type="button" class="ed-button" onclick={() => setIn(time)}>
+                {$t('frameleaf_video_editor_set_in')}
+              </button>
+              <button type="button" class="ed-button" onclick={() => setOut(time)}>
+                {$t('frameleaf_video_editor_set_out')}
+              </button>
+            </div>
+            <p>
+              {$t('frameleaf_video_editor_trim_summary', {
+                values: {
+                  start: preciseTime(edit.start),
+                  end: preciseTime(edit.end),
+                  length: preciseTime(trimmedLength),
+                },
+              })}{#if outputLength !== trimmedLength}{$t('frameleaf_video_editor_trim_after_speed', {
+                  values: { length: preciseTime(outputLength) },
+                })}{/if}.
+              {$t('frameleaf_video_editor_mark_hint')}
+            </p>
+          </div>
+        {:else if tool === 'speed'}
+          <div class="ed-panel-body">
+            <div class="ed-panel-head">
+              <h2>{$t('frameleaf_video_editor_tool_speed')}</h2>
+              <button
+                type="button"
+                class="ed-icon"
+                aria-label={$t('frameleaf_video_editor_reset_speed')}
+                title={$t('frameleaf_video_editor_reset_speed')}
+                disabled={edit.speed === 1 && edit.speedSegments.length === 0}
+                onclick={() => change({ speed: 1, speedSegments: [] })}
+              >
+                <Icon icon={mdiRestore} size="18" />
+              </button>
+            </div>
+            <h3>{$t('frameleaf_video_editor_whole_clip')}</h3>
+            <div class="ed-row" role="radiogroup" aria-label={$t('frameleaf_video_editor_clip_speed')}>
+              {#each SPEEDS as value (value)}
+                <button
+                  type="button"
+                  role="radio"
+                  class="ed-chip"
+                  aria-checked={edit.speed === value}
+                  onclick={() => change({ speed: value })}
                 >
-                  {#each TEXT_POSITIONS as position (position)}
-                    <button
-                      type="button"
-                      role="radio"
-                      aria-checked={item.position === position}
-                      aria-label={$t(POSITION_LABELS[position])}
-                      title={$t(POSITION_LABELS[position])}
-                      onclick={() => updateOverlay(item.id, { position })}
-                    ></button>
-                  {/each}
+                  {formatSpeed(value)}
+                </button>
+              {/each}
+            </div>
+            <div class="ed-row spread ed-ranges-head">
+              <h3>{$t('frameleaf_video_editor_ranges')}</h3>
+              <button
+                type="button"
+                class="ed-button"
+                disabled={edit.speedSegments.length >= MAX_SPEED_RANGES}
+                onclick={addRange}
+              >
+                <Icon icon={mdiPlus} size="18" />
+                {$t('frameleaf_video_editor_add_range')}
+              </button>
+            </div>
+            {#if edit.speedSegments.length === 0}
+              <p class="ed-empty">{$t('frameleaf_video_editor_ranges_empty')}</p>
+            {/if}
+            {#each edit.speedSegments as range, index (`${index}-${range.start}`)}
+              {@const number = index + 1}
+              <div class="ed-card">
+                <div class="ed-card-head">
+                  <strong>{$t('frameleaf_video_editor_range', { values: { number } })}</strong>
+                  <button
+                    type="button"
+                    class="ed-icon"
+                    aria-label={$t('frameleaf_video_editor_remove_range', { values: { number } })}
+                    onclick={() => change({ speedSegments: edit.speedSegments.filter((_, i) => i !== index) })}
+                  >
+                    <Icon icon={mdiClose} size="18" />
+                  </button>
                 </div>
-                <div class="ed-grid-2 ed-grow">
+                <div class="ed-grid-2">
                   <label class="ed-field">
                     {$t('frameleaf_video_editor_start')}
                     <input
                       type="number"
                       step="0.1"
-                      min="0"
-                      max={item.end}
-                      value={item.start}
+                      min={edit.start}
+                      max={round(range.end - MIN_SPAN)}
+                      value={range.start}
                       onchange={(event) =>
-                        updateOverlay(item.id, { start: clamp(Number(event.currentTarget.value), 0, item.end) })}
+                        updateRange(index, {
+                          start: clamp(Number(event.currentTarget.value), edit.start, range.end - MIN_SPAN),
+                        })}
                     />
                   </label>
                   <label class="ed-field">
@@ -1890,95 +1747,247 @@
                     <input
                       type="number"
                       step="0.1"
-                      min={item.start}
-                      max={duration}
-                      value={item.end}
+                      min={round(range.start + MIN_SPAN)}
+                      max={edit.end}
+                      value={range.end}
                       onchange={(event) =>
-                        updateOverlay(item.id, { end: clamp(Number(event.currentTarget.value), item.start, duration) })}
+                        updateRange(index, {
+                          end: clamp(Number(event.currentTarget.value), range.start + MIN_SPAN, edit.end),
+                        })}
                     />
                   </label>
                 </div>
-              </div>
-              <EditorSlider
-                id="size-{item.id}"
-                label={$t('frameleaf_video_editor_text_size')}
-                value={item.fontSize}
-                min={12}
-                max={96}
-                step={1}
-                defaultValue={32}
-                format={(value) => $t('frameleaf_video_editor_points', { values: { size: value } })}
-                onChange={(value) => updateOverlay(item.id, { fontSize: value })}
-              />
-              <div class="ed-row spread">
                 <div
-                  class="ed-swatches"
+                  class="ed-row"
                   role="radiogroup"
-                  aria-label={$t('frameleaf_video_editor_text_colour', { values: { number } })}
+                  aria-label={$t('frameleaf_video_editor_range_speed', { values: { number } })}
                 >
-                  {#each TEXT_SWATCHES as color (color)}
+                  {#each SPEEDS as value (value)}
                     <button
                       type="button"
                       role="radio"
-                      class="ed-swatch"
-                      style="background:{color}"
-                      aria-checked={item.color === color}
-                      aria-label={color}
-                      onclick={() => updateOverlay(item.id, { color })}
-                    ></button>
+                      class="ed-chip"
+                      aria-checked={range.speed === value}
+                      onclick={() => updateRange(index, { speed: value })}
+                    >
+                      {formatSpeed(value)}
+                    </button>
                   {/each}
-                  <input
-                    type="color"
-                    aria-label={$t('frameleaf_video_editor_text_custom_colour', { values: { number } })}
-                    value={item.color}
-                    oninput={(event) => updateOverlay(item.id, { color: event.currentTarget.value })}
-                  />
                 </div>
-                <label class="ed-check">
-                  <input
-                    type="checkbox"
-                    checked={item.shadow}
-                    onchange={(event) => updateOverlay(item.id, { shadow: event.currentTarget.checked })}
-                  />
-                  {$t('frameleaf_video_editor_text_shadow')}
-                </label>
               </div>
-            </div>
-          {/each}
-        </div>
-      {:else if tool === 'enhance'}
-        <div class="ed-panel-body">
-          <div class="ed-panel-head">
-            <h2>{$t('frameleaf_video_editor_tool_enhance')}</h2>
+            {/each}
+            <p>
+              {$t('frameleaf_video_editor_speed_summary', {
+                values: { length: preciseTime(outputLength), rate: speedAt(edit, time) },
+              })}
+            </p>
           </div>
-          {#each enhanceItems as item (item.key)}
+        {:else if tool === 'audio'}
+          <div class="ed-panel-body">
+            <div class="ed-panel-head">
+              <h2>{$t('frameleaf_video_editor_tool_audio')}</h2>
+              <button
+                type="button"
+                class="ed-icon"
+                aria-label={$t('frameleaf_video_editor_reset_audio')}
+                title={$t('frameleaf_video_editor_reset_audio')}
+                disabled={edit.volume === 100}
+                onclick={() => change({ volume: 100 })}
+              >
+                <Icon icon={mdiRestore} size="18" />
+              </button>
+            </div>
+            <EditorSlider
+              id="volume"
+              label={$t('frameleaf_video_editor_clip_gain')}
+              value={edit.volume}
+              min={0}
+              max={150}
+              step={1}
+              defaultValue={100}
+              format={(value) => `${value}%`}
+              onChange={(value) => change({ volume: value })}
+            />
             <div class="ed-toggle">
-              <strong><Icon icon={item.icon} size="16" /> {$t(item.label)}</strong>
+              <strong>{$t('frameleaf_video_editor_mute')}</strong>
               <button
                 type="button"
                 role="switch"
                 class="ed-switch"
-                aria-checked={edit[item.key]}
-                aria-label={$t(item.label)}
-                onclick={() => change({ [item.key]: !edit[item.key] })}
+                aria-checked={edit.volume === 0}
+                aria-label={$t('frameleaf_video_editor_mute')}
+                onclick={() => change({ volume: edit.volume ? 0 : 100 })}
               ></button>
-              <p>{$t(item.help)}</p>
-              {#if edit[item.key]}
-                <span class="ed-status" role="status">{$t('frameleaf_video_editor_enhance_on_save')}</span>
-              {/if}
+              <p>{$t('frameleaf_video_editor_mute_help')}</p>
             </div>
-          {/each}
-        </div>
-      {:else}
-        <RestorationPanel
-          {asset}
-          onCompare={(compare) => (restorationCompare = compare)}
-          onCurrentChanged={() => (saveChangedCurrent = true)}
-          loupe={restorationLoupe}
-          onLoupeChange={(value) => (restorationLoupe = value)}
-          currentFrameSeconds={() => (restorationCompare || videoError ? null : (videoEl?.currentTime ?? null))}
-        />
-      {/if}
+            <p>{$t('frameleaf_video_editor_channels_help')}</p>
+          </div>
+        {:else if tool === 'text'}
+          <div class="ed-panel-body">
+            <div class="ed-panel-head">
+              <h2>{$t('frameleaf_video_editor_tool_text')}</h2>
+              <button
+                type="button"
+                class="ed-button"
+                disabled={edit.textOverlays.length >= MAX_TEXT_OVERLAYS}
+                onclick={addOverlay}
+              >
+                <Icon icon={mdiPlus} size="18" />
+                {$t('frameleaf_video_editor_add_text')}
+              </button>
+            </div>
+            {#if edit.textOverlays.length === 0}
+              <p class="ed-empty">{$t('frameleaf_video_editor_text_empty')}</p>
+            {/if}
+            {#each edit.textOverlays as item, index (item.id)}
+              {@const number = index + 1}
+              <div class="ed-card">
+                <div class="ed-card-head">
+                  <strong>{$t('frameleaf_video_editor_text_number', { values: { number } })}</strong>
+                  <button
+                    type="button"
+                    class="ed-icon"
+                    aria-label={$t('frameleaf_video_editor_remove_text', { values: { number } })}
+                    onclick={() => change({ textOverlays: edit.textOverlays.filter((other) => other.id !== item.id) })}
+                  >
+                    <Icon icon={mdiClose} size="18" />
+                  </button>
+                </div>
+                <label class="ed-field">
+                  {$t('frameleaf_video_editor_text_content')}
+                  <input
+                    value={item.text}
+                    maxlength="200"
+                    oninput={(event) => updateOverlay(item.id, { text: event.currentTarget.value })}
+                  />
+                </label>
+                <div class="ed-row spread">
+                  <div
+                    class="ed-nine"
+                    role="radiogroup"
+                    aria-label={$t('frameleaf_video_editor_text_position', { values: { number } })}
+                  >
+                    {#each TEXT_POSITIONS as position (position)}
+                      <button
+                        type="button"
+                        role="radio"
+                        aria-checked={item.position === position}
+                        aria-label={$t(POSITION_LABELS[position])}
+                        title={$t(POSITION_LABELS[position])}
+                        onclick={() => updateOverlay(item.id, { position })}
+                      ></button>
+                    {/each}
+                  </div>
+                  <div class="ed-grid-2 ed-grow">
+                    <label class="ed-field">
+                      {$t('frameleaf_video_editor_start')}
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        max={item.end}
+                        value={item.start}
+                        onchange={(event) =>
+                          updateOverlay(item.id, { start: clamp(Number(event.currentTarget.value), 0, item.end) })}
+                      />
+                    </label>
+                    <label class="ed-field">
+                      {$t('frameleaf_video_editor_end')}
+                      <input
+                        type="number"
+                        step="0.1"
+                        min={item.start}
+                        max={duration}
+                        value={item.end}
+                        onchange={(event) =>
+                          updateOverlay(item.id, {
+                            end: clamp(Number(event.currentTarget.value), item.start, duration),
+                          })}
+                      />
+                    </label>
+                  </div>
+                </div>
+                <EditorSlider
+                  id="size-{item.id}"
+                  label={$t('frameleaf_video_editor_text_size')}
+                  value={item.fontSize}
+                  min={12}
+                  max={96}
+                  step={1}
+                  defaultValue={32}
+                  format={(value) => $t('frameleaf_video_editor_points', { values: { size: value } })}
+                  onChange={(value) => updateOverlay(item.id, { fontSize: value })}
+                />
+                <div class="ed-row spread">
+                  <div
+                    class="ed-swatches"
+                    role="radiogroup"
+                    aria-label={$t('frameleaf_video_editor_text_colour', { values: { number } })}
+                  >
+                    {#each TEXT_SWATCHES as color (color)}
+                      <button
+                        type="button"
+                        role="radio"
+                        class="ed-swatch"
+                        style="background:{color}"
+                        aria-checked={item.color === color}
+                        aria-label={color}
+                        onclick={() => updateOverlay(item.id, { color })}
+                      ></button>
+                    {/each}
+                    <input
+                      type="color"
+                      aria-label={$t('frameleaf_video_editor_text_custom_colour', { values: { number } })}
+                      value={item.color}
+                      oninput={(event) => updateOverlay(item.id, { color: event.currentTarget.value })}
+                    />
+                  </div>
+                  <label class="ed-check">
+                    <input
+                      type="checkbox"
+                      checked={item.shadow}
+                      onchange={(event) => updateOverlay(item.id, { shadow: event.currentTarget.checked })}
+                    />
+                    {$t('frameleaf_video_editor_text_shadow')}
+                  </label>
+                </div>
+              </div>
+            {/each}
+          </div>
+        {:else if tool === 'enhance'}
+          <div class="ed-panel-body">
+            <div class="ed-panel-head">
+              <h2>{$t('frameleaf_video_editor_tool_enhance')}</h2>
+            </div>
+            {#each enhanceItems as item (item.key)}
+              <div class="ed-toggle">
+                <strong><Icon icon={item.icon} size="16" /> {$t(item.label)}</strong>
+                <button
+                  type="button"
+                  role="switch"
+                  class="ed-switch"
+                  aria-checked={edit[item.key]}
+                  aria-label={$t(item.label)}
+                  onclick={() => change({ [item.key]: !edit[item.key] })}
+                ></button>
+                <p>{$t(item.help)}</p>
+                {#if edit[item.key]}
+                  <span class="ed-status" role="status">{$t('frameleaf_video_editor_enhance_on_save')}</span>
+                {/if}
+              </div>
+            {/each}
+          </div>
+        {:else}
+          <RestorationPanel
+            {asset}
+            onCompare={(compare) => (restorationCompare = compare)}
+            onCurrentChanged={() => (saveChangedCurrent = true)}
+            loupe={restorationLoupe}
+            onLoupeChange={(value) => (restorationLoupe = value)}
+            currentFrameSeconds={() => (restorationCompare || videoError ? null : (videoEl?.currentTime ?? null))}
+          />
+        {/if}
+      </fieldset>
     </div>
   </div>
 </div>
