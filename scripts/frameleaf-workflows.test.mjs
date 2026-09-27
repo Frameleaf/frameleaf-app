@@ -491,7 +491,8 @@ test("integration image is a guarded manual pre-release that never writes releas
   assert.equal(w.on.workflow_dispatch, null);
   assert.deepEqual(w.concurrency, {
     group: "integration-image",
-    "cancel-in-progress": true,
+    // A running build finishes; GitHub keeps only the newest queued run in the group.
+    "cancel-in-progress": false,
   });
   assert.deepEqual(w.permissions, {});
   assert.equal(w.env.IMAGE, "ghcr.io/frameleaf/frameleaf-server");
