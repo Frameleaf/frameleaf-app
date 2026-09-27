@@ -54,6 +54,15 @@ export function standardizeError(error: unknown) {
 type UnauthorizedHandler = (showError: () => void) => void;
 let unauthorizedHandler: UnauthorizedHandler | undefined;
 
+/**
+ * A 401 from the SDK, or from `uploadRequest`, whose XMLHttpRequest rejects with its own `ApiError`
+ * (`statusCode`), so a link revoked during an upload reaches the handler too.
+ */
+const isUnauthorized = (error: unknown) =>
+  isHttpError(error)
+    ? error.status === 401
+    : error instanceof Error && error.name === 'ApiError' && (error as { statusCode?: number }).statusCode === 401;
+
 export const setUnauthorizedHandler = (handler: UnauthorizedHandler | undefined) => {
   unauthorizedHandler = handler;
 };
@@ -92,7 +101,7 @@ export function handleError(error: unknown, localizedMessage: string, options?: 
     return localizedMessage;
   }
 
-  if (unauthorizedHandler && isHttpError(error) && error.status === 401) {
+  if (unauthorizedHandler && isUnauthorized(error)) {
     unauthorizedHandler(() => notifyError(error, localizedMessage, notify));
     return localizedMessage;
   }

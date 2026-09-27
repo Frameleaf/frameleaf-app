@@ -388,6 +388,14 @@
     session.destination = destination;
   });
 
+  /**
+   * Whose stored library view this page reads and writes. A public share (FL-56) is nobody's library:
+   * a signed-in visitor's own view never shapes it, and nothing from the share is kept in theirs.
+   */
+  const storageUserId = $derived(
+    publicView || authManager.isSharedLink || !authManager.authenticated ? undefined : authManager.user.id,
+  );
+
   // Restore once per mount: the URL's portable state wins over the stored view, and layout comes
   // from storage because it is device-local.
   $effect(() => {
@@ -395,7 +403,7 @@
       return;
     }
     restored = true;
-    session.restore(page.url, authManager.authenticated ? authManager.user.id : undefined);
+    session.restore(page.url, storageUserId);
     // FL-48: a link this version cannot read is refused out loud and left in the address bar, rather
     // than being quietly replaced by the stored view.
     if (session.refusedView) {
@@ -420,7 +428,7 @@
     if (!browser || !restored || !state || !layout) {
       return;
     }
-    savedOnDevice = session.persist(authManager.authenticated ? authManager.user.id : undefined);
+    savedOnDevice = session.persist(storageUserId);
     if (syncUrl && routerReady) {
       const next = session.viewUrl(page.url);
       if (next.href !== page.url.href) {

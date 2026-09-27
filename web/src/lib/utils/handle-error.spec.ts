@@ -16,6 +16,18 @@ vi.mock('@immich/sdk', async (original) => ({
   isHttpError: (error: unknown) => (error as { name?: string })?.name === 'HttpError',
 }));
 
+/** The shape `uploadRequest` rejects with (`$lib/utils`, not exported). */
+class UploadApiError extends Error {
+  override name = 'ApiError';
+
+  constructor(
+    message: string,
+    public statusCode: number,
+  ) {
+    super(message);
+  }
+}
+
 describe('handleError', () => {
   beforeEach(() => {
     vi.mocked(revokeSessionView).mockClear();
@@ -83,6 +95,29 @@ describe('handleError', () => {
     setUnauthorizedHandler(onUnauthorized);
 
     handleError(httpError(400, 'Bad request'), 'Unable to download');
+
+    expect(onUnauthorized).not.toHaveBeenCalled();
+    expect(toastManager.danger).toHaveBeenCalledOnce();
+  });
+
+  it('hands an upload refused with 401 to the registered handler (FL-56: link revoked mid-upload)', () => {
+    const onUnauthorized = vi.fn();
+    setUnauthorizedHandler(onUnauthorized);
+    // `uploadRequest` (XMLHttpRequest) rejects with its own ApiError, not the SDK's HttpError.
+    const uploadError = new UploadApiError('Unauthorized', 401);
+
+    handleError(uploadError, 'Unable to upload file');
+
+    expect(onUnauthorized).toHaveBeenCalledOnce();
+    expect(toastManager.danger).not.toHaveBeenCalled();
+  });
+
+  it('keeps other refused uploads a toast', () => {
+    const onUnauthorized = vi.fn();
+    setUnauthorizedHandler(onUnauthorized);
+    const uploadError = new UploadApiError('Payload Too Large', 413);
+
+    handleError(uploadError, 'Unable to upload file');
 
     expect(onUnauthorized).not.toHaveBeenCalled();
     expect(toastManager.danger).toHaveBeenCalledOnce();

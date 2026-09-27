@@ -16,6 +16,7 @@
   import { fileUploadHandler, openFileUploadDialog } from '$lib/utils/file-uploader';
   import type { AlbumResponseDto, SharedLinkResponseDto } from '@immich/sdk';
   import { toastManager } from '@immich/ui';
+  import { onDestroy } from 'svelte';
   import { t } from 'svelte-i18n';
 
   /**
@@ -47,7 +48,9 @@
    */
   const bulkContext = $derived({ sharedLinkId: sharedLink.id, readOnly: true });
 
-  dragAndDropFilesStore.subscribe((value) => {
+  // Ends with the page: a subscription left behind would take files dropped on the next share into
+  // this one's album (FL-56, a link session's data goes with it).
+  const stopDropUploads = dragAndDropFilesStore.subscribe((value) => {
     if (!(value.isDragging && value.files.length > 0)) {
       return;
     }
@@ -57,6 +60,7 @@
     }
     dragAndDropFilesStore.set({ isDragging: false, files: [] });
   });
+  onDestroy(stopDropUploads);
 
   /** FL-56 (`PublicViewer.jsx` handleFiles): "N items added to this share." */
   const announceUploads = (uploaded: (string | undefined)[]) => {

@@ -9,6 +9,8 @@ import {
   updateSharedLink,
 } from '@immich/sdk';
 import { expect, test, type Page } from '@playwright/test';
+import { createUserDto } from 'src/fixtures.js';
+import { makeRandomImage } from 'src/generators.js';
 import { asBearerAuth, utils } from 'src/utils.js';
 
 /** A fresh album link and a way to revoke it from the owner's side while a viewer has it open. */
@@ -16,6 +18,29 @@ const revokeLater = async (accessToken: string, albumId: string) => {
   const link = await utils.createSharedLink(accessToken, { type: SharedLinkType.Album, albumId });
   const revoke = () => removeSharedLink({ id: link.id }, { headers: asBearerAuth(accessToken) });
   return { link, revoke };
+};
+
+/**
+ * API requests a public page may make without the link's key: the server's own public description
+ * and the signed-in visitor's own session. Everything about the share goes through the link.
+ */
+const unscopedAllowed = [/^\/api\/server\//, /^\/api\/users\/me(\/preferences)?$/, /^\/api\/auth\/status$/];
+
+/** Records every API request that reaches the server without the link's key or slug. */
+const recordUnscoped = (page: Page) => {
+  const unscoped: string[] = [];
+  page.on('request', (request) => {
+    const url = new URL(request.url());
+    if (
+      url.pathname.startsWith('/api/') &&
+      !url.searchParams.has('key') &&
+      !url.searchParams.has('slug') &&
+      !unscopedAllowed.some((allowed) => allowed.test(url.pathname))
+    ) {
+      unscoped.push(`${request.method()} ${url.pathname}`);
+    }
+  });
+  return unscoped;
 };
 
 const unlock = async (page: Page) => {
@@ -254,6 +279,121 @@ test.describe('Shared Links', () => {
       await page.getByRole('heading', { name: 'This link is not available' }).waitFor();
       await expect(page.getByText('(Frameleaf Server Error)')).toHaveCount(0);
       await expect(page.getByRole('heading', { name: 'Test Album' })).toHaveCount(0);
+    });
+    test('uploading shows the unavailable state', async ({ page }) => {
+      const { link, revoke } = await revokeLater(admin.accessToken, album.id);
+      await page.goto(`/share/${link.key}`);
+      await page.getByRole('heading', { name: 'Test Album' }).waitFor();
+      await page.locator(`[data-asset-id="${asset.id}"] img`).waitFor();
+
+      await revoke();
+      const chooser = page.waitForEvent('filechooser');
+      await page.getByRole('button', { name: 'Add photos' }).click();
+      await (await chooser).setFiles({ name: 'late.png', mimeType: 'image/png', buffer: makeRandomImage() });
+
+      await page.getByRole('heading', { name: 'This link is not available' }).waitFor();
+      await expect(page.getByRole('heading', { name: 'Test Album' })).toHaveCount(0);
+    });
+
+    test('a playing slideshow stops on the unavailable state', async ({ page }) => {
+      const link = await utils.createSharedLink(admin.accessToken, {
+        type: SharedLinkType.Individual,
+        assetIds: [asset.id, asset2.id],
+      });
+      await page.goto(`/share/${link.key}/photos/${asset.id}`);
+      await expect(page.locator('#immich-asset-viewer')).toBeVisible();
+      await page.getByRole('button', { name: 'Play slideshow' }).first().click();
+
+      await removeSharedLink({ id: link.id }, { headers: asBearerAuth(admin.accessToken) });
+
+      // The slideshow's next step (5 seconds by default) is refused and the page says so.
+      await expect(page.getByRole('heading', { name: 'This link is not available' })).toBeVisible({ timeout: 15_000 });
+      await expect(page.locator('#immich-asset-viewer')).toHaveCount(0);
+    });
+  });
+
+  // FL-56: a signed-in person who does not own the link sees it exactly as an anonymous visitor
+  // does: the public frame only, the link's own permissions, and nothing of their own library.
+  test.describe('a signed-in visitor who does not own the link', () => {
+    let visitor: LoginResponseDto;
+    const visitorDto = createUserDto.create('fl56-visitor');
+    const visitorAlbumName = 'Visitor private album';
+
+    test.beforeAll(async () => {
+      visitor = await utils.userSetup(admin.accessToken, visitorDto);
+      const own = await utils.createAsset(visitor.accessToken);
+      await utils.createAlbum(visitor.accessToken, { albumName: visitorAlbumName, assetIds: [own.id] });
+    });
+
+    for (const permissions of [
+      { allowDownload: false, allowUpload: false, showMetadata: false },
+      { allowDownload: false, allowUpload: true, showMetadata: false },
+      { allowDownload: true, allowUpload: false, showMetadata: true },
+      { allowDownload: true, allowUpload: true, showMetadata: true },
+    ]) {
+      const name = Object.entries(permissions)
+        .map(([option, on]) => `${option} ${on ? 'on' : 'off'}`)
+        .join(', ');
+
+      test(`${name}: only the public frame and what the link allows`, async ({ context, page }) => {
+        const link = await utils.createSharedLink(admin.accessToken, {
+          type: SharedLinkType.Album,
+          albumId: album.id,
+          ...permissions,
+        });
+        await utils.setAuthCookies(context, visitor.accessToken);
+        const unscoped = recordUnscoped(page);
+
+        await page.goto(`/share/${link.key}`);
+        await page.getByRole('heading', { name: 'Test Album' }).waitFor();
+        await page.locator(`[data-asset-id="${asset.id}"] img`).waitFor();
+
+        // No private navigation, account menu or anything of the visitor's own.
+        await expect(page.getByRole('link', { name: 'Go to Frameleaf' })).toBeVisible();
+        await expect(page.getByRole('navigation', { name: 'Primary' })).toHaveCount(0);
+        await expect(page.getByRole('button', { name: 'Collapse navigation' })).toHaveCount(0);
+        await expect(page.getByRole('button', { name: /^Account menu for/ })).toHaveCount(0);
+        await expect(page.getByText(visitorAlbumName)).toHaveCount(0);
+        await expect(page.getByText(visitorDto.name)).toHaveCount(0);
+
+        // The header offers exactly what the link allows.
+        await expect(page.getByRole('button', { name: 'Download all' })).toHaveCount(permissions.allowDownload ? 1 : 0);
+        await expect(page.getByRole('button', { name: 'Add photos' })).toHaveCount(permissions.allowUpload ? 1 : 0);
+
+        // The viewer shows details only when the link shows metadata, and no owner actions.
+        await page.locator(`[data-asset-id="${asset.id}"]`).click();
+        await expect(page.locator('#immich-asset-viewer')).toBeVisible();
+        await expect(page.getByRole('button', { name: /^Information/ })).toHaveCount(permissions.showMetadata ? 1 : 0);
+        for (const ownerAction of ['Share', 'Favorite', 'Delete', 'Edit']) {
+          await expect(page.getByRole('button', { name: ownerAction, exact: true })).toHaveCount(0);
+        }
+
+        // Everything about the share went through the link, never the visitor's own session.
+        expect(unscoped).toEqual([]);
+      });
+    }
+
+    test('leaving the share keeps nothing of it in the visitor’s own library view', async ({ context, page }) => {
+      await utils.setAuthCookies(context, visitor.accessToken);
+      await page.goto(`/share/${sharedLink.key}`);
+      await page.getByRole('heading', { name: 'Test Album' }).waitFor();
+      await page.locator(`[data-asset-id="${asset.id}"]`).click();
+      await expect(page.locator('#immich-asset-viewer')).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(page.locator('#immich-asset-viewer')).toHaveCount(0);
+
+      await page.getByRole('link', { name: 'Go to Frameleaf' }).click();
+      await page.waitForURL('/photos');
+      await expect(page.locator(`[data-asset-id="${asset.id}"]`)).toHaveCount(0);
+
+      const stored = await page.evaluate(() =>
+        Object.keys(localStorage)
+          .filter((key) => key.startsWith('frameleaf:library:'))
+          .map((key) => localStorage.getItem(key))
+          .join('\n'),
+      );
+      expect(stored).not.toContain(album.id);
+      expect(stored).not.toContain(asset.id);
     });
   });
 

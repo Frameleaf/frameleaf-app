@@ -17,6 +17,7 @@
   import { toTimelineAsset } from '$lib/utils/timeline-util';
   import { getMySharedLink, type SharedLinkResponseDto } from '@immich/sdk';
   import { toastManager } from '@immich/ui';
+  import { onDestroy } from 'svelte';
   import { t } from 'svelte-i18n';
 
   /**
@@ -51,7 +52,9 @@
     namedArchiveName(sharedLink.description, $t('frameleaf_archive_name_shared')),
   );
 
-  dragAndDropFilesStore.subscribe((value) => {
+  // Ends with the page: a subscription left behind would take files dropped on the next share into
+  // this one's album (FL-56, a link session's data goes with it).
+  const stopDropUploads = dragAndDropFilesStore.subscribe((value) => {
     if (!(value.isDragging && value.files.length > 0)) {
       return;
     }
@@ -61,6 +64,7 @@
     }
     dragAndDropFilesStore.set({ isDragging: false, files: [] });
   });
+  onDestroy(stopDropUploads);
 
   // A cancelled download is the user's choice, not an error to log.
   const download = (assetIds: string[]) =>
