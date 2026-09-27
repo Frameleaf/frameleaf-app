@@ -712,8 +712,22 @@ export type RemoteAccessStatusResponseDto = {
     publicUrlChoice: RemoteAccessPublicUrl;
     /** Why it is off, idle or failing, in plain words */
     reason: string | null;
+    /** Bytes received through the relay since the edge worker started */
+    relayBytesIn: number;
+    /** Bytes sent through the relay since the edge worker started */
+    relayBytesOut: number;
     relayConnected: boolean;
+    /** When the current relay connection was made */
+    relayConnectedAt: string | null;
+    /** The last relay problem, in plain words */
+    relayLastError: string | null;
+    relayLastErrorAt: string | null;
+    /** Round trip to the relay, from its last keepalive */
+    relayLatencyMs: number | null;
+    /** The relay this server uses (eu1, us1) */
     relayRegion: string | null;
+    /** Frameleaf Cloud stopped the relay for this server; it is tried again once relinked */
+    relayRevoked: boolean;
     status: RemoteAccessState;
     /** Why remote access cannot be turned on (not set up, not linked, no plan); null when it can */
     unavailableReason: string | null;

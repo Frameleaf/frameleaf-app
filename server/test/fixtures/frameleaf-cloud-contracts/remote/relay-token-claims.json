@@ -1,0 +1,26 @@
+{
+  "iss": "https://api.frameleaf.cloud",
+  "sub": "0192f1a4-7c3e-7b21-9d4e-2a6f8c0b1e53",
+  "sni": "u225vlzhsdlhwh4l.frameleaf.net",
+  "hosts": [
+    "photos.example.com"
+  ],
+  "relay": "eu1",
+  "cnf": {
+    "jwk": {
+      "kty": "OKP",
+      "crv": "Ed25519",
+      "x": "hMtoh1AefyJyZkWYlBO5ccMRq0sgegtqMTjp47mbnTY"
+    }
+  },
+  "thr": {
+    "bps": 8000000,
+    "burst": 4194304
+  },
+  "lim": {
+    "conns": 500
+  },
+  "iat": 1790000000,
+  "exp": 1790014400,
+  "jti": "01999b1e-2f3a-7c4d-8e5f-6a7b8c9d0e1f"
+}

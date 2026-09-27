@@ -100,3 +100,10 @@ tested against what the cloud publishes (FL-177).
 
 Do not edit these files by hand. When the cloud changes a fixture, copy the new version and update the commit
 above.
+- FL-166: `remote/relay-token-response.json`, `remote/relay-token-claims.json`, `remote/relay-token-header.json`,
+  `remote/relay-candidates.json`, `remote/relay-select-request.json`, `remote/relay-select-response.json`,
+  `remote/wan-probe-request.json`, `remote/wan-probe-response.json` and `remote/remote-usage.json` are byte-identical
+  to `origin/main` at `62637ca6b77cccf0b68bac2b19c50b14242a6830` (FC-28 relay control plane). The tunnel protocol
+  constants in `server/src/utils/frameleaf-relay.ts` mirror `packages/contracts/src/tunnel.ts` on `codex/FC-30-relay`
+  at `b223ee8`; `server/test/fixtures/relay.ts` is a Node stand-in for the Go relay (`apps/relay`), and
+  `server/test/fixtures/frameleaf-relay/` holds test-only certificates and keys used nowhere else.

@@ -1152,6 +1152,8 @@ export type FrameleafRemoteEnrollment = {
   certProfile: string;
   renewBeforeDays: number;
   cloneSuspected: boolean;
+  /** The link this enrolment was made for (`FrameleafCloudLink.linkedAt`): a new link enrols again. */
+  linkedAt?: string;
   enrolledAt: string;
 };
 
@@ -1219,7 +1221,22 @@ export type FrameleafRemoteAccess = {
   certificateIssuance?: FrameleafEdgeIssuance;
   customCertificate?: (FrameleafEdgeCertificate & { host: string }) | null;
   customCertificateIssuance?: FrameleafEdgeIssuance & { host: string };
-  relay: { connected: boolean };
+  /** The relay tunnel (FL-166): which relay, its round trip, since when, bytes and the last problem. */
+  relay: {
+    connected: boolean;
+    relayId?: string;
+    host?: string;
+    latencyMs?: number;
+    connectedAt?: string;
+    bytesIn?: number;
+    bytesOut?: number;
+    lastError?: string;
+    lastErrorAt?: string;
+    /** Since when there is no tunnel while remote access serves (the admin notice waits 15 minutes). */
+    disconnectedSince?: string | null;
+    /** Frameleaf Cloud revoked or suspended the tunnel; it is tried again once the server is linked again. */
+    revoked?: boolean;
+  };
   direct: {
     listening: boolean;
     port: number;
