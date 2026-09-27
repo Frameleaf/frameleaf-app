@@ -125,6 +125,118 @@ test.describe('Map', () => {
     await expect(page.locator(`[data-asset-id="${located.id}"]`)).toBeVisible();
   });
 
+  test('opens an item from the list, closes back to the same map, and returns from the area search (FL-51)', async ({
+    context,
+    page,
+  }) => {
+    await utils.setAuthCookies(context, admin.accessToken);
+    await page.goto('/map');
+    await expect(page.getByText('1 item in view')).toBeVisible();
+
+    const tools = page.getByRole('toolbar', { name: 'Map tools' });
+    await tools.getByRole('button', { name: 'Show list' }).click();
+    const list = page.getByRole('complementary', { name: 'Items in view' });
+    await list.getByRole('button', { name: /^thompson-springs\.jpg/ }).click();
+    await expect(page.locator('#immich-asset-viewer')).toBeVisible();
+
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#immich-asset-viewer')).toHaveCount(0);
+    await expect(page).toHaveURL(/\/map/);
+    await expect(page.getByText('1 item in view')).toBeVisible();
+    await expect(list.getByRole('button', { name: /^thompson-springs\.jpg/ })).toBeVisible();
+
+    // Back from the Library's map area lands on the same map position (the address keeps it).
+    await tools.getByRole('button', { name: 'Zoom out' }).click();
+    await expect(page).toHaveURL(/\/map#[\d.-]+\/[\d.-]+\/[\d.-]+/);
+    const position = new URL(page.url()).hash;
+    await page.getByRole('button', { name: 'Search this area' }).click();
+    await page.waitForURL(/\/photos\?area=/);
+    await page.goBack();
+    await page.waitForURL(/\/map/);
+    expect(new URL(page.url()).hash).toBe(position);
+    await expect(page.getByText('1 item in view')).toBeVisible();
+  });
+
+  test('rapid panning and zooming keep the in-view count in step, and Show all items recovers (FL-51)', async ({
+    context,
+    page,
+  }) => {
+    await utils.setAuthCookies(context, admin.accessToken);
+    await page.goto('/map');
+    await expect(page.getByText('1 item in view')).toBeVisible();
+
+    const canvas = page.locator('.maplibregl-canvas');
+    const box = (await canvas.boundingBox())!;
+    const [x, y] = [box.x + box.width / 2, box.y + box.height / 2];
+    const tools = page.getByRole('toolbar', { name: 'Map tools' });
+    for (let index = 0; index < 4; index++) {
+      await tools.getByRole('button', { name: 'Zoom in' }).click();
+    }
+    for (let index = 0; index < 6; index++) {
+      await page.mouse.move(x, y);
+      await page.mouse.down();
+      await page.mouse.move(x + (index % 2 === 0 ? 300 : -120), y + 90, { steps: 2 });
+      await page.mouse.up();
+    }
+    await expect(page.getByText(/^\d+ items? in view$/)).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Search this area' })).toBeVisible();
+
+    await tools.getByRole('button', { name: 'Show all items' }).click();
+    await expect(page.getByText('1 item in view')).toBeVisible();
+
+    // Home on the focused map fits every located item too (MapView.jsx keyboard help).
+    await canvas.focus();
+    for (let index = 0; index < 8; index++) {
+      await page.keyboard.press('ArrowRight');
+    }
+    await page.keyboard.press('Home');
+    await expect(page.getByText('1 item in view')).toBeVisible();
+  });
+
+  test('an empty part of the map lists nothing and says how to get back (FL-51)', async ({ context, page }) => {
+    await utils.setAuthCookies(context, admin.accessToken);
+    // A link to a position is honoured instead of fitting the located items.
+    await page.goto('/map#8/-60/-150');
+    await expect(page.getByText('0 items in view')).toBeVisible();
+    await expect(page.getByText('· 1 located')).toBeVisible();
+
+    await page.getByRole('toolbar', { name: 'Map tools' }).getByRole('button', { name: 'Show list' }).click();
+    const list = page.getByRole('complementary', { name: 'Items in view' });
+    await expect(list.getByRole('status')).toHaveText(
+      'Nothing in this part of the map. Zoom out or choose Show all items.',
+    );
+
+    await page.getByRole('toolbar', { name: 'Map tools' }).getByRole('button', { name: 'Show all items' }).click();
+    await expect(page.getByText('1 item in view')).toBeVisible();
+    await expect(list.getByRole('button', { name: /^thompson-springs\.jpg/ })).toBeVisible();
+  });
+
+  test('on a phone the located items stay reachable through the list when tiles fail (FL-51)', async ({
+    context,
+    page,
+  }) => {
+    await page.setViewportSize({ width: 375, height: 812 });
+    await utils.setAuthCookies(context, admin.accessToken);
+    await utils.mockMapStyle(context, 500);
+    await page.goto('/map');
+
+    const offline = page.getByRole('status').filter({ hasText: 'The map can’t load' });
+    await expect(offline).toBeVisible();
+    await offline.getByRole('button', { name: 'Show list' }).click();
+
+    const list = page.getByRole('complementary', { name: 'Items in view' });
+    const row = list.getByRole('button', { name: /^thompson-springs\.jpg/ });
+    await expect(row).toBeVisible();
+    await expect(row).toBeInViewport();
+    const listBox = (await list.boundingBox())!;
+    expect(listBox.x).toBeGreaterThanOrEqual(0);
+    expect(listBox.x + listBox.width).toBeLessThanOrEqual(375);
+
+    await row.focus();
+    await page.keyboard.press('Enter');
+    await expect(page.locator('#immich-asset-viewer')).toBeVisible();
+  });
+
   test('the geolocation utility removes a location after review (FL-51)', async ({ context, page }) => {
     await utils.setAuthCookies(context, admin.accessToken);
     await page.goto('/user-settings?area=utilities&section=geolocation');
