@@ -45,6 +45,11 @@ import {
   RenderWorkerUpdateDto,
   RenderWorkerWriteResultDto,
 } from 'src/dtos/render-worker.dto.js';
+import {
+  RenderWorkerStreamOfferDto,
+  RenderWorkerStreamSignalDto,
+  RenderWorkerStreamSignalRequestDto,
+} from 'src/dtos/studio-preview-stream.dto.js';
 import { ApiTag, ImmichHeader } from 'src/enum.js';
 import { Auth, Authenticated, FileResponse, HomeNetworkOnly } from 'src/middleware/auth.guard.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -406,6 +411,42 @@ export class RenderWorkerController {
     @Body() dto: RenderWorkerCancelAckDto,
   ): Promise<RenderWorkerWriteResultDto> {
     return this.service.acknowledgeCancel(session, id, dto);
+  }
+
+  @Post('operations/:id/stream')
+  @HttpCode(HttpStatus.OK)
+  @WorkerSessionHeader()
+  @Authenticated({ public: true })
+  @Endpoint({
+    summary: 'Read the signalling of a claimed preview stream',
+    description:
+      "FL-96. What the worker holding a Studio preview stream must do now: stop (`close`), offer for the current negotiation (`offerNeeded`), or connect with the browser's answer, which carries the server's bitrate bound. Poll at least every two seconds while streaming.",
+    history: history(),
+  })
+  getRenderStreamSignal(
+    @Headers(ImmichHeader.RenderWorkerSession) session: string | undefined,
+    @Param() { id }: UUIDv7ParamDto,
+    @Body() dto: RenderWorkerStreamSignalRequestDto,
+  ): Promise<RenderWorkerStreamSignalDto> {
+    return this.service.streamSignal(session, id, dto);
+  }
+
+  @Post('operations/:id/stream/offer')
+  @HttpCode(HttpStatus.OK)
+  @WorkerSessionHeader()
+  @Authenticated({ public: true })
+  @Endpoint({
+    summary: 'Offer a claimed preview stream',
+    description:
+      'FL-96. The complete session description (non-trickle ICE) for the current negotiation: one send-only video and one control data channel. One offer per negotiation per claim.',
+    history: history(),
+  })
+  offerRenderStream(
+    @Headers(ImmichHeader.RenderWorkerSession) session: string | undefined,
+    @Param() { id }: UUIDv7ParamDto,
+    @Body() dto: RenderWorkerStreamOfferDto,
+  ): Promise<RenderWorkerWriteResultDto> {
+    return this.service.streamOffer(session, id, dto);
   }
 
   @Get('remote-references')

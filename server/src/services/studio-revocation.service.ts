@@ -6,10 +6,15 @@ import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { StudioProjectRepository } from 'src/repositories/studio-project.repository.js';
 import { StudioPreviewService } from 'src/services/studio-preview.service.js';
+import { StudioPreviewStreamService } from 'src/services/studio-preview-stream.service.js';
 import { StudioProjectService } from 'src/services/studio-project.service.js';
 
 /** The Studio jobs a source leaving the library stops. */
-const SOURCE_BOUND_KINDS = [MediaOperationKind.StudioExport, MediaOperationKind.StudioPreview] as const;
+const SOURCE_BOUND_KINDS = [
+  MediaOperationKind.StudioExport,
+  MediaOperationKind.StudioPreview,
+  MediaOperationKind.StudioPreviewStream,
+] as const;
 
 /**
  * Resource revocation for Studio (FL-90, `STU-203`): "revocation stops streams and jobs and
@@ -22,7 +27,7 @@ const SOURCE_BOUND_KINDS = [MediaOperationKind.StudioExport, MediaOperationKind.
  *   cached resolutions dropped, its live preview frames evicted with their files, and its
  *   unfinished exports and previews cancelled, for every account.
  * - **A source is moved into the Locked space.** Interactive reads refuse Locked media, so live
- *   previews stop and resolutions are dropped. Exports keep running: a background renderer reads
+ *   previews and preview streams (FL-96) stop and resolutions are dropped. Exports keep running: a background renderer reads
  *   the Locked sources a job its owner submitted names (owner decision, September 22, 2026).
  * - **A member leaves, or is taken out of, a shared space.** That member's previews and jobs on
  *   the space's projects stop; the owner's and other members' work is untouched.
@@ -36,6 +41,7 @@ export class StudioRevocationService {
     private projectRepository: StudioProjectRepository,
     private projects: StudioProjectService,
     private previews: StudioPreviewService,
+    private streams: StudioPreviewStreamService,
     private operations: MediaOperationRepository,
   ) {
     this.logger.setContext(StudioRevocationService.name);
@@ -71,7 +77,10 @@ export class StudioRevocationService {
     }
     this.projects.forgetResolutions(projectIds);
     const frames = await this.previews.revokeForProjects(projectIds);
-    this.logger.log(`Locked sources stopped ${frames} preview frame(s) in ${projectIds.length} Studio project(s)`);
+    const streams = await this.streams.revokeForProjects(projectIds);
+    this.logger.log(
+      `Locked sources stopped ${frames} preview frame(s) and ${streams} preview stream(s) in ${projectIds.length} Studio project(s)`,
+    );
   }
 
   @OnEvent({ name: 'AlbumUserRemove' })
@@ -82,6 +91,7 @@ export class StudioRevocationService {
     if (detached.length > 0) {
       this.projects.forgetResolutions(detached);
       const frames = await this.previews.revokeForProjects(detached);
+      await this.streams.revokeForProjects(detached);
       this.logger.log(
         `A member left space ${albumId}: kept ${detached.length} of their Studio project(s) as private; stopped ${frames} shared preview frame(s)`,
       );
@@ -93,6 +103,7 @@ export class StudioRevocationService {
     }
     this.projects.forgetResolutions(projectIds);
     const frames = await this.previews.revokeForProjects(projectIds, userId);
+    await this.streams.revokeForProjects(projectIds, userId);
     const jobs = await this.cancelJobs(projectIds, userId);
     if (frames > 0 || jobs > 0) {
       this.logger.log(`A member left space ${albumId}: stopped ${frames} preview frame(s) and ${jobs} Studio job(s)`);
@@ -106,6 +117,8 @@ export class StudioRevocationService {
     }
     this.projects.forgetResolutions(projectIds);
     const frames = await this.previews.revokeForProjects(projectIds);
+    // Streams first, so each records why it closed; the job pass then finds nothing of theirs left.
+    await this.streams.revokeForProjects(projectIds);
     const jobs = await this.cancelJobs(projectIds);
     this.logger.log(
       `Removed sources stopped ${frames} preview frame(s) and ${jobs} Studio job(s) in ${projectIds.length} project(s)`,

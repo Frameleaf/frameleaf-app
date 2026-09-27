@@ -36,6 +36,11 @@ import {
   RenderWorkerWriteResultDto,
 } from 'src/dtos/render-worker.dto.js';
 import {
+  RenderWorkerStreamOfferDto,
+  RenderWorkerStreamSignalDto,
+  RenderWorkerStreamSignalRequestDto,
+} from 'src/dtos/studio-preview-stream.dto.js';
+import {
   AlbumUserRole,
   CacheControl,
   MediaOperationCheckpointState,
@@ -68,6 +73,7 @@ import { UserRepository } from 'src/repositories/user.repository.js';
 import { RENDER_WORKER_LIMIT_INSTANCE_SUBJECT } from 'src/schema/tables/render-worker.table.js';
 import { StudioExportService } from 'src/services/studio-export.service.js';
 import { StudioPreviewService } from 'src/services/studio-preview.service.js';
+import { StudioPreviewStreamService } from 'src/services/studio-preview-stream.service.js';
 import { StudioAuthorizedManifest, StudioResourceService } from 'src/services/studio-resource.service.js';
 import { ImmichFileResponse } from 'src/utils/file.js';
 import {
@@ -290,6 +296,7 @@ export class RenderWorkerService {
     private studioProjects: StudioProjectRepository,
     private studioExports: StudioExportService,
     private studioPreviews: StudioPreviewService,
+    private studioStreams: StudioPreviewStreamService,
     @Optional() @Inject(DESTINATION_HEALTH_PROVIDER) destinationHealth?: DestinationHealthProvider,
   ) {
     this.logger.setContext(RenderWorkerService.name);
@@ -1194,6 +1201,34 @@ export class RenderWorkerService {
     if (accepted && operation.kind === MediaOperationKind.StudioExport) {
       await this.studioExports.onRenderCancelAcknowledged(operation, worker.id, dto.released);
     }
+    return { accepted, refusal: null };
+  }
+
+  /**
+   * FL-96: the signalling of a preview stream this worker holds. The worker polls this at least
+   * every two seconds while it streams, stops sending the moment `close` is true (then acknowledges
+   * the cancel), and offers whenever `offerNeeded` is true. Bound to the claim like every other
+   * worker write, so a worker can only signal for a session it holds.
+   */
+  async streamSignal(
+    sessionToken: string | undefined,
+    operationId: string,
+    dto: RenderWorkerStreamSignalRequestDto,
+  ): Promise<RenderWorkerStreamSignalDto> {
+    const { worker } = await this.authenticate(sessionToken);
+    const operation = await this.requireClaimed(worker.id, operationId, dto.claimToken);
+    return this.studioStreams.workerSignal(operation);
+  }
+
+  /** FL-96: the worker's offer for a stream it holds, for the round `streamSignal` named. */
+  async streamOffer(
+    sessionToken: string | undefined,
+    operationId: string,
+    dto: RenderWorkerStreamOfferDto,
+  ): Promise<RenderWorkerWriteResultDto> {
+    const { worker } = await this.authenticate(sessionToken);
+    const operation = await this.requireClaimed(worker.id, operationId, dto.claimToken);
+    const { accepted } = await this.studioStreams.workerOffer(operation, dto);
     return { accepted, refusal: null };
   }
 

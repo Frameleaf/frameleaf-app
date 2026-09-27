@@ -94,6 +94,7 @@ import { StorageService } from 'src/services/storage.service.js';
 import { StudioBundleService } from 'src/services/studio-bundle.service.js';
 import { StudioExportService } from 'src/services/studio-export.service.js';
 import { StudioPreviewService } from 'src/services/studio-preview.service.js';
+import { StudioPreviewStreamService } from 'src/services/studio-preview-stream.service.js';
 import { StudioProjectService } from 'src/services/studio-project.service.js';
 import { StudioResourceService } from 'src/services/studio-resource.service.js';
 import { StudioRevocationService } from 'src/services/studio-revocation.service.js';
@@ -213,6 +214,7 @@ export const services = [
   StackService,
   StudioExportService,
   StudioPreviewService,
+  StudioPreviewStreamService,
   StorageService,
   StorageTemplateService,
   StudioBundleService,

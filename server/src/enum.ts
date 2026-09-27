@@ -1274,6 +1274,12 @@ export enum MediaOperationKind {
   StudioExport = 'studio_export',
   /** A short Studio preview render; same graph, bounded range. */
   StudioPreview = 'studio_preview',
+  /**
+   * A bounded WebRTC playback session of a stored Studio revision (FL-96): the worker holding the
+   * claim streams to the browser that opened it, signalled and authorised through the server. It
+   * lives as long as its lease, its keepalive and its bound allow, and never produces a file.
+   */
+  StudioPreviewStream = 'studio_preview_stream',
   /** A video restoration render. */
   Restoration = 'restoration',
   /** The five-second restoration motion preview a full render must inherit from. */

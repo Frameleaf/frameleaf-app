@@ -185,6 +185,7 @@ export const canResumeLostClaim = (operation: { kind: MediaOperationKind; attemp
 export const RENDER_WORKER_MEDIA_OPERATION_KINDS: readonly MediaOperationKind[] = [
   MediaOperationKind.StudioExport,
   MediaOperationKind.StudioPreview,
+  MediaOperationKind.StudioPreviewStream,
   MediaOperationKind.Restoration,
   MediaOperationKind.RestorationPreview,
   MediaOperationKind.QuickEdit,
