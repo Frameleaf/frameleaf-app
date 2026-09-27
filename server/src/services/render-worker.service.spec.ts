@@ -18,6 +18,7 @@ import { StudioProjectRepository } from 'src/repositories/studio-project.reposit
 import { RenderWorkerService } from 'src/services/render-worker.service.js';
 import { StudioExportService } from 'src/services/studio-export.service.js';
 import { StudioPreviewService } from 'src/services/studio-preview.service.js';
+import { StudioPreviewStreamService } from 'src/services/studio-preview-stream.service.js';
 import { StudioAuthorizedManifest, StudioResourceService } from 'src/services/studio-resource.service.js';
 import { signInputGrant } from 'src/utils/render-admission.js';
 import { StudioDestination, StudioResourceKind } from 'src/utils/studio-resources.js';
@@ -207,6 +208,7 @@ describe(RenderWorkerService.name, () => {
     ReturnType<typeof vi.fn>
   >;
   let studioPreviews: Record<'onRenderClaimed' | 'onRenderCompleted' | 'onRenderFailed', ReturnType<typeof vi.fn>>;
+  let studioStreams: Record<'workerSignal' | 'workerOffer', ReturnType<typeof vi.fn>>;
   let studioProjects: {
     getById: ReturnType<typeof vi.fn>;
     getRevision: ReturnType<typeof vi.fn>;
@@ -293,6 +295,10 @@ describe(RenderWorkerService.name, () => {
       listRemoteReferences: vi.fn().mockResolvedValue([]),
       acknowledgeRemoteReference: vi.fn().mockResolvedValue(true),
     };
+    studioStreams = {
+      workerSignal: vi.fn().mockResolvedValue({ close: false }),
+      workerOffer: vi.fn().mockResolvedValue({ accepted: true }),
+    };
     studioPreviews = {
       onRenderClaimed: vi.fn().mockReturnValue('/data/exports/owner/studio-previews/frame'),
       onRenderCompleted: vi.fn().mockResolvedValue({ published: true }),
@@ -314,6 +320,7 @@ describe(RenderWorkerService.name, () => {
       studioProjects as unknown as StudioProjectRepository,
       studioExports as unknown as StudioExportService,
       studioPreviews as unknown as StudioPreviewService,
+      studioStreams as unknown as StudioPreviewStreamService,
     );
 
     installSessions({ worker: workerA, session: sessionA }, { worker: workerB, session: sessionB });
@@ -1363,6 +1370,43 @@ describe(RenderWorkerService.name, () => {
     });
   });
 
+  describe('Studio preview streams (FL-96)', () => {
+    const stream = operationStub({
+      kind: MediaOperationKind.StudioPreviewStream,
+      status: MediaOperationStatus.Rendering,
+      claimToken: 'claim-1',
+      claimedBy: workerA.id,
+    });
+
+    beforeEach(() => {
+      vi.mocked(workers.getClaimed).mockImplementation((id, workerId, claimToken) =>
+        Promise.resolve(
+          id === stream.id && workerId === workerA.id && claimToken === 'claim-1' ? (stream as never) : undefined,
+        ),
+      );
+    });
+
+    it('hands the claimed session to the stream service for signalling and offers', async () => {
+      await sut.streamSignal(SESSION_A, stream.id, { claimToken: 'claim-1' });
+      expect(studioStreams.workerSignal).toHaveBeenCalledWith(stream);
+
+      const offer = { claimToken: 'claim-1', negotiation: 0, sdp: 'v=0' };
+      await expect(sut.streamOffer(SESSION_A, stream.id, offer)).resolves.toEqual({ accepted: true, refusal: null });
+      expect(studioStreams.workerOffer).toHaveBeenCalledWith(stream, offer);
+    });
+
+    it('refuses another worker, or a stale claim token', async () => {
+      await expect(sut.streamSignal(SESSION_B, stream.id, { claimToken: 'claim-1' })).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      await expect(
+        sut.streamOffer(SESSION_A, stream.id, { claimToken: 'claim-2', negotiation: 0, sdp: 'v=0' }),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(studioStreams.workerSignal).not.toHaveBeenCalled();
+      expect(studioStreams.workerOffer).not.toHaveBeenCalled();
+    });
+  });
+
   describe('readInput', () => {
     const claimedByA = operationStub({
       status: MediaOperationStatus.Rendering,
@@ -1904,6 +1948,7 @@ describe(RenderWorkerService.name, () => {
         qualified: [MediaOperationKind.StudioExport, MediaOperationKind.Restoration],
         unavailable: [
           MediaOperationKind.StudioPreview,
+          MediaOperationKind.StudioPreviewStream,
           MediaOperationKind.RestorationPreview,
           MediaOperationKind.QuickEdit,
         ],
@@ -1919,7 +1964,7 @@ describe(RenderWorkerService.name, () => {
 
       const { qualified, unavailable } = await sut.getCompatibility();
       expect(qualified).toEqual([]);
-      expect(unavailable).toHaveLength(5);
+      expect(unavailable).toHaveLength(6);
     });
   });
 });

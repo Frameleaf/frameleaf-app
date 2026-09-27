@@ -2,6 +2,7 @@ import { MediaOperationKind } from 'src/enum.js';
 import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { StudioProjectRepository } from 'src/repositories/studio-project.repository.js';
 import { StudioPreviewService } from 'src/services/studio-preview.service.js';
+import { StudioPreviewStreamService } from 'src/services/studio-preview-stream.service.js';
 import { StudioProjectService } from 'src/services/studio-project.service.js';
 import { StudioRevocationService } from 'src/services/studio-revocation.service.js';
 import { getMocks } from 'test/utils.js';
@@ -17,6 +18,7 @@ describe(StudioRevocationService.name, () => {
   };
   let projects: { forgetResolutions: ReturnType<typeof vi.fn> };
   let previews: { revokeForProjects: ReturnType<typeof vi.fn> };
+  let streams: { revokeForProjects: ReturnType<typeof vi.fn> };
   let operations: { listUnfinishedForProjects: ReturnType<typeof vi.fn>; requestCancel: ReturnType<typeof vi.fn> };
 
   beforeEach(() => {
@@ -27,6 +29,7 @@ describe(StudioRevocationService.name, () => {
     };
     projects = { forgetResolutions: vi.fn() };
     previews = { revokeForProjects: vi.fn().mockResolvedValue(2) };
+    streams = { revokeForProjects: vi.fn().mockResolvedValue(1) };
     operations = {
       listUnfinishedForProjects: vi.fn().mockResolvedValue([
         { id: 'export-1', ownerId: 'owner-1', kind: MediaOperationKind.StudioExport, projectId: 'project-1' },
@@ -39,6 +42,7 @@ describe(StudioRevocationService.name, () => {
       projectRepository as unknown as StudioProjectRepository,
       projects as unknown as StudioProjectService,
       previews as unknown as StudioPreviewService,
+      streams as unknown as StudioPreviewStreamService,
       operations as unknown as MediaOperationRepository,
     );
   });
@@ -54,9 +58,11 @@ describe(StudioRevocationService.name, () => {
     expect(projectRepository.getIdsReferencingAssets).toHaveBeenCalledWith([ASSET]);
     expect(projects.forgetResolutions).toHaveBeenCalledWith(['project-1', 'project-2']);
     expect(previews.revokeForProjects).toHaveBeenCalledWith(['project-1', 'project-2']);
+    // FL-96: streams stop with a recorded reason before the job pass.
+    expect(streams.revokeForProjects).toHaveBeenCalledWith(['project-1', 'project-2']);
     expect(operations.listUnfinishedForProjects).toHaveBeenCalledWith(
       ['project-1', 'project-2'],
-      [MediaOperationKind.StudioExport, MediaOperationKind.StudioPreview],
+      [MediaOperationKind.StudioExport, MediaOperationKind.StudioPreview, MediaOperationKind.StudioPreviewStream],
       undefined,
     );
     // Every account's job, each cancelled as its own owner.
@@ -71,10 +77,11 @@ describe(StudioRevocationService.name, () => {
     expect(operations.requestCancel).not.toHaveBeenCalled();
   });
 
-  it('stops interactive previews of newly Locked sources but lets owner-submitted exports run', async () => {
+  it('stops interactive previews and streams of newly Locked sources but lets owner-submitted exports run', async () => {
     await sut.onAssetLocked({ assetIds: [ASSET] });
     expect(projects.forgetResolutions).toHaveBeenCalledWith(['project-1', 'project-2']);
     expect(previews.revokeForProjects).toHaveBeenCalledWith(['project-1', 'project-2']);
+    expect(streams.revokeForProjects).toHaveBeenCalledWith(['project-1', 'project-2']);
     expect(operations.requestCancel).not.toHaveBeenCalled();
   });
 
@@ -82,9 +89,10 @@ describe(StudioRevocationService.name, () => {
     await sut.onAlbumUserRemove({ albumId: 'space-1', userId: 'reviewer-1' });
     expect(projectRepository.getIdsInSpace).toHaveBeenCalledWith('space-1');
     expect(previews.revokeForProjects).toHaveBeenCalledWith(['project-3'], 'reviewer-1');
+    expect(streams.revokeForProjects).toHaveBeenCalledWith(['project-3'], 'reviewer-1');
     expect(operations.listUnfinishedForProjects).toHaveBeenCalledWith(
       ['project-3'],
-      [MediaOperationKind.StudioExport, MediaOperationKind.StudioPreview],
+      [MediaOperationKind.StudioExport, MediaOperationKind.StudioPreview, MediaOperationKind.StudioPreviewStream],
       'reviewer-1',
     );
   });
@@ -96,6 +104,7 @@ describe(StudioRevocationService.name, () => {
     // Nothing is deleted; every other member's view of the project stops.
     expect(projects.forgetResolutions).toHaveBeenCalledWith(['project-9']);
     expect(previews.revokeForProjects).toHaveBeenCalledWith(['project-9']);
+    expect(streams.revokeForProjects).toHaveBeenCalledWith(['project-9']);
   });
 
   it('keeps going when one cancellation fails', async () => {
