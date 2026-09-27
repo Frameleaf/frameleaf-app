@@ -1721,7 +1721,7 @@ settingsSections.cloud = [
       module: "FrameleafCloud",
       icon: "mdiLinkVariant",
       keywords:
-        "frameleaf account link unlink device code pair connect instance fingerprint headless token permissions",
+        "frameleaf account link unlink device code pair connect instance fingerprint headless token permissions tour what linking unlocks",
     },
   ),
   section(

@@ -12,6 +12,14 @@ import { HardwareCheck } from "./HardwareCheck";
 import { JobsManager } from "./JobsManager";
 import { FrameleafCloud, useCloudState } from "./FrameleafCloud";
 import { CLOUD_DESTINATION, cloudSummary } from "./frameleaf-cloud-data.mjs";
+import { CloudTour } from "./CloudTour";
+import {
+  clampTourStep,
+  loadCloudTour,
+  markCloudTourSeen,
+  saveCloudTour,
+  shouldOfferCloudTour,
+} from "./cloud-tour.mjs";
 import { AccountsLibraries, PersonalAccess } from "./AccountsLibraries";
 import { ConfigurationTransfer } from "./ConfigurationTransfer";
 import { previewStoragePath } from "./configuration-transfer.mjs";
@@ -265,6 +273,39 @@ export function CommandCenter({
   const [pausedQueues, setPausedQueues] = useState([]);
   const main = useRef(null);
   const start = useRef(startArea);
+  // Linked-server tour: offered once per administrator after the server is linked
+  // outside first-run setup; ?tour=cloud&tourStep=N opens it for review.
+  const [cloudState] = useCloudState();
+  const [tour, setTour] = useState(() => {
+    const url = new URL(location.href);
+    return url.searchParams.get("tour") === "cloud"
+      ? { step: clampTourStep(url.searchParams.get("tourStep")) }
+      : null;
+  });
+  useEffect(() => {
+    if (
+      !tour &&
+      shouldOfferCloudTour({
+        tour: loadCloudTour(),
+        adminId: ownProfile?.id,
+        isAdmin: ownProfile?.isAdmin,
+        linkStatus: cloudState.link.status,
+      })
+    )
+      setTour({ step: 0 });
+  }, [cloudState.link.status]);
+  function endTour(how) {
+    saveCloudTour(markCloudTourSeen(loadCloudTour(), ownProfile?.id, how));
+    const url = new URL(location.href);
+    url.searchParams.delete("tour");
+    url.searchParams.delete("tourStep");
+    history.replaceState(history.state, "", url);
+    setTour(null);
+    if (how === "skipped")
+      setNotice(
+        "Take the tour again any time from Frameleaf Cloud → Account & link.",
+      );
+  }
   const previousPreferences = useRef({ theme, destination, defaultLayout });
   useEffect(() => {
     const patch = {
@@ -971,6 +1012,7 @@ export function CommandCenter({
                         <FrameleafCloud
                           section={section.id}
                           onNavigate={navigate}
+                          onTour={() => setTour({ step: 0 })}
                           draft={draft}
                           onSettingChange={changeSetting}
                           fields={section.fields}
@@ -1586,6 +1628,14 @@ export function CommandCenter({
           remember={remember}
           setNotice={setNotice}
           navigate={navigate}
+        />
+      )}
+      {tour && (
+        <CloudTour
+          state={cloudState}
+          initialStep={tour.step}
+          onClose={endTour}
+          onOpen={(next, section) => navigate(next, section)}
         />
       )}
       {entityForm && (
