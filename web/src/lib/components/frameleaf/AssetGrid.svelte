@@ -184,7 +184,7 @@
         }
       },
       // No zoom under any open viewer: a video viewer leaves + and − unclaimed.
-      enabled: () => !session.openAssetId && !assetViewerManager.isViewing,
+      enabled: () => !assetViewerManager.isViewing,
     });
   });
 

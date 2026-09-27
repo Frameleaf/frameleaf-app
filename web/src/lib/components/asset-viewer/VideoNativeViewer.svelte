@@ -1,6 +1,7 @@
 <script lang="ts">
   import VideoRemoteViewer from '$lib/components/asset-viewer/VideoRemoteViewer.svelte';
   import { assetViewerFadeDuration } from '$lib/constants';
+  import { librarySession } from '$lib/frameleaf/library-session.svelte';
   import { bindMediaSession, MEDIA_SESSION_ARTIST } from '$lib/frameleaf/media-session';
   import { videoSeek } from '$lib/frameleaf/video-seek.svelte';
   import '$lib/frameleaf/tokens.css';
@@ -326,6 +327,26 @@
     showVideo = true;
   });
 
+  // FL-31: the library session's open video resumes where it was left, in any layout and after a
+  // reload (prototype `MediaViewer` `initialTime`). It runs before the moment request below, so a
+  // moment chosen in the moments panel or in moment search still wins.
+  $effect(() => {
+    if (!hasLoadedMetadata || !videoPlayer) {
+      return;
+    }
+    const player = videoPlayer;
+    const id = assetId;
+    untrack(() => {
+      if (videoSeek.pending?.assetId === id) {
+        return;
+      }
+      const seconds = librarySession.playheadFor(id, player.duration);
+      if (seconds) {
+        player.currentTime = seconds;
+      }
+    });
+  });
+
   // FL-59: a moment chosen in the moments panel or in moment search starts the video there.
   $effect(() => {
     if (!hasLoadedMetadata || !videoPlayer || videoSeek.pending?.assetId !== assetId) {
@@ -367,6 +388,11 @@
     }
     return () => {
       controller.abort();
+      // FL-31: leave the playhead with the library session. A video that never loaded says nothing,
+      // and one that finished starts again from the beginning next time.
+      if (el && el.readyState >= 1 /* HAVE_METADATA */) {
+        librarySession.recordPlayhead(id, el.ended ? 0 : el.currentTime);
+      }
       el?.pause();
       if (isHlsElement(el)) {
         el.src = '';

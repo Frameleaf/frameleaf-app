@@ -501,6 +501,17 @@ On `codex/FL-31-search-ask`, based on `master/frameleaf-implementation` @ `729ac
 
 Validation: web unit specs `SearchAsk` and the search page; server `server.service` unit spec; CI-strict svelte-check. E2E expectations for the new feature flag are updated but were not run.
 
+### September 26 open item and playhead (FL-31)
+
+On `claude/FL-31-goals`, based on `master/frameleaf-implementation` @ `249c37a3ea`. The session's open item now follows the production viewer as the prototype's does (`App.jsx` `open`, `onNavigateAsset`, `MediaViewer` `initialTime` and `onPlaybackChange`).
+
+- **Open item**: while the page's viewer is open, `LibraryView` writes the asset it shows to the session (open item and scroll anchor), including the viewer's own previous and next. Closing the viewer leaves the item open, as in the prototype, so Work's panel and the scroll anchor still describe it.
+- **Keys**: the library decides the key surface from the viewer itself (`assetViewerManager.isViewing`), not from the session's open item. Before, the first item opened left the library on the viewer's key map for the rest of the visit: + and − stopped resizing Browse and Work, I no longer toggled the information panel, the arrow keys stopped moving focus and Escape was swallowed once.
+- **Playhead**: reopening the open item resumes it, and any other item starts at the beginning (`LibrarySessionStore.open`). The video viewer starts the session's open video at its stored playhead once its metadata loads (a moment chosen in the moments panel or moment search still wins), and leaves its position with the session when it closes or moves to another item. A video that never loaded leaves the playhead alone, and one that finished starts from the beginning next time. The playhead is stored on this device with the rest of the session, so it also survives a reload.
+- **Draft and undo**: the viewer, and the editor inside it, is rendered by `LibraryView` outside the layouts, so a layout switch never remounts it. A regression now holds that.
+
+Validation: web unit specs `library-session.svelte`, `LibraryView`, `LibraryTimeline.svelte` and `VideoNativeViewer`; a new mocked-API Playwright case (`timeline.e2e-spec.ts`, "The library keys come back once the viewer has closed") with the timeline keyboard, viewer-media and video-moments UI specs run against this worktree's Vite server.
+
 ### September 25 Frameleaf Cloud account, licensing and sign-in (FL-154 to FL-158, FL-170 to FL-172)
 
 On `codex/FL-154-cloud-account`, merged with `master/frameleaf-implementation` @ `d74c1bb2b7`. The Frameleaf Cloud area (`cloud`: Account & link, Plan, Licence), the Support Frameleaf screen, licence certificates and Sign in with Frameleaf are ported from the prototype (`FrameleafCloud.jsx`, `AuthScreens.jsx:256-560` and `:1400-1620`, `system-data.mjs:648-766`, effd05ffb7) on real server state. Nothing is simulated; every contract comes from the Frameleaf Cloud instance contract, and the specs run against a fake cloud and a fake identity provider.

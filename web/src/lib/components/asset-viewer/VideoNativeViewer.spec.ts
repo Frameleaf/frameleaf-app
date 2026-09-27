@@ -7,7 +7,9 @@ import { get } from 'svelte/store';
 import { getResizeObserverMock } from '$lib/__mocks__/resize-observer.mock';
 import TestWrapper from '$lib/components/TestWrapper.svelte';
 import ViewerFooter from '$lib/components/frameleaf/ViewerFooter.svelte';
+import { librarySession } from '$lib/frameleaf/library-session.svelte';
 import { clearMediaSession } from '$lib/frameleaf/media-session';
+import { videoSeek } from '$lib/frameleaf/video-seek.svelte';
 import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
@@ -230,6 +232,71 @@ describe('VideoNativeViewer component', () => {
       'src',
       getAssetPlaybackUrl({ id: props.asset.id, cacheKey: null }),
     );
+  });
+
+  describe('the library session playhead (FL-31)', () => {
+    const loaded = (video: HTMLVideoElement, { duration = 120, currentTime = 0, ended = false } = {}) => {
+      Object.defineProperty(video, 'duration', { configurable: true, value: duration });
+      Object.defineProperty(video, 'readyState', { configurable: true, value: 1 });
+      Object.defineProperty(video, 'ended', { configurable: true, value: ended });
+      video.currentTime = currentTime;
+    };
+
+    afterEach(() => {
+      librarySession.close();
+      videoSeek.pending = null;
+    });
+
+    it('resumes the session’s open video where it was left', async () => {
+      const props = videoProps();
+      librarySession.open(props.assetId, 42);
+      const viewer = renderViewer(props);
+      const video = viewer.container.querySelector('video')!;
+      loaded(video);
+      await fireEvent.loadedMetadata(video);
+      await waitFor(() => expect(video.currentTime).toBe(42));
+    });
+
+    it('lets a chosen moment win, and starts any other video at the beginning', async () => {
+      const props = videoProps();
+      librarySession.open(props.assetId, 42);
+      videoSeek.request(props.assetId, 5000);
+      const viewer = renderViewer(props);
+      const video = viewer.container.querySelector('video')!;
+      loaded(video);
+      await fireEvent.loadedMetadata(video);
+      await waitFor(() => expect(video.currentTime).toBe(5));
+
+      librarySession.open('another-asset', 30);
+      const other = renderViewer(videoProps());
+      const otherVideo = other.container.querySelector('video')!;
+      loaded(otherVideo);
+      await fireEvent.loadedMetadata(otherVideo);
+      expect(otherVideo.currentTime).toBe(0);
+    });
+
+    it('records where the open video stopped when the viewer closes, and forgets a finished one', async () => {
+      const props = videoProps();
+      librarySession.open(props.assetId);
+      const viewer = renderViewer(props);
+      const video = viewer.container.querySelector('video')!;
+      loaded(video, { currentTime: 17 });
+      viewer.unmount();
+      expect(librarySession.playbackPosition).toBe(17);
+
+      const again = renderViewer(props);
+      loaded(again.container.querySelector('video')!, { currentTime: 120, ended: true });
+      again.unmount();
+      expect(librarySession.playbackPosition).toBe(0);
+    });
+
+    it('does not overwrite the playhead from a video that never loaded', () => {
+      const props = videoProps();
+      librarySession.open(props.assetId, 42);
+      const viewer = renderViewer(props);
+      viewer.unmount();
+      expect(librarySession.playbackPosition).toBe(42);
+    });
   });
 
   it('retires the session and ignores a late capability result after switching sources', async () => {
