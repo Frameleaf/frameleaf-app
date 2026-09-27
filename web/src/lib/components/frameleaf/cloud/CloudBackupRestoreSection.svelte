@@ -13,7 +13,8 @@
   import CloudBackupRestoreDialog from '$lib/components/frameleaf/cloud/CloudBackupRestoreDialog.svelte';
   import CloudBanner from '$lib/components/frameleaf/cloud/CloudBanner.svelte';
   import CloudCard from '$lib/components/frameleaf/cloud/CloudCard.svelte';
-  import { LIBRARY_RESTORE_STEPS, WHOLE_LIBRARY_CONFIRMATION } from '$lib/frameleaf/cloud-backup';
+  import CloudWorkControls from '$lib/components/frameleaf/cloud/CloudWorkControls.svelte';
+  import { cloudWorkRows, LIBRARY_RESTORE_STEPS, WHOLE_LIBRARY_CONFIRMATION } from '$lib/frameleaf/cloud-backup';
   import { getByteUnitString } from '$lib/utils/byte-units';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
   import {
@@ -156,6 +157,12 @@
     dialogOpen = true;
   };
 
+  const restoreTitle = $derived(
+    $t(
+      cloudWorkRows(status).find((row) => row.id === 'cloud-restore-run')?.titleKey ??
+        'frameleaf_cloud_work_restore_files',
+    ),
+  );
   const restoreProgress = $derived(restoring ? Math.round(restoring.progress) : null);
   const lastRestore = $derived(status.lastRestore);
 </script>
@@ -360,6 +367,13 @@
             {restoreProgress}%
           </progress>
         {/if}
+        <CloudWorkControls
+          operationId={restoring.operationId}
+          runState={restoring.state}
+          title={restoreTitle}
+          restore
+          {onStatus}
+        />
       </div>
     {:else if lastRestore}
       <div class="fc-last-run">

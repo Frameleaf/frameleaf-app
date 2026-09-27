@@ -5,6 +5,8 @@ import {
   CloudBackupMockState,
   MANIFESTS,
   MANIFEST_ITEMS,
+  RESTORE_ID,
+  RUN_ID,
   setupCloudBackupMockApiRoutes,
 } from 'src/ui/mock-network/cloud-backup-network.js';
 import { CloudMockState, setupCloudMockApiRoutes } from 'src/ui/mock-network/cloud-network.js';
@@ -85,5 +87,64 @@ test.describe('Frameleaf Cloud backup restore', () => {
     await expect
       .poll(() => backup.requests.find(({ path }) => path === 'admin/cloud/backup/restore')?.body)
       .toEqual({ manifestKey: MANIFESTS[0].key, scope: 'library' });
+  });
+});
+
+/**
+ * FL-164: pause, resume and cancel a backup run and a restore in progress, on the Cloud backup page and in
+ * Settings › Background work, against the mocked `admin/cloud/backup/runs/:id/*` routes.
+ */
+test.describe('Frameleaf Cloud backup run controls', () => {
+  let backup: CloudBackupMockState;
+
+  test.beforeEach(async ({ context }) => {
+    await setupBaseMockApiRoutes(context, faker.string.uuid());
+    const cloud: CloudMockState = { state: 'linked', requests: [] };
+    await setupCloudMockApiRoutes(context, cloud);
+    backup = {
+      configured: true,
+      keyMode: 'server',
+      requests: [],
+      running: { state: 'running' },
+      restoring: { scope: 'files', state: 'running' },
+    };
+    await setupCloudBackupMockApiRoutes(context, backup);
+  });
+
+  test('pauses, resumes and cancels a backup run on the Cloud backup page', async ({ page }) => {
+    await page.goto(backupPage);
+    const controls = page.getByRole('group', { name: 'Cloud backup controls' });
+    await controls.getByRole('button', { name: 'Pause' }).click();
+    await expect(controls.getByRole('button', { name: 'Resume' })).toBeVisible();
+    expect(backup.requests.some(({ path }) => path === `admin/cloud/backup/runs/${RUN_ID}/pause`)).toBe(true);
+
+    await controls.getByRole('button', { name: 'Resume' }).click();
+    await expect(controls.getByRole('button', { name: 'Pause' })).toBeVisible();
+
+    await controls.getByRole('button', { name: 'Cancel' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Cancel Cloud backup?' });
+    await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await expect(dialog).toBeHidden();
+    await expect(page.getByRole('group', { name: 'Cloud backup controls' })).toBeHidden();
+    expect(backup.running).toBeNull();
+  });
+
+  test('cancels a restore from Settings › Background work', async ({ page }) => {
+    await page.goto('/user-settings?area=processing&section=queues');
+    const work = page.getByTestId('cloud-background-work');
+    const controls = work.getByRole('group', { name: 'Restore from cloud backup controls' });
+    await controls.getByRole('button', { name: 'Cancel' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Cancel Restore from cloud backup?' });
+    await expect(dialog.getByText('Files already restored stay where they are')).toBeVisible();
+    await dialog.getByRole('button', { name: 'Keep going' }).click();
+    expect(backup.restoring).not.toBeNull();
+
+    await controls.getByRole('button', { name: 'Cancel' }).click();
+    await page
+      .getByRole('dialog', { name: 'Cancel Restore from cloud backup?' })
+      .getByRole('button', { name: 'Cancel', exact: true })
+      .click();
+    await expect(work.getByRole('group', { name: 'Restore from cloud backup controls' })).toBeHidden();
+    expect(backup.requests.some(({ path }) => path === `admin/cloud/backup/runs/${RESTORE_ID}/cancel`)).toBe(true);
   });
 });
