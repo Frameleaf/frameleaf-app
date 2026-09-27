@@ -9,7 +9,7 @@
   import { Icon, Theme as AppTheme, themeManager } from '@immich/ui';
   import { mdiCloudUploadOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
-  import { fade } from 'svelte/transition';
+  import { motionFade } from '$lib/frameleaf/motion';
 
   /**
    * Drag-and-drop upload overlay for library pages (FL-45), restyled from the legacy
@@ -195,7 +195,7 @@
     data-theme={appTheme}
     role="status"
     aria-live="polite"
-    transition:fade={{ duration: 250 }}
+    transition:motionFade={{ duration: 250 }}
     ondragover={onDragOver}
   >
     <div class="fl-drop-frame" aria-hidden="true"></div>

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { fade } from 'svelte/transition';
+  import { motionFade } from '$lib/frameleaf/motion';
 
   import SettingActions from '$lib/components/frameleaf/settings/SettingActions.svelte';
   import SettingField from '$lib/components/frameleaf/settings/SettingField.svelte';
@@ -15,7 +15,7 @@
 </script>
 
 <div>
-  <div in:fade={{ duration: 500 }}>
+  <div in:motionFade={{ duration: 500 }}>
     <form autocomplete="off" onsubmit={(e) => e.preventDefault()}>
       <div class="flex flex-col gap-4">
         <SettingField
