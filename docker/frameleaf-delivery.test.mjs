@@ -74,7 +74,8 @@ for (const [filename, project, rootless] of [
     );
     assert.deepEqual(server.depends_on, ["redis", "database"]);
     assert.deepEqual(server.env_file, [".env"]);
-    assert.deepEqual(server.ports, ["2283:2283"]);
+    // FL-165: the edge worker's direct HTTPS listener for LAN names and direct remote connections.
+    assert.deepEqual(server.ports, ["2283:2283", "2443:2443"]);
     if (rootless) {
       assert.equal(server.user, "1000:1000");
       assert.equal(ml.user, "1000:1000");
