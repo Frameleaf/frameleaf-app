@@ -27,12 +27,33 @@ export const FRAMELEAF_CLOUD_TOKEN_REFRESH_MARGIN_MS = 60_000;
 export const FRAMELEAF_CLOUD_ASSERTION_TTL_SECONDS = 120;
 
 /**
- * A remote-access zone (FL-165, cloud FC-29): a lowercase registrable domain, one label under a
- * top-level domain, such as `frameleaf.net` in production or `frameleaf-direct.localhost` and
- * `frameleaf-direct.test` in the cloud's development and test setups. No subdomain, wildcard, IP
- * address, trailing dot or uppercase.
+ * A remote-access zone (FL-165, cloud FC-29): a lowercase DNS name of at least two labels, each 1-63
+ * characters of `a-z`, `0-9` and `-` without a leading or trailing hyphen, 253 characters at most:
+ * the cloud's own `domainName` rule (frameleaf-cloud `packages/contracts/src/instance/discovery.ts`).
+ * `frameleaf.net` in production, `frameleaf-direct.localhost` and `frameleaf-direct.test` in the
+ * cloud's development and test setups, or a delegated subdomain such as `direct.example.com`. No
+ * wildcard, trailing dot, uppercase, scheme or single label.
  */
-export const DIRECT_DOMAIN = /^[\da-z](?:[\da-z-]{0,61}[\da-z])?\.[a-z]{2,63}$/;
+export const DIRECT_DOMAIN = /^(?:[\da-z](?:[\da-z-]{0,61}[\da-z])?\.)+[\da-z](?:[\da-z-]{0,61}[\da-z])?$/;
+
+const remoteSchema = z.object({ directDomain: z.string().max(253).regex(DIRECT_DOMAIN) });
+
+/**
+ * Why discovery's `remote` block is dropped, or null when it is absent or usable. The schema drops a
+ * bad block without failing discovery; the caller logs this so the fallback to `frameleaf.net` is
+ * never silent.
+ */
+export const discoveryRemoteProblem = (raw: unknown): string | null => {
+  if (!raw || typeof raw !== 'object' || !('remote' in raw) || raw.remote === undefined) {
+    return null;
+  }
+  if (remoteSchema.safeParse(raw.remote).success) {
+    return null;
+  }
+  const value =
+    raw.remote && typeof raw.remote === 'object' && 'directDomain' in raw.remote ? raw.remote.directDomain : raw.remote;
+  return `remote.directDomain ${JSON.stringify(value)?.slice(0, 260)} is not a lowercase domain name`;
+};
 
 export const discoverySchema = z.object({
   version: z.number().int(),
@@ -59,12 +80,10 @@ export const discoverySchema = z.object({
    * FL-165: remote access. `directDomain` is the zone per-server names live under (`<label>.<zone>`,
    * `*.<label>.<zone>`, `r.<label>.<zone>`); optional, `frameleaf.net` when absent
    * (`DEFAULT_DIRECT_DOMAIN`), and the enrolment answer's `domain` wins over it. Only a lowercase
-   * registrable domain (`DIRECT_DOMAIN`) is taken; anything else drops the block, so the default applies.
+   * domain name (`DIRECT_DOMAIN`) is taken; anything else drops the block, so the default applies
+   * (`discoveryRemoteProblem` says why, for the log).
    */
-  remote: z
-    .object({
-      directDomain: z.string().max(200).regex(DIRECT_DOMAIN),
-    })
+  remote: remoteSchema
     .optional()
     // eslint-disable-next-line unicorn/no-useless-undefined -- a bad remote block is dropped, keeping the optional type
     .catch(() => undefined),
