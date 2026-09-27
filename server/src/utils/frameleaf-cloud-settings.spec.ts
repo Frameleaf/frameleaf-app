@@ -193,11 +193,14 @@ describe('the check-in settings snapshot (FL-159, FC-61)', () => {
       expect(settings?.lastRun).toEqual({ at: '2026-09-26T03:00:00.000Z', result: 'paused' });
     });
 
-    it('reports the admin’s own bucket as own-bucket once the cloud takes it, and leaves the block out until then', () => {
+    it('reports the admin’s own bucket as own-bucket, never its name, endpoint or keys (frameleaf-cloud PR #78)', () => {
       const own = { ...cloud.cloudBackup, enabled: true, target: 'byo-s3' as const, keyMode: 'own-memory' as const };
-      expect(CLOUD_BACKUP_REPORTS_OWN_BUCKET).toBe(false);
-      expect(cloudBackupSettingsOf(own, backup({ target: 'byo-s3', keyMode: 'own-memory' }))).toBeUndefined();
-      expect(cloudBackupSettingsOf(own, backup({ target: 'byo-s3', keyMode: 'own-memory' }), true)).toEqual({
+      expect(CLOUD_BACKUP_REPORTS_OWN_BUCKET).toBe(true);
+      // with the switch off, the block is left out rather than misreported as off
+      expect(cloudBackupSettingsOf(own, backup({ target: 'byo-s3', keyMode: 'own-memory' }), false)).toBeUndefined();
+      const settings = cloudBackupSettingsOf(own, backup({ target: 'byo-s3', keyMode: 'own-memory' }));
+      expect(JSON.stringify(settings)).not.toMatch(/fl-eu-x|s3\.test/);
+      expect(settings).toEqual({
         target: 'own-bucket',
         keyMode: 'own-memory',
         schedule: '0 3 * * *',
@@ -208,10 +211,7 @@ describe('the check-in settings snapshot (FL-159, FC-61)', () => {
       });
     });
 
-    it('leaves the block out for the admin’s own bucket and for values the contract refuses', () => {
-      expect(
-        cloudBackupSettingsOf({ ...cloud.cloudBackup, enabled: true, target: 'byo-s3' }, backup()),
-      ).toBeUndefined();
+    it('leaves the block out for values the contract refuses', () => {
       expect(
         cloudBackupSettingsOf(
           { ...cloud.cloudBackup, enabled: true, target: 'managed', schedule: { cronExpression: '0 3 * * MON' } },

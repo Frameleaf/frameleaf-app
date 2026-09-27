@@ -518,10 +518,10 @@ export const catalogDefaults = (models: readonly CloudCatalogEntry[]): Record<st
 /**
  * FC-62: whether `GET /v2/consent/current` is asked for the version the CHOSEN features need
  * (`?identityNames=&medicalSignals=`), so the admin reads, and the server records, the terms those
- * features require. Off until Frameleaf Cloud confirms the query is live: until then the cloud answers
- * for the features already on record, as before, and any other query key would be refused 422.
+ * features require. Live since frameleaf-cloud PR #78 (`ConsentCurrentQuery`); off, the cloud answers
+ * for the features already on record.
  */
-export const CONSENT_TERMS_FOR_FEATURES: boolean = false;
+export const CONSENT_TERMS_FOR_FEATURES: boolean = true;
 
 /**
  * The query of `GET /v2/consent/current` (FC-62): the chosen features as `"true"`/`"false"` strings when
