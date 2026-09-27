@@ -304,7 +304,7 @@ it('validates repeat saves and restores against the 30-second original after sho
   await ctx.newExif({ assetId: asset.id, exifImageWidth: 1280, exifImageHeight: 720 });
   const probe = vi.spyOn(ctx.get(MediaRepository), 'probe').mockResolvedValue({
     format: { duration: 30 },
-    videoStreams: [{ width: 1280, height: 720, rotation: 0 }],
+    videoStreams: [{ width: 1280, height: 720, rotation: 0, codecName: 'h264', pixelFormat: 'yuv420p' }],
     audioStreams: [],
   } as any);
   const auth = factory.auth({ user });
