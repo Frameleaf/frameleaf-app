@@ -15,6 +15,14 @@ with
       inner join lateral (
         select
           "asset".*,
+          exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "asset"."id"
+          ) as "isLocked",
           to_json("asset_exif") as "exifInfo",
           (
             select
@@ -145,6 +153,14 @@ from
   inner join lateral (
     select
       "asset".*,
+      exists (
+        select
+          1
+        from
+          asset_lock
+        where
+          asset_lock."assetId" = "asset"."id"
+      ) as "isLocked",
       to_json("asset_exif") as "exifInfo",
       (
         select

@@ -1332,7 +1332,12 @@ export class MemoryService extends BaseService {
     );
   }
 
+  /**
+   * The session's privacy options, or undefined when there are none: hidden content while locked, or
+   * (FL-195) the owner's own revealed locks while unlocked.
+   */
   private nsfwOptions(auth: AuthDto) {
-    return auth.hideNsfwAssets ? getHiddenContentQueryOptions(auth) : undefined;
+    const options = getHiddenContentQueryOptions(auth);
+    return Object.keys(options).length > 0 ? options : undefined;
   }
 }

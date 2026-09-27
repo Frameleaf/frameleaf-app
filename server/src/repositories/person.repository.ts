@@ -24,7 +24,7 @@ import {
   withHiddenContentFilter,
 } from 'src/utils/database.js';
 import { lockForkWrites } from 'src/utils/fork-write-lock.js';
-import { effectiveVisibility, isTimelineVisible } from 'src/utils/locked.js';
+import { effectiveVisibility, isTimelineVisible, revealedLockScope } from 'src/utils/locked.js';
 import { type PaginationOptions, paginationHelper } from 'src/utils/pagination.js';
 
 export interface PersonSearchOptions extends HiddenContentQueryOptions {
@@ -404,7 +404,7 @@ export class PersonRepository {
         join
           .onRef('asset_face.assetId', '=', 'asset.id')
           .onRef('asset.ownerId', '=', 'person.ownerId')
-          .on(isTimelineVisible('asset'))
+          .on(isTimelineVisible('asset', options?.revealLockedOwnerId))
           .on('asset.deletedAt', 'is', null),
       )
       // FL-37: the People grid shows "N items" per card and sorts by photo count or by the
@@ -667,7 +667,7 @@ export class PersonRepository {
             .innerJoin('asset', (join) =>
               join
                 .onRef('asset.id', '=', 'asset_face.assetId')
-                .on(isTimelineVisible('asset'))
+                .on(isTimelineVisible('asset', options.revealLockedOwnerId))
                 .on('asset.deletedAt', 'is', null),
             )
             .whereRef('asset_face.personGroupId', '=', 'person.personGroupId')
@@ -701,7 +701,7 @@ export class PersonRepository {
       .leftJoin('asset', (join) =>
         join
           .onRef('asset.id', '=', 'asset_face.assetId')
-          .on(isTimelineVisible('asset'))
+          .on(isTimelineVisible('asset', options.revealLockedOwnerId))
           .on('asset.deletedAt', 'is', null)
           .on((eb) => eb.or([eb('asset.ownerId', '=', asUuid(userId)), inSharedAlbum(eb, userId)])),
       )
@@ -747,7 +747,7 @@ export class PersonRepository {
                 eb
                   .selectFrom('asset')
                   .whereRef('asset.id', '=', 'asset_face.assetId')
-                  .where(isTimelineVisible('asset'))
+                  .where(isTimelineVisible('asset', options.revealLockedOwnerId))
                   .where('asset.deletedAt', 'is', null)
                   .$call((qb) => withHiddenContentFilter(qb, options)),
               ),
@@ -1222,35 +1222,38 @@ export class PersonRepository {
       return [];
     }
 
-    return this.db
-      .selectFrom('person')
-      .innerJoin('asset_face', 'asset_face.personGroupId', 'person.personGroupId')
-      .innerJoin('asset', 'asset.id', 'asset_face.assetId')
-      .distinctOn('person.personGroupId')
-      .select([
-        'person.personGroupId',
-        'asset_face.id as faceId',
-        'asset_face.assetId',
-        'asset_face.imageWidth',
-        'asset_face.imageHeight',
-        'asset_face.boundingBoxX1',
-        'asset_face.boundingBoxY1',
-        'asset_face.boundingBoxX2',
-        'asset_face.boundingBoxY2',
-      ])
-      .where('person.ownerId', '=', viewerId)
-      .where('person.personGroupId', '=', anyUuid(personGroupIds))
-      .where('asset_face.deletedAt', 'is', null)
-      .where('asset_face.isVisible', 'is', true)
-      .where('asset.ownerId', '=', viewerId)
-      .where('asset.deletedAt', 'is', null)
-      .where('asset.visibility', 'in', [sql.lit(AssetVisibility.Timeline), sql.lit(AssetVisibility.Archive)])
-      .where((eb) => isNotLockedAsset(eb))
-      .$call((qb) => withHiddenContentFilter(qb, options))
-      .orderBy('person.personGroupId')
-      .orderBy(sql`asset_face.id = person."faceAssetId"`, 'desc')
-      .orderBy('asset.fileCreatedAt', 'desc')
-      .execute();
+    return (
+      this.db
+        .selectFrom('person')
+        .innerJoin('asset_face', 'asset_face.personGroupId', 'person.personGroupId')
+        .innerJoin('asset', 'asset.id', 'asset_face.assetId')
+        .distinctOn('person.personGroupId')
+        .select([
+          'person.personGroupId',
+          'asset_face.id as faceId',
+          'asset_face.assetId',
+          'asset_face.imageWidth',
+          'asset_face.imageHeight',
+          'asset_face.boundingBoxX1',
+          'asset_face.boundingBoxY1',
+          'asset_face.boundingBoxX2',
+          'asset_face.boundingBoxY2',
+        ])
+        .where('person.ownerId', '=', viewerId)
+        .where('person.personGroupId', '=', anyUuid(personGroupIds))
+        .where('asset_face.deletedAt', 'is', null)
+        .where('asset_face.isVisible', 'is', true)
+        .where('asset.ownerId', '=', viewerId)
+        .where('asset.deletedAt', 'is', null)
+        .where('asset.visibility', 'in', [sql.lit(AssetVisibility.Timeline), sql.lit(AssetVisibility.Archive)])
+        // FL-195: the viewer's own revealed locks qualify in an unlocked session, like any other item
+        .where(revealedLockScope(options.revealLockedOwnerId, 'asset'))
+        .$call((qb) => withHiddenContentFilter(qb, options))
+        .orderBy('person.personGroupId')
+        .orderBy(sql`asset_face.id = person."faceAssetId"`, 'desc')
+        .orderBy('asset.fileCreatedAt', 'desc')
+        .execute()
+    );
   }
 
   /**
@@ -1275,7 +1278,8 @@ export class PersonRepository {
       .where('asset.ownerId', '=', viewerId)
       .where('asset.deletedAt', 'is', null)
       .where('asset.visibility', 'in', [sql.lit(AssetVisibility.Timeline), sql.lit(AssetVisibility.Archive)])
-      .where((eb) => isNotLockedAsset(eb))
+      // FL-195: the viewer's own revealed locks qualify in an unlocked session, like any other item
+      .where(revealedLockScope(options.revealLockedOwnerId, 'asset'))
       .$call((qb) => withHiddenContentFilter(qb, options))
       .execute();
     return new Set(rows.map(({ id }) => id));

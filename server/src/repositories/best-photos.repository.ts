@@ -19,7 +19,7 @@ import { DB } from 'src/schema/index.js';
 import { AssetBestPhotoScoreTable } from 'src/schema/tables/asset-best-photo-score.table.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
 import { anyUuid, asUuid, withHiddenContentFilter } from 'src/utils/database.js';
-import { isNotLocked } from 'src/utils/locked.js';
+import { isLocked, revealedLockScope } from 'src/utils/locked.js';
 import { paginationHelper } from 'src/utils/pagination.js';
 
 export type BestPhotoScore = Selectable<AssetBestPhotoScoreTable>;
@@ -27,6 +27,8 @@ export type BestPhotoScore = Selectable<AssetBestPhotoScoreTable>;
 export type BestPhotoScoreUpsert = Omit<Insertable<AssetBestPhotoScoreTable>, 'createdAt' | 'updatedAt'>;
 type BestPhotoBackfillTables = { assetBestPhotoScore: TableVerification };
 type BestPhotoAssetRow = Selectable<AssetTable> & {
+  /** FL-195: a revealed lock reads as `locked` in the response (`effectiveVisibilityOf`) */
+  isLocked: boolean;
   bestPhotoScore: number;
   bestPhotoAestheticScore: number | null;
   bestPhotoTechnicalScore: number | null;
@@ -167,7 +169,8 @@ export class BestPhotosRepository {
         sql.lit(AssetVisibility.Timeline),
         ...(options.includeArchived ? [sql.lit(AssetVisibility.Archive)] : []),
       ])
-      .where(isNotLocked('asset'))
+      // FL-195: the owner's own marks and detections rank like any other item in an unlocked session
+      .where(revealedLockScope(options.revealLockedOwnerId, 'asset'))
       .where('asset.type', 'in', [sql.lit(AssetType.Image), sql.lit(AssetType.Video)])
       .$if(options.minScore !== undefined, (qb) => qb.where('asset_best_photo_score.score', '>=', options.minScore!))
       .$call((qb) => withHiddenContentFilter(qb, options));
@@ -176,6 +179,7 @@ export class BestPhotosRepository {
       query.select((eb) => eb.fn.countAll().as('count')).executeTakeFirstOrThrow(),
       query
         .selectAll('asset')
+        .select(sql<boolean>`${isLocked('asset')}`.as('isLocked'))
         .select([
           'asset_best_photo_score.score as bestPhotoScore',
           'asset_best_photo_score.aestheticScore as bestPhotoAestheticScore',

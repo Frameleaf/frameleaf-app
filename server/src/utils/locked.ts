@@ -55,11 +55,19 @@ export const notLockedOrOwnedBy = (lockedOwnerId: string | undefined, assetAlias
     : isNotLocked(assetAlias);
 
 /**
- * The locks an ordinary view (the timeline) reveals to the owner's elevated session: their sensitive
- * marks and detections ("Revealed for this session"). Items moved over from the old Locked folder
- * stay in the Locked view only, as the upstream folder kept them out of the timeline.
+ * The locks every ordinary view reveals to the owner's elevated session: their sensitive marks and
+ * detections ("Revealed for this session"). Owner decision, September 27, 2026 (FL-195): once unlocked
+ * they behave like any other item everywhere — timeline, search, Explore, memories, people, albums,
+ * the map, tags, folders, Studio, bulk actions and downloads — and while locked they keep their places
+ * and associations but show nowhere. Items moved over from the old Locked folder stay in the Locked
+ * view only, as the upstream folder kept them out of the library (the prototype's `visibleAssets`).
+ * This list is the one switch for that rule.
  */
 export const REVEALED_LOCK_REASONS: readonly AssetLockReason[] = [AssetLockReason.Marked, AssetLockReason.Detected];
+
+/** In memory: whether a lock of this reason is one an ordinary view reveals (`REVEALED_LOCK_REASONS`). */
+export const isRevealedLockReason = (reason: AssetLockReason | string | null | undefined): boolean =>
+  !!reason && (REVEALED_LOCK_REASONS as readonly string[]).includes(reason);
 
 /**
  * Locked media an ordinary view shows: none, except `revealOwnerId`'s own items locked for a revealed
@@ -75,12 +83,19 @@ export const revealedLockScope = (revealOwnerId: string | undefined, assetAlias 
   return sql<boolean>`(${isNotLocked(assetAlias)} or (${owned} and ${revealed}))`;
 };
 
-/** Timeline or Archive, and not locked: what an ordinary read shows. */
-export const isDefaultVisible = (assetAlias = 'asset') =>
-  sql<boolean>`(${assetRef(assetAlias, 'visibility')} in (${sql.lit(AssetVisibility.Archive)}, ${sql.lit(AssetVisibility.Timeline)}) and ${isNotLocked(assetAlias)})`;
+/**
+ * Timeline or Archive, and not locked: what an ordinary read shows. With `revealOwnerId` (the viewer,
+ * elevated) that owner's own revealed locks show too (`revealedLockScope`, FL-195).
+ */
+export const isDefaultVisible = (assetAlias = 'asset', revealOwnerId?: string) =>
+  sql<boolean>`(${assetRef(assetAlias, 'visibility')} in (${sql.lit(AssetVisibility.Archive)}, ${sql.lit(AssetVisibility.Timeline)}) and ${revealedLockScope(revealOwnerId, assetAlias)})`;
 
-/** On the timeline and not locked. */
-export const isTimelineVisible = (assetAlias = 'asset') => visibilityIs(AssetVisibility.Timeline, assetAlias);
+/**
+ * On the timeline and not locked. With `revealOwnerId` (the viewer, elevated) that owner's own revealed
+ * locks on the timeline show too (FL-195: unlocked, they behave like any other item).
+ */
+export const isTimelineVisible = (assetAlias = 'asset', revealOwnerId?: string) =>
+  visibilityIs(AssetVisibility.Timeline, assetAlias, revealOwnerId);
 
 /**
  * A requested visibility as an API caller means it: `locked` is a locked asset that is not the hidden
@@ -94,11 +109,11 @@ export const visibilityIs = (visibility: AssetVisibility, assetAlias = 'asset', 
     : sql<boolean>`(${assetRef(assetAlias, 'visibility')} = ${sql.lit(visibility)} and ${revealedLockScope(revealOwnerId, assetAlias)})`;
 
 /** True when the asset matches any of the requested visibilities (see `visibilityIs`). */
-export const visibilityIn = (visibilities: AssetVisibility[], assetAlias = 'asset') =>
+export const visibilityIn = (visibilities: AssetVisibility[], assetAlias = 'asset', revealOwnerId?: string) =>
   visibilities.length === 0
     ? sql<boolean>`false`
     : sql<boolean>`(${sql.join(
-        visibilities.map((visibility) => visibilityIs(visibility, assetAlias)),
+        visibilities.map((visibility) => visibilityIs(visibility, assetAlias, revealOwnerId)),
         sql` or `,
       )})`;
 
@@ -143,3 +158,14 @@ export const getLockedOwnerId = (auth: AuthDto): string | undefined => {
 
   return auth.session?.hasElevatedPermission ? auth.user.id : undefined;
 };
+
+/**
+ * FL-195: the same account as it would be with its session locked — not elevated, and with its own
+ * Locked rules applied. For choices that persist and show while locked (a project poster, an album
+ * cover): only what a locked session could see may become one, so nothing hidden shows through it.
+ */
+export const asLockedSession = (auth: AuthDto): AuthDto => ({
+  ...auth,
+  session: auth.session && { ...auth.session, hasElevatedPermission: false },
+  ...(auth.suppressedContent && { hiddenContent: auth.suppressedContent, hideNsfwAssets: true }),
+});

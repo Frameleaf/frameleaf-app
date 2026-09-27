@@ -420,7 +420,7 @@ describe(TimelineService.name, () => {
       await sut.getTimeBuckets(elevated, { albumId: 'album-id' });
 
       expect(mocks.asset.getTimeBuckets).toHaveBeenCalledWith(
-        { albumId: 'album-id', lockedOwnerId: elevated.user.id },
+        { albumId: 'album-id', lockedOwnerId: elevated.user.id, revealLockedOwnerId: elevated.user.id },
         elevated,
       );
     });
@@ -465,6 +465,7 @@ describe(TimelineService.name, () => {
           visibility: AssetVisibility.Locked,
           userIds: [elevated.user.id],
           lockedOwnerId: elevated.user.id,
+          revealLockedOwnerId: elevated.user.id,
         },
         elevated,
       );
@@ -513,15 +514,27 @@ describe(TimelineService.name, () => {
       expect(mocks.asset.getTimeBuckets.mock.calls[1][0].revealLockedOwnerId).toBeUndefined();
     });
 
-    it('reveals nothing through an album or the archive', async () => {
+    it('reveals them in every ordinary view once unlocked: an album, the archive, a person (FL-195)', async () => {
       mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set(['album-id']));
       mocks.asset.getTimeBuckets.mockResolvedValue([]);
 
       await sut.getTimeBuckets(elevated, { albumId: 'album-id', visibility: AssetVisibility.Timeline });
       await sut.getTimeBuckets(elevated, { visibility: AssetVisibility.Archive });
 
+      expect(mocks.asset.getTimeBuckets.mock.calls[0][0].revealLockedOwnerId).toBe(elevated.user.id);
+      expect(mocks.asset.getTimeBuckets.mock.calls[1][0].revealLockedOwnerId).toBe(elevated.user.id);
+    });
+
+    it('never reveals through a shared link, even when its creator is unlocked elsewhere (FL-195)', async () => {
+      mocks.access.album.checkSharedLinkAccess.mockResolvedValue(new Set(['album-id']));
+      mocks.asset.getTimeBuckets.mockResolvedValue([]);
+
+      await sut.getTimeBuckets(
+        { ...authStub.adminSharedLink, session: { id: 'session', hasElevatedPermission: true } } as never,
+        { albumId: 'album-id' },
+      );
+
       expect(mocks.asset.getTimeBuckets.mock.calls[0][0].revealLockedOwnerId).toBeUndefined();
-      expect(mocks.asset.getTimeBuckets.mock.calls[1][0].revealLockedOwnerId).toBeUndefined();
     });
 
     it('needs the unlocked session for the Locked view, whatever the reason', async () => {

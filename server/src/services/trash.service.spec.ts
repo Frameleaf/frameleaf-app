@@ -158,14 +158,14 @@ describe(TrashService.name, () => {
         elevated.user.id,
         TrashReviewAction.RestoreAll,
         undefined,
-        { lockedOwnerId: elevated.user.id, privacy: {} },
+        { lockedOwnerId: elevated.user.id, privacy: { revealLockedOwnerId: elevated.user.id } },
         expect.any(Function),
       );
       expect(mocks.trash.applyReviewed).toHaveBeenCalledWith(
         elevated.user.id,
         TrashReviewAction.Empty,
         undefined,
-        { lockedOwnerId: elevated.user.id, privacy: {} },
+        { lockedOwnerId: elevated.user.id, privacy: { revealLockedOwnerId: elevated.user.id } },
         expect.any(Function),
       );
     });

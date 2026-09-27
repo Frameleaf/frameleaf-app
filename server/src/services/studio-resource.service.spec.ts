@@ -4,7 +4,7 @@ import type { StudioResourceRights } from 'src/utils/studio-rights.generated.js'
 import { AuthSession } from 'src/database.js';
 import { AssetRestorationStatus } from 'src/dtos/asset-restoration.dto.js';
 import { AuthDto } from 'src/dtos/auth.dto.js';
-import { AssetFileType, AssetType, AssetVisibility } from 'src/enum.js';
+import { AssetFileType, AssetLockReason, AssetType, AssetVisibility } from 'src/enum.js';
 import {
   STUDIO_GRANT_TTL_SECONDS,
   StudioAuthorizedManifest,
@@ -243,6 +243,51 @@ describe(StudioResourceService.name, () => {
         }),
       ]);
       expect(mocks.access.asset.checkOwnerAccess).toHaveBeenCalledWith(auth.user.id, new Set([locked.id]), true);
+    });
+
+    it("places the owner's own marks and detections in an unlocked session, never old Locked folder items (FL-195)", async () => {
+      const marked = ownedVideo({ visibility: AssetVisibility.Timeline });
+      const detected = ownedVideo({ visibility: AssetVisibility.Timeline });
+      const legacy = ownedVideo({ visibility: AssetVisibility.Timeline });
+      mocks.asset.getByIds.mockResolvedValue([
+        { ...marked, isLocked: true },
+        { ...detected, isLocked: true },
+        { ...legacy, isLocked: true },
+      ]);
+      mocks.asset.getLockReasons.mockResolvedValue([
+        { assetId: marked.id, reason: AssetLockReason.Marked, lockedAt: new Date() },
+        { assetId: detected.id, reason: AssetLockReason.Detected, lockedAt: new Date() },
+        { assetId: legacy.id, reason: AssetLockReason.ImmichLockedFolder, lockedAt: new Date() },
+      ]);
+      allowOwned(marked.id, detected.id, legacy.id);
+      const elevated: AuthDto = { ...auth, session: { id: 'sid', hasElevatedPermission: true } as AuthSession };
+
+      const { manifest, refused } = await sut.resolveProjectResources(
+        elevated,
+        context(sequenceWith({ assetId: marked.id }, { assetId: detected.id }, { assetId: legacy.id })),
+      );
+
+      expect(manifest.entries.map((entry) => entry.id)).toEqual([marked.id, detected.id]);
+      expect(refused.map(({ id, reason }) => [id, reason])).toEqual([[legacy.id, StudioRefusalReason.Locked]]);
+    });
+
+    it('keeps a revealed lock in the project but resolves it as missing once the session locks (FL-195)', async () => {
+      const marked = ownedVideo({ visibility: AssetVisibility.Timeline });
+      mocks.asset.getByIds.mockResolvedValue([{ ...marked, isLocked: true }]);
+      mocks.asset.getLockReasons.mockResolvedValue([
+        { assetId: marked.id, reason: AssetLockReason.Marked, lockedAt: new Date() },
+      ]);
+      allowOwned(marked.id);
+
+      const { manifest, refused } = await sut.resolveProjectResources(
+        auth,
+        context(sequenceWith({ assetId: marked.id })),
+      );
+
+      expect(manifest.complete).toBe(false);
+      expect(refused).toEqual([
+        expect.objectContaining({ id: marked.id, reason: StudioRefusalReason.NotFound, detail: 'No such asset.' }),
+      ]);
     });
 
     it("reports the owner's own Locked media as missing in an ordinary session", async () => {

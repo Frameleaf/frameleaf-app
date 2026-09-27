@@ -35,8 +35,9 @@ export class TagService extends BaseService {
 
   /**
    * FL-46: per-tag counts for the Tags browser, in the scope its "Show all" opens: the owner's
-   * Timeline items (tags only ever carry their owner's items), so nothing archived or Locked, even
-   * in an unlocked session, and never a hidden or suppressed item. A tag the session may not see
+   * Timeline items (tags only ever carry their owner's items), so nothing archived or Locked — except
+   * (FL-195) the owner's own marks and detections in an unlocked session, which the Timeline shows too —
+   * and never a hidden or suppressed item. A tag the session may not see
    * (suppressed, or nested under a suppressed tag, while locked) is left out entirely.
    */
   async getStatistics(auth: AuthDto): Promise<TagStatisticsResponseDto[]> {

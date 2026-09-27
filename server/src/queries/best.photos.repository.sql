@@ -107,6 +107,14 @@ where
   and "asset_best_photo_score"."score" >= $3
 select
   "asset".*,
+  exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
+  ) as "isLocked",
   "asset_best_photo_score"."score" as "bestPhotoScore",
   "asset_best_photo_score"."aestheticScore" as "bestPhotoAestheticScore",
   "asset_best_photo_score"."technicalScore" as "bestPhotoTechnicalScore",

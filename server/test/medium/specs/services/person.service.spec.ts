@@ -216,7 +216,7 @@ describe(PersonService.name, () => {
   });
 
   describe('Locked media (FL-34)', () => {
-    it('never shows Locked or foreign media as correction history evidence (FL-57)', async () => {
+    it('never shows Locked (while locked) or foreign media as correction history evidence (FL-57, FL-195)', async () => {
       // its own database: the corrected faces it leaves would outlast the forced recognition tests below
       const { sut, ctx } = setup(await getKyselyDB());
       const personRepo = ctx.get(PersonRepository);
@@ -242,17 +242,31 @@ describe(PersonService.name, () => {
         ]);
       }
 
-      for (const auth of [
-        factory.auth({ user: user1 }),
+      const locked = await sut.getCorrectionHistory(factory.auth({ user: user1 }), person.personGroupId, {
+        page: 1,
+        size: 25,
+      });
+      expect(locked.corrections).toHaveLength(3);
+      expect(locked.corrections.filter(({ evidence }) => evidence).map(({ evidence }) => evidence!.assetId)).toEqual([
+        timeline1.id,
+      ]);
+      expect(locked.corrections.filter(({ evidenceRevoked }) => evidenceRevoked)).toHaveLength(2);
+
+      // FL-195: the owner's unlocked session sees their own marked photo as evidence like any other;
+      // someone else's media never
+      const unlocked = await sut.getCorrectionHistory(
         factory.auth({ user: user1, session: { hasElevatedPermission: true } }),
-      ]) {
-        const { corrections } = await sut.getCorrectionHistory(auth, person.personGroupId, { page: 1, size: 25 });
-        expect(corrections).toHaveLength(3);
-        expect(corrections.filter(({ evidence }) => evidence).map(({ evidence }) => evidence!.assetId)).toEqual([
-          timeline1.id,
-        ]);
-        expect(corrections.filter(({ evidenceRevoked }) => evidenceRevoked)).toHaveLength(2);
-      }
+        person.personGroupId,
+        { page: 1, size: 25 },
+      );
+      expect(unlocked.corrections).toHaveLength(3);
+      expect(
+        unlocked.corrections
+          .filter(({ evidence }) => evidence)
+          .map(({ evidence }) => evidence!.assetId)
+          .toSorted(),
+      ).toEqual([locked1.id, timeline1.id].toSorted());
+      expect(unlocked.corrections.filter(({ evidenceRevoked }) => evidenceRevoked)).toHaveLength(1);
 
       // the history is the owner's: the partner sees none of it
       await expect(
