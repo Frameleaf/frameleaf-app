@@ -125,6 +125,7 @@
       trash: featureFlagsManager.value.trash,
       // Feature preferences are the account's own display choices, never permissions:
       // hiding a destination here does not revoke data or API access.
+      recentlyAdded: !!preferences?.recentlyAdded.sidebarWeb,
       people: !!preferences?.people.enabled && preferences.people.sidebarWeb,
       memories: !!preferences?.memories.enabled && preferences.memories.sidebarWeb,
       tags: !!preferences?.tags.enabled && preferences.tags.sidebarWeb,

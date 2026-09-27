@@ -82,35 +82,45 @@ export const withoutLockedSavedSearches = (
 export const PREFERENCES_CHANGED_MESSAGE =
   'These preferences changed after they were loaded. Load the latest preferences and try again.';
 
+/**
+ * Only values that differ from these defaults are stored (`getPreferencesPartial`), so a changed default
+ * reaches every account that never changed that value.
+ *
+ * FL-30 residue (FL-146, owner decision 2026-09-27): "Whatever the prototype displays, that should be
+ * default, they can be hidden by the admin." The navigation destinations the prototype rail
+ * (`LibraryRail.jsx`) and phone tab bar (`App.jsx` `fl-tabbar`) show — Recently added, People,
+ * Memories, Tags, Folders and Shared links — are on by default; the account or an administrator
+ * (Users → Features) can still hide each one, and that choice is stored because it now differs.
+ */
 const getDefaultPreferences = (): FrameleafUserPreferences => {
   return {
     albums: {
       defaultAssetOrder: AssetOrder.Desc,
     },
     folders: {
-      enabled: false,
-      sidebarWeb: false,
+      enabled: true,
+      sidebarWeb: true,
     },
     memories: {
       enabled: true,
       duration: 5,
-      sidebarWeb: false,
+      sidebarWeb: true,
     },
     people: {
       enabled: true,
-      sidebarWeb: false,
+      sidebarWeb: true,
       minimumFaces: 3,
     },
     sharedLinks: {
       enabled: true,
-      sidebarWeb: false,
+      sidebarWeb: true,
     },
     ratings: {
       enabled: false,
     },
     tags: {
-      enabled: false,
-      sidebarWeb: false,
+      enabled: true,
+      sidebarWeb: true,
     },
     emailNotifications: {
       enabled: true,
@@ -133,7 +143,7 @@ const getDefaultPreferences = (): FrameleafUserPreferences => {
       suppression: emptySuppressionPreferences(),
     },
     recentlyAdded: {
-      sidebarWeb: false,
+      sidebarWeb: true,
     },
     savedSearches: [],
   };

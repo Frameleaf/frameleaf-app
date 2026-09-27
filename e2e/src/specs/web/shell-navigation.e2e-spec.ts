@@ -1,4 +1,4 @@
-import { LoginResponseDto, setUserOnboarding } from '@immich/sdk';
+import { LoginResponseDto, setUserOnboarding, updateUserPreferencesAdmin } from '@immich/sdk';
 import { expect, Page, test } from '@playwright/test';
 import { createUserDto, loginDto } from 'src/fixtures.js';
 import { asBearerAuth, utils } from 'src/utils.js';
@@ -36,17 +36,11 @@ test.describe('Frameleaf shell navigation (FL-30)', () => {
     admin = await utils.adminSetup();
     member = await utils.userSetup(admin.accessToken, createUserDto.create('shell-member'));
     await utils.createAsset(admin.accessToken);
-    // Every registry family on: the Explore destinations an account may hide are shown here, and
-    // the next-but-one test turns some off again.
-    await utils.updateMyPreferences(admin.accessToken, {
-      people: { enabled: true, sidebarWeb: true },
-      memories: { enabled: true, sidebarWeb: true },
-      tags: { enabled: true, sidebarWeb: true },
-      folders: { enabled: true, sidebarWeb: true },
-      sharedLinks: { enabled: true, sidebarWeb: true },
-    });
+    // No preference is set: every destination the prototype shows is on by default (FL-146, owner
+    // decision 2026-09-27), and a later test turns some off again.
     // The one-time "Set up your account" page is FL-176's; these tests start after it.
     await setUserOnboarding({ onboardingDto: { isOnboarded: true } }, { headers: asBearerAuth(admin.accessToken) });
+    await setUserOnboarding({ onboardingDto: { isOnboarded: true } }, { headers: asBearerAuth(member.accessToken) });
   });
 
   test('opens every rail destination as a page of its own and marks it current', async ({ context, page }) => {
@@ -221,6 +215,52 @@ test.describe('Frameleaf shell navigation (FL-30)', () => {
         people: { enabled: true, sidebarWeb: true },
         memories: { enabled: true, sidebarWeb: true },
       });
+    }
+  });
+
+  // FL-146 (owner decision 2026-09-27): "Whatever the prototype displays, that should be default,
+  // they can be hidden by the admin." A new account that never changed a preference.
+  test("shows a new account every destination the prototype's rail and tab bar show", async ({ context, page }) => {
+    await utils.setAuthCookies(context, member.accessToken);
+    await page.goto('/photos');
+    for (const name of ['Recently added', 'People', 'Memories', 'Tags', 'Folders', 'Shared links']) {
+      await expect(railLink(page, name), name).toBeVisible();
+    }
+
+    // App.jsx `fl-tabbar`: Library, Memories, Albums, Search on a phone.
+    await page.setViewportSize({ width: 390, height: 844 });
+    const tabs = page.getByRole('navigation', { name: 'Sections' });
+    await expect(tabs).toBeVisible();
+    await expect(tabs.locator(':scope > a, :scope > button')).toHaveText(['Library', 'Memories', 'Albums', 'Search']);
+  });
+
+  test("lets an administrator hide a default destination from an account's rail", async ({ context, page }) => {
+    const hide = (sidebarWeb: boolean) =>
+      updateUserPreferencesAdmin(
+        {
+          id: member.userId,
+          userPreferencesUpdateDto: { tags: { sidebarWeb }, recentlyAdded: { sidebarWeb }, memories: { sidebarWeb } },
+        },
+        { headers: asBearerAuth(admin.accessToken) },
+      );
+    await utils.setAuthCookies(context, member.accessToken);
+    await hide(false);
+    try {
+      await page.goto('/photos');
+      await expect(railLink(page, 'Library')).toBeVisible();
+      await expect(railLink(page, 'Tags')).toHaveCount(0);
+      await expect(railLink(page, 'Recently added')).toHaveCount(0);
+      await expect(railLink(page, 'Memories')).toHaveCount(0);
+      await expect(railLink(page, 'Folders')).toBeVisible();
+
+      await page.setViewportSize({ width: 390, height: 844 });
+      await expect(page.getByRole('navigation', { name: 'Sections' }).getByText('Memories')).toHaveCount(0);
+
+      // A display choice, never an access control: the page still opens.
+      await page.goto('/tags');
+      await expect(errorTitle(page)).toHaveCount(0);
+    } finally {
+      await hide(true);
     }
   });
 

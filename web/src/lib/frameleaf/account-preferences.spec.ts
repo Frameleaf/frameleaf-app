@@ -2,6 +2,7 @@ import { AssetOrder, SuppressionScope } from '@immich/sdk';
 import { describe, expect, it } from 'vitest';
 import {
   archiveSizeToGib,
+  createDefaultDraft,
   createDraftState,
   draftFromPreferences,
   followLatestPreferences,
@@ -172,17 +173,39 @@ describe('account preferences (FL-77)', () => {
     });
   });
 
+  describe('defaults (FL-146, owner decision 2026-09-27)', () => {
+    it('turns on every destination the prototype rail and tab bar show, like the server', () => {
+      const draft = createDefaultDraft();
+      for (const key of [
+        'recentlyAdded.sidebarWeb',
+        'people.enabled',
+        'people.sidebarWeb',
+        'memories.enabled',
+        'memories.sidebarWeb',
+        'tags.enabled',
+        'tags.sidebarWeb',
+        'folders.enabled',
+        'folders.sidebarWeb',
+        'sharedLinks.enabled',
+        'sharedLinks.sidebarWeb',
+      ] as const) {
+        expect(draft[key], key).toBe(true);
+      }
+      expect(draft['ratings.enabled']).toBe(false);
+    });
+  });
+
   describe('resetSection', () => {
     it("restores one page's defaults and leaves the other pages and the casting decision alone", () => {
       const draft = {
         ...draftFromPreferences(loaded({ cast: { adminDisabled: true, gCastEnabled: false } })),
-        'tags.enabled': true,
+        'tags.enabled': false,
         'people.minimumFaces': 9,
         'albums.defaultAssetOrder': AssetOrder.Asc,
       };
       const reset = resetSection(draft, 'features');
 
-      expect(reset['tags.enabled']).toBe(false);
+      expect(reset['tags.enabled']).toBe(true);
       expect(reset['people.minimumFaces']).toBe(3);
       expect(reset['cast.adminDisabled']).toBe(true);
       expect(reset['albums.defaultAssetOrder']).toBe(AssetOrder.Asc);

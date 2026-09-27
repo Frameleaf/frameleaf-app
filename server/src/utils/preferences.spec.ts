@@ -71,9 +71,9 @@ describe('preferences (FL-77 admin casting permission)', () => {
 
     it("keeps the user's stored choice when a save sends casting as off while it is turned off", () => {
       const current = getPreferences(stored({ cast: { gCastEnabled: true, adminDisabled: true } }));
-      const merged = mergePreferences(current, { cast: { gCastEnabled: false }, tags: { enabled: true } }, 'user');
+      const merged = mergePreferences(current, { cast: { gCastEnabled: false }, ratings: { enabled: true } }, 'user');
       expect(merged.cast).toEqual({ gCastEnabled: true, adminDisabled: true });
-      expect(merged.tags.enabled).toBe(true);
+      expect(merged.ratings.enabled).toBe(true);
     });
 
     it('passes updates without a cast group through untouched', () => {
@@ -109,8 +109,8 @@ describe('preferences (FL-77 admin casting permission)', () => {
 
   describe('getPreferencesRevision (FL-77 stale-save rejection)', () => {
     it('is the same for equal stored preferences whatever their key order', () => {
-      const first = getPreferences(stored({ memories: { enabled: false, duration: 9 }, tags: { enabled: true } }));
-      const second = getPreferences(stored({ tags: { enabled: true }, memories: { duration: 9, enabled: false } }));
+      const first = getPreferences(stored({ memories: { enabled: false, duration: 9 }, ratings: { enabled: true } }));
+      const second = getPreferences(stored({ ratings: { enabled: true }, memories: { duration: 9, enabled: false } }));
       expect(getPreferencesRevision(first)).toBe(getPreferencesRevision(second));
     });
 
@@ -149,13 +149,13 @@ describe('preferences (FL-77 admin casting permission)', () => {
 
   describe('mergePreferences with expectedRevision', () => {
     it('applies an update made against the current revision and never stores the revision', () => {
-      const current = getPreferences(stored({ tags: { enabled: true } }));
+      const current = getPreferences(stored({ ratings: { enabled: true } }));
       const expectedRevision = getPreferencesRevision(current);
       const merged = mergePreferences(current, { expectedRevision, memories: { duration: 7 } }, 'admin');
       expect(merged.memories.duration).toBe(7);
-      expect(merged.tags.enabled).toBe(true);
+      expect(merged.ratings.enabled).toBe(true);
       expect(merged).not.toHaveProperty('expectedRevision');
-      expect(getPreferencesPartial(merged)).toEqual({ memories: { duration: 7 }, tags: { enabled: true } });
+      expect(getPreferencesPartial(merged)).toEqual({ memories: { duration: 7 }, ratings: { enabled: true } });
     });
 
     it('rejects an update made against an older revision without changing anything', () => {
@@ -233,12 +233,15 @@ describe('preferences (FL-77 admin casting permission)', () => {
     });
 
     it('leaves Locked ids out of a stored preferences value and keeps the rest', () => {
-      const value = { tags: { enabled: true }, privacy: { suppression: { personIds: [personId], scope: 'visible' } } };
+      const value = {
+        ratings: { enabled: true },
+        privacy: { suppression: { personIds: [personId], scope: 'visible' } },
+      };
       expect(withoutStoredLockedRuleIds(value)).toEqual({
-        tags: { enabled: true },
+        ratings: { enabled: true },
         privacy: { suppression: { scope: 'visible' } },
       });
-      expect(withoutStoredLockedRuleIds({ tags: { enabled: true } })).toEqual({ tags: { enabled: true } });
+      expect(withoutStoredLockedRuleIds({ ratings: { enabled: true } })).toEqual({ ratings: { enabled: true } });
       expect(withoutStoredLockedRuleIds(null)).toBeNull();
     });
 
@@ -246,7 +249,7 @@ describe('preferences (FL-77 admin casting permission)', () => {
       expect(changesLockedRules({})).toBe(false);
       expect(changesLockedRules({ privacy: {} })).toBe(false);
       expect(changesLockedRules({ privacy: { suppression: {} } })).toBe(false);
-      expect(changesLockedRules({ tags: { enabled: true } })).toBe(false);
+      expect(changesLockedRules({ ratings: { enabled: true } })).toBe(false);
     });
   });
 
@@ -346,5 +349,53 @@ describe('preferences (FL-77 admin casting permission)', () => {
         }).savedSearches,
       ).toEqual([searches[0]]);
     });
+  });
+});
+
+/**
+ * FL-30 residue (FL-146, owner decision 2026-09-27): "Whatever the prototype displays, that should be
+ * default, they can be hidden by the admin." The prototype rail (LibraryRail.jsx) and phone tab bar
+ * (App.jsx `fl-tabbar`) show Recently added, People, Memories, Tags, Folders and Shared links.
+ */
+describe('navigation defaults (FL-30 / FL-146)', () => {
+  const railPreferences = (preferences: ReturnType<typeof getPreferences>) => ({
+    folders: preferences.folders,
+    memories: { enabled: preferences.memories.enabled, sidebarWeb: preferences.memories.sidebarWeb },
+    people: { enabled: preferences.people.enabled, sidebarWeb: preferences.people.sidebarWeb },
+    recentlyAdded: preferences.recentlyAdded,
+    sharedLinks: preferences.sharedLinks,
+    tags: preferences.tags,
+  });
+
+  it('shows every destination the prototype rail and tab bar show on a new account', () => {
+    expect(railPreferences(getPreferences([]))).toEqual({
+      folders: { enabled: true, sidebarWeb: true },
+      memories: { enabled: true, sidebarWeb: true },
+      people: { enabled: true, sidebarWeb: true },
+      recentlyAdded: { sidebarWeb: true },
+      sharedLinks: { enabled: true, sidebarWeb: true },
+      tags: { enabled: true, sidebarWeb: true },
+    });
+  });
+
+  it('gives an existing account that never changed them the new defaults (only changes are stored)', () => {
+    expect(railPreferences(getPreferences(stored({ download: { includeEmbeddedVideos: true } })))).toEqual(
+      railPreferences(getPreferences([])),
+    );
+  });
+
+  it('keeps an entry an account or administrator hid', () => {
+    const hidden = getPreferences(stored({ people: { sidebarWeb: false }, tags: { enabled: false } }));
+    expect(hidden.people.sidebarWeb).toBe(false);
+    expect(hidden.tags.enabled).toBe(false);
+    expect(hidden.tags.sidebarWeb).toBe(true);
+  });
+
+  it('stores a hidden entry, since it now differs from the default, and drops a shown one', () => {
+    const preferences = getPreferences([]);
+    preferences.folders.sidebarWeb = false;
+    expect(getPreferencesPartial(preferences)).toEqual({ folders: { sidebarWeb: false } });
+    preferences.folders.sidebarWeb = true;
+    expect(getPreferencesPartial(preferences)).toEqual({});
   });
 });
