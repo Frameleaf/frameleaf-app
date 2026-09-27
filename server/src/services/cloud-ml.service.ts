@@ -1,10 +1,10 @@
 import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
+import type { ArgOf } from 'src/repositories/event.repository.js';
 import type { CloudMlGateway } from 'src/repositories/frameleaf-cloud-ml.repository.js';
 import type { MachineLearningHardwareResponse, MlEndpointProbe } from 'src/repositories/machine-learning.repository.js';
 import type { MlDestinationRow } from 'src/repositories/ml-destination.repository.js';
 import type { FrameleafMlWallet } from 'src/types.js';
 import { OnEvent } from 'src/decorators.js';
-import type { ArgOf } from 'src/repositories/event.repository.js';
 import {
   CloudMlCatalogResponseDto,
   CloudMlConsentHistoryResponseDto,
