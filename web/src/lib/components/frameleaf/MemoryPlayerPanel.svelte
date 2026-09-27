@@ -132,6 +132,7 @@
   import { t } from 'svelte-i18n';
   import type { Attachment } from 'svelte/attachments';
   import { Tween } from 'svelte/motion';
+  import MemoryHighlightControl from '$lib/components/frameleaf/MemoryHighlightControl.svelte';
   import MemoryPhotoViewer from '$lib/components/frameleaf/MemoryPhotoViewer.svelte';
   import MemoryVideoViewer from '$lib/components/frameleaf/MemoryVideoViewer.svelte';
 
@@ -1294,6 +1295,12 @@
                     <Icon icon={mdiExportVariant} size="20" />
                   </IconButton>
                 {/if}
+                <!-- FL-194: a highlight video rendered directly from the memory, beside the Studio handoff. -->
+                <MemoryHighlightControl
+                  memoryId={current.memory.id}
+                  memoryTitle={titleCard?.title ?? ''}
+                  onStatus={(message) => (status = message)}
+                />
                 <button type="button" class="fmp-studio" onclick={makeMovie}>
                   <Icon icon={mdiMovieEditOutline} size="18" aria-hidden="true" />
                   {$t('frameleaf_memories_make_movie')}

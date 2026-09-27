@@ -1,4 +1,5 @@
 import {
+  MemoryExportFormat,
   MemoryExportStatus,
   MemoryShowLessKind,
   MemoryType,
@@ -390,8 +391,14 @@ export const memoryEvidenceMs = (
 export const isExportActive = (status: MemoryExportStatus): boolean =>
   [MemoryExportStatus.Pending, MemoryExportStatus.Running, MemoryExportStatus.Cancelling].includes(status);
 
-/** Fraction of the export that is written, 0 to 1. Pending work reads as 0, not as NaN. */
-export const exportProgress = ({ assetCount, processedAssets }: MemoryExportResponseDto): number => {
+/**
+ * Fraction of the export that is done, 0 to 1. Pending work reads as 0, not as NaN. A highlight
+ * video (FL-194) reports its render's progress; an archive, the files written.
+ */
+export const exportProgress = ({ assetCount, processedAssets, highlight }: MemoryExportResponseDto): number => {
+  if (highlight) {
+    return Math.min(1, Math.max(0, highlight.progress / 100));
+  }
   if (assetCount <= 0) {
     return 0;
   }
@@ -403,8 +410,12 @@ export const exportProgress = ({ assetCount, processedAssets }: MemoryExportResp
  * returns is already newest first, but the order is re-established here so the component
  * does not depend on it.
  */
-export const latestExport = (runs: MemoryExportResponseDto[], memoryId: string): MemoryExportResponseDto | undefined =>
+export const latestExport = (
+  runs: MemoryExportResponseDto[],
+  memoryId: string,
+  format: MemoryExportFormat = MemoryExportFormat.Archive,
+): MemoryExportResponseDto | undefined =>
   runs
-    .filter((run) => run.memoryId === memoryId)
+    .filter((run) => run.memoryId === memoryId && (run.format ?? MemoryExportFormat.Archive) === format)
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
     .at(0);
