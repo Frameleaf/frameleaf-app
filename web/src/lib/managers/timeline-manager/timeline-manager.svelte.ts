@@ -148,6 +148,9 @@ export class TimelineManager extends VirtualScrollManager {
   static #INIT_OPTIONS = {};
   #websocketSupport: WebsocketSupport | undefined;
   #options: TimelineManagerOptions = TimelineManager.#INIT_OPTIONS;
+  /** The options last asked for: a load a newer request overtakes gives way to it (FL-33). */
+  #requestedOptions: TimelineManagerOptions = TimelineManager.#INIT_OPTIONS;
+  #removedListeners = new Set<(ids: string[]) => void>();
   #updatingViewportProximities = false;
   #scrollableElement: HTMLElement | undefined = $state();
   #unsubscribes: Array<() => void> = [];
@@ -350,14 +353,15 @@ export class TimelineManager extends VirtualScrollManager {
     return this.#options.orderedBy;
   }
 
-  async #initializeTimelineMonths() {
+  async #initializeTimelineMonths(signal: AbortSignal) {
     const revision = sessionAccess.revision;
     const timebuckets = await getTimeBuckets({
       ...authManager.params,
       ...this.#options,
     });
 
-    if (revision !== sessionAccess.revision) {
+    // A load cancelled by newer options, or a session lock, must not replace what replaced it.
+    if (signal.aborted || revision !== sessionAccess.revision) {
       return;
     }
 
@@ -403,7 +407,37 @@ export class TimelineManager extends VirtualScrollManager {
     if (options.deferInit) {
       return;
     }
-    if (this.#options !== TimelineManager.#INIT_OPTIONS && isEqual(this.#options, options)) {
+    if (this.#requestedOptions !== TimelineManager.#INIT_OPTIONS && isEqual(this.#requestedOptions, options)) {
+      return;
+    }
+
+    // A page can ask twice before the first load starts (its own options, then the query a link
+    // restored): the latest request wins, and an overtaken one gives way instead of loading.
+    this.#requestedOptions = options;
+    const overtaken = () => this.#requestedOptions !== options;
+    this.suspendTransitions = true;
+    try {
+      await this.initTask.reset();
+      if (overtaken()) {
+        return;
+      }
+      await this.#init(options);
+      if (overtaken()) {
+        return;
+      }
+      this.updateViewportGeometry(false);
+      this.#createScrubberMonths();
+    } finally {
+      if (!overtaken()) {
+        this.suspendTransitions = false;
+      }
+    }
+  }
+
+  async refresh() {
+    // Reload what was last asked for, which may still be loading.
+    const options = this.#requestedOptions;
+    if (options === TimelineManager.#INIT_OPTIONS || options.deferInit) {
       return;
     }
 
@@ -418,22 +452,6 @@ export class TimelineManager extends VirtualScrollManager {
     }
   }
 
-  async refresh() {
-    if (this.#options === TimelineManager.#INIT_OPTIONS || this.#options.deferInit) {
-      return;
-    }
-
-    this.suspendTransitions = true;
-    try {
-      await this.initTask.reset();
-      await this.#init(this.#options);
-      this.updateViewportGeometry(false);
-      this.#createScrubberMonths();
-    } finally {
-      this.suspendTransitions = false;
-    }
-  }
-
   async #init(options: TimelineManagerOptions) {
     this.isInitialized = false;
     this.months = [];
@@ -441,9 +459,9 @@ export class TimelineManager extends VirtualScrollManager {
     // The server re-applies its NSFW filter on reload, so drop the locally
     // tracked ids to avoid hiding assets that may since have been marked safe.
     this.#nsfwHiddenAssetIds.clear();
-    await this.initTask.execute(async () => {
+    await this.initTask.execute(async (signal) => {
       this.#options = options;
-      await this.#initializeTimelineMonths();
+      await this.#initializeTimelineMonths(signal);
     }, true);
   }
 
@@ -468,7 +486,7 @@ export class TimelineManager extends VirtualScrollManager {
     }
 
     if (!this.initTask.executed) {
-      await (this.initTask.loading ? this.initTask.waitUntilCompletion() : this.#init(this.#options));
+      await (this.initTask.loading ? this.initTask.waitUntilCompletion() : this.#init(this.#requestedOptions));
     }
 
     const changedWidth = viewport.width !== this.viewportWidth;
@@ -651,7 +669,24 @@ export class TimelineManager extends VirtualScrollManager {
 
   removeAssets(ids: string[]) {
     const result = this.#runAssetCallback(new Set(ids), () => ({ remove: true }));
+    if (ids.length > 0) {
+      for (const listener of this.#removedListeners) {
+        listener(ids);
+      }
+    }
     return [...result.notUpdated];
+  }
+
+  /**
+   * Hear about assets leaving this timeline, whatever removed them: a bulk action, a trash or delete
+   * on another device (the live events), or a lock (FL-33). Every id asked for is passed on, loaded
+   * or not, so a selection can drop an item whose month is not loaded here.
+   */
+  onRemoved(listener: (ids: string[]) => void) {
+    this.#removedListeners.add(listener);
+    return () => {
+      this.#removedListeners.delete(listener);
+    };
   }
 
   /**

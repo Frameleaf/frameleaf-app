@@ -140,6 +140,67 @@ describe('TimelineManager', () => {
     setSessionLockPending(false);
   });
 
+  describe('options that change while the timeline starts (FL-33)', () => {
+    const months = (timelineManager: TimelineManager) =>
+      timelineManager.months.map(({ yearMonth }) => `${yearMonth.year}-${yearMonth.month}`);
+
+    it('loads the latest options when a restored query arrives while the first load is starting', async () => {
+      sdkMock.getTimeBuckets.mockImplementation((request) =>
+        Promise.resolve([{ count: 1, timeBucket: request.tagId ? '2024-02-01' : '2024-01-01' }]),
+      );
+      const timelineManager = new TimelineManager();
+
+      // The page's own options, then the same options narrowed by the query the link restored.
+      const first = timelineManager.updateOptions({ visibility: AssetVisibility.Timeline });
+      const second = timelineManager.updateOptions({ visibility: AssetVisibility.Timeline, tagId: 'tag-1' });
+      await Promise.all([first, second]);
+
+      expect(sdkMock.getTimeBuckets).toHaveBeenLastCalledWith(expect.objectContaining({ tagId: 'tag-1' }));
+      expect(months(timelineManager)).toEqual(['2024-2']);
+      timelineManager.destroy();
+    });
+
+    it('never lets a late bucket list for superseded options replace the current one', async () => {
+      const late = deferred<Array<{ count: number; timeBucket: string }>>();
+      sdkMock.getTimeBuckets
+        .mockReturnValueOnce(late.promise)
+        .mockResolvedValueOnce([{ count: 1, timeBucket: '2024-02-01' }]);
+      const timelineManager = new TimelineManager();
+
+      const first = timelineManager.updateOptions({ visibility: AssetVisibility.Timeline });
+      await vi.waitFor(() => expect(sdkMock.getTimeBuckets).toHaveBeenCalledOnce());
+      await timelineManager.updateOptions({ visibility: AssetVisibility.Timeline, tagId: 'tag-1' });
+      expect(months(timelineManager)).toEqual(['2024-2']);
+
+      late.resolve([{ count: 3, timeBucket: '2024-01-01' }]);
+      await first;
+      await settle();
+
+      expect(months(timelineManager)).toEqual(['2024-2']);
+      timelineManager.destroy();
+    });
+  });
+
+  describe('removal listeners (FL-33)', () => {
+    it('tells its listeners which assets left the timeline, and stops once unsubscribed', async () => {
+      const asset = deriveLocalDateTimeFromFileCreatedAt(timelineAssetFactory.build());
+      sdkMock.getTimeBuckets.mockResolvedValue([]);
+      const timelineManager = new TimelineManager();
+      await timelineManager.updateOptions({ visibility: AssetVisibility.Timeline });
+      timelineManager.upsertAssets([asset]);
+      const listener = vi.fn();
+      const unsubscribe = timelineManager.onRemoved(listener);
+
+      timelineManager.removeAssets([asset.id, 'not-loaded']);
+      expect(listener).toHaveBeenCalledExactlyOnceWith([asset.id, 'not-loaded']);
+
+      unsubscribe();
+      timelineManager.removeAssets(['another']);
+      expect(listener).toHaveBeenCalledOnce();
+      timelineManager.destroy();
+    });
+  });
+
   describe('partner revocation (FL-54)', () => {
     const signedInAs = (id: string) => {
       vi.spyOn(authManager, 'authenticated', 'get').mockReturnValue(true);

@@ -455,6 +455,14 @@
   };
 
   /**
+   * Whatever takes an item out of the timeline — a trash or delete on another device, a lock, a
+   * bulk action — takes it out of the selection and the open item too (FL-33), so the bar never
+   * counts or acts on something that is no longer here. `mutated` is idempotent, so the bulk path
+   * reaching this again is harmless.
+   */
+  $effect(() => manager.onRemoved((removedIds) => session.mutated(removedIds)));
+
+  /**
    * A durable job's finished items leave the timeline as the job finishes them — through the same
    * `mutated` path as a small delete, so the session and the timeline drop them together, without
    * a reload (owner decision, September 22, 2026). Until then each tile shows its own loader.
