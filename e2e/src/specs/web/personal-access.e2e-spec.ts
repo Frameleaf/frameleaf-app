@@ -269,11 +269,12 @@ test.describe('Personal access (FL-67)', () => {
         return status;
       }),
     );
-    expect(statuses.toSorted()).toEqual([200, 401]);
+    expect(statuses.toSorted((a, b) => a - b)).toEqual([200, 401]);
     const survivor = statuses[0] === 200 ? other : third;
 
     // another device now signs out this one while the page is open
-    const current = (await getSessions({ headers: asBearerAuth(user.accessToken) })).find((s) => s.current);
+    const sessions = await getSessions({ headers: asBearerAuth(user.accessToken) });
+    const current = sessions.find((s) => s.current);
     expect(current).toBeDefined();
     await deleteSession({ id: current!.id }, { headers: asBearerAuth(survivor.accessToken) });
 

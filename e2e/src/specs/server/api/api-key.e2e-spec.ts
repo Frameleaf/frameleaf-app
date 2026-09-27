@@ -199,9 +199,8 @@ describe('/api-keys', () => {
 
     it('should refuse a rotation by a key without the rotate permission', async () => {
       const { id } = await create(user.accessToken, [Permission.ApiKeyRead]);
-      const { status } = await request(app)
-        .post(`/api-keys/${id}/rotate`)
-        .set('x-api-key', (await create(user.accessToken, [Permission.ApiKeyRead])).secret);
+      const { secret: readOnly } = await create(user.accessToken, [Permission.ApiKeyRead]);
+      const { status } = await request(app).post(`/api-keys/${id}/rotate`).set('x-api-key', readOnly);
       expect(status).toBe(403);
     });
 
