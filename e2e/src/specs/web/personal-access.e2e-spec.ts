@@ -2,8 +2,11 @@ import {
   ConfigCredential,
   LoginResponseDto,
   Permission,
+  deleteSession,
   getMyPreferences,
+  getSessions,
   lockAuthSession,
+  login,
   setUserOnboarding,
   setupPinCode,
   unlockAuthSession,
@@ -23,6 +26,7 @@ import request from 'supertest';
 const lockedRulesUrl = '/user-settings?area=security&section=suppressed-content';
 const profileUrl = '/user-settings?area=preferences&section=account';
 const apiKeysUrl = '/user-settings?area=security&section=api-keys';
+const devicesUrl = '/user-settings?area=security&section=authorized-devices';
 const emailSettingsUrl = '/user-settings?area=notifications&section=notifications&isOpen=email';
 
 const pinCode = '135790';
@@ -235,5 +239,47 @@ test.describe('Personal access (FL-67)', () => {
     await reveal.getByRole('button', { name: 'Done' }).click();
     await expect(reveal).toHaveCount(0);
     await expect(page.getByText(secret)).toHaveCount(0);
+  });
+  test('signs out another device, and leaves at once when this device is signed out elsewhere', async ({
+    context,
+    page,
+  }) => {
+    // FL-67: "revoked current session": signing out another device ends that session only, and when
+    // this browser's own session is revoked from another device the open page leaves for sign-in
+    // without waiting for a navigation.
+    const user = await createUser();
+    const credentials = { email: user.userEmail, password: 'password' };
+    const other = await login({ loginCredentialDto: credentials });
+    const third = await login({ loginCredentialDto: credentials });
+
+    await utils.setAuthCookies(context, user.accessToken);
+    await page.goto(devicesUrl);
+
+    const devices = page.getByRole('region', { name: 'Signed-in devices' });
+    await expect(devices.getByText('This device', { exact: true })).toBeVisible();
+    await expect(devices.getByRole('listitem')).toHaveCount(3);
+
+    // this device signs out one other device; that token stops working, the others do not
+    await devices.getByRole('button', { name: 'Sign out', exact: true }).first().click();
+    await page.getByRole('dialog').getByRole('button', { name: 'Sign out', exact: true }).click();
+    await expect(devices.getByRole('listitem')).toHaveCount(2);
+    const statuses = await Promise.all(
+      [other, third].map(async ({ accessToken }) => {
+        const { status } = await request(app).get('/users/me').set('Authorization', `Bearer ${accessToken}`);
+        return status;
+      }),
+    );
+    expect(statuses.toSorted()).toEqual([200, 401]);
+    const survivor = statuses[0] === 200 ? other : third;
+
+    // another device now signs out this one while the page is open
+    const current = (await getSessions({ headers: asBearerAuth(user.accessToken) })).find((s) => s.current);
+    expect(current).toBeDefined();
+    await deleteSession({ id: current!.id }, { headers: asBearerAuth(survivor.accessToken) });
+
+    await expect(page).toHaveURL(/\/auth\/login/);
+    await expect(page.getByLabel('Email', { exact: true })).toBeVisible();
+    const { status } = await request(app).get('/users/me').set('Authorization', `Bearer ${user.accessToken}`);
+    expect(status).toBe(401);
   });
 });
