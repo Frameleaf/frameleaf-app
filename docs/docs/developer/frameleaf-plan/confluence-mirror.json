@@ -433,18 +433,18 @@
       "version": 2
     },
     {
-      "bytes": 16235,
+      "bytes": 16163,
       "category": "features",
       "id": "61440280",
       "source": "docs/docs/features/fork-privacy-suite.md",
-      "sourceCommit": "a3a40128152daf16b5466af04d4acc9a5eaa321a",
-      "sourceSha256": "3c197936472bbd4a2b61ea625dcb8f78c0a54919520aa52af0db35556ad53a39",
+      "sourceCommit": "912fea8b20cb8c10dfd7e739b4cfe29cbdca4392",
+      "sourceSha256": "22f2de9d68fcdecdbfa570282558eb4529a870bdf4457c57176d4f0005a8c764",
       "title": "Feature Reference \u2014 Frameleaf privacy suite",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61440280/Feature+Reference+Frameleaf+privacy+suite",
-      "verification": "FL-190 Confluence page read back at version 7, retitled Feature Reference — Frameleaf privacy suite to match the new H1, with source hash 3c197936, 16235 bytes and commit a3a4012815 on master/frameleaf-implementation in the header (FL-190 commits 20289e0cf8 and 6c1477322f; FL-192 and FL-159 history kept); compared with version 6, the only differences are the header and the FL-190 rebrand wording (new H1, 'Who Frameleaf is for', Frameleaf or the upstream project or official upstream server in the introduction, telemetry, deduplication, rollout and safe operating sections, and the renamed switching-guide link); the Confluence page links and the Physical deduplication GitHub link are kept; no user additions.",
+      "verification": "FL-192: Confluence page read back at version 8 with source hash 22f2de9d, 16163 bytes and commit 912fea8b20 on master/frameleaf-implementation in the header (FL-192 update statement, backlink, FL-192 link first; FL-190, earlier FL-192 and FL-159 history kept); compared with version 7, the only differences are the header, the smart search and face recognition bullet now also naming text recognition (OCR) models, and the removed www.modelscope.cn OCR bullet; the Confluence page links and the Physical deduplication GitHub link are kept; no user additions.",
       "verified": true,
-      "verifiedAt": "2026-09-26T16:51:35.000Z",
-      "version": 7
+      "verifiedAt": "2026-09-27T04:23:00.000Z",
+      "version": 8
     },
     {
       "bytes": 3750,
