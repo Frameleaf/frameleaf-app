@@ -27,6 +27,7 @@ const status = (overrides: Partial<CloudStatusResponseDto> = {}): CloudStatusRes
   relinkRequested: false,
   linkTokenConfigured: false,
   remoteAccessEnabled: false,
+  manageUrl: null,
   signInClientId: null,
   signInIssuer: null,
   signInLinkedAccounts: 0,
