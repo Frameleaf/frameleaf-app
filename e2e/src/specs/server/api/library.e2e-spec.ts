@@ -292,6 +292,7 @@ describe('/libraries', () => {
     });
 
     it('reports every refusal when checking folders without saving', async () => {
+      utils.createImageFile(`${testAssetDir}/temp/fl78-check/asset.png`);
       const library = await utils.createLibrary(admin.accessToken, { ownerId: admin.userId, name: 'FL-78 check' });
       const { status, body } = await request(app)
         .post(`/libraries/${library.id}/validate`)
@@ -301,7 +302,7 @@ describe('/libraries', () => {
             `${testAssetDirInternal}/temp/fl78-link-to-upload`,
             `${testAssetDirInternal}/temp/../etc`,
             `${testAssetDirInternal}/temp/fl78-does-not-exist`,
-            `${testAssetDirInternal}/temp/directoryA`,
+            `${testAssetDirInternal}/temp/fl78-check`,
           ],
         });
       expect(status).toBe(200);
