@@ -418,6 +418,72 @@ describe(MlDestinationService.name, () => {
       expect(mocks.mlDestination.update).not.toHaveBeenCalled();
     });
 
+    it('reads the terms for the chosen features and records only the text shown, never an older version (FC-62)', async () => {
+      linkCloud();
+      mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.frameleafCloud);
+      const shown = 'a'.repeat(64);
+      mocks.frameleafCloudMl.getConsent.mockResolvedValue({
+        requiredVersion: '2026-10-01.2',
+        recordedVersion: '2026-09-26.1',
+        recordedAt: null,
+        features: { identityNames: false, medicalSignals: false, ocrAddon: false },
+        summary: '',
+        textSha256: 'b'.repeat(64),
+        documentUrl: null,
+      });
+      const features = { identityNames: false, medicalSignals: true, ocrAddon: false };
+
+      // other terms than the ones shown: 409 consent-version-outdated, nothing recorded
+      const changed = await sut
+        .grantConsent(authStub.admin, mlDestinationStub.frameleafCloud.id, {
+          acknowledgeMediaLeavesNetwork: true,
+          version: '2026-10-01.2',
+          textSha256: shown,
+          features,
+        })
+        .catch((error: unknown) => error);
+      expect(changed).toBeInstanceOf(ConflictException);
+      expect((changed as ConflictException).getResponse()).toMatchObject({
+        code: 'consent-version-outdated',
+        requiredVersion: '2026-10-01.2',
+      });
+      expect(mocks.frameleafCloudMl.getConsent).toHaveBeenCalledWith(expect.anything(), features);
+      expect(mocks.frameleafCloudMl.recordConsent).not.toHaveBeenCalled();
+
+      // a cloud naming a version below the one it has on record is never followed
+      mocks.frameleafCloudMl.getConsent.mockResolvedValue({
+        requiredVersion: '2026-09-25.1',
+        recordedVersion: '2026-09-26.1',
+        recordedAt: null,
+        features: { identityNames: false, medicalSignals: false, ocrAddon: false },
+        summary: '',
+        textSha256: null,
+        documentUrl: null,
+      });
+      await expect(
+        sut.grantConsent(authStub.admin, mlDestinationStub.frameleafCloud.id, {
+          acknowledgeMediaLeavesNetwork: true,
+          version: '2026-09-25.1',
+          features,
+        }),
+      ).rejects.toBeInstanceOf(ConflictException);
+
+      // nor below the version this server already accepted
+      mocks.mlDestination.getById.mockResolvedValue({
+        ...mlDestinationStub.frameleafCloud,
+        consentVersion: '2026-10-01.1',
+      });
+      await expect(
+        sut.grantConsent(authStub.admin, mlDestinationStub.frameleafCloud.id, {
+          acknowledgeMediaLeavesNetwork: true,
+          version: '2026-09-30.4',
+          features,
+        }),
+      ).rejects.toThrow(/2026-10-01.1/);
+      expect(mocks.frameleafCloudMl.recordConsent).not.toHaveBeenCalled();
+      expect(mocks.frameleafConsent.record).not.toHaveBeenCalled();
+    });
+
     it('refuses Frameleaf Cloud consent without a version, or while the server is not linked (FL-159)', async () => {
       mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.frameleafCloud);
       await expect(

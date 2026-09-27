@@ -108,6 +108,14 @@ describe('CloudMlSection (FL-159, prototype Processing)', () => {
     sdkMock.getCloudMlSettlements.mockResolvedValue({ items: [] });
     sdkMock.getHardwareCheck.mockRejectedValue(new Error('not checked'));
     sdkMock.searchUsersAdmin.mockResolvedValue([]);
+    // FC-62: the terms for the features chosen, read from Frameleaf Cloud when the dialog opens
+    sdkMock.getCloudMlConsentTerms.mockResolvedValue({
+      requiredVersion: '2026-10-01',
+      recordedVersion: null,
+      summary: 'Media is processed in the EU region and deleted after each job.',
+      textSha256: 'a'.repeat(64),
+      documentUrl: null,
+    });
   });
 
   it('lets an administrator allow a person to spend the AI Wallet, with an optional monthly limit', async () => {
@@ -163,6 +171,7 @@ describe('CloudMlSection (FL-159, prototype Processing)', () => {
     const accept = within(dialog).getByRole('button', { name: 'Accept and turn on' });
     expect(accept).toBeDisabled();
     await fireEvent.click(within(dialog).getByRole('checkbox'));
+    await vi.waitFor(() => expect(accept).toBeEnabled());
     await fireEvent.click(accept);
 
     await vi.waitFor(() => expect(sdkMock.grantMlDestinationConsent).toHaveBeenCalled());
@@ -171,6 +180,7 @@ describe('CloudMlSection (FL-159, prototype Processing)', () => {
       mlDestinationConsentRequestDto: {
         acknowledgeMediaLeavesNetwork: true,
         version: '2026-10-01',
+        textSha256: 'a'.repeat(64),
         features: { identityNames: false, medicalSignals: false, ocrAddon: false },
       },
     });

@@ -460,6 +460,30 @@ describe(CloudMlService.name, () => {
       expect(mocks.mlDestination.applySettlements).not.toHaveBeenCalled();
     });
 
+    it('never flags a consent accepted at or above the required version as outdated (FC-62)', async () => {
+      link();
+      mocks.mlDestination.getAll.mockResolvedValue([
+        { ...mlDestinationStub.frameleafCloudConsented, consentVersion: '2026-10-02.1' },
+      ]);
+      await expect(sut.getStatus()).resolves.toMatchObject({ consent: { outdated: false } });
+    });
+
+    it('reads the consent terms for the chosen features from Frameleaf Cloud each time (FC-62)', async () => {
+      link();
+      await expect(sut.getConsentTerms({ identityNames: true })).resolves.toEqual({
+        requiredVersion: consentCurrent.requiredVersion,
+        recordedVersion: consentCurrent.recordedVersion,
+        summary: consentCurrent.summary,
+        textSha256: consentCurrent.textSha256,
+        documentUrl: consentCurrent.documentUrl,
+      });
+      await sut.getConsentTerms({});
+      expect(mocks.frameleafCloudMl.getConsent.mock.calls.map(([, features]) => features)).toEqual([
+        { identityNames: true, medicalSignals: false },
+        { identityNames: false, medicalSignals: false },
+      ]);
+    });
+
     it('shows the top-up link only when the cloud returned one', async () => {
       link();
       mocks.frameleafCloudMl.getWallet.mockResolvedValue({

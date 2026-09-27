@@ -111,6 +111,14 @@ describe('MlDestinationsPanel (FL-110)', () => {
     vi.clearAllMocks();
     sdkMock.listMlDestinations.mockResolvedValue([destination(), cloud]);
     sdkMock.getMlWorkloadRoutes.mockResolvedValue({ routes });
+    // FC-62: the terms for the features chosen, read from Frameleaf Cloud when the dialog opens
+    sdkMock.getCloudMlConsentTerms.mockResolvedValue({
+      requiredVersion: '2026-10-01',
+      recordedVersion: null,
+      summary: 'Media is processed in the EU region and deleted after each job.',
+      textSha256: 'a'.repeat(64),
+      documentUrl: null,
+    });
   });
 
   it('shows every destination with its health and marks an unconsented cloud destination as blocked', () => {
@@ -158,7 +166,7 @@ describe('MlDestinationsPanel (FL-110)', () => {
     expect(sdkMock.grantMlDestinationConsent).not.toHaveBeenCalled();
 
     await fireEvent.click(within(dialog).getByRole('checkbox'));
-    expect(action).toBeEnabled();
+    await waitFor(() => expect(action).toBeEnabled());
     await fireEvent.click(action);
 
     await waitFor(() =>
@@ -167,6 +175,7 @@ describe('MlDestinationsPanel (FL-110)', () => {
         mlDestinationConsentRequestDto: {
           acknowledgeMediaLeavesNetwork: true,
           version: '2026-10-01',
+          textSha256: 'a'.repeat(64),
           // Names and medical signals never reach a cloud prompt unless chosen.
           features: { identityNames: false, medicalSignals: false, ocrAddon: false },
         },

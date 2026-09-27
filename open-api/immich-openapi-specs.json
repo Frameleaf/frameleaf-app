@@ -1670,6 +1670,72 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/admin/cloud/ml/consent/terms": {
+      "get": {
+        "description": "The consent version, summary and text digest Frameleaf Cloud asks this server to accept for the features the administrator chose, read from Frameleaf Cloud each time. Accepting sends that version and digest back.",
+        "operationId": "getCloudMlConsentTerms",
+        "parameters": [
+          {
+            "name": "identityNames",
+            "required": false,
+            "in": "query",
+            "description": "The names-in-photos feature as the administrator chose it",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "medicalSignals",
+            "required": false,
+            "in": "query",
+            "description": "The medical-signals feature as the administrator chose it",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudMlConsentTermsDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get the Frameleaf Cloud consent terms for chosen features",
+        "tags": [
+          "Frameleaf Cloud processing (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloudMl.read",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/cloud/ml/descriptions/batches": {
       "post": {
         "description": "Queues the estimated backfill as batches, one owner per batch and one cloud job per batch. Refused when the model changed, more photos need a description than were estimated, or the AI Wallet or a budget cannot cover it; nothing is sent to another destination.",
@@ -53281,6 +53347,41 @@
         ],
         "type": "object"
       },
+      "CloudMlConsentTermsDto": {
+        "properties": {
+          "documentUrl": {
+            "description": "The full consent text, when Frameleaf Cloud links one",
+            "nullable": true,
+            "type": "string"
+          },
+          "recordedVersion": {
+            "description": "The version Frameleaf Cloud has on record for this server",
+            "nullable": true,
+            "type": "string"
+          },
+          "requiredVersion": {
+            "description": "The consent version the chosen features need now",
+            "type": "string"
+          },
+          "summary": {
+            "description": "What that version covers, as Frameleaf Cloud words it",
+            "type": "string"
+          },
+          "textSha256": {
+            "description": "SHA-256 of that version’s text; sent back when accepting, so only the terms shown are recorded",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "documentUrl",
+          "recordedVersion",
+          "requiredVersion",
+          "summary",
+          "textSha256"
+        ],
+        "type": "object"
+      },
       "CloudMlDescriptionBatchCreateDto": {
         "properties": {
           "estimateId": {
@@ -64460,6 +64561,11 @@
               }
             },
             "type": "object"
+          },
+          "textSha256": {
+            "description": "Frameleaf Cloud (FC-62): SHA-256 of the terms text the administrator was shown; refused when the cloud now asks for other terms",
+            "pattern": "^[\\da-f]{64}$",
+            "type": "string"
           },
           "version": {
             "description": "Frameleaf Cloud: the consent version being accepted; required for Frameleaf Cloud",

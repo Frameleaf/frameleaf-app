@@ -20,6 +20,7 @@ import {
   resolveCloudGateway,
 } from 'src/utils/frameleaf-cloud-gateway.js';
 import {
+  CONSENT_TERMS_FOR_FEATURES,
   CloudEstimateRequest,
   CloudJobCreateRequest,
   FrameleafCloudError,
@@ -417,6 +418,16 @@ describe('Frameleaf Cloud client against a fake cloud (FL-159)', () => {
       requiredVersion: '2026-09-26.1',
       recordedVersion: null,
     });
+    // FC-62: the terms for chosen features are asked for only once the cloud's query is confirmed live
+    await expect(
+      ml.getConsent(resolution.gateway, { identityNames: true, medicalSignals: false }),
+    ).resolves.toMatchObject({ requiredVersion: '2026-09-26.1' });
+    const consentReads = cloud.requests.filter((request) => request.path.startsWith('/ml-eu/v2/consent/current'));
+    expect(consentReads.at(-1)?.path).toBe(
+      CONSENT_TERMS_FOR_FEATURES
+        ? '/ml-eu/v2/consent/current?identityNames=true&medicalSignals=false'
+        : '/ml-eu/v2/consent/current',
+    );
     const consent = cloudContractFixture<{
       version: string;
       features: { identityNames: boolean; medicalSignals: boolean; ocrAddon: boolean };

@@ -54,7 +54,15 @@ Create a link token in your Frameleaf account under **Servers → Add server**, 
 
 ## Check-ins
 
-While linked, the server checks in every few minutes. **What this server sends** on the Account & link page lists every field of a check-in: the Frameleaf version, a start marker, uptime, health, the addresses used for remote access, the remote-access state, the permission choices, the licence's signing key and the capabilities this version supports (such as signing every request with its key). Photos, videos, thumbnails, metadata, names, accounts and usage are never sent.
+While linked, the server checks in every few minutes: as often as Frameleaf Cloud's last answer asks, else as its service list says, else every five minutes, and never more often than once a minute or less often than every 15 minutes. **What this server sends** on the Account & link page lists every field of a check-in: the Frameleaf version, a start marker, uptime, health, the addresses used for remote access, the remote-access state, the permission choices, the licence's signing key and the capabilities this version supports (such as signing every request with its key). Photos, videos, thumbnails, metadata, names, accounts and usage are never sent.
+
+### Messages from Frameleaf Cloud
+
+A check-in can bring messages from Frameleaf Cloud, such as planned maintenance or new processing terms. Each one reaches every administrator once, as a notification titled **Message from Frameleaf Cloud**, however often later check-ins repeat it and even after the notification is dismissed. A message that can't be dismissed comes back once a day while it lasts. After this update, a message an earlier version already showed can appear once more.
+
+### When Frameleaf Cloud pauses new work
+
+Frameleaf Cloud can pause new work of one kind for a while, such as linking servers, relay connections or processing in a region, new backup storage, or AI credit top-ups in your Frameleaf account. Starting such work on this server then fails with Frameleaf Cloud's own explanation, shown as it is: linking ends with it (a link token set in `FRAMELEAF_LINK_TOKEN` is kept and tried again at the next start), setting up Frameleaf-managed backup storage shows it, the relay's last problem on the Remote access page shows it, and an estimate shows it in place of a price. Work already running is never interrupted: open relay connections, backups and cloud jobs carry on. A cloud job or description batch that Frameleaf Cloud has not accepted yet waits and tries again when Frameleaf Cloud says to, and so does the relay connection, and Activity shows the explanation while it waits; a cloud job that still can't start after several tries fails with it.
 
 ## What Frameleaf Cloud may ask
 
@@ -134,7 +142,7 @@ The server checks a key's format, including its check symbol, before sending it 
 
 ### Licence certificates
 
-Activating a key, or installing a licence file, gives this server a signed licence certificate. The server trusts only certificates signed by the Frameleaf keys built into it, bound to this server's instance ID. The instance ID is the binding; a certificate may also name this server's identity key, which is then checked too, but it does not have to, so a licence survives a key rotation and a licence file can be made before the server is linked. It refreshes them once a day while linked. If a refresh keeps failing, cloud features keep working through a grace period (the certificate says how long), then pause; nothing local changes. Administrators are told once when a plan enters grace and once when it ends.
+Activating a key, or installing a licence file, gives this server a signed licence certificate. The server trusts only certificates signed by the Frameleaf keys built into it, bound to this server's instance ID. The instance ID is the binding; a certificate may also name this server's identity key, which is then checked too, but it does not have to, so a licence survives a key rotation and a licence file can be made before the server is linked. It refreshes them while linked, as often as Frameleaf Cloud's service list says (at least every hour and at most every day; once a day unless it says otherwise), and picks up a change within the hour. If a refresh keeps failing, cloud features keep working through a grace period (the certificate says how long), then pause; nothing local changes. Administrators are told once when a plan enters grace and once when it ends.
 
 ### Servers without internet access
 
@@ -235,6 +243,8 @@ The command takes none of the server's locks: stop the server first, or at least
 ## Restoration and Smooth motion on Frameleaf Cloud
 
 Restoration and Smooth motion can run on Frameleaf Cloud when the server is linked, cloud processing is turned on and its terms are accepted. Nothing is sent without a confirmation for that job: choosing Frameleaf Cloud in the editor's restoration panel, or asking for Smooth motion on a video, opens an estimate first. A job that Frameleaf Cloud cannot run or finish stops and says why; it never moves to this server or another computer by itself, and a job for this server never moves to Frameleaf Cloud.
+
+The terms have a version. The terms dialog shows the version Frameleaf Cloud asks this server to accept, read from Frameleaf Cloud each time, and accepting records exactly that version and text. If the terms change before you accept, the dialog shows the new ones to read again. When Frameleaf Cloud requires a newer version, the Cloud processing page asks an administrator to review it, and Frameleaf Cloud usually sends a message about it too; until then cloud jobs are refused, and nothing on this server changes. An accepted version never goes back to an older one.
 
 Administrators can always confirm Frameleaf Cloud jobs. Anyone else can confirm them only once an administrator allows them under **Settings › Frameleaf Cloud › Cloud processing › Who can spend the AI Wallet**, each with an optional monthly limit in USD. The limit belongs to the person who confirms a job, not to the owner of the photo or video: a job counts against whoever confirmed it. It counts the jobs they confirmed this month (by the date each was confirmed), plus any earlier job that still holds part of the AI Wallet. A settled job counts what it was charged, and a job that has not settled counts what the AI Wallet holds for it. A job not sent yet counts 10 % more than its hold, because it may be estimated that much higher if it waits past its estimate. A job that would go past the limit is refused. Everyone else still sees the estimate, with a message that an administrator can allow them. The server checks this when a job is confirmed, so removing someone from the list stops their next confirmation; jobs they already confirmed carry on, and can be cancelled in Activity.
 

@@ -516,6 +516,42 @@ export const catalogDefaults = (models: readonly CloudCatalogEntry[]): Record<st
   );
 
 /**
+ * FC-62: whether `GET /v2/consent/current` is asked for the version the CHOSEN features need
+ * (`?identityNames=&medicalSignals=`), so the admin reads, and the server records, the terms those
+ * features require. Off until Frameleaf Cloud confirms the query is live: until then the cloud answers
+ * for the features already on record, as before, and any other query key would be refused 422.
+ */
+export const CONSENT_TERMS_FOR_FEATURES: boolean = false;
+
+/**
+ * The query of `GET /v2/consent/current` (FC-62): the chosen features as `"true"`/`"false"` strings when
+ * `enabled`, else none, so the cloud answers for the features on record as before.
+ */
+export const consentCurrentQuery = (
+  features: { identityNames: boolean; medicalSignals: boolean } | undefined,
+  enabled: boolean = CONSENT_TERMS_FOR_FEATURES,
+): string =>
+  features && enabled
+    ? `?${new URLSearchParams({
+        identityNames: String(features.identityNames),
+        medicalSignals: String(features.medicalSignals),
+      })}`
+    : '';
+
+/**
+ * Order two consent versions (`YYYY-MM-DD.N`): the date, then the revision as a number. Negative when
+ * `a` is older. Consent never goes back to an older version (FC-62).
+ */
+export const compareConsentVersions = (a: string, b: string): number => {
+  const [dateA, revisionA = '0'] = a.split('.', 2);
+  const [dateB, revisionB = '0'] = b.split('.', 2);
+  if (dateA !== dateB) {
+    return dateA < dateB ? -1 : 1;
+  }
+  return Number(revisionA) - Number(revisionB);
+};
+
+/**
  * `GET /v2/consent/current` (FC-34 `ConsentCurrent`): the disclosure the region asks for now and
  * what this server last recorded, with the per-feature choices recorded alongside that version.
  */

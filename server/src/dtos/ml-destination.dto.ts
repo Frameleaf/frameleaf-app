@@ -159,6 +159,13 @@ const MlDestinationConsentRequestSchema = z
       .max(64)
       .optional()
       .describe('Frameleaf Cloud: the consent version being accepted; required for Frameleaf Cloud'),
+    textSha256: z
+      .string()
+      .regex(/^[\da-f]{64}$/)
+      .optional()
+      .describe(
+        'Frameleaf Cloud (FC-62): SHA-256 of the terms text the administrator was shown; refused when the cloud now asks for other terms',
+      ),
     features: z
       .object({
         identityNames: z.boolean().default(false).describe('Allow people names in cloud description prompts'),
