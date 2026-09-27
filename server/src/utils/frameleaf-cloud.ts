@@ -26,6 +26,14 @@ export const FRAMELEAF_CLOUD_TOKEN_REFRESH_MARGIN_MS = 60_000;
 /** Lifetime of the signed client assertion (the contract allows at most five minutes). */
 export const FRAMELEAF_CLOUD_ASSERTION_TTL_SECONDS = 120;
 
+/**
+ * A remote-access zone (FL-165, cloud FC-29): a lowercase registrable domain, one label under a
+ * top-level domain, such as `frameleaf.net` in production or `frameleaf-direct.localhost` and
+ * `frameleaf-direct.test` in the cloud's development and test setups. No subdomain, wildcard, IP
+ * address, trailing dot or uppercase.
+ */
+export const DIRECT_DOMAIN = /^[\da-z](?:[\da-z-]{0,61}[\da-z])?\.[a-z]{2,63}$/;
+
 export const discoverySchema = z.object({
   version: z.number().int(),
   validFor: z
@@ -48,15 +56,14 @@ export const discoverySchema = z.object({
     // eslint-disable-next-line unicorn/no-useless-undefined -- a bad store address is dropped, keeping the optional type
     .catch(() => undefined),
   /**
-   * FL-165: remote access. `directDomain` is the domain per-server names live under
-   * (`r.<label>.<directDomain>`); the enrolment answer's `domain` wins over it. A bad value is dropped.
+   * FL-165: remote access. `directDomain` is the zone per-server names live under (`<label>.<zone>`,
+   * `*.<label>.<zone>`, `r.<label>.<zone>`); optional, `frameleaf.net` when absent
+   * (`DEFAULT_DIRECT_DOMAIN`), and the enrolment answer's `domain` wins over it. Only a lowercase
+   * registrable domain (`DIRECT_DOMAIN`) is taken; anything else drops the block, so the default applies.
    */
   remote: z
     .object({
-      directDomain: z
-        .string()
-        .max(200)
-        .regex(/^(?:[\da-z](?:[\da-z-]{0,61}[\da-z])?\.)+[a-z]{2,63}$/),
+      directDomain: z.string().max(200).regex(DIRECT_DOMAIN),
     })
     .optional()
     // eslint-disable-next-line unicorn/no-useless-undefined -- a bad remote block is dropped, keeping the optional type

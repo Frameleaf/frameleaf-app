@@ -94,6 +94,42 @@ describe('frameleaf remote access (FL-165)', () => {
       expect(bad.remote).toBeUndefined();
     });
 
+    it('builds every name under the zone discovery provides, including the cloud dev and test zones', () => {
+      for (const zone of ['frameleaf.net', 'frameleaf-direct.localhost', 'frameleaf-direct.test']) {
+        const document = discoverySchema.parse({
+          ...cloudContractFixture<object>('instance/discovery.json'),
+          remote: { directDomain: zone },
+        });
+        const domain = directDomainOf(null, document);
+        expect(domain).toBe(zone);
+        const names = { label: 'u225vlzhsdlhwh4l', domain };
+        expect(wildcardNames(names)).toEqual([`*.u225vlzhsdlhwh4l.${zone}`, `u225vlzhsdlhwh4l.${zone}`]);
+        expect(customHostnameRecords('photos.example.com', names)[0].value).toBe(`r.u225vlzhsdlhwh4l.${zone}`);
+      }
+    });
+
+    it('falls back to frameleaf.net when discovery gives no zone, or one that is not a lowercase registrable domain', () => {
+      const golden = cloudContractFixture('instance/discovery.json');
+      for (const directDomain of [
+        '',
+        'Frameleaf.NET',
+        'frameleaf.net.',
+        'r.u225vlzhsdlhwh4l.frameleaf.net',
+        '*.frameleaf.net',
+        'frameleaf',
+        '192.168.1.10',
+        'https://frameleaf.net',
+        'frame_leaf.net',
+        '-frameleaf.net',
+      ]) {
+        const document = discoverySchema.parse({ ...golden, remote: { directDomain } });
+        expect(document.remote, directDomain).toBeUndefined();
+        expect(directDomainOf(null, document)).toBe('frameleaf.net');
+      }
+      expect(directDomainOf(null, discoverySchema.parse({ ...golden, remote: 'frameleaf.net' }))).toBe('frameleaf.net');
+      expect(directDomainOf(null, null)).toBe('frameleaf.net');
+    });
+
     it('refuses an answer for another server or with names its label does not make', () => {
       const answer = enrollResponseSchema.parse(cloudContractFixture('remote/enroll-response.json'));
       expect(enrollmentProblem('01930000-0000-7000-8000-000000000000', answer)).toBe(

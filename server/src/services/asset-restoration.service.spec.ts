@@ -208,7 +208,10 @@ describe(AssetRestorationService.name, () => {
         { modelGroup: 'restoration-faithful', modelId: 'restore-faithful', updatedAt: new Date() },
       ]);
 
-      const options = await sut.getOptions(authStub.user1, asset.id, { mode: AssetRestorationMode.Faithful, upscale: 2 });
+      const options = await sut.getOptions(authStub.user1, asset.id, {
+        mode: AssetRestorationMode.Faithful,
+        upscale: 2,
+      });
 
       // the stub's catalogue has no upscaling model, so a photo is refused there however restoration is set
       expect(options.destinations[0]).toMatchObject({ available: false });
@@ -216,6 +219,13 @@ describe(AssetRestorationService.name, () => {
     });
 
     it('lists every destination with the admission verdict from the persisted probe and a per-destination estimate', async () => {
+      // FL-162 judges a photo on Frameleaf Cloud as upscaling, so the cloud row is allowed that work; the
+      // allow-list is checked before consent (evaluateAdmission), and this case is about the missing consent
+      const cloudRow = {
+        ...mlDestinationStub.frameleafCloud,
+        workloads: [...mlDestinationStub.frameleafCloud.workloads, MlWorkload.Upscale],
+      };
+      mocks.mlDestination.getAll.mockResolvedValue([mlDestinationStub.local, mlDestinationStub.lan, cloudRow]);
       mocks.mlDestination.getThroughput.mockImplementation((id: string) =>
         Promise.resolve(
           id === mlDestinationStub.lan.id

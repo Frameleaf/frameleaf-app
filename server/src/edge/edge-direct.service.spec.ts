@@ -87,9 +87,12 @@ describe(EdgeDirectService.name, () => {
     });
   });
 
-  /** A decrypted connection as the listener sees it, from any address. */
+  /**
+   * A decrypted connection as the listener sees it, from any address: the parts of a `TLSSocket` the
+   * listener and the proxy mock touch (`secureConnection` hands over the TLS socket itself).
+   */
   const arrive = (remoteAddress: string, servername: string) => {
-    const socket = { remoteAddress, servername, destroy: vi.fn() };
+    const socket = { remoteAddress, servername, destroy: vi.fn(), end: vi.fn() };
     (sut as unknown as { onSecureConnection: (socket: unknown) => void }).onSecureConnection(socket);
     return socket;
   };
@@ -133,6 +136,8 @@ describe(EdgeDirectService.name, () => {
   it('stops listening and closes every connection within 5 seconds', async () => {
     proxy.accept.mockImplementation(() => true);
     const socket = tls.connect({ host: '127.0.0.1', port, servername: LAN_NAME, rejectUnauthorized: false });
+    // the listener destroys the connection on stop, so the client may see a reset; that is the point
+    socket.on('error', () => {});
     await new Promise<void>((resolve) => socket.once('secureConnect', () => resolve()));
     const closed = new Promise<void>((resolve) => socket.once('close', () => resolve()));
     const started = Date.now();
