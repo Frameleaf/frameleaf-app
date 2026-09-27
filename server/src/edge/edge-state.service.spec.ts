@@ -5,6 +5,7 @@ import type { FrameleafLicense, FrameleafLicenseClaims, FrameleafRemoteAccess } 
 import { EdgeCertificateRepository } from 'src/edge/edge-certificate.repository.js';
 import { EdgeDirectService } from 'src/edge/edge-direct.service.js';
 import { EdgeProxyService } from 'src/edge/edge-proxy.service.js';
+import { EdgeRelayService } from 'src/edge/edge-relay.service.js';
 import { EdgeStateService } from 'src/edge/edge-state.service.js';
 import { SystemMetadataKey } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -52,6 +53,7 @@ describe(EdgeStateService.name, () => {
   let certificates: EdgeCertificateRepository;
   let direct: { listening: boolean; configure: any; start: any; stop: any };
   let proxy: { destroy: any };
+  let relay: { configure: any; ensure: any; stop: any; status: any; state: Record<string, unknown> };
   let env: { url: string | null; secret: string | null };
   let calls: Array<{ method: string; url: string; body: unknown }>;
   let lockHeld: boolean;
@@ -137,6 +139,13 @@ describe(EdgeStateService.name, () => {
       }),
     };
     proxy = { destroy: vi.fn() };
+    relay = {
+      state: { connected: false },
+      configure: vi.fn(),
+      ensure: vi.fn(() => Promise.resolve()),
+      stop: vi.fn(() => Promise.resolve()),
+      status: vi.fn(() => relay.state),
+    };
     sut = new EdgeStateService(
       logger,
       mocks.config as never,
@@ -150,6 +159,7 @@ describe(EdgeStateService.name, () => {
       certificates,
       direct as unknown as EdgeDirectService,
       proxy as unknown as EdgeProxyService,
+      relay as unknown as EdgeRelayService,
     );
     sut.wait = () => Promise.resolve();
     sut.inContainer = () => true;
@@ -241,13 +251,92 @@ describe(EdgeStateService.name, () => {
         certificate: { reported: true },
         direct: { listening: true, port: 2443 },
       });
+      // the relay name is published only while the tunnel is READY
       expect(state.candidates.map((candidate) => candidate.uri)).toEqual([
         'https://192-168-1-10.u225vlzhsdlhwh4l.frameleaf.net:2443',
-        'https://r.u225vlzhsdlhwh4l.frameleaf.net',
       ]);
       // no key or secret is ever part of the state
       expect(JSON.stringify(state)).not.toContain('PRIVATE KEY');
       expect(JSON.stringify(state)).not.toContain(SECRET);
+    });
+
+    describe('relay tunnel', () => {
+      it('keeps the tunnel up for this link with the certificate, and publishes the relay only while READY', async () => {
+        issueWith(wildcard);
+        metadata.set(SystemMetadataKey.FrameleafCloudLink, {
+          status: 'linked',
+          cloudUrl: CLOUD,
+          instanceId: INSTANCE_ID,
+          linkedAt: '2026-09-01T00:00:00.000Z',
+        });
+        await sut.tick(now);
+        expect(relay.configure).toHaveBeenCalledWith({
+          contexts: { wildcard, custom: null },
+          enrollment: expect.objectContaining({ label: 'u225vlzhsdlhwh4l' }),
+        });
+        expect(relay.ensure).toHaveBeenCalledWith(
+          expect.objectContaining({
+            instanceId: INSTANCE_ID,
+            linkKey: `${INSTANCE_ID}|2026-09-01T00:00:00.000Z`,
+            enrollment: expect.objectContaining({ domain: 'frameleaf.net' }),
+          }),
+          now,
+        );
+        expect(remoteState()!.candidates.some((candidate) => candidate.relay)).toBe(false);
+
+        relay.state = { connected: true, relayId: 'eu1', latencyMs: 21 };
+        await sut.tick(now + 10_000);
+        expect(remoteState()!.relay).toMatchObject({ connected: true, relayId: 'eu1', latencyMs: 21 });
+        expect(remoteState()!.candidates.at(-1)).toMatchObject({
+          kind: 'relay',
+          uri: 'https://r.u225vlzhsdlhwh4l.frameleaf.net',
+        });
+      });
+
+      it('closes the tunnel when remote access is turned off', async () => {
+        issueWith(wildcard);
+        await sut.tick(now);
+        setSettings({ enabled: false });
+        await sut.tick(now + 10_000);
+        expect(relay.stop).toHaveBeenCalled();
+      });
+
+      it('enrols again when the server is linked again', async () => {
+        issueWith(wildcard);
+        await sut.tick(now);
+        metadata.set(SystemMetadataKey.FrameleafCloudLink, {
+          status: 'linked',
+          cloudUrl: CLOUD,
+          instanceId: INSTANCE_ID,
+          linkedAt: '2026-09-26T13:00:00.000Z',
+        });
+        await sut.tick(now + 10_000);
+        expect(calls.filter((call) => call.url.endsWith('/v1/remote/enroll'))).toHaveLength(2);
+      });
+
+      it('tells administrators once after 15 minutes without a tunnel', async () => {
+        issueWith(wildcard);
+        relay.state = {
+          connected: false,
+          disconnectedSince: new Date(now).toISOString(),
+          lastError: 'The relay refused the tunnel: internal',
+        };
+        await sut.tick(now + 14 * 60 * 1000);
+        expect(mocks.notification.create).not.toHaveBeenCalledWith(
+          expect.objectContaining({ title: 'Remote access relay disconnected' }),
+        );
+        await sut.tick(now + 16 * 60 * 1000);
+        await sut.tick(now + 17 * 60 * 1000);
+        const notices = mocks.notification.create.mock.calls.filter(
+          ([notice]) => notice.title === 'Remote access relay disconnected',
+        );
+        expect(notices).toHaveLength(1);
+        expect(notices[0][0]).toMatchObject({
+          userId: 'admin-1',
+          data: { dedupeKey: 'frameleaf-remote:relay' },
+          description: expect.stringContaining('internal'),
+        });
+      });
     });
 
     it('does not issue again until the renewal window, and checks daily', async () => {

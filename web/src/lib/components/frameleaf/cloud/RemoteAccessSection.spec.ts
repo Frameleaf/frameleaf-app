@@ -79,6 +79,13 @@ const remote = (overrides: Partial<RemoteAccessStatusResponseDto> = {}): RemoteA
   certificateError: null,
   relayConnected: false,
   relayRegion: 'eu1',
+  relayLatencyMs: null,
+  relayConnectedAt: null,
+  relayBytesIn: 0,
+  relayBytesOut: 0,
+  relayLastError: null,
+  relayLastErrorAt: null,
+  relayRevoked: false,
   directListening: false,
   cgnatSuspected: false,
   customHostname: null,
@@ -339,6 +346,45 @@ describe('RemoteAccessSection (FL-165)', () => {
     );
     expect(await screen.findByText('Port forwarding')).toBeInTheDocument();
     expect(screen.getByRole('switch', { name: 'I forward the port myself' })).toBeInTheDocument();
+  });
+
+  it('shows the connected relay, its round trip, since when and what it carried (FL-166)', async () => {
+    sdkMock.getRemoteAccess.mockResolvedValue(
+      remote({
+        enabled: true,
+        status: RemoteAccessState.Ready,
+        relayConnected: true,
+        relayLatencyMs: 23,
+        relayConnectedAt: '2026-09-26T12:00:00.000Z',
+        relayBytesIn: 2048,
+        relayBytesOut: 3_145_728,
+      }),
+    );
+    render(RemoteAccessSection);
+
+    expect(await screen.findByText('23 ms')).toBeInTheDocument();
+    expect(screen.getByText('Connected since')).toBeInTheDocument();
+    expect(screen.getByText(/2 KiB in, 3 MiB out/)).toBeInTheDocument();
+    expect(screen.queryByText(/Last problem/)).not.toBeInTheDocument();
+  });
+
+  it('says why the relay is not connected, and when Frameleaf Cloud stopped it (FL-166)', async () => {
+    sdkMock.getRemoteAccess.mockResolvedValue(
+      remote({
+        enabled: true,
+        status: RemoteAccessState.Ready,
+        relayLastError: 'The relay refused the tunnel: timeout',
+      }),
+    );
+    const { unmount } = render(RemoteAccessSection);
+    expect(await screen.findByText('Last problem: The relay refused the tunnel: timeout')).toBeInTheDocument();
+    unmount();
+
+    sdkMock.getRemoteAccess.mockResolvedValue(
+      remote({ enabled: true, status: RemoteAccessState.Ready, relayRevoked: true, relayLastError: 'revoked' }),
+    );
+    render(RemoteAccessSection);
+    expect(await screen.findByText('Frameleaf Cloud stopped the relay for this server')).toBeInTheDocument();
   });
 });
 

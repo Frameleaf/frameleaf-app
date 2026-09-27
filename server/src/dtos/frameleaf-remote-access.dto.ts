@@ -98,7 +98,16 @@ const RemoteAccessStatusResponseSchema = z
     certificateExpiresAt: z.string().nullable(),
     certificateError: z.string().nullable().describe('The last issuance or renewal problem'),
     relayConnected: z.boolean(),
-    relayRegion: z.string().nullable(),
+    relayRegion: z.string().nullable().describe('The relay this server uses (eu1, us1)'),
+    relayLatencyMs: z.int().nullable().describe('Round trip to the relay, from its last keepalive'),
+    relayConnectedAt: z.string().nullable().describe('When the current relay connection was made'),
+    relayBytesIn: z.int().describe('Bytes received through the relay since the edge worker started'),
+    relayBytesOut: z.int().describe('Bytes sent through the relay since the edge worker started'),
+    relayLastError: z.string().nullable().describe('The last relay problem, in plain words'),
+    relayLastErrorAt: z.string().nullable(),
+    relayRevoked: z
+      .boolean()
+      .describe('Frameleaf Cloud stopped the relay for this server; it is tried again once relinked'),
     directListening: z.boolean(),
     cgnatSuspected: z.boolean(),
     customHostname: z.string().nullable().describe('The custom hostname, when one was added'),

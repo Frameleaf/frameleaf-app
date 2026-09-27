@@ -26,6 +26,8 @@ export type FrameleafKeySigner = {
   kid: string;
   publicJwk: Ed25519PublicJwk;
   sign: (header: Record<string, unknown>, payload: Record<string, unknown>) => string;
+  /** A raw Ed25519 signature over `data` with the same key (the relay tunnel's PROOF, FL-166). */
+  signBytes?: (data: Buffer) => Buffer;
 };
 
 /** An instance access token and the key it is bound to (`cnf.jkt`). */

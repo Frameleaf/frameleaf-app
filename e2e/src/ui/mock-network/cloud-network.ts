@@ -20,6 +20,8 @@ export type RemoteMockState = {
   customHostnameStatus: 'pending' | 'verified' | null;
   publicUrlChoice: 'frameleaf' | 'custom';
   tested: boolean;
+  /** FL-166: the relay tunnel is READY (the edge worker's report). */
+  relayConnected?: boolean;
 };
 
 const RELAY = 'https://r.u225vlzhsdlhwh4l.frameleaf.net';
@@ -51,8 +53,15 @@ export const remoteStatus = (mock: CloudMockState) => {
     certificateName: on ? '*.u225vlzhsdlhwh4l.frameleaf.net' : null,
     certificateExpiresAt: on ? '2026-11-09T16:00:00.000Z' : null,
     certificateError: null,
-    relayConnected: false,
+    relayConnected: on && !!remote.relayConnected,
     relayRegion: linked ? 'eu1' : null,
+    relayLatencyMs: on && remote.relayConnected ? 24 : null,
+    relayConnectedAt: on && remote.relayConnected ? '2026-09-26T12:00:00.000Z' : null,
+    relayBytesIn: on && remote.relayConnected ? 5_242_880 : 0,
+    relayBytesOut: on && remote.relayConnected ? 52_428_800 : 0,
+    relayLastError: on && !remote.relayConnected ? 'The relay refused the tunnel: unavailable' : null,
+    relayLastErrorAt: on && !remote.relayConnected ? '2026-09-26T12:01:00.000Z' : null,
+    relayRevoked: false,
     directListening: on,
     cgnatSuspected: false,
     customHostname: host,

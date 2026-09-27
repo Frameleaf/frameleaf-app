@@ -70678,12 +70678,50 @@
             "nullable": true,
             "type": "string"
           },
+          "relayBytesIn": {
+            "description": "Bytes received through the relay since the edge worker started",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "relayBytesOut": {
+            "description": "Bytes sent through the relay since the edge worker started",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
           "relayConnected": {
             "type": "boolean"
           },
-          "relayRegion": {
+          "relayConnectedAt": {
+            "description": "When the current relay connection was made",
             "nullable": true,
             "type": "string"
+          },
+          "relayLastError": {
+            "description": "The last relay problem, in plain words",
+            "nullable": true,
+            "type": "string"
+          },
+          "relayLastErrorAt": {
+            "nullable": true,
+            "type": "string"
+          },
+          "relayLatencyMs": {
+            "description": "Round trip to the relay, from its last keepalive",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          },
+          "relayRegion": {
+            "description": "The relay this server uses (eu1, us1)",
+            "nullable": true,
+            "type": "string"
+          },
+          "relayRevoked": {
+            "description": "Frameleaf Cloud stopped the relay for this server; it is tried again once relinked",
+            "type": "boolean"
           },
           "status": {
             "$ref": "#/components/schemas/RemoteAccessState"
@@ -70717,8 +70755,15 @@
           "publicUrl",
           "publicUrlChoice",
           "reason",
+          "relayBytesIn",
+          "relayBytesOut",
           "relayConnected",
+          "relayConnectedAt",
+          "relayLastError",
+          "relayLastErrorAt",
+          "relayLatencyMs",
           "relayRegion",
+          "relayRevoked",
           "status",
           "unavailableReason"
         ],
