@@ -183,7 +183,7 @@ describe('LibrarySessionStore', () => {
 
     store.recordPlayhead('asset-1', 90);
     expect(store.playheadFor('asset-1', 60)).toBe(60);
-    store.recordPlayhead('asset-1', Number.NaN);
+    store.recordPlayhead('asset-1', NaN);
     expect(store.playbackPosition).toBe(60);
   });
 
