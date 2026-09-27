@@ -26,6 +26,8 @@ import {
   cloudModelGroupFor,
   cloudRequestBody,
   cloudWorkloadIdFor,
+  compareConsentVersions,
+  consentCurrentQuery,
   consentCurrentSchema,
   consentRecordRequestSchema,
   consentRecordedSchema,
@@ -1340,5 +1342,21 @@ describe('paused new work (FC-62)', () => {
       retryAfterSeconds: 300,
     });
     expect(pausedException(refused(500, 'internal'))).toBeNull();
+  });
+});
+
+describe('consent versions and terms (FC-62)', () => {
+  it('orders consent versions by date, then revision as a number', () => {
+    expect(compareConsentVersions('2026-09-26.1', '2026-09-26.1')).toBe(0);
+    expect(compareConsentVersions('2026-09-26.2', '2026-09-26.10')).toBeLessThan(0);
+    expect(compareConsentVersions('2026-10-01.1', '2026-09-30.9')).toBeGreaterThan(0);
+    expect(compareConsentVersions('2026-09-25', '2026-09-25.1')).toBeLessThan(0);
+  });
+
+  it('asks for the chosen features’ terms only once the cloud’s query is live', () => {
+    const features = { identityNames: true, medicalSignals: false };
+    expect(consentCurrentQuery(features, true)).toBe('?identityNames=true&medicalSignals=false');
+    expect(consentCurrentQuery(features, false)).toBe('');
+    expect(consentCurrentQuery(undefined, true)).toBe('');
   });
 });

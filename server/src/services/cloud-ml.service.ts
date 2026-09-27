@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, ServiceUnavailableException } from '@nestjs/common';
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import type { CloudMlGateway } from 'src/repositories/frameleaf-cloud-ml.repository.js';
 import type { MachineLearningHardwareResponse, MlEndpointProbe } from 'src/repositories/machine-learning.repository.js';
@@ -8,6 +8,8 @@ import { OnEvent } from 'src/decorators.js';
 import {
   CloudMlCatalogResponseDto,
   CloudMlConsentHistoryResponseDto,
+  CloudMlConsentTermsDto,
+  CloudMlConsentTermsQueryDto,
   CloudMlDestinationCreateDto,
   CloudMlModelChoiceUpdateDto,
   CloudMlModelChoicesResponseDto,
@@ -52,6 +54,7 @@ import {
   cloudDefaultGroupFor,
   cloudErrorCode,
   cloudFactsFromCapabilities,
+  compareConsentVersions,
   isCloudModelGroup,
   isLocalOnlyModel,
   knownWorkloads,
@@ -185,7 +188,8 @@ export class CloudMlService extends BaseService {
         features: consent.features,
         summary: consent.summary,
         documentUrl: consent.documentUrl,
-        outdated: accepted !== null && accepted !== consent.requiredVersion,
+        // FC-62: the required version only goes up, and never below one this server already accepted
+        outdated: accepted !== null && compareConsentVersions(accepted, consent.requiredVersion) < 0,
       };
       status.wallet = this.toWalletDto(await this.refreshWallet(resolution.gateway));
       // Settled costs are applied by `POST admin/cloud/ml/usage` (update permission), never by this read.
@@ -197,6 +201,33 @@ export class CloudMlService extends BaseService {
       status.detail = error.message;
     }
     return status;
+  }
+
+  /**
+   * `GET admin/cloud/ml/consent/terms` (FC-62): the terms Frameleaf Cloud asks this server to accept for
+   * the features the administrator chose, read from the cloud each time. The consent dialog shows them
+   * and accepts exactly that version and text digest.
+   */
+  async getConsentTerms(dto: CloudMlConsentTermsQueryDto): Promise<CloudMlConsentTermsDto> {
+    const gateway = await this.requireGateway();
+    try {
+      const terms = await this.frameleafCloudMlRepository.getConsent(gateway, {
+        identityNames: dto.identityNames ?? false,
+        medicalSignals: dto.medicalSignals ?? false,
+      });
+      return {
+        requiredVersion: terms.requiredVersion,
+        recordedVersion: terms.recordedVersion,
+        summary: terms.summary,
+        textSha256: terms.textSha256,
+        documentUrl: terms.documentUrl,
+      };
+    } catch (error) {
+      if (error instanceof FrameleafCloudError) {
+        throw new ServiceUnavailableException(`Frameleaf Cloud did not answer with its terms: ${error.message}`);
+      }
+      throw error;
+    }
   }
 
   /** `POST admin/cloud/ml/destination`: the only way the Frameleaf Cloud destination is created. */

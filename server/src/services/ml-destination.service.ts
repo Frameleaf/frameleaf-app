@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import type { MlDestinationRow } from 'src/repositories/ml-destination.repository.js';
@@ -34,7 +34,12 @@ import {
 } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
 import { CloudConnectionState, CloudMlGatewayDeps, resolveCloudGateway } from 'src/utils/frameleaf-cloud-gateway.js';
-import { CloudErrorCode, FrameleafCloudError, cloudErrorCode } from 'src/utils/frameleaf-cloud.js';
+import {
+  CloudErrorCode,
+  FrameleafCloudError,
+  cloudErrorCode,
+  compareConsentVersions,
+} from 'src/utils/frameleaf-cloud.js';
 import { mapMlDestination, mlDestinationHealthOf } from 'src/utils/ml-destination-dto.js';
 import {
   ML_BUDGET_WINDOW_DAYS,
@@ -75,6 +80,19 @@ export const ML_CAPABILITY_FRESHNESS_MS = 15 * 60 * 1000;
 export const ML_ESTIMATE_WINDOW_DAYS = 30;
 
 const windowStart = (days: number) => new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+
+/**
+ * FL-183, FC-62: the terms changed between reading and accepting: 409 `consent-version-outdated`, so the
+ * consent dialog reads the terms for the same features again and asks the administrator to review them.
+ */
+const termsChanged = (requiredVersion: string) =>
+  new ConflictException({
+    message: `Frameleaf Cloud now asks for consent version ${requiredVersion}; review it and accept again`,
+    error: 'Conflict',
+    statusCode: 409,
+    code: CloudErrorCode.ConsentVersionOutdated,
+    requiredVersion,
+  });
 
 /**
  * Administration of machine-learning destinations, workload routes, consent, cost controls
@@ -337,13 +355,23 @@ export class MlDestinationService extends BaseService {
     if (resolution.state !== CloudConnectionState.Ready) {
       throw new BadRequestException(resolution.detail);
     }
+    // FC-62: consent never goes back to a version older than one this server already accepted
+    if (current.consentVersion && compareConsentVersions(dto.version, current.consentVersion) < 0) {
+      throw termsChanged(current.consentVersion);
+    }
     let recordedVersion: string;
     try {
-      const required = await this.frameleafCloudMlRepository.getConsent(resolution.gateway);
-      if (required.requiredVersion !== dto.version) {
-        throw new BadRequestException(
-          `Frameleaf Cloud now asks for consent version ${required.requiredVersion}; review it and accept again`,
-        );
+      // the terms for the features chosen now, read from the cloud each time (FC-62)
+      const required = await this.frameleafCloudMlRepository.getConsent(resolution.gateway, features);
+      if (
+        required.requiredVersion !== dto.version ||
+        (required.recordedVersion !== null && compareConsentVersions(dto.version, required.recordedVersion) < 0)
+      ) {
+        throw termsChanged(required.requiredVersion);
+      }
+      // only the text the administrator was shown is recorded
+      if (dto.textSha256 && required.textSha256 && dto.textSha256 !== required.textSha256) {
+        throw termsChanged(required.requiredVersion);
       }
       recordedVersion = (
         await this.frameleafCloudMlRepository.recordConsent(resolution.gateway, { version: dto.version, features })
@@ -351,12 +379,12 @@ export class MlDestinationService extends BaseService {
     } catch (error) {
       if (error instanceof FrameleafCloudError) {
         // FL-183 (FC-34): consent is versioned; a disclosure that changed between reading and
-        // recording is answered 403 consent-version-outdated with the version now required
+        // recording is answered 403 consent-version-outdated with the version now required. The
+        // dialog reads the terms again for the same features and shows them; that version is never
+        // recorded unseen
         const required = error.envelope?.data?.requiredVersion;
         if (cloudErrorCode(error) === CloudErrorCode.ConsentVersionOutdated && typeof required === 'string') {
-          throw new BadRequestException(
-            `Frameleaf Cloud now asks for consent version ${required}; review it and accept again`,
-          );
+          throw termsChanged(required);
         }
         throw new BadRequestException(`Frameleaf Cloud did not record the consent: ${error.message}`);
       }

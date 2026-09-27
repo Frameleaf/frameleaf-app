@@ -35,6 +35,7 @@ import {
   catalogSchema,
   cloudAddressProblem,
   cloudRequestBody,
+  consentCurrentQuery,
   consentCurrentSchema,
   consentRecordRequestSchema,
   consentRecordedSchema,
@@ -516,9 +517,17 @@ export class FrameleafCloudMlRepository {
     return this.request(gateway, usageSchema, { url: `${gateway.url}/v2/usage?${query}`, dpop: gateway.token });
   }
 
-  getConsent(gateway: CloudMlGateway): Promise<CloudConsentCurrent> {
+  /**
+   * `GET /v2/consent/current`: the terms this server is asked to accept. With `features` (and FC-62's
+   * `CONSENT_TERMS_FOR_FEATURES` on), the version, summary and text are those the chosen features need,
+   * never below the record in force; without, those of the features on record.
+   */
+  getConsent(
+    gateway: CloudMlGateway,
+    features?: Pick<CloudConsentFeatures, 'identityNames' | 'medicalSignals'>,
+  ): Promise<CloudConsentCurrent> {
     return this.request(gateway, consentCurrentSchema, {
-      url: `${gateway.url}/v2/consent/current`,
+      url: `${gateway.url}/v2/consent/current${consentCurrentQuery(features)}`,
       dpop: gateway.token,
     });
   }

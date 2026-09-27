@@ -556,6 +556,18 @@ export type CloudMlConsentRecordDto = {
 export type CloudMlConsentHistoryResponseDto = {
     records: CloudMlConsentRecordDto[];
 };
+export type CloudMlConsentTermsDto = {
+    /** The full consent text, when Frameleaf Cloud links one */
+    documentUrl: string | null;
+    /** The version Frameleaf Cloud has on record for this server */
+    recordedVersion: string | null;
+    /** The consent version the chosen features need now */
+    requiredVersion: string;
+    /** What that version covers, as Frameleaf Cloud words it */
+    summary: string;
+    /** SHA-256 of that version’s text; sent back when accepting, so only the terms shown are recorded */
+    textSha256: string | null;
+};
 export type CloudMlDescriptionBatchCreateDto = {
     /** The estimate to queue; its model, photos and prices are read from the server, never sent */
     estimateId: string;
@@ -6676,6 +6688,8 @@ export type MlDestinationConsentRequestDto = {
         /** Allow the cloud text-recognition add-on */
         ocrAddon?: boolean;
     };
+    /** Frameleaf Cloud (FC-62): SHA-256 of the terms text the administrator was shown; refused when the cloud now asks for other terms */
+    textSha256?: string;
     /** Frameleaf Cloud: the consent version being accepted; required for Frameleaf Cloud */
     version?: string;
 };
@@ -11444,6 +11458,23 @@ export function getCloudMlConsentHistory(opts?: Oazapfts.RequestOpts) {
         status: 200;
         data: CloudMlConsentHistoryResponseDto;
     }>("/admin/cloud/ml/consent", {
+        ...opts
+    }));
+}
+/**
+ * Get the Frameleaf Cloud consent terms for chosen features
+ */
+export function getCloudMlConsentTerms({ identityNames, medicalSignals }: {
+    identityNames?: boolean;
+    medicalSignals?: boolean;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CloudMlConsentTermsDto;
+    }>(`/admin/cloud/ml/consent/terms${QS.query(QS.explode({
+        identityNames,
+        medicalSignals
+    }))}`, {
         ...opts
     }));
 }

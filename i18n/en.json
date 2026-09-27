@@ -133,6 +133,7 @@
     "frameleaf_cloud_ml_consent_read": "I have read these terms. I can turn cloud processing off at any time.",
     "frameleaf_cloud_ml_consent_recorded": "Terms {version} accepted. Save to turn cloud processing on.",
     "frameleaf_cloud_ml_consent_review": "Review consent",
+    "frameleaf_cloud_ml_consent_terms_changed": "Frameleaf Cloud now asks for these terms. Read them, then accept again.",
     "frameleaf_cloud_ml_consent_title": "Cloud processing terms · version {version}",
     "frameleaf_cloud_ml_description": "Your own computers stay the default, and nothing goes to the cloud without asking.",
     "frameleaf_cloud_ml_error_load": "Frameleaf Cloud status could not be loaded",

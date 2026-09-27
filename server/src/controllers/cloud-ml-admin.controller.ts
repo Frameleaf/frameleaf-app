@@ -1,10 +1,12 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Put } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Put, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
   CloudMlCatalogResponseDto,
   CloudMlConsentHistoryResponseDto,
+  CloudMlConsentTermsDto,
+  CloudMlConsentTermsQueryDto,
   CloudMlDescriptionBatchCreateDto,
   CloudMlDescriptionBatchesResponseDto,
   CloudMlDescriptionEstimateResponseDto,
@@ -48,6 +50,19 @@ export class CloudMlAdminController {
   })
   getStatus(): Promise<CloudMlStatusResponseDto> {
     return this.service.getStatus();
+  }
+
+  @Get('consent/terms')
+  @Authenticated({ permission: Permission.AdminCloudMlRead, admin: true })
+  @Endpoint({
+    operationId: 'getCloudMlConsentTerms',
+    summary: 'Get the Frameleaf Cloud consent terms for chosen features',
+    description:
+      'The consent version, summary and text digest Frameleaf Cloud asks this server to accept for the features the administrator chose, read from Frameleaf Cloud each time. Accepting sends that version and digest back.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  getConsentTerms(@Query() dto: CloudMlConsentTermsQueryDto): Promise<CloudMlConsentTermsDto> {
+    return this.service.getConsentTerms(dto);
   }
 
   @Post('descriptions/batches')
