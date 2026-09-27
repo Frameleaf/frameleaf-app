@@ -1,5 +1,6 @@
-import { AssetVisibility } from '@immich/sdk';
+import { AssetLockReason, AssetVisibility } from '@immich/sdk';
 import { describe, expect, it } from 'vitest';
+import { sessionAccess } from '$lib/frameleaf/session-access.svelte';
 import { tileActionAvailability } from './tile-actions';
 
 describe('tile quick actions (FL-33, T-4)', () => {
@@ -24,10 +25,28 @@ describe('tile quick actions (FL-33, T-4)', () => {
     });
   });
 
-  it('offers nothing but More on a Locked item, on the Locked page or revealed elsewhere', () => {
+  it('offers nothing but More on a Locked item on the Locked page, or while the session is locked', () => {
     const locked = { favorite: false, edit: false, share: false, more: true };
     expect(tileActionAvailability(asset({ visibility: AssetVisibility.Locked }), context)).toEqual(locked);
     expect(tileActionAvailability(asset(), { ...context, locked: true })).toEqual(locked);
+  });
+
+  it('treats a mark revealed in an unlocked session like any other item, but never shares it (FL-195)', () => {
+    sessionAccess.isElevated = true;
+    try {
+      const revealed = asset({ visibility: AssetVisibility.Locked, lockReason: AssetLockReason.Marked });
+      expect(tileActionAvailability(revealed, context)).toEqual({
+        favorite: true,
+        edit: true,
+        share: false,
+        more: true,
+      });
+      expect(tileActionAvailability(revealed, { ...context, locked: true }).favorite).toBe(false);
+      const legacy = asset({ visibility: AssetVisibility.Locked, lockReason: AssetLockReason.ImmichLockedFolder });
+      expect(tileActionAvailability(legacy, context).favorite).toBe(false);
+    } finally {
+      sessionAccess.isElevated = false;
+    }
   });
 
   it('changes nothing in the trash, and needs a viewer to edit or open', () => {

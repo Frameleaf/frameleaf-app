@@ -1,5 +1,4 @@
 import {
-  AssetVisibility,
   downloadAsset,
   getAssetInfo,
   getPartners,
@@ -10,6 +9,7 @@ import {
 import { toastManager, type ToastShow } from '@immich/ui';
 import { t } from 'svelte-i18n';
 import { get } from 'svelte/store';
+import { actsAsRegular } from '$lib/frameleaf/session-access.svelte';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { getSharedLink } from '$lib/utils';
 
@@ -81,9 +81,12 @@ export const sendCopyPermitted = (
   return sharedLink.userId === userId || (sharedLink.allowDownload && sharedLink.showMetadata);
 };
 
-/** Locked and trashed items are never sent. */
+/**
+ * Locked and trashed items are never sent — except (FL-195) the owner's revealed marks and detections
+ * in their unlocked session, which download and send like any other item.
+ */
 export const isSendable = (asset: Pick<AssetResponseDto, 'visibility' | 'isTrashed'>): boolean =>
-  asset.visibility !== AssetVisibility.Locked && !asset.isTrashed;
+  actsAsRegular(asset) && !asset.isTrashed;
 
 export type SendCopyDeps = {
   getInfo: (id: string) => Promise<AssetResponseDto>;

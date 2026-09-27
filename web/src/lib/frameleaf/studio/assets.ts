@@ -24,11 +24,11 @@ import {
   AssetRestorationFileKind,
   AssetRestorationSourceType,
   AssetTypeEnum,
-  AssetVisibility,
   type AssetResponseDto,
   type StudioRestoredVersionDto,
 } from '@immich/sdk';
 import { restorationFileUrl } from '$lib/frameleaf/restoration';
+import { actsAsRegular } from '$lib/frameleaf/session-access.svelte';
 import { getAssetMediaUrl, getAssetPlaybackUrl } from '$lib/utils';
 import type { StudioAssetRef } from './host-contract';
 import { fromMilliseconds } from './rational-time';
@@ -36,7 +36,8 @@ import { fromMilliseconds } from './rational-time';
 /** Whether an asset may be offered to the editor at all. */
 export const isStudioEligibleAsset = (asset: AssetResponseDto): boolean =>
   !asset.isTrashed &&
-  asset.visibility !== AssetVisibility.Locked &&
+  // FL-195: the owner's revealed marks and detections place like any other item while unlocked
+  actsAsRegular(asset) &&
   (asset.type === AssetTypeEnum.Image || asset.type === AssetTypeEnum.Video);
 
 export const toStudioAsset = (asset: AssetResponseDto): StudioAssetRef => {
