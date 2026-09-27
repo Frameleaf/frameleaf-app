@@ -1,5 +1,12 @@
 import z from 'zod';
 import type { FrameleafCloudLink, FrameleafCloudLinkRefusal, FrameleafCloudPermissions } from 'src/types.js';
+import {
+  type HeartbeatSettings,
+  cloudBackupSettingsSchema,
+  cloudMlSettingsSchema,
+  licenseStateSchema,
+  remoteAccessSettingsSchema,
+} from 'src/utils/frameleaf-cloud-settings.js';
 import { CloudErrorCode, FrameleafCloudError, cloudErrorCode } from 'src/utils/frameleaf-cloud.js';
 
 /**
@@ -53,6 +60,11 @@ export const HEARTBEAT_FIELDS = [
   'permissions',
   'licenseKid',
   'capabilities',
+  // FC-61: the settings snapshot, each block left out when it can't be reported
+  'remoteAccessSettings',
+  'cloudMl',
+  'cloudBackup',
+  'licenseState',
 ] as const;
 export type HeartbeatField = (typeof HEARTBEAT_FIELDS)[number];
 
@@ -76,7 +88,7 @@ export type HeartbeatPayload = {
    * Present while `HEARTBEAT_REPORTS_CAPABILITIES` is on.
    */
   capabilities?: readonly string[];
-};
+} & HeartbeatSettings;
 
 /** The check-in body: only the listed fields, never media, names, accounts or usage. */
 export const buildHeartbeat = (input: HeartbeatPayload): HeartbeatPayload => ({
@@ -98,7 +110,18 @@ export const buildHeartbeat = (input: HeartbeatPayload): HeartbeatPayload => ({
       .filter((value) => value.length > 0 && value.length <= HEARTBEAT_CAPABILITY_MAX_LENGTH)
       .slice(0, HEARTBEAT_MAX_CAPABILITIES),
   }),
+  // FC-61 (frameleaf-cloud PR #73): settings only. Each block is checked against the contract's strict
+  // schema once more; one that doesn't pass, or carries any other key, is left out, never sent
+  ...snapshotBlock('remoteAccessSettings', remoteAccessSettingsSchema, input.remoteAccessSettings),
+  ...snapshotBlock('cloudMl', cloudMlSettingsSchema, input.cloudMl),
+  ...snapshotBlock('cloudBackup', cloudBackupSettingsSchema, input.cloudBackup),
+  ...snapshotBlock('licenseState', licenseStateSchema, input.licenseState),
 });
+
+const snapshotBlock = <K extends keyof HeartbeatSettings, T extends z.ZodType>(key: K, schema: T, value: unknown) => {
+  const result = value === undefined ? null : schema.safeParse(value);
+  return (result?.success ? { [key]: result.data as unknown } : {}) as Partial<Pick<HeartbeatSettings, K>>;
+};
 
 /** What Frameleaf Cloud may ask this server to do, before an administrator changes it (prototype defaults). */
 export const defaultPermissions = (): FrameleafCloudPermissions => ({
@@ -193,6 +216,8 @@ export enum CloudCommandType {
   SecretRotate = 'secret.rotate',
   KeyRotate = 'key.rotate',
   Relink = 'relink',
+  /** FC-61: fetch the entitlements again, as for `entitlementsChanged`; sent only to a server listing the capability. */
+  EntitlementsRefresh = 'entitlements.refresh',
 }
 
 /**
@@ -209,7 +234,8 @@ export const commandPermission = (type: string): keyof FrameleafCloudPermissions
       return 'allowBackupTrigger';
     }
     case CloudCommandType.SecretRotate:
-    case CloudCommandType.KeyRotate: {
+    case CloudCommandType.KeyRotate:
+    case CloudCommandType.EntitlementsRefresh: {
       return 'allowEntitlementRefresh';
     }
     case CloudCommandType.Relink: {
