@@ -1,4 +1,4 @@
-import { ConflictException } from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
 import { decodeProtectedHeader, importJWK, jwtVerify } from 'jose';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -12,11 +12,14 @@ import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import {
   FrameleafLicenseService,
   IDENTITY_KEY_MISMATCH_MESSAGE,
+  LINK_CODE_INVALID_MESSAGE,
+  LINK_CODE_PASTE_KEY,
   LINK_CODE_UNAVAILABLE_MESSAGE,
 } from 'src/services/frameleaf-license.service.js';
 import { ed25519Thumbprint } from 'src/utils/frameleaf-cloud.js';
 import { FakeCloud, FakeCloudRequest, startFakeCloud, tokenAnswer, tokenNameOf } from 'test/fake-frameleaf-cloud.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
+import { cloudContractFixture } from 'test/fixtures/frameleaf-cloud-contracts.js';
 import { makeLicenseSigner, signLicenseCertificate } from 'test/fixtures/frameleaf-license.fixture.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
@@ -601,94 +604,153 @@ describe(FrameleafLicenseService.name, () => {
     });
   });
 
-  describe('link codes (CLD-004)', () => {
-    const CODE = 'flc_ABCDEFGHJKMNPQRSTVWXYZ2345';
-    const REDEEM = '/api/v1/licenses/redeem-link-code';
-    const enable = () => {
-      const base = cloud.discovery;
-      cloud.discovery = () => ({ ...base(), features: { licenseLinkCode: true } });
+  describe('link codes (CLD-004, golden fixtures of frameleaf-cloud PR #82)', () => {
+    const golden = {
+      request: cloudContractFixture('licence/redeem-link-code-request.json'),
+      personal: cloudContractFixture('licence/redeem-link-code-request-personal.json'),
+      response: cloudContractFixture('licence/redeem-link-code-response.json'),
+      discovery: cloudContractFixture('instance/discovery.json'),
     };
-    const serverCertificate = () =>
-      certificate({ ent: ['SUPPORTER_SERVER'], lic_exp: null, lic: { id: 'lic-s', kind: 'server', last4: 'J583' } });
-    const personalCertificate = () =>
-      certificate({
-        ent: ['SUPPORTER_INDIVIDUAL'],
-        lic_exp: null,
-        lic: { id: 'lic-i', kind: 'individual', last4: '8EL6' },
+    const CODE: string = golden.request.code;
+    const REDEEM = '/api/v1/licenses/redeem-link-code';
+    /** The published discovery document's switch and redeem address, pointed at the fake cloud. */
+    const enable = (endpoint = `${cloud.url}${REDEEM}`) => {
+      const base = cloud.discovery;
+      expect(golden.discovery.features).toEqual({ licenseLinkCode: true });
+      expect(golden.discovery.endpoints.licenseLinkCode).toBe(
+        'https://api.frameleaf.cloud/v1/licenses/redeem-link-code',
+      );
+      cloud.discovery = () => ({
+        ...base(),
+        features: golden.discovery.features,
+        endpoints: { licenseLinkCode: endpoint },
       });
+    };
+    /** The golden answer, with a certificate this spec can sign for this server. */
+    const answer = (kind: 'server' | 'individual', last4: string) => ({
+      ...golden.response,
+      kind,
+      last4,
+      certificate: certificate({
+        ent: [kind === 'server' ? 'SUPPORTER_SERVER' : 'SUPPORTER_INDIVIDUAL'],
+        lic_exp: null,
+        lic: { id: `lic-${kind}`, kind, last4 },
+      }),
+    });
+    const redeems = () => cloud.requests.filter(({ path }) => path === REDEEM);
+    /** A request body has exactly the golden request's shape (the cloud's schema is strict). */
+    const expectShape = (body: Record<string, any>, fixture: Record<string, any>) => {
+      expect(Object.keys(body).sort()).toEqual(Object.keys(fixture).sort());
+      expect(Object.keys(body.fingerprint).sort()).toEqual(Object.keys(fixture.fingerprint).sort());
+      expect(body.code).toMatch(/^flc_[a-z2-7]{26}$/);
+    };
 
     it('asks to link first, or paste the key, on an unlinked server and contacts nothing', async () => {
       enable();
       await expect(sut.redeemLinkCode(authStub.admin, { code: CODE })).rejects.toThrow(LINK_CODE_UNAVAILABLE_MESSAGE);
-      expect(cloud.requests.some(({ path }) => path === REDEEM)).toBe(false);
+      expect(redeems()).toHaveLength(0);
     });
 
     it('stays off until discovery advertises features.licenseLinkCode', async () => {
       link();
       serveToken();
       await expect(sut.redeemLinkCode(authStub.admin, { code: CODE })).rejects.toThrow(LINK_CODE_UNAVAILABLE_MESSAGE);
-      expect(cloud.requests.some(({ path }) => path === REDEEM)).toBe(false);
+      expect(redeems()).toHaveLength(0);
     });
 
-    it('redeems with the DPoP-bound instance token and installs a server key without ever holding the key', async () => {
+    it.each([
+      'flc_JF23QNBC4WVMPNUOGENCLB2HYO',
+      'flc_jf23qnbc4wvmpnuogenclb2hy',
+      'flc_jf23qnbc4wvmpnuogenclb2hy1',
+      'FL-S8NL-49G8-J583',
+    ])('never sends %s, which is not a link code, and asks for the key instead', async (code) => {
       link();
       serveToken();
       enable();
-      cloud.on(`POST ${REDEEM}`, () => ({
-        status: 200,
-        body: { certificate: serverCertificate(), activationId: 'act-1', kind: 'server', last4: 'J583' },
-      }));
+      await expect(sut.redeemLinkCode(authStub.admin, { code })).rejects.toThrow(LINK_CODE_INVALID_MESSAGE);
+      expect(cloud.requests).toHaveLength(0);
+    });
+
+    it('redeems a server key with the DPoP-bound token, in the golden request shape, never holding the key', async () => {
+      link();
+      serveToken();
+      enable();
+      cloud.on(`POST ${REDEEM}`, () => ({ status: 200, body: answer('server', golden.response.last4) }));
 
       await expect(sut.redeemLinkCode(authStub.admin, { code: CODE })).resolves.toEqual({
         kind: 'server',
-        keyHint: 'J583',
+        keyHint: golden.response.last4,
       });
 
-      const request = cloud.requests.find(({ path }) => path === REDEEM)!;
+      const [request] = redeems();
+      expect(redeems()).toHaveLength(1);
       expect(tokenNameOf(request)).toBe('api-token');
       expect(request.dpop).toMatchObject({ claims: { htm: 'POST', htu: `${cloud.url}${REDEEM}` } });
       const identity = metadata.get(SystemMetadataKey.FrameleafInstance) as { kid: string };
-      expect(request.json()).toEqual({
+      const body = request.json() as Record<string, any>;
+      expectShape(body, golden.request);
+      // a server key is bound to the server: fingerprint.user would be refused (422)
+      expect(body).toEqual({
         code: CODE,
-        fingerprint: { instanceId: instanceId(), jkt: identity.kid, user: expect.stringMatching(/^[\da-f]{64}$/) },
+        fingerprint: { instanceId: instanceId(), jkt: identity.kid },
         instanceName: expect.any(String),
-        allowKinds: ['server', 'individual'],
+        allowKinds: ['server'],
       });
-      // the code travels only in the body: never in any address the server called
       for (const { path } of cloud.requests) {
         expect(path).not.toContain(CODE);
       }
-      expect(store()?.key).toMatchObject({ kind: 'server', keyHint: 'J583', activationId: 'act-1', source: 'key' });
+      expect(store()?.key).toMatchObject({
+        kind: 'server',
+        keyHint: golden.response.last4,
+        activationId: golden.response.activationId,
+        source: 'key',
+      });
       expect(JSON.stringify(store())).not.toContain(CODE);
       expect(mocks.adminAudit.create).toHaveBeenCalledWith([
-        expect.objectContaining({ action: AdminAuditAction.LicenseActivated, detail: 'J583' }),
+        expect.objectContaining({ action: AdminAuditAction.LicenseActivated, detail: golden.response.last4 }),
       ]);
     });
 
     it('uses endpoints.licenseLinkCode when discovery names one', async () => {
       link();
       serveToken();
-      const base = cloud.discovery;
-      cloud.discovery = () => ({
-        ...base(),
-        features: { licenseLinkCode: true },
-        endpoints: { licenseLinkCode: `${cloud.url}/api/v2/redeem` },
-      });
-      cloud.on('POST /api/v2/redeem', () => ({
-        status: 200,
-        body: { certificate: serverCertificate(), activationId: 'act-2' },
-      }));
+      enable(`${cloud.url}/api/v2/redeem`);
+      cloud.on('POST /api/v2/redeem', () => ({ status: 200, body: answer('server', 'H23J') }));
       await expect(sut.redeemLinkCode(authStub.admin, { code: CODE })).resolves.toMatchObject({ kind: 'server' });
     });
 
-    it('lets anyone else redeem only a personal key, held for that person', async () => {
+    it('asks again for this person when an administrator redeems a personal key', async () => {
       link();
       serveToken();
       enable();
-      cloud.on(`POST ${REDEEM}`, () => ({
-        status: 200,
-        body: { certificate: personalCertificate(), activationId: 'act-9' },
-      }));
+      const mismatch = cloudContractFixture('errors/link-code-kind-mismatch.json');
+      expect(mismatch.data).toEqual({ kind: 'individual' });
+      cloud.on(`POST ${REDEEM}`, (request) =>
+        (request.json() as { allowKinds: string[] }).allowKinds.includes('server')
+          ? { status: 409, body: mismatch }
+          : { status: 200, body: answer('individual', '8EL6') },
+      );
+      mocks.frameleafUserLicense.getByKeyHash.mockResolvedValue(undefined);
+      mocks.frameleafUserLicense.upsert.mockImplementation((row) =>
+        Promise.resolve({ ...row, kind: 'individual', activatedAt: new Date('2026-09-25T12:00:00.000Z') }),
+      );
+
+      await expect(sut.redeemLinkCode(authStub.admin, { code: CODE })).resolves.toEqual({
+        kind: 'individual',
+        keyHint: '8EL6',
+      });
+      const [first, second] = redeems().map((request) => request.json() as Record<string, any>);
+      expect(first.allowKinds).toEqual(['server']);
+      expectShape(second, golden.personal);
+      expect(second.allowKinds).toEqual(golden.personal.allowKinds);
+      expect(store()?.key ?? null).toBeNull();
+    });
+
+    it('lets anyone else redeem only a personal key, in the golden personal request shape', async () => {
+      link();
+      serveToken();
+      enable();
+      cloud.on(`POST ${REDEEM}`, () => ({ status: 200, body: answer('individual', '8EL6') }));
       mocks.frameleafUserLicense.getByKeyHash.mockResolvedValue(undefined);
       mocks.frameleafUserLicense.upsert.mockImplementation((row) =>
         Promise.resolve({ ...row, kind: 'individual', activatedAt: new Date('2026-09-25T12:00:00.000Z') }),
@@ -698,38 +760,101 @@ describe(FrameleafLicenseService.name, () => {
         kind: 'individual',
         keyHint: '8EL6',
       });
-      const body = cloud.requests.find(({ path }) => path === REDEEM)!.json() as Record<string, any>;
+      expect(redeems()).toHaveLength(1);
+      const body = redeems()[0].json() as Record<string, any>;
+      expectShape(body, golden.personal);
       expect(body.allowKinds).toEqual(['individual']);
+      expect(body.fingerprint.user).toMatch(/^[\da-f]{64}$/);
       expect(mocks.frameleafUserLicense.upsert).toHaveBeenCalledWith(
         expect.objectContaining({
           userId: authStub.user1.user.id,
           keyHint: '8EL6',
           binding: body.fingerprint.user,
-          activationId: 'act-9',
+          activationId: golden.response.activationId,
         }),
       );
       expect(JSON.stringify(mocks.frameleafUserLicense.upsert.mock.calls)).not.toContain(CODE);
       expect(store()?.key ?? null).toBeNull();
     });
 
-    it.each([
-      [404, 'link_code_not_found', 'not valid'],
-      [410, 'link_code_expired', 'expired'],
-      [410, 'link_code_used', 'already used'],
-      [403, 'link_code_wrong_account', 'different Frameleaf account'],
-      [409, 'link_code_kind_mismatch', 'server key'],
-      [409, 'activation_limit', 'already active on another server'],
-      [429, 'rate-limited', 'Too many attempts'],
-      [409, 'instance-id-taken', 'identity key does not match'],
-    ])('explains a %s %s refusal without echoing the code', async (status, code, words) => {
+    it('explains a server key to someone who may only hold a personal one', async () => {
       link();
       serveToken();
       enable();
-      cloud.on(`POST ${REDEEM}`, () => ({ status, body: { code, message: `refused ${CODE}` } }));
-      const error = await sut.redeemLinkCode(authStub.admin, { code: CODE }).catch((error_: Error) => error_);
-      expect((error as Error).message).toContain(words);
-      expect((error as Error).message).not.toContain(CODE);
+      cloud.on(`POST ${REDEEM}`, () => ({
+        status: 409,
+        body: {
+          ...cloudContractFixture<Record<string, unknown>>('errors/link-code-kind-mismatch.json'),
+          data: { kind: 'server' },
+        },
+      }));
+      await expect(sut.redeemLinkCode(authStub.user1, { code: CODE })).rejects.toThrow('This is a server key');
+      expect(redeems()).toHaveLength(1);
+    });
+
+    it.each([
+      [404, 'errors/link-code-not-found.json'],
+      [410, 'errors/link-code-expired.json'],
+      [410, 'errors/link-code-used.json'],
+      [403, 'errors/link-code-wrong-account.json'],
+      [409, 'errors/link-code-activation-limit.json'],
+      [429, 'errors/link-code-rate-limited.json'],
+      [422, 'errors/request-invalid.json'],
+    ])('shows the cloud’s own words for a %s %s and asks for the key, never echoing the code', async (status, name) => {
+      link();
+      serveToken();
+      enable();
+      const envelope = cloudContractFixture(name);
+      cloud.on(`POST ${REDEEM}`, () => ({ status, body: envelope }));
+      const error = (await sut
+        .redeemLinkCode(authStub.admin, { code: CODE })
+        .catch((error_: Error) => error_)) as Error;
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect(error.message).toBe(`${envelope.message} ${LINK_CODE_PASTE_KEY}`);
+      expect(error.message).not.toContain(CODE);
       expect(store()?.key ?? null).toBeNull();
+    });
+
+    it('shows a licence on hold during a payment dispute (403 forbidden, as /activate) and asks for the key', async () => {
+      link();
+      serveToken();
+      enable();
+      cloud.on(`POST ${REDEEM}`, () => ({
+        status: 403,
+        body: {
+          code: 'forbidden',
+          message: 'This licence is on hold while a payment dispute is open.',
+          retryable: false,
+        },
+      }));
+      await expect(sut.redeemLinkCode(authStub.admin, { code: CODE })).rejects.toThrow(
+        `This licence is on hold while a payment dispute is open. ${LINK_CODE_PASTE_KEY}`,
+      );
+    });
+
+    it('never echoes a code the cloud puts in its message', async () => {
+      link();
+      serveToken();
+      enable();
+      cloud.on(`POST ${REDEEM}`, () => ({
+        status: 404,
+        body: { code: 'link_code_not_found', message: `No ${CODE}.` },
+      }));
+      const error = (await sut
+        .redeemLinkCode(authStub.admin, { code: CODE })
+        .catch((error_: Error) => error_)) as Error;
+      expect(error.message).not.toContain(CODE);
+    });
+
+    it('explains an instance-id-taken refusal the way activation does', async () => {
+      link();
+      serveToken();
+      enable();
+      cloud.on(`POST ${REDEEM}`, () => ({
+        status: 409,
+        body: cloudContractFixture('errors/link-code-instance-id-taken.json'),
+      }));
+      await expect(sut.redeemLinkCode(authStub.admin, { code: CODE })).rejects.toThrow(IDENTITY_KEY_MISMATCH_MESSAGE);
     });
 
     it('treats a 401 as a link that no longer works', async () => {
@@ -737,7 +862,7 @@ describe(FrameleafLicenseService.name, () => {
       serveToken();
       enable();
       cloud.on(`POST ${REDEEM}`, () => ({ status: 401, body: { code: 'instance_revoked', message: 'revoked' } }));
-      await expect(sut.redeemLinkCode(authStub.admin, { code: CODE })).rejects.toThrow();
+      await expect(sut.redeemLinkCode(authStub.admin, { code: CODE })).rejects.toThrow(LINK_CODE_UNAVAILABLE_MESSAGE);
       expect(store()?.key ?? null).toBeNull();
     });
   });

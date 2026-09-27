@@ -258,7 +258,7 @@ describe('BuyScreen (FL-157, FL-170, FL-171, FL-172)', () => {
   });
 
   describe('link codes from the Frameleaf account site (CLD-004)', () => {
-    const code = 'flc_ABCDEFGHJKMNPQRSTVWXYZ2345';
+    const code = 'flc_jf23qnbc4wvmpnuogenclb2hyo';
 
     it('has this server redeem the code once and shows the activated card, never holding a key', async () => {
       sdkMock.redeemLicenseLinkCode.mockResolvedValue({ kind: 'individual', keyHint: '8EL6' } as never);
@@ -291,8 +291,17 @@ describe('BuyScreen (FL-157, FL-170, FL-171, FL-172)', () => {
       expect(screen.getByLabelText('Product key')).toHaveValue('');
     });
 
+    it('asks for the key after a link code that is not shaped like one, never sending it', async () => {
+      render(BuyScreen, { linkNotice: 'invalid-code' });
+
+      expect(
+        await screen.findByText(/This link from your Frameleaf account isn’t valid\. Paste your key below/),
+      ).toBeInTheDocument();
+      expect(sdkMock.redeemLicenseLinkCode).not.toHaveBeenCalled();
+    });
+
     it('asks for the key to be pasted after an old link that carried one, without using it', async () => {
-      render(BuyScreen, { keyInLink: true });
+      render(BuyScreen, { linkNotice: 'key-in-link' });
 
       expect(
         await screen.findByText(/keys are no longer accepted in links\. Paste your key below/),

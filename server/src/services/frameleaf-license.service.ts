@@ -7,6 +7,7 @@ import type { FrameleafLicense, FrameleafLicenseStore } from 'src/types.js';
 import { FRAMELEAF_LICENSE_KEYS } from 'src/constants.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import {
+  LINK_CODE_PATTERN,
   LicenseActivateDto,
   LicenseCertificateDto,
   LicenseLinkCodeDto,
@@ -113,27 +114,50 @@ export const IDENTITY_KEY_MISMATCH_MESSAGE =
   'This server’s identity key does not match the one Frameleaf Cloud has registered for it. Link this server again from Settings → Frameleaf Cloud → Account & link, then activate the key.';
 
 /**
- * CLD-004: what the cloud's link-code refusals mean to the person on the Support Frameleaf screen.
- * Each one ends by offering the way that always works: pasting the key.
+ * CLD-004: the cloud's link-code refusals ("Licence link codes" in the instance contract). The cloud's
+ * own message is shown when it sends one (these are the fallbacks), always followed by the way that
+ * works without the cloud: pasting the key.
  */
 const LINK_CODE_REFUSALS: Record<string, string> = {
-  link_code_not_found:
-    'This link from your Frameleaf account is not valid. Open it again from My licenses, or paste the key.',
-  link_code_expired:
-    'This link from your Frameleaf account has expired. Open it again from My licenses, or paste the key.',
-  link_code_used:
-    'This link from your Frameleaf account was already used. Open it again from My licenses, or paste the key.',
+  link_code_not_found: 'This link from your Frameleaf account is not valid. Open it again from My licences.',
+  link_code_expired: 'This link from your Frameleaf account has expired. Open it again from My licences.',
+  link_code_used: 'This link from your Frameleaf account was already used. Open it again from My licences.',
   link_code_wrong_account:
-    'This licence belongs to a different Frameleaf account than the one this server is linked to. Paste the key instead.',
-  link_code_kind_mismatch:
-    'This is a server key. An administrator activates it under Frameleaf Cloud → Licence, or pastes it on Support Frameleaf.',
+    'This licence belongs to a different Frameleaf account, or another server, than the one this server is linked to.',
+  link_code_kind_mismatch: 'This server can’t use this kind of licence here.',
   activation_limit: 'This key is already active on another server. Deactivate it in your Frameleaf account first.',
-  'rate-limited': 'Too many attempts. Try again later, or paste the key.',
+  forbidden: 'This licence is on hold while a payment dispute is open.',
+  'request-invalid': 'Frameleaf Cloud did not accept this request for this server.',
+  'rate-limited': 'Too many attempts. Try again later.',
 };
+
+/** CLD-004: what every link-code refusal ends with. */
+export const LINK_CODE_PASTE_KEY = 'Or paste the key under “Already have a key?” instead.';
 
 /** CLD-004: a link code cannot be redeemed here; the key can still be pasted. */
 export const LINK_CODE_UNAVAILABLE_MESSAGE =
   'Link this server to Frameleaf Cloud to use links from your Frameleaf account, or paste the key instead.';
+
+/** CLD-004: a code that is not shaped like one is never sent to the cloud. */
+export const LINK_CODE_INVALID_MESSAGE =
+  'This link from your Frameleaf account isn’t valid. Paste the key under “Already have a key?” instead.';
+
+/** CLD-004: a personal key reaching someone who may only hold a server key, or the reverse. */
+const LINK_CODE_SERVER_KEY_MESSAGE =
+  'This is a server key. An administrator activates it on Support Frameleaf or under Frameleaf Cloud → Licence.';
+
+/** `POST /v1/licenses/redeem-link-code` 200: the activation's answer plus the licence's kind and last four. */
+const redeemResponseSchema = certificateResponseSchema.extend({
+  kind: z.enum(['server', 'individual']),
+  last4: z.string().min(1).max(8),
+});
+
+/** The cloud refused a redemption only because the licence is of `kind` (the code is not consumed). */
+const isKindMismatch = (error: unknown, kind: 'server' | 'individual') =>
+  error instanceof FrameleafCloudError &&
+  error.status === 409 &&
+  cloudErrorCode(error) === 'link_code_kind_mismatch' &&
+  error.envelope?.data?.kind === kind;
 
 /** How long a signed activation from an unlinked server may be used (the token assertions' limit). */
 const ACTIVATION_PROOF_TTL_SECONDS = 120;
@@ -536,10 +560,15 @@ export class FrameleafLicenseService extends BaseService {
    * logged or echoed.
    */
   async redeemLinkCode(auth: AuthDto, dto: LicenseLinkCodeDto): Promise<LicenseLinkCodeResponseDto> {
+    // never send the cloud anything that is not shaped like a link code
+    if (!LINK_CODE_PATTERN.test(dto.code)) {
+      throw new BadRequestException(LINK_CODE_INVALID_MESSAGE);
+    }
     const { cloudUrl, linked, link } = await readCloudLink(this.gatewayDeps());
     if (!cloudUrl || !linked || !link?.instanceId) {
       throw new BadRequestException(LINK_CODE_UNAVAILABLE_MESSAGE);
     }
+    const instanceId = link.instanceId;
     // a server key needs what `PUT admin/license/activate` needs: an administrator, and an API key only
     // when it also holds that permission
     const isAdmin =
@@ -548,31 +577,61 @@ export class FrameleafLicenseService extends BaseService {
     const identity = await loadInstanceIdentity(this.gatewayDeps());
     const binding = sha256(`${identity.instanceId}${auth.user.id}`);
     const config = await this.getConfig({ withCache: true });
-    let answer: z.infer<typeof certificateResponseSchema>;
+    const instanceName = config.server.name?.trim() || 'Frameleaf server';
+
+    let answer: z.infer<typeof redeemResponseSchema>;
     try {
-      const { document, token } = await this.apiToken(cloudUrl, link.instanceId);
+      const { document } = await this.apiToken(cloudUrl, instanceId);
       if (document.features?.licenseLinkCode !== true) {
         throw new BadRequestException(LINK_CODE_UNAVAILABLE_MESSAGE);
       }
       const url =
         document.endpoints?.licenseLinkCode ?? `${document.api.replace(/\/+$/, '')}/v1/licenses/redeem-link-code`;
-      answer = await this.frameleafCloudRepository.requestJson(certificateResponseSchema, {
-        method: 'POST',
-        url,
-        dpop: token,
-        body: {
-          code: dto.code,
-          fingerprint: { instanceId: link.instanceId, jkt: token.signer.kid, user: binding },
-          instanceName: config.server.name?.trim() || 'Frameleaf server',
-          allowKinds: isAdmin ? ['server', 'individual'] : ['individual'],
-        },
-      });
+      // The cloud binds a server key to the server and refuses `fingerprint.user` with it (422), and a
+      // personal key needs `user`: the kind is unknown until the cloud answers. An administrator asks
+      // for a server key first; `link_code_kind_mismatch` (409, the code is not consumed) naming a
+      // personal key then asks again for this person. Anyone else asks for a personal key only.
+      const redeem = async (kind: 'server' | 'individual') => {
+        const { token } = await this.apiToken(cloudUrl, instanceId);
+        return this.frameleafCloudRepository.requestJson(redeemResponseSchema, {
+          method: 'POST',
+          url,
+          dpop: token,
+          body: {
+            code: dto.code,
+            fingerprint:
+              kind === 'server'
+                ? { instanceId, jkt: token.signer.kid }
+                : { instanceId, jkt: token.signer.kid, user: binding },
+            instanceName,
+            allowKinds: [kind],
+          },
+        });
+      };
+      if (isAdmin) {
+        try {
+          answer = await redeem('server');
+        } catch (error) {
+          if (!isKindMismatch(error, 'individual')) {
+            throw error;
+          }
+          answer = await redeem('individual');
+        }
+      } else {
+        answer = await redeem('individual');
+      }
     } catch (error) {
-      throw this.linkCodeError(error);
+      throw this.linkCodeError(error, isAdmin);
     }
 
-    const license = await this.verifyForStore(answer.certificate, 'key', { activationId: answer.activationId });
+    const license = await this.verifyForStore(answer.certificate, 'key', {
+      keyHint: answer.last4,
+      activationId: answer.activationId,
+    });
     const keyHint = license.keyHint ?? null;
+    if (license.kind !== answer.kind) {
+      throw new BadRequestException('Frameleaf Cloud returned a licence that does not match what it said it was.');
+    }
     if (license.kind === 'server' && isAdmin) {
       const store = await this.readStore();
       await this.writeStore({ ...store, key: license });
@@ -605,7 +664,7 @@ export class FrameleafLicenseService extends BaseService {
   }
 
   /** The person-facing refusal for a failed redemption; the code is never part of it. */
-  private linkCodeError(error: unknown): Error {
+  private linkCodeError(error: unknown, isAdmin: boolean): Error {
     if (error instanceof BadRequestException || error instanceof ConflictException) {
       return error;
     }
@@ -613,16 +672,21 @@ export class FrameleafLicenseService extends BaseService {
     if (code === CloudErrorCode.InstanceIdTaken) {
       return new ConflictException(IDENTITY_KEY_MISMATCH_MESSAGE);
     }
-    if (code && LINK_CODE_REFUSALS[code]) {
-      return new BadRequestException(LINK_CODE_REFUSALS[code]);
+    if (code === 'link_code_kind_mismatch' && !isAdmin) {
+      return new BadRequestException(LINK_CODE_SERVER_KEY_MESSAGE);
     }
     if (error instanceof FrameleafCloudError) {
       if (error.status === 401) {
         return new BadRequestException(LINK_CODE_UNAVAILABLE_MESSAGE);
       }
+      if (code && LINK_CODE_REFUSALS[code]) {
+        // the cloud's own words when it sends them; a code is never echoed
+        const said = (error.envelope?.message ?? '').replaceAll(/flc_[a-z0-9]*/gi, '').trim();
+        return new BadRequestException(`${said || LINK_CODE_REFUSALS[code]} ${LINK_CODE_PASTE_KEY}`);
+      }
       return error.status !== null && error.status < 500
-        ? new BadRequestException('Frameleaf Cloud did not accept this link. Paste the key instead.')
-        : new ConflictException('Frameleaf Cloud could not be reached. Try again later, or paste the key.');
+        ? new BadRequestException(`Frameleaf Cloud did not accept this link. ${LINK_CODE_PASTE_KEY}`)
+        : new ConflictException(`Frameleaf Cloud could not be reached. Try again later. ${LINK_CODE_PASTE_KEY}`);
     }
     return error instanceof Error ? error : new Error(String(error));
   }

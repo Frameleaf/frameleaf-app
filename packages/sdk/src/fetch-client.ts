@@ -6001,7 +6001,7 @@ export type ValidateLibraryResponseDto = {
     importPaths?: ValidateLibraryImportPathResponseDto[];
 };
 export type LicenseLinkCodeDto = {
-    /** A one-time link code from the Frameleaf account site, flc_ and 26 symbols */
+    /** A one-time link code from the Frameleaf account site: flc_ and 26 lower-case base32 symbols */
     code: string;
 };
 export type LicenseLinkCodeResponseDto = {

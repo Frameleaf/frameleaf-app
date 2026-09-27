@@ -20,5 +20,5 @@
 </svelte:head>
 
 <AuthShell wide>
-  <BuyScreen linkCode={data.linkCode} keyInLink={data.keyInLink} onBack={back} />
+  <BuyScreen linkCode={data.linkCode} linkNotice={data.linkNotice} onBack={back} />
 </AuthShell>

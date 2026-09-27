@@ -185,6 +185,15 @@ describe(discoveryProblem.name, () => {
       expect(storeAddress('https://api.frameleaf.cloud', 'http://frameleaf.cloud/store')).toBeNull();
     });
 
+    it('reads the published link-code switch and redeem address from the golden discovery documents (CLD-004)', () => {
+      for (const name of ['instance/discovery.json', 'instance/discovery-instance.json']) {
+        const document = discoverySchema.parse(cloudContractFixture(name));
+        expect(document.features?.licenseLinkCode).toBe(true);
+        expect(document.endpoints?.licenseLinkCode).toBe('https://api.frameleaf.cloud/v1/licenses/redeem-link-code');
+        expect(discoveryProblem('https://api.frameleaf.cloud', document)).toBeNull();
+      }
+    });
+
     it('reads the licence link-code switch, off when absent or malformed, and accepts new endpoint names (CLD-004)', () => {
       expect(discoverySchema.parse(production).features?.licenseLinkCode).toBeUndefined();
       const on = discoverySchema.parse({
