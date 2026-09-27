@@ -176,7 +176,9 @@ test("each broken installation fails the deployment test", async () => {
       /edge worker started 2 times/,
     ],
     [
-      { logs: "Starting api worker\nFrameleaf Microservices is running [v3.2.0]\n" },
+      {
+        logs: "Starting api worker\nFrameleaf Microservices is running [v3.2.0]\n",
+      },
       /edge worker started 0 times/,
     ],
   ])
