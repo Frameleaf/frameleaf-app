@@ -779,9 +779,13 @@ class PartnerAccess {
 class TagAccess {
   constructor(private db: Kysely<DB>) {}
 
-  @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID_SET, true] })
+  /**
+   * `hideLocked`: the session is not unlocked, so a tag carried only by locked items is not there
+   * either (owner decision, September 27, 2026).
+   */
+  @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID_SET, true, true] })
   @ChunkedSet({ paramIndex: 1 })
-  async checkOwnerAccess(userId: string, tagIds: Set<string>, hideNsfwAssets?: AccessPrivacy) {
+  async checkOwnerAccess(userId: string, tagIds: Set<string>, hideNsfwAssets?: AccessPrivacy, hideLocked = false) {
     if (tagIds.size === 0) {
       return new Set<string>();
     }
@@ -798,10 +802,10 @@ class TagAccess {
         .$if(suppressedIds.length > 0, (qb) =>
           qb.where(sql<boolean>`not ${tagIsSuppressed(sql.ref('tag.id'), suppressedIds)}`),
         )
-        .$if(!!getHiddenContentFilter(privacyOptions(hideNsfwAssets)), (qb) =>
-          qb.where(
-            tagHasVisibleAssetOrNoAssets(sql.ref('tag.id'), getHiddenContentFilter(privacyOptions(hideNsfwAssets))),
-          ),
+        .where(
+          tagHasVisibleAssetOrNoAssets(sql.ref('tag.id'), getHiddenContentFilter(privacyOptions(hideNsfwAssets)), {
+            hideLocked,
+          }),
         )
         .execute()
         .then((tags) => new Set(tags.map((tag) => tag.id)))

@@ -24,13 +24,20 @@ describe(TagService.name, () => {
     it('should return all tags for a user', async () => {
       mocks.tag.getAll.mockResolvedValue([tagStub.tag]);
       await expect(sut.getAll(authStub.admin)).resolves.toEqual([tagResponseStub.tag1]);
-      expect(mocks.tag.getAll).toHaveBeenCalledWith(authStub.admin.user.id, {});
+      // not unlocked: a tag only on locked items is left out (owner decision, September 27, 2026)
+      expect(mocks.tag.getAll).toHaveBeenCalledWith(authStub.admin.user.id, { hideLocked: true });
+    });
+
+    it('should list tags only on locked items for an unlocked session', async () => {
+      mocks.tag.getAll.mockResolvedValue([tagStub.tag]);
+      await sut.getAll({ ...authStub.admin, session: { id: 'session-1', hasElevatedPermission: true } });
+      expect(mocks.tag.getAll).toHaveBeenCalledWith(authStub.admin.user.id, { hideLocked: false });
     });
 
     it('should request non-NSFW tags while hide mode is active', async () => {
       mocks.tag.getAll.mockResolvedValue([tagStub.tag]);
       await expect(sut.getAll({ ...authStub.admin, hideNsfwAssets: true })).resolves.toEqual([tagResponseStub.tag1]);
-      expect(mocks.tag.getAll).toHaveBeenCalledWith(authStub.admin.user.id, { excludeNsfw: true });
+      expect(mocks.tag.getAll).toHaveBeenCalledWith(authStub.admin.user.id, { excludeNsfw: true, hideLocked: true });
     });
   });
 
@@ -130,11 +137,22 @@ describe(TagService.name, () => {
   });
 
   describe('create', () => {
-    it('should throw an error for a duplicate tag', async () => {
+    it('answers an existing name with that tag, unchanged, never an error (owner decision, September 27, 2026)', async () => {
       mocks.tag.getByValue.mockResolvedValue(tagStub.tag);
-      await expect(sut.create(authStub.admin, { name: 'tag-1' })).rejects.toBeInstanceOf(BadRequestException);
+      await expect(sut.create(authStub.admin, { name: 'tag-1', color: '#123456' })).resolves.toEqual(
+        tagResponseStub.tag1,
+      );
       expect(mocks.tag.getByValue).toHaveBeenCalledWith(authStub.admin.user.id, 'tag-1');
       expect(mocks.tag.create).not.toHaveBeenCalled();
+      expect(mocks.tag.update).not.toHaveBeenCalled();
+    });
+
+    it('answers with the tag another request created meanwhile', async () => {
+      mocks.tag.getByValue.mockResolvedValueOnce(void 0).mockResolvedValueOnce(tagStub.tag);
+      mocks.tag.create.mockRejectedValue(
+        Object.assign(new Error('duplicate'), { constraint_name: 'tag_userId_value_uq' }),
+      );
+      await expect(sut.create(authStub.admin, { name: 'tag-1' })).resolves.toEqual(tagResponseStub.tag1);
     });
 
     it('should create a new tag', async () => {
@@ -419,6 +437,7 @@ describe(TagService.name, () => {
         authStub.admin.user.id,
         new Set(['tag-1']),
         lockedAuth.hiddenContent,
+        true,
       );
       expect(suppressed).toBeInstanceOf(NotFoundException);
       expect(missing).toBeInstanceOf(NotFoundException);
@@ -426,19 +445,22 @@ describe(TagService.name, () => {
       expect(mocks.tag.get).not.toHaveBeenCalled();
     });
 
-    it('answers writes with 404 and changes nothing', async () => {
+    it('answers a rename or delete with 404 and changes nothing', async () => {
       mocks.access.tag.checkOwnerAccess.mockResolvedValue(new Set());
 
       await expect(sut.update(lockedAuth, 'tag-1', { color: '#000000' })).rejects.toBeInstanceOf(NotFoundException);
       await expect(sut.remove(lockedAuth, 'tag-1')).rejects.toBeInstanceOf(NotFoundException);
-      await expect(sut.addAssets(lockedAuth, 'tag-1', { ids: ['asset-1'] })).rejects.toBeInstanceOf(NotFoundException);
-      await expect(sut.removeAssets(lockedAuth, 'tag-1', { ids: ['asset-1'] })).rejects.toBeInstanceOf(
-        NotFoundException,
-      );
       expect(mocks.tag.update).not.toHaveBeenCalled();
       expect(mocks.tag.delete).not.toHaveBeenCalled();
-      expect(mocks.tag.addAssetIds).not.toHaveBeenCalled();
-      expect(mocks.tag.removeAssetIds).not.toHaveBeenCalled();
+    });
+
+    it('checks applying a tag as the owner only, so a reused hidden tag can be applied (September 27, 2026)', async () => {
+      mocks.access.tag.checkOwnerAccess.mockResolvedValue(new Set(['tag-1']));
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set());
+      mocks.tag.getAssetIds.mockResolvedValue(new Set());
+
+      await sut.addAssets(lockedAuth, 'tag-1', { ids: ['asset-1'] });
+      expect(mocks.access.tag.checkOwnerAccess).toHaveBeenCalledWith(authStub.admin.user.id, new Set(['tag-1']));
     });
 
     it('hands the suppression filter to the tag list', async () => {
@@ -448,6 +470,7 @@ describe(TagService.name, () => {
 
       expect(mocks.tag.getAll).toHaveBeenCalledWith(authStub.admin.user.id, {
         hiddenContent: lockedAuth.hiddenContent,
+        hideLocked: true,
       });
     });
   });

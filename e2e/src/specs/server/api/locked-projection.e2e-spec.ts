@@ -59,6 +59,12 @@ describe('Locked projection over the API (FL-34)', () => {
   let sharedKey: string;
   let folderPath: string;
   const hiddenTag = 'FL-34 hidden rule';
+  // Owner decision, September 27, 2026: while locked, a tag carried only by hidden items is hidden too.
+  const lockedOnlyTag = 'FL-34 locked only';
+  const besideRuleTag = 'FL-34 beside rule';
+  // ...and one visible item brings it back, counted without the hidden one.
+  const mixedTag = 'FL-34 on both';
+  const tagIds: Record<string, string> = {};
 
   const ownerReads = (): Read[] => [
     { name: 'timeline buckets', path: '/timeline/buckets', query: { visibility: 'timeline' } },
@@ -68,7 +74,7 @@ describe('Locked projection over the API (FL-34)', () => {
     { name: 'search metadata', method: 'post', path: '/search/metadata', body: {} },
     { name: 'search random', method: 'post', path: '/search/random', body: { size: 50 } },
     { name: 'search statistics', method: 'post', path: '/search/statistics', body: {} },
-    { name: 'search facets', method: 'post', path: '/search/facets', body: { facets: ['type', 'tag', 'city'] } },
+    { name: 'search facets', method: 'post', path: '/search/facets', body: { facets: ['type', 'tags', 'city'] } },
     { name: 'search histogram', method: 'post', path: '/search/histogram', body: {} },
     { name: 'explore', path: '/search/explore' },
     { name: 'places', path: '/search/places', query: { name: 'Paris' } },
@@ -131,6 +137,16 @@ describe('Locked projection over the API (FL-34)', () => {
 
     const [tag] = await utils.upsertTags(owner.accessToken, [hiddenTag]);
     await utils.tagAssets(owner.accessToken, tag.id, [ruleMatch.id]);
+    for (const [name, assetIds] of [
+      [lockedOnlyTag, [locked.id]],
+      [besideRuleTag, [ruleMatch.id]],
+      [mixedTag, [locked.id, plain.id]],
+    ] as const) {
+      const [created] = await utils.upsertTags(owner.accessToken, [name]);
+      await utils.tagAssets(owner.accessToken, created.id, [...assetIds]);
+      tagIds[name] = created.id;
+    }
+    tagIds[hiddenTag] = tag.id;
 
     const album = await utils.createAlbum(owner.accessToken, {
       albumName: 'Holiday',
@@ -195,13 +211,27 @@ describe('Locked projection over the API (FL-34)', () => {
     const search = answers.find((answer) => answer.name === 'search metadata')!.text;
     expect(search).toContain(locked.id);
     expect(search).toContain(ruleMatch.id);
-    expect(answers.find((answer) => answer.name === 'tags')!.text).toContain(hiddenTag);
+    const tags = answers.find((answer) => answer.name === 'tags')!.text;
+    for (const name of [hiddenTag, lockedOnlyTag, besideRuleTag, mixedTag]) {
+      expect(tags).toContain(name);
+    }
   });
 
   it('leaves no trace of a lock or a rule match in any projection of a locked session', async () => {
     await lock(owner.accessToken);
     const answers = await readAll(ownerReads(), bearer(owner.accessToken));
-    expectNoTrace(answers, [locked.id, ruleMatch.id, 'locked-secret', 'rule-secret', hiddenTag]);
+    expectNoTrace(answers, [
+      locked.id,
+      ruleMatch.id,
+      'locked-secret',
+      'rule-secret',
+      hiddenTag,
+      lockedOnlyTag,
+      besideRuleTag,
+      tagIds[hiddenTag],
+      tagIds[lockedOnlyTag],
+      tagIds[besideRuleTag],
+    ]);
 
     const count = (name: string) => JSON.parse(answers.find((answer) => answer.name === name)!.text);
     expect(count('search statistics').total).toBe(1);
@@ -223,6 +253,60 @@ describe('Locked projection over the API (FL-34)', () => {
       .query({ visibility: 'locked' })
       .set(bearer(owner.accessToken));
     expect(status).toBe(401);
+  });
+
+  // Owner decision, September 27, 2026: the tag list, tree, filters, facets and counts of a locked
+  // session leave out a tag carried only by hidden items, and count a mixed tag's visible items only.
+  it('hides a tag carried only by hidden items from every tag read of a locked session', async () => {
+    await lock(owner.accessToken);
+    const headers = bearer(owner.accessToken);
+
+    const { body: tags } = await request(app).get('/tags').set(headers).expect(200);
+    expect(tags.map(({ value }: { value: string }) => value)).toEqual([mixedTag]);
+    const { body: statistics } = await request(app).get('/tags/statistics').set(headers).expect(200);
+    expect(statistics).toEqual([{ id: tagIds[mixedTag], count: 1, total: 1 }]);
+    const { body: facets } = await request(app)
+      .post('/search/facets')
+      .set(headers)
+      .send({ facets: ['tags'] })
+      .expect(200);
+    expect(JSON.stringify(facets)).toContain(mixedTag);
+
+    for (const name of [hiddenTag, lockedOnlyTag, besideRuleTag]) {
+      const id = tagIds[name];
+      await request(app).get(`/tags/${id}`).set(headers).expect(404);
+      const filtered = await request(app)
+        .get('/timeline/buckets')
+        .query({ tagId: id, visibility: 'timeline' })
+        .set(headers);
+      expect(filtered.status, `timeline filtered by ${name}`).toBeGreaterThanOrEqual(400);
+      const search = await request(app)
+        .post('/search/metadata')
+        .set(headers)
+        .send({ tagIds: [id] });
+      expect(search.text).not.toContain(locked.id);
+      expect(search.text).not.toContain(ruleMatch.id);
+    }
+
+    // "Use the existing tag regardless": creating one by a hidden tag's name reuses it, with the tag
+    // alone in the answer, and it stays hidden
+    for (const name of [hiddenTag, lockedOnlyTag]) {
+      const { status, body } = await request(app).post('/tags').set(headers).send({ name });
+      expect(status).toBe(201);
+      expect(body.id).toBe(tagIds[name]);
+      expect(JSON.stringify(body)).not.toContain(locked.id);
+      expect(JSON.stringify(body)).not.toContain(ruleMatch.id);
+    }
+    const { body: after } = await request(app).get('/tags').set(headers).expect(200);
+    expect(after.map(({ value }: { value: string }) => value)).toEqual([mixedTag]);
+
+    await unlock(owner.accessToken);
+    const { body: unlocked } = await request(app).get('/tags').set(headers).expect(200);
+    expect(
+      unlocked.map(({ value }: { value: string }) => value).toSorted((a: string, b: string) => a.localeCompare(b)),
+    ).toEqual(
+      [besideRuleTag, hiddenTag, lockedOnlyTag, mixedTag].toSorted((a: string, b: string) => a.localeCompare(b)),
+    );
   });
 
   it('never shows a Locked item to a partner, an album member or a shared link', async () => {

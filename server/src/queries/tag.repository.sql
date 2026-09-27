@@ -141,6 +141,14 @@ where
               end
             )
         )
+        and not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "tag_asset"."assetId"
+        )
     )
   )
 order by
