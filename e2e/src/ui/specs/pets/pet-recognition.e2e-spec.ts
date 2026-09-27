@@ -4,7 +4,7 @@ import { setupBaseMockApiRoutes } from 'src/ui/mock-network/base-network.js';
 /**
  * FL-58: pet recognition on the Pets page with fake processing destinations (no real worker, no
  * spending). Only the administrator's routed destination is offered: this server, a computer on
- * the network or Frameleaf Cloud; an unavailable worker shows the server's own reason with the
+ * the network; Frameleaf Cloud is refused (embeddings stay home) and an unavailable worker shows the server's own reason with the
  * way to fix it. A run is durable on the server: it can be stopped, and a reload shows it as the
  * server left it. A named pet's page asks search for that pet's confirmed photos only.
  */
@@ -135,15 +135,27 @@ test.describe('pet recognition', () => {
     expect(state.calls).toEqual(['POST', 'DELETE']);
   });
 
-  test('says when recognition runs on Frameleaf Cloud', async ({ context, page }) => {
-    await setup(context, available({ kind: 'frameleaf-cloud', name: 'Frameleaf Cloud' }));
+  test('refuses Frameleaf Cloud, which never runs pet recognition, and sends nothing there', async ({
+    context,
+    page,
+  }) => {
+    // Pet recognition compares smart-search embeddings, which stay on this network (FL-146, FL-159):
+    // a cloud-only route is answered as not allowed, never as a destination that runs it.
+    const state = await setup(context, {
+      available: false,
+      destination: { kind: 'frameleaf-cloud', name: 'Frameleaf Cloud' },
+      reason: 'workload-not-allowed',
+      detail: null,
+      hasConfirmedPhotos: true,
+      run: null,
+    });
     await page.goto('/pets');
 
-    const section = recognitionSection(page);
-    await expect(
-      section.getByText('Recognition runs on Frameleaf Cloud. Photos are sent there to be checked.'),
-    ).toBeVisible();
-    await expect(section.getByText('Recognition runs on this server.')).toHaveCount(0);
+    const status = recognitionSection(page).getByTestId('pet-recognition-unavailable');
+    await expect(status).toContainText('its processing destination is not allowed to run pet recognition.');
+    await expect(recognitionSection(page).getByText(/Recognition runs on/)).toHaveCount(0);
+    await expect(recognitionSection(page).getByRole('button', { name: 'Look for pets' })).toHaveCount(0);
+    expect(state.calls).toEqual([]);
   });
 
   test('names a computer on the network', async ({ context, page }) => {
