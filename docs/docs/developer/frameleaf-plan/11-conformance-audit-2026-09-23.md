@@ -513,6 +513,17 @@ On `claude/FL-31-goals`, based on `master/frameleaf-implementation` @ `249c37a3e
 
 Validation: web unit specs `library-session.svelte`, `LibraryView`, `LibraryTimeline.svelte` and `VideoNativeViewer`; a new mocked-API Playwright case (`timeline.e2e-spec.ts`, "The library keys come back once the viewer has closed") with the timeline keyboard, viewer-media and video-moments UI specs run against this worktree's Vite server.
 
+### September 26 integrity reports and restore evidence (FL-81)
+
+On `claude/FL-81-goals`, based on `master/frameleaf-implementation` @ `5d08c44999`. Earlier FL-81 work (restore guard, newer-backup refusal, refused sign-in links, log redaction, "Last run", report file) was already on integration; this closes the gaps found when the integrity and restore flows ran against the real server.
+
+- **Integrity checks.** A check started before the section's first queue poll, or one still queued behind other work, is re-read when it finishes. Before, a quick run left the card on its old count. "Recheck findings" in the report viewer re-reads the findings once its refresh job is created, including a refresh that finishes between two polls.
+- **Maintenance loads per section.** The integrity checks no longer wait for the backup list. A backup list that cannot be read shows "could not load" only in Database backups.
+- **No backups folder.** A server that never made a backup lists no backups instead of failing with a 500. Other read errors still fail. This affected the Maintenance area and the emergency restore flow on a fresh install.
+- **Evidence.** The web integrity e2e runs again (it was skipped upstream): a check run from its card, deleting one finding (the file is removed from disk), Recheck findings, Load More past the 500-finding page, and Delete report. The maintenance e2e adds a restore that survives a dropped connection and a page reload.
+
+Validation: web vitest `IntegrityReportSection` and `MaintenanceSection` (new) with the maintenance component specs; server `database-backup.service` spec; CI-strict svelte-check. Against the e2e stack built from this branch: web `integrity.e2e-spec.ts` 5/5 (twice), Playwright maintenance project 9/9, API maintenance suite 22/22 and API `integrity.e2e-spec.ts` 20/20.
+
 ### September 25 Frameleaf Cloud account, licensing and sign-in (FL-154 to FL-158, FL-170 to FL-172)
 
 On `codex/FL-154-cloud-account`, merged with `master/frameleaf-implementation` @ `d74c1bb2b7`. The Frameleaf Cloud area (`cloud`: Account & link, Plan, Licence), the Support Frameleaf screen, licence certificates and Sign in with Frameleaf are ported from the prototype (`FrameleafCloud.jsx`, `AuthScreens.jsx:256-560` and `:1400-1620`, `system-data.mjs:648-766`, effd05ffb7) on real server state. Nothing is simulated; every contract comes from the Frameleaf Cloud instance contract, and the specs run against a fake cloud and a fake identity provider.
