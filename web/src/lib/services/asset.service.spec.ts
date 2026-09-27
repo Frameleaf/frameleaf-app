@@ -1,4 +1,4 @@
-import { AssetTypeEnum, getAssetInfo } from '@immich/sdk';
+import { AssetTypeEnum, getAssetInfo, type AlbumResponseDto } from '@immich/sdk';
 import { toastManager } from '@immich/ui';
 import { mdiTune } from '@mdi/js';
 import { get } from 'svelte/store';
@@ -91,6 +91,17 @@ describe('AssetService', () => {
       setSharedLink(sharedLinkFactory.build({ allowDownload: false }));
       const assetActions = getAssetActions(() => '', asset);
       expect(assetActions.SharedLinkDownload.$if?.()).toStrictEqual(false);
+    });
+
+    it('opens a shared album link for a signed-in visitor, whose album carries no members (FL-56)', () => {
+      authManager.setUser(userAdminFactory.build({ id: 'visitor' }));
+      setSharedLink(sharedLinkFactory.build({ allowDownload: false }));
+      // A link's album comes without its members (shared-link.service strips them).
+      const album = { id: 'album-1', albumUsers: [] } as unknown as AlbumResponseDto;
+
+      const assetActions = getAssetActions(() => '', assetFactory.build({ ownerId }), album);
+
+      expect(assetActions.RemoveFromAlbum.$if?.()).toBe(false);
     });
 
     it('should allow shared link downloads if shared link downloads are enabled regardless of user', () => {
