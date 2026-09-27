@@ -9419,6 +9419,8 @@
   "frameleaf_viewer_stack_primary": "Primary",
   "frameleaf_viewer_stars": "{count, plural, one {# star} other {# stars}}",
   "frameleaf_viewer_stop_live_clip": "Stop live clip",
+  "frameleaf_viewer_video_decode_failed": "This browser couldn't decode this video.",
+  "frameleaf_viewer_video_format_unsupported": "This browser can't play the original file's format.",
   "frameleaf_viewer_video_source": "Video source",
   "frameleaf_viewer_view_on_map": "View on map",
   "frameleaf_viewer_zoom_in": "Zoom in",

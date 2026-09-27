@@ -17,6 +17,7 @@
     onNextAsset?: () => void;
     onVideoEnded?: () => void;
     onVideoStarted?: () => void;
+    onPlayEncoded?: () => void;
   }
 
   let {
@@ -32,6 +33,7 @@
     onNextAsset,
     onVideoEnded,
     onVideoStarted,
+    onPlayEncoded,
   }: Props = $props();
 
   const effectiveAssetId = $derived(assetId ?? asset.id);
@@ -52,5 +54,6 @@
     {onVideoEnded}
     {onVideoStarted}
     {onClose}
+    {onPlayEncoded}
   />
 {/if}
