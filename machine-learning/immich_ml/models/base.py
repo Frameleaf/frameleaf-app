@@ -99,28 +99,37 @@ class InferenceModel(ABC):
             ModelFormat.RKNN: ["*.armnn"],
         }
 
-        repo_id = f"{MODEL_SOURCE_ORG}/{clean_name(self.model_name)}"
+        self._download_from_source(
+            clean_name(self.model_name), ignore_patterns=ignored_patterns.get(self.model_format, [])
+        )
+
+    def _download_from_source(self, repo: str, **snapshot_kwargs: Any) -> None:
+        """Download `MODEL_SOURCE_ORG/<repo>` from the model source into this model's cache directory."""
+        repo_id = f"{MODEL_SOURCE_ORG}/{repo}"
         endpoint = model_source_url()
         try:
             snapshot_download(
                 repo_id,
                 cache_dir=self.cache_dir,
                 local_dir=self.cache_dir,
-                ignore_patterns=ignored_patterns.get(self.model_format, []),
                 endpoint=endpoint,
                 # A Hugging Face token only ever goes to huggingface.co (see model_source_token).
                 token=model_source_token(),
+                **snapshot_kwargs,
             )
         except Exception as error:
             if not _is_missing_model(error):
                 raise
-            message = (
-                f"Model '{self.model_name}' isn't available from the model source {endpoint} "
-                f"(looked for {repo_id}). An admin can set MACHINE_LEARNING_MODEL_SOURCE_URL "
-                "to their own model source that serves this model."
-            )
-            log.error(message)
-            raise ModelUnavailableError(message) from error
+            raise self._unavailable(repo_id, endpoint) from error
+
+    def _unavailable(self, repo_id: str, endpoint: str, reason: str = "isn't available") -> ModelUnavailableError:
+        message = (
+            f"Model '{self.model_name}' {reason} from the model source {endpoint} "
+            f"(looked for {repo_id}). An admin can set MACHINE_LEARNING_MODEL_SOURCE_URL "
+            "to their own model source that serves this model."
+        )
+        log.error(message)
+        return ModelUnavailableError(message)
 
     def _load(self) -> ModelSession:
         return self._make_session(self.model_path)
