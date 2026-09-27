@@ -35,7 +35,6 @@ import {
 import { MediaPolicyError, MediaPolicyViolation } from 'src/utils/media-policy.js';
 
 // Re-exported so existing callers keep importing it from here; it lives in enum.ts for the API.
-export { DecodeRefusal };
 
 /** How this renderer will treat a probed source. */
 export enum DecodeSupport {
@@ -674,3 +673,5 @@ export const selectDecodeAcceleration = (
       `${layout.bitDepth}-bit ${layout.chroma} ${codec}.`,
   };
 };
+
+export { DecodeRefusal } from 'src/enum.js';

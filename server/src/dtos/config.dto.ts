@@ -38,11 +38,11 @@ import {
   TranscodeHardwareAccelerationSchema,
   TranscodePolicy,
   TranscodePolicySchema,
+  VersionCheckFrequency,
+  VersionCheckFrequencySchema,
   VideoCodec,
   VideoCodecSchema,
   VideoContainer,
-  VersionCheckFrequency,
-  VersionCheckFrequencySchema,
   VideoContainerSchema,
 } from 'src/enum.js';
 

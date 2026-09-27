@@ -1,9 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { UserMetadata, UserMetadataItem } from 'src/types.js';
 import { CloudTourResponseDto, CloudTourSeenDto } from 'src/dtos/frameleaf-cloud.dto.js';
 import { SystemMetadataKey, UserMetadataKey } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
-import type { UserMetadata, UserMetadataItem } from 'src/types.js';
 import { readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
 
 type TourRecord = UserMetadata[UserMetadataKey.FrameleafCloudTour];
