@@ -8565,6 +8565,8 @@ export type ServerAppReleasesResponseDto = {
     };
 };
 export type ServerFrameleafConfigDto = {
+    /** Whether the deployment names a Frameleaf Cloud address (FRAMELEAF_CLOUD_URL), so setup can offer to link; nothing is contacted */
+    cloudConfigured: boolean;
     /** The address Frameleaf Cloud published for this server, while it is linked */
     publicUrl: string | null;
     /** Whether Sign in with Frameleaf is available (the server is linked) */

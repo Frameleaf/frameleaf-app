@@ -168,6 +168,11 @@ const ServerConfigSchema = z
         via: FrameleafViaSchema.nullable().describe(
           'How the request arrived; null when the edge worker did not vouch for it',
         ),
+        cloudConfigured: z
+          .boolean()
+          .describe(
+            'Whether the deployment names a Frameleaf Cloud address (FRAMELEAF_CLOUD_URL), so setup can offer to link; nothing is contacted',
+          ),
         signInAvailable: z.boolean().describe('Whether Sign in with Frameleaf is available (the server is linked)'),
         signInRequired: z
           .boolean()

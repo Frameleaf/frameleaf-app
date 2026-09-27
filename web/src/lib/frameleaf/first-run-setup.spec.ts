@@ -87,10 +87,25 @@ describe('first-run setup state (FL-176)', () => {
       expect(validateStep(state, 'account', { secrets: strong }).ok).toBe(true);
     });
 
-    it('requires the Frameleaf link when the admin chose Frameleaf', () => {
+    it('on a server not linked yet, the Frameleaf path creates the admin first and then needs the link (FL-168)', () => {
       const state = createSetup('new');
-      expect(validateStep(state, 'account').errors).toEqual({ link: 'frameleaf_setup_error_link' });
-      expect(validateStep(setLinked(state, true), 'account').ok).toBe(true);
+      expect(state.choices.signIn).toBe('frameleaf');
+      // the administrator's own details first
+      expect(validateStep(state, 'account').errors).toMatchObject({ name: 'frameleaf_setup_error_name' });
+      const filled = { ...state, choices: { ...state.choices, adminName: 'Ada', adminEmail: 'ada@example.com' } };
+      expect(validateStep(filled, 'account', { secrets: strong }).ok).toBe(true);
+      // then the link
+      const created = { ...filled, choices: { ...filled.choices, accountCreated: true } };
+      expect(validateStep(created, 'account').errors).toEqual({ link: 'frameleaf_setup_error_link' });
+      expect(validateStep(setLinked(created, true), 'account').ok).toBe(true);
+    });
+
+    it('on a server already linked, the Frameleaf path is Sign in with Frameleaf', () => {
+      const state = createSetup('new');
+      expect(validateStep(state, 'account', { frameleafSignIn: true }).errors).toEqual({
+        link: 'frameleaf_setup_error_link',
+      });
+      expect(validateStep(setLinked(state, true), 'account', { frameleafSignIn: true }).ok).toBe(true);
     });
 
     it('requires a writable library location', () => {
@@ -158,9 +173,17 @@ describe('first-run setup state (FL-176)', () => {
       expect(resumeSetup('existing', { server }, true)).toMatchObject({ step: 3, choices: { signedIn: true } });
       expect(resumeSetup('existing', {}, true).step).toBe(1);
       expect(resumeSetup('existing', {}, false).step).toBe(0);
+      // FL-168: an administrator created on the Frameleaf path carries on to link
       const created = resumeSetup('new', {}, true);
-      expect(created.choices).toMatchObject({ accountCreated: true, signIn: 'local' });
-      expect(firstInvalidStep(created)).toBe(-1);
+      expect(created.choices).toMatchObject({ accountCreated: true, signIn: 'frameleaf', linked: false });
+      expect(firstInvalidStep(created)).toBe(indexOf('new', 'account'));
+      const local = resumeSetup(
+        'new',
+        { local: { ...createSetup('new'), choices: { ...createSetup('new').choices, signIn: 'local' } } },
+        true,
+      );
+      expect(local.choices).toMatchObject({ accountCreated: true, signIn: 'local' });
+      expect(firstInvalidStep(local)).toBe(-1);
     });
   });
 
