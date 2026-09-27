@@ -13,7 +13,17 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/sve
 import { init, register, waitLocale } from 'svelte-i18n';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
+import { SystemConfigDraftStore } from '$lib/frameleaf/system-config-draft.svelte';
 import RemoteAccessSection from './RemoteAccessSection.svelte';
+
+const draftRef = vi.hoisted(() => ({ current: undefined as unknown }));
+vi.mock('$lib/managers/feature-flags-manager.svelte', () => ({
+  featureFlagsManager: { value: { configFile: false } },
+}));
+vi.mock('$lib/frameleaf/system-config-draft.svelte', async (original) => ({
+  ...(await original<typeof import('$lib/frameleaf/system-config-draft.svelte')>()),
+  getSystemConfigDraft: () => draftRef.current,
+}));
 
 const status = (overrides: Partial<CloudStatusResponseDto> = {}): CloudStatusResponseDto => ({
   state: CloudLinkState.Unlinked,
@@ -329,5 +339,98 @@ describe('RemoteAccessSection (FL-165)', () => {
     );
     expect(await screen.findByText('Port forwarding')).toBeInTheDocument();
     expect(screen.getByRole('switch', { name: 'I forward the port myself' })).toBeInTheDocument();
+  });
+});
+
+describe('RemoteAccessSection Public server URL (FL-168)', () => {
+  beforeAll(async () => {
+    await init({ fallbackLocale: 'en-US' });
+    register('en-US', () => import('$i18n/en.json'));
+    await waitLocale('en-US');
+  });
+
+  const useDraft = (externalDomain = '') => {
+    const config = { server: { externalDomain, name: '', loginPageMessage: '', publicUsers: true } } as never;
+    const store = new SystemConfigDraftStore(
+      { config, revision: 'r1' },
+      { defaults: config, load: vi.fn(), save: vi.fn() },
+    );
+    draftRef.current = store;
+    return store;
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    draftRef.current = undefined;
+    sdkMock.getCloudStatus.mockResolvedValue(linked({ remoteAccessEnabled: true }));
+    sdkMock.getLicenseStatus.mockResolvedValue({} as never);
+    sdkMock.getLicenseProducts.mockResolvedValue({} as never);
+  });
+
+  it('edits the Public server URL here, as part of the settings draft', async () => {
+    const store = useDraft('https://old.example.com');
+    sdkMock.getRemoteAccess.mockResolvedValue(remote({ enabled: true, publicUrl: RELAY }));
+    render(RemoteAccessSection);
+
+    const field = await screen.findByTestId('public-server-url');
+    expect(field).toHaveValue('https://old.example.com');
+    expect(screen.getByText('Saved with your other settings changes.')).toBeInTheDocument();
+    await fireEvent.input(field, { target: { value: 'https://photos.example.org' } });
+    expect(store.draft.server.externalDomain).toBe('https://photos.example.org');
+    expect(sdkMock.updateRemoteAccess).not.toHaveBeenCalled();
+  });
+
+  it('fills it with the Frameleaf address or the verified domain, and publishes the same address', async () => {
+    const store = useDraft('');
+    sdkMock.getRemoteAccess.mockResolvedValue(
+      remote({
+        enabled: true,
+        publicUrl: RELAY,
+        customHostname: 'photos.example.com',
+        customHostnameStatus: RemoteHostnameStatus.Verified,
+      }),
+    );
+    sdkMock.updateRemoteAccess.mockResolvedValue(
+      remote({
+        enabled: true,
+        publicUrl: 'https://photos.example.com',
+        publicUrlChoice: RemoteAccessPublicUrl.Custom,
+        customHostname: 'photos.example.com',
+        customHostnameStatus: RemoteHostnameStatus.Verified,
+      }),
+    );
+    render(RemoteAccessSection);
+
+    const frameleaf = await screen.findByRole('button', { name: 'Use the Frameleaf address' });
+    await waitFor(() => expect(frameleaf).toBeEnabled());
+    await fireEvent.click(frameleaf);
+    expect(store.draft.server.externalDomain).toBe(RELAY);
+    // already published: nothing to change on the server
+    expect(sdkMock.updateRemoteAccess).not.toHaveBeenCalled();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Use my domain' }));
+    expect(store.draft.server.externalDomain).toBe('https://photos.example.com');
+    await waitFor(() =>
+      expect(sdkMock.updateRemoteAccess).toHaveBeenCalledWith({
+        remoteAccessUpdateDto: { publicUrl: RemoteAccessPublicUrl.Custom },
+      }),
+    );
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Use my domain' })).toBeDisabled());
+  });
+
+  it('keeps Use my domain off until Frameleaf Cloud verified the domain', async () => {
+    useDraft('');
+    sdkMock.getRemoteAccess.mockResolvedValue(
+      remote({
+        enabled: true,
+        customHostname: 'photos.example.com',
+        customHostnameStatus: RemoteHostnameStatus.Pending,
+      }),
+    );
+    render(RemoteAccessSection);
+
+    const domain = await screen.findByRole('button', { name: 'Use my domain' });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Use the Frameleaf address' })).toBeEnabled());
+    expect(domain).toBeDisabled();
   });
 });

@@ -312,6 +312,8 @@
       description: section.subtitle,
       group: group(section.key),
       scope: sectionScope(section),
+      // FL-168: every section row carries its icon, as the prototype's SectionDirectory draws it
+      icon: section.icon,
       onSelect: () => void navigate(area, section.key),
     }));
     if (area === 'care') {
@@ -484,7 +486,7 @@
   );
 
   // CC-4: the template's `settings.serverName` (CommandCenter.jsx:657), which an administrator sets in
-  // Server identity & network; saved drafts apply at once, and an unnamed server shows its address.
+  // Server identity; saved drafts apply at once, and an unnamed server shows its address.
   const serverName = $derived(
     settingsDraft?.baseline?.server?.name?.trim() || serverConfigManager.value.serverName?.trim() || page.url.host,
   );

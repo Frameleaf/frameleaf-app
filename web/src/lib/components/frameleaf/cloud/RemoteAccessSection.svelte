@@ -10,7 +10,8 @@
    * - the public address with its certificate and QR code;
    * - the custom hostname: the two DNS records to add, "Check DNS" (adds the hostname, then asks
    *   Frameleaf Cloud whether the records are in place) and "Remove domain";
-   * - which address is published ("Use the Frameleaf address" or "Use my domain");
+   * - the Public server URL (FL-168: moved here from Server identity), which "Use the Frameleaf
+   *   address" or "Use my domain" fill, publishing the same address to the apps;
    * - who can connect (a Frameleaf sign-in for remote visitors is a fixed policy; originals and
    *   passwords over the relay ask before turning on); and the connection test.
    *
@@ -27,7 +28,9 @@
   import { formatDateTime } from '$lib/frameleaf/cloud-ml';
   import { checkCustomHostname, hostnameMessageKey } from '$lib/frameleaf/remote-access';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
+  import { getSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { cloudManager } from '$lib/managers/cloud-manager.svelte';
+  import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { copyToClipboard } from '$lib/utils';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
   import {
@@ -84,6 +87,17 @@
   const hostPending = $derived(remote?.customHostnameStatus === RemoteHostnameStatus.Pending);
   const customUrl = $derived(remote?.customHostname ? `https://${remote.customHostname}` : '');
   const serving = $derived(remote?.status === RemoteAccessState.Ready);
+
+  // FL-168: the Public server URL (`server.externalDomain`) lives here rather than in Server
+  // identity, as in the prototype's Remote access (FrameleafCloud.jsx "Public server URL"). It is part
+  // of the settings draft ("Saved with your other settings changes"); the two buttons fill it with the
+  // Frameleaf address or the verified domain and publish the same address to the apps.
+  const settingsDraft = getSystemConfigDraft();
+  // a configuration file manages the settings: the field is read-only, as on every settings page
+  const configFile = $derived(settingsDraft ? featureFlagsManager.value.configFile : false);
+  const serverUrl = $derived(settingsDraft?.draft.server.externalDomain ?? remote?.publicUrl ?? '');
+  const frameleafUrl = $derived(remote?.frameleafAddress ?? '');
+  const choseCustom = $derived(remote?.publicUrlChoice === RemoteAccessPublicUrl.Custom);
 
   const records = $derived(
     hostCheck?.valid && remote?.frameleafAddress
@@ -246,6 +260,23 @@
     hostInput = '';
     hostTouched = false;
     await run(() => removeRemoteHostname(), $t('frameleaf_remote_domain_removed'));
+  };
+
+  const setServerUrl = (value: string) => {
+    if (settingsDraft) {
+      settingsDraft.draft.server.externalDomain = value.trim();
+    }
+  };
+
+  /** "Use the Frameleaf address" / "Use my domain": fill the Public server URL and publish that address. */
+  const usePublicUrl = async (choice: RemoteAccessPublicUrl) => {
+    const url = choice === RemoteAccessPublicUrl.Custom ? customUrl : frameleafUrl;
+    if (!configFile) {
+      setServerUrl(url);
+    }
+    if (remote?.publicUrlChoice !== choice) {
+      await update({ publicUrl: choice }, $t('frameleaf_remote_saved'));
+    }
   };
 
   const runTest = async () => {
@@ -568,23 +599,35 @@
     title={$t('frameleaf_remote_public_url_title')}
     description={$t('frameleaf_remote_public_url_description')}
   >
-    {#if remote?.publicUrl}
+    {#if settingsDraft}
+      <label class="fc-stack">
+        {$t('frameleaf_remote_public_url_title')}
+        <input
+          type="url"
+          value={serverUrl}
+          placeholder="https://photos.example.com"
+          autocomplete="off"
+          spellcheck={false}
+          disabled={configFile}
+          data-testid="public-server-url"
+          oninput={(event) => setServerUrl(event.currentTarget.value)}
+        />
+        <small class="fc-muted">{$t('frameleaf_remote_public_url_help')}</small>
+      </label>
+    {:else if remote?.publicUrl}
       {@render copyValue(remote.publicUrl, $t('frameleaf_remote_public_url_title'))}
     {/if}
     <div class="fc-actions">
       <Button
-        disabled={!!blocked || busy || remote?.publicUrlChoice === RemoteAccessPublicUrl.Frameleaf}
-        onclick={() => void update({ publicUrl: RemoteAccessPublicUrl.Frameleaf }, $t('frameleaf_remote_saved'))}
+        disabled={!!blocked || busy || !frameleafUrl || (serverUrl === frameleafUrl && !choseCustom)}
+        onclick={() => void usePublicUrl(RemoteAccessPublicUrl.Frameleaf)}
       >
         <Icon icon={mdiCloudOutline} size="16" />
         {$t('frameleaf_remote_use_frameleaf')}
       </Button>
       <Button
-        disabled={!!blocked ||
-          busy ||
-          !hostVerified ||
-          (remote?.publicUrlChoice === RemoteAccessPublicUrl.Custom && remote.publicUrl === customUrl)}
-        onclick={() => void update({ publicUrl: RemoteAccessPublicUrl.Custom }, $t('frameleaf_remote_saved'))}
+        disabled={!!blocked || busy || !hostVerified || (serverUrl === customUrl && choseCustom)}
+        onclick={() => void usePublicUrl(RemoteAccessPublicUrl.Custom)}
       >
         <Icon icon={mdiWeb} size="16" />
         {$t('frameleaf_remote_use_domain')}

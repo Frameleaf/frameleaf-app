@@ -27,14 +27,7 @@
         isEdited={configToEdit.server.name !== config.server.name}
       />
 
-      <SettingField
-        inputType={SettingInputFieldType.TEXT}
-        label={$t('admin.server_external_domain_settings')}
-        description={$t('admin.server_external_domain_settings_description')}
-        bind:value={configToEdit.server.externalDomain}
-        isEdited={configToEdit.server.externalDomain !== config.server.externalDomain}
-      />
-
+      <!-- FL-168: the Public server URL is edited in Frameleaf Cloud › Remote access, as in the prototype. -->
       <SettingField
         inputType={SettingInputFieldType.TEXT}
         label={$t('admin.server_welcome_message')}

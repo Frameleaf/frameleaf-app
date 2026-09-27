@@ -21,8 +21,8 @@
    * with the Sept 24 grouped-list style (command-center.css:1619-1695): one inset grouped list per
    * group, like System Settings. Rows carry no repeated area icon, and a scope tag only when the row
    * applies to someone other than the rest of its area ("Just you" among server settings, and so on).
-   * A row with an icon of its own (the utilities, `utilities-data.mjs:15-87`) shows it first, as
-   * `SectionDirectory` does (CommandCenter.jsx:2739, command-center.css:1663-1666).
+   * Every row shows its own icon first (FL-168: each settings section's, and each tool's,
+   * `utilities-data.mjs:15-87`), as `SectionDirectory` does (CommandCenter.jsx:2784, command-center.css:1663-1666).
    * A group named like its area does not repeat the name as a heading.
    */
   import { usualScope } from '$lib/frameleaf/settings-areas';

@@ -3,9 +3,12 @@
  * from real server state, kept free of the DOM so the rules can be tested.
  */
 import {
+  CloudLinkState,
+  LicenseState,
   MlDestinationHealth,
-  MlDestinationKind,
   MlWorkload,
+  type CloudStatusResponseDto,
+  type LicenseStatusResponseDto,
   type MlDestinationResponseDto,
   type MlWorkloadRouteDto,
   type RenderWorkerCompatibilityResponseDto,
@@ -48,14 +51,68 @@ export const mlEndpointState = (
     : 'unchecked';
 };
 
-/** "Cloud destination": Frameleaf Cloud when a library workload is routed to it (FL-159). */
-export const cloudDestinationState = (
-  destinations: MlDestinationResponseDto[],
-  routes: MlWorkloadRouteDto[],
-): 'frameleaf' | 'local' =>
-  libraryDestinations(destinations, routes).some((destination) => destination.kind === MlDestinationKind.FrameleafCloud)
-    ? 'frameleaf'
-    : 'local';
+/** The Frameleaf Cloud glance tile's link part (FL-168; `cloudSummary` in frameleaf-cloud-data.mjs). */
+export type CloudGlanceLink = 'linked' | 'pending' | 'unlinked';
+/** Its plan part: the plan when there is one, else a supporter key, else none. */
+export type CloudGlancePlan = 'none' | 'supporter' | 'active' | 'grace' | 'expired' | 'invalid';
+
+export type CloudGlance =
+  | { configured: false; attention: false }
+  | { configured: true; link: CloudGlanceLink; remote: boolean; plan: CloudGlancePlan; attention: boolean };
+
+/**
+ * "Frameleaf Cloud" on the Overview (FL-168), the prototype's `cloudSummary`: link state · remote
+ * access on or off · plan, from the cloud manager's status and licence. A server without
+ * `FRAMELEAF_CLOUD_URL` reads "Not set up" and nothing else, since it never contacts Frameleaf Cloud.
+ * A plan in its grace period or expired needs attention.
+ */
+export const cloudGlance = (
+  status: Pick<CloudStatusResponseDto, 'state' | 'configured' | 'remoteAccessEnabled'>,
+  license?: Pick<LicenseStatusResponseDto, 'state' | 'plan' | 'entitlements'> | null,
+): CloudGlance => {
+  if (!status.configured || status.state === CloudLinkState.NotConfigured) {
+    return { configured: false, attention: false };
+  }
+  const link: CloudGlanceLink =
+    status.state === CloudLinkState.Linked
+      ? 'linked'
+      : status.state === CloudLinkState.Pending
+        ? 'pending'
+        : 'unlinked';
+  let plan: CloudGlancePlan;
+  if (!license?.plan) {
+    plan = license?.entitlements?.supporter ? 'supporter' : 'none';
+  } else {
+    switch (license.state) {
+      case LicenseState.Active: {
+        plan = 'active';
+        break;
+      }
+      case LicenseState.Grace: {
+        plan = 'grace';
+        break;
+      }
+      case LicenseState.Expired: {
+        plan = 'expired';
+        break;
+      }
+      case LicenseState.Invalid: {
+        plan = 'invalid';
+        break;
+      }
+      default: {
+        plan = 'none';
+      }
+    }
+  }
+  return {
+    configured: true,
+    link,
+    remote: status.remoteAccessEnabled,
+    plan,
+    attention: plan === 'grace' || plan === 'expired' || plan === 'invalid',
+  };
+};
 
 /** "GPU Studio": qualified when every render kind has a qualified GPU worker. */
 export const gpuStudioState = (compatibility: RenderWorkerCompatibilityResponseDto): 'qualified' | 'check' =>

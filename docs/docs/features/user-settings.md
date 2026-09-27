@@ -21,6 +21,7 @@ Everything in this part of the settings changes only your own account.
 - **API keys**: create a key with only the permissions an application needs (or full access), edit its name and permissions, rotate it or delete it. A new or rotated key is shown once; the old value of a rotated key stops working at once.
 - **Sign-in provider**: connect or disconnect your account from the server's sign-in provider, and open the provider's account page when your administrator configured one.
 - **Signed-in devices**: see where your account is signed in, sign out one device or every device except this one.
+- **Frameleaf account**: link your own Frameleaf account so you can sign in with it when you are away from home, through the server's remote access; unlink it here too, which ends your other Frameleaf sessions on this server. Until your administrator links the server to Frameleaf Cloud, the page says so and you keep signing in at home as usual (see [Frameleaf Cloud](/administration/frameleaf-cloud#sign-in-with-frameleaf)).
 - **Supporter status**: activate or remove personal supporter status with its key. Administrators also register or remove the server support key here, as a separate action.
 
 ## Locked tags & people

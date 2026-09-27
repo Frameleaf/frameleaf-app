@@ -159,7 +159,7 @@ describe('CloudMlSection (FL-159, prototype Processing)', () => {
 
     const dialog = await screen.findByRole('dialog', { name: 'Cloud processing terms · version 2026-10-01' });
     expect(store.draft.frameleafCloud!.cloudMl.enabled).toBe(false);
-    expect(within(dialog).getByText("eu · your account's region")).toBeInTheDocument();
+    expect(within(dialog).getByText('eu · your account’s region')).toBeInTheDocument();
     const accept = within(dialog).getByRole('button', { name: 'Accept and turn on' });
     expect(accept).toBeDisabled();
     await fireEvent.click(within(dialog).getByRole('checkbox'));

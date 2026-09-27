@@ -64,11 +64,13 @@ vi.mock('@immich/sdk', async (importOriginal) => ({
   }),
 }));
 
-const serverSection = (key: string, title: string): SettingsHostSection => ({
+const ICON = 'M12 2L2 22h20Z';
+const serverSection = (key: string, title: string, keywords?: string[]): SettingsHostSection => ({
   key,
   title,
   subtitle: `${title} help`,
-  icon: '',
+  icon: ICON,
+  keywords,
   admin: true,
   component: key === 'external-library' ? SettingsLibraryGroup : MockText,
 });
@@ -76,7 +78,7 @@ const accountSection = (key: string, title: string): SettingsHostSection => ({
   key,
   title,
   subtitle: `${title} help`,
-  icon: '',
+  icon: ICON,
 });
 
 const sections = [
@@ -88,6 +90,7 @@ const sections = [
   serverSection('notifications', 'Email delivery'),
   serverSection('queues', 'Job manager'),
   serverSection('accounts', 'People with server access'),
+  serverSection('cloud-remote', 'Remote access', ['Public server URL']),
   accountSection('account', 'Your profile'),
   accountSection('takeout', 'Google Photos imports'),
   accountSection('email-preferences', 'Your email notifications'),
@@ -168,7 +171,7 @@ describe('the Command Center (FL-71)', () => {
     expect(state.goto).toHaveBeenLastCalledWith('/user-settings?area=storage', expect.any(Object));
   });
 
-  it('draws an area directory as grouped lists without repeated icons (FL-71, FL-10)', () => {
+  it('draws an area directory as grouped lists, every row with its own icon (FL-71, FL-10, FL-168)', () => {
     open('/user-settings?area=storage');
     const { container } = render(SettingsHost, { sections });
     const directory = container.querySelector<HTMLElement>('.cc-directory')!;
@@ -177,9 +180,10 @@ describe('the Command Center (FL-71)', () => {
         .getAllByRole('heading', { level: 2 })
         .map((heading) => heading.textContent),
     ).toEqual(['Storage', 'Trash']);
-    // Only the chevron: no area icon repeated on every row.
+    // The section's own icon and the chevron; no area icon repeated on every row.
     for (const row of within(directory).getAllByRole('button')) {
-      expect(row.querySelectorAll('svg')).toHaveLength(1);
+      expect(row.querySelectorAll('svg')).toHaveLength(2);
+      expect(row.querySelector('.row-icon path')).toHaveAttribute('d', ICON);
     }
     // Every row is a server setting, like the area, so none carries a scope tag.
     expect(directory.querySelector('.cc-directory-scope')).toBeNull();
@@ -350,6 +354,14 @@ describe('the Command Center (FL-71)', () => {
     expect(await screen.findByText('No settings found')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Clear search' }));
     expect(search).toHaveValue('');
+  });
+
+  it('finds a section by a setting it holds: the Public server URL lands in Remote access (FL-168)', async () => {
+    open('/user-settings?area=storage');
+    render(SettingsHost, { sections });
+    await userEvent.type(screen.getByRole('searchbox', { name: 'Search all settings' }), 'public server url');
+    await userEvent.click(await screen.findByRole('button', { name: /Remote access/ }));
+    expect(state.goto).toHaveBeenCalledWith('/user-settings?area=cloud&section=cloud-remote', expect.any(Object));
   });
 
   it('keeps the Libraries manager and its settings together without a directory', () => {

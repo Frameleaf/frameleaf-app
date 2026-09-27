@@ -11,7 +11,8 @@
   import { formatBytes } from '$lib/frameleaf/physical-dedup';
   import { Route } from '$lib/route';
   import { jobQueue } from '$lib/frameleaf/job-queues';
-  import { cloudDestinationState, gpuStudioState, mlEndpointState } from '$lib/frameleaf/overview-readiness';
+  import { cloudGlance, gpuStudioState, mlEndpointState } from '$lib/frameleaf/overview-readiness';
+  import { cloudManager } from '$lib/managers/cloud-manager.svelte';
   import {
     AnalyticsRange,
     AnalyticsScopeKind,
@@ -46,6 +47,7 @@
     mdiServerOutline,
   } from '@mdi/js';
   import { locale } from '$lib/stores/preferences.store';
+  import { onMount } from 'svelte';
   import { t, type Translations } from 'svelte-i18n';
   let report = $state<AnalyticsReportResponseDto>();
   let about = $state<ServerAboutResponseDto>();
@@ -132,6 +134,23 @@
     const definition = jobQueue(name);
     return definition ? $t(`frameleaf_jobs_queue_${definition.key}` as Translations) : name;
   };
+  // FL-168: the Frameleaf Cloud tile (the prototype's `cloudSummary`), from the cloud manager's
+  // link status and licence (the same status the Frameleaf Cloud pages show).
+  onMount(() => cloudManager.listen());
+  const cloud = $derived(cloudManager.status ? cloudGlance(cloudManager.status, cloudManager.license) : null);
+  const cloudText = $derived.by(() => {
+    if (!cloud) {
+      return $t('frameleaf_cc_unmeasured');
+    }
+    if (!cloud.configured) {
+      return $t('frameleaf_cc_cloud_not_set_up');
+    }
+    return [
+      $t(`frameleaf_cc_cloud_link_${cloud.link}` as Translations),
+      $t(cloud.remote ? 'frameleaf_cc_cloud_remote_on' : 'frameleaf_cc_cloud_remote_off'),
+      $t(`frameleaf_cc_cloud_plan_${cloud.plan}` as Translations),
+    ].join(' · ');
+  });
   const analyticsHref = $derived(
     commandCenterUrl('analytics', undefined, { scope: scope === 'all' ? undefined : scope }),
   );
@@ -381,13 +400,9 @@
           ></span
         ><Icon icon={mdiChevronRight} size="18" /></a
       >
-      <a href={href('processing', 'cloud-ml')}
+      <a href={href('cloud')} class:attention={cloud?.attention} data-testid="overview-cloud-tile"
         ><Icon icon={mdiCloudOutline} size="18" /><span
-          ><strong>{$t('frameleaf_cc_cloud_destination')}</strong><small
-            >{ml
-              ? $t(`frameleaf_cc_cloud_${cloudDestinationState(ml.destinations, ml.routes)}` as Translations)
-              : $t('frameleaf_cc_review_destinations')}</small
-          ></span
+          ><strong>{$t('frameleaf_settings_area_cloud')}</strong><small>{cloudText}</small></span
         ><Icon icon={mdiChevronRight} size="18" /></a
       >
     </div>
@@ -427,6 +442,11 @@
     display: block;
     color: var(--fl-muted);
     margin-top: 6px;
+  }
+  /* The prototype's `cc-glance-attention`: a plan in its grace period or expired. */
+  .glance a.attention > :global(svg:first-child),
+  .glance a.attention small {
+    color: var(--fl-warning-text, var(--fl-warning));
   }
   @media (max-width: 1000px) {
     .glance > div {
