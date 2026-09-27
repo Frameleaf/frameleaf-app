@@ -138,6 +138,8 @@ export class EdgeStateService {
   private enrollRetry: { at: number; failures: number } | null = null;
   private reportAttempts = new Map<EdgeCertificateKind, number>();
   private relayNoticeAt = 0;
+  /** Set once the migrations have run (see `schemaReady`). */
+  private migrated = false;
   /** Specs replace the waits. */
   wait = (ms: number) => sleep(ms);
 
@@ -261,7 +263,27 @@ export class EdgeStateService {
     return { serve: true, cloudUrl, link: link as FrameleafCloudLink & { instanceId: string }, settings };
   }
 
+  /**
+   * On a fresh install the API migrates while this worker starts: reading `system_metadata` before
+   * that finishes fails (and every failed query is logged). Each pass waits for a boot that is
+   * migrating (`DatabaseLock.Migrations`) and does nothing until the schema is there.
+   */
+  private async schemaReady(): Promise<boolean> {
+    if (!this.migrated) {
+      this.migrated = await this.databaseRepository.withLock(DatabaseLock.Migrations, () =>
+        this.databaseRepository.isSchemaReady(),
+      );
+      if (!this.migrated) {
+        this.logger.debug('Waiting for the database migrations before starting remote access');
+      }
+    }
+    return this.migrated;
+  }
+
   private async reconcile(now: number) {
+    if (!(await this.schemaReady())) {
+      return;
+    }
     // the lock lives on a connection of its own; it is checked on every pass, and a lost connection
     // (the lock went with it) stops serving at once, before another edge worker can take over
     if (this.lock && !(await this.lock.verify())) {

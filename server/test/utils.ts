@@ -343,6 +343,7 @@ export const getMocks = () => {
   const databaseMock = automock(DatabaseRepository, { args: [, loggerMock], strict: false });
 
   databaseMock.withLock.mockImplementation((_type, fn) => fn());
+  databaseMock.isSchemaReady.mockResolvedValue(true);
   databaseMock.withAssetMetadataLock.mockImplementation((_assetId, fn) => fn(undefined as never));
   databaseMock.withAssetMetadataLocks.mockImplementation((_assetIds, fn) => fn(undefined as never));
   databaseMock.withUserPreferencesLock.mockImplementation((_userId, fn) => fn(undefined as never));
