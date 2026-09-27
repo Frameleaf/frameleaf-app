@@ -818,18 +818,18 @@
       "version": 2
     },
     {
-      "bytes": 36723,
+      "bytes": 36905,
       "category": "development",
       "id": "61407844",
       "source": "docs/docs/developer/frameleaf-development.md",
-      "sourceCommit": "f50a1c8e7bb84de30293e8204c4570a9b0bbed3c",
-      "sourceSha256": "854f04685d62991b4f2a8aa1fca2df2ac51295bcd5348b0ac3d69cb6d6377a8f",
+      "sourceCommit": "7372de4ff09a3c5d4b8f18b03b1e1e20094bd85b",
+      "sourceSha256": "45ea138f660b1ec09ed79966d6c4cef0dbdcfe2ae66e1e98665c45260d366956",
       "title": "Frameleaf Development and Delivery",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61407844",
-      "verification": "FL-142/FL-145/FL-146 release model: Confluence page read back at version 16 as ADF (published as HTML); the header carries source hash 854f0468 and 36723 bytes and names commit f50a1c8e7b pushed on master/frameleaf-implementation; 16 headings, the same as version 15; Build and release flow now carries the deployment test before any push, Deploy production (production environment, cosign signing and verification command, dry run by default) and the staged rollout, kill switch and rollback paragraph; Integration image describes the same gate; Validation and activation lists .github/frameleaf-deploy-test.test.cjs and records the production environment, its two secrets by name and that native apps release from their own repositories; the page-only Earlier infrastructure checkpoint, Agent workflow update and PR 112 delivery checkpoint sections are kept unchanged; the two site-relative doc links are rendered as source paths as before; no user additions.",
+      "verification": "Integration image on push: Confluence page read back at version 17 as markdown (published as HTML to keep smart links); the header carries source hash 45ea138f and 36905 bytes and names commit 7372de4ff0 on master/frameleaf-implementation, keeping the FL-142/FL-145/FL-146, integration-image, Flutter-removal, FL-191 and FL-159 history; compared with version 16, the only differences are the header and, under Integration image (pre-release), the push trigger sentence and the example commands (list and watch the latest run instead of dispatching); the page-only earlier checkpoints are unchanged; no user additions.",
       "verified": true,
-      "verifiedAt": "2026-09-27T18:41:00.000Z",
-      "version": 16
+      "verifiedAt": "2026-09-27T18:49:00.000Z",
+      "version": 17
     },
     {
       "bytes": 411,
