@@ -48,6 +48,8 @@ import type { Project } from '@/types/project'
 import type { StudioHostToFrameMessage } from '@frameleaf/host/frame-protocol'
 import { STUDIO_FRAME_PROTOCOL_VERSION } from '@frameleaf/host/frame-protocol'
 import type { StudioHostContext } from '@frameleaf/host/host-contract'
+import { cadenceFromDecimal, nearestTimelineFrame, withProjectCadence } from '@frameleaf/host/studio-timing'
+import { handoffProjectFps, withStoredCadence } from './project-cadence'
 import { call, connectToHost, post } from './host-port'
 import { setPersistenceGate } from './persistence-gate'
 import { VirtualWorkspace } from './virtual-workspace'
@@ -168,20 +170,27 @@ interface Session extends DraftSendState {
 
 let session: Session | null = null
 
-/** A new project for an empty handle: the host's name, a 1080p30 canvas, the handoff on V1. */
+/**
+ * A new project for an empty handle: the host's name, a 1080p canvas, the handoff on V1. The grid
+ * is the handoff's own frame rate when every handed-over video shares one of the editor's project
+ * rates exactly, and 30 fps otherwise; either way the graph stores it as an exact rational (FL-93),
+ * and a source on another cadence is converted, as a recorded decision, only at export.
+ */
 async function newProjectFor(context: StudioHostContext, id: string): Promise<Project> {
-  const project = createProjectObject(
-    { name: context.project.name, width: 1920, height: 1080, fps: 30 },
-    id,
-  )
   const handoff = context.handoffAssetIds.filter((assetId) =>
     context.assets.some((asset) => asset.id === assetId && !asset.isOffline),
   )
+  const { getAllMedia } = await import('@/infrastructure/storage')
+  const media = handoff.length > 0 ? await getAllMedia() : []
+  const created = createProjectObject(
+    { name: context.project.name, width: 1920, height: 1080, fps: handoffProjectFps(handoff, media) },
+    id,
+  )
+  const project = { ...created, metadata: withProjectCadence(created.metadata) } as Project
   if (handoff.length === 0) return project
   // The handoff becomes the starting cut through the same canonical commands a native client
   // would send, so a "make a movie" project is built exactly as the engine would build it.
   const { applyCanonicalCommands } = await import('./canonical-commands')
-  const { getAllMedia } = await import('@/infrastructure/storage')
   const withTrack = {
     ...project,
     timeline: {
@@ -218,9 +227,8 @@ async function newProjectFor(context: StudioHostContext, id: string): Promise<Pr
       keyframes: [],
     },
   } as unknown as Project
-  const media = await getAllMedia()
-  // Stills run five seconds, videos their own length, end to end, on the 30 fps grid of the new
-  // project (the same frame count `clip.add` gives a video), so no clip overlaps the next.
+  // Stills run five seconds, videos their own length, end to end, on the grid of the new project
+  // (the same frame count `clip.add` gives a video), so no clip overlaps the next.
   const fps = project.metadata.fps
   let atFrames = 0
   const envelopes = handoff.map((assetId, index) => {
@@ -252,7 +260,7 @@ async function seedProject(state: Session, mount: EditorMount): Promise<void> {
   if (graph && typeof graph === 'object') {
     workspace.putFile(
       projectJsonPath(mount.projectId),
-      JSON.stringify({ ...graph, id: mount.projectId }, null, 2),
+      JSON.stringify({ ...withStoredCadence(graph), id: mount.projectId }, null, 2),
     )
     // Keep the index honest so Freecut's project listing agrees with the file.
     if (!(await getProject(mount.projectId)))
@@ -508,8 +516,9 @@ function startAtHandoffPlayhead(state: Session, at: { num: number; den: number }
   const apply = () => {
     const settings = useTimelineSettingsStore.getState()
     if (settings.isTimelineLoading) return false
-    const fps = settings.fps || 30
-    usePlaybackStore.getState().setCurrentFrame(Math.round((at.num / at.den) * fps))
+    const cadence = cadenceFromDecimal(settings.fps || 30)
+    if (!cadence) return true
+    usePlaybackStore.getState().setCurrentFrame(nearestTimelineFrame(at, cadence))
     return true
   }
   if (apply()) return
@@ -526,8 +535,8 @@ function watchPlayhead(state: Session) {
     usePlaybackStore.subscribe((playback) => {
       if (playback.isPlaying || playback.currentFrame === last) return
       last = playback.currentFrame
-      const fps = useTimelineSettingsStore.getState().fps || 30
-      post({ type: 'playhead', time: frameToTime(last, fps) })
+      const time = frameToTime(last, useTimelineSettingsStore.getState().fps || 30)
+      if (time) post({ type: 'playhead', time })
     }),
   )
 }

@@ -29,6 +29,7 @@ import type { AnimatableProperty, EasingType } from '@/types/keyframe'
 import type { TransformProperties } from '@/types/transform'
 import type { TransitionPresentation } from '@/types/transition'
 import { migrateProject } from '@/shared/projects/migrations'
+import { cadenceFromDecimal, projectCadenceOf, withProjectCadence } from '@frameleaf/host/studio-timing'
 import {
   buildTimelineFromStores,
   hydrateTimelineStoresFromProject,
@@ -156,18 +157,22 @@ const isRational = (value: unknown): value is Rational => {
   return Number.isSafeInteger(num) && Number.isSafeInteger(den) && den > 0
 }
 
-/** The project's frame rate as an exact fraction (Freecut stores 29.97 as a decimal). */
-export const frameRateOf = (fps: number): { num: bigint; den: bigint } => {
-  if (!Number.isFinite(fps) || fps <= 0) return { num: 30n, den: 1n }
-  if (Number.isInteger(fps)) return { num: BigInt(fps), den: 1n }
-  return { num: BigInt(Math.round(fps * 1000)), den: 1000n }
+/**
+ * The project's frame rate as an exact fraction (FL-93). A graph that stores `metadata.frameRate`
+ * is read from it; Freecut's own `fps` number is read exactly when it is an integer or an NTSC
+ * `x/1001` rate, and refused otherwise, never rounded onto a nearby fraction.
+ */
+export const frameRateOf = (rate: number | Rational): { num: bigint; den: bigint } => {
+  const exact = typeof rate === 'number' ? cadenceFromDecimal(rate) : projectCadenceOf({ frameRate: rate })
+  if (!exact) invalid('The project frame rate has no exact reading')
+  return { num: BigInt(exact!.num), den: BigInt(exact!.den) }
 }
 
 /** Seconds (exact) to the nearest frame; halves round up. */
-export const secondsToFrames = (time: Rational, fps: number): number => {
-  const rate = frameRateOf(fps)
-  const numerator = BigInt(time.num) * rate.num
-  const denominator = BigInt(time.den) * rate.den
+export const secondsToFrames = (time: Rational, rate: number | Rational): number => {
+  const cadence = frameRateOf(rate)
+  const numerator = BigInt(time.num) * cadence.num
+  const denominator = BigInt(time.den) * cadence.den
   const doubled = 2n * numerator + denominator
   const twice = 2n * denominator
   // floor((2n + d) / 2d) for either sign.
@@ -177,10 +182,10 @@ export const secondsToFrames = (time: Rational, fps: number): number => {
   return frames
 }
 
-const timeField = (payload: Record<string, unknown>, name: string, fps: number): number => {
+const timeField = (payload: Record<string, unknown>, name: string, cadence: Rational): number => {
   const value = payload[name]
   if (!isRational(value)) invalid(`${name} must be an exact rational time`)
-  const frames = secondsToFrames(value as Rational, fps)
+  const frames = secondsToFrames(value as Rational, cadence)
   if (frames < 0) invalid(`${name} must not be negative`)
   return frames
 }
@@ -188,8 +193,8 @@ const timeField = (payload: Record<string, unknown>, name: string, fps: number):
 const optionalTime = (
   payload: Record<string, unknown>,
   name: string,
-  fps: number,
-): number | undefined => (payload[name] === undefined ? undefined : timeField(payload, name, fps))
+  cadence: Rational,
+): number | undefined => (payload[name] === undefined ? undefined : timeField(payload, name, cadence))
 
 const stringField = (payload: Record<string, unknown>, name: string): string => {
   const value = payload[name]
@@ -506,15 +511,15 @@ const setTransform = (id: string, transform: Partial<TransformProperties>) => {
 
 type Handler = (
   payload: Record<string, unknown>,
-  context: { fps: number; media: Map<string, MediaMetadata> },
+  context: { fps: number; cadence: Rational; media: Map<string, MediaMetadata> },
 ) => void
 
 const handlers: Record<string, Handler> = {
-  'clip.add'(payload, { fps, media }) {
+  'clip.add'(payload, { fps, cadence, media }) {
     const assetId = stringField(payload, 'assetId')
     const track = requireTrack(stringField(payload, 'trackId'))
-    const from = timeField(payload, 'at', fps)
-    const duration = optionalTime(payload, 'duration', fps)
+    const from = timeField(payload, 'at', cadence)
+    const duration = optionalTime(payload, 'duration', cadence)
     if (duration !== undefined && duration < 1) invalid('duration must be at least one frame')
     const source = media.get(assetId)
     if (!source) invalid(`assetId: "${assetId}" is not media this session may use`)
@@ -594,9 +599,9 @@ const handlers: Record<string, Handler> = {
     else removeItems(ids as string[])
   },
 
-  'clip.move'(payload, { fps }) {
+  'clip.move'(payload, { cadence }) {
     const item = requireItem(stringField(payload, 'clipId'))
-    const from = timeField(payload, 'start', fps)
+    const from = timeField(payload, 'start', cadence)
     const trackId = optionalString(payload, 'trackId')
     if (trackId) requireTrack(trackId)
     moveItem(item.id, from, trackId)
@@ -628,7 +633,7 @@ const handlers: Record<string, Handler> = {
     if (!ok) failed('clip.setTransformParent: the parent would create a cycle or is not allowed')
   },
 
-  'clip.setTransition'(payload, { fps }) {
+  'clip.setTransition'(payload, { cadence }) {
     const item = requireItem(stringField(payload, 'clipId'))
     const existing = useTransitionsStore
       .getState()
@@ -642,7 +647,7 @@ const handlers: Record<string, Handler> = {
     const { type, duration } = intent as { type?: unknown; duration?: unknown }
     if (typeof type !== 'string') invalid('transition.type is required')
     const presentation = transitionPresentationOf(type as string)
-    const frames = timeField({ duration }, 'duration', fps)
+    const frames = timeField({ duration }, 'duration', cadence)
     if (frames < 1) invalid('transition.duration must be at least one frame')
     if (existing) {
       updateTransition(existing.id, { durationInFrames: frames, presentation })
@@ -660,8 +665,8 @@ const handlers: Record<string, Handler> = {
     }
   },
 
-  'clip.split'(payload, { fps }) {
-    const frame = timeField(payload, 'at', fps)
+  'clip.split'(payload, { cadence }) {
+    const frame = timeField(payload, 'at', cadence)
     const ids = payload.clipIds
     if (ids === undefined) {
       if (splitAllItemsAtFrame(frame) === 0) invalid('clip.split: nothing spans that time')
@@ -675,9 +680,9 @@ const handlers: Record<string, Handler> = {
     }
   },
 
-  'clip.trimStart'(payload, { fps }) {
+  'clip.trimStart'(payload, { cadence }) {
     const item = requireItem(stringField(payload, 'clipId'))
-    const start = timeField(payload, 'start', fps)
+    const start = timeField(payload, 'start', cadence)
     const delta = start - item.from
     if (delta === 0) return
     if (start >= item.from + item.durationInFrames) invalid('start must be before the clip ends')
@@ -687,9 +692,9 @@ const handlers: Record<string, Handler> = {
       failed('clip.trimStart: the source has no more media there')
   },
 
-  'clip.trimEnd'(payload, { fps }) {
+  'clip.trimEnd'(payload, { cadence }) {
     const item = requireItem(stringField(payload, 'clipId'))
-    const end = timeField(payload, 'end', fps)
+    const end = timeField(payload, 'end', cadence)
     const delta = end - (item.from + item.durationInFrames)
     if (delta === 0) return
     if (end <= item.from) invalid('end must be after the clip starts')
@@ -799,10 +804,10 @@ const handlers: Record<string, Handler> = {
     removeEffect(item.id, effectId)
   },
 
-  'keyframe.add'(payload, { fps }) {
+  'keyframe.add'(payload, { cadence }) {
     const item = requireItem(stringField(payload, 'clipId'))
     const property = stringField(payload, 'property') as AnimatableProperty
-    const at = timeField(payload, 'at', fps)
+    const at = timeField(payload, 'at', cadence)
     const value = (payload.value as { value?: unknown } | undefined)?.value
     if (typeof value !== 'number' || !Number.isFinite(value))
       invalid('value must be { value: number }')
@@ -833,10 +838,10 @@ const handlers: Record<string, Handler> = {
     for (const id of ids as string[]) removeKeyframe(item.id, property, id)
   },
 
-  'title.add'(payload, { fps }) {
+  'title.add'(payload, { cadence }) {
     const text = stringField(payload, 'text')
-    const from = timeField(payload, 'at', fps)
-    const duration = optionalTime(payload, 'duration', fps) ?? 3 * Math.round(fps)
+    const from = timeField(payload, 'at', cadence)
+    const duration = optionalTime(payload, 'duration', cadence) ?? secondsToFrames({ num: 3, den: 1 }, cadence)
     if (duration < 1) invalid('duration must be at least one frame')
     const track = tracks().find(
       (candidate) => !candidate.isGroup && (candidate.kind ?? 'video') === 'video',
@@ -930,6 +935,16 @@ export async function applyCanonicalCommands(
     fps: project.metadata.fps || 30,
   }
   const fps = projectCanvas.fps
+  // FL-93: payload times become frames on the exact project cadence, never on a rounded decimal.
+  const cadence = projectCadenceOf(project.metadata)
+  if (!cadence) {
+    return {
+      status: 'rejected',
+      index: 0,
+      reason: 'invalid',
+      detail: 'The project frame rate has no exact reading',
+    }
+  }
   const mediaById = new Map(media.map((entry) => [entry.id, entry]))
 
   await hydrateTimelineStoresFromProject(project)
@@ -951,7 +966,7 @@ export async function applyCanonicalCommands(
     try {
       // The clock is the envelope's own issue time, so a retried envelope stamps the same values.
       await withDeterminism(`${envelope.idempotencyKey}:${index}`, envelope.issuedAt ?? 0, () =>
-        handler(envelope.payload ?? {}, { fps, media: mediaById }),
+        handler(envelope.payload ?? {}, { fps, cadence, media: mediaById }),
       )
     } catch (error) {
       if (error instanceof CommandRejection) {
@@ -967,6 +982,7 @@ export async function applyCanonicalCommands(
   }
 
   const timeline = buildTimelineFromStores()
-  const next: Project = { ...project, timeline }
+  // The stored graph carries its exact cadence from here on (FL-93), beside Freecut's own `fps`.
+  const next: Project = { ...project, metadata: withProjectCadence(project.metadata), timeline }
   return { status: 'applied', project: next, digest: await graphDigest(next) }
 }
