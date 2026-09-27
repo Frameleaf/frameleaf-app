@@ -31,10 +31,8 @@ e2e/
 !e2e/package.json
 !e2e/package-lock.json
 
-fastlane/
 machine-learning/
 misc/
-mobile/
 
 packages/sdk/build/
 
