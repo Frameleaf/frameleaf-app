@@ -288,8 +288,8 @@ test.describe('Settings area directories', () => {
     await expect(page.getByRole('heading', { level: 1, name: 'Storage & originals' })).toBeVisible();
     const directory = page.locator('.cc-directory');
     await expect(directory.getByRole('heading', { level: 2, name: 'Identical files' })).toBeVisible();
-    // No repeated area icon on the rows: only the chevron.
-    await expect(directory.getByRole('button').first().locator('svg')).toHaveCount(1);
+    // FL-168: each row carries its own section icon and the chevron, never the area icon again.
+    await expect(directory.getByRole('button').first().locator('svg')).toHaveCount(2);
     await expect(page.getByRole('button', { name: 'Library analytics' }).locator('.tile')).toBeVisible();
   });
 });
