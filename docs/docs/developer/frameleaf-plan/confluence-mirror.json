@@ -68,7 +68,7 @@
       "sourceCommit": "a3a40128152daf16b5466af04d4acc9a5eaa321a",
       "sourceSha256": "53e8d53c630c73ca8b2590d58b3f3d127ba5b60a2de1469492a6180c3ea6d639",
       "sourceState": "committed-fl-190-fl-191-branding-and-owned-images-merged-2026-09-26",
-      "title": "Administration Reference \u2014 Certified upstream handoff and library adoption",
+      "title": "Administration Reference — Certified upstream handoff and library adoption",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/64815115/Administration+Reference+Certified+upstream+handoff+and+library+adoption",
       "version": 4
     },
@@ -83,7 +83,7 @@
       "sourceCommit": "a2b1b11c1452e3a3eee87e430e199182827c6f33",
       "sourceSha256": "fa9bbc9227a42a305d92b8e04b1e92d94fec3bf13cb961ab5a39a900ab9f78ea",
       "sourceState": "pushed-fl-168-cloud-polish-2026-09-27",
-      "title": "Administration Reference \u2014 Frameleaf Cloud",
+      "title": "Administration Reference — Frameleaf Cloud",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/64749620/Administration+Reference+Frameleaf+Cloud",
       "version": 7
     },
@@ -441,7 +441,7 @@
       "sourceSha256": "3c197936472bbd4a2b61ea625dcb8f78c0a54919520aa52af0db35556ad53a39",
       "title": "Feature Reference \u2014 Frameleaf privacy suite",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61440280/Feature+Reference+Frameleaf+privacy+suite",
-      "verification": "FL-190 Confluence page read back at version 7, retitled Feature Reference \u2014 Frameleaf privacy suite to match the new H1, with source hash 3c197936, 16235 bytes and commit a3a4012815 on master/frameleaf-implementation in the header (FL-190 commits 20289e0cf8 and 6c1477322f; FL-192 and FL-159 history kept); compared with version 6, the only differences are the header and the FL-190 rebrand wording (new H1, 'Who Frameleaf is for', Frameleaf or the upstream project or official upstream server in the introduction, telemetry, deduplication, rollout and safe operating sections, and the renamed switching-guide link); the Confluence page links and the Physical deduplication GitHub link are kept; no user additions.",
+      "verification": "FL-190 Confluence page read back at version 7, retitled Feature Reference — Frameleaf privacy suite to match the new H1, with source hash 3c197936, 16235 bytes and commit a3a4012815 on master/frameleaf-implementation in the header (FL-190 commits 20289e0cf8 and 6c1477322f; FL-192 and FL-159 history kept); compared with version 6, the only differences are the header and the FL-190 rebrand wording (new H1, 'Who Frameleaf is for', Frameleaf or the upstream project or official upstream server in the introduction, telemetry, deduplication, rollout and safe operating sections, and the renamed switching-guide link); the Confluence page links and the Physical deduplication GitHub link are kept; no user additions.",
       "verified": true,
       "verifiedAt": "2026-09-26T16:51:35.000Z",
       "version": 7
@@ -578,7 +578,7 @@
       "sourceBranch": "master/frameleaf-implementation",
       "sourceCommit": "a3a40128152daf16b5466af04d4acc9a5eaa321a",
       "sourceState": "committed-fl-190-fl-191-branding-and-owned-images-merged-2026-09-26",
-      "readbackResult": "FL-190: read back at version 3, retitled Feature Reference \u2014 Switching between Frameleaf and the upstream server to match the new H1, with source hash d68d3e48, 825 bytes and commit a3a4012815 on master/frameleaf-implementation in the header (committed-at-commit statement, Source bytes line and backlink replacing the working-tree note); compared with version 2, the only differences are the header and the FL-190 wording from commits 20289e0cf8 and 6c1477322f (Frameleaf 3.0 and the official upstream release, the handoff and return runbook, and the renamed Reverting to the upstream server link); Confluence page links kept; no user additions.",
+      "readbackResult": "FL-190: read back at version 3, retitled Feature Reference — Switching between Frameleaf and the upstream server to match the new H1, with source hash d68d3e48, 825 bytes and commit a3a4012815 on master/frameleaf-implementation in the header (committed-at-commit statement, Source bytes line and backlink replacing the working-tree note); compared with version 2, the only differences are the header and the FL-190 wording from commits 20289e0cf8 and 6c1477322f (Frameleaf 3.0 and the official upstream release, the handoff and return runbook, and the renamed Reverting to the upstream server link); Confluence page links kept; no user additions.",
       "readbackAt": "2026-09-26T16:52:20.000Z"
     },
     {
@@ -593,7 +593,7 @@
       "sourceBranch": "master/frameleaf-implementation",
       "sourceCommit": "a3a40128152daf16b5466af04d4acc9a5eaa321a",
       "sourceState": "committed-fl-190-fl-191-branding-and-owned-images-merged-2026-09-26",
-      "readbackResult": "FL-190: read back at version 3, retitled Feature Reference \u2014 Reverting to the upstream server to match the new H1, with source hash 2af55d9f, 3564 bytes and commit a3a4012815 on master/frameleaf-implementation in the header (committed-at-commit statement replacing the working-tree note); compared with version 2, the only differences are the header and the FL-190 wording from commits 20289e0cf8 and 6c1477322f (Frameleaf releases and the official upstream server or image, the handoff and return runbook, Pre-compatibility Frameleaf releases, and an unconverted database from an early Frameleaf release); database identifiers and the certified image reference are unchanged; no user additions.",
+      "readbackResult": "FL-190: read back at version 3, retitled Feature Reference — Reverting to the upstream server to match the new H1, with source hash 2af55d9f, 3564 bytes and commit a3a4012815 on master/frameleaf-implementation in the header (committed-at-commit statement replacing the working-tree note); compared with version 2, the only differences are the header and the FL-190 wording from commits 20289e0cf8 and 6c1477322f (Frameleaf releases and the official upstream server or image, the handoff and return runbook, Pre-compatibility Frameleaf releases, and an unconverted database from an early Frameleaf release); database identifiers and the certified image reference are unchanged; no user additions.",
       "readbackAt": "2026-09-26T16:52:20.000Z"
     },
     {
