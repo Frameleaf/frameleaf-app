@@ -61,7 +61,7 @@ test.describe('Transfers', () => {
 
     const before = await assetCount(admin.accessToken);
     await uploadFromTopBar(page, [file]);
-    await expect(panel.getByText(/Already in your library$/)).toBeVisible();
+    await expect(panel.getByText('Already in your library', { exact: true })).toBeAttached();
     await expect(panel.getByText(/1 duplicate/)).toBeVisible();
     expect(await assetCount(admin.accessToken)).toBe(before);
   });
@@ -101,6 +101,7 @@ test.describe('Transfers', () => {
 
     await panel.getByRole('button', { name: 'Cancel remaining' }).click();
     await expect(panel.getByText('3 uploads need attention')).toBeVisible();
+    await expect(panel.getByText('Cancelled')).toHaveCount(3);
     expect(await assetCount(admin.accessToken)).toBe(before);
 
     await page.unroute((url) => url.pathname === '/api/assets');
@@ -119,7 +120,7 @@ test.describe('Transfers', () => {
 
     await utils.setAuthCookies(context, admin.accessToken);
     await page.goto(`/albums/${album.id}`);
-    await expect(page.getByRole('heading', { name: 'Drop target' }).first()).toBeVisible();
+    await expect(page.getByText('No photos or videos in this view.')).toBeVisible();
 
     const dataTransfer = await page.evaluateHandle(
       ({ name, bytes }) => {
