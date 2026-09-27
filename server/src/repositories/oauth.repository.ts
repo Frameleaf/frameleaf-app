@@ -1,10 +1,13 @@
-import { Injectable, InternalServerErrorException } from '@nestjs/common';
+import { BadRequestException, Injectable, InternalServerErrorException } from '@nestjs/common';
 import { JWTVerifyGetKey, createRemoteJWKSet, jwtVerify } from 'jose';
 import {
+  AuthorizationResponseError,
   type ClientAuth,
+  ClientError,
   ClientSecretBasic,
   ClientSecretPost,
   None,
+  ResponseBodyError,
   type UserInfoResponse,
   allowInsecureRequests as allowInsecureRequestsExecute,
   authorizationCodeGrant,
@@ -42,6 +45,29 @@ export type OAuthConfig = {
   clientAuth?: ClientAuth;
 };
 export type OAuthProfile = UserInfoResponse;
+
+/**
+ * FL-80: a callback that must not sign anyone in is the visitor's problem, not the server's: the
+ * provider refused (`error=access_denied`), the state (or issuer) belongs to another sign-in, or the code expired,
+ * was used already or does not match the PKCE verifier. Each becomes a 400 with a fixed message; the
+ * provider's own text is never repeated, since anyone can put it in the address.
+ */
+const callbackRefusal = (error: unknown): string | undefined => {
+  if (error instanceof AuthorizationResponseError) {
+    return 'The identity provider did not approve the sign-in. Try again.';
+  }
+  if (
+    error instanceof ClientError &&
+    error.code === 'OAUTH_INVALID_RESPONSE' &&
+    error.cause instanceof Error &&
+    /"(state|iss)"/.test(error.cause.message)
+  ) {
+    return 'This sign-in was started somewhere else or has expired. Sign in again.';
+  }
+  if (error instanceof ResponseBodyError && error.error === 'invalid_grant') {
+    return 'This sign-in link has expired or was already used. Sign in again.';
+  }
+};
 
 @Injectable()
 export class OAuthRepository {
@@ -121,6 +147,12 @@ export class OAuthRepository {
 
       return { profile, sid, idToken: tokens.id_token };
     } catch (error: any) {
+      const refusal = callbackRefusal(error);
+      if (refusal) {
+        this.logger.warn(`OAuth callback refused: ${error.message}`);
+        throw new BadRequestException(refusal);
+      }
+
       if (error.message.includes('unexpected JWT alg received')) {
         this.logger.warn(
           [

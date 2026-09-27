@@ -1,6 +1,7 @@
 import {
   createFrameleafHandoff,
   finishFrameleafSignIn,
+  isHttpError,
   login,
   redeemFrameleafHandoff,
   startFrameleafSignIn,
@@ -23,7 +24,7 @@ import Page from './+page.svelte';
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
 vi.mock('@immich/sdk', () => ({
   login: vi.fn(),
-  isHttpError: () => false,
+  isHttpError: vi.fn(() => false),
   startFrameleafSignIn: vi.fn(),
   finishFrameleafSignIn: vi.fn(),
   createFrameleafHandoff: vi.fn(),
@@ -158,6 +159,41 @@ describe('login mandatory-change routing', () => {
     );
     expect(oauth.login).toHaveBeenCalledWith(expect.anything(), false);
     expect(rememberMePreference()).toBe(true);
+  });
+});
+
+describe('OAuth callback refusals (FL-80)', () => {
+  const refusal = 'The identity provider did not approve the sign-in. Try again.';
+
+  it('shows the refusal, stays signed out and forgets where the sign-in was going', async () => {
+    setOAuthContinue('/albums?from=share');
+    vi.mocked(oauth.isCallback).mockReturnValue(true);
+    vi.mocked(isHttpError).mockReturnValue(true);
+    vi.mocked(oauth.login).mockRejectedValue({ status: 400, data: { message: refusal } });
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    render(Page, { data: data(true) } as never);
+    expect(await screen.findByRole('alert')).toHaveTextContent(refusal);
+    expect(goto).not.toHaveBeenCalled();
+    expect(eventManager.emit).not.toHaveBeenCalled();
+    expect(String(getOAuthContinue('/photos'))).toBe(new URL('/photos', location.origin).href);
+
+    // retry: the provider button is back and starts a fresh sign-in
+    vi.mocked(oauth.authorize).mockResolvedValue(true);
+    await fireEvent.click(await screen.findByRole('button', { name: 'Continue with provider' }));
+    expect(oauth.authorize).toHaveBeenCalledOnce();
+  });
+
+  it('never continues to another site after a callback, whatever was stored', async () => {
+    setOAuthContinue('https://outside.example.test/steal');
+    vi.mocked(oauth.isCallback).mockReturnValue(true);
+    vi.mocked(oauth.login).mockResolvedValue({ ...forced, shouldChangePassword: false } as never);
+
+    render(Page, { data: data(true) } as never);
+    await waitFor(() => expect(goto).toHaveBeenCalledOnce());
+    const target = String(vi.mocked(goto).mock.calls[0][0]);
+    expect(new URL(target, location.origin).origin).toBe(location.origin);
+    expect(target).not.toContain('outside.example.test');
   });
 });
 
