@@ -1,6 +1,20 @@
 <!doctype html>
 <html class="dark">
   <head>
+    <!--
+      CLD-004: /link can be opened with a one-time licence link code (or, from an old link, a key) in
+      its address. Until the page has taken it out, no request sends that address on as a referrer;
+      the page restores the default policy once the address is clean (routes/link/+page.svelte).
+    -->
+    <script>
+      if (location.pathname === '/link') {
+        const referrer = document.createElement('meta');
+        referrer.name = 'referrer';
+        referrer.content = 'no-referrer';
+        referrer.id = 'link-referrer-policy';
+        document.head.append(referrer);
+      }
+    </script>
     <!-- (used for SSR) -->
     <!-- metadata:tags -->
 

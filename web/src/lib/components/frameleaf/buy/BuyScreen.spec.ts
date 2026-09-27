@@ -63,6 +63,13 @@ const licenseStatus = (overrides: Record<string, unknown> = {}) =>
     ...overrides,
   }) as never;
 
+/** Type (or paste) a key into "Already have a key?": the only way a key reaches this screen. */
+const typeKey = async (value: string) => {
+  const input = await screen.findByLabelText('Product key');
+  await fireEvent.input(input, { target: { value } });
+  return input;
+};
+
 describe('BuyScreen (FL-157, FL-170, FL-171, FL-172)', () => {
   beforeAll(async () => {
     await init({ fallbackLocale: 'en-US' });
@@ -154,7 +161,8 @@ describe('BuyScreen (FL-157, FL-170, FL-171, FL-172)', () => {
 
   it('refuses an upstream or mistyped key and never contacts the upstream licence server', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch');
-    render(BuyScreen, { pendingKey: 'IMCL-0KEY-AAAA-BBBB' });
+    render(BuyScreen);
+    await typeKey('IMCL-0KEY-AAAA-BBBB');
 
     const input = await screen.findByLabelText('Product key');
     expect(input).toHaveAttribute('placeholder', 'FL-XXXX-XXXX-XXXX');
@@ -176,7 +184,8 @@ describe('BuyScreen (FL-157, FL-170, FL-171, FL-172)', () => {
     sdkMock.getMyUser.mockResolvedValue(
       user({ license: { kind: 'individual', keyHint: '8EL6', activatedAt: '2026-09-25T00:00:00.000Z' } }),
     );
-    render(BuyScreen, { pendingKey: 'FL-IC8Q-BT2Q-8EL6' });
+    render(BuyScreen);
+    await typeKey('FL-IC8Q-BT2Q-8EL6');
 
     expect(await screen.findByLabelText('Product key')).toHaveValue('FL-IC8Q-BT2Q-8EL6');
     expect(screen.getByText('Individual key recognised')).toBeInTheDocument();
@@ -190,7 +199,8 @@ describe('BuyScreen (FL-157, FL-170, FL-171, FL-172)', () => {
   });
 
   it('sends a server key to the administrator endpoint, and refuses it for anyone else', async () => {
-    render(BuyScreen, { pendingKey: 'FL-S8NL-49G8-J583' });
+    render(BuyScreen);
+    await typeKey('FL-S8NL-49G8-J583');
     await fireEvent.click(await screen.findByRole('button', { name: 'Activate' }));
     expect(await screen.findByText(/Ask an administrator/)).toBeInTheDocument();
     expect(sdkMock.activateLicense).not.toHaveBeenCalled();
@@ -214,7 +224,8 @@ describe('BuyScreen (FL-157, FL-170, FL-171, FL-172)', () => {
     });
     sdkMock.activateLicense.mockResolvedValue(active);
     sdkMock.removeLicenseKey.mockResolvedValue(licenseStatus());
-    render(BuyScreen, { pendingKey: 'FL-S8NL-49G8-J583' });
+    render(BuyScreen);
+    await typeKey('FL-S8NL-49G8-J583');
 
     expect(await screen.findByRole('group', { name: 'Add AI credit' })).toBeInTheDocument();
     await fireEvent.click(screen.getByRole('button', { name: 'Activate' }));
@@ -244,5 +255,52 @@ describe('BuyScreen (FL-157, FL-170, FL-171, FL-172)', () => {
         userPreferencesUpdateDto: { purchase: { showSupportBadge: false } },
       }),
     );
+  });
+
+  describe('link codes from the Frameleaf account site (CLD-004)', () => {
+    const code = 'flc_ABCDEFGHJKMNPQRSTVWXYZ2345';
+
+    it('has this server redeem the code once and shows the activated card, never holding a key', async () => {
+      sdkMock.redeemLicenseLinkCode.mockResolvedValue({ kind: 'individual', keyHint: '8EL6' } as never);
+      sdkMock.getMyUser.mockResolvedValue(
+        user({ license: { kind: 'individual', keyHint: '8EL6', activatedAt: '2026-09-25T00:00:00.000Z' } }),
+      );
+      render(BuyScreen, { linkCode: code });
+
+      await waitFor(() => expect(sdkMock.redeemLicenseLinkCode).toHaveBeenCalledWith({ licenseLinkCodeDto: { code } }));
+      expect(sdkMock.redeemLicenseLinkCode).toHaveBeenCalledTimes(1);
+      expect(await screen.findByText('Thank you! Your key is active.')).toBeInTheDocument();
+      expect(await screen.findByText(/ends in 8EL6/)).toBeInTheDocument();
+      expect(sdkMock.setUserLicense).not.toHaveBeenCalled();
+      expect(sdkMock.activateLicense).not.toHaveBeenCalled();
+    });
+
+    it('explains a refused code and leaves the key field to paste into', async () => {
+      sdkMock.isHttpError.mockReturnValue(true);
+      sdkMock.redeemLicenseLinkCode.mockRejectedValue({
+        name: 'HttpError',
+        status: 400,
+        data: {
+          message:
+            'This link from your Frameleaf account has expired. Open it again from My licenses, or paste the key.',
+        },
+      });
+      render(BuyScreen, { linkCode: code });
+
+      expect(await screen.findByRole('alert')).toHaveTextContent(/expired/);
+      expect(screen.getByLabelText('Product key')).toHaveValue('');
+    });
+
+    it('asks for the key to be pasted after an old link that carried one, without using it', async () => {
+      render(BuyScreen, { keyInLink: true });
+
+      expect(
+        await screen.findByText(/keys are no longer accepted in links\. Paste your key below/),
+      ).toBeInTheDocument();
+      expect(screen.getByLabelText('Product key')).toHaveValue('');
+      expect(sdkMock.redeemLicenseLinkCode).not.toHaveBeenCalled();
+      expect(sdkMock.setUserLicense).not.toHaveBeenCalled();
+      expect(sdkMock.activateLicense).not.toHaveBeenCalled();
+    });
   });
 });

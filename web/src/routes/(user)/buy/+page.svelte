@@ -1,8 +1,8 @@
 <script lang="ts">
   /**
    * Support Frameleaf (FL-157): the prototype's Buy screen in the wide auth shell
-   * (AuthScreens.jsx:1696-2088, `AuthShell wide`). A key relayed from the Frameleaf store arrives
-   * through session storage (see `+page.ts`), never through the address.
+   * (AuthScreens.jsx:1696-2088, `AuthShell wide`). A link code from the Frameleaf account site arrives
+   * through session storage (see `+page.ts`), never through this page's address (CLD-004).
    */
   import { goto } from '$app/navigation';
   import AuthShell from '$lib/components/frameleaf/AuthShell.svelte';
@@ -20,5 +20,5 @@
 </svelte:head>
 
 <AuthShell wide>
-  <BuyScreen pendingKey={data.pendingKey} onBack={back} />
+  <BuyScreen linkCode={data.linkCode} keyInLink={data.keyInLink} onBack={back} />
 </AuthShell>
