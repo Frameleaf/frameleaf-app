@@ -818,18 +818,18 @@
       "version": 2
     },
     {
-      "bytes": 30571,
+      "bytes": 32316,
       "category": "development",
       "id": "61407844",
       "source": "docs/docs/developer/frameleaf-development.md",
-      "sourceCommit": "6faffc0a6205ec4faddb0b273cf98c405be2c1f3",
-      "sourceSha256": "90793b0383194b4a3f7961c1c4edef8815d2808cc8a0bdfc1af609c5b6c5bf20",
+      "sourceCommit": "79d14778bd2c4abeda8303ecf0613f565a611d42",
+      "sourceSha256": "d90c02e65d088102fd10273e4370929cefde26c5fdd0877ea40cc4205e427494",
       "title": "Frameleaf Development and Delivery",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61407844",
-      "verification": "Flutter app removal: Confluence page read back at version 14 as ADF (published as HTML to keep smart links); the header carries source hash 90793b03 and 30571 bytes and keeps the FL-191 and FL-159 history; compared with version 13, the only differences are the header and the retained branch-protection contexts, which no longer list Unit Test Mobile or Run Dart Code Analysis and now match the nine checks required on fork/main; the earlier delivery checkpoints are unchanged; no user additions.",
+      "verification": "Integration image (pre-release): Confluence page read back at version 15 as markdown (published as HTML to keep smart links); the header carries source hash d90c02e6 and 32316 bytes, names commit 79d14778bd \"ci: add a guarded pre-release integration image for the Frameleaf Cloud e2e\" and keeps the Flutter-removal, FL-191 and FL-159 history; compared with version 14, the only differences are the header and the new \"Integration image (pre-release)\" section before \"Validation and activation\"; the earlier delivery checkpoints are unchanged; no user additions. The search summary still shows the version 14 excerpt until Confluence reindexes.",
       "verified": true,
-      "verifiedAt": "2026-09-27T07:46:36.937Z",
-      "version": 14
+      "verifiedAt": "2026-09-27T12:31:00.000Z",
+      "version": 15
     },
     {
       "bytes": 411,
