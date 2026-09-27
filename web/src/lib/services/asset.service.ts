@@ -91,7 +91,8 @@ export const getAssetActions = (
   const Share: ActionItem = {
     title: $t('share'),
     icon: mdiShareVariantOutline,
-    $if: () => !!(authUser && !asset.isTrashed && asset.visibility !== AssetVisibility.Locked),
+    // FL-56: a public link offers no sharing of its own, whoever is signed in.
+    $if: () => !!(authUser && !sharedLink && !asset.isTrashed && asset.visibility !== AssetVisibility.Locked),
     onAction: () => modalManager.show(ShareSheetModal, { assetIds: [asset.id] }),
   };
 
