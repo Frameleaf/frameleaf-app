@@ -1,4 +1,4 @@
-import { AssetMediaResponseDto, LoginResponseDto, updateAsset, updatePerson } from '@immich/sdk';
+import { AssetMediaResponseDto, LoginResponseDto, updateAsset, updateAssets, updatePerson } from '@immich/sdk';
 import { expect, Locator, test } from '@playwright/test';
 import { asBearerAuth, utils } from 'src/utils.js';
 
@@ -23,6 +23,8 @@ const scrollOffset = (inside: Locator) =>
 test.describe('Explore', () => {
   let admin: LoginResponseDto;
   let first: AssetMediaResponseDto;
+  let second: AssetMediaResponseDto;
+  let archived: AssetMediaResponseDto;
 
   test.beforeAll(async () => {
     utils.initSdk();
@@ -33,12 +35,12 @@ test.describe('Explore', () => {
       assetData: { filename: 'sunset.png' },
       fileCreatedAt: '2026-08-02T18:00:00.000Z',
     });
-    const second = await utils.createAsset(admin.accessToken, {
+    second = await utils.createAsset(admin.accessToken, {
       assetData: { filename: 'harbour.png' },
       fileCreatedAt: '2026-08-01T09:00:00.000Z',
     });
     // Archived: tagged too, but outside the Timeline scope the search opens, so never counted.
-    const archived = await utils.createAsset(admin.accessToken, {
+    archived = await utils.createAsset(admin.accessToken, {
       assetData: { filename: 'archived.png' },
       fileCreatedAt: '2026-08-03T09:00:00.000Z',
     });
@@ -112,6 +114,31 @@ test.describe('Explore', () => {
     await expect(things).toBeVisible();
     const restored = await scrollOffset(things);
     expect(Math.abs(restored - scrolled)).toBeLessThan(80);
+  });
+
+  test('counts Favorites as the Favorites page shows them: archived included, a stack once (FL-50)', async ({
+    context,
+    page,
+  }) => {
+    const [top, under] = await Promise.all(
+      ['stack-top.png', 'stack-under.png'].map((filename) =>
+        utils.createAsset(admin.accessToken, { assetData: { filename }, fileCreatedAt: '2026-07-01T09:00:00.000Z' }),
+      ),
+    );
+    await utils.createStack(admin.accessToken, [top.id, under.id]);
+    await updateAssets(
+      { assetBulkUpdateDto: { ids: [second.id, archived.id, top.id, under.id], isFavorite: true } },
+      { headers: asBearerAuth(admin.accessToken) },
+    );
+
+    await utils.setAuthCookies(context, admin.accessToken);
+    await page.goto('/explore');
+    const favorites = page.locator('a.el-shortcut', { hasText: 'Favorites' });
+    await expect(favorites).toContainText('3 items');
+
+    await favorites.click();
+    await page.waitForURL(/\/favorites/);
+    await expect(page.locator('[data-asset-id]')).toHaveCount(3);
   });
 
   test('Best Photos without quality scores says so instead of ranking by stars (FL-50)', async ({ context, page }) => {
