@@ -146,7 +146,8 @@ test.describe('Frameleaf Cloud linked-server tour', () => {
 
   test('Skip tour records it and leaves the notice to take it again', async ({ page }) => {
     await page.goto(planPage);
-    await (await openedTour(page)).getByRole('button', { name: 'Skip tour' }).click();
+    const tour = await openedTour(page);
+    await tour.getByRole('button', { name: 'Skip tour' }).click();
     await expect(page.getByRole('dialog')).toHaveCount(0);
     await expect(page.getByText('Take the tour again any time from Frameleaf Cloud → Account & link.')).toBeVisible();
     expect(endings(mock)).toEqual(['skipped']);
@@ -221,6 +222,10 @@ test.describe('Frameleaf Cloud linked-server tour', () => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(planPage);
     const dialog = await openedTour(page);
+    // the sheet rises into place: measure it once its entrance has finished, not part way up
+    await dialog.evaluate((sheet) =>
+      Promise.all(sheet.getAnimations({ subtree: true }).map((animation) => animation.finished)),
+    );
     const box = (await dialog.boundingBox())!;
     expect(Math.round(box.y + box.height)).toBe(844);
     expect(Math.round(box.width)).toBe(390);
