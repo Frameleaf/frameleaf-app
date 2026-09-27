@@ -905,19 +905,19 @@ export class TimelineManager extends VirtualScrollManager {
   }
 
   /**
-   * FL-34/FL-195: an unlocked session reveals the owner's own sensitive marks and detections in every
-   * ordinary view — the timeline, the archive, a person, a tag ("Revealed for this session"); the
-   * server sends them with visibility `locked` and their reason, and only where their stored
-   * visibility matches the view. Anything else locked never belongs to an ordinary view. The Locked
-   * view also lists the owner's Locked-rule matches (the prototype's `classifyLocked`), which keep
-   * their stored visibility.
+   * FL-34/FL-195: an unlocked session reveals the owner's own Locked items — marks, detections and
+   * items moved from the old Locked folder — in every ordinary view: the timeline, the archive, a
+   * person, a tag. The server sends them with visibility `locked` and their reason, and only where
+   * their stored visibility matches the view and the session is unlocked. The Locked view also lists
+   * the owner's Locked-rule matches (the prototype's `classifyLocked`), which keep their stored
+   * visibility.
    */
   #isVisibilityMismatch(asset: TimelineAsset) {
     const revealed =
       this.#options.visibility !== undefined &&
       this.#options.visibility !== AssetVisibility.Locked &&
       asset.visibility === AssetVisibility.Locked &&
-      (asset.lockReason === AssetLockReason.Marked || asset.lockReason === AssetLockReason.Detected);
+      !!asset.lockReason;
     return !revealed && !this.#isLockedRuleMatch(asset) && isMismatched(this.#options.visibility, asset.visibility);
   }
 

@@ -24,6 +24,8 @@ import { fromStore, get } from 'svelte/store';
 import { goto } from '$app/navigation';
 import { page } from '$app/state';
 import { QueryParameter } from '$lib/constants';
+import { onLibraryAccessChange } from '$lib/frameleaf/library-access';
+import { trackSessionLockRefresh } from '$lib/frameleaf/session-access.svelte';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
@@ -74,6 +76,13 @@ class MemoryManager {
       AuthLogout: () => this.clearCache(),
       AuthUserLoaded: () => this.initialize(),
     });
+    // FL-195 follow-up: a memory holding a Locked item shows only to the owner's unlocked session, so
+    // every lock and unlock reloads the list rather than keep what the other state saw
+    onLibraryAccessChange((change) => {
+      if (change === 'restricted' || change === 'expanded') {
+        void trackSessionLockRefresh(this.reloadForSessionAccess());
+      }
+    });
 
     // loaded event might have already happened
     if (authManager.authenticated) {
@@ -97,6 +106,16 @@ class MemoryManager {
   }
 
   refresh() {
+    return this.initialize();
+  }
+
+  /** Drop every memory this session state loaded and read them again (a page in flight is discarded). */
+  reloadForSessionAccess() {
+    this.clearCache();
+    if (this.#loading) {
+      this.#queued = true;
+      return this.#loading;
+    }
     return this.initialize();
   }
 

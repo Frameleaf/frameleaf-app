@@ -3,6 +3,7 @@
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import BulkConfirmDialog from '$lib/components/frameleaf/BulkConfirmDialog.svelte';
+  import { onLibraryAccessChange } from '$lib/frameleaf/library-access';
   import { studioBundleDownloadPath } from '$lib/frameleaf/studio/bundles';
   import {
     isStudioBundleSettled,
@@ -50,7 +51,7 @@
   } from '@immich/sdk';
   import { Icon, toastManager } from '@immich/ui';
   import { mdiFilmstrip, mdiImport, mdiPlus } from '@mdi/js';
-  import { onDestroy } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
   import { locale, t, type Translations } from 'svelte-i18n';
 
   /**
@@ -140,6 +141,16 @@
       loading = false;
     }
   };
+
+  // FL-195 follow-up: a poster whose item is Locked shows only to the unlocked session, so a lock or an
+  // unlock reads the shelf again (the server then sends the placeholder, or the poster, as it should)
+  onMount(() =>
+    onLibraryAccessChange((change) => {
+      if (change === 'restricted' || change === 'expanded') {
+        void load();
+      }
+    }),
+  );
 
   $effect(() => {
     // Re-read whenever the shelf, the order or the search changes; typing waits for a pause.

@@ -41,14 +41,16 @@ describe('revealed locks (FL-195)', () => {
     expect(revealsLocks({ visibility: AssetVisibility.Locked }, true)).toBe(false);
   });
 
-  it('treats a revealed mark or detection like any other item, never an old Locked folder item', () => {
+  it('treats every revealed lock like any other item, old Locked folder items included', () => {
     expect(actsAsRegular({ visibility: AssetVisibility.Timeline }, false)).toBe(true);
     expect(isRevealedLock(marked, true)).toBe(true);
     expect(isRevealedLock(detected, true)).toBe(true);
     expect(actsAsRegular(marked, true)).toBe(true);
     // a viewer response carries no reason; the server only sends it to the owner's unlocked session
     expect(actsAsRegular({ visibility: AssetVisibility.Locked }, true)).toBe(true);
-    expect(actsAsRegular(legacy, true)).toBe(false);
+    expect(isRevealedLock(legacy, true)).toBe(true);
+    expect(actsAsRegular(legacy, true)).toBe(true);
+    expect(actsAsRegular(legacy, false)).toBe(false);
     expect(actsAsRegular(marked, false)).toBe(false);
   });
 });

@@ -159,17 +159,16 @@ export const revealsLocks = (
 ): boolean => isElevated && options.visibility !== AssetVisibility.Locked;
 
 /**
- * FL-195 (owner decision, September 27, 2026): a Locked item this session is shown outside the Locked
- * view is the owner's own mark or detection, revealed because the session is unlocked, and it behaves
- * like any other item — search, Studio, bulk actions, downloads. The server only ever sends such an
- * item to its owner's unlocked session. A known reason from the old Locked folder never counts; a
- * response without a reason (the viewer) is trusted to the server, which refuses what it must.
+ * FL-195 (owner decisions, September 27, 2026): a Locked item this session is shown outside the Locked
+ * view is the owner's own, revealed because the session is unlocked — a mark, a detection or an item
+ * moved from the old Locked folder — and it behaves like any other item: search, Studio, bulk actions,
+ * downloads. The server only ever sends such an item to its owner's unlocked session, and refuses
+ * what it must; the reason is kept for the Locked view's filters and badges.
  */
 export const isRevealedLock = (
   asset: { visibility?: AssetVisibility | string; lockReason?: AssetLockReason | null },
   isElevated = sessionAccess.isElevated,
-): boolean =>
-  isElevated && asset.visibility === AssetVisibility.Locked && asset.lockReason !== AssetLockReason.ImmichLockedFolder;
+): boolean => isElevated && asset.visibility === AssetVisibility.Locked;
 
 /** Whether an item acts like any other for this session: not Locked, or a revealed lock (FL-195). */
 export const actsAsRegular = (

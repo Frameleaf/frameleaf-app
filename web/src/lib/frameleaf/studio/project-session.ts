@@ -60,6 +60,7 @@ import {
   type StudioProjectSaveResponseDto,
 } from '@immich/sdk';
 import type { StudioCommandEnvelope } from './commands';
+import { holdBackHiddenClips, withHeldClips, type StudioHeldClip } from './hidden-clips';
 import type { StudioProjectHandle } from './host-contract';
 
 /* ------------------------------------------------------------------ */
@@ -379,6 +380,13 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
   let projectId: string | null = options.projectId;
   let draft: Draft | null = null;
   /**
+   * FL-195 follow-up: the clips of media hidden from this session (`resources.hiddenSources`), taken
+   * out of the graph the editor gets and put back into every graph this session saves, so the project
+   * keeps them while the editor never shows them, not even as missing media. Replaced on every read.
+   */
+  let held: StudioHeldClip[] = [];
+  const envelopeFor = (graph: unknown) => emptyEnvelope(engineRevision, withHeldClips(graph, held));
+  /**
    * Revisions this session stored from the editor's own graph, as base → stored revision. The editor
    * keeps editing from what it staged, so its later graphs build on each of these; a draft that
    * arrives before the editor has heard of the save is taken forward along this chain instead of
@@ -516,12 +524,14 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
       graphVersion += 1;
     }
     projectId = detail.id;
+    const visible = holdBackHiddenClips(detail.envelope?.graph ?? null, detail.resources?.hiddenSources);
+    held = visible.held;
     emit({
       project: {
         id: detail.id,
         name: detail.name,
         revision: detail.revision,
-        graph: detail.envelope?.graph ?? null,
+        graph: visible.graph ?? null,
         hasLease: leaseHeld,
       },
       access: detail.access,
@@ -669,7 +679,7 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
             clientId,
             requestKey: current.requestKey as string,
             expectedRevision: current.baseRevision,
-            envelope: emptyEnvelope(engineRevision, current.graph),
+            envelope: envelopeFor(current.graph),
             summary: summaryOf(current),
             ...(current.envelopes.length > 0 && {
               commands: current.envelopes.map((envelope) => ({
@@ -694,7 +704,7 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
           const created = await api.create({
             name: state.project.name,
             clientId,
-            envelope: emptyEnvelope(engineRevision, current.graph),
+            envelope: envelopeFor(current.graph),
             requestKey: current.requestKey ?? undefined,
           });
           if (gen !== generation) {
@@ -1010,7 +1020,7 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
         const created = await api.create({
           name,
           clientId,
-          envelope: emptyEnvelope(engineRevision, graph),
+          envelope: envelopeFor(graph),
           requestKey: newKey(),
         });
         if (gen !== generation) {
