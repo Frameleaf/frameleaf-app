@@ -235,6 +235,10 @@ export class MetadataService extends BaseService {
       return;
     }
 
+    // The tags the last extraction (or a tag edit) left on the asset, read before the file is: a tag
+    // added after this point is never taken for one the file dropped, even when the file (a sidecar
+    // written earlier) does not list it yet.
+    const previous = await this.assetRepository.getForMetadataExtractionTags(asset.id);
     const [exifResult, stats] = await Promise.all([
       this.getExifTags(asset),
       this.storageRepository.stat(asset.originalPath),
@@ -379,8 +383,6 @@ export class MetadataService extends BaseService {
           height: !asset.isEdited || asset.height === null ? assetHeight : undefined,
         }),
       async () => {
-        // The tags the last extraction (or a tag edit) left on the asset, before this one overwrites them.
-        const previous = await this.assetRepository.getForMetadataExtractionTags(asset.id);
         await this.assetRepository.upsertExif({
           exif: exifData,
           audio: audioData,
@@ -535,7 +537,14 @@ export class MetadataService extends BaseService {
     // file's coordinates back
     const locationRemoved =
       lockedProperties.includes('latitude') && asset.exifInfo.latitude === null && asset.exifInfo.longitude === null;
-    const keptLocked = new Set<string>([...placeProperties, ...(locationRemoved ? ['latitude', 'longitude'] : [])]);
+    // Tags set in Frameleaf stay locked too. The sidecar is written by a job that can run behind the tag
+    // edits, so the next metadata read may find an older list in it; unlocked, that read took the
+    // older list as the file's and dropped the tags added since.
+    const keptLocked = new Set<string>([
+      ...placeProperties,
+      'tags',
+      ...(locationRemoved ? ['latitude', 'longitude'] : []),
+    ]);
     await this.assetRepository.unlockProperties(
       asset.id,
       lockedProperties.filter((property) => !keptLocked.has(property)),

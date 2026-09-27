@@ -2163,6 +2163,24 @@ describe(MetadataService.name, () => {
       ]);
     });
 
+    it('writes the tags set in Frameleaf and keeps them locked', async () => {
+      const asset = AssetFactory.from()
+        .file({ type: AssetFileType.Sidecar })
+        .exif({ tags: ['Parent/Child', 'Trip'] })
+        .build();
+      mocks.assetJob.getLockedPropertiesForMetadataExtraction.mockResolvedValue(['tags', 'rating']);
+      mocks.assetJob.getForSidecarWriteJob.mockResolvedValue(getForSidecarWrite(asset));
+
+      await expect(sut.handleSidecarWrite({ id: asset.id })).resolves.toBe(JobStatus.Success);
+
+      expect(mocks.metadata.writeTags).toHaveBeenCalledWith(
+        asset.files[0].path,
+        expect.objectContaining({ TagsList: ['Parent/Child', 'Trip'] }),
+      );
+      // a sidecar written behind later tag edits must not become the tags' source
+      expect(mocks.asset.unlockProperties).toHaveBeenCalledWith(asset.id, ['rating']);
+    });
+
     it('writes a removed location as no coordinates and keeps it locked (FL-51)', async () => {
       const asset = AssetFactory.from()
         .file({ type: AssetFileType.Sidecar })
