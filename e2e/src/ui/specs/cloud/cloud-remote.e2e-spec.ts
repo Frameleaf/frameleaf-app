@@ -57,7 +57,8 @@ test.describe('Frameleaf Cloud remote access', () => {
   test('adds a custom hostname, verifies it and publishes it', async ({ page }) => {
     mock.remote = { ...defaults(), enabled: true };
     await page.goto(remotePage);
-    const hostname = page.getByPlaceholder('photos.example.com');
+    // FL-168 put the Public server URL (placeholder https://photos.example.com) on this page too.
+    const hostname = page.getByRole('textbox', { name: 'Custom hostname' });
     await hostname.fill('photos.frameleaf.net');
     await expect(page.getByText('Use a domain you own; Frameleaf addresses are already set up.')).toBeVisible();
 
