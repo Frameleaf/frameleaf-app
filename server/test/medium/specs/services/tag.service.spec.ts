@@ -367,6 +367,166 @@ describe(TagService.name, () => {
     });
   });
 
+  /**
+   * Owner decisions, September 27, 2026 (FL-46 / FL-34):
+   * - "Use the existing tag regardless": creating or applying a tag by the name of one the session
+   *   cannot see (a Locked-rule tag, or one only on hidden items) reuses that tag and succeeds, so no
+   *   "already exists" error gives it away, and nothing about its hidden items is returned.
+   * - While the session is not unlocked, a tag carried only by hidden items (locked for any reason,
+   *   or matched by a Locked rule) is hidden itself: out of the list and answered like a missing id.
+   *   One visible item brings it back. An unlocked session sees every tag.
+   */
+  describe('hidden tags (owner decisions, September 27, 2026)', () => {
+    const lock = async (ctx: ReturnType<typeof setup>['ctx'], assetId: string, reason = AssetLockReason.Marked) => {
+      await ctx.database.insertInto('asset_lock').values({ assetId, reason, lockedBy: null }).execute();
+    };
+    const unlockedAuth = (userId: string) => ({
+      ...factory.auth({ user: { id: userId } }),
+      session: { id: 'session-1', hasElevatedPermission: true },
+    });
+    /** Not unlocked, and nothing suppressed: only locks hide anything. */
+    const plainLockedAuth = (userId: string) => factory.auth({ user: { id: userId } });
+
+    it('reuses a Locked-rule tag when a locked session creates one by its name, without revealing its items', async () => {
+      const { sut, ctx } = setup();
+      ctx.getMock(EventRepository).emit.mockResolvedValue();
+      const { user } = await ctx.newUser();
+      const [hidden] = await upsertTags(ctx.get(TagRepository), { userId: user.id, tags: ['Alice'] });
+      const { asset: secret } = await ctx.newAsset({ ownerId: user.id });
+      await ctx.newTagAsset({ tagIds: [hidden.id], assetIds: [secret.id] });
+      const auth = lockedAuth(user.id, [hidden.id]);
+
+      const created = await sut.create(auth, { name: 'Alice' });
+      expect(created.id).toBe(hidden.id);
+      // only the tag itself: no items, no counts
+      expect(Object.keys(created).toSorted()).toEqual(
+        ['color', 'createdAt', 'id', 'name', 'parentId', 'updatedAt', 'value'].toSorted(),
+      );
+      expect(JSON.stringify(created)).not.toContain(secret.id);
+
+      // applying it ties items to the same tag; the tag still follows the Locked rules
+      const { asset: photo } = await ctx.newAsset({ ownerId: user.id });
+      await expect(sut.bulkTagAssets(auth, { tagIds: [created.id], assetIds: [photo.id] })).resolves.toEqual({
+        count: 1,
+      });
+      await expect(ctx.get(TagRepository).getAssetIds(hidden.id, [photo.id, secret.id])).resolves.toEqual(
+        new Set([photo.id, secret.id]),
+      );
+      await expect(sut.getAll(auth)).resolves.toEqual([]);
+      await expect(sut.get(auth, hidden.id)).rejects.toThrow('Tag not found');
+      await expect(sut.getStatistics(auth)).resolves.toEqual([]);
+
+      // the unlocked owner sees one tag with both items
+      const owner = unlockedAuth(user.id);
+      await expect(sut.getAll(owner)).resolves.toEqual([expect.objectContaining({ id: hidden.id, value: 'Alice' })]);
+      await expect(sut.getStatistics(owner)).resolves.toEqual([{ id: hidden.id, count: 2, total: 2 }]);
+    });
+
+    it('reuses a tag that is only on locked items when a locked session creates or upserts it', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const [onlyLocked] = await upsertTags(ctx.get(TagRepository), { userId: user.id, tags: ['Trips/Secret'] });
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      await ctx.newTagAsset({ tagIds: [onlyLocked.id], assetIds: [asset.id] });
+      await lock(ctx, asset.id);
+      const auth = plainLockedAuth(user.id);
+
+      await expect(sut.upsert(auth, { tags: ['Trips/Secret'] })).resolves.toEqual([
+        expect.objectContaining({ id: onlyLocked.id, value: 'Trips/Secret' }),
+      ]);
+      const trips = (await ctx.get(TagRepository).getByValue(user.id, 'Trips'))!;
+      // under a parent the session cannot see, the answer is the one for a missing parent
+      const hiddenParent = await sut.create(auth, { name: 'Secret', parentId: trips.id }).catch((error) => error);
+      const missingParent = await sut
+        .create(auth, { name: 'Secret', parentId: '00000000-0000-4000-8000-000000000000' })
+        .catch((error) => error);
+      expect(hiddenParent).toBeInstanceOf(BadRequestException);
+      expect(hiddenParent.getResponse()).toEqual(missingParent.getResponse());
+      await expect(sut.create(unlockedAuth(user.id), { name: 'Secret', parentId: trips.id })).resolves.toEqual(
+        expect.objectContaining({ id: onlyLocked.id }),
+      );
+    });
+
+    it('answers a create by an existing visible name with that tag instead of an error', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const auth = factory.auth({ user });
+      const first = await sut.create(auth, { name: 'Family', color: '#ff0000' });
+
+      await expect(sut.create(auth, { name: 'Family', color: '#00ff00' })).resolves.toEqual(
+        expect.objectContaining({ id: first.id, color: '#ff0000' }),
+      );
+      await expect(sut.getAll(auth)).resolves.toHaveLength(1);
+    });
+
+    it('attaches imported (sidecar) tag names to the existing hidden tag, never a copy', async () => {
+      const { ctx } = setup();
+      const { user } = await ctx.newUser();
+      const [hidden] = await upsertTags(ctx.get(TagRepository), { userId: user.id, tags: ['People/Alice'] });
+
+      const imported = await upsertTags(ctx.get(TagRepository), { userId: user.id, tags: ['People/Alice', 'Beach'] });
+      expect(imported.map(({ id }) => id)).toContain(hidden.id);
+      const rows = await ctx.database.selectFrom('tag').select('value').where('userId', '=', user.id).execute();
+      expect(rows.map(({ value }) => value).toSorted()).toEqual(['Beach', 'People', 'People/Alice']);
+    });
+
+    it('hides a tag carried only by locked items from a locked session, whatever the lock reason', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const tags = await upsertTags(ctx.get(TagRepository), {
+        userId: user.id,
+        tags: ['marked', 'detected', 'moved', 'mixed', 'empty', 'parent/child'],
+      });
+      const byValue = new Map(tags.map((tag) => [tag.value, tag]));
+      const parent = (await ctx.get(TagRepository).getByValue(user.id, 'parent'))!;
+      const newLocked = async (reason: AssetLockReason) => {
+        const { asset } = await ctx.newAsset({ ownerId: user.id });
+        await lock(ctx, asset.id, reason);
+        return asset;
+      };
+      const marked = await newLocked(AssetLockReason.Marked);
+      const detected = await newLocked(AssetLockReason.Detected);
+      const moved = await newLocked(AssetLockReason.ImmichLockedFolder);
+      const { asset: visible } = await ctx.newAsset({ ownerId: user.id });
+      await ctx.newTagAsset({ tagIds: [byValue.get('marked')!.id], assetIds: [marked.id] });
+      await ctx.newTagAsset({ tagIds: [byValue.get('detected')!.id], assetIds: [detected.id] });
+      await ctx.newTagAsset({ tagIds: [byValue.get('moved')!.id], assetIds: [moved.id] });
+      await ctx.newTagAsset({ tagIds: [byValue.get('mixed')!.id], assetIds: [marked.id, visible.id] });
+      await ctx.newTagAsset({ tagIds: [byValue.get('parent/child')!.id], assetIds: [detected.id] });
+
+      const auth = plainLockedAuth(user.id);
+      const listed = (await sut.getAll(auth)).map(({ value }) => value).toSorted();
+      // a tag without items stays; one visible item brings a tag back, counted without the hidden one
+      expect(listed).toEqual(['empty', 'mixed']);
+      for (const value of ['marked', 'detected', 'moved', 'parent/child']) {
+        await expect(sut.get(auth, byValue.get(value)!.id), value).rejects.toThrow('Tag not found');
+      }
+      await expect(sut.get(auth, parent.id)).rejects.toThrow('Tag not found');
+      await expect(sut.getStatistics(auth)).resolves.toEqual([{ id: byValue.get('mixed')!.id, count: 1, total: 1 }]);
+
+      const all = (await sut.getAll(unlockedAuth(user.id))).map(({ value }) => value).toSorted();
+      expect(all).toEqual(['detected', 'empty', 'marked', 'mixed', 'moved', 'parent', 'parent/child']);
+    });
+
+    it('hides a tag carried only by items a Locked rule matches', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const tags = await upsertTags(ctx.get(TagRepository), { userId: user.id, tags: ['rule', 'beside-rule', 'open'] });
+      const byValue = new Map(tags.map((tag) => [tag.value, tag]));
+      const { asset: matched } = await ctx.newAsset({ ownerId: user.id });
+      const { asset: visible } = await ctx.newAsset({ ownerId: user.id });
+      await ctx.newTagAsset({
+        tagIds: [byValue.get('rule')!.id, byValue.get('beside-rule')!.id],
+        assetIds: [matched.id],
+      });
+      await ctx.newTagAsset({ tagIds: [byValue.get('open')!.id], assetIds: [visible.id] });
+      const auth = lockedAuth(user.id, [byValue.get('rule')!.id]);
+
+      await expect(sut.getAll(auth)).resolves.toEqual([expect.objectContaining({ value: 'open' })]);
+      await expect(sut.get(auth, byValue.get('beside-rule')!.id)).rejects.toThrow('Tag not found');
+    });
+  });
+
   describe('deleteEmptyTags', () => {
     it('single tag exists, not connected to any assets, and is deleted', async () => {
       const { sut, ctx } = setup();

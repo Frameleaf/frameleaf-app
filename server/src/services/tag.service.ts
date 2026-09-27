@@ -26,7 +26,10 @@ import { upsertTags } from 'src/utils/tag.js';
 @Injectable()
 export class TagService extends BaseService {
   async getAll(auth: AuthDto) {
-    const tags = await this.tagRepository.getAll(auth.user.id, getHiddenContentQueryOptions(auth));
+    const tags = await this.tagRepository.getAll(auth.user.id, {
+      ...getHiddenContentQueryOptions(auth),
+      hideLocked: !getLockedOwnerId(auth),
+    });
     return tags.map((tag) => mapTag(tag));
   }
 
@@ -57,6 +60,13 @@ export class TagService extends BaseService {
     return mapTag(tag);
   }
 
+  /**
+   * Owner decision, September 27, 2026 ("use the existing tag regardless", FL-46): a name that is
+   * already a tag of the owner's answers with that tag, unchanged, instead of an "already exists"
+   * error, so a locked session cannot learn from the error that a tag it cannot see (a Locked-rule
+   * tag, or one only on hidden items) exists. The answer is the tag alone, never its items or counts;
+   * the tag keeps following the Locked rules.
+   */
   async create(auth: AuthDto, dto: TagCreateDto) {
     let parent;
     if (dto.parentId) {
@@ -69,15 +79,23 @@ export class TagService extends BaseService {
 
     const userId = auth.user.id;
     const value = parent ? `${parent.value}/${dto.name}` : dto.name;
-    const duplicate = await this.tagRepository.getByValue(userId, value);
-    if (duplicate) {
-      throw new BadRequestException(`A tag with that name already exists`);
+    const existing = await this.tagRepository.getByValue(userId, value);
+    if (existing) {
+      return mapTag(existing);
     }
 
     const { color } = dto;
-    const tag = await this.tagRepository.create({ userId, value, color, parentId: parent?.id });
-
-    return mapTag(tag);
+    try {
+      const tag = await this.tagRepository.create({ userId, value, color, parentId: parent?.id });
+      return mapTag(tag);
+    } catch (error) {
+      // created by another request (or a metadata import) in the meantime: the same answer
+      const raced = await this.tagRepository.getByValue(userId, value);
+      if (raced) {
+        return mapTag(raced);
+      }
+      throw error;
+    }
   }
 
   async update(auth: AuthDto, id: string, dto: TagUpdateDto): Promise<TagResponseDto> {

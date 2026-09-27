@@ -4,6 +4,7 @@ import { AuthSharedLink } from 'src/database.js';
 import { AuthDto } from 'src/dtos/auth.dto.js';
 import { AlbumUserRole, Permission } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
+import { getLockedOwnerId } from 'src/utils/locked.js';
 import { areSetsEqual, isSetSuperset, setDifference, setUnion } from 'src/utils/set.js';
 
 export type GrantedRequest = {
@@ -372,11 +373,18 @@ const checkOtherAccess = async (access: AccessRepository, request: OtherAccessRe
       return access.notification.checkOwnerAccess(auth.user.id, ids);
     }
 
-    case Permission.TagAsset:
+    // Owner decision, September 27, 2026 ("use the existing tag regardless"): applying or removing a
+    // tag reuses the owner's tag even when the session cannot see it (a Locked-rule tag, or one only
+    // on hidden items), so a tag created by that name can be applied. It returns nothing about the
+    // tag's other items; reading, renaming and deleting still follow the Locked rules below.
+    case Permission.TagAsset: {
+      return await access.tag.checkOwnerAccess(auth.user.id, ids);
+    }
+
     case Permission.TagRead:
     case Permission.TagUpdate:
     case Permission.TagDelete: {
-      return await access.tag.checkOwnerAccess(auth.user.id, ids, accessPrivacy(auth));
+      return await access.tag.checkOwnerAccess(auth.user.id, ids, accessPrivacy(auth), !getLockedOwnerId(auth));
     }
 
     case Permission.TimelineRead: {
