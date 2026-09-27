@@ -636,18 +636,18 @@
       "version": 3
     },
     {
-      "bytes": 29969,
+      "bytes": 30660,
       "category": "plan",
       "id": "61538653",
       "source": "docs/docs/developer/frameleaf-plan/04-native-and-release.md",
-      "sourceCommit": "cae33e1e910c7f6fde3b42a5966cfb169be064c8",
-      "sourceSha256": "1a4d945749597d6544b78e69df253be296569f64ee24546aada0cd2597084381",
+      "sourceCommit": "f50a1c8e7bb84de30293e8204c4570a9b0bbed3c",
+      "sourceSha256": "533adbf33d4f497cf007d872734ad7b9b3b984e01e3bf1d564ee41034eaffc22",
       "title": "Native Applications and Release Implementation",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61538653/Native+Applications+and+Release+Implementation",
-      "verification": "Flutter app removal: Confluence page read back at version 6 as markdown and ADF (the ADF readback confirms the note panel before Verified starting point); the header carries source hash 1a4d9457 and 29969 bytes; compared with version 5, the only differences are the header, the removal note, the relocated native-parity.json and native-preserved-dirty-evidence.json, native (not Flutter) MOB-200 Studio, REL-101 without the example file, REL-202 TypeScript-only generation and the command blocks without the deleted inventory script and Flutter checks; no user additions.",
+      "verification": "FL-142/FL-145/FL-146 release model: Confluence page read back at version 7 as ADF (published as HTML); the header blockquote carries source hash 533adbf3 and 30660 bytes and names commit f50a1c8e7b pushed on master/frameleaf-implementation; the note panel before Verified starting point now adds that the native apps live in their own private repositories with their own signing keys and releases and that Deploy production signs container images only; REL-203 names Deploy production for the server images and links the delivery guide; compared with version 6 the other sections are unchanged (9 headings, one note panel); relative JSON links are rendered as source paths as before; no user additions.",
       "verified": true,
-      "verifiedAt": "2026-09-27T06:52:30.385Z",
-      "version": 6
+      "verifiedAt": "2026-09-27T18:38:30.000Z",
+      "version": 7
     },
     {
       "bytes": 13493,
@@ -818,18 +818,18 @@
       "version": 2
     },
     {
-      "bytes": 32316,
+      "bytes": 36723,
       "category": "development",
       "id": "61407844",
       "source": "docs/docs/developer/frameleaf-development.md",
-      "sourceCommit": "79d14778bd2c4abeda8303ecf0613f565a611d42",
-      "sourceSha256": "d90c02e65d088102fd10273e4370929cefde26c5fdd0877ea40cc4205e427494",
+      "sourceCommit": "f50a1c8e7bb84de30293e8204c4570a9b0bbed3c",
+      "sourceSha256": "854f04685d62991b4f2a8aa1fca2df2ac51295bcd5348b0ac3d69cb6d6377a8f",
       "title": "Frameleaf Development and Delivery",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61407844",
-      "verification": "Integration image (pre-release): Confluence page read back at version 15 as markdown (published as HTML to keep smart links); the header carries source hash d90c02e6 and 32316 bytes, names commit 79d14778bd \"ci: add a guarded pre-release integration image for the Frameleaf Cloud e2e\" and keeps the Flutter-removal, FL-191 and FL-159 history; compared with version 14, the only differences are the header and the new \"Integration image (pre-release)\" section before \"Validation and activation\"; the earlier delivery checkpoints are unchanged; no user additions. The search summary still shows the version 14 excerpt until Confluence reindexes.",
+      "verification": "FL-142/FL-145/FL-146 release model: Confluence page read back at version 16 as ADF (published as HTML); the header carries source hash 854f0468 and 36723 bytes and names commit f50a1c8e7b pushed on master/frameleaf-implementation; 16 headings, the same as version 15; Build and release flow now carries the deployment test before any push, Deploy production (production environment, cosign signing and verification command, dry run by default) and the staged rollout, kill switch and rollback paragraph; Integration image describes the same gate; Validation and activation lists .github/frameleaf-deploy-test.test.cjs and records the production environment, its two secrets by name and that native apps release from their own repositories; the page-only Earlier infrastructure checkpoint, Agent workflow update and PR 112 delivery checkpoint sections are kept unchanged; the two site-relative doc links are rendered as source paths as before; no user additions.",
       "verified": true,
-      "verifiedAt": "2026-09-27T12:31:00.000Z",
-      "version": 15
+      "verifiedAt": "2026-09-27T18:41:00.000Z",
+      "version": 16
     },
     {
       "bytes": 411,
