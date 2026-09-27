@@ -613,9 +613,13 @@ const scale = z.union([z.literal(2), z.literal(4)]);
  * here before it is sent, as the cloud would refuse it with 422 `request-invalid`.
  */
 export const CLOUD_WORKLOAD_REQUESTS = {
+  // FC-44 `DescriptionsRequest`: fixed options only, and the two consent-gated features as booleans
   descriptions: z.strictObject({
     language: languageTag.optional(),
     length: z.enum(['short', 'standard', 'long']).optional(),
+    style: z.enum(['natural', 'factual']).optional(),
+    maxTags: z.number().int().min(0).max(30).optional(),
+    features: z.strictObject({ identityNames: z.boolean(), medicalSignals: z.boolean() }).partial().optional(),
   }),
   upscale: z.strictObject({ scale: scale.optional() }),
   restoration: z.strictObject({ mode: z.enum(CLOUD_RESTORATION_MODES).optional(), scale: scale.optional() }),
@@ -1019,6 +1023,87 @@ export const jobViewSchema = z.strictObject({
   updatedAt: gatewayTimestamp(),
 });
 export type CloudJobView = z.infer<typeof jobViewSchema>;
+
+/**
+ * FC-44 `DescriptionWarning`: why a description item is incomplete or was changed. The first four
+ * mean the item failed (an empty description, no tags, no moment, confidence 0).
+ */
+export const CLOUD_DESCRIPTION_WARNINGS = [
+  'input-unsupported',
+  'input-too-large',
+  'input-unreadable',
+  'output-invalid',
+  'metadata-removed',
+  'content-removed',
+  'truncated',
+] as const;
+export type CloudDescriptionWarning = (typeof CLOUD_DESCRIPTION_WARNINGS)[number];
+export const CLOUD_DESCRIPTION_FAILURE_WARNINGS: readonly CloudDescriptionWarning[] = [
+  'input-unsupported',
+  'input-too-large',
+  'input-unreadable',
+  'output-invalid',
+];
+
+/** Text for people: no control characters and no markup. */
+const descriptionText = (max: number) =>
+  z
+    .string()
+    .max(max)
+    .regex(/^[^\p{Cc}<>]*$/u);
+
+/** FC-44 `DescriptionItem`: one photo's description, or why it has none. */
+export const descriptionItemSchema = z
+  .strictObject({
+    inputId: z.string().regex(/^[\w-]{1,64}$/),
+    description: descriptionText(1200),
+    tags: z.array(descriptionText(48).min(1)).max(30),
+    moment: descriptionText(120).min(1).nullable(),
+    confidence: z.number().min(0).max(1),
+    warnings: z.array(z.enum(CLOUD_DESCRIPTION_WARNINGS)).max(7),
+  })
+  .superRefine((item, context) => {
+    const issue = (path: string, message: string) => context.addIssue({ code: 'custom', path: [path], message });
+    if (new Set(item.tags).size !== item.tags.length) {
+      issue('tags', 'tags are unique');
+    }
+    if (new Set(item.warnings).size !== item.warnings.length) {
+      issue('warnings', 'warnings are unique');
+    }
+    const failed = item.warnings.some((warning) => CLOUD_DESCRIPTION_FAILURE_WARNINGS.includes(warning));
+    if (failed !== (item.description === '')) {
+      issue(
+        'description',
+        'a failed item has an empty description and a failure warning; a described item has neither',
+      );
+    }
+    if (failed && (item.tags.length > 0 || item.moment !== null || item.confidence !== 0)) {
+      issue('tags', 'a failed item has no tags, no moment and confidence 0');
+    }
+  });
+export type CloudDescriptionItem = z.infer<typeof descriptionItemSchema>;
+
+/**
+ * FC-44 `DescriptionsResult`: one output document of a completed descriptions job (one output per
+ * input, `outputId` = the input's `inputId`, `application/json`). It names the model by SKU and
+ * revision only; anything else (a model name, a fingerprint, markup) refuses the whole document.
+ */
+export const descriptionsResultSchema = z
+  .strictObject({
+    schema: z.literal('frameleaf.descriptions/v1'),
+    modelSku: modelSkuSchema,
+    modelRev: modelRevSchema,
+    language: languageTag,
+    items: z.array(descriptionItemSchema).min(1).max(1000),
+  })
+  .refine((result) => new Set(result.items.map((item) => item.inputId)).size === result.items.length, {
+    path: ['items'],
+    message: 'inputId must be unique',
+  });
+export type CloudDescriptionsResult = z.infer<typeof descriptionsResultSchema>;
+
+/** The largest description output document this server reads (FC-44 `DESCRIPTIONS_RESULT_MAX_BYTES`). */
+export const CLOUD_DESCRIPTION_RESULT_MAX_BYTES = 16_384;
 
 /**
  * A body this server is about to send to the ML gateway, checked against the contract first. One the

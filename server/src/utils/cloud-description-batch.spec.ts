@@ -2,15 +2,14 @@ import { describe, expect, it, vi } from 'vitest';
 import { DatabaseLock, SystemMetadataKey } from 'src/enum.js';
 import {
   CLOUD_DESCRIPTION_BATCH_SIZE,
-  CLOUD_DESCRIPTION_CONTRACT,
   CLOUD_DESCRIPTION_QUEUE_FLUSH_MS,
   CLOUD_DESCRIPTION_QUEUE_FLUSH_SIZE,
   CLOUD_DESCRIPTION_QUEUE_MAX,
-  CLOUD_DESCRIPTION_UPLOADS_UNPUBLISHED,
   CloudDescriptionPhase,
   CloudDescriptionQueueWriter,
   cloudDescriptionIdempotencyKey,
   cloudDescriptionPackKey,
+  cloudDescriptionRequest,
   emptyCloudDescriptionResult,
   groupCloudDescriptionBatches,
   heavyModelGuidance,
@@ -40,13 +39,14 @@ const withModel = (entry: Record<string, unknown>, sku: string, model: string, r
   display: { model, gpu: 'H100-class, 80 GB' },
   default: false,
 });
-/** The gateway's descriptions catalogue, with a 27B, a 35B-A3B and a 72B model added (FL-163). */
+/** The gateway's descriptions catalogue, with a 27B, a 35B-A3B, the 122B-A10B and a 72B model added (FL-163). */
 const ladder = catalogSchema.parse({
   ...descriptions,
   models: [
     ...descriptions.models,
     withModel(descriptions.models[0], 'ms_M27B0000', 'Qwen3.5-27B', 3),
     withModel(descriptions.models[0], 'ms_M35B0000', 'Qwen3.5-35B-A3B', 4),
+    withModel(descriptions.models[0], 'ms_M122B000', 'Qwen3.5-122B-A10B', 5),
     withModel(descriptions.models[0], 'ms_M72B0000', 'Qwen2.5-VL-72B', 6),
   ],
 }).models;
@@ -114,6 +114,14 @@ describe('cloud description batches (FL-163)', () => {
         smallBatches: 2,
         suggestedModelId: 'ms_M35B0000',
         suggestedModelName: 'Descriptions · Qwen3.5-35B-A3B',
+      });
+    });
+
+    it('counts Qwen3.5-122B-A10B in the 72B class: it shares its GPU class and start fee', () => {
+      expect(heavyModelGuidance(model('ms_M122B000'), [50], ladder)).toMatchObject({
+        minimumBatch: 200,
+        smallBatches: 1,
+        suggestedModelId: 'ms_M35B0000',
       });
     });
 
@@ -185,10 +193,20 @@ describe('cloud description batches (FL-163)', () => {
     });
   });
 
-  describe('the upload gate', () => {
-    it('keeps job creation closed until the FC-39 upload and result contract is implemented', () => {
-      expect(CLOUD_DESCRIPTION_CONTRACT.uploadsPublished).toBe(false);
-      expect(CLOUD_DESCRIPTION_UPLOADS_UNPUBLISHED).toMatch(/no description job is created/);
+  describe('the request (prompt privacy)', () => {
+    it('sends names and health signals off unless the recorded consent allows them', () => {
+      expect(cloudDescriptionRequest(null)).toEqual({
+        length: 'standard',
+        features: { identityNames: false, medicalSignals: false },
+      });
+      expect(cloudDescriptionRequest({ identityNames: true, medicalSignals: false })).toEqual({
+        length: 'standard',
+        features: { identityNames: true, medicalSignals: false },
+      });
+      expect(cloudDescriptionRequest({ identityNames: false, medicalSignals: true }).features).toEqual({
+        identityNames: false,
+        medicalSignals: true,
+      });
     });
   });
 
