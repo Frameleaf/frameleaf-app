@@ -1,6 +1,6 @@
-"""Faithful and Creative restoration model adapters and their qualification gate (FL-114).
+"""Restoration and Smooth motion model adapters and their qualification gate (FL-114, FL-162).
 
-Two families back the two modes:
+Three families back the three modes:
 
 * **Faithful** — RealBasicVSR (https://github.com/ckkelvinchan/RealBasicVSR). It restores at
   its native x4 and the pipeline then resizes conventionally (Lanczos) to the requested 2x or
@@ -8,6 +8,9 @@ Two families back the two modes:
 * **Creative** — SeedVR2 (https://github.com/ByteDance-Seed/SeedVR). It generates at the
   requested size and writes an intermediate encoded video, which the pipeline decodes,
   checks and re-encodes.
+* **Smooth motion** — RIFE (https://github.com/hzwer/Practical-RIFE). It makes the in-between
+  frames of a folder of frames at 2x, 4x or 8x; the pipeline encodes them at that many times the
+  source frame rate, so the clip keeps its length and its audio (FL-162).
 
 Each family runs in its own pinned, isolated runtime (an upstream checkout at an exact
 commit with its own Python environment) that this worker invokes as a subprocess from the
@@ -24,7 +27,8 @@ A model is available only when every one of these holds, checked in this order:
 6. a qualification record for this model id, revision and exact weight hashes carries a
    ``pass`` for every required evidence item and names this container revision;
 7. that record approves the code and weight licenses;
-8. an NVIDIA GPU is present (both runtimes are CUDA-only as pinned);
+8. an NVIDIA GPU is present (RealBasicVSR and SeedVR2 are CUDA-only as pinned; a model whose
+   manifest says ``requiresGpu: false``, such as RIFE on the processor, skips 8 to 10);
 9. the GPU model and driver branch are ones the record qualified; and
 10. it has at least the manifest's minimum memory.
 
@@ -81,10 +85,22 @@ HASH_CHUNK_BYTES = 8 * 1024 * 1024
 STDERR_TAIL_BYTES = 4000
 # Placeholders a runtime argv template may use, besides ``{weight:<role>}``.
 RUNTIME_PLACEHOLDERS = frozenset(
-    {"python", "runtime_root", "input_dir", "output_dir", "seed", "target_width", "target_height", "max_seq_len"}
+    {
+        "python",
+        "runtime_root",
+        "input_dir",
+        "output_dir",
+        "seed",
+        "target_width",
+        "target_height",
+        "max_seq_len",
+        # Smooth motion: frames per source frame, and its base-2 exponent (RIFE's ``--exp``).
+        "factor",
+        "exp",
+    }
 )
 
-ModelFamily = Literal["realbasicvsr", "seedvr2"]
+ModelFamily = Literal["realbasicvsr", "seedvr2", "rife"]
 
 
 class RestorationFailure(Exception):
@@ -143,12 +159,23 @@ class RuntimeSpec(ConfigModel):
     timeoutSeconds: int = Field(default=3600, ge=10, le=86400)
 
 
+class WeightSource(ConfigModel):
+    """Where ``fetch_weights`` downloads a weight from: a repository of the Frameleaf model source
+    (``MACHINE_LEARNING_MODEL_SOURCE_URL``, by default https://models.frameleaf.cloud), under the
+    ``frameleaf`` organisation. The download is kept only when it hashes to the pinned sha256."""
+
+    repo: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,95}$")
+    file: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$")
+
+
 class WeightSpec(ConfigModel):
     role: str = Field(pattern=r"^[a-z0-9][a-z0-9-]{0,39}$")
     # Relative paths resolve against the manifest's ``weightsRoot``.
     path: Path
     # Pinned hash. A value that is not 64 lowercase hex characters leaves the model not pinned.
     sha256: str
+    # Optional: where to download it from on the Frameleaf model source.
+    source: WeightSource | None = None
 
 
 class LimitsSpec(ConfigModel):
@@ -176,6 +203,8 @@ class ModelSpec(ConfigModel):
     weights: list[WeightSpec] = Field(min_length=1)
     limits: LimitsSpec
     dynamicRanges: list[DynamicRange] = Field(default_factory=lambda: [DynamicRange.SDR])
+    # False for a model qualified on the processor (RIFE can be); its record then names that processor.
+    requiresGpu: bool = True
     notes: str = ""
 
     @model_validator(mode="after")
@@ -190,6 +219,8 @@ class ModelSpec(ConfigModel):
                         raise ValueError(f"model {self.id} argv names an undeclared weight: {{{name}}}")
                 elif name not in RUNTIME_PLACEHOLDERS:
                     raise ValueError(f"model {self.id} argv uses an unknown placeholder: {{{name}}}")
+        if (self.family == "rife") != (self.mode == RestorationMode.SMOOTH_MOTION):
+            raise ValueError(f"model {self.id}: only the rife family serves smooth_motion")
         return self
 
 
@@ -238,6 +269,9 @@ class EvidenceItem(StrEnum):
     # SeedVR2: the intermediate video's compression and its frame count.
     INTERMEDIATE_COMPRESSION = "intermediate-compression"
     FRAME_COUNT = "frame-count"
+    # RIFE: ghosting and warping around occlusions, fast motion and scene cuts, judged against
+    # plain frame blending of the same source at the same rate.
+    INTERPOLATION_ARTIFACTS = "interpolation-artifacts"
 
 
 COMMON_EVIDENCE: frozenset[EvidenceItem] = frozenset(
@@ -266,6 +300,7 @@ COMMON_EVIDENCE: frozenset[EvidenceItem] = frozenset(
 REQUIRED_EVIDENCE: dict[str, frozenset[EvidenceItem]] = {
     "realbasicvsr": COMMON_EVIDENCE | {EvidenceItem.X4_TO_REQUESTED_2X},
     "seedvr2": COMMON_EVIDENCE | {EvidenceItem.INTERMEDIATE_COMPRESSION, EvidenceItem.FRAME_COUNT},
+    "rife": COMMON_EVIDENCE | {EvidenceItem.FRAME_COUNT, EvidenceItem.INTERPOLATION_ARTIFACTS},
 }
 
 
@@ -526,14 +561,31 @@ HDR_OUTPUT_SUPPORTED = False
 def allowed_dynamic_ranges(spec: ModelSpec, record: QualificationRecord | None) -> list[DynamicRange]:
     """SDR when declared; HDR only when declared, independently qualified and encodable."""
     ranges = [DynamicRange.SDR] if DynamicRange.SDR in spec.dynamicRanges else []
-    if (
-        HDR_OUTPUT_SUPPORTED
-        and DynamicRange.HDR in spec.dynamicRanges
-        and record is not None
-        and record.hdrQualified
-    ):
+    if HDR_OUTPUT_SUPPORTED and DynamicRange.HDR in spec.dynamicRanges and record is not None and record.hdrQualified:
         ranges.append(DynamicRange.HDR)
     return ranges
+
+
+def gpu_findings(
+    spec: ModelSpec, gpus: list[GpuDescription], qualified: set[tuple[str, str]]
+) -> list[tuple[ModelState, str]]:
+    """The GPU a CUDA runtime needs: present, a qualified model and driver branch, enough memory."""
+    findings: list[tuple[ModelState, str]] = []
+    if not gpus:
+        findings.append((ModelState.NO_GPU, "no NVIDIA GPU is visible to the worker"))
+    else:
+        matching = [gpu for gpu in gpus if (gpu.name, driver_branch(gpu.driverVersion)) in qualified]
+        if not matching:
+            present = ", ".join(f"{gpu.name} (driver {gpu.driverVersion})" for gpu in gpus)
+            findings.append((ModelState.GPU_UNQUALIFIED, f"{present} is not a qualified GPU and driver for {spec.id}"))
+        elif max(gpu.memoryTotalBytes for gpu in matching) < spec.limits.minVramBytes:
+            findings.append(
+                (
+                    ModelState.INSUFFICIENT_VRAM,
+                    f"{spec.id} needs {spec.limits.minVramBytes} bytes of GPU memory",
+                )
+            )
+    return findings
 
 
 def evaluate_model(
@@ -560,24 +612,13 @@ def evaluate_model(
     if record is None or not record.license.complete:
         findings.append((ModelState.LICENSE_UNREVIEWED, "the code and weight licenses are not approved"))
 
-    # Both runtimes are CUDA-only as pinned, so a qualified NVIDIA GPU is always required: the
-    # same model name on the same driver branch the evidence was recorded with.
+    # The restoration runtimes are CUDA-only as pinned, so a qualified NVIDIA GPU is required: the
+    # same model name on the same driver branch the evidence was recorded with. A model qualified on
+    # the processor says so in its manifest and skips this.
     hardware = record.hardware if record else []
     qualified = {(entry.gpu, driver_branch(entry.driverVersion)) for entry in hardware}
-    if not gpus:
-        findings.append((ModelState.NO_GPU, "no NVIDIA GPU is visible to the worker"))
-    else:
-        matching = [gpu for gpu in gpus if (gpu.name, driver_branch(gpu.driverVersion)) in qualified]
-        if not matching:
-            present = ", ".join(f"{gpu.name} (driver {gpu.driverVersion})" for gpu in gpus)
-            findings.append((ModelState.GPU_UNQUALIFIED, f"{present} is not a qualified GPU and driver for {spec.id}"))
-        elif max(gpu.memoryTotalBytes for gpu in matching) < spec.limits.minVramBytes:
-            findings.append(
-                (
-                    ModelState.INSUFFICIENT_VRAM,
-                    f"{spec.id} needs {spec.limits.minVramBytes} bytes of GPU memory",
-                )
-            )
+    if spec.requiresGpu:
+        findings += gpu_findings(spec, gpus, qualified)
 
     verified = weights.verified and not is_pinned(spec)
     return ModelCapability(
@@ -732,6 +773,8 @@ class RuntimeJob:
     seed: int
     # swscale matrix of the source, for any conversion back to YCbCr and out again.
     yuv_matrix: str = "bt709"
+    # Smooth motion: frames per source frame. 1 for a restoration.
+    interpolation_factor: int = 1
 
 
 @dataclass(frozen=True)
@@ -860,9 +903,43 @@ class SeedVr2Adapter(RestorationAdapter):
         )
 
 
+class RifeAdapter(RestorationAdapter):
+    """Smooth motion (FL-162). Upstream's frame-folder inference reads the source frames and writes
+    ``(n - 1) * factor + 1`` PNG frames at the source size: every source frame, with ``factor - 1``
+    new frames between each pair. The pipeline checks that count, keeps the size and encodes them at
+    ``factor`` times the source frame rate."""
+
+    family = "rife"
+
+    def run(self, job: RuntimeJob) -> AdapterRun:
+        factor = job.interpolation_factor
+        if factor not in (2, 4, 8):
+            raise RestorationFailure(
+                RestorationErrorCode.INVALID_REQUEST, f"smooth motion needs a factor of 2, 4 or 8, not {factor}"
+            )
+        output_dir = job.work_dir / "runtime-output"
+        output_dir.mkdir()
+        values = {
+            **self.base_values(job),
+            "input_dir": str(job.source_frames),
+            "output_dir": str(output_dir),
+            "factor": str(factor),
+            "exp": str(factor.bit_length() - 1),
+        }
+        outcome = self.runner(self.invocation(values))
+        return AdapterRun(
+            frames_dir=output_dir,
+            expected_size=job.source_size,
+            runtime_ms=outcome.duration_ms,
+            peak_vram_bytes=outcome.peak_vram_bytes,
+            warnings=[],
+        )
+
+
 ADAPTERS: dict[str, type[RestorationAdapter]] = {
     RealBasicVsrAdapter.family: RealBasicVsrAdapter,
     SeedVr2Adapter.family: SeedVr2Adapter,
+    RifeAdapter.family: RifeAdapter,
 }
 
 
@@ -1040,3 +1117,77 @@ class RestorationRegistry:
 
 def adapter_for(selected: SelectedModel, runner: Runner = run_runtime) -> RestorationAdapter:
     return ADAPTERS[selected.spec.family](selected.spec, selected.weights_root, runner)
+
+
+# ---------------------------------------------------------------------------------------
+# Weights from the Frameleaf model source.
+# ---------------------------------------------------------------------------------------
+
+MODEL_SOURCE_ORG = "frameleaf"
+
+Downloader = Callable[[str, str, Path], Path]
+
+
+def _download_from_model_source(repo_id: str, filename: str, directory: Path) -> Path:
+    from huggingface_hub import hf_hub_download
+
+    from immich_ml.config import model_source_token, model_source_url
+
+    return Path(
+        hf_hub_download(
+            repo_id,
+            filename,
+            local_dir=directory,
+            endpoint=model_source_url(),
+            # A Hugging Face token only ever goes to huggingface.co (see model_source_token).
+            token=model_source_token(),
+        )
+    )
+
+
+def fetch_weights(
+    manifest: Manifest,
+    *,
+    model_ids: list[str] | None = None,
+    download: Downloader = _download_from_model_source,
+    verifier: WeightVerifier | None = None,
+) -> list[str]:
+    """Download every weight that names a ``source`` from the Frameleaf model source into its
+    manifest path. A weight already present with its pinned hash is left alone; a download is moved
+    into place only when it hashes to the pinned sha256, so a wrong or tampered file never becomes
+    a weight. Returns what was done, one line per weight. Qualification is still required before
+    any model serves a request."""
+    verifier = verifier or WeightVerifier()
+    report: list[str] = []
+    for spec in manifest.models:
+        if model_ids and spec.id not in model_ids:
+            continue
+        for weight in spec.weights:
+            target = resolve_weight_path(manifest.weightsRoot, weight)
+            if weight.source is None:
+                report.append(f"{spec.id} {weight.role}: no model source entry; place {target} yourself")
+                continue
+            if not SHA256_RE.match(weight.sha256):
+                report.append(f"{spec.id} {weight.role}: not pinned; nothing downloaded")
+                continue
+            if target.is_file() and verifier.sha256(target) == weight.sha256:
+                report.append(f"{spec.id} {weight.role}: already present")
+                continue
+            staging = target.parent / f".download-{weight.role}"
+            staging.mkdir(parents=True, exist_ok=True)
+            try:
+                downloaded = download(f"{MODEL_SOURCE_ORG}/{weight.source.repo}", weight.source.file, staging)
+                actual = WeightVerifier().sha256(downloaded)
+                if actual != weight.sha256:
+                    raise RestorationFailure(
+                        RestorationErrorCode.MODEL_UNAVAILABLE,
+                        f"{spec.id} {weight.role} from the model source hashes to {actual}, pinned {weight.sha256}",
+                        model_id=spec.id,
+                    )
+                os.replace(downloaded, target)
+            finally:
+                for leftover in sorted(staging.rglob("*"), reverse=True):
+                    leftover.unlink() if leftover.is_file() or leftover.is_symlink() else leftover.rmdir()
+                staging.rmdir()
+            report.append(f"{spec.id} {weight.role}: downloaded and verified")
+    return report

@@ -1,7 +1,8 @@
 # Video restoration worker
 
 The restoration worker serves the **Faithful** and **Creative** restoration workloads
-(`restoration-faithful`, `restoration-creative`). It is a separate process from the
+(`restoration-faithful`, `restoration-creative`) and **Smooth motion** frame interpolation
+(`interpolation`, FL-162). It is a separate process from the
 `/predict` machine-learning container and is added to the server as a local or LAN
 destination under **Processing destinations** (Frameleaf Cloud runs restoration as its own cloud jobs). The server only
 sends it work after an explicit destination choice; a cloud destination additionally needs
@@ -17,6 +18,7 @@ restoration workload.
 | -------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
 | Faithful | [RealBasicVSR](https://github.com/ckkelvinchan/RealBasicVSR)     | Upstream `inference_realbasicvsr.py` on a folder of frames at native x4, then a Lanczos resize to the requested size |
 | Creative | [SeedVR2](https://github.com/ByteDance-Seed/SeedVR)              | Upstream `projects/inference_seedvr2_*.py` on a near-lossless clip at the requested size; its encoded output is decoded |
+| Smooth motion | [RIFE](https://github.com/hzwer/Practical-RIFE) (4.25)      | A frame-folder run at 2x, 4x or 8x (`--exp 1..3`) at the source size; the frames are encoded at that many times the source rate, so the clip keeps its length and audio |
 
 The mode names express intention, not a fidelity guarantee.
 
@@ -32,6 +34,36 @@ The mode names express intention, not a fidelity guarantee.
   isolated runtime.
 - `../immich_ml/video_restoration/` — the worker: `models.py` (adapters and gate),
   `pipeline.py` (one inference), `app.py` (HTTP), `schemas.py` (wire contract).
+
+## Smooth motion (RIFE)
+
+Smooth motion adds in-between frames: a clip plays slower without stutter, or at a higher frame
+rate. It never changes the size (`scale` is 1) and the original is never touched; the server saves
+the result as a new version. For `n` source frames the runtime must write exactly
+`(n - 1) * factor + 1` frames at the source size, which the worker checks frame by frame (count,
+size, and no blank frame where the source had content). The last frame is then held for
+`factor - 1` frames so `n` frames become `n * factor`. A chunk of a longer video carries the next
+chunk's first frame as context (`trailingContextFrame`), so the frames between two chunks are made
+too; that context frame is not returned.
+
+The weights come from the Frameleaf model source (`frameleaf/rife-4.25`, served from
+`MACHINE_LEARNING_MODEL_SOURCE_URL`, by default https://models.frameleaf.cloud). A weight with a
+`source` entry is downloaded with
+
+```sh
+python -m immich_ml.video_restoration fetch-weights rife-4-25
+```
+
+and is moved into place only when it hashes to the manifest's pinned sha256. Downloading never
+qualifies a model: RIFE needs its own qualification record like every other model, with
+`frame-count` and `interpolation-artifacts` (ghosting and warping around occlusions, fast motion
+and cuts, judged against plain frame blending) on top of the common evidence. A record qualified
+on the processor can set `requiresGpu: false` in the manifest; otherwise a qualified NVIDIA GPU is
+required.
+
+The server routes Smooth motion by the interpolation setting under Where each job runs: **Local
+only** and **Both** can use this worker, and nothing ever moves to Frameleaf Cloud without the
+person confirming a separate Frameleaf Cloud job.
 
 ## When a model is available
 

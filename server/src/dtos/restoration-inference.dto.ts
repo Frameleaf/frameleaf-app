@@ -1,6 +1,10 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
-import { AssetRestorationModeSchema, AssetRestorationUpscaleSchema } from 'src/dtos/asset-restoration.dto.js';
+import {
+  AssetRestorationMode,
+  AssetRestorationModeSchema,
+  AssetRestorationUpscaleSchema,
+} from 'src/dtos/asset-restoration.dto.js';
 import { MlWorkload, MlWorkloadSchema } from 'src/enum.js';
 
 /**
@@ -109,10 +113,24 @@ export const RestorationWorkerRequestSchema = z
     seed: z.int().min(0).max(2_147_483_647),
     /** What the server measured about the upload; the worker re-probes and refuses a mismatch. */
     source: RestorationWorkerSourceSchema,
+    /** Smooth motion (FL-162): each source frame becomes this many frames at this many times the rate. */
+    interpolationFactor: z
+      .union([z.literal(2), z.literal(4), z.literal(8)])
+      .nullable()
+      .optional(),
+    /** Smooth motion: the last uploaded frame is the next chunk's first, sent as context and not returned. */
+    trailingContextFrame: z.boolean().optional(),
   })
   .refine((request) => request.kind === 'image' || (request.source.durationMs ?? null) !== null, {
     message: 'A video request needs source.durationMs',
-  });
+  })
+  .refine(
+    (request) =>
+      request.mode === AssetRestorationMode.SmoothMotion
+        ? !!request.interpolationFactor && request.scale === 1 && request.kind === 'video'
+        : !request.interpolationFactor && !request.trailingContextFrame,
+    { message: 'interpolationFactor is required for smooth_motion (scale 1, video) and refused otherwise' },
+  );
 
 export type RestorationWorkerRequest = z.infer<typeof RestorationWorkerRequestSchema>;
 

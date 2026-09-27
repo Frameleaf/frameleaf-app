@@ -929,7 +929,10 @@ export enum MlWorkload {
   StudioAi = 'studio-ai',
   /** FL-159: image and video upscaling. Frameleaf Cloud only; no local worker serves it yet. */
   Upscale = 'upscale',
-  /** FL-159: frame interpolation. Frameleaf Cloud only. */
+  /**
+   * FL-159/FL-162: frame interpolation (Smooth motion). RIFE on a local or LAN restoration worker, or
+   * FILM on Frameleaf Cloud as its own confirmed job.
+   */
   Interpolation = 'interpolation',
   /** FL-159: Studio render on Frameleaf Cloud. Local renders go through enrolled render workers. */
   StudioRender = 'studio-render',
@@ -968,10 +971,11 @@ export const FRAMELEAF_CLOUD_ML_WORKLOADS: readonly MlWorkload[] = [
   MlWorkload.Interpolation,
 ];
 
-/** The workloads only the separate restoration worker serves (FL-114, FL-72). */
+/** The workloads only the separate restoration worker serves (FL-114, FL-72, FL-162 Smooth motion). */
 export const RESTORATION_ML_WORKLOADS: readonly MlWorkload[] = [
   MlWorkload.RestorationFaithful,
   MlWorkload.RestorationCreative,
+  MlWorkload.Interpolation,
 ];
 
 /**

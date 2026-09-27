@@ -30,6 +30,7 @@ vi.mock('$lib/managers/auth-manager.svelte', () => ({ authManager: { params: {} 
 const destination = (overrides: Partial<AssetRestorationDestinationDto> = {}): AssetRestorationDestinationDto => ({
   id: 'local',
   kind: MlDestinationKind.Local,
+  gpu: null,
   name: 'This server',
   health: MlDestinationHealth.Healthy,
   available: true,

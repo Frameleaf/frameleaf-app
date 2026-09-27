@@ -57,7 +57,7 @@ Choose the models for each kind of work in **Where each job runs** or on the **M
 - **White** stops run on this server's processor and **green** stops fit its GPU, as the last Hardware & GPU check found it. Without a check every stop is white; run the check to see which fit. A model that needs more GPU memory than you have, or CUDA on a GPU that does not use it, is crossed out with the reason.
 - **Blue** stops run on Frameleaf Cloud only, with the price per minute of GPU time.
 
-Descriptions and tags is the only kind of work with a model for this server on the slider. Choosing a white or green stop changes the description model setting, saved with the settings bar like the Machine learning settings. The machine-learning container downloads a model it doesn't have yet the first time a job uses it, which can take several minutes. The fallback model and any model typed as a custom name stay in the Machine learning settings. Restoration and Studio AI workers bring their own models, and upscale and smooth motion run on Frameleaf Cloud only, so their sliders have blue stops only.
+Descriptions and tags is the only kind of work with a model for this server on the slider. Choosing a white or green stop changes the description model setting, saved with the settings bar like the Machine learning settings. The machine-learning container downloads a model it doesn't have yet the first time a job uses it, which can take several minutes. The fallback model and any model typed as a custom name stay in the Machine learning settings. Restoration and Studio AI workers bring their own models, and upscale runs on Frameleaf Cloud only, so their sliders in Where each job runs have blue stops only. Smooth motion runs RIFE on a restoration worker on this server or your network when an administrator has added one with a qualified RIFE model (see `machine-learning/video-restoration/README.md`); the Smooth motion slider in the editor and in Studio shows it on a white or green stop, and FILM on Frameleaf Cloud on a blue one, confirmed as its own job.
 
 A blue stop is saved at once. When no Frameleaf Cloud model is chosen, jobs use the model Frameleaf Cloud recommends for your region; if it recommends none, and always for Studio AI, cloud jobs are refused until you choose one. Choosing on one side never changes the other, and where each job runs still follows its setting: work set to **Local only** shows its blue stops crossed out, and work set to **Cloud only** its white and green stops. Every model the cloud tier offers is licensed Apache-2.0, MIT or for commercial hosted use.
 
@@ -77,7 +77,7 @@ The check names the set-up problems it finds, each with the fix and, where docke
 
 - **Descriptions and tags**: a few generated test photos are described with your description model on this server's machine-learning container (never on Frameleaf Cloud).
 - **Restoration**: the speed the restoration worker measured on its current GPU when it was qualified.
-- **Upscale** and **smooth motion** have no local runner, and a transcription worker reports no speed; the benchmark says so rather than estimating.
+- **Upscale** has no local runner, and a transcription worker and a Smooth motion (RIFE) restoration worker report no speed to this check; the benchmark says so rather than estimating.
 
 ## Prerequisites
 

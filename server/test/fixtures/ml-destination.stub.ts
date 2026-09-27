@@ -142,7 +142,7 @@ export const mlProbeStub = {
   } satisfies MlEndpointProbe,
   restoration: {
     reachable: true,
-    workloads: [MlWorkload.RestorationFaithful, MlWorkload.RestorationCreative],
+    workloads: [MlWorkload.RestorationFaithful, MlWorkload.RestorationCreative, MlWorkload.Interpolation],
     hardware: null,
     latencyMs: 40,
     probedAt: at,

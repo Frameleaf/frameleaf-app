@@ -30,6 +30,8 @@
    * new version like a restoration.
    */
   import CloudJobDialog from '$lib/components/frameleaf/cloud/CloudJobDialog.svelte';
+  import ModelSlider from '$lib/components/frameleaf/cloud/ModelSlider.svelte';
+  import { resolvePosition, type DetectedGpu } from '$lib/frameleaf/gpu-model-catalog';
   import { activitySession } from '$lib/frameleaf/activity-session.svelte';
   import {
     CENTRE_REGION,
@@ -145,6 +147,10 @@
   let regionChoice = $state<'centre' | 'crop'>('centre');
   let startSeconds = $state<number | null>(null);
   let smoothFactor = $state<SmoothMotionFactor>(2);
+  /** FL-162/FL-159: the Smooth motion model on its slider, and where that stop runs. */
+  let smoothModelId = $state<string | null>(null);
+  let smoothRunsOn = $state<'local' | 'cloud' | null>(null);
+  let smoothOptions = $state<AssetRestorationOptionsDto | null>(null);
 
   /* A Frameleaf Cloud job waiting for its estimate to be confirmed (FL-162). */
   type CloudJobRequest = {
@@ -178,10 +184,37 @@
   const canRequest = $derived(
     !!options && !!selected && selected.available && !submitting && !loadError && (!onCloud || !!cloudUpscale),
   );
-  /** Smooth motion runs only on Frameleaf Cloud here; the estimate says whether it can run now. */
+  /** Frameleaf Cloud, for a Smooth motion or restoration job confirmed in CloudJobDialog. */
   const cloudDestinationId = $derived(
     destinations.find((candidate) => candidate.kind === MlDestinationKind.FrameleafCloud)?.id ?? null,
   );
+  /**
+   * FL-162: the home worker that runs Smooth motion (RIFE) right now, this server's first. The server
+   * decides availability with the interpolation row of Where each job runs; nothing moves elsewhere.
+   */
+  const smoothLocal = $derived(
+    orderedDestinations(smoothOptions?.destinations ?? []).find(
+      (candidate) => candidate.kind !== MlDestinationKind.FrameleafCloud && candidate.available,
+    ) ?? null,
+  );
+  const smoothGpu = $derived.by((): DetectedGpu | null => {
+    const gpu = smoothLocal?.gpu;
+    return gpu ? { name: gpu.name, vramGb: gpu.memoryTotalBytes / 1024 ** 3, backend: 'CUDA', profile: null } : null;
+  });
+  const smoothRoute = $derived(smoothOptions?.route ?? 'local');
+  // The slider starts on the model that fits here, as Where each job runs would choose it.
+  $effect(() => {
+    if (!smoothOptions || smoothModelId) {
+      return;
+    }
+    const start = resolvePosition('interpolation', null, { gpu: smoothGpu, route: smoothRoute });
+    if (start) {
+      smoothModelId = start.item.id;
+      smoothRunsOn = start.runsOn;
+    }
+  });
+  const canSmoothLocally = $derived(smoothRunsOn === 'local' && !!smoothLocal && !submitting);
+  const canSmoothOnCloud = $derived(smoothRunsOn === 'cloud' && !!cloudDestinationId && !!options);
   const previewEstimate = $derived(selected ? formatEstimateSeconds(selected.estimate.previewSeconds, $locale) : null);
   const fullEstimate = $derived(selected ? formatEstimateSeconds(selected.estimate.fullSeconds, $locale) : null);
 
@@ -236,6 +269,12 @@
     );
   };
 
+  const loadSmoothOptions = async () => {
+    if (isVideo) {
+      smoothOptions = await getAssetRestorationOptions({ id: asset.id, mode: AssetRestorationMode.SmoothMotion });
+    }
+  };
+
   onMount(async () => {
     stopActivity = activitySession.watch();
     try {
@@ -245,6 +284,7 @@
           untrack(() => mode),
           untrack(() => upscale),
         ),
+        loadSmoothOptions(),
       ]);
     } catch (error) {
       loadError = $t('frameleaf_restoration_load_error');
@@ -342,6 +382,40 @@
       handleError(error, failure);
     } finally {
       busyId = null;
+    }
+  };
+
+  /** Smooth motion preview on this server or a home-network worker (FL-162), saved as a new version. */
+  const requestLocalSmoothMotion = async () => {
+    if (!canSmoothLocally || !smoothLocal) {
+      return;
+    }
+    submitting = true;
+    try {
+      const created = await requestAssetRestoration({
+        id: asset.id,
+        assetRestorationRequestDto: {
+          mode: AssetRestorationMode.SmoothMotion,
+          upscale: 1,
+          smoothMotionFactor: smoothFactor,
+          keepGrain: false,
+          destinationId: smoothLocal.id,
+          region,
+        },
+      });
+      list = {
+        assetId: asset.id,
+        currentRestorationId: list?.currentRestorationId ?? null,
+        items: [created, ...items],
+      };
+      announce = $t('frameleaf_restoration_preview_queued', { values: { revision: created.revision } });
+      toastManager.primary(announce);
+      void activitySession.refresh();
+      schedulePoll();
+    } catch (error) {
+      handleError(error, $t('frameleaf_restoration_request_error'));
+    } finally {
+      submitting = false;
     }
   };
 
@@ -801,7 +875,11 @@
   </div>
 
   {#if isVideo}
-    <!-- FL-162 Smooth motion: in-between frames on Frameleaf Cloud, preview first, saved as a new version. -->
+    <!--
+      FL-162 Smooth motion (prototype FrameMethod): in-between frames, preview first, saved as a new
+      version. The model slider (FL-159) shows where each model runs here: this server or your GPU runs
+      RIFE locally, a blue stop is its own Frameleaf Cloud job confirmed with its estimate.
+    -->
     <h3>{$t('frameleaf_restoration_mode_smooth_motion')}</h3>
     <p class="rs-help">{$t('frameleaf_restoration_mode_smooth_motion_help')}</p>
     <div class="ed-row" role="radiogroup" aria-label={$t('frameleaf_restoration_smooth_motion_factor_label')}>
@@ -817,16 +895,45 @@
         </button>
       {/each}
     </div>
-    <div class="rs-actions">
-      <button type="button" class="ed-button" disabled={!cloudDestinationId || !options} onclick={requestSmoothMotion}>
-        <Icon icon={mdiCloudOutline} size="18" />
-        {$t('frameleaf_restoration_smooth_motion_estimate')}
-      </button>
-      <p class="rs-help">
-        {cloudDestinationId
-          ? $t('frameleaf_restoration_smooth_motion_cloud_only')
-          : $t('frameleaf_restoration_smooth_motion_needs_cloud')}
-      </p>
+    {#if smoothOptions}
+      <ModelSlider
+        workload="interpolation"
+        value={smoothModelId}
+        gpu={smoothGpu}
+        route={smoothRoute}
+        label={$t('frameleaf_restoration_smooth_motion_model')}
+        hideLegend
+        localDisabledReason={smoothLocal ? '' : $t('frameleaf_restoration_smooth_motion_no_local')}
+        onChange={(id, state) => {
+          smoothModelId = id;
+          smoothRunsOn = state.runsOn;
+        }}
+      />
+    {/if}
+    <div class="rs-actions" data-testid="restoration-smooth-motion">
+      {#if smoothRunsOn === 'cloud'}
+        <button type="button" class="ed-button" disabled={!canSmoothOnCloud} onclick={requestSmoothMotion}>
+          <Icon icon={mdiCloudOutline} size="18" />
+          {$t('frameleaf_restoration_smooth_motion_estimate')}
+        </button>
+        <p class="rs-help">
+          {cloudDestinationId
+            ? $t('frameleaf_restoration_smooth_motion_cloud_only')
+            : $t('frameleaf_restoration_smooth_motion_needs_cloud')}
+        </p>
+      {:else}
+        <button type="button" class="ed-button" disabled={!canSmoothLocally} onclick={requestLocalSmoothMotion}>
+          <Icon icon={mdiPlayCircleOutline} size="18" />
+          {$t('frameleaf_restoration_smooth_motion_preview', {
+            values: { seconds: smoothOptions?.previewSeconds ?? 5 },
+          })}
+        </button>
+        <p class="rs-help">
+          {smoothLocal
+            ? $t('frameleaf_restoration_smooth_motion_on', { values: { name: smoothLocal.name } })
+            : $t('frameleaf_restoration_smooth_motion_no_local')}
+        </p>
+      {/if}
     </div>
   {/if}
 

@@ -49882,6 +49882,24 @@
           "estimate": {
             "$ref": "#/components/schemas/AssetRestorationEstimateDto"
           },
+          "gpu": {
+            "description": "The GPU a home restoration worker reported at its last check, for the model slider (FL-159); null otherwise",
+            "nullable": true,
+            "properties": {
+              "memoryTotalBytes": {
+                "format": "double",
+                "type": "number"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "memoryTotalBytes"
+            ],
+            "type": "object"
+          },
           "health": {
             "$ref": "#/components/schemas/MlDestinationHealth"
           },
@@ -49919,6 +49937,7 @@
           "consentGranted",
           "consentRequired",
           "estimate",
+          "gpu",
           "health",
           "id",
           "kind",
@@ -50075,6 +50094,10 @@
             "nullable": true,
             "type": "number"
           },
+          "route": {
+            "$ref": "#/components/schemas/AssetRestorationRoute",
+            "description": "Where each job runs for this kind of work: Local only, Both or Cloud only (FL-159). Frameleaf Cloud is never chosen silently."
+          },
           "sourceHeight": {
             "maximum": 9007199254740991,
             "minimum": -9007199254740991,
@@ -50106,6 +50129,7 @@
           "outputHeight",
           "outputWidth",
           "previewSeconds",
+          "route",
           "sourceHeight",
           "sourceType",
           "sourceWidth",
@@ -50183,6 +50207,32 @@
               "x": 0.25,
               "y": 0.25
             }
+          },
+          "smoothMotionFactor": {
+            "anyOf": [
+              {
+                "type": "number",
+                "format": "double",
+                "enum": [
+                  2
+                ]
+              },
+              {
+                "type": "number",
+                "format": "double",
+                "enum": [
+                  4
+                ]
+              },
+              {
+                "type": "number",
+                "format": "double",
+                "enum": [
+                  8
+                ]
+              }
+            ],
+            "description": "Smooth motion only (FL-162): how many frames each frame becomes. Required for smooth_motion, refused otherwise."
           },
           "upscale": {
             "anyOf": [
@@ -50434,6 +50484,14 @@
           "workload"
         ],
         "type": "object"
+      },
+      "AssetRestorationRoute": {
+        "enum": [
+          "local",
+          "both",
+          "cloud"
+        ],
+        "type": "string"
       },
       "AssetRestorationSelectDto": {
         "properties": {

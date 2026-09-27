@@ -618,6 +618,72 @@ describe(RestorationWorkerService.name, () => {
     });
   });
 
+  describe('run: local Smooth motion (FL-162)', () => {
+    const smooth = (stage: 'preview' | 'full') =>
+      snapshot({
+        stage,
+        sourceType: AssetRestorationSourceType.Video,
+        sourceWidth: 1920,
+        sourceHeight: 1080,
+        sourceDurationSeconds: 45,
+        mode: AssetRestorationMode.SmoothMotion,
+        workload: MlWorkload.Interpolation,
+        upscale: 1,
+        interpolationFactor: 4,
+        output: { width: 1920, height: 1080 },
+        ...(stage === 'full' && { model: { name: 'faithful-v1', version: '1.0' } }),
+      });
+
+    beforeEach(() => {
+      mocks.mlDestination.getById.mockResolvedValue({
+        ...mlDestinationStub.lan,
+        workloads: [MlWorkload.Interpolation],
+      });
+      mocks.machineLearning.probe.mockResolvedValue({ ...mlProbeStub.healthy, workloads: [MlWorkload.Interpolation] });
+      mocks.media.probe.mockResolvedValue({
+        format: { formatName: 'mp4', formatLongName: 'mp4', duration: 20, bitrate: 0 },
+        videoStreams: [{ width: 1920, height: 1080, frameRate: 25 }],
+        audioStreams: [],
+      } as never);
+    });
+
+    it('asks the home worker for interpolation at the chosen factor, at the source size', async () => {
+      await sut.run(operation({ snapshot: smooth('preview') }), CLAIM);
+
+      expect(restore).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ kind: 'video', width: 1920, height: 1080 }),
+        expect.objectContaining({
+          mode: AssetRestorationMode.SmoothMotion,
+          upscale: 1,
+          interpolationFactor: 4,
+          trailingContextFrame: false,
+          maxWidth: 1920,
+          maxHeight: 1080,
+        }),
+      );
+    });
+
+    it('gives every chunk but the last the next chunk’s first frame as context, so no join is left out', async () => {
+      restorations.get.mockResolvedValue(
+        row({ status: AssetRestorationStatus.Accepted, mode: AssetRestorationMode.SmoothMotion, upscale: 4 }),
+      );
+      mocks.storage.stat.mockResolvedValue({ size: 1024 } as never);
+      mocks.crypto.hashFile.mockResolvedValue(Buffer.from('chunk'));
+      await sut.run(operation({ kind: MediaOperationKind.Restoration, snapshot: smooth('full') }), CLAIM);
+
+      const chunkCuts = mocks.media.transcode.mock.calls.filter(([, output]) => String(output).includes('-in-'));
+      // 45 s in 20 s chunks: 20, 20 and 5 seconds; the first two carry one more frame (1/25 s)
+      expect(chunkCuts.map((call) => call[2].inputOptions)).toEqual([
+        ['-ss', '0.000', '-t', '20.040'],
+        ['-ss', '20.000', '-t', '20.040'],
+        ['-ss', '40.000', '-t', '5.000'],
+      ]);
+      expect(restore.mock.calls.map((call) => call[2].trailingContextFrame)).toEqual([true, true, false]);
+      expect(restore.mock.calls.every((call) => call[2].interpolationFactor === 4)).toBe(true);
+    });
+  });
+
   describe('run: cancellation', () => {
     it('acknowledges an owner cancel and marks the stage cancelled instead of failed', async () => {
       operations.reportProgress.mockResolvedValueOnce(true).mockResolvedValueOnce(false);

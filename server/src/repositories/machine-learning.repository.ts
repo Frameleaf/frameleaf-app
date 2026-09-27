@@ -366,6 +366,7 @@ export const parseMlContainerReport = (body: unknown): MlContainerReport | null 
 const RESTORATION_WORKLOAD_SET: ReadonlySet<MlWorkload> = new Set([
   MlWorkload.RestorationFaithful,
   MlWorkload.RestorationCreative,
+  MlWorkload.Interpolation,
 ]);
 
 const isMlWorkload = (value: unknown): value is MlWorkload =>
@@ -857,6 +858,11 @@ export class MachineLearningRepository implements RestorationInference {
         height: input.height,
         durationMs: input.kind === 'video' ? Math.max(1, Math.round(input.durationSeconds * 1000)) : null,
       },
+      // FL-162 Smooth motion on a local or LAN restoration worker (RIFE)
+      ...(options.interpolationFactor && {
+        interpolationFactor: options.interpolationFactor,
+        trailingContextFrame: options.trailingContextFrame ?? false,
+      }),
     });
 
     // Exclusive create: fails when anything already exists at the path.
