@@ -2,11 +2,35 @@
 
 Frameleaf Cloud adds optional extras to a self-hosted server: the Frameleaf mobile apps from anywhere, remote access, cloud processing and cloud backup. Your server works fully without it. Local photos and features never depend on a link, a plan or a licence.
 
-Everything on this page is in **Settings → Frameleaf Cloud**.
+Everything on this page is in **Settings → Frameleaf Cloud**: **Account & link**, **Plan**, **Licence**, **Remote access**, **Cloud processing** and **Cloud backup**, each also found by searching the settings. Each person links their own Frameleaf account under Your preferences → **Frameleaf account**. The Command Center **Overview** has a **Frameleaf Cloud** tile that reads, for example, "Linked · Remote on · Plan active": whether the server is linked, whether remote access is on, and the plan (or "Not set up" when the deployment has no Frameleaf Cloud address). It turns amber while a plan is in its grace period or has expired, and opens these pages. First-run setup offers to link a Frameleaf account too; you can skip it and link later.
 
 ## Setting the address
 
 The deployment names Frameleaf Cloud with `FRAMELEAF_CLOUD_URL` (see [Environment Variables](/install/environment-variables#frameleaf-cloud)). Without it, **Account & link** says Frameleaf Cloud is not set up, and the server never contacts anything. The address is never a setting and no default host is built in.
+
+## Environment variables and secrets
+
+Frameleaf Cloud is set up by the deployment, not in the settings. Every variable is described in [Environment Variables](/install/environment-variables#frameleaf-cloud):
+
+| Variable                       | What it does                                                                                                                                                                                        |
+| :----------------------------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `FRAMELEAF_CLOUD_URL`          | Frameleaf Cloud's address. Unset means Frameleaf Cloud is not set up and nothing is ever contacted.                                                                                                 |
+| `FRAMELEAF_IDENTITY_DIR`       | The folder holding this server's identity key, its backup key and the edge worker's certificates. Keep it on persistent storage and in your own backups.                                            |
+| `FRAMELEAF_LINK_TOKEN`         | A single-use token that links the server when it starts, without a browser (see [Linking without a browser](#linking-without-a-browser)).                                                           |
+| `FRAMELEAF_EDGE_PORT`          | The port the edge worker listens on for direct connections (default `2443`).                                                                                                                        |
+| `FRAMELEAF_EDGE_BIND`          | The address it listens on (default `0.0.0.0`).                                                                                                                                                      |
+| `FRAMELEAF_TRUSTED_LAN_CIDRS`  | Extra networks that count as home for remote access.                                                                                                                                                |
+| `FRAMELEAF_LOCAL_URL`          | This server's address on the home network, offered to remote visitors who turn out to be at home.                                                                                                   |
+| `FRAMELEAF_ACME_DIRECTORY_URL` | Only for testing certificates against Let's Encrypt staging or a test certificate authority.                                                                                                        |
+| `FRAMELEAF_EDGE_SECRET`        | Set by the server itself: it generates a new secret on every start and hands it to the edge worker. Set it yourself only when the edge worker runs in another container, to the same value in both. |
+
+Secrets are write-only: the server keeps them, but never shows them again, never puts them in an export, a log or the settings history, and never sends them to Frameleaf Cloud.
+
+| Secret                                                                | Where it lives                                                                                                                                                                                                                                                                                                                                                                          |
+| :-------------------------------------------------------------------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Your bucket's secret access key (`cloud-backup-s3-secret-key`)        | Entered during cloud backup setup for your own bucket. Replace or clear it under **Server credentials** in the settings, or with `PUT` and `DELETE /api/admin/config/credentials/cloud-backup-s3-secret-key` (see [System settings](/administration/system-settings#server-credentials)). Frameleaf-managed storage has no stored key: the server gets a fresh one for every operation. |
+| The backup encryption key (`cloud-backup-bucket-key`)                 | Never a setting. A generated key is kept in a file only the server can read in the identity folder; your own key is kept there only if you choose **Keep a copy on this server**, otherwise it is loaded with **Unlock** after each restart. It is replaced only by setting up backup again, and it is shown once, in the recovery kit (see [Cloud backup](#cloud-backup)).             |
+| Sign in with Frameleaf client secret (`frameleaf-oidc-client-secret`) | No longer stored: the server signs in to Frameleaf Cloud with its own key.                                                                                                                                                                                                                                                                                                              |
 
 ## This server's identity
 
@@ -58,11 +82,11 @@ Once the server is linked, people can sign in with their Frameleaf account. It w
 - A person Frameleaf Cloud authorizes for this server gets an account here on first sign-in, as an administrator or a member as Frameleaf Cloud says. A Frameleaf account is linked to an existing account here only by a verified email address; the same rule now applies to your own OpenID provider.
 - When Frameleaf Cloud signs someone out, or the server is unlinked, their Frameleaf sessions on this server end.
 
-The server proves who it is to Frameleaf Cloud with its own key. A client secret is only needed if Frameleaf Cloud registered the server with one; it is write-only, like the other credentials.
+The server proves who it is to Frameleaf Cloud with its own key, so no client secret is stored for Sign in with Frameleaf. Entries in the settings change history from before this still read "Sign in with Frameleaf client secret" (`frameleaf-oidc-client-secret`).
 
 ## Remote access security
 
-Remote access itself (the switch, the connection, the server's certificate, your own domain and the connection test) is described in [Workers and endpoints](/administration/workers-and-endpoints#the-edge-worker-remote-access). Turning it on needs a linked server and a plan that includes remote access; unlinking turns it off, removes the server's remote-access certificates and stops using a custom domain.
+Remote access itself (the switch, the connection, the server's certificate, your own domain and the connection test) is described in [Workers and endpoints](/administration/workers-and-endpoints#the-edge-worker-remote-access). The **Public server URL** is set on the same page: it is the address this server puts in shared links, emails and sign-in callbacks, saved with your other settings changes. **Use the Frameleaf address** fills in `https://r.<label>.frameleaf.net`; **Use my domain** fills in your own verified hostname (see [Your own domain](/administration/workers-and-endpoints#your-own-domain)). Either one also becomes the address the server publishes to the apps. Turning it on needs a linked server and a plan that includes remote access; unlinking turns it off, removes the server's remote-access certificates and stops using a custom domain.
 
 These protections are in place before any remote path opens. The sign-in and download rules apply only to requests that arrive through remote access, so people on your home network sign in and download as before; the rate limits apply to every request. Both settings below are under Settings → Frameleaf Cloud → **Remote access**, and go back to off when the server is unlinked.
 

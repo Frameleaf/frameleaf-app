@@ -19,6 +19,8 @@ export type SettingsHostSection = {
   component?: Component;
   /** True for server settings, which only administrators see. */
   admin?: boolean;
+  /** Other words the Command Center search finds the section by, such as a setting it holds (FL-168). */
+  keywords?: readonly string[];
 };
 
 export type SettingsAreaId =
@@ -325,11 +327,11 @@ export const resolveSettingsSection = (
   return DIRECT_SECTION[area];
 };
 
-export type SearchableSection = { key: string; title: string; subtitle?: string };
+export type SearchableSection = { key: string; title: string; subtitle?: string; keywords?: readonly string[] };
 
 export const normalizeSettingsQuery = (query: string | null | undefined) => (query ?? '').trim().toLowerCase();
 
-/** Sections whose title or help mentions the query, in their area order. Empty query matches nothing. */
+/** Sections whose title, help or keywords mention the query, in their area order. Empty query matches nothing. */
 export const searchSettingsSections = <T extends SearchableSection>(sections: readonly T[], query: string): T[] => {
   const needle = normalizeSettingsQuery(query);
   if (!needle) {
@@ -337,7 +339,9 @@ export const searchSettingsSections = <T extends SearchableSection>(sections: re
   }
   return sections.filter(
     (section) =>
-      section.title.toLowerCase().includes(needle) || (section.subtitle ?? '').toLowerCase().includes(needle),
+      section.title.toLowerCase().includes(needle) ||
+      (section.subtitle ?? '').toLowerCase().includes(needle) ||
+      (section.keywords ?? []).some((keyword) => keyword.toLowerCase().includes(needle)),
   );
 };
 

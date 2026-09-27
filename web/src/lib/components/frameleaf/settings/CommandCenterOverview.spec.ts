@@ -27,6 +27,18 @@ vi.mock('$app/state', () => ({
     },
   },
 }));
+const cloud = vi.hoisted(() => ({ status: null as unknown, license: null as unknown }));
+vi.mock('$lib/managers/cloud-manager.svelte', () => ({
+  cloudManager: {
+    listen: () => () => {},
+    get status() {
+      return cloud.status;
+    },
+    get license() {
+      return cloud.license;
+    },
+  },
+}));
 vi.mock('@immich/sdk', async (original) => ({ ...(await original<typeof import('@immich/sdk')>()), ...sdk }));
 vi.mock('$lib/components/frameleaf/analytics/AnalyticsChart.svelte', async () => ({
   default: (await import('../../../../test-data/components/MockText.svelte')).default,
@@ -36,6 +48,8 @@ describe('Command Center measured Overview', () => {
   beforeAll(() => addMessages('dev', en));
   beforeEach(() => {
     state.url = new SvelteURL('http://localhost/user-settings?area=overview');
+    cloud.status = null;
+    cloud.license = null;
     sdk.getAnalyticsReport.mockReset().mockResolvedValue(analyticsReportFixture());
     sdk.getAboutInfo.mockResolvedValue({ version: '3.2.0', licensed: false });
     sdk.getStorage.mockResolvedValue({
@@ -194,7 +208,7 @@ describe('Command Center measured Overview', () => {
       expect(screen.getByRole('link', { name: /GPU Studio/ })).toHaveTextContent('Compatibility check needed');
     });
 
-    it('reads the ML endpoint and cloud destination from the routed destinations', async () => {
+    it('reads the ML endpoint from the routed destinations', async () => {
       sdk.listMlDestinations.mockResolvedValue([
         destination('local', 'local', 'healthy'),
         destination('pod', 'frameleaf-cloud', 'healthy'),
@@ -209,9 +223,58 @@ describe('Command Center measured Overview', () => {
       render(CommandCenterOverview);
 
       await waitFor(() => expect(screen.getByRole('link', { name: /ML endpoint/ })).toHaveTextContent('Reachable'));
-      expect(screen.getByRole('link', { name: /Cloud destination/ })).toHaveTextContent('Frameleaf Cloud selected');
       expect(screen.getByRole('link', { name: /GPU Studio/ })).toHaveTextContent('Qualified');
       expect(screen.queryByRole('link', { name: /Check worker compatibility/ })).toBeNull();
+    });
+  });
+
+  describe('Frameleaf Cloud tile (FL-168)', () => {
+    const entitlements = {
+      cloudBackup: false,
+      cloudMl: false,
+      frameleafCloud: false,
+      remoteAccess: false,
+      supporter: false,
+    };
+    const plan = { activatedAt: '2026-09-01T00:00:00.000Z', expiresAt: null, graceUntil: null };
+    const tile = () => screen.getByTestId('overview-cloud-tile');
+
+    it('replaces the cloud destination tile and opens Frameleaf Cloud', async () => {
+      cloud.status = { configured: false, state: 'not-configured', remoteAccessEnabled: false };
+      render(CommandCenterOverview);
+
+      await waitFor(() => expect(tile()).toHaveTextContent('Frameleaf Cloud'));
+      expect(tile()).toHaveTextContent('Not set up');
+      expect(tile()).not.toHaveTextContent('·');
+      expect(tile()).toHaveAttribute('href', '/user-settings?area=cloud');
+      expect(screen.queryByText('Cloud destination')).toBeNull();
+    });
+
+    it('reads an unlinked server', async () => {
+      cloud.status = { configured: true, state: 'unlinked', remoteAccessEnabled: false };
+      cloud.license = { state: 'none', plan: null, entitlements };
+      render(CommandCenterOverview);
+
+      await waitFor(() => expect(tile()).toHaveTextContent('Not linked · Remote off · No plan'));
+      expect(tile()).not.toHaveClass('attention');
+    });
+
+    it('reads a linked server with remote access and an active plan', async () => {
+      cloud.status = { configured: true, state: 'linked', remoteAccessEnabled: true };
+      cloud.license = { state: 'active', plan, entitlements };
+      render(CommandCenterOverview);
+
+      await waitFor(() => expect(tile()).toHaveTextContent('Linked · Remote on · Plan active'));
+      expect(tile()).not.toHaveClass('attention');
+    });
+
+    it('asks for attention while the plan is in its grace period', async () => {
+      cloud.status = { configured: true, state: 'linked', remoteAccessEnabled: true };
+      cloud.license = { state: 'grace', plan, entitlements };
+      render(CommandCenterOverview);
+
+      await waitFor(() => expect(tile()).toHaveTextContent('Linked · Remote on · Plan in grace period'));
+      expect(tile()).toHaveClass('attention');
     });
   });
 });

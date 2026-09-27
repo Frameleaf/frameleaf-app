@@ -240,7 +240,7 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
     pattern: 'frameleafCloud.remoteAccess.publicUrl',
     kind: 'control',
     file: 'src/lib/components/frameleaf/cloud/RemoteAccessSection.svelte',
-    evidence: 'publicUrl: RemoteAccessPublicUrl.Custom',
+    evidence: 'update({ publicUrl: choice }',
   },
   {
     pattern: 'frameleafCloud.signIn.buttonText',
@@ -1263,10 +1263,11 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
     evidence: 'reverseGeocoding.enabled',
   },
   {
+    // FL-168: the Public server URL moved from Server identity to Frameleaf Cloud › Remote access.
     pattern: 'server.externalDomain',
     kind: 'control',
-    file: 'src/routes/admin/system-settings/ServerSettings.svelte',
-    evidence: 'server.externalDomain',
+    file: 'src/lib/components/frameleaf/cloud/RemoteAccessSection.svelte',
+    evidence: 'settingsDraft.draft.server.externalDomain = value.trim()',
   },
   {
     pattern: 'server.loginPageMessage',
