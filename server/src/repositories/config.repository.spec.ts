@@ -331,6 +331,24 @@ describe('getEnv', () => {
       }
     });
   });
+
+  describe('versionCheck (FL-71)', () => {
+    it("asks only Frameleaf's own release services, with no editable address", () => {
+      process.env.IMMICH_VERSION_CHECK_URL = 'https://updates.invalid/latest';
+      process.env.IMMICH_ENV = 'development';
+      try {
+        const { versionCheck } = getEnv();
+        expect(versionCheck).toEqual({
+          url: 'https://api.frameleaf.cloud/v1/releases/latest',
+          fallbackUrl: 'https://api.github.com/repos/Frameleaf/frameleaf-app/releases',
+        });
+        expect(JSON.stringify(versionCheck)).not.toMatch(/immich/i);
+      } finally {
+        delete process.env.IMMICH_VERSION_CHECK_URL;
+      }
+    });
+  });
+
   describe('frameleafCloud (FL-154)', () => {
     it('is not configured by default and never falls back to a default host', () => {
       expect(getEnv().frameleafCloud).toEqual({
