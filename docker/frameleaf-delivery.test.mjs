@@ -454,7 +454,7 @@ const historicalRecord = (file) =>
 const trackedFilesContaining = (needle) => {
   const result = spawnSync(
     "git",
-    ["grep", "-l", "-F", needle, "--", ".", ":(exclude)mobile"],
+    ["grep", "-l", "-F", needle, "--", "."],
     { cwd: root, encoding: "utf8" },
   );
   assert.ok(

@@ -60,16 +60,6 @@
   "assessment": "Supplied artwork and approved references are preserved; no production web/native integration or release qualification is claimed.",
   "compatibilitySentinels": [
     {
-      "expectedValue": "immich_mobile",
-      "parser": "yaml-root-name",
-      "path": "mobile/pubspec.yaml"
-    },
-    {
-      "expectedValue": "assets/immich-logo.png",
-      "parser": "yaml-image-path-android",
-      "path": "mobile/pubspec.yaml"
-    },
-    {
       "expectedValue": "@immich/sdk",
       "parser": "json-name",
       "path": "packages/sdk/package.json"
@@ -171,8 +161,6 @@
       "paths": [
         "mobile/lib/services/oauth.service.dart",
         "mobile/lib/widgets/forms/login/login_form.dart",
-        "mobile/lib/services/auth.service.dart",
-        "mobile/lib/providers/auth.provider.dart",
         "server/src/services/auth.service.ts",
         "server/src/controllers/oauth.controller.ts",
         "server/src/dtos/config.dto.ts",
@@ -193,11 +181,7 @@
         "design/frameleaf",
         "mobile/assets/frameleaf-mark.png",
         "mobile/pubspec.yaml",
-        "mobile/android/fastlane/metadata",
-        "mobile/ios/Runner/Assets.xcassets",
-        "mobile/ios/ShareExtension",
         "mobile/ios/WidgetExtension",
-        "mobile/lib/utils/licenses.dart",
         "mobile/lib/frameleaf/frameleaf_links.dart",
         "web/src/lib/components/frameleaf",
         "design/frameleaf/brand-kit",
