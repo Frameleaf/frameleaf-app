@@ -8,6 +8,7 @@ import { libraryGridPreferences } from '$lib/frameleaf/library-grid-preferences.
 import { librarySession } from '$lib/frameleaf/library-session.svelte';
 import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
 import { authManager } from '$lib/managers/auth-manager.svelte';
+import { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
 import { assetFactory } from '@test-data/factories/asset-factory';
 import { preferencesFactory } from '@test-data/factories/preferences-factory';
 import { userAdminFactory } from '@test-data/factories/user-factory';
@@ -606,6 +607,23 @@ describe('LibraryView', () => {
       expect(librarySession.session.scrollAnchor).toBe('edited');
       librarySession.clearSelection();
       librarySession.setQuery(emptyDiscoveryQuery());
+    });
+
+    it('drops an item trashed or deleted elsewhere from the selection and the open item (FL-33)', async () => {
+      const subscribe = vi.spyOn(TimelineManager.prototype, 'onRemoved');
+      await setupWithViewer();
+      const manager = subscribe.mock.contexts.at(-1) as TimelineManager;
+      librarySession.select('kept');
+      librarySession.select('gone');
+      librarySession.open('open-gone', 30);
+
+      // what the live on_asset_trash / on_asset_delete events do to the timeline
+      manager.removeAssets(['gone', 'open-gone']);
+
+      expect(librarySession.selection).toEqual(['kept']);
+      expect(librarySession.openAssetId).toBeUndefined();
+      librarySession.clearSelection();
+      subscribe.mockRestore();
     });
 
     it('keeps the viewer, and whatever it is editing, mounted across a layout switch', async () => {
