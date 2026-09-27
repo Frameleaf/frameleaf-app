@@ -41,12 +41,14 @@
     RemoteHostnameStatus,
     checkRemoteHostname,
     getRemoteAccess,
+    getRemoteAccessUsage,
     removeRemoteHostname,
     setRemoteHostname,
     testRemoteAccess,
     updateRemoteAccess,
     type RemoteAccessStatusResponseDto,
     type RemoteAccessUpdateDto,
+    type RemoteAccessUsageResponseDto,
   } from '@immich/sdk';
   import { Icon } from '@immich/ui';
   import {
@@ -71,6 +73,7 @@
   const status = $derived(cloudManager.status);
   const linked = $derived(status?.state === 'linked');
   let remote = $state<RemoteAccessStatusResponseDto | null>(null);
+  let usage = $state<RemoteAccessUsageResponseDto | null>(null);
   let busy = $state(false);
   let testing = $state(false);
   let failure = $state('');
@@ -192,6 +195,26 @@
       failure = getServerErrorMessage(error) ?? $t('frameleaf_cloud_action_failed');
     }
   };
+
+  // FL-166: "Relay use this month" as Frameleaf Cloud meters it, asked for only once remote access is
+  // available (a linked server with the plan); the meter stays hidden when it cannot be read
+  const usageAvailable = $derived(!!remote && !remote.unavailableReason);
+  $effect(() => {
+    if (!usageAvailable) {
+      usage = null;
+      return;
+    }
+    void (async () => {
+      try {
+        usage = await getRemoteAccessUsage();
+      } catch {
+        usage = null;
+      }
+    })();
+  });
+  const usageRatio = $derived(usage && usage.limitBytes > 0 ? Math.min(1, usage.bytes / usage.limitBytes) : 0);
+  const throttleSpeed = (bps: number) =>
+    `${Number((bps / 1_000_000).toFixed(1)).toLocaleString($locale ?? undefined)} Mbit/s`;
 
   onMount(() => {
     const stop = cloudManager.listen();
@@ -443,6 +466,42 @@
           </dd>
         {/if}
       </dl>
+      {#if usage}
+        <div class="fc-meter">
+          <div class="fc-meter-label">
+            <span>{$t('frameleaf_remote_relay_usage_label')}</span>
+            <strong>
+              {$t('frameleaf_remote_relay_usage_of', {
+                values: {
+                  used: getByteUnitString(usage.bytes, $locale ?? undefined),
+                  allowance: getByteUnitString(usage.limitBytes, $locale ?? undefined),
+                },
+              })}
+            </strong>
+          </div>
+          <div
+            class="fc-meter-track"
+            class:is-high={usageRatio >= 0.8}
+            role="meter"
+            aria-label={$t('frameleaf_remote_relay_usage_label')}
+            aria-valuemin={0}
+            aria-valuemax={usage.limitBytes}
+            aria-valuenow={usage.bytes}
+          >
+            <span style:width="{(usageRatio * 100).toFixed(1)}%"></span>
+          </div>
+        </div>
+        {#if usage.throttled && usage.throttleBps !== null && usage.throttleUntil}
+          <p class="fc-muted" role="status">
+            {$t('frameleaf_remote_relay_throttled', {
+              values: {
+                speed: throttleSpeed(usage.throttleBps),
+                when: formatDateTime(usage.throttleUntil, $locale),
+              },
+            })}
+          </p>
+        {/if}
+      {/if}
       {#if remote?.enabled && remote.relayRevoked}
         <CloudBanner tone="warning" title={$t('frameleaf_remote_relay_revoked_title')}>
           {$t('frameleaf_remote_relay_revoked_body')}

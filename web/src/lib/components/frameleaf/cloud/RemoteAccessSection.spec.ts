@@ -481,3 +481,69 @@ describe('RemoteAccessSection Public server URL (FL-168)', () => {
     expect(domain).toBeDisabled();
   });
 });
+
+describe('RemoteAccessSection relay use this month (FL-166)', () => {
+  const usage = (overrides: Record<string, unknown> = {}) => ({
+    period: '2026-09',
+    periodStart: '2026-09-01T00:00:00.000Z',
+    periodEnd: '2026-10-01T00:00:00.000Z',
+    bytes: 171_798_691_840,
+    limitBytes: 214_748_364_800,
+    throttled: false,
+    throttleBps: null,
+    throttleUntil: null,
+    ...overrides,
+  });
+
+  beforeAll(async () => {
+    await init({ fallbackLocale: 'en-US' });
+    register('en-US', () => import('$i18n/en.json'));
+    await waitLocale('en-US');
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    sdkMock.getLicenseStatus.mockResolvedValue({} as never);
+    sdkMock.getLicenseProducts.mockResolvedValue({} as never);
+    sdkMock.getCloudStatus.mockResolvedValue(linked());
+    sdkMock.getRemoteAccess.mockResolvedValue(remote({ enabled: true, relayConnected: true }));
+    sdkMock.getRemoteAccessUsage.mockResolvedValue(usage());
+  });
+
+  it('shows this month’s relay use against the plan’s allowance', async () => {
+    render(RemoteAccessSection);
+
+    const meter = await screen.findByRole('meter', { name: 'Relay use this month' });
+    expect(meter).toHaveAttribute('aria-valuenow', '171798691840');
+    expect(meter).toHaveAttribute('aria-valuemax', '214748364800');
+    expect(meter.className).toContain('is-high');
+    expect(screen.getByText('160 GiB of 200 GiB')).toBeInTheDocument();
+  });
+
+  it('says the relay is slowed down, not cut off, once the allowance is used up', async () => {
+    sdkMock.getRemoteAccessUsage.mockResolvedValue(
+      usage({
+        bytes: 214_748_364_800,
+        throttled: true,
+        throttleBps: 1_000_000,
+        throttleUntil: '2026-10-01T00:00:00.000Z',
+      }),
+    );
+    render(RemoteAccessSection);
+
+    expect(await screen.findByText(/slowed to 1 Mbit\/s until/)).toBeInTheDocument();
+    expect(screen.getByText(/Remote access keeps working/)).toBeInTheDocument();
+  });
+
+  it('asks Frameleaf Cloud for nothing while remote access is unavailable', async () => {
+    sdkMock.getCloudStatus.mockResolvedValue(status());
+    sdkMock.getRemoteAccess.mockResolvedValue(
+      remote({ unavailableReason: 'Link this server to a Frameleaf account first.' }),
+    );
+    render(RemoteAccessSection);
+
+    await screen.findByText('Who can connect');
+    expect(sdkMock.getRemoteAccessUsage).not.toHaveBeenCalled();
+    expect(screen.queryByRole('meter', { name: 'Relay use this month' })).toBeNull();
+  });
+});
