@@ -125,6 +125,27 @@ describe('FirstRunSetup (FL-176)', () => {
       );
       expect(screen.getByText(/ada@example.com/)).toBeInTheDocument();
     });
+
+    it('records the linked-server tour as covered by setup when the link lands (FL-196)', async () => {
+      sdkMock.getServerConfig.mockResolvedValue(serverConfig({ cloudConfigured: true, signInAvailable: false }));
+      sdkMock.getCloudStatus.mockResolvedValue({
+        state: 'linked',
+        configured: true,
+        pending: null,
+        account: { id: 'account-1', label: 'ada@example.com' },
+      } as never);
+      sdkMock.getLicenseStatus.mockResolvedValue({} as never);
+      sdkMock.getLicenseProducts.mockResolvedValue({} as never);
+      sdkMock.markCloudTourSeen.mockResolvedValue({} as never);
+      sdkMock.updateFrameleafSetup.mockResolvedValue({} as never);
+      render(FirstRunSetup, {
+        initial: accountStep({ accountCreated: true, adminEmail: 'ada@example.com' }),
+        authenticated: true,
+      });
+      await waitFor(() =>
+        expect(sdkMock.markCloudTourSeen).toHaveBeenCalledWith({ cloudTourSeenDto: { ending: 'setup' } }),
+      );
+    });
   });
 
   it('offers a way out to a signed-in admin, but not at the sign-in gate', () => {
