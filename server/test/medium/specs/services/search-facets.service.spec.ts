@@ -339,4 +339,53 @@ describe('SearchService facets, histogram and smart counts (FL-49)', () => {
     });
     expect(counts(plain, SearchFacetField.City)).toEqual([{ value: 'Lisbon', count: 2 }]);
   });
+
+  it('drops trashed items and a revoked partner from both the Explore counts and the searches they open (FL-50)', async () => {
+    const { sut, ctx } = setup();
+    const { user } = await ctx.newUser();
+    const { user: partner } = await ctx.newUser();
+    const partnership = { sharedById: partner.id, sharedWithId: user.id };
+    await ctx.get(PartnerRepository).create({ ...partnership, inTimeline: true, shareLocation: true });
+
+    const own = await newItem(ctx, user.id, { city: 'Lisbon' });
+    const trashed = await newItem(ctx, user.id, { city: 'Lisbon' });
+    await ctx.softDeleteAsset(trashed.id);
+    const shared = await newItem(ctx, partner.id, { city: 'Lisbon' });
+
+    const auth = factory.auth({ user });
+    // Explore's Places card and Photos shortcut, and the flat searches each one opens
+    const place = { visibility: AssetVisibility.Timeline, city: 'Lisbon' };
+    const photos = { visibility: AssetVisibility.Timeline, type: AssetType.Image };
+    const explore = async () => {
+      const facets = await sut.searchFacets(auth, {
+        visibility: AssetVisibility.Timeline,
+        facets: [SearchFacetField.City],
+        facetCovers: true,
+      });
+      const found = await sut.searchMetadata(auth, place);
+      return {
+        card: counts(facets, SearchFacetField.City),
+        placeCount: (await sut.searchStatistics(auth, place)).total,
+        placeResults: found.assets.items.map(({ id }) => id).toSorted(),
+        photoCount: (await sut.searchStatistics(auth, photos)).total,
+        photoResults: (await sut.searchMetadata(auth, photos)).assets.total,
+      };
+    };
+
+    const before = await explore();
+    expect(before.card).toEqual([{ value: 'Lisbon', count: 2, coverAssetId: expect.any(String) }]);
+    expect(before.placeResults).toEqual([own.id, shared.id].toSorted());
+    expect(before.placeCount).toBe(2);
+    expect(before.photoCount).toBe(2);
+    expect(before.photoResults).toBe(2);
+
+    // the partner stops sharing: their items leave the card and every search it opens at once
+    await ctx.get(PartnerRepository).remove(partnership);
+    const after = await explore();
+    expect(after.card).toEqual([{ value: 'Lisbon', count: 1, coverAssetId: own.id }]);
+    expect(after.placeResults).toEqual([own.id]);
+    expect(after.placeCount).toBe(1);
+    expect(after.photoCount).toBe(1);
+    expect(after.photoResults).toBe(1);
+  });
 });
