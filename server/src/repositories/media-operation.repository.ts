@@ -1249,7 +1249,9 @@ export class MediaOperationRepository {
       db
         .updateTable('media_operation')
         .set({
-          result: sql<Record<string, unknown>>`coalesce("result", '{}'::jsonb) || ${JSON.stringify(patch)}::jsonb`,
+          result: sql<
+            Record<string, unknown>
+          >`coalesce("result", '{}'::jsonb) || ${JSON.stringify(patch)}::text::jsonb`,
         })
         .where('id', '=', id)
         .where('kind', '=', MediaOperationKind.StudioPreviewStream)
