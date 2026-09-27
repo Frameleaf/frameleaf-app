@@ -23,11 +23,13 @@ import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MemoryRepository } from 'src/repositories/memory.repository.js';
 import { PartnerRepository } from 'src/repositories/partner.repository.js';
+import { PersonRepository } from 'src/repositories/person.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { DB } from 'src/schema/index.js';
 import { MemoryService } from 'src/services/memory.service.js';
+import { emptyHiddenContentFilter } from 'src/utils/hidden-content.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { factory } from 'test/small.factory.js';
 import { getKyselyDB } from 'test/utils.js';
@@ -47,6 +49,7 @@ const setup = (db?: Kysely<DB>) => {
       UserRepository,
       PartnerRepository,
       StorageRepository,
+      PersonRepository,
     ],
     mock: [LoggingRepository],
   });
@@ -544,6 +547,103 @@ describe(MemoryService.name, () => {
       for (const result of [restored, read, byId]) {
         expect(result.assets.map(({ id }) => id)).toEqual([otherPhoto.id]);
       }
+    });
+  });
+
+  // FL-57: a birthday or recap names a person and shows their photos; a face or person change must
+  // never leave it naming someone else or showing a photo that no longer shows them.
+  describe('birthdays and recaps after face changes (FL-57)', () => {
+    const personMemory = async (ctx: ReturnType<typeof setup>['ctx'], type = MemoryType.Birthday) => {
+      const { user } = await ctx.newUser();
+      const { person } = await ctx.newPerson({ ownerId: user.id, name: 'Ann' });
+      const { person: other } = await ctx.newPerson({ ownerId: user.id, name: 'Bea' });
+      const { asset: moved } = await ctx.newAsset({ ownerId: user.id });
+      const { asset: kept } = await ctx.newAsset({ ownerId: user.id });
+      const { assetFace: movedFace } = await ctx.newAssetFace({
+        assetId: moved.id,
+        personGroupId: person.personGroupId,
+      });
+      await ctx.newAssetFace({ assetId: kept.id, personGroupId: person.personGroupId });
+      const { memory } = await ctx.newMemory({
+        ownerId: user.id,
+        type,
+        data: {
+          kind: type === MemoryType.Birthday ? 'birthday' : 'person_recap',
+          year: 2026,
+          subject: 'person',
+          subjectId: person.personGroupId,
+          name: 'Ann',
+        } as never,
+      });
+      await ctx.newMemoryAsset({ memoryId: memory.id, assetId: moved.id });
+      await ctx.newMemoryAsset({ memoryId: memory.id, assetId: kept.id });
+      return { user, person, other, moved, kept, movedFace, memory };
+    };
+
+    it('names the person as they are called now', async () => {
+      const { sut, ctx } = setup();
+      const { user, person, memory } = await personMemory(ctx);
+      const auth = factory.auth({ user });
+      await ctx.database
+        .updateTable('person')
+        .set({ name: 'Anna' })
+        .where('personGroupId', '=', person.personGroupId)
+        .execute();
+
+      const [found] = await sut.search(auth, {});
+      const read = await sut.get(auth, memory.id);
+
+      for (const result of [found, read]) {
+        expect(result.data).toEqual(expect.objectContaining({ name: 'Anna' }));
+      }
+    });
+
+    it('leaves out a photo whose face was moved to someone else, and brings it back on undo', async () => {
+      const { sut, ctx } = setup();
+      const { user, person, other, moved, kept, movedFace, memory } = await personMemory(ctx, MemoryType.PersonRecap);
+      const auth = factory.auth({ user });
+      const { memory: onThisDay } = await ctx.newMemory({ ownerId: user.id, data: { year: 2020 } });
+      await ctx.newMemoryAsset({ memoryId: onThisDay.id, assetId: moved.id });
+      const moveTo = (personGroupId: string) =>
+        ctx.database.updateTable('asset_face').set({ personGroupId }).where('id', '=', movedFace.id).execute();
+
+      await moveTo(other.personGroupId);
+      const recap = (await sut.search(auth, {})).find(({ id }) => id === memory.id);
+      expect(recap?.assets.map(({ id }) => id)).toEqual([kept.id]);
+      expect((await sut.get(auth, memory.id)).assets.map(({ id }) => id)).toEqual([kept.id]);
+      // a memory that does not name a person keeps its photo
+      expect((await sut.get(auth, onThisDay.id)).assets.map(({ id }) => id)).toEqual([moved.id]);
+
+      await moveTo(person.personGroupId);
+      expect((await sut.get(auth, memory.id)).assets.map(({ id }) => id).toSorted()).toEqual(
+        [moved.id, kept.id].toSorted(),
+      );
+    });
+
+    it('is left out once the person is merged away, hidden or suppressed while locked', async () => {
+      const { sut, ctx } = setup();
+      const { user, person, memory } = await personMemory(ctx);
+      const auth = factory.auth({ user });
+      const locked = {
+        ...factory.auth({ user }),
+        hiddenContent: { ...emptyHiddenContentFilter(user.id), personIds: [person.personGroupId] },
+      };
+
+      await expect(sut.search(locked, {})).resolves.toEqual([]);
+      await expect(sut.get(locked, memory.id)).rejects.toThrow(/not found/i);
+
+      await ctx.database
+        .updateTable('person')
+        .set({ isHidden: true })
+        .where('personGroupId', '=', person.personGroupId)
+        .execute();
+      await expect(sut.search(auth, {})).resolves.toEqual([]);
+      await expect(sut.statistics(auth, {})).resolves.toEqual({ total: 0 });
+
+      await ctx.database.deleteFrom('person').where('personGroupId', '=', person.personGroupId).execute();
+      await expect(sut.search(auth, {})).resolves.toEqual([]);
+      await expect(sut.statistics(auth, { type: MemoryType.Birthday })).resolves.toEqual({ total: 0 });
+      await expect(sut.get(auth, memory.id)).rejects.toThrow(/not found/i);
     });
   });
 
