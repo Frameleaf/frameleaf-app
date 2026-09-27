@@ -59,6 +59,7 @@ import { MediaOperationSweepService } from 'src/services/media-operation-sweep.s
 import { MediaOperationService } from 'src/services/media-operation.service.js';
 import { MediaRecoveryService } from 'src/services/media-recovery.service.js';
 import { MediaService } from 'src/services/media.service.js';
+import { MemoryHighlightService } from 'src/services/memory-highlight.service.js';
 import { MemoryService } from 'src/services/memory.service.js';
 import { MetadataService } from 'src/services/metadata.service.js';
 import { MlDestinationService } from 'src/services/ml-destination.service.js';
@@ -178,6 +179,7 @@ export const services = [
   PhotoToolsService,
   RenderWorkerService,
   MediaService,
+  MemoryHighlightService,
   MemoryService,
   MlDestinationService,
   WorkerInventoryService,

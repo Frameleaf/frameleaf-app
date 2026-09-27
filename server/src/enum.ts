@@ -203,7 +203,22 @@ export const MemoryExportStatusSchema = z
 export enum MemoryExportFormat {
   /** a zip of the memory's original files */
   Archive = 'archive',
+  /** a highlight video rendered through the Studio render pipeline (FL-194) */
+  Highlight = 'highlight',
 }
+
+/** FL-194: the sound a memory's highlight video carries. */
+export enum MemoryHighlightAudio {
+  /** Each video keeps its own sound; photos are silent. */
+  Original = 'original',
+  /** No sound at all. */
+  Silent = 'silent',
+}
+
+export const MemoryHighlightAudioSchema = z
+  .enum(MemoryHighlightAudio)
+  .describe('Sound of a memory highlight video')
+  .meta({ id: 'MemoryHighlightAudio' });
 
 export const MemoryExportFormatSchema = z
   .enum(MemoryExportFormat)

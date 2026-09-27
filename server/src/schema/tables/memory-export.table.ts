@@ -10,6 +10,8 @@ import {
 import type { Generated, Timestamp } from '@immich/sql-tools';
 import { MemoryExportFormat, MemoryExportStatus } from 'src/enum.js';
 import { MemoryTable } from 'src/schema/tables/memory.table.js';
+import { StudioExportVersionTable } from 'src/schema/tables/studio-export.table.js';
+import { StudioProjectTable } from 'src/schema/tables/studio-project.table.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
 
 /**
@@ -81,6 +83,22 @@ export class MemoryExportTable {
   /** the archive is deleted after this instant, whether or not it was downloaded */
   @Column({ type: 'timestamp with time zone', nullable: true })
   expiresAt!: Timestamp | null;
+
+  /** a `highlight` run's length, resolution, audio policy and destination (FL-194) */
+  @Column({ type: 'jsonb', nullable: true })
+  settings!: Record<string, unknown> | null;
+
+  /**
+   * The Studio project a `highlight` run renders (FL-194). The highlight is an ordinary Studio
+   * export of this project, so it goes through the qualified render pipeline; the project is
+   * deleted with the run's memory, which removes the private result with it.
+   */
+  @ForeignKeyColumn(() => StudioProjectTable, { onDelete: 'SET NULL', onUpdate: 'CASCADE', nullable: true })
+  studioProjectId!: string | null;
+
+  /** the Studio export version the highlight render publishes (FL-194) */
+  @ForeignKeyColumn(() => StudioExportVersionTable, { onDelete: 'SET NULL', onUpdate: 'CASCADE', nullable: true })
+  studioExportVersionId!: string | null;
 
   @CreateDateColumn()
   createdAt!: Generated<Timestamp>;

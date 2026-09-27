@@ -18,6 +18,7 @@ import {
   AssetFileType,
   AssetOrderWithRandom,
   AssetVisibility,
+  MemoryExportFormat,
   MemoryExportStatus,
   MemoryType,
   PetObservationState,
@@ -567,6 +568,18 @@ export class MemoryRepository implements IBulkAsset {
     return new Set(rows.map(({ id }) => id));
   }
 
+  /** Highlight runs (FL-194) of the unsaved memories the next `cleanup` deletes. */
+  getHighlightsOfExpiredMemories() {
+    return this.db
+      .selectFrom('memory_export')
+      .innerJoin('memory', 'memory.id', 'memory_export.memoryId')
+      .selectAll('memory_export')
+      .where('memory_export.format', '=', MemoryExportFormat.Highlight)
+      .where('memory.createdAt', '<', DateTime.now().minus({ days: 30 }).toJSDate())
+      .where('memory.isSaved', '=', false)
+      .execute();
+  }
+
   /** Runs whose archive has outlived its window, and runs abandoned by a lost worker. */
   getReclaimableExports(now: Date, staleBefore: Date) {
     return this.db
@@ -578,6 +591,8 @@ export class MemoryRepository implements IBulkAsset {
           eb.and([
             eb('status', 'in', [MemoryExportStatus.Pending, MemoryExportStatus.Running, MemoryExportStatus.Cancelling]),
             eb('updatedAt', '<=', staleBefore),
+            // a highlight renders as a Studio export, whose lease and sweep recover a lost worker (FL-194)
+            eb('format', '=', MemoryExportFormat.Archive),
           ]),
         ]),
       )

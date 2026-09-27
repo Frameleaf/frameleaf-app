@@ -21,9 +21,22 @@ import { ServiceMocks, newTestService } from 'test/utils.js';
 describe(MemoryService.name, () => {
   let sut: MemoryService;
   let mocks: ServiceMocks;
+  let highlights: Record<string, ReturnType<typeof vi.fn>>;
 
   beforeEach(() => {
     ({ sut, mocks } = newTestService(MemoryService));
+    // FL-194: highlight videos are delegated to their own service, injected as a property
+    highlights = {
+      create: vi.fn(),
+      refresh: vi.fn((run) => Promise.resolve(run)),
+      cancel: vi.fn(),
+      remove: vi.fn(),
+      download: vi.fn(),
+      saveToLibrary: vi.fn(),
+      removeForMemory: vi.fn().mockResolvedValue(undefined),
+      removeForExpiredMemories: vi.fn().mockResolvedValue(undefined),
+    };
+    (sut as unknown as { highlights: unknown }).highlights = highlights;
     // FL-62: the owner's curation and show-less rules are read on every search and generation pass
     mocks.memory.getCurations.mockResolvedValue(new Map());
     mocks.memory.getHiddenMemoryIds.mockResolvedValue([]);
@@ -648,6 +661,121 @@ describe(MemoryService.name, () => {
 
       expect(mocks.memory.createExport).not.toHaveBeenCalled();
       expect(mocks.job.queue).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('highlight exports (FL-194)', () => {
+    it("renders a highlight of the memory's items in the owner's order and under the owner's title", async () => {
+      const userId = newUuid();
+      const [first, second] = [AssetFactory.create({ ownerId: userId }), AssetFactory.create({ ownerId: userId })];
+      const memory = MemoryFactory.from({ ownerId: userId }).asset(first).asset(second).build();
+      const run = exportRun({ ownerId: userId, memoryId: memory.id, format: MemoryExportFormat.Highlight });
+
+      mocks.access.memory.checkOwnerAccess.mockResolvedValue(new Set([memory.id]));
+      mocks.memory.get.mockResolvedValue(getForMemory(memory));
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([first.id, second.id]));
+      mocks.memory.getCurations.mockResolvedValue(
+        new Map([
+          [memory.id, { memoryId: memory.id, hiddenAt: null, title: 'Summer', assetOrder: [second.id] }],
+        ]) as never,
+      );
+      highlights.create.mockResolvedValue(run);
+
+      const options = { lengthSeconds: 30 };
+      await expect(
+        sut.createExport(factory.auth({ user: { id: userId } }), memory.id, {
+          format: MemoryExportFormat.Highlight,
+          highlight: options,
+        }),
+      ).resolves.toMatchObject({ id: run.id, format: MemoryExportFormat.Highlight });
+
+      const [, target, passed] = highlights.create.mock.calls[0];
+      expect(target.title).toBe('Summer');
+      expect(target.assets.map((asset: { id: string }) => asset.id)).toEqual([second.id, first.id]);
+      expect(passed).toBe(options);
+      // the download right is rechecked as for an archive, and no archive job is queued
+      expect(mocks.access.asset.checkOwnerAccess).toHaveBeenCalled();
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+    });
+
+    it('lets a highlight and an archive of the same memory run side by side, one of each', async () => {
+      const userId = newUuid();
+      const asset = AssetFactory.create({ ownerId: userId });
+      const memory = MemoryFactory.from({ ownerId: userId }).asset(asset).build();
+      const archive = exportRun({ ownerId: userId, memoryId: memory.id, status: MemoryExportStatus.Running });
+      const highlight = exportRun({
+        ownerId: userId,
+        memoryId: memory.id,
+        format: MemoryExportFormat.Highlight,
+        status: MemoryExportStatus.Running,
+      });
+
+      mocks.access.memory.checkOwnerAccess.mockResolvedValue(new Set([memory.id]));
+      mocks.memory.get.mockResolvedValue(getForMemory(memory));
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.memory.searchExports.mockResolvedValue([archive] as never);
+      highlights.create.mockResolvedValue(highlight);
+
+      const auth = factory.auth({ user: { id: userId } });
+      await sut.createExport(auth, memory.id, { format: MemoryExportFormat.Highlight });
+      expect(highlights.create).toHaveBeenCalledTimes(1);
+
+      mocks.memory.searchExports.mockResolvedValue([archive, highlight] as never);
+      await expect(sut.createExport(auth, memory.id, { format: MemoryExportFormat.Highlight })).resolves.toMatchObject({
+        id: highlight.id,
+      });
+      expect(highlights.create).toHaveBeenCalledTimes(1);
+    });
+
+    it('routes reads, cancel, delete, download and save of a highlight to its render', async () => {
+      const auth = factory.auth();
+      const run = exportRun({ ownerId: auth.user.id, format: MemoryExportFormat.Highlight });
+      mocks.memory.getExport.mockResolvedValue(run as never);
+      highlights.cancel.mockResolvedValue(run);
+      highlights.saveToLibrary.mockResolvedValue(run);
+
+      await sut.getExport(auth, run.id);
+      expect(highlights.refresh).toHaveBeenCalledWith(run);
+      await sut.cancelExport(auth, run.id);
+      expect(highlights.cancel).toHaveBeenCalledWith(auth, run);
+      await sut.downloadExport(auth, run.id);
+      expect(highlights.download).toHaveBeenCalledWith(auth, run);
+      await sut.saveExportToLibrary(auth, run.id);
+      expect(highlights.saveToLibrary).toHaveBeenCalledWith(auth, run);
+      await sut.deleteExport(auth, run.id);
+      expect(highlights.remove).toHaveBeenCalledWith(auth, run);
+    });
+
+    it('saves only a highlight to the library, and only the caller’s own', async () => {
+      const auth = factory.auth();
+      mocks.memory.getExport.mockResolvedValue(exportRun({ ownerId: auth.user.id }) as never);
+      await expect(sut.saveExportToLibrary(auth, newUuid())).rejects.toBeInstanceOf(BadRequestException);
+
+      mocks.memory.getExport.mockResolvedValue(undefined as never);
+      await expect(sut.saveExportToLibrary(auth, newUuid())).rejects.toBeInstanceOf(BadRequestException);
+      expect(highlights.saveToLibrary).not.toHaveBeenCalled();
+    });
+
+    it("removes a memory's highlights with it, and those of memories the cleanup deletes", async () => {
+      const auth = factory.auth();
+      const memoryId = newUuid();
+      mocks.access.memory.checkOwnerAccess.mockResolvedValue(new Set([memoryId]));
+      mocks.memory.searchExports.mockResolvedValue([
+        exportRun({ ownerId: auth.user.id, memoryId, format: MemoryExportFormat.Highlight }),
+      ] as never);
+      mocks.memory.delete.mockResolvedValue();
+
+      await sut.remove(auth, memoryId);
+      expect(highlights.removeForMemory).toHaveBeenCalledWith(auth.user.id, memoryId);
+      expect(mocks.memory.delete).toHaveBeenCalledWith(memoryId);
+
+      mocks.memory.cleanup.mockResolvedValue([]);
+      mocks.memory.getReclaimableExports.mockResolvedValue([]);
+      await sut.onMemoriesCleanup();
+      expect(highlights.removeForExpiredMemories).toHaveBeenCalled();
+      expect(highlights.removeForExpiredMemories.mock.invocationCallOrder[0]).toBeLessThan(
+        mocks.memory.cleanup.mock.invocationCallOrder[0],
+      );
     });
   });
 

@@ -354,6 +354,116 @@ describe(StudioExportRepository.name, () => {
     });
   });
 
+  describe('a result kept with its project, then saved to the library (FL-194)', () => {
+    const kept = (staged: { version: StudioExportVersion }) =>
+      `/data/exports/${staged.version.ownerId}/studio-exports/versions/${staged.version.id}.mp4`;
+
+    it('keeps an all-own result out of the library until the owner saves it, with its privacy', async () => {
+      const context = setup();
+      const { user } = await context.ctx.newUser();
+      const sources = [
+        await ownSource(context.ctx, user.id),
+        await ownSource(context.ctx, user.id, { visibility: AssetVisibility.Locked }),
+      ];
+      const staged = await stagedExport(context, user.id, sources);
+
+      const published = await context.sut.publish(
+        publication(staged, sources, {
+          expectedScope: StudioExportScope.Project,
+          retainInProject: true,
+          path: kept(staged),
+        }),
+      );
+      expect(published.createdAssetId).toBeNull();
+      expect(published.version).toEqual(
+        expect.objectContaining({ scope: StudioExportScope.Project, resultAssetId: null, outputPath: kept(staged) }),
+      );
+      const before = await defaultDatabase
+        .selectFrom('asset')
+        .select('id')
+        .where('ownerId', '=', user.id)
+        .where('checksum', '=', staged.checksum)
+        .execute();
+      expect(before).toEqual([]);
+
+      const library = `/data/upload/${user.id}/${staged.version.id}.mp4`;
+      const saved = await context.sut.saveToLibrary({
+        versionId: staged.version.id,
+        ownerId: user.id,
+        sources: publication(staged, sources).sources,
+        nsfwHiding: false,
+        path: library,
+        checksum: staged.checksum,
+        sizeInBytes: 1024,
+        contentType: 'video/mp4',
+        assetType: AssetType.Video,
+        originalFileName: 'Lake trip.mp4',
+      });
+      expect(saved.version).toEqual(
+        expect.objectContaining({
+          scope: StudioExportScope.Library,
+          resultAssetId: saved.createdAssetId,
+          outputPath: library,
+        }),
+      );
+      // the Locked source's lock is installed on the saved asset, as at publication
+      expect(await lockOf(saved.createdAssetId!)).toBe(AssetLockReason.Marked);
+
+      // saving again answers with the same result
+      const again = await context.sut.saveToLibrary({
+        versionId: staged.version.id,
+        ownerId: user.id,
+        sources: [],
+        nsfwHiding: false,
+        path: library,
+        checksum: staged.checksum,
+        sizeInBytes: 1024,
+        contentType: 'video/mp4',
+        assetType: AssetType.Video,
+        originalFileName: 'Lake trip.mp4',
+      });
+      expect(again.createdAssetId).toBeNull();
+      expect(again.version.resultAssetId).toBe(saved.createdAssetId);
+    });
+
+    it("refuses to save somebody else's result or one whose source was deleted", async () => {
+      const context = setup();
+      const { user } = await context.ctx.newUser();
+      const { user: stranger } = await context.ctx.newUser();
+      const sources = [await ownSource(context.ctx, user.id)];
+      const staged = await stagedExport(context, user.id, sources);
+      await context.sut.publish(
+        publication(staged, sources, {
+          expectedScope: StudioExportScope.Project,
+          retainInProject: true,
+          path: kept(staged),
+        }),
+      );
+      const save = (ownerId: string) =>
+        context.sut.saveToLibrary({
+          versionId: staged.version.id,
+          ownerId,
+          sources: publication(staged, sources).sources,
+          nsfwHiding: false,
+          path: `/data/upload/${ownerId}/${staged.version.id}.mp4`,
+          checksum: staged.checksum,
+          sizeInBytes: 1024,
+          contentType: 'video/mp4',
+          assetType: AssetType.Video,
+          originalFileName: 'Lake trip.mp4',
+        });
+
+      await expectRefusal(save(stranger.id), 'not-staged');
+      await defaultDatabase
+        .updateTable('asset')
+        .set({ deletedAt: new Date() })
+        .where('id', '=', sources[0].id)
+        .execute();
+      await expectRefusal(save(user.id), 'source-unavailable');
+      expect(await context.sut.getById(staged.version.id)).toMatchObject({ scope: StudioExportScope.Project });
+    });
+  });
+
   describe('publish: current access', () => {
     it('refuses a multi-owner export once the album that shared a source is left', async () => {
       const context = setup();

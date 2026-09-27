@@ -169,6 +169,19 @@ export class MemoryController {
     return this.service.deleteExport(auth, id);
   }
 
+  @Post('exports/:id/library')
+  @Authenticated({ permission: Permission.MemoryUpdate })
+  @HttpCode(HttpStatus.OK)
+  @Endpoint({
+    summary: 'Save a memory highlight to the library',
+    description:
+      "Save a finished highlight video of one of the caller's own memories to their library. Until then it is kept with the memory, out of the library, and removed with it.",
+    history: new HistoryBuilder().added('v3'),
+  })
+  saveMemoryExportToLibrary(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<MemoryExportResponseDto> {
+    return this.service.saveExportToLibrary(auth, id);
+  }
+
   @Get('exports/:id/download')
   @Authenticated({ permission: Permission.MemoryRead })
   // FL-161: an archive of the memory's media

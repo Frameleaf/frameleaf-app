@@ -79,6 +79,8 @@ export type StudioExportPublishSnapshot = {
   renderOperationId: string;
   projectId: string;
   revision: number;
+  /** The result stays with its project until the owner saves it to the library (FL-194). */
+  retain?: 'project';
 };
 
 export const parseStudioExportPublishSnapshot = (value: unknown): StudioExportPublishSnapshot | null => {

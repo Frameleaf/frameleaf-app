@@ -5593,6 +5593,17 @@ export type QueuesResponseLegacyDto = {
 export type JobCreateDto = {
     name: ManualJobName;
 };
+export type MemoryHighlightResponseDto = {
+    audio: MemoryHighlightAudio;
+    destination: MemoryHighlightDestination;
+    /** Target length in seconds */
+    lengthSeconds: number;
+    /** Render progress, 0 to 100 */
+    progress: number;
+    resolution: StudioExportResolution;
+    /** The library asset the highlight was saved as, once saved */
+    savedAssetId: string | null;
+};
 export type MemoryExportResponseDto = {
     /** Number of assets in the export */
     assetCount: number;
@@ -5605,6 +5616,8 @@ export type MemoryExportResponseDto = {
     /** When the export reached a terminal state */
     finishedAt: string | null;
     format: MemoryExportFormat;
+    /** The highlight video settings and render state, for a `highlight` export */
+    highlight: (MemoryHighlightResponseDto) | null;
     /** Export ID */
     id: string;
     /** Whether the archive can be downloaded right now */
@@ -6449,9 +6462,21 @@ export type MemoryUpdateDto = {
     /** The owner's own title for the memory; null returns to the generated one */
     title?: string | null;
 };
+export type MemoryHighlightOptionsDto = {
+    /** Sound policy, each video's own sound by default */
+    audio?: MemoryHighlightAudio;
+    /** Where it renders, this server by default */
+    destination?: MemoryHighlightDestination;
+    /** Target length in seconds, 60 by default */
+    lengthSeconds?: number;
+    /** Output resolution, 2160p by default */
+    resolution?: StudioExportResolution;
+};
 export type MemoryExportCreateDto = {
     /** Export format, defaults to an archive of the originals */
     format?: MemoryExportFormat;
+    /** Options for a `highlight` export */
+    highlight?: MemoryHighlightOptionsDto;
 };
 export type MlDestinationCreateDto = {
     /** Bearer token for a LAN worker (write-only) */
@@ -15736,6 +15761,20 @@ export function downloadMemoryExport({ id }: {
     }));
 }
 /**
+ * Save a memory highlight to the library
+ */
+export function saveMemoryExportToLibrary({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MemoryExportResponseDto;
+    }>(`/memories/exports/${encodeURIComponent(id)}/library`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
  * Remove a memories show-less rule
  */
 export function removeMemoryShowLess({ memoryShowLessDto }: {
@@ -21917,7 +21956,16 @@ export enum ManualJobName {
     AnalyticsCollect = "analytics-collect"
 }
 export enum MemoryExportFormat {
-    Archive = "archive"
+    Archive = "archive",
+    Highlight = "highlight"
+}
+export enum MemoryHighlightAudio {
+    Original = "original",
+    Silent = "silent"
+}
+export enum MemoryHighlightDestination {
+    Local = "local",
+    Lan = "lan"
 }
 export enum MemoryExportStatus {
     Pending = "pending",

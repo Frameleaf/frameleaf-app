@@ -4,12 +4,16 @@ import { Memory, MemoryExport } from 'src/database.js';
 import { HistoryBuilder } from 'src/decorators.js';
 import { AssetResponseSchema, mapAsset } from 'src/dtos/asset-response.dto.js';
 import { AuthDto } from 'src/dtos/auth.dto.js';
+import { StudioExportResolutionSchema } from 'src/dtos/studio-export.dto.js';
 import {
   AssetOrderWithRandomSchema,
+  MediaOperationDestination,
   MemoryExportFormat,
   MemoryExportFormatSchema,
   MemoryExportStatus,
   MemoryExportStatusSchema,
+  MemoryHighlightAudio,
+  MemoryHighlightAudioSchema,
   MemoryShowLessKindSchema,
   MemoryType,
   MemoryTypeSchema,
@@ -262,9 +266,41 @@ export const applyMemoryAssetOrder = <T extends { id: string }>(assets: T[], ord
  * mirrors the shape the media-health runs already expose rather than inventing a second
  * job vocabulary.
  */
+/**
+ * FL-194: a highlight video of the memory, rendered as a Studio export through the qualified render
+ * workers. It renders at home only: on this server or another computer on the home network.
+ */
+const MemoryHighlightDestinationSchema = z
+  .enum([MediaOperationDestination.Local, MediaOperationDestination.Lan])
+  .describe('Where the highlight renders: this server or another computer on your home network')
+  .meta({ id: 'MemoryHighlightDestination' });
+
+const MemoryHighlightOptionsSchema = z
+  .object({
+    lengthSeconds: z.int().min(15).max(300).optional().describe('Target length in seconds, 60 by default'),
+    resolution: StudioExportResolutionSchema.optional().describe('Output resolution, 2160p by default'),
+    audio: MemoryHighlightAudioSchema.optional().describe("Sound policy, each video's own sound by default"),
+    destination: MemoryHighlightDestinationSchema.optional().describe('Where it renders, this server by default'),
+  })
+  .meta({ id: 'MemoryHighlightOptionsDto' });
+
+const MemoryHighlightSchema = z
+  .object({
+    lengthSeconds: z.int().describe('Target length in seconds'),
+    resolution: StudioExportResolutionSchema,
+    audio: MemoryHighlightAudioSchema,
+    destination: MemoryHighlightDestinationSchema,
+    progress: z.int().min(0).max(100).describe('Render progress, 0 to 100'),
+    savedAssetId: z.uuidv4().nullable().describe('The library asset the highlight was saved as, once saved'),
+  })
+  .meta({ id: 'MemoryHighlightResponseDto' });
+
 const MemoryExportCreateSchema = z
   .object({
     format: MemoryExportFormatSchema.optional().describe('Export format, defaults to an archive of the originals'),
+    highlight: MemoryHighlightOptionsSchema.optional()
+      .describe('Options for a `highlight` export')
+      .meta(new HistoryBuilder().added('v3').getExtensions()),
   })
   .meta({ id: 'MemoryExportCreateDto' });
 
@@ -292,10 +328,15 @@ export const MemoryExportResponseSchema = z
     startedAt: isoDatetimeToDate.nullable().describe('When the worker picked the export up'),
     finishedAt: isoDatetimeToDate.nullable().describe('When the export reached a terminal state'),
     expiresAt: isoDatetimeToDate.nullable().describe('When the archive is deleted'),
+    highlight: MemoryHighlightSchema.nullable()
+      .describe('The highlight video settings and render state, for a `highlight` export')
+      .meta(new HistoryBuilder().added('v3').getExtensions()),
   })
   .meta({ id: 'MemoryExportResponseDto' });
 
 export class MemoryExportCreateDto extends createZodDto(MemoryExportCreateSchema) {}
+export class MemoryHighlightOptionsDto extends createZodDto(MemoryHighlightOptionsSchema) {}
+export class MemoryHighlightResponseDto extends createZodDto(MemoryHighlightSchema) {}
 export class MemoryExportSearchDto extends createZodDto(MemoryExportSearchSchema) {}
 export class MemoryExportResponseDto extends createZodDto(MemoryExportResponseSchema) {}
 
@@ -325,7 +366,26 @@ export const mapMemoryExport = (entity: MemoryExport): MemoryExportResponseDto =
   startedAt: entity.startedAt ?? null,
   finishedAt: entity.finishedAt ?? null,
   expiresAt: entity.expiresAt ?? null,
+  highlight: entity.format === MemoryExportFormat.Highlight ? mapMemoryHighlight(entity.settings) : null,
 });
+
+/** The stored settings of a highlight run (FL-194), read defensively: jsonb holds what was written. */
+export type MemoryHighlightSettings = z.infer<typeof MemoryHighlightSchema>;
+
+export const mapMemoryHighlight = (value: unknown): MemoryHighlightSettings => {
+  const settings = (value ?? {}) as Partial<MemoryHighlightSettings>;
+  return {
+    lengthSeconds: typeof settings.lengthSeconds === 'number' ? settings.lengthSeconds : 60,
+    resolution: settings.resolution ?? '2160p',
+    audio: settings.audio === MemoryHighlightAudio.Silent ? MemoryHighlightAudio.Silent : MemoryHighlightAudio.Original,
+    destination:
+      settings.destination === MediaOperationDestination.Lan
+        ? MediaOperationDestination.Lan
+        : MediaOperationDestination.Local,
+    progress: typeof settings.progress === 'number' ? Math.round(Math.min(100, Math.max(0, settings.progress))) : 0,
+    savedAssetId: typeof settings.savedAssetId === 'string' ? settings.savedAssetId : null,
+  };
+};
 
 export class MemorySearchDto extends createZodDto(MemorySearchSchema) {}
 export class MemoryUpdateDto extends createZodDto(MemoryUpdateSchema) {}

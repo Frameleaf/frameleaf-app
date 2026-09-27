@@ -84,6 +84,18 @@ import {
 
 type RunningJob = { operation: MediaOperation; claimToken: string };
 
+export type StudioExportCreateOptions = {
+  /**
+   * Keep the published result with its project, out of the library, even when every source is the
+   * owner's (FL-194). The owner can save it to the library later; until then it is removed with
+   * the project.
+   */
+  retainInProject?: boolean;
+};
+
+const isRetainedInProject = (snapshot: unknown): boolean =>
+  !!snapshot && typeof snapshot === 'object' && (snapshot as { retain?: unknown }).retain === 'project';
+
 /** A failure of one publication attempt. Retried once automatically, like every job (FL-104). */
 class PublishError extends Error {
   constructor(
@@ -201,7 +213,12 @@ export class StudioExportService {
    * cannot place in Studio (trashed, unshared, Locked…) refuses the export rather than rendering
    * a picture with a hole in it. The render job and its version row are created together.
    */
-  async create(auth: AuthDto, projectId: string, dto: StudioExportCreateDto): Promise<StudioExportCreateResponseDto> {
+  async create(
+    auth: AuthDto,
+    projectId: string,
+    dto: StudioExportCreateDto,
+    options: StudioExportCreateOptions = {},
+  ): Promise<StudioExportCreateResponseDto> {
     this.requireInteractive(auth);
 
     if (dto.requestKey) {
@@ -301,6 +318,7 @@ export class StudioExportService {
           manifestDigest: authorized.manifest.digest,
           requestKey: dto.requestKey ?? null,
           studio: { stored: true, revision: authorized.revision.revision, cloudConsent: dto.cloudConsent === true },
+          ...(options.retainInProject && { retain: 'project' }),
         },
         settings,
         estimate: null,
@@ -441,6 +459,86 @@ export class StudioExportService {
     });
   }
 
+  /**
+   * Save a result that was kept with its project to the owner's library (FL-194).
+   *
+   * Only on the owner's request, only for a published `project` result whose file is still there,
+   * and only when every source is the owner's own: a result made with media shared with them stays
+   * with its project, so a temporary share never becomes a permanent copy. The file is moved to an
+   * ordinary upload path and adopted in one transaction that re-checks the sources and installs
+   * their Locked and sensitive evidence on the new asset, exactly as publication does. A refusal
+   * puts the file back where it was.
+   */
+  async saveToLibrary(auth: AuthDto, id: string): Promise<StudioExportVersionDto> {
+    this.requireInteractive(auth);
+    const version = await this.findOwned(auth, id);
+    const sources = (await this.repository.getSources(version.id)).filter((source) => isLibrarySource(source));
+    if (version.state === StudioExportVersionState.Published && version.scope === StudioExportScope.Library) {
+      return this.map(version, auth, sources);
+    }
+    const container = STUDIO_EXPORT_CONTENT_TYPES[version.outputContentType ?? ''];
+    if (
+      version.state !== StudioExportVersionState.Published ||
+      version.scope !== StudioExportScope.Project ||
+      !version.outputPath ||
+      version.outputRemovedAt ||
+      !version.outputChecksum ||
+      version.outputSizeInBytes === null ||
+      !container
+    ) {
+      throw new ConflictException({ message: 'This export has no file to save', code: 'studio_export_not_saveable' });
+    }
+    if (sources.some((source) => source.ownerId !== auth.user.id)) {
+      throw new ConflictException({
+        message: 'A result made with media shared with you stays with its project',
+        code: 'studio_export_source_access_lost',
+      });
+    }
+
+    const project = version.projectId ? await this.projects.getById(version.projectId) : undefined;
+    const keptPath = version.outputPath;
+    const finalPath = studioExportLibraryPath(version.ownerId, version.id, container.extension);
+    this.storage.mkdirSync(dirname(finalPath));
+    await this.storage.rename(keptPath, finalPath);
+
+    let saved: Awaited<ReturnType<StudioExportRepository['saveToLibrary']>>;
+    try {
+      saved = await this.repository.saveToLibrary({
+        versionId: version.id,
+        ownerId: version.ownerId,
+        sources,
+        nsfwHiding: await this.nsfwHiding(),
+        path: finalPath,
+        checksum: Buffer.from(version.outputChecksum),
+        sizeInBytes: Number(version.outputSizeInBytes),
+        contentType: version.outputContentType!,
+        assetType: container.assetType,
+        originalFileName: studioExportFileName(project?.name ?? '', container.extension),
+      });
+    } catch (error) {
+      await this.storage.rename(finalPath, keptPath).catch((restoreError) => {
+        this.logger.warn(`Could not return ${finalPath} to ${keptPath}: ${errorMessage(restoreError)}`);
+      });
+      if (error instanceof StudioExportRefusal) {
+        throw new ConflictException({ message: error.message, code: errorCode(error) });
+      }
+      throw error;
+    }
+
+    if (saved.reusedAssetId) {
+      // The owner already had these bytes; the moved copy is referenced by nothing.
+      await this.storage.unlink(finalPath).catch(() => {});
+    }
+    if (saved.createdAssetId) {
+      await this.jobs.queue({
+        name: JobName.AssetExtractMetadata,
+        data: { id: saved.createdAssetId, source: 'upload' },
+      });
+    }
+    this.logger.log(`Studio export ${version.id} saved to the library as ${saved.version.resultAssetId}`);
+    return this.map(saved.version, auth, sources);
+  }
+
   /* ------------------------------------------------------------------ */
   /* Render contract (called by the render worker service)               */
   /* ------------------------------------------------------------------ */
@@ -532,6 +630,7 @@ export class StudioExportService {
           renderOperationId: operation.id,
           projectId: version.projectId as string,
           revision: version.revision,
+          ...(isRetainedInProject(operation.snapshot) && { retain: 'project' }),
         } satisfies StudioExportPublishSnapshot as unknown as Record<string, unknown>,
         settings: version.settings,
         estimate: null,
@@ -676,7 +775,7 @@ export class StudioExportService {
 
     let prepared: PreparedPublication | undefined;
     try {
-      prepared = await this.prepare(version);
+      prepared = await this.prepare(version, snapshot.retain === 'project');
       const published = await this.publishAcknowledged(version, operation, claimToken, prepared);
       await this.afterPublished(published, prepared);
       await this.finishJob(operation, claimToken, published.version.resultAssetId);
@@ -712,7 +811,7 @@ export class StudioExportService {
    * hashed again and moved to where the result will live. Every refusal here happens before any
    * write; the transaction re-checks what matters under locks.
    */
-  private async prepare(version: StudioExportVersion): Promise<PreparedPublication> {
+  private async prepare(version: StudioExportVersion, retainInProject: boolean): Promise<PreparedPublication> {
     const owner = await this.ownerAuth(version.ownerId);
     if (!owner) {
       throw new StudioExportRefusal('owner-unavailable', 'The account this export belongs to is being deleted');
@@ -746,9 +845,12 @@ export class StudioExportService {
     const recorded = await this.repository.getSources(version.id);
     this.assertSameSources(recorded, resolution.manifest.entries);
 
-    const expectedScope = resolution.manifest.entries.some((entry) => entry.sourceAccess === 'shared')
-      ? StudioExportScope.Project
-      : StudioExportScope.Library;
+    // A render the owner asked to keep with its project (FL-194) stays out of the library until they
+    // save it there; one made with shared media always does.
+    const expectedScope =
+      retainInProject || resolution.manifest.entries.some((entry) => entry.sourceAccess === 'shared')
+        ? StudioExportScope.Project
+        : StudioExportScope.Library;
 
     const contentType = version.outputContentType ?? '';
     const container = STUDIO_EXPORT_CONTENT_TYPES[contentType];
@@ -774,18 +876,14 @@ export class StudioExportService {
       await this.storage.rename(stagedPath, finalPath);
     }
 
-    const config = await getConfig(
-      { configRepo: this.configRepository, metadataRepo: this.systemMetadata, logger: this.logger },
-      { withCache: true },
-    );
-
     return {
       versionId: version.id,
       stagedPath,
       finalPath,
       stagingFolder: staging,
       expectedScope,
-      nsfwHiding: isNsfwHidingEnabled(config.machineLearning),
+      retainInProject,
+      nsfwHiding: await this.nsfwHiding(),
       sources: recorded.filter((source) => isLibrarySource(source)),
       contentType,
       assetType: container.assetType,
@@ -850,6 +948,7 @@ export class StudioExportService {
         ownerId: version.ownerId,
         sources: prepared.sources,
         expectedScope: prepared.expectedScope,
+        retainInProject: prepared.retainInProject,
         nsfwHiding: prepared.nsfwHiding,
         path: prepared.finalPath,
         checksum: Buffer.from(version.outputChecksum!),
@@ -1029,6 +1128,14 @@ export class StudioExportService {
     return version;
   }
 
+  private async nsfwHiding(): Promise<boolean> {
+    const config = await getConfig(
+      { configRepo: this.configRepository, metadataRepo: this.systemMetadata, logger: this.logger },
+      { withCache: true },
+    );
+    return isNsfwHidingEnabled(config.machineLearning);
+  }
+
   /** The owner as an elevated background-runner auth, or null when the account is gone. */
   private async ownerAuth(ownerId: string): Promise<AuthDto | null> {
     const user = await this.users.get(ownerId, {});
@@ -1100,6 +1207,7 @@ type PreparedPublication = {
   finalPath: string;
   stagingFolder: string;
   expectedScope: StudioExportScope;
+  retainInProject: boolean;
   nsfwHiding: boolean;
   sources: StudioExportVersionSource[];
   contentType: string;

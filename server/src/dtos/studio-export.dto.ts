@@ -27,7 +27,7 @@ const StudioExportColorSchema = z
   .describe('Colour handling; Dolby Vision needs a qualified worker')
   .meta({ id: 'StudioExportColor' });
 
-const StudioExportResolutionSchema = z
+export const StudioExportResolutionSchema = z
   .enum(STUDIO_EXPORT_RESOLUTIONS)
   .describe('Output resolution')
   .meta({ id: 'StudioExportResolution' });

@@ -125,6 +125,9 @@ export type MemoryExport = {
   startedAt: Date | null;
   finishedAt: Date | null;
   expiresAt: Date | null;
+  settings: Record<string, unknown> | null;
+  studioProjectId: string | null;
+  studioExportVersionId: string | null;
   createdAt: Date;
   updatedAt: Date;
 };
