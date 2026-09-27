@@ -413,6 +413,14 @@
           tilesFailed = true;
         }
       }}
+      onmoveend={(event: { originalEvent?: unknown }) => {
+        // FL-51: attached with the map, not in onload, so with an unreachable style (no "load") the
+        // In view list the offline card points to still follows the view.
+        if (event.originalEvent) {
+          changed = true;
+        }
+        updateInView();
+      }}
       onload={(instance: Map) => {
         // MapView.jsx:230-240: place names start past their dot and clear of the bubbles, on every style.
         const layoutLabels = () => applyClusterLabelLayout(instance, 'geojson');
@@ -421,12 +429,6 @@
           if (event.sourceId === 'geojson') {
             layoutLabels();
           }
-        });
-        instance.on('moveend', (event: { originalEvent?: unknown }) => {
-          if (event.originalEvent) {
-            changed = true;
-          }
-          updateInView();
         });
       }}
       bind:map

@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import MapScreen from '$lib/components/frameleaf/MapScreen.svelte';
-import { getMapLibreStubProps, resetMapLibreStub } from '@test-data/frameleaf/map-libre-stub';
+import { getMapLibreStubProps, resetMapLibreStub, setMapLibreStubMap } from '@test-data/frameleaf/map-libre-stub';
 import en from '../../../../../i18n/en.json';
 
 /**
@@ -85,5 +85,32 @@ describe('MapScreen (FL-193)', () => {
     await fireEvent.click(screen.getByText(en.frameleaf_map_try_again));
 
     await waitFor(() => expect(screen.queryByText(en.frameleaf_map_tiles_failed_title)).not.toBeInTheDocument());
+  });
+
+  it('keeps the In view list in step with the view when the style never loads (FL-51)', async () => {
+    sdkMock.getMapMarkers.mockResolvedValue([
+      { id: 'a0000000-0000-4000-8000-000000000001', lat: 10, lon: 50, city: 'Here', state: null, country: null },
+    ]);
+    let [west, east] = [-10, 10];
+    setMapLibreStubMap({
+      getBounds: () => ({
+        getWest: () => west,
+        getEast: () => east,
+        contains: ([lon]: [number, number]) => lon >= west && lon <= east,
+      }),
+      getZoom: () => 3,
+      fitBounds: vi.fn(),
+      setStyle: vi.fn(),
+    });
+    render(MapScreen, { title: 'Map', onOpenAsset: vi.fn() });
+    await waitFor(() => expect(screen.getByText('0 items in view')).toBeInTheDocument());
+
+    // the style failed, so `load` never fires; a move must still re-count what is in view
+    const { onerror, onmoveend } = getMapLibreStubProps();
+    onerror?.({ error: new Error('style fetch failed') });
+    [west, east] = [40, 60];
+    onmoveend?.({});
+
+    await waitFor(() => expect(screen.getByText('1 item in view')).toBeInTheDocument());
   });
 });

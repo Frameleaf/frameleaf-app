@@ -7,9 +7,18 @@
 export interface MapLibreStubProps {
   onload?: (map: unknown) => void;
   onerror?: (event: { error?: unknown; sourceId?: string }) => void;
+  onmoveend?: (event: unknown) => void;
 }
 
 let latest: MapLibreStubProps | undefined;
+let stubMap: unknown;
+
+/** FL-51: the map instance the stub binds to its consumer's `bind:map`, for specs that move the view. */
+export const setMapLibreStubMap = (map: unknown) => {
+  stubMap = map;
+};
+
+export const getMapLibreStubMap = () => stubMap;
 
 export const setMapLibreStubProps = (props: MapLibreStubProps) => {
   latest = props;
@@ -24,4 +33,5 @@ export const getMapLibreStubProps = (): MapLibreStubProps => {
 
 export const resetMapLibreStub = () => {
   latest = undefined;
+  stubMap = undefined;
 };

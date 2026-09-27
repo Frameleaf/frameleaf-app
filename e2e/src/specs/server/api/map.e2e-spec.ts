@@ -169,8 +169,9 @@ describe('/map', () => {
     it("drops a partner's located items from the markers, the counts and the bounds once the partner stops sharing", async () => {
       const { id: partnerLocatedId } = await utils.createAsset(partner.accessToken, {
         assetData: {
-          bytes: await readFile(join(testAssetDir, 'metadata/gps-position/thompson-springs.jpg')),
-          filename: 'partner-thompson-springs.jpg',
+          // not the partner's archived thompson-springs.jpg, which the upload would answer as a duplicate
+          bytes: await readFile(join(testAssetDir, 'metadata/dates/datetimeoriginal-gps.jpg')),
+          filename: 'datetimeoriginal-gps.jpg',
         },
       });
       await utils.waitForWebsocketEvent({ event: 'assetUpload', id: partnerLocatedId });
@@ -211,7 +212,7 @@ describe('/map', () => {
       const { status } = await request(app)
         .delete(`/partners/${admin.userId}`)
         .set('Authorization', `Bearer ${partner.accessToken}`);
-      expect(status).toBe(200);
+      expect(status).toBe(204);
 
       expect(await markerIds()).not.toContain(partnerLocatedId);
       expect(await statistics()).toEqual(expect.objectContaining({ partner: 0 }));
