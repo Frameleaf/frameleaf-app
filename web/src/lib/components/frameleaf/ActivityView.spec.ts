@@ -4,7 +4,7 @@ import {
   MediaOperationStatus,
   type MediaOperationDto,
 } from '@immich/sdk';
-import { fireEvent, render, screen } from '@testing-library/svelte';
+import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { init, register, waitLocale } from 'svelte-i18n';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { goto } from '$app/navigation';
@@ -126,7 +126,10 @@ describe('Frameleaf Activity page', () => {
     sdkMock.resumeMediaOperation.mockResolvedValue(operation({ status: MediaOperationStatus.Queued }));
     await mount([operation({ status: MediaOperationStatus.Paused, pauseRequestedAt: '2026-09-23T10:00:00.000Z' })]);
 
-    await vi.waitFor(() => expect(screen.getByText('Paused')).toBeInTheDocument());
+    // FL-162 groups In progress by stage: the job sits under the Paused stage and its own status reads Paused.
+    const pausedStage = await screen.findByRole('group', { name: /^paused/i });
+    const job = within(pausedStage).getByRole('article');
+    expect(within(job).getByText(/^Paused at 42%/, { selector: '.fla-status' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^pause/i })).not.toBeInTheDocument();
 
     await fireEvent.click(screen.getByRole('button', { name: /^resume/i }));
