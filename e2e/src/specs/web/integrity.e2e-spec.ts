@@ -99,19 +99,20 @@ test.describe('Integrity', () => {
   });
 
   test('a report longer than a page loads the rest with "Load More"', async ({ context, page }) => {
-    await dockerExec([`for i in $(seq 1 101); do echo untracked > ${folder}/page$i.png; done`]).promise;
+    await dockerExec([`for i in $(seq 1 501); do echo untracked > ${folder}/page$i.png; done`]).promise;
     await runUntrackedCheck();
-    expect(await untrackedCount()).toBeGreaterThan(100);
+    expect(await untrackedCount()).toBeGreaterThan(500);
 
     await utils.setAuthCookies(context, admin.accessToken);
     await page.goto(untrackedReport);
 
     const rows = page.locator('tbody tr');
-    await expect(rows).toHaveCount(100);
-    await expect(page.getByText('100 findings loaded · more available')).toBeVisible();
+    // The report endpoint pages 500 findings at a time.
+    await expect(rows).toHaveCount(500);
+    await expect(page.getByText('500 findings loaded · more available')).toBeVisible();
 
     await page.getByRole('button', { name: 'Load More' }).click();
-    await expect.poll(() => rows.count()).toBeGreaterThan(100);
+    await expect.poll(() => rows.count()).toBeGreaterThan(500);
   });
 
   test('deleting the report deletes every untracked file it lists', async ({ context, page }) => {
