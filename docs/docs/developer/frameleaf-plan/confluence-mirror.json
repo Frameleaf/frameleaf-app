@@ -344,14 +344,14 @@
       "version": 2
     },
     {
-      "bytes": 5454,
+      "bytes": 5008,
       "category": "reference",
       "id": "61374926",
       "source": "docs/docs/developer/fork-integration.md",
-      "sourceSha256": "274a3531ba1066a0d6a3ac6ad65792acaaedf6e6a28532b97ac12035cb9dce0c",
+      "sourceSha256": "c60bf21775a66d14c9e693aa356fc6606587b98a1f83fbf84e04a447c390691c",
       "title": "Inherited Compatibility and Integration Gate",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61374926/Inherited+Compatibility+and+Integration+Gate",
-      "version": 2
+      "version": 3
     },
     {
       "bytes": 4144,
@@ -597,17 +597,17 @@
       "readbackAt": "2026-09-26T16:52:20.000Z"
     },
     {
-      "bytes": 18501,
+      "bytes": 18163,
       "category": "plan",
       "id": "61407516",
       "source": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "sourceSha256": "47b7948acee2faa5360214ad47a680856bd453bc4b4a687571399cfc8481f1a9",
+      "sourceSha256": "4a87a06cf13648a7a4e1a8c9b730be484aca8df6b8f2f554e3897351cd3367ba",
       "title": "AI Coding Agent Execution Guide",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61407516/AI+Coding+Agent+Execution+Guide",
-      "verification": "Full FL-28 candidate source path, SHA-256, byte count, fresh 49f23537 fork/main baseline, no-PR status, reproducibility-gate instructions and terminal content read back after update; no independent additions were present in the prior source-owned mirror.",
+      "verification": "Flutter app removal: Confluence page read back at version 8 as ADF; the header carries source hash 4a87a06c and 18163 bytes and records the previous FL-28 revision; compared with version 7, the only differences are the header, the API clients, Native app and Design identity architecture rows, lane C (native apps), the tool-version sentence and the build commands without the Dart client, mobile inventory check and mobile check script; no user additions.",
       "verified": true,
-      "verifiedAt": "2026-09-20T16:01:41.059Z",
-      "version": 7
+      "verifiedAt": "2026-09-27T06:53:54.140Z",
+      "version": 8
     },
     {
       "bytes": 6223,
@@ -636,32 +636,32 @@
       "version": 3
     },
     {
-      "bytes": 30133,
+      "bytes": 29969,
       "category": "plan",
       "id": "61538653",
       "source": "docs/docs/developer/frameleaf-plan/04-native-and-release.md",
-      "sourceCommit": "a3a40128152daf16b5466af04d4acc9a5eaa321a",
-      "sourceSha256": "fb5f30d35ddda282e1b7ae69d1b70544cdba04ba8d45a48f4803e682d4c32f2b",
+      "sourceCommit": "cae33e1e910c7f6fde3b42a5966cfb169be064c8",
+      "sourceSha256": "1a4d945749597d6544b78e69df253be296569f64ee24546aada0cd2597084381",
       "title": "Native Applications and Release Implementation",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61538653/Native+Applications+and+Release+Implementation",
-      "verification": "FL-190 Confluence page read back at version 5 with source hash fb5f30d3, 30133 bytes and commit a3a4012815 on master/frameleaf-implementation in the header (committed-at-commit statement replacing the uncommitted candidate status, backlink and FL-190 link); compared with version 4, the only differences are the header and the three FL-190 changes from commit 20289e0cf8 ('existing upstream clients' twice and 'Keep the upstream-project attribution' in REL-103), plus removal of stale mirror wording that called the now-committed native ownership map uncommitted; relative links remain shown as code paths; no user additions.",
+      "verification": "Flutter app removal: Confluence page read back at version 6 as markdown and ADF (the ADF readback confirms the note panel before Verified starting point); the header carries source hash 1a4d9457 and 29969 bytes; compared with version 5, the only differences are the header, the removal note, the relocated native-parity.json and native-preserved-dirty-evidence.json, native (not Flutter) MOB-200 Studio, REL-101 without the example file, REL-202 TypeScript-only generation and the command blocks without the deleted inventory script and Flutter checks; no user additions.",
       "verified": true,
-      "verifiedAt": "2026-09-26T16:57:25.000Z",
-      "version": 5
+      "verifiedAt": "2026-09-27T06:52:30.385Z",
+      "version": 6
     },
     {
-      "bytes": 13482,
+      "bytes": 13493,
       "category": "plan",
       "id": "61407537",
       "source": "docs/docs/developer/frameleaf-plan/06-brand-assets.md",
-      "sourceCommit": "a3a40128152daf16b5466af04d4acc9a5eaa321a",
-      "sourceSha256": "0252bb9965a6b162069e19f764497b41ebd634833fa86d0cd323338f4d2bee00",
+      "sourceCommit": "cae33e1e910c7f6fde3b42a5966cfb169be064c8",
+      "sourceSha256": "fbc679a7ffe211e7db30b19deafee8d34bd1e99ead563155efae77b471f682e7",
       "title": "Frameleaf SVG Brand Kit",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61407537/Frameleaf+SVG+Brand+Kit",
-      "verification": "FL-190 Confluence page read back at version 5 with source hash 0252bb99, 13482 bytes and commit a3a4012815 on master/frameleaf-implementation in the header (replacing the uncommitted Docs Build candidate status; PR #119 kept as FL-25 history; FL-190 linked); compared with version 4, the only differences are the header and the FL-190 change to REL-103 ('keep the upstream-project attribution and required notices separate'); existing relative source links kept as the page had them; no user additions.",
+      "verification": "Flutter app removal: Confluence page read back at version 6 as markdown; the header carries source hash fbc679a7 and 13493 bytes with the FL-190 history kept; compared with version 5, the only differences are the header and four sentences (historical mobile mark removed with the app, no Dart package imports, tokens.json and web tokens, native apps' export path); no user additions.",
       "verified": true,
-      "verifiedAt": "2026-09-26T16:51:06.000Z",
-      "version": 5
+      "verifiedAt": "2026-09-27T06:48:42.849Z",
+      "version": 6
     },
     {
       "bytes": 42239,
@@ -674,17 +674,17 @@
       "version": 3
     },
     {
-      "bytes": 6602,
+      "bytes": 6548,
       "category": "plan",
       "id": "61538800",
       "source": "docs/docs/developer/frameleaf-plan/07-feature-ownership.md",
-      "sourceSha256": "2b8b9d497e0e3676167b4f7f2ee7908cbbe02697bd55513aa44cf005897d574b",
+      "sourceSha256": "91582b42108952c2f891567618c57c7ec7c2d8f6156a72cc37934612eac485cf",
       "title": "Complete Feature Ownership and Jira Coverage",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61538800/Complete+Feature+Ownership+and+Jira+Coverage",
-      "verification": "Version 7 records FL-44 commit c7b109192f065423fa7ce77db4b4c84092e98084 on branch codex/FL-44-inventory-ledger-sync (not merged, no PR): coverage follows the regenerated ledger with 92 route rows (80 committed plus 12 dirty-only), 1217 source rows and 1197 canonical requirements; the FL-27 candidate banner and all other content are preserved; full page read back after update.",
+      "verification": "Flutter app removal: Confluence page read back at version 8 as markdown; the header carries source hash 91582b42, 6548 bytes and the claude/remove-flutter-app branch for master/frameleaf-implementation; compared with version 7, the only differences are the header and the Validation block, which no longer runs the deleted scripts/frameleaf-mobile-inventory.py; no user additions.",
       "verified": true,
-      "verifiedAt": "2026-09-23T10:33:31.652Z",
-      "version": 7
+      "verifiedAt": "2026-09-27T06:43:34.050Z",
+      "version": 8
     },
     {
       "bytes": 11211,
@@ -739,31 +739,31 @@
       "version": 2
     },
     {
-      "bytes": 20813,
+      "bytes": 20979,
       "category": "plan",
       "id": "61538319",
       "source": "docs/docs/developer/frameleaf-plan/00-implementation-plan.md",
-      "sourceCommit": "a3a40128152daf16b5466af04d4acc9a5eaa321a",
-      "sourceSha256": "f7a25fac9a1d371134a5dbe91e5cc8e9c4a2b73b0952eb973c5e77a762d92d2a",
+      "sourceCommit": "cae33e1e910c7f6fde3b42a5966cfb169be064c8",
+      "sourceSha256": "545d7983ad8ca05e949272b2e5d671f6be9fb4a604c05074520d93af5333f625",
       "title": "Frameleaf Implementation Plan",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61538319/Frameleaf+Implementation+Plan",
-      "verification": "FL-190 Confluence page read back at version 13 with source hash f7a25fac, 20813 bytes and commit a3a4012815 on master/frameleaf-implementation in the header (FL-153 history kept, FL-190 linked); compared with version 12, the only differences are the header and the FL-190 rebrand wording from commit 20289e0cf8 ('Existing upstream and fork capabilities' and 'Retain the upstream-project attribution in README/About'); all Confluence page links and the page hierarchy kept; no user additions.",
+      "verification": "Flutter app removal: Confluence page read back at version 14 as markdown; the header carries source hash 545d7983 and 20979 bytes with the FL-190 and FL-153 history kept; compared with version 13, the only differences are the header, Read this first (production plus the Frameleaf native apps), the preserved Flutter foundations note and native tablets using native controls; Confluence page links preserved; no user additions.",
       "verified": true,
-      "verifiedAt": "2026-09-26T16:52:30.000Z",
-      "version": 13
+      "verifiedAt": "2026-09-27T06:50:17.054Z",
+      "version": 14
     },
     {
-      "bytes": 11216,
+      "bytes": 11023,
       "category": "plan",
       "id": "61408007",
       "source": "studio/README.md",
-      "sourceSha256": "0927fa3594b744a0e42cdc3cb78397e7ca91f116975cc6792049f326132e4030",
+      "sourceSha256": "fb54609606c179839ef6ae14670773f1951db6922af4494296746b27bc1f42d2",
       "title": "Studio and Freecut Source Inventory",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61408007/Studio+and+Freecut+Source+Inventory",
-      "verification": "Decoded full HTML source readback matches reconciled Studio README; historical candidate bodies and links retained. PR133 isolated engine recovery remains unpublished and unqualified for distribution or production integration.",
+      "verification": "Flutter app removal: Confluence page read back at version 7; the new top section carries source hash fb546096 and 11023 bytes and mirrors the full source in a markdown code block (Canonical command catalogue lists two contracts, no Dart native contract or FrameleafStudioRational); the earlier snapshots and receipts are kept below it and the previous reconciled source remains in version 6; no user additions.",
       "verified": true,
-      "verifiedAt": "2026-09-23T19:41:15Z",
-      "version": 6
+      "verifiedAt": "2026-09-27T06:47:44.681Z",
+      "version": 7
     },
     {
       "bytes": 9687,
@@ -779,17 +779,17 @@
       "version": 7
     },
     {
-      "bytes": 9079,
+      "bytes": 9028,
       "category": "development",
       "id": "61440673",
       "source": "AGENTS.md",
-      "sourceSha256": "68f40f4a1de2791641ab09e386f8d5922b9d6f44498b187fd10ab0bf3e43cf42",
+      "sourceSha256": "881a731f0fb026528ddec46beee40fac6d029ab796f30d4c1e4e28f5a6e7a752",
       "title": "Frameleaf Repository Agent Instructions",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61440673",
-      "verification": "Version 7 (published from branch claude/frameleaf-design-rules-sep23, commit 7e982c2a93ddbbefc12d06d5892fda87bce42903) carries the September 23, 2026 rules now on the integration branch: do not touch the iOS or Android apps, the September 22 prototype is authoritative, and design adaptation names production Svelte only. FL-44 read back the full page on the integration head and its body and source hash marker match the current AGENTS.md; no write was needed.",
+      "verification": "Flutter app removal: Confluence page read back at version 8 (published as HTML because a markdown replacement is refused for the page's Confluence smart links); the header carries source hash 881a731f and 9028 bytes and keeps the September 23 candidate-status history; compared with version 7, the only differences are the header and the mobile rule under Documentation and implementation contracts, which now says the Flutter app, Dart client generator and fastlane link were removed and server APIs stay unchanged for installed clients; smart links preserved; no user additions.",
       "verified": true,
-      "verifiedAt": "2026-09-23T10:35:01.000Z",
-      "version": 7
+      "verifiedAt": "2026-09-27T06:45:57.914Z",
+      "version": 8
     },
     {
       "bytes": 11072,
@@ -839,36 +839,36 @@
       "sourceSha256": "1d64dcbf499b84a94a20744c50fdbbc5227a25e997a1030a38fe3fa4707be69d",
       "title": "Frameleaf Reusable Design Template",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61539021/Frameleaf+Reusable+Design+Template",
-      "verification": "Shared six-source page version 10 published as HTML from aj/apple-style-integration @ c04d2a56d2 (commit e53164fb04, PR #139 against claude/frameleaf-implementation, FL-147; not merged): the polish pass and analytics dashboard added to design/frameleaf/README.md, INTERACTION-REQUIREMENTS.md and template/README.md. Read back in full; every section hash marker matches its source.",
+      "verification": "Flutter app removal: shared six-source page read back at version 11 as ADF; the design/AGENTS.md and design/frameleaf/README.md receipts carry source hashes d794ad0d (2097 bytes) and 49cd710a (6186 bytes) and name the Frameleaf native apps instead of Flutter; the other four source receipts and bodies are unchanged from version 10; a September 27 mirror-status line was added; smart links preserved; no user additions.",
       "verified": true,
-      "verifiedAt": "2026-09-24T16:39:35.650Z",
-      "version": 10
+      "verifiedAt": "2026-09-27T06:57:26.716Z",
+      "version": 11
     },
     {
-      "bytes": 2032,
+      "bytes": 2097,
       "category": "design-template",
       "id": "61539021",
       "source": "design/AGENTS.md",
-      "sourceSha256": "649f704713477e12313af810fa9fc7b90268117c3495c9bc5446baf08e1d86ef",
+      "sourceSha256": "d794ad0dedf00029df94e7facc98951156302514b196e55b24b0bf020fba3d5f",
       "title": "Frameleaf Reusable Design Template",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61539021/Frameleaf+Reusable+Design+Template",
-      "verification": "Shared six-source page version 10 published as HTML from aj/apple-style-integration @ c04d2a56d2 (commit e53164fb04, PR #139 against claude/frameleaf-implementation, FL-147; not merged): the polish pass and analytics dashboard added to design/frameleaf/README.md, INTERACTION-REQUIREMENTS.md and template/README.md. Read back in full; every section hash marker matches its source.",
+      "verification": "Flutter app removal: shared six-source page read back at version 11 as ADF; the design/AGENTS.md and design/frameleaf/README.md receipts carry source hashes d794ad0d (2097 bytes) and 49cd710a (6186 bytes) and name the Frameleaf native apps instead of Flutter; the other four source receipts and bodies are unchanged from version 10; a September 27 mirror-status line was added; smart links preserved; no user additions.",
       "verified": true,
-      "verifiedAt": "2026-09-24T16:39:35.650Z",
-      "version": 10
+      "verifiedAt": "2026-09-27T06:57:26.716Z",
+      "version": 11
     },
     {
-      "bytes": 6159,
+      "bytes": 6186,
       "category": "design-template",
       "id": "61539021",
       "source": "design/frameleaf/README.md",
-      "sourceSha256": "a315630a75974a8e28e7c401482f73b1bbef46accbb42457030020d1c2024a49",
+      "sourceSha256": "49cd710a99c66846588645b13a38e73be5f4a1ac617209ac8095fa7878326a5a",
       "title": "Frameleaf Reusable Design Template",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61539021/Frameleaf+Reusable+Design+Template",
-      "verification": "Shared six-source page version 10 published as HTML from aj/apple-style-integration @ c04d2a56d2 (commit e53164fb04, PR #139 against claude/frameleaf-implementation, FL-147; not merged): the polish pass and analytics dashboard added to design/frameleaf/README.md, INTERACTION-REQUIREMENTS.md and template/README.md. Read back in full; every section hash marker matches its source.",
+      "verification": "Flutter app removal: shared six-source page read back at version 11 as ADF; the design/AGENTS.md and design/frameleaf/README.md receipts carry source hashes d794ad0d (2097 bytes) and 49cd710a (6186 bytes) and name the Frameleaf native apps instead of Flutter; the other four source receipts and bodies are unchanged from version 10; a September 27 mirror-status line was added; smart links preserved; no user additions.",
       "verified": true,
-      "verifiedAt": "2026-09-24T16:39:35.650Z",
-      "version": 10
+      "verifiedAt": "2026-09-27T06:57:26.716Z",
+      "version": 11
     },
     {
       "bytes": 22692,
@@ -878,10 +878,10 @@
       "sourceSha256": "19bcad4422b087fcd6a227853e85a58821078f8d8103cd87adc6cce8882b97a5",
       "title": "Frameleaf Reusable Design Template",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61539021/Frameleaf+Reusable+Design+Template",
-      "verification": "Shared six-source page version 10 published as HTML from aj/apple-style-integration @ c04d2a56d2 (commit e53164fb04, PR #139 against claude/frameleaf-implementation, FL-147; not merged): the polish pass and analytics dashboard added to design/frameleaf/README.md, INTERACTION-REQUIREMENTS.md and template/README.md. Read back in full; every section hash marker matches its source.",
+      "verification": "Flutter app removal: shared six-source page read back at version 11 as ADF; the design/AGENTS.md and design/frameleaf/README.md receipts carry source hashes d794ad0d (2097 bytes) and 49cd710a (6186 bytes) and name the Frameleaf native apps instead of Flutter; the other four source receipts and bodies are unchanged from version 10; a September 27 mirror-status line was added; smart links preserved; no user additions.",
       "verified": true,
-      "verifiedAt": "2026-09-24T16:39:35.650Z",
-      "version": 10
+      "verifiedAt": "2026-09-27T06:57:26.716Z",
+      "version": 11
     },
     {
       "bytes": 6705,
@@ -891,10 +891,10 @@
       "sourceSha256": "058d2576387c41855fe43b41a7944d319d9ae2b6395a40360a05a4e86353d05c",
       "title": "Frameleaf Reusable Design Template",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61539021/Frameleaf+Reusable+Design+Template",
-      "verification": "Shared six-source page version 10 published as HTML from aj/apple-style-integration @ c04d2a56d2 (commit e53164fb04, PR #139 against claude/frameleaf-implementation, FL-147; not merged): the polish pass and analytics dashboard added to design/frameleaf/README.md, INTERACTION-REQUIREMENTS.md and template/README.md. Read back in full; every section hash marker matches its source.",
+      "verification": "Flutter app removal: shared six-source page read back at version 11 as ADF; the design/AGENTS.md and design/frameleaf/README.md receipts carry source hashes d794ad0d (2097 bytes) and 49cd710a (6186 bytes) and name the Frameleaf native apps instead of Flutter; the other four source receipts and bodies are unchanged from version 10; a September 27 mirror-status line was added; smart links preserved; no user additions.",
       "verified": true,
-      "verifiedAt": "2026-09-24T16:39:35.650Z",
-      "version": 10
+      "verifiedAt": "2026-09-27T06:57:26.716Z",
+      "version": 11
     },
     {
       "bytes": 1805,
@@ -904,10 +904,10 @@
       "sourceSha256": "423eb8fe70df78929c926fb83011a3a55c00f760b8807ed951f3c8f776882488",
       "title": "Frameleaf Reusable Design Template",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61539021/Frameleaf+Reusable+Design+Template",
-      "verification": "Shared six-source page version 10 published as HTML from aj/apple-style-integration @ c04d2a56d2 (commit e53164fb04, PR #139 against claude/frameleaf-implementation, FL-147; not merged): the polish pass and analytics dashboard added to design/frameleaf/README.md, INTERACTION-REQUIREMENTS.md and template/README.md. Read back in full; every section hash marker matches its source.",
+      "verification": "Flutter app removal: shared six-source page read back at version 11 as ADF; the design/AGENTS.md and design/frameleaf/README.md receipts carry source hashes d794ad0d (2097 bytes) and 49cd710a (6186 bytes) and name the Frameleaf native apps instead of Flutter; the other four source receipts and bodies are unchanged from version 10; a September 27 mirror-status line was added; smart links preserved; no user additions.",
       "verified": true,
-      "verifiedAt": "2026-09-24T16:39:35.650Z",
-      "version": 10
+      "verifiedAt": "2026-09-27T06:57:26.716Z",
+      "version": 11
     },
     {
       "bytes": 9820,
