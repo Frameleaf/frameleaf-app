@@ -5,7 +5,11 @@ import {
   CLOUD_BACKUP_OBJECT_PREFIX,
   CloudBackupManifest,
   CloudBackupManifestFile,
+  cloudBackupAlbumSchema,
+  cloudBackupPersonSchema,
   isSha256Hex,
+  readManifestAsset,
+  readManifestSection,
 } from 'src/utils/cloud-backup.js';
 import { compareCodeUnits } from 'src/utils/compare.js';
 
@@ -183,7 +187,7 @@ export const readManifest = (body: Buffer): CloudBackupManifest => {
     !manifest ||
     typeof manifest !== 'object' ||
     manifest.format !== CLOUD_BACKUP_MANIFEST_FORMAT ||
-    manifest.version !== 1 ||
+    (manifest.version !== 1 && manifest.version !== 2) ||
     typeof manifest.instanceId !== 'string' ||
     !manifest.assets ||
     typeof manifest.assets !== 'object'
@@ -203,14 +207,21 @@ export const readManifest = (body: Buffer): CloudBackupManifest => {
   if (database && (typeof database.key !== 'string' || !isSha256Hex(database.sha256))) {
     throw new Error('This backup manifest names a database dump without a valid checksum.');
   }
+  const v2 = manifest.version === 2;
   return {
     format: CLOUD_BACKUP_MANIFEST_FORMAT,
-    version: 1,
+    version: v2 ? 2 : 1,
     instanceId: manifest.instanceId,
     createdAt: typeof manifest.createdAt === 'string' ? manifest.createdAt : '',
     database,
-    assets: manifest.assets,
+    assets: v2
+      ? Object.fromEntries(Object.entries(manifest.assets).map(([id, asset]) => [id, readManifestAsset(asset)]))
+      : Object.fromEntries(
+          Object.entries(manifest.assets).map(([id, asset]) => [id, { owner: asset.owner, files: asset.files }]),
+        ),
     profiles,
+    albums: v2 ? readManifestSection(manifest.albums, cloudBackupAlbumSchema) : {},
+    people: v2 ? readManifestSection(manifest.people, cloudBackupPersonSchema) : {},
   };
 };
 

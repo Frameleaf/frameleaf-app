@@ -262,6 +262,9 @@ describe(CloudBackupService.name, () => {
       countAssets: vi.fn().mockResolvedValue(3),
       listAssets: vi.fn().mockResolvedValue([]),
       listProfileImages: vi.fn().mockResolvedValue([]),
+      getAssetDetails: vi.fn().mockResolvedValue(new Map()),
+      getAlbumRecords: vi.fn().mockResolvedValue(new Map()),
+      getPersonRecords: vi.fn().mockResolvedValue(new Map()),
     };
     keys = {
       read: vi.fn().mockResolvedValue(null),
@@ -569,7 +572,7 @@ describe(CloudBackupService.name, () => {
       expect(contentType).toBe('application/gzip');
       expect(manifestOf()).toEqual({
         format: 'frameleaf-backup-manifest',
-        version: 1,
+        version: 2,
         instanceId: 'instance-1',
         createdAt: expect.any(String),
         database: { key: dumpKey, sha256: SHA_DUMP, size: 50 },
@@ -596,6 +599,8 @@ describe(CloudBackupService.name, () => {
             mtime: '2026-09-01T00:00:00.000Z',
           },
         },
+        albums: {},
+        people: {},
       });
       expect(index.setManifestDatabase).toHaveBeenCalledWith('manifest-1', dumpKey);
       expect(index.finishManifest).toHaveBeenCalledWith('manifest-1', {
@@ -806,6 +811,61 @@ describe(CloudBackupService.name, () => {
       expect(store.uploadStream).toHaveBeenCalledOnce();
       expect(operations.fail).toHaveBeenCalled();
       expect(index.finishManifest).not.toHaveBeenCalledWith('manifest-1', { status: 'failed' });
+    });
+
+    it('writes each item’s record and details, and the albums and people they name (manifest v2)', async () => {
+      index.getEntriesPage.mockResolvedValue([entry('asset-1:original'), entry('asset-2:original')]);
+      const details = (albums: Array<{ id: string; name: string }>, personId: string | null) => ({
+        isFavorite: true,
+        visibility: 'timeline',
+        rating: 5,
+        description: 'Lake',
+        dateTimeOriginal: '2026-08-14T09:12:00.000Z',
+        timeZone: null,
+        latitude: null,
+        longitude: null,
+        tags: ['Trips'],
+        albums,
+        faces: personId ? [{ personId, box: [1, 2, 3, 4], imageWidth: 10, imageHeight: 10, isHidden: false }] : [],
+        stack: null,
+        edits: [],
+      });
+      const record = {
+        type: 'IMAGE',
+        originalFileName: 'IMG_1.jpg',
+        fileCreatedAt: '2026-08-14T07:12:00.000Z',
+        fileModifiedAt: '2026-08-14T07:12:00.000Z',
+        localDateTime: '2026-08-14T09:12:00.000Z',
+        duration: null,
+      };
+      index.getAssetDetails.mockResolvedValue(
+        new Map([
+          ['asset-1', { record, details: details([{ id: 'album-1', name: 'Lake house' }], 'person-1') }],
+          ['asset-2', { record, details: details([{ id: 'album-1', name: 'Lake house' }], null) }],
+        ]),
+      );
+      const album = {
+        name: 'Lake house',
+        description: '',
+        ownerId: 'owner-1',
+        coverAssetId: 'asset-1',
+        order: 'desc',
+        sharedUsers: [],
+      };
+      const person = { ownerId: 'owner-1', name: 'Jamie', birthDate: null, isHidden: false, isFavorite: false };
+      index.getAlbumRecords.mockResolvedValue(new Map([['album-1', album]]));
+      index.getPersonRecords.mockResolvedValue(new Map([['person-1', person]]));
+
+      await sut.run(operationOf(), 'claim-1');
+
+      expect(index.getAssetDetails).toHaveBeenCalledWith(['asset-1', 'asset-2']);
+      expect(index.getAlbumRecords).toHaveBeenCalledWith(['album-1']);
+      expect(index.getPersonRecords).toHaveBeenCalledWith([{ ownerId: 'owner-1', personId: 'person-1' }]);
+      const manifest = manifestOf();
+      expect(manifest.version).toBe(2);
+      expect(manifest.assets['asset-1']).toMatchObject({ ...record, details: { rating: 5, tags: ['Trips'] } });
+      expect(manifest.albums).toEqual({ 'album-1': album });
+      expect(manifest.people).toEqual({ 'person-1': person });
     });
 
     it('streams the manifest a page of recorded files at a time', async () => {
