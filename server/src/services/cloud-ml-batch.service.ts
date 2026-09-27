@@ -95,6 +95,8 @@ import {
   estimateUsable,
   isFinalCloudJobStatus,
   offeredCatalogModels,
+  pausedException,
+  pausedMessageOf,
 } from 'src/utils/frameleaf-cloud.js';
 import { TERMINAL_MEDIA_OPERATION_STATUSES } from 'src/utils/media-operation.js';
 import { handlePromiseError } from 'src/utils/misc.js';
@@ -780,7 +782,7 @@ export class CloudMlBatchService extends BaseService {
         }
       }
     } catch (error) {
-      const refusal = error instanceof WaitUntil ? error : batchRefusalOf(error);
+      const refusal = error instanceof WaitUntil ? error : (this.pausedWait(run, error) ?? batchRefusalOf(error));
       if (!refusal) {
         throw error;
       }
@@ -1979,11 +1981,30 @@ export class CloudMlBatchService extends BaseService {
     try {
       return await call();
     } catch (error) {
+      // FC-62: new processing is paused in this region; the admin reads Frameleaf Cloud's own words
+      const paused = pausedException(error);
+      if (paused) {
+        throw paused;
+      }
       if (error instanceof FrameleafCloudError) {
         throw new BadRequestException(error.message);
       }
       throw error;
     }
+  }
+
+  /**
+   * FC-62: a batch not yet admitted, refused because the region takes no new jobs for now, waits as the
+   * cloud asked (`Retry-After`, five minutes when it names none) instead of failing; once admitted it is
+   * never paused. The cloud's own message is what Activity shows while it waits.
+   */
+  private pausedWait(run: BatchRun, error: unknown): WaitUntil | null {
+    const paused = pausedMessageOf(error);
+    if (!paused || run.result.job) {
+      return null;
+    }
+    const seconds = Math.max(60, (error as FrameleafCloudError).retryAfterSeconds ?? 300);
+    return new WaitUntil(new Date(run.now.getTime() + seconds * 1000), paused);
   }
 
   private gatewayDeps(): CloudMlGatewayDeps {

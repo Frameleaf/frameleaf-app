@@ -125,7 +125,9 @@ import {
   cloudErrorCode,
   estimateUsable,
   isFinalCloudJobStatus,
+  isNewWorkPaused,
   offeredCatalogModels,
+  pausedException,
 } from 'src/utils/frameleaf-cloud.js';
 import { STRIP_VIDEO_METADATA_OPTIONS, strippedStillFormat, strippedVideoStreams } from 'src/utils/media-privacy.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
@@ -1065,6 +1067,11 @@ export class CloudMlJobService {
    * False when the failure is the job's own (then it stops as before).
    */
   private async waitOut(run: JobRun, error: unknown, failure: CloudMlJobFailure | null): Promise<boolean> {
+    if (!run.result.job && isNewWorkPaused(error)) {
+      // FC-62: the region takes no new jobs for now (503 `capacity`, the cloud's own words in the message):
+      // the job waits for it as asked (`Retry-After`) a limited number of times, then fails with that message
+      return this.waitForAdmission(run, error, failure);
+    }
     const { phase } = run.result;
     const counted = phase === CloudMlJobPhase.Uploading || phase === CloudMlJobPhase.Ending;
     if (!run.result.job || failure?.retry === false || (!counted && phase !== CloudMlJobPhase.Started)) {
@@ -1092,6 +1099,27 @@ export class CloudMlJobService {
     this.logger.warn(`Frameleaf Cloud job ${run.operation.id} waits after a failure: ${errorMessage(error)}`);
     if (await this.save(run)) {
       await this.wait(run, cloudMlJobBackoffMs(failures, retryAfter));
+    }
+    return true;
+  }
+
+  private async waitForAdmission(
+    run: JobRun,
+    error: FrameleafCloudError,
+    failure: CloudMlJobFailure | null,
+  ): Promise<boolean> {
+    const failures = run.result.transientFailures + 1;
+    if (failures > CLOUD_ML_JOB_MAX_TRANSIENT_FAILURES) {
+      return false;
+    }
+    run.result = {
+      ...run.result,
+      transientFailures: failures,
+      waiting: { code: failure?.code ?? 'cloud_ml_waiting', detail: errorMessage(error), at: run.now.toISOString() },
+    };
+    this.logger.warn(`Frameleaf Cloud job ${run.operation.id} waits to be admitted: ${errorMessage(error)}`);
+    if (await this.save(run)) {
+      await this.wait(run, cloudMlJobBackoffMs(failures, error.retryAfterSeconds));
     }
     return true;
   }
@@ -1274,6 +1302,8 @@ export class CloudMlJobService {
         error: null,
       },
       waiting: null,
+      // waits before admission (FC-62) never count against the job's uploads
+      transientFailures: 0,
     };
     if (await this.save(run)) {
       await this.upload(run, client, admitted.uploads ?? null, signal);
@@ -2754,7 +2784,8 @@ export class CloudMlJobService {
         return this.modelMismatch(error.message);
       }
       default: {
-        return new BadRequestException(error.message);
+        // FC-62: new jobs are paused in this region; the dialog shows Frameleaf Cloud's own words
+        return pausedException(error) ?? new BadRequestException(error.message);
       }
     }
   }

@@ -846,6 +846,12 @@ export type FrameleafCloudLink = {
      * compares it with the router's public address to tell carrier-grade NAT.
      */
     observedIp?: string | null;
+    /**
+     * FC-62: the notice ids (`fc-notice-<uuid>`, or `fc-notice-<uuid>-<yyyymmdd>` for one that cannot be
+     * dismissed) already shown to the administrators, with when, so a notice the cloud keeps sending for
+     * up to 90 days is shown once, however soon a dismissed notification is cleaned up.
+     */
+    shownNotices?: Record<string, string>;
   };
   /** FL-155: sha256 of headless link tokens already used, so a token never links twice. */
   usedLinkTokens?: string[];

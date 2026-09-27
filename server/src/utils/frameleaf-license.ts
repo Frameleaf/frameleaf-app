@@ -35,9 +35,15 @@ export type LicenseEntitlements = {
 export const LICENSE_CLOCK_SKEW_SECONDS = 60;
 /** Grace days when a certificate names none. */
 export const DEFAULT_GRACE_DAYS = 7;
-/** Refresh a day after issue when the certificate gives no hint, as the contract's `upd.after`. */
+/**
+ * Refresh a day after issue when neither discovery (`intervals.entitlementRefreshSec`) nor the
+ * certificate (`upd.after`) names an interval: the contract's default.
+ */
 export const DEFAULT_REFRESH_AFTER_SECONDS = 86_400;
-/** At most this much random delay is added to a scheduled refresh. */
+/** The bounds staff may set the entitlement refresh interval within (FC-62); a named one is clamped to them. */
+export const REFRESH_AFTER_MIN_SECONDS = 3600;
+export const REFRESH_AFTER_MAX_SECONDS = 86_400;
+/** At most this much random delay is added to a scheduled refresh, and never more than a tenth of the interval. */
 export const REFRESH_JITTER_SECONDS = 3600;
 
 export const LICENSE_TYPE = 'license+jwt';
@@ -261,14 +267,64 @@ export const certificateKind = (claims: FrameleafLicenseClaims): FrameleafLicens
   return claims.lic.kind === 'individual' || claims.ent.includes('SUPPORTER_INDIVIDUAL') ? 'individual' : 'server';
 };
 
-/** When to ask for a fresh certificate: `upd.after` seconds after issue, plus jitter. */
-export const nextRefreshAt = (claims: FrameleafLicenseClaims, random = Math.random): Date =>
-  new Date(
-    (claims.iat +
-      (claims.upd?.after ?? DEFAULT_REFRESH_AFTER_SECONDS) +
-      Math.floor(random() * REFRESH_JITTER_SECONDS)) *
-      1000,
+/**
+ * The entitlement refresh interval (FC-62): discovery's `intervals.entitlementRefreshSec` (staff-set,
+ * read per request), else the certificate's `upd.after`, else the contract default, clamped to
+ * 3,600–86,400 s.
+ */
+export const refreshIntervalSeconds = (
+  claims: Pick<FrameleafLicenseClaims, 'upd'> | null | undefined,
+  discoverySeconds?: number | null,
+): number => {
+  const named = [discoverySeconds, claims?.upd?.after].find(
+    (value): value is number => typeof value === 'number' && Number.isFinite(value) && value > 0,
   );
+  return named === undefined
+    ? DEFAULT_REFRESH_AFTER_SECONDS
+    : Math.min(REFRESH_AFTER_MAX_SECONDS, Math.max(REFRESH_AFTER_MIN_SECONDS, Math.round(named)));
+};
+
+/** The most jitter added to a refresh at this interval. */
+export const refreshJitterSeconds = (intervalSeconds: number): number =>
+  Math.min(REFRESH_JITTER_SECONDS, Math.floor(intervalSeconds / 10));
+
+/**
+ * When to ask for a fresh certificate: the refresh interval after the last refresh (`sinceSeconds`),
+ * else after issue, plus jitter. A refresh can hand back an unchanged certificate, so the schedule
+ * counts from the refresh, not from the certificate's `iat`.
+ */
+export const nextRefreshAt = (
+  claims: FrameleafLicenseClaims,
+  random = Math.random,
+  discoverySeconds?: number | null,
+  sinceSeconds?: number,
+): Date => {
+  const interval = refreshIntervalSeconds(claims, discoverySeconds);
+  const since = Math.max(claims.iat, sinceSeconds ?? claims.iat);
+  return new Date((since + interval + Math.floor(random() * refreshJitterSeconds(interval))) * 1000);
+};
+
+/**
+ * Whether a held certificate is due for refresh at `now`: its scheduled time passed, or (FC-62) staff
+ * shortened the interval since it was scheduled and even the latest time under the current interval
+ * (counted from the last refresh, else from issue) passed. A failed refresh keeps its own retry time.
+ */
+export const isRefreshDue = (
+  license: Pick<FrameleafLicense, 'claims' | 'nextRefreshAt' | 'lastRefreshError' | 'refreshedAt'> | null,
+  now: number,
+  discoverySeconds?: number | null,
+): boolean => {
+  if (!license?.nextRefreshAt || Date.parse(license.nextRefreshAt) <= now) {
+    return true;
+  }
+  if (license.lastRefreshError) {
+    return false;
+  }
+  const interval = refreshIntervalSeconds(license.claims, discoverySeconds);
+  const refreshed = license.refreshedAt ? Date.parse(license.refreshedAt) / 1000 : NaN;
+  const since = Number.isFinite(refreshed) ? Math.max(license.claims.iat, refreshed) : license.claims.iat;
+  return (since + interval + refreshJitterSeconds(interval)) * 1000 <= now;
+};
 
 // ------------------------------------------------------------------ keys
 
