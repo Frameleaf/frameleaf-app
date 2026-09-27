@@ -13,6 +13,7 @@ import {
   TimelineData,
 } from 'src/ui/generators/timeline';
 import { setupBaseMockApiRoutes } from 'src/ui/mock-network/base-network.js';
+import { setupSocketMock } from 'src/ui/mock-network/socket-network.js';
 import {
   pageRoutePromise,
   setupTimelineMockApiRoutes,
@@ -433,6 +434,64 @@ test.describe('Timeline', () => {
       await expect(page).toHaveURL(/\/photos(?:\?|$)/);
       await timelineUtils.waitForTimelineLoad(page);
       await expect(page.locator('#immich-asset-viewer')).toHaveCount(0);
+    });
+
+    test('Layout switches never change the query in the link', async ({ page }) => {
+      await pageUtils.openPhotosPage(page);
+      await expect.poll(() => new URL(page.url()).searchParams.get('fl')).not.toBeNull();
+      const query = () => JSON.parse(new URL(page.url()).searchParams.get('fl')!) as Record<string, unknown>;
+      // Grouping is presentation: Timeline turns "All" into days, as the prototype does (`App.jsx`).
+      const portable = () => {
+        const { scope, query: structured, sort } = query();
+        return { scope, query: structured, sort };
+      };
+      const before = portable();
+      for (const layout of ['Timeline', 'Work', 'Browse', 'Timeline'] as const) {
+        await timelineUtils.setLayout(page, layout);
+        expect(portable()).toEqual(before);
+      }
+    });
+
+    test('An item trashed or deleted on another device leaves the selection', async ({ context, page }) => {
+      const socket = await setupSocketMock(context);
+      await pageUtils.openPhotosPage(page);
+      await expect.poll(() => socket.connected()).toBe(1);
+      await thumbnailUtils.ensureSelected(page, assets[0].id);
+      await thumbnailUtils.ensureSelected(page, assets[1].id);
+      await thumbnailUtils.ensureSelected(page, assets[2].id);
+      await expect(selectionBarUtils.locator(page)).toContainText('3 selected');
+
+      socket.emit('on_asset_trash', [assets[1].id]);
+      await expect(thumbnailUtils.withAssetId(page, assets[1].id)).toHaveCount(0);
+      await expect(selectionBarUtils.locator(page)).toContainText('2 selected');
+
+      socket.emit('on_asset_delete', assets[2].id);
+      await expect(thumbnailUtils.withAssetId(page, assets[2].id)).toHaveCount(0);
+      await expect(selectionBarUtils.locator(page)).toContainText('1 selected');
+      await expect(thumbnailUtils.selectButton(page, assets[0].id)).toBeChecked();
+    });
+
+    test('A filter that matches nothing says so, and clearing it brings the library back', async ({ page }) => {
+      // One tag is a condition the time buckets apply themselves (`library-query-options.ts`).
+      const tagId = faker.string.uuid();
+      await page.route('**/api/timeline/buckets?*', (route, request) =>
+        new URL(request.url()).searchParams.get('tagId') === tagId ? route.fulfill({ json: [] }) : route.fallback(),
+      );
+      await pageUtils.openPhotosPage(page);
+      await expect.poll(() => new URL(page.url()).searchParams.get('fl')).not.toBeNull();
+      const state = JSON.parse(new URL(page.url()).searchParams.get('fl')!);
+      state.query = { ...state.query, filter: { tagIds: { any: [tagId] } } };
+      const filtered = new URL(page.url());
+      filtered.searchParams.set('fl', JSON.stringify(state));
+
+      // The link restores the query: the grid narrows to it, and it matches nothing.
+      await page.goto(filtered.pathname + filtered.search);
+      await expect(page.getByText('No matching media')).toBeVisible();
+      await expect(thumbnailUtils.locator(page)).toHaveCount(0);
+
+      await page.getByRole('button', { name: 'Clear search and filters' }).click();
+      await timelineUtils.waitForTimelineLoad(page);
+      await expect.poll(() => JSON.parse(new URL(page.url()).searchParams.get('fl')!).query?.filter ?? {}).toEqual({});
     });
 
     test('Favorites with nothing in it shows the Frameleaf empty state', async ({ page }) => {
