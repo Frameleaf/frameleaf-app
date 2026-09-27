@@ -801,6 +801,7 @@
   {preview}
   droppedAssetCount={data.unavailableAssetCount}
   {unavailableRestorations}
+  unsupportedSources={sessionState?.resources?.unsupportedSources ?? []}
   {session}
   {saveStatus}
   conflict={sessionState?.conflict ?? null}

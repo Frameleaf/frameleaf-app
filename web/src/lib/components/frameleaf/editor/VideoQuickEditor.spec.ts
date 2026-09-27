@@ -1,6 +1,7 @@
 import {
   AssetEditAction,
   AssetTypeEnum,
+  DecodeRefusal,
   TextOverlayPosition,
   editAsset,
   getAssetEdits,
@@ -204,11 +205,11 @@ describe('VideoQuickEditor', () => {
 });
 
 describe('HDR and Dolby Vision clips (FL-113)', () => {
-  const openWith = async (policy: 'tone-map' | 'unsupported') => {
+  const openWith = async (policy: 'tone-map' | 'unsupported', decodeRefusal?: DecodeRefusal) => {
     vi.mocked(getAssetEdits).mockResolvedValue({
       assetId: 'asset',
       edits: [],
-      originalVideo: { ...originalVideo, colorPolicy: policy as never, colorReason: 'server reason' },
+      originalVideo: { ...originalVideo, colorPolicy: policy as never, colorReason: 'server reason', decodeRefusal },
     });
     render(VideoQuickEditor, { asset: video(), onClose: vi.fn() });
     await waitFor(() => expect(screen.getByTestId('video-color-policy')).toHaveAttribute('data-policy', policy));
@@ -226,4 +227,22 @@ describe('HDR and Dolby Vision clips (FL-113)', () => {
     expect(screen.getByRole('button', { name: 'frameleaf_editor_save_version' })).toBeDisabled();
     expect(editAsset).not.toHaveBeenCalled();
   });
+
+  it.each([
+    [DecodeRefusal.DolbyVisionEnhancementLayer, 'frameleaf_video_editor_decode_dolby_vision_enhancement_layer'],
+    [DecodeRefusal.UnsupportedBitDepth, 'frameleaf_video_editor_decode_bit_depth'],
+    [DecodeRefusal.UnknownPixelFormat, 'frameleaf_video_editor_decode_pixel_format'],
+  ])(
+    'says why a %s clip cannot be edited before editing starts, and does not offer to save (FL-101)',
+    async (refusal, key) => {
+      await openWith('unsupported', refusal);
+      const note = screen.getByTestId('video-color-policy');
+      expect(note).toHaveTextContent(key);
+      expect(note).toHaveAttribute('data-refusal', refusal);
+      const save = screen.getByRole('button', { name: 'frameleaf_editor_save_version' });
+      expect(save).toBeDisabled();
+      expect(save).toHaveAttribute('title', key);
+      expect(editAsset).not.toHaveBeenCalled();
+    },
+  );
 });

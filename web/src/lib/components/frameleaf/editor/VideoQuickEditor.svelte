@@ -30,6 +30,7 @@
     type RestorationCompareRequest,
   } from '$lib/components/frameleaf/editor/RestorationPanel.svelte';
   import VideoVersionsMenu from '$lib/components/frameleaf/editor/VideoVersionsMenu.svelte';
+  import { decodeRefusalMessageKey } from '$lib/frameleaf/decode-refusal';
   import {
     ASPECTS,
     AUTO_TONE,
@@ -882,11 +883,14 @@
 
   /**
    * FL-113: what an edited version does with this clip's colour, said before anything is saved. An
-   * HDR clip is rendered to SDR and its HDR original stays the reference; a Dolby Vision profile 5
-   * clip has no honest render path here, so Save version is off and the original is untouched.
+   * HDR clip is rendered to SDR and its HDR original stays the reference. FL-101: a clip the server
+   * cannot decode (Dolby Vision profiles 5, 7 and others outside the matrix, more than 12 bits, an
+   * unknown pixel format) has no honest render path here, so the reason is shown before editing,
+   * Save version is off and the original is untouched.
    */
   const colorPolicy = $derived(source?.colorPolicy ?? 'preserve');
   const cannotSave = $derived(colorPolicy === 'unsupported');
+  const unsupportedMessage = $derived($t(decodeRefusalMessageKey(source?.decodeRefusal)));
 
   const saveVersion = async () => {
     if (saving || !source || cannotSave) {
@@ -1153,7 +1157,7 @@
       class="ed-tool primary labelled"
       disabled={saving || !source || cannotSave}
       onclick={saveVersion}
-      title={cannotSave ? $t('frameleaf_video_editor_color_unsupported') : $t('frameleaf_video_editor_save_title')}
+      title={cannotSave ? unsupportedMessage : $t('frameleaf_video_editor_save_title')}
     >
       <span>{saving ? $t('frameleaf_editor_saving') : $t('frameleaf_editor_save_version')}</span>
     </button>
@@ -1282,10 +1286,14 @@
         <span class="ed-badge centre">{$t('frameleaf_video_editor_preview_still')}</span>
       {/if}
       {#if colorPolicy !== 'preserve'}
-        <p class="ed-color-note" role="status" data-testid="video-color-policy" data-policy={colorPolicy}>
-          {colorPolicy === 'tone-map'
-            ? $t('frameleaf_video_editor_color_tone_map')
-            : $t('frameleaf_video_editor_color_unsupported')}
+        <p
+          class="ed-color-note"
+          role="status"
+          data-testid="video-color-policy"
+          data-policy={colorPolicy}
+          data-refusal={source?.decodeRefusal}
+        >
+          {colorPolicy === 'tone-map' ? $t('frameleaf_video_editor_color_tone_map') : unsupportedMessage}
         </p>
       {/if}
       {#if tool === 'restore' && !restorationCompare}

@@ -684,6 +684,11 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
           if (gen !== generation) {
             return;
           }
+          // FL-101: a new revision comes back with how its sources resolved, so a placed video the
+          // server cannot decode is reported now rather than when a preview or export fails.
+          if (saved.resources) {
+            emit({ resources: saved.resources });
+          }
           result = { revision: saved.revision, lease: saved.lease };
         } else {
           const created = await api.create({
@@ -699,6 +704,7 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
           emit({
             project: { ...state.project, id: created.id, name: created.name, hasLease: created.lease.heldByYou },
             access: 'owner',
+            resources: created.resources,
           });
           result = { revision: created.revision, lease: created.lease };
         }

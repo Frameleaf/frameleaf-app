@@ -39,6 +39,7 @@
   } from '@mdi/js';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import StudioHistoryPanel from '$lib/components/frameleaf/StudioHistoryPanel.svelte';
+  import { decodeRefusalMessageKey } from '$lib/frameleaf/decode-refusal';
   import {
     loadStudioEngine as defaultLoadStudioEngine,
     type StudioEngineResolution,
@@ -74,7 +75,7 @@
   } from '$lib/frameleaf/studio/project-session';
   import { readStudioThemeTokens } from '$lib/frameleaf/studio/theme';
   import { idleStudioPreviewView, type StudioPreviewView } from '$lib/frameleaf/studio/preview';
-  import { StudioRestoredVersionUnavailable } from '@immich/sdk';
+  import { StudioRestoredVersionUnavailable, type StudioUnsupportedSourceDto } from '@immich/sdk';
   import type { Translations } from 'svelte-i18n';
 
   const unavailableRestorationKeys: Record<StudioRestoredVersionUnavailable, Translations> = {
@@ -112,6 +113,7 @@
     queuedJobs = 0,
     droppedAssetCount = 0,
     unavailableRestorations = [],
+    unsupportedSources = [],
     /**
      * The remote preview the host owns (FL-96). It arrives here as data and leaves for the
      * engine as data; neither this component nor the engine ever fetches a frame itself.
@@ -187,6 +189,11 @@
      * their original was trashed or locked. Said plainly; the original is never swapped in silently.
      */
     unavailableRestorations?: readonly { name: string; reason: StudioRestoredVersionUnavailable }[];
+    /**
+     * FL-101: placed videos the server refused when the project's sources were admitted, because it
+     * cannot decode them. They stay on the timeline as the person placed them, but will not render.
+     */
+    unsupportedSources?: readonly StudioUnsupportedSourceDto[];
     preview?: StudioPreviewView;
     /** The project session (FL-89). When present the header offers history and review. */
     session?: StudioProjectSession | null;
@@ -213,6 +220,10 @@
   let historyOpen = $state(false);
 
   const hasSavedProject = $derived(session !== null && project.id !== STUDIO_DRAFT_PROJECT_ID);
+  /** One sentence per distinct reason, so three profile 7 clips are explained once. */
+  const unsupportedReasons = $derived([
+    ...new Set(unsupportedSources.map((source) => decodeRefusalMessageKey(source.refusal))),
+  ]);
   const showBanner = $derived(['conflict', 'lease-lost', 'offline', 'error'].includes(saveStatus));
 
   /**
@@ -618,6 +629,20 @@
           <li>{$t(unavailableRestorationKeys[item.reason], { values: { name: item.name } })}</li>
         {/each}
       </ul>
+    </div>
+  {/if}
+
+  {#if unsupportedSources.length > 0}
+    <!--
+      FL-101: a video the server cannot decode is refused as soon as it is admitted, and said here with
+      the reason, rather than left to fail when a preview or export is rendered.
+    -->
+    <div class="fl-studio-banner" role="status" data-testid="studio-unsupported-sources">
+      <Icon icon={mdiAlertCircleOutline} size="18" />
+      <p>
+        {$t('frameleaf_studio_sources_unsupported', { values: { count: unsupportedSources.length } })}
+        {unsupportedReasons.map((key) => $t(key)).join(' ')}
+      </p>
     </div>
   {/if}
 
