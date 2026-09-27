@@ -496,6 +496,7 @@ test("integration image is a guarded manual pre-release that never writes releas
   });
   assert.deepEqual(w.permissions, {});
   assert.equal(w.env.IMAGE, "ghcr.io/frameleaf/frameleaf-server");
+  assert.equal(w.env.DATABASE_IMAGE, "ghcr.io/frameleaf/frameleaf-postgres");
   assert.deepEqual(Object.keys(w.jobs), [
     "guard",
     "build",
@@ -605,6 +606,32 @@ test("integration image is a guarded manual pre-release that never writes releas
     /oras cp --from-oci-layout/.test(s.run ?? ""),
   ).run;
   assert.match(push, /oras resolve/);
+  assert.match(push, /^\s*push server "\$IMAGE" ""$/m);
+  assert.match(push, /^\s*push database "\$DATABASE_IMAGE" \/postgres$/m);
+
+  // The database image is built from docker/postgres on the same runners, tested by the same
+  // deployment test (DATABASE_ARCHIVE), and only then pushed: the pushed digest is the tested one.
+  const database = w.jobs.build.steps.find((s) => s.id === "database").with;
+  assert.equal(database.context, "docker/postgres");
+  assert.equal(database.file, "docker/postgres/Dockerfile");
+  assert.equal(database.platforms, "${{ matrix.platform }}");
+  assert.match(
+    database.outputs,
+    /^type=oci,dest=\$\{\{ runner\.temp \}\}\/archive\/postgres\/image\.tar,/,
+  );
+  assert.equal(database["cache-to"], undefined);
+  assert.match(
+    database.labels,
+    /^org\.opencontainers\.image\.version=integration-\$\{\{ github\.sha \}\}$/m,
+  );
+  assert.match(
+    database.labels,
+    /^org\.opencontainers\.image\.description=Pre-release integration build, not a release$/m,
+  );
+  assert.equal(
+    w.jobs["deploy-test"].steps.at(-1).env.DATABASE_ARCHIVE,
+    "${{ runner.temp }}/server/postgres/image.tar",
+  );
   assert.equal(
     build["cache-to"],
     undefined,
@@ -625,7 +652,8 @@ test("integration image is a guarded manual pre-release that never writes releas
 
   const publish = w.jobs.publish.steps.find((s) => s.id === "manifest").run;
   const tags = [...publish.matchAll(/--tag "([^"]+)"/g)].map((m) => m[1]);
-  assert.deepEqual(tags, ["${IMAGE}:${full}", "${IMAGE}:${short}"]);
+  assert.deepEqual(tags, ["${IMAGE_REF}:${full}", "${IMAGE_REF}:${short}"]);
+  assert.match(publish, /for name in server database; do/);
   assert.match(publish, /full="integration-\$\{SHA\}"/);
   assert.match(publish, /short="integration-\$\{SHA:0:12\}"/);
   assert.doesNotMatch(
