@@ -10,12 +10,18 @@
 # and it is not a release: nothing promotes, qualifies or advertises this image.
 name: Integration Image
 
+# A workflow that is not on the default branch (fork/main) cannot be dispatched, so every push to
+# master/frameleaf-implementation builds its head; a newer push cancels the older run. The manual
+# dispatch stays for when this file reaches the default branch. The guard below still refuses any
+# other branch or repository.
 on:
+  push:
+    branches: [master/frameleaf-implementation]
   workflow_dispatch:
 
 concurrency:
-  group: frameleaf-integration-image-${{ github.sha }}
-  cancel-in-progress: false
+  group: integration-image
+  cancel-in-progress: true
 
 permissions: {}
 
@@ -28,7 +34,7 @@ jobs:
     runs-on: ubuntu-24.04
     permissions: {}
     steps:
-      - name: Require the Frameleaf repository, the integration branch and a manual dispatch
+      - name: Require the Frameleaf repository, the integration branch and a push or manual dispatch
         env:
           REPOSITORY: ${{ github.repository }}
           REF: ${{ github.ref }}
@@ -38,13 +44,13 @@ jobs:
           set -euo pipefail
           [[ "$REPOSITORY" == Frameleaf/frameleaf-app ]] || { echo "::error::Wrong repository: $REPOSITORY"; exit 1; }
           [[ "$REF" == refs/heads/master/frameleaf-implementation ]] || { echo "::error::Integration images build only from master/frameleaf-implementation, not $REF"; exit 1; }
-          [[ "$EVENT" == workflow_dispatch ]] || { echo "::error::Manual dispatch only, not $EVENT"; exit 1; }
+          [[ "$EVENT" == push || "$EVENT" == workflow_dispatch ]] || { echo "::error::Push or manual dispatch only, not $EVENT"; exit 1; }
           [[ "$SHA" =~ ^[a-f0-9]{40}$ ]] || { echo "::error::Invalid source SHA"; exit 1; }
 
   build:
     name: Build ${{ matrix.platform }}
     needs: guard
-    if: github.repository == 'Frameleaf/frameleaf-app' && github.ref == 'refs/heads/master/frameleaf-implementation' && github.event_name == 'workflow_dispatch'
+    if: github.repository == 'Frameleaf/frameleaf-app' && github.ref == 'refs/heads/master/frameleaf-implementation' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 120
     permissions:
@@ -123,7 +129,7 @@ jobs:
   deploy-test:
     name: Deployment test ${{ matrix.architecture }}
     needs: build
-    if: github.repository == 'Frameleaf/frameleaf-app' && github.ref == 'refs/heads/master/frameleaf-implementation' && github.event_name == 'workflow_dispatch'
+    if: github.repository == 'Frameleaf/frameleaf-app' && github.ref == 'refs/heads/master/frameleaf-implementation' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     permissions:
@@ -169,7 +175,7 @@ jobs:
   publish:
     name: Push the tested image and tag integration-<sha>
     needs: deploy-test
-    if: github.repository == 'Frameleaf/frameleaf-app' && github.ref == 'refs/heads/master/frameleaf-implementation' && github.event_name == 'workflow_dispatch'
+    if: github.repository == 'Frameleaf/frameleaf-app' && github.ref == 'refs/heads/master/frameleaf-implementation' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-24.04
     permissions:
       contents: read
