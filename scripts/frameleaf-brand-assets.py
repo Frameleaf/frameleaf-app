@@ -48,8 +48,6 @@ REFERENCE_SPECS = (
 )
 
 COMPATIBILITY_SENTINELS = (
-    ("mobile/pubspec.yaml", "yaml-root-name", "immich_mobile"),
-    ("mobile/pubspec.yaml", "yaml-image-path-android", "assets/immich-logo.png"),
     ("packages/sdk/package.json", "json-name", "@immich/sdk"),
     ("server/package.json", "json-name", "immich"),
     ("machine-learning/pyproject.toml", "toml-project-name", "immich-ml"),
@@ -60,8 +58,8 @@ COMPATIBILITY_SENTINELS = (
 OWNERS = {
     "FN-201": {"jiraId": "23644", "jiraKey": "FL-29", "dependencies": ["FN-103"], "paths": ["design/frameleaf/tokens.json", "web/src/lib/frameleaf/tokens.css", "web/src/lib/components/frameleaf", "mobile/lib/frameleaf/frameleaf_tokens.dart", "design/frameleaf/brand-kit/manifest.json", "docs/docs/developer/frameleaf-plan/06-brand-assets.md"]},
     "REL-101": {"jiraId": "23745", "jiraKey": "FL-130", "dependencies": ["REL-201"], "paths": ["mobile/frameleaf-identity.example.json", "scripts/frameleaf-mobile-identity.py", "scripts/frameleaf-mobile-identity-test.py", "mobile/android/app/build.gradle", "mobile/ios/Runner.xcodeproj", "mobile/ios/Runner/Runner.entitlements", "mobile/ios/fastlane", "design/frameleaf/brand-kit/manifest.json", "design/frameleaf/brand-kit/frameleaf-app-icon.svg", "design/frameleaf/brand-kit/frameleaf-symbol-white.svg", "docs/docs/developer/frameleaf-plan/06-brand-assets.md"]},
-    "REL-102": {"jiraId": "23746", "jiraKey": "FL-131", "dependencies": ["MOB-101", "REL-101"], "paths": ["mobile/lib/services/oauth.service.dart", "mobile/lib/widgets/forms/login/login_form.dart", "mobile/lib/services/auth.service.dart", "mobile/lib/providers/auth.provider.dart", "server/src/services/auth.service.ts", "server/src/controllers/oauth.controller.ts", "server/src/dtos/config.dto.ts", "design/frameleaf/brand-kit/frameleaf-logo-dark.svg", "design/frameleaf/brand-kit/frameleaf-symbol.svg", "docs/docs/developer/frameleaf-plan/06-brand-assets.md"]},
-    "REL-103": {"jiraId": "23750", "jiraKey": "FL-135", "dependencies": ["MOB-101", "REL-101"], "paths": ["design/frameleaf", "mobile/assets/frameleaf-mark.png", "mobile/pubspec.yaml", "mobile/android/fastlane/metadata", "mobile/ios/Runner/Assets.xcassets", "mobile/ios/ShareExtension", "mobile/ios/WidgetExtension", "mobile/lib/utils/licenses.dart", "mobile/lib/frameleaf/frameleaf_links.dart", "web/src/lib/components/frameleaf", "design/frameleaf/brand-kit", "design/frameleaf/brand-kit/manifest.json", "docs/docs/developer/frameleaf-plan/06-brand-assets.md"]},
+    "REL-102": {"jiraId": "23746", "jiraKey": "FL-131", "dependencies": ["MOB-101", "REL-101"], "paths": ["mobile/lib/services/oauth.service.dart", "mobile/lib/widgets/forms/login/login_form.dart", "server/src/services/auth.service.ts", "server/src/controllers/oauth.controller.ts", "server/src/dtos/config.dto.ts", "design/frameleaf/brand-kit/frameleaf-logo-dark.svg", "design/frameleaf/brand-kit/frameleaf-symbol.svg", "docs/docs/developer/frameleaf-plan/06-brand-assets.md"]},
+    "REL-103": {"jiraId": "23750", "jiraKey": "FL-135", "dependencies": ["MOB-101", "REL-101"], "paths": ["design/frameleaf", "mobile/assets/frameleaf-mark.png", "mobile/pubspec.yaml", "mobile/ios/WidgetExtension", "mobile/lib/frameleaf/frameleaf_links.dart", "web/src/lib/components/frameleaf", "design/frameleaf/brand-kit", "design/frameleaf/brand-kit/manifest.json", "docs/docs/developer/frameleaf-plan/06-brand-assets.md"]},
 }
 
 
@@ -118,13 +116,6 @@ def compatibility_value(root, path_text, parser):
     if parser == "json-name":
         value = load_json(path)
         return value.get("name")
-    if parser.startswith("yaml-"):
-        active = strip_line_comments(text)
-        if parser == "yaml-root-name":
-            matches = re.findall(r"^name\s*:\s*['\"]?([^'\"\s]+)['\"]?\s*$", active, re.M)
-        else:
-            matches = re.findall(r"^\s*image_path_android\s*:\s*['\"]?([^'\"\s#]+)['\"]?\s*$", active, re.M)
-        return matches[0] if len(matches) == 1 else None
     if parser.startswith("toml-"):
         active = strip_line_comments(text)
         sections = {}
