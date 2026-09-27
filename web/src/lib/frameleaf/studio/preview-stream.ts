@@ -32,8 +32,6 @@
  * - **Honest fallback.** Without `RTCPeerConnection`, without a worker, or after a failure the view
  *   is `unavailable` with its reason, and the panel falls back to exact frames while paused.
  */
-import type { Rational } from './rational-time';
-import { formatRational } from './rational-time';
 import type { StudioPreviewQuality } from './preview';
 import {
   STUDIO_STREAM_CONTROL_LABEL,
@@ -41,6 +39,8 @@ import {
   type StudioStreamIntent,
   type StudioStreamReport,
 } from './preview-stream-protocol';
+import type { Rational } from './rational-time';
+import { formatRational } from './rational-time';
 
 /* ------------------------------------------------------------------ */
 /* Transport                                                            */
@@ -48,13 +48,7 @@ import {
 
 export type StudioStreamState = 'queued' | 'negotiating' | 'offered' | 'answered' | 'closed';
 export type StudioStreamCloseReason =
-  | 'closed'
-  | 'superseded'
-  | 'revoked'
-  | 'stale-revision'
-  | 'expired'
-  | 'worker-lost'
-  | 'failed';
+  'closed' | 'superseded' | 'revoked' | 'stale-revision' | 'expired' | 'worker-lost' | 'failed';
 
 export interface StudioStreamBounds {
   maxBitrateKbps: number;
@@ -117,7 +111,8 @@ export interface StudioPreviewStreamTransport {
 /* View                                                                 */
 /* ------------------------------------------------------------------ */
 
-export type StudioStreamPhase = 'off' | 'connecting' | 'seeking' | 'playing' | 'paused' | 'reconnecting' | 'unavailable';
+export type StudioStreamPhase =
+  'off' | 'connecting' | 'seeking' | 'playing' | 'paused' | 'reconnecting' | 'unavailable';
 
 export type StudioStreamUnavailableReason =
   | 'unsupported'
@@ -234,9 +229,7 @@ export interface StudioPreviewStreamClient {
 
 /** An intent before it is numbered. */
 type StudioStreamIntentInput =
-  | { type: 'play'; at: string }
-  | { type: 'pause'; at: string }
-  | { type: 'seek'; at: string; playing: boolean };
+  { type: 'play'; at: string } | { type: 'pause'; at: string } | { type: 'seek'; at: string; playing: boolean };
 
 /** Above this the channel is congested: newer intents replace the pending one. */
 export const STUDIO_STREAM_HIGH_WATER = 16 * 1024;
@@ -343,7 +336,10 @@ export const createStudioPreviewStream = (options: StudioPreviewStreamOptions): 
       return;
     }
     const position = { seekGeneration: report.seekGeneration, pts: report.pts, timebase: report.timebase };
-    publish({ position, phase: intent.type === 'pause' || (intent.type === 'seek' && !intent.playing) ? 'paused' : 'playing' });
+    publish({
+      position,
+      phase: intent.type === 'pause' || (intent.type === 'seek' && !intent.playing) ? 'paused' : 'playing',
+    });
   };
 
   const attachChannel = (next: RTCDataChannel) => {
@@ -552,7 +548,10 @@ export const createStudioPreviewStream = (options: StudioPreviewStreamOptions): 
           await ensureSession();
           return;
         }
-        publish({ phase: reason === 'worker-lost' ? 'unavailable' : 'off', reason: reason === 'worker-lost' ? 'worker-lost' : null });
+        publish({
+          phase: reason === 'worker-lost' ? 'unavailable' : 'off',
+          reason: reason === 'worker-lost' ? 'worker-lost' : null,
+        });
         return;
       }
       case 'failed': {

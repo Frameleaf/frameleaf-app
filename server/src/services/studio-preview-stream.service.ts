@@ -369,9 +369,10 @@ export class StudioPreviewStreamService {
     const snapshot = snapshotOf(operation);
     let signal = readStreamSignal(operation.result);
 
-    const shouldClose = isOpenStream(operation) && !operation.cancelRequestedAt
-      ? streamCloseReason({ createdAt: operation.createdAt as unknown as Date, signal, now })
-      : null;
+    const shouldClose =
+      isOpenStream(operation) && !operation.cancelRequestedAt
+        ? streamCloseReason({ createdAt: operation.createdAt as unknown as Date, signal, now })
+        : null;
     if (shouldClose) {
       await this.close(operation, shouldClose);
       signal = { ...signal, closeReason: shouldClose };
@@ -542,11 +543,7 @@ export class StudioPreviewStreamService {
     }
   }
 
-  private map(
-    operation: MediaOperation,
-    now: Date,
-    extra: { currentRevision?: number } = {},
-  ): StudioPreviewStreamDto {
+  private map(operation: MediaOperation, now: Date, extra: { currentRevision?: number } = {}): StudioPreviewStreamDto {
     const signal: StreamSignal = readStreamSignal(operation.result);
     const snapshot = snapshotOf(operation);
     const cancelled = !!operation.cancelRequestedAt;
@@ -563,7 +560,9 @@ export class StudioPreviewStreamService {
       start: snapshot.start,
       bounds: snapshot.bounds,
       keepaliveMs: STREAM_KEEPALIVE_MS,
-      expiresAt: new Date(new Date(operation.createdAt as unknown as Date).getTime() + STREAM_MAX_DURATION_MS).toISOString(),
+      expiresAt: new Date(
+        new Date(operation.createdAt as unknown as Date).getTime() + STREAM_MAX_DURATION_MS,
+      ).toISOString(),
     };
   }
 }

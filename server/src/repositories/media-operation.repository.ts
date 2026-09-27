@@ -1248,7 +1248,9 @@ export class MediaOperationRepository {
     return (await this.write((db) =>
       db
         .updateTable('media_operation')
-        .set({ result: sql<Record<string, unknown>>`coalesce("result", '{}'::jsonb) || ${JSON.stringify(patch)}::jsonb` })
+        .set({
+          result: sql<Record<string, unknown>>`coalesce("result", '{}'::jsonb) || ${JSON.stringify(patch)}::jsonb`,
+        })
         .where('id', '=', id)
         .where('kind', '=', MediaOperationKind.StudioPreviewStream)
         .where('status', 'not in', [...TERMINAL_MEDIA_OPERATION_STATUSES])
@@ -1256,7 +1258,8 @@ export class MediaOperationRepository {
           qb.where(sql<boolean>`coalesce(("result"->>'negotiation')::int, 0) = ${expect.negotiation!}`),
         )
         .returningAll()
-        .executeTakeFirst())) as unknown as MediaOperation | undefined;
+        .executeTakeFirst(),
+    )) as unknown as MediaOperation | undefined;
   }
 
   /** An account's open preview streams, oldest first (FL-96 session limits). */
