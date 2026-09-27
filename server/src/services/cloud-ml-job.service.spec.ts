@@ -656,20 +656,15 @@ describe(CloudMlJobService.name, () => {
       const [input] = estimates().at(-1)!.inputs;
       expect(input.path).toContain('cloud_ml_input_');
       // a stream copy drops the camera's own SEI data too
-      const [, , options] = mocks.media.transcode.mock.calls[0];
+      const options = mocks.media.transcode.mock.calls[0][2];
       expect(options.outputOptions).toEqual(expect.arrayContaining(['-bsf:v', 'filter_units=remove_types=6']));
       expect(stripsVideoMetadata(options.outputOptions)).toBe(true);
     });
 
     it('prepares one video per person at a time', async () => {
       // the first video is still being prepared while the second is asked for
-      let release: () => void = () => {};
-      mocks.media.transcode.mockImplementationOnce(
-        () =>
-          new Promise<void>((resolve) => {
-            release = resolve;
-          }),
-      );
+      const { promise: held, resolve: release } = Promise.withResolvers<void>();
+      mocks.media.transcode.mockImplementationOnce(() => held);
       await expect(sut.estimate(owner, full(), now)).rejects.toBeInstanceOf(ConflictException);
       mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
         ...source,
@@ -992,7 +987,7 @@ describe(CloudMlJobService.name, () => {
 
       await sut.step(claimed(), 'claim', new Date('2026-09-26T04:20:00.000Z'));
 
-      const [, , key] = mocks.frameleafCloudMl.createJob.mock.calls[0];
+      const key = mocks.frameleafCloudMl.createJob.mock.calls[0][2];
       expect(key).toBe(`${OPERATION_ID}-2`);
     });
 
@@ -1243,7 +1238,7 @@ describe(CloudMlJobService.name, () => {
 
       expect(mocks.mediaOperation.fail).not.toHaveBeenCalled();
       expect(mocks.frameleafCloudMl.cancelJob).not.toHaveBeenCalled();
-      const delays = mocks.mediaOperation.requeue.mock.calls.map(([, , options]) => options.delayMs);
+      const delays = mocks.mediaOperation.requeue.mock.calls.map((call) => call[2].delayMs);
       // never sooner than Retry-After (20 s), doubling from 5 s otherwise
       expect(delays).toEqual([20_000, 20_000]);
       expect(written()).toMatchObject({ phase: CloudMlJobPhase.Started, transientFailures: 2 });

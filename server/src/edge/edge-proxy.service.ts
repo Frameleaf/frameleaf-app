@@ -56,7 +56,7 @@ export const upstreamHeaders = (
   upgrade?: string,
 ): OutgoingHttpHeaders => {
   const connectionNamed = new Set(
-    String(headers.connection ?? '')
+    (headers.connection ?? '')
       .split(',')
       .map((name) => name.trim().toLowerCase())
       .filter(Boolean),
@@ -184,10 +184,12 @@ export class EdgeProxyService {
     deadline.unref();
     await new Promise<void>((resolve) => {
       const check = setInterval(() => {
-        if (this.sockets.size === 0) {
-          clearInterval(check);
-          resolve();
+        if (this.sockets.size > 0) {
+          return;
         }
+
+        clearInterval(check);
+        resolve();
       }, 50);
       check.unref();
     });

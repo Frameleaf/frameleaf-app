@@ -74,7 +74,7 @@ describe(EdgeCertificateRepository.name, () => {
     identityDir = await mkdtemp(join(tmpdir(), 'frameleaf-edge-'));
     certificate = await fixture('wildcard.cert.pem');
     key = await fixture('wildcard.key.pem');
-    const logger = automock(LoggingRepository, { args: [, { getEnv: () => ({}) }], strict: false });
+    const logger = automock(LoggingRepository, { args: [undefined, { getEnv: () => ({}) }], strict: false });
     sut = new EdgeCertificateRepository(logger);
     vi.spyOn(sut, 'createCsr').mockResolvedValue({ key, csr: Buffer.from('csr') });
   });

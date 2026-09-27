@@ -126,12 +126,12 @@ const compressIpv6 = (address: string): string | null => {
 
 /** The LAN (or WAN) name for an IPv4 address: `192-168-1-10.<label>.<domain>`. */
 export const ipv4Name = (enrollment: Pick<FrameleafRemoteEnrollment, 'names'>, address: string): string | null =>
-  isIP(address) === 4 ? enrollment.names.lanPattern.replace('{ipv4}', address.replaceAll('.', '-')) : null;
+  isIP(address) === 4 ? enrollment.names.lanPattern.replace('{ipv4}', () => address.replaceAll('.', '-')) : null;
 
 /** The IPv6 name for an address: `2001-db8--1.<label>.<domain>`. */
 export const ipv6Name = (enrollment: Pick<FrameleafRemoteEnrollment, 'names'>, address: string): string | null => {
   const compressed = compressIpv6(address);
-  return compressed ? enrollment.names.ipv6Pattern.replace('{ipv6}', compressed.replaceAll(':', '-')) : null;
+  return compressed ? enrollment.names.ipv6Pattern.replace('{ipv6}', () => compressed.replaceAll(':', '-')) : null;
 };
 
 /**
@@ -210,7 +210,10 @@ export const enrollmentProblem = (instanceId: string, answer: EnrollResponse): s
   const base = `${answer.label}.${answer.domain}`;
   if (
     answer.names.relay !== `r.${base}` ||
+    // `{ipv4}` and `{ipv6}` are the contract's literal placeholders, not interpolations
+    // eslint-disable-next-line unicorn/no-incorrect-template-string-interpolation
     answer.names.lanPattern !== `{ipv4}.${base}` ||
+    // eslint-disable-next-line unicorn/no-incorrect-template-string-interpolation
     answer.names.ipv6Pattern !== `{ipv6}.${base}`
   ) {
     return 'the enrolment names do not match its label';
@@ -425,6 +428,9 @@ export const hostnameProblem = (hostname: Pick<RemoteHostname, 'state' | 'failur
     case 'claimed_elsewhere': {
       return 'The records point to another server.';
     }
+    case null: {
+      break;
+    }
   }
   if (hostname.state === 'failed') {
     return 'The hostname stopped pointing to this server. Add it again once its records are back.';
@@ -550,8 +556,8 @@ export const buildCandidates = (input: {
   }
   // IPv6 has no router mapping: the listener's own port is the one visitors connect to
   if (direct && input.ipv6Listening) {
-    for (const address of input.ipv6Addresses.filter((value) => isGlobalIpv6(value))) {
-      const name = ipv6Name(enrollment, address);
+    for (const address of input.ipv6Addresses) {
+      const name = isGlobalIpv6(address) ? ipv6Name(enrollment, address) : null;
       if (name) {
         candidates.push(connection('ipv6', name, input.listenPort, { ipv6: true }));
       }
@@ -631,7 +637,7 @@ export const addressBucket = (address: string | undefined | null): string => {
   if (!compressed) {
     return 'unknown';
   }
-  const [head, tail = ''] = compressed.split('::');
+  const [head, tail = ''] = compressed.split('::', 2);
   const left = head ? head.split(':') : [];
   const right = tail ? tail.split(':') : [];
   const groups = compressed.includes('::')

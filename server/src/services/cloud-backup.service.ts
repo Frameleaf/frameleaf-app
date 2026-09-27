@@ -415,7 +415,7 @@ export class CloudBackupService {
    * operation. A failure keeps what was last known.
    */
   private async refreshManagedUsage(metadata: FrameleafCloudBackup, linked: boolean): Promise<FrameleafCloudBackup> {
-    const measured = metadata.managed?.usage ? Date.parse(metadata.managed.checkedAt) : Number.NaN;
+    const measured = metadata.managed?.usage ? Date.parse(metadata.managed.checkedAt) : NaN;
     if (!linked || Date.now() - measured < MANAGED_USAGE_REFRESH_MS) {
       return metadata;
     }
@@ -771,7 +771,7 @@ export class CloudBackupService {
     await this.requireKeyForRequest(metadata);
     if (!dto.dryRun) {
       const preview = metadata.lastPrune;
-      const previewAt = preview?.dryRun ? Date.parse(preview.at) : Number.NaN;
+      const previewAt = preview?.dryRun ? Date.parse(preview.at) : NaN;
       const backedUpSince = !!metadata.lastSuccessAt && Date.parse(metadata.lastSuccessAt) > previewAt;
       if (Number.isNaN(previewAt) || Date.now() - previewAt > PRUNE_PREVIEW_VALID_MS || backedUpSince) {
         throw new ConflictException('Preview the clean-up first, then remove what it found.');
@@ -1365,7 +1365,7 @@ export class CloudBackupService {
         this.notify({ ...CLONE_SUSPECTED_NOTICE, type: NotificationType.SystemMessage });
       }
       if (refusal.retryAfterMs === null) {
-        throw new Error(refusal.message);
+        throw new Error(refusal.message, { cause: error });
       }
       this.logger.warn(`Cloud backup operation ${operation.id} waits for managed storage: ${refusal.message}`);
       await this.operations.requeue(operation.id, claimToken, { delayMs: refusal.retryAfterMs, returnAttempt: true });
@@ -1582,7 +1582,10 @@ export class CloudBackupService {
     });
     const known = await this.index.getManifestKeys(run.metadata.bucketRef, listed);
     const adopted = [];
-    for (const key of listed.filter((name) => !known.has(name) && name !== run.progress.result.manifestKey)) {
+    for (const key of listed) {
+      if (known.has(key) || key === run.progress.result.manifestKey) {
+        continue;
+      }
       try {
         const manifest = readManifest(await this.store.get(run.connection, key, run.bucketKey));
         const files = [
@@ -2968,7 +2971,7 @@ const maskMediaPath = (message: string) => {
     return message;
   }
   const escaped = media.replaceAll(/[$()*+.?[\\\]^{|}]/g, String.raw`\$&`);
-  return message.replaceAll(new RegExp(`${escaped}(?=/|$|[\\s'",:;)])`, 'g'), '<media>');
+  return message.replaceAll(new RegExp(String.raw`${escaped}(?=/|$|[\s'",:;)])`, 'g'), '<media>');
 };
 
 /** FL-164: what a checkpoint of a verification, a clean-up or a restore decided. */

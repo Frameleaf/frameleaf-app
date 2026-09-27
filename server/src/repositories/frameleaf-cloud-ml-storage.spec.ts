@@ -18,7 +18,6 @@ import {
 import { cloudContractFixture } from 'test/fixtures/frameleaf-cloud-contracts.js';
 
 // The fake storage and gateway listen on plain http on this machine, as a development cloud does.
-/* eslint-disable unicorn/prefer-https */
 
 type Seen = { method: string; path: string; headers: IncomingMessage['headers']; body: Buffer };
 
@@ -38,7 +37,9 @@ const startFake = async (): Promise<FakeStorage> => {
   };
   const server: Server = createServer((request, response) => {
     const chunks: Buffer[] = [];
-    request.on('data', (chunk: Buffer) => chunks.push(chunk));
+    request.on('data', (chunk: Buffer) => {
+      chunks.push(chunk);
+    });
     request.on('end', () => {
       const seen = {
         method: request.method ?? 'GET',
@@ -100,7 +101,7 @@ describe('Frameleaf Cloud job storage and job reads (FL-162, FC-39, FC-42)', () 
 
       const first = await cloud.requestJsonConditional(jobViewSchema, { url: `${fake.url}/v2/jobs/x` }, null);
       expect(first).toMatchObject({ notModified: false, etag: '"v1"', retryAfterSeconds: 5 });
-      expect(first.notModified === false && first.data.status).toBe('running');
+      expect(!first.notModified && first.data.status).toBe('running');
 
       const second = await cloud.requestJsonConditional(jobViewSchema, { url: `${fake.url}/v2/jobs/x` }, '"v1"');
       expect(second).toEqual({ notModified: true, etag: '"v1"', retryAfterSeconds: 7 });

@@ -79,7 +79,9 @@ describe(EdgeProxyService.name, () => {
       secret = SECRET;
       upstream = http.createServer((request, response) => {
         const chunks: Buffer[] = [];
-        request.on('data', (chunk: Buffer) => chunks.push(chunk));
+        request.on('data', (chunk: Buffer) => {
+          chunks.push(chunk);
+        });
         request.on('end', () => {
           seen.push({
             method: request.method,
@@ -112,7 +114,7 @@ describe(EdgeProxyService.name, () => {
             },
           }),
       } as unknown as ConfigRepository;
-      const logger = automock(LoggingRepository, { args: [, { getEnv: () => ({}) }], strict: false });
+      const logger = automock(LoggingRepository, { args: [undefined, { getEnv: () => ({}) }], strict: false });
       sut = new EdgeProxyService(logger, config);
       // a plain TCP front stands in for the TLS listener
       front = net.createServer((socket) => sut.accept(socket, arrival));
@@ -129,7 +131,9 @@ describe(EdgeProxyService.name, () => {
       new Promise<{ status: number; headers: IncomingHttpHeaders; body: string }>((resolve, reject) => {
         const outgoing = http.request({ host: '127.0.0.1', port: frontPort, agent: false, ...options }, (response) => {
           const chunks: Buffer[] = [];
-          response.on('data', (chunk: Buffer) => chunks.push(chunk));
+          response.on('data', (chunk: Buffer) => {
+            chunks.push(chunk);
+          });
           response.on('end', () => {
             const text = Buffer.concat(chunks).toString();
             resolve({ status: response.statusCode ?? 0, headers: response.headers, body: text });
@@ -207,7 +211,7 @@ describe(EdgeProxyService.name, () => {
   describe('connection caps', () => {
     it('takes at most 64 connections per address and frees them on close', () => {
       const config = { getEnv: () => mockEnvData({}) } as unknown as ConfigRepository;
-      const logger = automock(LoggingRepository, { args: [, { getEnv: () => ({}) }], strict: false });
+      const logger = automock(LoggingRepository, { args: [undefined, { getEnv: () => ({}) }], strict: false });
       const sut = new EdgeProxyService(logger, config);
       (sut as unknown as { server: { emit: () => void } }).server.emit = vi.fn();
 

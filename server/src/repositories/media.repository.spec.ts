@@ -383,7 +383,7 @@ describe(MediaRepository.name, () => {
         const bytes = readFileSync(output).toString('latin1');
         expect(bytes).not.toContain('FrameleafTestCamera');
         expect(bytes).not.toContain('Private person');
-        expect(bytes).not.toContain('Exif\u0000\u0000');
+        expect(bytes).not.toContain('Exif\u{0}\u{0}');
       } finally {
         rmSync(dirPath, { recursive: true, force: true });
       }
