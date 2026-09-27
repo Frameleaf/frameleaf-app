@@ -213,6 +213,28 @@ export const linkRefusalKeys = (refusal: CloudLinkRefusal) => {
         body: 'frameleaf_cloud_link_refusal_key_already_linked_body',
       } as const;
     }
+    case CloudLinkRefusal.RegionMismatch: {
+      // FC-18: the page shows Frameleaf Cloud's own message (it names both regions); this body is the fallback
+      return {
+        title: 'frameleaf_cloud_link_refusal_region_mismatch_title',
+        body: 'frameleaf_cloud_link_refusal_region_mismatch_body',
+      } as const;
+    }
+  }
+};
+
+/** FC-18: a data region as the cloud contract names it (`eu`, `na`; North America includes Canada). */
+export const dataRegionKey = (region: string) => {
+  switch (region) {
+    case 'eu': {
+      return 'frameleaf_cloud_region_eu';
+    }
+    case 'na': {
+      return 'frameleaf_cloud_region_na';
+    }
+    default: {
+      return null;
+    }
   }
 };
 

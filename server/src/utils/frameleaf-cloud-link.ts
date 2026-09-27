@@ -399,7 +399,40 @@ export const linkRefusalOf = (error: unknown): FrameleafCloudLinkRefusal | null 
   if (error.status === 409 && code === CloudErrorCode.JwkAlreadyBound) {
     return 'key-already-linked';
   }
+  if (error.status === 409 && code === CloudErrorCode.RegionMismatch) {
+    return 'region-mismatch';
+  }
   return null;
+};
+
+/** The data regions the cloud contract defines (`DataRegion`): `na` is North America, Canada included. */
+export const DATA_REGIONS = ['eu', 'na'] as const;
+export type DataRegion = (typeof DATA_REGIONS)[number];
+export const isDataRegion = (value: unknown): value is DataRegion =>
+  typeof value === 'string' && (DATA_REGIONS as readonly string[]).includes(value);
+
+/**
+ * FC-18: `POST /v1/instances` answered 409 `region-mismatch`: the account keeps its data in
+ * `data.accountRegion`, not the `dataRegion` this server sent. Nothing was written and the link token
+ * stays usable. `message` is the cloud's own words (they name both regions), or ours when it sent none.
+ */
+export const regionMismatchOf = (
+  error: unknown,
+): { accountRegion: string; requestedRegion?: string; message: string } | null => {
+  if (!(error instanceof FrameleafCloudError) || linkRefusalOf(error) !== 'region-mismatch') {
+    return null;
+  }
+  const data = error.envelope?.data ?? {};
+  const accountRegion = isDataRegion(data.accountRegion) ? data.accountRegion : null;
+  if (!accountRegion) {
+    return null;
+  }
+  const requestedRegion = isDataRegion(data.requestedRegion) ? data.requestedRegion : undefined;
+  return {
+    accountRegion,
+    requestedRegion,
+    message: error.envelope?.message.trim() || LINK_REFUSAL_MESSAGES['region-mismatch'],
+  };
 };
 
 /** What an administrator reads for a refused registration: what happened and what to do next. */
@@ -412,4 +445,6 @@ export const LINK_REFUSAL_MESSAGES: Record<FrameleafCloudLinkRefusal, string> = 
     'This server, or another one with its ID, is still registered with Frameleaf Cloud, for example after an unlink made while it was offline. Remove it under Servers in your Frameleaf account, then link again.',
   'key-already-linked':
     'This server’s key is already linked, usually because its identity directory was copied from another server. Give this server its own identity directory, or unlink the other one under Servers in your Frameleaf account.',
+  'region-mismatch':
+    'Your Frameleaf account keeps its data in another region than the one this server asked for. Link in the account’s region, or link to an account in the region you want.',
 };

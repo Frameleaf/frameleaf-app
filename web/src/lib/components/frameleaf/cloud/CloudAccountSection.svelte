@@ -17,11 +17,18 @@
   import CloudBanner from '$lib/components/frameleaf/cloud/CloudBanner.svelte';
   import CloudCard from '$lib/components/frameleaf/cloud/CloudCard.svelte';
   import CloudToggleRow from '$lib/components/frameleaf/cloud/CloudToggleRow.svelte';
-  import { displayHost, formatCountdown, linkRefusalKeys, secondsUntil, shortFingerprint } from '$lib/frameleaf/cloud';
+  import {
+    dataRegionKey,
+    displayHost,
+    formatCountdown,
+    linkRefusalKeys,
+    secondsUntil,
+    shortFingerprint,
+  } from '$lib/frameleaf/cloud';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { cloudManager } from '$lib/managers/cloud-manager.svelte';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
-  import type { CloudHeartbeatField, CloudPermissionsDto } from '@immich/sdk';
+  import { CloudLinkRefusal, type CloudHeartbeatField, type CloudPermissionsDto } from '@immich/sdk';
   import { Icon } from '@immich/ui';
   import {
     mdiCellphone,
@@ -90,6 +97,12 @@
 
   const permission = (key: keyof CloudPermissionsDto, value: boolean) =>
     act(() => cloudManager.setPermissions({ [key]: value }));
+
+  /** FC-18: the account's region in words ("the EU", "North America"), or null when it is not one we know. */
+  const regionName = (region: string | null | undefined) => {
+    const key = region ? dataRegionKey(region) : null;
+    return key ? $t(key) : null;
+  };
 
   const heartbeatLabel = (field: CloudHeartbeatField) => $t(`frameleaf_cloud_sends_${field}` as Translations);
   const heartbeatHelp = (field: CloudHeartbeatField) => $t(`frameleaf_cloud_sends_${field}_help` as Translations);
@@ -165,7 +178,39 @@
         {$t('frameleaf_cloud_link_expired_body')}
       </CloudBanner>
     {/if}
-    {#if status.linkRefusal && status.state === 'unlinked'}
+    {#if status.linkRefusal === CloudLinkRefusal.RegionMismatch && status.state === 'unlinked'}
+      {@const accountRegion = regionName(status.regionMismatch?.accountRegion)}
+      <!-- FC-18: Frameleaf Cloud's own message names both regions -->
+      <CloudBanner tone="danger" title={$t('frameleaf_cloud_link_refusal_region_mismatch_title')}>
+        {status.lastError || $t('frameleaf_cloud_link_refusal_region_mismatch_body')}
+      </CloudBanner>
+      {#if status.regionMismatch?.canContinue}
+        <div class="fc-actions" data-testid="cloud-region-mismatch-actions">
+          <Button
+            variant="primary"
+            disabled={busy}
+            onclick={() =>
+              void act(
+                () => cloudManager.continueLink(),
+                accountRegion ? $t('frameleaf_cloud_link_region_linked', { values: { region: accountRegion } }) : '',
+              )}
+          >
+            <Icon icon={mdiLinkVariant} size="18" />
+            {accountRegion
+              ? $t('frameleaf_cloud_link_continue_region', { values: { region: accountRegion } })
+              : $t('frameleaf_cloud_link_continue_account_region')}
+          </Button>
+          <Button
+            disabled={busy}
+            onclick={() => void act(() => cloudManager.cancelLink(), $t('frameleaf_cloud_link_cancelled'))}
+          >
+            {$t('frameleaf_cloud_cancel')}
+          </Button>
+        </div>
+      {:else if status.linkTokenConfigured}
+        <p class="fc-muted">{$t('frameleaf_cloud_link_region_headless')}</p>
+      {/if}
+    {:else if status.linkRefusal && status.state === 'unlinked'}
       {@const refusal = linkRefusalKeys(status.linkRefusal)}
       <CloudBanner tone="danger" title={$t(refusal.title)}>{$t(refusal.body)}</CloudBanner>
     {:else if status.lastError && status.state === 'unlinked'}

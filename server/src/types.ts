@@ -808,10 +808,24 @@ export type FrameleafCloudLink = {
     /** The administrator who started linking. */
     startedBy?: string;
   };
+  /** FC-18: the regions of the last `region-mismatch` refusal of the headless `FRAMELEAF_LINK_TOKEN`. */
+  lastRegionMismatch?: { accountRegion: string; requestedRegion?: string };
   /** FL-155: how the last device authorization ended. */
   lastLinkResult?: 'approved' | 'denied' | 'expired';
   /** FL-177: why Frameleaf Cloud refused the last registration, when it said (shown with its own help). */
   lastLinkRefusal?: FrameleafCloudLinkRefusal;
+  /**
+   * FC-18: an approved device-flow link token Frameleaf Cloud refused with 409 `region-mismatch`. The
+   * cloud wrote nothing and did not spend the token, so it is kept (never returned) until the
+   * administrator links in the account's region (`accountRegion`) or cancels, or a new attempt starts.
+   */
+  heldLink?: {
+    linkToken: string;
+    accountRegion: string;
+    requestedRegion?: string;
+    /** The administrator who started linking. */
+    startedBy?: string;
+  };
   /** FL-155: what Frameleaf Cloud may ask this server to do. */
   permissions?: FrameleafCloudPermissions;
   /**
@@ -876,7 +890,7 @@ export type FrameleafCloudLink = {
  * another key) and `key-already-linked` (409 `jwk_already_bound`, a copied identity directory).
  */
 export type FrameleafCloudLinkRefusal =
-  'instance-limit' | 'server-refused' | 'instance-id-taken' | 'key-already-linked';
+  'instance-limit' | 'server-refused' | 'instance-id-taken' | 'key-already-linked' | 'region-mismatch';
 
 /** FL-177: one boot id per server start, shared by every worker (as-built decision #14). */
 export type FrameleafBoot = { bootId: string; startedAt: string };

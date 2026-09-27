@@ -21,9 +21,9 @@ export const CloudLinkResultSchema = z
   .meta({ id: 'CloudLinkResult' });
 
 export const CloudLinkRefusalSchema = z
-  .enum(['instance-limit', 'server-refused', 'instance-id-taken', 'key-already-linked'])
+  .enum(['instance-limit', 'server-refused', 'instance-id-taken', 'key-already-linked', 'region-mismatch'])
   .describe(
-    'Why Frameleaf Cloud refused the last link: instance-limit: the plan has no room for another server; server-refused: the server was removed from the account or the account is suspended; instance-id-taken: this server, or another one with its ID, is still registered; key-already-linked: this server’s key is already linked (a copied identity directory)',
+    'Why Frameleaf Cloud refused the last link: instance-limit: the plan has no room for another server; server-refused: the server was removed from the account or the account is suspended; instance-id-taken: this server, or another one with its ID, is still registered; key-already-linked: this server’s key is already linked (a copied identity directory); region-mismatch: the account keeps its data in another region than the one this server asked for (FC-18)',
   )
   .meta({ id: 'CloudLinkRefusal' });
 
@@ -68,6 +68,18 @@ const CloudStatusResponseSchema = z
     linkRefusal: CloudLinkRefusalSchema.nullable().describe(
       'Why Frameleaf Cloud refused the last link attempt, while unlinked; null when it gave no such reason',
     ),
+    regionMismatch: z
+      .object({
+        accountRegion: z.string().describe('The data region the Frameleaf account keeps its data in (eu, na)'),
+        requestedRegion: z.string().nullable().describe('The data region this server asked for'),
+        canContinue: z
+          .boolean()
+          .describe('The approved link is kept: linking again in the account’s region needs no new code'),
+      })
+      .nullable()
+      .describe(
+        'FC-18: Frameleaf Cloud refused the link because the account keeps its data in another region; lastError carries its message',
+      ),
     permissions: CloudPermissionsSchema,
     revoked: z.object({ at: z.string(), reason: z.string() }).nullable(),
     lastError: z.string().nullable().describe('The last link or check-in problem, in plain words'),

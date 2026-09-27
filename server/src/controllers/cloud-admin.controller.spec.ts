@@ -33,6 +33,7 @@ describe(CloudAdminController.name, () => {
       ['get', '/admin/cloud/link'],
       ['post', '/admin/cloud/link'],
       ['delete', '/admin/cloud/link'],
+      ['post', '/admin/cloud/link/continue'],
       ['delete', '/admin/cloud/link/pending'],
       ['put', '/admin/cloud/permissions'],
       ['put', '/admin/cloud/sign-in'],
