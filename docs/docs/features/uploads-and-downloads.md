@@ -6,7 +6,7 @@ Frameleaf uploads and downloads through two panels that stay on screen while you
 
 - **Upload** in the top bar offers files or a folder, and an album to put them in. You can also drag files onto a library page.
 - Each file gets a row with its size and state: waiting, uploading with a percentage, uploaded, already in your library (a duplicate is recognised by its content and not stored twice), or the error.
-- **Retry failed** uploads the failed files again. **Cancel remaining** stops the files still waiting and the ones on their way; files already uploaded stay. **Clear finished** removes the uploaded and duplicate rows while the rest continue.
+- **Retry failed** uploads the failed files again, to the same album or Locked folder they were first sent to. **Cancel remaining** stops the files still waiting and the ones on their way; files already uploaded stay. **Clear finished** removes the uploaded and duplicate rows while the rest continue.
 - Uploads keep going while you move between pages of the app.
 
 ### If you reload or close the tab
