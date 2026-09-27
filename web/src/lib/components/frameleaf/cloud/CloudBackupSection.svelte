@@ -591,7 +591,9 @@
 
     <CloudCard
       title={$t('frameleaf_cloud_backup_turn_off_title')}
-      description={$t('frameleaf_cloud_backup_turn_off_description')}
+      description={status?.target === CloudBackupTargetSetting.Managed
+        ? $t('frameleaf_cloud_backup_turn_off_description_managed')
+        : $t('frameleaf_cloud_backup_turn_off_description')}
     >
       <div class="fc-actions">
         <Button disabled={!!active} onclick={() => (turnOffOpen = true)}>{$t('frameleaf_cloud_backup_turn_off')}</Button
@@ -665,6 +667,9 @@
     {status?.keyMode === CloudBackupKeyMode.Server
       ? $t('frameleaf_cloud_backup_turn_off_body_kit')
       : $t('frameleaf_cloud_backup_turn_off_body_key_file')}
+    {status?.target === CloudBackupTargetSetting.Managed
+      ? $t('frameleaf_cloud_backup_turn_off_delete_managed')
+      : $t('frameleaf_cloud_backup_turn_off_delete_own')}
   </p>
   {#snippet actions()}
     <Button onclick={() => (turnOffOpen = false)}>{$t('frameleaf_cloud_backup_keep_backing_up')}</Button>
