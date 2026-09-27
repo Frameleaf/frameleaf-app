@@ -53149,7 +53149,11 @@
           "remoteAccess",
           "permissions",
           "licenseKid",
-          "capabilities"
+          "capabilities",
+          "remoteAccessSettings",
+          "cloudMl",
+          "cloudBackup",
+          "licenseState"
         ],
         "type": "string"
       },
