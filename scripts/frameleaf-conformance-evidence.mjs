@@ -696,9 +696,9 @@ const actions = {
   ],
   "moment-search-frame-caption-transcript-timestamp-matches-and-jump-playback":
     [
-      "in-flight",
+      "match",
       [],
-      "FL-59 video moments (beyond the prototype)",
+      "FL-59 video moments (beyond the prototype): frame, caption and transcript matches, frame-to-moment search, playback from the moment",
       {
         production: [`${W}/lib/components/frameleaf/VideoMomentsPanel.svelte`],
       },
@@ -716,9 +716,9 @@ const actions = {
     { production: [`${W}/lib/components/frameleaf/FilterMultiSelect.svelte`] },
   ],
   "play-annotate-a-discovered-video-moment": [
-    "in-flight",
+    "match",
     [],
-    "FL-59 video moments (beyond the prototype)",
+    "FL-59 video moments (beyond the prototype): play from the moment, the owner's own moments and typed transcripts",
     { production: [`${W}/lib/components/frameleaf/VideoMomentResults.svelte`] },
   ],
   "rating-favorites-archive-not-in-album-untagged": ["match", []],
