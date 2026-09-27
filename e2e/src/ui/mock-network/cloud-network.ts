@@ -218,7 +218,41 @@ export const cloudStatus = (mock: CloudMockState) => {
   };
 };
 
+/**
+ * The licence and prices the cloud manager loads with the link status. Left unmocked they reach the
+ * real server, whose answer (a 401 for the fake session, or a slow store lookup) decides when the
+ * cloud pages finish loading, so a spec could time out before its first assertion.
+ */
+const unlicensed = {
+  configured: true,
+  entitlements: { cloudBackup: false, cloudMl: false, frameleafCloud: false, remoteAccess: false, supporter: false },
+  expiresAt: null,
+  fingerprint: { instanceId: '018f3a7c-5e2b-7c91-9a4d-2f6b1e0c8d55', jkt: null },
+  graceUntil: null,
+  key: null,
+  keyHint: null,
+  kind: null,
+  licensed: false,
+  linked: false,
+  offline: false,
+  plan: null,
+  refresh: { lastError: null, nextRefreshAt: null, refreshedAt: null },
+  state: 'none',
+};
+
+const noStoreProducts = {
+  currency: 'USD',
+  licensedDiscount: 0.2,
+  pricesVersion: '2026-09-25.1',
+  storeUrl: null,
+  credit: { minimumUsd: 20, maximumUsd: 500 },
+  backup: { includedTb: 1, blockTb: 1, usdPerTbMonth: 9.99 },
+  products: [],
+};
+
 export const setupCloudMockApiRoutes = async (context: BrowserContext, mock: CloudMockState) => {
+  await context.route('**/api/admin/license', (route) => route.fulfill({ status: 200, json: unlicensed }));
+  await context.route('**/api/license/products', (route) => route.fulfill({ status: 200, json: noStoreProducts }));
   await context.route('**/api/admin/cloud/**', async (route, request) => {
     const path = new URL(request.url()).pathname.replace('/api/', '');
     const method = request.method();
