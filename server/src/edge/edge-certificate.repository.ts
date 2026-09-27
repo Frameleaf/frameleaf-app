@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import acme from 'acme-client';
+import { Client as AcmeLibraryClient, crypto as acmeCrypto } from 'acme-client';
 import { randomUUID } from 'node:crypto';
 import { chmod, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -12,7 +12,7 @@ export type EdgeCertificatePair = { certificate: string; key: string };
 
 /** The part of an ACME client an issuance uses (acme-client's `Client`), so specs can stand in a fake CA. */
 export type AcmeClient = Pick<
-  acme.Client,
+  AcmeLibraryClient,
   | 'createAccount'
   | 'getAccountUrl'
   | 'createOrder'
@@ -80,7 +80,7 @@ export class EdgeCertificateRepository {
         throw error;
       }
     }
-    const key = (await acme.crypto.createPrivateEcdsaKey('P-256')).toString();
+    const key = (await acmeCrypto.createPrivateEcdsaKey('P-256')).toString();
     await this.writePrivate(identityDir, ACCOUNT_KEY_FILE, key);
     return key;
   }
@@ -118,13 +118,13 @@ export class EdgeCertificateRepository {
 
   /** The ACME client for a directory and account key. Specs replace this with a fake CA. */
   client(directoryUrl: string, accountKey: string): AcmeClient {
-    return new acme.Client({ directoryUrl, accountKey });
+    return new AcmeLibraryClient({ directoryUrl, accountKey });
   }
 
   /** A new P-256 key and a CSR for `names`; the key stays in this process until it is written 0600. */
   async createCsr(names: string[]): Promise<{ key: string; csr: Buffer }> {
-    const key = await acme.crypto.createPrivateEcdsaKey('P-256');
-    const [, csr] = await acme.crypto.createCsr({ commonName: names[0], altNames: names }, key);
+    const key = await acmeCrypto.createPrivateEcdsaKey('P-256');
+    const [, csr] = await acmeCrypto.createCsr({ commonName: names[0], altNames: names }, key);
     return { key: key.toString(), csr };
   }
 
