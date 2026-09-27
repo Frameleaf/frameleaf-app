@@ -26,6 +26,7 @@ import {
   QueueName,
   SystemMetadataKey,
 } from 'src/enum.js';
+import { FrameleafCloudPublicCall } from 'src/repositories/frameleaf-cloud.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import {
   CLONE_SUSPECTED_NOTICE,
@@ -76,8 +77,20 @@ import { acceptPublishedPricing } from 'src/utils/frameleaf-license.js';
 import { edgeStateCurrent, heartbeatEndpoints } from 'src/utils/frameleaf-remote-access.js';
 import { handlePromiseError } from 'src/utils/misc.js';
 
-/** Capabilities this build announces when it registers (instance contract step 4). */
-const INSTANCE_CAPABILITIES = ['heartbeat', 'commands', 'license', 'oidc'];
+/**
+ * Capabilities this build announces when it registers (instance contract step 4). `dpop` (FC-50,
+ * CLD-201): every call this server makes to Frameleaf Cloud carries a DPoP proof by its instance key
+ * (`FrameleafCloudRepository` refuses to send any other call except the named public ones), so the
+ * cloud may refuse this server any unbound token, at the token endpoint, on api. and on ml.<region>.
+ */
+export const INSTANCE_CAPABILITIES: readonly string[] = ['heartbeat', 'commands', 'license', 'oidc', 'dpop'];
+
+/**
+ * CLD-201 (FC-50): whether the check-in reports `INSTANCE_CAPABILITIES`, so a server linked before it
+ * declared `dpop` opts in without relinking. Off until Frameleaf Cloud's heartbeat accepts the field:
+ * its schema is strict today and would refuse the whole check-in.
+ */
+export const HEARTBEAT_REPORTS_CAPABILITIES: boolean = false;
 
 /** FL-175: the least time between two recovery rotations after a damaged key (the cloud allows 3 an hour). */
 const KEY_RECOVERY_RETRY_MS = 20 * 60 * 1000;
@@ -199,6 +212,7 @@ export class FrameleafCloudService extends BaseService {
       return this.frameleafCloudRepository.requestJson(deviceAuthorizationSchema, {
         method: 'POST',
         url: linkEndpoints(document).deviceAuthorization,
+        unauthenticated: FrameleafCloudPublicCall.DeviceAuthorization,
         form: {
           client_id: FRAMELEAF_LINK_CLIENT_ID,
           instance_name: name,
@@ -312,6 +326,7 @@ export class FrameleafCloudService extends BaseService {
     const result = await this.frameleafCloudRepository.requestOAuth(linkTokenSchema, {
       method: 'POST',
       url: linkEndpoints(document).token,
+      unauthenticated: FrameleafCloudPublicCall.DeviceToken,
       form: { grant_type: DEVICE_CODE_GRANT, device_code: pending.deviceCode, client_id: FRAMELEAF_LINK_CLIENT_ID },
     });
 
@@ -865,6 +880,7 @@ export class FrameleafCloudService extends BaseService {
       remoteAccess,
       permissions: permissionsOf(link),
       licenseKid: license?.plan?.kid ?? license?.key?.kid ?? null,
+      ...(HEARTBEAT_REPORTS_CAPABILITIES && { capabilities: INSTANCE_CAPABILITIES }),
     });
   }
 

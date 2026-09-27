@@ -10,7 +10,7 @@ import type { SystemMetadataRepository } from 'src/repositories/system-metadata.
 import type { FrameleafCloudLink, FrameleafInstanceIdentity, FrameleafMlSuspension } from 'src/types.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { DatabaseLock, MlAdmissionRefusal, NotificationLevel, NotificationType, SystemMetadataKey } from 'src/enum.js';
-import { FrameleafCloudError, regionalGateway } from 'src/utils/frameleaf-cloud.js';
+import { FrameleafCloudError, isRegionMismatch, regionalGateway } from 'src/utils/frameleaf-cloud.js';
 
 export type CloudGatewayDeps = {
   configRepository: ConfigRepository;
@@ -47,6 +47,40 @@ export const CLONE_SUSPECTED_NOTICE = Object.freeze({
 /** Why cloud processing is refused while Frameleaf Cloud suspects a copy of this server (FL-185). */
 export const ML_CLONE_SUSPENDED_DETAIL =
   'Frameleaf Cloud paused cloud processing because this server’s identity is in use in two places. It resumes when Frameleaf Cloud clears this.';
+
+/**
+ * FC-50: why cloud processing is refused when Frameleaf Cloud still refuses this server's region after
+ * it re-read discovery and its link and asked once more. Shown with the refusal and in the notice.
+ */
+export const ML_REGION_MISMATCH_DETAIL =
+  'Frameleaf Cloud refused cloud processing because this server is using another region than its Frameleaf account’s data region, even after reading Frameleaf Cloud’s service list and this server’s link again. Cloud processing stays off until this is fixed: check that FRAMELEAF_CLOUD_URL points to Frameleaf Cloud, then link the server again in Administration > Frameleaf Cloud.';
+
+/** The administrators' notice for a region Frameleaf Cloud keeps refusing (FC-50). One key, sent once a day at most. */
+export const REGION_MISMATCH_NOTICE = Object.freeze({
+  level: NotificationLevel.Error,
+  title: 'Cloud processing is using the wrong region',
+  description: ML_REGION_MISMATCH_DETAIL,
+  dedupeKey: 'frameleaf-cloud:region-mismatch',
+  dedupeDays: 1,
+});
+
+/**
+ * FC-50: Frameleaf Cloud still refuses this server's region after one re-read and retry. Logged and
+ * told to the administrators; never retried again on its own. Never throws.
+ */
+export const reportRegionMismatch = async (
+  deps: Pick<CloudMlGatewayDeps, 'eventRepository' | 'logger'>,
+  region: string | undefined,
+): Promise<void> => {
+  deps.logger.warn(
+    `Frameleaf Cloud refused cloud processing in region ${region ?? 'none'} (region-mismatch) after discovery and the link were read again`,
+  );
+  try {
+    await deps.eventRepository.emit('AdminNotify', { type: NotificationType.SystemMessage, ...REGION_MISMATCH_NOTICE });
+  } catch (notifyError) {
+    deps.logger.warn(`Could not notify administrators: ${notifyError}`);
+  }
+};
 
 /**
  * How long a recorded ML suspension blocks every ML token request before one probe is allowed (FL-185):
@@ -200,7 +234,10 @@ export const readCloudLink = async (
  * `ML_SUSPENSION_PROBE_AFTER_MS` one ML token request is allowed: a token clears the suspension, a new
  * refusal records it again from now.
  */
-export const resolveCloudGateway = async (deps: CloudMlGatewayDeps): Promise<CloudGatewayResolution> => {
+export const resolveCloudGateway = async (
+  deps: CloudMlGatewayDeps,
+  { regionRetry = false }: { regionRetry?: boolean } = {},
+): Promise<CloudGatewayResolution> => {
   const { cloudUrl, link, linked } = await readCloudLink(deps);
   if (!cloudUrl) {
     return {
@@ -299,9 +336,21 @@ export const resolveCloudGateway = async (deps: CloudMlGatewayDeps): Promise<Clo
     // FL-183: the gateway itself answering 403 clone_suspected suspends cloud processing exactly as
     // the token endpoint's refusal does (FL-185), with the same notice
     const onCloneSuspected = () => suspendCloudMl(deps, cloudUrl, instanceId, { notify: true });
+    // FC-50: the gateway answering 403 region-mismatch re-reads discovery, the link and the owner's
+    // region (nothing cached is kept) and resolves once more; a refusal then is the caller's error
+    const onRegionMismatch = async () => {
+      deps.frameleafCloudRepository.forget();
+      const again = await resolveCloudGateway(deps, { regionRetry: true });
+      if (again.state !== CloudConnectionState.Ready) {
+        throw new FrameleafCloudError(again.refusal, null, again.detail);
+      }
+      return { url: again.gateway.url, token: again.gateway.token };
+    };
+    const { dataRegion } = link;
+    const onRegionMismatchUnresolved = () => reportRegionMismatch(deps, dataRegion);
     return {
       state: CloudConnectionState.Ready,
-      gateway: { url: gatewayUrl, token, onCloneSuspected },
+      gateway: { url: gatewayUrl, token, onCloneSuspected, onRegionMismatch, onRegionMismatchUnresolved },
       region: link.dataRegion,
       link,
     };
@@ -311,6 +360,22 @@ export const resolveCloudGateway = async (deps: CloudMlGatewayDeps): Promise<Clo
       // A new suspicion always notifies (the dedupe key keeps repeats out); a refused daily probe is not new
       await suspendCloudMl(deps, cloudUrl, link.instanceId, { notify: !probing });
       return suspendedRefusal;
+    }
+    if (isRegionMismatch(error)) {
+      // FC-50: the token endpoint refused the ML resource (400 invalid_target): re-read discovery, the
+      // link and the owner's region once, then tell the administrators instead of retrying again. A
+      // daily clone-suspicion probe is not repeated (its claim already blocks a second request).
+      if (!regionRetry && !probing) {
+        deps.frameleafCloudRepository.forget();
+        return resolveCloudGateway(deps, { regionRetry: true });
+      }
+      await reportRegionMismatch(deps, link.dataRegion);
+      return {
+        state: CloudConnectionState.Unavailable,
+        refusal: MlAdmissionRefusal.CloudUnavailable,
+        detail: ML_REGION_MISMATCH_DETAIL,
+        link,
+      };
     }
     if (error instanceof FrameleafCloudError) {
       return { state: CloudConnectionState.Unavailable, refusal: error.refusal, detail: error.message, link };

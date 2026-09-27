@@ -399,7 +399,8 @@ describe(FrameleafCloudService.name, () => {
         platform: expect.any(String),
         jwk: { kty: 'OKP', crv: 'Ed25519', kid: expect.any(String) },
         bootId: expect.any(String),
-        capabilities: golden.capabilities,
+        // FC-50 (CLD-201): this build proofs every call, so it declares `dpop` beside the golden set
+        capabilities: [...golden.capabilities, 'dpop'],
         permissions: golden.permissions,
       });
       expect(body.instanceId).toMatch(/^[\da-f]{8}-[\da-f]{4}-7[\da-f]{3}-[89ab][\da-f]{3}-[\da-f]{12}$/);

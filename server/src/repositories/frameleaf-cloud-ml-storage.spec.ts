@@ -68,6 +68,12 @@ const HEADERS = {
   'content-type': 'video/mp4',
 };
 
+/** Every gateway call carries a DPoP proof (FC-50); the fake storage does not check it. */
+const dpop = {
+  signer: { kid: 'kid', publicJwk: { kty: 'OKP', crv: 'Ed25519', x: 'x' }, sign: () => 'proof' },
+  accessToken: 'token',
+} as const;
+
 describe('Frameleaf Cloud job storage and job reads (FL-162, FC-39, FC-42)', () => {
   let fake: FakeStorage;
   let folder: string;
@@ -99,11 +105,11 @@ describe('Frameleaf Cloud job storage and job reads (FL-162, FC-39, FC-42)', () 
         response.end(JSON.stringify(view));
       };
 
-      const first = await cloud.requestJsonConditional(jobViewSchema, { url: `${fake.url}/v2/jobs/x` }, null);
+      const first = await cloud.requestJsonConditional(jobViewSchema, { url: `${fake.url}/v2/jobs/x`, dpop }, null);
       expect(first).toMatchObject({ notModified: false, etag: '"v1"', retryAfterSeconds: 5 });
       expect(!first.notModified && first.data.status).toBe('running');
 
-      const second = await cloud.requestJsonConditional(jobViewSchema, { url: `${fake.url}/v2/jobs/x` }, '"v1"');
+      const second = await cloud.requestJsonConditional(jobViewSchema, { url: `${fake.url}/v2/jobs/x`, dpop }, '"v1"');
       expect(second).toEqual({ notModified: true, etag: '"v1"', retryAfterSeconds: 7 });
       expect(fake.seen[0].headers['if-none-match']).toBeUndefined();
       expect(fake.seen[1].headers['if-none-match']).toBe('"v1"');
@@ -116,11 +122,11 @@ describe('Frameleaf Cloud job storage and job reads (FL-162, FC-39, FC-42)', () 
         // 300 KiB of whitespace keeps the answer valid JSON above the 256 KiB default
         response.end(JSON.stringify(view) + ' '.repeat(300 * 1024));
       };
-      await expect(cloud.requestJson(jobViewSchema, { url: `${fake.url}/v2/jobs/x` })).rejects.toThrow(
+      await expect(cloud.requestJson(jobViewSchema, { url: `${fake.url}/v2/jobs/x`, dpop })).rejects.toThrow(
         'Frameleaf Cloud response is too large',
       );
       await expect(
-        cloud.requestJson(jobViewSchema, { url: `${fake.url}/v2/jobs/x`, maxBodyBytes: 1024 * 1024 }),
+        cloud.requestJson(jobViewSchema, { url: `${fake.url}/v2/jobs/x`, dpop, maxBodyBytes: 1024 * 1024 }),
       ).resolves.toMatchObject({ status: 'queued' });
     });
   });

@@ -6,10 +6,11 @@ import type { FrameleafInstanceToken } from 'src/utils/frameleaf-dpop.js';
 import { MlAdmissionRefusal } from 'src/enum.js';
 import {
   FrameleafCloudConditional,
+  FrameleafCloudPublicCall,
   FrameleafCloudRepository,
   FrameleafCloudRequest,
 } from 'src/repositories/frameleaf-cloud.repository.js';
-import { ML_CLONE_SUSPENDED_DETAIL } from 'src/utils/frameleaf-cloud-gateway.js';
+import { ML_CLONE_SUSPENDED_DETAIL, ML_REGION_MISMATCH_DETAIL } from 'src/utils/frameleaf-cloud-gateway.js';
 import {
   CloudCapabilities,
   CloudCatalog,
@@ -40,6 +41,7 @@ import {
   estimateRequestSchema,
   estimateResponseSchema,
   isGatewayCloneSuspected,
+  isRegionMismatch,
   jobAdmittedSchema,
   jobCreateRequestSchema,
   jobStatusSchema,
@@ -104,6 +106,13 @@ export type CloudMlGateway = {
   url: string;
   token: FrameleafInstanceToken;
   onCloneSuspected?: () => Promise<void>;
+  /**
+   * FC-50: the gateway answered 403 `region-mismatch`. Re-reads discovery, the link and the owner's
+   * `dataRegion` and answers the gateway and token to retry with (once), or throws the refusal.
+   */
+  onRegionMismatch?: () => Promise<Pick<CloudMlGateway, 'url' | 'token'>>;
+  /** FC-50: the retry was refused for its region too: tell the administrators. Never throws. */
+  onRegionMismatchUnresolved?: () => Promise<void>;
 };
 
 /** `GET /ping` (public; FC-66 minimal responses): `{ok: true}` and nothing else. */
@@ -136,7 +145,10 @@ export class FrameleafCloudMlRepository {
   constructor(private cloud: FrameleafCloudRepository) {}
 
   async ping(gateway: Pick<CloudMlGateway, 'url'>): Promise<void> {
-    await this.cloud.requestJson(pingSchema, { url: `${gateway.url}/ping` });
+    await this.cloud.requestJson(pingSchema, {
+      url: `${gateway.url}/ping`,
+      unauthenticated: FrameleafCloudPublicCall.MlPing,
+    });
   }
 
   getCapabilities(gateway: CloudMlGateway): Promise<CloudCapabilities> {
@@ -221,10 +233,10 @@ export class FrameleafCloudMlRepository {
   ): Promise<FrameleafCloudConditional<CloudJobView>> {
     const url = this.jobUrl(gateway, jobId);
     try {
-      return await this.cloud.requestJsonConditional(
-        jobViewSchema,
+      return await this.inRegion(
+        gateway,
         { url, dpop: gateway.token, maxBodyBytes: CLOUD_JOB_MAX_BODY_BYTES },
-        etag,
+        (request) => this.cloud.requestJsonConditional(jobViewSchema, request, etag),
       );
     } catch (error) {
       throw await this.cloneSuspected(gateway, error);
@@ -548,14 +560,59 @@ export class FrameleafCloudMlRepository {
    * refuses with `CloudUnavailable`, whatever `refusal` the answer named.
    */
   private async request<T extends z.ZodType>(
-    gateway: Pick<CloudMlGateway, 'onCloneSuspected'>,
+    gateway: CloudMlGateway,
     schema: T,
     request: FrameleafCloudRequest,
   ): Promise<z.infer<T>> {
     try {
-      return await this.cloud.requestJson(schema, request);
+      return await this.inRegion(gateway, request, (sent) => this.cloud.requestJson(schema, sent));
     } catch (error) {
       throw await this.cloneSuspected(gateway, error);
+    }
+  }
+
+  /**
+   * One gateway call in the owner's region (FC-50). A 403 `region-mismatch` is not transient: the
+   * gateway is re-resolved from a fresh discovery document and the link's `dataRegion`
+   * (`onRegionMismatch`), `gateway` is updated in place so the caller's later calls use it too, and
+   * the call is sent once more with the new address and token. A second `region-mismatch` tells the
+   * administrators (`onRegionMismatchUnresolved`) and refuses with `ML_REGION_MISMATCH_DETAIL`; it is
+   * never retried again.
+   */
+  private async inRegion<R>(
+    gateway: CloudMlGateway,
+    request: FrameleafCloudRequest,
+    send: (request: FrameleafCloudRequest) => Promise<R>,
+  ): Promise<R> {
+    try {
+      return await send(request);
+    } catch (error) {
+      if (!isRegionMismatch(error) || !gateway.onRegionMismatch || !request.dpop) {
+        throw error;
+      }
+    }
+    const previousUrl = gateway.url;
+    const fresh = await gateway.onRegionMismatch();
+    gateway.url = fresh.url;
+    gateway.token = fresh.token;
+    const url = request.url.startsWith(`${previousUrl}/`)
+      ? `${fresh.url}${request.url.slice(previousUrl.length)}`
+      : request.url;
+    try {
+      return await send({ ...request, url, dpop: fresh.token });
+    } catch (error) {
+      if (!isRegionMismatch(error)) {
+        throw error;
+      }
+      await gateway.onRegionMismatchUnresolved?.();
+      throw new FrameleafCloudError(
+        error.refusal,
+        error.status,
+        ML_REGION_MISMATCH_DETAIL,
+        error.envelope,
+        null,
+        error.retryAfterSeconds,
+      );
     }
   }
 

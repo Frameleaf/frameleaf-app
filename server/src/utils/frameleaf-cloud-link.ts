@@ -60,6 +60,12 @@ export type HeartbeatPayload = {
   remoteAccess: { enabled: boolean; relayConnected: boolean; direct: boolean };
   permissions: FrameleafCloudPermissions;
   licenseKid: string | null;
+  /**
+   * CLD-201 (FC-50): the capabilities this build supports, so a server linked before it declared `dpop`
+   * turns per-instance DPoP enforcement on without relinking. Only present while
+   * `HEARTBEAT_REPORTS_CAPABILITIES` is on.
+   */
+  capabilities?: readonly string[];
 };
 
 /** The check-in body: only the listed fields, never media, names, accounts or usage. */
@@ -76,6 +82,8 @@ export const buildHeartbeat = (input: HeartbeatPayload): HeartbeatPayload => ({
   },
   permissions: { ...defaultPermissions(), ...pickPermissions(input.permissions) },
   licenseKid: input.licenseKid,
+  // CLD-201 (FC-50): additive and one-way on the cloud side; only sent once the cloud accepts it
+  ...(input.capabilities && { capabilities: [...input.capabilities] }),
 });
 
 /** What Frameleaf Cloud may ask this server to do, before an administrator changes it (prototype defaults). */

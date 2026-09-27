@@ -25,6 +25,7 @@ import {
   SystemMetadataKey,
   UserMetadataKey,
 } from 'src/enum.js';
+import { FrameleafCloudPublicCall } from 'src/repositories/frameleaf-cloud.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { loadInstanceIdentity, readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
 import {
@@ -554,6 +555,7 @@ export class FrameleafLicenseService extends BaseService {
       return await this.frameleafCloudRepository.requestJson(certificateResponseSchema, {
         method: 'POST',
         url,
+        unauthenticated: FrameleafCloudPublicCall.UnlinkedLicense,
         raw: { contentType: 'application/jose', body: proof },
       });
     } catch (error) {
@@ -587,7 +589,8 @@ export class FrameleafLicenseService extends BaseService {
       await this.frameleafCloudRepository.requestJson(z.unknown(), {
         method: 'POST',
         url: `${document.api.replace(/\/+$/, '')}/v1/licenses/deactivate`,
-        dpop: api?.token,
+        // linked: DPoP-bound (FC-50); not linked: there is no instance token to bind
+        ...(api ? { dpop: api.token } : { unauthenticated: FrameleafCloudPublicCall.UnlinkedLicense }),
         body: {
           activationId: extra.activationId ?? license?.activationId ?? null,
           licenseId: license?.claims.lic?.id ?? null,
