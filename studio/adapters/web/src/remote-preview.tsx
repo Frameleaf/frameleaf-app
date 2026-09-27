@@ -13,6 +13,7 @@
  * otherwise. Frames are asked for only while paused: scrubbing and inspection need exact frames;
  * continuous playback is the WebRTC stream the render worker does not publish yet (FL-145).
  */
+import { cadenceFromDecimal, timelineFrameTime } from '@frameleaf/host/studio-timing'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { usePlaybackStore } from '@/shared/state/playback'
 import { useTimelineSettingsStore } from '@/features/timeline/stores/timeline-settings-store'
@@ -39,18 +40,14 @@ type Call = <Name extends StudioFrameServiceName>(
 
 const key = () => crypto.randomUUID()
 
-/** A playhead frame as an exact rational second at the project's rate (FL-93). */
-export const frameToTime = (frame: number, fps: number): { num: number; den: number } => {
-  const rate = Number.isInteger(fps)
-    ? { num: fps, den: 1 }
-    : { num: Math.round(fps * 1000), den: 1000 }
-  let num = frame * rate.den
-  let den = rate.num
-  const gcd = (a: number, b: number): number => (b === 0 ? Math.abs(a) : gcd(b, a % b))
-  const divisor = gcd(num, den) || 1
-  num /= divisor
-  den /= divisor
-  return { num, den }
+/**
+ * A playhead frame as an exact rational second at the project's rate (FL-93), or null when the rate
+ * has no exact reading. The rate is Freecut's `fps`, read exactly (an integer or an NTSC `x/1001`
+ * rate), so 30000/1001 stays 30000/1001 rather than becoming 2997/100.
+ */
+export const frameToTime = (frame: number, fps: number): { num: number; den: number } | null => {
+  const cadence = cadenceFromDecimal(fps)
+  return cadence ? timelineFrameTime(frame, cadence) : null
 }
 
 export function RemotePreview({ context, call }: { context: StudioHostContext; call: Call }) {
@@ -64,6 +61,8 @@ export function RemotePreview({ context, call }: { context: StudioHostContext; c
 
   useEffect(() => {
     if (!open || frame === null || !context.capabilities.renderWorker) return
+    const at = frameToTime(frame, fps)
+    if (!at) return
     const timer = setTimeout(() => {
       const box = panel.current?.getBoundingClientRect()
       const scale = globalThis.devicePixelRatio || 1
@@ -71,7 +70,7 @@ export function RemotePreview({ context, call }: { context: StudioHostContext; c
         {
           id: 'preview.request',
           payload: {
-            at: frameToTime(frame, fps),
+            at,
             quality: 'standard',
             viewportWidth: Math.max(64, Math.round((box?.width ?? 480) * scale)),
             viewportHeight: Math.max(36, Math.round(((box?.width ?? 480) * 9 * scale) / 16)),
