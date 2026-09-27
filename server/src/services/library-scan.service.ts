@@ -42,6 +42,7 @@ import {
   checkImportPathOnDisk,
   isSameOrInside,
   normalizeImportPath,
+  resolvesIntoMediaStorage,
 } from 'src/utils/library-paths.js';
 import {
   LibraryScanResult,
@@ -690,6 +691,10 @@ export class LibraryScanService {
     for (const filePath of paths) {
       const assetPath = path.normalize(filePath);
       try {
+        if (await resolvesIntoMediaStorage(this.storageRepository, assetPath)) {
+          this.logger.warn(`Skipping ${assetPath} for library ${library.id}: it links into the media storage`);
+          continue;
+        }
         const stat = await this.storageRepository.stat(assetPath);
         rows.push(
           libraryAssetFromFile(

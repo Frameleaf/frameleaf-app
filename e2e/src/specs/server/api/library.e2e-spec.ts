@@ -1,12 +1,25 @@
-import { LibraryRemovalReviewDto, LibraryResponseDto, LoginResponseDto } from '@immich/sdk';
-import { cpSync, existsSync } from 'node:fs';
+import { LibraryRemovalReviewDto, LibraryResponseDto, LoginResponseDto, updateConfig } from '@immich/sdk';
+import { cpSync, existsSync, symlinkSync } from 'node:fs';
 import { Socket } from 'socket.io-client';
 import { createUserDto } from 'src/fixtures.js';
 import { errorDto } from 'src/responses.js';
-import { app, testAssetDir, testAssetDirInternal, utils } from 'src/utils.js';
+import { app, asBearerAuth, dockerExec, testAssetDir, testAssetDirInternal, utils } from 'src/utils.js';
 import request from 'supertest';
 import { utimes } from 'utimes';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+
+/** FL-78: the server's media storage inside the e2e container, which no library may reach. */
+const mediaLocation = '/data';
+
+/** FL-78: a create refused for its import folder, and the reason the server gives. */
+const refusedCreate = async (accessToken: string, ownerId: string, importPaths: string[]) => {
+  const { status, body } = await request(app)
+    .post('/libraries')
+    .set('Authorization', `Bearer ${accessToken}`)
+    .send({ ownerId, importPaths });
+  expect(status).toBe(400);
+  return body;
+};
 
 /** FL-78: the first stage of a library removal, as an administrator sees it. */
 const removalReview = async (accessToken: string, id: string) => {
@@ -206,6 +219,100 @@ describe('/libraries', () => {
       );
     });
 
+    it('refuses a folder that climbs out through a parent-directory segment', async () => {
+      const body = await refusedCreate(admin.accessToken, admin.userId, [`${testAssetDirInternal}/temp/../../etc`]);
+      expect(body).toEqual(
+        errorDto.badRequest('Invalid import path: Import path must not use parent-directory segments'),
+      );
+    });
+
+    it("refuses the server's upload folder", async () => {
+      const body = await refusedCreate(admin.accessToken, admin.userId, [`${mediaLocation}/upload`]);
+      expect(body).toEqual(
+        errorDto.badRequest('Invalid import path: Cannot use media upload folder for external libraries'),
+      );
+    });
+
+    it('refuses a folder that contains the upload folder', async () => {
+      const body = await refusedCreate(admin.accessToken, admin.userId, ['/']);
+      expect(body).toEqual(errorDto.badRequest('Invalid import path: Import path contains the media upload folder'));
+    });
+
+    it('refuses a symbolic link to the upload folder', async () => {
+      // the link is resolved inside the server container, where the upload folder lives
+      symlinkSync(`${mediaLocation}/upload`, `${testAssetDir}/temp/fl78-link-to-upload`);
+      const body = await refusedCreate(admin.accessToken, admin.userId, [
+        `${testAssetDirInternal}/temp/fl78-link-to-upload`,
+      ]);
+      expect(body).toEqual(
+        errorDto.badRequest(
+          `Invalid import path: Import path resolves to ${mediaLocation}/upload: Cannot use media upload folder for external libraries`,
+        ),
+      );
+    });
+
+    it('refuses a symbolic link to a folder that contains the upload folder', async () => {
+      symlinkSync('/', `${testAssetDir}/temp/fl78-link-to-root`);
+      const body = await refusedCreate(admin.accessToken, admin.userId, [
+        `${testAssetDirInternal}/temp/fl78-link-to-root`,
+      ]);
+      expect(body).toEqual(
+        errorDto.badRequest(
+          'Invalid import path: Import path resolves to /: Import path contains the media upload folder',
+        ),
+      );
+    });
+
+    it('refuses a file where a folder belongs', async () => {
+      utils.createImageFile(`${testAssetDir}/temp/fl78-a-file/asset.png`);
+      const body = await refusedCreate(admin.accessToken, admin.userId, [
+        `${testAssetDirInternal}/temp/fl78-a-file/asset.png`,
+      ]);
+      expect(body).toEqual(errorDto.badRequest('Invalid import path: Not a directory'));
+    });
+
+    it('refuses the same folder listed twice', async () => {
+      utils.createImageFile(`${testAssetDir}/temp/fl78-twice/asset.png`);
+      const body = await refusedCreate(admin.accessToken, admin.userId, [
+        `${testAssetDirInternal}/temp/fl78-twice`,
+        `${testAssetDirInternal}/temp/fl78-twice/`,
+      ]);
+      expect(body).toEqual(errorDto.badRequest('Invalid import path: Import path is listed more than once'));
+    });
+
+    it('refuses nested folders in one library', async () => {
+      utils.createImageFile(`${testAssetDir}/temp/fl78-nested/inner/asset.png`);
+      const body = await refusedCreate(admin.accessToken, admin.userId, [
+        `${testAssetDirInternal}/temp/fl78-nested`,
+        `${testAssetDirInternal}/temp/fl78-nested/inner`,
+      ]);
+      expect(body).toEqual(
+        errorDto.badRequest('Invalid import path: Import path is inside another import path of this library'),
+      );
+    });
+
+    it('reports every refusal when checking folders without saving', async () => {
+      const library = await utils.createLibrary(admin.accessToken, { ownerId: admin.userId, name: 'FL-78 check' });
+      const { status, body } = await request(app)
+        .post(`/libraries/${library.id}/validate`)
+        .set('Authorization', `Bearer ${admin.accessToken}`)
+        .send({
+          importPaths: [
+            `${testAssetDirInternal}/temp/fl78-link-to-upload`,
+            `${testAssetDirInternal}/temp/../etc`,
+            `${testAssetDirInternal}/temp/fl78-does-not-exist`,
+            `${testAssetDirInternal}/temp/directoryA`,
+          ],
+        });
+      expect(status).toBe(200);
+      expect(body.importPaths.map(({ reason }: { reason: string }) => reason)).toEqual([
+        'upload_folder',
+        'parent_traversal',
+        'not_found',
+        'valid',
+      ]);
+    });
+
     it("refuses a folder that overlaps another library's folder", async () => {
       utils.createImageFile(`${testAssetDir}/temp/fl78-overlap/nested/asset.png`);
       await utils.createLibrary(admin.accessToken, {
@@ -222,6 +329,79 @@ describe('/libraries', () => {
       expect(body).toEqual(
         errorDto.badRequest('Invalid import path: Import path overlaps an import path of library FL-78 overlap'),
       );
+    });
+  });
+
+  describe('FL-78: a scan never reaches the media storage through a symbolic link', () => {
+    it("imports the folder's own files and skips a link into the upload folder", async () => {
+      // something of the administrator's in the upload folder, which the link below points at
+      await utils.createAsset(admin.accessToken);
+      utils.createImageFile(`${testAssetDir}/temp/fl78-linked-uploads/own.png`);
+      symlinkSync(`${mediaLocation}/upload`, `${testAssetDir}/temp/fl78-linked-uploads/uploads`);
+      const library = await utils.createLibrary(admin.accessToken, {
+        ownerId: nonAdmin.userId,
+        name: 'FL-78 linked uploads',
+        importPaths: [`${testAssetDirInternal}/temp/fl78-linked-uploads`],
+      });
+
+      await utils.scan(admin.accessToken, library.id);
+
+      const { assets } = await utils.searchAssets(nonAdmin.accessToken, { libraryId: library.id });
+      expect(assets.items.map(({ originalPath }) => originalPath)).toEqual([
+        `${testAssetDirInternal}/temp/fl78-linked-uploads/own.png`,
+      ]);
+    });
+  });
+
+  describe('FL-78: the folder watcher', () => {
+    afterAll(async () => {
+      await utils.resetAdminConfig(admin.accessToken);
+    });
+
+    it('imports a file added to a watched folder and marks a deleted one offline', async () => {
+      const folder = `${testAssetDirInternal}/temp/fl78-watch`;
+      utils.createImageFile(`${testAssetDir}/temp/fl78-watch/first.png`);
+      const library = await utils.createLibrary(admin.accessToken, {
+        ownerId: admin.userId,
+        name: 'FL-78 watch',
+        importPaths: [folder],
+      });
+      await utils.scan(admin.accessToken, library.id);
+
+      const config = await utils.getSystemConfig(admin.accessToken);
+      config.library.watch.enabled = true;
+      await updateConfig({ adminConfigDto: config }, { headers: asBearerAuth(admin.accessToken) });
+      // the watcher starts on the configuration event; give it a moment to be ready
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+
+      // written inside the server container, where the watcher listens
+      const added = `${folder}/added.jpg`;
+      await dockerExec([`cp ${testAssetDirInternal}/albums/nature/tanners_ridge.jpg ${added}`]).promise;
+
+      const findAdded = async () => {
+        const { assets } = await utils.searchAssets(admin.accessToken, { libraryId: library.id, originalPath: added });
+        return assets.items[0];
+      };
+      await expect
+        .poll(findAdded, { timeout: 45_000, interval: 1000 })
+        .toEqual(expect.objectContaining({ originalPath: added, isOffline: false }));
+      const { id } = await findAdded();
+
+      await dockerExec([`rm ${added}`]).promise;
+
+      // a deleted file is not forgotten: its item stays, offline, until the file comes back
+      await expect
+        .poll(
+          async () => {
+            const asset = await utils.getAssetInfo(admin.accessToken, id);
+            return asset.isOffline;
+          },
+          {
+            timeout: 45_000,
+            interval: 1000,
+          },
+        )
+        .toBe(true);
     });
   });
 

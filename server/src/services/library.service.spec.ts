@@ -3,6 +3,7 @@ import { Stats } from 'node:fs';
 import { vitest } from 'vitest';
 import type { LibraryRemovalCounts } from 'src/repositories/library.repository.js';
 import type { ILibraryFileJob } from 'src/types.js';
+import { StorageCore } from 'src/cores/storage.core.js';
 import { SystemConfig, defaults } from 'src/dtos/config.dto.js';
 import { mapLibrary } from 'src/dtos/library.dto.js';
 import {
@@ -197,7 +198,7 @@ describe(LibraryService.name, () => {
 
       const mockLibraryJob: ILibraryFileJob = {
         libraryId: library.id,
-        paths: ['/data/user1/photo.jpg'],
+        paths: ['/mnt/user1/photo.jpg'],
       };
 
       mocks.asset.createAll.mockResolvedValue([asset.id]);
@@ -209,7 +210,7 @@ describe(LibraryService.name, () => {
         expect.objectContaining({
           ownerId: library.ownerId,
           libraryId: library.id,
-          originalPath: '/data/user1/photo.jpg',
+          originalPath: '/mnt/user1/photo.jpg',
           type: AssetType.Image,
           originalFileName: 'photo.jpg',
           isExternal: true,
@@ -229,6 +230,17 @@ describe(LibraryService.name, () => {
           },
         },
       ]);
+    });
+
+    it('should not import a file whose real path is in the media storage (FL-78)', async () => {
+      const library = factory.library();
+      mocks.library.get.mockResolvedValue(library);
+      mocks.storage.realpath.mockResolvedValue(`${StorageCore.getMediaLocation()}/upload/someone/photo.jpg`);
+      mocks.asset.createAll.mockResolvedValue([]);
+
+      await sut.handleSyncFiles({ libraryId: library.id, paths: ['/mnt/user1/linked/photo.jpg'] });
+
+      expect(mocks.asset.createAll).toHaveBeenCalledWith([]);
     });
 
     it("should not import into a deleted account's library (FL-78)", async () => {

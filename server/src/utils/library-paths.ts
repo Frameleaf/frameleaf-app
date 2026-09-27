@@ -24,6 +24,7 @@ export type ImportPathCheck = {
 export type ImportPathStorage = {
   stat(filepath: string): Promise<{ isDirectory(): boolean }>;
   checkFileExists(filepath: string, mode?: number): Promise<boolean>;
+  realpath(filepath: string): Promise<string>;
 };
 
 /** Another library's folders, for the overlap check. */
@@ -123,8 +124,19 @@ export const checkImportPathOnDisk = async (
     return invalid(importPath, LibraryImportPathReason.NotReadable, 'Lacking read permission for folder');
   }
 
+  // a symbolic link must not smuggle the upload folder, or a folder containing it, past the checks above
+  const realPath = await storage.realpath(importPath);
+  const resolved = realPath === normalizeImportPath(importPath) ? null : checkImportPathFormat(realPath);
+  if (resolved) {
+    return invalid(importPath, resolved.reason, `Import path resolves to ${realPath}: ${resolved.message}`);
+  }
+
   return valid(importPath);
 };
+
+/** Whether a found file really lives in the server's own media storage, for example through a symbolic link. */
+export const resolvesIntoMediaStorage = async (storage: Pick<ImportPathStorage, 'realpath'>, filepath: string) =>
+  StorageCore.isImmichPath(await storage.realpath(filepath));
 
 /**
  * Every folder of a list, in order: form and location first, then clashes within the list and with

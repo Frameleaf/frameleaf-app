@@ -1,5 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { Stats } from 'node:fs';
+import { StorageCore } from 'src/cores/storage.core.js';
 import {
   AdminAuditAction,
   AssetStatus,
@@ -285,6 +286,21 @@ describe(LibraryScanService.name, () => {
       );
       expect(operations.complete).toHaveBeenCalledWith(operation.id, 'token', { resultAssetId: null });
       expect(operations.fail).not.toHaveBeenCalled();
+    });
+
+    it('skips a file whose real path is in the media storage', async () => {
+      mocks.storage.walk.mockImplementation(() => walkOf(['/mnt/photos/mine.jpg', '/mnt/photos/linked/theirs.jpg']));
+      mocks.storage.realpath.mockImplementation((path: string) =>
+        Promise.resolve(
+          path.includes('/linked/') ? `${StorageCore.getMediaLocation()}/upload/someone/theirs.jpg` : path,
+        ),
+      );
+
+      await sut.run(operationOf(), 'token');
+
+      expect(mocks.asset.createAll).toHaveBeenCalledWith([
+        expect.objectContaining({ originalPath: '/mnt/photos/mine.jpg' }),
+      ]);
     });
 
     it('fails, changing nothing, when an import folder does not exist', async () => {
