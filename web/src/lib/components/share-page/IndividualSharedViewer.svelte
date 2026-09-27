@@ -53,7 +53,7 @@
   );
 
   // Ends with the page: a subscription left behind would take files dropped on the next share into
-  // this one's album (FL-56, a link session's data goes with it).
+  // this one (FL-56, a link session's data goes with it).
   const stopDropUploads = dragAndDropFilesStore.subscribe((value) => {
     if (!(value.isDragging && value.files.length > 0)) {
       return;
