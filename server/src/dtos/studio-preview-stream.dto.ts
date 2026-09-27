@@ -1,9 +1,9 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
-import { StudioPreviewQualitySchema } from 'src/enum.js';
 import { PreviewTimeSchema } from 'src/dtos/studio-preview.dto.js';
-import { PREVIEW_MAX_VIEWPORT, PREVIEW_MIN_VIEWPORT } from 'src/utils/studio-preview.js';
+import { StudioPreviewQualitySchema } from 'src/enum.js';
 import { STREAM_CLOSE_REASONS, STREAM_MAX_SDP_BYTES } from 'src/utils/studio-preview-stream.js';
+import { PREVIEW_MAX_VIEWPORT, PREVIEW_MIN_VIEWPORT } from 'src/utils/studio-preview.js';
 
 /**
  * Bounded WebRTC playback of a stored Studio revision (FL-96). See `studio-preview-stream.ts` for

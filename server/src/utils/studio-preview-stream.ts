@@ -78,7 +78,7 @@ const sectionsOf = (sdp: string): { session: string[]; media: Section[] } => {
   const media: Section[] = [];
   for (const line of lines) {
     if (line.startsWith('m=')) {
-      media.push({ kind: line.slice(2).split(' ')[0], lines: [line] });
+      media.push({ kind: line.slice(2).split(' ', 1)[0], lines: [line] });
     } else if (media.length > 0) {
       media.at(-1)!.lines.push(line);
     } else {

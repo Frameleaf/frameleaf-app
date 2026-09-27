@@ -17,8 +17,8 @@ import {
 import { StudioProjectRepository } from 'src/repositories/studio-project.repository.js';
 import { RenderWorkerService } from 'src/services/render-worker.service.js';
 import { StudioExportService } from 'src/services/studio-export.service.js';
-import { StudioPreviewService } from 'src/services/studio-preview.service.js';
 import { StudioPreviewStreamService } from 'src/services/studio-preview-stream.service.js';
+import { StudioPreviewService } from 'src/services/studio-preview.service.js';
 import { StudioAuthorizedManifest, StudioResourceService } from 'src/services/studio-resource.service.js';
 import { signInputGrant } from 'src/utils/render-admission.js';
 import { StudioDestination, StudioResourceKind } from 'src/utils/studio-resources.js';
