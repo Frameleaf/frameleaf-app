@@ -90,7 +90,9 @@ test.describe('Bulk actions', () => {
 
     await utils.setAuthCookies(context, admin.accessToken);
     // No live events, so the stale item stays selected as it would on a slow or dropped connection.
-    await page.route('**/api/socket.io/**', (route) => route.abort());
+    // The web client opens socket.io as a WebSocket only (transports: ['websocket']), which page.route never
+    // sees; an unanswered routeWebSocket stub keeps the server's on_asset_delete from pruning the selection.
+    await page.routeWebSocket('**/api/socket.io/**', () => {});
     await page.goto('/photos');
     await select(page, kept.id);
     await select(page, gone.id);
