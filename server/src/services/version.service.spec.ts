@@ -1,4 +1,5 @@
 import { DateTime } from 'luxon';
+import { serverVersion } from 'src/constants.js';
 import { defaults } from 'src/dtos/config.dto.js';
 import { CronJob, JobName, JobStatus, ReleaseChannel, SystemMetadataKey, VersionCheckFrequency } from 'src/enum.js';
 import { VersionService } from 'src/services/version.service.js';
@@ -204,7 +205,30 @@ describe(VersionService.name, () => {
       expect(mocks.systemMetadata.set).toHaveBeenCalledWith(SystemMetadataKey.VersionCheckState, {
         checkedAt: expect.any(String),
         releaseVersion: 'v3.0.0',
+        rolloutSeed: expect.stringMatching(/^[a-f0-9]{32}$/),
       });
+      expect(mocks.websocket.clientBroadcast).not.toHaveBeenCalled();
+    });
+
+    it('keeps the staged-rollout seed across checks (FL-142)', async () => {
+      given({ checkedAt: DateTime.utc().minus({ hours: 2 }).toISO(), releaseVersion: 'v3.0.0', rolloutSeed: 'seed-1' });
+      mocks.serverInfo.getLatestRelease.mockResolvedValue(mockVersionResponse('v3.0.0'));
+      await expect(sut.handleVersionCheck()).resolves.toEqual(JobStatus.Success);
+      expect(mocks.serverInfo.getLatestRelease).toHaveBeenCalledWith(ReleaseChannel.Stable, 'seed-1');
+      expect(mocks.systemMetadata.set).toHaveBeenCalledWith(
+        SystemMetadataKey.VersionCheckState,
+        expect.objectContaining({ rolloutSeed: 'seed-1' }),
+      );
+    });
+
+    it('announces nothing when no release is offered to this server (withdrawn or staged, FL-142)', async () => {
+      given(null);
+      mocks.serverInfo.getLatestRelease.mockResolvedValue(null);
+      await expect(sut.handleVersionCheck()).resolves.toEqual(JobStatus.Success);
+      expect(mocks.systemMetadata.set).toHaveBeenCalledWith(
+        SystemMetadataKey.VersionCheckState,
+        expect.objectContaining({ releaseVersion: `v${serverVersion.toString()}` }),
+      );
       expect(mocks.websocket.clientBroadcast).not.toHaveBeenCalled();
     });
 
@@ -319,10 +343,11 @@ describe(VersionService.name, () => {
           type: 'major',
         }),
       );
-      expect(mocks.serverInfo.getLatestRelease).toHaveBeenCalledWith(ReleaseChannel.Stable);
+      expect(mocks.serverInfo.getLatestRelease).toHaveBeenCalledWith(ReleaseChannel.Stable, expect.any(String));
       expect(mocks.systemMetadata.set).toHaveBeenCalledWith(SystemMetadataKey.VersionCheckState, {
         checkedAt: expect.any(String),
         releaseVersion: 'v100.0.0',
+        rolloutSeed: expect.stringMatching(/^[a-f0-9]{32}$/),
       });
     });
 
