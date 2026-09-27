@@ -445,11 +445,14 @@
 
   // A running engine gets the new context; it is never remounted for a data change. The
   // dependencies are read here, in the effect body, so a change to any of them reaches the
-  // engine, while the phase check and the call itself stay untracked.
+  // engine. The phase is tracked too: a change made while the engine was still starting (the
+  // engine reporting it has no WebCodecs, so the server preview opens) reaches it once it is
+  // ready, instead of being lost because there was no engine to update at the time.
   $effect(() => {
     const next = context();
+    const ready = host.phase === 'ready';
     untrack(() => {
-      if (engine && host.phase === 'ready') {
+      if (engine && ready) {
         engine.update(next);
       }
     });
@@ -762,7 +765,7 @@
         bind:open={serverPreviewOpen}
         {preview}
         {stream}
-        available={capabilities.renderWorker}
+        available={capabilities?.renderWorker === true}
         onVideoSize={onStreamVideoSize}
       />
     {/if}
