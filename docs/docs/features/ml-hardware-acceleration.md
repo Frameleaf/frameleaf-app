@@ -61,6 +61,24 @@ Descriptions and tags is the only kind of work with a model for this server on t
 
 A blue stop is saved at once. When no Frameleaf Cloud model is chosen, jobs use the model Frameleaf Cloud recommends for your region; if it recommends none, and always for Studio AI, cloud jobs are refused until you choose one. Choosing on one side never changes the other, and where each job runs still follows its setting: work set to **Local only** shows its blue stops crossed out, and work set to **Cloud only** its white and green stops. Every model the cloud tier offers is licensed Apache-2.0, MIT or for commercial hosted use.
 
+## Hardware & GPU check
+
+**Settings → Compute & jobs → Hardware & GPU** checks each part of Frameleaf on its own, because each needs its own access to the GPU. For the server container (video and Studio export) and the machine-learning container (AI features) it reports three separate facts:
+
+- **GPU on the host**: the host's PCI list, read from inside the container, shows a GPU. Under WSL2 or Docker Desktop the host's GPUs are hidden, so this shows **Not reported** unless the container sees one.
+- **Visible to the container**: an NVIDIA device, a `/dev/dri` render node, `/dev/kfd` or `/dev/dxg` was passed in.
+- **Used by the runtime**: the test transcode ran on the GPU's video engine, or the analysis runtime (CUDA, ROCm or OpenVINO) is using the GPU.
+
+Enrolled Studio render workers and restoration workers are listed below the two containers, from the evidence they reported. A fact a worker does not report shows **Not reported**; it is never guessed.
+
+The check names the set-up problems it finds, each with the fix and, where docker compose can fix it, a copy-ready snippet with the values it found (such as the render group's number or the graphics card's PCI path). It detects, among others: the NVIDIA Container Toolkit missing, an old driver, the `video` capability missing for NVENC, `/dev/dri` not passed in, a render node owned by a group the container does not have, the integrated GPU used instead of the graphics card on a host with both, an RX 6000 or 7600 card that needs `HSA_OVERRIDE_GFX_VERSION` for ROCm, WSL2, Unraid, the processor image on a GPU host, and Docker Desktop on a Mac. A Turing card (compute capability 7.5, such as the GTX 16 series) is shown as a note: it has no bf16 or FlashAttention, so models that use them run slower.
+
+**Run a short benchmark** times search embeddings and a test transcode, then records the throughput of each kind of work the model sliders estimate:
+
+- **Descriptions and tags**: a few generated test photos are described with your description model on this server's machine-learning container (never on Frameleaf Cloud).
+- **Restoration**: the speed the restoration worker measured on its current GPU when it was qualified.
+- **Upscale** and **smooth motion** have no local runner, and a transcription worker reports no speed; the benchmark says so rather than estimating.
+
 ## Prerequisites
 
 #### ARM NN

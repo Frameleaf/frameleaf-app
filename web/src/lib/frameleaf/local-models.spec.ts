@@ -25,10 +25,20 @@ const check = (ml: { model: string | null; vramGb: number | null; backend: Hardw
       driver: null,
       backend: HardwareBackend.Cpu,
       test: null,
+      gpu: { present: null, visible: null, usable: null },
     },
-    ml: { reachable: true, vendor: null, driver: null, test: null, ...ml },
+    ml: {
+      reachable: true,
+      vendor: null,
+      driver: null,
+      test: null,
+      gpu: { present: null, visible: null, usable: null },
+      ...ml,
+    },
     mlImage: null,
     issues: [],
+    findings: [],
+    workers: [],
     benchmark: null,
   }) as HardwareCheckResponseDto;
 

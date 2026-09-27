@@ -454,3 +454,10 @@
 .fc-card > .fc-table-wrap {
   margin-top: 14px;
 }
+
+.hw-subtitle {
+  margin: 12px 0 4px;
+  font-size: var(--fl-font-small, 12px);
+  font-weight: 600;
+  color: var(--fl-muted);
+}
