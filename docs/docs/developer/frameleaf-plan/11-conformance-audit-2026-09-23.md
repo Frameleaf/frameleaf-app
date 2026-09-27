@@ -267,7 +267,13 @@ On `codex/FL-35-complete-viewer`, based on `master/frameleaf-implementation` @ `
 
 Validation: web unit specs for the menu, keys, filmstrip placeholders, date and location rules, tag suggestions and owner line, and component specs for the navbar, viewer, rating, trash actions, chooser, Live badge, tags, date and location dialogs; server unit specs for the place names and the sidecar lock. The e2e specs `e2e/src/specs/web/asset-viewer/navbar.e2e-spec.ts`, `detail-panel.e2e-spec.ts`, `e2e/src/ui/specs/asset-viewer/viewer-media.e2e-spec.ts` (Live Photo, panorama, original or encoded video, unavailable original, menu, rating, T, Space), `asset-viewer.e2e-spec.ts` and `e2e/src/specs/server/api/asset.e2e-spec.ts` were updated and not run.
 
-FL-36's bulk acceptance (frozen selection, per-item failures, refreshed views, undo only for metadata) is the FL-32 `BulkController` and `bulk-operations.ts`, unchanged here; server e2e now check the mixed-permission, partial-success and stale-selection answers of `PUT /assets`, `POST /stacks` and `PUT /tags/:id/assets` (not run).
+FL-36's bulk acceptance (frozen selection, per-item failures, refreshed views, undo only for metadata) is the FL-32 `BulkController` and `bulk-operations.ts`, unchanged here; server e2e now check the mixed-permission, partial-success and stale-selection answers of `PUT /assets`, `POST /stacks` and `PUT /tags/:id/assets` (run below).
+
+FL-36 run on September 26 against a local server built from `master/frameleaf-implementation` @ `249c37a3ea` (web build served by it, e2e database on 5435):
+
+- Server e2e `asset.e2e-spec.ts`, `stack.e2e-spec.ts` and `tag.e2e-spec.ts`: 95 passed, including the FL-36 mixed-permission, partial-success and stale-selection cases. Two upload cases in `asset.e2e-spec.ts` (thumbnails for every file type, the Samsung motion photo) time out only because the host's ffmpeg lacks the container's encoders; they are unrelated to FL-36 and run in the e2e image.
+- Web e2e `e2e/src/specs/web/asset-viewer/` (navbar, detail panel, slideshow and the rest): 39 passed. UI e2e `e2e/src/ui/specs/asset-viewer/` (including `viewer-media.e2e-spec.ts`) and `timeline/timeline.e2e-spec.ts`: 135 passed.
+- New web e2e `e2e/src/specs/web/bulk-actions.e2e-spec.ts` runs the selection bar against the real server: a partner's item in the Timeline is skipped rather than changed ("1 of 2 updated, 0 failed, 1 skipped") and the favorite is undone; an item deleted after it was selected is reported as failed while the rest are changed; a move to the trash asks nothing, leaves the view and is undone from the toast.
 
 ### September 25 trash and large files completion (FL-47)
 
