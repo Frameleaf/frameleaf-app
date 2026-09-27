@@ -1109,6 +1109,44 @@ export class ImageEnrichmentService extends BaseService {
       }
     }
 
+    return this.publishDescription({
+      asset,
+      config,
+      machineLearning,
+      options,
+      result,
+      nsfw,
+      nsfwIsFresh,
+      fingerprintBefore,
+      knownPersons,
+      destinationId,
+      modelName: machineLearning.imageDescription.modelName,
+    });
+  }
+
+  /**
+   * Publish a finished description (the local model's, or a Frameleaf Cloud batch's for one photo):
+   * checked against the original and the confirmed names it was made with, stored with its provenance,
+   * and applied to the visible metadata, search, smart albums and classification rules.
+   */
+  private async publishDescription(args: {
+    asset: { id: string; ownerId: string; type: AssetType; description?: string | null };
+    config: SystemConfig;
+    machineLearning: SystemConfig['machineLearning'];
+    options: EnrichmentRunOptions;
+    result: ImageDescriptionResult;
+    nsfw: NsfwDetectionResult | undefined;
+    nsfwIsFresh: boolean;
+    fingerprintBefore: string | undefined;
+    knownPersons: KnownPerson[];
+    destinationId: string;
+    modelName: string;
+  }): Promise<EnrichmentStageResult> {
+    const { asset, config, machineLearning, options, nsfw, nsfwIsFresh, fingerprintBefore, knownPersons } = args;
+    const { destinationId, modelName } = args;
+    const id = asset.id;
+    let result = args.result;
+
     // FL-36: keep a reported confidence only when it is a real 0-1 number; never invent one
     result = { ...result, confidence: descriptionConfidence(result) };
 
@@ -1180,7 +1218,7 @@ export class ImageEnrichmentService extends BaseService {
 
       m.description = {
         status: 'success',
-        modelName: machineLearning.imageDescription.modelName,
+        modelName,
         updatedAt: new Date().toISOString(),
         result,
         configHash: promptConfigHash(machineLearning.imageDescription.prompt),
@@ -1250,6 +1288,64 @@ export class ImageEnrichmentService extends BaseService {
     }
 
     return { status: JobStatus.Success };
+  }
+
+  /**
+   * FL-163: write one photo's description from a finished Frameleaf Cloud batch (an FC-44 item), as
+   * the description stage writes a local one: with the Frameleaf Cloud destination as its provenance and
+   * the cloud model as its model, checked against the confirmed names and applied to the visible
+   * metadata, search, smart albums and classification rules. The cloud returns no medical or safety
+   * verdict, so none is stored. An item the cloud could not describe (`failure`) is recorded as failed
+   * for that photo only. Nothing is sent anywhere from here.
+   */
+  async publishCloudDescription(
+    assetId: string,
+    item: { description: string; tags: string[]; moment: string | null; confidence: number },
+    source: { destinationId: string; modelName: string; failure?: string },
+  ): Promise<EnrichmentStageResult> {
+    const config = await this.getConfig({ withCache: true });
+    const machineLearning = config.machineLearning;
+    const asset = await this.assetJobRepository.getForImageEnrichment(assetId);
+    if (!asset || !this.isEligibleForDescription(asset)) {
+      return { status: JobStatus.Skipped, reasonKey: 'not-eligible' };
+    }
+    const failure = source.failure;
+    if (failure) {
+      await this.databaseRepository.withAssetMetadataLock(assetId, async (trx) => {
+        const m = await this.getEnrichmentMetadata(assetId, trx);
+        m.description = {
+          status: 'failed',
+          modelName: source.modelName,
+          updatedAt: new Date().toISOString(),
+          error: failure,
+        };
+        await this.saveEnrichmentMetadata(assetId, m, trx);
+      });
+      return { status: JobStatus.Failed, reasonKey: 'model-error', message: failure };
+    }
+    const stored = this.getStoredNsfw(await this.getEnrichmentMetadata(assetId));
+    return this.publishDescription({
+      asset,
+      config,
+      machineLearning,
+      options: {},
+      result: {
+        description: item.description,
+        confidence: item.confidence,
+        people: [],
+        environment: '',
+        objects: [],
+        visible_text: [],
+        context: item.moment ?? '',
+        tags: item.tags,
+      },
+      nsfw: stored ?? undefined,
+      nsfwIsFresh: false,
+      fingerprintBefore: await this.getSourceFingerprint(assetId),
+      knownPersons: await this.getKnownPersonsForAsset(asset.id, asset.ownerId),
+      destinationId: source.destinationId,
+      modelName: source.modelName,
+    });
   }
 
   /**

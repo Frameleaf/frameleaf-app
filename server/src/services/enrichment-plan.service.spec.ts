@@ -178,6 +178,21 @@ describe(EnrichmentPlanService.name, () => {
       expect(operations.create).not.toHaveBeenCalled();
     });
 
+    it('refuses Frameleaf Cloud for descriptions until its terms are accepted (FL-163 privacy gate)', async () => {
+      const assetIds = [newUuid()];
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(assetIds));
+      mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.frameleafCloud);
+
+      await expect(
+        sut.createPlan(authStub.admin, {
+          assetIds,
+          stages: [EnrichmentStage.Description],
+          destinationId: mlDestinationStub.frameleafCloud.id,
+        }),
+      ).rejects.toThrow(BadRequestException);
+      expect(operations.create).not.toHaveBeenCalled();
+    });
+
     it('answers a submit that lost the race for its request key with the plan that won', async () => {
       const assetIds = [newUuid()];
       const winner = operationOf(snapshotOf({ assetIds }));
@@ -291,6 +306,32 @@ describe(EnrichmentPlanService.name, () => {
         reasonKey: 'not-an-image',
       });
       expect(operations.complete).toHaveBeenCalled();
+    });
+
+    it('leaves a description pinned to Frameleaf Cloud to its batches and never describes it elsewhere (FL-163)', async () => {
+      const photo = newUuid();
+      const cloud = mlDestinationStub.frameleafCloudConsented.id;
+      const snapshot = snapshotOf({
+        assetIds: [photo],
+        destinations: { enrichment: cloud, search: destinationId },
+      });
+      momentRepository.getAssetKinds.mockResolvedValue(kindsOf([[photo, AssetType.Image]]));
+      mocks.access.asset.checkOwnerAccess.mockImplementation((_userId, ids) => Promise.resolve(new Set(ids)));
+      enrichment.describeAsset.mockResolvedValue({ status: JobStatus.Skipped, reasonKey: 'cloud-batch' });
+
+      await sut.run(operationOf(snapshot), 'token');
+
+      expect(enrichment.describeAsset).toHaveBeenCalledTimes(1);
+      expect(enrichment.describeAsset).toHaveBeenCalledWith(
+        photo,
+        expect.objectContaining({ planRun: true, enrichmentDestinationId: cloud }),
+      );
+      const last = vi.mocked(operations.setBulkResult).mock.calls.at(-1)![2];
+      const item = parseEnrichmentPlanResult(last.result).items[0];
+      expect(item.stages[EnrichmentStage.Description]).toMatchObject({
+        state: EnrichmentItemState.Skipped,
+        reasonKey: 'cloud-batch',
+      });
     });
 
     it('skips the stages that need a failed stage and retries the failures once, later', async () => {

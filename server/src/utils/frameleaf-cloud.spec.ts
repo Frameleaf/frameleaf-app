@@ -29,6 +29,7 @@ import {
   consentCurrentSchema,
   consentRecordRequestSchema,
   consentRecordedSchema,
+  descriptionsResultSchema,
   discoveryProblem,
   discoverySchema,
   errorEnvelopeSchema,
@@ -1230,5 +1231,73 @@ describe('Frameleaf Cloud job views, storage and cost (FL-162, FC-39, FC-42, FC-
   it('refuses a job view whose cost lines do not add up, even when every line is well formed', () => {
     const view = cloudContractFixture<{ cost: { totalUsd: number } }>('ml/job-completed.json');
     expect(jobViewSchema.safeParse({ ...view, cost: { ...view.cost, totalUsd: 0.2027 } }).success).toBe(false);
+  });
+});
+
+/**
+ * FL-163: the cloud's FC-44 descriptions fixtures (`ml/descriptions/`): the request options a batch may
+ * send, and the result document of each input that a batch writes back per photo.
+ */
+describe('Frameleaf Cloud descriptions contract (FC-44, FL-163)', () => {
+  const REJECTED_REQUESTS = [
+    'request-feature-not-boolean.json',
+    'request-free-text-style.json',
+    'request-max-tags-over.json',
+    'request-prompt.json',
+    'request-unknown-feature.json',
+  ];
+  const REJECTED_RESULTS = [
+    'result-confidence-above-one.json',
+    'result-control-characters.json',
+    'result-described-with-failure.json',
+    'result-duplicate-inputs.json',
+    'result-duplicate-tags.json',
+    'result-empty-without-warning.json',
+    'result-failed-with-tags.json',
+    'result-markup.json',
+    'result-model-fingerprint.json',
+    'result-model-name.json',
+    'result-no-items.json',
+    'result-too-long.json',
+    'result-too-many-tags.json',
+    'result-unknown-warning.json',
+  ];
+
+  it('sends the descriptions estimate and job requests, consent features included, as they are', () => {
+    for (const [schema, name] of [
+      [estimateRequestSchema, 'estimate-request.json'],
+      [jobCreateRequestSchema, 'job-request.json'],
+      [jobCreateRequestSchema, 'job-request-minimal.json'],
+    ] as const) {
+      const body = cloudContractFixture<unknown>(`ml/descriptions/${name}`);
+      expect(cloudRequestBody(schema, body, name)).toEqual(body);
+    }
+  });
+
+  it.each(REJECTED_REQUESTS)('never sends the rejected %s descriptions request', (name) => {
+    const request = cloudContractFixture<unknown>(`ml/descriptions/rejected/${name}`);
+    const body = { ...cloudContractFixture<Record<string, unknown>>('ml/descriptions/estimate-request.json'), request };
+    expect(() => cloudRequestBody(estimateRequestSchema, body, name)).toThrow(FrameleafCloudError);
+  });
+
+  it('reads a described item, a failed item and one whose metadata the cloud removed', () => {
+    expect(descriptionsResultSchema.parse(cloudContractFixture('ml/descriptions/result.json'))).toMatchObject({
+      modelSku: 'ms_K6WT70CS',
+      modelRev: 'mr_B2H147RBJBQ0',
+      items: [{ inputId: 'a1', confidence: 0.87, moment: 'An evening run on the beach', warnings: [] }],
+    });
+    expect(
+      descriptionsResultSchema.parse(cloudContractFixture('ml/descriptions/result-failed-item.json')).items[0],
+    ).toMatchObject({ description: '', warnings: ['input-too-large'] });
+    expect(
+      descriptionsResultSchema.parse(cloudContractFixture('ml/descriptions/result-metadata-removed.json')).items[0]
+        .warnings,
+    ).toEqual(['metadata-removed', 'content-removed']);
+  });
+
+  it.each(REJECTED_RESULTS)('refuses the rejected %s result document', (name) => {
+    expect(descriptionsResultSchema.safeParse(cloudContractFixture(`ml/descriptions/rejected/${name}`)).success).toBe(
+      false,
+    );
   });
 });

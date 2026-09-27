@@ -2576,6 +2576,75 @@ describe(ImageEnrichmentService.name, () => {
       expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.ImageDescription, data: { id: assetId } }]);
     });
 
+    describe('a batch result (publishCloudDescription)', () => {
+      const item = {
+        description: 'A golden retriever runs along a sandy beach at sunset.',
+        tags: ['dog', 'beach'],
+        moment: 'An evening run on the beach',
+        confidence: 0.87,
+      };
+      /** The description as it was first stored (later writes only add bookkeeping). */
+      const writtenDescription = () =>
+        (
+          mocks.asset.upsertMetadata.mock.calls[0][1] as unknown as Array<{
+            value: { description: Record<string, any> };
+          }>
+        )[0].value.description;
+
+      it('writes the photo its description with the Frameleaf Cloud model and destination, and no health verdict', async () => {
+        configure(false);
+
+        await expect(
+          sut.publishCloudDescription(assetId, item, { destinationId: cloud.id, modelName: 'Qwen3.5-9B' }),
+        ).resolves.toEqual({ status: JobStatus.Success });
+
+        expect(writtenDescription()).toMatchObject({
+          status: 'success',
+          modelName: 'Qwen3.5-9B',
+          provenance: { destinationId: cloud.id },
+          result: { description: item.description, tags: ['dog', 'beach'], context: item.moment, confidence: 0.87 },
+        });
+        // the cloud returns no medical or safety verdict, so none is stored or tagged
+        expect(writtenDescription().result.medical).toBeUndefined();
+        expect(writtenDescription().result.safety).toBeUndefined();
+        // nothing is described or sent from here
+        expect(mocks.machineLearning.describeImage).not.toHaveBeenCalled();
+        expect(mocks.machineLearning.detectNsfw).not.toHaveBeenCalled();
+      });
+
+      it('records a photo the cloud could not describe as failed, for that photo only', async () => {
+        configure(false);
+
+        await expect(
+          sut.publishCloudDescription(
+            assetId,
+            { description: '', tags: [], moment: null, confidence: 0 },
+            {
+              destinationId: cloud.id,
+              modelName: 'Qwen3.5-9B',
+              failure: 'Frameleaf Cloud could not describe this photo (input-too-large)',
+            },
+          ),
+        ).resolves.toEqual(expect.objectContaining({ status: JobStatus.Failed }));
+
+        expect(writtenDescription()).toMatchObject({
+          status: 'failed',
+          modelName: 'Qwen3.5-9B',
+          error: 'Frameleaf Cloud could not describe this photo (input-too-large)',
+        });
+      });
+
+      it('writes nothing for a photo that is gone', async () => {
+        configure(false);
+        mocks.assetJob.getForImageEnrichment.mockResolvedValue(void 0);
+
+        await expect(
+          sut.publishCloudDescription(assetId, item, { destinationId: cloud.id, modelName: 'Qwen3.5-9B' }),
+        ).resolves.toEqual({ status: JobStatus.Skipped, reasonKey: 'not-eligible' });
+        expect(mocks.asset.upsertMetadata).not.toHaveBeenCalled();
+      });
+    });
+
     it('queues no library-wide description jobs while descriptions are routed to Frameleaf Cloud', async () => {
       configure(false);
       mocks.assetJob.streamForImageDescriptionJob.mockReturnValue(makeStream([{ id: assetId }]));

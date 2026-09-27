@@ -2,6 +2,7 @@ import type { SystemConfig } from 'src/config.js';
 import type { DatabaseRepository } from 'src/repositories/database.repository.js';
 import type { MlDestinationRepository, MlDestinationRow } from 'src/repositories/ml-destination.repository.js';
 import type { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
+import type { CloudJobUploadState } from 'src/utils/frameleaf-cloud-job-client.js';
 import type { CloudCatalogEntry, CloudConsentFeatures, CloudEstimate } from 'src/utils/frameleaf-cloud.js';
 import { DatabaseLock, MlAdmissionRefusal, MlDestinationKind, MlWorkload, SystemMetadataKey } from 'src/enum.js';
 import { cloudRouteAllows } from 'src/utils/ml-destination.js';
@@ -28,8 +29,10 @@ export const CLOUD_DESCRIPTION_BACKFILL_MAX = 5000;
 export const CLOUD_DESCRIPTION_SAMPLE_SIZE = 10;
 /** How often the batch pass runs (cron): automatic batching, then every batch's next step. */
 export const CLOUD_DESCRIPTION_PASS_CRON = '* * * * *';
-/** How long a batch waits between two reads of its cloud job. */
+/** How long a batch waits between two reads of its cloud job when the cloud gives no `Retry-After`... */
 export const CLOUD_DESCRIPTION_POLL_MS = 60_000;
+/** ...and the longest it waits when the cloud asks for more. */
+export const CLOUD_DESCRIPTION_POLL_MAX_MS = 5 * 60_000;
 /** A batch's claim lease; one step (preparing 200 photos and estimating them) fits well inside it. */
 export const CLOUD_DESCRIPTION_LEASE_MS = 10 * 60_000;
 /** Batches one pass steps at most, so a pass never runs for long. */
@@ -50,23 +53,19 @@ export const CLOUD_DESCRIPTION_QUEUE_FLUSH_SIZE = 100;
 export const CLOUD_DESCRIPTION_QUEUE_FLUSH_MS = 5000;
 
 /**
- * FL-163 review P1: whether Frameleaf Cloud's published contract lets this server upload a batch's
- * photos and read its results. Until it does, no cloud job is ever created: a backfill is refused, new
- * photos are not batched, and a batch stops before `POST /v2/jobs` (estimates, which are free, still
- * run). The job broker's upload and result contract is FC-39 and is not published yet. Flip this in the
- * change that implements that contract (uploads, `progress` and `result`), never because `POST /v2/jobs`
- * stopped answering 503 `capacity`. It is an object only so specs can exercise the submit path.
+ * The `request` of every description batch (FC-44 `DescriptionsRequest`): the length, and the two
+ * consent-gated features exactly as the recorded consent allows them (both off unless the administrator
+ * turned them on when accepting the terms). Prompts stay in the cloud (API protection measure 2), so no
+ * name, face or other text from this server is ever part of it; with `identityNames` and
+ * `medicalSignals` off, the cloud removes any name or health inference from what it returns.
  */
-export const CLOUD_DESCRIPTION_CONTRACT: { uploadsPublished: boolean } = { uploadsPublished: false };
-
-/** Why nothing is sent while the contract has no uploads (see `CLOUD_DESCRIPTION_CONTRACT`). */
-export const CLOUD_DESCRIPTION_UPLOADS_UNPUBLISHED =
-  'Frameleaf Cloud does not accept description uploads from this server yet, so no description job is created. Nothing was sent.';
-/**
- * The `request` every description batch sends: the length only. Prompts stay in the cloud (API
- * protection measure 2), so no name, face or other text from this server is ever part of it.
- */
-export const CLOUD_DESCRIPTION_REQUEST = Object.freeze({ length: 'standard' as const });
+export const cloudDescriptionRequest = (
+  features: Pick<CloudConsentFeatures, 'identityNames' | 'medicalSignals'> | null,
+) => ({
+  length: 'standard' as const,
+  features: { identityNames: features?.identityNames === true, medicalSignals: features?.medicalSignals === true },
+});
+export type CloudDescriptionRequest = ReturnType<typeof cloudDescriptionRequest>;
 
 /** Where a batch is. The media operation status says whether it is running; this says what it waits for. */
 export enum CloudDescriptionPhase {
@@ -91,6 +90,8 @@ export type CloudDescriptionSnapshot = {
   assetIds: string[];
   /** The model SKU (FL-183 model identity) the batch is estimated and run with. */
   modelSku: string;
+  /** The model's display name (`Qwen3.5-9B`), recorded with each photo's description. */
+  modelName?: string;
   /** The job-packing key: one per model, so batches of one model can share a started worker. */
   packKey: string;
   /** The most the batch may be estimated at (p90, USD) for a backfill; null for automatic batches. */
@@ -108,6 +109,17 @@ export type CloudDescriptionItem = {
   refused?: string;
   /** Its share of the settled charge, once settled (USD). */
   costShareUsd?: number;
+  /**
+   * What the finished job gave this photo: `described` (its description was written, with the model
+   * revision that produced it) or `failed` (it was not; `error` says why). One photo failing never
+   * fails the batch.
+   */
+  outcome?: 'described' | 'failed';
+  /** The model revision (`mr_…`) the cloud described it with. */
+  modelRev?: string;
+  /** The cloud's FC-44 warnings for this photo (`input-too-large`, `content-removed`, …). */
+  warnings?: string[];
+  error?: string;
 };
 
 /** What happened to a batch so far. `items` is left out of job lists (`listRecentOfKind`). */
@@ -127,6 +139,8 @@ export type CloudDescriptionResult = {
     p90Usd: number;
     holdUsd: number;
     startupUsd: number;
+    /** The request the estimate was sealed with, sent again unchanged with its job (FC-44). */
+    request?: CloudDescriptionRequest;
     /**
      * When `POST /v2/jobs` was first sent with this key and estimate, recorded before it is sent. A
      * batch that finds it set replays the same key and body before estimating again, so a crash after
@@ -143,7 +157,13 @@ export type CloudDescriptionResult = {
     ceilingUsd: number;
     admittedAt: string;
     meteredSeconds: number | null;
+    /** Every photo is uploaded and the job was started (`POST /v2/jobs/{id}/start`). */
+    started?: boolean;
+    /** The last ETag of `GET /v2/jobs/{id}`, sent back with `If-None-Match`. */
+    etag?: string | null;
   } | null;
+  /** Upload progress per input (resumed after a restart without sending a finished part again). */
+  uploads: CloudJobUploadState;
   settledUsd: number | null;
   /** The last refusal a step met while waiting (for example 503 `capacity`), shown in the batch. */
   waiting: { refusal: string; detail: string; at: string } | null;
@@ -180,6 +200,7 @@ export const emptyCloudDescriptionResult = (assetIds: readonly string[]): CloudD
   submission: null,
   estimates: 0,
   job: null,
+  uploads: {},
   settledUsd: null,
   waiting: null,
 });
@@ -194,7 +215,7 @@ export const parseCloudDescriptionSnapshot = (value: unknown): CloudDescriptionS
   if (!isRecord(value) || value.version !== 1) {
     throw new Error('This description batch was written by another version and cannot be read');
   }
-  const { origin, destinationId, assetIds, modelSku, packKey, approvedP90Usd } = value;
+  const { origin, destinationId, assetIds, modelSku, modelName, packKey, approvedP90Usd } = value;
   if (
     (origin !== 'backfill' && origin !== 'automatic') ||
     typeof destinationId !== 'string' ||
@@ -212,6 +233,7 @@ export const parseCloudDescriptionSnapshot = (value: unknown): CloudDescriptionS
     destinationId,
     assetIds: assetIds as string[],
     modelSku,
+    ...(typeof modelName === 'string' && { modelName }),
     packKey,
     approvedP90Usd: approvedP90Usd as number | null,
   };
@@ -232,6 +254,7 @@ export const parseCloudDescriptionResult = (value: unknown, assetIds: readonly s
     submission: isRecord(value.submission) ? (value.submission as CloudDescriptionResult['submission']) : null,
     estimates: typeof value.estimates === 'number' ? value.estimates : 0,
     job: isRecord(value.job) ? (value.job as CloudDescriptionResult['job']) : null,
+    uploads: isRecord(value.uploads) ? (value.uploads as CloudJobUploadState) : {},
     settledUsd: typeof value.settledUsd === 'number' ? value.settledUsd : null,
     waiting: isRecord(value.waiting) ? (value.waiting as CloudDescriptionResult['waiting']) : null,
   };
@@ -327,9 +350,12 @@ export const projectCloudDescriptionCost = (
   };
 };
 
-/** Whether a description model is of the 72B class, told by its display name (a SKU never names it). */
+/**
+ * Whether a description model is of the 72B class, told by its display name (a SKU never names it):
+ * Qwen2.5-VL-72B and Qwen3.5-122B-A10B, which share the 141 GB GPU class and its start fee.
+ */
 export const isHeavyDescriptionModel = (entry: Pick<CloudCatalogEntry, 'display'>): boolean =>
-  /(?:^|\D)72b/i.test(entry.display.model);
+  /(?:^|\D)(?:72|122)b/i.test(entry.display.model);
 
 const isMidDescriptionModel = (entry: Pick<CloudCatalogEntry, 'display'>): boolean =>
   /(?:^|\D)(?:27|35)b/i.test(entry.display.model);
