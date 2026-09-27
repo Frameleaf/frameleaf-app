@@ -282,6 +282,7 @@ const TASK_TITLE: Record<CloudBackupTask, Translations> = {
 const RESTORE_TITLE: Record<CloudBackupRestoreScope, Translations> = {
   [CloudBackupRestoreScope.Files]: 'frameleaf_cloud_work_restore_files',
   [CloudBackupRestoreScope.Asset]: 'frameleaf_cloud_work_restore_asset',
+  [CloudBackupRestoreScope.Album]: 'frameleaf_cloud_work_restore_album',
   [CloudBackupRestoreScope.Database]: 'frameleaf_cloud_work_restore_database',
   [CloudBackupRestoreScope.Library]: 'frameleaf_cloud_work_restore_library',
 };
