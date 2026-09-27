@@ -349,15 +349,19 @@ export class UserRepository {
       .executeTakeFirstOrThrow();
   }
 
+  /**
+   * `withDeleted` (FL-76): the email is unique across soft-deleted accounts too, so a duplicate check
+   * before an insert or update must see them. Sign-in never passes it.
+   */
   @GenerateSql({ params: [DummyValue.EMAIL] })
-  getByEmail(email: string, options?: { withPassword?: boolean }) {
+  getByEmail(email: string, options?: { withPassword?: boolean; withDeleted?: boolean }) {
     return this.db
       .selectFrom('user')
       .select(columns.userAdmin)
       .select(withMetadata)
       .$if(!!options?.withPassword, (eb) => eb.select('password'))
       .where('email', '=', email)
-      .where('user.deletedAt', 'is', null)
+      .$if(!options?.withDeleted, (qb) => qb.where('user.deletedAt', 'is', null))
       .executeTakeFirst();
   }
 
