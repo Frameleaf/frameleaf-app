@@ -263,6 +263,8 @@ test("legacy publishing and upstream mutations are inert and cannot inherit secr
 
 test("OpenAPI compares immutable same-repository base commits, not the moving target branch", () => {
   const w = workflow("check-openapi.yml");
+  assert.deepEqual(w.on.pull_request.branches, ["fork/main", "master/frameleaf-implementation"]);
+  assert.ok(w.on.pull_request.types.includes("edited"));
   const steps = w.jobs["check-openapi"].steps;
   const baseline = steps.find((s) => s.name === "Checkout exact PR base");
   assert.equal(baseline.with.repository, "Frameleaf/frameleaf-app");
