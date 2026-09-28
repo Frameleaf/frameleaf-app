@@ -161,12 +161,18 @@ The **Integration Image** workflow (`.github/workflows/integration-image.yml`) b
 
 ```sh
 gh run list -R Frameleaf/frameleaf-app --workflow integration-image.yml --branch master/frameleaf-implementation --limit 1
-gh run watch -R Frameleaf/frameleaf-app "$(gh run list -R Frameleaf/frameleaf-app --workflow integration-image.yml --limit 1 --json databaseId --jq '.[0].databaseId')"
+gh run watch -R Frameleaf/frameleaf-app --compact --interval 420 --exit-status "$(gh run list -R Frameleaf/frameleaf-app --workflow integration-image.yml --limit 1 --json databaseId --jq '.[0].databaseId')"
 docker pull ghcr.io/frameleaf/frameleaf-server:integration-<full-SHA>
 docker pull ghcr.io/frameleaf/frameleaf-postgres:integration-<full-SHA>
 ```
 
 The run summary lists both images' tags and manifest digests; pin the digests in the consuming test. The packages are private, so pulling needs a GitHub token with `read:packages` (`docker login ghcr.io`), and a workflow in another repository can pull only after an organization owner grants that repository Read access under each package's **Manage Actions access**.
+
+### Build-time geodata host
+
+The server Dockerfile fetches the five files pinned in `server/base-image/geodata/geodata.lock` from `https://static.frameleaf.cloud/geodata/2026-09-11/`. Frameleaf Cloud serves this immutable snapshot through the `frameleaf-geodata` Cloudflare Workers static asset service. The published paths, bytes and SHA-256 hashes must match the lock; keep older snapshots available when adding a new versioned directory. Responses use `Cache-Control: public, max-age=31536000, immutable` and HTTPS with a valid certificate.
+
+To update the host, deploy a complete static asset archive in Cloudflare Workers & Pages → `frameleaf-geodata` → **New deployment**. Include the matching `_headers` cache rules and GeoNames CC BY 4.0 / Natural Earth attribution. Never overwrite bytes in an existing snapshot. Verify every path's status, size and checksum against `geodata.lock`, then confirm the next Integration Image build log names `static.frameleaf.cloud` for all five downloads without using the Internet Archive fallback. The deployment receipt and exact update instructions are kept in the private FL-197 operations record.
 
 ### Extra licence keys (integration builds only)
 
