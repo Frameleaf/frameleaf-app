@@ -1,6 +1,11 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { emptyDiscoveryQuery } from '$lib/components/discovery/query';
-import { libraryPreferenceKey, libraryTransientKey, writeLibraryView, type LibraryViewState } from '$lib/frameleaf/library-session';
+import {
+  libraryPreferenceKey,
+  libraryTransientKey,
+  writeLibraryView,
+  type LibraryViewState,
+} from '$lib/frameleaf/library-session';
 import { LibrarySessionStore } from '$lib/frameleaf/library-session.svelte';
 
 class MemoryStorage {

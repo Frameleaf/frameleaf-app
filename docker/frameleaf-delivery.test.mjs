@@ -439,6 +439,7 @@ const compatibilityTargetFiles = new Set([
   "e2e/docker-compose.fork-roundtrip.yml",
   "scripts/test-fork-roundtrip.sh",
   "scripts/test-fork-roundtrip.test.mjs",
+  "scripts/test-cli-fork-to-official.mjs",
   "server/src/commands/fork-handoff.command.spec.ts",
   "server/src/fork-schema/supported-versions.json",
   "server/src/repositories/fork-handoff.repository.ts",

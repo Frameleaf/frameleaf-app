@@ -1,6 +1,6 @@
 import { browser } from '$app/environment';
-import { downloadManager } from '$lib/managers/download-manager.svelte';
 import { clearPrivateBrowserState } from '$lib/frameleaf/private-browser-state';
+import { downloadManager } from '$lib/managers/download-manager.svelte';
 
 /** Discard route-independent protected state when elevated access is revoked. */
 export const revokeSessionView = (destination: string) => {

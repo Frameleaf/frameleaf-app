@@ -164,7 +164,10 @@ test.describe('Google Photos import (FL-144)', () => {
     expect(await readFile(await csvDownload.path(), 'utf8')).toContain('Trip/IMG_1.png,takeout.zip,image,ready,');
   });
 
-  test('reviews Live Photo pairs from split archives and keeps each decision after reload', async ({ context, page }) => {
+  test('reviews Live Photo pairs from split archives and keeps each decision after reload', async ({
+    context,
+    page,
+  }) => {
     test.setTimeout(60_000);
     const auth = { headers: asBearerAuth(admin.accessToken) };
     const takeout = await createTakeoutImport({ takeoutCreateDto: { name: 'Live Photo review' } }, auth);
