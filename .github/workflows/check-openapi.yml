@@ -10,10 +10,12 @@ name: Check OpenAPI
   pull_request:
     branches:
       - fork/main
+      - master/frameleaf-implementation
     types:
       - opened
       - synchronize
       - reopened
+      - edited
       - labeled
       - unlabeled
     paths:
