@@ -1,8 +1,12 @@
-import { Kysely } from 'kysely';
+import { Kysely, sql } from 'kysely';
 import { AssetEditAction } from 'src/dtos/editing.dto.js';
 import { AssetVisibility, DocumentEditAction } from 'src/enum.js';
 import { AssetEditRepository } from 'src/repositories/asset-edit.repository.js';
-import { DocumentEditConflictError, DocumentRepository } from 'src/repositories/document.repository.js';
+import {
+  type DocumentEdit,
+  DocumentEditConflictError,
+  DocumentRepository,
+} from 'src/repositories/document.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { OcrRepository } from 'src/repositories/ocr.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -120,14 +124,42 @@ describe(DocumentRepository.name, () => {
     const first = await sut.create(values);
 
     await expect(sut.create(values)).rejects.toBeInstanceOf(DocumentEditConflictError);
-    const second = await sut.update(first.id, first.revision, { value: '13.00' });
-    expect(second).toMatchObject({ revision: first.revision + 1, value: '13.00' });
-    await expect(sut.update(first.id, first.revision, { value: '14.00' })).rejects.toBeInstanceOf(
-      DocumentEditConflictError,
-    );
+    const contenders = ['13.00', '14.00'];
+    let outcomes!: Promise<PromiseSettledResult<DocumentEdit>[]>;
+    await database.transaction().execute(async (trx) => {
+      await trx
+        .selectFrom('asset_document_edit')
+        .select('id')
+        .where('id', '=', first.id)
+        .forUpdate()
+        .executeTakeFirstOrThrow();
+      outcomes = Promise.allSettled(contenders.map((value) => sut.update(first.id, first.revision, { value })));
+      await vi.waitFor(
+        async () => {
+          const { rows } = await sql<{ waiting: number }>`
+            select count(*)::int as waiting from pg_stat_activity
+            where datname = current_database() and wait_event_type = 'Lock'
+              and query like 'update "asset_document_edit"%'
+          `.execute(database);
+          expect(rows[0].waiting).toBe(2);
+        },
+        { timeout: 5000 },
+      );
+    });
+    const results = await outcomes;
+    expect(results.map(({ status }) => status).sort()).toEqual(['fulfilled', 'rejected']);
+    const [winner] = await sut.getEdits(asset.id);
+    expect(winner).toMatchObject({ id: first.id, revision: first.revision + 1 });
+    for (const [index, result] of results.entries()) {
+      if (result.status === 'rejected') {
+        expect(result.reason).toBeInstanceOf(DocumentEditConflictError);
+        expect(winner.value).not.toBe(contenders[index]);
+      } else {
+        expect(winner).toMatchObject({ value: result.value.value, revision: result.value.revision });
+      }
+    }
     await expect(sut.delete(first.id, asset.id, first.revision)).rejects.toBeInstanceOf(DocumentEditConflictError);
-    await expect(sut.getEdits(asset.id)).resolves.toEqual([expect.objectContaining({ id: first.id, value: '13.00' })]);
-    await sut.delete(first.id, asset.id, second.revision);
+    await sut.delete(first.id, asset.id, winner.revision);
     await expect(sut.getEdits(asset.id)).resolves.toEqual([]);
-  });
+  }, 20_000);
 });
