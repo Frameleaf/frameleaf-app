@@ -92,9 +92,11 @@ function setup(isTrashed = true) {
 }
 
 it('removes a remotely Locked result and advances the open viewer', async () => {
-  const { assets } = setup(false);
+  const { assets, view } = setup(false);
   const [hidden, next, last] = assets;
 
+  // ResultsAssetViewer imports the viewer lazily; deliver the event once it is open and subscribed.
+  await view.findByRole('button', { name: 'view_next_asset' });
   eventManager.emit('AssetUpdate', { ...hidden, visibility: AssetVisibility.Locked });
 
   await waitFor(() => expect(assetViewerManager.asset?.id).toBe(next.id));

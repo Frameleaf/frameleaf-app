@@ -7,7 +7,8 @@ class SearchStore {
    * `recentSearches`). Kept in memory only and dropped on every access change: a search typed while the
    * session was unlocked can name a Locked person or tag, and must not be shown once it is locked.
    */
-  recentSearches = $state<PaletteSearch[]>([]);
+  // Recents are replaced as a whole; query helpers clone their plain values.
+  recentSearches = $state.raw<PaletteSearch[]>([]);
   isSearchEnabled = $state(false);
 
   constructor() {
