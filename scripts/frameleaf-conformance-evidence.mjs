@@ -1031,13 +1031,14 @@ const actions = {
     },
   ],
   "share-with-recipients-create-or-manage-a-public-link": [
-    "partial",
+    "fixed",
     ["AL-30", "AL-30b", "AL-32", "AL-33"],
-    "Selection Share link opens the form and ShareSheet offers the link only (fixed); the viewer's Share opens ShareSheet (AL-33, fixed on codex/FL-52-albums-sharing); per-item person sharing has no server contract (AL-30b, owner)",
+    'Selection Share link opens the form; the viewer\'s Share opens ShareSheet (AL-33). ShareSheet offers "Share with people in this library" and "Create a public link" as in the prototype: per-item shares to a person (AL-30b, owner decision 2026-09-27; /item-shares, fork migration 206), seen under Sharing › Shared with you, locked items never shared or shown',
     {
       production: [
         `${W}/lib/components/frameleaf/ShareSheet.svelte`,
         `${W}/lib/components/frameleaf/SharedLinkForm.svelte`,
+        `${W}/lib/components/frameleaf/SharedWithYouSection.svelte`,
       ],
     },
   ],
@@ -1369,9 +1370,9 @@ const routes = {
     ],
   ],
   "/albums": [
-    "partial",
+    "fixed",
     ["AL-1", "AL-2", "AL-3", "AL-4", "AL-5", "AL-6", "AL-7", "AL-8", "AL-9"],
-    "Albums page dialogs, smart album create and built-in Re-evaluate (AL-6) fixed; AL-9 (editor move rights) is an owner decision (FL-146)",
+    "Albums page dialogs, smart album create and built-in Re-evaluate (AL-6) fixed; AL-9: only the owner moves an album (owner decision 2026-09-27), so an editor is never offered Move to… or a drag and the server answers 403",
     [`${P}/Collections.jsx`, `${P}/AlbumCard.jsx`, `${P}/collections-data.mjs`],
     [
       `${W}/routes/(user)/albums/+page.svelte`,
@@ -1585,9 +1586,9 @@ const routes = {
     [`${W}/routes/(user)/memory/[[photos=photos]]/[[assetId=id]]/+page.ts`],
   ],
   "/partners/[userId]/[[photos=photos]]/[[assetId=id]]": [
-    "partial",
+    "intentional-product-change",
     ["AL-39", "AL-40", "AL-41"],
-    "Partner header copy fixed (AL-39, FL-83) and the legacy bar removed (AL-41); the location toggle without sharing back (AL-40) is an owner decision (FL-146)",
+    "Partner header copy fixed (AL-39, FL-83) and the legacy bar removed (AL-41); the location toggle shows only when you share back (AL-40), kept as built by owner decision 2026-09-27 because the setting lives on your own partner row",
     [`${P}/PartnerLibrary.jsx`],
     [
       `${W}/routes/(user)/partners/[userId]/[[photos=photos]]/[[assetId=id]]/+page.svelte`,

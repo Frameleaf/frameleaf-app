@@ -20,13 +20,13 @@
     "routes": 83,
     "byStatus": {
       "match": 63,
-      "partial": 3,
+      "partial": 0,
       "missing": 0,
-      "fixed": 155,
+      "fixed": 157,
       "in-flight": 0,
       "studio-parked": 2,
       "retained-live-route": 8,
-      "intentional-product-change": 5
+      "intentional-product-change": 6
     }
   },
   "webActions": [
@@ -1753,11 +1753,12 @@
       "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
       "production": [
         "web/src/lib/components/frameleaf/ShareSheet.svelte",
-        "web/src/lib/components/frameleaf/SharedLinkForm.svelte"
+        "web/src/lib/components/frameleaf/SharedLinkForm.svelte",
+        "web/src/lib/components/frameleaf/SharedWithYouSection.svelte"
       ],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["AL-30", "AL-30b", "AL-32", "AL-33"],
-      "followUp": "Selection Share link opens the form and ShareSheet offers the link only (fixed); the viewer's Share opens ShareSheet (AL-33, fixed on codex/FL-52-albums-sharing); per-item person sharing has no server contract (AL-30b, owner)"
+      "followUp": "Selection Share link opens the form; the viewer's Share opens ShareSheet (AL-33). ShareSheet offers \"Share with people in this library\" and \"Create a public link\" as in the prototype: per-item shares to a person (AL-30b, owner decision 2026-09-27; /item-shares, fork migration 206), seen under Sharing › Shared with you, locked items never shared or shown"
     },
     {
       "requirementId": "action:viewer:shared-link-download-with-link-restrictions",
@@ -2140,9 +2141,9 @@
         "web/src/routes/(user)/albums/+page.svelte",
         "web/src/lib/components/frameleaf/AlbumDirectory.svelte"
       ],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["AL-1", "AL-2", "AL-3", "AL-4", "AL-5", "AL-6", "AL-7", "AL-8", "AL-9"],
-      "followUp": "Albums page dialogs, smart album create and built-in Re-evaluate (AL-6) fixed; AL-9 (editor move rights) is an owner decision (FL-146)"
+      "followUp": "Albums page dialogs, smart album create and built-in Re-evaluate (AL-6) fixed; AL-9: only the owner moves an album (owner decision 2026-09-27), so an editor is never offered Move to… or a drag and the server answers 403"
     },
     {
       "route": "/albums/[albumId=id]/[[photos=photos]]/[[assetId=id]]",
@@ -2358,9 +2359,9 @@
         "web/src/routes/(user)/partners/[userId]/[[photos=photos]]/[[assetId=id]]/+page.svelte",
         "web/src/lib/components/frameleaf/PartnerLibraryHeader.svelte"
       ],
-      "status": "partial",
+      "status": "intentional-product-change",
       "gaps": ["AL-39", "AL-40", "AL-41"],
-      "followUp": "Partner header copy fixed (AL-39, FL-83) and the legacy bar removed (AL-41); the location toggle without sharing back (AL-40) is an owner decision (FL-146)"
+      "followUp": "Partner header copy fixed (AL-39, FL-83) and the legacy bar removed (AL-41); the location toggle shows only when you share back (AL-40), kept as built by owner decision 2026-09-27 because the setting lives on your own partner row"
     },
     {
       "route": "/people",
