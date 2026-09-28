@@ -5,6 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { createHash } from 'node:crypto';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import {
   StudioCommentCreateDto,
@@ -1150,13 +1151,14 @@ export class StudioProjectService {
     cloudConsent?: boolean,
   ): Promise<CachedResolution & { cached: boolean }> {
     const generated = await this.repository.listGeneratedResources(project.id);
-    // Publication can add a declaration without changing the graph revision. Resolve generated
-    // projects freshly until their publication/retention lifecycle supplies cache invalidations.
-    const cacheable = destination !== StudioDestination.FrameleafCloud && generated.length === 0;
+    // The repository returns immutable declarations ordered by id. Publication can add one without
+    // a graph save, so bind the cache to this set; unchanged sets keep the same preview digest.
+    const declarations = createHash('sha256').update(JSON.stringify(generated)).digest('hex');
+    const cacheable = destination !== StudioDestination.FrameleafCloud;
     // FL-195: an unlocked session resolves the owner's revealed locks, a locked one refuses them, so a
     // resolution is never shared between the two
     const privacy = getLockedOwnerId(auth) ? 'unlocked' : 'locked';
-    const key = `${project.id}:${revision.revision}:${auth.user.id}:${privacy}:${destination}`;
+    const key = `${project.id}:${revision.revision}:${auth.user.id}:${privacy}:${destination}:${declarations}`;
     const now = Date.now();
 
     if (cacheable) {

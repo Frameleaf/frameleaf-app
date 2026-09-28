@@ -5,6 +5,7 @@ import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { StudioProjectRepository, StudioRevisionAppend } from 'src/repositories/studio-project.repository.js';
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
+import { StudioRevocationService } from 'src/services/studio-revocation.service.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { getKyselyDB } from 'test/utils.js';
 
@@ -400,6 +401,89 @@ describe(StudioProjectRepository.name, () => {
   });
 
   describe('generated resources', () => {
+    it('revokes relinked generated media through distinct restoration and original ids, including after deletion', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      const sourceId = asset.id!;
+      const restoration = await defaultDatabase
+        .insertInto('asset_restoration')
+        .values({
+          assetId: sourceId,
+          ownerId: user.id,
+          revision: 1,
+          mode: 'faithful',
+          workload: 'restore-video',
+          destinationKind: 'local',
+          destinationName: 'Local',
+          sourceType: 'video',
+          sourceChecksum: Buffer.from('ab'.repeat(32), 'hex'),
+          sourceWidth: 1920,
+          sourceHeight: 1080,
+          previewRegion: { x: 0, y: 0, w: 1, h: 1 },
+        })
+        .returning('id')
+        .executeTakeFirstOrThrow();
+      expect(restoration.id).not.toBe(sourceId);
+      const project = await leasedProject(sut, user.id);
+      await sut.appendRevision(
+        append(project.id, user.id, {
+          envelope: { graph: { clips: [{ restoredVersionId: restoration.id }] } },
+        }),
+      );
+      expect(await sut.getIdsReferencingAssets([sourceId])).toEqual([project.id]);
+      const resource = {
+        projectId: project.id,
+        ownerId: user.id,
+        sourceRevision: 1,
+        id: 'reverse',
+        producer: 'reverse-conform',
+        checksum: 'ab'.repeat(32),
+        path: '/private/studio/reverse.mp4',
+        derivedFrom: [`restored-version:${restoration.id}`],
+      };
+      await sut.registerGeneratedResource(resource);
+      await sut.registerGeneratedResource(resource);
+      expect((await sut.listGeneratedResources(project.id))[0].derivedFrom).toEqual([
+        `restored-version:${restoration.id}`,
+        `library-asset:${sourceId}`,
+      ]);
+      await sut.appendRevision(
+        append(project.id, user.id, {
+          expectedRevision: 1,
+          requestKey: 'relinked',
+          digest: 'relinked',
+          envelope: { graph: { clips: [{ generatedId: 'reverse' }] } },
+        }),
+      );
+      const projects = { forgetResolutions: vi.fn() };
+      const previews = { revokeForProjects: vi.fn().mockResolvedValue(1) };
+      const streams = { revokeForProjects: vi.fn().mockResolvedValue(1) };
+      const operations = { listUnfinishedForProjects: vi.fn().mockResolvedValue([]) };
+      const revocation = new StudioRevocationService(
+        ctx.get(LoggingRepository),
+        sut,
+        projects as never,
+        previews as never,
+        streams as never,
+        operations as never,
+      );
+      await revocation.onAssetLocked({ assetIds: [sourceId] });
+      await revocation.onAssetTrash({ assetId: sourceId, userId: user.id });
+      // Match production's post-delete event: the restoration FK has already cascaded.
+      await defaultDatabase.deleteFrom('asset').where('id', '=', sourceId).execute();
+      expect(
+        await defaultDatabase.selectFrom('asset_restoration').select('id').where('id', '=', restoration.id).execute(),
+      ).toEqual([]);
+      await revocation.onAssetDelete({ assetId: sourceId, userId: user.id });
+      for (const revoke of [projects.forgetResolutions, previews.revokeForProjects, streams.revokeForProjects]) {
+        expect(revoke).toHaveBeenCalledTimes(3);
+        expect(revoke).toHaveBeenNthCalledWith(1, [project.id]);
+        expect(revoke).toHaveBeenNthCalledWith(2, [project.id]);
+        expect(revoke).toHaveBeenNthCalledWith(3, [project.id]);
+      }
+    });
+
     it('persists immutable provenance, isolates projects, and finds relinked source revocations', async () => {
       const { ctx, sut } = setup();
       const { user } = await ctx.newUser();
@@ -472,6 +556,12 @@ describe(StudioProjectRepository.name, () => {
       await expect(sut.registerGeneratedResource({ ...resource, derivedFrom: [] })).rejects.toThrow(
         'Invalid generated',
       );
+      await expect(
+        sut.registerGeneratedResource({ ...resource, derivedFrom: ['restored-version:invalid'] }),
+      ).rejects.toThrow('Invalid generated restoration');
+      await expect(
+        sut.registerGeneratedResource({ ...resource, derivedFrom: [`restored-version:${randomUUID()}`] }),
+      ).rejects.toThrow('restoration source is unavailable');
       expect(await sut.listGeneratedResources(project.id)).toEqual([]);
     });
   });

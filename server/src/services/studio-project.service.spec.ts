@@ -680,7 +680,12 @@ describe(StudioProjectService.name, () => {
       expect(next.cached).toBe(false);
       expect(repository.listGeneratedResources).toHaveBeenLastCalledWith(project.id);
       expect(resources.resolveProjectResources).toHaveBeenLastCalledWith(owner, expect.objectContaining({ generated }));
-      await sut.authorizeRevision(owner, { projectId: project.id });
+      const repeated = await sut.authorizeRevision(owner, { projectId: project.id });
+      expect(repeated.cached).toBe(true);
+      expect(repeated.manifest).toBe(next.manifest);
+      expect(resources.resolveProjectResources).toHaveBeenCalledTimes(2);
+      sut.forgetResolutions([project.id]);
+      expect((await sut.authorizeRevision(owner, { projectId: project.id })).cached).toBe(false);
       expect(resources.resolveProjectResources).toHaveBeenCalledTimes(3);
     });
 

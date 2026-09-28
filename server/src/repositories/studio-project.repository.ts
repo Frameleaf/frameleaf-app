@@ -440,12 +440,18 @@ export class StudioProjectRepository {
    * the original from the graph; conservatively revoke any project declaring such a derivative.
    */
   async getIdsReferencingAssets(assetIds: readonly string[]): Promise<string[]> {
-    const patterns = [...new Set(assetIds)]
-      .filter((id) => /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i.test(id))
-      .map((id) => `%${id.toLowerCase()}%`);
-    if (patterns.length === 0) {
+    const ids = [...new Set(assetIds.filter(isStudioUuid).map((id) => id.toLowerCase()))];
+    if (ids.length === 0) {
       return [];
     }
+    // A restored-version reference names the restoration, not its original asset. Include both
+    // identities for current graphs and persisted declarations, including projects relinked to a generated id.
+    const restorations = await this.db
+      .selectFrom('asset_restoration')
+      .select('id')
+      .where('assetId', 'in', ids)
+      .execute();
+    const patterns = [...ids, ...restorations.map(({ id }) => id)].map((id) => `%${id}%`);
     const rows = await this.db
       .selectFrom('studio_project')
       .innerJoin('studio_project_revision', (join) =>
@@ -541,7 +547,38 @@ export class StudioProjectRepository {
       if (!revision) {
         throw new ConflictException('The generated media project or source revision is unavailable');
       }
-      const lineage = JSON.stringify(resource.derivedFrom);
+      // Keep the original id durably: AssetDelete runs after restoration rows cascade away.
+      // The restoration row lock keeps deletion from racing this provenance snapshot.
+      const restorationIds = [
+        ...new Set(
+          resource.derivedFrom
+            .filter((key) => key.startsWith('restored-version:'))
+            .map((key) => key.slice('restored-version:'.length)),
+        ),
+      ];
+      if (restorationIds.some((id) => !isStudioUuid(id))) {
+        throw new BadRequestException('Invalid generated restoration lineage');
+      }
+      const restorations =
+        restorationIds.length === 0
+          ? []
+          : await tx
+              .selectFrom('asset_restoration')
+              .select(['id', 'assetId'])
+              .where('id', 'in', restorationIds)
+              .orderBy('id')
+              .forShare()
+              .execute();
+      if (restorations.length !== restorationIds.length) {
+        throw new ConflictException('The generated media restoration source is unavailable');
+      }
+      const derivedFrom = [
+        ...new Set([...resource.derivedFrom, ...restorations.map(({ assetId }) => `library-asset:${assetId}`)]),
+      ];
+      if (derivedFrom.length > STUDIO_MAX_REFERENCES) {
+        throw new BadRequestException('The generated media has too many source references');
+      }
+      const lineage = JSON.stringify(derivedFrom);
       await sql`
         INSERT INTO immich_fork.studio_generated_resource
           ("projectId", id, "ownerId", "sourceRevision", producer, checksum, path, "derivedFrom")
