@@ -8,9 +8,12 @@ import {
 } from '@immich/sdk';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
+import { goto } from '$app/navigation';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import en from '../../../../../i18n/en.json';
 import PartnerLibraryHeader from './PartnerLibraryHeader.svelte';
+
+vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
 
 vi.mock('$lib/managers/auth-manager.svelte', () => ({
   authManager: { authenticated: true, user: { id: 'me', name: 'Me', email: 'me@example.com' }, params: {} },
@@ -35,7 +38,7 @@ const partner: PartnerResponseDto = {
 /** the same user seen from my side: I share my library with them */
 const sharedBack: PartnerResponseDto = { ...partner, inTimeline: true, shareLocation: true };
 
-const locationSwitchName = en.frameleaf_sharing.share_location_title;
+const locationSwitchName = en.frameleaf_sharing.partner_location_title;
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -48,7 +51,7 @@ describe('PartnerLibraryHeader', () => {
     vi.mocked(updatePartner).mockResolvedValue({ ...partner, inTimeline: true });
     render(PartnerLibraryHeader, { partner: { ...partner }, count: 3, onStopped: vi.fn() });
 
-    const toggle = screen.getByRole('switch', { name: en.show_in_timeline });
+    const toggle = screen.getByRole('switch', { name: en.frameleaf_sharing.partner_show_in_my_timeline });
     await fireEvent.click(toggle);
 
     expect(updatePartner).toHaveBeenCalledWith({ id: 'partner-1', partnerUpdateDto: { inTimeline: true } });
@@ -58,7 +61,9 @@ describe('PartnerLibraryHeader', () => {
     vi.mocked(updatePartner).mockRejectedValue(new Error('network'));
     render(PartnerLibraryHeader, { partner: { ...partner }, onStopped: vi.fn() });
 
-    const toggle = screen.getByRole('switch', { name: en.show_in_timeline }) as HTMLInputElement;
+    const toggle = screen.getByRole('switch', {
+      name: en.frameleaf_sharing.partner_show_in_my_timeline,
+    }) as HTMLInputElement;
     await fireEvent.click(toggle);
 
     await waitFor(() => expect(toggle.checked).toBe(false));
@@ -69,8 +74,8 @@ describe('PartnerLibraryHeader', () => {
     const onStopped = vi.fn();
     render(PartnerLibraryHeader, { partner: { ...partner }, onStopped });
 
-    await fireEvent.click(screen.getByRole('button', { name: en.stop_sharing_photos_with_user }));
-    await fireEvent.click(screen.getAllByRole('button', { name: en.stop_sharing_photos_with_user })[1]);
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_sharing.partner_stop_sharing }));
+    await fireEvent.click(screen.getAllByRole('button', { name: en.frameleaf_sharing.partner_stop_sharing })[1]);
 
     expect(removePartner).toHaveBeenCalledWith({ id: 'partner-1' });
     await waitFor(() => expect(onStopped).toHaveBeenCalledOnce());
@@ -81,8 +86,8 @@ describe('PartnerLibraryHeader', () => {
     const emit = vi.spyOn(eventManager, 'emit');
     render(PartnerLibraryHeader, { partner: { ...partner }, onStopped: vi.fn() });
 
-    await fireEvent.click(screen.getByRole('button', { name: en.stop_sharing_photos_with_user }));
-    await fireEvent.click(screen.getAllByRole('button', { name: en.stop_sharing_photos_with_user })[1]);
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_sharing.partner_stop_sharing }));
+    await fireEvent.click(screen.getAllByRole('button', { name: en.frameleaf_sharing.partner_stop_sharing })[1]);
 
     await waitFor(() =>
       expect(emit).toHaveBeenCalledWith('PartnerRevoke', { sharedById: 'me', sharedWithId: 'partner-1' }),
@@ -136,6 +141,38 @@ describe('PartnerLibraryHeader', () => {
       await fireEvent.click(toggle);
 
       await waitFor(() => expect(toggle.checked).toBe(true));
+    });
+  });
+  describe('prototype copy (FL-83 AL-39)', () => {
+    it('labels the switches, the settings control and the stop button as the prototype does', async () => {
+      vi.mocked(getPartners).mockResolvedValue([sharedBack]);
+      render(PartnerLibraryHeader, { partner: { ...partner }, onStopped: vi.fn() });
+
+      expect(screen.getByText(en.frameleaf_sharing.partner_show_in_my_timeline)).toBeInTheDocument();
+      expect(screen.getByText(en.frameleaf_sharing.partner_show_in_my_timeline_description)).toBeInTheDocument();
+      expect(await screen.findByText(en.frameleaf_sharing.partner_location_title)).toBeInTheDocument();
+      expect(screen.getByText(en.frameleaf_sharing.partner_location_description)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: en.frameleaf_sharing.sharing_settings })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: en.frameleaf_sharing.partner_stop_sharing })).toBeInTheDocument();
+    });
+
+    it('asks before stopping, with the prototype title and explanation', async () => {
+      render(PartnerLibraryHeader, { partner: { ...partner }, onStopped: vi.fn() });
+      await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_sharing.partner_stop_sharing }));
+
+      expect(
+        await screen.findByRole('dialog', { name: en.frameleaf_sharing.partner_stop_sharing_title }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText(en.frameleaf_sharing.partner_stop_sharing_body.replace('{name}', 'Riley')),
+      ).toBeInTheDocument();
+      expect(screen.getByText(en.frameleaf_sharing.stop_sharing_note)).toBeInTheDocument();
+    });
+
+    it('opens the sharing settings from its button', async () => {
+      render(PartnerLibraryHeader, { partner: { ...partner }, onStopped: vi.fn() });
+      await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_sharing.sharing_settings }));
+      expect(goto).toHaveBeenCalledWith(expect.stringContaining('/user-settings'));
     });
   });
 });
