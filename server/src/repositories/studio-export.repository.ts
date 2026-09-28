@@ -39,8 +39,9 @@ import {
  * result carries the lock its sources had when it was published, and any source lock added later
  * (`lockDerivedResults`); on top of that it is judged by its sources as they stand at read time, so a
  * version with a source that is now hidden from the session — Locked while the session is locked, or
- * matched by the owner's Locked rules — is hidden too, whenever it was rendered. `revealed` is the
- * owner's unlocked session, which sees their stored locks.
+ * matched by the owner's Locked rules — is hidden too, whenever it was rendered, and so is one whose
+ * library item the owner locked directly. Unlocking the last locked source releases an inherited lock
+ * (`releaseDerivedResults`), so the version shows again. `revealed` is the owner's unlocked session.
  */
 export type StudioExportVisibility = HiddenContentQueryOptions & { revealed: boolean };
 
@@ -52,9 +53,16 @@ const versionHiddenFrom = (visibility: StudioExportVisibility) => {
     where hidden_source."versionId" = studio_export_version.id
       and ${hiddenFromSession(visibility, 'hidden_source_asset')}
   )`;
+  // a result the owner locked directly, whatever its sources: its entry goes with its library item
+  const hiddenResult = sql<boolean>`exists (
+    select 1
+    from asset as hidden_result_asset
+    where hidden_result_asset.id = studio_export_version."resultAssetId"
+      and ${hiddenFromSession(visibility, 'hidden_result_asset')}
+  )`;
   return visibility.revealed
-    ? hiddenSource
-    : sql<boolean>`(coalesce(studio_export_version."privacy" ->> 'lockReason', '') <> '' or ${hiddenSource})`;
+    ? sql<boolean>`(${hiddenSource} or ${hiddenResult})`
+    : sql<boolean>`(coalesce(studio_export_version."privacy" ->> 'lockReason', '') <> '' or ${hiddenSource} or ${hiddenResult})`;
 };
 
 /** FL-44 (FN-304): what every write here answers while a database handoff holds the schema. */

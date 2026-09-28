@@ -139,7 +139,8 @@ export class DerivativePrivacyRepository {
 
   /**
    * Install inherited privacy on a result created in this transaction. A lock is an `asset_lock`
-   * record, never a stored visibility; `lockedBy` is null because nobody chose it, it was inherited.
+   * record, never a stored visibility; `lockedBy` is null because nobody chose it, and it is marked
+   * `inherited`, so unlocking the last locked source releases it (`releaseDerivedResults`).
    */
   async install(
     tx: Kysely<DB>,
@@ -152,8 +153,8 @@ export class DerivativePrivacyRepository {
     }
     if (privacy.lockReason) {
       await sql`
-        INSERT INTO asset_lock ("assetId", reason, "lockedBy")
-        VALUES (${assetId}::uuid, ${privacy.lockReason}, NULL)
+        INSERT INTO asset_lock ("assetId", reason, "lockedBy", inherited)
+        VALUES (${assetId}::uuid, ${privacy.lockReason}, NULL, true)
         ON CONFLICT ("assetId") DO NOTHING
       `.execute(tx);
     }
