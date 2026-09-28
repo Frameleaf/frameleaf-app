@@ -122,9 +122,9 @@ const actions = {
     "Create link menu item, Link ready step, Frameleaf form and share sheet from the viewer (fixed on codex/FL-52-albums-sharing)",
   ],
   "custom-smart-album-filter-preset-snapshot": [
-    "partial",
+    "fixed",
     ["AL-1", "AL-6", "AL-12", "S-14"],
-    "Per-album rules shipped with FL-60 (AL-1, AL-12) and saved presets in the rail (S-14); AL-6 remains",
+    "Per-album rules shipped with FL-60 (AL-1, AL-12) and saved presets in the rail (S-14); Re-evaluate of a built-in smart album is scoped to its own kind (AL-6, FL-83 September 27)",
   ],
   "delete-album-while-retaining-assets": [
     "fixed",
@@ -163,9 +163,9 @@ const actions = {
     { production: [`${W}/lib/frameleaf/bulk-actions.ts`] },
   ],
   "select-change-album-cover": [
-    "partial",
+    "fixed",
     ["AL-13"],
-    '"Always use the newest item" option in the cover dialog',
+    '"Always use the newest item" in the cover dialog, kept by the server (fork migration 205, FL-83 September 27)',
   ],
   "share-album-invite-people": [
     "fixed",
@@ -1292,7 +1292,7 @@ const routes = {
     [`${W}/routes/admin/server-status/+page.ts`],
   ],
   "/admin/system-settings": [
-    "partial",
+    "fixed",
     [
       "CC-1",
       "CC-2",
@@ -1305,7 +1305,7 @@ const routes = {
       "CC-11",
       "CC-12",
     ],
-    "Rail, areas, search, directory and draft/review fixed (FL-66, FL-71; section titles, search count and scope note aligned in the Sept 24 re-audit); the server name fixed (CC-4, `server.name`); the platform shortcut hint fixed (CC-7, September 25); configuration transfer fixed by FL-71 (CC-46..CC-48)",
+    "Rail, areas, search, directory and draft/review fixed (FL-66, FL-71; section titles, search count and scope note aligned in the Sept 24 re-audit); the server name fixed (CC-4, `server.name`); the platform shortcut hint fixed (CC-7, September 25); configuration transfer fixed by FL-71 (CC-46..CC-48); every listed gap re-verified in code on September 27 (FL-83)",
     [
       `${P}/CommandCenter.jsx`,
       `${P}/settings-catalog.mjs`,
@@ -1371,7 +1371,7 @@ const routes = {
   "/albums": [
     "partial",
     ["AL-1", "AL-2", "AL-3", "AL-4", "AL-5", "AL-6", "AL-7", "AL-8", "AL-9"],
-    "Albums page dialogs and smart album create fixed; AL-6 (built-in smart albums) and AL-9 (editor move rights, owner decision) remain",
+    "Albums page dialogs, smart album create and built-in Re-evaluate (AL-6) fixed; AL-9 (editor move rights) is an owner decision (FL-146)",
     [`${P}/Collections.jsx`, `${P}/AlbumCard.jsx`, `${P}/collections-data.mjs`],
     [
       `${W}/routes/(user)/albums/+page.svelte`,
@@ -1379,7 +1379,7 @@ const routes = {
     ],
   ],
   "/albums/[albumId=id]/[[photos=photos]]/[[assetId=id]]": [
-    "partial",
+    "fixed",
     [
       "AL-10",
       "AL-11",
@@ -1391,7 +1391,7 @@ const routes = {
       "AL-17",
       "AL-18",
     ],
-    "Album header conformance; AL-13 (newest-item cover) needs a server change",
+    "Album header conformance; the newest-item cover (AL-13) is kept by the server (FL-83 September 27)",
     [`${P}/CollectionHeader.jsx`, `${P}/ActivityPanel.jsx`],
     [
       `${W}/routes/(user)/albums/[albumId=id]/[[photos=photos]]/[[assetId=id]]/+page.svelte`,
@@ -1481,9 +1481,9 @@ const routes = {
     ],
   ],
   "/documents/[[photos=photos]]/[[assetId=id]]": [
-    "in-flight",
+    "match",
     [],
-    "FL-63 documents (beyond the prototype)",
+    "Library destination for documents (prototype LibraryRail Documents); production finds them by document classification rather than the prototype's sample tag (FL-63)",
     [`${P}/App.jsx`],
     [
       `${W}/routes/(user)/documents/[[photos=photos]]/[[assetId=id]]/+page.svelte`,
@@ -1587,7 +1587,7 @@ const routes = {
   "/partners/[userId]/[[photos=photos]]/[[assetId=id]]": [
     "partial",
     ["AL-39", "AL-40", "AL-41"],
-    "Partner header copy (the legacy bar is removed, AL-41)",
+    "Partner header copy fixed (AL-39, FL-83) and the legacy bar removed (AL-41); the location toggle without sharing back (AL-40) is an owner decision (FL-146)",
     [`${P}/PartnerLibrary.jsx`],
     [
       `${W}/routes/(user)/partners/[userId]/[[photos=photos]]/[[assetId=id]]/+page.svelte`,
@@ -1736,7 +1736,7 @@ const routes = {
     ],
   ],
   "/shared-links": [
-    "partial",
+    "fixed",
     [
       "AL-19",
       "AL-20",
@@ -1750,7 +1750,7 @@ const routes = {
       "AL-28",
       "AL-29",
     ],
-    "Shared links form preview/slug availability (AL-25, AL-26); AL-19..AL-24, AL-27..AL-29 fixed",
+    "Link preview (AL-25) and address availability (AL-26) fixed on FL-83; AL-19..AL-24, AL-27..AL-29 fixed earlier",
     [
       `${P}/SharedLinks.jsx`,
       `${P}/SharedLinkForm.jsx`,
@@ -1779,9 +1779,9 @@ const routes = {
     ],
   ],
   "/sharing/[spaceId=id]/[[photos=photos]]/[[assetId=id]]": [
-    "partial",
+    "fixed",
     ["AL-42", "AL-43", "AL-44"],
-    "Space header controls (AL-42); confirmations and role labels fixed on codex/FL-52-albums-sharing",
+    "Space header controls (AL-42, FL-83); confirmations and role labels fixed on codex/FL-52-albums-sharing",
     [`${P}/CollectionHeader.jsx`],
     [
       `${W}/routes/(user)/sharing/[spaceId=id]/[[photos=photos]]/[[assetId=id]]/+page.svelte`,
@@ -1854,11 +1854,15 @@ const routes = {
     ],
   ],
   "/takeout": [
-    "in-flight",
-    [],
-    "FL-65 Takeout import (beyond the prototype's utilities directory)",
-    [`${P}/UtilitiesManager.jsx`],
-    [`${W}/routes/(user)/takeout/+page.svelte`],
+    "fixed",
+    ["PL-0"],
+    "Redirects to the Import Google Photos workflow in Command Center Backup (FL-83 September 27)",
+    [`${P}/CommandCenter.jsx`, `${P}/settings-catalog.mjs`],
+    [
+      `${W}/routes/(user)/takeout/+page.ts`,
+      `${W}/lib/components/frameleaf/settings/TakeoutSettingsSection.svelte`,
+      `${W}/lib/components/frameleaf/TakeoutWizard.svelte`,
+    ],
   ],
   "/trash/[[photos=photos]]/[[assetId=id]]": [
     "match",
@@ -1924,9 +1928,9 @@ const routes = {
     ],
   ],
   "/utilities/geolocation": [
-    "partial",
+    "fixed",
     ["GL-1", "UT-10", "UT-17", "UT-18", "UT-19", "UT-5"],
-    "Location editor conformance",
+    "Location editor: Update locations review and the map picker controls (FL-83)",
     [`${P}/UtilitiesManager.jsx`, `${P}/UtilityMapPicker.jsx`],
     [
       `${W}/routes/(user)/utilities/geolocation/+page.ts`,
@@ -1962,9 +1966,9 @@ const routes = {
     ],
   ],
   "/utilities/live-photos": [
-    "partial",
+    "fixed",
     ["LP-1", "UT-3", "UT-4", "UT-5", "UT-6", "UT-7", "UT-8", "UT-9"],
-    "Live Photo pairing labels, states, scope, notice",
+    "Live Photo pairing labels, states, scope, notice with Undo (FL-69, FL-83)",
     [`${P}/UtilitiesManager.jsx`],
     [
       `${W}/routes/(user)/utilities/live-photos/+page.ts`,
@@ -1992,9 +1996,9 @@ const routes = {
     ],
   ],
   "/workflows": [
-    "in-flight",
+    "match",
     [],
-    "FL-82 workflows and plugins",
+    "Redirects to the Workflows section of the Utilities area (FL-82; UtilitiesManager.jsx placement)",
     [`${P}/WorkflowDesigner.jsx`, `${P}/workflow-schema.mjs`],
     [
       `${W}/routes/(user)/workflows/+page.ts`,
@@ -2002,9 +2006,9 @@ const routes = {
     ],
   ],
   "/workflows/[workflowId]": [
-    "in-flight",
+    "match",
     [],
-    "FL-82 workflows and plugins",
+    "Redirects to the Workflows section of the Utilities area (FL-82; UtilitiesManager.jsx placement)",
     [`${P}/WorkflowDesigner.jsx`],
     [
       `${W}/routes/(user)/workflows/[workflowId]/+page.ts`,
