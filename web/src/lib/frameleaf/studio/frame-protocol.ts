@@ -26,7 +26,7 @@ import type {
 } from './host-contract';
 
 /** Bumped when a message changes shape; a frame built for another version is refused. */
-export const STUDIO_FRAME_PROTOCOL_VERSION = 3;
+export const STUDIO_FRAME_PROTOCOL_VERSION = 4;
 
 /** The engine build publishes this next to its documents (`/studio-engine/manifest.json`). */
 export interface StudioFrameManifest {
@@ -50,6 +50,7 @@ export interface StudioFrameServiceCalls {
     result: StudioDraftResult;
   };
   reloadProject: { args: []; result: StudioProjectHandle };
+  authorizeGeneratedMedia: { args: []; result: boolean };
   saveWorkspace: { args: [layout: unknown]; result: StudioWorkspaceSaveResult };
 }
 
@@ -60,6 +61,7 @@ export type StudioHostToFrameMessage =
   | { type: 'mount'; protocolVersion: number; context: StudioHostContext }
   | { type: 'update'; context: StudioHostContext }
   | { type: 'dispose' }
+  | { type: 'revoke-generated' }
   | { type: 'service-result'; callId: number; ok: true; value: unknown }
   | { type: 'service-result'; callId: number; ok: false; error: string };
 
@@ -95,6 +97,7 @@ export interface StudioCommandApplyRequest {
   envelopes: StudioCommandEnvelope[];
   /** Library media the commands may reference, for durations and frame rates. */
   assets: StudioHostContext['assets'];
+  generatedMedia?: StudioHostContext['generatedMedia'];
 }
 
 export type StudioCommandApplyOutcome =
