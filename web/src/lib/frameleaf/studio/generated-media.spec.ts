@@ -44,7 +44,10 @@ describe('generated media admission', () => {
   beforeEach(() => websocketStore.connected.set(true));
   it('keeps browser aliases reversible, checks project binding and revokes all retained admissions', async () => {
     const revoked = vi.fn();
-    const request = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => Response.json(result));
+    const request = vi.fn(async (_: RequestInfo | URL, init?: RequestInit) => {
+      void init;
+      return Response.json(result);
+    });
     const access = createStudioGeneratedAccess(revoked, request as typeof fetch);
     const media = await access.admit(projectId, graph, 1);
     expect(request.mock.calls[0][1]).toMatchObject({ credentials: 'same-origin', cache: 'no-store' });
@@ -75,12 +78,12 @@ describe('generated media admission', () => {
 
   it('does not publish an admission whose request completes after revocation', async () => {
     let resolve!: (response: Response) => void;
-    const request = vi.fn(
-      (_input: RequestInfo | URL, _init?: RequestInit) =>
-        new Promise<Response>((done) => {
-          resolve = done;
-        }),
-    );
+    const request = vi.fn((_: RequestInfo | URL, init?: RequestInit) => {
+      void init;
+      return new Promise<Response>((done) => {
+        resolve = done;
+      });
+    });
     const access = createStudioGeneratedAccess(vi.fn(), request as typeof fetch);
     const pending = access.admit(projectId, graph);
     const failure = expect(pending).rejects.toThrow();
