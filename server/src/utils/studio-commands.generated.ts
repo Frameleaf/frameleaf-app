@@ -4,7 +4,7 @@
  * Source: studio/frameleaf-studio-commands.json
  * Generator: scripts/frameleaf-studio-commands.mjs
  *
- * The server mirror of the canonical Studio command vocabulary (FL-92). It
+ * The server mirror of the canonical Studio command vocabulary. It
  * exists so the server can validate a command envelope without trusting the client's idea
  * of the vocabulary, and so a drifted web or native contract fails CI instead of failing a
  * person's edit. Payload objects are described, never interpreted: `object` fields travel
@@ -42,7 +42,6 @@ export interface StudioCommandMirror {
   mutatesGraph: boolean;
   undoable: boolean;
   capability: StudioCommandCapability | null;
-  owner: string;
   payload: Readonly<Record<string, StudioPayloadField>>;
 }
 
@@ -52,7 +51,6 @@ export const studioCommandMirror = {
     mutatesGraph: true,
     undoable: true,
     capability: 'transcriptionWorker',
-    owner: 'FL-94',
     payload: {
       captions: 'object[]',
     },
@@ -62,7 +60,6 @@ export const studioCommandMirror = {
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-94',
     payload: {
       assetId: 'string',
       at: 'time',
@@ -76,7 +73,6 @@ export const studioCommandMirror = {
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-94',
     payload: {
       clipId: 'string?',
       clipIds: 'string[]?',
@@ -88,7 +84,6 @@ export const studioCommandMirror = {
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-100',
     payload: {
       clipIds: 'string[]',
       name: 'string?',
@@ -99,7 +94,6 @@ export const studioCommandMirror = {
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-94',
     payload: {
       assetId: 'string',
       at: 'time',
@@ -113,7 +107,6 @@ export const studioCommandMirror = {
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-94',
     payload: {
       clipId: 'string',
       start: 'time',
@@ -125,7 +118,6 @@ export const studioCommandMirror = {
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-94',
     payload: {
       assetId: 'string',
       at: 'time',
@@ -139,7 +131,6 @@ export const studioCommandMirror = {
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-94',
     payload: {
       clipId: 'string',
       index: 'number',
@@ -151,7 +142,6 @@ export const studioCommandMirror = {
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-94',
     payload: {
       at: 'time',
       clipId: 'string',
@@ -162,7 +152,6 @@ export const studioCommandMirror = {
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-103',
     payload: {
       clipId: 'string',
       eq: 'object?',
@@ -179,7 +168,6 @@ export const studioCommandMirror = {
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-99',
     payload: {
       blendMode: 'string',
       clipId: 'string',
@@ -191,7 +179,6 @@ export const studioCommandMirror = {
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-98',
     payload: {
       clipId: 'string',
       cornerPin: 'object?',
@@ -203,7 +190,6 @@ export const studioCommandMirror = {
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-98',
     payload: {
       clipId: 'string',
       grade: 'object?',
@@ -214,7 +200,6 @@ export const studioCommandMirror = {
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-94',
     payload: {
       clipId: 'string',
       kenBurns: 'object?',
@@ -225,7 +210,6 @@ export const studioCommandMirror = {
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-94',
     payload: {
       clipIds: 'string[]',
       linked: 'boolean',
@@ -236,7 +220,6 @@ export const studioCommandMirror = {
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-99',
     payload: {
       clipId: 'string',
       mask: 'object?',
@@ -247,7 +230,6 @@ export const studioCommandMirror = {
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-94',
     payload: {
       clipId: 'string',
       speed: 'rate',
@@ -258,7 +240,6 @@ export const studioCommandMirror = {
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-94',
     payload: {
       clipId: 'string',
       transform: 'object',
@@ -269,7 +250,6 @@ export const studioCommandMirror = {
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-100',
     payload: {
       clipId: 'string',
       parentId: 'string?',
@@ -280,7 +260,6 @@ export const studioCommandMirror = {
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-94',
     payload: {
       clipId: 'string',
       transition: 'object?',
@@ -291,7 +270,6 @@ export const studioCommandMirror = {
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-94',
     payload: {
       clipId: 'string',
       delta: 'duration',
@@ -302,7 +280,6 @@ export const studioCommandMirror = {
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-94',
     payload: {
       clipId: 'string',
       delta: 'duration',
@@ -313,7 +290,6 @@ export const studioCommandMirror = {
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-94',
     payload: {
       at: 'time',
       clipIds: 'string[]?',
@@ -324,7 +300,6 @@ export const studioCommandMirror = {
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-94',
     payload: {
       clipId: 'string',
       end: 'time',
@@ -336,7 +311,6 @@ export const studioCommandMirror = {
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-94',
     payload: {
       clipId: 'string',
       ripple: 'boolean?',
@@ -348,7 +322,6 @@ export const studioCommandMirror = {
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-100',
     payload: {
       groupId: 'string',
     },
@@ -358,7 +331,6 @@ export const studioCommandMirror = {
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-94',
     payload: {
       clipId: 'string',
       patch: 'object',
@@ -369,7 +341,6 @@ export const studioCommandMirror = {
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-100',
     payload: {
       at: 'time?',
       clipIds: 'string[]?',
@@ -382,7 +353,6 @@ export const studioCommandMirror = {
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-100',
     payload: {
       compositionClipId: 'string',
       overrides: 'object',
@@ -393,7 +363,6 @@ export const studioCommandMirror = {
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-100',
     payload: {
       compositionId: 'string',
       controls: 'object[]',
@@ -404,7 +373,6 @@ export const studioCommandMirror = {
     mutatesGraph: true,
     undoable: true,
     capability: 'gpuWorker',
-    owner: 'FL-99',
     payload: {
       clipId: 'string',
       effect: 'string',
@@ -417,7 +385,6 @@ export const studioCommandMirror = {
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-99',
     payload: {
       clipId: 'string',
       effectId: 'string',
@@ -428,7 +395,6 @@ export const studioCommandMirror = {
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-99',
     payload: {
       clipId: 'string',
       effectId: 'string',
@@ -440,7 +406,6 @@ export const studioCommandMirror = {
     mutatesGraph: true,
     undoable: true,
     capability: 'gpuWorker',
-    owner: 'FL-99',
     payload: {
       clipId: 'string',
       effectId: 'string',
@@ -452,7 +417,6 @@ export const studioCommandMirror = {
     mutatesGraph: true,
     undoable: false,
     capability: null,
-    owner: 'FL-94',
     payload: {
       toRevision: 'number?',
     },
@@ -462,7 +426,6 @@ export const studioCommandMirror = {
     mutatesGraph: true,
     undoable: false,
     capability: null,
-    owner: 'FL-94',
     payload: {
       toRevision: 'number?',
     },
@@ -472,7 +435,6 @@ export const studioCommandMirror = {
     mutatesGraph: false,
     undoable: false,
     capability: null,
-    owner: 'FL-104',
     payload: {
       jobId: 'string',
     },
@@ -482,7 +444,6 @@ export const studioCommandMirror = {
     mutatesGraph: false,
     undoable: false,
     capability: 'analysisWorker',
-    owner: 'FL-111',
     payload: {
       clipIds: 'string[]?',
       destinationId: 'string',
@@ -495,7 +456,6 @@ export const studioCommandMirror = {
     mutatesGraph: false,
     undoable: false,
     capability: 'renderWorker',
-    owner: 'FL-104',
     payload: {
       audioFormat: 'string?',
       colour: 'string',
@@ -514,7 +474,6 @@ export const studioCommandMirror = {
     mutatesGraph: false,
     undoable: false,
     capability: 'analysisWorker',
-    owner: 'FL-103',
     payload: {
       clipIds: 'string[]?',
       destinationId: 'string',
@@ -526,7 +485,6 @@ export const studioCommandMirror = {
     mutatesGraph: false,
     undoable: false,
     capability: 'restorationWorker',
-    owner: 'FL-111',
     payload: {
       clipId: 'string',
       destinationId: 'string',
@@ -539,7 +497,6 @@ export const studioCommandMirror = {
     mutatesGraph: false,
     undoable: false,
     capability: 'generationWorker',
-    owner: 'FL-111',
     payload: {
       destinationId: 'string',
       duration: 'duration',
@@ -552,7 +509,6 @@ export const studioCommandMirror = {
     mutatesGraph: false,
     undoable: false,
     capability: 'renderWorker',
-    owner: 'FL-105',
     payload: {
       assetIds: 'string[]',
       destinationId: 'string',
@@ -563,7 +519,6 @@ export const studioCommandMirror = {
     mutatesGraph: false,
     undoable: false,
     capability: 'restorationWorker',
-    owner: 'FL-110',
     payload: {
       assetId: 'string?',
       destinationId: 'string',
@@ -579,7 +534,6 @@ export const studioCommandMirror = {
     mutatesGraph: false,
     undoable: false,
     capability: 'renderWorker',
-    owner: 'FL-111',
     payload: {
       clipId: 'string',
       destinationId: 'string',
@@ -590,7 +544,6 @@ export const studioCommandMirror = {
     mutatesGraph: false,
     undoable: false,
     capability: 'analysisWorker',
-    owner: 'FL-111',
     payload: {
       assetIds: 'string[]',
       destinationId: 'string',
@@ -603,7 +556,6 @@ export const studioCommandMirror = {
     mutatesGraph: false,
     undoable: false,
     capability: 'analysisWorker',
-    owner: 'FL-103',
     payload: {
       destinationId: 'string',
       minimumSilence: 'duration?',
@@ -616,7 +568,6 @@ export const studioCommandMirror = {
     mutatesGraph: false,
     undoable: false,
     capability: 'generationWorker',
-    owner: 'FL-111',
     payload: {
       destinationId: 'string',
       engine: 'string?',
@@ -629,7 +580,6 @@ export const studioCommandMirror = {
     mutatesGraph: false,
     undoable: false,
     capability: 'transcriptionWorker',
-    owner: 'FL-111',
     payload: {
       destinationId: 'string',
       language: 'string',
@@ -641,7 +591,6 @@ export const studioCommandMirror = {
     mutatesGraph: false,
     undoable: false,
     capability: 'restorationWorker',
-    owner: 'FL-111',
     payload: {
       clipId: 'string',
       destinationId: 'string',
@@ -653,7 +602,6 @@ export const studioCommandMirror = {
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-100',
     payload: {
       at: 'time',
       clipId: 'string',
@@ -667,7 +615,6 @@ export const studioCommandMirror = {
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-100',
     payload: {
       clipId: 'string',
       keyframeIds: 'string[]',
@@ -679,7 +626,6 @@ export const studioCommandMirror = {
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-100',
     payload: {
       bezier: 'object?',
       clipId: 'string',
@@ -693,7 +639,6 @@ export const studioCommandMirror = {
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-100',
     payload: {
       at: 'time?',
       clipId: 'string',
@@ -707,7 +652,6 @@ export const studioCommandMirror = {
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-105',
     payload: {
       clipId: 'string',
       colors: 'object?',
@@ -720,7 +664,6 @@ export const studioCommandMirror = {
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-94',
     payload: {
       at: 'time',
       colour: 'string?',
@@ -732,7 +675,6 @@ export const studioCommandMirror = {
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-94',
     payload: {
       markerId: 'string',
     },
@@ -742,7 +684,6 @@ export const studioCommandMirror = {
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-94',
     payload: {
       markerId: 'string',
       patch: 'object',
@@ -753,7 +694,6 @@ export const studioCommandMirror = {
     mutatesGraph: true,
     undoable: false,
     capability: null,
-    owner: 'FL-105',
     payload: {
       assetIds: 'string[]',
     },
@@ -763,7 +703,6 @@ export const studioCommandMirror = {
     mutatesGraph: true,
     undoable: false,
     capability: null,
-    owner: 'FL-105',
     payload: {
       assetId: 'string',
       mediaId: 'string',
@@ -774,7 +713,6 @@ export const studioCommandMirror = {
     mutatesGraph: true,
     undoable: false,
     capability: null,
-    owner: 'FL-105',
     payload: {
       mediaIds: 'string[]',
     },
@@ -784,7 +722,6 @@ export const studioCommandMirror = {
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-94',
     payload: {
       at: 'time',
       duration: 'duration?',
@@ -797,7 +734,6 @@ export const studioCommandMirror = {
     mutatesGraph: false,
     undoable: false,
     capability: null,
-    owner: 'FL-96',
     payload: {},
   },
   'preview.request': {
@@ -805,7 +741,6 @@ export const studioCommandMirror = {
     mutatesGraph: false,
     undoable: false,
     capability: 'gpuWorker',
-    owner: 'FL-96',
     payload: {
       at: 'time',
       quality: 'string',
@@ -818,7 +753,6 @@ export const studioCommandMirror = {
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-94',
     payload: {
       templateId: 'string',
     },
@@ -828,7 +762,6 @@ export const studioCommandMirror = {
     mutatesGraph: false,
     undoable: false,
     capability: null,
-    owner: 'FL-91',
     payload: {
       includeMedia: 'boolean?',
       sequenceIds: 'string[]?',
@@ -839,7 +772,6 @@ export const studioCommandMirror = {
     mutatesGraph: true,
     undoable: false,
     capability: null,
-    owner: 'FL-91',
     payload: {
       bundleUploadId: 'string',
     },
@@ -849,7 +781,6 @@ export const studioCommandMirror = {
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-94',
     payload: {
       name: 'string',
     },
@@ -859,7 +790,6 @@ export const studioCommandMirror = {
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-103',
     payload: {
       ducking: 'boolean?',
       gainDb: 'number?',
@@ -871,7 +801,6 @@ export const studioCommandMirror = {
     mutatesGraph: true,
     undoable: false,
     capability: null,
-    owner: 'FL-94',
     payload: {
       patch: 'object',
     },
@@ -881,7 +810,6 @@ export const studioCommandMirror = {
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-100',
     payload: {
       clipId: 'string',
       modifierId: 'string',
@@ -893,7 +821,6 @@ export const studioCommandMirror = {
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-100',
     payload: {
       clipId: 'string',
       expression: 'string?',
@@ -905,7 +832,6 @@ export const studioCommandMirror = {
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-100',
     payload: {
       clipId: 'string',
       modifier: 'object?',
@@ -917,7 +843,6 @@ export const studioCommandMirror = {
     mutatesGraph: false,
     undoable: false,
     capability: null,
-    owner: 'FL-94',
     payload: {
       text: 'string',
       time: 'time',
@@ -928,7 +853,6 @@ export const studioCommandMirror = {
     mutatesGraph: false,
     undoable: false,
     capability: null,
-    owner: 'FL-94',
     payload: {
       commentId: 'string',
     },
@@ -938,7 +862,6 @@ export const studioCommandMirror = {
     mutatesGraph: false,
     undoable: false,
     capability: null,
-    owner: 'FL-94',
     payload: {
       commentId: 'string',
       patch: 'object',
@@ -949,7 +872,6 @@ export const studioCommandMirror = {
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-94',
     payload: {
       fps: 'rate?',
       height: 'number?',
@@ -962,7 +884,6 @@ export const studioCommandMirror = {
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-94',
     payload: {
       name: 'string?',
       sequenceId: 'string',
@@ -973,7 +894,6 @@ export const studioCommandMirror = {
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-94',
     payload: {
       sequenceId: 'string',
     },
@@ -983,7 +903,6 @@ export const studioCommandMirror = {
     mutatesGraph: true,
     undoable: false,
     capability: null,
-    owner: 'FL-94',
     payload: {
       sequenceId: 'string',
     },
@@ -993,7 +912,6 @@ export const studioCommandMirror = {
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-94',
     payload: {
       captionLanguage: 'string?',
       captionsBurnIn: 'boolean?',
@@ -1005,7 +923,6 @@ export const studioCommandMirror = {
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-94',
     payload: {
       fps: 'rate?',
       height: 'number?',
@@ -1018,7 +935,6 @@ export const studioCommandMirror = {
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-100',
     payload: {
       clipId: 'string',
       motion: 'object?',
@@ -1029,7 +945,6 @@ export const studioCommandMirror = {
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-94',
     payload: {
       animation: 'string?',
       at: 'time',
@@ -1044,7 +959,6 @@ export const studioCommandMirror = {
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-94',
     payload: {
       index: 'number?',
       kind: 'string',
@@ -1056,7 +970,6 @@ export const studioCommandMirror = {
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-94',
     payload: {
       trackId: 'string',
     },
@@ -1066,7 +979,6 @@ export const studioCommandMirror = {
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-94',
     payload: {
       index: 'number',
       trackId: 'string',
@@ -1077,7 +989,6 @@ export const studioCommandMirror = {
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-94',
     payload: {
       patch: 'object',
       trackId: 'string',
@@ -1088,7 +999,6 @@ export const studioCommandMirror = {
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-103',
     payload: {
       eq: 'object?',
       gainDb: 'number?',
@@ -1101,7 +1011,6 @@ export const studioCommandMirror = {
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-94',
     payload: {
       at: 'time',
       duration: 'duration',
