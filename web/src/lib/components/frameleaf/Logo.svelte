@@ -3,7 +3,7 @@
    * Frameleaf brand mark for the shell (FL-135).
    *
    * Sourced only from the authorized `design/frameleaf/brand-kit` originals; nothing here is
-   * redrawn, recolored or re-exported. See docs/docs/developer/frameleaf-plan/06-brand-assets.md.
+   * redrawn, recolored or re-exported.
    *
    * `variant="icon"` always renders the transparent gradient symbol (`frameleaf-symbol.svg`),
    * which the brand kit documents as safe on any surface, light or dark.

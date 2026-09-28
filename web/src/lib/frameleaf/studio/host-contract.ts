@@ -6,8 +6,7 @@
  * boundary defined here: `mount` once, `update` when the host's view of the world changes,
  * `dispose` on exit or on access loss.
  *
- * Boundary rules, from `docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md`
- * and from FL-96 (no client API dependency in preview):
+ * Boundary rules, including FL-96 (no client API dependency in preview):
  *
  * - The contract passes data, never credentials: there is no token, no API base URL and no SDK
  *   instance in `StudioHostContext`, media arrives as URLs the host built, and everything else goes

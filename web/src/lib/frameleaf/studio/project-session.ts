@@ -6,7 +6,7 @@
  * unsaved draft, and the conversation with the server about all of it. It is framework-free
  * so the rules are testable without a DOM, and the route wraps it in Svelte state.
  *
- * Rules, from `docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md`:
+ * Rules:
  *
  * - **One writer.** The lease belongs to one editor instance (`clientId`), renewed every
  *   `renewMs`. A tab that finds the lease held elsewhere opens read-only and may take over only
