@@ -1,4 +1,11 @@
-import { AssetMediaResponseDto, AssetVisibility, LoginResponseDto, updateConfig } from '@immich/sdk';
+import {
+  AssetMediaResponseDto,
+  AssetVisibility,
+  LoginResponseDto,
+  RemoteAccessMode,
+  RemoteHostnameStatus,
+  updateConfig,
+} from '@immich/sdk';
 import { createUserDto } from 'src/fixtures.js';
 import { app, asBearerAuth, utils } from 'src/utils.js';
 import request from 'supertest';
@@ -258,9 +265,12 @@ describe('/item-shares', () => {
     const direct = 'https://1-2-3-4.lbl.direct.frameleaf.test:2443';
     const customHost = 'photos.family.example';
     const path = '/sharing?section=shared-with-you';
-    const client = await utils.connectDatabase();
     const config = await utils.getSystemConfig(admin.accessToken);
-    const savedRemote = config.frameleafCloud.remoteAccess;
+    const savedRemote = config.frameleafCloud?.remoteAccess;
+    if (!savedRemote) {
+      throw new Error('Frameleaf Cloud remote access config is missing');
+    }
+    const client = await utils.connectDatabase();
     const savedConfig = await client.query('SELECT value FROM system_metadata WHERE key = $1', ['system-config']);
     const putMetadata = (key: string, value: unknown) =>
       client.query(
@@ -296,7 +306,7 @@ describe('/item-shares', () => {
 
     try {
       await putMetadata('frameleaf-cloud-link', link);
-      await setRemote({ ...savedRemote, enabled: true, mode: 'relay-and-direct' });
+      await setRemote({ ...savedRemote, enabled: true, mode: RemoteAccessMode.RelayAndDirect });
       await putMetadata('frameleaf-remote-access', state);
 
       const directAsset = await utils.createAsset(owner.accessToken);
@@ -325,8 +335,12 @@ describe('/item-shares', () => {
       await setRemote({
         ...savedRemote,
         enabled: true,
-        mode: 'relay-and-direct',
-        customHostname: { host: customHost, status: 'verified', checkedAt: new Date().toISOString() },
+        mode: RemoteAccessMode.RelayAndDirect,
+        customHostname: {
+          host: customHost,
+          status: RemoteHostnameStatus.Verified,
+          checkedAt: new Date().toISOString(),
+        },
       });
       state.updatedAt = new Date().toISOString();
       await putMetadata('frameleaf-remote-access', state);
