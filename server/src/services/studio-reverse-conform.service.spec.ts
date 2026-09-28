@@ -85,7 +85,10 @@ const setup = () => {
     probe: vi.fn().mockImplementation(() => Promise.resolve(reverseVideoInfo())),
     probePackets: vi.fn().mockResolvedValue(reversePackets()),
   };
-  const renderer = { reverse: vi.fn().mockResolvedValue(undefined) };
+  const renderer = {
+    probeGeometry: vi.fn().mockResolvedValue({ width: 32, height: 32, sampleAspectRatio: '1:1' }),
+    reverse: vi.fn().mockResolvedValue(undefined),
+  };
   const storage = {
     stat: vi.fn().mockResolvedValue({ isFile: () => true, size: 1000 }),
     mkdirSync: vi.fn(),
@@ -146,6 +149,16 @@ describe(StudioReverseConformService.name, () => {
         snapshot: expect.objectContaining({ checksum, sourceKey, revision: 1, digest: 'revision-digest' }),
       }),
     );
+  });
+
+  it('refuses coded dimensions hidden by display geometry before enqueuing work', async () => {
+    const { sut, operations, renderer } = setup();
+    renderer.probeGeometry.mockResolvedValue({ width: 1920, height: 32, sampleAspectRatio: '1:60' });
+    await expect(
+      sut.enqueueSource(owner, { projectId, revision: 1, sourceKey, destination: StudioDestination.Local }),
+    ).rejects.toThrow('square-pixel');
+    expect(operations.create).not.toHaveBeenCalled();
+    expect(renderer.reverse).not.toHaveBeenCalled();
   });
 
   it('checks claim and publication access and registers the checked file inside the completion transaction', async () => {
