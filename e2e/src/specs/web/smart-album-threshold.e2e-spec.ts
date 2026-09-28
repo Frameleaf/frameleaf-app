@@ -16,6 +16,8 @@ test.describe('Smart album visual threshold (FL-144)', () => {
   test('changes real preview counts when the confidence threshold changes', async ({ context, page }) => {
     const auth = { headers: asBearerAuth(admin.accessToken) };
     const originalConfig = await getConfig(auth);
+    // Resetting the database removes routes; the first config save restores the local defaults.
+    await updateConfig({ adminConfigDto: originalConfig }, auth);
     const originalRoutes = await getMlWorkloadRoutes(auth);
     expect(originalConfig.machineLearning.urls).toEqual(['http://immich-machine-learning-fixture:3003']);
     expect(originalConfig.machineLearning.clip.modelName).toBe('ViT-B-16-SigLIP-384__webli');
