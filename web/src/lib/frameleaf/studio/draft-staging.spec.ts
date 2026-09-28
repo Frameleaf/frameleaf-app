@@ -33,6 +33,7 @@ describe('editor drafts reaching the host (FL-88, FL-89)', () => {
     expect(studioDraftHeld('conflict', true)).toBe(true);
     expect(studioDraftHeld('lease-lost', true)).toBe(true);
     expect(studioDraftHeld('saved', true)).toBe(false);
+    expect(studioDraftHeld('review', true)).toBe(true);
     expect(studioDraftHeld(undefined, false)).toBe(false);
     // After Reload there is no draft to hold, so the editor must show the head it is judged against.
     expect(studioDraftHeld('lease-lost', false)).toBe(false);
@@ -45,4 +46,18 @@ describe('editor drafts reaching the host (FL-88, FL-89)', () => {
     expect(studioDraftResult('ignored', false)).toEqual({ status: 'rejected', reason: 'lease-lost' });
     expect(studioDraftResult('staged', false)).toEqual({ status: 'rejected', reason: 'lease-lost' });
   });
+});
+
+it('accepts local recovery only for an authorized owner with a known shelved conflict', () => {
+  const conflict = { reason: 'project-archived' as const, currentRevision: 3, lease: null };
+  expect(decideStudioDraft(gate({ status: 'review', conflict }), { id: 'g' })).toEqual({ stage: true });
+  for (const override of [
+    { access: 'reviewer' as const },
+    { accessLost: true },
+    { authenticated: false },
+    { forbidden: true },
+  ]) {
+    expect(decideStudioDraft(gate({ status: 'review', conflict, ...override }), { id: 'g' }).stage).toBe(false);
+  }
+  expect(decideStudioDraft(gate({ status: 'review' }), { id: 'g' }).stage).toBe(false);
 });

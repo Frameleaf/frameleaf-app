@@ -40,15 +40,24 @@ import { projectJsonPath } from '@/infrastructure/storage/workspace-fs/paths'
 import { createProject, getProject } from '@/infrastructure/storage'
 import { blobUrlManager } from '@/infrastructure/browser/blob-url-manager'
 import { useTimelineSettingsStore } from '@/features/timeline/stores/timeline-settings-store'
-import { saveTimeline } from '@/features/timeline/stores/timeline-persistence'
+import { hydrateGeneratedMedia, storeGeneratedMedia } from '@frameleaf/host/generated-media'
+import {
+  buildTimelineFromStores,
+  saveTimeline,
+} from '@/features/timeline/stores/timeline-persistence'
 import { useMediaLibraryStore } from '@/features/media-library/stores/media-library-store'
 import { usePlaybackStore } from '@/shared/state/playback'
+import { useProjectStore } from '@/features/projects/stores/project-store'
 import { createProjectObject } from '@/features/projects/utils/project-helpers'
 import type { Project } from '@/types/project'
 import type { StudioHostToFrameMessage } from '@frameleaf/host/frame-protocol'
 import { STUDIO_FRAME_PROTOCOL_VERSION } from '@frameleaf/host/frame-protocol'
 import type { StudioHostContext } from '@frameleaf/host/host-contract'
-import { cadenceFromDecimal, nearestTimelineFrame, withProjectCadence } from '@frameleaf/host/studio-timing'
+import {
+  cadenceFromDecimal,
+  nearestTimelineFrame,
+  withProjectCadence,
+} from '@frameleaf/host/studio-timing'
 import { handoffProjectFps, withStoredCadence } from './project-cadence'
 import { call, connectToHost, post } from './host-port'
 import { setPersistenceGate } from './persistence-gate'
@@ -98,7 +107,11 @@ const LazyToaster = lazy(async () => {
  */
 const contentOf = (graph: unknown): string => {
   if (!graph || typeof graph !== 'object') return canonicalJson(graph)
-  const { updatedAt: _updatedAt, id: _id, ...rest } = graph as Record<string, unknown>
+  const {
+    updatedAt: _updatedAt,
+    id: _id,
+    ...rest
+  } = storeGeneratedMedia(graph) as Record<string, unknown>
   return canonicalJson(rest)
 }
 
@@ -183,7 +196,12 @@ async function newProjectFor(context: StudioHostContext, id: string): Promise<Pr
   const { getAllMedia } = await import('@/infrastructure/storage')
   const media = handoff.length > 0 ? await getAllMedia() : []
   const created = createProjectObject(
-    { name: context.project.name, width: 1920, height: 1080, fps: handoffProjectFps(handoff, media) },
+    {
+      name: context.project.name,
+      width: 1920,
+      height: 1080,
+      fps: handoffProjectFps(handoff, media),
+    },
     id,
   )
   const project = { ...created, metadata: withProjectCadence(created.metadata) } as Project
@@ -260,7 +278,16 @@ async function seedProject(state: Session, mount: EditorMount): Promise<void> {
   if (graph && typeof graph === 'object') {
     workspace.putFile(
       projectJsonPath(mount.projectId),
-      JSON.stringify({ ...withStoredCadence(graph), id: mount.projectId }, null, 2),
+      JSON.stringify(
+        {
+          ...withStoredCadence(
+            hydrateGeneratedMedia(graph, context.generatedMedia ?? []) as Project,
+          ),
+          id: mount.projectId,
+        },
+        null,
+        2,
+      ),
     )
     // Keep the index honest so Freecut's project listing agrees with the file.
     if (!(await getProject(mount.projectId)))
@@ -357,7 +384,7 @@ function sendDraft(state: Session, mount: EditorMount): Promise<void> {
     stage: (graph, baseRevision, graphVersion) =>
       call(
         'stageDraft',
-        { ...(graph as object), id: state.engineProjectId },
+        { ...(storeGeneratedMedia(graph) as object), id: state.engineProjectId },
         ['editor.save'],
         baseRevision,
         graphVersion,
@@ -551,8 +578,36 @@ function watchTransport(state: Session) {
   let playing = false
   let lastFrame = -1
   let lastAt = 0
+  let checking = false
+  let permitted = false
   state.unsubscribe.push(
     usePlaybackStore.subscribe((playback) => {
+      if (
+        playback.isPlaying &&
+        !playing &&
+        (state.context.generatedMedia?.length ?? 0) > 0 &&
+        !permitted
+      ) {
+        playback.pause()
+        if (!checking) {
+          checking = true
+          void call('authorizeGeneratedMedia')
+            .then((allowed) => {
+              if (allowed && !state.disposed) {
+                permitted = true
+                usePlaybackStore.getState().play()
+              }
+            })
+            .catch(() => {
+              /* A closed host cannot authorize playback. */
+            })
+            .finally(() => {
+              checking = false
+            })
+        }
+        return
+      }
+      if (!playback.isPlaying) permitted = false
       const fps = useTimelineSettingsStore.getState().fps || 30
       const now = performance.now()
       const frame = playback.currentFrame
@@ -571,15 +626,23 @@ function watchTransport(state: Session) {
   )
 }
 
+let generatedRevoked = false
+
 async function mount(context: StudioHostContext): Promise<void> {
   applyTheme(context)
   await i18nReady
   await changeAppLanguage(context.auth.locale).catch(() => undefined)
 
+  if (generatedRevoked) throw new Error('Generated media was revoked')
   const workspace = new VirtualWorkspace()
   const handle = workspace.handle()
   setWorkspaceRoot(handle)
   await bootstrapWorkspace(handle)
+  if (generatedRevoked) {
+    workspace.dispose()
+    setWorkspaceRoot(null)
+    throw new Error('Generated media was revoked')
+  }
 
   const container = document.getElementById('root')
   if (!container) throw new Error('The editor document has no root element')
@@ -621,8 +684,10 @@ async function mount(context: StudioHostContext): Promise<void> {
   })
 
   // The bin first (the handoff needs frame rates), then the project that uses it.
-  await state.media.seed(context.assets)
+  await state.media.seed([...context.assets, ...(context.generatedMedia ?? [])])
+  if (state.disposed) return
   await seedProject(state, first)
+  if (state.disposed) return
 
   state.render = () =>
     state.root.render(
@@ -645,6 +710,10 @@ async function update(context: StudioHostContext): Promise<void> {
   const previous = state.context
   state.context = context
   applyTheme(context)
+  if ((context.generatedMedia?.length ?? 0) > 0) {
+    await state.media.seed(context.generatedMedia ?? [])
+    if (state.disposed) return
+  }
   // The graph is settled first, so the echo of a save is not held up behind video probing; the
   // mount rules keep this correct whatever the order.
   const incoming = contentOf(context.project.graph)
@@ -667,7 +736,7 @@ async function update(context: StudioHostContext): Promise<void> {
   }
   if (context.auth.locale !== previous.auth.locale)
     await changeAppLanguage(context.auth.locale).catch(() => undefined)
-  await state.media.seed(context.assets)
+  await state.media.seed([...context.assets, ...(context.generatedMedia ?? [])])
   if (
     shouldResendDraft({
       pending: state.pendingSend,
@@ -683,7 +752,7 @@ async function update(context: StudioHostContext): Promise<void> {
 async function currentGraph(state: Session): Promise<unknown> {
   const text = await state.workspace.readText(projectJsonPath(state.mount.projectId))
   try {
-    return text ? JSON.parse(text) : null
+    return text ? storeGeneratedMedia(JSON.parse(text)) : null
   } catch {
     return null
   }
@@ -703,6 +772,38 @@ async function dispose(): Promise<void> {
   blobUrlManager.releaseAll()
   state.workspace.dispose()
   setWorkspaceRoot(null)
+}
+
+/** Capture the current timeline without thumbnail/file I/O, then release every media consumer. */
+async function revokeGenerated(): Promise<void> {
+  const state = session
+  if (!state || state.disposed) return
+  const mount = state.mount
+  const currentProject = useProjectStore.getState().currentProject
+  const project =
+    currentProject?.id === mount.projectId ? currentProject : state.context.project.graph
+  let graph: unknown = null
+  try {
+    graph = mount.loaded
+      ? storeGeneratedMedia({
+          ...(project as object),
+          id: state.engineProjectId,
+          timeline: buildTimelineFromStores(),
+        })
+      : null
+  } finally {
+    await dispose()
+  }
+  if (graph) {
+    const result = await call(
+      'stageDraft',
+      graph,
+      ['editor.save'],
+      mount.revision,
+      mount.graphVersion,
+    )
+    if (result.status !== 'staged') post({ type: 'dirty', dirty: true })
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -734,6 +835,11 @@ async function onHostMessage(message: StudioHostToFrameMessage) {
       await update(message.context).catch((error: unknown) =>
         post({ type: 'fatal', error: error instanceof Error ? error.message : String(error) }),
       )
+      return
+    }
+    case 'revoke-generated': {
+      generatedRevoked = true
+      await revokeGenerated().finally(() => post({ type: 'disposed' }))
       return
     }
     case 'dispose': {

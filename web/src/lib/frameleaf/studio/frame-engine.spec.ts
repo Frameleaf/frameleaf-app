@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { eventManager } from '$lib/managers/event-manager.svelte';
+import { websocketEvents, websocketStore } from '$lib/stores/websocket';
 import { clearStudioEngine, loadStudioEngine, pinnedFreecutRevision, registerStudioEngine } from './engine-loader';
 import { createFrameStudioEngine, resolveStudioFrameManifest, toFrameData } from './frame-engine';
 import { STUDIO_FRAME_PROTOCOL_VERSION, type StudioFrameManifest } from './frame-protocol';
+import { generatedMediaAlias } from './generated-media';
 import { emptyStudioCapabilities, type StudioHostContext, type StudioHostServices } from './host-contract';
 import { idleStudioPreviewView } from './preview';
 
@@ -53,7 +56,11 @@ const services = (): StudioHostServices => ({
  * the channel arrives through `contentWindow.postMessage`, as it does in a browser.
  */
 const fakeFrame = (
-  options: { revision?: string; respond?: (port: MessagePort, message: { type: string }) => void } = {},
+  options: {
+    kind?: 'editor' | 'commands';
+    revision?: string;
+    respond?: (port: MessagePort, message: { type: string }) => void;
+  } = {},
 ) => {
   const frames: HTMLIFrameElement[] = [];
   let framePort: MessagePort | null = null;
@@ -76,7 +83,7 @@ const fakeFrame = (
           origin: location.origin,
           data: {
             source: 'frameleaf-studio-frame',
-            kind: 'editor',
+            kind: options.kind ?? 'editor',
             protocolVersion: STUDIO_FRAME_PROTOCOL_VERSION,
             engineRevision: options.revision ?? pinnedFreecutRevision,
           },
@@ -310,4 +317,148 @@ describe('studio editor frame (FL-88)', () => {
     expect(copy).toEqual({ nested: { value: 1 } });
     expect(copy.nested).not.toBe(live.nested);
   });
+});
+
+it.each(['source', 'project'] as const)(
+  'preserves the normalized pending draft before %s revocation removes the frame',
+  async (kind) => {
+    const listen = vi.spyOn(websocketEvents, 'on');
+    websocketStore.connected.set(true);
+    const operationId = '0195e2a0-0000-7000-8000-000000000012';
+    const generatedId = `reverse-${operationId}`;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        Response.json({
+          operationId,
+          projectId: 'p',
+          generatedId,
+          frames: 300,
+          frameRate: { num: 30, den: 1 },
+          width: 32,
+          height: 32,
+          browserPreview: {
+            generatedId: `reverse-preview-${operationId}`,
+            checksum: 'ab'.repeat(32),
+            contentType: 'video/mp4',
+            profile: 'h264-main-3.2-aac-lc-v1',
+            delivery: 'authenticated',
+          },
+        }),
+      ),
+    );
+    const host = services();
+    const draft = { timeline: { items: [{ id: 'clip', generatedId, from: 42 }] } };
+    const frame = fakeFrame({
+      respond: (port, message) => {
+        if (message.type === 'mount') {
+          expect(message).toMatchObject({
+            context: { generatedMedia: [{ generatedId, id: generatedMediaAlias(generatedId) }] },
+          });
+          port.postMessage({ type: 'mounted' });
+        } else if (message.type === 'revoke-generated') {
+          port.postMessage({
+            type: 'service',
+            callId: 99,
+            name: 'stageDraft',
+            args: [
+              {
+                timeline: {
+                  items: [
+                    { ...draft.timeline.items[0], mediaId: generatedMediaAlias(generatedId), src: '/private-preview' },
+                  ],
+                },
+              },
+              ['editor.save'],
+              2,
+              0,
+            ],
+          });
+        } else if (message.type === 'service-result') {
+          expect(host.stageDraft).toHaveBeenCalledWith(draft, ['editor.save'], 2, 0);
+          port.postMessage({ type: 'disposed' });
+        }
+      },
+    });
+    const initial = context();
+    initial.project.graph = draft;
+    try {
+      const instance = await createFrameStudioEngine({ manifest, createFrame: frame.createFrame }).mount(
+        newStage(),
+        initial,
+        host,
+      );
+      if (kind === 'source') eventManager.emit('AssetsDelete', ['source']);
+      else {
+        const invalidate = listen.mock.calls.find(([event]) => event === 'StudioProjectInvalidatedV1')![1] as (data: {
+          projectId: string | null;
+        }) => void;
+        invalidate({ projectId: 'p' });
+      }
+      await vi.waitFor(() => expect(host.reportFatal).toHaveBeenCalledOnce());
+      expect(frame.frames[0].isConnected).toBe(false);
+      await instance.dispose();
+    } finally {
+      listen.mockRestore();
+      vi.unstubAllGlobals();
+    }
+  },
+);
+
+it.each(['disconnect', 'project'] as const)('rejects an in-flight command on %s revocation', async (kind) => {
+  const listen = vi.spyOn(websocketEvents, 'on');
+  websocketStore.connected.set(true);
+  const operationId = '0195e2a0-0000-7000-8000-000000000012';
+  const generatedId = `reverse-${operationId}`;
+  const request = vi.fn(async () =>
+    Response.json({
+      operationId,
+      projectId: 'p',
+      generatedId,
+      frames: 300,
+      frameRate: { num: 30, den: 1 },
+      width: 32,
+      height: 32,
+      browserPreview: {
+        generatedId: `reverse-preview-${operationId}`,
+        checksum: 'ab'.repeat(32),
+        contentType: 'video/mp4',
+        profile: 'h264-main-3.2-aac-lc-v1',
+        delivery: 'authenticated',
+      },
+    }),
+  );
+  vi.stubGlobal('fetch', request);
+  const received: unknown[] = [];
+  const frame = fakeFrame({
+    kind: 'commands',
+    respond: (_port, message) => {
+      received.push(message);
+    },
+  });
+  try {
+    const engine = await createFrameStudioEngine({ manifest, createFrame: frame.createFrame }).createCommandEngine!();
+    const graph = { timeline: { items: [{ id: 'clip', generatedId }] } };
+    const result = engine.apply(graph, [], [], 'p');
+    await vi.waitFor(() => expect(received).toHaveLength(1));
+    expect(request).toHaveBeenCalledOnce();
+    expect(received[0]).toMatchObject({
+      type: 'apply',
+      graph,
+      generatedMedia: [{ generatedId, id: generatedMediaAlias(generatedId) }],
+    });
+    if (kind === 'disconnect') websocketStore.connected.set(false);
+    else {
+      const invalidate = listen.mock.calls.find(([event]) => event === 'StudioProjectInvalidatedV1')![1] as (data: {
+        projectId: string | null;
+      }) => void;
+      invalidate({ projectId: null });
+    }
+    await expect(result).resolves.toMatchObject({ status: 'rejected', detail: 'The command engine was released' });
+    expect(frame.frames[0].isConnected).toBe(false);
+    engine.dispose();
+  } finally {
+    listen.mockRestore();
+    vi.unstubAllGlobals();
+  }
 });

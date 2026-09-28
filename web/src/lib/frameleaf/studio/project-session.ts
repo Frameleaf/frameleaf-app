@@ -656,7 +656,10 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
     if (!draft || disposed) {
       return;
     }
-    if (['conflict', 'lease-lost', 'forbidden'].includes(state.status)) {
+    if (
+      ['conflict', 'lease-lost', 'forbidden', 'review'].includes(state.status) ||
+      (state.conflict && isShelvedConflict(state.conflict))
+    ) {
       // These are the person's to resolve; autosave must not keep knocking.
       return;
     }
@@ -733,18 +736,21 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
           // The newer draft was built on top of this one, so it now follows the revision just stored.
           draft.baseRevision = result.revision;
         }
+        // A save committed before shelving can answer later. Its revision is real, but it must
+        // not clear the newer read-only decision or restart writes.
+        const shelved = !!state.conflict && isShelvedConflict(state.conflict);
         emit({
           // The graph shown stays the newest edit; a newer draft is not rolled back to this save.
           project: { ...state.project, revision: result.revision, graph: (draft ?? current).graph },
           lastSavedAt: now(),
-          conflict: null,
+          conflict: shelved ? state.conflict : null,
           error: null,
-          status: draft ? 'dirty' : 'saved',
+          status: shelved ? 'review' : draft ? 'dirty' : 'saved',
         });
         if (state.project.hasLease) {
           scheduleRenewal(gen);
         }
-        if (draft) {
+        if (draft && !shelved) {
           scheduleFlush();
         }
       } catch (error) {
@@ -888,7 +894,11 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
   ): StudioStageOutcome => {
     // Edits made after the lease was lost are kept with the draft until the person reacquires,
     // takes over or saves a copy; they are never dropped (FL-89).
-    const keepsDraft = (state.status === 'lease-lost' || state.status === 'conflict') && state.access === 'owner';
+    // A final editor snapshot may arrive after archive/trash revoked the lease. Keep it locally
+    // for the owner, without scheduling a write or reopening the editor for new commands.
+    const shelvedEditor = origin === 'editor' && !!state.conflict && isShelvedConflict(state.conflict);
+    const keepsDraft =
+      (state.status === 'lease-lost' || state.status === 'conflict' || shelvedEditor) && state.access === 'owner';
     if (disposed || state.access === 'reviewer' || (!state.project.hasLease && !keepsDraft)) {
       return 'ignored';
     }
@@ -1116,7 +1126,7 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
     },
 
     setOnline(online) {
-      if (disposed) {
+      if (disposed || (state.conflict && isShelvedConflict(state.conflict))) {
         return;
       }
       if (!online) {

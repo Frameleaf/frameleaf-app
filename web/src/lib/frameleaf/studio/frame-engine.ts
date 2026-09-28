@@ -30,6 +30,8 @@ import {
   type StudioFrameToHostMessage,
   type StudioHostToFrameMessage,
 } from './frame-protocol';
+import { storeGeneratedMedia } from './generated-media';
+import { createStudioGeneratedAccess } from './generated-media-client';
 import type {
   StudioAssetRef,
   StudioCommandEngine,
@@ -195,6 +197,7 @@ const isCount = (value: unknown): value is number => Number.isSafeInteger(value)
 
 /** The services a frame may call, each checked for shape before it reaches the host. */
 const serviceCalls: Record<StudioFrameServiceName, ServiceCall> = {
+  authorizeGeneratedMedia: () => Promise.resolve(false),
   submitCommands: (services, [envelopes]) =>
     services.submitCommands(Array.isArray(envelopes) ? (envelopes as StudioCommandEnvelope[]) : []),
   stageDraft: (services, [graph, commandIds, baseRevision, graphVersion]) => {
@@ -232,18 +235,38 @@ export const createFrameStudioEngine = ({
   features: [...manifest.features],
 
   async mount(target: HTMLElement, context: StudioHostContext, services: StudioHostServices) {
+    let revoke: (error: Error) => void = () => {};
+    let pendingRevocation: Error | null = null;
+    const access = createStudioGeneratedAccess((error) => {
+      pendingRevocation = error;
+      revoke(error);
+    });
+    let current: StudioHostContext;
+    try {
+      current = {
+        ...context,
+        generatedMedia: await access.admit(context.project.id, context.project.graph, context.project.revision),
+      };
+    } catch (error) {
+      access.dispose();
+      throw error;
+    }
     const frame = createFrame(target, documentUrl(base, manifest.editor), false);
     let port: MessagePort;
     try {
       port = await connect(frame, 'editor', manifest.engineRevision, helloTimeoutMs);
     } catch (error) {
+      access.dispose();
       frame.remove();
       throw error;
     }
 
     let disposed = false;
+    let disposing: Promise<void> | null = null;
     let settleMount: { resolve: () => void; reject: (error: Error) => void } | null = null;
     let settleDispose: (() => void) | null = null;
+    let settleRevocation: (() => void) | null = null;
+    let revoking = false;
     const send = (message: StudioHostToFrameMessage) => {
       if (!disposed) {
         port.postMessage(message);
@@ -272,6 +295,7 @@ export const createFrameStudioEngine = ({
           break;
         }
         case 'disposed': {
+          settleRevocation?.();
           settleDispose?.();
           break;
         }
@@ -285,9 +309,16 @@ export const createFrameStudioEngine = ({
               ? serviceCalls[message.name]
               : undefined;
           const args = Array.isArray(message.args) ? message.args : [];
-          const run = handler
-            ? handler(services, args)
-            : Promise.reject(new Error(`Unknown service ${String((message as { name: unknown }).name)}`));
+          const run = Promise.resolve().then(() =>
+            message.name === 'authorizeGeneratedMedia'
+              ? access.recheck()
+              : handler
+                ? handler(
+                    services,
+                    message.name === 'stageDraft' ? [storeGeneratedMedia(args[0]), ...args.slice(1)] : args,
+                  )
+                : Promise.reject(new Error(`Unknown service ${String((message as { name: unknown }).name)}`)),
+          );
           void run
             .then((value) =>
               send({ type: 'service-result', callId: message.callId, ok: true, value: toFrameData(value) }),
@@ -354,14 +385,36 @@ export const createFrameStudioEngine = ({
 
     const teardown = () => {
       disposed = true;
+      access.dispose();
       port.close();
       frame.remove();
     };
 
+    revoke = (error) => {
+      if (revoking || disposed || disposing) return;
+      revoking = true;
+      frame.style.visibility = 'hidden';
+      access.dispose();
+      void (async () => {
+        await new Promise<void>((resolve) => {
+          const timer = setTimeout(resolve, DISPOSE_TIMEOUT_MS);
+          settleRevocation = () => {
+            clearTimeout(timer);
+            resolve();
+          };
+          send({ type: 'revoke-generated' });
+        });
+        settleMount?.reject(error);
+        teardown();
+        services.reportFatal(error);
+      })();
+    };
+
     try {
+      if (pendingRevocation) throw pendingRevocation;
       await new Promise<void>((resolve, reject) => {
         settleMount = { resolve, reject };
-        send({ type: 'mount', protocolVersion: STUDIO_FRAME_PROTOCOL_VERSION, context: toFrameData(context) });
+        send({ type: 'mount', protocolVersion: STUDIO_FRAME_PROTOCOL_VERSION, context: toFrameData(current) });
       });
     } catch (error) {
       teardown();
@@ -370,12 +423,22 @@ export const createFrameStudioEngine = ({
       settleMount = null;
     }
 
-    let disposing: Promise<void> | null = null;
+    let updating: Promise<void> = Promise.resolve();
     const instance: StudioEngineInstance = {
       update(next) {
-        send({ type: 'update', context: toFrameData(next) });
+        updating = updating
+          .then(async () => {
+            if (disposed || revoking || disposing) return;
+            const generatedMedia = await access.admit(next.project.id, next.project.graph, next.project.revision);
+            if (disposed || revoking || disposing) return;
+            current = { ...next, generatedMedia };
+            send({ type: 'update', context: toFrameData(current) });
+          })
+          .catch((error) => revoke(error instanceof Error ? error : new Error(String(error))));
       },
       dispose() {
+        if (disposed) return Promise.resolve();
+        access.dispose();
         disposing ??= (async () => {
           await new Promise<void>((resolve) => {
             const timer = setTimeout(resolve, DISPOSE_TIMEOUT_MS);
@@ -413,9 +476,15 @@ export const createFrameStudioEngine = ({
     });
     port.start();
     let closed = false;
+    const access = createStudioGeneratedAccess(() => instance.dispose());
 
-    return {
-      apply(graph: unknown, envelopes: readonly StudioCommandEnvelope[], assets: readonly StudioAssetRef[]) {
+    const instance: StudioCommandEngine = {
+      async apply(
+        graph: unknown,
+        envelopes: readonly StudioCommandEnvelope[],
+        assets: readonly StudioAssetRef[],
+        projectId?: string,
+      ) {
         if (closed) {
           return Promise.resolve({
             status: 'rejected',
@@ -424,11 +493,19 @@ export const createFrameStudioEngine = ({
             detail: 'The command engine was released',
           });
         }
+        let generatedMedia;
+        try {
+          generatedMedia = await access.admit(projectId, graph);
+        } catch (error) {
+          return { status: 'rejected', index: 0, reason: 'failed', detail: String(error) };
+        }
+        if (closed) return { status: 'rejected', index: 0, reason: 'failed', detail: 'Generated media was revoked' };
         const requestId = nextRequest++;
         const request: StudioCommandApplyRequest = {
           type: 'apply',
           requestId,
-          graph: toFrameData(graph),
+          graph: toFrameData(storeGeneratedMedia(graph)),
+          generatedMedia: toFrameData(generatedMedia),
           envelopes: toFrameData([...envelopes]),
           assets: toFrameData([...assets]),
         };
@@ -442,6 +519,7 @@ export const createFrameStudioEngine = ({
           return;
         }
         closed = true;
+        access.dispose();
         for (const resolve of waiting.values()) {
           resolve({ status: 'rejected', index: 0, reason: 'failed', detail: 'The command engine was released' });
         }
@@ -450,6 +528,7 @@ export const createFrameStudioEngine = ({
         frame.remove();
       },
     };
+    return instance;
   },
 });
 

@@ -24,6 +24,8 @@ interface AppRestartEvent {
 }
 
 export interface Events {
+  /** FL-111: owner project shelf/audience changed; null invalidates all owner projects. */
+  StudioProjectInvalidatedV1: (data: { projectId: string | null }) => void;
   on_upload_success: (asset: AssetResponseDto) => void;
   on_user_delete: (id: string) => void;
   on_asset_delete: (assetId: string) => void;
