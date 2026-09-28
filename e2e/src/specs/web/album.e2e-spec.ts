@@ -1,4 +1,12 @@
-import { AlbumKind, LoginResponseDto, getAlbumTree, moveAlbumToCollection } from '@immich/sdk';
+import {
+  AlbumKind,
+  AlbumUserRole,
+  LoginResponseDto,
+  getAlbumInfo,
+  getAlbumTree,
+  moveAlbumToCollection,
+  setUserOnboarding,
+} from '@immich/sdk';
 import { expect, test } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { asBearerAuth, testAssetDir, utils } from 'src/utils.js';
@@ -42,6 +50,82 @@ test.describe('Album', () => {
 
     await page.goto(albumUrl);
     await expect(page.getByRole('button', { name: 'Add photos' })).toBeVisible();
+  });
+
+  test('keeps a shared photo and video through viewer back and refresh (FL-40)', async ({ browser, context, page }) => {
+    const member = await utils.userSetup(admin.accessToken, {
+      name: 'Album Member',
+      email: 'fl40-album-member@example.com',
+      password: 'password',
+    });
+    await setUserOnboarding({ onboardingDto: { isOnboarded: true } }, { headers: asBearerAuth(member.accessToken) });
+    const photo = await utils.createAsset(admin.accessToken);
+    const video = await utils.createAsset(admin.accessToken, {
+      assetData: {
+        bytes: readFileSync(
+          new URL('../../../../design/frameleaf/template/public/media/kayak-demo.mp4', import.meta.url),
+        ),
+        filename: 'kayak-demo.mp4',
+      },
+    });
+    const album = await utils.createAlbum(admin.accessToken, {
+      albumName: 'Photo and video trip',
+      assetIds: [photo.id, video.id],
+      albumUsers: [{ userId: member.userId, role: AlbumUserRole.Viewer }],
+    });
+
+    await utils.setAuthCookies(context, admin.accessToken);
+    await page.goto(`/albums/${album.id}`);
+    const photoTile = page.locator(`[data-asset-id="${photo.id}"]`);
+    const videoTile = page.locator(`[data-asset-id="${video.id}"]`);
+    await expect(photoTile).toBeVisible();
+    await expect(videoTile).toBeVisible();
+
+    await photoTile.hover();
+    await photoTile.getByRole('checkbox').click();
+    await expect(page.getByRole('region', { name: 'Selected items' })).toContainText('1 selected');
+    await page.getByRole('group', { name: 'Layout' }).getByRole('button', { name: 'Work' }).click();
+    await expect(page.getByTestId('frameleaf-library')).toHaveAttribute('data-layout', 'work');
+    await expect(photoTile.getByRole('checkbox')).toBeChecked();
+    await photoTile.getByRole('checkbox').click();
+
+    await videoTile.locator('button').first().click();
+    await expect(page.locator('#immich-asset-viewer')).toHaveAttribute('data-asset-id', video.id);
+    await page.goBack();
+    await expect(page.locator('#immich-asset-viewer')).toHaveCount(0);
+    await page.reload();
+    await expect(photoTile).toBeVisible();
+    await expect(videoTile).toBeVisible();
+
+    const memberContext = await browser.newContext();
+    try {
+      await utils.setAuthCookies(memberContext, member.accessToken);
+      const memberPage = await memberContext.newPage();
+      await memberPage.goto(`/albums/${album.id}`);
+      await expect(memberPage.locator(`[data-asset-id="${photo.id}"]`)).toBeVisible();
+      await expect(memberPage.locator(`[data-asset-id="${video.id}"]`)).toBeVisible();
+      await memberPage.reload();
+      await expect(memberPage.locator(`[data-asset-id="${photo.id}"]`)).toBeVisible();
+      await expect(memberPage.locator(`[data-asset-id="${video.id}"]`)).toBeVisible();
+      await memberPage.locator(`[data-asset-id="${photo.id}"] button`).first().click();
+      await expect(memberPage.locator('#immich-asset-viewer')).toHaveAttribute('data-asset-id', photo.id);
+      await memberPage.goBack();
+      await expect(memberPage.locator('#immich-asset-viewer')).toHaveCount(0);
+      await expect(memberPage.locator(`[data-asset-id="${video.id}"]`)).toBeVisible();
+    } finally {
+      await memberContext.close();
+    }
+
+    const saved = await getAlbumInfo({ id: album.id }, { headers: asBearerAuth(admin.accessToken) });
+    expect(saved.assetCount).toBe(2);
+    expect(saved.albumUsers).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          role: AlbumUserRole.Viewer,
+          user: expect.objectContaining({ id: member.userId }),
+        }),
+      ]),
+    );
   });
 
   test('opens the Map screen scoped to the album and returns to it from the viewer', async ({ context, page }) => {
