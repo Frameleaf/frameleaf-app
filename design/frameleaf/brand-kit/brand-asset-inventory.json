@@ -1,11 +1,11 @@
 {
   "approvedReferences": [
     {
-      "bytes": 22692,
+      "bytes": 22273,
       "id": "reference:design/frameleaf/INTERACTION-REQUIREMENTS.md",
       "path": "design/frameleaf/INTERACTION-REQUIREMENTS.md",
       "role": "approved-interaction-contract",
-      "sha256": "19bcad4422b087fcd6a227853e85a58821078f8d8103cd87adc6cce8882b97a5",
+      "sha256": "ede727aa1a6c56d6b4f814a7e07406bd0f76c32021c997b8ec28b68c0a8876c6",
       "status": "reference-not-production-qualification"
     },
     {
@@ -87,7 +87,7 @@
     "suppliedVectors": 7
   },
   "digests": {
-    "approvedReferenceLedgerSha256": "a029af1cf5c3e0dfb525b81448441d5bc80aed5bf3924b7cf8578dc190aade9a",
+    "approvedReferenceLedgerSha256": "99e3851804f9b8d2e9486bf4c0298697a26198240230d612d890a62a0c61f529",
     "suppliedSourceLedgerSha256": "a317886619c3d450f81d91fb065ed698d3715e1bc537b95d2751becf59d6f488"
   },
   "expectedDuplicateContent": [
