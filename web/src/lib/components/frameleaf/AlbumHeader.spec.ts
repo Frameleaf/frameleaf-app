@@ -256,4 +256,33 @@ describe('AlbumHeader', () => {
       expect(onToggleActivity).toHaveBeenCalledOnce();
     });
   });
+
+  describe('cover (FL-83 AL-13)', () => {
+    it.each([
+      [true, 'Cover follows the newest item'],
+      [false, 'Cover updated'],
+    ])('announces the saved cover (follows newest: %s)', async (coverFollowsNewest, message) => {
+      const album = albumAs(AlbumUserRole.Owner);
+      sdkMock.searchAssets.mockResolvedValue({
+        assets: { items: [], count: 0, total: 0, facets: [], nextPage: null },
+      } as never);
+      sdkMock.updateAlbumInfo.mockResolvedValue({ ...album, coverFollowsNewest });
+      const onAlbumChange = vi.fn();
+      render(AlbumHeader, {
+        album,
+        assetCount: album.assetCount,
+        onAlbumChange,
+        onRefresh: vi.fn(),
+        onAddPhotos: vi.fn(),
+        onToggleActivity: vi.fn(),
+      });
+
+      const menu = await openMore();
+      await fireEvent.click(menu.getByRole('menuitem', { name: 'Select cover' }));
+      await fireEvent.click(await screen.findByRole('button', { name: 'Use as cover' }));
+
+      await waitFor(() => expect(onAlbumChange).toHaveBeenCalledWith(expect.objectContaining({ coverFollowsNewest })));
+      expect(screen.getByRole('status')).toHaveTextContent(message);
+    });
+  });
 });
