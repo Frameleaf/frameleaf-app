@@ -9,10 +9,10 @@ Frameleaf sends machine-learning work to **destinations**: the machine-learning 
 
 Library analysis and restoration never share a worker.
 
-| Work                                                               | Runs on                                                                           | Image                                     |
-| ------------------------------------------------------------------ | --------------------------------------------------------------------------------- | ----------------------------------------- |
-| Library analysis: faces, search and similarity, text, descriptions | The machine-learning endpoints or a `/predict` container on another machine       | `frameleaf-machine-learning`              |
-| Restoration (Faithful and Creative)                                | A restoration worker on this server or your network                               | Built from `Dockerfile.video-restoration` |
+| Work                                                               | Runs on                                                                     | Image                                     |
+| ------------------------------------------------------------------ | --------------------------------------------------------------------------- | ----------------------------------------- |
+| Library analysis: faces, search and similarity, text, descriptions | The machine-learning endpoints or a `/predict` container on another machine | `frameleaf-machine-learning`              |
+| Restoration (Faithful and Creative)                                | A restoration worker on this server or your network                         | Built from `Dockerfile.video-restoration` |
 
 The rules the server enforces:
 

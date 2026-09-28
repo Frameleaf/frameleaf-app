@@ -58,7 +58,6 @@ Choose models for each kind of work in **Where each job runs**. Each kind of wor
 
 Choosing a white or green stop changes the description model setting, saved with the settings bar like the Machine learning settings. The machine-learning container downloads a model it doesn't have yet the first time a job uses it, which can take several minutes. The fallback model and any model typed as a custom name stay in the Machine learning settings. Restoration workers bring their own models. Smooth motion runs RIFE on a restoration worker on this server or your network when an administrator has added one with a qualified RIFE model (see `machine-learning/video-restoration/README.md`).
 
-
 ## Hardware & GPU check
 
 **Settings → Compute & jobs → Hardware & GPU** checks each part of Frameleaf on its own, because each needs its own access to the GPU. For the server container (video and Studio export) and the machine-learning container (AI features) it reports three separate facts:
