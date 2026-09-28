@@ -7,14 +7,12 @@ import { fileURLToPath } from 'node:url';
 import {
   CATALOGUE_PATH,
   MANIFEST_PATH,
-  PROTOTYPE_PATH,
   SERVER_MIRROR_PATH,
   WEB_VOCABULARY_PATH,
   buildServerMirror,
   canonicalJson,
   generate,
   parseWebVocabulary,
-  prototypeCommandFunctions,
   validate,
 } from './frameleaf-studio-commands.mjs';
 
@@ -24,7 +22,6 @@ const clone = (value) => JSON.parse(JSON.stringify(value));
 
 const inputs = async () => ({
   manifest: JSON.parse(await read(MANIFEST_PATH)),
-  prototypeSource: await read(PROTOTYPE_PATH),
   webSource: await read(WEB_VOCABULARY_PATH),
 });
 
@@ -47,12 +44,28 @@ test('the published catalogue and its generated contracts are current', async ()
   assert.deepEqual(Object.keys(files).sort(), [CATALOGUE_PATH, SERVER_MIRROR_PATH].sort());
 });
 
-test('the catalogue covers every mutating function of the prototype project model', async () => {
-  const { document } = await generate(repository);
-  const referenced = new Set(document.commands.flatMap((command) => command.prototypeFunctions));
+test('the published contracts omit private planning metadata', async () => {
+  const { document, files } = await generate(repository);
 
-  for (const name of prototypeCommandFunctions(await read(PROTOTYPE_PATH))) {
-    assert.ok(referenced.has(name), `${name} has no command id`);
+  assert.equal(Object.hasOwn(document, 'prototypePath'), false);
+  assert.equal(Object.hasOwn(document, 'status'), false);
+  for (const command of document.commands) {
+    assert.deepEqual(Object.keys(command).sort(), [
+      'capability',
+      'description',
+      'id',
+      'manifestIds',
+      'mutatesGraph',
+      'payload',
+      'scope',
+      'undoable',
+    ]);
+  }
+  for (const row of document.nonCommandRows) {
+    assert.deepEqual(Object.keys(row).sort(), ['id', 'reason']);
+  }
+  for (const content of [...Object.values(files), await read(WEB_VOCABULARY_PATH)]) {
+    assert.doesNotMatch(content, /FL-\d+|prototypeFunctions|prototypeSource|owner:/);
   }
 });
 
@@ -67,15 +80,6 @@ test('a manifest row that loses its command and its exemption fails the check', 
     () => validate({ document: broken, ...context }),
     /command\.split has no command and is not declared a non-command row/,
   );
-});
-
-test('a non-command exemption must name a Jira owner', async () => {
-  const { document } = await generate(repository);
-  const context = await inputs();
-  const broken = clone(document);
-  broken.nonCommandRows[0].owner = 'private-plan-id';
-
-  assert.throws(() => validate({ document: broken, ...context }), /needs a Jira owner/);
 });
 
 test('a job row may not claim a graph change, an undo entry or a missing worker', async () => {
@@ -94,15 +98,6 @@ test('a job row may not claim a graph change, an undo entry or a missing worker'
   }
 });
 
-test('the vocabulary FL-92 publishes claims no semantics for itself', async () => {
-  const { document } = await generate(repository);
-  const context = await inputs();
-  const broken = clone(document);
-  broken.commands[0].owner = 'FL-92';
-
-  assert.throws(() => validate({ document: broken, ...context }), /publishes the vocabulary/);
-});
-
 test('a web vocabulary that drifts from the catalogue fails the check', async () => {
   const { document } = await generate(repository);
   const context = await inputs();
@@ -110,15 +105,6 @@ test('a web vocabulary that drifts from the catalogue fails the check', async ()
   assert.throws(
     () => validate({ document, ...context, webSource: context.webSource.replace("'clip.split',", "'clip.chop',") }),
     /Web command ids drifted/,
-  );
-  assert.throws(
-    () =>
-      validate({
-        document,
-        ...context,
-        webSource: context.webSource.replace("prototypeSource: 'splitClipAt',", "prototypeSource: 'chopClipAt',"),
-      }),
-    /clip\.split: web prototype source drifted/,
   );
 });
 

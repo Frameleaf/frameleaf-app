@@ -85,9 +85,7 @@ work.
 
 `frameleaf-studio-commands.json` is the published Studio command vocabulary: 90 commands,
 each with its payload fields, scope, whether it changes the stored graph, whether it is
-undoable, the worker capability it needs, the prototype
-function or pinned Freecut feature that specifies it, and the manifest rows it is the way
-to reach.
+undoable, the worker capability it needs, and the pinned Freecut manifest rows it reaches.
 
 Payload fields typed `time`, `duration` and `rate` are exact rationals, never floats:
 an instant on the timeline, a length, and a cadence or speed
@@ -103,10 +101,8 @@ The catalogue is the single source for two checked-in contracts:
 
 `scripts/frameleaf-studio-commands.mjs` writes the catalogue and the server mirror and,
 with no arguments, verifies them. It fails when a checked-in file is stale, when the web vocabulary drifts from the
-catalogue, when a mutating function of the prototype project model
-(`design/frameleaf/template/src/studio-project.mjs`) has no command id, or when a row of
-`freecut-feature-manifest.json` is neither mapped to a command nor listed in
-`nonCommandRows` with a reason and an owner. 182 rows are reachable through a command and
+catalogue, or when a row of `freecut-feature-manifest.json` is neither mapped to a command
+nor listed in `nonCommandRows` with a reason. 182 rows are reachable through a command and
 28 are declared non-command rows (module inventories, playback and storage behaviour,
 read-only surfaces, host lifecycle).
 
