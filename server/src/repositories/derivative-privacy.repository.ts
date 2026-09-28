@@ -104,9 +104,9 @@ export class DerivativePrivacyRepository {
    * The same two ways the library grants it (`AccessRepository`): an album the account is a member
    * of (owners are members too) that holds the asset, or a partner who shares their library with
    * the account and the asset is on their timeline. Locked media is reached by neither. The rows
-   * that grant access are locked `FOR SHARE`, so removing the account from the album, taking the
-   * asset out of it or ending the partnership waits for this transaction; one that committed first
-   * is seen as lost access.
+   * that grant access are locked `FOR SHARE`, so deleting the album, removing the account from it,
+   * taking the asset out of it or ending the partnership waits for this transaction; one that
+   * committed first is seen as lost access.
    */
   async lockSharedAccess(tx: Kysely<DB>, userId: string, sources: readonly LockedSourceRow[]): Promise<Set<string>> {
     const candidates = sources.filter((source) => source.ownerId !== userId && source.lockReason === null);
@@ -121,7 +121,8 @@ export class DerivativePrivacyRepository {
       JOIN album ON album.id = album_asset."albumId" AND album."deletedAt" IS NULL
       JOIN album_user ON album_user."albumId" = album.id AND album_user."userId" = ${userId}::uuid
       WHERE album_asset."assetId" = ANY(${ids}::uuid[])
-      FOR SHARE OF album_asset, album_user
+      ORDER BY album.id
+      FOR SHARE OF album, album_asset, album_user
     `.execute(tx);
 
     const partners = await sql<{ assetId: string }>`
