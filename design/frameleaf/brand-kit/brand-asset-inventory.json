@@ -1,14 +1,6 @@
 {
   "approvedReferences": [
     {
-      "bytes": 5835,
-      "id": "reference:design/frameleaf/README.md",
-      "path": "design/frameleaf/README.md",
-      "role": "approved-design-handoff",
-      "sha256": "d14aeca58bff0d3cef4a391819bf208664fd9a67ff58a6d12531676e9d3b78e0",
-      "status": "reference-not-production-qualification"
-    },
-    {
       "bytes": 22692,
       "id": "reference:design/frameleaf/INTERACTION-REQUIREMENTS.md",
       "path": "design/frameleaf/INTERACTION-REQUIREMENTS.md",
@@ -86,7 +78,7 @@
     }
   ],
   "counts": {
-    "approvedReferenceDocuments": 5,
+    "approvedReferenceDocuments": 4,
     "generatedDerivatives": 0,
     "historicalRasterReferences": 2,
     "nativeConsumers": 0,
@@ -95,7 +87,7 @@
     "suppliedVectors": 7
   },
   "digests": {
-    "approvedReferenceLedgerSha256": "7fd0342c633ec393fb45379b54764110e7c090770bbcfd24a1f40b6507fe44bc",
+    "approvedReferenceLedgerSha256": "a029af1cf5c3e0dfb525b81448441d5bc80aed5bf3924b7cf8578dc190aade9a",
     "suppliedSourceLedgerSha256": "a317886619c3d450f81d91fb065ed698d3715e1bc537b95d2751becf59d6f488"
   },
   "expectedDuplicateContent": [
