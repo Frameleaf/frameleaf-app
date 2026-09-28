@@ -20315,6 +20315,62 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/media-operations/{id}/reverse-result": {
+      "get": {
+        "description": "Owner-only metadata after current project, source and generated-lineage authorization. Contains no storage paths or worker grants.",
+        "operationId": "getMediaOperationReverseResult",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioReverseConformResultDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get a completed source reversal result",
+        "tags": [
+          "Media operations"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
     "/memories": {
       "get": {
         "description": "Retrieve a list of memories. Memories are sorted descending by creation date by default, although they can also be sorted in ascending order, or randomly.",
@@ -35489,6 +35545,138 @@
           },
           {
             "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/studio/projects/{id}/reverse-conform": {
+      "post": {
+        "description": "Owner-only local source reversal bound to a stored revision and the requesting editor lease.",
+        "operationId": "enqueueStudioReverseConform",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StudioReverseConformEnqueueDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioReverseConformQueuedDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Queue a Studio clip source reversal",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/studio/projects/{id}/reverse-conform/apply": {
+      "post": {
+        "description": "Rechecks ownership, current source access, lease and the original revision before relinking the clip. Newer edits are never overwritten.",
+        "operationId": "applyStudioReverseConform",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StudioReverseConformApplyDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioProjectSaveResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Apply a completed Studio clip source reversal",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
             "state": "Alpha"
           }
         ],
@@ -82633,6 +82821,214 @@
           "hidden-content"
         ],
         "type": "string"
+      },
+      "StudioReverseConformApplyDto": {
+        "properties": {
+          "clientId": {
+            "pattern": "^[\\w.:-]{1,128}$",
+            "type": "string"
+          },
+          "operationId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "clientId",
+          "operationId"
+        ],
+        "type": "object"
+      },
+      "StudioReverseConformEnqueueDto": {
+        "properties": {
+          "clientId": {
+            "pattern": "^[\\w.:-]{1,128}$",
+            "type": "string"
+          },
+          "command": {
+            "properties": {
+              "id": {
+                "enum": [
+                  "job.enqueueReverseConform"
+                ],
+                "type": "string"
+              },
+              "idempotencyKey": {
+                "pattern": "^[\\w.:-]{1,128}$",
+                "type": "string"
+              },
+              "issuedAt": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "payload": {
+                "properties": {
+                  "clipId": {
+                    "pattern": "^[\\w.:-]{1,128}$",
+                    "type": "string"
+                  },
+                  "destinationId": {
+                    "enum": [
+                      "local"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "clipId",
+                  "destinationId"
+                ],
+                "type": "object"
+              },
+              "revision": {
+                "maximum": 9007199254740991,
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "id",
+              "payload",
+              "revision",
+              "idempotencyKey",
+              "issuedAt"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "clientId",
+          "command"
+        ],
+        "type": "object"
+      },
+      "StudioReverseConformQueuedDto": {
+        "properties": {
+          "operationId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "operationId"
+        ],
+        "type": "object"
+      },
+      "StudioReverseConformResultDto": {
+        "properties": {
+          "browserPreview": {
+            "properties": {
+              "checksum": {
+                "pattern": "^[a-f0-9]{64}$",
+                "type": "string"
+              },
+              "contentType": {
+                "enum": [
+                  "video/mp4"
+                ],
+                "type": "string"
+              },
+              "delivery": {
+                "enum": [
+                  "authenticated"
+                ],
+                "type": "string"
+              },
+              "generatedId": {
+                "pattern": "^[\\w.:-]{1,128}$",
+                "type": "string"
+              },
+              "profile": {
+                "enum": [
+                  "h264-main-3.2-aac-lc-v1"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "generatedId",
+              "checksum",
+              "contentType",
+              "profile",
+              "delivery"
+            ],
+            "type": "object"
+          },
+          "clipId": {
+            "nullable": true,
+            "pattern": "^[\\w.:-]{1,128}$",
+            "type": "string"
+          },
+          "frameRate": {
+            "properties": {
+              "den": {
+                "maximum": 9007199254740991,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "num": {
+                "maximum": 9007199254740991,
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "num",
+              "den"
+            ],
+            "type": "object"
+          },
+          "frames": {
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "generatedId": {
+            "pattern": "^[\\w.:-]{1,128}$",
+            "type": "string"
+          },
+          "height": {
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "operationId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "projectId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "sourceRevision": {
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "width": {
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "browserPreview",
+          "clipId",
+          "frameRate",
+          "frames",
+          "generatedId",
+          "height",
+          "operationId",
+          "projectId",
+          "sourceRevision",
+          "width"
+        ],
+        "type": "object"
       },
       "StudioTimeDto": {
         "properties": {

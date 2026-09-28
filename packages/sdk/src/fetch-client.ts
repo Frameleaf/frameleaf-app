@@ -6548,6 +6548,27 @@ export type MediaOperationDetailDto = {
     /** The job is about a Locked item this session has not unlocked; its label and snapshot are withheld */
     withheld: boolean;
 };
+export type StudioReverseConformResultDto = {
+    browserPreview: {
+        checksum: string;
+        contentType: ContentType;
+        delivery: Delivery;
+        generatedId: string;
+        profile: Profile;
+    };
+    clipId: string | null;
+    frameRate: {
+        den: number;
+        num: number;
+    };
+    frames: number;
+    generatedId: string;
+    height: number;
+    operationId: string;
+    projectId: string;
+    sourceRevision: number;
+    width: number;
+};
 export type MemoryStoryPlaceDto = {
     /** City */
     city: string | null;
@@ -9894,6 +9915,26 @@ export type StudioProjectSaveResponseDto = {
     revisionId: string | null;
     /** The document equals the head, so no revision was written */
     unchanged: boolean;
+};
+export type StudioReverseConformEnqueueDto = {
+    clientId: string;
+    command: {
+        id: Id;
+        idempotencyKey: string;
+        issuedAt: number;
+        payload: {
+            clipId: string;
+            destinationId: DestinationId;
+        };
+        revision: number;
+    };
+};
+export type StudioReverseConformQueuedDto = {
+    operationId: string;
+};
+export type StudioReverseConformApplyDto = {
+    clientId: string;
+    operationId: string;
 };
 export type StudioCommandSummaryDto = {
     /** Command id to how many times it appeared */
@@ -16200,6 +16241,19 @@ export function viewMediaOperationReversePreview({ id }: {
     }));
 }
 /**
+ * Get a completed source reversal result
+ */
+export function getMediaOperationReverseResult({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioReverseConformResultDto;
+    }>(`/media-operations/${encodeURIComponent(id)}/reverse-result`, {
+        ...opts
+    }));
+}
+/**
  * Retrieve memories
  */
 export function searchMemories({ $for, id, isHidden, isSaved, isTrashed, isUpcoming, order, page, size, $type }: {
@@ -19805,6 +19859,38 @@ export function restoreStudioProjectRevision({ id, studioProjectRestoreDto }: {
     })));
 }
 /**
+ * Queue a Studio clip source reversal
+ */
+export function enqueueStudioReverseConform({ id, studioReverseConformEnqueueDto }: {
+    id: string;
+    studioReverseConformEnqueueDto: StudioReverseConformEnqueueDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: StudioReverseConformQueuedDto;
+    }>(`/studio/projects/${encodeURIComponent(id)}/reverse-conform`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: studioReverseConformEnqueueDto
+    })));
+}
+/**
+ * Apply a completed Studio clip source reversal
+ */
+export function applyStudioReverseConform({ id, studioReverseConformApplyDto }: {
+    id: string;
+    studioReverseConformApplyDto: StudioReverseConformApplyDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioProjectSaveResponseDto;
+    }>(`/studio/projects/${encodeURIComponent(id)}/reverse-conform/apply`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: studioReverseConformApplyDto
+    })));
+}
+/**
  * List Studio project history
  */
 export function getStudioProjectHistory({ id, skip, take }: {
@@ -22879,6 +22965,15 @@ export enum MediaOperationCheckpointState {
     Complete = "complete",
     Invalid = "invalid"
 }
+export enum ContentType {
+    VideoMp4 = "video/mp4"
+}
+export enum Delivery {
+    Authenticated = "authenticated"
+}
+export enum Profile {
+    H264Main32AacLcV1 = "h264-main-3.2-aac-lc-v1"
+}
 export enum MemorySearchOrder {
     Asc = "asc",
     Desc = "desc",
@@ -23399,6 +23494,12 @@ export enum StudioProjectSort {
 export enum StudioProjectAccess {
     Owner = "owner",
     Reviewer = "reviewer"
+}
+export enum Id {
+    JobEnqueueReverseConform = "job.enqueueReverseConform"
+}
+export enum DestinationId {
+    Local = "local"
 }
 export enum StudioRestoredVersionUnavailable {
     Discarded = "discarded",
