@@ -22,6 +22,10 @@
    * than a new endpoint; the chosen id is written with `PATCH /albums/{id}`
    * (`albumThumbnailAssetId`). A collection's own items are the union of its albums, so the
    * caller passes those album ids and the cover may come from any of them.
+   *
+   * "Always use the newest item" (FL-83, AL-13) is the prototype's `choice === null`: saved as
+   * `coverFollowsNewest`, after which the server keeps the newest item as the cover. Picking an item
+   * turns it off.
    */
   interface Props {
     album: AlbumResponseDto;
@@ -38,7 +42,9 @@
   let assets = $state<AssetResponseDto[]>([]);
   let loading = $state(false);
   let failed = $state(false);
-  let choice = $state<string | null>(album.albumThumbnailAssetId);
+  /** The picked item, or null for "Always use the newest item". */
+  const initialChoice = () => (album.coverFollowsNewest ? null : album.albumThumbnailAssetId);
+  let choice = $state<string | null>(initialChoice());
   let saving = $state(false);
 
   const load = async () => {
@@ -67,17 +73,17 @@
       return;
     }
 
-    choice = album.albumThumbnailAssetId;
+    choice = initialChoice();
     void load();
   });
 
   const save = async () => {
-    if (!choice) {
-      return;
-    }
     saving = true;
     try {
-      const updated = await handleUpdateAlbumInfo(album.id, { albumThumbnailAssetId: choice });
+      const updated = await handleUpdateAlbumInfo(
+        album.id,
+        choice === null ? { coverFollowsNewest: true } : { albumThumbnailAssetId: choice },
+      );
       if (updated) {
         onUpdated(updated);
         open = false;
@@ -116,9 +122,17 @@
         {/each}
       </div>
     {/if}
+    <label class="check">
+      <input
+        type="checkbox"
+        checked={choice === null}
+        onchange={(event) => (choice = event.currentTarget.checked ? null : (assets[0]?.id ?? null))}
+      />
+      <span>{$t('frameleaf_album_cover_follow_newest')}</span>
+    </label>
     <div class="buttons">
       <button type="button" disabled={saving} onclick={() => (open = false)}>{$t('cancel')}</button>
-      <button type="button" class="primary" disabled={saving || !choice} onclick={() => void save()}>
+      <button type="button" class="primary" disabled={saving} onclick={() => void save()}>
         {$t('frameleaf_album_cover_use')}
       </button>
     </div>
@@ -162,6 +176,19 @@
     inset-block-start: 0.25rem;
     inset-inline-end: 0.25rem;
     color: var(--fl-accent);
+  }
+  .check {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 4px 10px;
+    align-items: center;
+    cursor: pointer;
+  }
+  .check input {
+    width: 18px;
+    height: 18px;
+    margin: 0;
+    accent-color: var(--fl-accent);
   }
   .buttons {
     display: flex;

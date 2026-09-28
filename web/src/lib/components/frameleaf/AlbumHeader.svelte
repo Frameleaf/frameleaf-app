@@ -304,6 +304,14 @@
     return () => controller.abort();
   });
 
+  /** The prototype's cover status (FL-83): whether the cover now follows the newest item. */
+  const onCoverChange = (updated: AlbumResponseDto) => {
+    onAlbumChange(updated);
+    status = updated.coverFollowsNewest
+      ? $t('frameleaf_album_cover_follows_newest')
+      : $t('frameleaf_album_cover_updated');
+  };
+
   const save = async (dto: Parameters<typeof handleUpdateAlbumInfo>[1], message: string) => {
     const updated = await handleUpdateAlbumInfo(album.id, dto, { message });
     if (!updated) {
@@ -710,7 +718,7 @@
 </header>
 
 <AlbumShareDialog {album} bind:open={shareOpen} onChanged={onRefresh} onLeave={() => (leaveOpen = true)} />
-<AlbumCoverDialog {album} albumIds={coverSourceIds} bind:open={coverOpen} onUpdated={onAlbumChange} />
+<AlbumCoverDialog {album} albumIds={coverSourceIds} bind:open={coverOpen} onUpdated={onCoverChange} />
 <AlbumOptionsDialog {album} bind:open={optionsOpen} onUpdated={onAlbumChange} />
 <SharedLinkForm bind:open={linkFormOpen} target={linkTarget} />
 
