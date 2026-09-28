@@ -20,7 +20,7 @@ const operationId = '0195e2a0-0000-7000-8000-000000000012';
 const claimToken = '0195e2a0-0000-7000-8000-000000000013';
 const checksum = Buffer.from('ab'.repeat(32), 'hex').toString('base64');
 const sourceKey = `library-asset:${sourceId}`;
-const owner = authStub.user1;
+const owner = { ...authStub.user1, user: { ...authStub.user1.user, id: '0195e2a0-0000-7000-8000-000000000014' } };
 
 const setup = () => {
   const operation = {
