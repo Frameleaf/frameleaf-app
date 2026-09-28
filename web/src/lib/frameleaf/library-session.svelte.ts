@@ -17,9 +17,11 @@ import {
   createLibrarySession,
   fromStoredLibrarySession,
   libraryPreferenceKey,
+  libraryTransientKey,
   parseLibraryView,
   reduceLibrarySession,
   toStoredLibrarySession,
+  toStoredLibraryTransient,
   writeLibraryView,
   type LibraryLayout,
   type LibrarySession,
@@ -49,6 +51,8 @@ export type LibrarySessionStoreOptions = {
   destination?: DiscoveryDestination;
   /** Storage; injected in tests, and absent during server rendering. */
   storage?: Pick<Storage, 'getItem' | 'setItem'> | null;
+  /** Tab storage for selection, drafts and asset ids. */
+  transientStorage?: Pick<Storage, 'getItem' | 'setItem'> | null;
 };
 
 const safeStorage = (storage?: Pick<Storage, 'getItem' | 'setItem'> | null) => {
@@ -63,6 +67,17 @@ const safeStorage = (storage?: Pick<Storage, 'getItem' | 'setItem'> | null) => {
   }
 };
 
+const safeTransientStorage = (storage?: Pick<Storage, 'getItem' | 'setItem'> | null) => {
+  if (storage !== undefined) {
+    return storage;
+  }
+  try {
+    return globalThis.sessionStorage ?? null;
+  } catch {
+    return null;
+  }
+};
+
 export class LibrarySessionStore {
   /**
    * Raw, not deeply proxied: the reducer never mutates a session in place, it returns a new one, so
@@ -73,7 +88,9 @@ export class LibrarySessionStore {
   #pageSize: number | undefined;
   #destination: DiscoveryDestination | undefined = $state();
   #userId: string | undefined;
+  #context = '';
   #storage: Pick<Storage, 'getItem' | 'setItem'> | null;
+  #transientStorage: Pick<Storage, 'getItem' | 'setItem'> | null;
   /** Total matches for the current revision, or null while the server has not counted. */
   #total: number | null = $state(null);
   #totalRevision = -1;
@@ -87,6 +104,7 @@ export class LibrarySessionStore {
     this.#destination = options.destination;
     this.#userId = options.userId;
     this.#storage = safeStorage(options.storage);
+    this.#transientStorage = safeTransientStorage(options.transientStorage);
   }
 
   get session() {
@@ -135,22 +153,32 @@ export class LibrarySessionStore {
 
   /**
    * Restore the session. Portable state from the URL wins over what was stored, so a shared link
-   * opens what it describes; layout is device-local and comes from storage alone. Selection is
-   * never restored.
+   * opens what it describes; layout is device-local and comes from storage alone. Tab state is
+   * restored only for this account and the same view.
    */
-  restore(url?: URL, userId = this.#userId) {
-    this.#userId = userId;
+  restore(url?: URL, userId?: string, context = '') {
+    if (arguments.length > 1) {
+      this.#userId = userId;
+    }
+    const currentUserId = this.#userId;
+    this.#context = context;
     const parsed = url ? parseLibraryView(url) : null;
     const incoming = parsed?.ok ? parsed.state : null;
     let stored: string | null = null;
-    if (userId) {
+    let transient: string | null = null;
+    if (currentUserId) {
       try {
-        stored = this.#storage?.getItem(libraryPreferenceKey(userId)) ?? null;
+        stored = this.#storage?.getItem(libraryPreferenceKey(currentUserId)) ?? null;
       } catch {
         stored = null;
       }
+      try {
+        transient = this.#transientStorage?.getItem(libraryTransientKey(currentUserId)) ?? null;
+      } catch {
+        transient = null;
+      }
     }
-    this.#session = fromStoredLibrarySession(stored, incoming);
+    this.#session = fromStoredLibrarySession(stored, incoming, transient, context);
     this.#total = null;
     this.#totalRevision = -1;
     this.#refusedView = parsed && !parsed.ok ? parsed.problem : null;
@@ -166,16 +194,26 @@ export class LibrarySessionStore {
     return this.#refusedView;
   }
 
-  /** Write the device-local part of the session back to storage. Selection is deliberately absent. */
-  persist(userId = this.#userId) {
-    if (!userId || !this.#storage) {
+  /** Write device preferences and recoverable account/tab UI state to their separate stores. */
+  persist(userId?: string) {
+    const currentUserId = arguments.length ? userId : this.#userId;
+    if (!currentUserId || currentUserId !== this.#userId) {
       return false;
     }
+    let saved = false;
     try {
-      this.#storage.setItem(libraryPreferenceKey(userId), JSON.stringify(toStoredLibrarySession(this.#session)));
-      return true;
+      this.#storage?.setItem(libraryPreferenceKey(currentUserId), JSON.stringify(toStoredLibrarySession(this.#session)));
+      saved = !!this.#storage;
     } catch {
-      // A full or blocked store must not break the page; the session keeps working in memory.
+      // A full or blocked store must not break the page.
+    }
+    try {
+      this.#transientStorage?.setItem(
+        libraryTransientKey(currentUserId),
+        JSON.stringify(toStoredLibraryTransient(this.#session, this.#context)),
+      );
+      return saved && !!this.#transientStorage;
+    } catch {
       return false;
     }
   }

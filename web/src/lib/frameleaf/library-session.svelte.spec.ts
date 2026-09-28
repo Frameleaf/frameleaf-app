@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { emptyDiscoveryQuery } from '$lib/components/discovery/query';
-import { libraryPreferenceKey, writeLibraryView, type LibraryViewState } from '$lib/frameleaf/library-session';
+import { libraryPreferenceKey, libraryTransientKey, writeLibraryView, type LibraryViewState } from '$lib/frameleaf/library-session';
 import { LibrarySessionStore } from '$lib/frameleaf/library-session.svelte';
 
 class MemoryStorage {
@@ -35,7 +35,7 @@ describe('LibrarySessionStore', () => {
 
   beforeEach(() => {
     storage = new MemoryStorage();
-    store = new LibrarySessionStore({ userId: 'user-1', pageSize: 10, storage });
+    store = new LibrarySessionStore({ userId: 'user-1', pageSize: 10, storage, transientStorage: storage });
   });
 
   it('starts on Browse with nothing selected', () => {
@@ -266,8 +266,8 @@ describe('LibrarySessionStore', () => {
     // Layout is device-local: it comes from storage, never from the link.
     expect(store.layout).toBe('work');
     expect(store.state).toEqual(state);
-    expect(store.openAssetId).toBe('asset-7');
-    expect(store.playbackPosition).toBe(9);
+    expect(store.openAssetId).toBeUndefined();
+    expect(store.playbackPosition).toBe(0);
     expect(store.selection).toEqual([]);
     expect(store.session.page).toBe(1);
   });
@@ -279,7 +279,7 @@ describe('LibrarySessionStore', () => {
     expect(store.persist('user-1')).toBe(true);
 
     // Studio is a separate page: the library mounts again and restores from this device
-    const back = new LibrarySessionStore({ userId: 'user-1', storage });
+    const back = new LibrarySessionStore({ userId: 'user-1', storage, transientStorage: storage });
     back.restore(new URL('https://example.test/photos'), 'user-1');
     expect(back.layout).toBe('work');
     expect(back.state.sort).toBe('filename');
@@ -297,7 +297,7 @@ describe('LibrarySessionStore', () => {
     expect(store.layout).toBe('timeline');
     expect(store.state.sort).toBe('rating');
 
-    const fresh = new LibrarySessionStore({ userId: 'nobody', storage });
+    const fresh = new LibrarySessionStore({ userId: 'nobody', storage, transientStorage: storage });
     fresh.restore(new URL('https://example.test/photos'), 'nobody');
     expect(fresh.layout).toBe('browse');
     expect(fresh.state).toEqual({
@@ -343,10 +343,17 @@ describe('LibrarySessionStore', () => {
   it('persists the device-local session and survives a storage that refuses to write', () => {
     store.setLayout('timeline');
     store.open('asset-3', 8);
+    store.select('asset-4');
     expect(store.persist()).toBe(true);
     const stored = JSON.parse(storage.getItem(libraryPreferenceKey('user-1')) as string);
-    expect(stored).toMatchObject({ version: 1, layout: 'timeline', openAssetId: 'asset-3', playbackPosition: 8 });
+    expect(stored).toMatchObject({ version: 1, layout: 'timeline' });
     expect(stored.selection).toBeUndefined();
+    expect(stored.openAssetId).toBeUndefined();
+    expect(JSON.parse(storage.getItem(libraryTransientKey('user-1')) as string)).toMatchObject({
+      selection: ['asset-4'],
+      openAssetId: 'asset-3',
+      playbackPosition: 8,
+    });
 
     const blocked = new LibrarySessionStore({
       userId: 'user-1',
@@ -362,6 +369,52 @@ describe('LibrarySessionStore', () => {
     expect(() => blocked.restore(new URL('https://example.test/photos'), 'user-1')).not.toThrow();
     expect(blocked.persist()).toBe(false);
     expect(new LibrarySessionStore({ storage: null }).persist('user-1')).toBe(false);
+  });
+
+  it('restores selection and draft after reload, but never reuses them for another account or a public share', () => {
+    store.patchView({ scope: { kind: 'album', id: 'album-1' } });
+    store.select('asset-1');
+    store.dispatch({ type: 'draft', draft: { assetId: 'asset-1', recipe: [{ contrast: 20 }], undo: [[]], redo: [] } });
+    store.showMore();
+    expect(store.persist()).toBe(true);
+
+    const back = new LibrarySessionStore({ storage, transientStorage: storage });
+    back.restore(new URL('https://example.test/photos'), 'user-1');
+    expect(back.selection).toEqual(['asset-1']);
+    expect(back.session.draft).toEqual(store.session.draft);
+    expect(back.session.page).toBe(2);
+    expect(back.persist('user-2')).toBe(false);
+    expect(storage.getItem(libraryTransientKey('user-2'))).toBeNull();
+
+    back.restore(new URL('https://example.test/photos'), 'user-2');
+    expect(back.selection).toEqual([]);
+    expect(back.session.draft).toBeNull();
+
+    back.restore(new URL('https://example.test/share/abc'), undefined);
+    expect(back.selection).toEqual([]);
+    expect(back.persist(undefined)).toBe(false);
+  });
+
+  it('keeps tab selection and draft within the route and timeline options that saved them', () => {
+    const url = new URL('https://example.test/photos');
+    const locked = JSON.stringify({ route: '/locked', options: { visibility: 'locked' } });
+    const photos = JSON.stringify({ route: '/photos', options: {} });
+    store.restore(url, 'user-1', locked);
+    store.select('locked-asset');
+    store.dispatch({ type: 'draft', draft: { assetId: 'locked-asset', recipe: [], undo: [], redo: [] } });
+    store.open('locked-asset', 12);
+    expect(store.persist()).toBe(true);
+
+    const back = new LibrarySessionStore({ storage, transientStorage: storage });
+    back.restore(url, 'user-1', photos);
+    expect(back.selection).toEqual([]);
+    expect(back.session.draft).toBeNull();
+    expect(back.openAssetId).toBeUndefined();
+
+    back.restore(url, 'user-1', locked);
+    expect(back.selection).toEqual(['locked-asset']);
+    expect(back.session.draft).toEqual(store.session.draft);
+    expect(back.playbackPosition).toBe(12);
   });
 
   it('refuses a newer link out loud and keeps it in the address bar until the view changes (FL-48)', () => {

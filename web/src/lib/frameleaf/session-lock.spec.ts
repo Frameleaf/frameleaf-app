@@ -66,11 +66,13 @@ describe('requestSessionLock', () => {
   });
 
   it('releases the barrier once the server confirms the lock', async () => {
+    sessionStorage.setItem('frameleaf:library:tab:v1:user-1', '{"selection":["locked-id"]}');
     vi.mocked(lockAuthSession).mockResolvedValueOnce(undefined as never);
     await requestSessionLock();
     expect(sessionAccess.lockPending).toBe(false);
     expect(sessionAccess.lockStatus).toBe('idle');
     expect(revokeSessionView).toHaveBeenCalledWith('/photos');
+    expect(sessionStorage.getItem('frameleaf:library:tab:v1:user-1')).toBeNull();
     // an access boundary: fetches still in flight must be rejected, not just uncached
     expect(assetCacheManager.revoke).toHaveBeenCalled();
     expect(assetCacheManager.invalidate).not.toHaveBeenCalled();

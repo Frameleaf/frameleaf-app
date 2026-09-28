@@ -12,6 +12,7 @@ import { getAnimateMock } from '$lib/__mocks__/animate.mock';
 import { getResizeObserverMock } from '$lib/__mocks__/resize-observer.mock';
 import { assetCacheManager } from '$lib/managers/AssetCacheManager.svelte';
 import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
+import { saveEditorContinuity } from '$lib/frameleaf/editor-continuity';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
@@ -102,6 +103,7 @@ describe('AssetViewer', () => {
   });
 
   afterEach(() => {
+    sessionStorage.clear();
     slideshowStore.slideshowState.set(SlideshowState.None);
     assetCacheManager.invalidate();
     authManager.reset();
@@ -154,11 +156,37 @@ describe('AssetViewer', () => {
       authManager.setPreferences(preferencesFactory.build({ cast: { gCastEnabled: false } }));
       const asset = assetFactory.build({ ownerId: 'someone-else', type: AssetTypeEnum.Image });
       app.page.url = new URL(`http://localhost/photos/${asset.id}?edit=1`);
+      saveEditorContinuity({
+        assetId: asset.id,
+        kind: 'photo',
+        draft: { edits: [] },
+        base: '{}',
+        tool: 'adjust',
+        playhead: { num: 0, den: 1 },
+      });
 
       renderWithTooltips(AssetViewer, { cursor: { current: asset }, showNavigation: false });
 
       await new Promise((resolve) => setTimeout(resolve, 0));
       expect(assetViewerManager.isShowEditor).toBe(false);
+    });
+
+    it('reopens an unsaved owner draft in an authenticated shared album', async () => {
+      const user = userAdminFactory.build();
+      authManager.setUser(user);
+      authManager.setPreferences(preferencesFactory.build({ cast: { gCastEnabled: false } }));
+      const asset = assetFactory.build({ ownerId: user.id, type: AssetTypeEnum.Image });
+      saveEditorContinuity({
+        assetId: asset.id,
+        kind: 'photo',
+        draft: { edits: [] },
+        base: '{}',
+        tool: 'adjust',
+        playhead: { num: 0, den: 1 },
+      });
+
+      renderWithTooltips(AssetViewer, { cursor: { current: asset }, showNavigation: false, isShared: true });
+      await waitFor(() => expect(assetViewerManager.isShowEditor).toBe(true));
     });
   });
 

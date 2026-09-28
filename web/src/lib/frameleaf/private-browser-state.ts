@@ -22,6 +22,11 @@ export const DEVICE_PREFERENCE_KEYS: ReadonlySet<string> = new Set([
 
 const AUTH_PREFIX = 'frameleaf.auth.';
 
+// Invalidate writers synchronously, before storage removal or navigation can fire pagehide and
+// component teardown callbacks. A newly mounted editor after revalidation captures the new value.
+let privateStateGeneration = 0;
+export const getPrivateBrowserStateGeneration = () => privateStateGeneration;
+
 export const isPrivateBrowserKey = (key: string) =>
   key.startsWith('frameleaf') && !key.startsWith(AUTH_PREFIX) && !DEVICE_PREFERENCE_KEYS.has(key);
 
@@ -50,6 +55,7 @@ const storageOrUndefined = (read: () => Storage) => {
 };
 
 export const clearPrivateBrowserState = () => {
+  privateStateGeneration++;
   pruneExpiredOAuthRequests();
   for (const store of [storageOrUndefined(() => localStorage), storageOrUndefined(() => sessionStorage)]) {
     try {

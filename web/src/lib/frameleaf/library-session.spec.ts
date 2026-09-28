@@ -9,6 +9,7 @@ import {
   isCurrentResult,
   isLibraryFilter,
   libraryPreferenceKey,
+  libraryTransientKey,
   nextAnchor,
   parseLibraryView,
   parseLibraryViewValue,
@@ -18,6 +19,7 @@ import {
   selectGroup,
   selectRange,
   toStoredLibrarySession,
+  toStoredLibraryTransient,
   toggleSelection,
   writeLibraryView,
   type LibrarySession,
@@ -61,6 +63,7 @@ describe('library session defaults', () => {
 
   it('keys stored preferences per authenticated user', () => {
     expect(libraryPreferenceKey('user/1')).toBe('frameleaf:library:v1:user%2F1');
+    expect(libraryTransientKey('user/1')).toBe('frameleaf:library:tab:v1:user%2F1');
   });
 });
 
@@ -561,37 +564,68 @@ describe('portable URL state', () => {
 });
 
 describe('what survives a reload', () => {
-  it('stores layout and view state but never the selection', () => {
+  it('keeps preferences separate from same-tab selection, paging, open item and draft', () => {
     const session = run(
       createLibrarySession(),
       { type: 'layout', layout: 'timeline' },
       { type: 'view', patch: { scope: { kind: 'album', id: 'album-1' }, sort: 'rating' } },
-      { type: 'select-all', orderedIds: day },
+      { type: 'selection', ids: day, allMatching: true },
       { type: 'open', id: 'c', time: 8 },
+      { type: 'draft', draft: { assetId: 'c', recipe: [{ contrast: 20 }], undo: [[]], redo: [] } },
+      { type: 'show-more' },
     );
     const stored = toStoredLibrarySession(session);
     expect(JSON.stringify(stored)).not.toContain('"selection"');
+    expect(JSON.stringify(stored)).not.toContain('"assetId"');
     expect(stored).toEqual({
       version: 1,
       layout: 'timeline',
       state: session.state,
-      openAssetId: 'c',
-      playbackPosition: 8,
     });
 
-    const restored = fromStoredLibrarySession(JSON.stringify(stored));
+    const restored = fromStoredLibrarySession(JSON.stringify(stored), null, JSON.stringify(toStoredLibraryTransient(session)));
     expect(restored.layout).toBe('timeline');
     expect(restored.state).toEqual(session.state);
     expect(restored.openAssetId).toBe('c');
     expect(restored.playbackPosition).toBe(8);
-    expect(restored.selection).toEqual([]);
+    expect(restored.selection).toEqual(day);
+    expect(restored.selectionSnapshot).toEqual(session.selectionSnapshot);
     expect(restored.anchorId).toBeNull();
-    expect(restored.page).toBe(1);
+    expect(restored.draft).toEqual(session.draft);
+    expect(restored.page).toBe(2);
   });
 
-  it('never restores a selection even when one was written into storage by hand', () => {
-    const restored = fromStoredLibrarySession({ version: 1, layout: 'browse', selection: day });
+  it('ignores old local selections and refuses tab state for a different URL view', () => {
+    const session = run(createLibrarySession(), { type: 'select-all', orderedIds: day });
+    const stored = { ...toStoredLibrarySession(session), selection: day };
+    const transient = toStoredLibraryTransient(session);
+    const restored = fromStoredLibrarySession(stored, viewState({ scope: { kind: 'album', id: 'other' } }), transient);
     expect(restored.selection).toEqual([]);
+    expect(restored.draft).toBeNull();
+    expect(fromStoredLibrarySession(stored).selection).toEqual([]);
+  });
+
+  it('does not restore a Locked selection into Photos with the same portable view', () => {
+    const session = run(createLibrarySession(), { type: 'select', id: 'locked-asset' });
+    const stored = toStoredLibrarySession(session);
+    const locked = toStoredLibraryTransient(session, JSON.stringify({ route: '/locked', options: { visibility: 'locked' } }));
+    const photos = JSON.stringify({ route: '/photos', options: {} });
+    expect(fromStoredLibrarySession(stored, null, locked, photos).selection).toEqual([]);
+    expect(fromStoredLibrarySession(stored, null, locked, locked.context).selection).toEqual(['locked-asset']);
+  });
+
+  it('rejects malformed tab ids, drafts and snapshots without giving them authority', () => {
+    const session = run(createLibrarySession(), { type: 'selection', ids: day, allMatching: true });
+    const transient = toStoredLibraryTransient(session);
+    const restored = fromStoredLibrarySession(toStoredLibrarySession(session), null, {
+      ...transient,
+      selection: ['good', 42],
+      selectionSnapshot: { ...session.state, scope: { kind: 'album', id: 'wrong' } },
+      draft: { assetId: 'x', recipe: 'bad', undo: [], redo: [] },
+    });
+    expect(restored.selection).toEqual([]);
+    expect(restored.selectionSnapshot).toBeUndefined();
+    expect(restored.draft).toBeNull();
   });
 
   it('falls back to Browse and the empty library for unusable storage', () => {

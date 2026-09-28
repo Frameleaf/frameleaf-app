@@ -13,6 +13,8 @@ describe('revokeSessionView', () => {
   });
 
   it('conceals all UI and pauses media before replacing the document and its caches', () => {
+    sessionStorage.setItem('frameleaf:library:tab:v1:user-1', '{"selection":["locked-id"]}');
+    sessionStorage.setItem('frameleaf.editor.continuity.locked-id', '{"draft":"private"}');
     const video = document.createElement('video');
     document.body.append(video);
     const pause = vi.spyOn(video, 'pause').mockImplementation(() => {});
@@ -31,6 +33,8 @@ describe('revokeSessionView', () => {
 
     revokeSessionView('/photos');
     expect(replace).toHaveBeenCalledWith('/photos');
+    expect(sessionStorage.getItem('frameleaf:library:tab:v1:user-1')).toBeNull();
+    expect(sessionStorage.getItem('frameleaf.editor.continuity.locked-id')).toBeNull();
   });
 
   it('clears sources and posters in the production custom-player shadow boundary', () => {
