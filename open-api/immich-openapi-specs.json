@@ -44916,6 +44916,10 @@
             },
             "type": "array"
           },
+          "coverFollowsNewest": {
+            "description": "True when the cover always follows the newest item. Populated by GET /albums/{id} and PATCH /albums/{id}.",
+            "type": "boolean"
+          },
           "createdAt": {
             "description": "Creation date",
             "format": "date-time",
@@ -86194,10 +86198,14 @@
             "type": "string"
           },
           "albumThumbnailAssetId": {
-            "description": "Album thumbnail asset ID",
+            "description": "Album thumbnail asset ID. Picking an item stops the cover following the newest item.",
             "format": "uuid",
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
             "type": "string"
+          },
+          "coverFollowsNewest": {
+            "description": "Always use the newest item as the cover (true), or keep the current cover from now on (false). Cannot be true together with albumThumbnailAssetId.",
+            "type": "boolean"
           },
           "description": {
             "description": "Album description",
