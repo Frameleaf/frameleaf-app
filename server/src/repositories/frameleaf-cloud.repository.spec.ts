@@ -20,6 +20,7 @@ import {
   resolveCloudGateway,
 } from 'src/utils/frameleaf-cloud-gateway.js';
 import {
+  CLOUD_IDEMPOTENCY_IN_FLIGHT_RETRIES,
   CONSENT_TERMS_FOR_FEATURES,
   CloudEstimateRequest,
   CloudJobCreateRequest,
@@ -578,6 +579,60 @@ describe('Frameleaf Cloud client against a fake cloud (FL-159)', () => {
         refusal: MlAdmissionRefusal.RequestInvalid,
       });
       expect(cloud.requests.filter((request) => request.path.startsWith('/ml-eu/v2/jobs'))).toEqual([]);
+    });
+
+    it('sends the same job again while its idempotency key is in flight (409), then answers the admission (FC-43)', async () => {
+      const { gateway, ml } = await ready();
+      const delay = vi.spyOn(ml as unknown as { delay: (ms: number) => Promise<void> }, 'delay').mockResolvedValue();
+      let answered = 0;
+      cloud.respond = ({ path }) => {
+        if (path !== '/ml-eu/v2/jobs' || answered++ >= 2) {
+          return;
+        }
+        return { status: 409, body: cloudContractFixture('errors/idempotency-in-flight.json') };
+      };
+      await expect(ml.createJob(gateway, jobRequest(), 'batch-key-0101')).resolves.toMatchObject({ jobId });
+      const posts = gatewayRequests('POST', '/v2/jobs');
+      expect(posts).toHaveLength(3);
+      // exactly the same request each time: the same key and the same body
+      expect(new Set(posts.map((post) => post.idempotencyKey))).toEqual(new Set(['batch-key-0101']));
+      expect(new Set(posts.map((post) => post.body)).size).toBe(1);
+      expect(delay).toHaveBeenCalledTimes(2);
+      expect(delay).toHaveBeenCalledWith(2000);
+    });
+
+    it('gives up for now after a bounded number of in-flight answers, as a wait rather than a refusal', async () => {
+      const { gateway, ml } = await ready();
+      const delay = vi.spyOn(ml as unknown as { delay: (ms: number) => Promise<void> }, 'delay').mockResolvedValue();
+      cloud.respond = ({ path }) =>
+        path === '/ml-eu/v2/jobs'
+          ? { status: 409, body: cloudContractFixture('errors/idempotency-in-flight.json') }
+          : undefined;
+      await expect(ml.createJob(gateway, jobRequest(), 'batch-key-0102')).rejects.toMatchObject({
+        refusal: MlAdmissionRefusal.CloudUnavailable,
+        status: 409,
+        envelope: { code: 'idempotency-in-flight' },
+      });
+      expect(gatewayRequests('POST', '/v2/jobs')).toHaveLength(1 + CLOUD_IDEMPOTENCY_IN_FLIGHT_RETRIES);
+      expect(delay).toHaveBeenCalledTimes(CLOUD_IDEMPOTENCY_IN_FLIGHT_RETRIES);
+    });
+
+    it('never sends a job again whose idempotency key was reused with another body (422, FC-43)', async () => {
+      const { gateway, ml } = await ready();
+      const delay = vi.spyOn(ml as unknown as { delay: (ms: number) => Promise<void> }, 'delay').mockResolvedValue();
+      cloud.respond = ({ path }) =>
+        path === '/ml-eu/v2/jobs'
+          ? { status: 422, body: cloudContractFixture('errors/idempotency-key-reused.json') }
+          : undefined;
+      const refused = ml.createJob(gateway, jobRequest(), 'batch-key-0103');
+      await expect(refused).rejects.toMatchObject({
+        refusal: MlAdmissionRefusal.RequestInvalid,
+        status: 422,
+        envelope: { code: 'idempotency-key-reused' },
+      });
+      await expect(refused).rejects.toThrow(/was not sent again/);
+      expect(gatewayRequests('POST', '/v2/jobs')).toHaveLength(1);
+      expect(delay).not.toHaveBeenCalled();
     });
 
     it('refuses the job on 503 capacity as this destination being unhealthy, and on a spent estimate as a model mismatch', async () => {

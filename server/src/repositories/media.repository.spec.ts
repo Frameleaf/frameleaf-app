@@ -7,7 +7,15 @@ import { AssetEditAction, MirrorAxis } from 'src/dtos/editing.dto.js';
 import { Colorspace, ImageFormat } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
-import { chunkClipOutputOptions, previewClipOutputOptions, uploadClipOutputOptions } from 'src/utils/media-privacy.js';
+import { AudioChannelPolicy, findAudioLayoutMismatch, findAvAlignmentMismatch } from 'src/utils/media-policy.js';
+import {
+  audioReattachOffsetSeconds,
+  chunkClipOutputOptions,
+  fullVideoUploadOutputOptions,
+  previewClipOutputOptions,
+  reattachAudioOutputOptions,
+  uploadClipOutputOptions,
+} from 'src/utils/media-privacy.js';
 import { automock } from 'test/utils.js';
 
 const hasFfmpeg = (() => {
@@ -595,6 +603,96 @@ describe(MediaRepository.name, () => {
       const upload = join(dirPath, 'input.mp4');
       await transcode(clip, upload, [], uploadClipOutputOptions());
       expectNoMetadata(upload, ['video']);
+    });
+
+    /**
+     * The handler type of every track in an MP4, read from the file's own bytes: `moov` → `trak` →
+     * `mdia` → `hdlr`, whose handler type (`vide`, `soun`, …) sits 8 bytes into its payload. An audio
+     * track is a `soun` handler, whatever ffprobe makes of it.
+     */
+    const trackHandlers = (file: string): string[] => {
+      const bytes = readFileSync(file);
+      const handlers: string[] = [];
+      const walk = (start: number, end: number) => {
+        let offset = start;
+        while (offset + 8 <= end) {
+          let size = bytes.readUInt32BE(offset);
+          const type = bytes.toString('latin1', offset + 4, offset + 8);
+          let header = 8;
+          if (size === 1) {
+            size = Number(bytes.readBigUInt64BE(offset + 8));
+            header = 16;
+          } else if (size === 0) {
+            size = end - offset;
+          }
+          if (size < header || offset + size > end) {
+            throw new Error(`malformed ${type} box at ${offset}`);
+          }
+          if (['moov', 'trak', 'mdia'].includes(type)) {
+            walk(offset + header, offset + size);
+          } else if (type === 'hdlr') {
+            handlers.push(bytes.toString('latin1', offset + header + 8, offset + header + 12));
+          }
+          offset += size;
+        }
+      };
+      walk(0, bytes.length);
+      return handlers;
+    };
+
+    it('uploads a whole video for restoration or Smooth motion with no audio track in its bytes (FC-47)', async () => {
+      // the source really carries an audio track (and a chapter text track)
+      expect(trackHandlers(fixture)).toEqual(expect.arrayContaining(['vide', 'soun']));
+      // stream-copied, as a copyable codec is, with its SEI messages dropped
+      const copied = join(dirPath, 'whole-copied.mp4');
+      await transcode(
+        fixture,
+        copied,
+        [],
+        fullVideoUploadOutputOptions({ copy: true, bsf: 'filter_units=remove_types=6' }),
+      );
+      expect(trackHandlers(copied)).toEqual(['vide']);
+      expect(ffprobe(copied).streams.map((stream) => stream.codec_type)).toEqual(['video']);
+      // re-encoded, as any other codec is
+      const encoded = join(dirPath, 'whole-encoded.mp4');
+      await transcode(fixture, encoded, [], fullVideoUploadOutputOptions({ copy: false }));
+      expect(trackHandlers(encoded)).toEqual(['vide']);
+      // and the preview clip that is uploaded
+      const clip = join(dirPath, 'before-bytes.mp4');
+      await transcode(fixture, clip, ['-ss', '0.500', '-t', '1.500'], previewClipOutputOptions());
+      expect(trackHandlers(clip)).toEqual(['vide', 'soun']);
+      const upload = join(dirPath, 'input-bytes.mp4');
+      await transcode(clip, upload, [], uploadClipOutputOptions());
+      expect(trackHandlers(upload)).toEqual(['vide']);
+    });
+
+    it('puts the original audio back on the returned video, in step, as ffprobe confirms (CLD-202)', async () => {
+      // what came back from the cloud: the picture alone
+      const returned = join(dirPath, 'returned.mp4');
+      await transcode(fixture, returned, [], fullVideoUploadOutputOptions({ copy: true }));
+      const original = await sut.probe(fixture);
+      const offset = audioReattachOffsetSeconds(original.videoStreams[0].startTime, original.audioStreams[0].startTime);
+      const version = join(dirPath, 'version.mp4');
+      await transcode(returned, version, [], reattachAudioOutputOptions(fixture, offset));
+
+      expect(trackHandlers(version)).toEqual(['vide', 'soun']);
+      const probe = await sut.probe(version);
+      const source = original.audioStreams[0];
+      expect(
+        findAudioLayoutMismatch(
+          {
+            policy: AudioChannelPolicy.Preserve,
+            channels: source.channels ?? null,
+            channelLayout: source.channelLayout ?? null,
+            sampleRate: source.sampleRate ?? null,
+          },
+          probe.audioStreams[0],
+        ),
+      ).toBeNull();
+      expect(findAvAlignmentMismatch(probe.videoStreams[0], probe.audioStreams[0])).toBeNull();
+      expect(Math.abs((probe.audioStreams[0].startTime ?? 0) - (probe.videoStreams[0].startTime ?? 0))).toBeLessThan(
+        0.05,
+      );
     });
 
     it('cuts a chunk of the whole video with no audio and no metadata', async () => {

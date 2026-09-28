@@ -88,6 +88,11 @@
   gap: 2px;
   font-variant-numeric: tabular-nums;
 }
+/* FC-46: a photo the 64 MP output cap upscales by a smaller factor than asked */
+.fcj-lowered small {
+  font-weight: 600;
+}
+
 .fcj-short {
   color: var(--fl-danger);
   font-weight: 600;

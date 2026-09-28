@@ -35,6 +35,7 @@ import {
 import {
   FrameleafCloudError,
   catalogSchema,
+  errorEnvelopeSchema,
   estimateResponseSchema,
   jobAdmittedSchema,
   jobCreateRequestSchema,
@@ -931,6 +932,49 @@ describe(CloudMlBatchService.name, () => {
         delayMs: 0,
         returnAttempt: true,
       });
+    });
+
+    it('fails a batch whose idempotency key was reused with another body, never sending it again (FC-43)', async () => {
+      mocks.frameleafCloudMl.createJob.mockRejectedValue(
+        new FrameleafCloudError(
+          MlAdmissionRefusal.RequestInvalid,
+          422,
+          'Frameleaf Cloud refused the job: its idempotency key was already used for a different job.',
+          errorEnvelopeSchema.parse(cloudContractFixture('errors/idempotency-key-reused.json')),
+        ),
+      );
+
+      await sut.step(operation(), 'claim-1', now);
+
+      expect(mocks.frameleafCloudMl.createJob).toHaveBeenCalledTimes(1);
+      expect(mocks.logger.error).toHaveBeenCalled();
+      expect(mocks.mediaOperation.fail).toHaveBeenCalledWith(
+        BATCH_ID,
+        'claim-1',
+        expect.objectContaining({ errorCode: 'cloud_description_idempotency_key_reused' }),
+        { retry: false },
+      );
+    });
+
+    it('waits and replays the same key while it is still in flight, never estimating again (FC-43)', async () => {
+      mocks.frameleafCloudMl.createJob.mockRejectedValue(
+        new FrameleafCloudError(
+          MlAdmissionRefusal.CloudUnavailable,
+          409,
+          'still in flight',
+          errorEnvelopeSchema.parse(cloudContractFixture('errors/idempotency-in-flight.json')),
+        ),
+      );
+
+      await sut.step(operation(), 'claim-1', now);
+
+      expect(mocks.frameleafCloudMl.createEstimate).toHaveBeenCalledTimes(1);
+      expect(mocks.mediaOperation.fail).toHaveBeenCalledWith(
+        BATCH_ID,
+        'claim-1',
+        expect.objectContaining({ errorCode: 'cloud_description_cloud_unavailable' }),
+        { retry: true },
+      );
     });
 
     it('fails closed on 503 capacity: one retry, never another destination', async () => {

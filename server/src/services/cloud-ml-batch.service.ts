@@ -94,6 +94,7 @@ import {
   descriptionsResultSchema,
   estimateUsable,
   isFinalCloudJobStatus,
+  isIdempotencyKeyReused,
   offeredCatalogModels,
   pausedException,
   pausedMessageOf,
@@ -142,6 +143,10 @@ class WaitUntil extends Error {
 const batchRefusalOf = (error: unknown): BatchRefusal | null => {
   if (error instanceof BatchRefusal) {
     return error;
+  }
+  if (isIdempotencyKeyReused(error)) {
+    // FC-43: the key was used with another body, a bug here: the batch fails and nothing is sent again
+    return new BatchRefusal('cloud_description_idempotency_key_reused', errorMessage(error), false);
   }
   if (error instanceof CloudTransferError) {
     return new BatchRefusal(
@@ -1085,7 +1090,12 @@ export class CloudMlBatchService extends BaseService {
         submission.idempotencyKey,
       );
     } catch (error) {
+      if (isIdempotencyKeyReused(error)) {
+        this.logger.error(`Description batch ${operation.id}: ${errorMessage(error)}`);
+        throw error;
+      }
       // a spent, expired or mismatched estimate (409) created no job under this key: estimate again
+      // (a key still in flight is `CloudUnavailable`, never this: the same key is sent again later)
       if (
         error instanceof FrameleafCloudError &&
         error.refusal === MlAdmissionRefusal.ModelMismatch &&
@@ -1610,7 +1620,10 @@ export class CloudMlBatchService extends BaseService {
         await this.mediaOperationRepository.recordRemoteJobId(operation.id, admitted.jobId);
         await this.release(gateway, operation.id, admitted.jobId, true);
       } catch (error) {
-        if (!(error instanceof FrameleafCloudError && error.refusal === MlAdmissionRefusal.ModelMismatch)) {
+        if (isIdempotencyKeyReused(error)) {
+          // FC-43: this key never admitted this body, so there is no job of it to release
+          this.logger.error(`Description batch ${operation.id}: ${errorMessage(error)}`);
+        } else if (!(error instanceof FrameleafCloudError && error.refusal === MlAdmissionRefusal.ModelMismatch)) {
           this.logger.warn(
             `Description batch ${operation.id}: its submission could not be checked yet: ${errorMessage(error)}`,
           );

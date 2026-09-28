@@ -55,7 +55,9 @@ describe('gpu model catalogue (FL-159, CLD-201)', () => {
     const order = ['cpu', 'tiny', 'small', 'medium', 'large', 'xl'];
     for (const workload of LADDER_WORKLOADS) {
       const ladder = ladderFor(workload);
-      expect(ladder.length).toBeGreaterThanOrEqual(['interpolation', 'render'].includes(workload) ? 2 : 3);
+      // Smooth motion is RIFE only (owner decision 2026-09-27); Studio export has two encoders
+      const least = { interpolation: 1, render: 2 } as Partial<Record<string, number>>;
+      expect(ladder.length).toBeGreaterThanOrEqual(least[workload] ?? 3);
       if (workload === 'render') {
         expect(cloudPositions(workload)).toHaveLength(0);
       } else {
@@ -317,15 +319,14 @@ describe('gpu model catalogue (FL-159, CLD-201)', () => {
     }
   });
 
-  it('smooth motion: RIFE white on CPU and green on a GPU, FILM blue beyond it; cloud tier is commercial-OK', () => {
-    expect(bands('interpolation', gpus['cpu-only'])).toEqual(['cpu', 'cloud']);
-    expect(bands('interpolation', gpus.gtx1650)).toEqual(['gpu', 'cloud']);
-    expect(bands('interpolation', gpus.rtx3060)).toEqual(['gpu', 'gpu']);
-    expect(bands('interpolation', null, 'mac_docker')).toEqual(['cpu', 'cpu']);
+  it('smooth motion is RIFE only (owner decision 2026-09-27): no FILM option anywhere, cloud tier commercial-OK', () => {
+    expect(ladderFor('interpolation').map((item) => item.id)).toEqual(['rife-4.25@1']);
+    expect(positionById('film@1')).toBeNull();
+    expect(bands('interpolation', gpus['cpu-only'])).toEqual(['cpu']);
+    expect(bands('interpolation', gpus.rtx3060)).toEqual(['gpu']);
     for (const item of cloudPositions('interpolation')) {
       expect(item.licence).toMatch(/^(MIT|Apache-2\.0)$/);
     }
-    expect(ladderFor('interpolation').at(-1)?.id).toBe('film@1');
   });
 
   it('smooth motion estimates: new frames per source minute, chunked cloud workers, ~2× size at double rate', () => {
@@ -333,12 +334,6 @@ describe('gpu model catalogue (FL-159, CLD-201)', () => {
     expect(work).toEqual({ ratio: 2, units: 2, sizeFactor: 2 });
     expect(interpolationWork({ durationSeconds: 60, sourceFps: 25, targetFps: 50 }).sizeFactor).toBe(2);
     expect(interpolationWork({ durationSeconds: 60, sourceFps: 30, targetFps: 120 }).units).toBe(3);
-    const film = positionById('film@1')!;
-    const cloudJob = interpolationEstimate(film, work, { gpu: gpus.gtx1650 });
-    expect(cloudJob.runsOn).toBe('cloud');
-    const rate = gpuClasses.find((entry) => entry.id === film.cloud!.gpuClass)!.customerUsdPerSec;
-    expect(cloudJob.cost!.workers).toBe(4);
-    expect(Math.abs(cloudJob.cost!.p50 - (4 * 0.05 + 2 * 480 * rate))).toBeLessThan(1e-6);
     const local = interpolationEstimate(positionById('rife-4.25@1')!, work, { gpu: gpus.gtx1650 });
     expect(local.runsOn).toBe('gpu');
     expect(local.seconds).toBeGreaterThan(0);
