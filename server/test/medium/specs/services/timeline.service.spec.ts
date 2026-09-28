@@ -46,8 +46,8 @@ describe(TimelineService.name, () => {
       fileCreatedAt: date,
     });
     const { album } = await ctx.newAlbum({ ownerId: user.id }, [photo.id, video.id]);
-    await ctx.newExif({ assetId: photo.id });
-    await ctx.newExif({ assetId: video.id });
+    await ctx.newExif({ assetId: photo.id, make: 'Canon' });
+    await ctx.newExif({ assetId: video.id, make: 'Canon' });
 
     for (const asset of [photo, video]) {
       // Exercise the request schema too: an undeclared parameter would otherwise be stripped.
