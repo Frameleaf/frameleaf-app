@@ -1217,6 +1217,38 @@ async function createBundle(
     path.join(directory, "supported-versions.json"),
   );
   files.push("supported-versions.json");
+  const compose = await fs.readFile(path.join(root, "docker/docker-compose.yml"), "utf8");
+  const dependency = (service) => {
+    const section = compose.match(new RegExp(`^  ${service}:\\n([\\s\\S]*?)(?=^  [a-z-]+:|^volumes:)`, "m"))?.[1];
+    const image = section?.match(/^    image: (\S+)$/m)?.[1];
+    assert(image && /@sha256:[a-f0-9]{64}$/.test(image), `Unpinned ${service} image`);
+    return image;
+  };
+  const server = manifest.images.find((image) => image.image === "ghcr.io/frameleaf/frameleaf-server" && image.suffix === "");
+  const ml = manifest.images.find((image) => image.image === "ghcr.io/frameleaf/frameleaf-machine-learning" && image.suffix === "");
+  assert(server && ml && DIGEST.test(server.digest) && DIGEST.test(ml.digest), "Missing certified NAS images");
+  const migration = JSON.parse(await fs.readFile(path.join(root, "packaging/nas/certified-sources.json"), "utf8"));
+  assert(Array.isArray(migration.officialImmich) && Array.isArray(migration.priorFrameleaf), "Invalid NAS migration sources");
+  const nas = {
+    schemaVersion: 1,
+    tag,
+    sourceCommit: manifest.sourceCommit,
+    certifiedBuildRun: manifest.certifiedBuildRun,
+    images: {
+      server: `${server.image}@${server.digest}`,
+      machineLearning: `${ml.image}@${ml.digest}`,
+      machineLearningVariants: Object.fromEntries(manifest.images
+        .filter((image) => image.image === ml.image && image.suffix)
+        .map((image) => [image.suffix.slice(1), `${image.image}@${image.digest}`])),
+      postgres: dependency("database"),
+      valkey: dependency("redis"),
+    },
+    platforms: server.platforms.filter((platform) => ml.platforms.includes(platform)),
+    minimumVersions: { synologyDsm: "7.2.1", truenas: "24.10.2.2", unraid: "7.0" },
+    migration,
+  };
+  await fs.writeFile(path.join(directory, "nas-manifest.json"), JSON.stringify(nas, null, 2) + "\n");
+  files.push("nas-manifest.json");
   await fs.writeFile(
     path.join(directory, "release-manifest.json"),
     JSON.stringify(manifest, null, 2) + "\n",

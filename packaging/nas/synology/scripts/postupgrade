@@ -1,0 +1,4 @@
+#!/bin/sh
+set -eu
+[ -s "$SYNOPKG_PKGVAR/frameleaf.env" ]
+[ -s "$SYNOPKG_PKGDEST/project/.env" ]

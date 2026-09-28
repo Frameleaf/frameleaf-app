@@ -1,0 +1,32 @@
+#!/bin/sh
+set -eu
+umask 077
+if [ "${SYNOPKG_PKG_STATUS:-INSTALL}" = UPGRADE ]; then
+  [ -s "$SYNOPKG_PKGVAR/frameleaf.env" ] || exit 1
+else
+valid_path() {
+  case "$1" in /volume[0-9]/*) ;; *) return 1 ;; esac
+  case "$1" in *[!a-zA-Z0-9_./-]*) return 1 ;; esac
+  [ -d "$1" ] && [ -w "$1" ]
+}
+valid_path "${wizard_media_path:-}" || { echo 'Create a writable media directory on a volume first.' >&2; exit 1; }
+valid_path "${wizard_database_path:-}" || { echo 'Create a writable database directory on a volume first.' >&2; exit 1; }
+[ "$wizard_media_path" != "$wizard_database_path" ] || exit 1
+case "${wizard_web_port:-}" in ''|*[!0-9]*) exit 1 ;; esac
+[ "$wizard_web_port" -ge 1024 ] && [ "$wizard_web_port" -le 65535 ] || exit 1
+case "${wizard_database_password:-}" in ''|*[!a-zA-Z0-9]*) exit 1 ;; esac
+[ "${#wizard_database_password}" -ge 16 ] || exit 1
+  mkdir -p "$SYNOPKG_PKGVAR"
+  profile=''
+  [ "${wizard_enable_ml:-true}" = true ] && profile=ml
+  enabled=false
+  [ -n "$profile" ] && enabled=true
+  {
+    printf 'UPLOAD_LOCATION=%s\n' "$wizard_media_path"
+    printf 'DB_DATA_LOCATION=%s\n' "$wizard_database_path"
+    printf 'DB_PASSWORD=%s\n' "$wizard_database_password"
+    printf 'WEB_PORT=%s\n' "$wizard_web_port"
+    printf 'COMPOSE_PROFILES=%s\n' "$profile"
+    printf 'ENABLE_ML=%s\n' "$enabled"
+  } > "$SYNOPKG_PKGVAR/frameleaf.env"
+fi
