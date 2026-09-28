@@ -1,5 +1,5 @@
 import { Kysely, sql } from 'kysely';
-import { AssetLockReason, UserMetadataKey } from 'src/enum.js';
+import { AssetLockReason, AssetVisibility, UserMetadataKey } from 'src/enum.js';
 import { getCatalogEvidence } from 'src/fork-schema/catalog.js';
 import manifest from 'src/fork-schema/manifests/fork-v2-catalog.json' with { type: 'json' };
 import * as migration from 'src/fork-schema/migrations/0000000000206-AssetUserShares.js';
@@ -110,6 +110,30 @@ it('hides a shared item while it is locked, and shows it again once unlocked', a
   await unlock(asset.id);
   await expect(sut.getReceived(jamie.id)).resolves.toHaveLength(1);
   await expect(access.asset.checkItemShareAccess(jamie.id, new Set([asset.id]))).resolves.toEqual(new Set([asset.id]));
+});
+
+it('excludes Hidden shares from recipient reads while keeping a visible Live Photo’s motion accessible', async () => {
+  const { ctx, sut, access } = setup();
+  const { user: owner } = await ctx.newUser();
+  const { user: jamie } = await ctx.newUser();
+  const { asset: hidden } = await ctx.newAsset({ ownerId: owner.id, visibility: AssetVisibility.Hidden });
+  const { asset: changing } = await ctx.newAsset({ ownerId: owner.id });
+  const { asset: motion } = await ctx.newAsset({ ownerId: owner.id, visibility: AssetVisibility.Hidden });
+  const { asset: still } = await ctx.newAsset({ ownerId: owner.id, livePhotoVideoId: motion.id });
+  await sut.add(owner.id, [hidden.id, changing.id, still.id], [jamie.id]);
+
+  expect((await sut.getReceived(jamie.id)).map(({ assetId }) => assetId).toSorted()).toEqual(
+    [changing.id, still.id].toSorted(),
+  );
+  await expect(
+    access.asset.checkItemShareAccess(jamie.id, new Set([hidden.id, changing.id, still.id, motion.id])),
+  ).resolves.toEqual(new Set([changing.id, still.id, motion.id]));
+
+  await db.updateTable('asset').set({ visibility: AssetVisibility.Hidden }).where('id', '=', changing.id).execute();
+  expect((await sut.getReceived(jamie.id)).map(({ assetId }) => assetId)).toEqual([still.id]);
+  await expect(
+    access.asset.checkItemShareAccess(jamie.id, new Set([hidden.id, changing.id, still.id, motion.id])),
+  ).resolves.toEqual(new Set([still.id, motion.id]));
 });
 
 it('leaves out trashed items and items whose owner is deleted', async () => {

@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
+import { AssetVisibility } from 'src/enum.js';
 import { lockForkWrites } from 'src/repositories/fork-write-guard.js';
 import { DB } from 'src/schema/index.js';
 import { getOwnerHiddenShareIds } from 'src/utils/item-share.js';
@@ -20,7 +21,7 @@ const WRITE_REFUSAL = 'Sharing is unavailable while the server is being handed o
  * Items shared with a person in this library (FL-83 AL-30b) in `immich_fork.asset_user_share`
  * (fork migration 0000000000206): one row per item and recipient. The service decides who may share
  * what; this only stores the rows and reads them back. A read for the recipient never returns an
- * item that is locked now, trashed, or whose owner is gone, so locking an item hides it again.
+ * item that is Hidden or locked now, trashed, or whose owner is gone.
  */
 @Injectable()
 export class ItemShareRepository {
@@ -92,7 +93,7 @@ export class ItemShareRepository {
 
   /**
    * What the recipient sees: the items shared with them, newest share first, leaving out any item
-   * that is locked now, trashed, no longer owned by the person who shared it, or whose owner's
+   * that is Hidden or locked now, trashed, no longer owned by the person who shared it, or whose owner's
    * account is deleted.
    */
   async getReceived(userId: string): Promise<ItemShareRow[]> {
@@ -101,7 +102,9 @@ export class ItemShareRepository {
       FROM immich_fork.asset_user_share share
       JOIN asset ON asset.id = share."assetId" AND asset."ownerId" = share."ownerId" AND asset."deletedAt" IS NULL
       JOIN "user" owner ON owner.id = share."ownerId" AND owner."deletedAt" IS NULL
-      WHERE share."sharedWithId" = ${userId}::uuid AND ${isNotLocked('asset')}
+      WHERE share."sharedWithId" = ${userId}::uuid
+        AND asset.visibility != ${sql.lit(AssetVisibility.Hidden)}
+        AND ${isNotLocked('asset')}
       ORDER BY share."createdAt" DESC, share.id
     `.execute(this.db);
     const hidden = await getOwnerHiddenShareIds(
