@@ -3,6 +3,7 @@ import { Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { lockForkWrites } from 'src/repositories/fork-write-guard.js';
 import { DB } from 'src/schema/index.js';
+import { getOwnerHiddenShareIds } from 'src/utils/item-share.js';
 import { isNotLocked } from 'src/utils/locked.js';
 
 export type ItemShareRow = {
@@ -24,6 +25,19 @@ const WRITE_REFUSAL = 'Sharing is unavailable while the server is being handed o
 @Injectable()
 export class ItemShareRepository {
   constructor(@InjectKysely() private db: Kysely<DB>) {}
+
+  /** Recipients to notify after a lock, including items now excluded from recipient reads. */
+  async getRecipients(assetIds: string[]): Promise<Pick<ItemShareRow, 'assetId' | 'sharedWithId'>[]> {
+    if (assetIds.length === 0) {
+      return [];
+    }
+    const { rows } = await sql<Pick<ItemShareRow, 'assetId' | 'sharedWithId'>>`
+      SELECT "assetId", "sharedWithId"
+      FROM immich_fork.asset_user_share
+      WHERE "assetId" = ANY(${assetIds}::uuid[])
+    `.execute(this.db);
+    return rows;
+  }
 
   /** The owner's shares of these items, oldest first. */
   async getForAssets(ownerId: string, assetIds: string[]): Promise<ItemShareRow[]> {
@@ -90,6 +104,10 @@ export class ItemShareRepository {
       WHERE share."sharedWithId" = ${userId}::uuid AND ${isNotLocked('asset')}
       ORDER BY share."createdAt" DESC, share.id
     `.execute(this.db);
-    return rows;
+    const hidden = await getOwnerHiddenShareIds(
+      this.db,
+      rows.map((row) => ({ id: row.assetId, ownerId: row.ownerId })),
+    );
+    return rows.filter(({ assetId }) => !hidden.has(assetId));
   }
 }

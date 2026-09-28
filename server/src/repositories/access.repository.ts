@@ -18,6 +18,7 @@ import {
   withDefaultVisibility,
   withHiddenContentFilter,
 } from 'src/utils/database.js';
+import { getOwnerHiddenShareIds } from 'src/utils/item-share.js';
 import { isNotLocked, isTimelineVisible } from 'src/utils/locked.js';
 
 type AccessPrivacy = boolean | HiddenContentFilter | undefined;
@@ -320,7 +321,7 @@ class AssetAccess {
             .on(sql<boolean>`"owner"."id" = "share"."ownerId"`)
             .on('owner.deletedAt', 'is', null),
         )
-        .select(['asset.id', 'asset.livePhotoVideoId'])
+        .select(['asset.id', 'asset.ownerId', 'asset.livePhotoVideoId'])
         .$if(!!hiddenContent, (qb) =>
           qb.select(
             hiddenContentAssetIdExists(sql.ref('asset.livePhotoVideoId'), hiddenContent!).as('isLivePhotoVideoNsfw'),
@@ -331,15 +332,25 @@ class AssetAccess {
         .where(isNotLocked('asset'))
         .$call((qb) => withHiddenContentFilter(qb, options))
         .execute()
-        .then((assets) => {
+        .then(async (assets) => {
+          const hidden = await getOwnerHiddenShareIds(
+            this.db,
+            assets.flatMap((asset) => [
+              asset,
+              ...(asset.livePhotoVideoId ? [{ id: asset.livePhotoVideoId, ownerId: asset.ownerId }] : []),
+            ]),
+          );
           const allowedIds = new Set<string>();
           for (const asset of assets) {
+            if (hidden.has(asset.id)) {
+              continue;
+            }
             if (assetIds.has(asset.id)) {
               allowedIds.add(asset.id);
             }
             const motion = asset.livePhotoVideoId;
             const motionHidden = !!hiddenContent && (asset as { isLivePhotoVideoNsfw?: boolean }).isLivePhotoVideoNsfw;
-            if (motion && assetIds.has(motion) && !motionHidden) {
+            if (motion && assetIds.has(motion) && !motionHidden && !hidden.has(motion)) {
               allowedIds.add(motion);
             }
           }
