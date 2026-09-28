@@ -10,7 +10,6 @@
   "commands": [
     {
       "capability": "transcriptionWorker",
-      "deliveryPlanIds": ["AI-104"],
       "description": "Replace the sequence caption list with a validated, time-ordered set.",
       "id": "captions.set",
       "manifestIds": ["readme.local-ai-analysis.1"],
@@ -26,7 +25,6 @@
     },
     {
       "capability": null,
-      "deliveryPlanIds": ["STU-205", "STU-301"],
       "description": "Place library media on a track at a time, linking its camera audio.",
       "id": "clip.add",
       "manifestIds": ["command.addItem", "readme.timeline-editing.1"],
@@ -46,7 +44,6 @@
     },
     {
       "capability": null,
-      "deliveryPlanIds": ["STU-205", "STU-301"],
       "description": "Remove one clip or a selection with its linked clips, optionally closing the gap.",
       "id": "clip.delete",
       "manifestIds": ["command.removeItems", "readme.timeline-editing.5"],
@@ -64,7 +61,6 @@
     },
     {
       "capability": null,
-      "deliveryPlanIds": ["STU-304"],
       "description": "Group selected clips so transforms and keyframes apply to them together.",
       "id": "clip.group",
       "manifestIds": ["extra.compose"],
@@ -81,7 +77,6 @@
     },
     {
       "capability": null,
-      "deliveryPlanIds": ["AI-104", "STU-301"],
       "description": "Insert a marked source range at the playhead, rippling later clips right.",
       "id": "clip.insert",
       "manifestIds": ["readme.local-ai-analysis.4", "readme.timeline-editing.7"],
@@ -101,7 +96,6 @@
     },
     {
       "capability": null,
-      "deliveryPlanIds": ["STU-205"],
       "description": "Move a clip and its linked clips to another time, and optionally another track.",
       "id": "clip.move",
       "manifestIds": ["command.moveItem"],
@@ -119,7 +113,6 @@
     },
     {
       "capability": null,
-      "deliveryPlanIds": ["STU-301"],
       "description": "Overwrite the track at the playhead with a marked source range.",
       "id": "clip.overwrite",
       "manifestIds": ["readme.timeline-editing.7"],
@@ -139,7 +132,6 @@
     },
     {
       "capability": null,
-      "deliveryPlanIds": ["STU-301"],
       "description": "Move a clip to another index on its track; the track re-flows contiguously.",
       "id": "clip.reorder",
       "manifestIds": ["readme.timeline-editing.5"],
@@ -157,7 +149,6 @@
     },
     {
       "capability": null,
-      "deliveryPlanIds": ["STU-301", "STU-302"],
       "description": "Move the cut between two adjacent clips without changing the sequence length.",
       "id": "clip.roll",
       "manifestIds": ["readme.preview-playback.4", "readme.timeline-editing.3"],
@@ -174,7 +165,6 @@
     },
     {
       "capability": null,
-      "deliveryPlanIds": ["STU-305"],
       "description": "Set clip volume, mute, fades, pitch shift and the clip EQ stage.",
       "id": "clip.setAudio",
       "manifestIds": ["readme.audio.1", "readme.audio.2", "readme.audio.3"],
@@ -197,7 +187,6 @@
     },
     {
       "capability": null,
-      "deliveryPlanIds": ["STU-303"],
       "description": "Set the clip blend mode and compositing opacity.",
       "id": "clip.setBlendMode",
       "manifestIds": [
@@ -242,7 +231,6 @@
     },
     {
       "capability": null,
-      "deliveryPlanIds": ["STU-302"],
       "description": "Set the crop rectangle and corner-pin quad edited with the preview gizmos.",
       "id": "clip.setCrop",
       "manifestIds": ["readme.preview-playback.1"],
@@ -260,7 +248,6 @@
     },
     {
       "capability": null,
-      "deliveryPlanIds": ["STU-302"],
       "description": "Set the colour grade: look, intensity, primaries and the three colour wheels.",
       "id": "clip.setGrade",
       "manifestIds": ["extra.color-workspace"],
@@ -277,7 +264,6 @@
     },
     {
       "capability": null,
-      "deliveryPlanIds": ["STU-304"],
       "description": "Set the from and to rectangles of a still clip, or clear the move.",
       "id": "clip.setKenBurns",
       "manifestIds": ["readme.keyframe-animation.6"],
@@ -294,7 +280,6 @@
     },
     {
       "capability": null,
-      "deliveryPlanIds": ["STU-301"],
       "description": "Link or unlink audio and video clips so later edits move them together.",
       "id": "clip.setLink",
       "manifestIds": ["readme.timeline-editing.3"],
@@ -311,7 +296,6 @@
     },
     {
       "capability": null,
-      "deliveryPlanIds": ["STU-303"],
       "description": "Set or clear the clip mask, including pen path geometry.",
       "id": "clip.setMask",
       "manifestIds": ["readme.effects-masks-compositing.7"],
@@ -328,7 +312,6 @@
     },
     {
       "capability": null,
-      "deliveryPlanIds": ["STU-301"],
       "description": "Rate-stretch a bounded clip and its linked clips to a new speed.",
       "id": "clip.setSpeed",
       "manifestIds": ["readme.timeline-editing.3"],
@@ -345,7 +328,6 @@
     },
     {
       "capability": null,
-      "deliveryPlanIds": ["STU-205", "STU-302"],
       "description": "Set position, scale, rotation and opacity for a clip.",
       "id": "clip.setTransform",
       "manifestIds": ["command.setTransform", "readme.preview-playback.1"],
@@ -362,7 +344,6 @@
     },
     {
       "capability": null,
-      "deliveryPlanIds": ["STU-205", "STU-304"],
       "description": "Parent a clip transform to another clip, or clear the pick-whip link.",
       "id": "clip.setTransformParent",
       "manifestIds": ["command.setTransformParent", "extra.parenting"],
@@ -379,7 +360,6 @@
     },
     {
       "capability": null,
-      "deliveryPlanIds": ["STU-205", "STU-301", "STU-303"],
       "description": "Add, retime, realign or remove the transition at the cut before a clip.",
       "id": "clip.setTransition",
       "manifestIds": [
@@ -425,7 +405,6 @@
     },
     {
       "capability": null,
-      "deliveryPlanIds": ["STU-301", "STU-302"],
       "description": "Slide a clip along the track, trimming its neighbours instead of rippling.",
       "id": "clip.slide",
       "manifestIds": ["readme.preview-playback.4", "readme.timeline-editing.3"],
@@ -442,7 +421,6 @@
     },
     {
       "capability": null,
-      "deliveryPlanIds": ["STU-301", "STU-302"],
       "description": "Slip the source range inside a clip without moving the clip.",
       "id": "clip.slip",
       "manifestIds": ["readme.preview-playback.4", "readme.timeline-editing.3"],
@@ -459,7 +437,6 @@
     },
     {
       "capability": null,
-      "deliveryPlanIds": ["STU-205"],
       "description": "Split clips at a time, carrying linked clips and Ken Burns geometry across.",
       "id": "clip.split",
       "manifestIds": ["command.split"],
@@ -476,7 +453,6 @@
     },
     {
       "capability": null,
-      "deliveryPlanIds": ["STU-205"],
       "description": "Trim a clip out point, optionally rippling the rest of the track.",
       "id": "clip.trimEnd",
       "manifestIds": ["command.trimEnd"],
@@ -494,7 +470,6 @@
     },
     {
       "capability": null,
-      "deliveryPlanIds": ["STU-205"],
       "description": "Trim a clip in point, optionally rippling the rest of the track.",
       "id": "clip.trimStart",
       "manifestIds": ["command.trimStart"],
@@ -512,7 +487,6 @@
     },
     {
       "capability": null,
-      "deliveryPlanIds": [],
       "description": "Dissolve a group, leaving its clips in place.",
       "id": "clip.ungroup",
       "manifestIds": [],
@@ -528,7 +502,6 @@
     },
     {
       "capability": null,
-      "deliveryPlanIds": ["STU-205"],
       "description": "Patch clip fields the narrower commands do not own: name, text, style, position.",
       "id": "clip.update",
       "manifestIds": ["command.updateItem"],
@@ -545,7 +518,6 @@
     },
     {
       "capability": null,
-      "deliveryPlanIds": ["STU-205", "STU-301", "STU-304"],
       "description": "Create a compound clip from a selection and place it, openable as its own sequence.",
       "id": "composition.add",
       "manifestIds": [
@@ -569,7 +541,6 @@
     },
     {
       "capability": null,
-      "deliveryPlanIds": [],
       "description": "Override published control values on one instance of a composition.",
       "id": "composition.setControlOverrides",
       "manifestIds": [],
@@ -586,7 +557,6 @@
     },
     {
       "capability": null,
-      "deliveryPlanIds": ["STU-304"],
       "description": "Publish the controls a composition exposes to its instances.",
       "id": "composition.setPublishedControls",
       "manifestIds": ["extra.published-controls"],
@@ -603,7 +573,6 @@
     },
     {
       "capability": "gpuWorker",
-      "deliveryPlanIds": ["STU-205", "STU-303"],
       "description": "Add a GPU effect to a clip effect stack at an index.",
       "id": "effect.add",
       "manifestIds": [
@@ -629,7 +598,6 @@
     },
     {
       "capability": null,
-      "deliveryPlanIds": ["STU-205"],
       "description": "Remove one effect from a clip effect stack.",
       "id": "effect.remove",
       "manifestIds": ["command.removeEffect"],
@@ -646,7 +614,6 @@
     },
     {
       "capability": null,
-      "deliveryPlanIds": [],
       "description": "Reorder the effect stack, which changes the rendered result.",
       "id": "effect.reorder",
       "manifestIds": [],
@@ -664,7 +631,6 @@
     },
     {
       "capability": "gpuWorker",
-      "deliveryPlanIds": ["STU-303"],
       "description": "Set the parameters of one effect instance, including LUT and key controls.",
       "id": "effect.update",
       "manifestIds": [
@@ -737,7 +703,6 @@
     },
     {
       "capability": null,
-      "deliveryPlanIds": [],
       "description": "Redo the last undone revision, as a server-side revision move.",
       "id": "history.redo",
       "manifestIds": [],
@@ -753,7 +718,6 @@
     },
     {
       "capability": null,
-      "deliveryPlanIds": ["STU-301"],
       "description": "Undo the last undoable revision; the stack lives with the stored project.",
       "id": "history.undo",
       "manifestIds": ["readme.timeline-editing.6"],
@@ -769,7 +733,6 @@
     },
     {
       "capability": null,
-      "deliveryPlanIds": ["STU-403"],
       "description": "Ask the durable job model to cancel a queued or running job.",
       "id": "job.cancel",
       "manifestIds": ["extra.render-queue"],
@@ -785,7 +748,6 @@
     },
     {
       "capability": "analysisWorker",
-      "deliveryPlanIds": ["AI-104"],
       "description": "Queue AI captioning of media with an explicit destination.",
       "id": "job.enqueueCaptioning",
       "manifestIds": ["readme.local-ai-analysis.2"],
@@ -804,7 +766,6 @@
     },
     {
       "capability": "renderWorker",
-      "deliveryPlanIds": ["STU-306"],
       "description": "Queue a render of any sequence to an explicit destination.",
       "id": "job.enqueueExport",
       "manifestIds": [
@@ -837,7 +798,6 @@
     },
     {
       "capability": "analysisWorker",
-      "deliveryPlanIds": ["STU-305"],
       "description": "Queue filler-word detection; the edit itself is applied after review.",
       "id": "job.enqueueFillerRemoval",
       "manifestIds": ["extra.filler-removal"],
@@ -855,7 +815,6 @@
     },
     {
       "capability": "restorationWorker",
-      "deliveryPlanIds": ["AI-104"],
       "description": "Queue frame interpolation for a clip to an explicit destination.",
       "id": "job.enqueueInterpolation",
       "manifestIds": ["extra.interpolation-rife"],
@@ -874,7 +833,6 @@
     },
     {
       "capability": "generationWorker",
-      "deliveryPlanIds": ["AI-104"],
       "description": "Queue local music generation; the result arrives as an importable asset.",
       "id": "job.enqueueMusicGeneration",
       "manifestIds": ["extra.musicgen", "readme.local-ai-analysis.6"],
@@ -893,7 +851,6 @@
     },
     {
       "capability": "renderWorker",
-      "deliveryPlanIds": ["STU-306"],
       "description": "Queue proxy, thumbnail and waveform generation for project media.",
       "id": "job.enqueueProxy",
       "manifestIds": ["readme.media-import.4"],
@@ -910,7 +867,6 @@
     },
     {
       "capability": "restorationWorker",
-      "deliveryPlanIds": [],
       "description": "Queue a Frameleaf restoration pass with an explicit, never implicit, destination.",
       "id": "job.enqueueRestoration",
       "manifestIds": [],
@@ -932,7 +888,6 @@
     },
     {
       "capability": "renderWorker",
-      "deliveryPlanIds": ["AI-104"],
       "description": "Queue a reversed conform of a clip source.",
       "id": "job.enqueueReverseConform",
       "manifestIds": ["extra.reverse-conform"],
@@ -949,7 +904,6 @@
     },
     {
       "capability": "analysisWorker",
-      "deliveryPlanIds": ["AI-104"],
       "description": "Queue scene detection over project media.",
       "id": "job.enqueueSceneDetection",
       "manifestIds": ["readme.local-ai-analysis.3"],
@@ -968,7 +922,6 @@
     },
     {
       "capability": "analysisWorker",
-      "deliveryPlanIds": ["STU-305"],
       "description": "Queue silence detection; the edit itself is applied after review.",
       "id": "job.enqueueSilenceRemoval",
       "manifestIds": ["extra.silence-removal"],
@@ -987,7 +940,6 @@
     },
     {
       "capability": "generationWorker",
-      "deliveryPlanIds": ["AI-104"],
       "description": "Queue a local text-to-speech voiceover; the result arrives as an asset.",
       "id": "job.enqueueTextToSpeech",
       "manifestIds": [
@@ -1011,7 +963,6 @@
     },
     {
       "capability": "transcriptionWorker",
-      "deliveryPlanIds": ["AI-104"],
       "description": "Queue on-device transcription; captions land through captions.set.",
       "id": "job.enqueueTranscription",
       "manifestIds": ["readme.local-ai-analysis.1"],
@@ -1029,7 +980,6 @@
     },
     {
       "capability": "restorationWorker",
-      "deliveryPlanIds": ["AI-104"],
       "description": "Queue an upscale pass for a clip to an explicit destination.",
       "id": "job.enqueueUpscale",
       "manifestIds": ["extra.upscale-anime4k"],
@@ -1047,7 +997,6 @@
     },
     {
       "capability": null,
-      "deliveryPlanIds": ["STU-205", "STU-304"],
       "description": "Add a keyframe on an animatable property at a time.",
       "id": "keyframe.add",
       "manifestIds": [
@@ -1071,7 +1020,6 @@
     },
     {
       "capability": null,
-      "deliveryPlanIds": ["STU-205"],
       "description": "Remove keyframes from one property.",
       "id": "keyframe.remove",
       "manifestIds": ["command.removeKeyframes"],
@@ -1089,7 +1037,6 @@
     },
     {
       "capability": null,
-      "deliveryPlanIds": ["STU-304"],
       "description": "Set easing or an explicit bezier on selected keyframes.",
       "id": "keyframe.setEasing",
       "manifestIds": ["readme.keyframe-animation.2"],
@@ -1109,7 +1056,6 @@
     },
     {
       "capability": null,
-      "deliveryPlanIds": ["STU-304"],
       "description": "Retime or revalue one keyframe from the graph editor or dopesheet.",
       "id": "keyframe.update",
       "manifestIds": ["readme.keyframe-animation.1"],
@@ -1129,7 +1075,6 @@
     },
     {
       "capability": null,
-      "deliveryPlanIds": ["STU-306"],
       "description": "Remap Lottie colours and themes, edit its text and adjust value slots.",
       "id": "lottie.update",
       "manifestIds": ["readme.media-import.2"],
@@ -1148,7 +1093,6 @@
     },
     {
       "capability": null,
-      "deliveryPlanIds": ["STU-301"],
       "description": "Add a marker on the sequence at a time.",
       "id": "marker.add",
       "manifestIds": ["readme.timeline-editing.6"],
@@ -1166,7 +1110,6 @@
     },
     {
       "capability": null,
-      "deliveryPlanIds": [],
       "description": "Remove a sequence marker.",
       "id": "marker.remove",
       "manifestIds": [],
@@ -1182,7 +1125,6 @@
     },
     {
       "capability": null,
-      "deliveryPlanIds": [],
       "description": "Rename, recolour or move a sequence marker.",
       "id": "marker.update",
       "manifestIds": [],
@@ -1199,7 +1141,6 @@
     },
     {
       "capability": null,
-      "deliveryPlanIds": ["STU-306"],
       "description": "Reference library assets from the project without copying an original.",
       "id": "media.import",
       "manifestIds": ["readme.media-import.1"],
@@ -1215,7 +1156,6 @@
     },
     {
       "capability": null,
-      "deliveryPlanIds": ["STU-306"],
       "description": "Relink project media to another asset when the original moved.",
       "id": "media.relink",
       "manifestIds": ["readme.media-import.4"],
@@ -1232,7 +1172,6 @@
     },
     {
       "capability": null,
-      "deliveryPlanIds": [],
       "description": "Drop unused media references from the project; originals are untouched.",
       "id": "media.remove",
       "manifestIds": [],
@@ -1248,7 +1187,6 @@
     },
     {
       "capability": null,
-      "deliveryPlanIds": ["STU-205"],
       "description": "Place a music bed on the music track.",
       "id": "music.add",
       "manifestIds": ["command.addItem"],
@@ -1267,7 +1205,6 @@
     },
     {
       "capability": null,
-      "deliveryPlanIds": [],
       "description": "Tell the host the engine no longer needs the frame it last requested.",
       "id": "preview.release",
       "manifestIds": [],
@@ -1281,7 +1218,6 @@
     },
     {
       "capability": "gpuWorker",
-      "deliveryPlanIds": [],
       "description": "Ask for one frame of the current revision, rendered at an exact rational time.",
       "id": "preview.request",
       "manifestIds": [],
@@ -1300,7 +1236,6 @@
     },
     {
       "capability": null,
-      "deliveryPlanIds": ["STU-301"],
       "description": "Apply a project template, including canvas and frame rate defaults.",
       "id": "project.applyTemplate",
       "manifestIds": ["readme.timeline-editing.8"],
@@ -1316,7 +1251,6 @@
     },
     {
       "capability": null,
-      "deliveryPlanIds": ["STU-204"],
       "description": "Export a validated portable project bundle, optionally with copies of the media the person owns.",
       "id": "project.exportBundle",
       "manifestIds": ["readme.projects-storage.5"],
@@ -1333,7 +1267,6 @@
     },
     {
       "capability": null,
-      "deliveryPlanIds": [],
       "description": "Import a validated portable project bundle into this project.",
       "id": "project.importBundle",
       "manifestIds": [],
@@ -1349,7 +1282,6 @@
     },
     {
       "capability": null,
-      "deliveryPlanIds": [],
       "description": "Rename the project.",
       "id": "project.rename",
       "manifestIds": [],
@@ -1365,7 +1297,6 @@
     },
     {
       "capability": null,
-      "deliveryPlanIds": ["STU-302"],
       "description": "Set the project master bus, which is not the monitor or device volume.",
       "id": "project.setMasterAudio",
       "manifestIds": ["readme.preview-playback.6"],
@@ -1383,7 +1314,6 @@
     },
     {
       "capability": null,
-      "deliveryPlanIds": [],
       "description": "Set editor preferences stored with the project: mode, guides, loop, ducking.",
       "id": "project.setSettings",
       "manifestIds": [],
@@ -1399,7 +1329,6 @@
     },
     {
       "capability": null,
-      "deliveryPlanIds": ["STU-304"],
       "description": "Bake a procedural motion modifier into explicit keyframes.",
       "id": "property.bakeModifier",
       "manifestIds": ["readme.keyframe-animation.3"],
@@ -1417,7 +1346,6 @@
     },
     {
       "capability": null,
-      "deliveryPlanIds": ["STU-304"],
       "description": "Set or clear a property expression.",
       "id": "property.setExpression",
       "manifestIds": ["extra.expressions"],
@@ -1435,7 +1363,6 @@
     },
     {
       "capability": null,
-      "deliveryPlanIds": [],
       "description": "Attach or clear a procedural motion modifier on a property.",
       "id": "property.setModifier",
       "manifestIds": [],
@@ -1453,7 +1380,6 @@
     },
     {
       "capability": null,
-      "deliveryPlanIds": [],
       "description": "Add a timestamped review comment.",
       "id": "review.add",
       "manifestIds": [],
@@ -1470,7 +1396,6 @@
     },
     {
       "capability": null,
-      "deliveryPlanIds": [],
       "description": "Remove a review comment.",
       "id": "review.remove",
       "manifestIds": [],
@@ -1486,7 +1411,6 @@
     },
     {
       "capability": null,
-      "deliveryPlanIds": [],
       "description": "Edit or resolve a review comment.",
       "id": "review.update",
       "manifestIds": [],
@@ -1503,7 +1427,6 @@
     },
     {
       "capability": null,
-      "deliveryPlanIds": ["STU-301"],
       "description": "Add a sequence to the project.",
       "id": "sequence.add",
       "manifestIds": ["readme.timeline-editing.2"],
@@ -1522,7 +1445,6 @@
     },
     {
       "capability": null,
-      "deliveryPlanIds": [],
       "description": "Duplicate a sequence, including its tracks and clips.",
       "id": "sequence.duplicate",
       "manifestIds": [],
@@ -1539,7 +1461,6 @@
     },
     {
       "capability": null,
-      "deliveryPlanIds": [],
       "description": "Remove a sequence; the project keeps at least one.",
       "id": "sequence.remove",
       "manifestIds": [],
@@ -1555,7 +1476,6 @@
     },
     {
       "capability": null,
-      "deliveryPlanIds": [],
       "description": "Switch the active sequence, which is stored on the project.",
       "id": "sequence.setActive",
       "manifestIds": [],
@@ -1571,7 +1491,6 @@
     },
     {
       "capability": null,
-      "deliveryPlanIds": [],
       "description": "Set sequence name, caption language and caption burn-in.",
       "id": "sequence.setFields",
       "manifestIds": [],
@@ -1589,7 +1508,6 @@
     },
     {
       "capability": null,
-      "deliveryPlanIds": ["STU-301"],
       "description": "Set the sequence canvas and frame rate, including auto-match from first media.",
       "id": "sequence.setSettings",
       "manifestIds": ["readme.timeline-editing.8"],
@@ -1608,7 +1526,6 @@
     },
     {
       "capability": null,
-      "deliveryPlanIds": ["STU-304"],
       "description": "Set per-character, per-word or per-line text animation.",
       "id": "text.setMotion",
       "manifestIds": ["readme.keyframe-animation.4"],
@@ -1625,7 +1542,6 @@
     },
     {
       "capability": null,
-      "deliveryPlanIds": ["STU-205"],
       "description": "Add a title clip on the title track.",
       "id": "title.add",
       "manifestIds": ["command.addText"],
@@ -1646,7 +1562,6 @@
     },
     {
       "capability": null,
-      "deliveryPlanIds": ["STU-205"],
       "description": "Add a track of a kind at an index.",
       "id": "track.add",
       "manifestIds": ["command.addTrack"],
@@ -1664,7 +1579,6 @@
     },
     {
       "capability": null,
-      "deliveryPlanIds": [],
       "description": "Remove a track and the clips on it.",
       "id": "track.remove",
       "manifestIds": [],
@@ -1680,7 +1594,6 @@
     },
     {
       "capability": null,
-      "deliveryPlanIds": [],
       "description": "Reorder tracks, which changes compositing order.",
       "id": "track.reorder",
       "manifestIds": [],
@@ -1697,7 +1610,6 @@
     },
     {
       "capability": null,
-      "deliveryPlanIds": ["STU-301"],
       "description": "Set track name, mute, lock, solo and gain.",
       "id": "track.set",
       "manifestIds": ["readme.timeline-editing.5"],
@@ -1714,7 +1626,6 @@
     },
     {
       "capability": null,
-      "deliveryPlanIds": ["STU-305"],
       "description": "Set the track fader, pan and the track EQ stage.",
       "id": "track.setAudio",
       "manifestIds": ["readme.audio.1", "readme.audio.3"],
@@ -1733,7 +1644,6 @@
     },
     {
       "capability": null,
-      "deliveryPlanIds": ["STU-305"],
       "description": "Place a recorded or generated voiceover on the voice track.",
       "id": "voiceover.add",
       "manifestIds": ["extra.microphone"],
@@ -1772,7 +1682,6 @@
     "time"
   ],
   "generator": "scripts/frameleaf-studio-commands.mjs",
-  "issueMapPath": "docs/docs/developer/frameleaf-plan/freecut-issue-map.json",
   "manifestPath": "studio/freecut-feature-manifest.json",
   "nonCommandRows": [
     {

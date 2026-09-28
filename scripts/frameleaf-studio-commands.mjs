@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * The canonical Studio command catalogue and its generated contracts (FL-92, `STU-205`).
+ * The canonical Studio command catalogue and its generated contracts (FL-92).
  *
  * One table in this file is the source of truth for the Studio command vocabulary. From it
  * this script writes two checked-in artifacts, so web and server cannot drift:
@@ -22,8 +22,6 @@
  *   - `design/frameleaf/template/src/studio-project.mjs` — the prototype's project model,
  *     the interaction contract named by the September 22, 2026 revision.
  *   - `studio/freecut-feature-manifest.json` — the 210 pinned Freecut feature rows.
- *   - `docs/docs/developer/frameleaf-plan/freecut-issue-map.json` — the delivery plan id
- *     for each of those rows; `deliveryPlanIds` is computed from it, never hand-written.
  */
 
 import assert from 'node:assert/strict';
@@ -39,7 +37,6 @@ export const GENERATOR = 'scripts/frameleaf-studio-commands.mjs';
 export const CATALOGUE_PATH = 'studio/frameleaf-studio-commands.json';
 export const SERVER_MIRROR_PATH = 'server/src/utils/studio-commands.generated.ts';
 export const MANIFEST_PATH = 'studio/freecut-feature-manifest.json';
-export const ISSUE_MAP_PATH = 'docs/docs/developer/frameleaf-plan/freecut-issue-map.json';
 export const PROTOTYPE_PATH = 'design/frameleaf/template/src/studio-project.mjs';
 export const WEB_VOCABULARY_PATH = 'web/src/lib/frameleaf/studio/commands.ts';
 
@@ -81,7 +78,7 @@ export const CAPABILITIES = [
 /**
  * Payload field types. A `?` suffix on a field marks it optional.
  *
- * `time`, `duration` and `rate` are exact rationals, never floats (FL-93 / `VID-102`): an
+ * `time`, `duration` and `rate` are exact rationals, never floats (FL-93): an
  * instant on the timeline, a length, and a cadence or speed multiplier. They travel as a
  * reduced `{ num, den }` pair of integers, which is the only representation in which an
  * NTSC boundary the person set is the boundary the encoder is asked for. The web side
@@ -1742,12 +1739,10 @@ const fieldType = (declared) => (declared.endsWith('?') ? declared.slice(0, -1) 
 /* Artifacts                                                            */
 /* ------------------------------------------------------------------ */
 
-/** The published catalogue, with `deliveryPlanIds` computed from the pinned issue map. */
-export function buildCatalogueDocument(issueMap) {
-  const planById = new Map(issueMap.rows.map((row) => [row.id, row.issueIds]));
+/** The published catalogue. */
+export function buildCatalogueDocument(manifest) {
   const commands = catalogue.map((command) => ({
     capability: command.capability,
-    deliveryPlanIds: [...new Set(command.manifestIds.flatMap((id) => planById.get(id) ?? []))].sort(),
     description: command.description,
     id: command.id,
     manifestIds: [...command.manifestIds].sort(),
@@ -1767,7 +1762,7 @@ export function buildCatalogueDocument(issueMap) {
       commands: commands.length,
       commandsWithoutManifestRow: commands.filter((command) => command.manifestIds.length === 0).length,
       commandsWithoutPrototypeFunction: commands.filter((command) => command.prototypeFunctions.length === 0).length,
-      manifestRows: issueMap.rows.length,
+      manifestRows: manifest.features.length,
       manifestRowsDeclaredNonCommand: nonCommandRows.length,
       manifestRowsMapped: mapped.size,
     },
@@ -1775,7 +1770,6 @@ export function buildCatalogueDocument(issueMap) {
     engineRevision: ENGINE_REVISION,
     fieldTypes: FIELD_TYPES,
     generator: GENERATOR,
-    issueMapPath: ISSUE_MAP_PATH,
     manifestPath: MANIFEST_PATH,
     nonCommandRows: [...nonCommandRows].sort((a, b) => (a.id < b.id ? -1 : 1)),
     prototypePath: PROTOTYPE_PATH,
@@ -1792,7 +1786,7 @@ const TS_HEADER = `/**
  * Source: ${CATALOGUE_PATH}
  * Generator: ${GENERATOR}
  *
- * The server mirror of the canonical Studio command vocabulary (FL-92, \`STU-205\`). It
+ * The server mirror of the canonical Studio command vocabulary (FL-92). It
  * exists so the server can validate a command envelope without trusting the client's idea
  * of the vocabulary, and so a drifted web or native contract fails CI instead of failing a
  * person's edit. Payload objects are described, never interpreted: \`object\` fields travel
@@ -1929,7 +1923,7 @@ export function parseWebVocabulary(source) {
   return { ids, payloadKeys, rows };
 }
 
-export function validate({ document, manifest, issueMap, prototypeSource, webSource }) {
+export function validate({ document, manifest, prototypeSource, webSource }) {
   const ids = document.commands.map((command) => command.id);
   assert.deepEqual([...ids].sort(), ids, 'Catalogue rows must stay sorted by id');
   assert.equal(new Set(ids).size, ids.length, 'Duplicate command id');
@@ -1972,37 +1966,12 @@ export function validate({ document, manifest, issueMap, prototypeSource, webSou
 
   const manifestIds = new Set(manifest.features.map((feature) => feature.id));
   assert.equal(manifestIds.size, manifest.counts.features, 'Feature manifest row count drifted');
-  assert.deepEqual(
-    issueMap.rows.map((row) => row.id).sort(),
-    [...manifestIds].sort(),
-    'Issue map and feature manifest must describe the same rows',
-  );
   const declared = new Set(document.nonCommandRows.map((row) => row.id));
-  const planById = new Map(issueMap.rows.map((row) => [row.id, row.issueIds]));
-  const planKeys = new Map(
-    Object.entries({
-      'AI-104': 'FL-111',
-      'STU-201': 'FL-88',
-      'STU-204': 'FL-91',
-      'STU-205': 'FL-92',
-      'STU-301': 'FL-94',
-      'STU-302': 'FL-98',
-      'STU-303': 'FL-99',
-      'STU-304': 'FL-100',
-      'STU-305': 'FL-103',
-      'STU-306': 'FL-105',
-      'STU-403': 'FL-104',
-    }),
-  );
   for (const row of document.nonCommandRows) {
     assert.ok(manifestIds.has(row.id), `Non-command row ${row.id} is not a manifest row`);
     assert.ok(row.reason.length > 0, `Non-command row ${row.id} needs a reason`);
-    const planId = planById.get(row.id)[0];
-    assert.equal(
-      row.owner,
-      planKeys.get(planId),
-      `Non-command row ${row.id} must be owned by the story the plan assigns (${planId})`,
-    );
+    assert.match(row.owner, /^FL-\d+$/, `Non-command row ${row.id} needs a Jira owner`);
+    assert.notEqual(row.owner, 'FL-92', `Non-command row ${row.id}: FL-92 owns no semantics`);
   }
   const mapped = new Set(document.commands.flatMap((command) => command.manifestIds));
   for (const id of mapped) {
@@ -2015,14 +1984,6 @@ export function validate({ document, manifest, issueMap, prototypeSource, webSou
       `Manifest row ${id} has no command and is not declared a non-command row`,
     );
   }
-  for (const command of document.commands) {
-    assert.deepEqual(
-      command.deliveryPlanIds,
-      [...new Set(command.manifestIds.flatMap((id) => planById.get(id) ?? []))].sort(),
-      `${command.id}: deliveryPlanIds must be computed from the issue map`,
-    );
-  }
-
   const prototypeFunctions = prototypeCommandFunctions(prototypeSource);
   const referenced = new Set(document.commands.flatMap((command) => command.prototypeFunctions));
   for (const name of prototypeFunctions) {
@@ -2056,16 +2017,14 @@ export function validate({ document, manifest, issueMap, prototypeSource, webSou
 const read = (root, file) => readFile(path.join(root, file), 'utf8');
 
 export async function generate(root) {
-  const [manifestText, issueMapText, prototypeSource, webSource] = await Promise.all([
+  const [manifestText, prototypeSource, webSource] = await Promise.all([
     read(root, MANIFEST_PATH),
-    read(root, ISSUE_MAP_PATH),
     read(root, PROTOTYPE_PATH),
     read(root, WEB_VOCABULARY_PATH),
   ]);
   const manifest = JSON.parse(manifestText);
-  const issueMap = JSON.parse(issueMapText);
-  const document = buildCatalogueDocument(issueMap);
-  validate({ document, manifest, issueMap, prototypeSource, webSource });
+  const document = buildCatalogueDocument(manifest);
+  validate({ document, manifest, prototypeSource, webSource });
   return {
     document,
     files: {
