@@ -21,8 +21,7 @@
   import { mdiAlertOutline, mdiCheckCircle, mdiInformationOutline, mdiProgressClock, mdiUpdate } from '@mdi/js';
   import { DateTime } from 'luxon';
   import { t } from 'svelte-i18n';
-  // FL-135: the symbol is imported unmodified from the authorized brand kit (never redrawn);
-  // see docs/docs/developer/frameleaf-plan/06-brand-assets.md.
+  // FL-135: the symbol is imported unmodified from the authorized brand kit (never redrawn).
   import symbolUrl from '$lib/assets/frameleaf/frameleaf-symbol.svg?url';
 
   type Props = {
