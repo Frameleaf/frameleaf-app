@@ -8,6 +8,7 @@ import {
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { init, register, waitLocale } from 'svelte-i18n';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
+import { bumpPlaybackRevision, resetPlaybackRevisions } from '$lib/frameleaf/playback-revision.svelte';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { assetFactory } from '@test-data/factories/asset-factory';
 import { peopleListItemFactory, personFactory } from '@test-data/factories/person-factory';
@@ -69,6 +70,7 @@ describe('FaceTagger', () => {
 
   afterEach(() => {
     authManager.reset();
+    resetPlaybackRevisions();
   });
 
   const setup = async (overrides: Parameters<typeof assetFactory.build>[0] = {}) => {
@@ -81,11 +83,9 @@ describe('FaceTagger', () => {
     const onClose = vi.fn();
     const onSaved = vi.fn();
     render(FaceTagger, { asset, onClose, onSaved });
-    const image = screen.queryByRole('img', { name: 'beach.jpg' });
-    if (image) {
-      Object.defineProperties(image, { naturalWidth: { value: 1000 }, naturalHeight: { value: 800 } });
-      await fireEvent.load(image);
-    }
+    const image = await screen.findByRole('img', { name: 'beach.jpg' });
+    Object.defineProperties(image, { naturalWidth: { value: 1000 }, naturalHeight: { value: 800 } });
+    await fireEvent.load(image);
     await waitFor(() => expect(sdkMock.getFaces).toHaveBeenCalledWith({ id: asset.id }));
     await screen.findByText(en.frameleaf_face_tagger_position_note);
     return { asset, onClose, onSaved };
@@ -117,6 +117,37 @@ describe('FaceTagger', () => {
     expect(
       screen.getByText('beach.jpg · Video preview still. Tags apply to the whole video, not to a moment in it.'),
     ).toBeInTheDocument();
+  });
+
+  it('uses the ordinary edited face source when a restoration is selected, then saves crop/rotation coordinates', async () => {
+    sdkMock.getFaceSource.mockResolvedValue({ assetId: 'asset', revision: 'crop-rotate-source' });
+    const { asset } = await setup({ thumbhash: 'original-thumb', width: 2000, height: 1600 });
+    const image = screen.getByRole('img', { name: 'beach.jpg' });
+    const source = image.getAttribute('src');
+    expect(source).toContain('size=preview');
+    expect(source).toContain('edited=true');
+    expect(source).toContain('faceSource=true');
+    expect(source).toContain('c=crop-rotate-source');
+
+    // A playback revision represents selecting a restored version. It must not change
+    // the image against which the server's crop/rotation mapping interprets a face box.
+    bumpPlaybackRevision(asset.id);
+    expect(image.getAttribute('src')).toBe(source);
+
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_face_tagger_add_face }));
+    await pickPerson(bailey);
+    await fireEvent.click(save());
+
+    await waitFor(() =>
+      expect(sdkMock.createFace).toHaveBeenCalledWith({
+        assetFaceCreateDto: expect.objectContaining({
+          assetId: asset.id,
+          imageWidth: 1000,
+          imageHeight: 800,
+          expectedSourceRevision: 'crop-rotate-source',
+        }),
+      }),
+    );
   });
 
   it('tells manual and corrected faces apart from detected ones', async () => {

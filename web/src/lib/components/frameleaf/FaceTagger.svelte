@@ -150,7 +150,12 @@
   // representative frame the server picks from the opening of the video when it makes the
   // preview (media.service.ts pickVideoThumbnailStartTime). Tags belong to the whole video, not
   // to a moment in it, so the label says so.
-  const source = $derived(getAssetMediaUrl({ id: asset.id, size: AssetMediaSize.Preview, cacheKey: asset.thumbhash }));
+  // getFaceSource and face-box mapping use the ordinary edited preview, never a selected restoration.
+  const source = $derived(
+    sourceRevision
+      ? `${getAssetMediaUrl({ id: asset.id, size: AssetMediaSize.Preview, cacheKey: sourceRevision })}&faceSource=true`
+      : '',
+  );
   const content = $derived(imageContentRect(viewport, natural));
 
   /**
@@ -235,6 +240,10 @@
       }
       facePeople = personsOf(faces);
       people = list;
+      if (sourceRevision !== source.revision) {
+        natural = null;
+        imageFailed = false;
+      }
       sourceRevision = source.revision;
       baseline = faces.map((face) => draftFromFace(face));
       draft = faces.map((face) => draftFromFace(face));
@@ -766,7 +775,7 @@
       >
         {#if imageFailed}
           <p class="ft-image-error">{$t('frameleaf_face_tagger_image_unavailable')}</p>
-        {:else}
+        {:else if sourceRevision}
           <img
             src={source}
             alt={asset.originalFileName}

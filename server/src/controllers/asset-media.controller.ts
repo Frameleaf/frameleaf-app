@@ -190,9 +190,16 @@ export class AssetMediaController {
       dto.size === AssetMediaSize.FULLSIZE ? 'fullsize' : dto.size === AssetMediaSize.PREVIEW ? 'preview' : null;
     // FL-161: through the relay a full-size view falls back to the preview rather than the original
     const via = requestVia(req);
-    const viewThumbnailRes = view
-      ? await this.withPlaybackChoice(auth, id, view, () => this.service.viewThumbnail(auth, id, dto, via), via)
-      : await this.service.viewThumbnail(auth, id, dto, via);
+    // Face boxes and their source revision are defined against the ordinary edited preview.
+    // A selected restoration can have different pixels and dimensions, so never substitute it.
+    const faceSource = view === 'preview' && dto.faceSource === true;
+    if (faceSource) {
+      dto.edited = true;
+    }
+    const viewThumbnailRes =
+      view && !faceSource
+        ? await this.withPlaybackChoice(auth, id, view, () => this.service.viewThumbnail(auth, id, dto, via), via)
+        : await this.service.viewThumbnail(auth, id, dto, via);
 
     if (viewThumbnailRes instanceof ImmichFileResponse) {
       await sendFile(res, next, () => Promise.resolve(viewThumbnailRes), this.logger);
