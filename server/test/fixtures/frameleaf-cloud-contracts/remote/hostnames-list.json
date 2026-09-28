@@ -1,0 +1,26 @@
+{
+  "hostnames": [
+    {
+      "hostname": "photos.example.com",
+      "state": "pending",
+      "records": [
+        { "name": "photos.example.com", "type": "CNAME", "value": "r.u225vlzhsdlhwh4l.frameleaf.net" },
+        { "name": "_acme-challenge.photos.example.com", "type": "CNAME", "value": "_acme-challenge.u225vlzhsdlhwh4l.frameleaf.net" }
+      ],
+      "checkedAt": null,
+      "verifiedAt": null,
+      "failureReason": null
+    },
+    {
+      "hostname": "family.example.org",
+      "state": "verified",
+      "records": [
+        { "name": "family.example.org", "type": "CNAME", "value": "r.u225vlzhsdlhwh4l.frameleaf.net" },
+        { "name": "_acme-challenge.family.example.org", "type": "CNAME", "value": "_acme-challenge.u225vlzhsdlhwh4l.frameleaf.net" }
+      ],
+      "checkedAt": "2026-09-25T17:05:00.000Z",
+      "verifiedAt": "2026-09-24T09:10:00.000Z",
+      "failureReason": null
+    }
+  ]
+}

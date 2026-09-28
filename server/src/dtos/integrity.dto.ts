@@ -10,6 +10,16 @@ const IntegrityReportSummaryResponseSchema = z
   })
   .meta({ id: 'IntegrityReportSummaryResponseDto' });
 
+/** FL-81 (CC-21, `Maintenance.jsx` 467): when each check last completed a full run; null when none is recorded. */
+const lastRunAt = z.string().meta({ format: 'date-time' }).nullable();
+const IntegrityCheckRunsResponseSchema = z
+  .object({
+    [IntegrityReport.ChecksumFail]: lastRunAt.describe('When the checksum check last completed a full pass'),
+    [IntegrityReport.MissingFile]: lastRunAt.describe('When the missing-file check last completed'),
+    [IntegrityReport.UntrackedFile]: lastRunAt.describe('When the untracked-file check last completed'),
+  })
+  .meta({ id: 'IntegrityCheckRunsResponseDto' });
+
 const IntegrityGetReportSchema = z
   .object({
     type: IntegrityReportSchema,
@@ -36,6 +46,7 @@ const IntegrityReportResponseSchema = z
 const IntegrityReportParamSchema = z.object({ type: IntegrityReportSchema }).meta({ id: 'IntegrityReportDto' });
 
 export class IntegrityReportSummaryResponseDto extends createZodDto(IntegrityReportSummaryResponseSchema) {}
+export class IntegrityCheckRunsResponseDto extends createZodDto(IntegrityCheckRunsResponseSchema) {}
 export class IntegrityGetReportDto extends createZodDto(IntegrityGetReportSchema) {}
 export class IntegrityDeleteReportDto extends createZodDto(IntegrityDeleteReportSchema) {}
 export class IntegrityReportResponseDto extends createZodDto(IntegrityReportResponseSchema) {}

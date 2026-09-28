@@ -26,6 +26,7 @@
     "check:all": "pnpm run check:code && pnpm run test:cov",
     "test": "vitest --config test/vitest.config.mjs",
     "test:cov": "vitest --config test/vitest.config.mjs --coverage",
+    "test:runtime": "pnpm run build && node --test test/runtime/*.test.mjs",
     "test:medium": "vitest --config test/vitest.config.medium.mjs",
     "migrations:debug": "sql-tools -u ${DB_URL:-postgres://postgres:postgres@localhost:5432/immich} migrations generate --debug",
     "migrations:generate": "sql-tools -u ${DB_URL:-postgres://postgres:postgres@localhost:5432/immich} migrations generate",
@@ -39,6 +40,7 @@
     "email:dev": "email dev -p 3050 --dir src/emails"
   },
   "dependencies": {
+    "@achingbrain/nat-port-mapper": "4.0.5",
     "@extism/extism": "2.0.0-rc13",
     "@immich/plugin-sdk": "workspace:*",
     "@immich/sql-tools": "^0.6.3",
@@ -53,6 +55,7 @@
     "@react-email/components": "^1.0.0",
     "@react-email/render": "^2.0.0",
     "@socket.io/redis-adapter": "^8.3.0",
+    "acme-client": "^5.4.0",
     "archiver": "^7.0.0",
     "async-lock": "^1.4.0",
     "bcrypt": "^6.0.0",

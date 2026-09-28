@@ -9,7 +9,7 @@ import { join, parse } from 'node:path';
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import type { JobOf } from 'src/types.js';
 import { StorageCore } from 'src/cores/storage.core.js';
-import { Asset, AssetFile } from 'src/database.js';
+import { Asset, AssetFile, placeProperties } from 'src/database.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import {
   AssetFileType,
@@ -33,9 +33,10 @@ import { BaseService } from 'src/services/base.service.js';
 import { getAssetFiles, linkLivePhotoAssets } from 'src/utils/asset.util.js';
 import { isAssetChecksumConstraint } from 'src/utils/database.js';
 import { mergeTimeZone } from 'src/utils/date.js';
+import { isLockedRow } from 'src/utils/locked.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { batched, isFaceImportEnabled } from 'src/utils/misc.js';
-import { upsertTags } from 'src/utils/tag.js';
+import { normalizeTagValue, upsertTags } from 'src/utils/tag.js';
 import { Tasks } from 'src/utils/tasks.js';
 
 const POSTGRES_INT_MAX = 2_147_483_647;
@@ -234,6 +235,10 @@ export class MetadataService extends BaseService {
       return;
     }
 
+    // The tags the last extraction (or a tag edit) left on the asset, read before the file is: a tag
+    // added after this point is never taken for one the file dropped, even when the file (a sidecar
+    // written earlier) does not list it yet.
+    const previous = await this.assetRepository.getForMetadataExtractionTags(asset.id);
     const [exifResult, stats] = await Promise.all([
       this.getExifTags(asset),
       this.storageRepository.stat(asset.originalPath),
@@ -244,10 +249,14 @@ export class MetadataService extends BaseService {
     const dates = this.getDates(asset, exifTags, stats);
 
     const { width, height } = this.getImageDimensions(exifTags);
+    // FL-51: coordinates the owner set or removed are locked; the place names then stay as stored
+    // instead of being read from the file's own coordinates
+    const lockedProperties = (await this.assetJobRepository.getLockedPropertiesForMetadataExtraction(asset.id)) ?? [];
+    const locationLocked = lockedProperties.includes('latitude');
     let geo: ReverseGeocodeResult = { country: null, state: null, city: null },
       latitude: number | null = null,
       longitude: number | null = null;
-    if (this.hasGeo(exifTags)) {
+    if (this.hasGeo(exifTags) && !locationLocked) {
       latitude = Number(exifTags.GPSLatitude);
       longitude = Number(exifTags.GPSLongitude);
       if (reverseGeocoding.enabled) {
@@ -268,9 +277,7 @@ export class MetadataService extends BaseService {
       // gps
       latitude,
       longitude,
-      country: geo.country,
-      state: geo.state,
-      city: geo.city,
+      ...(!locationLocked && { country: geo.country, state: geo.state, city: geo.city }),
 
       // image/file
       fileSizeInByte: stats.size,
@@ -313,6 +320,10 @@ export class MetadataService extends BaseService {
             index: audio.index,
             profile: audio.profile,
             codecName: audio.codecName,
+            // FL-102: channel-aware audio. Null stays null; it means "not probed", not "stereo".
+            channels: audio.channels ?? null,
+            channelLayout: audio.channelLayout ?? null,
+            sampleRate: audio.sampleRate ?? null,
           }
         : undefined;
 
@@ -379,7 +390,7 @@ export class MetadataService extends BaseService {
           keyframes: keyframeData,
           lockedPropertiesBehavior: 'skip',
         });
-        await this.applyTagList(asset);
+        await this.applyTagList(asset, previous?.tags ?? []);
       },
     );
 
@@ -521,7 +532,23 @@ export class MetadataService extends BaseService {
       await this.assetRepository.upsertFile({ assetId: id, type: AssetFileType.Sidecar, path: sidecarPath });
     }
 
-    await this.assetRepository.unlockProperties(asset.id, lockedProperties);
+    // FL-36 (V-24): the sidecar has no place names, so a typed city, state or country stays locked.
+    // FL-51: a removed location stays locked, so the next metadata read does not bring the original
+    // file's coordinates back
+    const locationRemoved =
+      lockedProperties.includes('latitude') && asset.exifInfo.latitude === null && asset.exifInfo.longitude === null;
+    // Tags set in Frameleaf stay locked too. The sidecar is written by a job that can run behind the tag
+    // edits, so the next metadata read may find an older list in it; unlocked, that read took the
+    // older list as the file's and dropped the tags added since.
+    const keptLocked = new Set<string>([
+      ...placeProperties,
+      'tags',
+      ...(locationRemoved ? ['latitude', 'longitude'] : []),
+    ]);
+    await this.assetRepository.unlockProperties(
+      asset.id,
+      lockedProperties.filter((property) => !keptLocked.has(property)),
+    );
 
     return JobStatus.Success;
   }
@@ -706,16 +733,23 @@ export class MetadataService extends BaseService {
     return tags;
   }
 
-  private async applyTagList({ id, ownerId }: { id: string; ownerId: string }) {
+  /**
+   * Applies the file's tag list as a change, not a replacement: the tags it lists are added, and only
+   * those it listed before (`previousTags`) and no longer does are removed. Replacing the asset's whole
+   * tag set here dropped a tag added through the API between this job reading the list and writing it
+   * (a photo tagged right after upload lost the tag, and with it any Locked rule that matched it).
+   */
+  private async applyTagList({ id, ownerId }: { id: string; ownerId: string }, previousTags: string[]) {
     const asset = await this.assetRepository.getForMetadataExtractionTags(id);
-    const results = await upsertTags(this.tagRepository, {
-      userId: ownerId,
-      tags: asset?.tags ?? [],
-    });
-    await this.tagRepository.replaceAssetTags(
-      id,
-      results.map((tag) => tag.id),
+    const tags = asset?.tags ?? [];
+    const results = await upsertTags(this.tagRepository, { userId: ownerId, tags });
+
+    const current = new Set(tags.map((tag) => normalizeTagValue(tag)));
+    const dropped = [...new Set(previousTags.map((tag) => normalizeTagValue(tag)))].filter(
+      (value) => value && !current.has(value),
     );
+    await this.tagRepository.removeAssetTagValues(id, ownerId, dropped);
+    await this.tagRepository.upsertAssetIds(results.map((tag) => ({ tagId: tag.id, assetId: id })));
   }
 
   private isMotionPhoto(asset: { type: AssetType }, tags: ImmichTags): boolean {
@@ -958,6 +992,8 @@ export class MetadataService extends BaseService {
       clusterGroupId: string;
       faces: { id: string; sourceType: SourceType }[];
       originalPath: string;
+      visibility: AssetVisibility;
+      isLocked?: boolean | null;
     },
     tags: ImmichTags,
   ) {
@@ -1011,7 +1047,11 @@ export class MetadataService extends BaseService {
           clusterGroupId: asset.clusterGroupId,
           name: region.Name,
         });
-        missingWithFaceAsset.push({ personGroupId, ownerId: asset.ownerId, faceAssetId: face.id });
+        // A face on a Locked photo is never a person's thumbnail (FL-53): the person is created without
+        // one and takes another face of theirs later (the missing-thumbnail sweep), or keeps none.
+        if (!isLockedRow(asset)) {
+          missingWithFaceAsset.push({ personGroupId, ownerId: asset.ownerId, faceAssetId: face.id });
+        }
       }
     }
 
@@ -1024,7 +1064,7 @@ export class MetadataService extends BaseService {
         missing.map(({ name, ownerId, personGroupId }) => ({ name, ownerId, personGroupId })),
       );
 
-      const jobs = missing.map(
+      const jobs = missingWithFaceAsset.map(
         ({ personGroupId, ownerId }) =>
           ({ name: JobName.PersonGenerateThumbnail, data: { personGroupId, ownerId } }) as const,
       );

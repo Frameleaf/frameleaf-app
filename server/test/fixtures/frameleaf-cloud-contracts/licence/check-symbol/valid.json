@@ -1,0 +1,70 @@
+{
+  "description": "Valid keys (Luhn mod 32 over the kind value and the ten body symbols); the pair shares a body under S and I, with different check symbols",
+  "keys": [
+    {
+      "key": "FL-SABC-DEFG-H23J",
+      "kind": "server",
+      "last4": "H23J"
+    },
+    {
+      "key": "FL-IABC-DEFG-H233",
+      "kind": "individual",
+      "last4": "H233"
+    },
+    {
+      "key": "FL-SZXC-VBNM-456H",
+      "kind": "server",
+      "last4": "456H"
+    },
+    {
+      "key": "FL-IZXC-VBNM-4562",
+      "kind": "individual",
+      "last4": "4562"
+    },
+    {
+      "key": "FL-SQWE-RTYU-P78C",
+      "kind": "server",
+      "last4": "P78C"
+    },
+    {
+      "key": "FL-IQWE-RTYU-P78V",
+      "kind": "individual",
+      "last4": "P78V"
+    },
+    {
+      "key": "FL-S234-5678-923E",
+      "kind": "server",
+      "last4": "923E"
+    },
+    {
+      "key": "FL-I234-5678-923X",
+      "kind": "individual",
+      "last4": "923X"
+    },
+    {
+      "key": "FL-SAAA-AAAA-AAA9",
+      "kind": "server",
+      "last4": "AAA9"
+    },
+    {
+      "key": "FL-IAAA-AAAA-AAAS",
+      "kind": "individual",
+      "last4": "AAAS"
+    },
+    {
+      "key": "FL-S999-9999-999K",
+      "kind": "server",
+      "last4": "999K"
+    },
+    {
+      "key": "FL-I999-9999-9994",
+      "kind": "individual",
+      "last4": "9994"
+    }
+  ],
+  "pair": {
+    "body": "HJKLMNPQRS",
+    "server": "FL-SHJK-LMNP-QRSR",
+    "individual": "FL-IHJK-LMNP-QRSA"
+  }
+}

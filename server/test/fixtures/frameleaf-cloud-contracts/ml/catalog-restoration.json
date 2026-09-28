@@ -1,0 +1,65 @@
+{
+  "etag": "\"cat-na-3f9c2a71b0d4e58c\"",
+  "models": [
+    {
+      "sku": "ms_YS60DAXB",
+      "workload": "restoration",
+      "rank": 1,
+      "label": "Restore · Faithful",
+      "display": {
+        "model": "RealBasicVSR",
+        "gpu": "L40S-class, 48 GB"
+      },
+      "computeSku": "cs_KGECTVQ0",
+      "rate": {
+        "perSecondUsd": 0.001301,
+        "startFeeUsd": 0.1
+      },
+      "eta": {
+        "p50Sec": 20,
+        "p90Sec": 90
+      },
+      "limits": {
+        "maxInputs": 20,
+        "maxInputBytes": 2147483648
+      },
+      "rev": "mr_4H8QZ2N7C1TX",
+      "mode": "faithful",
+      "licence": {
+        "name": "Apache-2.0",
+        "commercialHosted": "yes"
+      },
+      "default": true
+    },
+    {
+      "sku": "ms_F1SSRED6",
+      "workload": "restoration",
+      "rank": 2,
+      "label": "Restore · Creative",
+      "display": {
+        "model": "SeedVR2-3B",
+        "gpu": "H100-class, 80 GB"
+      },
+      "computeSku": "cs_M3QZ4QK7",
+      "rate": {
+        "perSecondUsd": 0.003702,
+        "startFeeUsd": 0.45
+      },
+      "eta": {
+        "p50Sec": 45,
+        "p90Sec": 150
+      },
+      "limits": {
+        "maxInputs": 20,
+        "maxInputBytes": 2147483648
+      },
+      "rev": "mr_9KD3V6W0PM2R",
+      "mode": "creative",
+      "licence": {
+        "name": "Apache-2.0",
+        "commercialHosted": "yes"
+      },
+      "default": true
+    }
+  ]
+}

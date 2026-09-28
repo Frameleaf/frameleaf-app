@@ -20,30 +20,17 @@ export const dedupScope = (value) =>
     : "all";
 const checksum = (digit) => digit.repeat(40);
 const fixtures = [
-  ["lake-t", "taylor", "Moraine Lake.jpg", 14_850_240, checksum("a")],
-  ["lake-j", "jamie", "Moraine Lake.jpg", 14_850_240, checksum("a")],
-  ["lake-e", "emma", "Moraine Lake.jpg", 14_850_240, checksum("a")],
-  ["garden-t", "taylor", "Garden afternoon.mov", 428_600_320, checksum("b")],
-  ["garden-j", "jamie", "Garden afternoon.mov", 428_600_320, checksum("b")],
-  ["garden-edited", "emma", "Garden afternoon.mov", 418_600_320, checksum("c")],
-  [
-    "trip-t",
-    "taylor",
-    "Mountain trail.jpg",
-    12_400_640,
-    checksum("d"),
-    "missing",
-  ],
-  ["trip-j", "jamie", "Mountain trail.jpg", 12_400_640, checksum("d")],
-  [
-    "library-e",
-    "emma",
-    "Moraine Lake.jpg",
-    14_850_240,
-    checksum("a"),
-    "external",
-  ],
-].map(([id, ownerId, name, bytes, sha1, condition]) =>
+  // id, owner, file name, bytes, checksum, condition, sample preview, kind, detail
+  ["lake-t", "taylor", "Moraine Lake.jpg", 14_850_240, checksum("a"), "", "lake", "photo", "6000 × 4000"],
+  ["lake-j", "jamie", "Moraine Lake.jpg", 14_850_240, checksum("a"), "", "lake", "photo", "6000 × 4000"],
+  ["lake-e", "emma", "Moraine Lake.jpg", 14_850_240, checksum("a"), "", "lake", "photo", "6000 × 4000"],
+  ["garden-t", "taylor", "Garden afternoon.mov", 428_600_320, checksum("b"), "", "flowers", "video", "1:12 · 4K"],
+  ["garden-j", "jamie", "Garden afternoon.mov", 428_600_320, checksum("b"), "", "flowers", "video", "1:12 · 4K"],
+  ["garden-edited", "emma", "Garden afternoon.mov", 418_600_320, checksum("c"), "", "flowers", "video", "1:08 · 4K"],
+  ["trip-t", "taylor", "Mountain trail.jpg", 12_400_640, checksum("d"), "missing", "hiking", "photo", "6000 × 4000"],
+  ["trip-j", "jamie", "Mountain trail.jpg", 12_400_640, checksum("d"), "", "hiking", "photo", "6000 × 4000"],
+  ["library-e", "emma", "Moraine Lake.jpg", 14_850_240, checksum("a"), "external", "lake", "photo", "6000 × 4000"],
+].map(([id, ownerId, name, bytes, sha1, condition, preview, kind, detail]) =>
   Object.freeze({
     id,
     ownerId,
@@ -53,6 +40,9 @@ const fixtures = [
     external: condition === "external",
     exists: condition !== "missing",
     path: `${condition === "external" ? "/mnt/family-archive" : `/upload/library/${ownerId}`}/${id}/${name}`,
+    preview: `/media/${preview}.png`,
+    kind,
+    detail,
   }),
 );
 export const DEDUP_SAMPLE_ASSETS = Object.freeze(fixtures);
@@ -136,6 +126,10 @@ function rowsFor(state, scope, masterOwnerId) {
         checksum: asset.checksum,
         retainedChecksum: retained?.checksum || null,
         retainedExists: Boolean(retained?.exists),
+        preview: asset.preview,
+        kind: asset.kind,
+        detail: asset.detail,
+        retainedPreview: retained?.preview || null,
         status,
         reason,
         referencesBefore: currentRefs,

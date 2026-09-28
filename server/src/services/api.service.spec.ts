@@ -33,4 +33,38 @@ describe(ApiService.name, () => {
       ).toContain('<meta property="og:title" content="0;url=https://example.com&quot; http-equiv=&quot;refresh" />');
     });
   });
+
+  describe('ssr', () => {
+    const serve = async (url: string) => {
+      const config = { getEnv: () => ({ resourcePaths: { web: { indexHtml: '/nonexistent/index.html' } } }) };
+      const logger = { setContext: vi.fn(), warn: vi.fn() };
+      const service = new ApiService({} as never, {} as never, config as never, logger as never);
+      const headers: Record<string, string> = {};
+      const res = {
+        status: () => res,
+        type: () => res,
+        header: (name: string, value: string) => {
+          headers[name] = value;
+          return res;
+        },
+        send: vi.fn(),
+      };
+      const request = {
+        method: 'GET',
+        url,
+        path: url.split('?', 1)[0],
+        accepts: () => 'text/html',
+        header: () => {},
+        protocol: 'https',
+        host: 'photos.example',
+      };
+      await service.ssr([])(request as never, res as never, vi.fn());
+      return headers;
+    };
+
+    it('sends /link with no referrer, so nothing in its address leaves in a Referer (CLD-004)', async () => {
+      expect((await serve('/link?target=frameleaf_license&linkCode=flc_x'))['Referrer-Policy']).toBe('no-referrer');
+      expect((await serve('/photos'))['Referrer-Policy']).toBeUndefined();
+    });
+  });
 });

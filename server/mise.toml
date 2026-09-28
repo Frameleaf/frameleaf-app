@@ -9,6 +9,9 @@ run = "nest build"
 env._.path = "./node_modules/.bin"
 run = "vitest --config test/vitest.config.mjs"
 
+[tasks."test-runtime"]
+run = "pnpm run test:runtime"
+
 [tasks."test-medium"]
 env._.path = "./node_modules/.bin"
 run = "vitest --config test/vitest.config.medium.mjs"
@@ -23,6 +26,8 @@ run = "prettier --write ."
 
 [tasks.lint]
 env._.path = "./node_modules/.bin"
+# Type-aware linting of src and test together outgrew Node's default 4 GB heap on the CI runner.
+env.NODE_OPTIONS = "--max-old-space-size=6144"
 run = "eslint \"src/**/*.ts\" \"test/**/*.ts\" --max-warnings 0"
 
 [tasks."lint-fix"]
@@ -61,6 +66,7 @@ run = [
   { task = ":lint" },
   { task = ":check" },
   { task = ":test --run" },
+  { task = ":test-runtime" },
 ]
 
 [tasks.ci-medium]

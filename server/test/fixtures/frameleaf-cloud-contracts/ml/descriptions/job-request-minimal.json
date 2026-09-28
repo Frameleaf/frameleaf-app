@@ -1,0 +1,15 @@
+{
+  "estimate": "est1.BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+  "workload": "descriptions",
+  "modelSku": "ms_K6WT70CS",
+  "modelRev": "mr_B2H147RBJBQ0",
+  "inputs": [
+    {
+      "inputId": "a1",
+      "contentType": "image/jpeg",
+      "bytes": 412331,
+      "sha256": "9f2c1c0a7d3b5e8f6a4d2c1b0e9f8a7d6c5b4a3928171615141312111009f8e7"
+    }
+  ],
+  "request": {}
+}

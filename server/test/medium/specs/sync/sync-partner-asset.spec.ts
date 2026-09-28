@@ -1,5 +1,5 @@
 import { Kysely } from 'kysely';
-import { SyncEntityType, SyncRequestType } from 'src/enum.js';
+import { AssetVisibility, SyncEntityType, SyncRequestType } from 'src/enum.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { PartnerRepository } from 'src/repositories/partner.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
@@ -76,6 +76,39 @@ describe(SyncRequestType.PartnerAssetsV2, () => {
       },
       expect.objectContaining({ type: SyncEntityType.SyncCompleteV1 }),
     ]);
+
+    await ctx.syncAckAll(auth, response);
+    await ctx.assertSyncIsComplete(auth, [SyncRequestType.PartnerAssetsV2]);
+  });
+
+  it('should sync a locked partner asset as locked with its details blanked', async () => {
+    const { auth, ctx } = await setup();
+
+    const { user: user2 } = await ctx.newUser();
+    const { asset } = await ctx.newAsset({
+      ownerId: user2.id,
+      originalFileName: 'private.jpg',
+      thumbhash: Buffer.from('2225vHcVkZzNp3Q9G+FEA0nu6zUbGb4Tj4UOXkN0wRA=', 'base64'),
+      visibility: AssetVisibility.Locked,
+    });
+    await ctx.newPartner({ sharedById: user2.id, sharedWithId: auth.user.id });
+
+    const response = await ctx.syncStream(auth, [SyncRequestType.PartnerAssetsV2]);
+    expect(response).toEqual([
+      {
+        ack: expect.any(String),
+        data: expect.objectContaining({
+          id: asset.id,
+          visibility: AssetVisibility.Locked,
+          originalFileName: '',
+          thumbhash: null,
+          livePhotoVideoId: null,
+        }),
+        type: SyncEntityType.PartnerAssetV2,
+      },
+      expect.objectContaining({ type: SyncEntityType.SyncCompleteV1 }),
+    ]);
+    expect(response[0].data).not.toHaveProperty('isLocked');
 
     await ctx.syncAckAll(auth, response);
     await ctx.assertSyncIsComplete(auth, [SyncRequestType.PartnerAssetsV2]);

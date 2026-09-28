@@ -40,6 +40,18 @@ export interface ImmichZipStream extends ImmichReadStream {
   finalize: () => Promise<void>;
 }
 
+/**
+ * A zip stream that can be filled one entry at a time (FL-54): `whenIdle` resolves once every entry added
+ * so far has been written into the archive (so as fast as the client reads it), or once the archive has
+ * been closed or has failed, so a producer never prepares more than the reader has consumed.
+ */
+export interface ImmichPacedZipStream extends ImmichZipStream {
+  addBuffer: (content: Buffer, filename: string) => void;
+  whenIdle: () => Promise<void>;
+  /** true once the archive was closed, destroyed or failed before being finalized */
+  isClosed: () => boolean;
+}
+
 export interface DiskUsage {
   available: number;
   free: number;
@@ -110,6 +122,56 @@ export class StorageRepository {
     return { stream: archive, addFile, finalize };
   }
 
+  createPacedZipStream(): ImmichPacedZipStream {
+    const archive = archiver('zip', { store: true });
+    let pending = 0;
+    let closed = false;
+    let waiters: Array<() => void> = [];
+    const wake = () => {
+      if (!(pending === 0 || closed)) {
+        return;
+      }
+
+      const ready = waiters;
+      waiters = [];
+      for (const resolve of ready) {
+        resolve();
+      }
+    };
+
+    archive.on('entry', () => {
+      pending = Math.max(0, pending - 1);
+      wake();
+    });
+    // a reader that goes away destroys the stream ('close'); a failing entry errors it
+    for (const event of ['close', 'error'] as const) {
+      archive.on(event, () => {
+        closed = true;
+        wake();
+      });
+    }
+
+    return {
+      stream: archive,
+      addFile: (input: string, filename: string) => {
+        pending++;
+        archive.file(input, { name: filename, mode: 0o644 });
+      },
+      addBuffer: (content: Buffer, filename: string) => {
+        pending++;
+        archive.append(content, { name: filename, mode: 0o644 });
+      },
+      finalize: () => archive.finalize(),
+      whenIdle: () =>
+        pending === 0 || closed
+          ? Promise.resolve()
+          : new Promise<void>((resolve) => {
+              waiters.push(resolve);
+            }),
+      isClosed: () => closed || archive.destroyed,
+    };
+  }
+
   createGzip(): PassThrough {
     return createGzip();
   }
@@ -146,6 +208,34 @@ export class StorageRepository {
 
     // read everything
     return fs.readFile(filepath);
+  }
+
+  /**
+   * Positional reads from one open file, for formats read from the end first (a ZIP's central
+   * directory). Each read returns exactly the bytes that exist, never a zero-filled tail. The caller
+   * closes the handle.
+   */
+  async openForRandomRead(filepath: string): Promise<{
+    size: number;
+    read: (position: number, length: number) => Promise<Buffer>;
+    close: () => Promise<void>;
+  }> {
+    const handle = await fs.open(filepath, 'r');
+    try {
+      const { size } = await handle.stat();
+      return {
+        size,
+        read: async (position: number, length: number) => {
+          const buffer = Buffer.alloc(Math.max(0, length));
+          const { bytesRead } = await handle.read(buffer, 0, buffer.length, position);
+          return buffer.subarray(0, bytesRead);
+        },
+        close: () => handle.close(),
+      };
+    } catch (error) {
+      await handle.close();
+      throw error;
+    }
   }
 
   async readJsonFile<T>(filepath: string): Promise<T> {
@@ -219,6 +309,91 @@ export class StorageRepository {
       free: stats.bfree * stats.bsize,
       total: stats.blocks * stats.bsize,
     };
+  }
+
+  /**
+   * The bytes of every regular file under a folder, symbolic links not followed (FL-79: the
+   * nightly analytics collector's generated-file sizes). A missing folder is empty.
+   */
+  async getFolderBytes(folder: string, concurrency = 16): Promise<number> {
+    const sizeOf = async (file: string) => {
+      try {
+        return (await fs.lstat(file)).size;
+      } catch (error: any) {
+        // a file removed while the folder is read no longer counts
+        if (error?.code === 'ENOENT') {
+          return 0;
+        }
+        throw error;
+      }
+    };
+    let total = 0;
+    const pending = [folder];
+    while (pending.length > 0) {
+      const directory = pending.pop()!;
+      let entries: Dirent[];
+      try {
+        entries = await fs.readdir(directory, { withFileTypes: true });
+      } catch (error: any) {
+        if (error?.code === 'ENOENT') {
+          continue;
+        }
+        throw error;
+      }
+      const files: string[] = [];
+      for (const entry of entries) {
+        const entryPath = path.join(directory, entry.name);
+        if (entry.isDirectory()) {
+          pending.push(entryPath);
+        } else if (entry.isFile()) {
+          files.push(entryPath);
+        }
+      }
+      // a small, bounded number of lstat calls at once
+      for (let index = 0; index < files.length; index += concurrency) {
+        const sizes = await Promise.all(files.slice(index, index + concurrency).map((file) => sizeOf(file)));
+        total += sizes.reduce((sum, size) => sum + size, 0);
+      }
+    }
+    return total;
+  }
+
+  /**
+   * Every non-directory entry under `folder`, depth first, symbolic links listed but never followed
+   * (FL-44: user deletion checks each file's references before removing it). A missing folder is
+   * empty. Matching is exact — unlike `walk`, no glob and no case folding reaches a sibling folder.
+   */
+  async *walkFiles(folder: string): AsyncGenerator<string> {
+    const pending = [folder];
+    while (pending.length > 0) {
+      const directory = pending.pop()!;
+      let entries: Dirent[];
+      try {
+        entries = await fs.readdir(directory, { withFileTypes: true });
+      } catch (error: any) {
+        if (error?.code === 'ENOENT' || error?.code === 'ENOTDIR') {
+          continue;
+        }
+        throw error;
+      }
+      for (const entry of entries) {
+        const entryPath = path.join(directory, entry.name);
+        if (entry.isDirectory()) {
+          pending.push(entryPath);
+        } else {
+          yield entryPath;
+        }
+      }
+    }
+  }
+
+  /** The device a path lives on (`stat.dev`), or null when it cannot be read. */
+  async getDevice(filepath: string): Promise<number | null> {
+    try {
+      return (await fs.stat(filepath)).dev;
+    } catch {
+      return null;
+    }
   }
 
   crawl(crawlOptions: CrawlOptionsDto): Promise<string[]> {

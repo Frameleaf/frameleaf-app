@@ -24,10 +24,11 @@ from starlette.responses import JSONResponse, Response
 from starlette.types import ASGIApp
 
 from immich_ml.models import get_model_deps
-from immich_ml.models.base import InferenceModel
+from immich_ml.models.base import InferenceModel, ModelUnavailableError
 from immich_ml.models.transforms import decode_pil
 
-from .config import PreloadModelData, log, settings
+from .config import PreloadModelData, log, model_source, settings
+from .hardware_report import container_report
 from .models.cache import ModelCache
 from .schemas import (
     ImageDescriptionAcceleration,
@@ -56,6 +57,8 @@ last_called: float | None = None
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncGenerator[None, None]:
     global thread_pool
+    source_url, source_setting = model_source()
+    log.info(f"Downloading Frameleaf models from {source_url} ({source_setting}).")
     log.info(
         (
             "Created in-memory cache with unloading "
@@ -206,7 +209,7 @@ def get_entries(entries: str = Form()) -> InferenceEntries:
 app = FastAPI(lifespan=lifespan)
 
 
-# Health endpoints stay unauthenticated so RunPod's proxy probes and LAN deployments
+# Health endpoints stay unauthenticated so reverse-proxy probes and LAN deployments
 # (the default UX) keep working unchanged. Auth only kicks in for paths that actually
 # do inference, and only when IMMICH_ML_AUTH_TOKEN is set in the environment.
 # Normalised exempt paths — comparison strips trailing slash and lowercases.
@@ -235,12 +238,12 @@ class BearerAuthMiddleware(BaseHTTPMiddleware):
         # No token configured -> auth disabled; serve every request. This is the
         # default for local / same-LAN deployments — upstream Immich ships the ML
         # service without authentication. A token is only present when something
-        # sets IMMICH_ML_AUTH_TOKEN, e.g. RunPod Pod mode, whose endpoint is
-        # exposed on the public internet and must stay authenticated.
+        # sets IMMICH_ML_AUTH_TOKEN, e.g. a LAN worker reached through a proxy,
+        # whose endpoint may be exposed beyond this host and must stay authenticated.
         if self._expected_bytes is None:
             return await call_next(request)
         # Token configured: enforce bearer auth on everything except the health
-        # endpoints, which stay open so RunPod's proxy probes keep working.
+        # endpoints, which stay open so proxy health probes keep working.
         normalized_path = _normalize_auth_path(request.url.path)
         if normalized_path in _AUTH_EXEMPT_PATHS:
             return await call_next(request)
@@ -261,8 +264,8 @@ _expected_token = os.environ.get("IMMICH_ML_AUTH_TOKEN", "").strip() or None
 
 # Startup banner so the auth state is visible in worker logs — a single log
 # line is easy to miss when gunicorn boots, so the banner mirrors other Immich
-# startup output. Bearer auth is enforced only when a token is set (e.g. RunPod
-# Pod mode injects one); otherwise the service is open, matching upstream
+# startup output. Bearer auth is enforced only when a token is set (e.g. a LAN
+# worker configured with one); otherwise the service is open, matching upstream
 # Immich, which ships the ML service without authentication.
 _auth_state = (
     "ENABLED  (bearer token required for /predict)"
@@ -270,7 +273,7 @@ _auth_state = (
     else "DISABLED (no token; /predict open to anything that can reach this port)"
 )
 log.info("=" * 64)
-log.info("Immich ML auth: %s", _auth_state)
+log.info("Frameleaf ML auth: %s", _auth_state)
 log.info("  IMMICH_ML_AUTH_TOKEN set = %s", "yes" if _expected_token else "no")
 log.info("=" * 64)
 if not _expected_token:
@@ -285,12 +288,31 @@ app.add_middleware(BearerAuthMiddleware, expected_token=_expected_token)
 
 @app.get("/")
 async def root() -> ORJSONResponse:
-    return ORJSONResponse({"message": "Immich ML"})
+    return ORJSONResponse({"message": "Frameleaf ML"})
 
 
 @app.get("/ping")
 def ping() -> PlainTextResponse:
     return PlainTextResponse("pong")
+
+
+# The workloads this container serves (FL-110). The server's destination model asks every
+# endpoint what it can run before admitting a request, instead of inferring capability from
+# a successful /ping. This container is the ordinary /predict service: it serves the library
+# workloads and nothing else. Restoration and Studio AI need dedicated workers that publish
+# their own capabilities; listing them here would be a false claim.
+#
+# Public contract — KEEP IN SYNC WITH ``server/src/enum.ts`` (``MlWorkload``,
+# ``LIBRARY_ML_WORKLOADS``) and ``MachineLearningRepository.probe``.
+# "pet-recognition" (FL-58) is CLIP text encoding against the configured CLIP model, which this
+# container serves whenever it serves "clip"; it is listed separately so it can be routed alone.
+SERVED_WORKLOADS: tuple[str, ...] = ("face", "clip", "ocr", "enrichment", "pet-recognition")
+PREDICT_PROTOCOL = "predict-v1"
+
+
+@app.get("/capabilities")
+def capabilities() -> ORJSONResponse:
+    return ORJSONResponse({"protocol": PREDICT_PROTOCOL, "workloads": list(SERVED_WORKLOADS)})
 
 
 @app.get("/hardware")
@@ -322,6 +344,8 @@ def hardware() -> ORJSONResponse:
             "torchCudaAvailable": torch_cuda_available,
             "cudaDeviceCount": cuda_device_count,
             "preferredAcceleration": preferred_acceleration,
+            # FL-159: which GPU this container reaches, through which backend (Hardware & GPU).
+            "container": container_report(providers, openvino_device_ids),
         }
     )
 
@@ -434,6 +458,9 @@ async def load(model: InferenceModel) -> InferenceModel:
 
     try:
         return await run(_load, model)
+    except ModelUnavailableError as error:
+        # A missing model is a configuration problem; clearing the cache and retrying cannot fix it.
+        raise HTTPException(503, str(error)) from error
     except (OSError, InvalidProtobuf, BadZipFile, NoSuchFile):
         log.warning(f"Failed to load {model.model_type.replace('_', ' ')} model '{model.model_name}'. Clearing cache.")
         model.clear_cache()

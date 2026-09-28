@@ -1,5 +1,5 @@
 import {
-  getAboutInfo,
+  getServerFeatures,
   getMyPreferences,
   getMyUser,
   logout,
@@ -9,9 +9,12 @@ import {
 import { browser } from '$app/environment';
 import { goto } from '$app/navigation';
 import { page } from '$app/state';
+import { withoutLockedRuleIds } from '$lib/frameleaf/locked-rules';
+import { clearPrivateBrowserState } from '$lib/frameleaf/private-browser-state';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { Route } from '$lib/route';
 import { isSharedLinkRoute } from '$lib/utils/navigation';
+import { revokeSessionView } from '$lib/utils/session-privacy';
 
 class AuthManager {
   isPurchased = $state(false);
@@ -43,7 +46,8 @@ class AuthManager {
 
   constructor() {
     eventManager.on({
-      SessionDelete: () => goto(Route.logout()),
+      // FL-34: a deleted session discards every view, player and download it held, not only the route
+      SessionDelete: () => revokeSessionView(Route.logout()),
     });
   }
 
@@ -62,15 +66,15 @@ class AuthManager {
   async refresh() {
     try {
       const [user, preferences] = await Promise.all([getMyUser(), getMyPreferences()]);
-      this.#preferences = preferences;
+      this.#preferences = withoutLockedRuleIds(preferences);
       this.#user = user;
 
       if (user.license?.activatedAt) {
         this.isPurchased = true;
       } else {
-        // check server status
-        const serverInfo = await getAboutInfo().catch(() => {});
-        if (serverInfo?.licensed) {
+        // FL-156: a server supporter key (not a Frameleaf Cloud plan) gives everyone the badge
+        const features = await getServerFeatures().catch(() => {});
+        if (features?.supporter) {
           this.isPurchased = true;
         }
       }
@@ -85,8 +89,13 @@ class AuthManager {
     this.#user = user;
   }
 
+  /**
+   * FL-67: the session-wide preferences never hold the account's Locked people, pets and tags,
+   * even when a response from an unlocked session includes them. Only the Locked rules editor reads
+   * them, straight from the server while the session is unlocked.
+   */
   setPreferences(preferences: UserPreferencesResponseDto) {
-    this.#preferences = preferences;
+    this.#preferences = withoutLockedRuleIds(preferences);
   }
 
   async logout() {
@@ -100,6 +109,10 @@ class AuthManager {
     } catch {
       // noop
     }
+
+    // FL-80: the account's private browser state goes with the session, also when the provider's
+    // sign-out page takes over (which skips the in-app reset below)
+    clearPrivateBrowserState();
 
     if (redirectUri.startsWith('/')) {
       this.isPurchased = false;

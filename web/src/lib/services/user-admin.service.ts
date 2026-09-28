@@ -22,12 +22,14 @@ import {
 import { DateTime } from 'luxon';
 import type { MessageFormatter } from 'svelte-i18n';
 import { goto } from '$app/navigation';
+import AccountDeleteDialog from '$lib/components/frameleaf/AccountDeleteDialog.svelte';
+import AccountPasswordResetDialog from '$lib/components/frameleaf/AccountPasswordResetDialog.svelte';
+import AccountPinDialog from '$lib/components/frameleaf/AccountPinDialog.svelte';
+import AccountRestoreDialog from '$lib/components/frameleaf/AccountRestoreDialog.svelte';
+import { accountLifecycle } from '$lib/frameleaf/accounts';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { serverConfigManager } from '$lib/managers/server-config-manager.svelte';
-import PasswordResetSuccessModal from '$lib/modals/PasswordResetSuccessModal.svelte';
-import UserDeleteConfirmModal from '$lib/modals/UserDeleteConfirmModal.svelte';
-import UserRestoreConfirmModal from '$lib/modals/UserRestoreConfirmModal.svelte';
 import { Route } from '$lib/route';
 import type { HeaderButtonActionItem } from '$lib/types';
 import { handleError } from '$lib/utils/handle-error';
@@ -54,6 +56,8 @@ export const getUserAdminActions = ($t: MessageFormatter, user: UserAdminRespons
   const Update: ActionItem = {
     icon: mdiPencilOutline,
     title: $t('edit'),
+    // As the detail header's Edit account: only an active account can be edited.
+    $if: () => accountLifecycle(user) === 'active',
     onAction: () => goto(Route.editUser(user)),
   };
 
@@ -62,7 +66,7 @@ export const getUserAdminActions = ($t: MessageFormatter, user: UserAdminRespons
     title: $t('delete'),
     color: 'danger',
     $if: () => authManager.user.id !== user.id && !user.deletedAt,
-    onAction: () => modalManager.show(UserDeleteConfirmModal, { user }),
+    onAction: () => modalManager.show(AccountDeleteDialog, { user }),
     shortcuts: { key: 'Backspace' },
     shortcutOptions: { ignoreInputFields: true },
   };
@@ -78,20 +82,20 @@ export const getUserAdminActions = ($t: MessageFormatter, user: UserAdminRespons
       title: $t('admin.user_restore_scheduled_removal', { values: { date: getDeleteDate(user.deletedAt!) } }),
     },
     $if: () => !!user.deletedAt && user.status === UserStatus.Deleted,
-    onAction: () => modalManager.show(UserRestoreConfirmModal, { user }),
+    onAction: () => modalManager.show(AccountRestoreDialog, { user }),
   };
 
   const ResetPassword: ActionItem = {
     icon: mdiLockReset,
     title: $t('reset_password'),
     $if: () => authManager.user.id !== user.id,
-    onAction: () => handleResetPasswordUserAdmin(user),
+    onAction: () => modalManager.show(AccountPasswordResetDialog, { user }),
   };
 
   const ResetPinCode: ActionItem = {
     icon: mdiLockSmart,
     title: $t('reset_pin_code'),
-    onAction: () => handleResetPinCodeUserAdmin(user),
+    onAction: () => modalManager.show(AccountPinDialog, { user, mode: 'clear' }),
   };
 
   return { Detail, Update, Delete, Restore, ResetPassword, ResetPinCode };
@@ -168,38 +172,23 @@ const generatePassword = (length: number = 16) => {
   return generatedPassword;
 };
 
-const handleResetPasswordUserAdmin = async (user: UserAdminResponseDto) => {
+/**
+ * FL-76: the reset itself, without any UI of its own. There is no server-side password reset
+ * endpoint, so a password is generated here and sent through the admin update endpoint with
+ * `shouldChangePassword`, which hashes it and forces a change at the next sign-in. The plain
+ * value is returned to the caller so `AccountPasswordResetDialog` can show it once; it is
+ * never stored, logged or emitted on an event.
+ */
+export const handleResetPasswordUserAdmin = async (user: UserAdminResponseDto): Promise<string | undefined> => {
   const $t = await getFormatter();
-  const prompt = $t('admin.confirm_user_password_reset', { values: { user: user.name } });
-  const success = await modalManager.showDialog({ prompt });
-  if (!success) {
-    return;
-  }
 
   try {
     const dto = { password: generatePassword(), shouldChangePassword: true };
     const response = await updateUserAdmin({ id: user.id, userAdminUpdateDto: dto });
     eventManager.emit('UserAdminUpdate', response);
     toastManager.primary();
-    await modalManager.show(PasswordResetSuccessModal, { newPassword: dto.password });
+    return dto.password;
   } catch (error) {
     handleError(error, $t('errors.unable_to_reset_password'));
-  }
-};
-
-const handleResetPinCodeUserAdmin = async (user: UserAdminResponseDto) => {
-  const $t = await getFormatter();
-  const prompt = $t('admin.confirm_user_pin_code_reset', { values: { user: user.name } });
-  const success = await modalManager.showDialog({ prompt });
-  if (!success) {
-    return;
-  }
-
-  try {
-    const response = await updateUserAdmin({ id: user.id, userAdminUpdateDto: { pinCode: null } });
-    eventManager.emit('UserAdminUpdate', response);
-    toastManager.primary($t('pin_code_reset_successfully'));
-  } catch (error) {
-    handleError(error, $t('errors.unable_to_reset_pin_code'));
   }
 };

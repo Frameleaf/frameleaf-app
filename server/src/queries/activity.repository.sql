@@ -26,6 +26,17 @@ from
 where
   "activity"."albumId" = $1
   and "asset"."deletedAt" is null
+  and (
+    "asset"."id" is null
+    or not exists (
+      select
+        1
+      from
+        asset_lock
+      where
+        asset_lock."assetId" = "asset"."id"
+    )
+  )
   and not (
     case
       when "asset"."id" is null then false
@@ -163,7 +174,14 @@ where
   and (
     (
       "asset"."deletedAt" is null
-      and "asset"."visibility" != 'locked'
+      and not exists (
+        select
+          1
+        from
+          asset_lock
+        where
+          asset_lock."assetId" = "asset"."id"
+      )
     )
     or "asset"."id" is null
   )

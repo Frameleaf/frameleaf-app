@@ -6,19 +6,24 @@ import { AssetType, AssetVisibility, JobStatus, LogLevel } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
+import { ClassificationRepository } from 'src/repositories/classification.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
+import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { PersonRepository } from 'src/repositories/person.repository.js';
 import { PluginRepository } from 'src/repositories/plugin.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
+import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
 import { WorkflowRepository } from 'src/repositories/workflow.repository.js';
 import { DB } from 'src/schema/index.js';
 import { WorkflowExecutionService } from 'src/services/workflow-execution.service.js';
 import { clearConfigCache } from 'src/utils/config.js';
+import { toDefinition } from 'src/utils/workflow-definition.js';
 import { resolveMethod } from 'src/utils/workflow.js';
 import { MediumTestContext } from 'test/medium.factory.js';
 import { mockEnvData } from 'test/repositories/config.repository.mock.js';
@@ -34,15 +39,18 @@ class WorkflowTestContext extends MediumTestContext<typeof WorkflowExecutionServ
         AccessRepository,
         AlbumRepository,
         AssetRepository,
+        ClassificationRepository,
         CryptoRepository,
         DatabaseRepository,
         LoggingRepository,
+        // assetLock moves an asset into the Locked folder, which re-picks face thumbnails (FL-53)
+        PersonRepository,
         PluginRepository,
         StorageRepository,
         UserRepository,
         WorkflowRepository,
       ],
-      mock: [ConfigRepository, EventRepository, SystemMetadataRepository],
+      mock: [ConfigRepository, EventRepository, JobRepository, SystemMetadataRepository, WebsocketRepository],
     });
   }
 
@@ -94,6 +102,13 @@ const createWorkflow = async (template: WorkflowTemplate) => {
     return { ...step, pluginMethod };
   });
 
+  const definition = toDefinition({
+    trigger: template.trigger,
+    steps: template.steps.map((step) => ({
+      method: step.method,
+      config: (step.config ?? null) as Record<string, unknown> | null,
+    })),
+  });
   return workflowRepo.create(
     {
       enabled: true,
@@ -102,7 +117,10 @@ const createWorkflow = async (template: WorkflowTemplate) => {
       ownerId: template.ownerId,
       trigger: template.trigger,
     },
-    steps.map((step) => ({
+    definition,
+    steps.map((step, order) => ({
+      id: definition.steps[order]!.id,
+      order,
       enabled: true,
       pluginMethodId: step.pluginMethod.id,
       config: step.config,
@@ -196,8 +214,10 @@ describe('core plugin', () => {
 
       await expect(ctx.sut.handleAssetTrigger({ workflowId: workflow.id, assetId: asset.id })).resolves.toBeUndefined();
 
+      // a lock record (FL-34), never a stored `locked` visibility
       await expect(ctx.get(AssetRepository).getById(asset.id)).resolves.toMatchObject({
-        visibility: AssetVisibility.Locked,
+        visibility: AssetVisibility.Timeline,
+        isLocked: true,
       });
     });
 
@@ -215,9 +235,7 @@ describe('core plugin', () => {
         JobStatus.Skipped,
       );
 
-      await expect(ctx.get(AssetRepository).getById(asset.id)).resolves.toMatchObject({
-        visibility: AssetVisibility.Locked,
-      });
+      await expect(ctx.get(AssetRepository).getById(asset.id)).resolves.toMatchObject({ isLocked: true });
     });
   });
 
@@ -365,6 +383,7 @@ describe('core plugin', () => {
     });
 
     it('should require album access', async () => {
+      ctx.getMock(JobRepository).queue.mockResolvedValue();
       const { user: user1 } = await ctx.newUser();
       const { user: user2 } = await ctx.newUser();
       const { asset } = await ctx.newAsset({ ownerId: user1.id, isFavorite: true });
@@ -376,7 +395,9 @@ describe('core plugin', () => {
         steps: [{ method: 'immich-plugin-core#assetAddToAlbums', config: { albumIds: [album.id] } }],
       });
 
-      await expect(ctx.sut.handleAssetTrigger({ workflowId: workflow.id, assetId: asset.id })).resolves.toBeTruthy();
+      await expect(ctx.sut.handleAssetTrigger({ workflowId: workflow.id, assetId: asset.id })).resolves.toBe(
+        JobStatus.Failed,
+      );
 
       await expect(ctx.get(AlbumRepository).getAssetIds(album.id, [asset.id])).resolves.not.toContain(asset.id);
     });

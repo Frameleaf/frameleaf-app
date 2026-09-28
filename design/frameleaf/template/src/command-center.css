@@ -5,17 +5,10 @@
   min-height: 0;
   --cc-amber: #d9b879;
 }
+/* Settings has its own search field; keep the launcher's space so the top-bar
+   actions stay where they sit on every other screen. */
 .app[data-screen="admin"] .global-search {
-  display: none;
-}
-.app[data-screen="admin"] .topbar > .prototype-label {
-  margin-left: auto;
-}
-.app[data-screen="admin"] .topbar > .profile {
-  margin-left: auto;
-}
-.app[data-screen="admin"] .topbar > .prototype-label ~ .profile {
-  margin-left: 0;
+  visibility: hidden;
 }
 .cc-main > .settings-analytics {
   padding: 0;
@@ -532,6 +525,10 @@
   color: var(--fl-muted);
   margin-top: 5px;
   display: block;
+}
+.cc-services button.cc-glance-attention > svg:first-child,
+.cc-services button.cc-glance-attention small {
+  color: var(--cc-amber);
 }
 .cc-bottom-note {
   display: flex;
@@ -1623,67 +1620,81 @@
   width: 14px;
   height: 14px;
 }
+/* Area directories: one inset grouped list per group, like System Settings */
 .cc-directory {
   display: grid;
-  gap: 28px;
+  gap: 26px;
+  max-width: 820px;
   margin: 22px 0 32px;
 }
 .cc-directory section > h2 {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--fl-muted);
-  font-weight: 500;
-  margin: 0 0 10px;
+  font-weight: 600;
+  margin: 0 0 8px 14px;
 }
 .cc-directory-list {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+  border: 1px solid var(--fl-border);
+  border-radius: var(--fl-radius-card, 12px);
+  background: var(--fl-panel);
+  overflow: hidden;
 }
 .cc-directory-list button {
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 20px;
+  gap: 12px;
+  min-height: 56px;
+  padding: 11px 14px;
   text-align: left;
-  border: 1px solid var(--fl-border);
-  border-radius: 4px;
-  background: var(--fl-panel);
+  border: 0;
+  border-radius: 0;
+  background: none;
   color: var(--fl-text);
+  font: inherit;
+  cursor: pointer;
+}
+.cc-directory-list button + button {
+  box-shadow: inset 0 1px 0 var(--fl-border);
 }
 .cc-directory-list button:hover {
   background: var(--fl-raised);
-  border-color: color-mix(in srgb, var(--fl-muted) 60%, var(--fl-border));
+}
+.cc-directory-list button:focus-visible {
+  outline: 2px solid var(--fl-accent);
+  outline-offset: -2px;
 }
 .cc-directory-list button > svg:first-child {
   color: var(--fl-muted);
-  align-self: flex-start;
-  margin-top: 1px;
+  flex-shrink: 0;
 }
 .cc-directory-list button > svg:last-child {
-  margin-left: auto;
   flex-shrink: 0;
   color: var(--fl-muted);
 }
 .cc-directory-list button > span {
+  flex: 1;
   min-width: 0;
 }
 .cc-directory-list strong {
   display: block;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 550;
-  margin-bottom: 7px;
 }
 .cc-directory-list span > span {
   display: block;
+  margin-top: 2px;
   color: var(--fl-muted);
-  font-size: 12px;
-  line-height: 1.6;
+  font-size: 12.5px;
+  line-height: 1.45;
 }
-.cc-directory-list small {
-  display: block;
-  margin-top: 10px;
+.cc-directory-scope {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border-radius: var(--fl-radius-pill, 999px);
+  background: var(--fl-raised);
   color: var(--fl-muted);
-  font-size: 10px;
+  font-size: 11px;
 }
 .cc-page-tools {
   display: flex;
@@ -1740,11 +1751,6 @@
     width: min(410px, 50%);
   }
 }
-@media (max-width: 800px) {
-  .cc-directory-list {
-    grid-template-columns: 1fr;
-  }
-}
 @media (max-width: 700px) {
   .cc-account-scope {
     width: 100%;
@@ -1764,9 +1770,6 @@
   }
   .cc-page-tools {
     align-items: flex-start;
-  }
-  .cc-directory-list button {
-    padding: 16px;
   }
 }
 .cc-sharing-workspace {
@@ -1936,3 +1939,25 @@
 .jobs-manager .jm-concurrency-row, .jobs-manager .jm-manual-list label, .jobs-manager .jm-confirm { flex-direction:row; margin-bottom:0; }
 .jobs-manager .jm-concurrency-row { text-align:left; }
 .jobs-manager .jm-manual-list input[type=radio], .jobs-manager .jm-confirm input[type=checkbox] { width:16px; height:16px; }
+
+/* Account detail: one-time temporary password */
+.resource-issued .resource-secret {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 12px 0;
+}
+.resource-issued code {
+  font-size: 15px;
+  letter-spacing: 0.04em;
+  user-select: all;
+}
+.resource-issued footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--fl-border);
+}

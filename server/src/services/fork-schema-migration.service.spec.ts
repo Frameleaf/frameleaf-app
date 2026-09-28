@@ -1,9 +1,11 @@
 import {
+  ForkSchemaAdoptCommand,
   ForkSchemaStartCommand,
   ForkSchemaVerifyCommand,
+  formatForkSchemaAdoption,
   formatForkSchemaStatus,
 } from 'src/commands/fork-schema.command.js';
-import { JobName, JobStatus } from 'src/enum.js';
+import { DatabaseLock, JobName, JobStatus } from 'src/enum.js';
 import { BACKFILL_KINDS, BackfillKind, BackfillProgress } from 'src/repositories/fork-schema.repository.js';
 import { BackfillBatchHandler, ForkSchemaMigrationService } from 'src/services/fork-schema-migration.service.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
@@ -40,6 +42,34 @@ describe('fork-schema command', () => {
 
     expect(inquirer.ask).toHaveBeenCalledOnce();
     expect(migration.start).not.toHaveBeenCalled();
+  });
+
+  it('requires explicit confirmation before adopting a library', async () => {
+    const migration = { adopt: vi.fn() } as unknown as ForkSchemaMigrationService;
+    const inquirer = { ask: vi.fn().mockResolvedValue({ confirmed: false }) };
+    const command = new ForkSchemaAdoptCommand(migration, inquirer as never);
+
+    await command.run();
+
+    expect(inquirer.ask).toHaveBeenCalledWith('confirm-fork-schema-adopt', {});
+    expect(migration.adopt).not.toHaveBeenCalled();
+  });
+
+  it('reports what adoption applied, or that it had already happened', () => {
+    const adopted = formatForkSchemaAdoption({
+      ...completeStatus,
+      phase: 'legacy',
+      adoption: { adopted: true, applied: ['1787148183729-ClusterGroups', '2100000000570-AddWorkflowDefinitions'] },
+    });
+    const repeated = formatForkSchemaAdoption({
+      ...completeStatus,
+      phase: 'legacy',
+      adoption: { adopted: false, applied: [] },
+    });
+
+    expect(adopted).toContain('Adopted: yes (2 migrations applied)');
+    expect(adopted).toContain('Phase: legacy');
+    expect(repeated).toContain('Adopted: already (nothing changed)');
   });
 
   it('keeps the verify command read-only', async () => {
@@ -87,6 +117,26 @@ describe(ForkSchemaMigrationService.name, () => {
 
     expect(mocks.forkSchema.activateAfterReturnReconciliation).toHaveBeenCalledOnce();
     expect(status).toMatchObject({ active: true, phase: 'active' });
+  });
+
+  it('adopts an official-origin library under the migrations lock and reports the new phase', async () => {
+    const adoption = { adopted: true, applied: ['1787148183729-ClusterGroups'] };
+    mocks.database.adoptOfficialOrigin.mockResolvedValue(adoption);
+    mocks.forkSchema.getState.mockResolvedValue({ ...state('legacy'), schemaVersion: '1' });
+
+    const status = await service.adopt();
+
+    expect(mocks.database.withLock).toHaveBeenCalledWith(DatabaseLock.Migrations, expect.any(Function));
+    expect(mocks.database.adoptOfficialOrigin).toHaveBeenCalledOnce();
+    expect(status).toMatchObject({ adoption, phase: 'legacy', schemaVersion: '1' });
+  });
+
+  it('surfaces an adoption refusal without changing the backfill', async () => {
+    mocks.database.adoptOfficialOrigin.mockRejectedValue(new Error('Library already holds Frameleaf tables'));
+
+    await expect(service.adopt()).rejects.toThrow('Library already holds Frameleaf tables');
+    expect(mocks.forkSchema.transitionPhase).not.toHaveBeenCalled();
+    expect(mocks.job.queueAll).not.toHaveBeenCalled();
   });
 
   it('does not start outside legacy phase', async () => {

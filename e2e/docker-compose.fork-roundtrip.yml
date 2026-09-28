@@ -12,7 +12,11 @@ x-server-environment: &server-environment
 
 services:
   database:
-    image: ghcr.io/immich-app/postgres:14-vectorchord0.4.3-pgvectors0.2.0@sha256:bcf63357191b76a916ae5eb93464d65c07511da41e3bf7a8416db519b40b1c23
+    image: frameleaf-postgres:fork-roundtrip
+    # Built from Frameleaf's own Postgres image source (docker/postgres).
+    build:
+      context: ../docker/postgres
+      dockerfile: Dockerfile
     command: -c fsync=off -c shared_preload_libraries=vchord.so -c config_file=/var/lib/postgresql/data/postgresql.conf
     environment:
       POSTGRES_DB: immich
@@ -38,6 +42,8 @@ services:
       retries: 30
 
   official-server:
+    # Compatibility-target exception (FL-191): this lane certifies the handoff to the official server,
+    # so it pulls that exact image. It is never shipped or used by a Frameleaf installation.
     image: ghcr.io/immich-app/immich-server:${OFFICIAL_IMMICH_TAG:?OFFICIAL_IMMICH_TAG must be an exact certified tag}
     environment: *server-environment
     depends_on:
@@ -61,10 +67,16 @@ services:
     build:
       context: ..
       dockerfile: server/Dockerfile
+      cache_from:
+        # Frameleaf's own build cache from the Deploy workflow; a missing cache only makes the build slower.
+        - type=registry,ref=ghcr.io/frameleaf/frameleaf-server-build-cache:linux-amd64-cpu-prod
+        - type=registry,ref=ghcr.io/frameleaf/frameleaf-server-build-cache:linux-arm64-cpu-prod
       args:
         BUILD_ID: fork-roundtrip
         BUILD_IMAGE: fork-roundtrip
-        BUILD_SOURCE_COMMIT: local
+        # FL-44: becomes the image's org.opencontainers.image.revision label; scripts/test-fork-roundtrip.sh
+        # refuses an image whose revision is not the candidate commit.
+        BUILD_SOURCE_COMMIT: ${FORK_ROUNDTRIP_CANDIDATE_SHA:-unknown}
         BUILD_SOURCE_REF: fork-roundtrip
       secrets:
         - mise_github_token

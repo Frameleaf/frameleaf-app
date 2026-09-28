@@ -1,4 +1,5 @@
-import { mkdtempSync, rmSync, statSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import sharp from 'sharp';
@@ -6,7 +7,31 @@ import { AssetEditAction, MirrorAxis } from 'src/dtos/editing.dto.js';
 import { Colorspace, ImageFormat } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
+import { AudioChannelPolicy, findAudioLayoutMismatch, findAvAlignmentMismatch } from 'src/utils/media-policy.js';
+import {
+  audioReattachOffsetSeconds,
+  chunkClipOutputOptions,
+  fullVideoUploadOutputOptions,
+  previewClipOutputOptions,
+  reattachAudioOutputOptions,
+  uploadClipOutputOptions,
+} from 'src/utils/media-privacy.js';
 import { automock } from 'test/utils.js';
+
+const hasFfmpeg = (() => {
+  try {
+    execFileSync('ffprobe', ['-version'], { stdio: 'ignore' });
+    execFileSync('ffmpeg', ['-version'], { stdio: 'ignore' });
+    return true;
+  } catch {
+    // CI installs ffmpeg through mise: there a missing ffmpeg is a broken runner, never a skip
+    if (process.env.CI) {
+      throw new Error('[media.repository.spec] ffmpeg is not installed on CI; the byte-level clip tests must run');
+    }
+    console.warn('[media.repository.spec] ffmpeg is not installed; the byte-level clip tests are skipped');
+    return false;
+  }
+})();
 
 const getPixelColor = async (buffer: Buffer, x: number, y: number) => {
   const metadata = await sharp(buffer).metadata();
@@ -344,6 +369,336 @@ describe(MediaRepository.name, () => {
       } finally {
         rmSync(dirPath, { recursive: true, force: true });
       }
+    });
+  });
+
+  describe('writeStrippedStill (FL-162)', () => {
+    it('keeps the pixels and the ICC profile, and drops every EXIF, GPS and XMP byte', async () => {
+      const dirPath = mkdtempSync(join(tmpdir(), 'media-repository-'));
+      try {
+        const input = join(dirPath, 'located.jpg');
+        await sharp({ create: { width: 64, height: 48, channels: 3, background: { r: 200, g: 40, b: 40 } } })
+          .withIccProfile('p3')
+          .withExif({
+            IFD0: { Make: 'FrameleafTestCamera', Copyright: 'Private person' },
+            IFD3: {
+              GPSLatitudeRef: 'N',
+              GPSLatitude: '51/1 30/1 0/1',
+              GPSLongitudeRef: 'W',
+              GPSLongitude: '0/1 7/1 0/1',
+            },
+          })
+          .jpeg()
+          .toFile(input);
+        const before = await sharp(input).metadata();
+        expect(before.exif).toBeDefined();
+
+        const output = join(dirPath, 'stripped.jpg');
+        await sut.writeStrippedStill(input, output, 'jpeg');
+
+        const after = await sharp(output).metadata();
+        expect(after.format).toBe('jpeg');
+        expect(after.width).toBe(64);
+        expect(after.height).toBe(48);
+        expect(after.exif).toBeUndefined();
+        expect(after.xmp).toBeUndefined();
+        expect(after.iptc).toBeUndefined();
+        expect(after.icc).toBeDefined();
+        // the bytes that would be uploaded carry none of the camera or location text
+        const bytes = readFileSync(output).toString('latin1');
+        expect(bytes).not.toContain('FrameleafTestCamera');
+        expect(bytes).not.toContain('Private person');
+        expect(bytes).not.toContain('Exif\u{0}\u{0}');
+      } finally {
+        rmSync(dirPath, { recursive: true, force: true });
+      }
+    });
+
+    it('writes anything that is not a JPEG as a lossless PNG without metadata', async () => {
+      const dirPath = mkdtempSync(join(tmpdir(), 'media-repository-'));
+      try {
+        const input = join(dirPath, 'located.png');
+        await sharp({ create: { width: 16, height: 16, channels: 3, background: { r: 0, g: 0, b: 0 } } })
+          .withExif({ IFD0: { Make: 'FrameleafTestCamera' } })
+          .png()
+          .toFile(input);
+
+        const output = join(dirPath, 'stripped.png');
+        await sut.writeStrippedStill(input, output, 'png');
+
+        const after = await sharp(output).metadata();
+        expect(after.format).toBe('png');
+        expect(after.exif).toBeUndefined();
+        expect(readFileSync(output).toString('latin1')).not.toContain('FrameleafTestCamera');
+      } finally {
+        rmSync(dirPath, { recursive: true, force: true });
+      }
+    });
+  });
+
+  /*
+   * FL-162: the clips cut from a video for another machine (the preview comparison clip, what is
+   * uploaded from it, and a chunk of a whole video) are made with real ffmpeg from a fixture that
+   * carries a location, a creation time, camera tags, a custom handler name and chapters, and then
+   * read back with ffprobe and as raw bytes. Skipped only where no ffmpeg is installed; CI installs
+   * the pinned jellyfin-ffmpeg through mise.
+   */
+  describe.skipIf(!hasFfmpeg)('video clips for another machine (FL-162)', () => {
+    const secrets = [
+      '+51.5007-000.1246/',
+      'FrameleafTestCamera',
+      'Private person',
+      'Birthday at home',
+      'SecretHandler',
+    ];
+    let dirPath: string;
+    let fixture: string;
+
+    const transcode = (input: string, output: string, inputOptions: string[], outputOptions: string[]) =>
+      sut.transcode(input, output, {
+        inputOptions,
+        outputOptions,
+        twoPass: false,
+        progress: { frameCount: 0, percentInterval: 5 },
+      });
+
+    beforeAll(() => {
+      dirPath = mkdtempSync(join(tmpdir(), 'media-repository-clips-'));
+      const chapters = join(dirPath, 'chapters.txt');
+      writeFileSync(
+        chapters,
+        ';FFMETADATA1\ntitle=Private person\n[CHAPTER]\nTIMEBASE=1/1000\nSTART=0\nEND=1500\ntitle=Birthday at home\n' +
+          '[CHAPTER]\nTIMEBASE=1/1000\nSTART=1500\nEND=3000\ntitle=Cake\n',
+      );
+      fixture = join(dirPath, 'located.mp4');
+      execFileSync(
+        'ffmpeg',
+        [
+          '-hide_banner',
+          '-loglevel',
+          'error',
+          '-y',
+          '-f',
+          'lavfi',
+          '-i',
+          'testsrc=size=160x120:rate=25:duration=3',
+          '-f',
+          'lavfi',
+          '-i',
+          'sine=frequency=440:duration=3',
+          '-i',
+          chapters,
+          '-map',
+          '0:v',
+          '-map',
+          '1:a',
+          '-map_metadata',
+          '2',
+          '-map_chapters',
+          '2',
+          '-metadata',
+          'location=+51.5007-000.1246/',
+          '-metadata',
+          'location-eng=+51.5007-000.1246/',
+          '-metadata',
+          'creation_time=2019-04-01T10:00:00Z',
+          '-metadata',
+          'make=FrameleafTestCamera',
+          '-metadata',
+          'model=FrameleafTestCamera Pro',
+          '-metadata:s:v',
+          'handler_name=SecretHandler',
+          '-metadata:s:a',
+          'handler_name=SecretHandler',
+          '-metadata:s:v',
+          'creation_time=2019-04-01T10:00:00Z',
+          '-c:v',
+          'libx264',
+          '-preset',
+          'ultrafast',
+          '-pix_fmt',
+          'yuv420p',
+          '-c:a',
+          'aac',
+          '-movflags',
+          'use_metadata_tags',
+          fixture,
+        ],
+        { stdio: 'pipe' },
+      );
+    });
+
+    afterAll(() => {
+      rmSync(dirPath, { recursive: true, force: true });
+    });
+
+    const ffprobe = (file: string) =>
+      JSON.parse(
+        execFileSync(
+          'ffprobe',
+          ['-v', 'error', '-print_format', 'json', '-show_format', '-show_streams', '-show_chapters', file],
+          { encoding: 'utf8' },
+        ),
+      ) as {
+        format: { tags?: Record<string, string> };
+        streams: { codec_type: string; tags?: Record<string, string> }[];
+        chapters: unknown[];
+      };
+
+    /** Tags an MP4 muxer writes by itself in bitexact mode; none of them describes the person or the place. */
+    const structural = new Set([
+      'major_brand',
+      'minor_version',
+      'compatible_brands',
+      'encoder',
+      'language',
+      'handler_name',
+      'vendor_id',
+    ]);
+
+    const expectNoMetadata = (file: string, streams: string[]) => {
+      const probe = ffprobe(file);
+      expect(probe.chapters).toEqual([]);
+      expect(probe.streams.map((stream) => stream.codec_type)).toEqual(streams);
+      const tags = [probe.format.tags ?? {}, ...probe.streams.map((stream) => stream.tags ?? {})];
+      for (const set of tags) {
+        expect(Object.keys(set).filter((key) => !structural.has(key))).toEqual([]);
+        expect(Object.values(set).join(' ')).not.toMatch(/SecretHandler|Frameleaf|2019/);
+      }
+      const bytes = readFileSync(file).toString('latin1');
+      for (const secret of secrets) {
+        expect(bytes).not.toContain(secret);
+      }
+      expect(bytes).not.toContain('2019-04-01');
+    };
+
+    it('starts from a fixture that really carries a location, dates, camera tags and chapters', () => {
+      const probe = ffprobe(fixture);
+      expect(probe.chapters).toHaveLength(2);
+      expect(probe.format.tags).toMatchObject({ location: '+51.5007-000.1246/', make: 'FrameleafTestCamera' });
+      expect(probe.format.tags?.creation_time).toMatch(/^2019-04-01/);
+      expect(readFileSync(fixture).toString('latin1')).toContain('Birthday at home');
+    });
+
+    it('cuts the preview comparison clip with its audio and none of that metadata', async () => {
+      const clip = join(dirPath, 'before.mp4');
+      await transcode(fixture, clip, ['-ss', '0.500', '-t', '1.500'], previewClipOutputOptions());
+      expectNoMetadata(clip, ['video', 'audio']);
+    });
+
+    it('cuts a cropped preview clip without metadata too', async () => {
+      const clip = join(dirPath, 'before-cropped.mp4');
+      await transcode(
+        fixture,
+        clip,
+        ['-ss', '0.000', '-t', '1.000'],
+        previewClipOutputOptions(['-vf', 'crop=80:60:0:0']),
+      );
+      expectNoMetadata(clip, ['video', 'audio']);
+    });
+
+    it('uploads the clip as its video stream alone, still without metadata', async () => {
+      const clip = join(dirPath, 'before-for-upload.mp4');
+      await transcode(fixture, clip, ['-ss', '0.500', '-t', '1.500'], previewClipOutputOptions());
+      const upload = join(dirPath, 'input.mp4');
+      await transcode(clip, upload, [], uploadClipOutputOptions());
+      expectNoMetadata(upload, ['video']);
+    });
+
+    /**
+     * The handler type of every track in an MP4, read from the file's own bytes: `moov` → `trak` →
+     * `mdia` → `hdlr`, whose handler type (`vide`, `soun`, …) sits 8 bytes into its payload. An audio
+     * track is a `soun` handler, whatever ffprobe makes of it.
+     */
+    const trackHandlers = (file: string): string[] => {
+      const bytes = readFileSync(file);
+      const handlers: string[] = [];
+      const walk = (start: number, end: number) => {
+        let offset = start;
+        while (offset + 8 <= end) {
+          let size = bytes.readUInt32BE(offset);
+          const type = bytes.toString('latin1', offset + 4, offset + 8);
+          let header = 8;
+          if (size === 1) {
+            size = Number(bytes.readBigUInt64BE(offset + 8));
+            header = 16;
+          } else if (size === 0) {
+            size = end - offset;
+          }
+          if (size < header || offset + size > end) {
+            throw new Error(`malformed ${type} box at ${offset}`);
+          }
+          if (['moov', 'trak', 'mdia'].includes(type)) {
+            walk(offset + header, offset + size);
+          } else if (type === 'hdlr') {
+            handlers.push(bytes.toString('latin1', offset + header + 8, offset + header + 12));
+          }
+          offset += size;
+        }
+      };
+      walk(0, bytes.length);
+      return handlers;
+    };
+
+    it('uploads a whole video for restoration or Smooth motion with no audio track in its bytes (FC-47)', async () => {
+      // the source really carries an audio track (and a chapter text track)
+      expect(trackHandlers(fixture)).toEqual(expect.arrayContaining(['vide', 'soun']));
+      // stream-copied, as a copyable codec is, with its SEI messages dropped
+      const copied = join(dirPath, 'whole-copied.mp4');
+      await transcode(
+        fixture,
+        copied,
+        [],
+        fullVideoUploadOutputOptions({ copy: true, bsf: 'filter_units=remove_types=6' }),
+      );
+      expect(trackHandlers(copied)).toEqual(['vide']);
+      expect(ffprobe(copied).streams.map((stream) => stream.codec_type)).toEqual(['video']);
+      // re-encoded, as any other codec is
+      const encoded = join(dirPath, 'whole-encoded.mp4');
+      await transcode(fixture, encoded, [], fullVideoUploadOutputOptions({ copy: false }));
+      expect(trackHandlers(encoded)).toEqual(['vide']);
+      // and the preview clip that is uploaded
+      const clip = join(dirPath, 'before-bytes.mp4');
+      await transcode(fixture, clip, ['-ss', '0.500', '-t', '1.500'], previewClipOutputOptions());
+      expect(trackHandlers(clip)).toEqual(['vide', 'soun']);
+      const upload = join(dirPath, 'input-bytes.mp4');
+      await transcode(clip, upload, [], uploadClipOutputOptions());
+      expect(trackHandlers(upload)).toEqual(['vide']);
+    });
+
+    it('puts the original audio back on the returned video, in step, as ffprobe confirms (CLD-202)', async () => {
+      // what came back from the cloud: the picture alone
+      const returned = join(dirPath, 'returned.mp4');
+      await transcode(fixture, returned, [], fullVideoUploadOutputOptions({ copy: true }));
+      const original = await sut.probe(fixture);
+      const offset = audioReattachOffsetSeconds(original.videoStreams[0].startTime, original.audioStreams[0].startTime);
+      const version = join(dirPath, 'version.mp4');
+      await transcode(returned, version, [], reattachAudioOutputOptions(fixture, offset));
+
+      expect(trackHandlers(version)).toEqual(['vide', 'soun']);
+      const probe = await sut.probe(version);
+      const source = original.audioStreams[0];
+      expect(
+        findAudioLayoutMismatch(
+          {
+            policy: AudioChannelPolicy.Preserve,
+            channels: source.channels ?? null,
+            channelLayout: source.channelLayout ?? null,
+            sampleRate: source.sampleRate ?? null,
+          },
+          probe.audioStreams[0],
+        ),
+      ).toBeNull();
+      expect(findAvAlignmentMismatch(probe.videoStreams[0], probe.audioStreams[0])).toBeNull();
+      expect(Math.abs((probe.audioStreams[0].startTime ?? 0) - (probe.videoStreams[0].startTime ?? 0))).toBeLessThan(
+        0.05,
+      );
+    });
+
+    it('cuts a chunk of the whole video with no audio and no metadata', async () => {
+      const chunk = join(dirPath, 'chunk-0-in.mp4');
+      await transcode(fixture, chunk, ['-ss', '1.000', '-t', '2.000'], chunkClipOutputOptions());
+      expectNoMetadata(chunk, ['video']);
     });
   });
 });

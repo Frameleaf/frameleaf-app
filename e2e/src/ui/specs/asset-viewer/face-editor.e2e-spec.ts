@@ -1,285 +1,320 @@
-import { expect, Page, test } from '@playwright/test';
+import { expect, Locator, Page, test } from '@playwright/test';
 import { SeededRandom, selectRandom, TimelineAssetConfig } from 'src/ui/generators/timeline.js';
 import {
+  createFaceTaggerMockState,
+  createMockDetectedFace,
   createMockPeople,
   FaceCreateCapture,
+  FaceTaggerMockState,
   MockPerson,
-  setupFaceEditorMockApiRoutes,
+  setupFaceTaggerMockApiRoutes,
 } from 'src/ui/mock-network/face-editor-network';
 import { assetViewerUtils } from '../timeline/utils';
 import { setupAssetViewerFixture } from './utils';
 
-const waitForSelectorTransition = async (page: Page) => {
-  await page.waitForFunction(
-    () => {
-      const selector = document.querySelector('#face-selector') as HTMLElement | null;
-      if (!selector) {
-        return false;
-      }
-      return selector.getAnimations({ subtree: false }).every((animation) => animation.playState === 'finished');
-    },
-    undefined,
-    { timeout: 1000, polling: 50 },
-  );
-};
-
-const openFaceEditor = async (page: Page, asset: TimelineAssetConfig) => {
+/**
+ * FL-38 (V-28): the Frameleaf face tagger dialog (FaceTagger.jsx), opened from the info
+ * panel's People "Add" button. It replaced the legacy fabric-canvas overlay.
+ */
+const openFaceTagger = async (page: Page, asset: TimelineAssetConfig) => {
   await page.goto(`/photos/${asset.id}`);
   await assetViewerUtils.waitForViewerLoad(page, asset);
   await page.keyboard.press('i');
   await page.locator('#detail-panel').waitFor({ state: 'visible' });
-  await page.getByLabel('Tag people').click();
-  await page.locator('#face-selector').waitFor({ state: 'visible' });
-  await waitForSelectorTransition(page);
+  await page.getByRole('button', { name: 'Add person' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Tag people' });
+  await expect(dialog).toBeVisible();
+  // The toolbar enables once the preview has loaded and been measured.
+  await expect(dialog.getByRole('button', { name: 'Add face' })).toBeEnabled();
+  return dialog;
+};
+
+const addFace = async (dialog: Locator) => {
+  await dialog.getByRole('button', { name: 'Add face' }).click();
 };
 
 test.describe.configure({ mode: 'parallel' });
-test.describe('face-editor', () => {
+test.describe('face tagger', () => {
   const fixture = setupAssetViewerFixture(777);
   const rng = new SeededRandom(777);
   let mockPeople: MockPerson[];
   let faceCreateCapture: FaceCreateCapture;
+  let faceState: FaceTaggerMockState;
 
   test.beforeAll(async () => {
     mockPeople = createMockPeople(8);
   });
 
   test.beforeEach(async ({ context }) => {
-    faceCreateCapture = { requests: [] };
-    await setupFaceEditorMockApiRoutes(context, mockPeople, faceCreateCapture);
+    faceCreateCapture = { requests: [], people: [] };
+    faceState = createFaceTaggerMockState();
+    await setupFaceTaggerMockApiRoutes(context, mockPeople, faceCreateCapture, faceState);
   });
 
-  type ScreenRect = { top: number; left: number; width: number; height: number };
+  const pickAsset = () => selectRandom(fixture.assets, rng);
 
-  const getFaceBoxRect = async (page: Page): Promise<ScreenRect> => {
-    const dataEl = page.locator('#face-editor-data');
-    await expect(dataEl).toHaveAttribute('data-face-left', /^-?\d+/);
-    await expect(dataEl).toHaveAttribute('data-face-top', /^-?\d+/);
-    await expect(dataEl).toHaveAttribute('data-face-width', /^[1-9]/);
-    await expect(dataEl).toHaveAttribute('data-face-height', /^[1-9]/);
-    const canvasBox = await page.locator('#face-editor').boundingBox();
-    if (!canvasBox) {
-      throw new Error('Canvas element not found');
-    }
-    const left = Number(await dataEl.getAttribute('data-face-left'));
-    const top = Number(await dataEl.getAttribute('data-face-top'));
-    const width = Number(await dataEl.getAttribute('data-face-width'));
-    const height = Number(await dataEl.getAttribute('data-face-height'));
-    return {
-      top: canvasBox.y + top,
-      left: canvasBox.x + left,
-      width,
-      height,
-    };
-  };
+  test('opens with the file name, drawing mode and the empty-state guidance', async ({ page }) => {
+    const asset = pickAsset();
+    const dialog = await openFaceTagger(page, asset);
 
-  const getSelectorRect = async (page: Page): Promise<ScreenRect> => {
-    const box = await page.locator('#face-selector').boundingBox();
-    if (!box) {
-      throw new Error('Face selector element not found');
-    }
-    return { top: box.y, left: box.x, width: box.width, height: box.height };
-  };
+    await expect(dialog.getByRole('heading', { name: 'Tag people' })).toBeVisible();
+    await expect(dialog.getByRole('button', { name: 'Draw face', pressed: true })).toBeVisible();
+    await expect(dialog.getByText('0 faces')).toBeVisible();
+    await expect(dialog.getByText('Add a missing face')).toBeVisible();
+    await expect(dialog.getByRole('button', { name: 'Save face tags' })).toBeEnabled();
+  });
 
-  const computeOverlapArea = (a: ScreenRect, b: ScreenRect): number => {
-    const overlapX = Math.max(0, Math.min(a.left + a.width, b.left + b.width) - Math.max(a.left, b.left));
-    const overlapY = Math.max(0, Math.min(a.top + a.height, b.top + b.height) - Math.max(a.top, b.top));
-    return overlapX * overlapY;
-  };
+  test('Add face selects a new region and lists every person', async ({ page }) => {
+    const dialog = await openFaceTagger(page, pickAsset());
 
-  const dragFaceBox = async (page: Page, deltaX: number, deltaY: number) => {
-    const faceBox = await getFaceBoxRect(page);
-    const centerX = faceBox.left + faceBox.width / 2;
-    const centerY = faceBox.top + faceBox.height / 2;
-    await page.mouse.move(centerX, centerY);
-    await page.mouse.down();
-    await page.mouse.move(centerX + deltaX, centerY + deltaY, { steps: 5 });
-    await page.mouse.up();
-    await page.waitForTimeout(300);
-  };
+    await addFace(dialog);
 
-  test('Face editor opens with person list', async ({ page }) => {
-    const asset = selectRandom(fixture.assets, rng);
-    await openFaceEditor(page, asset);
-
-    await expect(page.locator('#face-selector')).toBeVisible();
-    await expect(page.locator('#face-editor')).toBeVisible();
-
+    await expect(dialog.getByText('1 face', { exact: true })).toBeVisible();
+    await expect(dialog.getByText('Choose a person for every face.')).toBeVisible();
+    await expect(dialog.getByRole('button', { name: 'Save face tags' })).toBeDisabled();
     for (const person of mockPeople) {
-      await expect(page.locator('#face-selector').getByText(person.name)).toBeVisible();
+      await expect(dialog.getByRole('button', { name: person.name })).toBeVisible();
     }
   });
 
   test('Search filters people by name', async ({ page }) => {
-    const asset = selectRandom(fixture.assets, rng);
-    await openFaceEditor(page, asset);
+    const dialog = await openFaceTagger(page, pickAsset());
+    await addFace(dialog);
 
-    const searchInput = page.locator('#face-selector input');
-    await searchInput.fill('Alice');
+    const search = dialog.getByRole('searchbox', { name: 'Find a person' });
+    await search.fill('Alice');
+    await expect(dialog.getByRole('button', { name: 'Alice Johnson' })).toBeVisible();
+    await expect(dialog.getByRole('button', { name: 'Bob Smith' })).toBeHidden();
 
-    await expect(page.locator('#face-selector').getByText('Alice Johnson')).toBeVisible();
-    await expect(page.locator('#face-selector').getByText('Bob Smith')).toBeHidden();
-
-    await searchInput.clear();
-
-    for (const person of mockPeople) {
-      await expect(page.locator('#face-selector').getByText(person.name)).toBeVisible();
-    }
+    await search.fill('Nonexistent Person XYZ');
+    await expect(dialog.getByText('No matching people.')).toBeVisible();
   });
 
-  test('Search with no results shows empty message', async ({ page }) => {
-    const asset = selectRandom(fixture.assets, rng);
-    await openFaceEditor(page, asset);
-
-    const searchInput = page.locator('#face-selector input');
-    await searchInput.fill('Nonexistent Person XYZ');
-
-    for (const person of mockPeople) {
-      await expect(page.locator('#face-selector').getByText(person.name)).toBeHidden();
+  test('dragging on the photo draws a face region', async ({ page }) => {
+    const dialog = await openFaceTagger(page, pickAsset());
+    const stage = dialog.getByRole('application', { name: 'Photo face regions' });
+    const box = await stage.boundingBox();
+    if (!box) {
+      throw new Error('Face tagger stage not found');
     }
+    const centerX = box.x + box.width / 2;
+    const centerY = box.y + box.height / 2;
+
+    await page.mouse.move(centerX - 40, centerY - 40);
+    await page.mouse.down();
+    await page.mouse.move(centerX + 40, centerY + 40, { steps: 5 });
+    await page.mouse.up();
+
+    await expect(dialog.getByText('1 face', { exact: true })).toBeVisible();
+    await expect(dialog.getByRole('button', { name: 'Draw face', pressed: false })).toBeVisible();
+    await expect(dialog.getByRole('button', { name: /^Face 1: Choose a person$/ })).toBeVisible();
   });
 
-  test('Selecting a person shows confirmation dialog', async ({ page }) => {
-    const asset = selectRandom(fixture.assets, rng);
-    await openFaceEditor(page, asset);
+  test('numeric inputs and arrow keys move the selected region, and Undo reverts', async ({ page }) => {
+    const dialog = await openFaceTagger(page, pickAsset());
+    await addFace(dialog);
+    const left = dialog.getByRole('spinbutton', { name: 'Left (%)' });
+    await expect(left).toHaveValue('35');
+
+    await left.fill('10');
+    await expect(left).toHaveValue('10');
+
+    await dialog.getByRole('application', { name: 'Photo face regions' }).focus();
+    await page.keyboard.press('Shift+ArrowRight');
+    await expect(left).toHaveValue('12');
+
+    await dialog.getByRole('button', { name: 'Undo' }).click();
+    await expect(left).toHaveValue('10');
+  });
+
+  test('saving a tagged region calls createFace and closes the dialog', async ({ page }) => {
+    const asset = pickAsset();
+    const dialog = await openFaceTagger(page, asset);
+    await addFace(dialog);
 
     const personToTag = mockPeople[0];
-    await page.locator('#face-selector').getByText(personToTag.name).click();
+    await dialog.getByRole('button', { name: personToTag.name }).click();
+    await expect(dialog.getByText('Changes are ready to save.')).toBeVisible();
+    await dialog.getByRole('button', { name: 'Save face tags' }).click();
 
-    await expect(page.getByRole('dialog')).toBeVisible();
-  });
-
-  test('Confirming tag calls createFace API and closes editor', async ({ page }) => {
-    const asset = selectRandom(fixture.assets, rng);
-    await openFaceEditor(page, asset);
-
-    const personToTag = mockPeople[0];
-    await page.locator('#face-selector').getByText(personToTag.name).click();
-
-    await expect(page.getByRole('dialog')).toBeVisible();
-    await page.getByRole('button', { name: /confirm/i }).click();
-
-    await expect(page.locator('#face-selector')).toBeHidden();
-    await expect(page.locator('#face-editor')).toBeHidden();
-
+    await expect(dialog).toBeHidden();
     expect(faceCreateCapture.requests).toHaveLength(1);
     expect(faceCreateCapture.requests[0].assetId).toBe(asset.id);
     expect(faceCreateCapture.requests[0].personId).toBe(personToTag.id);
+    expect(faceCreateCapture.requests[0].width).toBeGreaterThan(0);
+    expect(faceCreateCapture.requests[0].imageWidth).toBeGreaterThan(0);
   });
 
-  test('Cancel button closes face editor', async ({ page }) => {
-    const asset = selectRandom(fixture.assets, rng);
-    await openFaceEditor(page, asset);
+  test('several regions save in one batch, including a person created in the dialog', async ({ page }) => {
+    const dialog = await openFaceTagger(page, pickAsset());
+    await addFace(dialog);
+    await dialog.getByRole('button', { name: mockPeople[1].name }).click();
 
-    await expect(page.locator('#face-selector')).toBeVisible();
-    await expect(page.locator('#face-editor')).toBeVisible();
+    await addFace(dialog);
+    await dialog.getByRole('button', { name: 'Create person' }).click();
+    await dialog.getByRole('textbox', { name: "New person's name" }).fill('Zoe Quinn');
+    await dialog.getByRole('button', { name: 'Create and assign' }).click();
+    await expect(dialog.getByText('2 faces')).toBeVisible();
+    expect(faceCreateCapture.people).toHaveLength(0);
 
-    await page.getByRole('button', { name: /cancel/i }).click();
+    await dialog.getByRole('button', { name: 'Save face tags' }).click();
 
-    await expect(page.locator('#face-selector')).toBeHidden();
-    await expect(page.locator('#face-editor')).toBeHidden();
+    await expect(dialog).toBeHidden();
+    expect(faceCreateCapture.people).toEqual([{ name: 'Zoe Quinn' }]);
+    const personIds = faceCreateCapture.requests.map((request) => request.personId);
+    expect(personIds).toHaveLength(2);
+    expect(personIds).toEqual(expect.arrayContaining(['created-person-1', mockPeople[1].id]));
   });
 
-  test('Selector does not overlap face box on initial open', async ({ page }) => {
-    const asset = selectRandom(fixture.assets, rng);
-    await openFaceEditor(page, asset);
+  test('Remove face drops the selected region', async ({ page }) => {
+    const dialog = await openFaceTagger(page, pickAsset());
+    await addFace(dialog);
+    await expect(dialog.getByText('1 face', { exact: true })).toBeVisible();
 
-    const faceBox = await getFaceBoxRect(page);
-    const selectorBox = await getSelectorRect(page);
-    const overlap = computeOverlapArea(faceBox, selectorBox);
+    await dialog.getByRole('button', { name: 'Remove face' }).click();
 
-    expect(overlap).toBe(0);
+    await expect(dialog.getByText('0 faces')).toBeVisible();
   });
 
-  test('Selector repositions without overlap after dragging face box down', async ({ page }) => {
-    const asset = selectRandom(fixture.assets, rng);
-    await openFaceEditor(page, asset);
+  test('Cancel and Escape close the dialog without saving', async ({ page }) => {
+    const asset = pickAsset();
+    let dialog = await openFaceTagger(page, asset);
+    await addFace(dialog);
+    await dialog.getByRole('button', { name: 'Cancel' }).click();
+    await expect(dialog).toBeHidden();
 
-    await dragFaceBox(page, 0, 150);
+    await page.getByRole('button', { name: 'Add person' }).click();
+    dialog = page.getByRole('dialog', { name: 'Tag people' });
+    await expect(dialog).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(dialog).toBeHidden();
+    // Escape stays inside the dialog: the viewer itself is still open.
+    await expect(page.locator('#immich-asset-viewer')).toBeVisible();
 
-    const faceBox = await getFaceBoxRect(page);
-    const selectorBox = await getSelectorRect(page);
-    const overlap = computeOverlapArea(faceBox, selectorBox);
-
-    expect(overlap).toBe(0);
+    expect(faceCreateCapture.requests).toHaveLength(0);
   });
 
-  test('Selector repositions without overlap after dragging face box right', async ({ page }) => {
-    const asset = selectRandom(fixture.assets, rng);
-    await openFaceEditor(page, asset);
+  test.describe('existing faces (FL-38 corrections)', () => {
+    test.beforeEach(() => {
+      faceState.faces = [createMockDetectedFace(mockPeople[0])];
+    });
 
-    await dragFaceBox(page, 200, 0);
+    test('a detected face shows its provenance and is reassigned at the revision it was read', async ({ page }) => {
+      const dialog = await openFaceTagger(page, pickAsset());
+      const faces = dialog.getByRole('group', { name: 'Faces in this image' });
+      await expect(faces).toContainText(mockPeople[0].name);
+      await expect(faces).toContainText('Detected');
+      // detected faces can be placed with the position fields too
+      await expect(dialog.getByRole('spinbutton', { name: 'Left (%)' })).toBeEnabled();
 
-    const faceBox = await getFaceBoxRect(page);
-    const selectorBox = await getSelectorRect(page);
-    const overlap = computeOverlapArea(faceBox, selectorBox);
+      await dialog.getByRole('button', { name: mockPeople[1].name }).click();
+      await dialog.getByRole('button', { name: 'Save face tags' }).click();
 
-    expect(overlap).toBe(0);
+      await expect(dialog).toBeHidden();
+      expect(faceState.corrections).toEqual([
+        {
+          id: 'detected-face-1',
+          body: { expectedRevision: 'detected-face-1-rev-1', personId: mockPeople[1].id },
+        },
+      ]);
+    });
+
+    test('a detected face can be given a person created in the dialog', async ({ page }) => {
+      const dialog = await openFaceTagger(page, pickAsset());
+
+      await dialog.getByRole('button', { name: 'Create person' }).click();
+      await dialog.getByRole('textbox', { name: "New person's name" }).fill('Zoe Quinn');
+      await dialog.getByRole('button', { name: 'Create and assign' }).click();
+      await dialog.getByRole('button', { name: 'Save face tags' }).click();
+
+      await expect(dialog).toBeHidden();
+      expect(faceCreateCapture.people).toEqual([{ name: 'Zoe Quinn' }]);
+      expect(faceState.corrections).toEqual([
+        { id: 'detected-face-1', body: { expectedRevision: 'detected-face-1-rev-1', personId: 'created-person-1' } },
+      ]);
+    });
+
+    test('a detected face moved with the keyboard is saved as a box correction on the same image', async ({ page }) => {
+      const dialog = await openFaceTagger(page, pickAsset());
+
+      await dialog.getByRole('application', { name: 'Photo face regions' }).focus();
+      await page.keyboard.press('Shift+ArrowDown');
+      await expect(dialog.getByRole('group', { name: 'Faces in this image' })).toContainText('Corrected by you');
+      await dialog.getByRole('button', { name: 'Save face tags' }).click();
+
+      await expect(dialog).toBeHidden();
+      expect(faceState.corrections).toHaveLength(1);
+      expect(faceState.corrections[0].body).toEqual(
+        expect.objectContaining({
+          expectedRevision: 'detected-face-1-rev-1',
+          expectedSourceRevision: 'source-rev-1',
+          box: expect.objectContaining({ imageWidth: expect.any(Number), imageHeight: expect.any(Number) }),
+        }),
+      );
+    });
+
+    test('a conflicting save keeps the draft behind the stale banner until the latest faces load', async ({ page }) => {
+      faceState.conflictOnCorrect = true;
+      const dialog = await openFaceTagger(page, pickAsset());
+      await dialog.getByRole('button', { name: mockPeople[2].name }).click();
+      await dialog.getByRole('button', { name: 'Save face tags' }).click();
+
+      await expect(dialog.getByText('Face tags changed in another view.')).toBeVisible();
+      await expect(dialog.getByRole('button', { name: 'Save face tags' })).toBeDisabled();
+      // The kept draft names the person on the face box, its row and the people list; the list's
+      // choice is the one that stays pressed.
+      await expect(dialog.getByRole('button', { name: mockPeople[2].name, exact: true, pressed: true })).toBeVisible();
+      await expect(dialog.getByRole('button', { name: `Face 1: ${mockPeople[2].name}` })).toBeVisible();
+
+      faceState.faces = [{ ...createMockDetectedFace(mockPeople[3]), revision: 'detected-face-1-rev-9' }];
+      const reads = faceState.faceReads;
+      await dialog.getByRole('button', { name: 'Discard changes and load latest' }).click();
+
+      await expect(dialog.getByText('Face tags changed in another view.')).toBeHidden();
+      expect(faceState.faceReads).toBeGreaterThan(reads);
+      await expect(dialog.getByRole('group', { name: 'Faces in this image' })).toContainText(mockPeople[3].name);
+    });
+
+    test('a new region drawn before the image changed is refused and kept', async ({ page }) => {
+      faceState.conflictOnCreate = true;
+      faceState.sourceRevisionAfterConflict = 'source-rev-2';
+      const dialog = await openFaceTagger(page, pickAsset());
+      await addFace(dialog);
+      await dialog.getByRole('button', { name: mockPeople[1].name }).click();
+      await dialog.getByRole('button', { name: 'Save face tags' }).click();
+
+      await expect(dialog.getByText(/This image changed since you opened it/)).toBeVisible();
+      await expect(dialog.getByText('2 faces')).toBeVisible();
+      expect(faceCreateCapture.requests[0]).toEqual(
+        expect.objectContaining({ expectedSourceRevision: 'source-rev-1', personId: mockPeople[1].id }),
+      );
+    });
   });
 
-  test('Selector repositions without overlap after dragging face box to top-left corner', async ({ page }) => {
-    const asset = selectRandom(fixture.assets, rng);
-    await openFaceEditor(page, asset);
+  test('the dialog closes when the unlocked session is concealed (relock) while it is open', async ({
+    context,
+    page,
+  }) => {
+    // An elevated session: the tagger follows sessionAccess and closes once the view is concealed.
+    await context.route('**/api/auth/status', (route) =>
+      route.fulfill({
+        headers: { date: new Date().toUTCString() },
+        json: {
+          isElevated: true,
+          password: true,
+          pinCode: true,
+          pinExpiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+        },
+      }),
+    );
+    const dialog = await openFaceTagger(page, pickAsset());
 
-    await dragFaceBox(page, -300, -300);
+    await page.evaluate(() => {
+      Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
 
-    const faceBox = await getFaceBoxRect(page);
-    const selectorBox = await getSelectorRect(page);
-    const overlap = computeOverlapArea(faceBox, selectorBox);
-
-    expect(overlap).toBe(0);
-  });
-
-  test('Selector repositions without overlap after dragging face box to bottom-right', async ({ page }) => {
-    const asset = selectRandom(fixture.assets, rng);
-    await openFaceEditor(page, asset);
-
-    await dragFaceBox(page, 300, 300);
-
-    const faceBox = await getFaceBoxRect(page);
-    const selectorBox = await getSelectorRect(page);
-    const overlap = computeOverlapArea(faceBox, selectorBox);
-
-    expect(overlap).toBe(0);
-  });
-
-  test('Selector stays within viewport bounds', async ({ page }) => {
-    const asset = selectRandom(fixture.assets, rng);
-    await openFaceEditor(page, asset);
-
-    const viewportSize = page.viewportSize()!;
-    const selectorBox = await getSelectorRect(page);
-
-    expect(selectorBox.top).toBeGreaterThanOrEqual(0);
-    expect(selectorBox.left).toBeGreaterThanOrEqual(0);
-    expect(selectorBox.top + selectorBox.height).toBeLessThanOrEqual(viewportSize.height);
-    expect(selectorBox.left + selectorBox.width).toBeLessThanOrEqual(viewportSize.width);
-  });
-
-  test('Selector stays within viewport after dragging to edge', async ({ page }) => {
-    const asset = selectRandom(fixture.assets, rng);
-    await openFaceEditor(page, asset);
-
-    await dragFaceBox(page, -400, -400);
-
-    const viewportSize = page.viewportSize()!;
-    const selectorBox = await getSelectorRect(page);
-
-    expect(selectorBox.top).toBeGreaterThanOrEqual(0);
-    expect(selectorBox.left).toBeGreaterThanOrEqual(0);
-    expect(selectorBox.top + selectorBox.height).toBeLessThanOrEqual(viewportSize.height);
-    expect(selectorBox.left + selectorBox.width).toBeLessThanOrEqual(viewportSize.width);
-  });
-
-  test('Face box is draggable on the canvas', async ({ page }) => {
-    const asset = selectRandom(fixture.assets, rng);
-    await openFaceEditor(page, asset);
-
-    const beforeDrag = await getFaceBoxRect(page);
-    await dragFaceBox(page, 100, 50);
-    const afterDrag = await getFaceBoxRect(page);
-
-    expect(afterDrag.left).toBeGreaterThan(beforeDrag.left + 50);
-    expect(afterDrag.top).toBeGreaterThan(beforeDrag.top + 20);
+    await expect(dialog).toBeHidden();
+    expect(faceCreateCapture.requests).toHaveLength(0);
   });
 });

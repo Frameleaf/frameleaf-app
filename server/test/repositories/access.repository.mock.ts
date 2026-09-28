@@ -31,6 +31,7 @@ export const newAccessRepositoryMock = (): IAccessRepositoryMock => {
       checkAlbumAccess: vitest.fn().mockResolvedValue(new Set()),
       checkPartnerAccess: vitest.fn().mockResolvedValue(new Set()),
       checkSharedLinkAccess: vitest.fn().mockResolvedValue(new Set()),
+      checkItemShareAccess: vitest.fn().mockResolvedValue(new Set()),
     },
 
     assetFile: {

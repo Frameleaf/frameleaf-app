@@ -1,13 +1,17 @@
+import { BadRequestException, ConflictException } from '@nestjs/common';
 import { Kysely } from 'kysely';
 import type { HiddenContentFilter } from 'src/utils/hidden-content.js';
 import { BulkIdErrorReason } from 'src/dtos/asset-ids.response.dto.js';
-import { AssetMetadataKey } from 'src/enum.js';
+import { AlbumKind, AlbumUserRole, AssetMetadataKey, AssetVisibility } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
+import { ClassificationRepository } from 'src/repositories/classification.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MapRepository } from 'src/repositories/map.repository.js';
+import { PartnerRepository } from 'src/repositories/partner.repository.js';
+import { SmartAlbumRepository } from 'src/repositories/smart-album.repository.js';
 import { TagRepository } from 'src/repositories/tag.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -22,7 +26,17 @@ let defaultDatabase: Kysely<DB>;
 const setup = (db?: Kysely<DB>) => {
   const services = newMediumService(AlbumService, {
     database: db || defaultDatabase,
-    real: [AccessRepository, AlbumRepository, AssetRepository, MapRepository, TagRepository, UserRepository],
+    real: [
+      AccessRepository,
+      AlbumRepository,
+      AssetRepository,
+      ClassificationRepository,
+      MapRepository,
+      PartnerRepository,
+      SmartAlbumRepository,
+      TagRepository,
+      UserRepository,
+    ],
     mock: [EventRepository, LoggingRepository],
   });
   services.ctx.getMock(EventRepository).emit.mockResolvedValue();
@@ -146,6 +160,7 @@ describe(AlbumService.name, () => {
         includeNsfw: true,
         tagIds: [tag.id],
         personIds: [person.personGroupId],
+        petIds: [],
         scope: 'owned',
       };
       const hiddenAuth = {
@@ -255,6 +270,103 @@ describe(AlbumService.name, () => {
         expect.arrayContaining([visible.id, unreviewedNsfw.id, markedSafe.id, markedNsfw.id, tagOnly.id]),
       );
     });
+
+    it('narrows an album map by the settings sheet without reaching past the album (FL-51)', async () => {
+      const { sut, ctx } = setup(await getKyselyDB());
+      const { user: owner } = await ctx.newUser();
+      const { user: member } = await ctx.newUser();
+
+      const { asset: plain } = await ctx.newAsset({ ownerId: owner.id, fileCreatedAt: '2026-03-01T00:00:00.000Z' });
+      const { asset: archived } = await ctx.newAsset({
+        ownerId: owner.id,
+        visibility: AssetVisibility.Archive,
+        fileCreatedAt: '2026-03-02T00:00:00.000Z',
+      });
+      const { asset: ownerFavorite } = await ctx.newAsset({
+        ownerId: owner.id,
+        isFavorite: true,
+        fileCreatedAt: '2025-06-01T00:00:00.000Z',
+      });
+      const { asset: memberFavorite } = await ctx.newAsset({
+        ownerId: member.id,
+        isFavorite: true,
+        fileCreatedAt: '2026-03-03T00:00:00.000Z',
+      });
+      const { asset: outside } = await ctx.newAsset({ ownerId: owner.id, isFavorite: true });
+      for (const [index, asset] of [plain, archived, ownerFavorite, memberFavorite, outside].entries()) {
+        await ctx.newExif({ assetId: asset.id, latitude: 10 + index, longitude: 10 + index });
+      }
+      const { album } = await ctx.newAlbum({ ownerId: owner.id }, [
+        plain.id,
+        archived.id,
+        ownerFavorite.id,
+        memberFavorite.id,
+      ]);
+      await ctx.newAlbumUser({ albumId: album.id, userId: member.id, role: AlbumUserRole.Editor });
+
+      const ids = (markers: { id: string }[]) => markers.map(({ id }) => id).sort();
+      const ownerAuth = factory.auth({ user: { id: owner.id } });
+      const memberAuth = factory.auth({ user: { id: member.id } });
+
+      // no filters: the album as before, archived items included, nothing from outside it
+      await expect(sut.getMapMarkers(ownerAuth, album.id).then(ids)).resolves.toEqual(
+        [plain.id, archived.id, ownerFavorite.id, memberFavorite.id].sort(),
+      );
+      await expect(sut.getMapMarkers(ownerAuth, album.id, { isArchived: false }).then(ids)).resolves.toEqual(
+        [plain.id, ownerFavorite.id, memberFavorite.id].sort(),
+      );
+      // favorites are each viewer's own, and never the favorite outside the album
+      await expect(sut.getMapMarkers(ownerAuth, album.id, { isFavorite: true }).then(ids)).resolves.toEqual([
+        ownerFavorite.id,
+      ]);
+      await expect(sut.getMapMarkers(memberAuth, album.id, { isFavorite: true }).then(ids)).resolves.toEqual([
+        memberFavorite.id,
+      ]);
+      await expect(
+        sut
+          .getMapMarkers(ownerAuth, album.id, {
+            fileCreatedAfter: new Date('2026-01-01T00:00:00.000Z'),
+            fileCreatedBefore: new Date('2026-12-31T00:00:00.000Z'),
+          })
+          .then(ids),
+      ).resolves.toEqual([plain.id, archived.id, memberFavorite.id].sort());
+    });
+
+    it("keeps only the viewer's own album items when Partner items is off, as the prototype does (FL-51)", async () => {
+      const { sut, ctx } = setup(await getKyselyDB());
+      const { user: viewer } = await ctx.newUser();
+      const { user: partner } = await ctx.newUser();
+      const { user: member } = await ctx.newUser();
+      await ctx.newPartner({ sharedById: partner.id, sharedWithId: viewer.id });
+
+      const { asset: own } = await ctx.newAsset({ ownerId: viewer.id });
+      const { asset: partnerItem } = await ctx.newAsset({ ownerId: partner.id });
+      const { asset: memberItem } = await ctx.newAsset({ ownerId: member.id });
+      const { asset: partnerOutside } = await ctx.newAsset({ ownerId: partner.id });
+      for (const [index, asset] of [own, partnerItem, memberItem, partnerOutside].entries()) {
+        await ctx.newExif({ assetId: asset.id, latitude: 20 + index, longitude: 20 + index });
+      }
+      const { album } = await ctx.newAlbum({ ownerId: viewer.id }, [own.id, partnerItem.id, memberItem.id]);
+      await ctx.newAlbumUser({ albumId: album.id, userId: partner.id, role: AlbumUserRole.Editor });
+      await ctx.newAlbumUser({ albumId: album.id, userId: member.id, role: AlbumUserRole.Editor });
+
+      const ids = (markers: { id: string }[]) => markers.map(({ id }) => id).sort();
+      const auth = factory.auth({ user: { id: viewer.id } });
+
+      await expect(
+        sut.getMapMarkers(auth, album.id, { withPartners: true, withSharedAlbums: true }).then(ids),
+      ).resolves.toEqual([own.id, partnerItem.id, memberItem.id].sort());
+      // the prototype treats every item someone else owns as a partner item, partner or not
+      await expect(sut.getMapMarkers(auth, album.id, { withPartners: false }).then(ids)).resolves.toEqual([own.id]);
+      // "Shared spaces" only hides the viewer's own shared-space-only items, which album markers never are
+      await expect(sut.getMapMarkers(auth, album.id, { withSharedAlbums: false }).then(ids)).resolves.toEqual(
+        [own.id, partnerItem.id, memberItem.id].sort(),
+      );
+      // neither switch reaches the partner's item outside the album
+      await expect(
+        sut.getMapMarkers(auth, album.id, { withPartners: false, withSharedAlbums: false }).then(ids),
+      ).resolves.toEqual([own.id]);
+    });
   });
 
   describe('removeAssets', () => {
@@ -304,6 +416,68 @@ describe(AlbumService.name, () => {
     });
   });
 
+  describe('custom order (FL-52)', () => {
+    it("keeps each person's own order of the same albums, and changes nothing else", async () => {
+      const { sut, ctx } = setup();
+      const { user: owner } = await ctx.newUser();
+      const { user: viewer } = await ctx.newUser();
+      const { album: first } = await ctx.newAlbum({ ownerId: owner.id, albumName: 'First' });
+      const { album: second } = await ctx.newAlbum({ ownerId: owner.id, albumName: 'Second' });
+      await ctx.newAlbumUser({ albumId: first.id, userId: viewer.id, role: AlbumUserRole.Viewer });
+      await ctx.newAlbumUser({ albumId: second.id, userId: viewer.id, role: AlbumUserRole.Viewer });
+      const ownerAuth = factory.auth({ user: { id: owner.id } });
+      const viewerAuth = factory.auth({ user: { id: viewer.id } });
+
+      await sut.setOrder(ownerAuth, { parentId: null, albumIds: [second.id, first.id] });
+      await sut.setOrder(viewerAuth, { parentId: null, albumIds: [first.id, second.id] });
+
+      const ids = async (auth: typeof ownerAuth) => (await sut.getTree(auth)).albums.map(({ id }) => id);
+      await expect(ids(ownerAuth)).resolves.toEqual([second.id, first.id]);
+      await expect(ids(viewerAuth)).resolves.toEqual([first.id, second.id]);
+      // A viewer arranging their directory never gains rights or changes the owner's albums.
+      const [album] = await ctx.get(AlbumRepository).getAll(owner.id, { id: first.id });
+      expect(album.albumUsers?.find(({ user }) => user.id === viewer.id)?.role).toBe(AlbumUserRole.Viewer);
+    });
+
+    it('arranges the albums inside a collection and refuses an order from a stale tree', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const auth = factory.auth({ user: { id: user.id } });
+      const { album: collection } = await ctx.newAlbum({ ownerId: user.id, kind: AlbumKind.Collection });
+      const { album: a } = await ctx.newAlbum({ ownerId: user.id, parentId: collection.id });
+      const { album: b } = await ctx.newAlbum({ ownerId: user.id, parentId: collection.id });
+
+      await sut.setOrder(auth, { parentId: collection.id, albumIds: [b.id, a.id] });
+      const tree = await sut.getTree(auth);
+      expect(tree.collections[0].albums.map(({ id }) => id)).toEqual([b.id, a.id]);
+
+      // Somebody (another tab) takes `a` out of the collection; the first tab still shows it inside.
+      await sut.moveToCollection(auth, a.id, { collectionId: null });
+      await expect(sut.setOrder(auth, { parentId: collection.id, albumIds: [a.id, b.id] })).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+    });
+
+    it('refuses a move of a node that was moved since the client loaded it', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const auth = factory.auth({ user: { id: user.id } });
+      const { album: family } = await ctx.newAlbum({ ownerId: user.id, kind: AlbumKind.Collection });
+      const { album: trips } = await ctx.newAlbum({ ownerId: user.id, kind: AlbumKind.Collection });
+      const { album } = await ctx.newAlbum({ ownerId: user.id });
+
+      // Tab one moves the album into Family.
+      await sut.moveToCollection(auth, album.id, { collectionId: family.id, expectedParentId: null });
+      // Tab two, still showing it on its own, tries to move it into Trips.
+      await expect(
+        sut.moveToCollection(auth, album.id, { collectionId: trips.id, expectedParentId: null }),
+      ).rejects.toBeInstanceOf(ConflictException);
+
+      const moved = await sut.get(auth, album.id);
+      expect(moved.parentId).toBe(family.id);
+    });
+  });
+
   describe('database triggers', () => {
     it('should cascade delete an album when the owner is deleted', async () => {
       const { ctx } = setup();
@@ -318,6 +492,126 @@ describe(AlbumService.name, () => {
       await expect(
         ctx.database.selectFrom('album_user').selectAll().where('albumId', '=', album.id).execute(),
       ).resolves.toEqual([]);
+    });
+  });
+
+  describe('Locked media in albums (FL-32)', () => {
+    const elevated = (userId: string) =>
+      factory.auth({ user: { id: userId }, session: { id: factory.uuid(), hasElevatedPermission: true } });
+    const ordinary = (userId: string) => factory.auth({ user: { id: userId } });
+
+    it('lets only an elevated owner add Locked media, then shows it only to that owner while unlocked', async () => {
+      const { sut, ctx } = setup(await getKyselyDB());
+      const { user: owner } = await ctx.newUser();
+      const { user: member } = await ctx.newUser();
+      const { asset: plain } = await ctx.newAsset({ ownerId: owner.id });
+      const { asset: locked } = await ctx.newAsset({ ownerId: owner.id, visibility: AssetVisibility.Locked });
+      const { album } = await ctx.newAlbum({ ownerId: owner.id }, [plain.id]);
+      await ctx.newAlbumUser({ albumId: album.id, userId: member.id, role: AlbumUserRole.Editor });
+
+      await expect(sut.addAssets(ordinary(owner.id), album.id, { ids: [locked.id] })).resolves.toEqual([
+        { id: locked.id, success: false, error: BulkIdErrorReason.NO_PERMISSION },
+      ]);
+      await expect(sut.addAssets(elevated(owner.id), album.id, { ids: [locked.id] })).resolves.toEqual([
+        { id: locked.id, success: true },
+      ]);
+
+      await expect(sut.get(elevated(owner.id), album.id)).resolves.toEqual(
+        expect.objectContaining({ assetCount: 2, albumThumbnailAssetId: plain.id }),
+      );
+      await expect(sut.get(ordinary(owner.id), album.id)).resolves.toEqual(
+        expect.objectContaining({ assetCount: 1, albumThumbnailAssetId: plain.id }),
+      );
+      // another member never sees it, whatever their own session
+      await expect(sut.get(elevated(member.id), album.id)).resolves.toEqual(
+        expect.objectContaining({ assetCount: 1, albumThumbnailAssetId: plain.id }),
+      );
+
+      // album membership grants no access to the Locked item either
+      const access = ctx.get(AccessRepository);
+      await expect(access.asset.checkAlbumAccess(member.id, new Set([plain.id, locked.id]))).resolves.toEqual(
+        new Set([plain.id]),
+      );
+    });
+
+    it('never uses Locked media as the album cover and repairs a Locked cover on read', async () => {
+      const { sut, ctx } = setup(await getKyselyDB());
+      const { user: owner } = await ctx.newUser();
+      const { asset: locked } = await ctx.newAsset({ ownerId: owner.id, visibility: AssetVisibility.Locked });
+      const { album } = await ctx.newAlbum({ ownerId: owner.id }, [locked.id]);
+
+      await expect(sut.get(elevated(owner.id), album.id)).resolves.toEqual(
+        expect.objectContaining({ assetCount: 1, albumThumbnailAssetId: null }),
+      );
+
+      const { asset: plain } = await ctx.newAsset({ ownerId: owner.id });
+      await sut.addAssets(elevated(owner.id), album.id, { ids: [plain.id] });
+      await expect(sut.get(ordinary(owner.id), album.id)).resolves.toEqual(
+        expect.objectContaining({ assetCount: 1, albumThumbnailAssetId: plain.id }),
+      );
+
+      await expect(
+        sut.update(elevated(owner.id), album.id, { albumThumbnailAssetId: locked.id }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      await ctx.database
+        .updateTable('album')
+        .set({ albumThumbnailAssetId: locked.id })
+        .where('id', '=', album.id)
+        .execute();
+      await expect(sut.get(ordinary(owner.id), album.id)).resolves.toEqual(
+        expect.objectContaining({ albumThumbnailAssetId: plain.id }),
+      );
+    });
+
+    it('shows Locked map markers only to the elevated owner', async () => {
+      const { sut, ctx } = setup(await getKyselyDB());
+      const { user: owner } = await ctx.newUser();
+      const { user: member } = await ctx.newUser();
+      const { asset: plain } = await ctx.newAsset({ ownerId: owner.id });
+      const { asset: locked } = await ctx.newAsset({ ownerId: owner.id, visibility: AssetVisibility.Locked });
+      await ctx.newExif({ assetId: plain.id, latitude: 1, longitude: 1 });
+      await ctx.newExif({ assetId: locked.id, latitude: 2, longitude: 2 });
+      const { album } = await ctx.newAlbum({ ownerId: owner.id }, [plain.id, locked.id]);
+      await ctx.newAlbumUser({ albumId: album.id, userId: member.id, role: AlbumUserRole.Viewer });
+
+      const ids = (markers: { id: string }[]) => markers.map(({ id }) => id).sort();
+      await expect(sut.getMapMarkers(elevated(owner.id), album.id).then(ids)).resolves.toEqual(
+        [plain.id, locked.id].sort(),
+      );
+      await expect(sut.getMapMarkers(ordinary(owner.id), album.id).then(ids)).resolves.toEqual([plain.id]);
+      await expect(sut.getMapMarkers(elevated(member.id), album.id).then(ids)).resolves.toEqual([plain.id]);
+    });
+
+    it('counts hidden items for their contributor and Locked items only for the elevated owner', async () => {
+      const { sut, ctx } = setup(await getKyselyDB());
+      const { user: owner } = await ctx.newUser();
+      const { user: member } = await ctx.newUser();
+      const { asset: plain } = await ctx.newAsset({ ownerId: owner.id });
+      const { asset: hidden } = await ctx.newAsset({ ownerId: owner.id, visibility: AssetVisibility.Hidden });
+      const { asset: locked } = await ctx.newAsset({ ownerId: owner.id, visibility: AssetVisibility.Locked });
+      const { asset: memberAsset } = await ctx.newAsset({ ownerId: member.id });
+      const { album } = await ctx.newAlbum({ ownerId: owner.id }, [plain.id, hidden.id, locked.id, memberAsset.id]);
+      await ctx.newAlbumUser({ albumId: album.id, userId: member.id, role: AlbumUserRole.Editor });
+
+      const counts = (response: { contributorCounts?: { userId: string; assetCount: number }[] }) =>
+        Object.fromEntries(
+          (response.contributorCounts ?? []).map(({ userId, assetCount }) => [userId, Number(assetCount)]),
+        );
+
+      await expect(sut.get(elevated(owner.id), album.id).then(counts)).resolves.toEqual({
+        [owner.id]: 3,
+        [member.id]: 1,
+      });
+      await expect(sut.get(ordinary(owner.id), album.id).then(counts)).resolves.toEqual({
+        [owner.id]: 2,
+        [member.id]: 1,
+      });
+      // another member never counts the owner's Locked item, whatever their own session
+      await expect(sut.get(elevated(member.id), album.id).then(counts)).resolves.toEqual({
+        [owner.id]: 2,
+        [member.id]: 1,
+      });
     });
   });
 });

@@ -57,7 +57,7 @@ test("library override parser rejects foreign IDs and ownership fields without m
         favorite: false,
         ownerId: "jamie",
         image: "/private.jpg",
-        albumIds: ["family", "unknown"],
+        albumIds: ["family", "unknown", "../escape", "Bad Id", 42],
         sharedWith: ["Jamie", "Taylor", "intruder"],
       },
       unknown: { visibility: "locked" },
@@ -66,7 +66,7 @@ test("library override parser rejects foreign IDs and ownership fields without m
   assert.deepEqual(Object.keys(overrides), ["1"]);
   assert.deepEqual(overrides["1"], {
     favorite: false,
-    albumIds: ["family"],
+    albumIds: ["family", "unknown"],
     sharedWith: ["Jamie"],
   });
   assert.deepEqual(media, before);
@@ -303,8 +303,12 @@ test("invalid patches cannot silently clear a saved lock or mutate ownership", (
     { visibility: "locked" },
     { favorite: 1 },
     { ownerId: "jamie" },
-    { albumIds: ["unknown"] },
+    { albumIds: ["../escape"] },
+    { albumIds: [42] },
     { sharedWith: ["Taylor"] },
+    { description: "x".repeat(5000) },
+    { latitude: 120 },
+    { tagIds: ["ok", ""] },
     null,
     [],
     {},

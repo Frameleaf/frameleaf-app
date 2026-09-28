@@ -13,9 +13,6 @@ function createUploadStore() {
   const { subscribe } = uploadAssets;
 
   const isUploading = derived(uploadAssets, (items) => items.length > 0);
-  const isDismissible = derived(uploadAssets, (items) =>
-    items.some((item) => item.state === UploadState.ERROR || item.state === UploadState.DUPLICATED),
-  );
   const remainingUploads = derived(
     uploadAssets,
     (values) => values.filter((a) => a.state === UploadState.PENDING || a.state === UploadState.STARTED).length,
@@ -115,10 +112,32 @@ function createUploadStore() {
     });
   };
 
+  /**
+   * "Dismiss errors" (FL-45 U-1, UploadPanel.jsx `dismissUploadErrors`): drops the failed uploads
+   * only; duplicates stay listed until "Clear finished" or Done.
+   */
   const dismissErrors = () =>
-    uploadAssets.update((value) =>
-      value.filter((e) => e.state !== UploadState.ERROR && e.state !== UploadState.DUPLICATED),
-    );
+    uploadAssets.update((value) => {
+      const errors = value.filter((item) => item.state === UploadState.ERROR).length;
+      if (errors > 0) {
+        // The dismissed files leave the batch, so "Uploading N of M" counts only what remains.
+        stats.update((current) => ({ ...current, errors: current.errors - errors, total: current.total - errors }));
+      }
+      return value.filter((item) => item.state !== UploadState.ERROR);
+    });
+
+  /**
+   * "Clear finished" (FL-45, UploadPanel.jsx `clearFinishedUploads`): drops the uploads that are
+   * done or turned out to be duplicates while the rest keep going. Failed ones stay for a retry.
+   */
+  const clearFinished = () =>
+    uploadAssets.update((value) => {
+      const duplicates = value.filter((item) => item.state === UploadState.DUPLICATED).length;
+      if (duplicates > 0) {
+        stats.update((current) => ({ ...current, duplicates: current.duplicates - duplicates }));
+      }
+      return value.filter((item) => item.state !== UploadState.DONE && item.state !== UploadState.DUPLICATED);
+    });
 
   const reset = () => {
     uploadAssets.set([]);
@@ -151,10 +170,10 @@ function createUploadStore() {
   return {
     stats,
     remainingUploads,
-    isDismissible,
     isUploading,
     track,
     dismissErrors,
+    clearFinished,
     reset,
     markStarted,
     addItem,

@@ -1,0 +1,7 @@
+{
+  "code": "entitlement-missing",
+  "message": "Frameleaf Cloud AI needs an active Frameleaf Cloud plan on this account.",
+  "retryable": false,
+  "refusal": "entitlement-missing",
+  "requestId": "req_01J8ZK3M4N5P6Q7V"
+}

@@ -5,49 +5,30 @@ import {
   setMaintenanceMode,
   type DatabaseBackupUploadDto,
 } from '@immich/sdk';
-import { modalManager, type ActionItem } from '@immich/ui';
-import { mdiDownload, mdiTrashCanOutline } from '@mdi/js';
-import type { MessageFormatter } from 'svelte-i18n';
+import { confirmFrameleaf } from '$lib/frameleaf/confirm';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { uploadRequest } from '$lib/utils';
 import { openFilePicker } from '$lib/utils/file-uploader';
 import { handleError } from '$lib/utils/handle-error';
 import { getFormatter } from '$lib/utils/i18n';
 
-export const getDatabaseBackupActions = ($t: MessageFormatter, filename: string) => {
-  const Download: ActionItem = {
-    title: $t('download'),
-    icon: mdiDownload,
-    onAction: () => handleDownloadDatabaseBackup(filename),
-  };
-
-  const Delete: ActionItem = {
-    title: $t('delete'),
-    icon: mdiTrashCanOutline,
-    color: 'danger',
-    onAction: () => handleDeleteDatabaseBackup(filename),
-  };
-
-  return { Download, Delete };
-};
-
-export const handleRestoreDatabaseBackup = async (filename: string) => {
+/**
+ * Restores a database backup without prompting first. The caller owns the confirmation
+ * step: `MaintenanceRestoreConfirmDialog.svelte` requires the administrator to type
+ * RESTORE before this runs. It calls `setMaintenanceMode` with
+ * `MaintenanceAction.RestoreDatabase`.
+ */
+export const restoreDatabaseBackup = async (
+  filename: string,
+  { keepSafetyBackup }: { keepSafetyBackup?: boolean } = {},
+) => {
   const $t = await getFormatter();
-  const confirm = await modalManager.showDialog({
-    confirmText: $t('restore'),
-    title: $t('admin.maintenance_restore_backup'),
-    prompt: $t('admin.maintenance_restore_backup_description'),
-  });
-
-  if (!confirm) {
-    return;
-  }
-
   try {
     await setMaintenanceMode({
       setMaintenanceModeDto: {
         action: MaintenanceAction.RestoreDatabase,
         restoreBackupFilename: filename,
+        keepSafetyBackup,
       },
     });
   } catch (error) {
@@ -55,12 +36,17 @@ export const handleRestoreDatabaseBackup = async (filename: string) => {
   }
 };
 
-export const handleDeleteDatabaseBackup = async (...filenames: string[]) => {
+/**
+ * Deletes backups after the prototype's "Delete this backup?" confirmation
+ * (`design/frameleaf/template/src/Maintenance.jsx:610-640`); `date` names the backup in the prompt.
+ */
+export const handleDeleteDatabaseBackup = async ({ date }: { date: string }, ...filenames: string[]) => {
   const $t = await getFormatter();
-  const confirm = await modalManager.showDialog({
-    confirmText: $t('delete'),
-    title: $t('admin.maintenance_delete_backup'),
-    prompt: $t('admin.maintenance_delete_backup_description'),
+  const confirm = await confirmFrameleaf({
+    title: $t('admin.frameleaf_maintenance_backup_delete_title'),
+    prompt: $t('admin.frameleaf_maintenance_backup_delete_body', { values: { date } }),
+    confirmText: $t('admin.frameleaf_maintenance_backup_delete_action'),
+    danger: true,
   });
 
   if (!confirm) {

@@ -1,14 +1,22 @@
 name: Fork schema official-container certification
 
+# Compatibility-target exception (FL-191): these lanes certify the handoff to and from the official
+# server, so they pull its exact pinned image (OFFICIAL_IMMICH_TAG below, digest-checked by
+# scripts/test-fork-roundtrip.sh). This is the only place Frameleaf CI pulls an upstream image; the
+# database, the candidate server and everything a Frameleaf installation runs are Frameleaf-built.
+
 on:
   workflow_call:
   pull_request:
     paths:
       - '.github/workflows/fork-roundtrip.yml'
+      - 'docker/postgres/**'
       - 'e2e/docker-compose.fork-roundtrip.yml'
       - 'e2e/src/specs/server/fork-schema-*.ts'
       - 'scripts/test-fork-roundtrip.sh'
       - 'scripts/test-fork-roundtrip.test.mjs'
+      - 'server/Dockerfile'
+      - 'server/base-image/**'
       - 'server/src/app.module.ts'
       - 'server/src/commands/**'
       - 'server/src/fork-schema/**'
@@ -38,7 +46,8 @@ jobs:
       ${{ github.repository == 'Frameleaf/frameleaf-app' }}
     name: ${{ matrix.lane }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    # The candidate image now compiles its own media libraries (FL-191), which adds to the build.
+    timeout-minutes: 150
     strategy:
       fail-fast: false
       matrix:
@@ -46,8 +55,10 @@ jobs:
           - origin-v3.1.0-to-fork
           - current-fork-to-official-v3.1.0
           - official-v3.1.0-to-fork-return
+          - official-v3.1.0-to-fork-to-official-v3.1.0-to-fork
     env:
       FORK_ROUNDTRIP_LANE: ${{ matrix.lane }}
+      FORK_ROUNDTRIP_EVIDENCE_DIR: ${{ github.workspace }}/fork-roundtrip-evidence
       GITHUB_TOKEN: ${{ github.token }}
       OFFICIAL_IMMICH_TAG: v3.1.0
     steps:
@@ -62,6 +73,14 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Test certification restart handling
         run: node --test scripts/test-fork-roundtrip.test.mjs
+      # Read-only login so the Compose build can import Frameleaf's registry build cache (written by the
+      # Deploy workflow on fork/main); without it the server base compiles from source on every run.
+      - name: Login to owned GHCR namespace for the build cache
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
       - name: Run real official-container certification lane
         run: pnpm --filter immich-e2e test:fork-roundtrip
       - name: Capture container evidence
@@ -73,4 +92,7 @@ jobs:
         if: always()
         with:
           name: fork-roundtrip-${{ matrix.lane }}
-          path: fork-roundtrip-${{ matrix.lane }}.log
+          # The evidence JSON names the candidate commit and image id and the certified official digest.
+          path: |
+            fork-roundtrip-${{ matrix.lane }}.log
+            fork-roundtrip-evidence/

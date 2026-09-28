@@ -1,4 +1,4 @@
-import { AssetVisibility, deleteAssets as deleteBulk, restoreAssets } from '@immich/sdk';
+import { deleteAssets as deleteBulk, restoreAssets } from '@immich/sdk';
 import { toastManager } from '@immich/ui';
 import { t } from 'svelte-i18n';
 import { get } from 'svelte/store';
@@ -9,14 +9,6 @@ import { handleError } from './handle-error';
 
 export type OnDelete = (assetIds: string[]) => void;
 export type OnUndoDelete = (assets: TimelineAsset[]) => void;
-export type OnRestore = (ids: string[]) => void;
-export type OnLink = (assets: { still: TimelineAsset; motion: TimelineAsset }) => void;
-export type OnUnlink = (assets: { still: TimelineAsset; motion: TimelineAsset }) => void;
-export type OnArchive = (ids: string[], visibility: AssetVisibility) => void;
-export type OnFavorite = (ids: string[], favorite: boolean) => void;
-export type OnStack = (result: StackResponse) => void;
-export type OnUnstack = (assets: TimelineAsset[]) => void;
-export type OnSetVisibility = (ids: string[]) => void;
 
 export const deleteAssets = async (
   force: boolean,

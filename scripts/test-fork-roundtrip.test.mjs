@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { test } from "node:test";
 
@@ -11,7 +13,7 @@ const start = source.match(/^start_fork\(\) \{[\s\S]*?^\}/m)?.[0];
 const interrupt = source.match(/^interrupt_fork\(\) \{[\s\S]*?^\}/m)?.[0] ?? "";
 const checkpoints = [
   ...source.matchAll(
-    /^(?:compose kill -s SIGKILL fork-server|interrupt_fork)\nstart_fork$/gm,
+    /^[ \t]*(?:compose kill -s SIGKILL fork-server|interrupt_fork)\n[ \t]*start_fork$/gm,
   ),
 ];
 assert.ok(start, "startup helper is present");
@@ -105,7 +107,7 @@ for (const [failures, attempts, status] of [
 set -Eeuo pipefail
 attempts=0
 compose() {
-  [[ "$*" == 'pull official-server database redis' ]] || return 90
+  [[ "$*" == 'pull official-server redis' ]] || return 90
   attempts=$((attempts + 1))
   echo "pull $attempts"
   [[ "$attempts" -gt "$FAILURES" ]]
@@ -141,3 +143,163 @@ echo ready
     assert.equal(result.stdout.includes("ready"), status === 0);
   });
 }
+
+// FL-44 (FN-304): the proof records the exact candidate commit and image and the certified official image.
+const functionSource = (name) => {
+  const body = source.match(
+    new RegExp(`^${name}\\(\\) \\{[\\s\\S]*?^\\}`, "m"),
+  )?.[0];
+  assert.ok(body, `${name} is present`);
+  return body;
+};
+const evidenceFunctions = [
+  "resolve_candidate_commit",
+  "resolve_candidate_image",
+  "write_evidence",
+]
+  .map(functionSource)
+  .join("\n");
+const sha = "0123456789abcdef0123456789abcdef01234567";
+const imageId = `sha256:${"a".repeat(64)}`;
+
+function evidence({
+  dirtyTree = "",
+  allowDirty = "",
+  revision = sha,
+  id = imageId,
+  gitFails = false,
+} = {}) {
+  const dir = mkdtempSync(join(tmpdir(), "fork-roundtrip-evidence-"));
+  const result = spawnSync(
+    "bash",
+    [
+      "-c",
+      `
+set -Eeuo pipefail
+ROOT=/repo
+EVIDENCE_DIR="$DIR"
+EVIDENCE_FILE="$DIR/fork-roundtrip-chained.json"
+CANDIDATE_IMAGE='immich-fork-roundtrip:local'
+selected_lane=chained
+OFFICIAL_IMMICH_TAG=v3.1.0
+official_digest="ghcr.io/immich-app/immich-server@sha256:${"b".repeat(64)}"
+official_image_id="sha256:${"c".repeat(64)}"
+official_architecture=amd64
+expected_official_core_digest="${"d".repeat(64)}"
+git() {
+  [[ "$GIT_FAILS" != true ]] || return 128
+  case "$*" in
+    '-C /repo rev-parse --verify HEAD') echo ${sha} ;;
+    "-C /repo status --porcelain -- . :(exclude).cache") printf '%s' "$DIRTY_TREE" ;;
+    *) echo "unexpected git $*" >&2; return 90 ;;
+  esac
+}
+docker() {
+  case "$*" in
+    *'{{.Id}}'*) echo "$IMAGE_ID" ;;
+    *'org.opencontainers.image.revision'*) echo "$REVISION" ;;
+    *'{{json .RepoDigests}}'*) echo '[]' ;;
+    *) echo "unexpected docker $*" >&2; return 91 ;;
+  esac
+}
+${evidenceFunctions}
+resolve_candidate_commit
+resolve_candidate_image
+write_evidence passed
+cat "$EVIDENCE_FILE"
+`,
+    ],
+    {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        DIR: dir,
+        DIRTY_TREE: dirtyTree,
+        FORK_ROUNDTRIP_ALLOW_DIRTY: allowDirty,
+        GIT_FAILS: String(gitFails),
+        IMAGE_ID: id,
+        REVISION: revision,
+      },
+      timeout: 5000,
+    },
+  );
+  rmSync(dir, { recursive: true, force: true });
+  return result;
+}
+
+test("records the clean candidate commit, its image and the certified official image", () => {
+  const result = evidence();
+  assert.equal(result.status, 0, result.stderr);
+  const recorded = JSON.parse(result.stdout.slice(result.stdout.indexOf("{")));
+  assert.equal(recorded.status, "passed");
+  assert.deepEqual(recorded.candidate, {
+    commit: sha,
+    dirty: false,
+    image: "immich-fork-roundtrip:local",
+    imageId,
+    repoDigests: [],
+  });
+  assert.equal(recorded.official.tag, "v3.1.0");
+  assert.match(
+    recorded.official.repoDigest,
+    /^ghcr\.io\/immich-app\/immich-server@sha256:[0-9a-f]{64}$/,
+  );
+  assert.match(recorded.official.imageId, /^sha256:[0-9a-f]{64}$/);
+});
+
+test("refuses a dirty candidate tree unless explicitly allowed, and then records it as dirty", () => {
+  const refused = evidence({ dirtyTree: " M server/src/main.ts\n" });
+  assert.notEqual(refused.status, 0);
+  assert.match(refused.stderr, /uncommitted changes/);
+
+  const allowed = evidence({
+    dirtyTree: " M server/src/main.ts\n",
+    allowDirty: "true",
+  });
+  assert.equal(allowed.status, 0, allowed.stderr);
+  assert.equal(
+    JSON.parse(allowed.stdout.slice(allowed.stdout.indexOf("{"))).candidate
+      .dirty,
+    true,
+  );
+});
+
+test("fails when the candidate commit cannot be determined", () => {
+  const result = evidence({ gitFails: true });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /Cannot determine the candidate git commit/);
+});
+
+test("fails when the built image is not the candidate's or has no image id", () => {
+  const other = evidence({ revision: "f".repeat(40) });
+  assert.notEqual(other.status, 0);
+  assert.match(other.stderr, /not 0123456789abcdef/);
+
+  const missing = evidence({ id: "" });
+  assert.notEqual(missing.status, 0);
+  assert.match(missing.stderr, /Candidate image id is not a digest/);
+});
+
+test("the chained lane resets its volumes once and runs every leg on them", () => {
+  const chained = source.match(
+    /^if \[\[ "\$selected_lane" == all \|\| "\$selected_lane" == official-v3\.1\.0-to-fork-to-official-v3\.1\.0-to-fork \]\]; then[\s\S]*?^fi$/m,
+  )?.[0];
+  assert.ok(chained, "chained lane is present");
+  assert.equal(chained.match(/^reset_lane$/gm)?.length, 1);
+  const order = [
+    "phase origin-seed",
+    "phase chain-fork-seed",
+    "handoff_to_official",
+    "phase chain-official",
+    "return_to_fork",
+    "phase chain-fork-return",
+  ].map((step) => chained.indexOf(step));
+  assert.ok(
+    order.every((index) => index >= 0),
+    `every leg runs: ${order}`,
+  );
+  assert.deepEqual(
+    [...order].sort((a, b) => a - b),
+    order,
+  );
+});

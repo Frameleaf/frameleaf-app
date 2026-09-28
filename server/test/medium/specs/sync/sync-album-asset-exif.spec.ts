@@ -371,3 +371,81 @@ describe(SyncRequestType.AlbumAssetExifsV1, () => {
     ]);
   });
 });
+
+describe(`${SyncRequestType.AlbumAssetExifsV1} location (FL-54)`, () => {
+  const located = { latitude: 59.91, longitude: 10.75, city: 'Oslo', state: 'Oslo', country: 'Norway' };
+  const hidden = { latitude: null, longitude: null, city: null, state: null, country: null };
+
+  const hideLocationFrom = (sharedById: string, sharedWithId: string) =>
+    defaultDatabase
+      .updateTable('partner')
+      .set({ shareLocation: false })
+      .where('sharedById', '=', sharedById)
+      .where('sharedWithId', '=', sharedWithId)
+      .execute();
+
+  const exifRows = (response: Array<{ type: string; data: any }>) =>
+    response.filter(({ type }) => type === SyncEntityType.AlbumAssetExifCreateV1).map(({ data }) => data);
+
+  it("nulls a partner's location in their shared album when they hide it from the user", async () => {
+    const { auth, ctx } = await setup();
+    const { user: partner } = await ctx.newUser();
+    await ctx.newPartner({ sharedById: partner.id, sharedWithId: auth.user.id });
+    await hideLocationFrom(partner.id, auth.user.id);
+    const { asset } = await ctx.newAsset({ ownerId: partner.id });
+    await ctx.newExif({ assetId: asset.id, make: 'Canon', ...located });
+    const { album } = await ctx.newAlbum({ ownerId: partner.id });
+    await ctx.newAlbumAsset({ albumId: album.id, assetId: asset.id });
+    await ctx.newAlbumUser({ albumId: album.id, userId: auth.user.id, role: AlbumUserRole.Viewer });
+
+    const rows = exifRows(await ctx.syncStream(auth, [SyncRequestType.AlbumAssetExifsV1]));
+
+    // the row still arrives, with the same shape, only without its place
+    expect(rows).toEqual([expect.objectContaining({ assetId: asset.id, make: 'Canon', ...hidden })]);
+    expect(Object.keys(rows[0])).not.toContain('locationHidden');
+  });
+
+  it("nulls an owner's location reshared to a non-partner through an album whose owner they hide it from", async () => {
+    const { auth, ctx } = await setup();
+    const { user: hiding } = await ctx.newUser();
+    const { user: albumOwner } = await ctx.newUser();
+    await ctx.newPartner({ sharedById: hiding.id, sharedWithId: albumOwner.id });
+    await hideLocationFrom(hiding.id, albumOwner.id);
+    const { asset: theirs } = await ctx.newAsset({ ownerId: hiding.id });
+    const { asset: ownersOwn } = await ctx.newAsset({ ownerId: albumOwner.id });
+    await ctx.newExif({ assetId: theirs.id, make: 'Canon', ...located });
+    await ctx.newExif({ assetId: ownersOwn.id, make: 'Nikon', ...located });
+    const { album } = await ctx.newAlbum({ ownerId: albumOwner.id });
+    await ctx.newAlbumAsset({ albumId: album.id, assetId: theirs.id });
+    await ctx.newAlbumAsset({ albumId: album.id, assetId: ownersOwn.id });
+    await ctx.newAlbumUser({ albumId: album.id, userId: auth.user.id, role: AlbumUserRole.Viewer });
+
+    const rows = exifRows(await ctx.syncStream(auth, [SyncRequestType.AlbumAssetExifsV1]));
+
+    expect(rows).toHaveLength(2);
+    expect(rows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ assetId: theirs.id, make: 'Canon', ...hidden }),
+        expect.objectContaining({ assetId: ownersOwn.id, make: 'Nikon', ...located }),
+      ]),
+    );
+  });
+
+  it('keeps the location for a user the owner shares locations with directly', async () => {
+    const { auth, ctx } = await setup();
+    const { user: hiding } = await ctx.newUser();
+    const { user: albumOwner } = await ctx.newUser();
+    await ctx.newPartner({ sharedById: hiding.id, sharedWithId: albumOwner.id });
+    await hideLocationFrom(hiding.id, albumOwner.id);
+    await ctx.newPartner({ sharedById: hiding.id, sharedWithId: auth.user.id });
+    const { asset } = await ctx.newAsset({ ownerId: hiding.id });
+    await ctx.newExif({ assetId: asset.id, ...located });
+    const { album } = await ctx.newAlbum({ ownerId: albumOwner.id });
+    await ctx.newAlbumAsset({ albumId: album.id, assetId: asset.id });
+    await ctx.newAlbumUser({ albumId: album.id, userId: auth.user.id, role: AlbumUserRole.Viewer });
+
+    const rows = exifRows(await ctx.syncStream(auth, [SyncRequestType.AlbumAssetExifsV1]));
+
+    expect(rows).toEqual([expect.objectContaining({ assetId: asset.id, ...located })]);
+  });
+});

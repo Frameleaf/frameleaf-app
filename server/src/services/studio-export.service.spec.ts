@@ -1,0 +1,1455 @@
+import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { StorageCore } from 'src/cores/storage.core.js';
+import { AuthDto } from 'src/dtos/auth.dto.js';
+import {
+  AssetLockReason,
+  AssetType,
+  JobName,
+  MediaOperationDestination,
+  MediaOperationKind,
+  MediaOperationStatus,
+  MlDestinationKind,
+  MlWorkload,
+  StudioExportRemoteReason,
+  StudioExportScope,
+  StudioExportVersionState,
+} from 'src/enum.js';
+import { MediaOperation } from 'src/repositories/media-operation.repository.js';
+import {
+  StudioExportPublished,
+  StudioExportRefusal,
+  StudioExportVersion,
+  StudioExportVersionSource,
+} from 'src/repositories/studio-export.repository.js';
+import { StudioExportService, settleStudioExportPublication } from 'src/services/studio-export.service.js';
+import { StudioAuthorizedEntry } from 'src/services/studio-resource.service.js';
+import { studioExportStagingFolder } from 'src/utils/studio-export.js';
+import { StudioResourceKind } from 'src/utils/studio-resources.js';
+
+vi.mock('src/utils/config.js', () => ({
+  getConfig: vi.fn().mockResolvedValue({ machineLearning: { nsfwDetection: { hideFromLibrary: true } } }),
+}));
+
+const OWNER = '0195e2a0-0000-4000-8000-00000000000a';
+const PARTNER = '0195e2a0-0000-4000-8000-00000000000b';
+const PROJECT = '0195e2a0-0000-7000-8000-0000000000p1'.replace('p1', '01');
+const RENDER = '0195e2a0-0000-7000-8000-0000000000r1'.replace('r1', '02');
+const PUBLISH = '0195e2a0-0000-7000-8000-000000000003';
+const VERSION = '0195e2a0-0000-7000-8000-000000000004';
+const CLIP = '0195e2a0-0000-4000-8000-000000000011';
+const SHARED_CLIP = '0195e2a0-0000-4000-8000-000000000012';
+const SMOOTH_DESTINATION = '0195e2a0-0000-4000-8000-000000000021';
+const LIBRARY_ONLY_DESTINATION = '0195e2a0-0000-4000-8000-000000000022';
+
+const auth = (overrides: Partial<AuthDto> = {}): AuthDto =>
+  ({
+    user: {
+      id: OWNER,
+      name: 'Owner',
+      email: 'o@example.com',
+      isAdmin: false,
+      quotaSizeInBytes: null,
+      quotaUsageInBytes: 0,
+    },
+    session: { id: 'session-1', hasElevatedPermission: false },
+    ...overrides,
+  }) as AuthDto;
+
+const elevated = () => auth({ session: { id: 'session-1', hasElevatedPermission: true } } as never);
+
+const entry = (overrides: Partial<StudioAuthorizedEntry> = {}): StudioAuthorizedEntry => ({
+  key: `library-asset:${CLIP}`,
+  kind: StudioResourceKind.LibraryAsset,
+  id: CLIP,
+  graphPath: '$.clips[0]',
+  ownerId: OWNER,
+  checksum: 'c3VtLTE=',
+  path: '/data/library/clip.mov',
+  sourceAccess: 'owner',
+  grant: 'render',
+  ...overrides,
+});
+
+const sourceRow = (overrides: Partial<StudioExportVersionSource> = {}): StudioExportVersionSource => ({
+  versionId: VERSION,
+  key: `library-asset:${CLIP}`,
+  kind: StudioResourceKind.LibraryAsset,
+  resourceId: CLIP,
+  assetId: CLIP,
+  ownerId: OWNER,
+  checksum: 'c3VtLTE=',
+  sourceAccess: 'owner',
+  locked: null,
+  lockReason: null,
+  sensitive: null,
+  ...overrides,
+});
+
+const versionRow = (overrides: Partial<StudioExportVersion> = {}): StudioExportVersion =>
+  ({
+    id: VERSION,
+    ownerId: OWNER,
+    projectId: PROJECT,
+    revision: 3,
+    revisionDigest: 'digest-3',
+    renderOperationId: RENDER,
+    publishOperationId: PUBLISH,
+    state: StudioExportVersionState.Staged,
+    version: null,
+    scope: null,
+    destination: MediaOperationDestination.Lan,
+    settings: { format: 'mp4-h264', color: 'preserve', resolution: '1080p' },
+    workerId: 'worker-1',
+    engineDigest: 'engine-1',
+    outputPath: '',
+    outputChecksum: Buffer.from('ab'.repeat(32), 'hex'),
+    outputSizeInBytes: '1024',
+    outputContentType: 'video/mp4',
+    outputRemoteRef: null,
+    outputRemovedAt: null,
+    resultAssetId: null,
+    privacy: null,
+    errorCode: null,
+    error: null,
+    createdAt: new Date('2026-09-23T10:00:00.000Z'),
+    updatedAt: new Date('2026-09-23T10:00:00.000Z'),
+    publishedAt: null,
+    cancelledAt: null,
+    ...overrides,
+  }) as unknown as StudioExportVersion;
+
+const operation = (overrides: Partial<MediaOperation> = {}): MediaOperation =>
+  ({
+    id: RENDER,
+    ownerId: OWNER,
+    kind: MediaOperationKind.StudioExport,
+    status: MediaOperationStatus.Validating,
+    claimToken: 'render-claim',
+    destination: MediaOperationDestination.Lan,
+    label: 'Lake trip',
+    projectId: PROJECT,
+    snapshot: {},
+    settings: {},
+    ...overrides,
+  }) as unknown as MediaOperation;
+
+/** A live render session for a LAN worker that verified 1080p H.264 in SDR (FL-42). */
+const liveSession = (
+  overrides: Partial<{
+    destination: MediaOperationDestination;
+    gpuMemoryBytes: string | null;
+    codecs: string[] | null;
+    colorPrecision: { maxBitDepth: number; hdr10: boolean; dolbyVision: boolean } | null;
+    conformanceReportedAt: Date;
+  }> = {},
+) => ({
+  worker: {
+    id: 'worker-1',
+    status: 'active',
+    destination: overrides.destination ?? MediaOperationDestination.Lan,
+    engineDigest: 'engine-1',
+    conformanceMaxAgeMs: 24 * 60 * 60 * 1000,
+  },
+  session: {
+    id: 'session-1',
+    scopes: [MediaOperationKind.StudioExport],
+    gpuMemoryBytes: overrides.gpuMemoryBytes === undefined ? String(12 * 1024 ** 3) : overrides.gpuMemoryBytes,
+    engineDigest: 'engine-1',
+    conformanceReportedAt: overrides.conformanceReportedAt ?? new Date(),
+    codecs: overrides.codecs === undefined ? ['h264_nvenc', 'hevc_nvenc'] : overrides.codecs,
+    colorPrecision: overrides.colorPrecision ?? null,
+    expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+    revokedAt: null,
+  },
+});
+
+/** A Freecut graph at 30000/1001 with one clip of CLIP and its linked audio. */
+const clipGraph = (overrides: { items?: Record<string, unknown>[]; transitions?: unknown[] } = {}) => ({
+  id: 'project',
+  metadata: { fps: 30_000 / 1001, frameRate: { num: 30_000, den: 1001 } },
+  timeline: {
+    tracks: [{ id: 'v1' }, { id: 'a1' }],
+    items: overrides.items ?? [
+      { id: 'clip-v', type: 'video', trackId: 'v1', mediaId: CLIP, from: 0, durationInFrames: 300 },
+      { id: 'clip-a', type: 'audio', trackId: 'a1', mediaId: CLIP, from: 0, durationInFrames: 300 },
+    ],
+    transitions: overrides.transitions ?? [],
+    keyframes: [],
+  },
+});
+
+/** What the library knows about a source: a time base, a packet scan and its audio. */
+const facts = (
+  assetId: string,
+  overrides: { ownDuration?: number[]; startPts?: number; audio?: Record<string, unknown> | null } = {},
+) => ({
+  assetId,
+  video: { timeBase: 30_000, pixelFormat: 'yuv420p', colorTransfer: 1 },
+  packets: {
+    keyframePts: [overrides.startPts ?? 0, 30_030],
+    keyframeAccDuration: [1001, 31_031],
+    keyframeOwnDuration: overrides.ownDuration ?? [1001, 1001],
+    totalDuration: 300_300,
+    packetCount: 300,
+    outputFrames: 300,
+  },
+  audio:
+    overrides.audio === undefined
+      ? { codecName: 'aac', channels: 2, channelLayout: 'stereo', sampleRate: 48_000 }
+      : overrides.audio,
+});
+
+/** What the production probe reports for a rendered 8-bit SDR export with stereo audio. */
+const renderedOutput = (overrides: { video?: Record<string, unknown>; audio?: Record<string, unknown>[] } = {}) => ({
+  format: { duration: 10, bitrate: 0 },
+  videoStreams: [
+    {
+      index: 0,
+      width: 1920,
+      height: 1080,
+      pixelFormat: 'yuv420p',
+      colorTransfer: 1,
+      duration: 10,
+      frameRate: 30,
+      frameRateRational: { num: 30, den: 1 },
+      ...overrides.video,
+    },
+  ],
+  audioStreams: overrides.audio ?? [
+    { index: 1, codecName: 'aac', channels: 2, channelLayout: 'stereo', sampleRate: 48_000, duration: 10 },
+  ],
+});
+
+describe(StudioExportService.name, () => {
+  let sut: StudioExportService;
+  let repository: Record<string, ReturnType<typeof vi.fn>>;
+  let operations: Record<string, ReturnType<typeof vi.fn>>;
+  let projects: Record<string, ReturnType<typeof vi.fn>>;
+  let studio: Record<string, ReturnType<typeof vi.fn>>;
+  let resources: Record<string, ReturnType<typeof vi.fn>>;
+  let users: Record<string, ReturnType<typeof vi.fn>>;
+  let access: { asset: Record<string, ReturnType<typeof vi.fn>> };
+  let storage: Record<string, ReturnType<typeof vi.fn>> & {
+    checkFileExists: ReturnType<typeof vi.fn<(path: string) => Promise<boolean>>>;
+  };
+  let crypto: Record<string, ReturnType<typeof vi.fn>>;
+  let jobs: Record<string, ReturnType<typeof vi.fn>>;
+  let renderWorkers: { listLiveSessions: ReturnType<typeof vi.fn> };
+  let media: { probe: ReturnType<typeof vi.fn> };
+  let restorations: { queueExportSmoothMotion: ReturnType<typeof vi.fn> };
+  let mlDestinations: { getById: ReturnType<typeof vi.fn> };
+  let staged: string;
+
+  beforeAll(() => StorageCore.setMediaLocation('/data'));
+
+  beforeEach(() => {
+    staged = `${studioExportStagingFolder(OWNER, RENDER)}/out.mp4`;
+    repository = {
+      createWithRender: vi.fn(),
+      getById: vi.fn(),
+      getForOwner: vi.fn(),
+      getByRenderOperation: vi.fn(),
+      getSources: vi.fn().mockResolvedValue([sourceRow()]),
+      getSourceMediaFacts: vi.fn().mockResolvedValue([]),
+      getSourcesFor: vi.fn((ids: string[]) =>
+        Promise.resolve(new Map(ids.map((id) => [id, [sourceRow({ versionId: id })]]))),
+      ),
+      listForProject: vi.fn(),
+      recordRenderClaim: vi.fn().mockResolvedValue(true),
+      stage: vi.fn(),
+      markFailed: vi.fn().mockResolvedValue(undefined),
+      cancel: vi
+        .fn()
+        .mockImplementation((id) => Promise.resolve(versionRow({ id, state: StudioExportVersionState.Cancelled }))),
+      publish: vi.fn(),
+      listOrphanedWork: vi.fn().mockResolvedValue([]),
+      listSettledWork: vi.fn().mockResolvedValue([]),
+      listRemovableOutputs: vi.fn().mockResolvedValue([]),
+      markOutputRemoved: vi.fn(),
+      recordRemoteReference: vi.fn().mockResolvedValue(undefined),
+      acknowledgeRemoteCancel: vi.fn().mockResolvedValue(true),
+      listRemoteReferences: vi.fn(),
+      acknowledgeRemoteReference: vi.fn(),
+    };
+    operations = {
+      getByRequestKey: vi.fn().mockResolvedValue(undefined),
+      beginValidation: vi.fn().mockResolvedValue(true),
+      complete: vi.fn().mockResolvedValue(true),
+      fail: vi.fn().mockResolvedValue('retrying'),
+      requestCancel: vi.fn().mockResolvedValue(operation({ status: MediaOperationStatus.Cancelling })),
+      acknowledgeCancel: vi.fn().mockResolvedValue(true),
+      claimNext: vi.fn(),
+    };
+    projects = {
+      getById: vi.fn().mockResolvedValue({ id: PROJECT, ownerId: OWNER, name: 'Lake trip', deletedAt: null }),
+      getRevision: vi.fn().mockResolvedValue({ revision: 3, digest: 'digest-3', envelope: { graph: { clips: [] } } }),
+    };
+    studio = { authorizeRevision: vi.fn() };
+    resources = {
+      resolveProjectResources: vi.fn().mockResolvedValue({
+        manifest: { complete: true, refusedCount: 0, entries: [entry()] },
+        refused: [],
+      }),
+    };
+    users = { get: vi.fn().mockResolvedValue({ id: OWNER, name: 'Owner', email: 'o@example.com', isAdmin: false }) };
+    access = {
+      asset: {
+        checkOwnerAccess: vi.fn().mockImplementation((_user, ids: Set<string>) => Promise.resolve(new Set(ids))),
+        checkAlbumAccess: vi.fn().mockResolvedValue(new Set()),
+        checkPartnerAccess: vi.fn().mockResolvedValue(new Set()),
+      },
+    };
+    const files = new Map<string, number>([[staged, 1024]]);
+    storage = {
+      mkdirSync: vi.fn(),
+      stat: vi.fn((path: string) =>
+        files.has(path)
+          ? Promise.resolve({ size: files.get(path), isFile: () => true })
+          : Promise.reject(new Error('ENOENT')),
+      ),
+      realpath: vi.fn((path: string) => Promise.resolve(path)),
+      checkFileExists: vi.fn((path: string) => Promise.resolve(files.has(path))),
+      rename: vi.fn((from: string, to: string) => {
+        files.set(to, files.get(from)!);
+        files.delete(from);
+        return Promise.resolve();
+      }),
+      unlink: vi.fn().mockResolvedValue(undefined),
+      unlinkDir: vi.fn().mockResolvedValue(undefined),
+    };
+    crypto = { hashFile: vi.fn().mockResolvedValue(Buffer.from('ab'.repeat(32), 'hex')) };
+    jobs = { queue: vi.fn().mockResolvedValue(undefined) };
+    renderWorkers = { listLiveSessions: vi.fn().mockResolvedValue([liveSession()]) };
+    media = { probe: vi.fn().mockResolvedValue(renderedOutput()) };
+    restorations = { queueExportSmoothMotion: vi.fn().mockResolvedValue(null) };
+    mlDestinations = {
+      getById: vi
+        .fn()
+        .mockImplementation((id: string) =>
+          Promise.resolve(
+            id === SMOOTH_DESTINATION
+              ? { id, enabled: true, kind: MlDestinationKind.Lan, workloads: [MlWorkload.Interpolation] }
+              : id === LIBRARY_ONLY_DESTINATION
+                ? { id, enabled: true, kind: MlDestinationKind.Lan, workloads: [MlWorkload.Clip] }
+                : undefined,
+          ),
+        ),
+    };
+
+    sut = new StudioExportService(
+      { setContext: vi.fn(), log: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } as never,
+      repository as never,
+      operations as never,
+      projects as never,
+      studio as never,
+      resources as never,
+      users as never,
+      access as never,
+      storage as never,
+      crypto as never,
+      jobs as never,
+      {} as never,
+      {} as never,
+      renderWorkers as never,
+      media as never,
+      restorations as never,
+      mlDestinations as never,
+    );
+  });
+
+  describe('create', () => {
+    const authorized = (overrides: Record<string, unknown> = {}) => ({
+      project: { id: PROJECT, name: 'Lake trip' },
+      access: 'owner',
+      revision: { id: 'rev-row', revision: 3, digest: 'digest-3' },
+      envelope: { graph: clipGraph() },
+      manifest: { complete: true, refusedCount: 0, digest: 'm', entries: [entry()] },
+      ...overrides,
+    });
+    const dto = {
+      destination: MediaOperationDestination.Lan,
+      format: 'mp4-h264',
+      color: 'preserve',
+      resolution: '1080p',
+    } as never;
+
+    it('renders only at home: a Frameleaf Cloud destination is refused before anything is resolved', async () => {
+      await expect(
+        sut.create(auth(), PROJECT, {
+          ...(dto as object),
+          destination: MediaOperationDestination.FrameleafCloud,
+          cloudConsent: true,
+        } as never),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(studio.authorizeRevision).not.toHaveBeenCalled();
+      expect(repository.createWithRender).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      [[], {}, 'no-qualified-worker'],
+      [[liveSession({ gpuMemoryBytes: String(2 * 1024 ** 3) })], {}, 'insufficient-memory'],
+      [[liveSession({ codecs: ['h264_nvenc'] })], { format: 'prores-422-hq' }, 'codec-unavailable'],
+      [[liveSession()], { format: 'mp4-hevc-main10', color: 'hdr10' }, 'incompatible-color'],
+      [[liveSession({ destination: MediaOperationDestination.Local })], {}, 'no-qualified-worker'],
+      [[liveSession({ conformanceReportedAt: new Date(Date.now() - 48 * 60 * 60 * 1000) })], {}, 'no-qualified-worker'],
+    ])(
+      'refuses an export no qualified render session verified, with an actionable reason (FL-42) %#',
+      async (sessions, settings, reason) => {
+        studio.authorizeRevision.mockResolvedValue(authorized());
+        renderWorkers.listLiveSessions.mockResolvedValue(sessions);
+
+        const error = await sut
+          .create(auth(), PROJECT, { ...(dto as object), ...settings } as never)
+          .catch((error_: unknown) => error_);
+
+        expect(error).toBeInstanceOf(ConflictException);
+        expect((error as ConflictException).getResponse()).toMatchObject({ code: 'studio_export_unsupported', reason });
+        expect(repository.createWithRender).not.toHaveBeenCalled();
+      },
+    );
+
+    it('queues an HDR10 export only on a session that verified 10-bit HDR10 and a HEVC encoder (FL-42)', async () => {
+      studio.authorizeRevision.mockResolvedValue(authorized());
+      renderWorkers.listLiveSessions.mockResolvedValue([
+        liveSession({
+          codecs: ['hevc_nvenc', 'h264_nvenc'],
+          colorPrecision: { maxBitDepth: 10, hdr10: true, dolbyVision: false },
+        }),
+      ]);
+      repository.createWithRender.mockRejectedValue(new Error('created'));
+
+      await expect(
+        sut.create(auth(), PROJECT, { ...(dto as object), format: 'mp4-hevc-main10', color: 'hdr10' } as never),
+      ).rejects.toThrow('created');
+    });
+
+    it('refuses anybody but the owner', async () => {
+      studio.authorizeRevision.mockResolvedValue(authorized({ access: 'reviewer' }));
+      await expect(sut.create(auth(), PROJECT, dto)).rejects.toBeInstanceOf(ForbiddenException);
+      expect(repository.createWithRender).not.toHaveBeenCalled();
+    });
+
+    it('refuses a stale revision and a manifest with a refused source', async () => {
+      studio.authorizeRevision.mockResolvedValue(authorized());
+      await expect(
+        sut.create(auth(), PROJECT, { ...(dto as object), expectedRevision: 2 } as never),
+      ).rejects.toBeInstanceOf(ConflictException);
+      studio.authorizeRevision.mockResolvedValue(
+        authorized({ manifest: { complete: false, refusedCount: 1, digest: 'm', entries: [] } }),
+      );
+      await expect(sut.create(auth(), PROJECT, dto)).rejects.toBeInstanceOf(ConflictException);
+      expect(repository.createWithRender).not.toHaveBeenCalled();
+    });
+
+    it('refuses Dolby Vision output while no worker is qualified with the approved Dolby tools (FL-86, FL-145)', async () => {
+      studio.authorizeRevision.mockResolvedValue(authorized());
+      const dolby = { ...(dto as object), color: 'dolby-vision' } as never;
+      await expect(sut.create(auth(), PROJECT, dolby)).rejects.toMatchObject({
+        response: expect.objectContaining({ code: 'studio_export_dolby_unqualified', resource: 'tool:dolby-portal' }),
+      });
+      expect(studio.authorizeRevision).not.toHaveBeenCalled();
+      expect(repository.createWithRender).not.toHaveBeenCalled();
+    });
+
+    it('hides a Locked export on request-key replay after the session locks', async () => {
+      const version = versionRow({ privacy: { lockReason: AssetLockReason.Marked } });
+      operations.getByRequestKey.mockResolvedValue(operation());
+      repository.getByRenderOperation.mockResolvedValue(version);
+      repository.getForOwner.mockResolvedValue(version);
+      const replay = { ...(dto as object), requestKey: 'export-request' } as never;
+      await expect(sut.create(elevated(), PROJECT, replay)).resolves.toHaveProperty('version.id', VERSION);
+      await expect(sut.create(auth(), PROJECT, replay)).rejects.toBeInstanceOf(NotFoundException);
+      expect(repository.createWithRender).not.toHaveBeenCalled();
+    });
+
+    it('queues a render bound to the stored revision, with no graph in the job', async () => {
+      studio.authorizeRevision.mockResolvedValue(authorized());
+      repository.createWithRender.mockResolvedValue({
+        operation: operation({ status: MediaOperationStatus.Queued }),
+        version: versionRow({ state: StudioExportVersionState.Rendering }),
+      });
+
+      await sut.create(auth(), PROJECT, dto);
+
+      const [job, version] = repository.createWithRender.mock.calls[0];
+      expect(job).toEqual(
+        expect.objectContaining({
+          kind: MediaOperationKind.StudioExport,
+          resultAssetId: null,
+          snapshot: expect.objectContaining({ studio: { stored: true, revision: 3, cloudConsent: false } }),
+        }),
+      );
+      expect(job.snapshot.studio).not.toHaveProperty('graph');
+      expect(version).toEqual(expect.objectContaining({ ownerId: OWNER, projectId: PROJECT, revision: 3 }));
+    });
+
+    it('keeps Smooth motion out of the render: it rides along as its own job for after publication (FL-162)', async () => {
+      studio.authorizeRevision.mockResolvedValue(authorized());
+      repository.createWithRender.mockResolvedValue({
+        operation: operation({ status: MediaOperationStatus.Queued }),
+        version: versionRow({ state: StudioExportVersionState.Rendering }),
+      });
+
+      await sut.create(auth(), PROJECT, {
+        ...(dto as object),
+        smoothMotion: { factor: 4, destinationId: SMOOTH_DESTINATION },
+      } as never);
+
+      const [job] = repository.createWithRender.mock.calls[0];
+      // the render itself stays on the home network destination it was asked for
+      expect(job.destination).toBe(MediaOperationDestination.Lan);
+      expect(job.snapshot.smoothMotion).toEqual({ factor: 4, destinationId: SMOOTH_DESTINATION });
+      expect(job.settings).not.toHaveProperty('smoothMotion');
+    });
+
+    it('refuses Smooth motion on a destination that does not run it, before anything is queued', async () => {
+      studio.authorizeRevision.mockResolvedValue(authorized());
+      for (const destinationId of [LIBRARY_ONLY_DESTINATION, '0199aaaa-bbbb-4ccc-8ddd-eeeeffff00ff']) {
+        await expect(
+          sut.create(auth(), PROJECT, { ...(dto as object), smoothMotion: { factor: 2, destinationId } } as never),
+        ).rejects.toBeInstanceOf(BadRequestException);
+      }
+      expect(repository.createWithRender).not.toHaveBeenCalled();
+    });
+
+    it('keeps the result with its project when asked, for a render the owner saves to the library later (FL-194)', async () => {
+      studio.authorizeRevision.mockResolvedValue(authorized());
+      repository.createWithRender.mockResolvedValue({
+        operation: operation({ status: MediaOperationStatus.Queued }),
+        version: versionRow({ state: StudioExportVersionState.Rendering }),
+      });
+
+      await sut.create(auth(), PROJECT, dto, { retainInProject: true });
+      expect(repository.createWithRender.mock.calls[0][0].snapshot).toEqual(
+        expect.objectContaining({ retain: 'project' }),
+      );
+
+      await sut.create(auth(), PROJECT, dto);
+      expect(repository.createWithRender.mock.calls[1][0].snapshot).not.toHaveProperty('retain');
+    });
+  });
+
+  describe('declared timing and output contract (FL-93, FL-102)', () => {
+    const authorizedWith = (graph: unknown, entries = [entry()]) => ({
+      project: { id: PROJECT, name: 'Lake trip' },
+      access: 'owner',
+      revision: { id: 'rev-row', revision: 3, digest: 'digest-3' },
+      envelope: { graph },
+      manifest: { complete: true, refusedCount: 0, digest: 'm', entries },
+    });
+    const dto = {
+      destination: MediaOperationDestination.Lan,
+      format: 'mp4-h264',
+      color: 'preserve',
+      resolution: '1080p',
+    };
+    const snapshotOf = async (graph: unknown, overrides: Record<string, unknown> = {}, entries = [entry()]) => {
+      studio.authorizeRevision.mockResolvedValue(authorizedWith(graph, entries));
+      repository.createWithRender.mockResolvedValue({
+        operation: operation({ status: MediaOperationStatus.Queued }),
+        version: versionRow({ state: StudioExportVersionState.Rendering }),
+      });
+      await sut.create(auth(), PROJECT, { ...dto, ...overrides } as never);
+      const [job, version] = repository.createWithRender.mock.calls.at(-1)!;
+      return { snapshot: job.snapshot, version };
+    };
+
+    it('keeps the presentation timestamps of one variable-rate source the edit does not retime', async () => {
+      repository.getSourceMediaFacts.mockResolvedValue([facts(CLIP, { ownDuration: [1001, 1502], startPts: 2002 })]);
+      const { snapshot } = await snapshotOf(clipGraph());
+      expect(snapshot.timing).toEqual({
+        cadence: '30000/1001',
+        decision: expect.objectContaining({ mode: 'passthrough', cadence: null }),
+        timeBase: '1/30000',
+        sources: [
+          {
+            key: `library-asset:${CLIP}`,
+            assetId: CLIP,
+            timeBase: '1/30000',
+            originTicks: 2002,
+            cadence: null,
+            variableFrameRate: true,
+            trackTimescale: 30_000,
+            audio: { sampleRate: 48_000, channels: 2, channelLayout: 'stereo' },
+          },
+        ],
+      });
+    });
+
+    it('records a conversion onto the declared cadence for a composition, with one tick per frame', async () => {
+      repository.getSourceMediaFacts.mockResolvedValue([
+        facts(CLIP),
+        {
+          ...facts(SHARED_CLIP, { ownDuration: [1, 1] }),
+          video: { timeBase: 25, pixelFormat: 'yuv420p', colorTransfer: 1 },
+        },
+      ]);
+      const graph = clipGraph({
+        items: [
+          { id: 'a', type: 'video', trackId: 'v1', mediaId: CLIP, from: 0, durationInFrames: 30 },
+          { id: 'b', type: 'video', trackId: 'v1', mediaId: SHARED_CLIP, from: 30, durationInFrames: 30 },
+        ],
+      });
+      const entries = [entry(), entry({ key: `library-asset:${SHARED_CLIP}`, id: SHARED_CLIP })];
+      const { snapshot } = await snapshotOf(graph, {}, entries);
+      expect(snapshot.timing.decision).toEqual(
+        expect.objectContaining({
+          mode: 'convert',
+          cadence: '30000/1001',
+          reason: expect.stringContaining('2 sources'),
+        }),
+      );
+      expect(snapshot.timing.timeBase).toBe('1001/30000');
+      expect(snapshot.timing.sources.map((source: { cadence: string }) => source.cadence)).toEqual([
+        '30000/1001',
+        '25/1',
+      ]);
+    });
+
+    it('records a retimed single source as a conversion even at its own cadence', async () => {
+      repository.getSourceMediaFacts.mockResolvedValue([facts(CLIP)]);
+      const graph = clipGraph({
+        items: [{ id: 'a', type: 'video', trackId: 'v1', mediaId: CLIP, from: 0, durationInFrames: 150, speed: 2 }],
+      });
+      const { snapshot } = await snapshotOf(graph);
+      expect(snapshot.timing.decision).toEqual(
+        expect.objectContaining({ mode: 'convert', cadence: '30000/1001', reason: expect.stringContaining('retimes') }),
+      );
+    });
+
+    it('refuses a project whose frame rate has no exact reading, and a source never scanned', async () => {
+      repository.getSourceMediaFacts.mockResolvedValue([facts(CLIP)]);
+      studio.authorizeRevision.mockResolvedValue(authorizedWith({ ...clipGraph(), metadata: { fps: 27.3 } }));
+      await expect(sut.create(auth(), PROJECT, dto as never)).rejects.toMatchObject({
+        response: expect.objectContaining({ code: 'studio_export_timing_unknown' }),
+      });
+
+      repository.getSourceMediaFacts.mockResolvedValue([{ ...facts(CLIP), packets: null }]);
+      studio.authorizeRevision.mockResolvedValue(authorizedWith(clipGraph()));
+      await expect(sut.create(auth(), PROJECT, dto as never)).rejects.toMatchObject({
+        response: expect.objectContaining({ code: 'studio_export_timing_unknown' }),
+      });
+      expect(repository.createWithRender).not.toHaveBeenCalled();
+    });
+
+    it('promises the widest source layout, or a stereo downmix only when asked for', async () => {
+      const surround = { codecName: 'eac3', channels: 6, channelLayout: '5.1(side)', sampleRate: 48_000 };
+      repository.getSourceMediaFacts.mockResolvedValue([facts(CLIP, { audio: surround })]);
+      renderWorkers.listLiveSessions.mockResolvedValue([
+        liveSession({
+          codecs: ['hevc_nvenc', 'h264_nvenc'],
+          colorPrecision: { maxBitDepth: 10, hdr10: false, dolbyVision: false },
+        }),
+      ]);
+
+      const preserved = await snapshotOf(clipGraph(), { format: 'mp4-hevc-main10' });
+      expect(preserved.snapshot.contract).toEqual({
+        video: { minBitDepth: 10, transfer: null },
+        audio: { policy: 'preserve', channels: 6, channelLayout: '5.1(side)', sampleRate: 48_000 },
+      });
+      expect(preserved.version.settings).toEqual(expect.objectContaining({ audio: 'preserve' }));
+
+      const stereo = await snapshotOf(clipGraph(), { audio: 'stereo' });
+      expect(stereo.snapshot.contract.audio).toEqual({
+        policy: 'stereo',
+        channels: 2,
+        channelLayout: 'stereo',
+        sampleRate: 48_000,
+      });
+    });
+
+    it('promises no audio when every audio clip is muted, and 10-bit PQ for HDR10', async () => {
+      repository.getSourceMediaFacts.mockResolvedValue([facts(CLIP)]);
+      renderWorkers.listLiveSessions.mockResolvedValue([
+        liveSession({ codecs: ['hevc_nvenc'], colorPrecision: { maxBitDepth: 10, hdr10: true, dolbyVision: false } }),
+      ]);
+      const graph = clipGraph({
+        items: [
+          { id: 'v', type: 'video', trackId: 'v1', mediaId: CLIP, from: 0, durationInFrames: 30 },
+          { id: 'a', type: 'audio', trackId: 'a1', mediaId: CLIP, from: 0, durationInFrames: 30, muted: true },
+        ],
+      });
+      const { snapshot } = await snapshotOf(graph, { format: 'mp4-hevc-main10', color: 'hdr10' });
+      expect(snapshot.contract).toEqual({ video: { minBitDepth: 10, transfer: 'smpte2084' }, audio: null });
+    });
+  });
+
+  describe('render contract', () => {
+    it('records provenance and a remote stop obligation when a remote worker claims', async () => {
+      repository.getByRenderOperation.mockResolvedValue(versionRow({ state: StudioExportVersionState.Rendering }));
+
+      await sut.onRenderClaimed(operation({ status: MediaOperationStatus.Preparing }), {
+        workerId: 'worker-1',
+        engineDigest: 'engine-1',
+        entries: [
+          entry(),
+          entry({
+            key: 'font:inter',
+            kind: StudioResourceKind.Font,
+            id: 'inter',
+            ownerId: null,
+            sourceAccess: 'deployment',
+          }),
+        ],
+      });
+
+      expect(repository.recordRenderClaim).toHaveBeenCalledWith(RENDER, {
+        workerId: 'worker-1',
+        engineDigest: 'engine-1',
+        sources: [
+          expect.objectContaining({
+            key: `library-asset:${CLIP}`,
+            assetId: CLIP,
+            ownerId: OWNER,
+            checksum: 'c3VtLTE=',
+          }),
+          expect.objectContaining({ key: 'font:inter', assetId: null, ownerId: null }),
+        ],
+      });
+      expect(repository.recordRemoteReference).toHaveBeenCalledWith(
+        expect.objectContaining({ operationId: RENDER, workerId: 'worker-1', reason: StudioExportRemoteReason.Cancel }),
+      );
+    });
+
+    it('refuses an output outside the render directory, or of another size', async () => {
+      const output = {
+        path: '/data/library/owner/original.mov',
+        checksum: 'ab'.repeat(32),
+        sizeInBytes: '1024',
+        contentType: 'video/mp4',
+      };
+      await expect(sut.onRenderCompleted(operation(), 'worker-1', output)).rejects.toBeInstanceOf(BadRequestException);
+      await expect(
+        sut.onRenderCompleted(operation(), 'worker-1', { ...output, path: `${staged}/../../x.mp4` }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      await expect(
+        sut.onRenderCompleted(operation(), 'worker-1', { ...output, path: staged, sizeInBytes: '9' }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      await expect(
+        sut.onRenderCompleted(operation(), 'worker-1', { ...output, path: staged, contentType: 'text/html' }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(repository.stage).not.toHaveBeenCalled();
+    });
+
+    it('stages a good output, queues its publication and keeps a remote copy on record for deletion', async () => {
+      repository.stage = vi.fn(
+        (_id: string, _claimToken: string, _output: unknown, publish: (version: StudioExportVersion) => object) => {
+          const job = publish(versionRow({ state: StudioExportVersionState.Rendering }));
+          return Promise.resolve({ version: versionRow(), operation: { id: PUBLISH, ...job } });
+        },
+      );
+
+      const result = await sut.onRenderCompleted(operation(), 'worker-1', {
+        path: staged,
+        checksum: 'ab'.repeat(32),
+        sizeInBytes: '1024',
+        contentType: 'video/mp4',
+        remoteRef: 'worker-cache/out.mp4',
+      });
+
+      expect(result).toEqual({ accepted: true });
+      const publish = repository.stage.mock.calls[0][3](versionRow());
+      expect(publish).toEqual(
+        expect.objectContaining({
+          kind: MediaOperationKind.StudioExportPublish,
+          destination: MediaOperationDestination.Local,
+          maxAttempts: 1,
+          snapshot: expect.objectContaining({
+            kind: 'studio-export-publish',
+            versionId: VERSION,
+            renderOperationId: RENDER,
+          }),
+        }),
+      );
+      expect(repository.acknowledgeRemoteCancel).toHaveBeenCalledWith(RENDER, 'worker-1');
+      expect(repository.recordRemoteReference).toHaveBeenCalledWith(
+        expect.objectContaining({ reason: StudioExportRemoteReason.Delete, remoteRef: 'worker-cache/out.mp4' }),
+      );
+    });
+
+    it('carries Smooth motion into its publication (FL-162)', async () => {
+      repository.stage = vi.fn(() => Promise.resolve({ version: versionRow(), operation: { id: PUBLISH } }));
+
+      await sut.onRenderCompleted(
+        operation({
+          snapshot: { kind: 'studio-export', smoothMotion: { factor: 8, destinationId: SMOOTH_DESTINATION } },
+        }),
+        'worker-1',
+        { path: staged, checksum: 'ab'.repeat(32), sizeInBytes: '1024', contentType: 'video/mp4' },
+      );
+
+      const publish = repository.stage.mock.calls[0][3](versionRow());
+      expect(publish.snapshot.smoothMotion).toEqual({ factor: 8, destinationId: SMOOTH_DESTINATION });
+    });
+
+    it('carries a render that stays with its project into its publication (FL-194)', async () => {
+      repository.stage = vi.fn(() => Promise.resolve({ version: versionRow(), operation: { id: PUBLISH } }));
+
+      await sut.onRenderCompleted(operation({ snapshot: { kind: 'studio-export', retain: 'project' } }), 'worker-1', {
+        path: staged,
+        checksum: 'ab'.repeat(32),
+        sizeInBytes: '1024',
+        contentType: 'video/mp4',
+      });
+
+      const publish = repository.stage.mock.calls[0][3](versionRow());
+      expect(publish.snapshot).toEqual(expect.objectContaining({ retain: 'project' }));
+    });
+  });
+
+  describe('publication', () => {
+    const job = () => ({
+      operation: operation({
+        id: PUBLISH,
+        kind: MediaOperationKind.StudioExportPublish,
+        destination: MediaOperationDestination.Local,
+        snapshot: {
+          kind: 'studio-export-publish',
+          versionId: VERSION,
+          renderOperationId: RENDER,
+          projectId: PROJECT,
+          revision: 3,
+        },
+      }),
+      claimToken: 'claim-p',
+    });
+    const published = (overrides: Partial<StudioExportPublished> = {}): StudioExportPublished => ({
+      status: 'published',
+      version: versionRow({ state: StudioExportVersionState.Published, version: 1, resultAssetId: 'asset-new' }),
+      privacy: {
+        lockReason: AssetLockReason.Marked,
+        sensitive: false,
+        includesSharedSources: false,
+        scope: StudioExportScope.Library,
+        sourceCount: 1,
+        lockedSourceCount: 1,
+        sensitiveSourceCount: 0,
+      },
+      createdAssetId: 'asset-new',
+      reusedAssetId: null,
+      ...overrides,
+    });
+
+    beforeEach(() => {
+      repository.getById.mockResolvedValue(versionRow({ outputPath: staged }));
+    });
+
+    it('does not prepare or publish after losing the validation gate', async () => {
+      operations.beginValidation.mockResolvedValue(false);
+      await sut.run(job());
+      expect(storage.rename).not.toHaveBeenCalled();
+      expect(repository.publish).not.toHaveBeenCalled();
+      expect(operations.requestCancel).not.toHaveBeenCalled();
+    });
+
+    it('does not cancel a replacement claim when publication rejects a stale token', async () => {
+      repository.publish.mockRejectedValue(new StudioExportRefusal('claim-lost', 'stale token'));
+      await sut.run(job());
+      expect(operations.requestCancel).not.toHaveBeenCalled();
+      expect(operations.fail).not.toHaveBeenCalled();
+      expect(operations.complete).not.toHaveBeenCalled();
+    });
+
+    it('leaves the prepared output in place when a replacement runner has verified it', async () => {
+      const firstPrepared = Promise.withResolvers<void>();
+      const replacementPrepared = Promise.withResolvers<void>();
+      const firstFinished = Promise.withResolvers<void>();
+      let finalPath = '';
+      repository.publish = vi.fn(async (input: { claimToken: string; path: string }) => {
+        if (input.claimToken === 'claim-p') {
+          firstPrepared.resolve();
+          await replacementPrepared.promise;
+          throw new StudioExportRefusal('claim-lost', 'replacement claimed the operation');
+        }
+        finalPath = input.path;
+        replacementPrepared.resolve();
+        await firstFinished.promise;
+        expect(await storage.checkFileExists(finalPath)).toBe(true);
+        return published();
+      });
+
+      const first = sut.run(job());
+      await firstPrepared.promise;
+      const replacement = sut.run({ ...job(), claimToken: 'replacement-claim' });
+      await first;
+      firstFinished.resolve();
+      await replacement;
+
+      expect(crypto.hashFile).toHaveBeenCalledWith(finalPath, 'sha256');
+      expect(storage.rename).toHaveBeenCalledExactlyOnceWith(staged, finalPath);
+      expect(operations.complete).toHaveBeenCalledExactlyOnceWith(PUBLISH, 'replacement-claim', {
+        resultAssetId: 'asset-new',
+      });
+      expect(operations.fail).not.toHaveBeenCalled();
+      expect(operations.requestCancel).not.toHaveBeenCalled();
+    });
+
+    it('queues Smooth motion of the published video as its own job, only after publication (FL-162)', async () => {
+      repository.publish.mockResolvedValue(published());
+      const smooth = job();
+      (smooth.operation.snapshot as Record<string, unknown>).smoothMotion = {
+        factor: 4,
+        destinationId: SMOOTH_DESTINATION,
+      };
+
+      await sut.run(smooth);
+
+      expect(operations.complete).toHaveBeenCalledWith(PUBLISH, 'claim-p', { resultAssetId: 'asset-new' });
+      expect(restorations.queueExportSmoothMotion).toHaveBeenCalledWith({
+        ownerId: OWNER,
+        assetId: 'asset-new',
+        exportName: expect.any(String),
+        factor: 4,
+        destinationId: SMOOTH_DESTINATION,
+      });
+      expect(operations.complete.mock.invocationCallOrder[0]).toBeLessThan(
+        restorations.queueExportSmoothMotion.mock.invocationCallOrder[0],
+      );
+    });
+
+    it('queues no Smooth motion for an export that was not asked for it, or that stays with its project', async () => {
+      repository.publish.mockResolvedValue(published());
+      await sut.run(job());
+      expect(restorations.queueExportSmoothMotion).not.toHaveBeenCalled();
+
+      repository.publish.mockResolvedValue(
+        published({
+          version: versionRow({ state: StudioExportVersionState.Published, version: 1, resultAssetId: null }),
+        }),
+      );
+      const smooth = job();
+      (smooth.operation.snapshot as Record<string, unknown>).smoothMotion = {
+        factor: 2,
+        destinationId: SMOOTH_DESTINATION,
+      };
+      await sut.run(smooth);
+      expect(restorations.queueExportSmoothMotion).not.toHaveBeenCalled();
+    });
+
+    it('verifies the file, moves it into the library and publishes it with the sources re-checked', async () => {
+      repository.publish.mockResolvedValue(published());
+
+      await sut.run(job());
+
+      expect(crypto.hashFile).toHaveBeenCalledWith(staged, 'sha256');
+      const input = repository.publish.mock.calls[0][0];
+      expect(input).toEqual(
+        expect.objectContaining({
+          versionId: VERSION,
+          operationId: PUBLISH,
+          claimToken: 'claim-p',
+          expectedScope: StudioExportScope.Library,
+          nsfwHiding: true,
+          assetType: AssetType.Video,
+          originalFileName: 'Lake trip.mp4',
+          sources: [expect.objectContaining({ assetId: CLIP })],
+        }),
+      );
+      expect(input.path).toContain('/upload/');
+      expect(storage.rename).toHaveBeenCalledWith(staged, input.path);
+      expect(jobs.queue).toHaveBeenCalledWith({
+        name: JobName.AssetExtractMetadata,
+        data: { id: 'asset-new', source: 'upload' },
+      });
+      expect(operations.complete).toHaveBeenCalledWith(PUBLISH, 'claim-p', { resultAssetId: 'asset-new' });
+      expect(operations.fail).not.toHaveBeenCalled();
+    });
+
+    describe('holds the rendered file to its contract (FL-102)', () => {
+      const contracted = (contract: Record<string, unknown>) => {
+        const run = job();
+        (run.operation.snapshot as Record<string, unknown>).contract = contract;
+        return run;
+      };
+      const tenBitSurround = {
+        video: { minBitDepth: 10, transfer: null },
+        audio: { policy: 'preserve', channels: 6, channelLayout: '5.1(side)', sampleRate: 48_000 },
+      };
+      const surroundTrack = {
+        index: 1,
+        codecName: 'eac3',
+        channels: 6,
+        channelLayout: '5.1(side)',
+        sampleRate: 48_000,
+        duration: 10,
+      };
+
+      it('publishes a result that kept its precision and its 5.1 audio', async () => {
+        repository.publish.mockResolvedValue(published());
+        media.probe.mockResolvedValue(
+          renderedOutput({ video: { pixelFormat: 'yuv420p10le' }, audio: [surroundTrack] }),
+        );
+        await sut.run(contracted(tenBitSurround));
+        expect(media.probe).toHaveBeenCalledWith(staged);
+        expect(repository.publish).toHaveBeenCalledOnce();
+      });
+
+      it.each([
+        ['an 8-bit result for a Main10 export', { audio: [surroundTrack] }, 'below the 10-bit'],
+        ['a stereo downmix nobody chose', { video: { pixelFormat: 'yuv420p10le' } }, 'audio channels instead of 6'],
+        [
+          'audio that stops early',
+          { video: { pixelFormat: 'yuv420p10le' }, audio: [{ ...surroundTrack, duration: 8 }] },
+          'misaligned',
+        ],
+        ['a result with no audio', { video: { pixelFormat: 'yuv420p10le' }, audio: [] }, 'missing'],
+      ])('refuses %s instead of publishing it', async (_, output, reason) => {
+        media.probe.mockResolvedValue(renderedOutput(output));
+        await sut.run(contracted(tenBitSurround));
+        expect(repository.publish).not.toHaveBeenCalled();
+        expect(operations.fail).toHaveBeenCalledWith(
+          PUBLISH,
+          'claim-p',
+          expect.objectContaining({
+            errorCode: 'studio_export_output_rejected',
+            error: expect.stringContaining(reason),
+          }),
+        );
+        expect(storage.rename).not.toHaveBeenCalled();
+      });
+
+      it('refuses a missing HDR transfer', async () => {
+        media.probe.mockResolvedValue(renderedOutput({ video: { pixelFormat: 'yuv420p10le' } }));
+        await sut.run(contracted({ video: { minBitDepth: 10, transfer: 'smpte2084' }, audio: null }));
+        expect(operations.fail).toHaveBeenCalledWith(
+          PUBLISH,
+          'claim-p',
+          expect.objectContaining({ error: expect.stringContaining('smpte2084') }),
+        );
+      });
+
+      it('holds an export from before the contract to the precision of its settings', async () => {
+        repository.getById.mockResolvedValue(
+          versionRow({
+            outputPath: staged,
+            settings: { format: 'mp4-hevc-main10', color: 'preserve', resolution: '1080p' },
+          }),
+        );
+        await sut.run(job());
+        expect(operations.fail).toHaveBeenCalledWith(
+          PUBLISH,
+          'claim-p',
+          expect.objectContaining({ errorCode: 'studio_export_output_rejected' }),
+        );
+      });
+    });
+
+    it('keeps a result made with shared media with the project', async () => {
+      repository.getSources.mockResolvedValue([
+        sourceRow(),
+        sourceRow({
+          key: `library-asset:${SHARED_CLIP}`,
+          resourceId: SHARED_CLIP,
+          assetId: SHARED_CLIP,
+          ownerId: PARTNER,
+          sourceAccess: 'shared',
+        }),
+      ]);
+      resources.resolveProjectResources.mockResolvedValue({
+        manifest: {
+          complete: true,
+          entries: [
+            entry(),
+            entry({ key: `library-asset:${SHARED_CLIP}`, id: SHARED_CLIP, ownerId: PARTNER, sourceAccess: 'shared' }),
+          ],
+        },
+        refused: [],
+      });
+      repository.publish.mockResolvedValue(published());
+
+      await sut.run(job());
+
+      const input = repository.publish.mock.calls[0][0];
+      expect(input.expectedScope).toBe(StudioExportScope.Project);
+      expect(input.path).toContain('/exports/');
+      expect(input.path).not.toContain('/upload/');
+    });
+
+    it('keeps a result the owner asked to keep with its project out of the library (FL-194)', async () => {
+      repository.publish.mockResolvedValue(published({ createdAssetId: null }));
+      const kept = job();
+      kept.operation.snapshot = { ...kept.operation.snapshot, retain: 'project' };
+
+      await sut.run(kept);
+
+      const input = repository.publish.mock.calls[0][0];
+      expect(input).toEqual(
+        expect.objectContaining({ expectedScope: StudioExportScope.Project, retainInProject: true }),
+      );
+      expect(input.path).toContain('/exports/');
+      expect(input.path).not.toContain('/upload/');
+      expect(jobs.queue).not.toHaveBeenCalled();
+    });
+
+    it('cancels, without publishing, when the project went to the trash', async () => {
+      projects.getById.mockResolvedValue({ id: PROJECT, ownerId: OWNER, name: 'Lake trip', deletedAt: new Date() });
+
+      await sut.run(job());
+
+      expect(repository.publish).not.toHaveBeenCalled();
+      expect(repository.cancel).toHaveBeenCalledWith(
+        VERSION,
+        expect.objectContaining({ errorCode: 'studio_export_project_unavailable' }),
+      );
+      expect(operations.fail).not.toHaveBeenCalled();
+      expect(operations.acknowledgeCancel).toHaveBeenCalledWith(PUBLISH, 'claim-p', { released: true });
+    });
+
+    it('cancels when the owner is being deleted', async () => {
+      users.get.mockResolvedValue(undefined);
+      await sut.run(job());
+      expect(repository.publish).not.toHaveBeenCalled();
+      expect(repository.cancel).toHaveBeenCalledWith(
+        VERSION,
+        expect.objectContaining({ errorCode: 'studio_export_owner_unavailable' }),
+      );
+    });
+
+    it('fails the attempt when a source changed since the render, never publishing the stale render', async () => {
+      resources.resolveProjectResources.mockResolvedValue({
+        manifest: { complete: true, entries: [entry({ checksum: 'b3RoZXI=' })] },
+        refused: [],
+      });
+
+      await sut.run(job());
+
+      expect(repository.publish).not.toHaveBeenCalled();
+      expect(operations.fail).toHaveBeenCalledWith(
+        PUBLISH,
+        'claim-p',
+        expect.objectContaining({ errorCode: 'studio_export_source_changed' }),
+      );
+    });
+
+    it('refuses a file whose bytes do not match what the render reported', async () => {
+      crypto.hashFile.mockResolvedValue(Buffer.from('cd'.repeat(32), 'hex'));
+      operations.fail.mockResolvedValue('failed');
+
+      await sut.run(job());
+
+      expect(repository.publish).not.toHaveBeenCalled();
+      expect(operations.fail).toHaveBeenCalledWith(
+        PUBLISH,
+        'claim-p',
+        expect.objectContaining({ errorCode: 'studio_export_output_invalid' }),
+      );
+      expect(repository.markFailed).toHaveBeenCalledWith(
+        VERSION,
+        expect.objectContaining({ errorCode: 'studio_export_output_invalid' }),
+      );
+    });
+
+    it('returns the file to staging when the publication transaction refuses, so the retry finds it', async () => {
+      repository.publish.mockRejectedValue(new StudioExportRefusal('source-access-lost', 'no longer shared'));
+      repository.getById
+        .mockResolvedValueOnce(versionRow({ outputPath: staged }))
+        .mockResolvedValue(versionRow({ outputPath: staged }));
+
+      await sut.run(job());
+
+      const input = repository.publish.mock.calls[0][0];
+      expect(storage.rename).toHaveBeenLastCalledWith(input.path, staged);
+      expect(operations.fail).toHaveBeenCalledWith(
+        PUBLISH,
+        'claim-p',
+        expect.objectContaining({ errorCode: 'studio_export_source_access_lost' }),
+      );
+      expect(operations.complete).not.toHaveBeenCalled();
+    });
+
+    it('treats a lost commit acknowledgement as published when the version says this job published it', async () => {
+      repository.publish.mockRejectedValue(new Error('Connection terminated unexpectedly'));
+      repository.getById.mockResolvedValueOnce(versionRow({ outputPath: staged })).mockResolvedValue(
+        versionRow({
+          state: StudioExportVersionState.Published,
+          version: 1,
+          resultAssetId: 'asset-new',
+          publishOperationId: PUBLISH,
+        }),
+      );
+
+      await sut.run(job());
+
+      expect(operations.fail).not.toHaveBeenCalled();
+      expect(operations.complete).toHaveBeenCalledWith(PUBLISH, 'claim-p', { resultAssetId: 'asset-new' });
+      // The file stays where the committed result points.
+      expect(storage.rename).toHaveBeenCalledTimes(1);
+    });
+
+    it('acknowledges a cancel that landed on an already published job instead of leaving it to the lease', async () => {
+      repository.publish.mockResolvedValue(published());
+      operations.complete.mockResolvedValue(false);
+
+      await sut.run(job());
+
+      expect(operations.acknowledgeCancel).toHaveBeenCalledWith(PUBLISH, 'claim-p', { released: true });
+    });
+
+    it('finishes only the job when an earlier attempt already published', async () => {
+      repository.getById.mockResolvedValue(
+        versionRow({ state: StudioExportVersionState.Published, version: 2, resultAssetId: 'asset-new' }),
+      );
+
+      await sut.run(job());
+
+      expect(repository.publish).not.toHaveBeenCalled();
+      expect(operations.complete).toHaveBeenCalledWith(PUBLISH, 'claim-p', { resultAssetId: 'asset-new' });
+    });
+  });
+
+  describe('settleStudioExportPublication', () => {
+    it('rethrows when the version did not commit, and never for a refusal', async () => {
+      const repo = { getById: vi.fn().mockResolvedValue(versionRow()), getSources: vi.fn() };
+      await expect(
+        settleStudioExportPublication(repo, VERSION, PUBLISH, () => Promise.reject(new Error('lost'))),
+      ).rejects.toThrow('lost');
+      await expect(
+        settleStudioExportPublication(repo, VERSION, PUBLISH, () =>
+          Promise.reject(new StudioExportRefusal('source-changed', 'changed')),
+        ),
+      ).rejects.toBeInstanceOf(StudioExportRefusal);
+      expect(repo.getById).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not claim another job’s publication as its own', async () => {
+      const repo = {
+        getById: vi
+          .fn()
+          .mockResolvedValue(versionRow({ state: StudioExportVersionState.Published, publishOperationId: 'other' })),
+        getSources: vi.fn(),
+      };
+      await expect(
+        settleStudioExportPublication(repo, VERSION, PUBLISH, () => Promise.reject(new Error('lost'))),
+      ).rejects.toThrow('lost');
+    });
+  });
+
+  describe('download', () => {
+    const projectResult = (overrides: Partial<StudioExportVersion> = {}) =>
+      versionRow({
+        state: StudioExportVersionState.Published,
+        scope: StudioExportScope.Project,
+        outputPath: '/data/exports/o/studio-exports/versions/v.mp4',
+        privacy: { lockReason: null },
+        ...overrides,
+      });
+
+    beforeEach(() => {
+      repository.getSources.mockResolvedValue([
+        sourceRow(),
+        sourceRow({
+          key: 'shared',
+          resourceId: SHARED_CLIP,
+          assetId: SHARED_CLIP,
+          ownerId: PARTNER,
+          sourceAccess: 'shared',
+        }),
+      ]);
+    });
+
+    it('serves the file only while every source is still available to the owner', async () => {
+      repository.getForOwner.mockResolvedValue(projectResult());
+      access.asset.checkAlbumAccess.mockResolvedValue(new Set([SHARED_CLIP]));
+
+      await expect(sut.download(auth(), VERSION)).resolves.toEqual(
+        expect.objectContaining({ path: '/data/exports/o/studio-exports/versions/v.mp4' }),
+      );
+
+      access.asset.checkAlbumAccess.mockResolvedValue(new Set());
+      await expect(sut.download(auth(), VERSION)).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('answers a Locked result only in an unlocked session, and a library result never', async () => {
+      access.asset.checkPartnerAccess.mockResolvedValue(new Set([SHARED_CLIP]));
+      repository.getForOwner.mockResolvedValue(projectResult({ privacy: { lockReason: AssetLockReason.Marked } }));
+      await expect(sut.download(auth(), VERSION)).rejects.toBeInstanceOf(NotFoundException);
+      await expect(sut.download(elevated(), VERSION)).resolves.toBeDefined();
+
+      repository.getForOwner.mockResolvedValue(projectResult({ scope: StudioExportScope.Library }));
+      await expect(sut.download(elevated(), VERSION)).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('answers a Locked result only to an unlocked session, with its asset', async () => {
+      repository.getForOwner.mockResolvedValue(
+        projectResult({
+          scope: StudioExportScope.Library,
+          resultAssetId: 'asset-new',
+          privacy: { lockReason: 'marked' },
+        }),
+      );
+      await expect(sut.get(auth(), VERSION)).rejects.toBeInstanceOf(NotFoundException);
+      const shown = await sut.get(elevated(), VERSION);
+      expect(shown).toEqual(expect.objectContaining({ resultAssetId: 'asset-new', locked: true }));
+    });
+  });
+
+  describe('saveToLibrary', () => {
+    const kept = '/data/exports/o/studio-exports/versions/v.mp4';
+    const projectResult = (overrides: Partial<StudioExportVersion> = {}) =>
+      versionRow({
+        state: StudioExportVersionState.Published,
+        scope: StudioExportScope.Project,
+        outputPath: kept,
+        privacy: { lockReason: null },
+        ...overrides,
+      });
+    const saved = (assetId = 'asset-saved') => ({
+      version: projectResult({ scope: StudioExportScope.Library, resultAssetId: assetId }),
+      createdAssetId: assetId,
+      reusedAssetId: null,
+    });
+
+    beforeEach(() => {
+      repository.saveToLibrary = vi.fn();
+      storage.stat = vi.fn((path: string) =>
+        path === kept ? Promise.resolve({ size: 1024, isFile: () => true }) : Promise.reject(new Error('ENOENT')),
+      );
+    });
+
+    it('moves the kept file into the library as a new asset of the owner, only when asked', async () => {
+      repository.getForOwner.mockResolvedValue(projectResult());
+      repository.saveToLibrary.mockResolvedValue(saved());
+
+      const result = await sut.saveToLibrary(auth(), VERSION);
+
+      const input = repository.saveToLibrary.mock.calls[0][0];
+      expect(input).toEqual(
+        expect.objectContaining({
+          versionId: VERSION,
+          ownerId: OWNER,
+          nsfwHiding: true,
+          assetType: AssetType.Video,
+          originalFileName: 'Lake trip.mp4',
+          sources: [expect.objectContaining({ assetId: CLIP })],
+        }),
+      );
+      expect(input.path).toContain('/upload/');
+      expect(storage.rename).toHaveBeenCalledWith(kept, input.path);
+      expect(jobs.queue).toHaveBeenCalledWith({
+        name: JobName.AssetExtractMetadata,
+        data: { id: 'asset-saved', source: 'upload' },
+      });
+      expect(result).toEqual(
+        expect.objectContaining({ scope: StudioExportScope.Library, resultAssetId: 'asset-saved' }),
+      );
+    });
+
+    it('answers a result already in the library with it again', async () => {
+      repository.getForOwner.mockResolvedValue(
+        projectResult({ scope: StudioExportScope.Library, resultAssetId: 'asset-saved' }),
+      );
+      await expect(sut.saveToLibrary(auth(), VERSION)).resolves.toEqual(
+        expect.objectContaining({ resultAssetId: 'asset-saved' }),
+      );
+      expect(repository.saveToLibrary).not.toHaveBeenCalled();
+      expect(storage.rename).not.toHaveBeenCalled();
+    });
+
+    it('refuses a result that is not published or whose file is gone', async () => {
+      repository.getForOwner.mockResolvedValue(projectResult({ state: StudioExportVersionState.Staged }));
+      await expect(sut.saveToLibrary(auth(), VERSION)).rejects.toBeInstanceOf(ConflictException);
+      repository.getForOwner.mockResolvedValue(projectResult({ outputRemovedAt: new Date() } as never));
+      await expect(sut.saveToLibrary(auth(), VERSION)).rejects.toBeInstanceOf(ConflictException);
+      expect(repository.saveToLibrary).not.toHaveBeenCalled();
+    });
+
+    it('never makes media shared with the owner into a permanent copy', async () => {
+      repository.getForOwner.mockResolvedValue(projectResult());
+      repository.getSources.mockResolvedValue([
+        sourceRow(),
+        sourceRow({ key: 'shared', resourceId: SHARED_CLIP, assetId: SHARED_CLIP, ownerId: PARTNER }),
+      ]);
+      await expect(sut.saveToLibrary(auth(), VERSION)).rejects.toBeInstanceOf(ConflictException);
+      expect(storage.rename).not.toHaveBeenCalled();
+    });
+
+    it('returns the file to where it was when the library refuses it', async () => {
+      repository.getForOwner.mockResolvedValue(projectResult());
+      repository.saveToLibrary.mockRejectedValue(new StudioExportRefusal('quota-exceeded', 'full'));
+
+      await expect(sut.saveToLibrary(auth(), VERSION)).rejects.toBeInstanceOf(ConflictException);
+
+      const moved = repository.saveToLibrary.mock.calls[0][0].path;
+      expect(storage.rename).toHaveBeenLastCalledWith(moved, kept);
+      expect(jobs.queue).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('list', () => {
+    it('leaves Locked results out of an ordinary session’s list and count, and shows them when unlocked', async () => {
+      repository.listForProject.mockResolvedValue({
+        items: [versionRow({ state: StudioExportVersionState.Published })],
+        total: 1,
+      });
+
+      const ordinary = await sut.list(auth(), PROJECT, {});
+      expect(repository.listForProject).toHaveBeenLastCalledWith(PROJECT, OWNER, {
+        take: 50,
+        skip: 0,
+        visibility: { revealed: false },
+      });
+      expect(ordinary.total).toBe(1);
+
+      await sut.list(elevated(), PROJECT, {});
+      expect(repository.listForProject).toHaveBeenLastCalledWith(PROJECT, OWNER, {
+        take: 50,
+        skip: 0,
+        visibility: { revealed: true, revealLockedOwnerId: OWNER },
+      });
+    });
+
+    it('judges a version by its sources as they stand now, for this session (FL-195)', async () => {
+      repository.getForOwner.mockResolvedValue(undefined);
+      await expect(sut.get(auth(), VERSION)).rejects.toBeInstanceOf(NotFoundException);
+      expect(repository.getForOwner).toHaveBeenLastCalledWith(VERSION, OWNER, { revealed: false });
+      await expect(sut.download(elevated(), VERSION)).rejects.toBeInstanceOf(NotFoundException);
+      expect(repository.getForOwner).toHaveBeenLastCalledWith(VERSION, OWNER, {
+        revealed: true,
+        revealLockedOwnerId: OWNER,
+      });
+    });
+
+    it('reads the sources of the whole page in one query', async () => {
+      repository.listForProject.mockResolvedValue({
+        items: [versionRow({ id: 'v1' }), versionRow({ id: 'v2' })],
+        total: 2,
+      });
+
+      const listed = await sut.list(auth(), PROJECT, {});
+
+      expect(repository.getSourcesFor).toHaveBeenCalledTimes(1);
+      expect(repository.getSourcesFor).toHaveBeenCalledWith(['v1', 'v2']);
+      expect(repository.getSources).not.toHaveBeenCalled();
+      expect(listed.items.map((item) => item.sourceCount)).toEqual([1, 1]);
+    });
+  });
+
+  describe('sweep', () => {
+    it('cancels orphaned work and its jobs, and settles versions whose jobs ended elsewhere', async () => {
+      repository.listOrphanedWork.mockResolvedValue([
+        { ...versionRow({ state: StudioExportVersionState.Rendering }), orphanReason: 'owner-unavailable' },
+      ]);
+      repository.listSettledWork.mockResolvedValue([
+        {
+          ...versionRow({ id: 'v2', state: StudioExportVersionState.Rendering }),
+          jobStatus: MediaOperationStatus.Failed,
+        },
+        {
+          ...versionRow({ id: 'v3', state: StudioExportVersionState.Staged }),
+          jobStatus: MediaOperationStatus.Cancelled,
+        },
+      ]);
+
+      await sut.sweep(new Date());
+
+      expect(repository.cancel).toHaveBeenCalledWith(
+        VERSION,
+        expect.objectContaining({ errorCode: 'studio_export_owner_unavailable' }),
+      );
+      expect(operations.requestCancel).toHaveBeenCalledWith(RENDER, OWNER);
+      expect(operations.requestCancel).toHaveBeenCalledWith(PUBLISH, OWNER);
+      expect(repository.markFailed).toHaveBeenCalledWith('v2', expect.anything());
+      expect(repository.cancel).toHaveBeenCalledWith('v3', expect.anything());
+    });
+  });
+});

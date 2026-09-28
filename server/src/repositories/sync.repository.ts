@@ -1,13 +1,21 @@
 import { Injectable } from '@nestjs/common';
-import { Kysely, sql } from 'kysely';
+import { ExpressionBuilder, Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import type { SyncAck } from 'src/types.js';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import { EXTERNAL_SCAN_CHECKSUM } from 'src/constants.js';
 import { columns } from 'src/database.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
-import { AssetMetadataKey, AssetVisibility } from 'src/enum.js';
+import { AlbumUserRole, AssetMetadataKey, ChecksumAlgorithm } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
 import { getHiddenContentFilter, hiddenContentAssetIdExists, withHiddenContentFilter } from 'src/utils/database.js';
+import {
+  effectiveVisibility,
+  isDefaultVisible,
+  isLocked,
+  isTimelineVisible,
+  notLockedOrOwnedBy,
+} from 'src/utils/locked.js';
 
 export type SyncBackfillOptions = HiddenContentQueryOptions & {
   nowId: string;
@@ -69,14 +77,36 @@ const personFaceAssetId = (options: HiddenContentQueryOptions) => {
     : sql<string | null>`person."faceAssetId"`.as('faceAssetId');
 };
 
+/**
+ * The sha1 a device compares its local files against. No recorded digest of an asset with a path checksum
+ * (an external-library original, however it was recorded), nor any external scan's (FL-69), is sent:
+ * bytes on an external mount are not a managed copy, so a device must never treat its own photo as backed
+ * up because of them.
+ */
 const syncChecksum = () =>
   sql<Buffer>`coalesce(
-    (select checksum.sha1 from immich_fork.asset_checksum checksum where checksum."assetId" = asset.id),
+    (select checksum.sha1 from immich_fork.asset_checksum checksum where checksum."assetId" = asset.id
+      and asset."checksumAlgorithm" != ${sql.lit(ChecksumAlgorithm.sha1Path)}
+      and checksum.evidence ->> 'source' is distinct from ${sql.lit(EXTERNAL_SCAN_CHECKSUM)}),
     asset.checksum
   )`.as('checksum');
 
+/**
+ * An album stream never carries another member's Locked media (owner decision, September 22, 2026):
+ * the album keeps the item, but only its owner's own devices learn of it — not its id, file name,
+ * thumbhash, checksum or exif. Applied to every album-asset and album-to-asset stream. Locked is the
+ * lock record (FL-34, `src/utils/locked.ts`).
+ */
+const albumAssetVisibleTo = (userId: string) => notLockedOrOwnedBy(userId, 'asset');
+
+/**
+ * The visibility a device receives (FL-34): `locked` for a locked asset, so a client that keeps the
+ * upstream Locked folder still files it there; the stored visibility otherwise.
+ */
+const syncVisibility = () => effectiveVisibility('asset').as('visibility');
+
 const syncAssetColumns = columns.syncAsset.filter(
-  (column) => column !== 'asset.checksum' && column !== 'asset.livePhotoVideoId',
+  (column) => column !== 'asset.checksum' && column !== 'asset.livePhotoVideoId' && column !== 'asset.visibility',
 );
 
 const syncLivePhotoVideoId = (options: HiddenContentQueryOptions) => {
@@ -90,19 +120,90 @@ const syncLivePhotoVideoId = (options: HiddenContentQueryOptions) => {
 };
 
 const syncAsset = (options: HiddenContentQueryOptions) =>
-  [...syncAssetColumns, syncChecksum(), syncLivePhotoVideoId(options)] as const;
+  [...syncAssetColumns, syncChecksum(), syncLivePhotoVideoId(options), syncVisibility()] as const;
 
 const syncAlbumAssetColumns = columns.syncAlbumAsset.filter(
-  (column) => column !== 'asset.checksum' && column !== 'asset.livePhotoVideoId',
+  (column) => column !== 'asset.checksum' && column !== 'asset.livePhotoVideoId' && column !== 'asset.visibility',
 );
 const syncAlbumAsset = (options: HiddenContentQueryOptions) =>
-  [...syncAlbumAssetColumns, syncChecksum(), syncLivePhotoVideoId(options)] as const;
+  [...syncAlbumAssetColumns, syncChecksum(), syncLivePhotoVideoId(options), syncVisibility()] as const;
 
 const syncPartnerAssetColumns = columns.syncPartnerAsset.filter(
-  (column) => column !== 'asset.checksum' && column !== 'asset.livePhotoVideoId',
+  (column) => column !== 'asset.checksum' && column !== 'asset.livePhotoVideoId' && column !== 'asset.visibility',
 );
+/**
+ * A partner's Locked asset stays in the partner streams (FL-34) so a device that already holds it
+ * learns it is now `locked` and hides it, exactly as the upstream Locked folder behaved. `isLocked`
+ * lets the service blank its file name, thumbhash, live-photo link and exif before sending; the flag
+ * itself is stripped and never reaches the device.
+ */
+const syncPartnerLocked = () => isLocked('asset').as('isLocked');
+
 const syncPartnerAsset = (options: HiddenContentQueryOptions) =>
-  [...syncPartnerAssetColumns, syncChecksum(), syncLivePhotoVideoId(options)] as const;
+  [
+    ...syncPartnerAssetColumns,
+    syncChecksum(),
+    syncLivePhotoVideoId(options),
+    syncVisibility(),
+    syncPartnerLocked(),
+  ] as const;
+
+/**
+ * FL-54: whether `userId` may not see this asset's location. True when its owner hides locations from the
+ * user, or (owner default, privacy first) from the owner of an album the user reaches it through, unless
+ * the owner shares locations with the user directly. The service nulls the location fields of such rows
+ * and strips the flag, so the device keeps the row shape it expects. Mirrors
+ * `PartnerRepository.getLocationHiddenThroughAlbums`.
+ */
+const syncLocationHidden = (userId: string) => (eb: ExpressionBuilder<DB, 'asset'>) =>
+  eb
+    .and([
+      eb('asset.ownerId', '!=', userId),
+      eb.or([
+        eb.exists(
+          eb
+            .selectFrom('partner as viewer_partner')
+            .whereRef('viewer_partner.sharedById', '=', 'asset.ownerId')
+            .where('viewer_partner.sharedWithId', '=', userId)
+            .where('viewer_partner.shareLocation', '=', false),
+        ),
+        eb.and([
+          eb.exists(
+            eb
+              .selectFrom('album_asset as reached')
+              .innerJoin('album as reached_album', (join) =>
+                join.onRef('reached_album.id', '=', 'reached.albumId').on('reached_album.deletedAt', 'is', null),
+              )
+              .innerJoin('album_user as reached_member', (join) =>
+                join.onRef('reached_member.albumId', '=', 'reached.albumId').on('reached_member.userId', '=', userId),
+              )
+              .innerJoin('album_user as reached_owner', (join) =>
+                join
+                  .onRef('reached_owner.albumId', '=', 'reached.albumId')
+                  .on('reached_owner.role', '=', sql.lit(AlbumUserRole.Owner)),
+              )
+              .innerJoin('partner as owner_partner', (join) =>
+                join
+                  .onRef('owner_partner.sharedById', '=', 'asset.ownerId')
+                  .onRef('owner_partner.sharedWithId', '=', 'reached_owner.userId')
+                  .on('owner_partner.shareLocation', '=', false),
+              )
+              .whereRef('reached.assetId', '=', 'asset.id')
+              .whereRef('reached_owner.userId', '!=', 'asset.ownerId'),
+          ),
+          eb.not(
+            eb.exists(
+              eb
+                .selectFrom('partner as direct_partner')
+                .whereRef('direct_partner.sharedById', '=', 'asset.ownerId')
+                .where('direct_partner.sharedWithId', '=', userId)
+                .where('direct_partner.shareLocation', '=', true),
+            ),
+          ),
+        ]),
+      ]),
+    ])
+    .as('locationHidden');
 
 @Injectable()
 export class SyncRepository {
@@ -274,6 +375,7 @@ class AlbumAssetSync extends BaseSync {
       .select('album_asset.updateId')
       .where('album_asset.albumId', '=', albumId)
       .$call((qb) => withHiddenContentFilter(qb, options))
+      .where(albumAssetVisibleTo(userId))
       .stream();
   }
 
@@ -297,6 +399,7 @@ class AlbumAssetSync extends BaseSync {
       .innerJoin('album_user', 'album_user.albumId', 'album_asset.albumId')
       .where('album_user.userId', '=', userId)
       .$call((qb) => withHiddenContentFilter(qb, options))
+      .where(albumAssetVisibleTo(userId))
       .stream();
   }
 
@@ -319,20 +422,23 @@ class AlbumAssetSync extends BaseSync {
       .innerJoin('album_user', 'album_user.albumId', 'album_asset.albumId')
       .where('album_user.userId', '=', userId)
       .$call((qb) => withHiddenContentFilter(qb, options))
+      .where(albumAssetVisibleTo(userId))
       .stream();
   }
 }
 
 class AlbumAssetExifSync extends BaseSync {
-  @GenerateSql({ params: [dummyBackfillOptions, DummyValue.UUID], stream: true })
-  getBackfill(options: SyncBackfillOptions, albumId: string) {
+  @GenerateSql({ params: [dummyBackfillOptions, DummyValue.UUID, DummyValue.UUID], stream: true })
+  getBackfill(options: SyncBackfillOptions, albumId: string, userId: string) {
     return this.backfillQuery('album_asset', options)
       .innerJoin('asset_exif', 'asset_exif.assetId', 'album_asset.assetId')
       .innerJoin('asset', 'asset.id', 'album_asset.assetId')
       .select(columns.syncAssetExif)
+      .select(syncLocationHidden(userId))
       .select('album_asset.updateId')
       .where('album_asset.albumId', '=', albumId)
       .$call((qb) => withHiddenContentFilter(qb, options))
+      .where(albumAssetVisibleTo(userId))
       .stream();
   }
 
@@ -343,11 +449,13 @@ class AlbumAssetExifSync extends BaseSync {
       .innerJoin('album_asset', 'album_asset.assetId', 'asset_exif.assetId')
       .innerJoin('asset', 'asset.id', 'asset_exif.assetId')
       .select(columns.syncAssetExif)
+      .select(syncLocationHidden(userId))
       .select('asset_exif.updateId')
       .where('album_asset.updateId', '<=', albumToAssetAck.updateId) // Ensure we only send exif updates for assets that the client already knows about
       .innerJoin('album_user', 'album_user.albumId', 'album_asset.albumId')
       .where('album_user.userId', '=', userId)
       .$call((qb) => withHiddenContentFilter(qb, options))
+      .where(albumAssetVisibleTo(options.userId))
       .stream();
   }
 
@@ -359,22 +467,25 @@ class AlbumAssetExifSync extends BaseSync {
       .innerJoin('asset_exif', 'asset_exif.assetId', 'album_asset.assetId')
       .innerJoin('asset', 'asset.id', 'album_asset.assetId')
       .select(columns.syncAssetExif)
+      .select(syncLocationHidden(userId))
       .innerJoin('album', 'album.id', 'album_asset.albumId')
       .leftJoin('album_user', 'album_user.albumId', 'album_asset.albumId')
       .where('album_user.userId', '=', userId)
       .$call((qb) => withHiddenContentFilter(qb, options))
+      .where(albumAssetVisibleTo(options.userId))
       .stream();
   }
 }
 
 class AlbumToAssetSync extends BaseSync {
-  @GenerateSql({ params: [dummyBackfillOptions, DummyValue.UUID], stream: true })
-  getBackfill(options: SyncBackfillOptions, albumId: string) {
+  @GenerateSql({ params: [dummyBackfillOptions, DummyValue.UUID, DummyValue.UUID], stream: true })
+  getBackfill(options: SyncBackfillOptions, albumId: string, userId: string) {
     return this.backfillQuery('album_asset', options)
       .innerJoin('asset', 'asset.id', 'album_asset.assetId')
       .select(['album_asset.assetId as assetId', 'album_asset.albumId as albumId', 'album_asset.updateId'])
       .where('album_asset.albumId', '=', albumId)
       .$call((qb) => withHiddenContentFilter(qb, options))
+      .where(albumAssetVisibleTo(userId))
       .stream();
   }
 
@@ -408,6 +519,7 @@ class AlbumToAssetSync extends BaseSync {
       .innerJoin('album_user', 'album_user.albumId', 'album_asset.albumId')
       .where('album_user.userId', '=', userId)
       .$call((qb) => withHiddenContentFilter(qb, options))
+      .where(albumAssetVisibleTo(userId))
       .stream();
   }
 }
@@ -556,7 +668,7 @@ class PersonSync extends BaseSync {
                   .innerJoin('asset', (join) =>
                     join
                       .onRef('asset.id', '=', 'asset_face.assetId')
-                      .on('asset.visibility', '=', sql.lit(AssetVisibility.Timeline))
+                      .on(isTimelineVisible('asset'))
                       .on('asset.deletedAt', 'is', null),
                   )
                   .whereRef('asset_face.personGroupId', '=', 'person.personGroupId')
@@ -570,7 +682,7 @@ class PersonSync extends BaseSync {
                 .innerJoin('asset', (join) =>
                   join
                     .onRef('asset.id', '=', 'asset_face.assetId')
-                    .on('asset.visibility', '=', sql.lit(AssetVisibility.Timeline))
+                    .on(isTimelineVisible('asset'))
                     .on('asset.deletedAt', 'is', null),
                 )
                 .whereRef('asset_face.personGroupId', '=', 'person.personGroupId')
@@ -610,12 +722,7 @@ class AssetFaceSync extends BaseSync {
       .select(['asset_face_audit.id', 'assetFaceId'])
       .innerJoin('asset', 'asset.id', 'asset_face_audit.assetId')
       .innerJoin('user as owner', 'owner.id', 'asset.ownerId')
-      .where((eb) =>
-        eb.or([
-          eb('asset.ownerId', '=', options.userId),
-          eb('asset.visibility', 'in', [AssetVisibility.Timeline, AssetVisibility.Archive]),
-        ]),
-      )
+      .where((eb) => eb.or([eb('asset.ownerId', '=', options.userId), isDefaultVisible('asset')]))
       .where('owner.clusterGroupId', '=', ({ selectFrom }) =>
         selectFrom('user').select('user.clusterGroupId').where('user.id', '=', options.userId),
       )
@@ -646,12 +753,7 @@ class AssetFaceSync extends BaseSync {
       .select('asset_face.updateId')
       .innerJoin('asset', 'asset.id', 'asset_face.assetId')
       .innerJoin('user as owner', 'owner.id', 'asset.ownerId')
-      .where((eb) =>
-        eb.or([
-          eb('asset.ownerId', '=', options.userId),
-          eb('asset.visibility', 'in', [AssetVisibility.Timeline, AssetVisibility.Archive]),
-        ]),
-      )
+      .where((eb) => eb.or([eb('asset.ownerId', '=', options.userId), isDefaultVisible('asset')]))
       .where('owner.clusterGroupId', '=', ({ selectFrom }) =>
         selectFrom('user').select('user.clusterGroupId').where('user.id', '=', options.userId),
       )
@@ -767,7 +869,7 @@ class PartnerSync extends BaseSync {
   getCreatedAfter({ nowId, userId, afterCreateId }: SyncCreatedAfterOptions) {
     return this.db
       .selectFrom('partner')
-      .select(['sharedById', 'createId'])
+      .select(['sharedById', 'createId', 'shareLocation'])
       .where('sharedWithId', '=', userId)
       .$if(!!afterCreateId, (qb) => qb.where('createId', '>=', afterCreateId!))
       .where('createId', '<', nowId)
@@ -841,6 +943,7 @@ class PartnerAssetExifsSync extends BaseSync {
       .select(columns.syncAssetExif)
       .select('asset_exif.updateId')
       .innerJoin('asset', 'asset.id', 'asset_exif.assetId')
+      .select(syncPartnerLocked())
       .where('asset.ownerId', '=', partnerId)
       .$call((qb) => withHiddenContentFilter(qb, options))
       .stream();
@@ -848,15 +951,20 @@ class PartnerAssetExifsSync extends BaseSync {
 
   @GenerateSql({ params: [dummyQueryOptions], stream: true })
   getUpserts(options: SyncQueryOptions) {
-    return this.upsertQuery('asset_exif', options)
-      .innerJoin('asset', 'asset.id', 'asset_exif.assetId')
-      .select(columns.syncAssetExif)
-      .select('asset_exif.updateId')
-      .where('asset.ownerId', 'in', (eb) =>
-        eb.selectFrom('partner').select(['sharedById']).where('sharedWithId', '=', options.userId),
-      )
-      .$call((qb) => withHiddenContentFilter(qb, options))
-      .stream();
+    return (
+      this.upsertQuery('asset_exif', options)
+        .innerJoin('asset', 'asset.id', 'asset_exif.assetId')
+        .select(columns.syncAssetExif)
+        .select('asset_exif.updateId')
+        // the service needs the owner to apply per-partner location hiding; it is stripped before sending
+        .select('asset.ownerId')
+        .select(syncPartnerLocked())
+        .where('asset.ownerId', 'in', (eb) =>
+          eb.selectFrom('partner').select(['sharedById']).where('sharedWithId', '=', options.userId),
+        )
+        .$call((qb) => withHiddenContentFilter(qb, options))
+        .stream()
+    );
   }
 }
 

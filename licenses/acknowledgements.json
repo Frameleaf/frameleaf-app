@@ -1,0 +1,1641 @@
+{
+  "schemaVersion": 1,
+  "description": "Every third-party engine, model, voice, font and asset Frameleaf uses that needs credit. Source of truth for the About screen, docs/docs/overview/acknowledgements.md and licenses/THIRD-PARTY-NOTICES.md; scripts/frameleaf-acknowledgements.mjs checks coverage and regenerates both documents.",
+  "decisions": "Owner decisions FL-146 comments 34941, 34943 and 34944 (2026-09-25).",
+  "groups": {
+    "studio-editor": "Studio video editor",
+    "studio-models": "Studio models, voices and runtimes",
+    "studio-assets": "Studio assets and tools",
+    "library-models": "Photo library machine learning models",
+    "fonts": "Fonts (Studio titles)"
+  },
+  "components": [
+    {
+      "status": "recorded",
+      "notice": null,
+      "id": "freecut",
+      "group": "studio-editor",
+      "name": "Freecut",
+      "author": "Freecut authors (walterlow/freecut)",
+      "licence": "MIT",
+      "link": "https://github.com/walterlow/freecut",
+      "version": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "shipped": "bundled",
+      "noticeFiles": [
+        "studio/notices/freecut.txt"
+      ],
+      "covers": [],
+      "source": "studio/freecut-provenance.json (licensePath LICENSE, byte-identical copy in studio/notices/freecut.txt)"
+    },
+    {
+      "status": "looked-up",
+      "notice": "Local use only: not offered on Frameleaf Cloud (non-commercial licence; owner decision FL-146, 2026-09-25).",
+      "id": "musicgen-small",
+      "group": "studio-models",
+      "name": "MusicGen small (ONNX conversion)",
+      "author": "Meta AI (facebook/musicgen-small); ONNX conversion by Xenova",
+      "licence": "CC-BY-NC-4.0",
+      "link": "https://huggingface.co/Xenova/musicgen-small",
+      "shipped": "downloaded",
+      "noticeFiles": [
+        "licenses/texts/cc-by-nc-4.0.txt"
+      ],
+      "covers": [
+        "model:Xenova/musicgen-small"
+      ],
+      "source": "Hugging Face model cards Xenova/musicgen-small and facebook/musicgen-small (license: cc-by-nc-4.0)"
+    },
+    {
+      "status": "looked-up",
+      "notice": null,
+      "id": "kokoro",
+      "group": "studio-models",
+      "name": "Kokoro-82M text to speech",
+      "author": "hexgrad; ONNX conversion by onnx-community",
+      "licence": "Apache-2.0",
+      "link": "https://huggingface.co/hexgrad/Kokoro-82M",
+      "shipped": "downloaded",
+      "noticeFiles": [
+        "licenses/texts/apache-2.0.txt"
+      ],
+      "covers": [
+        "model:onnx-community/Kokoro-82M-v1.0-ONNX",
+        "voice:kokoro-*"
+      ],
+      "voices": [
+        "af_heart",
+        "af_bella",
+        "af_nicole",
+        "af_sky",
+        "af_sarah",
+        "af_alloy",
+        "af_aoede",
+        "af_jessica",
+        "af_kore",
+        "af_nova",
+        "af_river",
+        "am_michael",
+        "am_fenrir",
+        "am_puck",
+        "am_adam",
+        "am_echo",
+        "am_eric",
+        "am_liam",
+        "am_onyx",
+        "am_santa",
+        "bf_emma",
+        "bf_isabella",
+        "bf_alice",
+        "bf_lily",
+        "bm_george",
+        "bm_fable",
+        "bm_lewis",
+        "bm_daniel",
+        "ef_dora",
+        "em_alex",
+        "em_santa",
+        "ff_siwis",
+        "hf_alpha",
+        "hf_beta",
+        "hm_omega",
+        "hm_psi",
+        "if_sara",
+        "im_nicola",
+        "jf_alpha",
+        "jf_gongitsune",
+        "jf_nezumi",
+        "jf_tebukuro",
+        "jm_kumo",
+        "pf_dora",
+        "pm_alex",
+        "pm_santa",
+        "zf_xiaobei",
+        "zf_xiaoni",
+        "zf_xiaoxiao",
+        "zf_xiaoyi",
+        "zm_yunjian",
+        "zm_yunxi",
+        "zm_yunxia",
+        "zm_yunyang"
+      ],
+      "source": "Hugging Face model cards hexgrad/Kokoro-82M and onnx-community/Kokoro-82M-v1.0-ONNX (license: apache-2.0)"
+    },
+    {
+      "status": "looked-up",
+      "notice": "Supertonic-3 and its voices are licensed under the BigScience Open RAIL-M License. You may not use them, or speech made with them, for any of the use restrictions in Attachment A of that licence (reproduced in full below), and anyone you share them or their output with is bound by the same restrictions.",
+      "id": "supertonic-3",
+      "group": "studio-models",
+      "name": "Supertonic-3 text to speech",
+      "author": "Supertone Inc.",
+      "licence": "OpenRAIL-M",
+      "link": "https://huggingface.co/Supertone/supertonic-3",
+      "shipped": "downloaded",
+      "noticeFiles": [
+        "licenses/texts/supertonic-3-openrail-m.txt"
+      ],
+      "covers": [
+        "model:supertonic-3",
+        "voice:supertonic-*"
+      ],
+      "voices": [
+        "F1",
+        "F2",
+        "F3",
+        "F4",
+        "F5",
+        "M1",
+        "M2",
+        "M3",
+        "M4",
+        "M5"
+      ],
+      "source": "Hugging Face model card Supertone/supertonic-3 (license: openrail) and its LICENSE file"
+    },
+    {
+      "status": "looked-up",
+      "notice": null,
+      "id": "moss-tts-nano",
+      "group": "studio-models",
+      "name": "MOSS-TTS-Nano and MOSS audio tokenizer",
+      "author": "OpenMOSS Team",
+      "licence": "Apache-2.0",
+      "link": "https://huggingface.co/OpenMOSS-Team/MOSS-TTS-Nano-100M-ONNX",
+      "shipped": "downloaded",
+      "noticeFiles": [
+        "licenses/texts/apache-2.0.txt",
+        "studio/notices/moss-ort.txt",
+        "studio/notices/moss-tokenizer.txt"
+      ],
+      "covers": [
+        "model:OpenMOSS-Team/MOSS-TTS-Nano-100M-ONNX",
+        "model:OpenMOSS-Team/MOSS-Audio-Tokenizer-Nano-ONNX"
+      ],
+      "source": "Hugging Face model cards (license: apache-2.0)"
+    },
+    {
+      "status": "looked-up",
+      "notice": null,
+      "id": "gemma-4",
+      "group": "studio-models",
+      "name": "Gemma 4 E4B instruction-tuned (ONNX)",
+      "author": "Google DeepMind; ONNX conversion by onnx-community",
+      "licence": "Apache-2.0",
+      "link": "https://huggingface.co/onnx-community/gemma-4-E4B-it-ONNX",
+      "shipped": "downloaded",
+      "noticeFiles": [
+        "licenses/texts/apache-2.0.txt"
+      ],
+      "covers": [
+        "model:onnx-community/gemma-4-E4B-it-ONNX"
+      ],
+      "source": "Hugging Face model card (license: apache-2.0, license_link https://ai.google.dev/gemma/docs/gemma_4_license)"
+    },
+    {
+      "status": "looked-up",
+      "notice": null,
+      "id": "lfm2.5-vl",
+      "group": "studio-models",
+      "name": "LFM2.5-VL-450M (ONNX)",
+      "author": "Liquid AI",
+      "licence": "LFM Open License v1.0",
+      "link": "https://huggingface.co/LiquidAI/LFM2.5-VL-450M-ONNX",
+      "shipped": "downloaded",
+      "noticeFiles": [
+        "licenses/texts/lfm-open-license-1.0.txt"
+      ],
+      "covers": [
+        "model:LiquidAI/LFM2.5-VL-450M-ONNX"
+      ],
+      "source": "Hugging Face model card (license: other, license_name lfm1.0); licence text from LiquidAI/LFM2.5-VL-450M"
+    },
+    {
+      "status": "looked-up",
+      "notice": null,
+      "id": "clip-vit-b-32-studio",
+      "group": "studio-models",
+      "name": "CLIP ViT-B/32 (ONNX conversion)",
+      "author": "OpenAI; ONNX conversion by Xenova",
+      "licence": "MIT",
+      "link": "https://huggingface.co/Xenova/clip-vit-base-patch32",
+      "shipped": "downloaded",
+      "noticeFiles": [
+        "licenses/texts/openai-clip-mit.txt"
+      ],
+      "covers": [
+        "model:Xenova/clip-vit-base-patch32"
+      ],
+      "source": "Model cards declare no licence; OpenAI CLIP repository licence (MIT)"
+    },
+    {
+      "status": "looked-up",
+      "notice": null,
+      "id": "all-minilm-l6-v2",
+      "group": "studio-models",
+      "name": "all-MiniLM-L6-v2 sentence embeddings",
+      "author": "sentence-transformers; ONNX conversion by Xenova",
+      "licence": "Apache-2.0",
+      "link": "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2",
+      "shipped": "downloaded",
+      "noticeFiles": [
+        "licenses/texts/apache-2.0.txt"
+      ],
+      "covers": [
+        "model:Xenova/all-MiniLM-L6-v2"
+      ],
+      "source": "Hugging Face model cards (license: apache-2.0)"
+    },
+    {
+      "status": "looked-up",
+      "notice": null,
+      "id": "clap-htsat-unfused",
+      "group": "studio-models",
+      "name": "CLAP HTSAT (unfused) audio-text model",
+      "author": "LAION; ONNX conversion by Xenova",
+      "licence": "Apache-2.0",
+      "link": "https://huggingface.co/laion/clap-htsat-unfused",
+      "shipped": "downloaded",
+      "noticeFiles": [
+        "licenses/texts/apache-2.0.txt"
+      ],
+      "covers": [
+        "model:Xenova/clap-htsat-unfused"
+      ],
+      "source": "Hugging Face model card laion/clap-htsat-unfused (license: apache-2.0); the Xenova conversion declares none"
+    },
+    {
+      "status": "looked-up",
+      "notice": null,
+      "id": "rife",
+      "group": "studio-models",
+      "name": "RIFE frame interpolation (fp32, timestep)",
+      "author": "hzwer (Practical-RIFE); ONNX export by walterlow",
+      "licence": "MIT",
+      "link": "https://huggingface.co/walterlow/RIFE_fp32_timestep",
+      "shipped": "downloaded",
+      "noticeFiles": [
+        "licenses/texts/practical-rife-mit.txt"
+      ],
+      "covers": [
+        "model:walterlow/RIFE_fp32_timestep"
+      ],
+      "source": "Hugging Face model card (license: mit); upstream Practical-RIFE LICENSE"
+    },
+    {
+      "status": "looked-up",
+      "notice": "Parakeet TDT 0.6B v3 by NVIDIA, licensed under CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/). Changes: converted to ONNX and quantized (smoothquant) by Olicorne.",
+      "id": "parakeet-tdt",
+      "group": "studio-models",
+      "name": "Parakeet TDT 0.6B v3 speech recognition (quantized ONNX)",
+      "author": "NVIDIA; smoothquant ONNX conversion by Olicorne",
+      "licence": "CC-BY-4.0",
+      "link": "https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3",
+      "shipped": "downloaded",
+      "noticeFiles": [
+        "licenses/texts/cc-by-4.0.txt"
+      ],
+      "covers": [
+        "model:Olicorne/parakeet-tdt-0.6b-v3-smoothquant-onnx"
+      ],
+      "source": "Hugging Face model card nvidia/parakeet-tdt-0.6b-v3 (license: cc-by-4.0)"
+    },
+    {
+      "status": "looked-up",
+      "notice": null,
+      "id": "whisper",
+      "group": "studio-models",
+      "name": "Whisper speech recognition (tiny, base, small, large-v3-turbo; timestamped ONNX)",
+      "author": "OpenAI; ONNX conversions by onnx-community",
+      "licence": "MIT (code), Apache-2.0 (tiny, base, small weights), MIT (large-v3-turbo weights)",
+      "link": "https://github.com/openai/whisper",
+      "shipped": "downloaded",
+      "noticeFiles": [
+        "licenses/texts/openai-whisper-mit.txt",
+        "licenses/texts/apache-2.0.txt"
+      ],
+      "covers": [
+        "model:onnx-community/whisper-tiny_timestamped",
+        "model:onnx-community/whisper-base_timestamped",
+        "model:onnx-community/whisper-small_timestamped",
+        "model:onnx-community/whisper-large-v3-turbo_timestamped"
+      ],
+      "source": "Hugging Face model cards openai/whisper-tiny, -base, -small (apache-2.0), openai/whisper-large-v3-turbo (mit); OpenAI Whisper repository (MIT)"
+    },
+    {
+      "status": "recorded",
+      "notice": null,
+      "id": "anime4k",
+      "group": "studio-models",
+      "name": "Anime4K CNN 2x (M) upscaling weights",
+      "author": "bloc97 (Anime4K); WebSR by Sam Bhattacharyya",
+      "licence": "MIT",
+      "link": "https://github.com/bloc97/Anime4K",
+      "shipped": "bundled",
+      "noticeFiles": [
+        "studio/notices/anime4k-license.txt",
+        "studio/notices/websr-license.txt",
+        "studio/notices/anime4k-websr.txt"
+      ],
+      "covers": [
+        "weights:anime4k-an",
+        "weights:anime4k-rl",
+        "weights:anime4k-3d"
+      ],
+      "source": "studio/dependency-attribution.json bundled notices"
+    },
+    {
+      "status": "recorded",
+      "notice": null,
+      "id": "onnxruntime-web",
+      "group": "studio-models",
+      "name": "ONNX Runtime Web",
+      "author": "Microsoft Corporation",
+      "licence": "MIT",
+      "link": "https://github.com/microsoft/onnxruntime",
+      "shipped": "bundled",
+      "noticeFiles": [
+        "studio/notices/onnx-common-1-24-3-license.txt",
+        "studio/notices/moss-ort.txt"
+      ],
+      "covers": [
+        "runtime:onnx-cdn"
+      ],
+      "source": "studio/dependency-attribution.json (MIT) and bundled notices"
+    },
+    {
+      "status": "recorded",
+      "notice": null,
+      "id": "transformers-js",
+      "group": "studio-models",
+      "name": "Transformers.js",
+      "author": "Hugging Face",
+      "licence": "Apache-2.0",
+      "link": "https://github.com/huggingface/transformers.js",
+      "shipped": "bundled",
+      "noticeFiles": [
+        "licenses/texts/apache-2.0.txt"
+      ],
+      "covers": [
+        "runtime:whisper-transformers"
+      ],
+      "source": "studio/dependency-attribution.json (Apache-2.0)"
+    },
+    {
+      "status": "to-confirm",
+      "notice": null,
+      "id": "lottiefiles",
+      "group": "studio-assets",
+      "name": "LottieFiles animations",
+      "author": "Each animation’s creator on LottieFiles (credited on the clip that uses it)",
+      "licence": "Lottie Simple License (FL 9.13.21)",
+      "link": "https://lottiefiles.com/page/license",
+      "shipped": "downloaded",
+      "noticeFiles": [],
+      "covers": [
+        "asset:lottiefiles"
+      ],
+      "source": "studio/dependency-attribution.json declares the licence; its text could not be retrieved from lottiefiles.com (HTTP 403), so no copy ships yet"
+    },
+    {
+      "status": "looked-up",
+      "notice": null,
+      "id": "dotlottie-web",
+      "group": "studio-models",
+      "name": "dotLottie web player",
+      "author": "LottieFiles",
+      "licence": "MIT",
+      "link": "https://github.com/LottieFiles/dotlottie-web",
+      "shipped": "bundled",
+      "noticeFiles": [
+        "licenses/texts/dotlottie-web-mit.txt"
+      ],
+      "covers": [],
+      "source": "GitHub repository licence (MIT)"
+    },
+    {
+      "status": "recorded",
+      "notice": null,
+      "id": "user-imports",
+      "group": "studio-assets",
+      "name": "Your own imported media",
+      "author": "You",
+      "licence": "Your own rights",
+      "link": null,
+      "shipped": "user",
+      "noticeFiles": [],
+      "covers": [
+        "asset:user-import"
+      ],
+      "source": "Nothing to attribute: media a person imports into their own project"
+    },
+    {
+      "status": "recorded",
+      "notice": null,
+      "id": "dolby-tools",
+      "group": "studio-assets",
+      "name": "Dolby Vision professional tools (CM Analyze, Metafier, Mezzinator, artistic trims)",
+      "author": "Dolby Laboratories",
+      "licence": "Proprietary; installed by the administrator under their own Dolby agreement, never distributed with Frameleaf",
+      "link": "https://professional.dolby.com",
+      "shipped": "administrator-installed",
+      "noticeFiles": [],
+      "covers": [
+        "tool:dolby-portal",
+        "tool:dolby-artistic-trim"
+      ],
+      "source": "studio/dependency-attribution.json dolbyTools"
+    },
+    {
+      "status": "looked-up",
+      "notice": "buffalo_l is used under a commercial licence the owner obtained from InsightFace at no cost, in support of open source (FL-146, 2026-09-25). buffalo_m, buffalo_s and antelopev2 are provided under InsightFace’s model terms: non-commercial research only.",
+      "id": "insightface",
+      "group": "library-models",
+      "name": "InsightFace face detection and recognition (buffalo_l, buffalo_m, buffalo_s, antelopev2)",
+      "author": "InsightFace (deepinsight)",
+      "licence": "InsightFace model licence: non-commercial research use; Frameleaf holds a commercial licence for buffalo_l",
+      "link": "https://github.com/deepinsight/insightface",
+      "shipped": "downloaded",
+      "noticeFiles": [
+        "licenses/texts/insightface-model-licence.txt"
+      ],
+      "covers": [
+        "ml:insightface:*"
+      ],
+      "source": "Hugging Face cards immich-app/<model> (license: other, insightface) linking the InsightFace python-package licence section; the model files are served from the Frameleaf model mirror (models.frameleaf.cloud, frameleaf/<model>)"
+    },
+    {
+      "status": "looked-up",
+      "notice": null,
+      "id": "openai-clip",
+      "group": "library-models",
+      "name": "OpenAI CLIP (RN50, RN101, RN50x4/x16/x64, ViT-B/32, ViT-B/16, ViT-L/14, ViT-L/14@336)",
+      "author": "OpenAI",
+      "licence": "MIT",
+      "link": "https://github.com/openai/CLIP",
+      "shipped": "downloaded",
+      "noticeFiles": [
+        "licenses/texts/openai-clip-mit.txt",
+        "licenses/texts/open-clip-license.txt"
+      ],
+      "covers": [
+        "ml:clip:*__openai"
+      ],
+      "source": "OpenAI CLIP repository licence (MIT); loaded through OpenCLIP"
+    },
+    {
+      "status": "looked-up",
+      "notice": null,
+      "id": "openclip-laion",
+      "group": "library-models",
+      "name": "OpenCLIP models trained on LAION, YFCC15M and CC12M (including XLM-RoBERTa multilingual)",
+      "author": "LAION and the OpenCLIP authors",
+      "licence": "MIT",
+      "link": "https://github.com/mlfoundations/open_clip",
+      "shipped": "downloaded",
+      "noticeFiles": [
+        "licenses/texts/open-clip-license.txt"
+      ],
+      "covers": [
+        "ml:clip:*__laion*",
+        "ml:clip:*__frozen_laion*",
+        "ml:clip:*__yfcc15m",
+        "ml:clip:*__cc12m"
+      ],
+      "source": "Hugging Face cards laion/CLIP-* (license: mit); OpenCLIP repository licence"
+    },
+    {
+      "status": "looked-up",
+      "notice": null,
+      "id": "apple-dfn",
+      "group": "library-models",
+      "name": "DFN CLIP (ViT-H/14 DFN5B, ViT-L/14 DFN2B)",
+      "author": "Apple",
+      "licence": "Apple Sample Code License (apple-amlr)",
+      "link": "https://huggingface.co/apple/DFN5B-CLIP-ViT-H-14-378",
+      "shipped": "downloaded",
+      "noticeFiles": [
+        "licenses/texts/apple-amlr.txt"
+      ],
+      "covers": [
+        "ml:clip:*__dfn5b",
+        "ml:clip:*__dfn2b"
+      ],
+      "source": "Hugging Face cards apple/DFN5B-CLIP-ViT-H-14-378 and apple/DFN2B-CLIP-ViT-L-14 (license: apple-amlr)"
+    },
+    {
+      "status": "looked-up",
+      "notice": null,
+      "id": "siglip",
+      "group": "library-models",
+      "name": "SigLIP and SigLIP 2 (WebLI)",
+      "author": "Google",
+      "licence": "Apache-2.0",
+      "link": "https://huggingface.co/timm/ViT-B-16-SigLIP2",
+      "shipped": "downloaded",
+      "noticeFiles": [
+        "licenses/texts/apache-2.0.txt"
+      ],
+      "covers": [
+        "ml:clip:*SigLIP*__webli"
+      ],
+      "source": "Hugging Face cards timm/ViT-*-SigLIP* (license: apache-2.0)"
+    },
+    {
+      "status": "looked-up",
+      "notice": "Local use only: not offered on Frameleaf Cloud (non-commercial licence; owner decision FL-146, 2026-09-25).",
+      "id": "nllb-clip",
+      "group": "library-models",
+      "name": "NLLB-CLIP (base and large, SigLIP)",
+      "author": "Alexander Visheratin",
+      "licence": "CC-BY-NC-4.0",
+      "link": "https://huggingface.co/visheratin/nllb-clip-base-siglip",
+      "shipped": "downloaded",
+      "noticeFiles": [
+        "licenses/texts/cc-by-nc-4.0.txt"
+      ],
+      "covers": [
+        "ml:clip:nllb-clip-*"
+      ],
+      "source": "Hugging Face cards visheratin/nllb-clip-*-siglip (license: cc-by-nc-4.0)"
+    },
+    {
+      "status": "looked-up",
+      "notice": null,
+      "id": "m-clip",
+      "group": "library-models",
+      "name": "Multilingual CLIP (XLM-RoBERTa Large ViT-B/32, ViT-B/16+, ViT-L/14; LaBSE ViT-L/14)",
+      "author": "Fredrik Carlsson (M-CLIP)",
+      "licence": "MIT",
+      "link": "https://github.com/FreddeFrallan/Multilingual-CLIP",
+      "shipped": "downloaded",
+      "noticeFiles": [
+        "licenses/texts/multilingual-clip-mit.txt"
+      ],
+      "covers": [
+        "ml:mclip:*"
+      ],
+      "source": "Model cards declare no licence; Multilingual-CLIP repository licence (MIT)"
+    },
+    {
+      "status": "looked-up",
+      "notice": null,
+      "id": "pp-ocrv5",
+      "group": "library-models",
+      "name": "PP-OCRv5 text recognition (server and mobile, all language packs)",
+      "author": "PaddlePaddle Authors",
+      "licence": "Apache-2.0",
+      "link": "https://github.com/PaddlePaddle/PaddleOCR",
+      "shipped": "downloaded",
+      "noticeFiles": [
+        "licenses/texts/paddleocr-apache.txt"
+      ],
+      "covers": [
+        "ml:paddle:*"
+      ],
+      "source": "Hugging Face cards PaddlePaddle/PP-OCRv5_* (license: apache-2.0); PaddleOCR repository licence"
+    },
+    {
+      "status": "to-confirm",
+      "notice": "The 3B model’s Qwen Research License does not permit commercial use; whether it may stay the default, and on Frameleaf Cloud, needs an owner decision.",
+      "id": "qwen2.5-vl",
+      "group": "library-models",
+      "name": "Qwen2.5-VL Instruct 3B and 7B (photo descriptions)",
+      "author": "Qwen team, Alibaba Cloud; OpenVINO conversions by llmware",
+      "licence": "Qwen Research License (3B, the default); Apache-2.0 (7B)",
+      "link": "https://huggingface.co/Qwen/Qwen2.5-VL-3B-Instruct",
+      "shipped": "downloaded",
+      "noticeFiles": [
+        "licenses/texts/qwen-research-license.txt",
+        "licenses/texts/apache-2.0.txt"
+      ],
+      "covers": [
+        "ml:description:Qwen/*"
+      ],
+      "source": "Hugging Face cards Qwen/Qwen2.5-VL-3B-Instruct (license_name qwen-research) and Qwen/Qwen2.5-VL-7B-Instruct (license: apache-2.0)"
+    },
+    {
+      "status": "looked-up",
+      "notice": null,
+      "id": "florence-phi",
+      "group": "library-models",
+      "name": "Florence-2 (base, large; -ft) and Phi-3 / Phi-3.5 vision (photo descriptions)",
+      "author": "Microsoft; OpenVINO conversions by OpenVINO",
+      "licence": "MIT",
+      "link": "https://huggingface.co/microsoft/Florence-2-base",
+      "shipped": "downloaded",
+      "noticeFiles": [
+        "licenses/texts/microsoft-mit.txt"
+      ],
+      "covers": [
+        "ml:description:microsoft/*"
+      ],
+      "source": "Hugging Face cards microsoft/Florence-2-*, microsoft/Phi-3*-vision-* (license: mit)"
+    },
+    {
+      "status": "looked-up",
+      "notice": null,
+      "id": "nsfw-detection",
+      "group": "library-models",
+      "name": "NSFW image detection (ONNX)",
+      "author": "Falconsai; ONNX conversion by onnx-community",
+      "licence": "Apache-2.0",
+      "link": "https://huggingface.co/Falconsai/nsfw_image_detection",
+      "shipped": "downloaded",
+      "noticeFiles": [
+        "licenses/texts/apache-2.0.txt"
+      ],
+      "covers": [
+        "ml:nsfw:onnx-community/nsfw_image_detection-ONNX"
+      ],
+      "source": "Hugging Face card Falconsai/nsfw_image_detection (license: apache-2.0); the conversion declares none"
+    }
+  ],
+  "fonts": {
+    "source": "google/fonts @ 23e54b51ddffbc7713c583748e3bd86f62b1fa4a (licence directory and METADATA.pb designer per family), retrieved 2026-09-25",
+    "shipped": "loaded from Google Fonts when a title uses them; not bundled",
+    "noticeFiles": [
+      "licenses/texts/ofl-1.1.txt",
+      "licenses/texts/apache-2.0.txt",
+      "licenses/texts/ubuntu-font-licence-1.0.txt"
+    ],
+    "covers": [
+      "font:*"
+    ],
+    "families": [
+      {
+        "name": "Roboto",
+        "designer": "Christian Robertson, ParaType, Font Bureau",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Roboto",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/roboto/OFL.txt"
+      },
+      {
+        "name": "Open Sans",
+        "designer": "Steve Matteson",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Open+Sans",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/opensans/OFL.txt"
+      },
+      {
+        "name": "Google Sans",
+        "designer": "Google",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Google+Sans",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/googlesans/OFL.txt"
+      },
+      {
+        "name": "Noto Sans JP",
+        "designer": "Google",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Noto+Sans+JP",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/notosansjp/OFL.txt"
+      },
+      {
+        "name": "Inter",
+        "designer": "Rasmus Andersson",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Inter",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/inter/OFL.txt"
+      },
+      {
+        "name": "Montserrat",
+        "designer": "Julieta Ulanovsky, Sol Matas, Juan Pablo del Peral, Jacques Le Bailly",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Montserrat",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/montserrat/OFL.txt"
+      },
+      {
+        "name": "Poppins",
+        "designer": "Indian Type Foundry, Jonny Pinhorn, Ninad Kale",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Poppins",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/poppins/OFL.txt"
+      },
+      {
+        "name": "Lato",
+        "designer": "Łukasz Dziedzic",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Lato",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/lato/OFL.txt"
+      },
+      {
+        "name": "Roboto Condensed",
+        "designer": "Christian Robertson",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Roboto+Condensed",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/robotocondensed/OFL.txt"
+      },
+      {
+        "name": "Roboto Mono",
+        "designer": "Christian Robertson",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Roboto+Mono",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/robotomono/OFL.txt"
+      },
+      {
+        "name": "Arimo",
+        "designer": "Steve Matteson",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Arimo",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/arimo/OFL.txt"
+      },
+      {
+        "name": "Oswald",
+        "designer": "Vernon Adams, Kalapi Gajjar, Cyreal",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Oswald",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/oswald/OFL.txt"
+      },
+      {
+        "name": "Noto Sans",
+        "designer": "Google",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Noto+Sans",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/notosans/OFL.txt"
+      },
+      {
+        "name": "Raleway",
+        "designer": "Matt McInerney, Pablo Impallari, Rodrigo Fuenzalida",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Raleway",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/raleway/OFL.txt"
+      },
+      {
+        "name": "Nunito",
+        "designer": "Vernon Adams, Cyreal, Jacques Le Bailly",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Nunito",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/nunito/OFL.txt"
+      },
+      {
+        "name": "Nunito Sans",
+        "designer": "Vernon Adams, Jacques Le Bailly, Manvel Shmavonyan, Alexei Vanyashin",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Nunito+Sans",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/nunitosans/OFL.txt"
+      },
+      {
+        "name": "Playfair Display",
+        "designer": "Claus Eggers Sørensen",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Playfair+Display",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/playfairdisplay/OFL.txt"
+      },
+      {
+        "name": "Rubik",
+        "designer": "Hubert and Fischer, Meir Sadan, Cyreal, Daniel Grumer, Omaima Dajani",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Rubik",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/rubik/OFL.txt"
+      },
+      {
+        "name": "Ubuntu",
+        "designer": "Dalton Maag",
+        "licence": "Ubuntu Font Licence 1.0",
+        "link": "https://fonts.google.com/specimen/Ubuntu",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ufl/ubuntu/UFL.txt"
+      },
+      {
+        "name": "Roboto Slab",
+        "designer": "Christian Robertson",
+        "licence": "Apache-2.0",
+        "link": "https://fonts.google.com/specimen/Roboto+Slab",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/apache/robotoslab/LICENSE.txt"
+      },
+      {
+        "name": "DM Sans",
+        "designer": "Colophon Foundry",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/DM+Sans",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/dmsans/OFL.txt"
+      },
+      {
+        "name": "Merriweather",
+        "designer": "Sorkin Type",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Merriweather",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/merriweather/OFL.txt"
+      },
+      {
+        "name": "Noto Sans KR",
+        "designer": "Google",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Noto+Sans+KR",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/notosanskr/OFL.txt"
+      },
+      {
+        "name": "Work Sans",
+        "designer": "Wei Huang",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Work+Sans",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/worksans/OFL.txt"
+      },
+      {
+        "name": "PT Sans",
+        "designer": "ParaType",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/PT+Sans",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/ptsans/OFL.txt"
+      },
+      {
+        "name": "Kanit",
+        "designer": "Cadson Demak",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Kanit",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/kanit/OFL.txt"
+      },
+      {
+        "name": "Lora",
+        "designer": "Cyreal",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Lora",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/lora/OFL.txt"
+      },
+      {
+        "name": "Mulish",
+        "designer": "Vernon Adams, Cyreal, Jacques Le Bailly",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Mulish",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/mulish/OFL.txt"
+      },
+      {
+        "name": "Fjalla One",
+        "designer": "Sorkin Type, Irina Smirnova",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Fjalla+One",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/fjallaone/OFL.txt"
+      },
+      {
+        "name": "Manrope",
+        "designer": "Mikhail Sharanda",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Manrope",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/manrope/OFL.txt"
+      },
+      {
+        "name": "Archivo",
+        "designer": "Omnibus-Type",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Archivo",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/archivo/OFL.txt"
+      },
+      {
+        "name": "Quicksand",
+        "designer": "Andrew Paglinawan",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Quicksand",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/quicksand/OFL.txt"
+      },
+      {
+        "name": "Outfit",
+        "designer": "Smartsheet Inc, Rodrigo Fuenzalida",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Outfit",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/outfit/OFL.txt"
+      },
+      {
+        "name": "Figtree",
+        "designer": "Erik Kennedy",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Figtree",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/figtree/OFL.txt"
+      },
+      {
+        "name": "Fira Sans",
+        "designer": "Carrois Apostrophe",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Fira+Sans",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/firasans/OFL.txt"
+      },
+      {
+        "name": "Inconsolata",
+        "designer": "Raph Levien",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Inconsolata",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/inconsolata/OFL.txt"
+      },
+      {
+        "name": "Barlow",
+        "designer": "Jeremy Tribby",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Barlow",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/barlow/OFL.txt"
+      },
+      {
+        "name": "Bebas Neue",
+        "designer": "Ryoichi Tsunekawa",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Bebas+Neue",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/bebasneue/OFL.txt"
+      },
+      {
+        "name": "Noto Sans TC",
+        "designer": "Google",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Noto+Sans+TC",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/notosanstc/OFL.txt"
+      },
+      {
+        "name": "Archivo Black",
+        "designer": "Omnibus-Type",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Archivo+Black",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/archivoblack/OFL.txt"
+      },
+      {
+        "name": "Source Sans 3",
+        "designer": "Paul D. Hunt",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Source+Sans+3",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/sourcesans3/OFL.txt"
+      },
+      {
+        "name": "Hind Siliguri",
+        "designer": "Indian Type Foundry",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Hind+Siliguri",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/hindsiliguri/OFL.txt"
+      },
+      {
+        "name": "IBM Plex Sans",
+        "designer": "Mike Abbink, Bold Monday",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/IBM+Plex+Sans",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/ibmplexsans/OFL.txt"
+      },
+      {
+        "name": "Prompt",
+        "designer": "Cadson Demak",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Prompt",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/prompt/OFL.txt"
+      },
+      {
+        "name": "Bungee",
+        "designer": "David Jonathan Ross",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Bungee",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/bungee/OFL.txt"
+      },
+      {
+        "name": "Titillium Web",
+        "designer": "Accademia di Belle Arti di Urbino",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Titillium+Web",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/titilliumweb/OFL.txt"
+      },
+      {
+        "name": "Karla",
+        "designer": "Jonny Pinhorn",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Karla",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/karla/OFL.txt"
+      },
+      {
+        "name": "Heebo",
+        "designer": "Oded Ezer",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Heebo",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/heebo/OFL.txt"
+      },
+      {
+        "name": "Saira",
+        "designer": "Omnibus-Type",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Saira",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/saira/OFL.txt"
+      },
+      {
+        "name": "Noto Serif",
+        "designer": "Google",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Noto+Serif",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/notoserif/OFL.txt"
+      },
+      {
+        "name": "PT Serif",
+        "designer": "ParaType",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/PT+Serif",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/ptserif/OFL.txt"
+      },
+      {
+        "name": "Jost",
+        "designer": "Owen Earl",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Jost",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/jost/OFL.txt"
+      },
+      {
+        "name": "Plus Jakarta Sans",
+        "designer": "Tokotype",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Plus+Jakarta+Sans",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/plusjakartasans/OFL.txt"
+      },
+      {
+        "name": "Bricolage Grotesque",
+        "designer": "Mathieu Triay",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Bricolage+Grotesque",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/bricolagegrotesque/OFL.txt"
+      },
+      {
+        "name": "Noto Color Emoji",
+        "designer": "Google",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Noto+Color+Emoji",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/notocoloremoji/OFL.txt"
+      },
+      {
+        "name": "Share Tech",
+        "designer": "Carrois Apostrophe",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Share+Tech",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/sharetech/OFL.txt"
+      },
+      {
+        "name": "Smooch Sans",
+        "designer": "Robert Leuschke",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Smooch+Sans",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/smoochsans/OFL.txt"
+      },
+      {
+        "name": "Source Code Pro",
+        "designer": "Paul D. Hunt",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Source+Code+Pro",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/sourcecodepro/OFL.txt"
+      },
+      {
+        "name": "Libre Baskerville",
+        "designer": "Impallari Type",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Libre+Baskerville",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/librebaskerville/OFL.txt"
+      },
+      {
+        "name": "Dancing Script",
+        "designer": "Impallari Type",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Dancing+Script",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/dancingscript/OFL.txt"
+      },
+      {
+        "name": "Lobster Two",
+        "designer": "Impallari Type",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Lobster+Two",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/lobstertwo/OFL.txt"
+      },
+      {
+        "name": "EB Garamond",
+        "designer": "Georg Duffner, Octavio Pardo",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/EB+Garamond",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/ebgaramond/OFL.txt"
+      },
+      {
+        "name": "Josefin Sans",
+        "designer": "Santiago Orozco",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Josefin+Sans",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/josefinsans/OFL.txt"
+      },
+      {
+        "name": "Cairo",
+        "designer": "Mohamed Gaber, Accademia di Belle Arti di Urbino",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Cairo",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/cairo/OFL.txt"
+      },
+      {
+        "name": "Libre Franklin",
+        "designer": "Impallari Type",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Libre+Franklin",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/librefranklin/OFL.txt"
+      },
+      {
+        "name": "Gravitas One",
+        "designer": "Riccardo De Franceschi",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Gravitas+One",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/gravitasone/OFL.txt"
+      },
+      {
+        "name": "Noto Serif JP",
+        "designer": "Google",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Noto+Serif+JP",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/notoserifjp/OFL.txt"
+      },
+      {
+        "name": "Public Sans",
+        "designer": "USWDS, Dan Williams, Pablo Impallari, Rodrigo Fuenzalida",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Public+Sans",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/publicsans/OFL.txt"
+      },
+      {
+        "name": "Anton",
+        "designer": "Vernon Adams",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Anton",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/anton/OFL.txt"
+      },
+      {
+        "name": "Mukta",
+        "designer": "Ek Type",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Mukta",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/mukta/OFL.txt"
+      },
+      {
+        "name": "Schibsted Grotesk",
+        "designer": "Bakken & Bæck, Henrik Kongsvoll",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Schibsted+Grotesk",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/schibstedgrotesk/OFL.txt"
+      },
+      {
+        "name": "Dosis",
+        "designer": "Impallari Type",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Dosis",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/dosis/OFL.txt"
+      },
+      {
+        "name": "Barlow Condensed",
+        "designer": "Jeremy Tribby",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Barlow+Condensed",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/barlowcondensed/OFL.txt"
+      },
+      {
+        "name": "Bitter",
+        "designer": "Sol Matas",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Bitter",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/bitter/OFL.txt"
+      },
+      {
+        "name": "Roboto Flex",
+        "designer": "Font Bureau, David Berlow, Santiago Orozco, Irene Vlachou, Ilya Ruderman, Yury Ostromentsky, Mikhail Strukov",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Roboto+Flex",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/robotoflex/OFL.txt"
+      },
+      {
+        "name": "Cabin",
+        "designer": "Impallari Type, Rodrigo Fuenzalida",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Cabin",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/cabin/OFL.txt"
+      },
+      {
+        "name": "Noto Sans SC",
+        "designer": "Google",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Noto+Sans+SC",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/notosanssc/OFL.txt"
+      },
+      {
+        "name": "Ramabhadra",
+        "designer": "Purushoth Kumar Guttula",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Ramabhadra",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/ramabhadra/OFL.txt"
+      },
+      {
+        "name": "Noto Sans Telugu",
+        "designer": "Google",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Noto+Sans+Telugu",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/notosanstelugu/OFL.txt"
+      },
+      {
+        "name": "Nanum Gothic",
+        "designer": "Sandoll Communication",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Nanum+Gothic",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/nanumgothic/OFL.txt"
+      },
+      {
+        "name": "Space Grotesk",
+        "designer": "Florian Karsten",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Space+Grotesk",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/spacegrotesk/OFL.txt"
+      },
+      {
+        "name": "Changa One",
+        "designer": "Eduardo Tunni",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Changa+One",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/changaone/OFL.txt"
+      },
+      {
+        "name": "Anek Telugu",
+        "designer": "Ek Type",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Anek+Telugu",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/anektelugu/OFL.txt"
+      },
+      {
+        "name": "Assistant",
+        "designer": "Adobe Systems Inc., Ben Nathan",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Assistant",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/assistant/OFL.txt"
+      },
+      {
+        "name": "Oxygen",
+        "designer": "Vernon Adams",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Oxygen",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/oxygen/OFL.txt"
+      },
+      {
+        "name": "Pacifico",
+        "designer": "Vernon Adams, Jacques Le Bailly, Botjo Nikoltchev, Ani Petrova",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Pacifico",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/pacifico/OFL.txt"
+      },
+      {
+        "name": "Alfa Slab One",
+        "designer": "JM Solé",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Alfa+Slab+One",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/alfaslabone/OFL.txt"
+      },
+      {
+        "name": "Lexend",
+        "designer": "Bonnie Shaver-Troup, Thomas Jockin, Santiago Orozco, Héctor Gómez, Superunion",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Lexend",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/lexend/OFL.txt"
+      },
+      {
+        "name": "Hind",
+        "designer": "Indian Type Foundry",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Hind",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/hind/OFL.txt"
+      },
+      {
+        "name": "M PLUS Rounded 1c",
+        "designer": "Coji Morishita, M+ Fonts Project",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/M+PLUS+Rounded+1c",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/mplusrounded1c/OFL.txt"
+      },
+      {
+        "name": "Red Hat Display",
+        "designer": "MCKL",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Red+Hat+Display",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/redhatdisplay/OFL.txt"
+      },
+      {
+        "name": "Exo 2",
+        "designer": "Natanael Gama",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Exo+2",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/exo2/OFL.txt"
+      },
+      {
+        "name": "Slabo 27px",
+        "designer": "John Hudson",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Slabo+27px",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/slabo27px/OFL.txt"
+      },
+      {
+        "name": "Lobster",
+        "designer": "Impallari Type",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Lobster",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/lobster/OFL.txt"
+      },
+      {
+        "name": "Cormorant Garamond",
+        "designer": "Christian Thalmann",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Cormorant+Garamond",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/cormorantgaramond/OFL.txt"
+      },
+      {
+        "name": "Sora",
+        "designer": "Jonathan Barnbrook, Julián Moncada",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Sora",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/sora/OFL.txt"
+      },
+      {
+        "name": "Crimson Text",
+        "designer": "Sebastian Kosch",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Crimson+Text",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/crimsontext/OFL.txt"
+      },
+      {
+        "name": "Inter Tight",
+        "designer": "Rasmus Andersson",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Inter+Tight",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/intertight/OFL.txt"
+      },
+      {
+        "name": "Overpass",
+        "designer": "Delve Withrington, Dave Bailey, Thomas Jockin",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Overpass",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/overpass/OFL.txt"
+      },
+      {
+        "name": "Caveat",
+        "designer": "Impallari Type",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Caveat",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/caveat/OFL.txt"
+      },
+      {
+        "name": "Urbanist",
+        "designer": "Corey Hu",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Urbanist",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/urbanist/OFL.txt"
+      },
+      {
+        "name": "Comfortaa",
+        "designer": "Johan Aakerlund",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Comfortaa",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/comfortaa/OFL.txt"
+      },
+      {
+        "name": "Tajawal",
+        "designer": "Boutros Fonts, Mourad Boutros, Soulaf Khalifeh",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Tajawal",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/tajawal/OFL.txt"
+      },
+      {
+        "name": "Arvo",
+        "designer": "Anton Koovit",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Arvo",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/arvo/OFL.txt"
+      },
+      {
+        "name": "PT Sans Narrow",
+        "designer": "ParaType",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/PT+Sans+Narrow",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/ptsansnarrow/OFL.txt"
+      },
+      {
+        "name": "Rajdhani",
+        "designer": "Indian Type Foundry",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Rajdhani",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/rajdhani/OFL.txt"
+      },
+      {
+        "name": "DM Serif Display",
+        "designer": "Colophon Foundry",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/DM+Serif+Display",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/dmserifdisplay/OFL.txt"
+      },
+      {
+        "name": "Abel",
+        "designer": "MADType",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Abel",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/abel/OFL.txt"
+      },
+      {
+        "name": "Teko",
+        "designer": "Indian Type Foundry",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Teko",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/teko/OFL.txt"
+      },
+      {
+        "name": "Source Serif 4",
+        "designer": "Frank Grießhammer",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Source+Serif+4",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/sourceserif4/OFL.txt"
+      },
+      {
+        "name": "Noto Sans Arabic",
+        "designer": "Google",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Noto+Sans+Arabic",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/notosansarabic/OFL.txt"
+      },
+      {
+        "name": "Almarai",
+        "designer": "Boutros Fonts, Mourad Boutros",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Almarai",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/almarai/OFL.txt"
+      },
+      {
+        "name": "Merriweather Sans",
+        "designer": "Sorkin Type",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Merriweather+Sans",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/merriweathersans/OFL.txt"
+      },
+      {
+        "name": "Lexend Deca",
+        "designer": "Bonnie Shaver-Troup, Thomas Jockin, Santiago Orozco, Héctor Gómez, Superunion",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Lexend+Deca",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/lexenddeca/OFL.txt"
+      },
+      {
+        "name": "Satisfy",
+        "designer": "Sideshow",
+        "licence": "Apache-2.0",
+        "link": "https://fonts.google.com/specimen/Satisfy",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/apache/satisfy/LICENSE.txt"
+      },
+      {
+        "name": "Orbitron",
+        "designer": "Matt McInerney",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Orbitron",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/orbitron/OFL.txt"
+      },
+      {
+        "name": "Barlow Semi Condensed",
+        "designer": "Jeremy Tribby",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Barlow+Semi+Condensed",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/barlowsemicondensed/OFL.txt"
+      },
+      {
+        "name": "Domine",
+        "designer": "Impallari Type",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Domine",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/domine/OFL.txt"
+      },
+      {
+        "name": "Shadows Into Light",
+        "designer": "Kimberly Geswein",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/Shadows+Into+Light",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/shadowsintolight/OFL.txt"
+      },
+      {
+        "name": "M PLUS 1p",
+        "designer": "Coji Morishita, M+ Fonts Project",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/M+PLUS+1p",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/mplus1p/OFL.txt"
+      },
+      {
+        "name": "IBM Plex Mono",
+        "designer": "Mike Abbink, Bold Monday",
+        "licence": "OFL-1.1",
+        "link": "https://fonts.google.com/specimen/IBM+Plex+Mono",
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/ibmplexmono/OFL.txt"
+      }
+    ]
+  },
+  "texts": [
+    {
+      "file": "licenses/texts/apache-2.0.txt",
+      "title": "Apache License 2.0",
+      "source": "https://www.apache.org/licenses/LICENSE-2.0.txt",
+      "retrievedOn": "2026-09-25",
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+    },
+    {
+      "file": "licenses/texts/cc-by-4.0.txt",
+      "title": "Creative Commons Attribution 4.0 International",
+      "source": "https://creativecommons.org/licenses/by/4.0/legalcode.txt",
+      "retrievedOn": "2026-09-25",
+      "sha256": "9ba9550ad48438d0836ddab3da480b3b69ffa0aac7b7878b5a0039e7ab429411"
+    },
+    {
+      "file": "licenses/texts/cc-by-nc-4.0.txt",
+      "title": "Creative Commons Attribution-NonCommercial 4.0 International",
+      "source": "https://creativecommons.org/licenses/by-nc/4.0/legalcode.txt",
+      "retrievedOn": "2026-09-25",
+      "sha256": "41003d4a74749c0220e33dd415042164b5a1093ed401f36277234f772d22d3d0"
+    },
+    {
+      "file": "licenses/texts/supertonic-3-openrail-m.txt",
+      "title": "BigScience Open RAIL-M (Supertonic-3)",
+      "source": "https://huggingface.co/Supertone/supertonic-3/raw/main/LICENSE",
+      "retrievedOn": "2026-09-25",
+      "sha256": "0d944a9110fed9a9602d60e0423a272903e7bd21ab060490774efc77c2275e9f"
+    },
+    {
+      "file": "licenses/texts/lfm-open-license-1.0.txt",
+      "title": "LFM Open License v1.0",
+      "source": "https://huggingface.co/LiquidAI/LFM2.5-VL-450M/raw/main/LICENSE",
+      "retrievedOn": "2026-09-25",
+      "sha256": "4d28ca14dedc0b3d0fcc2b3339f0e79931faa33874f3d24f522183a8fc70068c"
+    },
+    {
+      "file": "licenses/texts/openai-clip-mit.txt",
+      "title": "MIT (OpenAI CLIP)",
+      "source": "https://raw.githubusercontent.com/openai/CLIP/main/LICENSE",
+      "retrievedOn": "2026-09-25",
+      "sha256": "987e63b32f6c89ff5160e429458a872ff048e6860b590a3912e938f9da8f14db"
+    },
+    {
+      "file": "licenses/texts/openai-whisper-mit.txt",
+      "title": "MIT (OpenAI Whisper)",
+      "source": "https://raw.githubusercontent.com/openai/whisper/main/LICENSE",
+      "retrievedOn": "2026-09-25",
+      "sha256": "b5d65a59060e68c4ff940e1eddfa6f94b2d68fdf58ed7f4dd57721c997e35e9d"
+    },
+    {
+      "file": "licenses/texts/multilingual-clip-mit.txt",
+      "title": "MIT (Multilingual-CLIP)",
+      "source": "https://raw.githubusercontent.com/FreddeFrallan/Multilingual-CLIP/main/LICENSE",
+      "retrievedOn": "2026-09-25",
+      "sha256": "9ce294c92306ddf21bbd25bb0055da268af45ec103dbfbbcab61b7a7339493b8"
+    },
+    {
+      "file": "licenses/texts/open-clip-license.txt",
+      "title": "OpenCLIP licence (MIT terms)",
+      "source": "https://raw.githubusercontent.com/mlfoundations/open_clip/main/LICENSE",
+      "retrievedOn": "2026-09-25",
+      "sha256": "4a5b4f13ea4792a8211a69f32d2b460b6d520e57cd23c6301e707c76a6e97a55"
+    },
+    {
+      "file": "licenses/texts/practical-rife-mit.txt",
+      "title": "MIT (Practical-RIFE)",
+      "source": "https://raw.githubusercontent.com/hzwer/Practical-RIFE/main/LICENSE",
+      "retrievedOn": "2026-09-25",
+      "sha256": "7932fb49341512b959b1744a6d9cbb39e5a1ec89da438a34d0454d5d8df9fecd"
+    },
+    {
+      "file": "licenses/texts/microsoft-mit.txt",
+      "title": "MIT (Microsoft; identical text ships with Phi-3.5-vision-instruct)",
+      "source": "https://huggingface.co/microsoft/Florence-2-base/raw/main/LICENSE",
+      "retrievedOn": "2026-09-25",
+      "sha256": "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383"
+    },
+    {
+      "file": "licenses/texts/apple-amlr.txt",
+      "title": "Apple Sample Code License (apple-amlr)",
+      "source": "https://huggingface.co/apple/DFN5B-CLIP-ViT-H-14-378/raw/main/LICENSE",
+      "retrievedOn": "2026-09-25",
+      "sha256": "d8f5d9dfbdb60dc81b8f1720421699e7811070f0b46f6668f90253d5ac8c0b20"
+    },
+    {
+      "file": "licenses/texts/qwen-research-license.txt",
+      "title": "Qwen Research License",
+      "source": "https://huggingface.co/Qwen/Qwen2.5-VL-3B-Instruct/raw/main/LICENSE",
+      "retrievedOn": "2026-09-25",
+      "sha256": "b5c0e5cf74cf51af1ecbc4af597cfcd13fd9925611838884a681070838a14a50"
+    },
+    {
+      "file": "licenses/texts/insightface-model-licence.txt",
+      "title": "InsightFace licence section (README \"License\", verbatim)",
+      "source": "https://raw.githubusercontent.com/deepinsight/insightface/master/python-package/README.md",
+      "retrievedOn": "2026-09-25",
+      "sha256": "c87de4c388290493f07cb58ec22f8dc71592c2230db97a6a6fe22b30d914e9d0"
+    },
+    {
+      "file": "licenses/texts/ofl-1.1.txt",
+      "title": "SIL Open Font License 1.1",
+      "source": "https://openfontlicense.org/documents/OFL.txt",
+      "retrievedOn": "2026-09-25",
+      "sha256": "1d361a8f8e8ce6e68457dcd93fb56e162e6baa3bbb7e7573a290d44399f6b57e"
+    },
+    {
+      "file": "licenses/texts/ubuntu-font-licence-1.0.txt",
+      "title": "Ubuntu Font Licence 1.0",
+      "source": "https://raw.githubusercontent.com/google/fonts/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ufl/ubuntu/UFL.txt",
+      "retrievedOn": "2026-09-25",
+      "sha256": "2f0015108d68627bd788d313f529c21ff4da2c2c42a5e1f3883acc83480f9002"
+    },
+    {
+      "file": "licenses/texts/paddleocr-apache.txt",
+      "title": "Apache License 2.0 (PaddleOCR)",
+      "source": "https://raw.githubusercontent.com/PaddlePaddle/PaddleOCR/main/LICENSE",
+      "retrievedOn": "2026-09-25",
+      "sha256": "3840c5c0c61c294264d2dd77b8777be6ddd90121ef4e0e64abcd22edea581d6e"
+    },
+    {
+      "file": "licenses/texts/dotlottie-web-mit.txt",
+      "title": "MIT (dotLottie web player)",
+      "source": "https://raw.githubusercontent.com/LottieFiles/dotlottie-web/main/LICENSE",
+      "retrievedOn": "2026-09-25",
+      "sha256": "779cec663b3c6590082566f2a000170d7a4d1a4bfc6f954e61efa4adddc652a8"
+    }
+  ]
+}
