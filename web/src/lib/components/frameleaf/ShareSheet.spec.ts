@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
+import { tick } from 'svelte';
 import { addMessages } from 'svelte-i18n';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import {
@@ -62,7 +63,7 @@ describe('ShareSheet', () => {
 
     it('shares with the people chosen and stops sharing with the ones turned off', async () => {
       sdkMock.searchUsers.mockResolvedValue([person('jamie', 'Jamie'), person('sam', 'Sam')]);
-      // Sam already has both items; Jamie has only one, so Jamie does not start selected.
+      // Sam has both items. Jamie starts partial, then is cleared and selected again to share both.
       sdkMock.getItemShares.mockResolvedValue([
         { id: 's1', assetId: 'a1', sharedWith: person('sam', 'Sam'), createdAt: '' },
         { id: 's2', assetId: 'a2', sharedWith: person('sam', 'Sam'), createdAt: '' },
@@ -73,11 +74,13 @@ describe('ShareSheet', () => {
       render(ShareSheet, { open: true, assetIds: ['a1', 'a2'] });
 
       const sam = await screen.findByRole('button', { name: 'Sam' });
-      const jamie = screen.getByRole('button', { name: 'Jamie' });
+      const jamie = screen.getByRole('button', { name: /Jamie, shared with some selected items/ });
       expect(sam).toHaveAttribute('aria-pressed', 'true');
-      expect(jamie).toHaveAttribute('aria-pressed', 'false');
-      expect(screen.getByRole('button', { name: 'Share with Sam' })).toBeInTheDocument();
+      expect(jamie).toHaveAttribute('aria-pressed', 'mixed');
+      expect(screen.getByText(en.frameleaf_sharing.some_items)).toBeInTheDocument();
 
+      await fireEvent.click(jamie);
+      expect(jamie).toHaveAttribute('aria-pressed', 'false');
       await fireEvent.click(jamie);
       await fireEvent.click(sam);
       await fireEvent.click(screen.getByRole('button', { name: 'Share with Jamie' }));
@@ -90,6 +93,64 @@ describe('ShareSheet', () => {
       expect(sdkMock.unshareItems).toHaveBeenCalledWith({
         itemShareChangeDto: { assetIds: ['a1', 'a2'], userIds: ['sam'] },
       });
+    });
+
+    it('clears a partial recipient across the selection', async () => {
+      sdkMock.searchUsers.mockResolvedValue([person('jamie', 'Jamie')]);
+      sdkMock.getItemShares.mockResolvedValue([
+        { id: 's1', assetId: 'a1', sharedWith: person('jamie', 'Jamie'), createdAt: '' },
+      ]);
+      sdkMock.unshareItems.mockResolvedValue({ shares: [], added: 0, removed: 1, link: null });
+      render(ShareSheet, { open: true, assetIds: ['a1', 'a2'] });
+
+      const jamie = await screen.findByRole('button', { name: /Jamie, shared with some selected items/ });
+      expect(jamie).toHaveAttribute('aria-pressed', 'mixed');
+      await fireEvent.click(jamie);
+      await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_sharing.save_sharing }));
+
+      expect(sdkMock.unshareItems).toHaveBeenCalledWith({
+        itemShareChangeDto: { assetIds: ['a1', 'a2'], userIds: ['jamie'] },
+      });
+      expect(sdkMock.shareItems).not.toHaveBeenCalled();
+    });
+
+    it('reloads sharing after a cancelled draft is reopened', async () => {
+      sdkMock.searchUsers.mockResolvedValue([person('jamie', 'Jamie'), person('sam', 'Sam')]);
+      const view = render(ShareSheet, { open: true, assetIds: ['a1'] });
+      const jamie = await screen.findByRole('button', { name: 'Jamie' });
+      await fireEvent.click(jamie);
+      expect(jamie).toHaveAttribute('aria-pressed', 'true');
+      await fireEvent.click(screen.getByRole('button', { name: en.cancel }));
+
+      sdkMock.getItemShares.mockResolvedValue([
+        { id: 's1', assetId: 'a1', sharedWith: person('sam', 'Sam'), createdAt: '' },
+      ]);
+      await view.rerender({ open: true, assetIds: ['a1'] });
+
+      await waitFor(() => expect(sdkMock.getItemShares).toHaveBeenCalledTimes(2));
+      expect(screen.getByRole('button', { name: 'Jamie' })).toHaveAttribute('aria-pressed', 'false');
+      expect(screen.getByRole('button', { name: 'Sam' })).toHaveAttribute('aria-pressed', 'true');
+    });
+
+    it('ignores an old load after reopening and does not duplicate a pending load', async () => {
+      sdkMock.searchUsers.mockResolvedValue([person('jamie', 'Jamie'), person('sam', 'Sam')]);
+      let finishFirst!: (shares: Awaited<ReturnType<typeof sdkMock.getItemShares>>) => void;
+      sdkMock.getItemShares
+        .mockImplementationOnce(() => new Promise((resolve) => (finishFirst = resolve)))
+        .mockResolvedValue([{ id: 's2', assetId: 'a1', sharedWith: person('sam', 'Sam'), createdAt: '' }]);
+      const view = render(ShareSheet, { open: true, assetIds: ['a1'] });
+
+      await view.rerender({ open: true, assetIds: ['a1'] });
+      expect(sdkMock.getItemShares).toHaveBeenCalledTimes(1);
+      await view.rerender({ open: false, assetIds: ['a1'] });
+      await view.rerender({ open: true, assetIds: ['a1'] });
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Sam' })).toHaveAttribute('aria-pressed', 'true'));
+
+      finishFirst([{ id: 's1', assetId: 'a1', sharedWith: person('jamie', 'Jamie'), createdAt: '' }]);
+      await Promise.resolve();
+      await tick();
+      expect(sdkMock.getItemShares).toHaveBeenCalledTimes(2);
+      expect(screen.getByRole('button', { name: 'Jamie' })).toHaveAttribute('aria-pressed', 'false');
     });
 
     it('says so when nobody else is in the library', async () => {
