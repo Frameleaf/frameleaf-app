@@ -4,6 +4,21 @@ import { app, asBearerAuth, utils } from 'src/utils.js';
 import request from 'supertest';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 
+const candidate = (uri: string, custom = false) => ({
+  kind: 'wan',
+  uri,
+  protocol: 'https',
+  address: new URL(uri).hostname,
+  port: Number(new URL(uri).port || 443),
+  local: false,
+  relay: custom,
+  ipv6: false,
+  custom,
+  dnsRebindingProtection: false,
+  httpsRequired: true,
+  verified: true,
+});
+
 /**
  * FL-83 (AL-30b, owner decision 2026-09-27): sharing individual items with a person in this
  * library. The link comes from the Public server URL, or a linked server's published direct and
@@ -263,20 +278,6 @@ describe('/item-shares', () => {
       );
       await utils.getSystemConfig(admin.accessToken); // refresh the server's cached config
     };
-    const candidate = (uri: string, custom = false) => ({
-      kind: 'wan',
-      uri,
-      protocol: 'https',
-      address: new URL(uri).hostname,
-      port: Number(new URL(uri).port || 443),
-      local: false,
-      relay: custom,
-      ipv6: false,
-      custom,
-      dnsRebindingProtection: false,
-      httpsRequired: true,
-      verified: true,
-    });
     const published = [candidate(direct), candidate(`https://${customHost}`, true)];
     const state = {
       status: 'ready',
@@ -377,7 +378,7 @@ describe('/item-shares', () => {
         expect(noAddress.body.link).toBeNull();
       }
     } finally {
-      if (savedConfig.rows.length) {
+      if (savedConfig.rows.length > 0) {
         await putMetadata('system-config', savedConfig.rows[0].value);
       } else {
         await client.query("DELETE FROM system_metadata WHERE key = 'system-config'");
