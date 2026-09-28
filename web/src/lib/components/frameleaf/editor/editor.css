@@ -1175,6 +1175,39 @@
   border-radius: var(--fl-radius-card);
   text-align: center;
 }
+/* FL-83 (E-9): Masks open from the Adjust panel, and return to it. */
+.ed-open-masks {
+  width: 100%;
+  margin-top: 16px;
+  justify-content: flex-start;
+}
+.ed-open-masks > :last-child {
+  margin-left: auto;
+}
+.ed-count {
+  min-width: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ed-ink) 13%, transparent);
+  font-size: var(--fl-font-micro);
+  text-align: center;
+}
+.ed-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0 0 8px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--fl-viewer-muted);
+  font-size: var(--fl-font-small);
+  cursor: pointer;
+}
+.ed-back:hover,
+.ed-back:focus-visible {
+  color: var(--fl-viewer-text);
+}
 .ed-note {
   margin-top: 18px;
   color: var(--fl-viewer-muted);
@@ -1215,6 +1248,15 @@
 }
 .ed-status.muted {
   color: var(--fl-viewer-muted);
+}
+/* FL-83 (E-9): restoration as the last section of a clip's Enhance panel. */
+.rs-subsection {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--fl-viewer-border);
+}
+.rs-subsection-title {
+  margin: 0;
 }
 .rs-lead {
   margin: 4px 0 0;

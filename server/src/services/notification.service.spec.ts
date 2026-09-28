@@ -393,6 +393,56 @@ describe(NotificationService.name, () => {
     });
   });
 
+  describe('onItemShare (FL-83 AL-30b)', () => {
+    const event = { ownerId: 'owner-1', userId: 'user-1', senderName: 'Taylor', count: 2, link: 'https://x/sharing' };
+    const withPrefs = (albumInvite: boolean) =>
+      mocks.user.get.mockResolvedValue({
+        ...userStub.user1,
+        metadata: [{ key: UserMetadataKey.Preferences, value: { emailNotifications: { enabled: true, albumInvite } } }],
+      });
+
+    it('notifies the recipient in the app, with the link and no item details', async () => {
+      withPrefs(false);
+      mocks.notification.create.mockResolvedValue(notificationStub.albumEvent);
+
+      await sut.onItemShare(event);
+
+      expect(mocks.notification.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: 'user-1',
+          type: NotificationType.ItemShare,
+          description: 'Taylor shared 2 items with you',
+          data: JSON.stringify({ ownerId: 'owner-1', count: 2, link: 'https://x/sharing' }),
+        }),
+      );
+      expect(mocks.websocket.clientSend).toHaveBeenCalledWith('on_notification', 'user-1', expect.anything());
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+    });
+
+    it('emails the recipient when they allow album invitation emails', async () => {
+      withPrefs(true);
+      mocks.systemMetadata.get.mockResolvedValue({ server: {} });
+      mocks.notification.create.mockResolvedValue(notificationStub.albumEvent);
+      mocks.email.renderEmail.mockResolvedValue({ html: '', text: '' });
+
+      await sut.onItemShare({ ...event, count: 1 });
+
+      expect(mocks.email.renderEmail).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ count: 1, link: 'https://x/sharing' }) }),
+      );
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.SendMail,
+        data: expect.objectContaining({ subject: 'Taylor shared an item with you' }),
+      });
+    });
+
+    it('does nothing for a recipient who is gone', async () => {
+      mocks.user.get.mockResolvedValue(void 0);
+      await sut.onItemShare(event);
+      expect(mocks.notification.create).not.toHaveBeenCalled();
+    });
+  });
+
   describe('handleAlbumInvite', () => {
     it('should skip if album could not be found', async () => {
       await expect(sut.handleAlbumInvite({ id: '', recipientId: '', senderName: 'foo' })).resolves.toBe(

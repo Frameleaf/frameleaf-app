@@ -3,7 +3,8 @@
    * Frameleaf FL-57: the guided merge-suggestion verdict banner, ported from the
    * prototype's `pl-suggestion` in `design/frameleaf/template/src/People.jsx:808-860`
    * (`PeopleLibrary`): two face crops, "Are these the same person?", the pair's names,
-   * "N more to review", "Yes, merge" and "No". Unlike the prototype (which invents pairs
+   * "N more to review", "Yes, merge" and "No". The pair line is the prototype's "{A} and {B} · {reason}."
+   * (FL-83 PG-10): a shared first name, otherwise that their faces look alike. Unlike the prototype (which invents pairs
    * from sample data), the suggestion comes from the real `GET /people/merge-suggestions`,
    * which reuses the face-embedding distance the facial-recognition job clusters with.
    *
@@ -22,6 +23,7 @@
   import FrameleafButton from '$lib/components/frameleaf/Button.svelte';
   import PersonAvatar from '$lib/components/frameleaf/PersonAvatar.svelte';
   import FaceCrop from '$lib/components/frameleaf/people/FaceCrop.svelte';
+  import { sharedFirstName } from '$lib/frameleaf/merge-suggestion';
   import { getAssetMediaUrl } from '$lib/utils';
   import { AssetMediaSize, type FaceEvidenceDto, type PersonMergeSuggestionDto } from '@immich/sdk';
   import { t } from 'svelte-i18n';
@@ -41,6 +43,13 @@
 
   const personName = $derived(suggestion.person.name || $t('add_a_name'));
   const suggestionName = $derived(suggestion.suggestion.name || $t('add_a_name'));
+  // FL-83 (PG-10): the prototype's "{A} and {B} · {reason}." line.
+  const sameName = $derived(sharedFirstName(suggestion.person.name, suggestion.suggestion.name));
+  const reason = $derived(
+    sameName
+      ? $t('frameleaf_people_merge_suggestion_reason_name', { values: { name: sameName } })
+      : $t('frameleaf_people_merge_suggestion_reason_faces'),
+  );
   const sides = $derived([
     { person: suggestion.person, name: personName, evidence: suggestion.personEvidence },
     { person: suggestion.suggestion, name: suggestionName, evidence: suggestion.suggestionEvidence },
@@ -64,7 +73,9 @@
     <div class="fl-merge-suggestion-copy">
       <strong>{$t('frameleaf_people_merge_suggestion_question')}</strong>
       <span
-        >{$t('frameleaf_people_merge_suggestion_pair', { values: { first: personName, second: suggestionName } })}</span
+        >{$t('frameleaf_people_merge_suggestion_pair', {
+          values: { first: personName, second: suggestionName, reason },
+        })}</span
       >
       {#if remaining > 0}
         <small>{$t('frameleaf_people_merge_suggestion_more', { values: { count: remaining } })}</small>

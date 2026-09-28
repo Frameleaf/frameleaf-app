@@ -49,6 +49,7 @@ import { FrameleafUserLicenseRepository } from 'src/repositories/frameleaf-user-
 import { HardwareProbeRepository } from 'src/repositories/hardware-probe.repository.js';
 import { InstanceIdentityRepository } from 'src/repositories/instance-identity.repository.js';
 import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
+import { ItemShareRepository } from 'src/repositories/item-share.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LibraryRepository } from 'src/repositories/library.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -308,6 +309,7 @@ export type ServiceOverrides = {
   session: SessionRepository;
   sharedLink: SharedLinkRepository;
   sharedLinkAsset: SharedLinkAssetRepository;
+  itemShare: ItemShareRepository;
   stack: StackRepository;
   storage: StorageRepository;
   sync: SyncRepository;
@@ -415,6 +417,7 @@ export const getMocks = () => {
     session: automock(SessionRepository),
     sharedLink: automock(SharedLinkRepository),
     sharedLinkAsset: automock(SharedLinkAssetRepository),
+    itemShare: automock(ItemShareRepository, { strict: false }),
     stack: automock(StackRepository),
     storage: newStorageRepositoryMock(),
     sync: automock(SyncRepository),
@@ -539,6 +542,7 @@ export const newTestService = <T extends BaseService>(
     overrides.session || (mocks.session as As<SessionRepository>),
     overrides.sharedLink || (mocks.sharedLink as As<SharedLinkRepository>),
     overrides.sharedLinkAsset || (mocks.sharedLinkAsset as As<SharedLinkAssetRepository>),
+    overrides.itemShare || (mocks.itemShare as As<ItemShareRepository>),
     overrides.stack || (mocks.stack as As<StackRepository>),
     overrides.storage || (mocks.storage as As<StorageRepository>),
     overrides.sync || (mocks.sync as As<SyncRepository>),

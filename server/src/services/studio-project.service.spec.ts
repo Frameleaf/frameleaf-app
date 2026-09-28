@@ -51,7 +51,7 @@ describe(StudioProjectService.name, () => {
   let repository: Record<keyof StudioProjectRepository, AnyMock>;
   let access: {
     album: { checkOwnerAccess: AnyMock; checkSharedAlbumAccess: AnyMock };
-    asset: { checkOwnerAccess: AnyMock; checkAlbumAccess: AnyMock; checkPartnerAccess: AnyMock };
+    asset: { checkOwnerAccess: AnyMock; checkAlbumAccess: AnyMock; checkPartnerAccess: AnyMock; checkItemShareAccess: AnyMock };
   };
   /** The owner's items the session may not see (Locked while locked, or hidden by a rule). */
   let hiddenFromSession: Set<string>;
@@ -170,6 +170,7 @@ describe(StudioProjectService.name, () => {
         ),
         checkAlbumAccess: vi.fn().mockResolvedValue(new Set()),
         checkPartnerAccess: vi.fn().mockResolvedValue(new Set()),
+        checkItemShareAccess: vi.fn().mockResolvedValue(new Set()),
       },
     };
     resources = { resolveProjectResources: vi.fn().mockResolvedValue(manifest(true)) };

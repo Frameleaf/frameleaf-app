@@ -494,6 +494,25 @@ describe('AlbumDirectory', () => {
     expect(screen.getByRole('status')).toHaveTextContent('Trips');
   });
 
+  it('never offers Move to… or a drag to an editor of someone else’s album (FL-83 AL-9)', async () => {
+    const shared = albumFactory.build({
+      id: 'shared-edit',
+      albumName: 'Jamie’s trip',
+      albumUsers: [
+        { user: jamie, role: AlbumUserRole.Owner },
+        { user: me, role: AlbumUserRole.Editor },
+      ],
+    });
+    renderWithTooltips(AlbumDirectory, { tree: { ...tree, albums: [trail, shared] }, onRefresh: vi.fn() });
+
+    expect(screen.getByRole('article', { name: 'Jamie’s trip' })).toHaveAttribute('draggable', 'false');
+    await fireEvent.click(screen.getByRole('button', { name: 'Actions for Jamie’s trip' }));
+    const menu = within(await screen.findByRole('menu', { name: 'Actions for Jamie’s trip' }));
+    // The editor still edits the album; only its place is the owner's.
+    expect(menu.getByRole('menuitem', { name: 'Edit' })).toBeInTheDocument();
+    expect(menu.queryByRole('menuitem', { name: 'Move to…' })).toBeNull();
+  });
+
   it('never lets a viewer drag someone else’s album', () => {
     renderWithTooltips(AlbumDirectory, { tree, onRefresh: vi.fn() });
     expect(screen.getByRole('article', { name: 'Trail camera' })).toHaveAttribute('draggable', 'false');

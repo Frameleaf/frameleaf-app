@@ -127,17 +127,11 @@ describe('Locked projection over the API (FL-34, FL-195)', () => {
     request(app).post('/auth/session/unlock').set(bearer(token)).send({ pinCode }).expect(204);
 
   const newAsset = async (name: string) => {
-    const asset = await utils.createAsset(owner.accessToken, {
+    return utils.createAsset(owner.accessToken, {
       assetData: { filename: `${name}.png` },
       fileCreatedAt: '2021-06-15T10:00:00.000Z',
       fileModifiedAt: '2021-06-15T10:00:00.000Z',
     });
-    await request(app)
-      .put(`/assets/${asset.id}`)
-      .set(bearer(owner.accessToken))
-      .send({ latitude: 48.8566, longitude: 2.3522, dateTimeOriginal: '2021-06-15T10:00:00.000Z' })
-      .expect(200);
-    return asset;
   };
 
   beforeAll(async () => {
@@ -152,10 +146,16 @@ describe('Locked projection over the API (FL-34, FL-195)', () => {
     detected = await newAsset('detected-secret');
     legacy = await newAsset('legacy-secret');
     ruleMatch = await newAsset('rule-secret');
-    // The date and place written above go to each item's sidecar and are read back by metadata
-    // extraction; let that settle before tagging, so no extraction pass races the tags added below.
+    // Let extraction settle before writing coordinates and tags, so it cannot overwrite either.
     for (const queue of ['sidecar', 'metadataExtraction'] as const) {
       await utils.waitForQueueFinish(admin.accessToken, queue);
+    }
+    for (const asset of [plain, locked, detected, legacy, ruleMatch]) {
+      await request(app)
+        .put(`/assets/${asset.id}`)
+        .set(bearer(owner.accessToken))
+        .send({ latitude: 48.8566, longitude: 2.3522, dateTimeOriginal: '2021-06-15T10:00:00.000Z' })
+        .expect(200);
     }
     const { body: plainInfo } = await request(app).get(`/assets/${plain.id}`).set(bearer(owner.accessToken));
     folderPath = plainInfo.originalPath.replace(/\/[^/]+$/, '');
