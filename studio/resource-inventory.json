@@ -1,7 +1,5 @@
 {
   "schemaVersion": 1,
-  "story": "FL-90",
-  "planId": "STU-203",
   "generatedBy": "server/src/utils/studio-resources.ts",
   "limits": {
     "maxGraphBytes": 8388608,

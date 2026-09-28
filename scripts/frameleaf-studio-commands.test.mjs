@@ -6,7 +6,6 @@ import { fileURLToPath } from 'node:url';
 
 import {
   CATALOGUE_PATH,
-  ISSUE_MAP_PATH,
   MANIFEST_PATH,
   PROTOTYPE_PATH,
   SERVER_MIRROR_PATH,
@@ -25,7 +24,6 @@ const clone = (value) => JSON.parse(JSON.stringify(value));
 
 const inputs = async () => ({
   manifest: JSON.parse(await read(MANIFEST_PATH)),
-  issueMap: JSON.parse(await read(ISSUE_MAP_PATH)),
   prototypeSource: await read(PROTOTYPE_PATH),
   webSource: await read(WEB_VOCABULARY_PATH),
 });
@@ -64,7 +62,6 @@ test('a manifest row that loses its command and its exemption fails the check', 
   const broken = clone(document);
   const victim = broken.commands.find((command) => command.id === 'clip.split');
   victim.manifestIds = [];
-  victim.deliveryPlanIds = [];
 
   assert.throws(
     () => validate({ document: broken, ...context }),
@@ -72,22 +69,13 @@ test('a manifest row that loses its command and its exemption fails the check', 
   );
 });
 
-test('a non-command exemption must name the story the delivery plan assigns', async () => {
+test('a non-command exemption must name a Jira owner', async () => {
   const { document } = await generate(repository);
   const context = await inputs();
   const broken = clone(document);
-  broken.nonCommandRows[0].owner = 'FL-1';
+  broken.nonCommandRows[0].owner = 'private-plan-id';
 
-  assert.throws(() => validate({ document: broken, ...context }), /must be owned by the story the plan assigns/);
-});
-
-test('delivery plan ids cannot be asserted by hand', async () => {
-  const { document } = await generate(repository);
-  const context = await inputs();
-  const broken = clone(document);
-  broken.commands[0].deliveryPlanIds = ['STU-999'];
-
-  assert.throws(() => validate({ document: broken, ...context }), /deliveryPlanIds must be computed/);
+  assert.throws(() => validate({ document: broken, ...context }), /needs a Jira owner/);
 });
 
 test('a job row may not claim a graph change, an undo entry or a missing worker', async () => {

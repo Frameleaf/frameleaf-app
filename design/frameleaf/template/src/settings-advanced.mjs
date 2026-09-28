@@ -3,7 +3,6 @@
 // Main contracts: server/src/dtos/config.dto.ts and user-preferences.dto.ts.
 // Resource-specific sources are named beside their sections below. Array-backed
 // fields use one item per line here; production adapters must validate/resolve them.
-// Full source mapping: docs/docs/developer/frameleaf-settings-inventory.md.
 const field = (id, label, value, type, help, extra = {}) => ({
   id: `advanced${id}`,
   label,
