@@ -175,7 +175,7 @@ describe('/server', () => {
         minFaces: 3,
         frameleaf: {
           via: null,
-          cloudConfigured: false,
+          cloudConfigured: true,
           signInAvailable: false,
           signInRequired: false,
           publicUrl: null,

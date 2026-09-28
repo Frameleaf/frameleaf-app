@@ -6,9 +6,8 @@ import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 /**
  * FL-83 (AL-30b, owner decision 2026-09-27): sharing individual items with a person in this
- * library. The e2e server has no Frameleaf Cloud link, so the direct-connection address and the
- * custom CNAME are covered by `server/src/utils/public-url.spec.ts`; here the link comes from the
- * Public server URL or is absent, and a forged Host header never becomes one.
+ * library. The link comes from the Public server URL, or a linked server's published direct and
+ * verified custom addresses; a forged Host header never becomes one.
  */
 describe('/item-shares', () => {
   let admin: LoginResponseDto;
@@ -237,5 +236,156 @@ describe('/item-shares', () => {
       count: 1,
       link: 'https://photos.family.example/sharing?section=shared-with-you',
     });
+  });
+
+  it('uses a published direct address or verified custom CNAME in API links and notifications', async () => {
+    const cloudUrl = 'https://cloud.frameleaf.test';
+    const direct = 'https://1-2-3-4.lbl.direct.frameleaf.test:2443';
+    const customHost = 'photos.family.example';
+    const path = '/sharing?section=shared-with-you';
+    const client = await utils.connectDatabase();
+    const config = await utils.getSystemConfig(admin.accessToken);
+    const savedRemote = config.frameleafCloud.remoteAccess;
+    const savedConfig = await client.query('SELECT value FROM system_metadata WHERE key = $1', ['system-config']);
+    const putMetadata = (key: string, value: unknown) =>
+      client.query(
+        `INSERT INTO system_metadata (key, value) VALUES ($1, $2::jsonb)
+         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+        [key, JSON.stringify(value)],
+      );
+    const setRemote = async (remote: typeof savedRemote) => {
+      await client.query(
+        `INSERT INTO system_metadata (key, value) VALUES ('system-config', jsonb_build_object('frameleafCloud', jsonb_build_object('remoteAccess', $1::jsonb)))
+         ON CONFLICT (key) DO UPDATE SET value = system_metadata.value || jsonb_build_object(
+           'frameleafCloud', coalesce(system_metadata.value -> 'frameleafCloud', '{}'::jsonb) || jsonb_build_object('remoteAccess', $1::jsonb)
+         )`,
+        [JSON.stringify(remote)],
+      );
+      await utils.getSystemConfig(admin.accessToken); // refresh the server's cached config
+    };
+    const candidate = (uri: string, custom = false) => ({
+      kind: 'wan',
+      uri,
+      protocol: 'https',
+      address: new URL(uri).hostname,
+      port: Number(new URL(uri).port || 443),
+      local: false,
+      relay: custom,
+      ipv6: false,
+      custom,
+      dnsRebindingProtection: false,
+      httpsRequired: true,
+      verified: true,
+    });
+    const published = [candidate(direct), candidate(`https://${customHost}`, true)];
+    const state = {
+      status: 'ready',
+      bootId: 'item-share-e2e',
+      updatedAt: new Date().toISOString(),
+      names: { instanceId: 'instance-1', names: { relay: 'r.lbl.frameleaf.test' } },
+      relay: { connected: true },
+      candidates: published,
+    };
+    const link = {
+      status: 'linked',
+      cloudUrl,
+      instanceId: 'instance-1',
+      services: { publicUrl: 'https://r.lbl.frameleaf.test' },
+    };
+
+    try {
+      await putMetadata('frameleaf-cloud-link', link);
+      await setRemote({ ...savedRemote, enabled: true, mode: 'relay-and-direct' });
+      await putMetadata('frameleaf-remote-access', state);
+
+      const directAsset = await utils.createAsset(owner.accessToken);
+      const directShare = await request(app)
+        .post('/item-shares')
+        .set('Authorization', auth(owner))
+        .set('Host', 'attacker.example')
+        .send({ assetIds: [directAsset.id], userIds: [sam.userId] })
+        .expect(201);
+      expect(directShare.body.link).toBe(`${direct}${path}`);
+      const directNotifications = await request(app).get('/notifications').set('Authorization', auth(sam)).expect(200);
+      expect(directNotifications.body).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            data: JSON.stringify({ ownerId: owner.userId, count: 1, link: `${direct}${path}` }),
+          }),
+        ]),
+      );
+      const unverified = await request(app)
+        .get('/item-shares/received')
+        .set('Authorization', auth(sam))
+        .set('Host', customHost)
+        .expect(200);
+      expect(unverified.body.link).toBe(`${direct}${path}`);
+
+      await setRemote({
+        ...savedRemote,
+        enabled: true,
+        mode: 'relay-and-direct',
+        customHostname: { host: customHost, status: 'verified', checkedAt: new Date().toISOString() },
+      });
+      state.updatedAt = new Date().toISOString();
+      await putMetadata('frameleaf-remote-access', state);
+
+      const customAsset = await utils.createAsset(owner.accessToken);
+      const customShare = await request(app)
+        .post('/item-shares')
+        .set('Authorization', auth(owner))
+        .set('Host', customHost)
+        .send({ assetIds: [customAsset.id], userIds: [sam.userId] })
+        .expect(201);
+      expect(customShare.body.link).toBe(`https://${customHost}${path}`);
+      const received = await request(app)
+        .get('/item-shares/received')
+        .set('Authorization', auth(sam))
+        .set('Host', customHost)
+        .expect(200);
+      expect(received.body.link).toBe(`https://${customHost}${path}`);
+      const customNotifications = await request(app).get('/notifications').set('Authorization', auth(sam)).expect(200);
+      expect(customNotifications.body).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            data: JSON.stringify({ ownerId: owner.userId, count: 1, link: `https://${customHost}${path}` }),
+          }),
+        ]),
+      );
+
+      state.updatedAt = new Date().toISOString();
+      state.relay.connected = false;
+      await putMetadata('frameleaf-remote-access', state);
+      const disconnected = await request(app)
+        .get('/item-shares/received')
+        .set('Authorization', auth(sam))
+        .set('Host', customHost)
+        .expect(200);
+      expect(disconnected.body.link).toBe(`${direct}${path}`);
+
+      state.candidates = published.filter((entry) => entry.relay);
+      state.updatedAt = new Date().toISOString();
+      await putMetadata('frameleaf-remote-access', state);
+      for (const publicUrl of ['https://r.lbl.frameleaf.test', `https://${customHost}`]) {
+        link.services.publicUrl = publicUrl;
+        await putMetadata('frameleaf-cloud-link', link);
+        const noAddress = await request(app)
+          .get('/item-shares/received')
+          .set('Authorization', auth(sam))
+          .set('Host', customHost)
+          .expect(200);
+        expect(noAddress.body.link).toBeNull();
+      }
+    } finally {
+      if (savedConfig.rows.length) {
+        await putMetadata('system-config', savedConfig.rows[0].value);
+      } else {
+        await client.query("DELETE FROM system_metadata WHERE key = 'system-config'");
+      }
+      await utils.getSystemConfig(admin.accessToken);
+      await client.query(
+        "DELETE FROM system_metadata WHERE key IN ('frameleaf-cloud-link', 'frameleaf-remote-access')",
+      );
+    }
   });
 });
