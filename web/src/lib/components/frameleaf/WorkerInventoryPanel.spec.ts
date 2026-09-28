@@ -162,7 +162,9 @@ describe('WorkerInventoryPanel (FL-72)', () => {
     render(WorkerInventoryPanel, { inventory: inventory(), destinations: [] });
 
     const video = screen.getByRole('article', { name: 'Workshop GPU' });
-    await fireEvent.click(within(video).getByRole('button', { name: 'Check capabilities' }));
+    // WorkerManager.jsx:128, 281: the prototype's check label and the section it answers (W-1).
+    expect(within(video).getByText('What this computer can run', { selector: 'dt' })).toBeInTheDocument();
+    await fireEvent.click(within(video).getByRole('button', { name: 'Check what it can run' }));
 
     await waitFor(() => expect(sdkMock.probeMlDestination).toHaveBeenCalledWith({ id: restoration.id }));
     expect(sdkMock.probeMlDestination).toHaveBeenCalledTimes(1);
