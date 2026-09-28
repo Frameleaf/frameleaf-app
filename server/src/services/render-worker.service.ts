@@ -1346,7 +1346,12 @@ export class RenderWorkerService {
           revision: studio.revision,
           graph: source.graph,
           imports: Array.isArray(studio.imports) ? (studio.imports as never) : undefined,
-          generated: Array.isArray(studio.generated) ? (studio.generated as never) : undefined,
+          generated:
+            studio.stored === true
+              ? await this.studioProjects.listGeneratedResources(operation.projectId!)
+              : Array.isArray(studio.generated)
+                ? (studio.generated as never)
+                : undefined,
           catalog: (studio.catalog as never) || undefined,
           destination: destination as StudioDestination,
           cloudConsent: studio.cloudConsent === true,

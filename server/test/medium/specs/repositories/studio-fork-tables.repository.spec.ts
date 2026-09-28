@@ -4,6 +4,7 @@ import { getCatalogEvidence } from 'src/fork-schema/catalog.js';
 import manifest from 'src/fork-schema/manifests/fork-v2-catalog.json' with { type: 'json' };
 import * as capabilities from 'src/fork-schema/migrations/0000000000181-RenderWorkerSessionCapabilities.js';
 import * as workspace from 'src/fork-schema/migrations/0000000000182-StudioWorkspaceLayout.js';
+import * as generated from 'src/fork-schema/migrations/0000000000207-StudioGeneratedResources.js';
 import { RenderWorkerRepository } from 'src/repositories/render-worker.repository.js';
 import { StudioProjectRepository } from 'src/repositories/studio-project.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -11,7 +12,7 @@ import { getKyselyDB } from 'test/utils.js';
 
 /**
  * Fork tables 181 (FL-95 render worker session capabilities) and 182 (FL-91 Studio workspace
- * layout): they match the private catalog, roll back without touching the official catalog, and
+ * layout) and 207 (FL-111 generated media): they match the private catalog, roll back without touching the official catalog, and
  * store what the repositories write.
  */
 let db: Kysely<DB>;
@@ -25,6 +26,7 @@ const catalog = manifest as unknown as Record<string, Array<{ identity: string }
 describe.each([
   ['immich_fork.render_worker_session_capability', capabilities],
   ['immich_fork.studio_workspace_layout', workspace],
+  ['immich_fork.studio_generated_resource', generated],
 ])('%s', (table, migration) => {
   const owned = (entry: { identity: string }) => entry.identity === table || entry.identity.startsWith(`${table}.`);
 

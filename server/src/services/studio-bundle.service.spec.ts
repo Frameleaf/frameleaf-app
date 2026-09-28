@@ -270,6 +270,7 @@ describe(StudioBundleService.name, () => {
       setFinishedResult: vi.fn().mockResolvedValue(true),
     };
     projects = {
+      listGeneratedResources: vi.fn().mockResolvedValue([]),
       getById: vi.fn(),
       getRevision: vi.fn(),
       createWithRevision: vi
@@ -328,6 +329,17 @@ describe(StudioBundleService.name, () => {
       });
       expect(created.snapshot.embed).toEqual([{ key: `library-asset:${assetA}`, kind: 'library-asset', id: assetA }]);
       expect(created.snapshot.requestKey).toBe('export-1');
+    });
+
+    it('refuses a generated-media bundle before creating an unusable job', async () => {
+      studio.authorizeRevision.mockResolvedValue({
+        ...authorized('owner', []),
+        envelope: { ...envelope, graph: { clips: [{ generatedId: 'reverse' }] } },
+      });
+      await expect(sut.createExport(owner, newUuidV7(), { includeMedia: true })).rejects.toThrow(
+        'Bundles containing generated media are not supported yet',
+      );
+      expect(operations.create).not.toHaveBeenCalled();
     });
 
     it('embeds nothing when media was not asked for', async () => {

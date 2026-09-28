@@ -1,8 +1,14 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
 import { sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
+import { isAbsolute } from 'node:path';
 import type { Kysely, RawBuilder, Selectable } from 'kysely';
-import { canWriteFork, lockPublicForkWrites, withPublicForkWrites } from 'src/repositories/fork-write-guard.js';
+import {
+  canWriteFork,
+  lockForkWrites,
+  lockPublicForkWrites,
+  withPublicForkWrites,
+} from 'src/repositories/fork-write-guard.js';
 import { DB } from 'src/schema/index.js';
 import {
   StudioBundleUploadTable,
@@ -10,6 +16,15 @@ import {
   StudioProjectRevisionTable,
   StudioProjectTable,
 } from 'src/schema/tables/studio-project.table.js';
+import type { StudioDeclaredGenerated } from 'src/services/studio-resource.service.js';
+import { STUDIO_MAX_REFERENCES, isStudioIdentifier, isStudioUuid } from 'src/utils/studio-resources.js';
+
+export type StudioGeneratedResource = StudioDeclaredGenerated & {
+  projectId: string;
+  ownerId: string;
+  sourceRevision: number;
+  checksum: string;
+};
 
 /** FL-44 (FN-304): what every write here answers while a database handoff holds the schema. */
 export const STUDIO_PROJECT_HANDOFF_REFUSAL = 'Studio projects are unavailable during database handoff';
@@ -421,7 +436,8 @@ export class StudioProjectRepository {
   /**
    * FL-90: the projects whose current revision names any of these assets. The graph is opaque
    * jsonb, so the id is matched as text; only well-formed UUIDs are searched, so a match is the
-   * id itself and never a pattern.
+   * id itself and never a pattern. Generated lineage participates even after a relink removes
+   * the original from the graph; conservatively revoke any project declaring such a derivative.
    */
   async getIdsReferencingAssets(assetIds: readonly string[]): Promise<string[]> {
     const patterns = [...new Set(assetIds)]
@@ -439,7 +455,13 @@ export class StudioProjectRepository {
       )
       .select('studio_project.id')
       .where(
-        sql<boolean>`lower("studio_project_revision"."envelope"::text) like any(array[${sql.join(patterns)}]::text[])`,
+        sql<boolean>`lower("studio_project_revision"."envelope"::text) like any(array[${sql.join(patterns)}]::text[])
+          OR EXISTS (
+            SELECT 1 FROM immich_fork.studio_generated_resource resource
+            WHERE resource."projectId" = "studio_project".id
+              AND resource."ownerId" = "studio_project"."ownerId"
+              AND lower(resource."derivedFrom"::text) like any(array[${sql.join(patterns)}]::text[])
+          )`,
       )
       .execute();
     return rows.map((row) => row.id);
@@ -471,6 +493,89 @@ export class StudioProjectRepository {
   async getIdsInSpace(spaceId: string): Promise<string[]> {
     const rows = await this.db.selectFrom('studio_project').select('id').where('spaceId', '=', spaceId).execute();
     return rows.map((row) => row.id);
+  }
+
+  /**
+   * Internal publication primitive. The caller must first check the output bytes, current source
+   * authorization and worker claim. Request graphs never reach this method. One id permanently
+   * binds the checked file and its provenance; an identical retry succeeds, a changed retry fails.
+   */
+  async registerGeneratedResource(resource: StudioGeneratedResource): Promise<void> {
+    if (
+      !isStudioUuid(resource.projectId) ||
+      !isStudioUuid(resource.ownerId) ||
+      !isStudioIdentifier(resource.id) ||
+      !isStudioIdentifier(resource.producer) ||
+      !Number.isSafeInteger(resource.sourceRevision) ||
+      resource.sourceRevision < 1 ||
+      !/^[a-f0-9]{64}$/.test(resource.checksum) ||
+      typeof resource.path !== 'string' ||
+      !isAbsolute(resource.path) ||
+      resource.path.includes('\0') ||
+      !Array.isArray(resource.derivedFrom) ||
+      resource.derivedFrom.length === 0 ||
+      resource.derivedFrom.length > STUDIO_MAX_REFERENCES ||
+      resource.derivedFrom.some((key) => typeof key !== 'string' || key.length === 0 || key.length > 256)
+    ) {
+      throw new BadRequestException('Invalid generated media declaration');
+    }
+    await this.db.transaction().execute(async (tx) => {
+      await lockForkWrites(tx, STUDIO_PROJECT_HANDOFF_REFUSAL);
+      const project = await tx
+        .selectFrom('studio_project')
+        .select('id')
+        .where('id', '=', resource.projectId)
+        .where('ownerId', '=', resource.ownerId)
+        .where('deletedAt', 'is', null)
+        .where('archivedAt', 'is', null)
+        .forUpdate()
+        .executeTakeFirst();
+      const revision =
+        project &&
+        (await tx
+          .selectFrom('studio_project_revision')
+          .select('id')
+          .where('projectId', '=', resource.projectId)
+          .where('revision', '=', resource.sourceRevision)
+          .executeTakeFirst());
+      if (!revision) {
+        throw new ConflictException('The generated media project or source revision is unavailable');
+      }
+      const lineage = JSON.stringify(resource.derivedFrom);
+      await sql`
+        INSERT INTO immich_fork.studio_generated_resource
+          ("projectId", id, "ownerId", "sourceRevision", producer, checksum, path, "derivedFrom")
+        VALUES (${resource.projectId}::uuid, ${resource.id}, ${resource.ownerId}::uuid,
+          ${resource.sourceRevision}, ${resource.producer}, ${resource.checksum}, ${resource.path}, ${lineage}::jsonb)
+        ON CONFLICT ("projectId", id) DO NOTHING
+      `.execute(tx);
+      const { rows } = await sql`
+        SELECT 1 FROM immich_fork.studio_generated_resource
+        WHERE "projectId" = ${resource.projectId}::uuid AND id = ${resource.id}
+          AND "ownerId" = ${resource.ownerId}::uuid AND "sourceRevision" = ${resource.sourceRevision}
+          AND producer = ${resource.producer} AND checksum = ${resource.checksum} AND path = ${resource.path}
+          AND "derivedFrom" = ${lineage}::jsonb
+      `.execute(tx);
+      if (rows.length === 0) {
+        throw new ConflictException('Generated media ids cannot be rebound to another file or source');
+      }
+    });
+  }
+
+  /** Server-side declarations only; source ACLs are still rechecked by StudioResourceService. */
+  async listGeneratedResources(projectId: string): Promise<StudioDeclaredGenerated[]> {
+    const { rows } = await sql<StudioDeclaredGenerated>`
+      SELECT resource.id, resource.producer, resource.checksum, resource.path, resource."derivedFrom"
+      FROM immich_fork.studio_generated_resource resource
+      JOIN studio_project project ON project.id = resource."projectId" AND project."ownerId" = resource."ownerId"
+      WHERE project.id = ${projectId}::uuid AND project."deletedAt" IS NULL
+      ORDER BY resource.id LIMIT ${STUDIO_MAX_REFERENCES + 1}
+    `.execute(this.db);
+    // ponytail: load the bounded project set; filter from graph roots if projects outgrow this cap.
+    if (rows.length > STUDIO_MAX_REFERENCES) {
+      throw new BadRequestException('The project has too many generated media declarations');
+    }
+    return rows;
   }
 
   /** FL-91: an account's stored workspace layout, from `immich_fork`. */

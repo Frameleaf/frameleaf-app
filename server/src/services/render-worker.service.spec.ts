@@ -210,6 +210,7 @@ describe(RenderWorkerService.name, () => {
   let studioPreviews: Record<'onRenderClaimed' | 'onRenderCompleted' | 'onRenderFailed', ReturnType<typeof vi.fn>>;
   let studioStreams: Record<'workerSignal' | 'workerOffer', ReturnType<typeof vi.fn>>;
   let studioProjects: {
+    listGeneratedResources: ReturnType<typeof vi.fn>;
     getById: ReturnType<typeof vi.fn>;
     getRevision: ReturnType<typeof vi.fn>;
   };
@@ -284,6 +285,7 @@ describe(RenderWorkerService.name, () => {
       verifyReadGrant: vi.fn(),
     };
     studioProjects = {
+      listGeneratedResources: vi.fn().mockResolvedValue([]),
       getById: vi.fn().mockResolvedValue(undefined),
       getRevision: vi.fn().mockResolvedValue(undefined),
     };
@@ -730,6 +732,7 @@ describe(RenderWorkerService.name, () => {
         });
 
         beforeEach(() => {
+          delete (storedOp.snapshot.studio as Record<string, unknown>).generated;
           vi.mocked(workers.peekQueued).mockReset();
           vi.mocked(workers.peekQueued)
             .mockResolvedValueOnce([storedOp] as never)
@@ -765,11 +768,30 @@ describe(RenderWorkerService.name, () => {
           );
         });
 
-        it('reads the graph from storage at the named revision and resolves it as a background runner', async () => {
+        it('reads stored graph and generated authority instead of snapshot declarations', async () => {
+          const generated = [
+            {
+              id: 'reverse',
+              producer: 'reverse-conform',
+              checksum: 'ab'.repeat(32),
+              path: '/private/generated.mp4',
+              derivedFrom: ['library-asset:clip-1'],
+            },
+          ];
+          studioProjects.listGeneratedResources.mockResolvedValue(generated);
+          (storedOp.snapshot.studio as Record<string, unknown>).generated = [
+            {
+              id: 'reverse',
+              path: '/untrusted/snapshot',
+              checksum: 'untrusted',
+              derivedFrom: [],
+            },
+          ];
           await sut.claim(SESSION_A, {} as never);
 
           // The named revision, not the head: a job renders exactly what it was submitted for.
           expect(studioProjects.getRevision).toHaveBeenCalledWith('project-1', 7);
+          expect(studioProjects.listGeneratedResources).toHaveBeenCalledWith('project-1');
           expect(studioResources.resolveProjectResources).toHaveBeenCalledWith(
             expect.objectContaining({ session: { id: sessionA.id, hasElevatedPermission: true } }),
             expect.objectContaining({
@@ -777,6 +799,7 @@ describe(RenderWorkerService.name, () => {
               ownerId: OWNER_A,
               revision: 7,
               graph: storedGraph,
+              generated,
               backgroundRunner: true,
             }),
           );

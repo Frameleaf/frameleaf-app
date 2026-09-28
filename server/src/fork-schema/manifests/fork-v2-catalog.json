@@ -1634,6 +1634,42 @@
     },
     {
       "definition": "text|not null|||",
+      "identity": "immich_fork.studio_generated_resource.checksum"
+    },
+    {
+      "definition": "timestamp with time zone|not null|clock_timestamp()||",
+      "identity": "immich_fork.studio_generated_resource.createdAt"
+    },
+    {
+      "definition": "jsonb|not null|||",
+      "identity": "immich_fork.studio_generated_resource.derivedFrom"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.studio_generated_resource.id"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.studio_generated_resource.ownerId"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.studio_generated_resource.path"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.studio_generated_resource.producer"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.studio_generated_resource.projectId"
+    },
+    {
+      "definition": "integer|not null|||",
+      "identity": "immich_fork.studio_generated_resource.sourceRevision"
+    },
+    {
+      "definition": "text|not null|||",
       "identity": "immich_fork.studio_workspace_layout.engineRevision"
     },
     {
@@ -7655,6 +7691,18 @@
       "identity": "immich_fork.state.state_pkey"
     },
     {
+      "definition": "CHECK (jsonb_typeof(\"derivedFrom\") = 'array'::text)",
+      "identity": "immich_fork.studio_generated_resource.studio_generated_resource_lineage_check"
+    },
+    {
+      "definition": "PRIMARY KEY (\"projectId\", id)",
+      "identity": "immich_fork.studio_generated_resource.studio_generated_resource_pkey"
+    },
+    {
+      "definition": "CHECK (\"sourceRevision\" > 0)",
+      "identity": "immich_fork.studio_generated_resource.studio_generated_resource_revision_check"
+    },
+    {
       "definition": "CHECK (jsonb_typeof(layout) = 'object'::text)",
       "identity": "immich_fork.studio_workspace_layout.studio_workspace_layout_object_check"
     },
@@ -9455,7 +9503,8 @@
     "0000000000203-FrameleafSessions",
     "0000000000204-FrameleafUserLicenses",
     "0000000000205-AlbumCoverFollowsNewest",
-    "0000000000206-AssetUserShares"
+    "0000000000206-AssetUserShares",
+    "0000000000207-StudioGeneratedResources"
   ],
   "functions": [
     {
@@ -10995,6 +11044,10 @@
     {
       "definition": "CREATE UNIQUE INDEX state_pkey ON immich_fork.state USING btree (id)",
       "identity": "immich_fork.state.state_pkey"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX studio_generated_resource_pkey ON immich_fork.studio_generated_resource USING btree (\"projectId\", id)",
+      "identity": "immich_fork.studio_generated_resource.studio_generated_resource_pkey"
     },
     {
       "definition": "CREATE UNIQUE INDEX studio_workspace_layout_pkey ON immich_fork.studio_workspace_layout USING btree (\"userId\")",
@@ -13514,6 +13567,10 @@
     {
       "definition": "table",
       "identity": "immich_fork.state"
+    },
+    {
+      "definition": "table",
+      "identity": "immich_fork.studio_generated_resource"
     },
     {
       "definition": "table",
