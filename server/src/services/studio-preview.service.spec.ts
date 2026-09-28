@@ -3,10 +3,10 @@ import type { Mock } from 'vitest';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { MediaOperationKind, StudioPreviewQuality, StudioPreviewStatus } from 'src/enum.js';
 import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
-import { StudioProjectRepository } from 'src/repositories/studio-project.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { StudioExportRepository } from 'src/repositories/studio-export.repository.js';
 import { StudioPreviewFrame, StudioPreviewRepository } from 'src/repositories/studio-preview.repository.js';
+import { StudioProjectRepository } from 'src/repositories/studio-project.repository.js';
 import { StudioPreviewService, studioPreviewFrameFolder } from 'src/services/studio-preview.service.js';
 import {
   StudioProjectService,
@@ -223,10 +223,12 @@ describe(StudioPreviewService.name, () => {
     };
     // A fresh resolution changes the signed manifest digest, just as a new issue timestamp does.
     let issued = 0;
-    const resolveProjectResources = vi.fn().mockImplementation(async () => ({
-      manifest: manifest({ digest: `manifest-${++issued}` }),
-      refused: [],
-    }));
+    const resolveProjectResources = vi.fn().mockImplementation(() =>
+      Promise.resolve({
+        manifest: manifest({ digest: `manifest-${++issued}` }),
+        refused: [],
+      }),
+    );
     const projectService = new StudioProjectService(
       mocks.logger as never,
       repository as unknown as StudioProjectRepository,
@@ -239,17 +241,17 @@ describe(StudioPreviewService.name, () => {
       projectService.authorizeRevision(...args),
     );
     let latest: string | undefined;
-    vi.mocked(previews.getLatestRevisionDigest).mockImplementation(async () => latest);
-    vi.mocked(previews.upsert).mockImplementation(async (input) => {
+    vi.mocked(previews.getLatestRevisionDigest).mockImplementation(() => Promise.resolve(latest));
+    vi.mocked(previews.upsert).mockImplementation((input) => {
       latest = input.revisionDigest;
-      return {
+      return Promise.resolve({
         frame: frameStub({
           status: StudioPreviewStatus.Pending,
           cacheKey: input.cacheKey,
           revisionDigest: input.revisionDigest,
         }),
         created: false,
-      };
+      });
     });
     await sut.request(authStub.user1, request());
     await sut.request(authStub.user1, request());

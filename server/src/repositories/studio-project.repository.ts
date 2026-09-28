@@ -3,6 +3,7 @@ import { sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { isAbsolute } from 'node:path';
 import type { Kysely, RawBuilder, Selectable } from 'kysely';
+import type { StudioDeclaredGenerated } from 'src/services/studio-resource.service.js';
 import {
   canWriteFork,
   lockForkWrites,
@@ -16,7 +17,6 @@ import {
   StudioProjectRevisionTable,
   StudioProjectTable,
 } from 'src/schema/tables/studio-project.table.js';
-import type { StudioDeclaredGenerated } from 'src/services/studio-resource.service.js';
 import { STUDIO_MAX_REFERENCES, isStudioIdentifier, isStudioUuid } from 'src/utils/studio-resources.js';
 
 export type StudioGeneratedResource = StudioDeclaredGenerated & {
@@ -578,12 +578,13 @@ export class StudioProjectRepository {
       if (derivedFrom.length > STUDIO_MAX_REFERENCES) {
         throw new BadRequestException('The generated media has too many source references');
       }
+      // Bind serialized JSON as text so the postgres driver does not JSON-encode the string again.
       const lineage = JSON.stringify(derivedFrom);
       await sql`
         INSERT INTO immich_fork.studio_generated_resource
           ("projectId", id, "ownerId", "sourceRevision", producer, checksum, path, "derivedFrom")
         VALUES (${resource.projectId}::uuid, ${resource.id}, ${resource.ownerId}::uuid,
-          ${resource.sourceRevision}, ${resource.producer}, ${resource.checksum}, ${resource.path}, ${lineage}::jsonb)
+          ${resource.sourceRevision}, ${resource.producer}, ${resource.checksum}, ${resource.path}, ${lineage}::text::jsonb)
         ON CONFLICT ("projectId", id) DO NOTHING
       `.execute(tx);
       const { rows } = await sql`
@@ -591,7 +592,7 @@ export class StudioProjectRepository {
         WHERE "projectId" = ${resource.projectId}::uuid AND id = ${resource.id}
           AND "ownerId" = ${resource.ownerId}::uuid AND "sourceRevision" = ${resource.sourceRevision}
           AND producer = ${resource.producer} AND checksum = ${resource.checksum} AND path = ${resource.path}
-          AND "derivedFrom" = ${lineage}::jsonb
+          AND "derivedFrom" = ${lineage}::text::jsonb
       `.execute(tx);
       if (rows.length === 0) {
         throw new ConflictException('Generated media ids cannot be rebound to another file or source');
