@@ -1,11 +1,11 @@
 <script lang="ts">
+  import AssetCollage from './AssetCollage.svelte';
   import Dialog from './Dialog.svelte';
   import QrCode from './QrCode.svelte';
   import { sharedLinkBadges, relativeTime, type SharedLinkBadgeId } from '$lib/frameleaf/shared-link-badges';
   import { asUrl, handleCreateSharedLink, handleUpdateSharedLink } from '$lib/services/shared-link.service';
   import { locale } from '$lib/stores/preferences.store';
-  import { getAssetMediaUrl } from '$lib/utils';
-  import { AssetMediaSize, getAllSharedLinks, SharedLinkType, type SharedLinkResponseDto } from '@immich/sdk';
+  import { getAllSharedLinks, SharedLinkType, type SharedLinkResponseDto } from '@immich/sdk';
   import { Icon } from '@immich/ui';
   import {
     mdiClockOutline,
@@ -13,7 +13,6 @@
     mdiDownloadOutline,
     mdiEyeOffOutline,
     mdiEyeOutline,
-    mdiImageMultipleOutline,
     mdiInformationOutline,
     mdiLinkVariant,
     mdiLockOutline,
@@ -625,16 +624,7 @@
       </form>
 
       <aside class="slf-preview" aria-label={$t('frameleaf_sharing.link_preview')}>
-        <div class="slf-collage" data-count={Math.min(previewIds.length, 4)} aria-hidden="true">
-          {#each previewIds.slice(0, 4) as id (id)}
-            <img src={getAssetMediaUrl({ id, size: AssetMediaSize.Thumbnail })} alt="" loading="lazy" />
-          {:else}
-            <span class="slf-collage-blank"><Icon icon={mdiImageMultipleOutline} size="28" /></span>
-          {/each}
-          {#if itemCount > Math.min(previewIds.length, 4) && previewIds.length > 0}
-            <span class="slf-collage-more">+{itemCount - Math.min(previewIds.length, 4)}</span>
-          {/if}
-        </div>
+        <AssetCollage ids={previewIds} count={itemCount} />
         <div class="slf-preview-body">
           <strong>{description.trim() || name}</strong>
           <small>
@@ -696,45 +686,6 @@
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius);
     overflow: hidden;
-  }
-  .slf-collage {
-    position: relative;
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    grid-auto-rows: 1fr;
-    aspect-ratio: 4 / 3;
-    gap: 2px;
-    background: var(--fl-border);
-  }
-  .slf-collage[data-count='0'],
-  .slf-collage[data-count='1'] {
-    grid-template-columns: 1fr;
-  }
-  .slf-collage[data-count='3'] img:first-child {
-    grid-row: span 2;
-  }
-  .slf-collage img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    display: block;
-  }
-  .slf-collage-blank {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--fl-muted);
-    background: var(--fl-raised);
-  }
-  .slf-collage-more {
-    position: absolute;
-    right: 8px;
-    bottom: 8px;
-    padding: 2px 8px;
-    border-radius: var(--fl-radius-pill);
-    background: color-mix(in srgb, black, transparent 40%);
-    color: white;
-    font-size: var(--fl-font-micro);
   }
   .slf-preview-body {
     display: flex;
