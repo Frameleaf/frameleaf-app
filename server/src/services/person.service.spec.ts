@@ -763,6 +763,33 @@ describe(PersonService.name, () => {
   });
 
   describe('createFace', () => {
+    it('refuses face placement while a develop revision owns the displayed preview', async () => {
+      const auth = AuthFactory.create();
+      const asset = AssetFactory.create();
+      const person = PersonFactory.create();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.access.person.checkOwnerAccess.mockResolvedValue(new Set([person.personGroupId]));
+      mocks.asset.getById.mockResolvedValue(getForAsset(asset));
+      mocks.asset.getCurrentDevelop.mockResolvedValue({ id: 'current-develop' } as never);
+      mocks.person.getByGroupId.mockResolvedValue(person);
+
+      await expect(
+        sut.createFace(auth, {
+          assetId: asset.id,
+          personId: person.personGroupId,
+          imageWidth: 200,
+          imageHeight: 150,
+          x: 50,
+          y: 25,
+          width: 10,
+          height: 20,
+          expectedSourceRevision: getFaceSourceRevision(getForAsset(asset)),
+        }),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(mocks.person.createAssetFace).not.toHaveBeenCalled();
+      await expect(sut.getFaceSource(auth, { id: asset.id })).rejects.toBeInstanceOf(ConflictException);
+    });
+
     it('maps a revision-checked crop and rotation box to the original pixels', async () => {
       const auth = AuthFactory.create();
       const asset = AssetFactory.from({ width: 200, height: 150 })

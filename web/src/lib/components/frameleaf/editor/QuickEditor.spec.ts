@@ -186,6 +186,33 @@ describe('QuickEditor', () => {
     expect(readEditorContinuity(photo.id)).toBeNull();
   });
 
+  it('refreshes the viewer only after a rendered revision becomes current', async () => {
+    const saved = revision({ assetId: photo.id, status: AssetDevelopRevisionStatus.Queued, isCurrent: false });
+    const rendered = revision({ assetId: photo.id, status: AssetDevelopRevisionStatus.Rendered, isCurrent: true });
+    vi.mocked(saveAssetDevelop).mockResolvedValue(saved);
+    vi.mocked(getAssetDevelop)
+      .mockResolvedValueOnce({ assetId: photo.id, currentRevisionId: null, revisions: [] })
+      .mockResolvedValueOnce({ assetId: photo.id, currentRevisionId: null, revisions: [rendered] })
+      .mockResolvedValue({ assetId: photo.id, currentRevisionId: rendered.id, revisions: [rendered] });
+    const onClose = vi.fn();
+    const onRendered = vi.fn();
+    render(QuickEditor, { asset: photo, onClose, onRendered });
+    await ready();
+
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_editor_save_version' }));
+      await waitFor(() => expect(onClose).toHaveBeenCalledWith(false));
+      await waitFor(() => expect(getAssetDevelop).toHaveBeenCalledTimes(2));
+      expect(onRendered).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(1200);
+      await waitFor(() => expect(onRendered).toHaveBeenCalledExactlyOnceWith(photo.id));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('discards unsaved edits at once with a toast, and closes quietly when clean', async () => {
     const onClose = vi.fn();
     render(QuickEditor, { asset: photo, onClose });

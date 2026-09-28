@@ -160,10 +160,12 @@
   let {
     asset,
     onClose,
+    onRendered,
   }: {
     asset: AssetResponseDto;
     /** `refreshAsset` is true when a saved version changed what the viewer should show. */
     onClose: (refreshAsset?: boolean) => void;
+    onRendered?: (assetId: string) => void;
   } = $props();
 
   const isVideo = isVideoAsset(asset);
@@ -715,6 +717,7 @@
   const followAfterClose = (revisionId: string) => {
     const translate = $t;
     let stop = () => {};
+    let renderedBeforeCurrent = 0;
     stop = followDevelop(
       asset.id,
       (next) => {
@@ -722,11 +725,21 @@
         if (!after || isRevisionBusy(after.status)) {
           return;
         }
+        // The renderer publishes files/status just before setCurrent. Wait for the current flag
+        // so the viewer's refresh cannot cache the previous pixels under this revision's key.
+        if (after.status === AssetDevelopRevisionStatus.Rendered && next.currentRevisionId !== revisionId) {
+          if (++renderedBeforeCurrent >= 10) {
+            stop();
+            toastManager.danger(translate('frameleaf_editor_versions_error'));
+          }
+          return;
+        }
         stop();
         if (after.status === AssetDevelopRevisionStatus.Rendered) {
           toastManager.primary(
             translate('frameleaf_editor_version_rendered', { values: { revision: after.revision } }),
           );
+          onRendered?.(asset.id);
         } else if (after.status === AssetDevelopRevisionStatus.Failed) {
           toastManager.danger(
             translate('frameleaf_editor_version_failed', {
@@ -735,7 +748,15 @@
           );
         }
       },
-      { onError: (error) => handleError(error, translate('frameleaf_editor_versions_error')) },
+      {
+        onError: (error) => handleError(error, translate('frameleaf_editor_versions_error')),
+        continueWhile: (next) =>
+          next.revisions.some(
+            (revision) => revision.id === revisionId && revision.status === AssetDevelopRevisionStatus.Rendered,
+          ) &&
+          next.currentRevisionId !== revisionId &&
+          renderedBeforeCurrent < 10,
+      },
     );
   };
   const cancelRender = async (revision: AssetDevelopRevisionResponseDto) => {

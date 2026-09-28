@@ -11,6 +11,7 @@ import type { UploadFile, UploadRequest } from 'src/types.js';
 import type { FrameleafVia } from 'src/utils/frameleaf-sign-in.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { Asset, AuthSharedLink } from 'src/database.js';
+import { AssetDevelopRevisionStatus } from 'src/dtos/asset-develop.dto.js';
 import {
   AssetBulkUploadCheckResponseDto,
   AssetMediaResponseDto,
@@ -384,6 +385,36 @@ export class AssetMediaService extends BaseService {
       size,
       dto.edited ?? false,
     );
+
+    // Develop revisions keep their own files; legacy asset_file edits do not point at them.
+    // Only the owner sees this working version. The face-source request remains on legacy pixels,
+    // and getFaceSource refuses drawing while a develop revision is current.
+    if (
+      !auth.sharedLink &&
+      auth.user.id === ownerId &&
+      dto.edited === true &&
+      !dto.faceSource &&
+      (size === AssetFileType.Preview || size === AssetFileType.FullSize)
+    ) {
+      const current = await this.assetRepository.getCurrentDevelop(id);
+      if (current && current.ownerId === ownerId) {
+        if (current.status !== AssetDevelopRevisionStatus.Rendered) {
+          throw new NotFoundException('Current developed preview is unavailable');
+        }
+        const fullSizeAllowed = size !== AssetFileType.FullSize || (await this.fullSizeAllowed(via));
+        const developedPath =
+          size === AssetFileType.FullSize && fullSizeAllowed ? current.masterPath : current.previewPath;
+        if (!developedPath) {
+          throw new NotFoundException('Current developed preview is unavailable');
+        }
+        return new ImmichFileResponse({
+          fileName: `${getFileNameWithoutExtension(originalFileName)}_develop_${size}${getFilenameExtension(developedPath)}`,
+          path: developedPath,
+          contentType: mimeTypes.lookup(developedPath),
+          cacheControl: CacheControl.PrivateWithoutCache,
+        });
+      }
+    }
 
     if (size === AssetFileType.FullSize && mimeTypes.isWebSupportedImage(originalPath) && !dto.edited) {
       // FL-161: through the relay the original is refused unless an administrator allowed it, so the
