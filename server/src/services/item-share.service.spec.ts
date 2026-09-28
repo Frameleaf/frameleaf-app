@@ -11,6 +11,7 @@ import { AuthFactory } from 'test/factories/auth.factory.js';
 import { UserFactory } from 'test/factories/user.factory.js';
 import { newUuid } from 'test/small.factory.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
+import { linkLivePhotoAssets } from 'src/utils/asset.util.js';
 
 /**
  * FL-83 (AL-30b, owner decision 2026-09-27): sharing individual items with a person in this library.
@@ -153,6 +154,53 @@ describe(ItemShareService.name, () => {
       ['on_asset_hidden', jamie.id, b],
       ['on_asset_hidden', owner.id, a],
     ]);
+  });
+
+  it('removes a newly Hidden shared item from recipients’ open pages', async () => {
+    const assetId = newUuid();
+    mocks.itemShare.getRecipients.mockResolvedValue([{ assetId, sharedWithId: jamie.id }]);
+
+    await sut.onAssetHide({ assetId, userId: owner.id });
+
+    expect(mocks.itemShare.getRecipients).toHaveBeenCalledWith([assetId]);
+    expect(mocks.websocket.clientSend).toHaveBeenCalledWith('on_asset_hidden', jamie.id, assetId);
+  });
+
+  it('notifies later recipients when sending to one recipient fails', async () => {
+    const assetId = newUuid();
+    const otherRecipientId = newUuid();
+    mocks.itemShare.getRecipients.mockResolvedValue([
+      { assetId, sharedWithId: jamie.id },
+      { assetId, sharedWithId: otherRecipientId },
+    ]);
+    mocks.websocket.clientSend.mockImplementationOnce(() => {
+      throw new Error('send unavailable');
+    });
+
+    await expect(sut.onAssetHide({ assetId, userId: owner.id })).resolves.toBeUndefined();
+
+    expect(mocks.websocket.clientSend.mock.calls).toEqual([
+      ['on_asset_hidden', jamie.id, assetId],
+      ['on_asset_hidden', otherRecipientId, assetId],
+    ]);
+    expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringContaining('send unavailable'));
+  });
+
+  it('does not fail a completed Live Photo relink when recipient lookup fails', async () => {
+    const motionAssetId = newUuid();
+    mocks.itemShare.getRecipients.mockRejectedValueOnce(new Error('lookup unavailable'));
+    const emit = vi.fn((_: string, event: { assetId: string; userId: string }) => sut.onAssetHide(event));
+
+    await expect(
+      linkLivePhotoAssets({ asset: mocks.asset, album: mocks.album, event: { emit } } as never, {
+        photoAssetId: newUuid(),
+        motionAssetId,
+        motionOwnerId: owner.id,
+      }),
+    ).resolves.toBeUndefined();
+
+    expect(emit).toHaveBeenCalledWith('AssetHide', { assetId: motionAssetId, userId: owner.id });
+    expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringContaining('lookup unavailable'));
   });
 
   describe('unshare', () => {
