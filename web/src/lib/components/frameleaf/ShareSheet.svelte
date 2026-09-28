@@ -340,28 +340,30 @@
     </p>
   {/if}
   <div class="ss-shortcuts">
-    <button type="button" disabled={!canCopyImage} onclick={() => void copyImage()}>
+    <button type="button" class="button" disabled={!canCopyImage} onclick={() => void copyImage()}>
       <Icon icon={mdiContentCopy} size="18" aria-hidden={true} />
       {$t('frameleaf_sharing.copy_image')}
     </button>
-    <button type="button" onclick={download}>
+    <button type="button" class="button" onclick={download}>
       <Icon icon={mdiDownloadOutline} size="18" aria-hidden={true} />
       {$t('download')}
     </button>
   </div>
-  <div class="ss-actions">
+  {#snippet actions()}
     {#if canSendCopies() && sendCopyPermitted()}
-      <button type="button" onclick={sendCopy}>{$t('frameleaf_send_copy')}</button>
+      <button type="button" class="button" onclick={sendCopy}>{$t('frameleaf_send_copy')}</button>
     {/if}
-    <button type="button" onclick={() => (open = false)}>{$t('cancel')}</button>
+    <button type="button" class="button" onclick={() => (open = false)}>{$t('cancel')}</button>
     {#if peopleMode}
-      <button type="button" class="primary" disabled={saving || loading} onclick={() => void saveSharing()}>
+      <button type="button" class="button primary" disabled={saving || loading} onclick={() => void saveSharing()}>
         {primaryLabel}
       </button>
     {:else}
-      <button type="button" class="primary" onclick={openLinkForm}>{$t('frameleaf_sharing.create_public_link')}</button>
+      <button type="button" class="button primary" onclick={openLinkForm}
+        >{$t('frameleaf_sharing.create_public_link')}</button
+      >
     {/if}
-  </div>
+  {/snippet}
 </Dialog>
 
 <SharedLinkForm bind:open={linkFormOpen} target={linkTarget} />
@@ -384,26 +386,15 @@
   .ss-shortcuts {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.5rem;
-    margin-top: 0.75rem;
-  }
-  .ss-shortcuts button {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.375rem;
-    min-height: 36px;
-    background: var(--fl-raised);
-    color: var(--fl-text);
-    border: 1px solid var(--fl-border);
-    border-radius: var(--fl-radius);
-    padding: 0 0.75rem;
-  }
-  .ss-shortcuts button:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
+    gap: 8px;
+    padding-top: 14px;
+    border-top: 1px solid var(--fl-border);
   }
   .ss-link-copy {
+    margin: 0 0 12px;
     color: var(--fl-muted);
+    font-size: var(--fl-font-small);
+    line-height: 1.55;
   }
   .ss-options {
     display: grid;
@@ -519,23 +510,5 @@
     .ss-options {
       grid-template-columns: 1fr;
     }
-  }
-  .ss-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 0.5rem;
-    margin-top: 1rem;
-  }
-  .ss-actions button {
-    background: var(--fl-raised);
-    color: var(--fl-text);
-    border: 1px solid var(--fl-border);
-    border-radius: var(--fl-radius);
-    padding: 0 0.75rem;
-  }
-  .ss-actions button.primary {
-    background: var(--fl-accent);
-    color: var(--fl-accent-text);
-    border-color: var(--fl-accent);
   }
 </style>
