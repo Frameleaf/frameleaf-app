@@ -108,11 +108,7 @@ describe('old addresses of Command Center sections', () => {
       async () => serverStatus({ url: at('/admin/server-status?scope=user&range=30d') } as never),
       '/user-settings?area=analytics&scope=user&range=30d',
     ],
-    [
-      '/admin/jobs-status',
-      async () => jobsStatus({ url: at('/admin/jobs-status') } as never),
-      '/user-settings?area=processing&section=queues',
-    ],
+    ['/admin/jobs-status', async () => jobsStatus(), '/user-settings?area=processing&section=queues'],
     [
       '/takeout',
       () => takeout({ url: at('/takeout') } as never),
