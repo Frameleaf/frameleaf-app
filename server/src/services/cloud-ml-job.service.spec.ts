@@ -231,7 +231,12 @@ describe(CloudMlJobService.name, () => {
                 cloudMl: {
                   ...defaults.frameleafCloud.cloudMl,
                   enabled,
-                  routing: { ...defaults.frameleafCloud.cloudMl.routing, restoration, interpolation: 'both' },
+                  routing: {
+                    ...defaults.frameleafCloud.cloudMl.routing,
+                    restoration,
+                    interpolation: 'both',
+                    upscale: 'both',
+                  },
                   spenders,
                 },
               },
@@ -1339,6 +1344,184 @@ describe(CloudMlJobService.name, () => {
       );
     });
 
+    const inFlight = () =>
+      new FrameleafCloudError(
+        MlAdmissionRefusal.CloudUnavailable,
+        409,
+        'still in flight',
+        errorEnvelopeSchema.parse(cloudContractFixture('errors/idempotency-in-flight.json')),
+        null,
+        30,
+      );
+
+    it('waits for a key still in flight and sends the same key again, never a new estimate (FC-43)', async () => {
+      mocks.frameleafCloudMl.createJob.mockRejectedValue(inFlight());
+
+      await sut.step(claimed(), 'claim', now);
+
+      expect(mocks.mediaOperation.fail).not.toHaveBeenCalled();
+      expect(mocks.mediaOperation.requeue).toHaveBeenLastCalledWith(OPERATION_ID, 'claim', {
+        delayMs: 30_000,
+        returnAttempt: true,
+      });
+      expect(written()).toMatchObject({ transientFailures: 1, submission: { idempotencyKey: OPERATION_ID } });
+
+      // the replay sends the recorded submission: the same key and body, nothing estimated again
+      mocks.frameleafCloudMl.createJob.mockResolvedValue(admitted);
+      await sut.step(claimed(written()), 'claim', now);
+      expect(mocks.frameleafCloudMl.createEstimate).toHaveBeenCalledTimes(1);
+      const [first, second] = mocks.frameleafCloudMl.createJob.mock.calls;
+      expect(second[2]).toBe(first[2]);
+      expect(second[1]).toEqual(first[1]);
+      expect(mocks.mediaOperation.setRemoteJobId).toHaveBeenCalledWith(OPERATION_ID, 'claim', JOB_ID);
+    });
+
+    it('fails a job whose idempotency key was reused with another body, logging it and never sending it again (FC-43)', async () => {
+      mocks.frameleafCloudMl.createJob.mockRejectedValue(
+        new FrameleafCloudError(
+          MlAdmissionRefusal.RequestInvalid,
+          422,
+          'reused',
+          errorEnvelopeSchema.parse(cloudContractFixture('errors/idempotency-key-reused.json')),
+        ),
+      );
+
+      await sut.step(claimed(), 'claim', now);
+
+      expect(mocks.frameleafCloudMl.createJob).toHaveBeenCalledTimes(1);
+      expect(mocks.frameleafCloudMl.createEstimate).toHaveBeenCalledTimes(1);
+      expect(mocks.logger.error).toHaveBeenCalledWith(expect.stringContaining('reused idempotency key'));
+      expect(mocks.mediaOperation.fail).toHaveBeenCalledWith(
+        OPERATION_ID,
+        'claim',
+        expect.objectContaining({ errorCode: 'cloud_ml_idempotency_key_reused' }),
+        { retry: false },
+      );
+      expect(rows.get(RESTORATION_ID)?.status).toBe(AssetRestorationStatus.PreviewFailed);
+    });
+
+    it('fails a job stopped at the 6-hour runtime cap as charged, never retried, telling the owner to split the clip (FC-47)', async () => {
+      const charged = view('job-completed.json').cost!;
+      mocks.frameleafCloudMl.getJobView.mockResolvedValue({
+        notModified: false,
+        data: view('job-failed.json', {
+          error: { code: 'runtime-cap', message: 'The job reached its 6-hour limit.', retryable: false },
+          cost: charged,
+        }),
+        etag: '"e9"',
+        retryAfterSeconds: null,
+      });
+      rendering();
+
+      await sut.step(following(), 'claim', now);
+
+      expect(mocks.frameleafCloudMl.downloadOutput).not.toHaveBeenCalled();
+      expect(mocks.mlDestination.applySettlements).toHaveBeenCalledWith([
+        { cloudJobId: JOB_ID, costUsd: charged.totalUsd, credits: null },
+      ]);
+      expect(written().cost).toMatchObject({ outcome: 'charged', totalUsd: charged.totalUsd });
+      expect(mocks.mediaOperation.fail).toHaveBeenCalledWith(
+        OPERATION_ID,
+        'claim',
+        { error: expect.stringMatching(/Split the clip/), errorCode: 'cloud_ml_job_runtime_cap' },
+        { retry: false },
+      );
+      expect(rows.get(RESTORATION_ID)?.status).toBe(AssetRestorationStatus.PreviewFailed);
+    });
+
+    it('never uploads a clip that still carries audio (FC-47)', async () => {
+      mocks.media.probe.mockResolvedValue({
+        format: { formatName: 'mp4', formatLongName: 'mp4', duration: 5, bitrate: 0 },
+        videoStreams: [{ width: 960, height: 540, codecName: 'h264' }],
+        audioStreams: [{ index: 1, codecName: 'aac', profile: null, bitrate: 0 }],
+      } as never);
+
+      await sut.step(claimed(), 'claim', now);
+
+      expect(mocks.frameleafCloudMl.createJob).not.toHaveBeenCalled();
+      expect(mocks.frameleafCloudMl.uploadInput).not.toHaveBeenCalled();
+      expect(mocks.mediaOperation.fail).toHaveBeenCalledWith(
+        OPERATION_ID,
+        'claim',
+        expect.objectContaining({ errorCode: 'cloud_ml_input_has_audio' }),
+        { retry: false },
+      );
+    });
+
+    describe('audio put back on the returned video (CLD-202)', () => {
+      const withAudio = (version: { audio: boolean; audioDuration?: number }) => {
+        mocks.media.probe.mockImplementation((file: string) => {
+          if (file.endsWith('before.mp4')) {
+            // the kept clip: its audio starts 50 ms before its first frame
+            return Promise.resolve({
+              format: { duration: 5 },
+              videoStreams: [{ width: 960, height: 540, startTime: 0.05, duration: 5 }],
+              audioStreams: [
+                { codecName: 'aac', channels: 2, channelLayout: 'stereo', sampleRate: 48_000, startTime: 0 },
+              ],
+            } as never);
+          }
+          return Promise.resolve({
+            format: { duration: 5 },
+            videoStreams: [{ width: 960, height: 540, duration: 5, frameRate: 30 }],
+            audioStreams: version.audio
+              ? [
+                  {
+                    codecName: 'aac',
+                    channels: 2,
+                    channelLayout: 'stereo',
+                    sampleRate: 48_000,
+                    duration: version.audioDuration ?? 5.01,
+                  },
+                ]
+              : [],
+          } as never);
+        });
+        mocks.frameleafCloudMl.getJobView.mockResolvedValue({
+          notModified: false,
+          data: completedWithOutputs(),
+          etag: '"e9"',
+          retryAfterSeconds: null,
+        });
+        rendering();
+      };
+
+      it('re-attaches the kept audio locally, in step, and checks it with ffprobe before publishing', async () => {
+        withAudio({ audio: true });
+
+        await sut.step(following(), 'claim', now);
+
+        const mux = mocks.media.transcode.mock.calls.at(-1)!;
+        const options = mux[2].outputOptions;
+        expect(options.slice(0, 3)).toEqual(['-itsoffset', '-0.050000', '-i']);
+        expect(options[3]).toMatch(/before\.mp4$/);
+        expect(options).toEqual(expect.arrayContaining(['-c:a', 'copy', '-shortest']));
+        expect(rows.get(RESTORATION_ID)?.status).toBe(AssetRestorationStatus.PreviewReady);
+      });
+
+      it('publishes nothing when the audio did not come back, or drifted from the picture', async () => {
+        withAudio({ audio: false });
+        await sut.step(following(), 'claim', now);
+        expect(mocks.mediaOperation.publishValidated).not.toHaveBeenCalled();
+        expect(mocks.mediaOperation.fail).toHaveBeenLastCalledWith(
+          OPERATION_ID,
+          'claim',
+          expect.objectContaining({ errorCode: 'cloud_ml_audio_invalid' }),
+          { retry: false },
+        );
+
+        withAudio({ audio: true, audioDuration: 4.5 });
+        await sut.step(following(), 'claim', now);
+        expect(mocks.mediaOperation.publishValidated).not.toHaveBeenCalled();
+        expect(mocks.mediaOperation.fail).toHaveBeenLastCalledWith(
+          OPERATION_ID,
+          'claim',
+          { error: expect.stringMatching(/drift apart/), errorCode: 'cloud_ml_audio_invalid' },
+          { retry: false },
+        );
+      });
+    });
+
     it('reports a failure on the cloud side with its fixed reason, nothing charged, and acknowledges the job', async () => {
       mocks.frameleafCloudMl.getJobView.mockResolvedValue({
         notModified: false,
@@ -1451,6 +1634,154 @@ describe(CloudMlJobService.name, () => {
         OPERATION_ID,
         'claim',
         expect.objectContaining({ errorCode: 'cloud_ml_turned_off' }),
+        { retry: false },
+      );
+    });
+  });
+
+  describe('photo upscale under the 64 MP output cap (FC-46)', () => {
+    const UPSCALE = 'ms_54S55W7C';
+    const UPSCALE_REV = 'mr_0WNPDD697MT0';
+    const photo = {
+      ...source,
+      type: AssetType.Image,
+      originalFileName: 'Garden.jpg',
+      originalPath: '/library/owner-1/Garden.jpg',
+      exifInfo: { exifImageWidth: 4000, exifImageHeight: 3000, orientation: null },
+    };
+    const upscaleEstimate = estimateResponseSchema.parse(cloudContractFixture('ml/upscale/estimate-response.json'));
+    /** The published result document, for this job's one photo: a3, the 12 MP photo lowered to 2×. */
+    const resultDocument = () => {
+      const document = cloudContractFixture('ml/upscale/result.json');
+      const item = document.items.find((entry: { inputId: string }) => entry.inputId === 'a3');
+      return {
+        ...document,
+        items: [{ ...item, inputId: 'v1', outputs: [{ ...item.outputs[0], outputId: 'v1' }] }],
+      };
+    };
+
+    beforeEach(() => {
+      const upscaleModel = catalogSchema
+        .parse(cloudContractFixture('ml/catalog.json'))
+        .models.find((model) => model.sku === UPSCALE)!;
+      mocks.frameleafCloudMl.getCatalog.mockResolvedValue({ ...catalog, models: [...catalog.models, upscaleModel] });
+      const upscaleCloud = {
+        ...cloud,
+        workloads: [...workloads, MlWorkload.Upscale],
+        lastProbeWorkloads: [...workloads, MlWorkload.Upscale],
+        lastProbeCloud: {
+          ...facts,
+          modelIds: [...facts.modelIds, UPSCALE],
+          modelWorkloads: { ...facts.modelWorkloads, [UPSCALE]: MlWorkload.Upscale },
+          defaultModels: { ...facts.defaultModels, upscale: UPSCALE },
+          modelGroups: { ...facts.modelGroups, [UPSCALE]: 'upscale' },
+        },
+      };
+      mocks.mlDestination.getAll.mockResolvedValue([upscaleCloud]);
+      mocks.mlDestination.getById.mockResolvedValue(upscaleCloud);
+      mocks.machineLearning.probe.mockResolvedValue({
+        ...mlProbeStub.frameleafCloud,
+        workloads: upscaleCloud.workloads,
+        cloud: upscaleCloud.lastProbeCloud,
+      });
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(photo as never);
+      mocks.media.decodeImage.mockResolvedValue({
+        data: Buffer.alloc(0),
+        info: { width: 4000, height: 3000, channels: 3 },
+      } as never);
+      // the prepared crop, as the owner chose the whole photo: 4000 × 3000, 12 MP
+      mocks.media.getImageMetadata.mockResolvedValue({ width: 4000, height: 3000 } as never);
+      mocks.frameleafCloudMl.createEstimate.mockResolvedValue({
+        ...upscaleEstimate,
+        upscale: { scale: 4, items: [{ inputId: 'v1', scale: 2 }], lowered: ['v1'] },
+      });
+      mocks.frameleafCloudMl.createJob.mockResolvedValue({ ...admitted, modelSku: UPSCALE, modelRev: UPSCALE_REV });
+    });
+
+    const estimatePhoto = () =>
+      sut.estimate(
+        owner,
+        preview({ assetId: photo.id, upscale: 4, modelSku: UPSCALE, region: { x: 0, y: 0, w: 1, h: 1 } }),
+        now,
+      );
+
+    it('declares the photo size, and shows the lowered factor before the owner confirms', async () => {
+      const estimate = await estimatePhoto();
+
+      expect(mocks.frameleafCloudMl.createEstimate).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          workload: 'upscale',
+          request: { scale: 4, items: [{ inputId: 'v1', width: 4000, height: 3000 }] },
+        }),
+      );
+      expect(estimate.upscale).toEqual({
+        requestedScale: 4,
+        appliedScale: 2,
+        lowered: true,
+        outputWidth: 8000,
+        outputHeight: 6000,
+      });
+      const [record] = estimates();
+      expect(record.upscale).toEqual({
+        requestedScale: 4,
+        appliedScale: 2,
+        lowered: true,
+        input: { width: 4000, height: 3000 },
+      });
+      expect(record.output).toEqual({ width: 8000, height: 6000 });
+    });
+
+    it('writes the version at the factor its own item got, checked against the photo times that factor', async () => {
+      const estimate = await estimatePhoto();
+      await sut.create(
+        owner,
+        { estimateId: estimate.estimateId, consentVersion: estimate.consent.version, acknowledgeDataLeaves: true },
+        now,
+      );
+      expect(rows.get(RESTORATION_ID)?.upscale).toBe(2);
+      const document = resultDocument();
+      mocks.storage.readFile.mockResolvedValue(Buffer.from(JSON.stringify(document)));
+      mocks.frameleafCloudMl.getJobView.mockResolvedValue({
+        notModified: false,
+        data: view('job-completed.json', {
+          modelSku: UPSCALE,
+          modelRev: UPSCALE_REV,
+          result: {
+            outputs: [
+              { ...output('v1'), contentType: 'image/webp' },
+              { ...output('result'), contentType: 'application/json' },
+            ],
+            headers: { 'x-amz-server-side-encryption-customer-algorithm': 'AES256' },
+            expiresAt: '2026-09-26T04:30:00.000Z',
+            modelSku: UPSCALE,
+            modelRev: UPSCALE_REV,
+          },
+        }),
+        etag: '"e9"',
+        retryAfterSeconds: null,
+      });
+      rendering();
+      mocks.media.getImageMetadata.mockResolvedValue({ width: 8000, height: 6000 } as never);
+
+      await sut.step(following(), 'claim', now);
+
+      // the result document is read, never published as a version
+      const downloaded = mocks.frameleafCloudMl.downloadOutput.mock.calls.map(([, item]) => item.outputId);
+      expect(downloaded).toEqual(['v1', 'result']);
+      expect(written().upscaleScale).toBe(2);
+      expect(rows.get(RESTORATION_ID)).toMatchObject({ status: AssetRestorationStatus.PreviewReady, upscale: 2 });
+
+      // a photo that is not the input times its own item's factor is never published
+      mocks.mediaOperation.publishValidated.mockClear();
+      rendering();
+      mocks.media.getImageMetadata.mockResolvedValue({ width: 16_000, height: 12_000 } as never);
+      await sut.step(following(), 'claim', now);
+      expect(mocks.mediaOperation.publishValidated).not.toHaveBeenCalled();
+      expect(mocks.mediaOperation.fail).toHaveBeenLastCalledWith(
+        OPERATION_ID,
+        'claim',
+        { error: expect.stringMatching(/not 2× the photo/), errorCode: 'cloud_ml_output_invalid' },
         { retry: false },
       );
     });
