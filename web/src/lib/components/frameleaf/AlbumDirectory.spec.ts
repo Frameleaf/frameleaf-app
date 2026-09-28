@@ -287,6 +287,26 @@ describe('AlbumDirectory', () => {
     expect(sdkMock.moveAlbumToCollection).not.toHaveBeenCalled();
   });
 
+  it('re-evaluates a built-in smart album scoped to its own kind (AL-6)', async () => {
+    const { authManager } = await import('$lib/managers/auth-manager.svelte');
+    const { modalManager } = await import('@immich/ui');
+    const show = vi.spyOn(modalManager, 'show').mockResolvedValue(undefined as never);
+    (authManager.user as { isAdmin: boolean }).isAdmin = true;
+    try {
+      const food = owned({ id: 'food', albumName: 'Food', isSmart: true, smartKind: 'food' });
+      renderWithTooltips(AlbumDirectory, { tree: { ...tree, albums: [food] }, onRefresh: vi.fn() });
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Actions for Food' }));
+      const menu = within(await screen.findByRole('menu', { name: 'Actions for Food' }));
+      await fireEvent.click(menu.getByRole('menuitem', { name: 'Re-evaluate' }));
+
+      await waitFor(() => expect(show).toHaveBeenCalledWith(expect.anything(), { kind: 'food', kindLabel: 'Food' }));
+    } finally {
+      (authManager.user as { isAdmin: boolean }).isAdmin = false;
+      show.mockRestore();
+    }
+  });
+
   it('shares an album in the Frameleaf share dialog with a searchable invite list (AL-3, AL-15)', async () => {
     sdkMock.searchUsers.mockResolvedValue([jamie]);
     renderWithTooltips(AlbumDirectory, { tree, onRefresh: vi.fn() });

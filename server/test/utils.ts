@@ -437,7 +437,7 @@ export const getMocks = () => {
   mocks.clusterGroup.create.mockResolvedValue(ClusterGroupFactory.create());
 
   // no album is filled by smart album rules, and no classification rule exists, unless a test says so (FL-60)
-  mocks.smartAlbum.getSmartBackedAlbumIds.mockResolvedValue(new Set());
+  mocks.smartAlbum.getSmartBackedAlbumKinds.mockResolvedValue(new Map());
   mocks.classification.getRuleAlbumIds.mockResolvedValue(new Set());
   mocks.classification.getRules.mockResolvedValue([]);
   mocks.classification.getEnabledRules.mockResolvedValue([]);
