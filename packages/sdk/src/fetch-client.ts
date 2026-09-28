@@ -4844,6 +4844,18 @@ export type CloudMlJobRefusalDto = {
     code: string;
     message: string;
 };
+export type CloudMlJobUpscaleDto = {
+    /** The factor Frameleaf Cloud will really use and prices: lower when the 64 MP output cap needs it */
+    appliedScale: number;
+    /** Whether the 64 MP output cap lowered the factor; shown before confirming */
+    lowered: boolean;
+    /** The height the result will have, in pixels */
+    outputHeight: number;
+    /** The width the result will have, in pixels */
+    outputWidth: number;
+    /** The upscale factor that was asked for (2 or 4) */
+    requestedScale: number;
+};
 export type CloudMlJobEstimateResponseDto = {
     /** AI Wallet balance minus holds, USD */
     availableUsd: number;
@@ -4885,6 +4897,8 @@ export type CloudMlJobEstimateResponseDto = {
     startFeeUsd: number;
     /** Start fees: one start fee per planned worker, USD */
     startupUsd: number;
+    /** Photo upscales only (FC-46): the factor each photo really gets under the 64 MP output cap; null otherwise */
+    upscale: (CloudMlJobUpscaleDto) | null;
     workload: MlWorkload;
 };
 export type ClusterGroupRequestResponseDto = {
