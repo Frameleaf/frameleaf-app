@@ -183,7 +183,7 @@ describe('AlbumHeader', () => {
       })) as never);
     });
 
-    // INTERACTION-REQUIREMENTS.md (Sept 24 second pass), CollectionHeader.jsx:1410-1510.
+    // Approved template, CollectionHeader.jsx:1410-1510.
     it('keeps Add photos and Share in the row and moves everything else into "…"', async () => {
       renderHeader(albumAs(AlbumUserRole.Owner));
 

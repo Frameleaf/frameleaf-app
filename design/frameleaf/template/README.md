@@ -35,7 +35,7 @@ For the September 24 refinements also try:
 - Settings → Library analytics for the dashboard, and any settings area for the grouped lists.
 - Folding a rail section, the "+" beside Shared spaces, and Library Care as the hub for fixes.
 
-Read [the interaction contract](../INTERACTION-REQUIREMENTS.md) for the latest decisions. Studio controls are an interaction layout; exports, restoration, job progress and account actions are simulations. Video playback uses local MP4 demonstrations; editing/restoration still shows sample imagery. Nothing changes a real user's library or contacts cloud compute.
+Read the authorized private design requirements for the latest written decisions; this approved template remains the UI reference. Studio controls are an interaction layout; exports, restoration, job progress and account actions are simulations. Video playback uses local MP4 demonstrations; editing/restoration still shows sample imagery. Nothing changes a real user's library or contacts cloud compute.
 
 ## Source map
 

@@ -1,14 +1,6 @@
 {
   "approvedReferences": [
     {
-      "bytes": 22273,
-      "id": "reference:design/frameleaf/INTERACTION-REQUIREMENTS.md",
-      "path": "design/frameleaf/INTERACTION-REQUIREMENTS.md",
-      "role": "approved-interaction-contract",
-      "sha256": "ede727aa1a6c56d6b4f814a7e07406bd0f76c32021c997b8ec28b68c0a8876c6",
-      "status": "reference-not-production-qualification"
-    },
-    {
       "bytes": 1615,
       "id": "reference:design/frameleaf/tokens.json",
       "path": "design/frameleaf/tokens.json",
@@ -17,19 +9,19 @@
       "status": "reference-not-production-qualification"
     },
     {
-      "bytes": 6705,
+      "bytes": 6746,
       "id": "reference:design/frameleaf/template/README.md",
       "path": "design/frameleaf/template/README.md",
       "role": "approved-prototype-usage-contract",
-      "sha256": "058d2576387c41855fe43b41a7944d319d9ae2b6395a40360a05a4e86353d05c",
+      "sha256": "c00056875be22d461e6bfead59d12c0cda7b336e8533032ace0a9b2f05bbff3e",
       "status": "reference-not-production-qualification"
     },
     {
-      "bytes": 1805,
+      "bytes": 1777,
       "id": "reference:design/frameleaf/references/README.md",
       "path": "design/frameleaf/references/README.md",
       "role": "approved-visual-reference-contract",
-      "sha256": "423eb8fe70df78929c926fb83011a3a55c00f760b8807ed951f3c8f776882488",
+      "sha256": "e6636839cae8e01f277f758243c2504ab64a0aafa53043b87c053023362c5169",
       "status": "reference-not-production-qualification"
     },
     {
@@ -78,7 +70,7 @@
     }
   ],
   "counts": {
-    "approvedReferenceDocuments": 4,
+    "approvedReferenceDocuments": 3,
     "generatedDerivatives": 0,
     "historicalRasterReferences": 2,
     "nativeConsumers": 0,
@@ -87,7 +79,7 @@
     "suppliedVectors": 7
   },
   "digests": {
-    "approvedReferenceLedgerSha256": "99e3851804f9b8d2e9486bf4c0298697a26198240230d612d890a62a0c61f529",
+    "approvedReferenceLedgerSha256": "db8547de7a4b9986814b3fb5a75a801f6dba2ba9edc670fde41885c6e9fb6f73",
     "suppliedSourceLedgerSha256": "a317886619c3d450f81d91fb065ed698d3715e1bc537b95d2751becf59d6f488"
   },
   "expectedDuplicateContent": [

@@ -4,8 +4,7 @@
 
   /**
    * An account's photo in the September 24 shape: every people photo is a squircle
-   * (apple-style.css "people photos: squircle everywhere", INTERACTION-REQUIREMENTS.md "Every people
-   * photo, named or not, uses the squircle"). The mask works in every engine, so it wraps the
+   * (apple-style.css "people photos: squircle everywhere"). The mask works in every engine, so it wraps the
    * existing avatar instead of re-implementing its image and fallback.
    */
   interface Props {

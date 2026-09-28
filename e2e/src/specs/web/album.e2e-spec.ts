@@ -369,7 +369,7 @@ test.describe('Album', () => {
     const album = await utils.createAlbum(admin.accessToken, { albumName: 'Phone album', assetIds: [asset.id] });
 
     await page.goto(`/albums/${album.id}`);
-    // INTERACTION-REQUIREMENTS.md (Sept 24 second pass): album actions beyond Add photos and Share move into "…".
+    // Approved template: album actions beyond Add photos and Share move into "…".
     const toolbar = page.getByRole('toolbar', { name: /actions/ });
     await expect(toolbar.getByRole('button', { name: 'Add photos' })).toBeVisible();
     await expect(toolbar.getByRole('button', { name: 'Share' })).toBeVisible();
