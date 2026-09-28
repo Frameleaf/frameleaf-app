@@ -240,7 +240,7 @@ test.describe('Locked content in the browser (FL-34)', () => {
     await unlockAuthSession({ sessionUnlockDto: { pinCode } }, { headers });
     await page.goto('/documents?query=grand');
     await page.locator(`[data-asset-id="${locked.id}"]`).click();
-    await page.getByRole('button', { name: 'Information', exact: true }).click();
+    await expect(page.locator('#detail-panel')).toBeVisible();
     await expect(page.getByTestId('frameleaf-document-fields')).toContainText('$19.25');
 
     const other = await login({ loginCredentialDto: { email: user.userEmail, password: 'password' } });
