@@ -1,11 +1,13 @@
 import {
   LoginResponseDto,
   deleteAssets,
+  getConfig,
   lockAssets,
   lockAuthSession,
   setUserOnboarding,
   setupPinCode,
   unlockAuthSession,
+  updateConfig,
 } from '@immich/sdk';
 import { Page, expect, test } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
@@ -30,6 +32,10 @@ test.describe('Locked content in the browser (FL-34)', () => {
     await utils.resetDatabase();
     admin = await utils.adminSetup();
     await setupPinCode({ pinCodeSetupDto: { pinCode } }, { headers: asBearerAuth(admin.accessToken) });
+  });
+
+  test.afterAll(async () => {
+    await utils.resetAdminConfig(admin.accessToken);
   });
 
   /** A fresh onboarded account with one ordinary and one locked photo, its session unlocked. */
@@ -165,6 +171,67 @@ test.describe('Locked content in the browser (FL-34)', () => {
     await page.goto(`/photos/${locked.id}`);
     await expect(page.getByTestId('preview')).toHaveCount(0);
     await page.goto('/locked');
+    await expect(traces(page, locked.id)).toHaveCount(0);
+  });
+
+  test('keeps corrected document evidence after reload and clears open detail on relock (FL-63)', async ({
+    context,
+    page,
+  }) => {
+    const { user, headers, locked } = await setup();
+    const config = await getConfig({ headers: asBearerAuth(admin.accessToken) });
+    await updateConfig(
+      {
+        adminConfigDto: {
+          ...config,
+          machineLearning: {
+            ...config.machineLearning,
+            ocr: { ...config.machineLearning.ocr, documentFields: true },
+          },
+        },
+      },
+      { headers: asBearerAuth(admin.accessToken) },
+    );
+
+    const db = await utils.connectDatabase();
+    await db.query(
+      `INSERT INTO asset_ocr ("assetId", x1, y1, x2, y2, x3, y3, x4, y4, "boxScore", "textScore", text)
+       VALUES ($1, 0.15, 0.2, 0.8, 0.2, 0.8, 0.32, 0.15, 0.32, 0.9, 0.96, $2)`,
+      [locked.id, 'Grand total $18.50'],
+    );
+    await db.query(
+      `INSERT INTO ocr_search ("assetId", text) VALUES ($1, $2)
+       ON CONFLICT ("assetId") DO UPDATE SET text = EXCLUDED.text`,
+      [locked.id, 'grand total 18.50'],
+    );
+
+    await utils.setAuthCookies(context, user.accessToken);
+    await page.goto('/documents?query=grand');
+    const tile = page.locator(`[data-asset-id="${locked.id}"]`);
+    await expect(tile).toBeVisible();
+    await tile.click();
+    await page.getByRole('button', { name: 'Information', exact: true }).click();
+
+    const text = page.getByTestId('frameleaf-document-text');
+    await expect(text.getByTestId('frameleaf-document-text-body')).toContainText('Grand total $18.50');
+    const total = text.getByTestId('frameleaf-document-fields').locator('li').filter({ hasText: 'Total' });
+    await expect(total).toContainText('$18.50');
+    await total.getByRole('button', { name: 'Show where' }).click();
+    await expect(page.getByTestId('document-region-highlight')).toBeVisible();
+
+    await total.getByRole('button', { name: 'Correct' }).click();
+    await total.getByRole('textbox', { name: 'Total value' }).fill('$19.25');
+    await total.getByRole('button', { name: 'Save' }).click();
+    await expect(total).toContainText('$19.25');
+
+    await page.reload();
+    await expect(page.locator('#detail-panel')).toBeVisible();
+    await expect(page.getByTestId('frameleaf-document-fields')).toContainText('$19.25');
+
+    await lockAuthSession({ headers });
+    await expect(page).toHaveURL(/\/photos\/?$/);
+    await expect(page.getByTestId('frameleaf-document-text')).toHaveCount(0);
+    await expect(page.getByText('$19.25')).toHaveCount(0);
     await expect(traces(page, locked.id)).toHaveCount(0);
   });
 });
