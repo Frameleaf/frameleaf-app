@@ -181,7 +181,7 @@ export class AlbumController {
   @Endpoint({
     summary: 'Move an album into or out of a collection',
     description:
-      'Move an album into a collection, or send null to take it out so it stands on its own. Only the album owner can move it; the destination must be a collection the user can edit. Collections and shared spaces cannot be moved.',
+      'Move an album into a collection, or send null to take it out so it stands on its own. Only the album owner can move it (an editor gets 403); the destination must be a collection the user can edit. Collections and shared spaces cannot be moved.',
     history: new HistoryBuilder().added('v3'),
   })
   moveAlbumToCollection(

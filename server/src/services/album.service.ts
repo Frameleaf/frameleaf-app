@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable } from '@nestjs/common';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { SmartAlbumBuiltInKind } from 'src/dtos/system-config.dto.js';
 import type { AlbumMapMarkerSearchOptions } from 'src/repositories/map.repository.js';
@@ -37,6 +37,10 @@ import { isLockedRow } from 'src/utils/locked.js';
 import { getLocationHiddenOwnerIdsForView } from 'src/utils/partner-location.js';
 import { getPreferences } from 'src/utils/preferences.js';
 import { isSharedSpace, requireInvitableRole, requireSpaceOwner } from 'src/utils/shared-space.js';
+
+/** Why an editor's move is refused. The album's place is one stored value that everyone sees. */
+export const ALBUM_MOVE_OWNER_ONLY =
+  'Only the album owner can move it. Editors can change what is in the album, but not where it is kept.';
 
 @Injectable()
 export class AlbumService extends BaseService {
@@ -454,7 +458,8 @@ export class AlbumService extends BaseService {
 
     const owner = album.albumUsers.find(({ role }) => role === AlbumUserRole.Owner);
     if (owner?.user.id !== auth.user.id) {
-      throw new BadRequestException('Only the album owner can move it');
+      // FL-83 (AL-9, owner decision 2026-09-27): editors never move albums, by Move to… or by dragging.
+      throw new ForbiddenException(ALBUM_MOVE_OWNER_ONLY);
     }
 
     if (newParentId !== null) {
