@@ -30,7 +30,9 @@ export function createStudioGeneratedAccess(
   let generation = 0;
   let admissions: Promise<void> = Promise.resolve();
   const revoke = () => {
-    if (revoked || !hasGenerated) return;
+    if (revoked || !hasGenerated) {
+      return;
+    }
     revoked = true;
     controller.abort();
     onRevoked(new Error('Generated Studio media access changed. Reload the project to check access again.'));
@@ -52,7 +54,9 @@ export function createStudioGeneratedAccess(
   });
   const socketUnsubscribers = [
     websocketEvents.on('StudioProjectInvalidatedV1', ({ projectId }) => {
-      if (projectId === null || requestedProjects.has(projectId)) revoke();
+      if (projectId === null || requestedProjects.has(projectId)) {
+        revoke();
+      }
     }),
     websocketEvents.on('on_asset_delete', revoke),
     websocketEvents.on('on_asset_trash', revoke),
@@ -60,14 +64,19 @@ export function createStudioGeneratedAccess(
     websocketEvents.on('on_asset_hidden', revoke),
     websocketStore.connected.subscribe((value) => {
       connected = value;
-      if (!connected) revoke();
+      if (!connected) {
+        revoke();
+      }
     }),
   ];
   globalThis.addEventListener?.('offline', revoke);
   const resolve = async (projectId: string | undefined, wanted: string[]): Promise<StudioGeneratedMedia[]> => {
-    if (wanted.length === 0) return [];
-    if (!projectId || !connected || controller.signal.aborted)
+    if (wanted.length === 0) {
+      return [];
+    }
+    if (!projectId || !connected || controller.signal.aborted) {
       throw new Error('Generated Studio admission was revoked');
+    }
     return Promise.all(
       wanted.map(async (generatedId) => {
         const operationId = generatedId.slice('reverse-'.length);
@@ -77,7 +86,9 @@ export function createStudioGeneratedAccess(
           cache: 'no-store',
           signal: controller.signal,
         });
-        if (!response.ok) throw new Error('Generated Studio media is unavailable');
+        if (!response.ok) {
+          throw new Error('Generated Studio media is unavailable');
+        }
         const result = record(await response.json());
         const frameRate = record(result.frameRate);
         const preview = record(result.browserPreview);
@@ -101,8 +112,9 @@ export function createStudioGeneratedAccess(
           throw new Error('Invalid generated Studio result binding');
         }
         const durationNumerator = result.frames * frameRate.den;
-        if (!Number.isSafeInteger(durationNumerator))
-          throw new Error('Generated media duration exceeds safe precision');
+        if (!Number.isSafeInteger(durationNumerator)) {
+          throw new TypeError('Generated media duration exceeds safe precision');
+        }
         return {
           id: generatedMediaAlias(generatedId),
           generatedId,
@@ -133,19 +145,27 @@ export function createStudioGeneratedAccess(
     async admit(projectId, graph, revision) {
       const requested = generatedMediaIds(graph);
       hasGenerated ||= requested.length > 0;
-      if (requested.length > 0 && projectId) requestedProjects.add(projectId);
+      if (requested.length > 0 && projectId) {
+        requestedProjects.add(projectId);
+      }
       const task = admissions.then(async () => {
-        if (revoked) throw new Error('Generated Studio admission was revoked');
+        if (revoked) {
+          throw new Error('Generated Studio admission was revoked');
+        }
         if (project !== undefined && project !== projectId && ids.length > 0) {
           revoke();
           throw new Error('Generated media belongs to another project');
         }
         const wanted = [...new Set([...ids, ...requested])].sort();
         const key = JSON.stringify([projectId, revision, wanted]);
-        if (revision !== undefined && key === admissionKey) return admitted;
+        if (revision !== undefined && key === admissionKey) {
+          return admitted;
+        }
         try {
           const next = await resolve(projectId, wanted);
-          if (controller.signal.aborted) throw new Error('Generated Studio admission was revoked');
+          if (controller.signal.aborted) {
+            throw new Error('Generated Studio admission was revoked');
+          }
           // Publish one authorized generation; a focus recheck must never see half an admission.
           project = projectId;
           ids = wanted;
@@ -158,16 +178,15 @@ export function createStudioGeneratedAccess(
           throw error;
         }
       });
-      admissions = task.then(
-        () => undefined,
-        () => undefined,
-      );
+      admissions = task.then(() => undefined).catch(() => undefined);
       return task;
     },
     async recheck() {
       while (true) {
         await settleAdmissions();
-        if (revoked) return false;
+        if (revoked) {
+          return false;
+        }
         const checkedGeneration = generation;
         const expected = admitted;
         let current: StudioGeneratedMedia[] | undefined;
@@ -177,11 +196,17 @@ export function createStudioGeneratedAccess(
           // Judge a failure only after any overlapping admission has settled.
         }
         await settleAdmissions();
-        if (revoked) return false;
+        if (revoked) {
+          return false;
+        }
         // A changed generation invalidates this read, including a denial. Freshly check the
         // complete current set before authorizing; a newer admission alone is not this check.
-        if (checkedGeneration !== generation) continue;
-        if (current && JSON.stringify(current) === JSON.stringify(expected)) return true;
+        if (checkedGeneration !== generation) {
+          continue;
+        }
+        if (current && JSON.stringify(current) === JSON.stringify(expected)) {
+          return true;
+        }
         revoke();
         return false;
       }
@@ -190,7 +215,9 @@ export function createStudioGeneratedAccess(
       revoked = true;
       controller.abort();
       unsubscribe();
-      for (const stop of socketUnsubscribers) stop();
+      for (const stop of socketUnsubscribers) {
+        stop();
+      }
       globalThis.removeEventListener?.('offline', revoke);
       globalThis.removeEventListener?.('focus', wake);
       globalThis.removeEventListener?.('online', wake);
