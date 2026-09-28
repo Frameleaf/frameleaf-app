@@ -49,6 +49,8 @@ type EventMap = {
   // album events
   AlbumUpdate: [{ id: string; userIds: string[]; recipientIds: string[] }];
   AlbumInvite: [{ id: string; userId: string; senderName: string }];
+  /** FL-83 (AL-30b): `count` more of `ownerId`'s items were shared with `userId`. */
+  ItemShare: [{ ownerId: string; userId: string; senderName: string; count: number; link: string | null }];
   /** FL-90: a member left, or was taken out of, an album or shared space; their access ended. */
   AlbumUserRemove: [{ albumId: string; userId: string }];
 

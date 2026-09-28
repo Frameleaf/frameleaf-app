@@ -240,6 +240,59 @@ export class NotificationService extends BaseService {
     await this.jobRepository.queue({ name: JobName.NotifyAlbumInvite, data: { id, recipientId: userId, senderName } });
   }
 
+  /**
+   * FL-83 (AL-30b): items were shared with a person. The notification album invitations use: one
+   * in-app notification, and an email when the recipient allows album invitation emails. Both carry
+   * the share link (`resolveShareBaseUrl`); neither names or shows an item, so nothing about the
+   * items reaches the recipient outside the access checks.
+   */
+  @OnEvent({ name: 'ItemShare' })
+  async onItemShare({ ownerId, userId, senderName, count, link }: ArgOf<'ItemShare'>) {
+    const recipient = await this.userRepository.get(userId, { withDeleted: false });
+    if (!recipient) {
+      return;
+    }
+
+    const item = await this.notificationRepository.create({
+      userId,
+      type: NotificationType.ItemShare,
+      level: NotificationLevel.Success,
+      title: 'Shared with you',
+      description:
+        count === 1 ? `${senderName} shared an item with you` : `${senderName} shared ${count} items with you`,
+      data: JSON.stringify({ ownerId, count, link }),
+    });
+    this.websocketRepository.clientSend('on_notification', userId, mapNotification(item));
+
+    const { emailNotifications } = getPreferences(recipient.metadata);
+    if (!emailNotifications.enabled || !emailNotifications.albumInvite) {
+      return;
+    }
+
+    const { server } = await this.getConfig({ withCache: false });
+    const { html, text } = await this.emailRepository.renderEmail({
+      template: EmailTemplate.ITEM_SHARE,
+      data: {
+        baseUrl: await this.getPublicUrl(server),
+        senderName,
+        recipientName: recipient.name,
+        count,
+        link: link ?? undefined,
+      },
+      customTemplate: '',
+    });
+
+    await this.jobRepository.queue({
+      name: JobName.SendMail,
+      data: {
+        to: recipient.email,
+        subject: count === 1 ? `${senderName} shared an item with you` : `${senderName} shared ${count} items with you`,
+        html,
+        text,
+      },
+    });
+  }
+
   @OnEvent({ name: 'ClusterGroupRequest' })
   async onClusterGroupRequest({ clusterGroupId, userId, senderName }: ArgOf<'ClusterGroupRequest'>) {
     const item = await this.notificationRepository.create({
