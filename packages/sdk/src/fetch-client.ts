@@ -21850,6 +21850,7 @@ export enum MediaOperationDestination {
 export enum MediaOperationKind {
     StudioExport = "studio_export",
     StudioPreview = "studio_preview",
+    StudioReverseConform = "studio_reverse_conform",
     StudioPreviewStream = "studio_preview_stream",
     Restoration = "restoration",
     RestorationPreview = "restoration_preview",
