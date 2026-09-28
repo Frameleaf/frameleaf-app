@@ -5,6 +5,7 @@
   import ActivityPanel from '$lib/components/frameleaf/ActivityPanel.svelte';
   import AlbumHeader from '$lib/components/frameleaf/AlbumHeader.svelte';
   import LibraryView from '$lib/components/frameleaf/LibraryView.svelte';
+  import ResultsAssetViewer from '$lib/components/frameleaf/ResultsAssetViewer.svelte';
   import ResultsView from '$lib/components/frameleaf/ResultsView.svelte';
   import SpaceMediaComments from '$lib/components/frameleaf/SpaceMediaComments.svelte';
   import Theme from '$lib/components/frameleaf/Theme.svelte';
@@ -168,7 +169,11 @@
   const handleMutated = (removedIds: string[]) => {
     const removed = new Set(removedIds);
     collectionAssets = collectionAssets.filter(({ id }) => !removed.has(id));
-    handlePromiseError(refreshAlbum());
+    handlePromiseError(refreshAlbum().then(() => invalidate('album:data')));
+  };
+
+  const updateCollectionAsset = (updated: AssetResponseDto) => {
+    collectionAssets = collectionAssets.map((asset) => (asset.id === updated.id ? updated : asset));
   };
 
   // The album is the scope of everything the bar does here.
@@ -505,6 +510,15 @@
     {/if}
   </div>
 </UserPageLayout>
+
+{#if isCollection}
+  <ResultsAssetViewer
+    assets={collectionAssets}
+    emptyRoute={Route.viewAlbum({ id: albumId })}
+    onAssetChange={updateCollectionAsset}
+    onRemove={(id) => handleMutated([id])}
+  />
+{/if}
 
 {#snippet spaceAssetComments(asset: AssetResponseDto)}
   <!-- FL-55: an item in a shared space is discussed in the space's threaded comments, not the album activity. -->

@@ -1,4 +1,4 @@
-import { getAssetInfo, type AssetResponseDto } from '@immich/sdk';
+import { AssetVisibility, getAssetInfo, type AssetResponseDto } from '@immich/sdk';
 import { fireEvent, waitFor } from '@testing-library/svelte';
 import { getAnimateMock } from '$lib/__mocks__/animate.mock';
 import { getResizeObserverMock } from '$lib/__mocks__/resize-observer.mock';
@@ -90,6 +90,17 @@ function setup(isTrashed = true) {
   });
   return { assets, view };
 }
+
+it('removes a remotely Locked result and advances the open viewer', async () => {
+  const { assets } = setup(false);
+  const [hidden, next, last] = assets;
+
+  eventManager.emit('AssetUpdate', { ...hidden, visibility: AssetVisibility.Locked });
+
+  await waitFor(() => expect(assetViewerManager.asset?.id).toBe(next.id));
+  expect(assets.map((asset) => asset.id)).toEqual([next.id, last.id]);
+  expect(assetViewerManager.isViewing).toBe(true);
+});
 
 it.each([true, false])(
   'advances after two real gallery deletions with deferred route publication (permanent=%s)',
