@@ -1,6 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { Kysely } from 'kysely';
-import { AlbumUserRole, AssetLockReason, AssetVisibility, SharedLinkType } from 'src/enum.js';
+import { TimeBucketDto } from 'src/dtos/time-bucket.dto.js';
+import { AlbumUserRole, AssetLockReason, AssetType, AssetVisibility, SharedLinkType } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -27,6 +28,45 @@ beforeAll(async () => {
 });
 
 describe(TimelineService.name, () => {
+  it('keeps media-type filters consistent across album counts, buckets, highlights and flat layouts (FL-40)', async () => {
+    const { sut, ctx } = setup();
+    const { user } = await ctx.newUser();
+    const auth = factory.auth({ user });
+    const date = new Date('1970-02-12');
+    const { asset: photo } = await ctx.newAsset({
+      ownerId: user.id,
+      type: AssetType.Image,
+      localDateTime: date,
+      fileCreatedAt: date,
+    });
+    const { asset: video } = await ctx.newAsset({
+      ownerId: user.id,
+      type: AssetType.Video,
+      localDateTime: date,
+      fileCreatedAt: date,
+    });
+    const { album } = await ctx.newAlbum({ ownerId: user.id }, [photo.id, video.id]);
+    await ctx.newExif({ assetId: photo.id });
+    await ctx.newExif({ assetId: video.id });
+
+    for (const asset of [photo, video]) {
+      // Exercise the request schema too: an undeclared parameter would otherwise be stripped.
+      const options = TimeBucketDto.schema.parse({ albumId: album.id, assetType: asset.type });
+      expect(options.assetType).toBe(asset.type);
+      await expect(sut.getTimeBuckets(auth, options)).resolves.toEqual([{ timeBucket: '1970-02-01', count: 1 }]);
+      expect(JSON.parse(await sut.getTimeBucket(auth, { ...options, timeBucket: '1970-02-01' })).id).toEqual([
+        asset.id,
+      ]);
+      expect(
+        JSON.parse(await sut.getTimelineOrdered(auth, { ...options, sort: 'filename', skip: 0, take: 10 })).id,
+      ).toEqual([asset.id]);
+      await expect(sut.getTimelineHighlights(auth, { ...options, grouping: 'month' })).resolves.toEqual([
+        expect.objectContaining({ timeBucket: '1970-02-01', count: 1, keyAssetId: asset.id }),
+      ]);
+    }
+    expect(TimeBucketDto.schema.safeParse({ assetType: 'invalid' }).success).toBe(false);
+  });
+
   describe('getTimeBuckets', () => {
     it('should get time buckets by month', async () => {
       const { sut, ctx } = setup();

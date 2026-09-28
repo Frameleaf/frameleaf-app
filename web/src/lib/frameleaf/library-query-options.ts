@@ -1,4 +1,4 @@
-import { AssetVisibility, type IdsFilter } from '@immich/sdk';
+import { AssetTypeEnum, AssetVisibility, type IdsFilter } from '@immich/sdk';
 import type { DiscoveryQuery } from '$lib/components/discovery/query';
 import { activeFilterFields, discoveryUrl } from '$lib/components/discovery/query';
 import { createLibrarySession, writeLibraryView } from '$lib/frameleaf/library-session';
@@ -10,7 +10,7 @@ import { Route } from '$lib/route';
  *
  * A library page's session can carry a query: "View in library" from Tags or Folders writes one into
  * the link, and a session restored on this device may hold one. The time buckets filter by one tag,
- * one person, one pet, one album and favourites, so those conditions narrow the grid
+ * one person, one pet, one album, media type and favourites, so those conditions narrow the grid
  * itself; the results toolbar's count, the empty state and Slideshow then describe what the grid
  * shows. A condition the buckets cannot express is reported in `unapplied` and left to the search
  * results page, where the whole query applies.
@@ -45,6 +45,18 @@ export const timelineQueryOptions = (
   const filter = query.filter ?? {};
   for (const field of activeFilterFields(query)) {
     switch (field) {
+      case 'type': {
+        const eq = filter.type?.eq;
+        if (
+          (eq === AssetTypeEnum.Image || eq === AssetTypeEnum.Video) &&
+          Object.keys(filter.type!).length === 1 &&
+          (!options.assetType || options.assetType === eq)
+        ) {
+          options.assetType = eq;
+          continue;
+        }
+        break;
+      }
       case 'tagIds': {
         const id = singleId(filter.tagIds);
         if (id && !options.tagId) {

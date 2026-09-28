@@ -1,6 +1,7 @@
 import {
   AssetLockReason,
   AssetOrder,
+  AssetTypeEnum,
   AssetVisibility,
   getAssetInfo,
   getTimeBuckets,
@@ -932,6 +933,8 @@ export class TimelineManager extends VirtualScrollManager {
     return (
       this.#nsfwHiddenAssetIds.has(asset.id) ||
       this.#isVisibilityMismatch(asset) ||
+      (this.#options.assetType === AssetTypeEnum.Image && !asset.isImage) ||
+      (this.#options.assetType === AssetTypeEnum.Video && !asset.isVideo) ||
       isMismatched(this.#options.isFavorite, asset.isFavorite) ||
       isMismatched(this.#options.isTrashed, asset.isTrashed) ||
       (this.#options.tagId && asset.tags && !asset.tags.includes(this.#options.tagId)) ||
