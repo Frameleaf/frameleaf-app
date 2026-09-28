@@ -159,6 +159,62 @@ describe('/item-shares', () => {
     expect(ids).not.toContain(locked.id);
   });
 
+  it('applies the owner’s Locked tag rule to existing shares and new recipients', async () => {
+    const privateAsset = await utils.createAsset(owner.accessToken);
+    await utils.waitForQueueFinish(admin.accessToken, 'metadataExtraction');
+    await utils.waitForQueueFinish(admin.accessToken, 'thumbnailGeneration');
+    await request(app)
+      .post('/item-shares')
+      .set('Authorization', auth(owner))
+      .send({ assetIds: [privateAsset.id], userIds: [jamie.userId] })
+      .expect(201);
+
+    const [tag] = await utils.upsertTags(owner.accessToken, ['FL-198 Private']);
+    await utils.tagAssets(owner.accessToken, tag.id, [privateAsset.id]);
+    const paths = [
+      `/assets/${privateAsset.id}`,
+      `/assets/${privateAsset.id}/thumbnail`,
+      `/assets/${privateAsset.id}/original`,
+    ];
+    for (const path of paths) {
+      await request(app).get(path).set('Authorization', auth(jamie)).expect(200);
+    }
+    const receivedBefore = await request(app)
+      .get('/item-shares/received')
+      .set('Authorization', auth(jamie))
+      .expect(200);
+    expect(receivedBefore.body.items.map(({ asset }: { asset: { id: string } }) => asset.id)).toContain(privateAsset.id);
+
+    await request(app)
+      .post('/auth/pin-code')
+      .set('Authorization', auth(owner))
+      .send({ pinCode: '246810' })
+      .expect(204);
+    await request(app)
+      .post('/auth/session/unlock')
+      .set('Authorization', auth(owner))
+      .send({ pinCode: '246810' })
+      .expect(204);
+    await request(app)
+      .put('/users/me/preferences')
+      .set('Authorization', auth(owner))
+      .send({ privacy: { suppression: { tagIds: [tag.id] } } })
+      .expect(200);
+
+    for (const path of paths) {
+      const { status } = await request(app).get(path).set('Authorization', auth(jamie));
+      expect([400, 403, 404]).toContain(status);
+    }
+    const received = await request(app).get('/item-shares/received').set('Authorization', auth(jamie)).expect(200);
+    expect(received.body.items.map(({ asset }: { asset: { id: string } }) => asset.id)).not.toContain(privateAsset.id);
+    await request(app)
+      .post('/item-shares')
+      .set('Authorization', auth(owner))
+      .send({ assetIds: [privateAsset.id], userIds: [sam.userId] })
+      .expect(400);
+    await request(app).get(`/assets/${privateAsset.id}`).set('Authorization', auth(sam)).expect(400);
+  });
+
   it('builds the link from the Public server URL, never from a forged Host header', async () => {
     const forged = await request(app)
       .get('/item-shares/received')
