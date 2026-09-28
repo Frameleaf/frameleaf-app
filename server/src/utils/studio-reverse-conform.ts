@@ -3,6 +3,8 @@ import { ColorMatrix, ColorPrimaries, ColorTransfer } from 'src/enum.js';
 import { VideoInfo, VideoPacketInfo } from 'src/types.js';
 import { Rational } from 'src/utils/rational-time.js';
 
+export type StudioReverseGeometry = { width: number; height: number; sampleAspectRatio: string | undefined };
+
 /** An intentionally bounded first local producer. No timeline offsets, speeds or effects are baked in. */
 export type StudioReverseSource = {
   width: number;
@@ -16,7 +18,11 @@ export type StudioReverseSource = {
   sampleRate: number | null;
 };
 
-export const checkStudioReverseSource = (info: VideoInfo, packets: VideoPacketInfo | null): StudioReverseSource => {
+export const checkStudioReverseSource = (
+  info: VideoInfo,
+  packets: VideoPacketInfo | null,
+  geometry: StudioReverseGeometry,
+): StudioReverseSource => {
   const video = info.videoStreams[0];
   const audio = info.audioStreams[0];
   const rate = video?.frameRateRational;
@@ -39,6 +45,15 @@ export const checkStudioReverseSource = (info: VideoInfo, packets: VideoPacketIn
     video.height < 2 ||
     video.width > 1280 ||
     video.height > 720 ||
+    !Number.isSafeInteger(geometry.width) ||
+    !Number.isSafeInteger(geometry.height) ||
+    geometry.width < 2 ||
+    geometry.height < 2 ||
+    geometry.width > 1280 ||
+    geometry.height > 720 ||
+    geometry.width !== video.width ||
+    geometry.height !== video.height ||
+    geometry.sampleAspectRatio !== '1:1' ||
     video.rotation !== 0 ||
     video.startTime !== 0 ||
     video.pixelFormat !== 'yuv420p' ||
@@ -65,7 +80,7 @@ export const checkStudioReverseSource = (info: VideoInfo, packets: VideoPacketIn
         audio.sampleRate > 48000))
   ) {
     throw new BadRequestException(
-      'Local source reversal currently requires zero-origin, constant-rate BT.709 limited-range 8-bit video up to 720p, 10 seconds and 300 frames, with at most one aligned mono/stereo audio stream',
+      'Local source reversal currently requires zero-origin, square-pixel, constant-rate BT.709 limited-range 8-bit video up to 720p, 10 seconds and 300 frames, with at most one aligned mono/stereo audio stream',
     );
   }
   return {

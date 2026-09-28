@@ -430,7 +430,9 @@ export class StudioReverseConformService {
     ) {
       throw new BadRequestException('Local source reversal accepts video up to ten seconds');
     }
-    return checkStudioReverseSource(info, await this.media.probePackets(entry.path!, info.videoStreams[0].index));
+    const streamIndex = info.videoStreams[0].index;
+    const geometry = await this.renderer.probeGeometry(entry.path!, streamIndex);
+    return checkStudioReverseSource(info, await this.media.probePackets(entry.path!, streamIndex), geometry);
   }
 
   private async owner(ownerId: string): Promise<AuthDto> {

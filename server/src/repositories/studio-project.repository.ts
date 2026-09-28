@@ -2,7 +2,7 @@ import { BadRequestException, ConflictException, Injectable } from '@nestjs/comm
 import { sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { isAbsolute } from 'node:path';
-import type { Kysely, RawBuilder, Selectable } from 'kysely';
+import type { Kysely, RawBuilder, Selectable, Transaction } from 'kysely';
 import type { StudioDeclaredGenerated } from 'src/services/studio-resource.service.js';
 import {
   canWriteFork,
@@ -506,7 +506,7 @@ export class StudioProjectRepository {
    * authorization and worker claim. Request graphs never reach this method. One id permanently
    * binds the checked file and its provenance; an identical retry succeeds, a changed retry fails.
    */
-  async registerGeneratedResource(resource: StudioGeneratedResource, executor?: Kysely<DB>): Promise<void> {
+  async registerGeneratedResource(resource: StudioGeneratedResource, executor?: Transaction<DB>): Promise<void> {
     if (
       !isStudioUuid(resource.projectId) ||
       !isStudioUuid(resource.ownerId) ||
@@ -525,7 +525,7 @@ export class StudioProjectRepository {
     ) {
       throw new BadRequestException('Invalid generated media declaration');
     }
-    const register = async (tx: Kysely<DB>) => {
+    const register = async (tx: Transaction<DB>) => {
       await lockForkWrites(tx, STUDIO_PROJECT_HANDOFF_REFUSAL);
       const project = await tx
         .selectFrom('studio_project')
