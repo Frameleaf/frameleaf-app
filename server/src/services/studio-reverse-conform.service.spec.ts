@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { MediaOperationDestination, MediaOperationKind, MediaOperationStatus } from 'src/enum.js';
 import { MediaOperation, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
@@ -37,6 +38,7 @@ const setup = () => {
     create: vi.fn().mockResolvedValue(operation),
     createStudioReverseCommand: vi.fn().mockResolvedValue(operation),
     getForWorker: vi.fn().mockResolvedValue(operation),
+    getForOwner: vi.fn().mockResolvedValue(operation),
     heartbeat: vi.fn().mockResolvedValue(true),
     reportProgress: vi.fn().mockResolvedValue(true),
     beginValidation: vi.fn().mockResolvedValue(true),
@@ -103,6 +105,7 @@ const setup = () => {
     previewPackets: vi.fn().mockResolvedValue(reversePreviewPackets()),
   };
   const storage = {
+    openForRandomRead: vi.fn(),
     stat: vi.fn().mockResolvedValue({ isFile: () => true, size: 1000 }),
     mkdirSync: vi.fn(),
     unlinkDir: vi.fn().mockResolvedValue(undefined),
@@ -251,12 +254,67 @@ describe(StudioReverseConformService.name, () => {
           checksum: 'cd'.repeat(32),
           derivedFrom: [`generated-intermediate:reverse-${operationId}`, sourceKey],
           contentType: 'video/mp4',
-          delivery: 'unavailable',
+          delivery: 'authenticated',
           audio: null,
           duration: 1,
         }),
       }),
     });
+  });
+
+  it('delivers only the checked preview buffer while its owner and source remain authorized', async () => {
+    const { sut, operation, operations, projects, resources, storage, manifest } = setup();
+    operation.status = MediaOperationStatus.Completed;
+    const bytes = Buffer.from('checked preview bytes');
+    const preview = {
+      id: `reverse-preview-${operationId}`,
+      producer: 'proxy',
+      checksum: createHash('sha256').update(bytes).digest('hex'),
+      path: '/private/source-reversed-preview.mp4',
+      derivedFrom: [`generated-intermediate:reverse-${operationId}`, sourceKey],
+    };
+    projects.listGeneratedResources.mockResolvedValue([
+      { id: `reverse-${operationId}`, producer: 'reverse-conform', derivedFrom: [sourceKey] },
+      preview,
+    ]);
+    const file = { size: bytes.length, read: vi.fn().mockResolvedValue(bytes), close: vi.fn() };
+    storage.openForRandomRead.mockResolvedValue(file);
+    await expect(sut.readPreview(owner, operationId)).resolves.toBe(bytes);
+    expect(operations.getForOwner).toHaveBeenCalledWith(operationId, owner.user.id);
+    expect(file.read).toHaveBeenCalledWith(0, bytes.length + 1);
+    expect(file.close).toHaveBeenCalledTimes(1);
+    expect(resources.resolveProjectResources).toHaveBeenCalledTimes(2);
+    expect(resources.resolveProjectResources).toHaveBeenLastCalledWith(
+      owner,
+      expect.objectContaining({ backgroundRunner: false }),
+    );
+
+    file.read.mockResolvedValue(Buffer.from('altered preview bytes'));
+    await expect(sut.readPreview(owner, operationId)).rejects.toThrow('Reverse preview not found');
+    expect(file.close).toHaveBeenCalledTimes(2);
+    file.read.mockResolvedValue(bytes);
+    file.size = 64 * 1024 * 1024 + 1;
+    await expect(sut.readPreview(owner, operationId)).rejects.toThrow('Reverse preview not found');
+    expect(file.read).toHaveBeenCalledTimes(2);
+    expect(file.close).toHaveBeenCalledTimes(3);
+    file.size = bytes.length;
+
+    // A lock/trash/access change during the read must prevent release of the verified buffer.
+    resources.resolveProjectResources
+      .mockResolvedValueOnce({ manifest })
+      .mockResolvedValueOnce({ manifest: { complete: false, entries: [] } });
+    await expect(sut.readPreview(owner, operationId)).rejects.toThrow('complete source manifest');
+    expect(file.close).toHaveBeenCalledTimes(4);
+
+    preview.derivedFrom = [sourceKey];
+    await expect(sut.readPreview(owner, operationId)).rejects.toThrow('Reverse preview not found');
+    expect(storage.openForRandomRead).toHaveBeenCalledTimes(4);
+    operations.getForOwner.mockResolvedValue(undefined);
+    await expect(sut.readPreview(authStub.user2, operationId)).rejects.toThrow('Reverse preview not found');
+    await expect(sut.readPreview({ ...owner, sharedLink: {} } as never, operationId)).rejects.toThrow(
+      'Reverse preview not found',
+    );
+    expect(storage.openForRandomRead).toHaveBeenCalledTimes(4);
   });
 
   it('cleans up both files without registering either when preview packets fail validation', async () => {
