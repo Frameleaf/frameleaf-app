@@ -7,8 +7,8 @@
   import SharedSpaceInvitations from '$lib/components/frameleaf/SharedSpaceInvitations.svelte';
   import Status from '$lib/components/frameleaf/Status.svelte';
   import { isOwner, canEdit, type AlbumDetailsDraft } from '$lib/frameleaf/album-directory';
-  import ButtonContextMenu from '$lib/components/shared-components/context-menu/ButtonContextMenu.svelte';
-  import MenuOption from '$lib/components/shared-components/context-menu/MenuOption.svelte';
+  import Menu from '$lib/components/frameleaf/Menu.svelte';
+  import MenuItem from '$lib/components/frameleaf/MenuItem.svelte';
   import UserAvatar from '$lib/components/shared-components/UserAvatar.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { eventManager } from '$lib/managers/event-manager.svelte';
@@ -153,47 +153,42 @@
 {#snippet menu(space: AlbumResponseDto)}
   {@const owner = isOwner(space, currentUserId)}
   {@const editor = canEdit(space, currentUserId)}
-  <ButtonContextMenu
-    icon={mdiDotsHorizontal}
-    title={$t('frameleaf_albums_actions_for', { values: { name: nameOf(space) } })}
-    align="top-right"
-    direction="left"
-    size="small"
-  >
-    <MenuOption
-      icon={mdiFolderOpenOutline}
-      text={$t('open')}
-      onClick={() => goto(Route.viewSharedSpace({ id: space.id }))}
-    />
-    <MenuOption
-      icon={mdiImageMultipleOutline}
-      text={$t('frameleaf_spaces_open_photos')}
-      onClick={() => goto(Route.viewAlbum({ id: space.id }))}
-    />
+  <!-- The Frameleaf Menu the Albums page uses for every album kind (AlbumDirectory.svelte), AL-45. -->
+  <Menu label={$t('frameleaf_albums_actions_for', { values: { name: nameOf(space) } })} align="end">
+    {#snippet trigger()}<Icon icon={mdiDotsHorizontal} size="18" aria-hidden={true} />{/snippet}
+    <MenuItem onSelect={() => goto(Route.viewSharedSpace({ id: space.id }))}>
+      <Icon icon={mdiFolderOpenOutline} size="18" aria-hidden={true} />{$t('open')}
+    </MenuItem>
+    <MenuItem onSelect={() => goto(Route.viewAlbum({ id: space.id }))}>
+      <Icon icon={mdiImageMultipleOutline} size="18" aria-hidden={true} />{$t('frameleaf_spaces_open_photos')}
+    </MenuItem>
     {#if editor}
-      <MenuOption icon={mdiPencilOutline} text={$t('edit')} onClick={() => (editDialog = { open: true, space })} />
+      <MenuItem onSelect={() => (editDialog = { open: true, space })}>
+        <Icon icon={mdiPencilOutline} size="18" aria-hidden={true} />{$t('edit')}
+      </MenuItem>
+      <MenuItem onSelect={() => void openFileUploadDialog({ albumId: space.id })}>
+        <Icon icon={mdiUpload} size="18" aria-hidden={true} />{$t('frameleaf_albums_upload')}
+      </MenuItem>
     {/if}
-    {#if editor}
-      <MenuOption
-        icon={mdiUpload}
-        text={$t('frameleaf_albums_upload')}
-        onClick={() => void openFileUploadDialog({ albumId: space.id })}
-      />
-    {/if}
-    <MenuOption
-      icon={owner ? mdiAccountPlusOutline : mdiAccountMultipleOutline}
-      text={owner ? $t('share') : $t('frameleaf_albums_members')}
-      onClick={() => (shareDialog = { open: true, space })}
-    />
-    {#if space.assetCount > 0}
-      <MenuOption icon={mdiDownloadOutline} text={$t('download')} onClick={() => handleDownloadAlbum(space)} />
-    {/if}
+    <div class="menu-separator" role="separator"></div>
+    <MenuItem onSelect={() => (shareDialog = { open: true, space })}>
+      <Icon icon={owner ? mdiAccountPlusOutline : mdiAccountMultipleOutline} size="18" aria-hidden={true} />
+      {owner ? $t('share') : $t('frameleaf_albums_members')}
+    </MenuItem>
+    <MenuItem disabled={space.assetCount === 0} onSelect={() => handleDownloadAlbum(space)}>
+      <Icon icon={mdiDownloadOutline} size="18" aria-hidden={true} />{$t('download')}
+    </MenuItem>
+    <div class="menu-separator" role="separator"></div>
     {#if owner}
-      <MenuOption icon={mdiDeleteOutline} text={$t('delete')} onClick={() => (deleteDialog = { open: true, space })} />
+      <MenuItem onSelect={() => (deleteDialog = { open: true, space })}>
+        <Icon icon={mdiDeleteOutline} size="18" aria-hidden={true} />{$t('delete')}
+      </MenuItem>
     {:else}
-      <MenuOption icon={mdiLogoutVariant} text={$t('leave')} onClick={() => (leaveDialog = { open: true, space })} />
+      <MenuItem onSelect={() => (leaveDialog = { open: true, space })}>
+        <Icon icon={mdiLogoutVariant} size="18" aria-hidden={true} />{$t('leave')}
+      </MenuItem>
     {/if}
-  </ButtonContextMenu>
+  </Menu>
 {/snippet}
 
 <section class="spaces" aria-labelledby="frameleaf-spaces-heading">
@@ -385,6 +380,11 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  .menu-separator {
+    height: 1px;
+    margin: 0.25rem 0.375rem;
+    background: var(--fl-border);
   }
   /* The Albums page's denser grid (apple-style.css:970-983). */
   .grid {
