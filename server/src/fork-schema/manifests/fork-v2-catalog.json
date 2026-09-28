@@ -570,6 +570,26 @@
     },
     {
       "definition": "uuid|not null|||",
+      "identity": "immich_fork.asset_user_share.assetId"
+    },
+    {
+      "definition": "timestamp with time zone|not null|clock_timestamp()||",
+      "identity": "immich_fork.asset_user_share.createdAt"
+    },
+    {
+      "definition": "uuid|not null|gen_random_uuid()||",
+      "identity": "immich_fork.asset_user_share.id"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.asset_user_share.ownerId"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.asset_user_share.sharedWithId"
+    },
+    {
+      "definition": "uuid|not null|||",
       "identity": "immich_fork.asset_video_duplicate_frame.assetId"
     },
     {
@@ -7243,6 +7263,14 @@
       "identity": "immich_fork.asset_storage_reservation.asset_storage_reservation_upstreamPath_key"
     },
     {
+      "definition": "UNIQUE (\"assetId\", \"sharedWithId\")",
+      "identity": "immich_fork.asset_user_share.asset_user_share_asset_recipient_key"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "immich_fork.asset_user_share.asset_user_share_pkey"
+    },
+    {
       "definition": "PRIMARY KEY (\"assetId\", \"frameIndex\")",
       "identity": "immich_fork.asset_video_duplicate_frame.asset_video_duplicate_frame_pkey"
     },
@@ -9422,7 +9450,8 @@
     "0000000000202-FrameleafAccountLinks",
     "0000000000203-FrameleafSessions",
     "0000000000204-FrameleafUserLicenses",
-    "0000000000205-AlbumCoverFollowsNewest"
+    "0000000000205-AlbumCoverFollowsNewest",
+    "0000000000206-AssetUserShares"
   ],
   "functions": [
     {
@@ -10670,6 +10699,22 @@
     {
       "definition": "CREATE UNIQUE INDEX \"asset_storage_reservation_upstreamPath_key\" ON immich_fork.asset_storage_reservation USING btree (\"upstreamPath\")",
       "identity": "immich_fork.asset_storage_reservation.asset_storage_reservation_upstreamPath_key"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX asset_user_share_asset_recipient_key ON immich_fork.asset_user_share USING btree (\"assetId\", \"sharedWithId\")",
+      "identity": "immich_fork.asset_user_share.asset_user_share_asset_recipient_key"
+    },
+    {
+      "definition": "CREATE INDEX asset_user_share_owner_idx ON immich_fork.asset_user_share USING btree (\"ownerId\", \"assetId\")",
+      "identity": "immich_fork.asset_user_share.asset_user_share_owner_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX asset_user_share_pkey ON immich_fork.asset_user_share USING btree (id)",
+      "identity": "immich_fork.asset_user_share.asset_user_share_pkey"
+    },
+    {
+      "definition": "CREATE INDEX asset_user_share_recipient_idx ON immich_fork.asset_user_share USING btree (\"sharedWithId\", \"createdAt\")",
+      "identity": "immich_fork.asset_user_share.asset_user_share_recipient_idx"
     },
     {
       "definition": "CREATE INDEX asset_video_duplicate_frame_asset_idx ON immich_fork.asset_video_duplicate_frame USING btree (\"assetId\")",
@@ -13333,6 +13378,10 @@
     {
       "definition": "table",
       "identity": "immich_fork.asset_storage_reservation"
+    },
+    {
+      "definition": "table",
+      "identity": "immich_fork.asset_user_share"
     },
     {
       "definition": "table",

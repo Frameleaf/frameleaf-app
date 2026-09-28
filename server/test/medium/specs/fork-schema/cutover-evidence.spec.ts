@@ -341,8 +341,8 @@ describe('exact v3.1.0 public schema cutover evidence', () => {
     // and show-less (FL-62), render worker session capability (FL-95), Studio workspace layout
     // (FL-91) and utility activity (FL-47) tables included, and every later fork table, among them
     // the supporter keys (FL-156), Frameleaf account links and Sign in with Frameleaf sessions (FL-158)
-    // and the album covers that follow the newest item (FL-83)
-    expect(observedLocks).toHaveLength(119);
+    // the album covers that follow the newest item (FL-83) and items shared with a person (FL-83 AL-30b)
+    expect(observedLocks).toHaveLength(120);
     expect(observedLocks).toEqual(
       expect.arrayContaining([
         'immich_fork.video_edit_version',
@@ -364,6 +364,7 @@ describe('exact v3.1.0 public schema cutover evidence', () => {
         'immich_fork.studio_workspace_layout',
         'immich_fork.utility_activity',
         'immich_fork.album_cover_follows_newest',
+        'immich_fork.asset_user_share',
       ]),
     );
   });
