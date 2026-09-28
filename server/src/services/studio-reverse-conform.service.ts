@@ -142,10 +142,7 @@ export class StudioReverseConformService {
       throw new NotFoundException('Reverse preview not found');
     }
     const snapshot = this.snapshot(operation);
-    this.requireBinding(
-      snapshot,
-      await this.source(auth, snapshot.projectId, snapshot.revision, snapshot.sourceKey),
-    );
+    this.requireBinding(snapshot, await this.source(auth, snapshot.projectId, snapshot.revision, snapshot.sourceKey));
 
     const declarations = await this.projects.listGeneratedResources(snapshot.projectId);
     const masterId = `reverse-${operation.id}`;
@@ -183,10 +180,7 @@ export class StudioReverseConformService {
     }
 
     // Access may change during disk I/O. Re-resolve interactively before releasing the bytes.
-    this.requireBinding(
-      snapshot,
-      await this.source(auth, snapshot.projectId, snapshot.revision, snapshot.sourceKey),
-    );
+    this.requireBinding(snapshot, await this.source(auth, snapshot.projectId, snapshot.revision, snapshot.sourceKey));
     return bytes;
   }
 
