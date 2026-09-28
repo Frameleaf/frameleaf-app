@@ -1739,7 +1739,7 @@ describe(CloudMlJobService.name, () => {
       });
 
       await expect(estimatePhoto()).rejects.toThrow(/quoted 4×.*expected at 2×/);
-      expect(estimates()).toHaveLength(0);
+      expect(metadata.has(SystemMetadataKey.FrameleafCloudMlJobEstimates)).toBe(false);
     });
 
     it('sends nothing when a refreshed estimate changes the approved factor', async () => {
