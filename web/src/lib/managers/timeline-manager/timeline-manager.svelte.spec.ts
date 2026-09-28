@@ -1,5 +1,6 @@
 import {
   AssetLockReason,
+  AssetTypeEnum,
   AssetVisibility,
   TimeBucketDateType,
   type AssetResponseDto,
@@ -701,6 +702,22 @@ describe('TimelineManager', () => {
 
       timelineManager.upsertAssets([{ ...fixture, visibility: AssetVisibility.Archive }]);
       expect(timelineManager.assetCount).toEqual(1);
+    });
+
+    it('keeps other media types out of live updates to a filtered timeline (FL-40)', async () => {
+      const photo = deriveLocalDateTimeFromFileCreatedAt(timelineAssetFactory.build({ isImage: true, isVideo: false }));
+      const video = deriveLocalDateTimeFromFileCreatedAt(timelineAssetFactory.build({ isImage: false, isVideo: true }));
+      for (const [assetType, matching, excluded] of [
+        [AssetTypeEnum.Image, photo, video],
+        [AssetTypeEnum.Video, video, photo],
+      ] as const) {
+        await timelineManager.updateOptions({ assetType });
+        expect(timelineManager.isExcluded(matching)).toBe(false);
+        expect(timelineManager.isExcluded(excluded)).toBe(true);
+        timelineManager.upsertAssetsFromLiveEvent([matching, excluded]);
+        expect(timelineManager.assetCount).toBe(1);
+        expect(timelineManager.months[0].getFirstAsset().id).toBe(matching.id);
+      }
     });
 
     it('asset is removed during upsert when TimelineManager if isFavorite changes', async () => {

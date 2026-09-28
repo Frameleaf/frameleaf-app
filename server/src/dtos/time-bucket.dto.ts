@@ -6,6 +6,7 @@ import {
   AssetLockReasonSchema,
   AssetOrderBySchema,
   AssetOrderSchema,
+  AssetTypeSchema,
   AssetVisibilitySchema,
   TimeBucketDateTypeSchema,
 } from 'src/enum.js';
@@ -18,6 +19,7 @@ const TimeBucketQueryBaseSchema = z
   .object({
     userId: z.uuidv4().optional().describe('Filter assets by specific user ID'),
     albumId: z.uuidv4().optional().describe('Filter assets belonging to a specific album'),
+    assetType: AssetTypeSchema.optional().describe('Filter assets by media type'),
     personId: z.uuidv4().optional().describe('Filter assets containing a specific person (face recognition)'),
     petId: z.uuidv4().optional().describe('Filter assets in which the caller confirmed one of their own pets'),
     tagId: z.uuidv4().optional().describe('Filter assets with a specific tag'),

@@ -1,4 +1,4 @@
-import { AssetOrder, AssetVisibility } from '@immich/sdk';
+import { AssetOrder, AssetTypeEnum, AssetVisibility } from '@immich/sdk';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { createRawSnippet, tick } from 'svelte';
 import { getResizeObserverMock } from '$lib/__mocks__/resize-observer.mock';
@@ -70,12 +70,17 @@ describe('LibraryView', () => {
     await fireEvent.change(sort, { target: { value: 'captured-asc' } });
     const query = {
       ...emptyDiscoveryQuery(),
-      filter: { albumIds: { any: ['album-1'] }, isFavorite: { eq: true } },
+      filter: { albumIds: { any: ['album-1'] }, isFavorite: { eq: true }, type: { eq: AssetTypeEnum.Image } },
     };
     expect(applyFilterQuery(query)).toBe(true);
     await waitFor(() =>
       expect(sdkMock.getTimeBuckets).toHaveBeenLastCalledWith(
-        expect.objectContaining({ albumId: 'album-1', isFavorite: true, order: AssetOrder.Asc }),
+        expect.objectContaining({
+          albumId: 'album-1',
+          isFavorite: true,
+          assetType: AssetTypeEnum.Image,
+          order: AssetOrder.Asc,
+        }),
       ),
     );
     librarySession.select('selected');
