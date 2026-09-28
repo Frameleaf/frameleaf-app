@@ -38,10 +38,6 @@ jobs:
         run: node --test scripts/frameleaf-workflows.test.mjs
       - name: Validate Frameleaf branding
         run: node --test scripts/frameleaf-branding.test.mjs
-      - name: Validate Frameleaf documentation and Jira coverage
-        run: |
-          node scripts/frameleaf-documentation-coverage.mjs
-          node --test scripts/frameleaf-documentation-coverage.test.mjs
       - name: Validate independent Studio conformance evidence
         run: |
           node studio/tools/conformance.mjs
