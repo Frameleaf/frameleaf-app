@@ -43,8 +43,10 @@ class BrandAssetContractTests(unittest.TestCase):
     def test_repository_contract_passes(self):
         inventory = brand_assets.validate(ROOT)
         self.assertEqual(inventory["counts"]["suppliedVectors"], 7)
-        self.assertFalse(inventory["qualification"]["nativeIntegrated"])
         self.assertEqual(inventory["sourceManifest"]["sha256"], brand_assets.SOURCE_MANIFEST_SHA256)
+        self.assertTrue({"assessment", "qualification"}.isdisjoint(inventory))
+        source_manifest = brand_assets.load_json(ROOT / brand_assets.SOURCE_MANIFEST_PATH)
+        self.assertTrue({"sourceState", "issue", "productionParity", "testScope"}.isdisjoint(source_manifest))
         rendered = json.dumps(brand_assets.build_inventory(ROOT), sort_keys=True)
         self.assertEqual(rendered, json.dumps(brand_assets.build_inventory(ROOT), sort_keys=True))
         self.assertNotIn(str(ROOT), rendered)
@@ -125,16 +127,6 @@ class BrandAssetContractTests(unittest.TestCase):
             path.write_text(malicious)
             with self.assertRaisesRegex(ValueError, "processing instructions"):
                 brand_assets.svg_facts(path)
-
-    def test_false_implementation_and_qualification_are_rejected(self):
-        for field in ("webIntegrated", "nativeIntegrated", "productionQualified", "releaseQualified"):
-            def mutation(root, field=field):
-                path = root / brand_assets.INVENTORY_PATH
-                value = json.loads(path.read_text())
-                value["qualification"][field] = True
-                path.write_text(json.dumps(value))
-            with self.subTest(field=field):
-                self.assert_invalid(mutation)
 
     def test_global_rebrand_compatibility_sentinel_is_rejected(self):
         def mutation(root):
