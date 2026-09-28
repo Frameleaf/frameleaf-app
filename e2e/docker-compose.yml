@@ -34,6 +34,7 @@ services:
       DB_DATABASE_NAME: immich
       IMMICH_MACHINE_LEARNING_ENABLED: 'false'
       IMMICH_ENV: testing
+      FRAMELEAF_CLOUD_URL: https://cloud.frameleaf.test
       IMMICH_PORT: '2285'
       IMMICH_IGNORE_MOUNT_CHECK_ERRORS: 'true'
     volumes:
