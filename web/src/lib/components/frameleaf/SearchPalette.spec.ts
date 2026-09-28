@@ -131,6 +131,17 @@ describe('SearchPalette', () => {
 
   const type = (input: HTMLElement, value: string) => fireEvent.input(input, { target: { value } });
 
+  it('keeps the Places section when the library has no places, as the prototype does', async () => {
+    sdkMock.searchFacets.mockResolvedValue({
+      total: 42,
+      facets: [{ fieldName: SearchFacetField.City, counts: [] }],
+    });
+    setup();
+    await waitFor(() => expect(sdkMock.searchFacets).toHaveBeenCalled());
+    const heading = await screen.findByRole('heading', { name: 'Places' });
+    expect(heading.nextElementSibling?.querySelectorAll('button')).toHaveLength(0);
+  });
+
   it('turns a completed operator into a removable chip and searches with the structured filter', async () => {
     const { input } = setup();
     await waitFor(() => expect(sdkMock.getAllPeople).toHaveBeenCalled());
