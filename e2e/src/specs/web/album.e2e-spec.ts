@@ -169,7 +169,7 @@ test.describe('Album', () => {
       .click();
     await filters.getByRole('button', { name: /^Show .*results?$/ }).click();
     await expect(filters).toBeHidden();
-    await expect(page).toHaveURL(new RegExp(`/albums/${album.id}(?:\\?|$)`));
+    await expect(page).toHaveURL(new RegExp(String.raw`/albums/${album.id}(?:\?|$)`));
     await expect(page.locator(`[data-asset-id="${video.id}"]`)).toHaveCount(0);
     await page.getByRole('combobox', { name: 'Sort assets' }).selectOption('filename');
     await expect(tiles).toHaveCount(2);
@@ -199,7 +199,8 @@ test.describe('Album', () => {
     await selection.getByRole('button', { name: 'Quick edit', exact: true }).click();
     const initialDevelop = await developLoaded;
     await initialDevelop.finished();
-    expect((await initialDevelop.json()).revisions).toEqual([]);
+    const developData = await initialDevelop.json();
+    expect(developData.revisions).toEqual([]);
     const editor = page.getByRole('dialog', { name: /Edit/ });
     const exposure = editor.getByRole('slider', { name: 'Exposure' });
     // This message renders only after the editor has consumed its initial server state.
