@@ -32,6 +32,7 @@ import { FrameleafAuthController } from 'src/controllers/frameleaf-auth.controll
 import { HardwareCheckController } from 'src/controllers/hardware-check.controller.js';
 import { ICloudSyncController } from 'src/controllers/icloud-sync.controller.js';
 import { IntegrityAdminController } from 'src/controllers/integrity-admin.controller.js';
+import { ItemShareController } from 'src/controllers/item-share.controller.js';
 import { JobController } from 'src/controllers/job.controller.js';
 import { LibraryController } from 'src/controllers/library.controller.js';
 import { LicenseAdminController, LicenseController } from 'src/controllers/license-admin.controller.js';
@@ -145,6 +146,7 @@ export const controllers = [
   ServerController,
   SessionController,
   SharedLinkController,
+  ItemShareController,
   SharedSpaceController,
   StackController,
   StudioBundleController,

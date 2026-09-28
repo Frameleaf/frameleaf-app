@@ -2,7 +2,7 @@ import { BadRequestException, ConflictException, ForbiddenException } from '@nes
 import { CreateAlbumDto } from 'src/dtos/album.dto.js';
 import { BulkIdErrorReason } from 'src/dtos/asset-ids.response.dto.js';
 import { AlbumKind, AlbumUserRole, AssetOrder, AssetVisibility, UserMetadataKey } from 'src/enum.js';
-import { AlbumService } from 'src/services/album.service.js';
+import { ALBUM_MOVE_OWNER_ONLY, AlbumService } from 'src/services/album.service.js';
 import { AlbumUserFactory } from 'test/factories/album-user.factory.js';
 import { AlbumFactory } from 'test/factories/album.factory.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
@@ -1156,8 +1156,22 @@ describe(AlbumService.name, () => {
 
       await expect(
         sut.moveToCollection(AuthFactory.create(editor), album.id, { collectionId: newUuid() }),
-      ).rejects.toThrow('Only the album owner can move it');
+      ).rejects.toThrow(new ForbiddenException(ALBUM_MOVE_OWNER_ONLY));
       expect(mocks.album.reparent).not.toHaveBeenCalled();
+    });
+
+    it('refuses an editor who moves the album through an update (FL-83 AL-9)', async () => {
+      const album = AlbumFactory.from().albumUser({ role: AlbumUserRole.Editor }).build();
+      const editor = album.albumUsers.find(({ role }) => role === AlbumUserRole.Editor)!.user;
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set());
+      mocks.access.album.checkSharedAlbumAccess.mockResolvedValue(new Set([album.id]));
+      mocks.album.getById.mockResolvedValue(getForAlbum(album));
+
+      await expect(sut.update(AuthFactory.create(editor), album.id, { parentId: newUuid() })).rejects.toThrow(
+        ForbiddenException,
+      );
+      expect(mocks.album.reparent).not.toHaveBeenCalled();
+      expect(mocks.album.update).not.toHaveBeenCalled();
     });
 
     it('refuses a destination that is not a collection', async () => {

@@ -46,6 +46,7 @@ import { ICloudStagingService } from 'src/services/icloud-staging.service.js';
 import { ICloudSyncService } from 'src/services/icloud-sync.service.js';
 import { ImageEnrichmentService } from 'src/services/image-enrichment.service.js';
 import { IntegrityService } from 'src/services/integrity.service.js';
+import { ItemShareService } from 'src/services/item-share.service.js';
 import { JobService } from 'src/services/job.service.js';
 import { LibraryScanService } from 'src/services/library-scan.service.js';
 import { LibraryService } from 'src/services/library.service.js';
@@ -207,6 +208,7 @@ export const services = [
   ServerService,
   SessionService,
   SharedLinkService,
+  ItemShareService,
   SharedSpaceService,
   SmartAlbumService,
   SmartInfoService,

@@ -68,6 +68,12 @@ const checkAssetPartnerAccess = (access: AccessRepository, auth: AuthDto, ids: S
     ? access.asset.checkPartnerAccess(auth.user.id, ids, accessPrivacy(auth))
     : access.asset.checkPartnerAccess(auth.user.id, ids);
 
+// FL-83 (AL-30b): items shared with this person one by one
+const checkAssetItemShareAccess = (access: AccessRepository, auth: AuthDto, ids: Set<string>) =>
+  accessPrivacy(auth)
+    ? access.asset.checkItemShareAccess(auth.user.id, ids, accessPrivacy(auth))
+    : access.asset.checkItemShareAccess(auth.user.id, ids);
+
 const checkPersonOwnerAccess = (access: AccessRepository, auth: AuthDto, ids: Set<string>) =>
   accessPrivacy(auth)
     ? access.person.checkOwnerAccess(auth.user.id, ids, accessPrivacy(auth))
@@ -219,7 +225,8 @@ const checkOtherAccess = async (access: AccessRepository, request: OtherAccessRe
       const isOwner = await checkAssetOwnerAccess(access, auth, ids, auth.session?.hasElevatedPermission);
       const isAlbum = await checkAssetAlbumAccess(access, auth, setDifference(ids, isOwner));
       const isPartner = await checkAssetPartnerAccess(access, auth, setDifference(ids, isOwner, isAlbum));
-      return setUnion(isOwner, isAlbum, isPartner);
+      const isShared = await checkAssetItemShareAccess(access, auth, setDifference(ids, isOwner, isAlbum, isPartner));
+      return setUnion(isOwner, isAlbum, isPartner, isShared);
     }
 
     case Permission.AssetShare: {
@@ -240,14 +247,16 @@ const checkOtherAccess = async (access: AccessRepository, request: OtherAccessRe
       const isOwner = await checkAssetOwnerAccess(access, auth, ids, auth.session?.hasElevatedPermission);
       const isAlbum = await checkAssetAlbumAccess(access, auth, setDifference(ids, isOwner));
       const isPartner = await checkAssetPartnerAccess(access, auth, setDifference(ids, isOwner, isAlbum));
-      return setUnion(isOwner, isAlbum, isPartner);
+      const isShared = await checkAssetItemShareAccess(access, auth, setDifference(ids, isOwner, isAlbum, isPartner));
+      return setUnion(isOwner, isAlbum, isPartner, isShared);
     }
 
     case Permission.AssetDownload: {
       const isOwner = await checkAssetOwnerAccess(access, auth, ids, auth.session?.hasElevatedPermission);
       const isAlbum = await checkAssetAlbumAccess(access, auth, setDifference(ids, isOwner));
       const isPartner = await checkAssetPartnerAccess(access, auth, setDifference(ids, isOwner, isAlbum));
-      return setUnion(isOwner, isAlbum, isPartner);
+      const isShared = await checkAssetItemShareAccess(access, auth, setDifference(ids, isOwner, isAlbum, isPartner));
+      return setUnion(isOwner, isAlbum, isPartner, isShared);
     }
 
     case Permission.AssetUpdate: {

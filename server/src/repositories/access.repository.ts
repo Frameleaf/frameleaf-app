@@ -292,6 +292,62 @@ class AssetAccess {
     );
   }
 
+  /**
+   * FL-83 (AL-30b): items the owner shared with this person (`immich_fork.asset_user_share`). A
+   * shared item is never reachable while it is locked, whoever locked it and whenever, and never
+   * once it is trashed or its owner is gone; the motion part of a shared live photo comes with it.
+   */
+  @ChunkedSet({ paramIndex: 1 })
+  async checkItemShareAccess(userId: string, assetIds: Set<string>, hideNsfwAssets?: AccessPrivacy) {
+    if (assetIds.size === 0) {
+      return new Set<string>();
+    }
+
+    const options = privacyOptions(hideNsfwAssets);
+    const hiddenContent = getHiddenContentFilter(options);
+    const ids = [...assetIds];
+
+    return (
+      this.db
+        .selectFrom(sql.table('immich_fork.asset_user_share').as('share'))
+        .innerJoin('asset', (join) =>
+          join.on(sql<boolean>`"asset"."id" = "share"."assetId"`).on('asset.deletedAt', 'is', null),
+        )
+        // the row's owner still owns the item, and their account is not deleted
+        .innerJoin('user as owner', (join) =>
+          join
+            .onRef('owner.id', '=', 'asset.ownerId')
+            .on(sql<boolean>`"owner"."id" = "share"."ownerId"`)
+            .on('owner.deletedAt', 'is', null),
+        )
+        .select(['asset.id', 'asset.livePhotoVideoId'])
+        .$if(!!hiddenContent, (qb) =>
+          qb.select(
+            hiddenContentAssetIdExists(sql.ref('asset.livePhotoVideoId'), hiddenContent!).as('isLivePhotoVideoNsfw'),
+          ),
+        )
+        .where(sql.ref('share.sharedWithId'), '=', asUuid(userId))
+        .where((eb) => eb.or([eb('asset.id', '=', anyUuid(ids)), eb('asset.livePhotoVideoId', '=', anyUuid(ids))]))
+        .where(isNotLocked('asset'))
+        .$call((qb) => withHiddenContentFilter(qb, options))
+        .execute()
+        .then((assets) => {
+          const allowedIds = new Set<string>();
+          for (const asset of assets) {
+            if (assetIds.has(asset.id)) {
+              allowedIds.add(asset.id);
+            }
+            const motion = asset.livePhotoVideoId;
+            const motionHidden = !!hiddenContent && (asset as { isLivePhotoVideoNsfw?: boolean }).isLivePhotoVideoNsfw;
+            if (motion && assetIds.has(motion) && !motionHidden) {
+              allowedIds.add(motion);
+            }
+          }
+          return allowedIds;
+        })
+    );
+  }
+
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID_SET] })
   @ChunkedSet({ paramIndex: 1 })
   async checkSharedLinkAccess(sharedLinkId: string, assetIds: Set<string>, hideNsfwAssets?: AccessPrivacy) {

@@ -41,6 +41,7 @@ import { FrameleafUserLicenseRepository } from 'src/repositories/frameleaf-user-
 import { HardwareProbeRepository } from 'src/repositories/hardware-probe.repository.js';
 import { InstanceIdentityRepository } from 'src/repositories/instance-identity.repository.js';
 import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
+import { ItemShareRepository } from 'src/repositories/item-share.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LibraryRepository } from 'src/repositories/library.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -147,6 +148,7 @@ export const BASE_SERVICE_DEPENDENCIES = [
   SessionRepository,
   SharedLinkRepository,
   SharedLinkAssetRepository,
+  ItemShareRepository,
   StackRepository,
   StorageRepository,
   SyncRepository,
@@ -224,6 +226,7 @@ export class BaseService {
     protected sessionRepository: SessionRepository,
     protected sharedLinkRepository: SharedLinkRepository,
     protected sharedLinkAssetRepository: SharedLinkAssetRepository,
+    protected itemShareRepository: ItemShareRepository,
     protected stackRepository: StackRepository,
     protected storageRepository: StorageRepository,
     protected syncRepository: SyncRepository,
@@ -310,6 +313,7 @@ export class BaseService {
       ctx.sessionRepository,
       ctx.sharedLinkRepository,
       ctx.sharedLinkAssetRepository,
+      ctx.itemShareRepository,
       ctx.stackRepository,
       ctx.storageRepository,
       ctx.syncRepository,

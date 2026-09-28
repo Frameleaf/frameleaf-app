@@ -8,7 +8,7 @@ import {
   removeAssetEdits,
 } from '@immich/sdk';
 import { toastManager } from '@immich/ui';
-import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { assetFactory } from '@test-data/factories/asset-factory';
 import VideoQuickEditor from './VideoQuickEditor.svelte';
 
@@ -78,7 +78,6 @@ describe('VideoQuickEditor', () => {
       'frameleaf_video_editor_tool_text',
       'frameleaf_video_editor_tool_enhance',
       'frameleaf_editor_tool_presets',
-      'frameleaf_editor_tool_restore',
     ]);
     expect(screen.getByRole('tab', { name: 'frameleaf_video_editor_tool_trim' })).toHaveAttribute(
       'aria-selected',
@@ -190,9 +189,13 @@ describe('VideoQuickEditor', () => {
     expect(mute).toHaveAttribute('aria-checked', 'true');
   });
 
-  it('keeps the clip on the Restore stage with the compare hint', async () => {
+  it('keeps the clip on the stage with the compare hint when restoring from Enhance (FL-83 E-9)', async () => {
     await opened();
-    await fireEvent.click(screen.getByRole('tab', { name: 'frameleaf_editor_tool_restore' }));
+    await fireEvent.click(screen.getByRole('tab', { name: 'frameleaf_video_editor_tool_enhance' }));
+    // Restoration is the prototype's "Restore video" section at the end of the Enhance panel.
+    const panel = screen.getByRole('tabpanel');
+    expect(within(panel).getByRole('heading', { level: 3, name: 'frameleaf_video_editor_restore_video' })).toBeTruthy();
+    expect(within(panel).getByRole('switch', { name: 'frameleaf_video_editor_stabilize' })).toBeTruthy();
     expect(screen.getByText('frameleaf_restoration_compare_empty')).toHaveClass('ed-restore-hint');
   });
 
