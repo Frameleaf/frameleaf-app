@@ -188,7 +188,7 @@ describe(StudioProjectService.name, () => {
       repository as unknown as StudioProjectRepository,
       access as unknown as AccessRepository,
       resources as unknown as StudioResourceService,
-      websocket,
+      websocket as never,
     );
   });
 
@@ -801,10 +801,8 @@ describe(StudioProjectService.name, () => {
     it('invalidates the final write when concurrent shelf changes return to the initial state', async () => {
       const initial = { ...project, archivedAt: null };
       repository.getById.mockResolvedValue(initial);
-      let commit!: (row: StudioProject) => void;
-      repository.update.mockReturnValueOnce(new Promise<StudioProject>((resolve) => {
-        commit = resolve;
-      }));
+      const { promise, resolve } = Promise.withResolvers<StudioProject>();
+      repository.update.mockReturnValueOnce(promise);
       const returningToInitial = sut.update(owner, project.id, { archived: false });
       await vi.waitFor(() => expect(repository.update).toHaveBeenCalledOnce());
 
@@ -813,7 +811,7 @@ describe(StudioProjectService.name, () => {
       expect(websocket.clientSend).toHaveBeenCalledOnce();
       vi.mocked(websocket.clientSend).mockClear();
 
-      commit(initial);
+      resolve(initial);
       await returningToInitial;
       expect(vi.mocked(websocket.clientSend).mock.calls).toEqual([
         ['StudioProjectInvalidatedV1', owner.user.id, { projectId: project.id }],
@@ -822,10 +820,8 @@ describe(StudioProjectService.name, () => {
 
     it('invalidates both restore and retrash when a trash request read the earlier trashed state', async () => {
       project = { ...project, deletedAt: new Date(), purgeAfter: future() };
-      let commit!: (row: StudioProject) => void;
-      repository.trash.mockReturnValueOnce(new Promise<StudioProject>((resolve) => {
-        commit = resolve;
-      }));
+      const { promise, resolve } = Promise.withResolvers<StudioProject>();
+      repository.trash.mockReturnValueOnce(promise);
       const retrashing = sut.remove(owner, project.id);
       await vi.waitFor(() => expect(repository.trash).toHaveBeenCalledOnce());
       expect(websocket.clientSend).not.toHaveBeenCalled();
@@ -835,7 +831,7 @@ describe(StudioProjectService.name, () => {
       expect(vi.mocked(websocket.clientSend).mock.calls).toEqual([event]);
       vi.mocked(websocket.clientSend).mockClear();
 
-      commit(project);
+      resolve(project);
       await retrashing;
       expect(vi.mocked(websocket.clientSend).mock.calls).toEqual([event]);
     });

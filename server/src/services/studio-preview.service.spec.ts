@@ -234,7 +234,7 @@ describe(StudioPreviewService.name, () => {
       repository as unknown as StudioProjectRepository,
       {} as never,
       { resolveProjectResources } as unknown as StudioResourceService,
-      mocks.websocket,
+      mocks.websocket as never,
     );
     await projectService.authorizeRevision(authStub.user1, { projectId: 'project-1' });
     repository.listGeneratedResources.mockResolvedValue(generated);
