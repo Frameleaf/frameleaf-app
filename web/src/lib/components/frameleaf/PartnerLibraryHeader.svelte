@@ -1,14 +1,17 @@
 <script lang="ts">
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { eventManager } from '$lib/managers/event-manager.svelte';
+  import Button from './Button.svelte';
   import Dialog from './Dialog.svelte';
+  import { goto } from '$app/navigation';
   import UserAvatar from '$lib/components/shared-components/UserAvatar.svelte';
   import { OpenQueryParam } from '$lib/constants';
   import '$lib/frameleaf/tokens.css';
   import { Route } from '$lib/route';
   import { handleError } from '$lib/utils/handle-error';
   import { getPartners, PartnerDirection, removePartner, updatePartner, type PartnerResponseDto } from '@immich/sdk';
-  import { Theme as AppTheme, themeManager, toastManager } from '@immich/ui';
+  import { Icon, Theme as AppTheme, themeManager, toastManager } from '@immich/ui';
+  import { mdiCogOutline, mdiInformationOutline, mdiLinkOff } from '@mdi/js';
   import { t } from 'svelte-i18n';
 
   // Mounted directly on the partner timeline route, above a full-bleed Timeline that has
@@ -103,7 +106,7 @@
       await removePartner({ id: partner.id });
       eventManager.emit('PartnerRevoke', { sharedById: authManager.user.id, sharedWithId: partner.id });
       confirmOpen = false;
-      toastManager.primary($t('saved'));
+      toastManager.primary($t('frameleaf_sharing.partner_stopped', { values: { name: partner.name } }));
       onStopped();
     } catch (error) {
       handleError(error, $t('errors.unable_to_remove_partner'));
@@ -129,13 +132,13 @@
   <div class="ph-toggles">
     <label class="ph-toggle">
       <span>
-        <strong>{$t('show_in_timeline')}</strong>
-        <small>{$t('show_in_timeline_setting_description')}</small>
+        <strong>{$t('frameleaf_sharing.partner_show_in_my_timeline')}</strong>
+        <small>{$t('frameleaf_sharing.partner_show_in_my_timeline_description')}</small>
       </span>
       <input
         type="checkbox"
         role="switch"
-        aria-label={$t('show_in_timeline')}
+        aria-label={$t('frameleaf_sharing.partner_show_in_my_timeline')}
         checked={partner.inTimeline}
         disabled={updating}
         onchange={(event) => toggleInTimeline(event.currentTarget.checked)}
@@ -145,8 +148,8 @@
     {#if sharedBack}
       <label class="ph-toggle">
         <span>
-          <strong>{$t('frameleaf_sharing.share_location_title')}</strong>
-          <small>{$t('frameleaf_sharing.share_location_description', { values: { name: partner.name } })}</small>
+          <strong>{$t('frameleaf_sharing.partner_location_title')}</strong>
+          <small>{$t('frameleaf_sharing.partner_location_description')}</small>
           {#if !shareLocation}
             <small class="ph-note" role="status">
               {$t('frameleaf_sharing.location_already_seen', { values: { name: partner.name } })}
@@ -156,7 +159,7 @@
         <input
           type="checkbox"
           role="switch"
-          aria-label={$t('frameleaf_sharing.share_location_title')}
+          aria-label={$t('frameleaf_sharing.partner_location_title')}
           checked={shareLocation}
           disabled={locationUpdating}
           onchange={(event) => toggleShareLocation(event.currentTarget.checked)}
@@ -168,22 +171,29 @@
   </div>
 
   <div class="ph-actions">
-    <a href={Route.userSettings({ isOpen: OpenQueryParam.SHARING })}>{$t('frameleaf_sharing.sharing_settings')}</a>
-    <button type="button" class="danger" onclick={() => (confirmOpen = true)}
-      >{$t('stop_sharing_photos_with_user')}</button
-    >
+    <Button onclick={() => void goto(Route.userSettings({ isOpen: OpenQueryParam.SHARING }))}>
+      <Icon icon={mdiCogOutline} size="18" aria-hidden={true} />
+      {$t('frameleaf_sharing.sharing_settings')}
+    </Button>
+    <Button variant="danger" onclick={() => (confirmOpen = true)}>
+      <Icon icon={mdiLinkOff} size="18" aria-hidden={true} />
+      {$t('frameleaf_sharing.partner_stop_sharing')}
+    </Button>
   </div>
 
   {#if confirmOpen}
-    <Dialog title={$t('stop_photo_sharing')} closeLabel={$t('close')} bind:open={confirmOpen}>
-      <p>{$t('stop_photo_sharing_description', { values: { partner: partner.name } })}</p>
-      <p class="muted">{$t('frameleaf_sharing.stop_sharing_note')}</p>
-      <div class="ph-confirm-actions">
-        <button type="button" onclick={() => (confirmOpen = false)}>{$t('cancel')}</button>
-        <button type="button" class="danger" disabled={updating} onclick={stopSharing}>
-          {$t('stop_sharing_photos_with_user')}
-        </button>
-      </div>
+    <Dialog title={$t('frameleaf_sharing.partner_stop_sharing_title')} closeLabel={$t('close')} bind:open={confirmOpen}>
+      <p>{$t('frameleaf_sharing.partner_stop_sharing_body', { values: { name: partner.name } })}</p>
+      <p class="muted ph-note-line">
+        <Icon icon={mdiInformationOutline} size="16" aria-hidden={true} />
+        {$t('frameleaf_sharing.stop_sharing_note')}
+      </p>
+      {#snippet actions()}
+        <Button onclick={() => (confirmOpen = false)}>{$t('cancel')}</Button>
+        <Button variant="primary" initialFocus disabled={updating} onclick={stopSharing}>
+          {$t('frameleaf_sharing.partner_stop_sharing')}
+        </Button>
+      {/snippet}
     </Dialog>
   {/if}
 </section>
@@ -238,27 +248,10 @@
     align-items: center;
     gap: 0.5rem;
   }
-  .ph-actions a,
-  .ph-actions button,
-  .ph-confirm-actions button {
-    background: var(--fl-raised);
-    color: var(--fl-text);
-    border: 1px solid var(--fl-border);
-    border-radius: var(--fl-radius);
-    padding: 0 0.75rem;
-    display: inline-flex;
-    align-items: center;
-  }
-  .ph-actions button.danger,
-  .ph-confirm-actions button.danger {
-    color: var(--fl-accent);
-    border-color: var(--fl-accent);
-  }
-  .ph-confirm-actions {
+  .ph-note-line {
     display: flex;
-    justify-content: flex-end;
-    gap: 0.5rem;
-    margin-top: 1rem;
+    align-items: center;
+    gap: 0.375rem;
   }
   .muted {
     color: var(--fl-muted);
