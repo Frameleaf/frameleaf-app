@@ -1,7 +1,10 @@
 import {
   LoginResponseDto,
   deleteAssets,
+  deleteSession,
   getConfig,
+  getSessions,
+  login,
   lockAssets,
   lockAuthSession,
   setUserOnboarding,
@@ -174,7 +177,7 @@ test.describe('Locked content in the browser (FL-34)', () => {
     await expect(traces(page, locked.id)).toHaveCount(0);
   });
 
-  test('keeps corrected document evidence after reload and clears open detail on relock (FL-63)', async ({
+  test('keeps corrected document evidence after reload and clears open detail on relock or revocation (FL-63)', async ({
     context,
     page,
   }) => {
@@ -230,6 +233,21 @@ test.describe('Locked content in the browser (FL-34)', () => {
 
     await lockAuthSession({ headers });
     await expect(page).toHaveURL(/\/photos\/?$/);
+    await expect(page.getByTestId('frameleaf-document-text')).toHaveCount(0);
+    await expect(page.getByText('$19.25')).toHaveCount(0);
+    await expect(traces(page, locked.id)).toHaveCount(0);
+
+    await unlockAuthSession({ sessionUnlockDto: { pinCode } }, { headers });
+    await page.goto('/documents?query=grand');
+    await page.locator(`[data-asset-id="${locked.id}"]`).click();
+    await page.getByRole('button', { name: 'Information', exact: true }).click();
+    await expect(page.getByTestId('frameleaf-document-fields')).toContainText('$19.25');
+
+    const other = await login({ loginCredentialDto: { email: user.userEmail, password: 'password' } });
+    const session = (await getSessions({ headers })).find((item) => item.current);
+    expect(session).toBeDefined();
+    await deleteSession({ id: session!.id }, { headers: asBearerAuth(other.accessToken) });
+    await expect(page).toHaveURL(/\/auth\/login/);
     await expect(page.getByTestId('frameleaf-document-text')).toHaveCount(0);
     await expect(page.getByText('$19.25')).toHaveCount(0);
     await expect(traces(page, locked.id)).toHaveCount(0);
