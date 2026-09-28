@@ -97,7 +97,9 @@ test.describe('Google Photos import (FL-144)', () => {
     expect(incompleteImport.sources[0].received).toBe(8);
 
     await chooser.setInputFiles({ name, mimeType: 'application/zip', buffer: bytes });
-    await expect(dialog.getByRole('status')).toContainText('Archives uploaded');
+    await expect(dialog.getByRole('status').filter({ hasText: 'Archives uploaded' })).toContainText(
+      'Archives uploaded',
+    );
     await expect
       .poll(async () => {
         const currentImport = await getTakeoutImport({ id: takeout.id }, auth);
