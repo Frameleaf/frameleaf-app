@@ -918,7 +918,13 @@
 {#if linkDialog.album}
   <SharedLinkForm
     bind:open={linkDialog.open}
-    target={{ type: SharedLinkType.Album, albumId: linkDialog.album.id, name: nameOf(linkDialog.album) }}
+    target={{
+      type: SharedLinkType.Album,
+      albumId: linkDialog.album.id,
+      name: nameOf(linkDialog.album),
+      previewAssetIds: linkDialog.album.albumThumbnailAssetId ? [linkDialog.album.albumThumbnailAssetId] : [],
+      count: linkDialog.album.assetCount,
+    }}
   />
 {/if}
 
