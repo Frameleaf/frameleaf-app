@@ -1732,6 +1732,98 @@ describe(CloudMlJobService.name, () => {
       expect(record.output).toEqual({ width: 8000, height: 6000 });
     });
 
+    it('rejects a cloud quote that exceeds the photo output cap', async () => {
+      mocks.frameleafCloudMl.createEstimate.mockResolvedValue({
+        ...upscaleEstimate,
+        upscale: { scale: 4, items: [{ inputId: 'v1', scale: 4 }], lowered: [] },
+      });
+
+      await expect(estimatePhoto()).rejects.toThrow(/quoted 4×.*expected at 2×/);
+      expect(estimates()).toHaveLength(0);
+    });
+
+    it('sends nothing when a refreshed estimate changes the approved factor', async () => {
+      const estimate = await estimatePhoto();
+      await sut.create(
+        owner,
+        { estimateId: estimate.estimateId, consentVersion: estimate.consent.version, acknowledgeDataLeaves: true },
+        now,
+      );
+      mocks.frameleafCloudMl.createEstimate.mockResolvedValue({
+        ...upscaleEstimate,
+        expiresAt: '2026-09-27T20:35:00.000Z',
+        upscale: { scale: 4, items: [{ inputId: 'v1', scale: 4 }], lowered: [] },
+      });
+
+      await sut.step(claimed(), 'claim', new Date('2026-09-27T20:20:00.000Z'));
+
+      expect(mocks.frameleafCloudMl.createJob).not.toHaveBeenCalled();
+      expect(mocks.mediaOperation.fail).toHaveBeenCalledWith(
+        OPERATION_ID,
+        'claim',
+        expect.objectContaining({ errorCode: 'cloud_ml_estimate_unstable' }),
+        { retry: false },
+      );
+    });
+
+    it('rejects a valid cloud result at a factor other than the approved one', async () => {
+      const smallPhoto = {
+        ...photo,
+        exifInfo: { exifImageWidth: 2000, exifImageHeight: 1500, orientation: null },
+      };
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(smallPhoto as never);
+      mocks.media.decodeImage.mockResolvedValue({
+        data: Buffer.alloc(0),
+        info: { width: 2000, height: 1500, channels: 3 },
+      } as never);
+      mocks.media.getImageMetadata.mockResolvedValue({ width: 2000, height: 1500 } as never);
+      mocks.frameleafCloudMl.createEstimate.mockResolvedValue({
+        ...upscaleEstimate,
+        upscale: { scale: 4, items: [{ inputId: 'v1', scale: 4 }], lowered: [] },
+      });
+      const estimate = await estimatePhoto();
+      await sut.create(
+        owner,
+        { estimateId: estimate.estimateId, consentVersion: estimate.consent.version, acknowledgeDataLeaves: true },
+        now,
+      );
+      const document = resultDocument();
+      document.items[0].input = { width: 2000, height: 1500 };
+      document.items[0].outputs[0].width = 4000;
+      document.items[0].outputs[0].height = 3000;
+      mocks.storage.readFile.mockResolvedValue(Buffer.from(JSON.stringify(document)));
+      mocks.frameleafCloudMl.getJobView.mockResolvedValue({
+        notModified: false,
+        data: view('job-completed.json', {
+          modelSku: UPSCALE,
+          modelRev: UPSCALE_REV,
+          result: {
+            outputs: [
+              { ...output('v1'), contentType: 'image/webp' },
+              { ...output('result'), contentType: 'application/json' },
+            ],
+            headers: { 'x-amz-server-side-encryption-customer-algorithm': 'AES256' },
+            expiresAt: '2026-09-26T04:30:00.000Z',
+            modelSku: UPSCALE,
+            modelRev: UPSCALE_REV,
+          },
+        }),
+        etag: '"e9"',
+        retryAfterSeconds: null,
+      });
+      rendering();
+
+      await sut.step(following(), 'claim', now);
+
+      expect(mocks.mediaOperation.publishValidated).not.toHaveBeenCalled();
+      expect(mocks.mediaOperation.fail).toHaveBeenLastCalledWith(
+        OPERATION_ID,
+        'claim',
+        { error: expect.stringMatching(/says 2×, but the owner approved 4×/), errorCode: 'cloud_ml_output_invalid' },
+        { retry: false },
+      );
+    });
+
     it('writes the version at the factor its own item got, checked against the photo times that factor', async () => {
       const estimate = await estimatePhoto();
       await sut.create(
