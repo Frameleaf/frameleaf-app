@@ -249,6 +249,20 @@ describe('PhysicalDedupManager plan evidence (FL-73)', () => {
     expect(screen.getAllByText(en.frameleaf_dedup_retained_location).length).toBe(2);
   });
 
+  it('names the checksum algorithm from the data under Checksum evidence, with the plan caption (PD-A)', async () => {
+    const withSha256 = plan();
+    withSha256.copies[0].checksum = 'b'.repeat(64);
+    render(PhysicalDedupManager, { users, initial: preview({ plan: withSha256 }) });
+
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_dedup_view_evidence }));
+    const table = screen.getByRole('table');
+    expect(within(table).getAllByText('Checksum evidence', { selector: 'summary' })).toHaveLength(2);
+    expect(within(table).getByText('SHA-256 · stored checksum')).toBeInTheDocument();
+    expect(within(table).getByText('SHA-1 · stored checksum')).toBeInTheDocument();
+    expect(within(table).getByText('1 → 2')).toBeInTheDocument();
+    expect(within(table).getAllByText('Across this plan').length).toBeGreaterThan(0);
+  });
+
   it('adds dimensions to the detail line (UT-25)', () => {
     render(PhysicalDedupManager, { users, initial: preview({ plan: plan() }) });
 
