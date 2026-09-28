@@ -4,6 +4,8 @@ import {
   LoginResponseDto,
   getAlbumInfo,
   getAlbumTree,
+  getAssetDevelop,
+  login,
   moveAlbumToCollection,
   setUserOnboarding,
 } from '@immich/sdk';
@@ -126,6 +128,139 @@ test.describe('Album', () => {
         }),
       ]),
     );
+  });
+
+  test('restores the album journey through filters, layouts, quick edit and reconnect (FL-40)', async ({
+    context,
+    page,
+  }) => {
+    test.slow();
+    const owner = await utils.userSetup(admin.accessToken, {
+      name: 'Album Journey Owner',
+      email: 'fl40-album-journey@example.com',
+      password: 'password',
+    });
+    await setUserOnboarding({ onboardingDto: { isOnboarded: true } }, { headers: asBearerAuth(owner.accessToken) });
+    await utils.setAuthCookies(context, owner.accessToken);
+    const photo = await utils.createAsset(owner.accessToken, { assetData: { filename: 'alpha.png' } });
+    const otherPhoto = await utils.createAsset(owner.accessToken, { assetData: { filename: 'zulu.png' } });
+    const video = await utils.createAsset(owner.accessToken, {
+      assetData: {
+        bytes: readFileSync(
+          new URL('../../../../design/frameleaf/template/public/media/kayak-demo.mp4', import.meta.url),
+        ),
+        filename: 'journey.mp4',
+      },
+    });
+    const album = await utils.createAlbum(owner.accessToken, {
+      albumName: 'Album continuity',
+      assetIds: [photo.id, otherPhoto.id, video.id],
+    });
+
+    await page.goto(`/albums/${album.id}`);
+    const photoTile = page.locator(`[data-asset-id="${photo.id}"]`);
+    const tiles = page.getByTestId('frameleaf-library').locator('[data-asset-id]');
+    await expect(page.locator(`[data-asset-id="${video.id}"]`)).toBeVisible();
+    await page.getByRole('button', { name: 'Filter', exact: true }).click();
+    const filters = page.getByRole('dialog', { name: 'Search your library' });
+    await filters
+      .getByRole('group', { name: 'Media type' })
+      .getByRole('button', { name: /^Photos/ })
+      .click();
+    await filters.getByRole('button', { name: /^Show .*results?$/ }).click();
+    await expect(filters).toBeHidden();
+    await expect(page).toHaveURL(new RegExp(`/albums/${album.id}(?:\\?|$)`));
+    await expect(page.locator(`[data-asset-id="${video.id}"]`)).toHaveCount(0);
+    await page.getByRole('combobox', { name: 'Sort assets' }).selectOption('filename');
+    await expect(tiles).toHaveCount(2);
+    await expect(tiles.first()).toHaveAttribute('data-asset-id', photo.id);
+    await expect(tiles.last()).toHaveAttribute('data-asset-id', otherPhoto.id);
+
+    await photoTile.hover();
+    await photoTile.getByRole('checkbox').click();
+    const selection = page.getByRole('region', { name: 'Selected items' });
+    // App.jsx: layout changes keep the one selection and query. Filename sort resumes in flat layouts.
+    for (const layout of ['Timeline', 'Browse', 'Work']) {
+      await page.getByRole('group', { name: 'Layout' }).getByRole('button', { name: layout, exact: true }).click();
+      await expect(page.getByTestId('frameleaf-library')).toHaveAttribute('data-layout', layout.toLowerCase());
+      await expect(photoTile.getByRole('checkbox')).toBeChecked();
+      await expect(selection).toContainText('1 selected');
+    }
+    await page.reload();
+    await expect(page.getByTestId('frameleaf-library')).toHaveAttribute('data-layout', 'work');
+    await expect(page.getByRole('combobox', { name: 'Sort assets' })).toHaveValue('filename');
+    await expect(photoTile.getByRole('checkbox')).toBeChecked();
+    await expect(tiles).toHaveCount(2);
+
+    // The real selection action opens the selected photo in the viewer and editor without clearing it.
+    const developLoaded = page.waitForResponse(
+      (response) => response.url().endsWith(`/api/assets/${photo.id}/develop`) && response.ok(),
+    );
+    await selection.getByRole('button', { name: 'Quick edit', exact: true }).click();
+    const initialDevelop = await developLoaded;
+    await initialDevelop.finished();
+    expect((await initialDevelop.json()).revisions).toEqual([]);
+    const editor = page.getByRole('dialog', { name: /Edit/ });
+    const exposure = editor.getByRole('slider', { name: 'Exposure' });
+    // This message renders only after the editor has consumed its initial server state.
+    await editor.getByRole('button', { name: 'Versions', exact: true }).click();
+    await expect(editor.getByText('No saved versions yet. Save version keeps this edit as a new one.')).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(exposure).toHaveValue('0');
+    const draftKey = `frameleaf.editor.continuity.${photo.id}`;
+    await context.setOffline(true);
+    try {
+      await exposure.fill('0.5');
+      await expect(exposure).toHaveValue('0.5');
+      await expect
+        .poll(() => page.evaluate((key) => sessionStorage.getItem(key), draftKey))
+        .toContain('"exposure":0.5');
+    } finally {
+      await context.setOffline(false);
+    }
+    await page.reload();
+    await expect(exposure).toHaveValue('0.5');
+    await editor.getByRole('button', { name: 'Undo', exact: true }).click();
+    await expect(exposure).toHaveValue('0');
+    await editor.getByRole('button', { name: 'Redo', exact: true }).click();
+    await expect(exposure).toHaveValue('0.5');
+    const develop = await getAssetDevelop({ id: photo.id }, { headers: asBearerAuth(owner.accessToken) });
+    expect(develop.revisions).toHaveLength(0);
+
+    await editor.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await expect(editor).toHaveCount(0);
+    await expect(page.locator('#immich-asset-viewer')).toHaveAttribute('data-asset-id', photo.id);
+    await page.goBack();
+    await expect(page.locator('#immich-asset-viewer')).toHaveCount(0);
+    await expect(photoTile.getByRole('checkbox')).toBeChecked();
+    await expect(page.getByTestId('frameleaf-library')).toHaveAttribute('data-layout', 'work');
+    await expect(page.getByRole('combobox', { name: 'Sort assets' })).toHaveValue('filename');
+    await expect(tiles).toHaveCount(2);
+    await expect(tiles.first()).toHaveAttribute('data-asset-id', photo.id);
+    await expect.poll(() => page.evaluate((key) => sessionStorage.getItem(key), draftKey)).toBeNull();
+
+    // Leave a real draft before signing out; neither it nor the album selection may reach the next session.
+    const albumUrl = page.url();
+    await selection.getByRole('button', { name: 'Quick edit', exact: true }).click();
+    await expect(exposure).toHaveValue('0');
+    await exposure.fill('0.7');
+    await expect.poll(() => page.evaluate((key) => sessionStorage.getItem(key), draftKey)).toContain('"exposure":0.7');
+    await page.goto(albumUrl);
+    await page.getByRole('button', { name: `Account menu for ${owner.name}` }).click();
+    await page.getByRole('menuitem', { name: 'Sign Out' }).click();
+    await expect(page).toHaveURL(/\/auth\/login/);
+    await expect.poll(() => page.evaluate((key) => sessionStorage.getItem(key), draftKey)).toBeNull();
+    await expect
+      .poll(() => page.evaluate((id) => sessionStorage.getItem(`frameleaf:library:tab:v1:${id}`), owner.userId))
+      .toBeNull();
+    const nextSession = await login({
+      loginCredentialDto: { email: owner.userEmail, password: 'password' },
+    });
+    await utils.setAuthCookies(context, nextSession.accessToken);
+    await page.goto(`/albums/${album.id}`);
+    await expect(photoTile).toBeVisible();
+    await expect(photoTile.getByRole('checkbox')).not.toBeChecked();
+    await expect(page.getByRole('dialog', { name: /Edit/ })).toHaveCount(0);
   });
 
   test('opens an asset from a collection and returns to its grid (FL-40)', async ({ context, page }) => {
