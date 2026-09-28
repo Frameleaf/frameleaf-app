@@ -36,6 +36,7 @@
   let loaded = $state(false);
   let section = $state<HTMLElement>();
   let loadId = 0;
+  let hiddenDuringLoad = new Set<string>();
 
   const assets = $derived(items.map((item) => item.asset));
   const groups = $derived.by(() => {
@@ -50,10 +51,11 @@
 
   const load = async () => {
     const request = ++loadId;
+    hiddenDuringLoad = new Set();
     try {
       const response = await getReceivedItemShares();
       if (request === loadId) {
-        items = response.items;
+        items = response.items.filter((item) => !hiddenDuringLoad.has(item.asset.id));
       }
     } catch (error) {
       if (request === loadId) {
@@ -112,6 +114,7 @@
   // A share revoked (or an item locked) elsewhere: drop it, and close the viewer if it was open.
   onDestroy(
     websocketEvents.on('on_asset_hidden', (assetId) => {
+      hiddenDuringLoad.add(assetId);
       items = items.filter((item) => item.asset.id !== assetId);
       if (openId === assetId) {
         closeViewer();

@@ -113,6 +113,38 @@ describe('SharedWithYouSection', () => {
     expect(sdkMock.getReceivedItemShares).toHaveBeenCalledTimes(2);
   });
 
+  it('does not restore a hidden item from an in-flight notification refresh', async () => {
+    app.page.url = new URL('http://localhost/sharing?assetId=beach');
+    let finishRefresh!: (response: Awaited<ReturnType<typeof sdkMock.getReceivedItemShares>>) => void;
+    sdkMock.getReceivedItemShares
+      .mockResolvedValueOnce({ link: null, items: [{ id: '1', sharedAt: '', owner: taylor, asset: beach }] })
+      .mockImplementationOnce(() => new Promise((resolve) => (finishRefresh = resolve)));
+    const close = vi.spyOn(assetViewerManager, 'showAssetViewer');
+    render(SharedWithYouSection);
+    expect(await screen.findByRole('button', { name: 'beach.jpg' })).toBeInTheDocument();
+
+    for (const handler of notificationHandlers) {
+      handler({ type: NotificationType.ItemShare });
+    }
+    expect(sdkMock.getReceivedItemShares).toHaveBeenCalledTimes(2);
+    for (const handler of hiddenHandlers) {
+      handler('beach');
+    }
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'beach.jpg' })).toBeNull());
+    expect(close).toHaveBeenCalledWith(false);
+    expect(goto).toHaveBeenCalledWith('/sharing', { noScroll: true, keepFocus: true });
+
+    finishRefresh({
+      link: null,
+      items: [
+        { id: '1', sharedAt: '', owner: taylor, asset: beach },
+        { id: '2', sharedAt: '', owner: sam, asset: dinner },
+      ],
+    });
+    expect(await screen.findByRole('button', { name: 'dinner.jpg' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'beach.jpg' })).toBeNull();
+  });
+
   it('opens the item named in the address in the viewer, only when it was shared with you', async () => {
     app.page.url = new URL('http://localhost/sharing?assetId=beach');
     sdkMock.getReceivedItemShares.mockResolvedValue({
