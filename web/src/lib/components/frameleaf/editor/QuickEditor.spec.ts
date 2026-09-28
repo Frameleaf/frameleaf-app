@@ -15,8 +15,8 @@ import { toastManager } from '@immich/ui';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { goto } from '$app/navigation';
 import { continuityBase, readEditorContinuity, saveEditorContinuity } from '$lib/frameleaf/editor-continuity';
-import { clearPrivateBrowserState } from '$lib/frameleaf/private-browser-state';
 import { openingRecipe, type EditorDraft } from '$lib/frameleaf/editor-draft';
+import { clearPrivateBrowserState } from '$lib/frameleaf/private-browser-state';
 import { assetFactory } from '@test-data/factories/asset-factory';
 import QuickEditor from './QuickEditor.svelte';
 
@@ -426,7 +426,9 @@ describe('QuickEditor', () => {
       first.unmount();
 
       render(QuickEditor, { asset: photo, onClose: vi.fn() });
-      await waitFor(() => expect(screen.getByRole('slider', { name: 'frameleaf_editor_param_contrast' })).toHaveValue('40'));
+      await waitFor(() =>
+        expect(screen.getByRole('slider', { name: 'frameleaf_editor_param_contrast' })).toHaveValue('40'),
+      );
       expect(screen.getByRole('button', { name: 'undo' })).not.toBeDisabled();
     });
 

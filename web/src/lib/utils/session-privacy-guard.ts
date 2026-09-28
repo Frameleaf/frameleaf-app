@@ -1,6 +1,6 @@
 import { getAuthStatus, isHttpError, lockAuthSession } from '@immich/sdk';
-import { hasPendingSessionUnlocks, sessionAccess } from '$lib/frameleaf/session-access.svelte';
 import { clearPrivateBrowserState } from '$lib/frameleaf/private-browser-state';
+import { hasPendingSessionUnlocks, sessionAccess } from '$lib/frameleaf/session-access.svelte';
 import { requestSessionLock } from '$lib/frameleaf/session-lock';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { Route } from '$lib/route';

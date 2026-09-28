@@ -1,4 +1,11 @@
-import { AssetMediaResponseDto, getAssetDevelop, LoginResponseDto } from '@immich/sdk';
+import {
+  AssetMediaResponseDto,
+  getAssetDevelop,
+  lockAuthSession,
+  LoginResponseDto,
+  setupPinCode,
+  unlockAuthSession,
+} from '@immich/sdk';
 import { expect, test } from '@playwright/test';
 import { asBearerAuth, utils } from 'src/utils.js';
 
@@ -195,5 +202,44 @@ test.describe('Video quick editor', () => {
     await editor.getByRole('tab', { name: 'Trim' }).click();
     await page.keyboard.press('i');
     await expect(editor.getByRole('status').last()).toHaveText(/In point 00:00\.0/);
+  });
+
+  test('restores a video draft and playhead after reload, then clears both when the session locks', async ({
+    page,
+  }) => {
+    const editor = page.getByRole('dialog', { name: /Edit/ });
+    await editor.getByRole('tab', { name: 'Audio' }).click();
+    await editor.getByRole('switch', { name: 'Mute clip' }).click();
+    await editor.getByRole('slider', { name: 'Playhead' }).fill('6');
+    await expect(editor.getByRole('switch', { name: 'Mute clip' })).toHaveAttribute('aria-checked', 'true');
+    await expect(editor.locator('.ed-timecode')).toHaveText('00:06.0 / 00:24.0');
+
+    const draftKey = `frameleaf.editor.continuity.${clip.id}`;
+    await expect.poll(() => page.evaluate((key) => sessionStorage.getItem(key), draftKey)).not.toBeNull();
+    await page.reload();
+    await expect(editor).toBeVisible();
+    await expect(editor.getByRole('tab', { name: 'Audio' })).toHaveAttribute('aria-selected', 'true');
+    await expect(editor.getByRole('switch', { name: 'Mute clip' })).toHaveAttribute('aria-checked', 'true');
+    await expect(editor.getByRole('slider', { name: 'Playhead' })).toHaveValue('6');
+    await expect(editor.locator('.ed-timecode')).toHaveText('00:06.0 / 00:24.0');
+
+    const headers = asBearerAuth(admin.accessToken);
+    const pinCode = '246810';
+    await setupPinCode({ pinCodeSetupDto: { pinCode } }, { headers });
+    await unlockAuthSession({ sessionUnlockDto: { pinCode } }, { headers });
+    await page.reload();
+    await expect(editor.getByRole('slider', { name: 'Playhead' })).toHaveValue('6');
+    await expect(page.getByRole('button', { name: 'Hide Locked content', includeHidden: true }).first()).toBeAttached();
+    await expect.poll(() => page.evaluate(() => sessionStorage.getItem('frameleaf:session:elevated-tab'))).toBe('1');
+
+    await lockAuthSession({ headers });
+    await expect(page).toHaveURL(/\/photos(?:\?|$)/);
+    await expect.poll(() => page.evaluate((key) => sessionStorage.getItem(key), draftKey)).toBeNull();
+    await page.goto(`/photos/${clip.id}`);
+    await expect(
+      page.getByRole('toolbar', { name: 'Media actions' }).getByRole('button', { name: 'Edit', exact: true }),
+    ).toBeVisible();
+    await expect(page.getByRole('dialog', { name: /Edit/ })).toHaveCount(0);
+    await expect.poll(() => page.evaluate((key) => sessionStorage.getItem(key), draftKey)).toBeNull();
   });
 });

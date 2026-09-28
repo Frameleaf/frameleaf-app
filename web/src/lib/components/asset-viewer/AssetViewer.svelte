@@ -1175,10 +1175,7 @@
     not a side panel. Photos edit through the server develop recipe pipeline; videos keep the
     production video editor's commands inside the same frame.
   -->
-  {#if assetViewerManager.isShowEditor &&
-    authManager.authenticated &&
-    !authManager.isSharedLink &&
-    asset.ownerId === authManager.user.id}
+  {#if assetViewerManager.isShowEditor && authManager.authenticated && !authManager.isSharedLink && asset.ownerId === authManager.user.id}
     <QuickEditor {asset} onClose={closeEditor} />
   {/if}
 

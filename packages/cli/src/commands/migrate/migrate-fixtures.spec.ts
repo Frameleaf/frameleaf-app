@@ -208,9 +208,9 @@ class DestinationFixture {
       this.onUpload?.(this.uploads);
       return send(res, 201, { id, status: 'created' });
     }
-    const getAsset = /^GET \/assets\/([^/]+)$/.exec(route);
-    if (getAsset) {
-      const asset = [...this.assets.values()].find(({ id }) => id === getAsset[1]);
+    const assetMatch = /^GET \/assets\/([^/]+)$/.exec(route);
+    if (assetMatch) {
+      const asset = this.assets.values().find(({ id }) => id === assetMatch[1]);
       return asset ? send(res, 200, asset) : send(res, 404, { message: 'missing asset' });
     }
     if (/^PUT \/assets\/[^/]+(\/metadata)?$/.test(route)) {

@@ -202,7 +202,10 @@ export class LibrarySessionStore {
     }
     let saved = false;
     try {
-      this.#storage?.setItem(libraryPreferenceKey(currentUserId), JSON.stringify(toStoredLibrarySession(this.#session)));
+      this.#storage?.setItem(
+        libraryPreferenceKey(currentUserId),
+        JSON.stringify(toStoredLibrarySession(this.#session)),
+      );
       saved = !!this.#storage;
     } catch {
       // A full or blocked store must not break the page.

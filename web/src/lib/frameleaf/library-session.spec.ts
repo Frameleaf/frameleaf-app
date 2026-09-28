@@ -583,7 +583,11 @@ describe('what survives a reload', () => {
       state: session.state,
     });
 
-    const restored = fromStoredLibrarySession(JSON.stringify(stored), null, JSON.stringify(toStoredLibraryTransient(session)));
+    const restored = fromStoredLibrarySession(
+      JSON.stringify(stored),
+      null,
+      JSON.stringify(toStoredLibraryTransient(session)),
+    );
     expect(restored.layout).toBe('timeline');
     expect(restored.state).toEqual(session.state);
     expect(restored.openAssetId).toBe('c');
@@ -608,7 +612,10 @@ describe('what survives a reload', () => {
   it('does not restore a Locked selection into Photos with the same portable view', () => {
     const session = run(createLibrarySession(), { type: 'select', id: 'locked-asset' });
     const stored = toStoredLibrarySession(session);
-    const locked = toStoredLibraryTransient(session, JSON.stringify({ route: '/locked', options: { visibility: 'locked' } }));
+    const locked = toStoredLibraryTransient(
+      session,
+      JSON.stringify({ route: '/locked', options: { visibility: 'locked' } }),
+    );
     const photos = JSON.stringify({ route: '/photos', options: {} });
     expect(fromStoredLibrarySession(stored, null, locked, photos).selection).toEqual([]);
     expect(fromStoredLibrarySession(stored, null, locked, locked.context).selection).toEqual(['locked-asset']);
