@@ -8,6 +8,8 @@
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { getAssetMediaUrl } from '$lib/utils';
   import { AssetMediaSize, AssetVisibility, getAssetInfo, searchAssets, type AssetResponseDto } from '@immich/sdk';
+  import { mdiArrowDown, mdiArrowLeft, mdiArrowRight, mdiArrowUp, mdiMinus, mdiPlus } from '@mdi/js';
+  import { Icon } from '@immich/ui';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
 
@@ -25,6 +27,9 @@
   let review = $state<{ ids: string[]; latitude: number | null; longitude: number | null } | null>(null);
   let reviewOpen = $state(false);
   let mapElement = $state<ReturnType<typeof MapComponent>>();
+  /** Bumped when the map view settles, so the "outside this view" hint re-reads the bounds. */
+  let viewVersion = $state(0);
+  const mapHelpId = $props.id();
   const bulk = new BulkController({ dispatch: () => {} });
   const valid = $derived(
     latitude !== undefined &&
@@ -107,6 +112,41 @@
     latitude = lat;
     longitude = lng;
   };
+
+  type Direction = 'north' | 'south' | 'east' | 'west';
+  const offsets: Record<Direction, [number, number]> = {
+    north: [1, 0],
+    south: [-1, 0],
+    west: [0, -1],
+    east: [0, 1],
+  };
+  const clamp = (value: number, limit: number) => Number(Math.max(-limit, Math.min(limit, value)).toFixed(6));
+  /**
+   * Nudge the selected point (UtilityMapPicker.jsx:47-57, 109-123): from the current point, or the
+   * map centre before one is chosen; Shift moves ten times farther.
+   */
+  const move = (direction: Direction, large = false) => {
+    const start = valid ? { lat: latitude!, lng: longitude! } : (mapElement?.getCenter() ?? { lat: 0, lng: 0 });
+    const step = large ? 0.01 : 0.001;
+    const [north, east] = offsets[direction];
+    choose(clamp(start.lat + north * step, 90), clamp(start.lng + east * step, 180));
+  };
+  const arrowDirections: Record<string, Direction> = {
+    ArrowUp: 'north',
+    ArrowDown: 'south',
+    ArrowLeft: 'west',
+    ArrowRight: 'east',
+  };
+  const onMapKeydown = (event: KeyboardEvent) => {
+    const direction = arrowDirections[event.key];
+    if (direction && event.target === event.currentTarget) {
+      event.preventDefault();
+      move(direction, event.shiftKey);
+    }
+  };
+  const outsideView = $derived(
+    viewVersion >= 0 && valid && mapElement ? !mapElement.contains(longitude!, latitude!) : false,
+  );
   const toggle = (asset: AssetResponseDto) => {
     if (!owned(asset) || durableBulkTracker.stateOf(asset.id)?.state === 'pending') {
       return;
@@ -193,18 +233,62 @@
     </p>{/if}
   <div class="location">
     <div class="map-picker">
-      <header><strong>{$t('frameleaf_utilities_coordinate_map')}</strong><small>WGS 84</small></header>
-      <div class="map">
+      <header>
+        <div><strong>{$t('frameleaf_utilities_coordinate_map')}</strong><small>WGS 84</small></div>
+        <!-- UtilityMapPicker.jsx:89-98: the picker's own zoom buttons replace the map's built-in ones. -->
+        <div class="map-buttons">
+          <Button label={$t('zoom_out')} onclick={() => mapElement?.zoomOut()}
+            ><Icon icon={mdiMinus} size="1rem" aria-hidden={true} /></Button
+          >
+          <Button label={$t('zoom_in')} onclick={() => mapElement?.zoomIn()}
+            ><Icon icon={mdiPlus} size="1rem" aria-hidden={true} /></Button
+          >
+        </div>
+      </header>
+      <!-- UtilityMapPicker.jsx:100-123: the focusable map surface; arrow keys nudge the selected point. -->
+      <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
+      <div
+        class="map"
+        role="group"
+        tabindex="0"
+        aria-label={$t('frameleaf_utilities_map_label')}
+        aria-describedby={mapHelpId}
+        onkeydown={onMapKeydown}
+      >
         {#await import('$lib/components/shared-components/map/Map.svelte') then { default: Map }}
           <Map
             bind:this={mapElement}
             mapMarkers={markers}
             simplified
             clickable
+            showSimpleControls={false}
+            onViewChange={() => viewVersion++}
             onClickPoint={({ lat, lng }) => choose(lat, lng)}
           />
         {/await}
       </div>
+      <!-- UtilityMapPicker.jsx:219-259: direction buttons, centre, the outside-view hint and help. -->
+      <div class="map-controls">
+        <div role="group" aria-label={$t('frameleaf_utilities_move_location')}>
+          <Button label={$t('frameleaf_utilities_move_west')} onclick={() => move('west')}
+            ><Icon icon={mdiArrowLeft} size="1rem" aria-hidden={true} /></Button
+          >
+          <Button label={$t('frameleaf_utilities_move_north')} onclick={() => move('north')}
+            ><Icon icon={mdiArrowUp} size="1rem" aria-hidden={true} /></Button
+          >
+          <Button label={$t('frameleaf_utilities_move_south')} onclick={() => move('south')}
+            ><Icon icon={mdiArrowDown} size="1rem" aria-hidden={true} /></Button
+          >
+          <Button label={$t('frameleaf_utilities_move_east')} onclick={() => move('east')}
+            ><Icon icon={mdiArrowRight} size="1rem" aria-hidden={true} /></Button
+          >
+        </div>
+        <Button disabled={!valid} onclick={() => valid && mapElement?.centerOn(longitude!, latitude!)}
+          >{$t('frameleaf_utilities_center_on_selection')}</Button
+        >
+      </div>
+      {#if outsideView}<p class="map-note">{$t('frameleaf_utilities_outside_view')}</p>{/if}
+      <p class="map-note" id={mapHelpId}>{$t('frameleaf_utilities_map_help')}</p>
     </div>
     <div class="coordinates">
       <label>{$t('latitude')}<input type="number" min="-90" max="90" step="any" bind:value={latitude} /></label>
@@ -259,21 +343,50 @@
 </div>
 
 {#if review}
+  {@const frozen = review}
+  {@const removing = frozen.latitude === null || frozen.longitude === null}
+  <!-- UtilitiesManager.jsx:963-1050: the fixed set, one "owner · old → new" row per item, Confirm n items. -->
   <Dialog
-    title={review.latitude === null ? $t('frameleaf_utilities_remove_location_title') : $t('change_location')}
+    title={removing
+      ? $t('frameleaf_utilities_remove_location_title')
+      : $t('frameleaf_utilities_update_locations_title')}
     closeLabel={$t('cancel')}
+    wide
     bind:open={reviewOpen}
   >
+    <p>{$t('library_care_review_fixed')}</p>
+    <div class="review-rows">
+      {#each frozen.ids as id (id)}
+        {@const item = assets.find((asset) => asset.id === id)}
+        {#if item}
+          <div>
+            <strong>{item.originalFileName}</strong>
+            <span
+              >{$t('frameleaf_utilities_location_change_row', {
+                values: {
+                  owner: ownerName(item),
+                  from: hasLocation(item)
+                    ? `${item.exifInfo!.latitude}, ${item.exifInfo!.longitude}`
+                    : $t('frameleaf_utilities_no_location'),
+                  to: removing ? $t('frameleaf_utilities_no_location') : `${frozen.latitude}, ${frozen.longitude}`,
+                },
+              })}</span
+            >
+          </div>
+        {/if}
+      {/each}
+    </div>
     <p>
-      {review.latitude === null || review.longitude === null
-        ? $t('frameleaf_utilities_remove_location_review', { values: { count: review.ids.length } })
-        : $t('frameleaf_utilities_location_review', {
-            values: { count: review.ids.length, latitude: review.latitude, longitude: review.longitude },
-          })}
+      {removing
+        ? $t('frameleaf_utilities_remove_location_review', { values: { count: frozen.ids.length } })
+        : $t('library_care_retained_policy')}
     </p>
-    <Button variant="primary" disabled={bulk.busy} onclick={() => void apply()}
-      >{$t('apply_count', { values: { count: review.ids.length } })}</Button
-    >
+    {#snippet actions()}
+      <Button onclick={() => (reviewOpen = false)}>{$t('cancel')}</Button>
+      <Button variant="primary" disabled={bulk.busy} onclick={() => void apply()}
+        >{$t('frameleaf_large_files_review_confirm', { values: { count: frozen.ids.length } })}</Button
+      >
+    {/snippet}
   </Dialog>
 {/if}
 
@@ -331,7 +444,53 @@
     min-width: 0;
   }
   .map-picker header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
     padding: 0.75rem 0.875rem;
+  }
+  .map-buttons,
+  .map-controls,
+  .map-controls > div {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.375rem;
+  }
+  .map-controls {
+    justify-content: space-between;
+    padding: 0.625rem 0.875rem 0;
+  }
+  .map:focus-visible {
+    outline: 2px solid var(--fl-accent);
+    outline-offset: -2px;
+  }
+  .map-note {
+    margin: 0;
+    padding: 0.5rem 0.875rem 0;
+    color: var(--fl-muted);
+    font-size: 0.6875rem;
+  }
+  .map-note:last-child {
+    padding-bottom: 0.75rem;
+  }
+  .review-rows {
+    display: grid;
+    gap: 0.5rem;
+    max-height: 14rem;
+    overflow-y: auto;
+    margin: 0.75rem 0;
+  }
+  .review-rows > div {
+    display: grid;
+    gap: 0.125rem;
+    padding: 0.5rem 0.625rem;
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius);
+    font-size: 0.8125rem;
+  }
+  .review-rows span {
+    color: var(--fl-muted);
   }
   .map-picker strong {
     display: block;

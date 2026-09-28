@@ -58,6 +58,8 @@
     rounded?: boolean;
     showSimpleControls?: boolean;
     autoFitBounds?: boolean;
+    /** Called after the view settles from a pan or zoom, so a caller can re-read `contains`. */
+    onViewChange?: () => void;
   }
 
   let {
@@ -74,6 +76,7 @@
     rounded = false,
     showSimpleControls = true,
     autoFitBounds = true,
+    onViewChange,
   }: Props = $props();
 
   // Calculate initial bounds from markers once during initialization
@@ -107,6 +110,28 @@
 
     center = { lng, lat };
     marker = new Marker().setLngLat([lng, lat]).addTo(map);
+  }
+
+  export function zoomIn() {
+    map?.zoomIn();
+  }
+
+  export function zoomOut() {
+    map?.zoomOut();
+  }
+
+  export function centerOn(lng: number, lat: number) {
+    map?.easeTo({ center: [lng, lat] });
+  }
+
+  export function getCenter(): { lng: number; lat: number } | undefined {
+    const current = map?.getCenter();
+    return current ? { lng: current.lng, lat: current.lat } : undefined;
+  }
+
+  /** Whether a point is inside the visible view; true before the map has loaded. */
+  export function contains(lng: number, lat: number) {
+    return map ? map.getBounds().contains([lng, lat]) : true;
   }
 
   function handleAssetClick(assetId: string, map: Map | null) {
@@ -230,6 +255,7 @@
     onload={(event: Map) => {
       event.setMaxZoom(18);
       event.on('click', handleMapClick);
+      event.on('moveend', () => onViewChange?.());
       if (!simplified) {
         event.addControl(new GlobeControl(), 'top-left');
       }

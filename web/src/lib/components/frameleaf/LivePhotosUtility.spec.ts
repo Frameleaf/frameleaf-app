@@ -6,10 +6,16 @@ import { SvelteMap } from 'svelte/reactivity';
 import en from '../../../../../i18n/en.json';
 import LivePhotosUtility from './LivePhotosUtility.svelte';
 
-const state = vi.hoisted(() => ({ run: vi.fn(), info: vi.fn(), tiles: new Map<string, { state: 'pending' }>() }));
+const state = vi.hoisted(() => ({
+  run: vi.fn(),
+  info: vi.fn(),
+  update: vi.fn(),
+  tiles: new Map<string, { state: 'pending' }>(),
+}));
 vi.mock('@immich/sdk', async (original) => ({
   ...(await original<typeof import('@immich/sdk')>()),
   getAssetInfo: state.info,
+  updateAsset: state.update,
 }));
 vi.mock('$lib/managers/auth-manager.svelte', () => ({
   authManager: { user: { id: 'owner', name: 'Alex' }, params: {} },
@@ -30,6 +36,7 @@ describe('Live Photo utility filters', () => {
     state.tiles = new SvelteMap();
     state.run.mockReset().mockResolvedValue({ succeeded: ['one'], failed: [] });
     state.info.mockReset();
+    state.update.mockReset().mockResolvedValue({});
   });
   const confirmHighConfidence = async () => {
     await userEvent.click(screen.getByRole('button', { name: 'Link high-confidence pairs' }));
@@ -72,6 +79,44 @@ describe('Live Photo utility filters', () => {
     expect(screen.getByRole('button', { name: 'Link high-confidence pairs' })).toBeDisabled();
     const row = within(screen.getByRole('img', { name: 'Lake.heic' }).closest('article')!);
     expect(row.getByRole('button', { name: 'Review pair' })).toBeDisabled();
+  });
+  it('shows the candidate count and prototype confidence badges beside the evidence (UT-4, UT-6)', () => {
+    render(LivePhotosUtility, { data: fixture() });
+    expect(screen.getByText('2 candidate pairs')).toBeInTheDocument();
+    const lake = within(screen.getByRole('img', { name: 'Lake.heic' }).closest('article')!);
+    expect(lake.getByText('High confidence')).toBeInTheDocument();
+    expect(lake.getByText('Same identifier')).toBeInTheDocument();
+    const cabin = within(screen.getByRole('img', { name: 'Cabin.heic' }).closest('article')!);
+    expect(cabin.getByText('Low confidence')).toBeInTheDocument();
+    expect(cabin.getByText('Similar capture time')).toBeInTheDocument();
+  });
+  it('says no candidate pairs need review when the list is empty (UT-7)', () => {
+    const data = fixture();
+    data.candidates.candidates = [];
+    data.candidates.suggestionsEnabled = true;
+    render(LivePhotosUtility, { data });
+    expect(screen.getByText('No candidate pairs need review.')).toBeInTheDocument();
+  });
+  it('announces a link with Undo that unlinks the motion video (UT-8)', async () => {
+    render(LivePhotosUtility, { data: fixture() });
+    await confirmHighConfidence();
+    const notice = (await screen.findByText('1 item updated.')).closest<HTMLElement>('[role="status"]')!;
+    await userEvent.click(within(notice).getByRole('button', { name: 'Undo' }));
+    await waitFor(() =>
+      expect(state.update).toHaveBeenCalledExactlyOnceWith({ id: 'one', updateAssetDto: { livePhotoVideoId: null } }),
+    );
+    expect(await screen.findByText('Last change undone.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Undo' })).not.toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'Lake.heic' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Link high-confidence pairs' })).toBeEnabled();
+  });
+  it('dismisses the link notice (UT-8)', async () => {
+    render(LivePhotosUtility, { data: fixture() });
+    await confirmHighConfidence();
+    const notice = (await screen.findByText('1 item updated.')).closest<HTMLElement>('[role="status"]')!;
+    await userEvent.click(within(notice).getByRole('button', { name: 'Dismiss utility message' }));
+    expect(screen.queryByText('1 item updated.')).not.toBeInTheDocument();
+    expect(state.update).not.toHaveBeenCalled();
   });
   it('limits the high-confidence batch to the visible candidate set', async () => {
     const data = fixture();
