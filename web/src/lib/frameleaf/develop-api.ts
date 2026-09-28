@@ -70,7 +70,11 @@ export async function requestDevelopPreview(
 export function followDevelop(
   assetId: string,
   onUpdate: (develop: AssetDevelopResponseDto) => void,
-  options: { intervalMs?: number; onError?: (error: unknown) => void } = {},
+  options: {
+    intervalMs?: number;
+    onError?: (error: unknown) => void;
+    continueWhile?: (develop: AssetDevelopResponseDto) => boolean;
+  } = {},
 ): () => void {
   const interval = options.intervalMs ?? RENDER_POLL_MS;
   let stopped = false;
@@ -85,7 +89,7 @@ export function followDevelop(
         return;
       }
       onUpdate(develop);
-      if (anyRevisionBusy(develop.revisions)) {
+      if (!stopped && (anyRevisionBusy(develop.revisions) || options.continueWhile?.(develop))) {
         timer = setTimeout(() => void tick(), interval);
       }
     } catch (error) {

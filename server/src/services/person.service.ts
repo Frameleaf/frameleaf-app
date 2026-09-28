@@ -1409,7 +1409,7 @@ export class PersonService extends BaseService {
     }
 
     // FL-38: a box drawn on an image that has since changed would land in the wrong place
-    this.requireFaceSource(asset, dto.expectedSourceRevision);
+    await this.requireFaceSource(asset, dto.assetId, dto.expectedSourceRevision);
 
     const id = this.cryptoRepository.randomUUID();
     await this.personRepository.createAssetFace({
@@ -1436,6 +1436,7 @@ export class PersonService extends BaseService {
     if (!asset) {
       throw new NotFoundException('Asset not found');
     }
+    await this.requireFaceSource(asset, dto.id);
     return { assetId: dto.id, revision: getFaceSourceRevision(asset) };
   }
 
@@ -1471,7 +1472,7 @@ export class PersonService extends BaseService {
       if (!asset) {
         throw new NotFoundException('Asset not found');
       }
-      this.requireFaceSource(asset, dto.expectedSourceRevision);
+      await this.requireFaceSource(asset, face.assetId, dto.expectedSourceRevision);
       box = this.toStoredFaceBox(asset, dto.box);
     }
 
@@ -1610,7 +1611,12 @@ export class PersonService extends BaseService {
     await this.refreshIdentities(auth.user.id, { assetIds: [face.assetId] });
   }
 
-  private requireFaceSource(asset: FaceSource, expectedSourceRevision?: string) {
+  private async requireFaceSource(asset: FaceSource, assetId: string, expectedSourceRevision?: string) {
+    // A develop recipe can crop/rotate (or import a different frame) without changing the
+    // legacy edit geometry. Until boxes have a matching inverse mapping, refuse to place them.
+    if (await this.assetRepository.getCurrentDevelop(assetId)) {
+      throw new ConflictException('Face placement is unavailable for the current developed version.');
+    }
     if (expectedSourceRevision !== undefined && expectedSourceRevision !== getFaceSourceRevision(asset)) {
       throw new ConflictException('The image changed since this face was drawn. Reload it before placing faces.');
     }

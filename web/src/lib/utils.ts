@@ -35,7 +35,7 @@ import {
   isPersonRecap,
   isYearInReview,
 } from '$lib/frameleaf/memory-stories';
-import { playbackCacheKey } from '$lib/frameleaf/playback-revision.svelte';
+import { mayHaveDevelopPlaybackRevision, playbackCacheKey } from '$lib/frameleaf/playback-revision.svelte';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { alwaysLoadOriginalFile, lang, locale } from '$lib/stores/preferences.store';
 import { isWebCompatibleImage } from '$lib/utils/asset-utils';
@@ -243,6 +243,9 @@ const forceUseOriginal = (asset: AssetResponseDto) => {
 
 export const targetImageSize = (asset: AssetResponseDto, forceOriginal: boolean) => {
   if (forceOriginal || get(alwaysLoadOriginalFile) || forceUseOriginal(asset)) {
+    if (asset.type === AssetTypeEnum.Image && mayHaveDevelopPlaybackRevision(asset)) {
+      return AssetMediaSize.Fullsize;
+    }
     return asset.type === AssetTypeEnum.Video || isWebCompatibleImage(asset)
       ? AssetMediaSize.Original
       : AssetMediaSize.Fullsize;

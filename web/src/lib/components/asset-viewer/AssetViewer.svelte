@@ -17,7 +17,12 @@
   import { sessionAccess } from '$lib/frameleaf/session-access.svelte';
   import { readEditorContinuity } from '$lib/frameleaf/editor-continuity';
   import ViewerOfflineBanner from '$lib/components/frameleaf/ViewerOfflineBanner.svelte';
-  import { bumpPlaybackRevision, playbackCacheKey } from '$lib/frameleaf/playback-revision.svelte';
+  import {
+    bumpPlaybackRevision,
+    markDevelopPlaybackUnresolved,
+    playbackCacheKey,
+    setDevelopPlaybackRevision,
+  } from '$lib/frameleaf/playback-revision.svelte';
   import ViewerStackStrip from '$lib/components/frameleaf/ViewerStackStrip.svelte';
   import OnEvents from '$lib/components/OnEvents.svelte';
   import { AssetAction } from '$lib/constants';
@@ -46,6 +51,7 @@
     AssetTypeEnum,
     AssetVisibility,
     getAssetInfo,
+    getAssetDevelop,
     getStack,
     type AlbumResponseDto,
     type AssetResponseDto,
@@ -151,6 +157,44 @@
   let stack: StackResponseDto | null = $state(null);
 
   const asset = $derived(previewStackedAsset ?? cursor.current);
+  let developReadyFor = $state<string | null>(null);
+  let developLookupGeneration = 0;
+  let viewerAlive = true;
+  $effect(() => {
+    const current = asset;
+    const generation = ++developLookupGeneration;
+    if (
+      current.type !== AssetTypeEnum.Image ||
+      !authManager.authenticated ||
+      authManager.isSharedLink ||
+      current.ownerId !== authManager.user.id
+    ) {
+      developReadyFor = current.id;
+      return;
+    }
+    developReadyFor = null;
+    let active = true;
+    void getAssetDevelop({ id: current.id })
+      .then((develop) => {
+        if (!active || generation !== developLookupGeneration) {
+          return;
+        }
+        setDevelopPlaybackRevision(current.id, develop.currentRevisionId);
+        developReadyFor = current.id;
+      })
+      .catch(() => {
+        if (!active || generation !== developLookupGeneration) {
+          return;
+        }
+        // A fresh key still reaches the media route, which chooses the current version itself.
+        markDevelopPlaybackUnresolved(current.id);
+        bumpPlaybackRevision(current.id);
+        developReadyFor = current.id;
+      });
+    return () => {
+      active = false;
+    };
+  });
   const nextAsset = $derived(cursor.nextAsset);
   const previousAsset = $derived(cursor.previousAsset);
   let sharedLink = getSharedLink();
@@ -365,6 +409,7 @@
   });
 
   onDestroy(() => {
+    viewerAlive = false;
     activityManager.reset();
     assetViewerManager.resetPanelState();
     syncAssetViewerOpenClass(false);
@@ -389,6 +434,35 @@
       assetViewerManager.setAsset(refreshedAsset);
     }
     assetViewerManager.closeEditor();
+  };
+
+  const refreshRenderedPhoto = async (assetId: string) => {
+    if (!viewerAlive || asset.id !== assetId) {
+      return;
+    }
+    const generation = ++developLookupGeneration;
+    developReadyFor = null;
+    try {
+      const develop = await getAssetDevelop({ id: assetId });
+      if (!viewerAlive || asset.id !== assetId || generation !== developLookupGeneration) {
+        return;
+      }
+      setDevelopPlaybackRevision(assetId, develop.currentRevisionId);
+      developReadyFor = assetId;
+      const refreshedAsset = await getAssetInfo({ id: assetId });
+      if (!viewerAlive || asset.id !== assetId || generation !== developLookupGeneration) {
+        return;
+      }
+      onAssetChange?.(refreshedAsset);
+      assetViewerManager.setAsset(refreshedAsset);
+    } catch (error) {
+      if (viewerAlive && asset.id === assetId && generation === developLookupGeneration) {
+        markDevelopPlaybackUnresolved(assetId);
+        bumpPlaybackRevision(assetId);
+        developReadyFor = assetId;
+        handleError(error, $t('frameleaf_editor_versions_error'));
+      }
+    }
   };
 
   // FL-38: after the face tagger saves, re-read the asset and its faces, as closeEditor does.
@@ -1075,7 +1149,9 @@
     {:else if viewerKind === 'ImagePanaramaViewer'}
       <ImagePanoramaViewer {asset} />
     {:else if viewerKind === 'PhotoViewer'}
-      <PhotoViewer cursor={{ ...cursor, current: asset }} {sharedLink} {onSwipe} />
+      {#if developReadyFor === asset.id}
+        <PhotoViewer cursor={{ ...cursor, current: asset }} {sharedLink} {onSwipe} />
+      {/if}
     {:else if viewerKind === 'VideoViewer'}
       <VideoViewer
         {asset}
@@ -1176,7 +1252,7 @@
     production video editor's commands inside the same frame.
   -->
   {#if assetViewerManager.isShowEditor && authManager.authenticated && !authManager.isSharedLink && asset.ownerId === authManager.user.id}
-    <QuickEditor {asset} onClose={closeEditor} />
+    <QuickEditor {asset} onClose={closeEditor} onRendered={refreshRenderedPhoto} />
   {/if}
 
   <!-- FL-38: the face tagger is a modal dialog over the viewer (FaceTagger.jsx), for photos and videos alike. -->

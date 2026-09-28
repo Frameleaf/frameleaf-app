@@ -11,6 +11,7 @@
   import { faceManager } from '$lib/stores/face.svelte';
   import { ocrManager } from '$lib/stores/ocr.svelte';
   import { prefersReducedMotion } from '$lib/frameleaf/motion';
+  import { mayHaveDevelopPlaybackRevision } from '$lib/frameleaf/playback-revision.svelte';
   import { effectiveTransition, SlideshowTransition } from '$lib/frameleaf/slideshow-transitions';
   import { SlideshowLook, SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
   import { handlePromiseError } from '$lib/utils';
@@ -77,7 +78,10 @@
     return scaleToFit(getNaturalSize(assetViewerManager.imgRef), { width: containerWidth, height: containerHeight });
   });
 
-  const highlightedBoxes = $derived(getBoundingBox(assetViewerManager.highlightedFaces, overlaySize));
+  // Stored face boxes use original/legacy edit geometry; a developed crop can move them.
+  const highlightedBoxes = $derived(
+    mayHaveDevelopPlaybackRevision(asset) ? [] : getBoundingBox(assetViewerManager.highlightedFaces, overlaySize),
+  );
   const isHighlighting = $derived(highlightedBoxes.length > 0);
 
   let visibleBoxes = $state<BoundingBox[]>([]);
@@ -193,7 +197,7 @@
   const faces = $derived(Array.from(faceToNameMap.keys()));
 
   const boundingBoxes = $derived.by(() => {
-    if (assetViewerManager.isFaceEditMode || ocrManager.showOverlay) {
+    if (mayHaveDevelopPlaybackRevision(asset) || assetViewerManager.isFaceEditMode || ocrManager.showOverlay) {
       return [];
     }
 
@@ -302,6 +306,7 @@
         {@const isActive = assetViewerManager.highlightedFaces.some((f) => f.id === boundingbox.id)}
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div
+          data-testid="face-hotspot"
           class="pointer-events-auto absolute rounded-lg {isActive && 'border-3 border-solid border-white'}"
           style="top: {boundingbox.top}px; left: {boundingbox.left}px; height: {boundingbox.height}px; width: {boundingbox.width}px;"
           onpointerenter={() => assetViewerManager.setHighlightedFaces([boundingbox.face])}

@@ -2,7 +2,9 @@ import {
   AssetTypeEnum,
   AssetVisibility,
   deleteAssets,
+  getAssetDevelop,
   getAssetInfo,
+  getFaces,
   updateAsset,
   type AssetResponseDto,
 } from '@immich/sdk';
@@ -11,6 +13,7 @@ import { get } from 'svelte/store';
 import { getAnimateMock } from '$lib/__mocks__/animate.mock';
 import { getResizeObserverMock } from '$lib/__mocks__/resize-observer.mock';
 import { saveEditorContinuity } from '$lib/frameleaf/editor-continuity';
+import { resetPlaybackRevisions, setDevelopPlaybackRevision } from '$lib/frameleaf/playback-revision.svelte';
 import { assetCacheManager } from '$lib/managers/AssetCacheManager.svelte';
 import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
 import { authManager } from '$lib/managers/auth-manager.svelte';
@@ -18,12 +21,23 @@ import { eventManager } from '$lib/managers/event-manager.svelte';
 import { SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
 // The application-wide socket subscription the layout loads; the viewer only listens to its events.
 import '$lib/stores/websocket';
+import { getAssetUrls } from '$lib/utils';
 import { renderWithTooltips } from '$tests/helpers';
 import { assetFactory } from '@test-data/factories/asset-factory';
 import { preferencesFactory } from '@test-data/factories/preferences-factory';
 import { userAdminFactory } from '@test-data/factories/user-factory';
 import { stubFocusVisible } from '@test-data/focus-visible';
 import AssetViewer from './AssetViewer.svelte';
+
+const deferred = <T>() => {
+  let resolve!: (value: T) => void;
+  let reject!: (reason: Error) => void;
+  const promise = new Promise<T>((done, fail) => {
+    resolve = done;
+    reject = fail;
+  });
+  return { promise, resolve, reject };
+};
 
 const { socketListeners } = vi.hoisted(() => ({ socketListeners: new Map<string, (...args: unknown[]) => void>() }));
 const { app } = vi.hoisted(() => ({ app: { page: { url: new URL('http://localhost/photos'), state: {} } } }));
@@ -92,11 +106,17 @@ vi.mock('@immich/sdk', async () => {
     updateAsset: vi.fn(),
     getFaces: vi.fn().mockResolvedValue([]),
     getAssetInfo: vi.fn(),
+    getAssetDevelop: vi.fn().mockResolvedValue({ assetId: 'asset', currentRevisionId: null, revisions: [] }),
     deleteAssets: vi.fn().mockResolvedValue(undefined),
   };
 });
 
 describe('AssetViewer', () => {
+  beforeEach(() => {
+    vi.mocked(getAssetDevelop).mockResolvedValue({ assetId: 'asset', currentRevisionId: null, revisions: [] });
+    vi.mocked(getFaces).mockResolvedValue([]);
+  });
+
   beforeAll(() => {
     Element.prototype.animate = getAnimateMock();
     vi.stubGlobal('ResizeObserver', getResizeObserverMock());
@@ -107,6 +127,7 @@ describe('AssetViewer', () => {
     slideshowStore.slideshowState.set(SlideshowState.None);
     assetCacheManager.invalidate();
     authManager.reset();
+    resetPlaybackRevisions();
     vi.clearAllMocks();
   });
 
@@ -127,6 +148,136 @@ describe('AssetViewer', () => {
     onAssetUpdate.mockClear();
     eventManager.emit('AssetUpdate', { ...updated, id: 'another-asset' });
     expect(onAssetUpdate).not.toHaveBeenCalled();
+  });
+
+  it('loads the owner photo current develop revision before selecting its viewer URL', async () => {
+    const user = userAdminFactory.build();
+    const asset = assetFactory.build({ ownerId: user.id, type: AssetTypeEnum.Image, thumbhash: 'photo-hash' });
+    authManager.setUser(user);
+    authManager.setPreferences(preferencesFactory.build({ cast: { gCastEnabled: false } }));
+    vi.mocked(getAssetDevelop).mockResolvedValue({
+      assetId: asset.id,
+      currentRevisionId: 'rendered-photo',
+      revisions: [],
+    });
+
+    renderWithTooltips(AssetViewer, { cursor: { current: asset }, showNavigation: false });
+
+    await waitFor(() => expect(getAssetDevelop).toHaveBeenCalledWith({ id: asset.id }));
+    await waitFor(() =>
+      expect(new URL(getAssetUrls(asset).preview, 'http://x').searchParams.get('c')).toBe(
+        'photo-hash-develop-rendered-photo',
+      ),
+    );
+  });
+
+  it('keeps both preview and zoom on the media route after a failed develop lookup', async () => {
+    const user = userAdminFactory.build();
+    const asset = assetFactory.build({
+      ownerId: user.id,
+      type: AssetTypeEnum.Image,
+      originalPath: 'image.jpg',
+      originalMimeType: 'image/jpeg',
+    });
+    authManager.setUser(user);
+    authManager.setPreferences(preferencesFactory.build({ cast: { gCastEnabled: false } }));
+    vi.mocked(getAssetDevelop).mockRejectedValue(new Error('offline'));
+    renderWithTooltips(AssetViewer, { cursor: { current: asset }, showNavigation: false });
+
+    await waitFor(() => expect(getAssetDevelop).toHaveBeenCalledWith({ id: asset.id }));
+    await waitFor(() =>
+      expect(new URL(getAssetUrls(asset).original, 'http://x').searchParams.get('size')).toBe('fullsize'),
+    );
+    expect(new URL(getAssetUrls(asset).preview, 'http://x').searchParams.get('size')).toBe('preview');
+    expect(new URL(getAssetUrls(asset).original, 'http://x').pathname).toContain(`/${asset.id}/thumbnail`);
+  });
+
+  it('drops a render refresh started before navigating A to B and back to A', async () => {
+    const user = userAdminFactory.build();
+    const first = assetFactory.build({ ownerId: user.id, type: AssetTypeEnum.Image, thumbhash: 'a-hash' });
+    const second = assetFactory.build({ ownerId: user.id, type: AssetTypeEnum.Image });
+    const late = deferred<AssetResponseDto>();
+    authManager.setUser(user);
+    authManager.setPreferences(preferencesFactory.build({ cast: { gCastEnabled: false } }));
+    assetViewerManager.isShowEditor = true;
+    const onAssetChange = vi.fn();
+    const view = renderWithTooltips(AssetViewer, {
+      cursor: { current: first },
+      showNavigation: false,
+      onAssetChange,
+    });
+    await waitFor(() => expect(getAssetDevelop).toHaveBeenCalledTimes(1));
+    vi.mocked(getAssetDevelop).mockResolvedValueOnce({
+      assetId: first.id,
+      currentRevisionId: 'stale-render',
+      revisions: [],
+    });
+    vi.mocked(getAssetInfo).mockReturnValueOnce(late.promise);
+    await fireEvent.click(view.getByRole('button', { name: 'Publish photo render' }));
+    await waitFor(() => expect(getAssetInfo).toHaveBeenCalledWith({ id: first.id }));
+
+    await view.rerender({ componentProps: { cursor: { current: second }, showNavigation: false, onAssetChange } });
+    await waitFor(() => expect(getAssetDevelop).toHaveBeenCalledTimes(3));
+    await view.rerender({ componentProps: { cursor: { current: first }, showNavigation: false, onAssetChange } });
+    await waitFor(() => expect(getAssetDevelop).toHaveBeenCalledTimes(4));
+    late.resolve({ ...first, thumbhash: 'stale-hash' });
+    await Promise.resolve();
+
+    expect(onAssetChange).not.toHaveBeenCalled();
+    expect(new URL(getAssetUrls(first).preview, 'http://x').searchParams.get('c')).toBe('a-hash');
+  });
+
+  it('ignores an older failed refresh after a newer render refresh succeeds for the same photo', async () => {
+    const user = userAdminFactory.build();
+    const asset = assetFactory.build({ ownerId: user.id, type: AssetTypeEnum.Image, thumbhash: 'photo-hash' });
+    const old = deferred<Awaited<ReturnType<typeof getAssetDevelop>>>();
+    const published = { ...asset, thumbhash: 'published-hash' };
+    authManager.setUser(user);
+    authManager.setPreferences(preferencesFactory.build({ cast: { gCastEnabled: false } }));
+    assetViewerManager.isShowEditor = true;
+    const onAssetChange = vi.fn();
+    const view = renderWithTooltips(AssetViewer, { cursor: { current: asset }, showNavigation: false, onAssetChange });
+    await waitFor(() => expect(getAssetDevelop).toHaveBeenCalledTimes(1));
+    vi.mocked(getAssetDevelop)
+      .mockReturnValueOnce(old.promise)
+      .mockResolvedValueOnce({ assetId: asset.id, currentRevisionId: 'new-render', revisions: [] });
+    vi.mocked(getAssetInfo).mockResolvedValueOnce(published);
+
+    await fireEvent.click(view.getByRole('button', { name: 'Publish photo render' }));
+    await waitFor(() => expect(getAssetDevelop).toHaveBeenCalledTimes(2));
+    await fireEvent.click(view.getByRole('button', { name: 'Publish photo render' }));
+    await waitFor(() => expect(onAssetChange).toHaveBeenCalledExactlyOnceWith(published));
+    old.reject(new Error('offline'));
+    await Promise.resolve();
+
+    expect(new URL(getAssetUrls(asset).preview, 'http://x').searchParams.get('c')).toBe(
+      'photo-hash-develop-new-render',
+    );
+    expect(onAssetChange).toHaveBeenCalledTimes(1);
+  });
+
+  it('removes stored face hotspots when a developed crop becomes the displayed image', async () => {
+    const user = userAdminFactory.build();
+    const asset = assetFactory.build({ ownerId: user.id, type: AssetTypeEnum.Image });
+    authManager.setUser(user);
+    authManager.setPreferences(preferencesFactory.build({ cast: { gCastEnabled: false } }));
+    vi.mocked(getFaces).mockResolvedValue([
+      {
+        id: 'face',
+        imageWidth: 200,
+        imageHeight: 150,
+        boundingBoxX1: 20,
+        boundingBoxX2: 60,
+        boundingBoxY1: 30,
+        boundingBoxY2: 80,
+        person: { id: 'person', name: 'Someone', isHidden: false },
+      } as never,
+    ]);
+    renderWithTooltips(AssetViewer, { cursor: { current: asset }, showNavigation: false });
+    await waitFor(() => expect(screen.getByTestId('face-hotspot')).toBeInTheDocument());
+
+    setDevelopPlaybackRevision(asset.id, 'cropped-version');
+    await waitFor(() => expect(screen.queryByTestId('face-hotspot')).not.toBeInTheDocument());
   });
 
   describe('back from Studio to the quick editor (FL-113)', () => {

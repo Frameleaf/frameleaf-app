@@ -1,8 +1,16 @@
 import { AssetTypeEnum } from '@immich/sdk';
-import { bumpPlaybackRevision, resetPlaybackRevisions } from '$lib/frameleaf/playback-revision.svelte';
+import {
+  bumpPlaybackRevision,
+  markDevelopPlaybackUnresolved,
+  resetPlaybackRevisions,
+  setDevelopPlaybackRevision,
+} from '$lib/frameleaf/playback-revision.svelte';
+import { authManager } from '$lib/managers/auth-manager.svelte';
 import { AbortError, cancelUploadRequests, getAssetUrl, getAssetUrls, semverToName, uploadRequest } from '$lib/utils';
 import { assetFactory } from '@test-data/factories/asset-factory';
+import { preferencesFactory } from '@test-data/factories/preferences-factory';
 import { sharedLinkFactory } from '@test-data/factories/shared-link-factory';
+import { userAdminFactory } from '@test-data/factories/user-factory';
 
 describe('utils', () => {
   describe('FL-45 cancelling uploads', () => {
@@ -30,7 +38,10 @@ describe('utils', () => {
   });
 
   describe('FL-115 playback cache key', () => {
-    afterEach(() => resetPlaybackRevisions());
+    afterEach(() => {
+      resetPlaybackRevisions();
+      authManager.reset();
+    });
 
     const photo = () =>
       assetFactory.build({
@@ -70,6 +81,57 @@ describe('utils', () => {
       bumpPlaybackRevision(chosen.id);
 
       expect(getAssetUrls(other).preview).toBe(otherBefore);
+    });
+
+    it('uses the current develop revision in owner photo preview URLs across a fresh viewer load', () => {
+      const asset = photo();
+      const original = getAssetUrls(asset);
+      authManager.setUser(userAdminFactory.build({ id: asset.ownerId }));
+      authManager.setPreferences(preferencesFactory.build());
+      setDevelopPlaybackRevision(asset.id, 'rendered-revision');
+      const developed = getAssetUrls(asset);
+
+      expect(new URL(developed.preview, 'http://x').searchParams.get('c')).toBe('hash-develop-rendered-revision');
+      expect(developed.original).not.toBe(original.original);
+      expect(developed.thumbnail).toBe(original.thumbnail);
+      authManager.reset();
+      expect(new URL(getAssetUrls(asset).preview, 'http://x').searchParams.get('c')).toBe('hash');
+    });
+
+    it('loads a developed JPEG master through full-size media instead of the original endpoint', () => {
+      const asset = assetFactory.build({
+        originalPath: 'image.jpg',
+        originalMimeType: 'image/jpeg',
+        type: AssetTypeEnum.Image,
+        thumbhash: 'jpeg-hash',
+      });
+      authManager.setUser(userAdminFactory.build({ id: asset.ownerId }));
+      authManager.setPreferences(preferencesFactory.build());
+      expect(getAssetUrls(asset).original).toContain(`/${asset.id}/original`);
+
+      setDevelopPlaybackRevision(asset.id, 'rendered-jpeg');
+
+      const original = new URL(getAssetUrls(asset).original, 'http://x');
+      expect(original.pathname).toContain(`/${asset.id}/thumbnail`);
+      expect(original.searchParams.get('size')).toBe('fullsize');
+      expect(original.searchParams.get('c')).toBe('jpeg-hash-develop-rendered-jpeg');
+    });
+
+    it('keeps preview and zoom on the media route when the current develop lookup fails', () => {
+      const asset = assetFactory.build({
+        originalPath: 'image.jpg',
+        originalMimeType: 'image/jpeg',
+        type: AssetTypeEnum.Image,
+      });
+      authManager.setUser(userAdminFactory.build({ id: asset.ownerId }));
+      authManager.setPreferences(preferencesFactory.build());
+      markDevelopPlaybackUnresolved(asset.id);
+      bumpPlaybackRevision(asset.id);
+
+      const urls = getAssetUrls(asset);
+      expect(new URL(urls.preview, 'http://x').searchParams.get('size')).toBe('preview');
+      expect(new URL(urls.original, 'http://x').searchParams.get('size')).toBe('fullsize');
+      expect(new URL(urls.original, 'http://x').pathname).toContain(`/${asset.id}/thumbnail`);
     });
   });
 
