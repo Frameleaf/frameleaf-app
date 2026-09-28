@@ -12,6 +12,7 @@
     AssetMediaSize,
     AssetTypeEnum,
     getReceivedItemShares,
+    NotificationType,
     type AssetResponseDto,
     type ItemShareReceivedDto,
   } from '@immich/sdk';
@@ -34,6 +35,7 @@
   let items = $state<ItemShareReceivedDto[]>([]);
   let loaded = $state(false);
   let section = $state<HTMLElement>();
+  let loadId = 0;
 
   const assets = $derived(items.map((item) => item.asset));
   const groups = $derived.by(() => {
@@ -47,12 +49,20 @@
   });
 
   const load = async () => {
+    const request = ++loadId;
     try {
-      ({ items } = await getReceivedItemShares());
+      const response = await getReceivedItemShares();
+      if (request === loadId) {
+        items = response.items;
+      }
     } catch (error) {
-      handleError(error, $t('frameleaf_sharing.shared_with_you_load_failed'));
+      if (request === loadId) {
+        handleError(error, $t('frameleaf_sharing.shared_with_you_load_failed'));
+      }
     } finally {
-      loaded = true;
+      if (request === loadId) {
+        loaded = true;
+      }
     }
   };
 
@@ -105,6 +115,13 @@
       items = items.filter((item) => item.asset.id !== assetId);
       if (openId === assetId) {
         closeViewer();
+      }
+    }),
+  );
+  onDestroy(
+    websocketEvents.on('on_notification', (notification) => {
+      if (notification.type === NotificationType.ItemShare) {
+        void load();
       }
     }),
   );

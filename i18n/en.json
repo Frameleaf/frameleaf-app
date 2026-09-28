@@ -8551,6 +8551,8 @@
     "slug_invalid": "Use 3–48 lowercase letters, numbers or dashes.",
     "slug_placeholder": "summer-trip",
     "slug_taken": "Already used by another link.",
+    "some_items": "Some items",
+    "some_items_action": "shared with some selected items; select to stop sharing them",
     "stop_sharing_note": "Shared links you created are not affected.",
     "summary_download_only": "They can download originals.",
     "summary_download_upload": "They can download originals and can add their own photos.",

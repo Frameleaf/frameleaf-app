@@ -33,8 +33,8 @@
    * they see them in their own Frameleaf, under Sharing › Shared with you, and are notified; nothing
    * leaves the server. It is not partner sharing, which exposes a whole library. Only the owner's own
    * items can be shared this way, so the option is offered only when every item is theirs. People
-   * already sharing every item start selected; saving adds the newly chosen and stops sharing with
-   * the ones turned off. "Create a public link" opens the shared-link form.
+   * already sharing any selected item start selected; partial sharing is marked as such. Turning a
+   * person off clears their shares across the selection. "Create a public link" opens the shared-link form.
    *
    * FL-35 / FL-54: "Send a copy…" sits beside Cancel as in the prototype (SharedLinks.jsx:477-482)
    * where the browser can share files. It hands copies of the originals to the native share sheet and
@@ -69,43 +69,67 @@
   const peopleMode = $derived(ownItems && mode === 'people');
   let people = $state<UserResponseDto[]>([]);
   let recipients = $state<Set<string>>(new Set());
+  let partialRecipients = $state<Set<string>>(new Set());
   let initialRecipients = new Set<string>();
+  let initialAllRecipients = new Set<string>();
   let loading = $state(false);
   let saving = $state(false);
   let loadedFor = '';
+  let loadingFor = '';
+  let loadId = 0;
 
-  const loadPeople = async () => {
-    const key = assetIds.join(',');
-    if (loadedFor === key) {
+  const loadPeople = async (key: string) => {
+    if (loadedFor === key || loadingFor === key) {
       return;
     }
-    loadedFor = key;
+    const request = ++loadId;
+    loadingFor = key;
     loading = true;
     try {
       const [users, shares] = await Promise.all([searchUsers(), getItemShares({ itemShareQueryDto: { assetIds } })]);
+      if (request !== loadId) {
+        return;
+      }
       people = users.filter((user) => user.id !== authManager.user.id);
-      // Someone counts as already chosen only when every one of these items is shared with them.
       const perPerson = new Map<string, Set<string>>();
       for (const share of shares) {
         const items = perPerson.get(share.sharedWith.id) ?? new Set<string>();
         items.add(share.assetId);
         perPerson.set(share.sharedWith.id, items);
       }
-      initialRecipients = new Set(
+      initialRecipients = new Set(perPerson.keys());
+      initialAllRecipients = new Set(
         [...perPerson].filter(([, items]) => assetIds.every((id) => items.has(id))).map(([id]) => id),
       );
       recipients = new Set(initialRecipients);
+      partialRecipients = new Set(without(initialRecipients, initialAllRecipients));
+      loadedFor = key;
     } catch (error) {
-      loadedFor = '';
-      handleError(error, $t('frameleaf_sharing.people_load_failed'));
+      if (request === loadId) {
+        handleError(error, $t('frameleaf_sharing.people_load_failed'));
+      }
     } finally {
-      loading = false;
+      if (request === loadId) {
+        loadingFor = '';
+        loading = false;
+      }
     }
   };
 
   $effect(() => {
+    const key = assetIds.join(',');
     if (open && ownItems) {
-      void loadPeople();
+      void loadPeople(key);
+    } else {
+      loadId++;
+      loadedFor = '';
+      loadingFor = '';
+      loading = false;
+      people = [];
+      recipients = new Set();
+      partialRecipients = new Set();
+      initialRecipients = new Set();
+      initialAllRecipients = new Set();
     }
   });
 
@@ -113,6 +137,9 @@
     const next = new Set(recipients);
     if (next.has(id)) {
       next.delete(id);
+      const partial = new Set(partialRecipients);
+      partial.delete(id);
+      partialRecipients = partial;
     } else {
       next.add(id);
     }
@@ -140,7 +167,7 @@
   };
 
   const saveSharing = async () => {
-    const toAdd = without(recipients, initialRecipients);
+    const toAdd = without(recipients, initialAllRecipients).filter((id) => !partialRecipients.has(id));
     const toRemove = without(initialRecipients, recipients);
     saving = true;
     try {
@@ -151,6 +178,7 @@
         await unshareItems({ itemShareChangeDto: { assetIds, userIds: toRemove } });
       }
       initialRecipients = new Set(recipients);
+      initialAllRecipients = new Set(without(recipients, partialRecipients));
       toastManager.primary($t('frameleaf_sharing.sharing_saved'));
       open = false;
     } catch (error) {
@@ -281,12 +309,13 @@
       <div class="ss-people" role="group" aria-label={$t('frameleaf_sharing.people_to_share_with')}>
         {#each people as person (person.id)}
           {@const selected = recipients.has(person.id)}
+          {@const partial = partialRecipients.has(person.id)}
           <button
             type="button"
             class="ss-person"
             class:is-selected={selected}
-            aria-pressed={selected}
-            aria-label={person.name}
+            aria-pressed={partial ? 'mixed' : selected}
+            aria-label={partial ? `${person.name}, ${$t('frameleaf_sharing.some_items_action')}` : person.name}
             onclick={() => toggle(person.id)}
           >
             <span class="ss-person-avatar" aria-hidden="true">
@@ -294,6 +323,7 @@
               <span class="ss-person-check"><Icon icon={mdiCheck} size="14" /></span>
             </span>
             <span class="ss-person-name" aria-hidden="true">{person.name}</span>
+            {#if partial}<small>{$t('frameleaf_sharing.some_items')}</small>{/if}
           </button>
         {/each}
       </div>

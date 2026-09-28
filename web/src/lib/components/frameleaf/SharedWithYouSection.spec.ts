@@ -1,3 +1,4 @@
+import { NotificationType } from '@immich/sdk';
 import { screen, waitFor, within } from '@testing-library/svelte';
 import { render } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
@@ -9,13 +10,19 @@ import en from '../../../../../i18n/en.json';
 import SharedWithYouSection from './SharedWithYouSection.svelte';
 
 const hiddenHandlers = vi.hoisted(() => new Set<(assetId: string) => void>());
+const notificationHandlers = vi.hoisted(() => new Set<(notification: { type: string }) => void>());
 vi.mock('$lib/stores/websocket', () => ({
   websocketEvents: {
-    on: (event: string, handler: (assetId: string) => void) => {
+    on: (event: string, handler: never) => {
       if (event === 'on_asset_hidden') {
         hiddenHandlers.add(handler);
+      } else if (event === 'on_notification') {
+        notificationHandlers.add(handler);
       }
-      return () => hiddenHandlers.delete(handler);
+      return () => {
+        hiddenHandlers.delete(handler);
+        notificationHandlers.delete(handler);
+      };
     },
   },
 }));
@@ -88,6 +95,22 @@ describe('SharedWithYouSection', () => {
     sdkMock.getReceivedItemShares.mockResolvedValue({ link: null, items: [] });
     render(SharedWithYouSection);
     expect(await screen.findByText(en.frameleaf_sharing.shared_with_you_empty)).toBeInTheDocument();
+  });
+
+  it('loads a new item share while the Sharing page remains open', async () => {
+    sdkMock.getReceivedItemShares.mockResolvedValueOnce({ link: null, items: [] }).mockResolvedValue({
+      link: null,
+      items: [{ id: '1', sharedAt: '', owner: taylor, asset: beach }],
+    });
+    render(SharedWithYouSection);
+    expect(await screen.findByText(en.frameleaf_sharing.shared_with_you_empty)).toBeInTheDocument();
+
+    for (const handler of notificationHandlers) {
+      handler({ type: NotificationType.ItemShare });
+    }
+
+    expect(await screen.findByRole('button', { name: 'beach.jpg' })).toBeInTheDocument();
+    expect(sdkMock.getReceivedItemShares).toHaveBeenCalledTimes(2);
   });
 
   it('opens the item named in the address in the viewer, only when it was shared with you', async () => {
