@@ -8,7 +8,13 @@
  * the draft is not a document.
  */
 import type { StudioDraftResult } from './host-contract';
-import type { StudioProjectAccess, StudioProjectStatus, StudioStageOutcome } from './project-session';
+import {
+  isShelvedConflict,
+  type StudioConflict,
+  type StudioProjectAccess,
+  type StudioProjectStatus,
+  type StudioStageOutcome,
+} from './project-session';
 
 export interface StudioDraftGate {
   accessLost: boolean;
@@ -16,6 +22,7 @@ export interface StudioDraftGate {
   authenticated: boolean;
   access: StudioProjectAccess | null;
   status: StudioProjectStatus;
+  conflict?: StudioConflict | null;
 }
 
 export const decideStudioDraft = (
@@ -28,7 +35,8 @@ export const decideStudioDraft = (
   if (!graph || typeof graph !== 'object' || Array.isArray(graph)) {
     return { stage: false, result: { status: 'rejected', reason: 'invalid' } };
   }
-  if (gate.access === 'reviewer' || gate.status === 'review' || gate.status === 'loading') {
+  const ownerRecovery = gate.access === 'owner' && !!gate.conflict && isShelvedConflict(gate.conflict);
+  if (gate.access === 'reviewer' || (gate.status === 'review' && !ownerRecovery) || gate.status === 'loading') {
     return { stage: false, result: { status: 'rejected', reason: 'lease-lost' } };
   }
   return { stage: true };
@@ -41,7 +49,7 @@ export const decideStudioDraft = (
  * (after Reload) nothing is held, so the editor shows the head it will be judged against.
  */
 export const studioDraftHeld = (status: StudioProjectStatus | undefined, hasDraft: boolean): boolean =>
-  hasDraft && (status === 'conflict' || status === 'lease-lost');
+  hasDraft && (status === 'conflict' || status === 'lease-lost' || status === 'review');
 
 /**
  * What the editor is told after the session judged its draft. `superseded` (FL-174): the draft was

@@ -33,7 +33,18 @@ import type { VirtualWorkspace } from './virtual-workspace'
  * (FL-93): Freecut counts source frames in this unit, and `29.97` drifts a tenth of a frame from
  * a 30000/1001 source over an hour.
  */
-const COMMON_FRAME_RATES = [24_000 / 1001, 24, 25, 30_000 / 1001, 30, 48, 50, 60_000 / 1001, 60, 120]
+const COMMON_FRAME_RATES = [
+  24_000 / 1001,
+  24,
+  25,
+  30_000 / 1001,
+  30,
+  48,
+  50,
+  60_000 / 1001,
+  60,
+  120,
+]
 
 /** Snap a measured packet rate to the nearest broadcast rate, as Freecut's own importer does. */
 export const snapFrameRate = (fps: number): number => {
@@ -67,7 +78,11 @@ export const initialMediaRecord = (asset: StudioAssetRef, now: number): MediaMet
   duration: durationSeconds(asset),
   width: asset.width ?? 0,
   height: asset.height ?? 0,
-  fps: asset.kind === 'video' ? 30 : 0,
+  fps: asset.frameRate
+    ? asset.frameRate.num / asset.frameRate.den
+    : asset.kind === 'video'
+      ? 30
+      : 0,
   codec: 'unknown',
   bitrate: 0,
   videoCodecSupported: true,
@@ -93,6 +108,7 @@ export interface ProbedMedia {
  */
 export async function probeVideo(url: string, signal: AbortSignal): Promise<ProbedMedia | null> {
   const { Input, UrlSource, ALL_FORMATS } = await import('mediabunny')
+  if (signal.aborted) return null
   const input = new Input({ source: new UrlSource(url), formats: ALL_FORMATS })
   const abort = () => input.dispose()
   signal.addEventListener('abort', abort, { once: true })
@@ -206,21 +222,22 @@ export function createLibraryMediaSeeder(options: {
       const size = await probeImage(url, controller.signal)
       if (size) Object.assign(updates, size)
     }
-    try {
-      const thumbnail = await fetchBlob(asset.thumbnailUrl, controller.signal)
-      const thumbnailId = `thumb-${asset.id}`
-      await saveThumbnail({
-        id: thumbnailId,
-        mediaId: asset.id,
-        blob: thumbnail,
-        timestamp: 0,
-        width: 320,
-        height: 180,
-      })
-      updates.thumbnailId = thumbnailId
-    } catch {
-      // The bin falls back to its own placeholder.
-    }
+    if (asset.thumbnailUrl)
+      try {
+        const thumbnail = await fetchBlob(asset.thumbnailUrl, controller.signal)
+        const thumbnailId = `thumb-${asset.id}`
+        await saveThumbnail({
+          id: thumbnailId,
+          mediaId: asset.id,
+          blob: thumbnail,
+          timestamp: 0,
+          width: 320,
+          height: 180,
+        })
+        updates.thumbnailId = thumbnailId
+      } catch {
+        // The bin falls back to its own placeholder.
+      }
     if (controller.signal.aborted || Object.keys(updates).length === 0) return
     await updateMedia(asset.id, { ...updates, updatedAt: Date.now() })
     onChange()
@@ -228,18 +245,21 @@ export function createLibraryMediaSeeder(options: {
 
   return {
     async seed(assets) {
+      if (controller.signal.aborted) return
       const fresh = assets.filter((asset) => !seeded.has(asset.id) && !asset.isOffline)
       const now = Date.now()
       for (const asset of fresh) {
         seeded.add(asset.id)
+        if (controller.signal.aborted) return
         const record = initialMediaRecord(asset, now)
         if (!(await getMedia(asset.id))) {
           await createMedia(record)
         }
+        if (controller.signal.aborted) return
         // Media bytes stay on the server until something actually reads them.
         workspace.putLazyFile(
           [...mediaDir(asset.id), record.fileName],
-          () => fetchBlob(sourceUrlOf(asset)),
+          () => fetchBlob(sourceUrlOf(asset), controller.signal),
           record.mimeType,
         )
         blobUrlManager.registerUrl(asset.id, sourceUrlOf(asset))

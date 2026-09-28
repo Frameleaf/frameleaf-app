@@ -398,6 +398,7 @@
   };
 
   const engineHandlers = createStudioEngineCommandHandlers({
+    projectId: () => project.id,
     graph: () => project.graph,
     revision: () => project.revision,
     assets: () => assets,
@@ -532,6 +533,7 @@
         authenticated: authManager.authenticated,
         access: sessionState?.access ?? null,
         status: saveStatus,
+        conflict: sessionState?.conflict,
       },
       graph,
     );

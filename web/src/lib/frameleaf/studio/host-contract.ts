@@ -27,6 +27,7 @@
  * provenance-checked snapshot that no story edits.
  */
 import type { StudioCapabilityId, StudioCommandEnvelope, StudioCommandResult, StudioDuration } from './commands';
+import type { StudioGeneratedMedia } from './generated-media';
 import type { StudioPreviewView } from './preview';
 
 /* ------------------------------------------------------------------ */
@@ -74,6 +75,8 @@ export interface StudioAssetRef {
   height?: number | null;
   /** The original's MIME type, when the library knows it. */
   mimeType?: string | null;
+  /** Exact source cadence for admitted generated media. */
+  frameRate?: { num: number; den: number };
 }
 
 /**
@@ -164,6 +167,8 @@ export interface StudioHostContext {
    * person chose it.
    */
   assets: readonly StudioAssetRef[];
+  /** Authenticated generated resources, kept separate from library identities. */
+  generatedMedia?: readonly StudioGeneratedMedia[];
   /** Asset ids the handoff asked the editor to start from, in order. */
   handoffAssetIds: readonly string[];
   auth: StudioAuthContext;
@@ -401,6 +406,7 @@ export interface StudioCommandEngine {
     graph: unknown,
     envelopes: readonly StudioCommandEnvelope[],
     assets: readonly StudioAssetRef[],
+    projectId?: string,
   ): Promise<StudioCommandApplication>;
   dispose(): void;
 }

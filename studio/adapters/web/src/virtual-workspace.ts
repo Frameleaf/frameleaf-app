@@ -79,7 +79,10 @@ export class VirtualWorkspace {
   }
   private readonly listeners = new Set<WorkspaceWriteListener>()
   /** The node and path behind each directory handle this workspace gave out, for `move`. */
-  private readonly directories = new WeakMap<object, { node: DirectoryNode; path: readonly string[] }>()
+  private readonly directories = new WeakMap<
+    object,
+    { node: DirectoryNode; path: readonly string[] }
+  >()
   private disposed = false
 
   onWrite(listener: WorkspaceWriteListener): () => void {
@@ -147,6 +150,7 @@ export class VirtualWorkspace {
     path: readonly string[],
     create: boolean,
   ): { parent: DirectoryNode; name: string } {
+    this.assertLive()
     if (path.length === 0) throw new TypeError('Empty workspace path')
     let directory = this.root
     for (const segment of path.slice(0, -1)) {
@@ -166,9 +170,11 @@ export class VirtualWorkspace {
   }
 
   private async materialize(node: FileNode): Promise<Blob> {
+    this.assertLive()
     if (node.data) return node.data
     if (!node.load) return new Blob([], { type: node.type })
     const blob = await node.load()
+    this.assertLive()
     // A write that landed while the fetch was in flight wins over the remote bytes.
     if (!node.data) {
       node.data = blob

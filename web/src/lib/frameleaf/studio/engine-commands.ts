@@ -101,6 +101,7 @@ export const createStudioGraphHistory = (limit = STUDIO_HISTORY_LIMIT): StudioGr
 export interface StudioEngineCommandOptions {
   /** The graph the session holds now (the draft, or the stored head). */
   graph: () => unknown;
+  projectId?: () => string;
   /** The project revision the bridge reports back. */
   revision: () => number;
   /** Library media the session may place. */
@@ -132,7 +133,7 @@ export const createStudioEngineCommandHandlers = (
     if (!engine) {
       throw rejectedBy('failed', 'The Studio engine is not available');
     }
-    const outcome = await engine.apply(graph, [envelope], options.assets());
+    const outcome = await engine.apply(graph, [envelope], options.assets(), options.projectId?.());
     if (outcome.status === 'rejected') {
       throw rejectedBy(outcome.reason, outcome.detail);
     }

@@ -7,6 +7,10 @@ import {
   type StudioProjectSaveResponseDto,
 } from '@immich/sdk';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { websocketEvents, websocketStore } from '$lib/stores/websocket';
+import { decideStudioDraft, studioDraftResult } from './draft-staging';
+import { generatedMediaAlias, storeGeneratedMedia } from './generated-media';
+import { createStudioGeneratedAccess } from './generated-media-client';
 import {
   createStudioProjectSession,
   STUDIO_DRAFT_PROJECT_ID,
@@ -780,6 +784,129 @@ describe('studio project session', () => {
       );
       await timers.fire((timer) => timer.ms === 30_000);
       expect(last()).toMatchObject({ status: 'lease-lost', project: { hasLease: false } });
+    });
+
+    it.each(['project-archived', 'project-trashed'] as const)(
+      'recovers the final editor snapshot when %s arrives before generated invalidation',
+      async (reason) => {
+        websocketStore.connected.set(true);
+        const session = create();
+        await session.open();
+        const operationId = '0195e2a0-0000-7000-8000-000000000012';
+        const generatedId = `reverse-${operationId}`;
+        const initial = { timeline: { items: [{ generatedId, from: 10 }] } };
+        session.stageEditor(initial, ['editor.save'], 3, 0);
+        const finalGraph = { timeline: { items: [{ generatedId, from: 42 }] } };
+        const listen = vi.spyOn(websocketEvents, 'on');
+        let staged: unknown;
+        const access = createStudioGeneratedAccess(
+          () => {
+            // The final frame message is normalized at the host, then judged by the route gate
+            // and the real project session, including the editor revision and graph version.
+            const graph = storeGeneratedMedia({
+              timeline: {
+                items: [
+                  {
+                    ...finalGraph.timeline.items[0],
+                    mediaId: generatedMediaAlias(generatedId),
+                    src: '/private-preview',
+                  },
+                ],
+              },
+            });
+            const decision = decideStudioDraft(
+              {
+                accessLost: false,
+                forbidden: false,
+                authenticated: true,
+                access: session.state.access,
+                status: session.state.status,
+                conflict: session.state.conflict,
+              },
+              graph,
+            );
+            staged = decision.stage
+              ? studioDraftResult(session.stageEditor(graph, ['editor.save'], 3, 0), session.state.hasDraft)
+              : decision.result;
+          },
+          vi.fn(async () =>
+            Response.json({
+              operationId,
+              projectId: 'p-1',
+              generatedId,
+              frames: 300,
+              frameRate: { num: 30, den: 1 },
+              width: 32,
+              height: 32,
+              browserPreview: {
+                generatedId: `reverse-preview-${operationId}`,
+                checksum: 'ab'.repeat(32),
+                contentType: 'video/mp4',
+                profile: 'h264-main-3.2-aac-lc-v1',
+                delivery: 'authenticated',
+              },
+            }),
+          ),
+        );
+        try {
+          await access.admit('p-1', initial, 3);
+          api.acquireLease.mockRejectedValueOnce(httpError(409, { reason, currentRevision: 3 }));
+          await timers.fire((timer) => timer.ms === 30_000);
+          expect(session.state).toMatchObject({ status: 'review', access: 'owner', project: { hasLease: false } });
+          const invalidate = listen.mock.calls.find(([event]) => event === 'StudioProjectInvalidatedV1')![1] as (data: {
+            projectId: string | null;
+          }) => void;
+          invalidate({ projectId: 'p-1' });
+          expect(staged).toEqual({ status: 'staged' });
+          expect(session.state).toMatchObject({
+            status: 'review',
+            hasDraft: true,
+            project: { graph: finalGraph, revision: 3, graphVersion: 0, hasLease: false },
+          });
+          expect(session.stageEditor({ stale: true }, ['editor.save'], 3, -1)).toBe('superseded');
+          expect(session.stage({ hostCommand: true })).toBe('ignored');
+          await session.flush();
+          session.setOnline(false);
+          session.setOnline(true);
+          await session.flush();
+          expect(timers.pending()).toEqual([]);
+          expect(api.save).not.toHaveBeenCalled();
+          expect(session.state.project.graph).toEqual(finalGraph);
+        } finally {
+          access.dispose();
+          listen.mockRestore();
+          await session.dispose();
+        }
+      },
+    );
+
+    it('keeps shelving authoritative when an earlier save answers before the final recovery draft', async () => {
+      let finish!: (result: StudioProjectSaveResponseDto) => void;
+      api.save.mockImplementationOnce(
+        () =>
+          new Promise<StudioProjectSaveResponseDto>((resolve) => {
+            finish = resolve;
+          }),
+      );
+      const session = create();
+      await session.open();
+      session.stageEditor({ edit: 1 }, ['editor.save'], 3, 0);
+      const saving = session.flush();
+      api.acquireLease.mockRejectedValueOnce(httpError(409, { reason: 'project-archived', currentRevision: 4 }));
+      await timers.fire((timer) => timer.ms === 30_000);
+      finish(saved(4));
+      await saving;
+      expect(session.stageEditor({ edit: 2 }, ['editor.save'], 3, 0)).toBe('staged');
+      expect(session.state).toMatchObject({
+        status: 'review',
+        conflict: { reason: 'project-archived' },
+        hasDraft: true,
+        project: { graph: { edit: 2 }, revision: 4, hasLease: false },
+      });
+      await session.flush();
+      expect(api.save).toHaveBeenCalledOnce();
+      expect(timers.pending()).toEqual([]);
+      await session.dispose();
     });
 
     it('turns read-only, keeping the draft, when the owner archives the project elsewhere', async () => {

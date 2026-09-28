@@ -389,7 +389,13 @@
     }
 
     try {
-      const instance = await resolution.module.mount(stage, context(), services);
+      const instance = await resolution.module.mount(stage, context(), {
+        ...services,
+        reportFatal: (error) => {
+          services.reportFatal(error);
+          dispatch({ type: 'fatal', detail: error instanceof Error ? error.message : String(error) });
+        },
+      });
       if (token !== mountToken) {
         // The route left while the engine was starting; nothing may be left running.
         await instance.dispose();

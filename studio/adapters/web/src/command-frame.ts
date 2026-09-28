@@ -16,7 +16,8 @@ import type {
 import { STUDIO_FRAME_PROTOCOL_VERSION } from '@frameleaf/host/frame-protocol'
 import type { StudioAssetRef } from '@frameleaf/host/host-contract'
 import type { MediaMetadata } from '@/types/storage'
-import { applyCanonicalCommands } from './canonical-commands'
+import { hydrateGeneratedMedia, storeGeneratedMedia } from '@frameleaf/host/generated-media'
+import { applyCanonicalCommands, graphDigest } from './canonical-commands'
 import { ENGINE_REVISION } from './engine-revision'
 import { initialMediaRecord, probeVideo, sourceUrlOf } from './library-media'
 import { installBrowserShims } from './browser-shims'
@@ -52,10 +53,12 @@ const referencedAssets = (request: StudioCommandApplyRequest): StudioAssetRef[] 
 
 async function apply(request: StudioCommandApplyRequest): Promise<StudioCommandApplyOutcome> {
   const media = await Promise.all(referencedAssets(request).map((asset) => metadataFor(asset)))
-  const outcome = await applyCanonicalCommands(request.graph, request.envelopes, media)
-  return outcome.status === 'applied'
-    ? { status: 'applied', graph: outcome.project, digest: outcome.digest }
-    : outcome
+  media.push(...(request.generatedMedia ?? []).map((asset) => initialMediaRecord(asset, 0)))
+  const graph = hydrateGeneratedMedia(request.graph, request.generatedMedia ?? [])
+  const outcome = await applyCanonicalCommands(graph, request.envelopes, media)
+  if (outcome.status !== 'applied') return outcome
+  const stored = storeGeneratedMedia(outcome.project)
+  return { status: 'applied', graph: stored, digest: await graphDigest(stored) }
 }
 
 let port: MessagePort | null = null
