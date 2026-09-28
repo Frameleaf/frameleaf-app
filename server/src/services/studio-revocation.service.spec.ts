@@ -62,7 +62,12 @@ describe(StudioRevocationService.name, () => {
     expect(streams.revokeForProjects).toHaveBeenCalledWith(['project-1', 'project-2']);
     expect(operations.listUnfinishedForProjects).toHaveBeenCalledWith(
       ['project-1', 'project-2'],
-      [MediaOperationKind.StudioExport, MediaOperationKind.StudioPreview, MediaOperationKind.StudioPreviewStream],
+      [
+        MediaOperationKind.StudioExport,
+        MediaOperationKind.StudioReverseConform,
+        MediaOperationKind.StudioPreview,
+        MediaOperationKind.StudioPreviewStream,
+      ],
       undefined,
     );
     // Every account's job, each cancelled as its own owner.
@@ -92,7 +97,12 @@ describe(StudioRevocationService.name, () => {
     expect(streams.revokeForProjects).toHaveBeenCalledWith(['project-3'], 'reviewer-1');
     expect(operations.listUnfinishedForProjects).toHaveBeenCalledWith(
       ['project-3'],
-      [MediaOperationKind.StudioExport, MediaOperationKind.StudioPreview, MediaOperationKind.StudioPreviewStream],
+      [
+        MediaOperationKind.StudioExport,
+        MediaOperationKind.StudioReverseConform,
+        MediaOperationKind.StudioPreview,
+        MediaOperationKind.StudioPreviewStream,
+      ],
       'reviewer-1',
     );
   });
