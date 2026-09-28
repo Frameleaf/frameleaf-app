@@ -1,5 +1,7 @@
+import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { SharedLinkType } from '@immich/sdk';
-import { fireEvent, render, screen } from '@testing-library/svelte';
+import { fireEvent, render, screen, within } from '@testing-library/svelte';
+import { tick } from 'svelte';
 import { addMessages } from 'svelte-i18n';
 import { sharedLinkFactory } from '$lib/../test-data/factories/shared-link-factory';
 import { handleCreateSharedLink, handleUpdateSharedLink } from '$lib/services/shared-link.service';
@@ -12,9 +14,14 @@ vi.mock('$lib/services/shared-link.service', () => ({
   handleUpdateSharedLink: vi.fn().mockResolvedValue(true),
 }));
 
+/** Every save hands the service a way to report an address that is already used (AL-26). */
+const saveOptions = expect.objectContaining({ onSlugTaken: expect.any(Function) });
+
 beforeEach(() => {
   vi.clearAllMocks();
   addMessages('dev', en);
+  sdkMock.getAllSharedLinks.mockResolvedValue([]);
+  sdkMock.getAssetThumbnailPath.mockImplementation((id: string) => `/assets/${id}/thumbnail`);
   vi.mocked(handleCreateSharedLink).mockResolvedValue(
     sharedLinkFactory.build({ type: SharedLinkType.Album, assets: [], password: null }),
   );
@@ -38,6 +45,7 @@ describe('SharedLinkForm', () => {
         description: 'For the family',
         password: 'hunter2',
       }),
+      saveOptions,
     );
 
     // The password never appears anywhere after submission, on the Link ready step either.
@@ -56,7 +64,7 @@ describe('SharedLinkForm', () => {
     const first = render(SharedLinkForm, { open: true, link });
 
     await fireEvent.click(screen.getByRole('button', { name: en.save }));
-    expect(handleUpdateSharedLink).toHaveBeenCalledWith(link, expect.objectContaining({ password: undefined }));
+    expect(handleUpdateSharedLink).toHaveBeenCalledWith(link, expect.objectContaining({ password: undefined }), saveOptions);
 
     // A successful save closes the form, so the second edit opens it again.
     first.unmount();
@@ -64,7 +72,7 @@ describe('SharedLinkForm', () => {
     render(SharedLinkForm, { open: true, link });
     await fireEvent.click(screen.getByLabelText(en.frameleaf_sharing.remove_password));
     await fireEvent.click(screen.getByRole('button', { name: en.save }));
-    expect(handleUpdateSharedLink).toHaveBeenCalledWith(link, expect.objectContaining({ password: null }));
+    expect(handleUpdateSharedLink).toHaveBeenCalledWith(link, expect.objectContaining({ password: null }), saveOptions);
   });
 
   it('computes a future expiry from a preset', async () => {
@@ -107,6 +115,7 @@ describe('SharedLinkForm', () => {
     await fireEvent.click(screen.getByRole('button', { name: en.create_link }));
     expect(handleCreateSharedLink).toHaveBeenCalledWith(
       expect.objectContaining({ showMetadata: false, allowDownload: false }),
+      saveOptions,
     );
   });
 
@@ -120,5 +129,115 @@ describe('SharedLinkForm', () => {
     expect(await screen.findByRole('heading', { name: en.frameleaf_sharing.link_ready_title })).toBeInTheDocument();
     expect(screen.getByLabelText(en.frameleaf_sharing.link_address)).toHaveValue('https://frameleaf.local/s/test');
     expect(screen.getByRole('button', { name: en.frameleaf_sharing.qr_code })).toHaveAttribute('aria-pressed', 'false');
+  });
+  describe('link preview (FL-83 AL-25)', () => {
+    it('shows the items as a collage of real thumbnails with live badges, expiry and a viewer summary', async () => {
+      render(SharedLinkForm, {
+        props: { open: true, target: { type: SharedLinkType.Individual, assetIds: ['a1', 'a2'], name: '2 items' } },
+      });
+
+      const preview = screen.getByRole('complementary', { name: en.frameleaf_sharing.link_preview });
+      const images = preview.querySelectorAll('img');
+      expect(images).toHaveLength(2);
+      expect(images[0].getAttribute('src')).toContain('/assets/a1/thumbnail');
+      expect(images[1].getAttribute('src')).toContain('/assets/a2/thumbnail');
+      expect(within(preview).getByText(en.frameleaf_sharing.preview_individual, { exact: false })).toBeInTheDocument();
+      expect(within(preview).getByText(en.frameleaf_sharing.preview_address_pending)).toBeInTheDocument();
+      expect(within(preview).queryByText(en.frameleaf_sharing.badge_uploads)).toBeNull();
+      expect(within(preview).getByText(/Viewers see 2 items without camera or location details\./)).toBeInTheDocument();
+      expect(within(preview).getByText(/No password is needed\./)).toBeInTheDocument();
+      expect(within(preview).getByText(/The link never expires\./)).toBeInTheDocument();
+
+      await fireEvent.click(screen.getByRole('switch', { name: new RegExp(`^${en.frameleaf_sharing.allow_upload}`) }));
+      await fireEvent.input(screen.getByLabelText(en.password), { target: { value: 'hunter2' } });
+      await fireEvent.change(screen.getByLabelText(en.frameleaf_sharing.expires), { target: { value: '7d' } });
+      await fireEvent.input(screen.getByLabelText(en.description), { target: { value: 'For the family' } });
+
+      expect(within(preview).getByText(en.frameleaf_sharing.badge_uploads)).toBeInTheDocument();
+      expect(within(preview).getByText(en.password)).toBeInTheDocument();
+      expect(within(preview).getByText(/^Expires in 7 days$/)).toBeInTheDocument();
+      expect(within(preview).getByText('For the family')).toBeInTheDocument();
+      expect(within(preview).getByText(/A password is required\./)).toBeInTheDocument();
+    });
+
+    it('shows an album by its cover and item count', () => {
+      render(SharedLinkForm, {
+        props: {
+          open: true,
+          target: {
+            type: SharedLinkType.Album,
+            albumId: 'album-1',
+            name: 'Summer trip',
+            previewAssetIds: ['cover-1'],
+            count: 12,
+          },
+        },
+      });
+
+      const preview = screen.getByRole('complementary', { name: en.frameleaf_sharing.link_preview });
+      expect(preview.querySelector('img')?.getAttribute('src')).toContain('/assets/cover-1/thumbnail');
+      expect(within(preview).getByText('+11')).toBeInTheDocument();
+      expect(within(preview).getByText(/Album · Summer trip · 12 items/)).toBeInTheDocument();
+    });
+  });
+
+  describe('custom address status (FL-83 AL-26)', () => {
+    const renderWithLinks = async () => {
+      sdkMock.getAllSharedLinks.mockResolvedValue([
+        sharedLinkFactory.build({ id: 'other', slug: 'family', assets: [] }),
+      ]);
+      render(SharedLinkForm, {
+        props: { open: true, target: { type: SharedLinkType.Individual, assetIds: ['a1'], name: '1 item' } },
+      });
+      await vi.waitFor(() => expect(sdkMock.getAllSharedLinks).toHaveBeenCalled());
+      await tick();
+      return screen.getByLabelText(en.frameleaf_sharing.custom_address);
+    };
+
+    it('says live whether the address is available, taken by one of your links, or not valid', async () => {
+      const input = await renderWithLinks();
+
+      await fireEvent.input(input, { target: { value: 'family' } });
+      expect(await screen.findByText(en.frameleaf_sharing.slug_taken)).toBeInTheDocument();
+      expect(input).toHaveAttribute('aria-invalid', 'true');
+
+      await fireEvent.input(input, { target: { value: 'Summer Trip' } });
+      expect(input).toHaveValue('summer-trip');
+      expect(screen.getByText(en.frameleaf_sharing.slug_available)).toBeInTheDocument();
+      expect(input).toHaveAttribute('aria-invalid', 'false');
+
+      await fireEvent.input(input, { target: { value: 'ab' } });
+      expect(screen.getByText(en.frameleaf_sharing.slug_invalid)).toBeInTheDocument();
+      expect(input).toHaveAttribute('aria-invalid', 'true');
+
+      await fireEvent.input(input, { target: { value: '' } });
+      expect(screen.getByText(en.frameleaf_sharing.slug_hint)).toBeInTheDocument();
+    });
+
+    it('does not save an address that is already used', async () => {
+      const input = await renderWithLinks();
+      await fireEvent.input(input, { target: { value: 'family' } });
+      await fireEvent.click(screen.getByRole('button', { name: en.create_link }));
+
+      expect(handleCreateSharedLink).not.toHaveBeenCalled();
+      expect(screen.getByRole('alert')).toHaveTextContent(en.frameleaf_sharing.slug_taken);
+    });
+
+    it('says the address is already used when the server refuses it on save', async () => {
+      vi.mocked(handleCreateSharedLink).mockImplementation((_dto, options) => {
+        options?.onSlugTaken?.();
+        return Promise.resolve(undefined);
+      });
+      const input = await renderWithLinks();
+      await fireEvent.input(input, { target: { value: 'someone-elses' } });
+      await fireEvent.click(screen.getByRole('button', { name: en.create_link }));
+
+      expect(handleCreateSharedLink).toHaveBeenCalledWith(
+        expect.objectContaining({ slug: 'someone-elses' }),
+        expect.objectContaining({ onSlugTaken: expect.any(Function) }),
+      );
+      expect(await screen.findByRole('alert')).toHaveTextContent(en.frameleaf_sharing.slug_taken);
+      expect(input).toHaveAttribute('aria-invalid', 'true');
+    });
   });
 });
