@@ -32,6 +32,9 @@
     "0000000000201-MlWorkloadAccountingCloudJobIndex",
     "0000000000202-FrameleafAccountLinks",
     "0000000000203-FrameleafSessions",
-    "0000000000204-FrameleafUserLicenses"
+    "0000000000204-FrameleafUserLicenses",
+    "0000000000205-AlbumCoverFollowsNewest",
+    "0000000000206-AssetUserShares",
+    "0000000000207-StudioGeneratedResources"
   ]
 }

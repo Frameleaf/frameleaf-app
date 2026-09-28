@@ -128,6 +128,7 @@ describe(StudioProjectService.name, () => {
 
     repository = {
       create: vi.fn(),
+      listGeneratedResources: vi.fn().mockResolvedValue([]),
       getById: vi.fn().mockImplementation((id: string) => Promise.resolve(id === project.id ? project : undefined)),
       listVisible: vi.fn().mockResolvedValue({ items: [], total: 0 }),
       update: vi.fn(),
@@ -662,6 +663,27 @@ describe(StudioProjectService.name, () => {
   });
 
   describe('authorizeRevision', () => {
+    it('hydrates server-owned generated files and re-resolves after publication without a graph save', async () => {
+      const first = await sut.authorizeRevision(owner, { projectId: project.id });
+      expect(first.cached).toBe(false);
+      const generated = [
+        {
+          id: 'reverse',
+          producer: 'reverse-conform',
+          checksum: 'ab'.repeat(32),
+          path: '/private/generated.mp4',
+          derivedFrom: ['library-asset:source'],
+        },
+      ];
+      repository.listGeneratedResources.mockResolvedValue(generated);
+      const next = await sut.authorizeRevision(owner, { projectId: project.id });
+      expect(next.cached).toBe(false);
+      expect(repository.listGeneratedResources).toHaveBeenLastCalledWith(project.id);
+      expect(resources.resolveProjectResources).toHaveBeenLastCalledWith(owner, expect.objectContaining({ generated }));
+      await sut.authorizeRevision(owner, { projectId: project.id });
+      expect(resources.resolveProjectResources).toHaveBeenCalledTimes(3);
+    });
+
     it('reuses an unexpired manifest for the same project, revision, account and destination', async () => {
       const first = await sut.authorizeRevision(owner, { projectId: project.id });
       const second = await sut.authorizeRevision(owner, { projectId: project.id });
