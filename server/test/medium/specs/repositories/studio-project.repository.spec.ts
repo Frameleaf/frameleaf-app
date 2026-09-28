@@ -1,4 +1,5 @@
 import { Kysely, sql } from 'kysely';
+import { randomUUID } from 'node:crypto';
 import { AlbumKind, AlbumUserRole } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { StudioProjectRepository, StudioRevisionAppend } from 'src/repositories/studio-project.repository.js';
@@ -44,6 +45,7 @@ beforeAll(async () => {
 });
 
 afterEach(async () => {
+  await sql`DELETE FROM immich_fork.studio_generated_resource`.execute(defaultDatabase);
   await defaultDatabase.deleteFrom('studio_project').execute();
 });
 
@@ -394,6 +396,83 @@ describe(StudioProjectRepository.name, () => {
       const { album } = await ctx.newAlbum({ ownerId: user.id, kind: AlbumKind.Space });
       await sut.update(other.id, { spaceId: album.id });
       expect(await sut.getIdsInSpace(album.id)).toEqual([other.id]);
+    });
+  });
+
+  describe('generated resources', () => {
+    it('persists immutable provenance, isolates projects, and finds relinked source revocations', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const project = await leasedProject(sut, user.id);
+      const other = await leasedProject(sut, user.id);
+      await sut.appendRevision(append(project.id, user.id));
+      const sourceId = randomUUID();
+      const resource = {
+        projectId: project.id,
+        ownerId: user.id,
+        sourceRevision: 1,
+        id: 'reverse',
+        producer: 'reverse-conform',
+        checksum: 'ab'.repeat(32),
+        path: '/private/studio/reverse.mp4',
+        derivedFrom: [`library-asset:${sourceId}`],
+      };
+
+      await Promise.all([sut.registerGeneratedResource(resource), sut.registerGeneratedResource(resource)]);
+      const reopened = new StudioProjectRepository(defaultDatabase);
+      expect(await reopened.listGeneratedResources(project.id)).toEqual([
+        {
+          id: resource.id,
+          producer: resource.producer,
+          checksum: resource.checksum,
+          path: resource.path,
+          derivedFrom: resource.derivedFrom,
+        },
+      ]);
+      expect(await reopened.listGeneratedResources(other.id)).toEqual([]);
+      expect(await reopened.getIdsReferencingAssets([sourceId])).toEqual([project.id]);
+      for (const changed of [
+        { path: '/private/other.mp4' },
+        { checksum: 'cd'.repeat(32) },
+        { derivedFrom: [`library-asset:${randomUUID()}`] },
+      ]) {
+        await expect(sut.registerGeneratedResource({ ...resource, ...changed })).rejects.toThrow('cannot be rebound');
+      }
+      expect((await reopened.listGeneratedResources(project.id))[0].checksum).toBe(resource.checksum);
+
+      await sut.trash(project.id, new Date(Date.now() + 1000));
+      expect(await reopened.listGeneratedResources(project.id)).toEqual([]);
+      await expect(sut.registerGeneratedResource(resource)).rejects.toThrow('unavailable');
+      await sut.untrash(project.id);
+      expect(await reopened.listGeneratedResources(project.id)).toHaveLength(1);
+      await sut.delete(project.id);
+      expect(await reopened.listGeneratedResources(project.id)).toEqual([]);
+    });
+
+    it('refuses another owner, an absent revision, and unchecked output metadata', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const project = await leasedProject(sut, user.id);
+      await sut.appendRevision(append(project.id, user.id));
+      const resource = {
+        projectId: project.id,
+        ownerId: user.id,
+        sourceRevision: 1,
+        id: 'reverse',
+        producer: 'reverse-conform',
+        checksum: 'ab'.repeat(32),
+        path: '/private/studio/reverse.mp4',
+        derivedFrom: [`library-asset:${randomUUID()}`],
+      };
+      await expect(sut.registerGeneratedResource({ ...resource, ownerId: randomUUID() })).rejects.toThrow(
+        'unavailable',
+      );
+      await expect(sut.registerGeneratedResource({ ...resource, sourceRevision: 2 })).rejects.toThrow('unavailable');
+      await expect(sut.registerGeneratedResource({ ...resource, checksum: '' })).rejects.toThrow('Invalid generated');
+      await expect(sut.registerGeneratedResource({ ...resource, derivedFrom: [] })).rejects.toThrow(
+        'Invalid generated',
+      );
+      expect(await sut.listGeneratedResources(project.id)).toEqual([]);
     });
   });
 

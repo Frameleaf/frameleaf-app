@@ -281,6 +281,7 @@ describe(StudioExportService.name, () => {
       claimNext: vi.fn(),
     };
     projects = {
+      listGeneratedResources: vi.fn().mockResolvedValue([]),
       getById: vi.fn().mockResolvedValue({ id: PROJECT, ownerId: OWNER, name: 'Lake trip', deletedAt: null }),
       getRevision: vi.fn().mockResolvedValue({ revision: 3, digest: 'digest-3', envelope: { graph: { clips: [] } } }),
     };
@@ -1066,11 +1067,26 @@ describe(StudioExportService.name, () => {
     });
 
     it('keeps a result the owner asked to keep with its project out of the library (FL-194)', async () => {
+      const generated = [
+        {
+          id: 'reverse',
+          producer: 'reverse-conform',
+          checksum: 'ab'.repeat(32),
+          path: '/private/generated.mp4',
+          derivedFrom: [entry().key],
+        },
+      ];
+      projects.listGeneratedResources.mockResolvedValue(generated);
       repository.publish.mockResolvedValue(published({ createdAssetId: null }));
       const kept = job();
       kept.operation.snapshot = { ...kept.operation.snapshot, retain: 'project' };
 
       await sut.run(kept);
+      expect(projects.listGeneratedResources).toHaveBeenCalledWith(PROJECT);
+      expect(resources.resolveProjectResources).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ generated }),
+      );
 
       const input = repository.publish.mock.calls[0][0];
       expect(input).toEqual(

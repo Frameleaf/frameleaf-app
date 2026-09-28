@@ -1149,7 +1149,10 @@ export class StudioProjectService {
     destination: StudioDestination,
     cloudConsent?: boolean,
   ): Promise<CachedResolution & { cached: boolean }> {
-    const cacheable = destination !== StudioDestination.FrameleafCloud;
+    const generated = await this.repository.listGeneratedResources(project.id);
+    // Publication can add a declaration without changing the graph revision. Resolve generated
+    // projects freshly until their publication/retention lifecycle supplies cache invalidations.
+    const cacheable = destination !== StudioDestination.FrameleafCloud && generated.length === 0;
     // FL-195: an unlocked session resolves the owner's revealed locks, a locked one refuses them, so a
     // resolution is never shared between the two
     const privacy = getLockedOwnerId(auth) ? 'unlocked' : 'locked';
@@ -1168,6 +1171,7 @@ export class StudioProjectService {
       ownerId: project.ownerId,
       revision: revision.revision,
       graph: envelopeOf(revision).graph,
+      generated,
       destination,
       cloudConsent,
     });

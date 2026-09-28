@@ -81,7 +81,13 @@ import {
   checkStudioEnvelope,
   studioEnvelopeDigest,
 } from 'src/utils/studio-project.js';
-import { StudioDestination, StudioResourceKind, isStudioUuid, studioReferenceKey } from 'src/utils/studio-resources.js';
+import {
+  StudioDestination,
+  StudioResourceKind,
+  extractStudioResourceReferences,
+  isStudioUuid,
+  studioReferenceKey,
+} from 'src/utils/studio-resources.js';
 
 /** How often the worker looks for queued bundle jobs. */
 export const STUDIO_BUNDLE_TICK_MS = 5000;
@@ -114,6 +120,19 @@ class BundleJobError extends Error {
     super(message);
   }
 }
+
+/** Generated artifacts need a portable file/lineage contract before they can leave their project. */
+const requirePortableSources = (graph: unknown): void => {
+  if (
+    extractStudioResourceReferences(graph).references.some(
+      (reference) =>
+        reference.kind === StudioResourceKind.GeneratedIntermediate ||
+        (reference.kind === StudioResourceKind.Audio && reference.source === 'generated'),
+    )
+  ) {
+    throw new BadRequestException('Bundles containing generated media are not supported yet');
+  }
+};
 
 const errorMessage = (error: unknown) => (error instanceof Error ? error.message : String(error)).slice(0, 500);
 
@@ -220,16 +239,20 @@ export class StudioBundleService {
     // now rather than failing the job, and only the media the kept sequences use may be copied.
     let sequenceIds: string[] | null = null;
     let keptKeys: Set<string> | null = null;
+    let exportGraph = authorized.envelope.graph;
     if (dto.sequenceIds && dto.sequenceIds.length > 0) {
       const selected = selectStudioSequences(authorized.envelope.graph, dto.sequenceIds);
       if (!selected.ok) {
         throw new BadRequestException(`This project has no sequence ${selected.unknown.join(', ').slice(0, 200)}`);
       }
+      exportGraph = selected.graph;
       if (selected.sequenceIds) {
         sequenceIds = [...new Set(dto.sequenceIds)];
         keptKeys = new Set(studioBundleSourceKeys(selected.graph).map((key) => key.key));
       }
     }
+
+    requirePortableSources(exportGraph);
 
     const embed = new Map<string, { key: string; kind: StudioResourceKind; id: string }>();
     if (dto.includeMedia) {
@@ -648,6 +671,7 @@ export class StudioBundleService {
       carried = selected.sequenceIds;
     }
 
+    requirePortableSources(envelope.graph);
     const owner = await this.authFor(operation.ownerId, { elevated: true });
     if (!owner) {
       throw new BundleJobError('bundle_owner_unavailable', 'The account that asked for this export no longer exists');
@@ -660,6 +684,7 @@ export class StudioBundleService {
       ownerId: project.ownerId,
       revision: revision.revision,
       graph: envelope.graph,
+      generated: await this.projects.listGeneratedResources(project.id),
       destination: StudioDestination.Local,
       backgroundRunner: true,
     });
