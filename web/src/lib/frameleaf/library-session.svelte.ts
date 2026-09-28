@@ -196,7 +196,7 @@ export class LibrarySessionStore {
 
   /** Write device preferences and recoverable account/tab UI state to their separate stores. */
   persist(userId?: string) {
-    const currentUserId = arguments.length ? userId : this.#userId;
+    const currentUserId = arguments.length > 0 ? userId : this.#userId;
     if (!currentUserId || currentUserId !== this.#userId) {
       return false;
     }
