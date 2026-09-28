@@ -31,10 +31,16 @@ import {
   StudioProjectUpdateDto,
   StudioRevisionParamDto,
 } from 'src/dtos/studio-project.dto.js';
+import {
+  StudioReverseConformApplyDto,
+  StudioReverseConformEnqueueDto,
+  StudioReverseConformQueuedDto,
+} from 'src/dtos/studio-reverse-conform.dto.js';
 import { ApiTag } from 'src/enum.js';
 import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
 import { StudioBundleService } from 'src/services/studio-bundle.service.js';
 import { StudioProjectService } from 'src/services/studio-project.service.js';
+import { StudioReverseConformCommandService } from 'src/services/studio-reverse-conform-command.service.js';
 import { UUIDv7ParamDto } from 'src/validation.js';
 
 /**
@@ -54,6 +60,7 @@ export class StudioProjectController {
   constructor(
     private service: StudioProjectService,
     private bundles: StudioBundleService,
+    private reverse: StudioReverseConformCommandService,
   ) {}
 
   @Get()
@@ -186,6 +193,40 @@ export class StudioProjectController {
     @Body() dto: StudioBundleExportCreateDto,
   ): Promise<MediaOperationDto> {
     return this.bundles.createExport(auth, id, dto);
+  }
+
+  @Post(':id/reverse-conform')
+  @HttpCode(HttpStatus.CREATED)
+  @Authenticated()
+  @Endpoint({
+    summary: 'Queue a Studio clip source reversal',
+    description: 'Owner-only local source reversal bound to a stored revision and the requesting editor lease.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  async enqueueStudioReverseConform(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDv7ParamDto,
+    @Body() dto: StudioReverseConformEnqueueDto,
+  ): Promise<StudioReverseConformQueuedDto> {
+    const operation = await this.reverse.enqueue(auth, id, dto.clientId, dto.command);
+    return { operationId: operation.id };
+  }
+
+  @Post(':id/reverse-conform/apply')
+  @HttpCode(HttpStatus.OK)
+  @Authenticated()
+  @Endpoint({
+    summary: 'Apply a completed Studio clip source reversal',
+    description:
+      'Rechecks ownership, current source access, lease and the original revision before relinking the clip. Newer edits are never overwritten.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  applyStudioReverseConform(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDv7ParamDto,
+    @Body() dto: StudioReverseConformApplyDto,
+  ): Promise<StudioProjectSaveResponseDto> {
+    return this.reverse.apply(auth, id, dto.clientId, dto.operationId);
   }
 
   @Post(':id/lease')

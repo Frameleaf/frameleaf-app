@@ -1,3 +1,4 @@
+import { StudioProjectController } from 'src/controllers/studio-project.controller.js';
 import { MediaOperationDestination, MediaOperationKind, MediaOperationStatus } from 'src/enum.js';
 import { StudioReverseConformCommandService } from 'src/services/studio-reverse-conform-command.service.js';
 import { StudioResourceKind } from 'src/utils/studio-resources.js';
@@ -149,6 +150,57 @@ describe(StudioReverseConformCommandService.name, () => {
       }),
     );
     expect(JSON.stringify(studio.save.mock.calls[0])).not.toContain('/private/');
+  });
+
+  it('routes enqueue/apply through owner, live resource and original-revision guards', async () => {
+    const { sut, studio, resources, operation } = setup();
+    const controller = new StudioProjectController(studio as never, {} as never, sut);
+    await expect(
+      controller.enqueueStudioReverseConform(
+        owner,
+        { id: projectId },
+        {
+          clientId: 'tab-a',
+          command: command as never,
+        },
+      ),
+    ).resolves.toEqual({ operationId });
+    expect(studio.save).not.toHaveBeenCalled();
+    await expect(
+      controller.applyStudioReverseConform(
+        authStub.admin,
+        { id: projectId },
+        {
+          clientId: 'tab-a',
+          operationId,
+        },
+      ),
+    ).rejects.toThrow('not found');
+    resources.resolveProjectResources.mockResolvedValueOnce({ manifest: { complete: false, entries: [] } });
+    await expect(
+      controller.applyStudioReverseConform(
+        owner,
+        { id: projectId },
+        {
+          clientId: 'tab-a',
+          operationId,
+        },
+      ),
+    ).rejects.toThrow('no longer available');
+    expect(studio.save).not.toHaveBeenCalled();
+    studio.save.mockRejectedValueOnce(new Error('stale-revision'));
+    await expect(
+      controller.applyStudioReverseConform(
+        owner,
+        { id: projectId },
+        {
+          clientId: 'tab-a',
+          operationId,
+        },
+      ),
+    ).rejects.toThrow('stale-revision');
+    expect(studio.save).toHaveBeenCalledTimes(1);
+    expect(studio.save.mock.calls[0][2].expectedRevision).toBe(operation.snapshot.revision);
   });
 
   it('uses the same save idempotency key on repeated result application', async () => {

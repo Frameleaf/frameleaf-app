@@ -6,6 +6,10 @@ import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent } from 'src/decorators.js';
 import {
+  StudioReverseConformResultDto,
+  StudioReverseConformResultSchema,
+} from 'src/dtos/studio-reverse-conform.dto.js';
+import {
   ImmichWorker,
   MediaOperationDestination,
   MediaOperationKind,
@@ -132,13 +136,12 @@ export class StudioReverseConformService {
       : this.operations.create(operation);
   }
 
-  /** Interactive owner read; a worker grant never authorizes browser delivery. */
-  async readPreview(auth: AuthDto, id: string): Promise<Buffer> {
+  private async authorizePreview(auth: AuthDto, id: string) {
     if (auth.sharedLink) {
       throw new NotFoundException('Reverse preview not found');
     }
     const operation = await this.operations.getForOwner(id, auth.user.id);
-    if (!operation || operation.status !== MediaOperationStatus.Completed) {
+    if (!operation || operation.ownerId !== auth.user.id || operation.status !== MediaOperationStatus.Completed) {
       throw new NotFoundException('Reverse preview not found');
     }
     const snapshot = this.snapshot(operation);
@@ -162,17 +165,55 @@ export class StudioReverseConformService {
       throw new NotFoundException('Reverse preview not found');
     }
 
+    return { operation, snapshot, preview };
+  }
+
+  /** Metadata is authorized like the bytes; stored worker results are never returned verbatim. */
+  async getResult(auth: AuthDto, id: string): Promise<StudioReverseConformResultDto> {
+    const { operation, snapshot, preview } = await this.authorizePreview(auth, id);
+    const result = operation.result as Record<string, unknown> | null;
+    const parsed = StudioReverseConformResultSchema.safeParse({
+      ...result,
+      operationId: operation.id,
+      projectId: snapshot.projectId,
+      clipId: (operation.snapshot as Record<string, unknown>).clipId ?? null,
+    });
+    const lineage = (result?.browserPreview as Record<string, unknown> | undefined)?.derivedFrom;
+    if (
+      !parsed.success ||
+      result?.kind !== 'studio-source-reverse' ||
+      result.sourceKey !== snapshot.sourceKey ||
+      result.sourceRevision !== snapshot.revision ||
+      result.sourceRevisionDigest !== snapshot.digest ||
+      result.sourceLevel !== true ||
+      result.requiresClipRelink !== true ||
+      parsed.data.generatedId !== `reverse-${operation.id}` ||
+      parsed.data.browserPreview.generatedId !== preview.id ||
+      parsed.data.browserPreview.checksum !== preview.checksum ||
+      !Array.isArray(lineage) ||
+      lineage.length !== preview.derivedFrom.length ||
+      lineage.some((key, index) => key !== preview.derivedFrom[index])
+    ) {
+      throw new NotFoundException('Reverse result not found');
+    }
+    return parsed.data;
+  }
+
+  /** Interactive owner read; a worker grant never authorizes browser delivery. */
+  async readPreview(auth: AuthDto, id: string): Promise<Buffer> {
+    const { snapshot, preview } = await this.authorizePreview(auth, id);
     // ponytail: buffer the producer's 64 MiB maximum; use verified temporary files if that limit grows.
     // One descriptor and a bounded buffer: hashing a path then letting Express reopen it could
     // serve different bytes. Read one extra byte to refuse a file that grew after the size check.
     const file = await this.storage.openForRandomRead(preview.path);
     let bytes: Buffer;
     try {
-      if (file.size <= 0 || file.size > 64 * 1024 * 1024) {
+      const byteCount = file.size;
+      if (byteCount <= 0 || byteCount > 64 * 1024 * 1024) {
         throw new NotFoundException('Reverse preview not found');
       }
-      bytes = await file.read(0, file.size + 1);
-      if (bytes.length !== file.size || createHash('sha256').update(bytes).digest('hex') !== preview.checksum) {
+      bytes = await file.read(0, byteCount + 1);
+      if (bytes.length !== byteCount || createHash('sha256').update(bytes).digest('hex') !== preview.checksum) {
         throw new NotFoundException('Reverse preview not found');
       }
     } finally {

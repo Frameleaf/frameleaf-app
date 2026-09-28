@@ -22,6 +22,7 @@ import {
   MediaOperationSearchDto,
   MediaOperationStatisticsDto,
 } from 'src/dtos/media-operation.dto.js';
+import { StudioReverseConformResultDto } from 'src/dtos/studio-reverse-conform.dto.js';
 import { ApiTag } from 'src/enum.js';
 import { Auth, Authenticated, FileResponse } from 'src/middleware/auth.guard.js';
 import { MediaOperationService } from 'src/services/media-operation.service.js';
@@ -96,6 +97,22 @@ export class MediaOperationController {
   })
   getMediaOperation(@Auth() auth: AuthDto, @Param() { id }: UUIDv7ParamDto): Promise<MediaOperationDetailDto> {
     return this.service.get(auth, id);
+  }
+
+  @Get(':id/reverse-result')
+  @Authenticated()
+  @Header('Cache-Control', 'private, no-store')
+  @Endpoint({
+    summary: 'Get a completed source reversal result',
+    description:
+      'Owner-only metadata after current project, source and generated-lineage authorization. Contains no storage paths or worker grants.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  getMediaOperationReverseResult(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDv7ParamDto,
+  ): Promise<StudioReverseConformResultDto> {
+    return this.reverse.getResult(auth, id);
   }
 
   @Get(':id/reverse-preview')
