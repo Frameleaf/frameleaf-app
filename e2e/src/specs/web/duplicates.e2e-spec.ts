@@ -159,11 +159,13 @@ test.describe('Duplicate review', () => {
     await undo.click();
     await expect
       .poll(
-        async () =>
-          (await reviewGroups())
+        async () => {
+          const groups = await reviewGroups();
+          return groups
             .find((candidate) => candidate.duplicateId === duplicateId)
             ?.assets.map((asset) => asset.id)
-            .toSorted((a, b) => a.localeCompare(b)),
+            .toSorted((a, b) => a.localeCompare(b));
+        },
         { timeout: 30_000 },
       )
       .toEqual(group.assets.map((asset) => asset.id).toSorted((a, b) => a.localeCompare(b)));
