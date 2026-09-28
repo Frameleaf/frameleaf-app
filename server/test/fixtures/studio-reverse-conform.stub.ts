@@ -41,3 +41,28 @@ export const reversePackets = (): VideoPacketInfo => ({
   startPts: 0,
   variableFrameRate: false,
 });
+
+export const reverseClipGraph = (assetId = '0195e2a0-0000-7000-8000-000000000011') => ({
+  metadata: { fps: 3, frameRate: { num: 3, den: 1 } },
+  timeline: {
+    items: [
+      {
+        id: 'clip-a',
+        type: 'video',
+        mediaId: assetId,
+        trackId: 'video-1',
+        from: 20,
+        durationInFrames: 1,
+        sourceStart: 0,
+        sourceEnd: 1,
+        sourceDuration: 3,
+        sourceFps: 3,
+        speed: 1,
+        isReversed: true,
+        effects: [{ id: 'grade-a', amount: 0.5 }],
+        transform: { x: 12, scale: 0.75 },
+      },
+    ],
+  },
+  extensions: { preserve: ['unknown', null] },
+});

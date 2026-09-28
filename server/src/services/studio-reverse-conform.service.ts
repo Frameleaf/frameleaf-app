@@ -14,7 +14,11 @@ import {
 } from 'src/enum.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
-import { MediaOperation, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
+import {
+  MediaOperation,
+  MediaOperationCreate,
+  MediaOperationRepository,
+} from 'src/repositories/media-operation.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { StudioProjectRepository } from 'src/repositories/studio-project.repository.js';
@@ -23,6 +27,7 @@ import { UserRepository } from 'src/repositories/user.repository.js';
 import { StudioProjectService } from 'src/services/studio-project.service.js';
 import { StudioAuthorizedEntry, StudioResourceService } from 'src/services/studio-resource.service.js';
 import { StudioDestination, StudioResourceKind, isStudioUuid } from 'src/utils/studio-resources.js';
+import { checkReverseClipSource } from 'src/utils/studio-reverse-clip.js';
 import { checkStudioReverseOutput, checkStudioReverseSource } from 'src/utils/studio-reverse-conform.js';
 
 const LEASE_MS = 120_000;
@@ -37,7 +42,7 @@ type ReverseSnapshot = {
 };
 type Job = { operation: MediaOperation; claimToken: string };
 
-/** Internal producer only. No clip command or endpoint is enabled until its relink adapter exists. */
+/** Internal local producer; command binding is handled by StudioReverseConformCommandService. */
 @Injectable()
 export class StudioReverseConformService {
   private readonly workerId = `studio-reverse-${randomUUID()}`;
@@ -61,10 +66,16 @@ export class StudioReverseConformService {
     this.logger.setContext(StudioReverseConformService.name);
   }
 
-  /** A source-level request, deliberately not job.enqueueReverseConform's clip payload. */
+  /** Source-level work; an optional command binding is derived from the stored graph by the adapter. */
   async enqueueSource(
     auth: AuthDto,
-    input: { projectId: string; revision: number; sourceKey: string; destination: StudioDestination },
+    input: {
+      projectId: string;
+      revision: number;
+      sourceKey: string;
+      destination: StudioDestination;
+      command?: { clipId: string; clientId: string; requestKey: string };
+    },
   ): Promise<MediaOperation> {
     if (input.destination !== StudioDestination.Local) {
       throw new BadRequestException(
@@ -81,6 +92,12 @@ export class StudioReverseConformService {
     }
     const resolved = await this.source(auth, input.projectId, input.revision, input.sourceKey);
     const plan = await this.inspect(resolved.entry);
+    if (input.command) {
+      const clip = checkReverseClipSource(resolved.graph, input.command.clipId, plan);
+      if (`library-asset:${clip.assetId}` !== input.sourceKey) {
+        throw new BadRequestException('The command clip does not name this source');
+      }
+    }
     const snapshot: ReverseSnapshot = {
       kind: 'studio-source-reverse',
       projectId: input.projectId,
@@ -89,7 +106,7 @@ export class StudioReverseConformService {
       sourceKey: input.sourceKey,
       checksum: resolved.entry.checksum!,
     };
-    return this.operations.create({
+    const operation: MediaOperationCreate = {
       ownerId: auth.user.id,
       kind: MediaOperationKind.StudioReverseConform,
       destination: MediaOperationDestination.Local,
@@ -100,12 +117,15 @@ export class StudioReverseConformService {
       retryOfId: null,
       projectId: input.projectId,
       revisionId: resolved.revisionId,
-      snapshot,
+      snapshot: input.command ? { ...snapshot, ...input.command } : snapshot,
       settings: { sourceLevel: true, requiresClipRelink: true },
       estimate: null,
       totalUnits: plan.frames,
       maxAttempts: 2,
-    });
+    };
+    return input.command
+      ? this.operations.createStudioReverseCommand(operation, { ...input.command, revision: input.revision })
+      : this.operations.create(operation);
   }
 
   @OnEvent({ name: 'AppBootstrap', workers: [ImmichWorker.Microservices] })
@@ -399,7 +419,12 @@ export class StudioReverseConformService {
         'The complete source manifest is unavailable, or this source is not an owned library original',
       );
     }
-    return { entry, digest: authorized.revision.digest, revisionId: authorized.revision.id };
+    return {
+      entry,
+      digest: authorized.revision.digest,
+      revisionId: authorized.revision.id,
+      graph: authorized.envelope.graph,
+    };
   }
 
   private requireBinding(snapshot: ReverseSnapshot, resolved: { entry: StudioAuthorizedEntry; digest: string }) {

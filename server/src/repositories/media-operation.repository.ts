@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { ConflictException, Injectable } from '@nestjs/common';
 import { ExpressionBuilder, Insertable, Kysely, Selectable, Transaction, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { randomUUID } from 'node:crypto';
@@ -18,6 +18,7 @@ import {
   RESUMABLE_MEDIA_OPERATION_KINDS,
   TERMINAL_MEDIA_OPERATION_STATUSES,
 } from 'src/utils/media-operation.js';
+import { canonicalJson } from 'src/utils/studio-project.js';
 
 /** FL-44 (FN-304): what every write here answers while a database handoff holds the schema. */
 export const MEDIA_OPERATION_HANDOFF_REFUSAL = 'Media operations are unavailable during database handoff';
@@ -241,6 +242,57 @@ export class MediaOperationRepository {
     const row = await this.write((db) =>
       db.insertInto('media_operation').values(operation).returningAll().executeTakeFirstOrThrow(),
     );
+    this.changed(row as unknown as MediaOperationChange);
+    return row as unknown as MediaOperation;
+  }
+
+  /** Serialize command submission with the project's edit lease and saves, including duplicate requests. */
+  async createStudioReverseCommand(
+    operation: MediaOperationCreate,
+    binding: { requestKey: string; clientId: string; revision: number },
+  ): Promise<MediaOperation> {
+    const row = await this.db.transaction().execute(async (tx) => {
+      await lockPublicForkWrites(tx, MEDIA_OPERATION_HANDOFF_REFUSAL);
+      const project = await tx
+        .selectFrom('studio_project')
+        .selectAll()
+        .where('id', '=', operation.projectId!)
+        .where('ownerId', '=', operation.ownerId)
+        .where('deletedAt', 'is', null)
+        .where('archivedAt', 'is', null)
+        .forUpdate()
+        .executeTakeFirst();
+      if (!project || operation.kind !== MediaOperationKind.StudioReverseConform) {
+        throw new ConflictException('The reverse-conform project is unavailable');
+      }
+      const existing = await tx
+        .selectFrom('media_operation')
+        .selectAll()
+        .where('projectId', '=', project.id)
+        .where('ownerId', '=', operation.ownerId)
+        .where('kind', '=', MediaOperationKind.StudioReverseConform)
+        .where(sql<string>`"snapshot"->>'requestKey'`, '=', binding.requestKey)
+        .executeTakeFirst();
+      if (existing) {
+        if (canonicalJson(existing.snapshot) !== canonicalJson(operation.snapshot)) {
+          throw new ConflictException('This reverse-conform request key was already used for another command');
+        }
+        return existing;
+      }
+      const held = await tx
+        .selectFrom('studio_project')
+        .select('id')
+        .where('id', '=', project.id)
+        .where('currentRevision', '=', binding.revision)
+        .where('leaseHolderId', '=', operation.ownerId)
+        .where('leaseClientId', '=', binding.clientId)
+        .where('leaseExpiresAt', '>', sql<Date>`clock_timestamp()`)
+        .executeTakeFirst();
+      if (!held) {
+        throw new ConflictException('The reverse-conform revision or edit lease changed');
+      }
+      return tx.insertInto('media_operation').values(operation).returningAll().executeTakeFirstOrThrow();
+    });
     this.changed(row as unknown as MediaOperationChange);
     return row as unknown as MediaOperation;
   }

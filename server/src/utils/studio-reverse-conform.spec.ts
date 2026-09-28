@@ -45,31 +45,46 @@ describe('local source reversal contract', () => {
     (caseName) => {
       const info = reverseVideoInfo();
       const packets = reversePackets();
-      if (caseName === 'vfr') {
-        packets.variableFrameRate = true;
-      } else if (caseName === 'packet-gaps') {
-        packets.outputFrames = 4;
-      } else if (caseName === 'hdr') {
-        info.videoStreams[0].colorTransfer = ColorTransfer.Smpte2084;
-      } else if (caseName === 'too-long') {
-        info.format.duration = 11;
-      } else if (caseName === 'rotated') {
-        info.videoStreams[0].rotation = 90;
-      } else if (caseName === 'unknown-origin') {
-        info.videoStreams[0].startTime = null;
-      } else if (caseName === 'unaligned-audio') {
-        info.audioStreams = [
-          {
-            index: 1,
-            codecName: 'pcm_f32le',
-            profile: null,
-            bitrate: 1000,
-            channels: 2,
-            sampleRate: 48_000,
-            duration: 1,
-            startTime: 0.5,
-          },
-        ];
+      switch (caseName) {
+        case 'vfr': {
+          packets.variableFrameRate = true;
+          break;
+        }
+        case 'packet-gaps': {
+          packets.outputFrames = 4;
+          break;
+        }
+        case 'hdr': {
+          info.videoStreams[0].colorTransfer = ColorTransfer.Smpte2084;
+          break;
+        }
+        case 'too-long': {
+          info.format.duration = 11;
+          break;
+        }
+        case 'rotated': {
+          info.videoStreams[0].rotation = 90;
+          break;
+        }
+        case 'unknown-origin': {
+          info.videoStreams[0].startTime = null;
+          break;
+        }
+        case 'unaligned-audio': {
+          info.audioStreams = [
+            {
+              index: 1,
+              codecName: 'pcm_f32le',
+              profile: null,
+              bitrate: 1000,
+              channels: 2,
+              sampleRate: 48_000,
+              duration: 1,
+              startTime: 0.5,
+            },
+          ];
+          break;
+        }
       }
       expect(() =>
         checkStudioReverseSource(info, packets, {
