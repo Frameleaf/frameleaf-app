@@ -40,26 +40,24 @@ The default description model setting is `Qwen/Qwen2.5-VL-3B-Instruct`. The Inte
 
 The full curated dropdown of description models, with VRAM hints, lives in [Image Enrichment](/features/image-enrichment#hardware-and-model-notes).
 
-The default fallback setting is `microsoft/Florence-2-base-ft`. The fallback is only attempted on local and LAN workers, never on Frameleaf Cloud — see [Image Enrichment → Fallback model behavior](/features/image-enrichment#fallback-model-behavior) for the rationale.
+The default fallback setting is `microsoft/Florence-2-base-ft`. See [Image Enrichment → Fallback model behavior](/features/image-enrichment#fallback-model-behavior) for when it is used.
 
-#### Model licences and Frameleaf Cloud
+#### Model licences
 
-Some models may run on your own hardware but are never offered on Frameleaf Cloud, because their licences do not allow hosted commercial use. The server refuses a cloud job for them and a model choice that names one, and the Frameleaf Cloud model pickers never offer them. They stay available on this server and on home-network workers.
+Some models have licences that limit commercial use. Check the licence before using a model outside your own installation.
 
-| Model                                                          | Licence                                         | Frameleaf Cloud |
-| -------------------------------------------------------------- | ----------------------------------------------- | --------------- |
-| `Qwen/Qwen2.5-VL-3B-Instruct` (and `llmware/qwen2.5-vl-3b-ov`) | Qwen Research License Agreement (Alibaba Cloud) | Local only      |
-| `nllb-clip` search models (base and large, every variant)      | CC-BY-NC-4.0                                    | Local only      |
-| MusicGen-small (`Xenova/musicgen-small`)                       | CC-BY-NC-4.0                                    | Local only      |
+| Model                                                          | Licence                                         |
+| -------------------------------------------------------------- | ----------------------------------------------- |
+| `Qwen/Qwen2.5-VL-3B-Instruct` (and `llmware/qwen2.5-vl-3b-ov`) | Qwen Research License Agreement (Alibaba Cloud) |
+| `nllb-clip` search models (base and large, every variant)      | CC-BY-NC-4.0                                    |
+| MusicGen-small (`Xenova/musicgen-small`)                       | CC-BY-NC-4.0                                    |
 
-Choose the models for each kind of work in **Where each job runs** or on the **Models** card of Cloud processing. Each kind of work has one slider, from lighter to heavier models:
+Choose models for each kind of work in **Where each job runs**. Each kind of work has one slider, from lighter to heavier models:
 
 - **White** stops run on this server's processor and **green** stops fit its GPU, as the last Hardware & GPU check found it. Without a check every stop is white; run the check to see which fit. A model that needs more GPU memory than you have, or CUDA on a GPU that does not use it, is crossed out with the reason.
-- **Blue** stops run on Frameleaf Cloud only, with the price per minute of GPU time.
 
-Descriptions and tags is the only kind of work with a model for this server on the slider. Choosing a white or green stop changes the description model setting, saved with the settings bar like the Machine learning settings. The machine-learning container downloads a model it doesn't have yet the first time a job uses it, which can take several minutes. The fallback model and any model typed as a custom name stay in the Machine learning settings. Restoration and Studio AI workers bring their own models, and upscale runs on Frameleaf Cloud only, so their sliders in Where each job runs have blue stops only. Smooth motion runs RIFE on a restoration worker on this server or your network when an administrator has added one with a qualified RIFE model (see `machine-learning/video-restoration/README.md`); the Smooth motion slider in the editor and in Studio shows it on a white or green stop, and FILM on Frameleaf Cloud on a blue one, confirmed as its own job.
+Choosing a white or green stop changes the description model setting, saved with the settings bar like the Machine learning settings. The machine-learning container downloads a model it doesn't have yet the first time a job uses it, which can take several minutes. The fallback model and any model typed as a custom name stay in the Machine learning settings. Restoration workers bring their own models. Smooth motion runs RIFE on a restoration worker on this server or your network when an administrator has added one with a qualified RIFE model (see `machine-learning/video-restoration/README.md`).
 
-A blue stop is saved at once. When no Frameleaf Cloud model is chosen, jobs use the model Frameleaf Cloud recommends for your region; if it recommends none, and always for Studio AI, cloud jobs are refused until you choose one. Choosing on one side never changes the other, and where each job runs still follows its setting: work set to **Local only** shows its blue stops crossed out, and work set to **Cloud only** its white and green stops. Every model the cloud tier offers is licensed Apache-2.0, MIT or for commercial hosted use.
 
 ## Hardware & GPU check
 
@@ -75,7 +73,7 @@ The check names the set-up problems it finds, each with the fix and, where docke
 
 **Run a short benchmark** times search embeddings and a test transcode, then records the throughput of each kind of work the model sliders estimate:
 
-- **Descriptions and tags**: a few generated test photos are described with your description model on this server's machine-learning container (never on Frameleaf Cloud).
+- **Descriptions and tags**: a few generated test photos are described with your description model on this server's machine-learning container.
 - **Restoration**: the speed the restoration worker measured on its current GPU when it was qualified.
 - **Upscale** has no local runner, and a transcription worker and a Smooth motion (RIFE) restoration worker report no speed to this check; the benchmark says so rather than estimating.
 

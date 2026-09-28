@@ -204,7 +204,7 @@ Override the default notifications text with notification templates. More inform
 
 ### Public server URL
 
-The address this server puts in shared links, emails, maintenance login links and sign-in callbacks is set in **Frameleaf Cloud → Remote access → Public server URL**, not under Server identity, and searching the settings for it opens that page. It is saved with your other settings changes, needs no Frameleaf Cloud link, and should not include a trailing slash. **Use the Frameleaf address** and **Use my domain** fill it in for a server with remote access (see [Frameleaf Cloud](/administration/frameleaf-cloud#remote-access-security)). Without it, a server linked to Frameleaf Cloud uses its public URL; otherwise emails are sent without links (see [email notifications](./email-notification.mdx#links-in-emails)).
+The address this server puts in shared links, emails, maintenance login links and sign-in callbacks is set in **Frameleaf Cloud → Remote access → Public server URL**. It is saved with your other settings changes, needs no cloud link, and should not include a trailing slash. Without a public URL, emails are sent without links (see [email notifications](./email-notification.mdx#links-in-emails)).
 
 ### Welcome Message
 
