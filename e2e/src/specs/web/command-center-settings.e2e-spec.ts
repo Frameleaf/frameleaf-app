@@ -303,4 +303,57 @@ test.describe('Command Center settings', () => {
     ).toBeDisabled();
     await other.close();
   });
+
+  test('recovers a two-page draft, reviews a conflict, and resets only one page', async ({ page }) => {
+    const defaults = await getConfigDefaults({ headers: asBearerAuth(admin.accessToken) });
+    const savedDays = defaults.trash.days + 15;
+    await setTrashDays(admin, savedDays);
+    const before = await readConfig(admin);
+    const draftDays = savedDays + 5;
+    const otherDays = savedDays + 9;
+    const frequency =
+      before.newVersionCheck.frequency === VersionCheckFrequency.Daily
+        ? VersionCheckFrequency.Weekly
+        : VersionCheckFrequency.Daily;
+
+    await page.goto(trashUrl);
+    await page.getByLabel(labels.trashDays).fill(String(draftDays));
+    const navigation = page.getByRole('navigation', { name: 'Settings navigation' });
+    await navigation.getByRole('button', { name: 'Server & updates' }).click();
+    await navigation.getByRole('button', { name: 'Versions & compatibility' }).click();
+    await page.getByRole('combobox', { name: labels.checkFrequency }).selectOption(frequency);
+    const bar = page.getByRole('region', { name: labels.bar });
+    await expect(bar).toBeVisible();
+
+    // A second administrator changes one drafted value while both pages are still unsaved.
+    await setTrashDays(admin, otherDays);
+    page.once('dialog', (dialog) => dialog.accept());
+    await page.reload();
+    await expect(page.getByText('Recovered 2 unsaved changes from before the page reloaded.')).toBeVisible();
+    await expect(page.getByRole('combobox', { name: labels.checkFrequency })).toHaveValue(frequency);
+    const conflict = page.getByRole('alert').filter({ hasText: labels.conflict });
+    await expect(conflict).toBeVisible();
+    await expect(conflict.getByText(`Saved now: ${otherDays}`)).toBeVisible();
+    await expect(conflict.getByText(`Your draft: ${draftDays}`)).toBeVisible();
+    await expect(bar.getByRole('button', { name: labels.review })).toBeDisabled();
+
+    await navigation.getByRole('button', { name: 'Storage & originals' }).click();
+    await navigation.getByRole('button', { name: 'Trash & retention' }).click();
+    const days = page.getByLabel(labels.trashDays);
+    await expect(days).toHaveValue(String(draftDays));
+    await conflict.getByRole('button', { name: 'Keep my changes' }).click();
+    await expect(conflict).toBeHidden();
+    await expect(days).toHaveValue(String(draftDays));
+    await page.getByRole('button', { name: labels.resetPage }).click();
+    await expect(days).toHaveValue(String(defaults.trash.days));
+    await expect(bar).toBeVisible();
+
+    await reviewAndSave(page);
+    await expect
+      .poll(async () => {
+        const config = await readConfig(admin);
+        return { days: config.trash.days, frequency: config.newVersionCheck.frequency };
+      })
+      .toEqual({ days: defaults.trash.days, frequency });
+  });
 });
