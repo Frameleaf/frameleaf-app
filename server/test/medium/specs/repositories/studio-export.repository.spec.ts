@@ -891,6 +891,72 @@ describe(StudioExportRepository.name, () => {
       expect(version!.privacy).toEqual(expect.objectContaining({ lockReason: AssetLockReason.Marked }));
     });
 
+    it('unlocks the results again once their last locked source is unlocked (FL-195 follow-up)', async () => {
+      const context = setup();
+      const { user } = await context.ctx.newUser();
+      const sources = [await ownSource(context.ctx, user.id), await ownSource(context.ctx, user.id)];
+      const staged = await stagedExport(context, user.id, sources);
+      const resultId = (await context.sut.publish(publication(staged, sources))).createdAssetId!;
+      const locked = { revealed: false };
+      const inherited = async () =>
+        (
+          await defaultDatabase
+            .selectFrom('asset_lock')
+            .select('inherited')
+            .where('assetId', '=', resultId)
+            .executeTakeFirst()
+        )?.inherited;
+
+      await context.assets.lock([sources[0].id, sources[1].id], AssetLockReason.Marked, user.id);
+      expect(await lockOf(resultId)).toBe(AssetLockReason.Marked);
+      expect(await inherited()).toBe(true);
+      await expect(context.sut.getForOwner(staged.version.id, user.id, locked)).resolves.toBeUndefined();
+
+      // one source still locked: the result stays locked
+      await context.assets.unlock([sources[0].id]);
+      expect(await lockOf(resultId)).toBe(AssetLockReason.Marked);
+      await expect(context.sut.getForOwner(staged.version.id, user.id, locked)).resolves.toBeUndefined();
+
+      // the last one unlocked: so is the result, its version and its entry
+      await context.assets.unlock([sources[1].id]);
+      expect(await lockOf(resultId)).toBeNull();
+      const version = await context.sut.getById(staged.version.id);
+      expect(version!.privacy).toEqual(expect.objectContaining({ lockReason: null }));
+      await expect(context.sut.getForOwner(staged.version.id, user.id, locked)).resolves.toEqual(
+        expect.objectContaining({ id: staged.version.id }),
+      );
+      const rows = await context.sut.getSources(staged.version.id);
+      expect(rows.every((row) => !row.locked)).toBe(true);
+    });
+
+    it('never releases a lock the owner put on the result directly (FL-195 follow-up)', async () => {
+      const context = setup();
+      const { user } = await context.ctx.newUser();
+      const sources = [await ownSource(context.ctx, user.id)];
+      const staged = await stagedExport(context, user.id, sources);
+      const resultId = (await context.sut.publish(publication(staged, sources))).createdAssetId!;
+      const locked = { revealed: false };
+
+      // locked directly before the source, and again on top of the inherited lock: both stay
+      await context.assets.lock([sources[0].id], AssetLockReason.Marked, user.id);
+      await context.assets.lock([resultId], AssetLockReason.Marked, user.id);
+      const row = await defaultDatabase
+        .selectFrom('asset_lock')
+        .select(['inherited', 'lockedBy'])
+        .where('assetId', '=', resultId)
+        .executeTakeFirstOrThrow();
+      expect(row).toEqual({ inherited: false, lockedBy: user.id });
+
+      await context.assets.unlock([sources[0].id]);
+
+      expect(await lockOf(resultId)).toBe(AssetLockReason.Marked);
+      // the version's entry follows its directly locked library item
+      await expect(context.sut.getForOwner(staged.version.id, user.id, locked)).resolves.toBeUndefined();
+      await expect(
+        context.sut.getForOwner(staged.version.id, user.id, { revealed: true, revealLockedOwnerId: user.id }),
+      ).resolves.toEqual(expect.objectContaining({ id: staged.version.id }));
+    });
+
     it('locks descendants beyond eight generations, crossing existing locks and stopping cycles', async () => {
       const context = setup();
       const { user } = await context.ctx.newUser();

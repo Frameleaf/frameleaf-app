@@ -46,7 +46,7 @@ describe('iCloud source metadata reconciliation (PostgreSQL)', () => {
       'ALTER TABLE pet ADD COLUMN "ownerId" uuid',
       `CREATE TABLE pet_observation(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),"petId" uuid REFERENCES pet,"assetId" uuid REFERENCES asset,state text NOT NULL DEFAULT 'confirmed')`,
       // Locked is a lock record (FL-34); locking touches the asset and takes live-photo parts along
-      `CREATE TABLE asset_lock("assetId" uuid PRIMARY KEY REFERENCES asset ON DELETE CASCADE,reason text NOT NULL,"lockedAt" timestamptz NOT NULL DEFAULT now(),"lockedBy" uuid,"previousVisibility" text)`,
+      `CREATE TABLE asset_lock("assetId" uuid PRIMARY KEY REFERENCES asset ON DELETE CASCADE,reason text NOT NULL,"lockedAt" timestamptz NOT NULL DEFAULT now(),"lockedBy" uuid,"previousVisibility" text,inherited boolean NOT NULL DEFAULT false)`,
       'ALTER TABLE asset ADD COLUMN "livePhotoVideoId" uuid',
       'ALTER TABLE asset ADD COLUMN "updatedAt" timestamptz',
     ]) {

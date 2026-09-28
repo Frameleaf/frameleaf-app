@@ -36,4 +36,11 @@ export class AssetLockTable {
    */
   @Column({ enum: asset_visibility_enum, nullable: true })
   previousVisibility!: AssetVisibility | null;
+
+  /**
+   * FL-195 follow-up: a Studio export result's lock inherited from its sources, released when its last
+   * locked source is unlocked. False for every lock someone or something put on the asset itself.
+   */
+  @Column({ type: 'boolean', default: false })
+  inherited!: Generated<boolean>;
 }

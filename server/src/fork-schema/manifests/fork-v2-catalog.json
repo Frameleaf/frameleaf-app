@@ -2677,6 +2677,10 @@
       "identity": "public.asset_lock.assetId"
     },
     {
+      "definition": "boolean|not null|false||",
+      "identity": "public.asset_lock.inherited"
+    },
+    {
       "definition": "timestamp with time zone|not null|now()||",
       "identity": "public.asset_lock.lockedAt"
     },

@@ -81,7 +81,7 @@ import {
   withTagId,
   withTags,
 } from 'src/utils/database.js';
-import { lockDerivedResults } from 'src/utils/derivative-locks.js';
+import { lockDerivedResults, releaseDerivedResults } from 'src/utils/derivative-locks.js';
 import { lockAssetRowsInOrder, onStacksJoined, otherStackMembers } from 'src/utils/locked-stacks.js';
 import {
   effectiveVisibility,
@@ -1119,6 +1119,14 @@ export class AssetRepository {
     // the group's rows before its lock records, in id order, like every lock writer (FL-34)
     await lockAssetRowsInOrder(tx, targetIds);
 
+    // FL-195 follow-up: a lock put on an item that only carried a lock inherited from its sources (a
+    // Studio export result) makes that lock its own, so unlocking the sources no longer releases it
+    await sql`
+      update asset_lock
+      set inherited = false, "lockedBy" = coalesce(${lockedBy}::uuid, "lockedBy")
+      where "assetId" = any(${`{${targetIds}}`}::uuid[]) and inherited = true
+    `.execute(tx);
+
     const { rows } = await sql<{ assetId: string }>`
       insert into asset_lock ("assetId", "reason", "lockedBy")
       select target.id, ${reason}, ${lockedBy}::uuid
@@ -1223,6 +1231,10 @@ export class AssetRepository {
     if (unlocked.length > 0) {
       const unlockedIds = unlocked.map(({ assetId }) => assetId);
       await tx.updateTable('asset').set({ updatedAt: new Date() }).where('id', '=', anyUuid(unlockedIds)).execute();
+      // FL-195 follow-up: Studio exports whose last locked source this was unlock with it, unless the
+      // owner locked them directly. They are not part of what this unlock returns: the caller reviews
+      // and checks exactly the group it asked for.
+      await releaseDerivedResults(tx, unlockedIds);
     }
 
     return unlocked;

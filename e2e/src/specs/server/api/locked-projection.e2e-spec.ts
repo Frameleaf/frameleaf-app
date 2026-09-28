@@ -25,7 +25,7 @@ const readAll = async (reads: Read[], headers: Record<string, string>) => {
 const expectNoTrace = (answers: { name: string; text: string }[], secrets: string[]) => {
   for (const { name, text } of answers) {
     for (const secret of secrets) {
-      expect(text.includes(secret), `${name} mentions ${secret}`).toBe(false);
+      expect((text ?? '').includes(secret), `${name} mentions ${secret}`).toBe(false);
     }
   }
 };
@@ -679,6 +679,9 @@ describe('Studio exports rendered before their source was locked (FL-195 follow-
   let result: { id: string };
   let laterSource: { id: string };
   let laterResult: { id: string };
+  let directSource: { id: string };
+  let directResult: { id: string };
+  let directVersionId: string;
   let projectId: string;
   let versionId: string;
   let laterVersionId: string;
@@ -716,6 +719,8 @@ describe('Studio exports rendered before their source was locked (FL-195 follow-
     result = await newAsset('export-render');
     laterSource = await newAsset('later-source');
     laterResult = await newAsset('later-render');
+    directSource = await newAsset('direct-source');
+    directResult = await newAsset('direct-render');
 
     const { body: project } = await request(app)
       .post('/studio/projects')
@@ -737,6 +742,13 @@ describe('Studio exports rendered before their source was locked (FL-195 follow-
       resultAssetId: laterResult.id,
       sourceAssetIds: [laterSource.id],
       version: 2,
+    });
+    directVersionId = await utils.seedStudioExport({
+      ownerId: owner.userId,
+      projectId,
+      resultAssetId: directResult.id,
+      sourceAssetIds: [directSource.id],
+      version: 3,
     });
 
     const album = await utils.createAlbum(owner.accessToken, {
@@ -760,6 +772,20 @@ describe('Studio exports rendered before their source was locked (FL-195 follow-
       .expect(204);
     // a lock that reached the other source without going through a lock request: judged at read time
     await utils.setAssetLock(laterSource.id, 'detected');
+    // the third export inherits its source's lock, and its owner, unlocked (the export is Locked now),
+    // then locks it directly as well
+    await request(app)
+      .post('/assets/lock')
+      .set(bearer(owner.accessToken))
+      .send({ ids: [directSource.id] })
+      .expect(204);
+    await unlock(owner.accessToken);
+    await request(app)
+      .post('/assets/lock')
+      .set(bearer(owner.accessToken))
+      .send({ ids: [directResult.id] })
+      .expect(204);
+    await lock(owner.accessToken);
   });
 
   it('hides the export, its library item and its share while the session is locked', async () => {
@@ -779,9 +805,9 @@ describe('Studio exports rendered before their source was locked (FL-195 follow-
     const answers = await readAll(exportReads(), bearer(owner.accessToken));
     const answer = (name: string) => answers.find((read) => read.name === name)!;
     const listed = JSON.parse(answer('exports').text);
-    expect(listed.total).toBe(2);
+    expect(listed.total).toBe(3);
     expect(listed.items.map((item: { id: string }) => item.id).toSorted(byId)).toEqual(
-      [versionId, laterVersionId].toSorted(byId),
+      [versionId, laterVersionId, directVersionId].toSorted(byId),
     );
     const version = JSON.parse(answer('export').text);
     expect(version).toEqual(expect.objectContaining({ id: versionId, resultAssetId: result.id, locked: true }));
@@ -838,5 +864,44 @@ describe('Studio exports rendered before their source was locked (FL-195 follow-
       bearer(admin.accessToken),
     );
     expectNoTrace(adminAnswers, secrets);
+  });
+  it('shows the export again once its sources are unlocked, but never one its owner locked directly', async () => {
+    await unlock(owner.accessToken);
+    await request(app)
+      .post('/assets/unlock')
+      .set(bearer(owner.accessToken))
+      .send({ ids: [source.id, laterSource.id, directSource.id] })
+      .expect(204);
+    await lock(owner.accessToken);
+
+    const answers = await readAll(
+      [
+        ...exportReads(),
+        { name: 'direct export', path: `/studio/exports/${directVersionId}` },
+        ...oneItemReads(directResult.id),
+      ],
+      bearer(owner.accessToken),
+    );
+    const answer = (name: string) => answers.find((read) => read.name === name)!;
+    const listed = JSON.parse(answer('exports').text);
+    expect(listed.items.map((item: { id: string }) => item.id).toSorted(byId)).toEqual(
+      [versionId, laterVersionId].toSorted(byId),
+    );
+    expect(JSON.parse(answer('export').text)).toEqual(
+      expect.objectContaining({ id: versionId, resultAssetId: result.id, locked: false }),
+    );
+    expect(answer('later export').status).toBe(200);
+    expect(answer('timeline bucket').text).toContain(result.id);
+    expect(answer(`asset ${result.id}`).status).toBe(200);
+    expect(JSON.parse(answer('album').text).assetCount).toBe(1);
+
+    // the directly locked export stays hidden, its entry, library item and download included
+    expectNoTrace(answers, [directVersionId, directResult.id, 'direct-render']);
+    for (const name of ['direct export', `asset ${directResult.id}`, `original ${directResult.id}`]) {
+      expect(answer(name).status, name).toBeGreaterThanOrEqual(400);
+    }
+    // and its share: a shared link never shows it
+    const { text } = await request(app).get(`/albums/${albumId}`).query({ key: sharedKey });
+    expect(text).not.toContain(directResult.id);
   });
 });
