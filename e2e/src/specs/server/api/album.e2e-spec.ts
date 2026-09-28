@@ -809,6 +809,34 @@ describe('/albums', () => {
       });
     });
 
+    it('refuses an editor who tries to move the album (FL-83 AL-9)', async () => {
+      const collection = await utils.createAlbum(user2.accessToken, {
+        albumName: 'EditorShelf',
+        kind: AlbumKind.Collection,
+      });
+      const message =
+        'Only the album owner can move it. Editors can change what is in the album, but not where it is kept.';
+
+      const moved = await request(app)
+        .put(`/albums/${user1Albums[0].id}/collection`)
+        .set('Authorization', `Bearer ${user2.accessToken}`)
+        .send({ collectionId: collection.id });
+      expect(moved.status).toBe(403);
+      expect(moved.body).toEqual(expect.objectContaining({ message }));
+
+      const patched = await request(app)
+        .patch(`/albums/${user1Albums[0].id}`)
+        .set('Authorization', `Bearer ${user2.accessToken}`)
+        .send({ parentId: collection.id });
+      expect(patched.status).toBe(403);
+      expect(patched.body).toEqual(expect.objectContaining({ message }));
+
+      const { body } = await request(app)
+        .get(`/albums/${user1Albums[0].id}`)
+        .set('Authorization', `Bearer ${user1.accessToken}`);
+      expect(body.parentId).toBeNull();
+    });
+
     it('should not be able to update as a viewer', async () => {
       const { status, body } = await request(app)
         .patch(`/albums/${user1Albums[3].id}`)
