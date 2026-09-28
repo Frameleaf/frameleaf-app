@@ -1,5 +1,5 @@
 import { AlbumKind, AlbumUserRole, type AlbumResponseDto, type PartnerResponseDto, UserAvatarColor } from '@immich/sdk';
-import { fireEvent, screen } from '@testing-library/svelte';
+import { fireEvent, screen, waitFor, within } from '@testing-library/svelte';
 import { init, register, waitLocale } from 'svelte-i18n';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
@@ -83,5 +83,83 @@ describe('SharedSpacesWorkspace', () => {
         'A shared space is a top-level library that everyone you invite adds to. Invite people from its page once it exists.',
       ),
     ).toBeInTheDocument();
+  });
+  describe('space menu on the Frameleaf Menu (FL-83 AL-45)', () => {
+    const joinedSpace = albumFactory.build({
+      id: 'club-space',
+      albumName: 'Book Club',
+      kind: AlbumKind.Space,
+      assetCount: 3,
+      albumUsers: [
+        { user: jamie, role: AlbumUserRole.Owner },
+        { user: me, role: AlbumUserRole.Viewer },
+      ],
+    });
+
+    const openMenu = async (name: string) => {
+      await fireEvent.click(screen.getByRole('button', { name: `Actions for ${name}` }));
+      return within(await screen.findByRole('menu', { name: `Actions for ${name}` }));
+    };
+
+    it('uses the Frameleaf menu, not the legacy context menu', async () => {
+      renderWithTooltips(SharedSpacesWorkspace, { spaces: [familySpace], partners: [], onRefresh: vi.fn() });
+      const menu = await openMenu('Family Space');
+      expect(menu.getByRole('menuitem', { name: 'Open' })).toBeInTheDocument();
+      expect(menu.getByRole('menuitem', { name: 'Open the photos' })).toBeInTheDocument();
+      expect(menu.getByRole('menuitem', { name: 'Download' })).toBeInTheDocument();
+      // The Frameleaf Menu (the one the Albums page uses), whose list sits in its own root.
+      const root = screen.getByRole('menu', { name: 'Actions for Family Space' }).closest('.menu-root');
+      expect(root).not.toBeNull();
+      expect(root?.querySelector('button[aria-haspopup]')).toHaveAccessibleName('Actions for Family Space');
+    });
+
+    it('edits a space in the Frameleaf edit dialog', async () => {
+      renderWithTooltips(SharedSpacesWorkspace, { spaces: [familySpace], partners: [], onRefresh: vi.fn() });
+      const menu = await openMenu('Family Space');
+      await fireEvent.click(menu.getByRole('menuitem', { name: 'Edit' }));
+
+      const dialog = within(await screen.findByRole('dialog', { name: /shared space/i }));
+      expect(dialog.getByRole('textbox', { name: 'Name' })).toHaveValue('Family Space');
+    });
+
+    it('shares a space from its menu in the Frameleaf share dialog', async () => {
+      sdkMock.searchUsers.mockResolvedValue([jamie]);
+      renderWithTooltips(SharedSpacesWorkspace, { spaces: [familySpace], partners: [], onRefresh: vi.fn() });
+      const menu = await openMenu('Family Space');
+      await fireEvent.click(menu.getByRole('menuitem', { name: 'Share' }));
+
+      expect(await screen.findByRole('dialog', { name: 'Share this shared space' })).toBeInTheDocument();
+    });
+
+    it('deletes an owned space after the Frameleaf confirmation', async () => {
+      const onRefresh = vi.fn();
+      sdkMock.deleteAlbum.mockResolvedValue(undefined as never);
+      renderWithTooltips(SharedSpacesWorkspace, { spaces: [familySpace], partners: [], onRefresh });
+      const menu = await openMenu('Family Space');
+      expect(menu.queryByRole('menuitem', { name: 'Leave' })).toBeNull();
+      await fireEvent.click(menu.getByRole('menuitem', { name: 'Delete' }));
+
+      await screen.findByRole('dialog', { name: 'Delete “Family Space”?' });
+      await fireEvent.click(screen.getByRole('button', { name: 'Delete shared space' }));
+
+      await waitFor(() => expect(sdkMock.deleteAlbum).toHaveBeenCalledWith({ id: 'family-space' }));
+      await waitFor(() => expect(onRefresh).toHaveBeenCalled());
+    });
+
+    it('leaves a space someone else owns after the Frameleaf confirmation', async () => {
+      const onRefresh = vi.fn();
+      sdkMock.removeUserFromAlbum.mockResolvedValue(undefined as never);
+      renderWithTooltips(SharedSpacesWorkspace, { spaces: [joinedSpace], partners: [], onRefresh });
+      const menu = await openMenu('Book Club');
+      expect(menu.queryByRole('menuitem', { name: 'Delete' })).toBeNull();
+      expect(menu.queryByRole('menuitem', { name: 'Edit' })).toBeNull();
+      await fireEvent.click(menu.getByRole('menuitem', { name: 'Leave' }));
+
+      await screen.findByRole('dialog', { name: 'Leave “Book Club”?' });
+      await fireEvent.click(screen.getByRole('button', { name: 'Leave shared space' }));
+
+      await waitFor(() => expect(sdkMock.removeUserFromAlbum).toHaveBeenCalledWith({ id: 'club-space', userId: 'me' }));
+      await waitFor(() => expect(onRefresh).toHaveBeenCalled());
+    });
   });
 });
