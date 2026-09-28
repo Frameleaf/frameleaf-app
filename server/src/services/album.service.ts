@@ -22,6 +22,7 @@ import {
   asAlbumKind,
   mapAlbum,
 } from 'src/dtos/album.dto.js';
+import type { SmartAlbumBuiltInKind } from 'src/dtos/system-config.dto.js';
 import { BulkIdErrorReason, BulkIdResponseDto, BulkIdsDto } from 'src/dtos/asset-ids.response.dto.js';
 import { AlbumMapMarkerDto, MapMarkerResponseDto } from 'src/dtos/map.dto.js';
 import { AlbumKind, AlbumUserRole, Permission, SharedSpaceEventType } from 'src/enum.js';
@@ -116,7 +117,7 @@ export class AlbumService extends BaseService {
     const ids = albums.map((album) => album.id);
     const [results, smartBackedIds, ruleAlbumIds, rules, positions] = await Promise.all([
       this.albumRepository.getMetadataForIds(ids, privacyOptions),
-      this.smartAlbumRepository.getSmartBackedAlbumIds(ids),
+      this.smartAlbumRepository.getSmartBackedAlbumKinds(ids),
       this.classificationRepository.getRuleAlbumIds(ids),
       this.classificationRepository.getRules(auth.user.id),
       this.albumRepository.getPositions(auth.user.id),
@@ -137,6 +138,7 @@ export class AlbumService extends BaseService {
           ...this.withReadableParent(this.toListItem(album, albumMetadata), readable),
           isSmart: smartBackedIds.has(album.id) || ruleAlbumIds.has(album.id),
           smartRuleId: ruleByAlbum.get(album.id) ?? null,
+          smartKind: (smartBackedIds.get(album.id) as SmartAlbumBuiltInKind | undefined) ?? null,
         })),
       ),
       positions,
@@ -233,14 +235,15 @@ export class AlbumService extends BaseService {
   private async smartStateOf(
     auth: AuthDto,
     albumId: string,
-  ): Promise<{ isSmart: boolean; smartRuleId: string | null }> {
+  ): Promise<{ isSmart: boolean; smartRuleId: string | null; smartKind: SmartAlbumBuiltInKind | null }> {
     const [builtIn, rule] = await Promise.all([
-      this.smartAlbumRepository.getSmartBackedAlbumIds([albumId]),
+      this.smartAlbumRepository.getSmartBackedAlbumKinds([albumId]),
       this.classificationRepository.getRuleByAlbumId(albumId),
     ]);
     return {
       isSmart: builtIn.has(albumId) || !!rule,
       smartRuleId: rule && rule.ownerId === auth.user.id ? rule.id : null,
+      smartKind: (builtIn.get(albumId) as SmartAlbumBuiltInKind | undefined) ?? null,
     };
   }
 

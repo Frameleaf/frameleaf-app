@@ -298,10 +298,16 @@
     }
   };
 
-  /** Re-evaluate a rule-backed smart album in place; the built-in ones keep the server-wide check. */
+  /**
+   * Re-evaluate a rule-backed smart album in place; a built-in one runs the server check scoped to its
+   * own kind (AL-6), and only an album with no known kind falls back to every enabled kind.
+   */
   const openReevaluate = async (album: AlbumResponseDto) => {
     if (!album.smartRuleId) {
-      void modalManager.show(SmartAlbumReevaluateModal, {});
+      void modalManager.show(
+        SmartAlbumReevaluateModal,
+        album.smartKind ? { kind: album.smartKind, kindLabel: album.albumName } : {},
+      );
       return;
     }
     try {
