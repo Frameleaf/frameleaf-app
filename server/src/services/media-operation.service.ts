@@ -647,6 +647,10 @@ export class MediaOperationService {
       return this.retryEdit(auth, operation, edit);
     }
 
+    if (operation.kind === MediaOperationKind.StudioReverseConform) {
+      throw new BadRequestException('Source reversal must be submitted again with current source authorization');
+    }
+
     // FL-106: a Studio export is a version of its project. Its render and its publication each had
     // their automatic retry; exporting again makes a new version against the project as it is now,
     // with its sources re-checked, rather than a copy of a job whose version already ended.

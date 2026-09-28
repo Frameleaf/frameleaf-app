@@ -506,7 +506,7 @@ export class StudioProjectRepository {
    * authorization and worker claim. Request graphs never reach this method. One id permanently
    * binds the checked file and its provenance; an identical retry succeeds, a changed retry fails.
    */
-  async registerGeneratedResource(resource: StudioGeneratedResource): Promise<void> {
+  async registerGeneratedResource(resource: StudioGeneratedResource, executor?: Kysely<DB>): Promise<void> {
     if (
       !isStudioUuid(resource.projectId) ||
       !isStudioUuid(resource.ownerId) ||
@@ -525,7 +525,7 @@ export class StudioProjectRepository {
     ) {
       throw new BadRequestException('Invalid generated media declaration');
     }
-    await this.db.transaction().execute(async (tx) => {
+    const register = async (tx: Kysely<DB>) => {
       await lockForkWrites(tx, STUDIO_PROJECT_HANDOFF_REFUSAL);
       const project = await tx
         .selectFrom('studio_project')
@@ -597,7 +597,8 @@ export class StudioProjectRepository {
       if (rows.length === 0) {
         throw new ConflictException('Generated media ids cannot be rebound to another file or source');
       }
-    });
+    };
+    await (executor ? register(executor) : this.db.transaction().execute(register));
   }
 
   /** Server-side declarations only; source ACLs are still rechecked by StudioResourceService. */
