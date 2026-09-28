@@ -4,7 +4,13 @@ import { MediaOperation, MediaOperationRepository } from 'src/repositories/media
 import { StudioReverseConformService } from 'src/services/studio-reverse-conform.service.js';
 import { StudioDestination, StudioResourceKind } from 'src/utils/studio-resources.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
-import { reverseClipGraph, reversePackets, reverseVideoInfo } from 'test/fixtures/studio-reverse-conform.stub.js';
+import {
+  reverseClipGraph,
+  reversePackets,
+  reversePreviewInfo,
+  reversePreviewPackets,
+  reverseVideoInfo,
+} from 'test/fixtures/studio-reverse-conform.stub.js';
 import { getMocks } from 'test/utils.js';
 
 const projectId = '0195e2a0-0000-7000-8000-000000000010';
@@ -83,12 +89,18 @@ const setup = () => {
   const resources = { resolveProjectResources: vi.fn().mockResolvedValue({ manifest }) };
   const users = { get: vi.fn().mockResolvedValue(owner.user) };
   const media = {
-    probe: vi.fn().mockImplementation(() => Promise.resolve(reverseVideoInfo())),
+    probe: vi
+      .fn()
+      .mockImplementation((path: string) =>
+        Promise.resolve(path.endsWith('.mp4') ? reversePreviewInfo() : reverseVideoInfo()),
+      ),
     probePackets: vi.fn().mockResolvedValue(reversePackets()),
   };
   const renderer = {
     probeGeometry: vi.fn().mockResolvedValue({ width: 32, height: 32, sampleAspectRatio: '1:1' }),
     reverse: vi.fn().mockResolvedValue(undefined),
+    preview: vi.fn().mockResolvedValue(undefined),
+    previewPackets: vi.fn().mockResolvedValue(reversePreviewPackets()),
   };
   const storage = {
     stat: vi.fn().mockResolvedValue({ isFile: () => true, size: 1000 }),
@@ -201,9 +213,98 @@ describe(StudioReverseConformService.name, () => {
       }),
       tx,
     );
+    expect(projects.registerGeneratedResource).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        projectId,
+        ownerId: owner.user.id,
+        sourceRevision: 1,
+        id: `reverse-preview-${operationId}`,
+        producer: 'proxy',
+        checksum: 'cd'.repeat(32),
+        path: expect.stringContaining(`/${operationId}/${claimToken}/source-reversed-preview.mp4`),
+        derivedFrom: [`generated-intermediate:reverse-${operationId}`, sourceKey],
+      }),
+      tx,
+    );
+    expect(tx.updateTable).toHaveBeenCalledWith('media_operation');
     expect(operations.publishValidated).toHaveBeenCalledWith(operationId, claimToken, expect.any(Function));
     expect(operations.fail).not.toHaveBeenCalled();
     expect(storage.unlinkDir).not.toHaveBeenCalled();
+  });
+
+  it('records a non-deliverable checked preview in the same completion transaction', async () => {
+    const { sut, operation, tx, renderer } = setup();
+    await sut.run({ operation, claimToken });
+    expect(renderer.preview).toHaveBeenCalledWith(
+      expect.stringContaining('source-reversed.mkv'),
+      expect.stringContaining('source-reversed-preview.mp4'),
+      expect.objectContaining({ frames: 3 }),
+      expect.any(AbortSignal),
+      expect.any(Function),
+    );
+    const query = tx.updateTable.mock.results[0].value;
+    expect(query.set).toHaveBeenCalledWith({
+      result: expect.objectContaining({
+        browserPreview: expect.objectContaining({
+          generatedId: `reverse-preview-${operationId}`,
+          checksum: 'cd'.repeat(32),
+          derivedFrom: [`generated-intermediate:reverse-${operationId}`, sourceKey],
+          contentType: 'video/mp4',
+          delivery: 'unavailable',
+          audio: null,
+          duration: 1,
+        }),
+      }),
+    });
+  });
+
+  it('cleans up both files without registering either when preview packets fail validation', async () => {
+    const { sut, operation, projects, operations, renderer, storage } = setup();
+    renderer.previewPackets.mockResolvedValue([{ pts: 0, dts: 0, duration: 1 }]);
+    await sut.run({ operation, claimToken });
+    expect(projects.registerGeneratedResource).not.toHaveBeenCalled();
+    expect(operations.publishValidated).not.toHaveBeenCalled();
+    expect(storage.unlinkDir).toHaveBeenCalledWith(expect.stringContaining(claimToken), {
+      recursive: true,
+      force: true,
+    });
+  });
+
+  it('kills a cancelled preview and never publishes the already-rendered master', async () => {
+    vi.useFakeTimers();
+    const { sut, operation, operations, renderer, projects, storage } = setup();
+    const { promise: rendering, resolve: started } = Promise.withResolvers<void>();
+    renderer.preview.mockImplementation(
+      (_input, _output, _source, signal: AbortSignal) =>
+        new Promise<void>((_resolve, reject) => {
+          signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+          started();
+        }),
+    );
+    const run = sut.run({ operation, claimToken });
+    await rendering;
+    operations.getForWorker.mockResolvedValue({ ...operation, status: MediaOperationStatus.Cancelling });
+    await vi.advanceTimersByTimeAsync(5000);
+    await run;
+    expect(operations.acknowledgeCancel).toHaveBeenCalledWith(operationId, claimToken, { released: true });
+    expect(projects.registerGeneratedResource).not.toHaveBeenCalled();
+    expect(storage.unlinkDir).toHaveBeenCalledWith(expect.stringContaining(claimToken), {
+      recursive: true,
+      force: true,
+    });
+  });
+
+  it('does not complete if the preview declaration is rejected inside the publication transaction', async () => {
+    const { sut, operation, projects, operations, storage, tx } = setup();
+    projects.registerGeneratedResource.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('conflict'));
+    await sut.run({ operation, claimToken });
+    expect(tx.updateTable).not.toHaveBeenCalled();
+    expect(operations.fail).toHaveBeenCalled();
+    expect(storage.unlinkDir).toHaveBeenCalledWith(expect.stringContaining(claimToken), {
+      recursive: true,
+      force: true,
+    });
   });
 
   it('refuses a lapsed claim before opening its source or starting ffmpeg', async () => {

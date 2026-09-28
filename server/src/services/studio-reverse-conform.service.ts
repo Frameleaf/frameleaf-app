@@ -28,7 +28,11 @@ import { StudioProjectService } from 'src/services/studio-project.service.js';
 import { StudioAuthorizedEntry, StudioResourceService } from 'src/services/studio-resource.service.js';
 import { StudioDestination, StudioResourceKind, isStudioUuid } from 'src/utils/studio-resources.js';
 import { checkReverseClipSource } from 'src/utils/studio-reverse-clip.js';
-import { checkStudioReverseOutput, checkStudioReverseSource } from 'src/utils/studio-reverse-conform.js';
+import {
+  checkStudioReverseOutput,
+  checkStudioReversePreview,
+  checkStudioReverseSource,
+} from 'src/utils/studio-reverse-conform.js';
 
 const LEASE_MS = 120_000;
 const TICK_MS = 5000;
@@ -182,6 +186,8 @@ export class StudioReverseConformService {
     );
     const path = join(folder, 'source-reversed.mkv');
     const generatedId = `reverse-${operation.id}`;
+    const previewPath = join(folder, 'source-reversed-preview.mp4');
+    const previewId = `reverse-preview-${operation.id}`;
     const controller = new AbortController();
     this.abort = controller;
     let published = false;
@@ -230,7 +236,7 @@ export class StudioReverseConformService {
       const original = await this.source(auth, snapshot.projectId, snapshot.revision, snapshot.sourceKey, true);
       this.requireBinding(snapshot, original);
       const plan = await this.inspect(original.entry);
-      total = plan.frames;
+      total = plan.frames * 2;
       controller.signal.throwIfAborted();
       this.storage.mkdirSync(folder);
       stage = MediaOperationStatus.Rendering;
@@ -239,6 +245,17 @@ export class StudioReverseConformService {
       await this.renderer.reverse(original.entry.path!, path, plan, controller.signal, (value) => {
         frames = value;
       });
+      const stat = await this.storage.stat(path);
+      if (!stat.isFile() || stat.size === 0) {
+        throw new Error('Missing reversed file');
+      }
+      checkStudioReverseOutput(plan, await this.media.probe(path, { countFrames: true }));
+      const checksum = (await this.crypto.hashFile(path, 'sha256')).toString('hex');
+      // The preview reads the checked master; source reversal and timeline effects are not repeated.
+      controller.signal.throwIfAborted();
+      await this.renderer.preview(path, previewPath, plan, controller.signal, (value) => {
+        frames = plan.frames + value;
+      });
       // Stop rendering progress before entering validation; a late report cannot move its stage back.
       clearInterval(heartbeat);
       await writing;
@@ -246,12 +263,20 @@ export class StudioReverseConformService {
       if (!(await this.operations.beginValidation(operation.id, claimToken))) {
         throw new Error('Claim lost');
       }
-      const stat = await this.storage.stat(path);
-      if (!stat.isFile() || stat.size === 0) {
-        throw new Error('Missing reversed file');
+      const previewStat = await this.storage.stat(previewPath);
+      if (!previewStat.isFile() || previewStat.size === 0 || previewStat.size > 64 * 1024 * 1024) {
+        throw new Error('Missing or oversized reverse preview');
       }
-      checkStudioReverseOutput(plan, await this.media.probe(path, { countFrames: true }));
-      const checksum = (await this.crypto.hashFile(path, 'sha256')).toString('hex');
+      const previewInfo = await this.media.probe(previewPath, { countFrames: true });
+      checkStudioReversePreview(
+        plan,
+        previewInfo,
+        await this.renderer.probeGeometry(previewPath, previewInfo.videoStreams[0]?.index ?? 0),
+        await this.renderer.previewPackets(previewPath, controller.signal),
+      );
+      const previewChecksum = (await this.crypto.hashFile(previewPath, 'sha256')).toString('hex');
+      const previewLineage = [`${StudioResourceKind.GeneratedIntermediate}:${generatedId}`, snapshot.sourceKey];
+
       const current = await this.source(auth, snapshot.projectId, snapshot.revision, snapshot.sourceKey, true);
       this.requireBinding(snapshot, current);
       await this.checkBytes(current.entry);
@@ -263,6 +288,17 @@ export class StudioReverseConformService {
         sourceRevisionDigest: snapshot.digest,
         sourceLevel: true,
         requiresClipRelink: true,
+        browserPreview: {
+          generatedId: previewId,
+          checksum: previewChecksum,
+          derivedFrom: previewLineage,
+          contentType: 'video/mp4',
+          profile: 'h264-main-3.2-aac-lc-v1',
+          duration: (plan.frames * plan.frameRate.den) / plan.frameRate.num,
+          audio: plan.audioIndex === null ? null : { channels: plan.channels, sampleRate: plan.sampleRate },
+          // Delivery is a separate access/revocation contract; this is not a browser URL.
+          delivery: 'unavailable',
+        },
         frames: plan.frames,
         frameRate: plan.frameRate,
         width: plan.width,
@@ -308,6 +344,19 @@ export class StudioReverseConformService {
           },
           tx,
         );
+        await this.projects.registerGeneratedResource(
+          {
+            projectId: snapshot.projectId,
+            ownerId: operation.ownerId,
+            sourceRevision: snapshot.revision,
+            id: previewId,
+            producer: 'proxy',
+            checksum: previewChecksum,
+            path: previewPath,
+            derivedFrom: previewLineage,
+          },
+          tx,
+        );
         await tx.updateTable('media_operation').set({ result }).where('id', '=', operation.id).execute();
         return true;
       });
@@ -348,7 +397,7 @@ export class StudioReverseConformService {
           finalState &&
           finalState.status !== MediaOperationStatus.Completed &&
           declarations &&
-          declarations.every((entry) => entry.path !== path)
+          declarations.every((entry) => entry.path !== path && entry.path !== previewPath)
         ) {
           await this.storage.unlinkDir(folder, { recursive: true, force: true }).catch(() => {});
         }

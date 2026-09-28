@@ -1,6 +1,15 @@
-import { ColorPrimaries, ColorTransfer } from 'src/enum.js';
-import { checkStudioReverseOutput, checkStudioReverseSource } from 'src/utils/studio-reverse-conform.js';
-import { reversePackets, reverseVideoInfo } from 'test/fixtures/studio-reverse-conform.stub.js';
+import { AacProfile, ColorPrimaries, ColorTransfer } from 'src/enum.js';
+import {
+  checkStudioReverseOutput,
+  checkStudioReversePreview,
+  checkStudioReverseSource,
+} from 'src/utils/studio-reverse-conform.js';
+import {
+  reversePackets,
+  reversePreviewInfo,
+  reversePreviewPackets,
+  reverseVideoInfo,
+} from 'test/fixtures/studio-reverse-conform.stub.js';
 
 describe('local source reversal contract', () => {
   it.each([
@@ -10,6 +19,18 @@ describe('local source reversal contract', () => {
     { width: 32, height: 1080, sampleAspectRatio: '1:1' },
   ])('refuses unsafe or unknown coded geometry %j', (geometry) => {
     expect(() => checkStudioReverseSource(reverseVideoInfo(), reversePackets(), geometry)).toThrow('square-pixel');
+  });
+
+  it('refuses odd coded dimensions before enqueueing a source that H.264 cannot encode', () => {
+    const info = reverseVideoInfo();
+    info.videoStreams[0].width = 33;
+    expect(() =>
+      checkStudioReverseSource(info, reversePackets(), {
+        width: 33,
+        height: 32,
+        sampleAspectRatio: '1:1',
+      }),
+    ).toThrow('Local source reversal currently requires');
   });
 
   it('retains the exact source cadence and checks the actual output frame count', () => {
@@ -93,6 +114,124 @@ describe('local source reversal contract', () => {
           sampleAspectRatio: '1:1',
         }),
       ).toThrow('Local source reversal currently requires');
+    },
+  );
+});
+
+describe('reverse browser preview contract', () => {
+  const geometry = { width: 32, height: 32, sampleAspectRatio: '1:1' };
+  const source = checkStudioReverseSource(reverseVideoInfo(), reversePackets(), geometry);
+  it('accepts zero-origin, exact-cadence H.264 MP4 without invented audio', () => {
+    expect(() =>
+      checkStudioReversePreview(source, reversePreviewInfo(), geometry, reversePreviewPackets()),
+    ).not.toThrow();
+  });
+  it.each([
+    'missing-frame',
+    'gap',
+    'reordered',
+    'packet-duration',
+    'sar',
+    'container',
+    'duration',
+    'cadence',
+    'extra-audio',
+    'colour',
+  ])('refuses a malformed preview: %s', (failure) => {
+    const info = reversePreviewInfo();
+    const coded = { ...geometry };
+    const packets = reversePreviewPackets();
+    switch (failure) {
+      case 'missing-frame': {
+        packets.pop();
+        break;
+      }
+      case 'gap': {
+        packets[1].pts = 2;
+        break;
+      }
+      case 'reordered': {
+        packets[1].dts = 0;
+        break;
+      }
+      case 'packet-duration': {
+        packets[2].duration = 2;
+        break;
+      }
+      case 'sar': {
+        coded.sampleAspectRatio = '2:1';
+        break;
+      }
+      case 'container': {
+        info.format.formatName = 'matroska';
+        break;
+      }
+      case 'duration': {
+        info.format.duration = 1.1;
+        break;
+      }
+      case 'cadence': {
+        info.videoStreams[0].timeBaseRational = { num: 1, den: 4 };
+        break;
+      }
+      case 'extra-audio': {
+        info.audioStreams = [{ index: 1, codecName: 'aac', profile: AacProfile.Lc, bitrate: 192_000 }];
+        break;
+      }
+      case 'colour': {
+        info.videoStreams[0].colorTransfer = ColorTransfer.Unknown;
+        break;
+      }
+    }
+    expect(() => checkStudioReversePreview(source, info, coded, packets)).toThrow('browser media contract');
+  });
+  it.each(['aligned', 'shifted', 'resampled', 'padded', 'downmixed'])(
+    'checks AAC presentation alignment: %s',
+    (failure) => {
+      const info = reversePreviewInfo();
+      info.audioStreams = [
+        {
+          index: 1,
+          codecName: 'aac',
+          profile: AacProfile.Lc,
+          bitrate: 192_000,
+          channels: 2,
+          sampleRate: 48_000,
+          duration: 1,
+          startTime: 0,
+        },
+      ];
+      const audio = info.audioStreams[0];
+      switch (failure) {
+        case 'shifted': {
+          audio.startTime = 0.021;
+          break;
+        }
+        case 'resampled': {
+          audio.sampleRate = 44_100;
+          break;
+        }
+        case 'padded': {
+          audio.duration = 1.021;
+          break;
+        }
+        case 'downmixed': {
+          audio.channels = 1;
+          break;
+        }
+      }
+      const check = () =>
+        checkStudioReversePreview(
+          { ...source, audioIndex: 1, channels: 2, sampleRate: 48_000 },
+          info,
+          geometry,
+          reversePreviewPackets(),
+        );
+      if (failure === 'aligned') {
+        expect(check).not.toThrow();
+      } else {
+        expect(check).toThrow('browser media contract');
+      }
     },
   );
 });
