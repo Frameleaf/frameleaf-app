@@ -606,6 +606,38 @@ describe('ResultsToolbar', () => {
     await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
   });
 
+  it('dismisses the filter menu on an outside pointer without consuming the next action (FL-40)', async () => {
+    const onSlideshow = vi.fn();
+    const onOpenFilterPanel = vi.fn();
+    render(ResultsToolbar, { session, count: 2, onSlideshow, onOpenFilterPanel });
+    const toggle = screen.getByRole('button', { name: 'frameleaf_library_choose_filter' });
+    await fireEvent.click(toggle);
+    const places = screen.getByRole('menuitem', { name: 'places' });
+    await fireEvent.pointerDown(places);
+    expect(screen.getByRole('menu')).toBeTruthy();
+    await fireEvent.click(places);
+    expect(onOpenFilterPanel).toHaveBeenCalledWith('places');
+
+    await fireEvent.click(toggle);
+    const slideshow = screen.getByRole('button', { name: 'slideshow' });
+    await fireEvent.pointerDown(slideshow);
+    expect(screen.queryByRole('menu')).toBeNull();
+    slideshow.focus();
+    await fireEvent.click(slideshow);
+    expect(onSlideshow).toHaveBeenCalledTimes(1);
+    expect(slideshow).toHaveFocus();
+
+    await fireEvent.click(toggle);
+    await fireEvent.pointerDown(toggle);
+    await fireEvent.click(toggle);
+    expect(screen.queryByRole('menu')).toBeNull();
+
+    await fireEvent.click(toggle);
+    await fireEvent.keyDown(globalThis as unknown as Window, { key: 'Escape' });
+    expect(screen.queryByRole('menu')).toBeNull();
+    expect(toggle).toHaveFocus();
+  });
+
   it('opens the panel from Filter itself at the last section, or People (S-16)', async () => {
     const onOpenFilterPanel = vi.fn();
     render(ResultsToolbar, { session, onOpenFilterPanel });
