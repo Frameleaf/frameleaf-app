@@ -43,6 +43,7 @@ import {
   StudioProjectRevision,
   StudioProjectRevisionSummary,
 } from 'src/repositories/studio-project.repository.js';
+import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
 import {
   StudioAuthorizedManifest,
   StudioRefusedReference,
@@ -194,6 +195,7 @@ export class StudioProjectService {
     private repository: StudioProjectRepository,
     private access: AccessRepository,
     private resources: StudioResourceService,
+    private websocket: WebsocketRepository,
   ) {
     this.logger.setContext(StudioProjectService.name);
   }
@@ -381,16 +383,18 @@ export class StudioProjectService {
       throw new NotFoundException('Studio project not found');
     }
 
+    if (dto.spaceId !== undefined || dto.archived !== undefined) {
+      // The pre-write snapshot can be stale: even a same-value request can undo a concurrent change.
+      // Notify after every committed audience/shelf write, before fallible response/lease lookups.
+      this.forgetManifests(project.id);
+      this.websocket.clientSend('StudioProjectInvalidatedV1', project.ownerId, { projectId: project.id });
+    }
+
     let after = updated;
     if (dto.archived === true && !project.archivedAt) {
       await this.repository.clearLease(project.id);
       after = { ...updated, leaseHolderId: null, leaseClientId: null, leaseExpiresAt: null };
       this.logger.log(`Studio project ${project.id} archived by its owner`);
-    }
-
-    if ((dto.spaceId !== undefined && dto.spaceId !== project.spaceId) || dto.archived !== undefined) {
-      // The audience changed, so nothing resolved for the old one may be reused.
-      this.forgetManifests(project.id);
     }
 
     return this.mapProject(after, 'owner', auth.user.id, null, await this.visiblePosters(auth, [after]));
@@ -409,11 +413,15 @@ export class StudioProjectService {
 
     if (dto.permanent) {
       await this.repository.delete(project.id);
+      this.websocket.clientSend('StudioProjectInvalidatedV1', project.ownerId, { projectId: project.id });
       this.logger.log(`Studio project ${project.id} deleted for good by its owner`);
       return;
     }
 
-    await this.repository.trash(project.id, studioPurgeAfter());
+    const trashed = await this.repository.trash(project.id, studioPurgeAfter());
+    if (trashed) {
+      this.websocket.clientSend('StudioProjectInvalidatedV1', project.ownerId, { projectId: project.id });
+    }
     this.logger.log(`Studio project ${project.id} moved to the trash by its owner`);
   }
 
@@ -423,9 +431,14 @@ export class StudioProjectService {
     if (!project.deletedAt) {
       return this.mapProject(project, 'owner', auth.user.id, null, await this.visiblePosters(auth, [project]));
     }
-    const restored = (await this.repository.untrash(project.id)) ?? (await this.repository.getById(project.id));
+    const untrashed = await this.repository.untrash(project.id);
+    const restored = untrashed ?? (await this.repository.getById(project.id));
     if (!restored) {
       throw new NotFoundException('Studio project not found');
+    }
+    if (untrashed) {
+      this.forgetManifests(project.id);
+      this.websocket.clientSend('StudioProjectInvalidatedV1', project.ownerId, { projectId: project.id });
     }
     this.logger.log(`Studio project ${project.id} restored from the trash`);
     return this.mapProject(restored, 'owner', auth.user.id, null, await this.visiblePosters(auth, [restored]));
@@ -436,6 +449,7 @@ export class StudioProjectService {
     this.requireInteractive(auth);
     const count = await this.repository.emptyTrash(auth.user.id);
     if (count > 0) {
+      this.websocket.clientSend('StudioProjectInvalidatedV1', auth.user.id, { projectId: null });
       this.logger.log(`Studio trash emptied: ${count} projects deleted for good`);
     }
     return { count };
