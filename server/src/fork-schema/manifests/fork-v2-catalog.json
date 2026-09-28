@@ -10,6 +10,14 @@
     },
     {
       "definition": "uuid|not null|||",
+      "identity": "immich_fork.album_cover_follows_newest.albumId"
+    },
+    {
+      "definition": "timestamp with time zone|not null|clock_timestamp()||",
+      "identity": "immich_fork.album_cover_follows_newest.updatedAt"
+    },
+    {
+      "definition": "uuid|not null|||",
       "identity": "immich_fork.album_metadata.albumId"
     },
     {
@@ -7083,6 +7091,10 @@
       "identity": "immich_fork.album_closure.album_closure_pkey"
     },
     {
+      "definition": "PRIMARY KEY (\"albumId\")",
+      "identity": "immich_fork.album_cover_follows_newest.album_cover_follows_newest_pkey"
+    },
+    {
       "definition": "CHECK (kind = ANY (ARRAY['album'::text, 'collection'::text, 'space'::text]))",
       "identity": "immich_fork.album_metadata.album_metadata_kind_check"
     },
@@ -9409,7 +9421,8 @@
     "0000000000201-MlWorkloadAccountingCloudJobIndex",
     "0000000000202-FrameleafAccountLinks",
     "0000000000203-FrameleafSessions",
-    "0000000000204-FrameleafUserLicenses"
+    "0000000000204-FrameleafUserLicenses",
+    "0000000000205-AlbumCoverFollowsNewest"
   ],
   "functions": [
     {
@@ -10501,6 +10514,10 @@
     {
       "definition": "CREATE UNIQUE INDEX album_closure_pkey ON immich_fork.album_closure USING btree (\"ancestorId\", \"descendantId\")",
       "identity": "immich_fork.album_closure.album_closure_pkey"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX album_cover_follows_newest_pkey ON immich_fork.album_cover_follows_newest USING btree (\"albumId\")",
+      "identity": "immich_fork.album_cover_follows_newest.album_cover_follows_newest_pkey"
     },
     {
       "definition": "CREATE INDEX album_metadata_parent_sort_idx ON immich_fork.album_metadata USING btree (\"parentId\", \"sortOrder\")",
@@ -13256,6 +13273,10 @@
     {
       "definition": "table",
       "identity": "immich_fork.album_closure"
+    },
+    {
+      "definition": "table",
+      "identity": "immich_fork.album_cover_follows_newest"
     },
     {
       "definition": "table",

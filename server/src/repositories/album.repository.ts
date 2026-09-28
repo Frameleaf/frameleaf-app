@@ -25,7 +25,7 @@ import { DB } from 'src/schema/index.js';
 import { AlbumTable } from 'src/schema/tables/album.table.js';
 import { AssetExifTable } from 'src/schema/tables/asset-exif.table.js';
 import { albumCoverCandidates } from 'src/utils/album-cover.js';
-import { albumCoverReplacement, getBestPhotoScoreTable } from 'src/utils/cover-references.js';
+import { albumCoverReplacement, albumNewestCover, getBestPhotoScoreTable } from 'src/utils/cover-references.js';
 import { anyUuid, asUuid, dummy, withAlbumVisibility, withHiddenContentFilter } from 'src/utils/database.js';
 import { isNotLocked, notLockedOrOwnedBy } from 'src/utils/locked.js';
 
@@ -299,6 +299,10 @@ export class AlbumRepository {
       );
       await this.smartAlbums.deleteOwner(userId, tx);
       await this.deletePositions({ albumIds: albums.map(({ id }) => id), userId }, tx);
+      await this.deleteCoverFollowsNewest(
+        albums.map(({ id }) => id),
+        tx,
+      );
       await this.forkMetadata.delete(
         albums.map(({ id }) => id),
         tx,
@@ -468,6 +472,7 @@ export class AlbumRepository {
       const subtreeIds = subtree.length > 0 ? subtree.map(({ id_descendant }) => id_descendant) : [id];
       await this.smartAlbums.deleteAlbums(subtreeIds, tx);
       await this.deletePositions({ albumIds: subtreeIds }, tx);
+      await this.deleteCoverFollowsNewest(subtreeIds, tx);
       await tx.deleteFrom('album').where('id', '=', id).execute();
       await this.forkMetadata.delete(subtreeIds, tx);
     });
@@ -488,6 +493,19 @@ export class AlbumRepository {
     await sql`
       DELETE FROM immich_fork.album_position
       WHERE "albumId" = ANY(${albumIds}::uuid[]) OR "userId" = ${userId ?? null}::uuid
+    `.execute(tx);
+  }
+
+  /**
+   * FL-83: forget "cover follows the newest item" for deleted albums. Like `deletePositions`, cleanup
+   * never blocks the delete; a row whose album is gone is never read.
+   */
+  private async deleteCoverFollowsNewest(albumIds: string[], tx: Transaction<DB>): Promise<void> {
+    if (albumIds.length === 0 || !(await canWriteFork(tx))) {
+      return;
+    }
+    await sql`
+      DELETE FROM immich_fork.album_cover_follows_newest WHERE "albumId" = ANY(${albumIds}::uuid[])
     `.execute(tx);
   }
 
@@ -699,6 +717,10 @@ export class AlbumRepository {
    * @returns Amount of updated album thumbnails or undefined when unknown
    */
   async updateThumbnails(): Promise<number | undefined> {
+    // Albums whose cover follows the newest item (FL-83) take it first; the rules below then only
+    // touch albums that have no valid cover.
+    await this.updateNewestCovers();
+
     // Subquery for getting a new thumbnail.
     const scores = await getBestPhotoScoreTable(this.db);
 
@@ -726,6 +748,63 @@ export class AlbumRepository {
       .execute();
 
     return Number(result[0].numUpdatedRows);
+  }
+
+  /**
+   * FL-83 (AL-13): whether the album's cover follows its newest item.
+   */
+  @GenerateSql({ params: [DummyValue.UUID] })
+  async isCoverFollowingNewest(albumId: string): Promise<boolean> {
+    const { rows } = await sql<{ albumId: string }>`
+      SELECT "albumId" FROM immich_fork.album_cover_follows_newest WHERE "albumId" = ${albumId}::uuid
+    `.execute(this.db);
+    return rows.length > 0;
+  }
+
+  /**
+   * FL-83 (AL-13): turns "Always use the newest item" on or off for an album. Turning it on makes the
+   * newest item the cover straight away; turning it off keeps the current cover. Like every
+   * fork-owned writer, it refuses while the fork schema is not writable or a handoff runs.
+   */
+  async setCoverFollowsNewest(albumId: string, enabled: boolean): Promise<void> {
+    await this.db.transaction().execute(async (tx) => {
+      await lockForkWrites(tx, 'Album cover settings are unavailable during database handoff');
+      if (!enabled) {
+        await sql`DELETE FROM immich_fork.album_cover_follows_newest WHERE "albumId" = ${albumId}::uuid`.execute(tx);
+        return;
+      }
+      await sql`
+        INSERT INTO immich_fork.album_cover_follows_newest ("albumId")
+        VALUES (${albumId}::uuid)
+        ON CONFLICT ("albumId") DO UPDATE SET "updatedAt" = clock_timestamp()
+      `.execute(tx);
+      await this.updateNewestCovers([albumId], tx);
+    });
+  }
+
+  /**
+   * FL-83 (AL-13): points every album whose cover follows the newest item (or only `albumIds`) at
+   * its newest item (`albumNewestCover`); an album left without a possible cover gets none. Albums
+   * whose cover is already right are not written.
+   */
+  async updateNewestCovers(albumIds?: string[], kysely: Kysely<DB> = this.db): Promise<void> {
+    if (albumIds?.length === 0) {
+      return;
+    }
+    await kysely
+      .updateTable('album')
+      .set((eb) => ({ albumThumbnailAssetId: albumNewestCover(eb) }))
+      .where((eb) =>
+        eb.exists(
+          eb
+            .selectFrom(sql.table('immich_fork.album_cover_follows_newest').as('newest'))
+            .select(sql.lit(1).as('1'))
+            .where(sql.ref('newest.albumId'), '=', sql.ref('album.id')),
+        ),
+      )
+      .$if(albumIds !== undefined, (qb) => qb.where('album.id', '=', anyUuid(albumIds!)))
+      .where((eb) => eb('album.albumThumbnailAssetId', 'is distinct from', albumNewestCover(eb)))
+      .execute();
   }
 
   /**

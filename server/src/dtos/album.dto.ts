@@ -116,7 +116,16 @@ const UpdateAlbumSchema = z
           )
           .getExtensions(),
       }),
-    albumThumbnailAssetId: z.uuidv4().optional().describe('Album thumbnail asset ID'),
+    albumThumbnailAssetId: z
+      .uuidv4()
+      .optional()
+      .describe('Album thumbnail asset ID. Picking an item stops the cover following the newest item.'),
+    coverFollowsNewest: z
+      .boolean()
+      .optional()
+      .describe(
+        'Always use the newest item as the cover (true), or keep the current cover from now on (false). Cannot be true together with albumThumbnailAssetId.',
+      ),
     isActivityEnabled: z.boolean().optional().describe('Enable activity feed'),
     order: AssetOrderSchema.optional(),
     parentId: z
@@ -244,6 +253,12 @@ export const AlbumResponseSchema = z
       .nullable()
       .optional()
       .describe('Your classification rule behind this smart album, when it is one of yours'),
+    coverFollowsNewest: z
+      .boolean()
+      .optional()
+      .describe(
+        'True when the cover always follows the newest item. Populated by GET /albums/{id} and PATCH /albums/{id}.',
+      ),
     sortOrder: z
       .number()
       .meta({ format: 'double' })
