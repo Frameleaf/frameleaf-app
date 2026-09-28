@@ -5,7 +5,15 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { inventory, licenses, verifySnapshot } from './engine.mjs';
+import { assertPinnedSource } from '../../scripts/frameleaf-studio-contracts.mjs';
 import { writeResourcePolicy } from './resource-policy.mjs';
+
+test('engine source pin rejects a changed archive without local planning files', async () => {
+  const provenance = JSON.parse(await readFile(new URL('../freecut-provenance.json', import.meta.url), 'utf8'));
+  assert.doesNotThrow(() => assertPinnedSource(provenance));
+  provenance.archiveSha256 = '0'.repeat(64);
+  assert.throws(() => assertPinnedSource(provenance));
+});
 
 test('snapshot gate rejects mutations, extra files, missing files and symlinks', async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), 'frameleaf-snapshot-'));

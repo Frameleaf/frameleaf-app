@@ -8,6 +8,7 @@ import { parseJsonRejectingDuplicateKeys } from '../../scripts/frameleaf-studio-
 
 export const AXES = ['native', 'chromium', 'firefox', 'safari', 'command', 'graph', 'preview', 'export', 'timingColor', 'authorizationFailure', 'test'];
 const CATALOG_SHA256 = '74e65893486ef0f372c66e140915b8bb98ca32bb07be668efe30514b733c748b';
+const OWNERS_SHA256 = '685a8b513e13049ec76bab7064ced47ed5f5c900eea49b996355932ea459fc83';
 const SHA256 = /^[a-f0-9]{64}$/;
 const NON_RENDERING_ROWS = new Set([
   'readme.projects-storage.1', 'readme.projects-storage.2', 'readme.projects-storage.3',
@@ -72,6 +73,7 @@ export async function validateConformance(data, root, { release = false } = {}) 
   assert.equal(ids.length, 210);
   exact(ids, [...new Set(ids)], 'manifest IDs');
   exact(overlay.rows.map((row) => row.id), ids, 'overlay IDs');
+  assert.equal(digest(JSON.stringify(overlay.rows.map(({ id, owner }) => ({ id, owner })))), OWNERS_SHA256, 'Studio owners changed');
   exact(catalog.rows.map((row) => row.id), ids, 'fixture IDs');
   for (const [prefix, count] of Object.entries({ effect: 54, transition: 21, blend: 25, command: 19 })) {
     assert.equal(ids.filter((id) => id.startsWith(`${prefix}.`)).length, count);
