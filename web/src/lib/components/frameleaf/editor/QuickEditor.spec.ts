@@ -2,10 +2,12 @@ import {
   AssetDevelopRevisionKind,
   AssetDevelopRevisionStatus,
   AssetTypeEnum,
+  cancelAssetDevelopRender,
   getAssetDevelop,
   getAssetEdits,
   getVideoEditVersions,
   previewAssetDevelop,
+  renderAssetDevelopRevision,
   saveAssetDevelop,
   type AssetDevelopRevisionResponseDto,
 } from '@immich/sdk';
@@ -280,6 +282,64 @@ describe('QuickEditor', () => {
 
     const contrast = screen.getByRole('slider', { name: 'frameleaf_editor_param_contrast' }) as HTMLInputElement;
     expect(contrast.value).toBe('30');
+  });
+
+  const manageVersions = async () => {
+    await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_editor_tool_versions' }));
+    await fireEvent.click(await screen.findByRole('menuitem', { name: 'frameleaf_editor_manage_versions' }));
+  };
+
+  it('cancels a version that is still rendering on the server', async () => {
+    const rendering = revision({ status: AssetDevelopRevisionStatus.Rendering, progress: 40, hasMaster: false });
+    vi.mocked(getAssetDevelop).mockResolvedValue({
+      assetId: photo.id,
+      currentRevisionId: null,
+      revisions: [rendering],
+    });
+    vi.mocked(cancelAssetDevelopRender).mockResolvedValue({
+      ...rendering,
+      status: AssetDevelopRevisionStatus.Cancelled,
+    });
+    render(QuickEditor, { asset: photo, onClose: vi.fn() });
+    await ready();
+    await manageVersions();
+
+    // The top bar and the version's own row both offer it; this is the row's.
+    const cancel = await screen.findAllByRole('button', { name: 'frameleaf_editor_cancel_render' });
+    expect(cancel).toHaveLength(2);
+    const cancelled = { ...rendering, status: AssetDevelopRevisionStatus.Cancelled };
+    vi.mocked(getAssetDevelop).mockResolvedValue({
+      assetId: photo.id,
+      currentRevisionId: null,
+      revisions: [cancelled],
+    });
+    await fireEvent.click(cancel[1]);
+
+    expect(cancelAssetDevelopRender).toHaveBeenCalledWith({ id: photo.id, revisionId: 'rev-1' });
+    expect(renderAssetDevelopRevision).not.toHaveBeenCalled();
+    expect(await screen.findByRole('button', { name: 'frameleaf_editor_render' })).toBeInTheDocument();
+  });
+
+  it('renders a failed version again on the server', async () => {
+    const failed = revision({ status: AssetDevelopRevisionStatus.Failed, error: 'out of memory', hasMaster: false });
+    vi.mocked(getAssetDevelop).mockResolvedValue({ assetId: photo.id, currentRevisionId: null, revisions: [failed] });
+    vi.mocked(renderAssetDevelopRevision).mockResolvedValue({
+      ...failed,
+      status: AssetDevelopRevisionStatus.Queued,
+      error: null,
+    });
+    render(QuickEditor, { asset: photo, onClose: vi.fn() });
+    await ready();
+    await manageVersions();
+
+    expect(await screen.findByText('out of memory')).toBeInTheDocument();
+    const queued = { ...failed, status: AssetDevelopRevisionStatus.Queued, error: null };
+    vi.mocked(getAssetDevelop).mockResolvedValue({ assetId: photo.id, currentRevisionId: null, revisions: [queued] });
+    await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_editor_render' }));
+
+    expect(renderAssetDevelopRevision).toHaveBeenCalledWith({ id: photo.id, revisionId: 'rev-1' });
+    expect(cancelAssetDevelopRender).not.toHaveBeenCalled();
+    expect(await screen.findAllByRole('button', { name: 'frameleaf_editor_cancel_render' })).toHaveLength(2);
   });
 
   it('offers the phone More actions menu and names the people in the photo', async () => {
