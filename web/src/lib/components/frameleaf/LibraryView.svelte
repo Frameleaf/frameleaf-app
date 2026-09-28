@@ -58,7 +58,12 @@
   import { BulkController } from '$lib/frameleaf/bulk-controller.svelte';
   import { durableBulkTracker } from '$lib/frameleaf/durable-bulk-tracker.svelte';
   import { type FilterEntityKind, resolveEntityNames } from '$lib/frameleaf/filter-entity-names';
-  import { effectiveAlbumSort, readAlbumViewSort, writeAlbumViewSort } from '$lib/frameleaf/album-view-sort';
+  import {
+    albumOrderSort,
+    effectiveAlbumSort,
+    readAlbumViewSort,
+    writeAlbumViewSort,
+  } from '$lib/frameleaf/album-view-sort';
   import type { TileLayout } from '$lib/frameleaf/library-grid';
   import { libraryGridPreferences } from '$lib/frameleaf/library-grid-preferences.svelte';
   import { timelineQueryOptions } from '$lib/frameleaf/library-query-options';
@@ -385,6 +390,9 @@
   const TIMELINE_SORTS: readonly LibrarySort[] = ['captured-desc', 'captured-asc'];
   const FLAT_SORTS: readonly LibrarySort[] = ['captured-desc', 'captured-asc', 'imported-desc', 'filename', 'rating'];
   const sorts = $derived(sortable ? (gridLayout === 'timeline' ? TIMELINE_SORTS : FLAT_SORTS) : undefined);
+  const shownSort = $derived(
+    gridLayout === 'timeline' && !TIMELINE_SORTS.includes(activeSort) ? albumOrderSort(options?.order) : activeSort,
+  );
   const sortedOptions = $derived.by(() => {
     const base = queryApplied.options;
     if (!base || !sortable) {
@@ -1509,7 +1517,7 @@
                 inspectorOpen={canShowInfoPanel ? inspectorOpen : undefined}
                 onToggleInspector={() => (inspectorOpen = !inspectorOpen)}
                 {sorts}
-                sort={albumSortId ? activeSort : undefined}
+                sort={shownSort}
                 onSortChange={albumSortId ? changeAlbumSort : undefined}
                 unappliedFields={queryApplied.unapplied}
                 view={gridLayout === 'timeline' || publicView ? undefined : listView ? 'list' : 'grid'}

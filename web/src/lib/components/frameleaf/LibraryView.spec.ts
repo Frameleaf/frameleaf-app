@@ -259,6 +259,29 @@ describe('LibraryView', () => {
       expect(librarySession.state.sort).toBe(sessionSort);
       expect(sdkMock.updateAlbumInfo).not.toHaveBeenCalled();
     });
+
+    it('shows Timeline’s date order while keeping a flat sort for Browse and Work', async () => {
+      render(LibraryView, {
+        options: { albumId: 'album-1', order: AssetOrder.Asc },
+        destination: { kind: 'album', id: 'album-1' },
+        syncUrl: false,
+        noSelectionBar: true,
+      });
+      const sort = await screen.findByRole('combobox', { name: 'frameleaf_library_sort' });
+      librarySession.setLayout('browse');
+      await fireEvent.change(sort, { target: { value: 'filename' } });
+      expect(sort).toHaveValue('filename');
+
+      librarySession.setLayout('timeline');
+      await waitFor(() => expect(sort).toHaveValue('captured-asc'));
+      await waitFor(() =>
+        expect(sdkMock.getTimeBuckets).toHaveBeenLastCalledWith(expect.objectContaining({ order: AssetOrder.Asc })),
+      );
+
+      librarySession.setLayout('work');
+      await waitFor(() => expect(sort).toHaveValue('filename'));
+      expect(JSON.parse(localStorage.getItem('frameleaf.albumViewSort') ?? '{}')).toEqual({ 'album-1': 'filename' });
+    });
   });
 
   describe('one toolbar and the status bar (FL-32, FL-33)', () => {
