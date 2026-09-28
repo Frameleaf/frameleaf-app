@@ -1255,7 +1255,13 @@ describe(StudioResourceService.name, () => {
         },
         { id: 'b', producer: 'proxy', checksum: 'b', path: '/cache/b', derivedFrom: ['generated-intermediate:a'] },
         { id: 'audio', producer: 'waveform', checksum: 'c', path: '/cache/c', derivedFrom: ['audio:unknown'] },
-        { id: 'path', producer: 'proxy', checksum: 'd', path: '/cache/d', derivedFrom: ['library-asset:/private/file'] },
+        {
+          id: 'path',
+          producer: 'proxy',
+          checksum: 'd',
+          path: '/cache/d',
+          derivedFrom: ['library-asset:/private/file'],
+        },
       ];
       const { manifest, refused } = await sut.resolveProjectResources(
         auth,

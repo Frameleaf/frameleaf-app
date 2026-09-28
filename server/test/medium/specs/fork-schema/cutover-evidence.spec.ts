@@ -335,14 +335,15 @@ describe('exact v3.1.0 public schema cutover evidence', () => {
     ).rejects.toThrow('rollback original-official lock probe');
 
     expect(observedLocks).toEqual(report.tableEvidence.map(({ table }) => table).toSorted());
-    // 66 v3.1.0 public + the 48 fork tables: the video version (FL-39), archive operation (FL-32),
+    // 66 v3.1.0 public + the 55 fork tables: the video version (FL-39), archive operation (FL-32),
     // merge verdict (FL-57), album position (FL-52), recipient group (FL-55), preference
     // history (FL-71), face correction history (FL-57), pet recognition run (FL-58), memory curation
     // and show-less (FL-62), render worker session capability (FL-95), Studio workspace layout
     // (FL-91) and utility activity (FL-47) tables included, and every later fork table, among them
     // the supporter keys (FL-156), Frameleaf account links and Sign in with Frameleaf sessions (FL-158)
     // the album covers that follow the newest item (FL-83) and items shared with a person (FL-83 AL-30b)
-    expect(observedLocks).toHaveLength(120);
+    // and server-owned generated media declarations (FL-111).
+    expect(observedLocks).toHaveLength(121);
     expect(observedLocks).toEqual(
       expect.arrayContaining([
         'immich_fork.video_edit_version',
@@ -362,6 +363,7 @@ describe('exact v3.1.0 public schema cutover evidence', () => {
         'immich_fork.frameleaf_session',
         'immich_fork.render_worker_session_capability',
         'immich_fork.studio_workspace_layout',
+        'immich_fork.studio_generated_resource',
         'immich_fork.utility_activity',
         'immich_fork.album_cover_follows_newest',
         'immich_fork.asset_user_share',

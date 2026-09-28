@@ -503,6 +503,11 @@ describe(StudioProjectRepository.name, () => {
       };
 
       await Promise.all([sut.registerGeneratedResource(resource), sut.registerGeneratedResource(resource)]);
+      const storedLineage = await sql<{ type: string; length: number }>`
+        SELECT jsonb_typeof("derivedFrom") AS type, jsonb_array_length("derivedFrom") AS length
+        FROM immich_fork.studio_generated_resource WHERE "projectId" = ${project.id}::uuid AND id = ${resource.id}
+      `.execute(defaultDatabase);
+      expect(storedLineage.rows).toEqual([{ type: 'array', length: 1 }]);
       const reopened = new StudioProjectRepository(defaultDatabase);
       expect(await reopened.listGeneratedResources(project.id)).toEqual([
         {
