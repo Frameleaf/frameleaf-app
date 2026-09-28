@@ -1,0 +1,24 @@
+{
+  "schema": "frameleaf.upscale/v1",
+  "modelSku": "ms_54S55W7C",
+  "modelRev": "mr_0WNPDD697MT0",
+  "licence": "BSD-3-Clause and Apache-2.0",
+  "scale": 4,
+  "format": "webp",
+  "items": [
+    {
+      "inputId": "a1",
+      "input": {
+        "width": 2000,
+        "height": 1500
+      },
+      "scale": null,
+      "outputs": [],
+      "metrics": {
+        "tiles": 24,
+        "seconds": 3.912
+      },
+      "warnings": []
+    }
+  ]
+}

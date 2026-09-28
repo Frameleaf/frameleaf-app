@@ -119,6 +119,11 @@ export interface VideoStreamInfo {
    * additive, like the fields above: persisted metadata does not carry it.
    */
   duration?: number | null;
+  /**
+   * CLD-202: when this stream's first picture is presented, in seconds, as ffprobe states it. Optional
+   * and additive: a re-attached audio track is kept in step with the picture from it.
+   */
+  startTime?: number | null;
   bitrate: number;
   pixelFormat: string;
   colorPrimaries: ColorPrimaries;
@@ -152,6 +157,8 @@ export interface AudioStreamInfo {
   sampleRate?: number | null;
   /** FL-102: this stream's own duration in seconds, when the container states one. */
   duration?: number | null;
+  /** CLD-202: when this stream's first sample is presented, in seconds, as ffprobe states it. */
+  startTime?: number | null;
 }
 
 /** Packet-derived video data needed for accurate HLS playlists. */
