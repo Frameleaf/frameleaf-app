@@ -152,6 +152,21 @@ test.describe('Duplicate review', () => {
         kind: DuplicateDecisionKind.Keepers,
         keepAssetIds: keepAssetIds.toSorted((a, b) => a.localeCompare(b)),
       });
+
+    await page.reload();
+    const undo = review.getByRole('button', { name: /^Undo/ }).first();
+    await expect(undo).toBeEnabled();
+    await undo.click();
+    await expect
+      .poll(
+        async () =>
+          (await reviewGroups())
+            .find((candidate) => candidate.duplicateId === duplicateId)
+            ?.assets.map((asset) => asset.id)
+            .toSorted((a, b) => a.localeCompare(b)),
+        { timeout: 30_000 },
+      )
+      .toEqual(group.assets.map((asset) => asset.id).toSorted((a, b) => a.localeCompare(b)));
   });
 
   test('lists only the signed-in account’s groups, each complete', async () => {
