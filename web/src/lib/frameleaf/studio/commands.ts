@@ -1,45 +1,14 @@
 import type { Translations } from 'svelte-i18n';
 /**
- * The canonical Studio command vocabulary (FL-88 host boundary, FL-92 contract).
+ * The canonical Studio command vocabulary.
  *
- * The React editor never mutates a project directly and never calls the API. Every
- * change it wants leaves the engine as a `StudioCommandEnvelope` on the typed bridge the
- * Svelte host owns, which is the single place authorization, revision checking and
- * idempotency can be enforced. This module is the vocabulary half of that bridge: the
- * identifiers, their payload shapes and a registry that says, per command, whether it
- * mutates the graph, whether it is undoable, whether it needs the project lease and which
- * later story owns its semantics.
+ * Every editor change crosses the typed bridge as a StudioCommandEnvelope. The registry
+ * supplies scope, graph/undo flags and worker capabilities; the host supplies handlers.
+ * scripts/frameleaf-studio-commands.mjs checks this vocabulary against the published
+ * catalogue and generated server mirror.
  *
- * FL-92 published the complete catalogue: the file is generated-adjacent, not free-form.
- * `studio/frameleaf-studio-commands.json` is the single source, `scripts/frameleaf-studio-commands.mjs`
- * writes it together with the server mirror (`server/src/utils/studio-commands.generated.ts`),
- * and the same script fails CI when the ids, scopes, flags, capabilities, owners or prototype sources
- * here drift from it. Add a command there first, then mirror the row and its payload type
- * here; a row that exists in only one of the two is a build failure, not a surprise at
- * runtime.
- *
- * The catalogue is complete in two directions:
- *
- * - every mutating function of the prototype's project model,
- *   `design/frameleaf/template/src/studio-project.mjs`, which the September 22, 2026
- *   revision names as the interaction contract, has an id here; and
- * - every row of `studio/freecut-feature-manifest.json` is either reachable through a
- *   command or listed in the catalogue's `nonCommandRows` with a reason and an owner.
- *
- * The prototype is design evidence: the production graph stays Freecut's, so `payload`
- * shapes describe *intent* (which clip, which track, which time), never a serialized
- * graph. Every instant, length and cadence is an exact rational from FL-93's
- * `rational-time.ts` (`StudioTime`, `StudioDuration`, `StudioRate`), never a float: the
- * catalogue types those fields `time`, `duration` and `rate`, and they travel as a reduced
- * `{ num, den }` pair through the server mirror and the native contract. Where a payload
- * carries graph-shaped data it is typed `StudioOpaqueValue` and travels unread, so an
- * unknown Freecut field, a null, an array or a rational timing extension survives the
- * round trip through web, server and native.
- *
- * FL-88 defines and validates the vocabulary and routes it; it does not implement the
- * editing semantics. Every row whose `owner` is not FL-88 is a typed extension point: the
- * bridge accepts the envelope, validates it and returns a `not-implemented` rejection
- * until that story lands. Nothing here silently no-ops.
+ * Payloads describe intent, never a serialized graph. Times, durations and rates use
+ * exact rationals; opaque graph values travel unread to preserve unknown Freecut fields.
  */
 import type { Rational } from './rational-time';
 
@@ -156,7 +125,7 @@ export const isStudioCommandId = (value: unknown): value is StudioCommandId =>
 /* ------------------------------------------------------------------ */
 
 /**
- * An instant on the sequence timeline, in seconds, as an exact rational (FL-93).
+ * An instant on the sequence timeline, in seconds, as an exact rational.
  *
  * It was a float. A float cannot hold 1001/30000, so an in point typed on an NTSC clip, a
  * split, a transition boundary and the frame the encoder is asked for all drifted apart by a
@@ -174,7 +143,7 @@ export type StudioTime = Rational;
 export type StudioDuration = Rational;
 
 /**
- * A cadence or a speed multiplier, as an exact rational (FL-93): 30000/1001 for NTSC, 1/3 for
+ * A cadence or a speed multiplier, as an exact rational: 30000/1001 for NTSC, 1/3 for
  * a third-speed clip. The same reasoning as StudioTime — a frame rate that is not exactly the
  * one the source has makes every later boundary wrong — and the published catalogue types
  * these fields `rate`.
@@ -323,7 +292,7 @@ export interface StudioCommandPayloads {
   };
   'job.enqueueFillerRemoval': { sequenceId: string; clipIds?: string[]; destinationId: string };
   /**
-   * FL-162 Smooth motion for the clip's source, previewed first and saved as a new version. `factor`
+   * Smooth motion for the clip's source, previewed first and saved as a new version. `factor`
    * (2, 4 or 8) is the frames per source frame; without it the host derives it from `targetFps`.
    */
   'job.enqueueInterpolation': { clipId: string; targetFps: StudioRate; destinationId: string; factor?: number };
@@ -335,7 +304,7 @@ export interface StudioCommandPayloads {
   };
   'job.enqueueProxy': { assetIds: string[]; destinationId: string };
   /**
-   * FL-115: a restoration preview of `assetId` (`preview: true`), or the full render of the reviewed
+   * A restoration preview of `assetId` (`preview: true`), or the full render of the reviewed
    * `restorationId` (`preview: false`), on an explicit destination.
    */
   'job.enqueueRestoration': {
@@ -401,9 +370,9 @@ export interface StudioCommandPayloads {
   /** The engine no longer needs the frame it last asked for; stop paying for it. */
   'preview.release': Record<string, never>;
   /**
-   * Ask for one frame of the current revision (FL-96).
+   * Ask for one frame of the current revision.
    *
-   * `at` is a `StudioTime` — FL-93's exact rational — never float seconds: a preview must
+   * `at` is a `StudioTime` — an exact rational — never float seconds: a preview must
    * address the same frame the export does. The viewport is part of the frame's identity, not
    * a hint; the engine reports the size of the surface it will paint into.
    */
@@ -491,14 +460,6 @@ export interface StudioCommandDefinition {
    * the quick editor stay GPU-free; only these rows depend on a worker.
    */
   requiresCapability?: StudioCapabilityId;
-  /** The Jira story that owns the semantics. FL-88 owns routing only. */
-  owner: string;
-  /**
-   * How the command is specified: the function in
-   * `design/frameleaf/template/src/studio-project.mjs` it comes from, or, for a command
-   * the prototype has no counterpart for, the pinned Freecut feature it adapts.
-   */
-  prototypeSource: string;
 }
 
 export const studioCapabilityIds = [
@@ -523,240 +484,180 @@ export const studioCommandRegistry: ReadonlyMap<StudioCommandId, StudioCommandDe
     mutatesGraph: true,
     undoable: true,
     requiresCapability: 'transcriptionWorker',
-    owner: 'FL-94',
-    prototypeSource: 'setCaptions',
   }),
   define({
     id: 'clip.add',
     scope: 'clip',
     mutatesGraph: true,
     undoable: true,
-    owner: 'FL-94',
-    prototypeSource: 'addClip',
   }),
   define({
     id: 'clip.delete',
     scope: 'clip',
     mutatesGraph: true,
     undoable: true,
-    owner: 'FL-94',
-    prototypeSource: 'deleteClip',
   }),
   define({
     id: 'clip.group',
     scope: 'clip',
     mutatesGraph: true,
     undoable: true,
-    owner: 'FL-100',
-    prototypeSource: 'beyond the prototype: Freecut groups and null controllers',
   }),
   define({
     id: 'clip.insert',
     scope: 'clip',
     mutatesGraph: true,
     undoable: true,
-    owner: 'FL-94',
-    prototypeSource: 'addClip (source monitor insert edit)',
   }),
   define({
     id: 'clip.move',
     scope: 'clip',
     mutatesGraph: true,
     undoable: true,
-    owner: 'FL-94',
-    prototypeSource: 'moveClip',
   }),
   define({
     id: 'clip.overwrite',
     scope: 'clip',
     mutatesGraph: true,
     undoable: true,
-    owner: 'FL-94',
-    prototypeSource: 'addClip (source monitor overwrite edit)',
   }),
   define({
     id: 'clip.reorder',
     scope: 'clip',
     mutatesGraph: true,
     undoable: true,
-    owner: 'FL-94',
-    prototypeSource: 'reorder',
   }),
   define({
     id: 'clip.roll',
     scope: 'clip',
     mutatesGraph: true,
     undoable: true,
-    owner: 'FL-94',
-    prototypeSource: 'trimClipEnd with trimClipStart (rolling edit)',
   }),
   define({
     id: 'clip.setAudio',
     scope: 'clip',
     mutatesGraph: true,
     undoable: true,
-    owner: 'FL-103',
-    prototypeSource: 'updateClip (volume and mute)',
   }),
   define({
     id: 'clip.setBlendMode',
     scope: 'clip',
     mutatesGraph: true,
     undoable: true,
-    owner: 'FL-99',
-    prototypeSource: 'beyond the prototype: Freecut BlendMode union',
   }),
   define({
     id: 'clip.setCrop',
     scope: 'clip',
     mutatesGraph: true,
     undoable: true,
-    owner: 'FL-98',
-    prototypeSource: 'beyond the prototype: Freecut crop and corner-pin gizmos',
   }),
   define({
     id: 'clip.setGrade',
     scope: 'clip',
     mutatesGraph: true,
     undoable: true,
-    owner: 'FL-98',
-    prototypeSource: 'normalizeGrade via updateClip',
   }),
   define({
     id: 'clip.setKenBurns',
     scope: 'clip',
     mutatesGraph: true,
     undoable: true,
-    owner: 'FL-94',
-    prototypeSource: 'setKenBurns',
   }),
   define({
     id: 'clip.setLink',
     scope: 'clip',
     mutatesGraph: true,
     undoable: true,
-    owner: 'FL-94',
-    prototypeSource: 'beyond the prototype: linkId groups in the prototype clip model',
   }),
   define({
     id: 'clip.setMask',
     scope: 'clip',
     mutatesGraph: true,
     undoable: true,
-    owner: 'FL-99',
-    prototypeSource: 'beyond the prototype: Freecut clip masks and pen paths',
   }),
   define({
     id: 'clip.setSpeed',
     scope: 'clip',
     mutatesGraph: true,
     undoable: true,
-    owner: 'FL-94',
-    prototypeSource: 'setSpeed',
   }),
   define({
     id: 'clip.setTransform',
     scope: 'clip',
     mutatesGraph: true,
     undoable: true,
-    owner: 'FL-94',
-    prototypeSource: 'updateClip (transform patch)',
   }),
   define({
     id: 'clip.setTransformParent',
     scope: 'clip',
     mutatesGraph: true,
     undoable: true,
-    owner: 'FL-100',
-    prototypeSource: 'beyond the prototype: Freecut transform parenting',
   }),
   define({
     id: 'clip.setTransition',
     scope: 'clip',
     mutatesGraph: true,
     undoable: true,
-    owner: 'FL-94',
-    prototypeSource: 'setTransition',
   }),
   define({
     id: 'clip.slide',
     scope: 'clip',
     mutatesGraph: true,
     undoable: true,
-    owner: 'FL-94',
-    prototypeSource: 'moveClip (slide edit)',
   }),
   define({
     id: 'clip.slip',
     scope: 'clip',
     mutatesGraph: true,
     undoable: true,
-    owner: 'FL-94',
-    prototypeSource: 'updateClip (slip edit on the source in and out points)',
   }),
   define({
     id: 'clip.split',
     scope: 'clip',
     mutatesGraph: true,
     undoable: true,
-    owner: 'FL-94',
-    prototypeSource: 'splitClipAt',
   }),
   define({
     id: 'clip.trimEnd',
     scope: 'clip',
     mutatesGraph: true,
     undoable: true,
-    owner: 'FL-94',
-    prototypeSource: 'trimClipEnd',
   }),
   define({
     id: 'clip.trimStart',
     scope: 'clip',
     mutatesGraph: true,
     undoable: true,
-    owner: 'FL-94',
-    prototypeSource: 'trimClipStart',
   }),
   define({
     id: 'clip.ungroup',
     scope: 'clip',
     mutatesGraph: true,
     undoable: true,
-    owner: 'FL-100',
-    prototypeSource: 'beyond the prototype: Freecut groups and null controllers',
   }),
   define({
     id: 'clip.update',
     scope: 'clip',
     mutatesGraph: true,
     undoable: true,
-    owner: 'FL-94',
-    prototypeSource: 'updateClip',
   }),
   define({
     id: 'composition.add',
     scope: 'composition',
     mutatesGraph: true,
     undoable: true,
-    owner: 'FL-100',
-    prototypeSource: 'beyond the prototype: Freecut compound clips and nested compositions',
   }),
   define({
     id: 'composition.setControlOverrides',
     scope: 'composition',
     mutatesGraph: true,
     undoable: true,
-    owner: 'FL-100',
-    prototypeSource: 'beyond the prototype: Freecut composition instance overrides',
   }),
   define({
     id: 'composition.setPublishedControls',
     scope: 'composition',
     mutatesGraph: true,
     undoable: true,
-    owner: 'FL-100',
-    prototypeSource: 'beyond the prototype: Freecut published composition controls',
   }),
   define({
     id: 'effect.add',
@@ -764,24 +665,18 @@ export const studioCommandRegistry: ReadonlyMap<StudioCommandId, StudioCommandDe
     mutatesGraph: true,
     undoable: true,
     requiresCapability: 'gpuWorker',
-    owner: 'FL-99',
-    prototypeSource: 'beyond the prototype: Freecut GPU effect catalogue',
   }),
   define({
     id: 'effect.remove',
     scope: 'effect',
     mutatesGraph: true,
     undoable: true,
-    owner: 'FL-99',
-    prototypeSource: 'beyond the prototype: Freecut GPU effect catalogue',
   }),
   define({
     id: 'effect.reorder',
     scope: 'effect',
     mutatesGraph: true,
     undoable: true,
-    owner: 'FL-99',
-    prototypeSource: 'beyond the prototype: Freecut effect stack order',
   }),
   define({
     id: 'effect.update',
@@ -789,32 +684,24 @@ export const studioCommandRegistry: ReadonlyMap<StudioCommandId, StudioCommandDe
     mutatesGraph: true,
     undoable: true,
     requiresCapability: 'gpuWorker',
-    owner: 'FL-99',
-    prototypeSource: 'beyond the prototype: Freecut GPU effect parameters',
   }),
   define({
     id: 'history.redo',
     scope: 'history',
     mutatesGraph: true,
     undoable: false,
-    owner: 'FL-94',
-    prototypeSource: 'redo',
   }),
   define({
     id: 'history.undo',
     scope: 'history',
     mutatesGraph: true,
     undoable: false,
-    owner: 'FL-94',
-    prototypeSource: 'undo (over the commit history)',
   }),
   define({
     id: 'job.cancel',
     scope: 'job',
     mutatesGraph: false,
     undoable: false,
-    owner: 'FL-104',
-    prototypeSource: 'beyond the prototype: durable job cancellation',
   }),
   define({
     id: 'job.enqueueCaptioning',
@@ -822,8 +709,6 @@ export const studioCommandRegistry: ReadonlyMap<StudioCommandId, StudioCommandDe
     mutatesGraph: false,
     undoable: false,
     requiresCapability: 'analysisWorker',
-    owner: 'FL-111',
-    prototypeSource: 'beyond the prototype: local vision-language captioning',
   }),
   define({
     id: 'job.enqueueExport',
@@ -831,8 +716,6 @@ export const studioCommandRegistry: ReadonlyMap<StudioCommandId, StudioCommandDe
     mutatesGraph: false,
     undoable: false,
     requiresCapability: 'renderWorker',
-    owner: 'FL-104',
-    prototypeSource: 'estimateRender via ExportDialog',
   }),
   define({
     id: 'job.enqueueFillerRemoval',
@@ -840,8 +723,6 @@ export const studioCommandRegistry: ReadonlyMap<StudioCommandId, StudioCommandDe
     mutatesGraph: false,
     undoable: false,
     requiresCapability: 'analysisWorker',
-    owner: 'FL-103',
-    prototypeSource: 'beyond the prototype: filler-word removal with review',
   }),
   define({
     id: 'job.enqueueInterpolation',
@@ -849,8 +730,6 @@ export const studioCommandRegistry: ReadonlyMap<StudioCommandId, StudioCommandDe
     mutatesGraph: false,
     undoable: false,
     requiresCapability: 'restorationWorker',
-    owner: 'FL-111',
-    prototypeSource: 'beyond the prototype: RIFE frame interpolation',
   }),
   define({
     id: 'job.enqueueMusicGeneration',
@@ -858,8 +737,6 @@ export const studioCommandRegistry: ReadonlyMap<StudioCommandId, StudioCommandDe
     mutatesGraph: false,
     undoable: false,
     requiresCapability: 'generationWorker',
-    owner: 'FL-111',
-    prototypeSource: 'beyond the prototype: local MusicGen generation',
   }),
   define({
     id: 'job.enqueueProxy',
@@ -867,8 +744,6 @@ export const studioCommandRegistry: ReadonlyMap<StudioCommandId, StudioCommandDe
     mutatesGraph: false,
     undoable: false,
     requiresCapability: 'renderWorker',
-    owner: 'FL-105',
-    prototypeSource: 'beyond the prototype: proxy and waveform generation',
   }),
   define({
     id: 'job.enqueueRestoration',
@@ -876,8 +751,6 @@ export const studioCommandRegistry: ReadonlyMap<StudioCommandId, StudioCommandDe
     mutatesGraph: false,
     undoable: false,
     requiresCapability: 'restorationWorker',
-    owner: 'FL-110',
-    prototypeSource: 'estimateRender via RestorePanel',
   }),
   define({
     id: 'job.enqueueReverseConform',
@@ -885,8 +758,6 @@ export const studioCommandRegistry: ReadonlyMap<StudioCommandId, StudioCommandDe
     mutatesGraph: false,
     undoable: false,
     requiresCapability: 'renderWorker',
-    owner: 'FL-111',
-    prototypeSource: 'beyond the prototype: reversed media conforming',
   }),
   define({
     id: 'job.enqueueSceneDetection',
@@ -894,8 +765,6 @@ export const studioCommandRegistry: ReadonlyMap<StudioCommandId, StudioCommandDe
     mutatesGraph: false,
     undoable: false,
     requiresCapability: 'analysisWorker',
-    owner: 'FL-111',
-    prototypeSource: 'beyond the prototype: histogram and adaptive scene detection',
   }),
   define({
     id: 'job.enqueueSilenceRemoval',
@@ -903,8 +772,6 @@ export const studioCommandRegistry: ReadonlyMap<StudioCommandId, StudioCommandDe
     mutatesGraph: false,
     undoable: false,
     requiresCapability: 'analysisWorker',
-    owner: 'FL-103',
-    prototypeSource: 'beyond the prototype: silence removal with review',
   }),
   define({
     id: 'job.enqueueTextToSpeech',
@@ -912,8 +779,6 @@ export const studioCommandRegistry: ReadonlyMap<StudioCommandId, StudioCommandDe
     mutatesGraph: false,
     undoable: false,
     requiresCapability: 'generationWorker',
-    owner: 'FL-111',
-    prototypeSource: 'beyond the prototype: local text-to-speech voiceovers',
   }),
   define({
     id: 'job.enqueueTranscription',
@@ -921,8 +786,6 @@ export const studioCommandRegistry: ReadonlyMap<StudioCommandId, StudioCommandDe
     mutatesGraph: false,
     undoable: false,
     requiresCapability: 'transcriptionWorker',
-    owner: 'FL-111',
-    prototypeSource: 'sampleCaptions (simulated transcription in the prototype)',
   }),
   define({
     id: 'job.enqueueUpscale',
@@ -930,112 +793,84 @@ export const studioCommandRegistry: ReadonlyMap<StudioCommandId, StudioCommandDe
     mutatesGraph: false,
     undoable: false,
     requiresCapability: 'restorationWorker',
-    owner: 'FL-111',
-    prototypeSource: 'beyond the prototype: Anime4K upscaling',
   }),
   define({
     id: 'keyframe.add',
     scope: 'keyframe',
     mutatesGraph: true,
     undoable: true,
-    owner: 'FL-100',
-    prototypeSource: 'beyond the prototype: Freecut keyframe model',
   }),
   define({
     id: 'keyframe.remove',
     scope: 'keyframe',
     mutatesGraph: true,
     undoable: true,
-    owner: 'FL-100',
-    prototypeSource: 'beyond the prototype: Freecut keyframe model',
   }),
   define({
     id: 'keyframe.setEasing',
     scope: 'keyframe',
     mutatesGraph: true,
     undoable: true,
-    owner: 'FL-100',
-    prototypeSource: 'beyond the prototype: Freecut easing presets and tangents',
   }),
   define({
     id: 'keyframe.update',
     scope: 'keyframe',
     mutatesGraph: true,
     undoable: true,
-    owner: 'FL-100',
-    prototypeSource: 'beyond the prototype: Freecut graph editor and dopesheet',
   }),
   define({
     id: 'lottie.update',
     scope: 'media',
     mutatesGraph: true,
     undoable: true,
-    owner: 'FL-105',
-    prototypeSource: 'beyond the prototype: Lottie colour, text and slot editing',
   }),
   define({
     id: 'marker.add',
     scope: 'sequence',
     mutatesGraph: true,
     undoable: true,
-    owner: 'FL-94',
-    prototypeSource: 'beyond the prototype: sequence markers',
   }),
   define({
     id: 'marker.remove',
     scope: 'sequence',
     mutatesGraph: true,
     undoable: true,
-    owner: 'FL-94',
-    prototypeSource: 'beyond the prototype: sequence markers',
   }),
   define({
     id: 'marker.update',
     scope: 'sequence',
     mutatesGraph: true,
     undoable: true,
-    owner: 'FL-94',
-    prototypeSource: 'beyond the prototype: sequence markers',
   }),
   define({
     id: 'media.import',
     scope: 'media',
     mutatesGraph: true,
     undoable: false,
-    owner: 'FL-105',
-    prototypeSource: 'beyond the prototype: project media bin',
   }),
   define({
     id: 'media.relink',
     scope: 'media',
     mutatesGraph: true,
     undoable: false,
-    owner: 'FL-105',
-    prototypeSource: 'beyond the prototype: media relinking',
   }),
   define({
     id: 'media.remove',
     scope: 'media',
     mutatesGraph: true,
     undoable: false,
-    owner: 'FL-105',
-    prototypeSource: 'beyond the prototype: project media bin',
   }),
   define({
     id: 'music.add',
     scope: 'clip',
     mutatesGraph: true,
     undoable: true,
-    owner: 'FL-94',
-    prototypeSource: 'addMusic',
   }),
   define({
     id: 'preview.release',
     scope: 'preview',
     mutatesGraph: false,
     undoable: false,
-    owner: 'FL-96',
-    prototypeSource: 'Studio.jsx preview monitor',
   }),
   define({
     /**
@@ -1048,84 +883,64 @@ export const studioCommandRegistry: ReadonlyMap<StudioCommandId, StudioCommandDe
     mutatesGraph: false,
     undoable: false,
     requiresCapability: 'gpuWorker',
-    owner: 'FL-96',
-    prototypeSource: 'Studio.jsx preview monitor',
   }),
   define({
     id: 'project.applyTemplate',
     scope: 'project',
     mutatesGraph: true,
     undoable: true,
-    owner: 'FL-94',
-    prototypeSource: 'beyond the prototype: project templates',
   }),
   define({
     id: 'project.exportBundle',
     scope: 'project',
     mutatesGraph: false,
     undoable: false,
-    owner: 'FL-91',
-    prototypeSource: 'beyond the prototype: portable project bundles',
   }),
   define({
     id: 'project.importBundle',
     scope: 'project',
     mutatesGraph: true,
     undoable: false,
-    owner: 'FL-91',
-    prototypeSource: 'beyond the prototype: portable project bundles',
   }),
   define({
     id: 'project.rename',
     scope: 'project',
     mutatesGraph: true,
     undoable: true,
-    owner: 'FL-94',
-    prototypeSource: 'renameProject',
   }),
   define({
     id: 'project.setMasterAudio',
     scope: 'project',
     mutatesGraph: true,
     undoable: true,
-    owner: 'FL-103',
-    prototypeSource: 'beyond the prototype: project master bus',
   }),
   define({
     id: 'project.setSettings',
     scope: 'project',
     mutatesGraph: true,
     undoable: false,
-    owner: 'FL-94',
-    prototypeSource: 'setSettings',
   }),
   define({
     id: 'property.bakeModifier',
     scope: 'keyframe',
     mutatesGraph: true,
     undoable: true,
-    owner: 'FL-100',
-    prototypeSource: 'beyond the prototype: procedural motion modifiers',
   }),
   define({
     id: 'property.setExpression',
     scope: 'keyframe',
     mutatesGraph: true,
     undoable: true,
-    owner: 'FL-100',
-    prototypeSource: 'beyond the prototype: property expressions',
   }),
   define({
     id: 'property.setModifier',
     scope: 'keyframe',
     mutatesGraph: true,
     undoable: true,
-    owner: 'FL-100',
-    prototypeSource: 'beyond the prototype: procedural motion modifiers',
   }),
   define({
     /**
-     * Not a graph change, for all three review rows: FL-89 stores comments beside the graph,
+     * Not a graph change, for all three review rows: the server stores comments beside the graph,
      * against the revision the reviewer was looking at. A reviewer holds no lease and may be a
      * revision behind, and neither may stop them commenting. Not undoable either: a comment is
      * a shared record other people may already have read, removed explicitly, not by undo.
@@ -1134,48 +949,36 @@ export const studioCommandRegistry: ReadonlyMap<StudioCommandId, StudioCommandDe
     scope: 'review',
     mutatesGraph: false,
     undoable: false,
-    owner: 'FL-94',
-    prototypeSource: 'addReviewComment',
   }),
   define({
     id: 'review.remove',
     scope: 'review',
     mutatesGraph: false,
     undoable: false,
-    owner: 'FL-94',
-    prototypeSource: 'removeReviewComment',
   }),
   define({
     id: 'review.update',
     scope: 'review',
     mutatesGraph: false,
     undoable: false,
-    owner: 'FL-94',
-    prototypeSource: 'updateReviewComment',
   }),
   define({
     id: 'sequence.add',
     scope: 'sequence',
     mutatesGraph: true,
     undoable: true,
-    owner: 'FL-94',
-    prototypeSource: 'beyond the prototype: the prototype ships two fixed sequences',
   }),
   define({
     id: 'sequence.duplicate',
     scope: 'sequence',
     mutatesGraph: true,
     undoable: true,
-    owner: 'FL-94',
-    prototypeSource: 'beyond the prototype: the prototype ships two fixed sequences',
   }),
   define({
     id: 'sequence.remove',
     scope: 'sequence',
     mutatesGraph: true,
     undoable: true,
-    owner: 'FL-94',
-    prototypeSource: 'beyond the prototype: the prototype ships two fixed sequences',
   }),
   define({
     // The active sequence is stored on the project, so switching it is a graph change even
@@ -1184,88 +987,66 @@ export const studioCommandRegistry: ReadonlyMap<StudioCommandId, StudioCommandDe
     scope: 'sequence',
     mutatesGraph: true,
     undoable: false,
-    owner: 'FL-94',
-    prototypeSource: 'setActiveSequence',
   }),
   define({
     id: 'sequence.setFields',
     scope: 'sequence',
     mutatesGraph: true,
     undoable: true,
-    owner: 'FL-94',
-    prototypeSource: 'setSequenceFields',
   }),
   define({
     id: 'sequence.setSettings',
     scope: 'sequence',
     mutatesGraph: true,
     undoable: true,
-    owner: 'FL-94',
-    prototypeSource: 'beyond the prototype: canvas and frame rate are fixed there',
   }),
   define({
     id: 'text.setMotion',
     scope: 'clip',
     mutatesGraph: true,
     undoable: true,
-    owner: 'FL-100',
-    prototypeSource: 'beyond the prototype: per-character motion text',
   }),
   define({
     id: 'title.add',
     scope: 'clip',
     mutatesGraph: true,
     undoable: true,
-    owner: 'FL-94',
-    prototypeSource: 'addTitle',
   }),
   define({
     id: 'track.add',
     scope: 'track',
     mutatesGraph: true,
     undoable: true,
-    owner: 'FL-94',
-    prototypeSource: 'beyond the prototype: its six track kinds are fixed',
   }),
   define({
     id: 'track.remove',
     scope: 'track',
     mutatesGraph: true,
     undoable: true,
-    owner: 'FL-94',
-    prototypeSource: 'beyond the prototype: its six track kinds are fixed',
   }),
   define({
     id: 'track.reorder',
     scope: 'track',
     mutatesGraph: true,
     undoable: true,
-    owner: 'FL-94',
-    prototypeSource: 'beyond the prototype: its track order is fixed',
   }),
   define({
     id: 'track.set',
     scope: 'track',
     mutatesGraph: true,
     undoable: true,
-    owner: 'FL-94',
-    prototypeSource: 'setTrack',
   }),
   define({
     id: 'track.setAudio',
     scope: 'track',
     mutatesGraph: true,
     undoable: true,
-    owner: 'FL-103',
-    prototypeSource: 'setTrack (gain only in the prototype)',
   }),
   define({
     id: 'voiceover.add',
     scope: 'clip',
     mutatesGraph: true,
     undoable: true,
-    owner: 'FL-94',
-    prototypeSource: 'addVoiceover',
   }),
 ]);
 
@@ -1279,14 +1060,11 @@ export const studioCommandDefinition = (id: StudioCommandId): StudioCommandDefin
   return definition;
 };
 
-/**
- * Commands FL-88 itself applies end to end. It owns routing, not editing semantics, so
- * this is currently empty by design: every row belongs to a later story and is a typed
- * extension point. The bridge uses it to catch a registry that claims ownership without a
- * handler, which would otherwise look like a silent no-op.
- */
-export const isStudioCommandImplemented = (id: StudioCommandId): boolean =>
-  studioCommandDefinition(id).owner === 'FL-88';
+/** Command handlers are supplied by the host; the vocabulary itself implements none. */
+export const isStudioCommandImplemented = (id: StudioCommandId): boolean => {
+  studioCommandDefinition(id);
+  return false;
+};
 
 /* ------------------------------------------------------------------ */
 /* Envelopes and results                                                */

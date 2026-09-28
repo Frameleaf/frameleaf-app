@@ -1,27 +1,11 @@
 #!/usr/bin/env node
 
 /**
- * The canonical Studio command catalogue and its generated contracts (FL-92).
+ * The canonical Studio command catalogue and its generated contracts.
  *
- * One table in this file is the source of truth for the Studio command vocabulary. From it
- * this script writes two checked-in artifacts, so web and server cannot drift:
- *
- *   studio/frameleaf-studio-commands.json          the published catalogue
- *   server/src/utils/studio-commands.generated.ts  the server envelope mirror
- *
- * `--check` (the default, and what CI runs) regenerates everything in memory and fails when
- * a checked-in file differs, when the TypeScript vocabulary in
- * `web/src/lib/frameleaf/studio/commands.ts` drifts from the table, when a mutating command
- * in the prototype's project model has no command id, or when a row of the pinned Freecut
- * feature manifest is neither mapped to a command nor declared as a non-command row.
- *
- * What this script does NOT do: implement a command. Every row names the story that owns
- * its semantics; until that story lands the bridge answers `not-implemented`.
- *
- * Sources:
- *   - `design/frameleaf/template/src/studio-project.mjs` — the prototype's project model,
- *     the interaction contract named by the September 22, 2026 revision.
- *   - `studio/freecut-feature-manifest.json` — the 210 pinned Freecut feature rows.
+ * This table generates studio/frameleaf-studio-commands.json and the server envelope
+ * mirror. The default --check mode verifies both artifacts, the web vocabulary, and
+ * coverage of every pinned Freecut feature row.
  */
 
 import assert from 'node:assert/strict';
@@ -37,7 +21,6 @@ export const GENERATOR = 'scripts/frameleaf-studio-commands.mjs';
 export const CATALOGUE_PATH = 'studio/frameleaf-studio-commands.json';
 export const SERVER_MIRROR_PATH = 'server/src/utils/studio-commands.generated.ts';
 export const MANIFEST_PATH = 'studio/freecut-feature-manifest.json';
-export const PROTOTYPE_PATH = 'design/frameleaf/template/src/studio-project.mjs';
 export const WEB_VOCABULARY_PATH = 'web/src/lib/frameleaf/studio/commands.ts';
 
 /** Scopes a command may act on. Ordered for the generated enums. */
@@ -78,7 +61,7 @@ export const CAPABILITIES = [
 /**
  * Payload field types. A `?` suffix on a field marks it optional.
  *
- * `time`, `duration` and `rate` are exact rationals, never floats (FL-93): an
+ * `time`, `duration` and `rate` are exact rationals, never floats: an
  * instant on the timeline, a length, and a cadence or speed multiplier. They travel as a
  * reduced `{ num, den }` pair of integers, which is the only representation in which an
  * NTSC boundary the person set is the boundary the encoder is asked for. The web side
@@ -214,15 +197,8 @@ const BLEND_ROWS = manifestRange('blend.', [
 /**
  * The catalogue. One row per command.
  *
- * - `prototypeFunctions` names the exported functions of the prototype project model this
- *   command is specified by; `prototypeSource` is the human sentence the TypeScript
- *   registry repeats. A command with no prototype counterpart says so in `prototypeSource`
- *   and keeps `prototypeFunctions` empty.
- * - `manifestIds` names the pinned Freecut feature rows this command is the way to reach.
- *   An empty list means the command is a Frameleaf addition with no upstream row (project
- *   review, restoration, effect stack order): the check reports them rather than inventing
- *   a mapping.
- * - `owner` is the story that owns the *semantics*. FL-92 owns this vocabulary only.
+ * `manifestIds` names the pinned Freecut feature rows this command reaches. An empty
+ * list means the command is a Frameleaf addition with no upstream row.
  */
 export const catalogue = [
   {
@@ -231,9 +207,6 @@ export const catalogue = [
     mutatesGraph: true,
     undoable: true,
     capability: 'transcriptionWorker',
-    owner: 'FL-94',
-    prototypeFunctions: ['setCaptions'],
-    prototypeSource: 'setCaptions',
     manifestIds: ['readme.local-ai-analysis.1'],
     payload: { captions: 'object[]' },
     description: 'Replace the sequence caption list with a validated, time-ordered set.',
@@ -244,9 +217,6 @@ export const catalogue = [
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-94',
-    prototypeFunctions: ['addClip'],
-    prototypeSource: 'addClip',
     manifestIds: ['command.addItem', 'readme.timeline-editing.1'],
     payload: {
       trackId: 'string',
@@ -263,9 +233,6 @@ export const catalogue = [
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-94',
-    prototypeFunctions: ['deleteClip'],
-    prototypeSource: 'deleteClip',
     manifestIds: ['command.removeItems', 'readme.timeline-editing.5'],
     payload: { clipId: 'string?', clipIds: 'string[]?', ripple: 'boolean?' },
     description: 'Remove one clip or a selection with its linked clips, optionally closing the gap.',
@@ -276,9 +243,6 @@ export const catalogue = [
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-100',
-    prototypeFunctions: [],
-    prototypeSource: 'beyond the prototype: Freecut groups and null controllers',
     manifestIds: ['extra.compose'],
     payload: { clipIds: 'string[]', name: 'string?' },
     description: 'Group selected clips so transforms and keyframes apply to them together.',
@@ -289,9 +253,6 @@ export const catalogue = [
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-94',
-    prototypeFunctions: ['addClip'],
-    prototypeSource: 'addClip (source monitor insert edit)',
     manifestIds: ['readme.timeline-editing.7', 'readme.local-ai-analysis.4'],
     payload: {
       trackId: 'string',
@@ -308,9 +269,6 @@ export const catalogue = [
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-94',
-    prototypeFunctions: ['moveClip'],
-    prototypeSource: 'moveClip',
     manifestIds: ['command.moveItem'],
     payload: { clipId: 'string', start: 'time', trackId: 'string?' },
     description: 'Move a clip and its linked clips to another time, and optionally another track.',
@@ -321,9 +279,6 @@ export const catalogue = [
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-94',
-    prototypeFunctions: ['addClip'],
-    prototypeSource: 'addClip (source monitor overwrite edit)',
     manifestIds: ['readme.timeline-editing.7'],
     payload: {
       trackId: 'string',
@@ -340,9 +295,6 @@ export const catalogue = [
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-94',
-    prototypeFunctions: ['reorder'],
-    prototypeSource: 'reorder',
     manifestIds: ['readme.timeline-editing.5'],
     payload: { trackId: 'string', clipId: 'string', index: 'number' },
     description: 'Move a clip to another index on its track; the track re-flows contiguously.',
@@ -353,9 +305,6 @@ export const catalogue = [
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-94',
-    prototypeFunctions: ['trimClipEnd', 'trimClipStart'],
-    prototypeSource: 'trimClipEnd with trimClipStart (rolling edit)',
     manifestIds: ['readme.timeline-editing.3', 'readme.preview-playback.4'],
     payload: { clipId: 'string', at: 'time' },
     description: 'Move the cut between two adjacent clips without changing the sequence length.',
@@ -366,9 +315,6 @@ export const catalogue = [
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-103',
-    prototypeFunctions: ['updateClip'],
-    prototypeSource: 'updateClip (volume and mute)',
     manifestIds: ['readme.audio.1', 'readme.audio.2', 'readme.audio.3'],
     payload: {
       clipId: 'string',
@@ -388,9 +334,6 @@ export const catalogue = [
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-99',
-    prototypeFunctions: [],
-    prototypeSource: 'beyond the prototype: Freecut BlendMode union',
     manifestIds: ['readme.effects-masks-compositing.6', ...BLEND_ROWS],
     payload: { clipId: 'string', blendMode: 'string', opacity: 'number?' },
     description: 'Set the clip blend mode and compositing opacity.',
@@ -401,9 +344,6 @@ export const catalogue = [
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-98',
-    prototypeFunctions: [],
-    prototypeSource: 'beyond the prototype: Freecut crop and corner-pin gizmos',
     manifestIds: ['readme.preview-playback.1'],
     payload: { clipId: 'string', crop: 'object?', cornerPin: 'object?' },
     description: 'Set the crop rectangle and corner-pin quad edited with the preview gizmos.',
@@ -414,9 +354,6 @@ export const catalogue = [
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-98',
-    prototypeFunctions: ['updateClip'],
-    prototypeSource: 'normalizeGrade via updateClip',
     manifestIds: ['extra.color-workspace'],
     payload: { clipId: 'string', grade: 'object?' },
     description: 'Set the colour grade: look, intensity, primaries and the three colour wheels.',
@@ -427,9 +364,6 @@ export const catalogue = [
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-94',
-    prototypeFunctions: ['setKenBurns'],
-    prototypeSource: 'setKenBurns',
     manifestIds: ['readme.keyframe-animation.6'],
     payload: { clipId: 'string', kenBurns: 'object?' },
     description: 'Set the from and to rectangles of a still clip, or clear the move.',
@@ -440,9 +374,6 @@ export const catalogue = [
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-94',
-    prototypeFunctions: [],
-    prototypeSource: 'beyond the prototype: linkId groups in the prototype clip model',
     manifestIds: ['readme.timeline-editing.3'],
     payload: { clipIds: 'string[]', linked: 'boolean' },
     description: 'Link or unlink audio and video clips so later edits move them together.',
@@ -453,9 +384,6 @@ export const catalogue = [
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-99',
-    prototypeFunctions: [],
-    prototypeSource: 'beyond the prototype: Freecut clip masks and pen paths',
     manifestIds: ['readme.effects-masks-compositing.7'],
     payload: { clipId: 'string', mask: 'object?' },
     description: 'Set or clear the clip mask, including pen path geometry.',
@@ -466,9 +394,6 @@ export const catalogue = [
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-94',
-    prototypeFunctions: ['setSpeed'],
-    prototypeSource: 'setSpeed',
     manifestIds: ['readme.timeline-editing.3'],
     payload: { clipId: 'string', speed: 'rate' },
     description: 'Rate-stretch a bounded clip and its linked clips to a new speed.',
@@ -479,9 +404,6 @@ export const catalogue = [
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-94',
-    prototypeFunctions: ['updateClip'],
-    prototypeSource: 'updateClip (transform patch)',
     manifestIds: ['command.setTransform', 'readme.preview-playback.1'],
     payload: { clipId: 'string', transform: 'object' },
     description: 'Set position, scale, rotation and opacity for a clip.',
@@ -492,9 +414,6 @@ export const catalogue = [
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-100',
-    prototypeFunctions: [],
-    prototypeSource: 'beyond the prototype: Freecut transform parenting',
     manifestIds: ['command.setTransformParent', 'extra.parenting'],
     payload: { clipId: 'string', parentId: 'string?' },
     description: 'Parent a clip transform to another clip, or clear the pick-whip link.',
@@ -505,9 +424,6 @@ export const catalogue = [
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-94',
-    prototypeFunctions: ['setTransition'],
-    prototypeSource: 'setTransition',
     manifestIds: [
       'command.addTransition',
       'command.updateTransition',
@@ -527,9 +443,6 @@ export const catalogue = [
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-94',
-    prototypeFunctions: ['moveClip'],
-    prototypeSource: 'moveClip (slide edit)',
     manifestIds: ['readme.timeline-editing.3', 'readme.preview-playback.4'],
     payload: { clipId: 'string', delta: 'duration' },
     description: 'Slide a clip along the track, trimming its neighbours instead of rippling.',
@@ -540,9 +453,6 @@ export const catalogue = [
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-94',
-    prototypeFunctions: ['updateClip'],
-    prototypeSource: 'updateClip (slip edit on the source in and out points)',
     manifestIds: ['readme.timeline-editing.3', 'readme.preview-playback.4'],
     payload: { clipId: 'string', delta: 'duration' },
     description: 'Slip the source range inside a clip without moving the clip.',
@@ -553,9 +463,6 @@ export const catalogue = [
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-94',
-    prototypeFunctions: ['splitClipAt'],
-    prototypeSource: 'splitClipAt',
     manifestIds: ['command.split'],
     payload: { at: 'time', clipIds: 'string[]?' },
     description: 'Split clips at a time, carrying linked clips and Ken Burns geometry across.',
@@ -566,9 +473,6 @@ export const catalogue = [
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-94',
-    prototypeFunctions: ['trimClipEnd'],
-    prototypeSource: 'trimClipEnd',
     manifestIds: ['command.trimEnd'],
     payload: { clipId: 'string', end: 'time', ripple: 'boolean?' },
     description: 'Trim a clip out point, optionally rippling the rest of the track.',
@@ -579,9 +483,6 @@ export const catalogue = [
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-94',
-    prototypeFunctions: ['trimClipStart'],
-    prototypeSource: 'trimClipStart',
     manifestIds: ['command.trimStart'],
     payload: { clipId: 'string', start: 'time', ripple: 'boolean?' },
     description: 'Trim a clip in point, optionally rippling the rest of the track.',
@@ -592,9 +493,6 @@ export const catalogue = [
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-100',
-    prototypeFunctions: [],
-    prototypeSource: 'beyond the prototype: Freecut groups and null controllers',
     manifestIds: [],
     payload: { groupId: 'string' },
     description: 'Dissolve a group, leaving its clips in place.',
@@ -605,9 +503,6 @@ export const catalogue = [
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-94',
-    prototypeFunctions: ['updateClip'],
-    prototypeSource: 'updateClip',
     manifestIds: ['command.updateItem'],
     payload: { clipId: 'string', patch: 'object' },
     description: 'Patch clip fields the narrower commands do not own: name, text, style, position.',
@@ -618,9 +513,6 @@ export const catalogue = [
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-100',
-    prototypeFunctions: [],
-    prototypeSource: 'beyond the prototype: Freecut compound clips and nested compositions',
     manifestIds: [
       'command.addClip',
       'extra.compose',
@@ -641,9 +533,6 @@ export const catalogue = [
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-100',
-    prototypeFunctions: [],
-    prototypeSource: 'beyond the prototype: Freecut composition instance overrides',
     manifestIds: [],
     payload: { compositionClipId: 'string', overrides: 'object' },
     description: 'Override published control values on one instance of a composition.',
@@ -654,9 +543,6 @@ export const catalogue = [
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-100',
-    prototypeFunctions: [],
-    prototypeSource: 'beyond the prototype: Freecut published composition controls',
     manifestIds: ['extra.published-controls'],
     payload: { compositionId: 'string', controls: 'object[]' },
     description: 'Publish the controls a composition exposes to its instances.',
@@ -667,9 +553,6 @@ export const catalogue = [
     mutatesGraph: true,
     undoable: true,
     capability: 'gpuWorker',
-    owner: 'FL-99',
-    prototypeFunctions: [],
-    prototypeSource: 'beyond the prototype: Freecut GPU effect catalogue',
     manifestIds: [
       'command.addEffect',
       'readme.effects-masks-compositing.1',
@@ -692,9 +575,6 @@ export const catalogue = [
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-99',
-    prototypeFunctions: [],
-    prototypeSource: 'beyond the prototype: Freecut GPU effect catalogue',
     manifestIds: ['command.removeEffect'],
     payload: { clipId: 'string', effectId: 'string' },
     description: 'Remove one effect from a clip effect stack.',
@@ -705,9 +585,6 @@ export const catalogue = [
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-99',
-    prototypeFunctions: [],
-    prototypeSource: 'beyond the prototype: Freecut effect stack order',
     manifestIds: [],
     payload: { clipId: 'string', effectId: 'string', index: 'number' },
     description: 'Reorder the effect stack, which changes the rendered result.',
@@ -718,9 +595,6 @@ export const catalogue = [
     mutatesGraph: true,
     undoable: true,
     capability: 'gpuWorker',
-    owner: 'FL-99',
-    prototypeFunctions: [],
-    prototypeSource: 'beyond the prototype: Freecut GPU effect parameters',
     manifestIds: EFFECT_ROWS,
     payload: { clipId: 'string', effectId: 'string', params: 'object' },
     description: 'Set the parameters of one effect instance, including LUT and key controls.',
@@ -731,9 +605,6 @@ export const catalogue = [
     mutatesGraph: true,
     undoable: false,
     capability: null,
-    owner: 'FL-94',
-    prototypeFunctions: ['redo'],
-    prototypeSource: 'redo',
     manifestIds: [],
     payload: { toRevision: 'number?' },
     description: 'Redo the last undone revision, as a server-side revision move.',
@@ -744,9 +615,6 @@ export const catalogue = [
     mutatesGraph: true,
     undoable: false,
     capability: null,
-    owner: 'FL-94',
-    prototypeFunctions: ['undo', 'commit'],
-    prototypeSource: 'undo (over the commit history)',
     manifestIds: ['readme.timeline-editing.6'],
     payload: { toRevision: 'number?' },
     description: 'Undo the last undoable revision; the stack lives with the stored project.',
@@ -757,9 +625,6 @@ export const catalogue = [
     mutatesGraph: false,
     undoable: false,
     capability: null,
-    owner: 'FL-104',
-    prototypeFunctions: [],
-    prototypeSource: 'beyond the prototype: durable job cancellation',
     manifestIds: ['extra.render-queue'],
     payload: { jobId: 'string' },
     description: 'Ask the durable job model to cancel a queued or running job.',
@@ -770,9 +635,6 @@ export const catalogue = [
     mutatesGraph: false,
     undoable: false,
     capability: 'analysisWorker',
-    owner: 'FL-111',
-    prototypeFunctions: [],
-    prototypeSource: 'beyond the prototype: local vision-language captioning',
     manifestIds: ['readme.local-ai-analysis.2'],
     payload: {
       sequenceId: 'string',
@@ -788,9 +650,6 @@ export const catalogue = [
     mutatesGraph: false,
     undoable: false,
     capability: 'renderWorker',
-    owner: 'FL-104',
-    prototypeFunctions: ['estimateRender'],
-    prototypeSource: 'estimateRender via ExportDialog',
     manifestIds: [
       'readme.export.1',
       'readme.export.2',
@@ -820,9 +679,6 @@ export const catalogue = [
     mutatesGraph: false,
     undoable: false,
     capability: 'analysisWorker',
-    owner: 'FL-103',
-    prototypeFunctions: [],
-    prototypeSource: 'beyond the prototype: filler-word removal with review',
     manifestIds: ['extra.filler-removal'],
     payload: { sequenceId: 'string', clipIds: 'string[]?', destinationId: 'string' },
     description: 'Queue filler-word detection; the edit itself is applied after review.',
@@ -833,9 +689,6 @@ export const catalogue = [
     mutatesGraph: false,
     undoable: false,
     capability: 'restorationWorker',
-    owner: 'FL-111',
-    prototypeFunctions: [],
-    prototypeSource: 'beyond the prototype: RIFE frame interpolation',
     manifestIds: ['extra.interpolation-rife'],
     payload: { clipId: 'string', targetFps: 'rate', destinationId: 'string', factor: 'number?' },
     description: 'Queue frame interpolation for a clip to an explicit destination.',
@@ -846,9 +699,6 @@ export const catalogue = [
     mutatesGraph: false,
     undoable: false,
     capability: 'generationWorker',
-    owner: 'FL-111',
-    prototypeFunctions: [],
-    prototypeSource: 'beyond the prototype: local MusicGen generation',
     manifestIds: ['readme.local-ai-analysis.6', 'extra.musicgen'],
     payload: {
       prompt: 'string',
@@ -864,9 +714,6 @@ export const catalogue = [
     mutatesGraph: false,
     undoable: false,
     capability: 'renderWorker',
-    owner: 'FL-105',
-    prototypeFunctions: [],
-    prototypeSource: 'beyond the prototype: proxy and waveform generation',
     manifestIds: ['readme.media-import.4'],
     payload: { assetIds: 'string[]', destinationId: 'string' },
     description: 'Queue proxy, thumbnail and waveform generation for project media.',
@@ -877,9 +724,6 @@ export const catalogue = [
     mutatesGraph: false,
     undoable: false,
     capability: 'restorationWorker',
-    owner: 'FL-110',
-    prototypeFunctions: ['estimateRender'],
-    prototypeSource: 'estimateRender via RestorePanel',
     manifestIds: [],
     payload: {
       mode: 'string',
@@ -898,9 +742,6 @@ export const catalogue = [
     mutatesGraph: false,
     undoable: false,
     capability: 'renderWorker',
-    owner: 'FL-111',
-    prototypeFunctions: [],
-    prototypeSource: 'beyond the prototype: reversed media conforming',
     manifestIds: ['extra.reverse-conform'],
     payload: { clipId: 'string', destinationId: 'string' },
     description: 'Queue a reversed conform of a clip source.',
@@ -911,9 +752,6 @@ export const catalogue = [
     mutatesGraph: false,
     undoable: false,
     capability: 'analysisWorker',
-    owner: 'FL-111',
-    prototypeFunctions: [],
-    prototypeSource: 'beyond the prototype: histogram and adaptive scene detection',
     manifestIds: ['readme.local-ai-analysis.3'],
     payload: {
       assetIds: 'string[]',
@@ -929,9 +767,6 @@ export const catalogue = [
     mutatesGraph: false,
     undoable: false,
     capability: 'analysisWorker',
-    owner: 'FL-103',
-    prototypeFunctions: [],
-    prototypeSource: 'beyond the prototype: silence removal with review',
     manifestIds: ['extra.silence-removal'],
     payload: {
       sequenceId: 'string',
@@ -947,9 +782,6 @@ export const catalogue = [
     mutatesGraph: false,
     undoable: false,
     capability: 'generationWorker',
-    owner: 'FL-111',
-    prototypeFunctions: [],
-    prototypeSource: 'beyond the prototype: local text-to-speech voiceovers',
     manifestIds: [
       'readme.local-ai-analysis.5',
       'extra.tts-kokoro',
@@ -970,9 +802,6 @@ export const catalogue = [
     mutatesGraph: false,
     undoable: false,
     capability: 'transcriptionWorker',
-    owner: 'FL-111',
-    prototypeFunctions: ['sampleCaptions'],
-    prototypeSource: 'sampleCaptions (simulated transcription in the prototype)',
     manifestIds: ['readme.local-ai-analysis.1'],
     payload: { sequenceId: 'string', language: 'string', destinationId: 'string' },
     description: 'Queue on-device transcription; captions land through captions.set.',
@@ -983,9 +812,6 @@ export const catalogue = [
     mutatesGraph: false,
     undoable: false,
     capability: 'restorationWorker',
-    owner: 'FL-111',
-    prototypeFunctions: [],
-    prototypeSource: 'beyond the prototype: Anime4K upscaling',
     manifestIds: ['extra.upscale-anime4k'],
     payload: { clipId: 'string', factor: 'number', destinationId: 'string' },
     description: 'Queue an upscale pass for a clip to an explicit destination.',
@@ -996,9 +822,6 @@ export const catalogue = [
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-100',
-    prototypeFunctions: [],
-    prototypeSource: 'beyond the prototype: Freecut keyframe model',
     manifestIds: [
       'command.addKeyframe',
       'readme.keyframe-animation.5',
@@ -1019,9 +842,6 @@ export const catalogue = [
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-100',
-    prototypeFunctions: [],
-    prototypeSource: 'beyond the prototype: Freecut keyframe model',
     manifestIds: ['command.removeKeyframes'],
     payload: { clipId: 'string', property: 'string', keyframeIds: 'string[]' },
     description: 'Remove keyframes from one property.',
@@ -1032,9 +852,6 @@ export const catalogue = [
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-100',
-    prototypeFunctions: [],
-    prototypeSource: 'beyond the prototype: Freecut easing presets and tangents',
     manifestIds: ['readme.keyframe-animation.2'],
     payload: {
       clipId: 'string',
@@ -1051,9 +868,6 @@ export const catalogue = [
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-100',
-    prototypeFunctions: [],
-    prototypeSource: 'beyond the prototype: Freecut graph editor and dopesheet',
     manifestIds: ['readme.keyframe-animation.1'],
     payload: {
       clipId: 'string',
@@ -1070,9 +884,6 @@ export const catalogue = [
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-105',
-    prototypeFunctions: [],
-    prototypeSource: 'beyond the prototype: Lottie colour, text and slot editing',
     manifestIds: ['readme.media-import.2'],
     payload: {
       clipId: 'string',
@@ -1088,9 +899,6 @@ export const catalogue = [
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-94',
-    prototypeFunctions: [],
-    prototypeSource: 'beyond the prototype: sequence markers',
     manifestIds: ['readme.timeline-editing.6'],
     payload: { at: 'time', name: 'string?', colour: 'string?' },
     description: 'Add a marker on the sequence at a time.',
@@ -1101,9 +909,6 @@ export const catalogue = [
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-94',
-    prototypeFunctions: [],
-    prototypeSource: 'beyond the prototype: sequence markers',
     manifestIds: [],
     payload: { markerId: 'string' },
     description: 'Remove a sequence marker.',
@@ -1114,9 +919,6 @@ export const catalogue = [
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-94',
-    prototypeFunctions: [],
-    prototypeSource: 'beyond the prototype: sequence markers',
     manifestIds: [],
     payload: { markerId: 'string', patch: 'object' },
     description: 'Rename, recolour or move a sequence marker.',
@@ -1127,9 +929,6 @@ export const catalogue = [
     mutatesGraph: true,
     undoable: false,
     capability: null,
-    owner: 'FL-105',
-    prototypeFunctions: [],
-    prototypeSource: 'beyond the prototype: project media bin',
     manifestIds: ['readme.media-import.1'],
     payload: { assetIds: 'string[]' },
     description: 'Reference library assets from the project without copying an original.',
@@ -1140,9 +939,6 @@ export const catalogue = [
     mutatesGraph: true,
     undoable: false,
     capability: null,
-    owner: 'FL-105',
-    prototypeFunctions: [],
-    prototypeSource: 'beyond the prototype: media relinking',
     manifestIds: ['readme.media-import.4'],
     payload: { mediaId: 'string', assetId: 'string' },
     description: 'Relink project media to another asset when the original moved.',
@@ -1153,9 +949,6 @@ export const catalogue = [
     mutatesGraph: true,
     undoable: false,
     capability: null,
-    owner: 'FL-105',
-    prototypeFunctions: [],
-    prototypeSource: 'beyond the prototype: project media bin',
     manifestIds: [],
     payload: { mediaIds: 'string[]' },
     description: 'Drop unused media references from the project; originals are untouched.',
@@ -1166,9 +959,6 @@ export const catalogue = [
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-94',
-    prototypeFunctions: ['addMusic'],
-    prototypeSource: 'addMusic',
     manifestIds: ['command.addItem'],
     payload: {
       musicId: 'string',
@@ -1184,9 +974,6 @@ export const catalogue = [
     mutatesGraph: false,
     undoable: false,
     capability: null,
-    owner: 'FL-96',
-    prototypeFunctions: [],
-    prototypeSource: 'Studio.jsx preview monitor',
     manifestIds: [],
     payload: {},
     description: 'Tell the host the engine no longer needs the frame it last requested.',
@@ -1197,9 +984,6 @@ export const catalogue = [
     mutatesGraph: false,
     undoable: false,
     capability: 'gpuWorker',
-    owner: 'FL-96',
-    prototypeFunctions: [],
-    prototypeSource: 'Studio.jsx preview monitor',
     manifestIds: [],
     payload: {
       at: 'time',
@@ -1215,9 +999,6 @@ export const catalogue = [
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-94',
-    prototypeFunctions: [],
-    prototypeSource: 'beyond the prototype: project templates',
     manifestIds: ['readme.timeline-editing.8'],
     payload: { templateId: 'string' },
     description: 'Apply a project template, including canvas and frame rate defaults.',
@@ -1228,9 +1009,6 @@ export const catalogue = [
     mutatesGraph: false,
     undoable: false,
     capability: null,
-    owner: 'FL-91',
-    prototypeFunctions: [],
-    prototypeSource: 'beyond the prototype: portable project bundles',
     manifestIds: ['readme.projects-storage.5'],
     payload: { sequenceIds: 'string[]?', includeMedia: 'boolean?' },
     description: 'Export a validated portable project bundle, optionally with copies of the media the person owns.',
@@ -1241,9 +1019,6 @@ export const catalogue = [
     mutatesGraph: true,
     undoable: false,
     capability: null,
-    owner: 'FL-91',
-    prototypeFunctions: [],
-    prototypeSource: 'beyond the prototype: portable project bundles',
     manifestIds: [],
     payload: { bundleUploadId: 'string' },
     description: 'Import a validated portable project bundle into this project.',
@@ -1254,9 +1029,6 @@ export const catalogue = [
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-94',
-    prototypeFunctions: ['renameProject'],
-    prototypeSource: 'renameProject',
     manifestIds: [],
     payload: { name: 'string' },
     description: 'Rename the project.',
@@ -1267,9 +1039,6 @@ export const catalogue = [
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-103',
-    prototypeFunctions: [],
-    prototypeSource: 'beyond the prototype: project master bus',
     manifestIds: ['readme.preview-playback.6'],
     payload: { gainDb: 'number?', muted: 'boolean?', ducking: 'boolean?' },
     description: 'Set the project master bus, which is not the monitor or device volume.',
@@ -1280,9 +1049,6 @@ export const catalogue = [
     mutatesGraph: true,
     undoable: false,
     capability: null,
-    owner: 'FL-94',
-    prototypeFunctions: ['setSettings'],
-    prototypeSource: 'setSettings',
     manifestIds: [],
     payload: { patch: 'object' },
     description: 'Set editor preferences stored with the project: mode, guides, loop, ducking.',
@@ -1293,9 +1059,6 @@ export const catalogue = [
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-100',
-    prototypeFunctions: [],
-    prototypeSource: 'beyond the prototype: procedural motion modifiers',
     manifestIds: ['readme.keyframe-animation.3'],
     payload: { clipId: 'string', property: 'string', modifierId: 'string' },
     description: 'Bake a procedural motion modifier into explicit keyframes.',
@@ -1306,9 +1069,6 @@ export const catalogue = [
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-100',
-    prototypeFunctions: [],
-    prototypeSource: 'beyond the prototype: property expressions',
     manifestIds: ['extra.expressions'],
     payload: { clipId: 'string', property: 'string', expression: 'string?' },
     description: 'Set or clear a property expression.',
@@ -1319,9 +1079,6 @@ export const catalogue = [
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-100',
-    prototypeFunctions: [],
-    prototypeSource: 'beyond the prototype: procedural motion modifiers',
     manifestIds: [],
     payload: { clipId: 'string', property: 'string', modifier: 'object?' },
     description: 'Attach or clear a procedural motion modifier on a property.',
@@ -1332,9 +1089,6 @@ export const catalogue = [
     mutatesGraph: false,
     undoable: false,
     capability: null,
-    owner: 'FL-94',
-    prototypeFunctions: ['addReviewComment'],
-    prototypeSource: 'addReviewComment',
     manifestIds: [],
     payload: { time: 'time', text: 'string' },
     description: 'Add a timestamped review comment.',
@@ -1345,9 +1099,6 @@ export const catalogue = [
     mutatesGraph: false,
     undoable: false,
     capability: null,
-    owner: 'FL-94',
-    prototypeFunctions: ['removeReviewComment'],
-    prototypeSource: 'removeReviewComment',
     manifestIds: [],
     payload: { commentId: 'string' },
     description: 'Remove a review comment.',
@@ -1358,9 +1109,6 @@ export const catalogue = [
     mutatesGraph: false,
     undoable: false,
     capability: null,
-    owner: 'FL-94',
-    prototypeFunctions: ['updateReviewComment'],
-    prototypeSource: 'updateReviewComment',
     manifestIds: [],
     payload: { commentId: 'string', patch: 'object' },
     description: 'Edit or resolve a review comment.',
@@ -1371,9 +1119,6 @@ export const catalogue = [
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-94',
-    prototypeFunctions: [],
-    prototypeSource: 'beyond the prototype: the prototype ships two fixed sequences',
     manifestIds: ['readme.timeline-editing.2'],
     payload: {
       name: 'string',
@@ -1389,9 +1134,6 @@ export const catalogue = [
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-94',
-    prototypeFunctions: [],
-    prototypeSource: 'beyond the prototype: the prototype ships two fixed sequences',
     manifestIds: [],
     payload: { sequenceId: 'string', name: 'string?' },
     description: 'Duplicate a sequence, including its tracks and clips.',
@@ -1402,9 +1144,6 @@ export const catalogue = [
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-94',
-    prototypeFunctions: [],
-    prototypeSource: 'beyond the prototype: the prototype ships two fixed sequences',
     manifestIds: [],
     payload: { sequenceId: 'string' },
     description: 'Remove a sequence; the project keeps at least one.',
@@ -1415,9 +1154,6 @@ export const catalogue = [
     mutatesGraph: true,
     undoable: false,
     capability: null,
-    owner: 'FL-94',
-    prototypeFunctions: ['setActiveSequence'],
-    prototypeSource: 'setActiveSequence',
     manifestIds: [],
     payload: { sequenceId: 'string' },
     description: 'Switch the active sequence, which is stored on the project.',
@@ -1428,9 +1164,6 @@ export const catalogue = [
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-94',
-    prototypeFunctions: ['setSequenceFields'],
-    prototypeSource: 'setSequenceFields',
     manifestIds: [],
     payload: {
       name: 'string?',
@@ -1445,9 +1178,6 @@ export const catalogue = [
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-94',
-    prototypeFunctions: [],
-    prototypeSource: 'beyond the prototype: canvas and frame rate are fixed there',
     manifestIds: ['readme.timeline-editing.8'],
     payload: {
       sequenceId: 'string',
@@ -1463,9 +1193,6 @@ export const catalogue = [
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-100',
-    prototypeFunctions: [],
-    prototypeSource: 'beyond the prototype: per-character motion text',
     manifestIds: ['readme.keyframe-animation.4'],
     payload: { clipId: 'string', motion: 'object?' },
     description: 'Set per-character, per-word or per-line text animation.',
@@ -1476,9 +1203,6 @@ export const catalogue = [
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-94',
-    prototypeFunctions: ['addTitle'],
-    prototypeSource: 'addTitle',
     manifestIds: ['command.addText'],
     payload: {
       at: 'time',
@@ -1496,9 +1220,6 @@ export const catalogue = [
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-94',
-    prototypeFunctions: [],
-    prototypeSource: 'beyond the prototype: its six track kinds are fixed',
     manifestIds: ['command.addTrack'],
     payload: { kind: 'string', name: 'string?', index: 'number?' },
     description: 'Add a track of a kind at an index.',
@@ -1509,9 +1230,6 @@ export const catalogue = [
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-94',
-    prototypeFunctions: [],
-    prototypeSource: 'beyond the prototype: its six track kinds are fixed',
     manifestIds: [],
     payload: { trackId: 'string' },
     description: 'Remove a track and the clips on it.',
@@ -1522,9 +1240,6 @@ export const catalogue = [
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-94',
-    prototypeFunctions: [],
-    prototypeSource: 'beyond the prototype: its track order is fixed',
     manifestIds: [],
     payload: { trackId: 'string', index: 'number' },
     description: 'Reorder tracks, which changes compositing order.',
@@ -1535,9 +1250,6 @@ export const catalogue = [
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-94',
-    prototypeFunctions: ['setTrack'],
-    prototypeSource: 'setTrack',
     manifestIds: ['readme.timeline-editing.5'],
     payload: { trackId: 'string', patch: 'object' },
     description: 'Set track name, mute, lock, solo and gain.',
@@ -1548,9 +1260,6 @@ export const catalogue = [
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-103',
-    prototypeFunctions: ['setTrack'],
-    prototypeSource: 'setTrack (gain only in the prototype)',
     manifestIds: ['readme.audio.1', 'readme.audio.3'],
     payload: {
       trackId: 'string',
@@ -1566,9 +1275,6 @@ export const catalogue = [
     mutatesGraph: true,
     undoable: true,
     capability: null,
-    owner: 'FL-94',
-    prototypeFunctions: ['addVoiceover'],
-    prototypeSource: 'addVoiceover',
     manifestIds: ['extra.microphone'],
     payload: { at: 'time', duration: 'duration', uploadId: 'string' },
     description: 'Place a recorded or generated voiceover on the voice track.',
@@ -1576,95 +1282,81 @@ export const catalogue = [
 ];
 
 /**
- * Pinned manifest rows that are deliberately not commands, with the story that owns them.
+ * Pinned manifest rows that are deliberately not commands.
  * A row here is a capability, a runtime behaviour, a read-only surface or a host-owned
  * lifecycle action: reaching it does not mean sending an editing command. The check rejects
  * any manifest row that is neither mapped nor listed here, so this table is the only way a
  * row can be left out, and it cannot be left out silently.
  */
 export const nonCommandRows = [
-  { id: 'extra.bento', owner: 'FL-98', reason: 'Panel layout preset; a client preference, not a graph change.' },
+  { id: 'extra.bento', reason: 'Panel layout preset; a client preference, not a graph change.' },
   {
     id: 'extra.portable-headless',
-    owner: 'FL-91',
     reason: 'Workspace and lifecycle API the host owns; not an in-editor command.',
   },
   {
     id: 'module.docs',
-    owner: 'FL-88',
     reason: 'Source module inventory row, not an action.',
   },
-  { id: 'module.editor', owner: 'FL-88', reason: 'Source module inventory row, not an action.' },
-  { id: 'module.effects', owner: 'FL-99', reason: 'Source module inventory row, not an action.' },
-  { id: 'module.export', owner: 'FL-105', reason: 'Source module inventory row, not an action.' },
-  { id: 'module.keyframes', owner: 'FL-100', reason: 'Source module inventory row, not an action.' },
-  { id: 'module.lottie-browser', owner: 'FL-105', reason: 'Source module inventory row, not an action.' },
-  { id: 'module.media-library', owner: 'FL-105', reason: 'Source module inventory row, not an action.' },
-  { id: 'module.preview', owner: 'FL-98', reason: 'Source module inventory row, not an action.' },
-  { id: 'module.project-bundle', owner: 'FL-91', reason: 'Source module inventory row, not an action.' },
-  { id: 'module.projects', owner: 'FL-91', reason: 'Source module inventory row, not an action.' },
-  { id: 'module.scene-browser', owner: 'FL-111', reason: 'Source module inventory row, not an action.' },
-  { id: 'module.settings', owner: 'FL-88', reason: 'Source module inventory row, not an action.' },
-  { id: 'module.timeline', owner: 'FL-94', reason: 'Source module inventory row, not an action.' },
-  { id: 'module.workspace-gate', owner: 'FL-91', reason: 'Source module inventory row, not an action.' },
+  { id: 'module.editor', reason: 'Source module inventory row, not an action.' },
+  { id: 'module.effects', reason: 'Source module inventory row, not an action.' },
+  { id: 'module.export', reason: 'Source module inventory row, not an action.' },
+  { id: 'module.keyframes', reason: 'Source module inventory row, not an action.' },
+  { id: 'module.lottie-browser', reason: 'Source module inventory row, not an action.' },
+  { id: 'module.media-library', reason: 'Source module inventory row, not an action.' },
+  { id: 'module.preview', reason: 'Source module inventory row, not an action.' },
+  { id: 'module.project-bundle', reason: 'Source module inventory row, not an action.' },
+  { id: 'module.projects', reason: 'Source module inventory row, not an action.' },
+  { id: 'module.scene-browser', reason: 'Source module inventory row, not an action.' },
+  { id: 'module.settings', reason: 'Source module inventory row, not an action.' },
+  { id: 'module.timeline', reason: 'Source module inventory row, not an action.' },
+  { id: 'module.workspace-gate', reason: 'Source module inventory row, not an action.' },
   {
     id: 'readme.audio.4',
-    owner: 'FL-103',
     reason: 'Render-path preservation obligation proved by export evidence, not by a command.',
   },
   {
     id: 'readme.effects-masks-compositing.8',
-    owner: 'FL-99',
     reason: 'Colour picker and eyedropper; an input control whose result travels in another payload.',
   },
   {
     id: 'readme.local-ai-analysis.7',
-    owner: 'FL-111',
     reason: 'Model cache and unload controls live in settings, outside the project graph.',
   },
   {
     id: 'readme.media-import.3',
-    owner: 'FL-105',
     reason: 'ProRes decode is a deployment capability, not an editing command.',
   },
   {
     id: 'readme.preview-playback.2',
-    owner: 'FL-98',
     reason: 'Playback clock and composition runtime; no graph change.',
   },
   {
     id: 'readme.preview-playback.3',
-    owner: 'FL-98',
     reason: 'Scrub overlays, prewarming and adaptive quality; no graph change.',
   },
   {
     id: 'readme.preview-playback.5',
-    owner: 'FL-98',
     reason: 'Colour scopes are read-only measurement surfaces.',
   },
   {
     id: 'readme.projects-storage.1',
-    owner: 'FL-91',
     reason: 'Project storage is server-side here; the workspace folder API does not apply.',
   },
   {
     id: 'readme.projects-storage.2',
-    owner: 'FL-91',
     reason: 'Workspace switching is replaced by the account library; not an editing command.',
   },
   {
     id: 'readme.projects-storage.3',
-    owner: 'FL-91',
     reason: 'Project storage and migration are host lifecycle, not editing commands.',
   },
   {
     id: 'readme.projects-storage.4',
-    owner: 'FL-91',
     reason: 'Project trash and delete flows are host lifecycle with their own authorization.',
   },
   {
     id: 'readme.projects-storage.6',
-    owner: 'FL-91',
     reason: 'Auto-save, thumbnails and orphan cleanup are host obligations, not commands.',
   },
 ];
@@ -1747,10 +1439,7 @@ export function buildCatalogueDocument(manifest) {
     id: command.id,
     manifestIds: [...command.manifestIds].sort(),
     mutatesGraph: command.mutatesGraph,
-    owner: command.owner,
     payload: command.payload,
-    prototypeFunctions: [...command.prototypeFunctions].sort(),
-    prototypeSource: command.prototypeSource,
     scope: command.scope,
     undoable: command.undoable,
   }));
@@ -1761,7 +1450,6 @@ export function buildCatalogueDocument(manifest) {
     counts: {
       commands: commands.length,
       commandsWithoutManifestRow: commands.filter((command) => command.manifestIds.length === 0).length,
-      commandsWithoutPrototypeFunction: commands.filter((command) => command.prototypeFunctions.length === 0).length,
       manifestRows: manifest.features.length,
       manifestRowsDeclaredNonCommand: nonCommandRows.length,
       manifestRowsMapped: mapped.size,
@@ -1772,10 +1460,8 @@ export function buildCatalogueDocument(manifest) {
     generator: GENERATOR,
     manifestPath: MANIFEST_PATH,
     nonCommandRows: [...nonCommandRows].sort((a, b) => (a.id < b.id ? -1 : 1)),
-    prototypePath: PROTOTYPE_PATH,
     schemaVersion: SCHEMA_VERSION,
     scopes: SCOPES,
-    status: 'vocabulary-published-semantics-owned-by-later-stories',
     webVocabularyPath: WEB_VOCABULARY_PATH,
   };
 }
@@ -1786,7 +1472,7 @@ const TS_HEADER = `/**
  * Source: ${CATALOGUE_PATH}
  * Generator: ${GENERATOR}
  *
- * The server mirror of the canonical Studio command vocabulary (FL-92). It
+ * The server mirror of the canonical Studio command vocabulary. It
  * exists so the server can validate a command envelope without trusting the client's idea
  * of the vocabulary, and so a drifted web or native contract fails CI instead of failing a
  * person's edit. Payload objects are described, never interpreted: \`object\` fields travel
@@ -1837,7 +1523,6 @@ export function buildServerMirror(document) {
     '  mutatesGraph: boolean;',
     '  undoable: boolean;',
     '  capability: StudioCommandCapability | null;',
-    '  owner: string;',
     '  payload: Readonly<Record<string, StudioPayloadField>>;',
     '}',
     '',
@@ -1850,7 +1535,6 @@ export function buildServerMirror(document) {
       `    mutatesGraph: ${command.mutatesGraph},`,
       `    undoable: ${command.undoable},`,
       `    capability: ${command.capability === null ? 'null' : `'${command.capability}'`},`,
-      `    owner: '${command.owner}',`,
       ...(Object.keys(command.payload).length === 0
         ? ['    payload: {},']
         : [
@@ -1875,19 +1559,6 @@ export function buildServerMirror(document) {
 /* ------------------------------------------------------------------ */
 /* Checks                                                              */
 /* ------------------------------------------------------------------ */
-
-/** Exported functions of the prototype project model, between two of its banner comments. */
-export function prototypeCommandFunctions(source) {
-  const start = source.indexOf('Commands (each returns a new project');
-  const end = source.indexOf('/* History');
-  assert.ok(start > 0 && end > start, 'Prototype command section not found');
-  const region = source.slice(start, end);
-  const names = [
-    ...region.matchAll(/export\s+(?:function|const)\s+([A-Za-z0-9_]+)/g),
-  ].map(([, name]) => name);
-  assert.ok(names.length > 0, 'Prototype command section declares no exported functions');
-  return names;
-}
 
 /**
  * Read the web vocabulary without importing TypeScript: the id list, the registry rows and
@@ -1917,13 +1588,11 @@ export function parseWebVocabulary(source) {
       mutatesGraph: field(chunk, 'mutatesGraph', 'true|false') === 'true',
       undoable: field(chunk, 'undoable', 'true|false') === 'true',
       capability: field(chunk, 'requiresCapability', "'[^']+'")?.slice(1, -1) ?? null,
-      owner: field(chunk, 'owner', "'[^']+'")?.slice(1, -1) ?? null,
-      prototypeSource: field(chunk, 'prototypeSource', "'[^']+'")?.slice(1, -1) ?? null,
     }));
   return { ids, payloadKeys, rows };
 }
 
-export function validate({ document, manifest, prototypeSource, webSource }) {
+export function validate({ document, manifest, webSource }) {
   const ids = document.commands.map((command) => command.id);
   assert.deepEqual([...ids].sort(), ids, 'Catalogue rows must stay sorted by id');
   assert.equal(new Set(ids).size, ids.length, 'Duplicate command id');
@@ -1933,16 +1602,7 @@ export function validate({ document, manifest, prototypeSource, webSource }) {
       command.capability === null || CAPABILITIES.includes(command.capability),
       `${command.id}: unknown capability`,
     );
-    assert.match(command.owner, /^FL-\d+$/, `${command.id}: owner must be a Jira key`);
-    assert.notEqual(command.owner, 'FL-92', `${command.id}: FL-92 publishes the vocabulary, it owns no semantics`);
     assert.ok(command.description.length > 0, `${command.id}: missing description`);
-    assert.ok(command.prototypeSource.length > 0, `${command.id}: missing prototype source`);
-    for (const name of command.prototypeFunctions) {
-      assert.ok(
-        command.prototypeSource.includes(name),
-        `${command.id}: prototypeSource must name ${name}`,
-      );
-    }
     // A graph change always carries intent. Only a lease-free signal (`preview.release`) may
     // have nothing to say beyond its id; the server mirror then admits no fields at all.
     assert.ok(
@@ -1970,8 +1630,6 @@ export function validate({ document, manifest, prototypeSource, webSource }) {
   for (const row of document.nonCommandRows) {
     assert.ok(manifestIds.has(row.id), `Non-command row ${row.id} is not a manifest row`);
     assert.ok(row.reason.length > 0, `Non-command row ${row.id} needs a reason`);
-    assert.match(row.owner, /^FL-\d+$/, `Non-command row ${row.id} needs a Jira owner`);
-    assert.notEqual(row.owner, 'FL-92', `Non-command row ${row.id}: FL-92 owns no semantics`);
   }
   const mapped = new Set(document.commands.flatMap((command) => command.manifestIds));
   for (const id of mapped) {
@@ -1984,12 +1642,6 @@ export function validate({ document, manifest, prototypeSource, webSource }) {
       `Manifest row ${id} has no command and is not declared a non-command row`,
     );
   }
-  const prototypeFunctions = prototypeCommandFunctions(prototypeSource);
-  const referenced = new Set(document.commands.flatMap((command) => command.prototypeFunctions));
-  for (const name of prototypeFunctions) {
-    assert.ok(referenced.has(name), `Prototype command ${name} has no Studio command id`);
-  }
-
   const web = parseWebVocabulary(webSource);
   assert.deepEqual(web.ids, ids, 'Web command ids drifted from the catalogue');
   assert.deepEqual([...web.payloadKeys].sort(), [...ids].sort(), 'Web payload types drifted from the catalogue');
@@ -2005,8 +1657,6 @@ export function validate({ document, manifest, prototypeSource, webSource }) {
     assert.equal(row.mutatesGraph, command.mutatesGraph, `${row.id}: web mutatesGraph drifted`);
     assert.equal(row.undoable, command.undoable, `${row.id}: web undoable drifted`);
     assert.equal(row.capability, command.capability, `${row.id}: web capability drifted`);
-    assert.equal(row.owner, command.owner, `${row.id}: web owner drifted`);
-    assert.equal(row.prototypeSource, command.prototypeSource, `${row.id}: web prototype source drifted`);
   }
 }
 
@@ -2017,14 +1667,13 @@ export function validate({ document, manifest, prototypeSource, webSource }) {
 const read = (root, file) => readFile(path.join(root, file), 'utf8');
 
 export async function generate(root) {
-  const [manifestText, prototypeSource, webSource] = await Promise.all([
+  const [manifestText, webSource] = await Promise.all([
     read(root, MANIFEST_PATH),
-    read(root, PROTOTYPE_PATH),
     read(root, WEB_VOCABULARY_PATH),
   ]);
   const manifest = JSON.parse(manifestText);
   const document = buildCatalogueDocument(manifest);
-  validate({ document, manifest, prototypeSource, webSource });
+  validate({ document, manifest, webSource });
   return {
     document,
     files: {

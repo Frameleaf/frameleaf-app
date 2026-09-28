@@ -50,15 +50,14 @@ describe('studio command vocabulary', () => {
     }
   });
 
-  it('names an owning story for every command so no row is anonymous', () => {
+  it('omits private planning metadata from command definitions', () => {
     for (const id of studioCommandIds) {
-      expect(studioCommandDefinition(id).owner).toMatch(/^FL-\d+$/);
-      expect(studioCommandDefinition(id).prototypeSource).not.toBe('');
+      expect(studioCommandDefinition(id)).not.toHaveProperty('owner');
+      expect(studioCommandDefinition(id)).not.toHaveProperty('prototypeSource');
     }
   });
 
-  it('claims no editing semantics for the host story itself', () => {
-    // FL-88 routes the vocabulary; every row's behaviour belongs to a later story.
+  it('claims no built-in command handlers', () => {
     expect(studioCommandIds.filter((id) => isStudioCommandImplemented(id))).toEqual([]);
   });
 

@@ -14,12 +14,9 @@
       "id": "captions.set",
       "manifestIds": ["readme.local-ai-analysis.1"],
       "mutatesGraph": true,
-      "owner": "FL-94",
       "payload": {
         "captions": "object[]"
       },
-      "prototypeFunctions": ["setCaptions"],
-      "prototypeSource": "setCaptions",
       "scope": "sequence",
       "undoable": true
     },
@@ -29,7 +26,6 @@
       "id": "clip.add",
       "manifestIds": ["command.addItem", "readme.timeline-editing.1"],
       "mutatesGraph": true,
-      "owner": "FL-94",
       "payload": {
         "assetId": "string",
         "at": "time",
@@ -37,8 +33,6 @@
         "kind": "string?",
         "trackId": "string"
       },
-      "prototypeFunctions": ["addClip"],
-      "prototypeSource": "addClip",
       "scope": "clip",
       "undoable": true
     },
@@ -48,14 +42,11 @@
       "id": "clip.delete",
       "manifestIds": ["command.removeItems", "readme.timeline-editing.5"],
       "mutatesGraph": true,
-      "owner": "FL-94",
       "payload": {
         "clipId": "string?",
         "clipIds": "string[]?",
         "ripple": "boolean?"
       },
-      "prototypeFunctions": ["deleteClip"],
-      "prototypeSource": "deleteClip",
       "scope": "clip",
       "undoable": true
     },
@@ -65,13 +56,10 @@
       "id": "clip.group",
       "manifestIds": ["extra.compose"],
       "mutatesGraph": true,
-      "owner": "FL-100",
       "payload": {
         "clipIds": "string[]",
         "name": "string?"
       },
-      "prototypeFunctions": [],
-      "prototypeSource": "beyond the prototype: Freecut groups and null controllers",
       "scope": "clip",
       "undoable": true
     },
@@ -81,7 +69,6 @@
       "id": "clip.insert",
       "manifestIds": ["readme.local-ai-analysis.4", "readme.timeline-editing.7"],
       "mutatesGraph": true,
-      "owner": "FL-94",
       "payload": {
         "assetId": "string",
         "at": "time",
@@ -89,8 +76,6 @@
         "sourceOut": "time",
         "trackId": "string"
       },
-      "prototypeFunctions": ["addClip"],
-      "prototypeSource": "addClip (source monitor insert edit)",
       "scope": "clip",
       "undoable": true
     },
@@ -100,14 +85,11 @@
       "id": "clip.move",
       "manifestIds": ["command.moveItem"],
       "mutatesGraph": true,
-      "owner": "FL-94",
       "payload": {
         "clipId": "string",
         "start": "time",
         "trackId": "string?"
       },
-      "prototypeFunctions": ["moveClip"],
-      "prototypeSource": "moveClip",
       "scope": "clip",
       "undoable": true
     },
@@ -117,7 +99,6 @@
       "id": "clip.overwrite",
       "manifestIds": ["readme.timeline-editing.7"],
       "mutatesGraph": true,
-      "owner": "FL-94",
       "payload": {
         "assetId": "string",
         "at": "time",
@@ -125,8 +106,6 @@
         "sourceOut": "time",
         "trackId": "string"
       },
-      "prototypeFunctions": ["addClip"],
-      "prototypeSource": "addClip (source monitor overwrite edit)",
       "scope": "clip",
       "undoable": true
     },
@@ -136,14 +115,11 @@
       "id": "clip.reorder",
       "manifestIds": ["readme.timeline-editing.5"],
       "mutatesGraph": true,
-      "owner": "FL-94",
       "payload": {
         "clipId": "string",
         "index": "number",
         "trackId": "string"
       },
-      "prototypeFunctions": ["reorder"],
-      "prototypeSource": "reorder",
       "scope": "clip",
       "undoable": true
     },
@@ -153,13 +129,10 @@
       "id": "clip.roll",
       "manifestIds": ["readme.preview-playback.4", "readme.timeline-editing.3"],
       "mutatesGraph": true,
-      "owner": "FL-94",
       "payload": {
         "at": "time",
         "clipId": "string"
       },
-      "prototypeFunctions": ["trimClipEnd", "trimClipStart"],
-      "prototypeSource": "trimClipEnd with trimClipStart (rolling edit)",
       "scope": "clip",
       "undoable": true
     },
@@ -169,7 +142,6 @@
       "id": "clip.setAudio",
       "manifestIds": ["readme.audio.1", "readme.audio.2", "readme.audio.3"],
       "mutatesGraph": true,
-      "owner": "FL-103",
       "payload": {
         "clipId": "string",
         "eq": "object?",
@@ -180,8 +152,6 @@
         "pitchSemitones": "number?",
         "volume": "number?"
       },
-      "prototypeFunctions": ["updateClip"],
-      "prototypeSource": "updateClip (volume and mute)",
       "scope": "clip",
       "undoable": true
     },
@@ -218,14 +188,11 @@
         "readme.effects-masks-compositing.6"
       ],
       "mutatesGraph": true,
-      "owner": "FL-99",
       "payload": {
         "blendMode": "string",
         "clipId": "string",
         "opacity": "number?"
       },
-      "prototypeFunctions": [],
-      "prototypeSource": "beyond the prototype: Freecut BlendMode union",
       "scope": "clip",
       "undoable": true
     },
@@ -235,14 +202,11 @@
       "id": "clip.setCrop",
       "manifestIds": ["readme.preview-playback.1"],
       "mutatesGraph": true,
-      "owner": "FL-98",
       "payload": {
         "clipId": "string",
         "cornerPin": "object?",
         "crop": "object?"
       },
-      "prototypeFunctions": [],
-      "prototypeSource": "beyond the prototype: Freecut crop and corner-pin gizmos",
       "scope": "clip",
       "undoable": true
     },
@@ -252,13 +216,10 @@
       "id": "clip.setGrade",
       "manifestIds": ["extra.color-workspace"],
       "mutatesGraph": true,
-      "owner": "FL-98",
       "payload": {
         "clipId": "string",
         "grade": "object?"
       },
-      "prototypeFunctions": ["updateClip"],
-      "prototypeSource": "normalizeGrade via updateClip",
       "scope": "clip",
       "undoable": true
     },
@@ -268,13 +229,10 @@
       "id": "clip.setKenBurns",
       "manifestIds": ["readme.keyframe-animation.6"],
       "mutatesGraph": true,
-      "owner": "FL-94",
       "payload": {
         "clipId": "string",
         "kenBurns": "object?"
       },
-      "prototypeFunctions": ["setKenBurns"],
-      "prototypeSource": "setKenBurns",
       "scope": "clip",
       "undoable": true
     },
@@ -284,13 +242,10 @@
       "id": "clip.setLink",
       "manifestIds": ["readme.timeline-editing.3"],
       "mutatesGraph": true,
-      "owner": "FL-94",
       "payload": {
         "clipIds": "string[]",
         "linked": "boolean"
       },
-      "prototypeFunctions": [],
-      "prototypeSource": "beyond the prototype: linkId groups in the prototype clip model",
       "scope": "clip",
       "undoable": true
     },
@@ -300,13 +255,10 @@
       "id": "clip.setMask",
       "manifestIds": ["readme.effects-masks-compositing.7"],
       "mutatesGraph": true,
-      "owner": "FL-99",
       "payload": {
         "clipId": "string",
         "mask": "object?"
       },
-      "prototypeFunctions": [],
-      "prototypeSource": "beyond the prototype: Freecut clip masks and pen paths",
       "scope": "clip",
       "undoable": true
     },
@@ -316,13 +268,10 @@
       "id": "clip.setSpeed",
       "manifestIds": ["readme.timeline-editing.3"],
       "mutatesGraph": true,
-      "owner": "FL-94",
       "payload": {
         "clipId": "string",
         "speed": "rate"
       },
-      "prototypeFunctions": ["setSpeed"],
-      "prototypeSource": "setSpeed",
       "scope": "clip",
       "undoable": true
     },
@@ -332,13 +281,10 @@
       "id": "clip.setTransform",
       "manifestIds": ["command.setTransform", "readme.preview-playback.1"],
       "mutatesGraph": true,
-      "owner": "FL-94",
       "payload": {
         "clipId": "string",
         "transform": "object"
       },
-      "prototypeFunctions": ["updateClip"],
-      "prototypeSource": "updateClip (transform patch)",
       "scope": "clip",
       "undoable": true
     },
@@ -348,13 +294,10 @@
       "id": "clip.setTransformParent",
       "manifestIds": ["command.setTransformParent", "extra.parenting"],
       "mutatesGraph": true,
-      "owner": "FL-100",
       "payload": {
         "clipId": "string",
         "parentId": "string?"
       },
-      "prototypeFunctions": [],
-      "prototypeSource": "beyond the prototype: Freecut transform parenting",
       "scope": "clip",
       "undoable": true
     },
@@ -393,13 +336,10 @@
         "transition.wipe"
       ],
       "mutatesGraph": true,
-      "owner": "FL-94",
       "payload": {
         "clipId": "string",
         "transition": "object?"
       },
-      "prototypeFunctions": ["setTransition"],
-      "prototypeSource": "setTransition",
       "scope": "clip",
       "undoable": true
     },
@@ -409,13 +349,10 @@
       "id": "clip.slide",
       "manifestIds": ["readme.preview-playback.4", "readme.timeline-editing.3"],
       "mutatesGraph": true,
-      "owner": "FL-94",
       "payload": {
         "clipId": "string",
         "delta": "duration"
       },
-      "prototypeFunctions": ["moveClip"],
-      "prototypeSource": "moveClip (slide edit)",
       "scope": "clip",
       "undoable": true
     },
@@ -425,13 +362,10 @@
       "id": "clip.slip",
       "manifestIds": ["readme.preview-playback.4", "readme.timeline-editing.3"],
       "mutatesGraph": true,
-      "owner": "FL-94",
       "payload": {
         "clipId": "string",
         "delta": "duration"
       },
-      "prototypeFunctions": ["updateClip"],
-      "prototypeSource": "updateClip (slip edit on the source in and out points)",
       "scope": "clip",
       "undoable": true
     },
@@ -441,13 +375,10 @@
       "id": "clip.split",
       "manifestIds": ["command.split"],
       "mutatesGraph": true,
-      "owner": "FL-94",
       "payload": {
         "at": "time",
         "clipIds": "string[]?"
       },
-      "prototypeFunctions": ["splitClipAt"],
-      "prototypeSource": "splitClipAt",
       "scope": "clip",
       "undoable": true
     },
@@ -457,14 +388,11 @@
       "id": "clip.trimEnd",
       "manifestIds": ["command.trimEnd"],
       "mutatesGraph": true,
-      "owner": "FL-94",
       "payload": {
         "clipId": "string",
         "end": "time",
         "ripple": "boolean?"
       },
-      "prototypeFunctions": ["trimClipEnd"],
-      "prototypeSource": "trimClipEnd",
       "scope": "clip",
       "undoable": true
     },
@@ -474,14 +402,11 @@
       "id": "clip.trimStart",
       "manifestIds": ["command.trimStart"],
       "mutatesGraph": true,
-      "owner": "FL-94",
       "payload": {
         "clipId": "string",
         "ripple": "boolean?",
         "start": "time"
       },
-      "prototypeFunctions": ["trimClipStart"],
-      "prototypeSource": "trimClipStart",
       "scope": "clip",
       "undoable": true
     },
@@ -491,12 +416,9 @@
       "id": "clip.ungroup",
       "manifestIds": [],
       "mutatesGraph": true,
-      "owner": "FL-100",
       "payload": {
         "groupId": "string"
       },
-      "prototypeFunctions": [],
-      "prototypeSource": "beyond the prototype: Freecut groups and null controllers",
       "scope": "clip",
       "undoable": true
     },
@@ -506,13 +428,10 @@
       "id": "clip.update",
       "manifestIds": ["command.updateItem"],
       "mutatesGraph": true,
-      "owner": "FL-94",
       "payload": {
         "clipId": "string",
         "patch": "object"
       },
-      "prototypeFunctions": ["updateClip"],
-      "prototypeSource": "updateClip",
       "scope": "clip",
       "undoable": true
     },
@@ -527,15 +446,12 @@
         "readme.timeline-editing.2"
       ],
       "mutatesGraph": true,
-      "owner": "FL-100",
       "payload": {
         "at": "time?",
         "clipIds": "string[]?",
         "name": "string",
         "trackId": "string?"
       },
-      "prototypeFunctions": [],
-      "prototypeSource": "beyond the prototype: Freecut compound clips and nested compositions",
       "scope": "composition",
       "undoable": true
     },
@@ -545,13 +461,10 @@
       "id": "composition.setControlOverrides",
       "manifestIds": [],
       "mutatesGraph": true,
-      "owner": "FL-100",
       "payload": {
         "compositionClipId": "string",
         "overrides": "object"
       },
-      "prototypeFunctions": [],
-      "prototypeSource": "beyond the prototype: Freecut composition instance overrides",
       "scope": "composition",
       "undoable": true
     },
@@ -561,13 +474,10 @@
       "id": "composition.setPublishedControls",
       "manifestIds": ["extra.published-controls"],
       "mutatesGraph": true,
-      "owner": "FL-100",
       "payload": {
         "compositionId": "string",
         "controls": "object[]"
       },
-      "prototypeFunctions": [],
-      "prototypeSource": "beyond the prototype: Freecut published composition controls",
       "scope": "composition",
       "undoable": true
     },
@@ -584,15 +494,12 @@
         "readme.effects-masks-compositing.5"
       ],
       "mutatesGraph": true,
-      "owner": "FL-99",
       "payload": {
         "clipId": "string",
         "effect": "string",
         "index": "number?",
         "params": "object?"
       },
-      "prototypeFunctions": [],
-      "prototypeSource": "beyond the prototype: Freecut GPU effect catalogue",
       "scope": "effect",
       "undoable": true
     },
@@ -602,13 +509,10 @@
       "id": "effect.remove",
       "manifestIds": ["command.removeEffect"],
       "mutatesGraph": true,
-      "owner": "FL-99",
       "payload": {
         "clipId": "string",
         "effectId": "string"
       },
-      "prototypeFunctions": [],
-      "prototypeSource": "beyond the prototype: Freecut GPU effect catalogue",
       "scope": "effect",
       "undoable": true
     },
@@ -618,14 +522,11 @@
       "id": "effect.reorder",
       "manifestIds": [],
       "mutatesGraph": true,
-      "owner": "FL-99",
       "payload": {
         "clipId": "string",
         "effectId": "string",
         "index": "number"
       },
-      "prototypeFunctions": [],
-      "prototypeSource": "beyond the prototype: Freecut effect stack order",
       "scope": "effect",
       "undoable": true
     },
@@ -690,14 +591,11 @@
         "effect.gpu-zoom-blur"
       ],
       "mutatesGraph": true,
-      "owner": "FL-99",
       "payload": {
         "clipId": "string",
         "effectId": "string",
         "params": "object"
       },
-      "prototypeFunctions": [],
-      "prototypeSource": "beyond the prototype: Freecut GPU effect parameters",
       "scope": "effect",
       "undoable": true
     },
@@ -707,12 +605,9 @@
       "id": "history.redo",
       "manifestIds": [],
       "mutatesGraph": true,
-      "owner": "FL-94",
       "payload": {
         "toRevision": "number?"
       },
-      "prototypeFunctions": ["redo"],
-      "prototypeSource": "redo",
       "scope": "history",
       "undoable": false
     },
@@ -722,12 +617,9 @@
       "id": "history.undo",
       "manifestIds": ["readme.timeline-editing.6"],
       "mutatesGraph": true,
-      "owner": "FL-94",
       "payload": {
         "toRevision": "number?"
       },
-      "prototypeFunctions": ["commit", "undo"],
-      "prototypeSource": "undo (over the commit history)",
       "scope": "history",
       "undoable": false
     },
@@ -737,12 +629,9 @@
       "id": "job.cancel",
       "manifestIds": ["extra.render-queue"],
       "mutatesGraph": false,
-      "owner": "FL-104",
       "payload": {
         "jobId": "string"
       },
-      "prototypeFunctions": [],
-      "prototypeSource": "beyond the prototype: durable job cancellation",
       "scope": "job",
       "undoable": false
     },
@@ -752,15 +641,12 @@
       "id": "job.enqueueCaptioning",
       "manifestIds": ["readme.local-ai-analysis.2"],
       "mutatesGraph": false,
-      "owner": "FL-111",
       "payload": {
         "clipIds": "string[]?",
         "destinationId": "string",
         "sampleCadence": "duration?",
         "sequenceId": "string"
       },
-      "prototypeFunctions": [],
-      "prototypeSource": "beyond the prototype: local vision-language captioning",
       "scope": "job",
       "undoable": false
     },
@@ -778,7 +664,6 @@
         "readme.export.7"
       ],
       "mutatesGraph": false,
-      "owner": "FL-104",
       "payload": {
         "audioFormat": "string?",
         "colour": "string",
@@ -791,8 +676,6 @@
         "subtitles": "string?",
         "videoCodec": "string?"
       },
-      "prototypeFunctions": ["estimateRender"],
-      "prototypeSource": "estimateRender via ExportDialog",
       "scope": "job",
       "undoable": false
     },
@@ -802,14 +685,11 @@
       "id": "job.enqueueFillerRemoval",
       "manifestIds": ["extra.filler-removal"],
       "mutatesGraph": false,
-      "owner": "FL-103",
       "payload": {
         "clipIds": "string[]?",
         "destinationId": "string",
         "sequenceId": "string"
       },
-      "prototypeFunctions": [],
-      "prototypeSource": "beyond the prototype: filler-word removal with review",
       "scope": "job",
       "undoable": false
     },
@@ -819,15 +699,12 @@
       "id": "job.enqueueInterpolation",
       "manifestIds": ["extra.interpolation-rife"],
       "mutatesGraph": false,
-      "owner": "FL-111",
       "payload": {
         "clipId": "string",
         "destinationId": "string",
         "factor": "number?",
         "targetFps": "rate"
       },
-      "prototypeFunctions": [],
-      "prototypeSource": "beyond the prototype: RIFE frame interpolation",
       "scope": "job",
       "undoable": false
     },
@@ -837,15 +714,12 @@
       "id": "job.enqueueMusicGeneration",
       "manifestIds": ["extra.musicgen", "readme.local-ai-analysis.6"],
       "mutatesGraph": false,
-      "owner": "FL-111",
       "payload": {
         "destinationId": "string",
         "duration": "duration",
         "preset": "string?",
         "prompt": "string"
       },
-      "prototypeFunctions": [],
-      "prototypeSource": "beyond the prototype: local MusicGen generation",
       "scope": "job",
       "undoable": false
     },
@@ -855,13 +729,10 @@
       "id": "job.enqueueProxy",
       "manifestIds": ["readme.media-import.4"],
       "mutatesGraph": false,
-      "owner": "FL-105",
       "payload": {
         "assetIds": "string[]",
         "destinationId": "string"
       },
-      "prototypeFunctions": [],
-      "prototypeSource": "beyond the prototype: proxy and waveform generation",
       "scope": "job",
       "undoable": false
     },
@@ -871,7 +742,6 @@
       "id": "job.enqueueRestoration",
       "manifestIds": [],
       "mutatesGraph": false,
-      "owner": "FL-110",
       "payload": {
         "assetId": "string?",
         "destinationId": "string",
@@ -881,8 +751,6 @@
         "restorationId": "string?",
         "upscale": "number"
       },
-      "prototypeFunctions": ["estimateRender"],
-      "prototypeSource": "estimateRender via RestorePanel",
       "scope": "job",
       "undoable": false
     },
@@ -892,13 +760,10 @@
       "id": "job.enqueueReverseConform",
       "manifestIds": ["extra.reverse-conform"],
       "mutatesGraph": false,
-      "owner": "FL-111",
       "payload": {
         "clipId": "string",
         "destinationId": "string"
       },
-      "prototypeFunctions": [],
-      "prototypeSource": "beyond the prototype: reversed media conforming",
       "scope": "job",
       "undoable": false
     },
@@ -908,15 +773,12 @@
       "id": "job.enqueueSceneDetection",
       "manifestIds": ["readme.local-ai-analysis.3"],
       "mutatesGraph": false,
-      "owner": "FL-111",
       "payload": {
         "assetIds": "string[]",
         "destinationId": "string",
         "mode": "string",
         "verifyWithModel": "boolean?"
       },
-      "prototypeFunctions": [],
-      "prototypeSource": "beyond the prototype: histogram and adaptive scene detection",
       "scope": "job",
       "undoable": false
     },
@@ -926,15 +788,12 @@
       "id": "job.enqueueSilenceRemoval",
       "manifestIds": ["extra.silence-removal"],
       "mutatesGraph": false,
-      "owner": "FL-103",
       "payload": {
         "destinationId": "string",
         "minimumSilence": "duration?",
         "sequenceId": "string",
         "thresholdDb": "number?"
       },
-      "prototypeFunctions": [],
-      "prototypeSource": "beyond the prototype: silence removal with review",
       "scope": "job",
       "undoable": false
     },
@@ -949,15 +808,12 @@
         "readme.local-ai-analysis.5"
       ],
       "mutatesGraph": false,
-      "owner": "FL-111",
       "payload": {
         "destinationId": "string",
         "engine": "string?",
         "text": "string",
         "voice": "string"
       },
-      "prototypeFunctions": [],
-      "prototypeSource": "beyond the prototype: local text-to-speech voiceovers",
       "scope": "job",
       "undoable": false
     },
@@ -967,14 +823,11 @@
       "id": "job.enqueueTranscription",
       "manifestIds": ["readme.local-ai-analysis.1"],
       "mutatesGraph": false,
-      "owner": "FL-111",
       "payload": {
         "destinationId": "string",
         "language": "string",
         "sequenceId": "string"
       },
-      "prototypeFunctions": ["sampleCaptions"],
-      "prototypeSource": "sampleCaptions (simulated transcription in the prototype)",
       "scope": "job",
       "undoable": false
     },
@@ -984,14 +837,11 @@
       "id": "job.enqueueUpscale",
       "manifestIds": ["extra.upscale-anime4k"],
       "mutatesGraph": false,
-      "owner": "FL-111",
       "payload": {
         "clipId": "string",
         "destinationId": "string",
         "factor": "number"
       },
-      "prototypeFunctions": [],
-      "prototypeSource": "beyond the prototype: Anime4K upscaling",
       "scope": "job",
       "undoable": false
     },
@@ -1005,7 +855,6 @@
         "readme.keyframe-animation.6"
       ],
       "mutatesGraph": true,
-      "owner": "FL-100",
       "payload": {
         "at": "time",
         "clipId": "string",
@@ -1013,8 +862,6 @@
         "property": "string",
         "value": "object"
       },
-      "prototypeFunctions": [],
-      "prototypeSource": "beyond the prototype: Freecut keyframe model",
       "scope": "keyframe",
       "undoable": true
     },
@@ -1024,14 +871,11 @@
       "id": "keyframe.remove",
       "manifestIds": ["command.removeKeyframes"],
       "mutatesGraph": true,
-      "owner": "FL-100",
       "payload": {
         "clipId": "string",
         "keyframeIds": "string[]",
         "property": "string"
       },
-      "prototypeFunctions": [],
-      "prototypeSource": "beyond the prototype: Freecut keyframe model",
       "scope": "keyframe",
       "undoable": true
     },
@@ -1041,7 +885,6 @@
       "id": "keyframe.setEasing",
       "manifestIds": ["readme.keyframe-animation.2"],
       "mutatesGraph": true,
-      "owner": "FL-100",
       "payload": {
         "bezier": "object?",
         "clipId": "string",
@@ -1049,8 +892,6 @@
         "keyframeIds": "string[]",
         "property": "string"
       },
-      "prototypeFunctions": [],
-      "prototypeSource": "beyond the prototype: Freecut easing presets and tangents",
       "scope": "keyframe",
       "undoable": true
     },
@@ -1060,7 +901,6 @@
       "id": "keyframe.update",
       "manifestIds": ["readme.keyframe-animation.1"],
       "mutatesGraph": true,
-      "owner": "FL-100",
       "payload": {
         "at": "time?",
         "clipId": "string",
@@ -1068,8 +908,6 @@
         "property": "string",
         "value": "object?"
       },
-      "prototypeFunctions": [],
-      "prototypeSource": "beyond the prototype: Freecut graph editor and dopesheet",
       "scope": "keyframe",
       "undoable": true
     },
@@ -1079,15 +917,12 @@
       "id": "lottie.update",
       "manifestIds": ["readme.media-import.2"],
       "mutatesGraph": true,
-      "owner": "FL-105",
       "payload": {
         "clipId": "string",
         "colors": "object?",
         "slots": "object?",
         "text": "object?"
       },
-      "prototypeFunctions": [],
-      "prototypeSource": "beyond the prototype: Lottie colour, text and slot editing",
       "scope": "media",
       "undoable": true
     },
@@ -1097,14 +932,11 @@
       "id": "marker.add",
       "manifestIds": ["readme.timeline-editing.6"],
       "mutatesGraph": true,
-      "owner": "FL-94",
       "payload": {
         "at": "time",
         "colour": "string?",
         "name": "string?"
       },
-      "prototypeFunctions": [],
-      "prototypeSource": "beyond the prototype: sequence markers",
       "scope": "sequence",
       "undoable": true
     },
@@ -1114,12 +946,9 @@
       "id": "marker.remove",
       "manifestIds": [],
       "mutatesGraph": true,
-      "owner": "FL-94",
       "payload": {
         "markerId": "string"
       },
-      "prototypeFunctions": [],
-      "prototypeSource": "beyond the prototype: sequence markers",
       "scope": "sequence",
       "undoable": true
     },
@@ -1129,13 +958,10 @@
       "id": "marker.update",
       "manifestIds": [],
       "mutatesGraph": true,
-      "owner": "FL-94",
       "payload": {
         "markerId": "string",
         "patch": "object"
       },
-      "prototypeFunctions": [],
-      "prototypeSource": "beyond the prototype: sequence markers",
       "scope": "sequence",
       "undoable": true
     },
@@ -1145,12 +971,9 @@
       "id": "media.import",
       "manifestIds": ["readme.media-import.1"],
       "mutatesGraph": true,
-      "owner": "FL-105",
       "payload": {
         "assetIds": "string[]"
       },
-      "prototypeFunctions": [],
-      "prototypeSource": "beyond the prototype: project media bin",
       "scope": "media",
       "undoable": false
     },
@@ -1160,13 +983,10 @@
       "id": "media.relink",
       "manifestIds": ["readme.media-import.4"],
       "mutatesGraph": true,
-      "owner": "FL-105",
       "payload": {
         "assetId": "string",
         "mediaId": "string"
       },
-      "prototypeFunctions": [],
-      "prototypeSource": "beyond the prototype: media relinking",
       "scope": "media",
       "undoable": false
     },
@@ -1176,12 +996,9 @@
       "id": "media.remove",
       "manifestIds": [],
       "mutatesGraph": true,
-      "owner": "FL-105",
       "payload": {
         "mediaIds": "string[]"
       },
-      "prototypeFunctions": [],
-      "prototypeSource": "beyond the prototype: project media bin",
       "scope": "media",
       "undoable": false
     },
@@ -1191,15 +1008,12 @@
       "id": "music.add",
       "manifestIds": ["command.addItem"],
       "mutatesGraph": true,
-      "owner": "FL-94",
       "payload": {
         "at": "time",
         "duration": "duration?",
         "musicId": "string",
         "volume": "number?"
       },
-      "prototypeFunctions": ["addMusic"],
-      "prototypeSource": "addMusic",
       "scope": "clip",
       "undoable": true
     },
@@ -1209,10 +1023,7 @@
       "id": "preview.release",
       "manifestIds": [],
       "mutatesGraph": false,
-      "owner": "FL-96",
       "payload": {},
-      "prototypeFunctions": [],
-      "prototypeSource": "Studio.jsx preview monitor",
       "scope": "preview",
       "undoable": false
     },
@@ -1222,15 +1033,12 @@
       "id": "preview.request",
       "manifestIds": [],
       "mutatesGraph": false,
-      "owner": "FL-96",
       "payload": {
         "at": "time",
         "quality": "string",
         "viewportHeight": "number",
         "viewportWidth": "number"
       },
-      "prototypeFunctions": [],
-      "prototypeSource": "Studio.jsx preview monitor",
       "scope": "preview",
       "undoable": false
     },
@@ -1240,12 +1048,9 @@
       "id": "project.applyTemplate",
       "manifestIds": ["readme.timeline-editing.8"],
       "mutatesGraph": true,
-      "owner": "FL-94",
       "payload": {
         "templateId": "string"
       },
-      "prototypeFunctions": [],
-      "prototypeSource": "beyond the prototype: project templates",
       "scope": "project",
       "undoable": true
     },
@@ -1255,13 +1060,10 @@
       "id": "project.exportBundle",
       "manifestIds": ["readme.projects-storage.5"],
       "mutatesGraph": false,
-      "owner": "FL-91",
       "payload": {
         "includeMedia": "boolean?",
         "sequenceIds": "string[]?"
       },
-      "prototypeFunctions": [],
-      "prototypeSource": "beyond the prototype: portable project bundles",
       "scope": "project",
       "undoable": false
     },
@@ -1271,12 +1073,9 @@
       "id": "project.importBundle",
       "manifestIds": [],
       "mutatesGraph": true,
-      "owner": "FL-91",
       "payload": {
         "bundleUploadId": "string"
       },
-      "prototypeFunctions": [],
-      "prototypeSource": "beyond the prototype: portable project bundles",
       "scope": "project",
       "undoable": false
     },
@@ -1286,12 +1085,9 @@
       "id": "project.rename",
       "manifestIds": [],
       "mutatesGraph": true,
-      "owner": "FL-94",
       "payload": {
         "name": "string"
       },
-      "prototypeFunctions": ["renameProject"],
-      "prototypeSource": "renameProject",
       "scope": "project",
       "undoable": true
     },
@@ -1301,14 +1097,11 @@
       "id": "project.setMasterAudio",
       "manifestIds": ["readme.preview-playback.6"],
       "mutatesGraph": true,
-      "owner": "FL-103",
       "payload": {
         "ducking": "boolean?",
         "gainDb": "number?",
         "muted": "boolean?"
       },
-      "prototypeFunctions": [],
-      "prototypeSource": "beyond the prototype: project master bus",
       "scope": "project",
       "undoable": true
     },
@@ -1318,12 +1111,9 @@
       "id": "project.setSettings",
       "manifestIds": [],
       "mutatesGraph": true,
-      "owner": "FL-94",
       "payload": {
         "patch": "object"
       },
-      "prototypeFunctions": ["setSettings"],
-      "prototypeSource": "setSettings",
       "scope": "project",
       "undoable": false
     },
@@ -1333,14 +1123,11 @@
       "id": "property.bakeModifier",
       "manifestIds": ["readme.keyframe-animation.3"],
       "mutatesGraph": true,
-      "owner": "FL-100",
       "payload": {
         "clipId": "string",
         "modifierId": "string",
         "property": "string"
       },
-      "prototypeFunctions": [],
-      "prototypeSource": "beyond the prototype: procedural motion modifiers",
       "scope": "keyframe",
       "undoable": true
     },
@@ -1350,14 +1137,11 @@
       "id": "property.setExpression",
       "manifestIds": ["extra.expressions"],
       "mutatesGraph": true,
-      "owner": "FL-100",
       "payload": {
         "clipId": "string",
         "expression": "string?",
         "property": "string"
       },
-      "prototypeFunctions": [],
-      "prototypeSource": "beyond the prototype: property expressions",
       "scope": "keyframe",
       "undoable": true
     },
@@ -1367,14 +1151,11 @@
       "id": "property.setModifier",
       "manifestIds": [],
       "mutatesGraph": true,
-      "owner": "FL-100",
       "payload": {
         "clipId": "string",
         "modifier": "object?",
         "property": "string"
       },
-      "prototypeFunctions": [],
-      "prototypeSource": "beyond the prototype: procedural motion modifiers",
       "scope": "keyframe",
       "undoable": true
     },
@@ -1384,13 +1165,10 @@
       "id": "review.add",
       "manifestIds": [],
       "mutatesGraph": false,
-      "owner": "FL-94",
       "payload": {
         "text": "string",
         "time": "time"
       },
-      "prototypeFunctions": ["addReviewComment"],
-      "prototypeSource": "addReviewComment",
       "scope": "review",
       "undoable": false
     },
@@ -1400,12 +1178,9 @@
       "id": "review.remove",
       "manifestIds": [],
       "mutatesGraph": false,
-      "owner": "FL-94",
       "payload": {
         "commentId": "string"
       },
-      "prototypeFunctions": ["removeReviewComment"],
-      "prototypeSource": "removeReviewComment",
       "scope": "review",
       "undoable": false
     },
@@ -1415,13 +1190,10 @@
       "id": "review.update",
       "manifestIds": [],
       "mutatesGraph": false,
-      "owner": "FL-94",
       "payload": {
         "commentId": "string",
         "patch": "object"
       },
-      "prototypeFunctions": ["updateReviewComment"],
-      "prototypeSource": "updateReviewComment",
       "scope": "review",
       "undoable": false
     },
@@ -1431,15 +1203,12 @@
       "id": "sequence.add",
       "manifestIds": ["readme.timeline-editing.2"],
       "mutatesGraph": true,
-      "owner": "FL-94",
       "payload": {
         "fps": "rate?",
         "height": "number?",
         "name": "string",
         "width": "number?"
       },
-      "prototypeFunctions": [],
-      "prototypeSource": "beyond the prototype: the prototype ships two fixed sequences",
       "scope": "sequence",
       "undoable": true
     },
@@ -1449,13 +1218,10 @@
       "id": "sequence.duplicate",
       "manifestIds": [],
       "mutatesGraph": true,
-      "owner": "FL-94",
       "payload": {
         "name": "string?",
         "sequenceId": "string"
       },
-      "prototypeFunctions": [],
-      "prototypeSource": "beyond the prototype: the prototype ships two fixed sequences",
       "scope": "sequence",
       "undoable": true
     },
@@ -1465,12 +1231,9 @@
       "id": "sequence.remove",
       "manifestIds": [],
       "mutatesGraph": true,
-      "owner": "FL-94",
       "payload": {
         "sequenceId": "string"
       },
-      "prototypeFunctions": [],
-      "prototypeSource": "beyond the prototype: the prototype ships two fixed sequences",
       "scope": "sequence",
       "undoable": true
     },
@@ -1480,12 +1243,9 @@
       "id": "sequence.setActive",
       "manifestIds": [],
       "mutatesGraph": true,
-      "owner": "FL-94",
       "payload": {
         "sequenceId": "string"
       },
-      "prototypeFunctions": ["setActiveSequence"],
-      "prototypeSource": "setActiveSequence",
       "scope": "sequence",
       "undoable": false
     },
@@ -1495,14 +1255,11 @@
       "id": "sequence.setFields",
       "manifestIds": [],
       "mutatesGraph": true,
-      "owner": "FL-94",
       "payload": {
         "captionLanguage": "string?",
         "captionsBurnIn": "boolean?",
         "name": "string?"
       },
-      "prototypeFunctions": ["setSequenceFields"],
-      "prototypeSource": "setSequenceFields",
       "scope": "sequence",
       "undoable": true
     },
@@ -1512,15 +1269,12 @@
       "id": "sequence.setSettings",
       "manifestIds": ["readme.timeline-editing.8"],
       "mutatesGraph": true,
-      "owner": "FL-94",
       "payload": {
         "fps": "rate?",
         "height": "number?",
         "sequenceId": "string",
         "width": "number?"
       },
-      "prototypeFunctions": [],
-      "prototypeSource": "beyond the prototype: canvas and frame rate are fixed there",
       "scope": "sequence",
       "undoable": true
     },
@@ -1530,13 +1284,10 @@
       "id": "text.setMotion",
       "manifestIds": ["readme.keyframe-animation.4"],
       "mutatesGraph": true,
-      "owner": "FL-100",
       "payload": {
         "clipId": "string",
         "motion": "object?"
       },
-      "prototypeFunctions": [],
-      "prototypeSource": "beyond the prototype: per-character motion text",
       "scope": "clip",
       "undoable": true
     },
@@ -1546,7 +1297,6 @@
       "id": "title.add",
       "manifestIds": ["command.addText"],
       "mutatesGraph": true,
-      "owner": "FL-94",
       "payload": {
         "animation": "string?",
         "at": "time",
@@ -1555,8 +1305,6 @@
         "style": "string?",
         "text": "string"
       },
-      "prototypeFunctions": ["addTitle"],
-      "prototypeSource": "addTitle",
       "scope": "clip",
       "undoable": true
     },
@@ -1566,14 +1314,11 @@
       "id": "track.add",
       "manifestIds": ["command.addTrack"],
       "mutatesGraph": true,
-      "owner": "FL-94",
       "payload": {
         "index": "number?",
         "kind": "string",
         "name": "string?"
       },
-      "prototypeFunctions": [],
-      "prototypeSource": "beyond the prototype: its six track kinds are fixed",
       "scope": "track",
       "undoable": true
     },
@@ -1583,12 +1328,9 @@
       "id": "track.remove",
       "manifestIds": [],
       "mutatesGraph": true,
-      "owner": "FL-94",
       "payload": {
         "trackId": "string"
       },
-      "prototypeFunctions": [],
-      "prototypeSource": "beyond the prototype: its six track kinds are fixed",
       "scope": "track",
       "undoable": true
     },
@@ -1598,13 +1340,10 @@
       "id": "track.reorder",
       "manifestIds": [],
       "mutatesGraph": true,
-      "owner": "FL-94",
       "payload": {
         "index": "number",
         "trackId": "string"
       },
-      "prototypeFunctions": [],
-      "prototypeSource": "beyond the prototype: its track order is fixed",
       "scope": "track",
       "undoable": true
     },
@@ -1614,13 +1353,10 @@
       "id": "track.set",
       "manifestIds": ["readme.timeline-editing.5"],
       "mutatesGraph": true,
-      "owner": "FL-94",
       "payload": {
         "patch": "object",
         "trackId": "string"
       },
-      "prototypeFunctions": ["setTrack"],
-      "prototypeSource": "setTrack",
       "scope": "track",
       "undoable": true
     },
@@ -1630,15 +1366,12 @@
       "id": "track.setAudio",
       "manifestIds": ["readme.audio.1", "readme.audio.3"],
       "mutatesGraph": true,
-      "owner": "FL-103",
       "payload": {
         "eq": "object?",
         "gainDb": "number?",
         "pan": "number?",
         "trackId": "string"
       },
-      "prototypeFunctions": ["setTrack"],
-      "prototypeSource": "setTrack (gain only in the prototype)",
       "scope": "track",
       "undoable": true
     },
@@ -1648,14 +1381,11 @@
       "id": "voiceover.add",
       "manifestIds": ["extra.microphone"],
       "mutatesGraph": true,
-      "owner": "FL-94",
       "payload": {
         "at": "time",
         "duration": "duration",
         "uploadId": "string"
       },
-      "prototypeFunctions": ["addVoiceover"],
-      "prototypeSource": "addVoiceover",
       "scope": "clip",
       "undoable": true
     }
@@ -1663,7 +1393,6 @@
   "counts": {
     "commands": 90,
     "commandsWithoutManifestRow": 23,
-    "commandsWithoutPrototypeFunction": 53,
     "manifestRows": 210,
     "manifestRowsDeclaredNonCommand": 28,
     "manifestRowsMapped": 182
@@ -1686,146 +1415,117 @@
   "nonCommandRows": [
     {
       "id": "extra.bento",
-      "owner": "FL-98",
       "reason": "Panel layout preset; a client preference, not a graph change."
     },
     {
       "id": "extra.portable-headless",
-      "owner": "FL-91",
       "reason": "Workspace and lifecycle API the host owns; not an in-editor command."
     },
     {
       "id": "module.docs",
-      "owner": "FL-88",
       "reason": "Source module inventory row, not an action."
     },
     {
       "id": "module.editor",
-      "owner": "FL-88",
       "reason": "Source module inventory row, not an action."
     },
     {
       "id": "module.effects",
-      "owner": "FL-99",
       "reason": "Source module inventory row, not an action."
     },
     {
       "id": "module.export",
-      "owner": "FL-105",
       "reason": "Source module inventory row, not an action."
     },
     {
       "id": "module.keyframes",
-      "owner": "FL-100",
       "reason": "Source module inventory row, not an action."
     },
     {
       "id": "module.lottie-browser",
-      "owner": "FL-105",
       "reason": "Source module inventory row, not an action."
     },
     {
       "id": "module.media-library",
-      "owner": "FL-105",
       "reason": "Source module inventory row, not an action."
     },
     {
       "id": "module.preview",
-      "owner": "FL-98",
       "reason": "Source module inventory row, not an action."
     },
     {
       "id": "module.project-bundle",
-      "owner": "FL-91",
       "reason": "Source module inventory row, not an action."
     },
     {
       "id": "module.projects",
-      "owner": "FL-91",
       "reason": "Source module inventory row, not an action."
     },
     {
       "id": "module.scene-browser",
-      "owner": "FL-111",
       "reason": "Source module inventory row, not an action."
     },
     {
       "id": "module.settings",
-      "owner": "FL-88",
       "reason": "Source module inventory row, not an action."
     },
     {
       "id": "module.timeline",
-      "owner": "FL-94",
       "reason": "Source module inventory row, not an action."
     },
     {
       "id": "module.workspace-gate",
-      "owner": "FL-91",
       "reason": "Source module inventory row, not an action."
     },
     {
       "id": "readme.audio.4",
-      "owner": "FL-103",
       "reason": "Render-path preservation obligation proved by export evidence, not by a command."
     },
     {
       "id": "readme.effects-masks-compositing.8",
-      "owner": "FL-99",
       "reason": "Colour picker and eyedropper; an input control whose result travels in another payload."
     },
     {
       "id": "readme.local-ai-analysis.7",
-      "owner": "FL-111",
       "reason": "Model cache and unload controls live in settings, outside the project graph."
     },
     {
       "id": "readme.media-import.3",
-      "owner": "FL-105",
       "reason": "ProRes decode is a deployment capability, not an editing command."
     },
     {
       "id": "readme.preview-playback.2",
-      "owner": "FL-98",
       "reason": "Playback clock and composition runtime; no graph change."
     },
     {
       "id": "readme.preview-playback.3",
-      "owner": "FL-98",
       "reason": "Scrub overlays, prewarming and adaptive quality; no graph change."
     },
     {
       "id": "readme.preview-playback.5",
-      "owner": "FL-98",
       "reason": "Colour scopes are read-only measurement surfaces."
     },
     {
       "id": "readme.projects-storage.1",
-      "owner": "FL-91",
       "reason": "Project storage is server-side here; the workspace folder API does not apply."
     },
     {
       "id": "readme.projects-storage.2",
-      "owner": "FL-91",
       "reason": "Workspace switching is replaced by the account library; not an editing command."
     },
     {
       "id": "readme.projects-storage.3",
-      "owner": "FL-91",
       "reason": "Project storage and migration are host lifecycle, not editing commands."
     },
     {
       "id": "readme.projects-storage.4",
-      "owner": "FL-91",
       "reason": "Project trash and delete flows are host lifecycle with their own authorization."
     },
     {
       "id": "readme.projects-storage.6",
-      "owner": "FL-91",
       "reason": "Auto-save, thumbnails and orphan cleanup are host obligations, not commands."
     }
   ],
-  "prototypePath": "design/frameleaf/template/src/studio-project.mjs",
   "schemaVersion": 1,
   "scopes": [
     "clip",
@@ -1841,6 +1541,5 @@
     "sequence",
     "track"
   ],
-  "status": "vocabulary-published-semantics-owned-by-later-stories",
   "webVocabularyPath": "web/src/lib/frameleaf/studio/commands.ts"
 }
