@@ -340,6 +340,15 @@ describe(SharedLinkService.name, () => {
         key: Buffer.from('random-bytes', 'utf8'),
       });
     });
+    it('should say when the custom address is already used by another link (FL-83 AL-26)', async () => {
+      const album = AlbumFactory.from().asset().build();
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([album.id]));
+      mocks.sharedLink.create.mockRejectedValue({ constraint_name: 'shared_link_slug_uq' });
+
+      await expect(
+        sut.create(authStub.admin, { type: SharedLinkType.Album, albumId: album.id, slug: 'summer-trip' }),
+      ).rejects.toThrow(new BadRequestException('Shared link slug is already in use'));
+    });
   });
 
   describe('update', () => {
@@ -350,6 +359,16 @@ describe(SharedLinkService.name, () => {
 
       expect(mocks.sharedLink.get).toHaveBeenCalledWith(authStub.user1.user.id, 'missing-id');
       expect(mocks.sharedLink.update).not.toHaveBeenCalled();
+    });
+
+    it('should say when the new custom address is already used by another link (FL-83 AL-26)', async () => {
+      const sharedLink = SharedLinkFactory.create();
+      mocks.sharedLink.get.mockResolvedValue(getForSharedLink(sharedLink));
+      mocks.sharedLink.update.mockRejectedValue({ constraint_name: 'shared_link_slug_uq' });
+
+      await expect(sut.update(authStub.user1, sharedLinkStub.valid.id, { slug: 'summer-trip' })).rejects.toThrow(
+        new BadRequestException('Shared link slug is already in use'),
+      );
     });
 
     it('should update a shared link', async () => {

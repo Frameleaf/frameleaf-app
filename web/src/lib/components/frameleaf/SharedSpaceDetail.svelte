@@ -3,7 +3,12 @@
   import { page } from '$app/state';
   import AlbumConfirmDialog from '$lib/components/frameleaf/AlbumConfirmDialog.svelte';
   import AlbumCreateDialog from '$lib/components/frameleaf/AlbumCreateDialog.svelte';
+  import AlbumAvatarStack from '$lib/components/frameleaf/AlbumAvatarStack.svelte';
   import AlbumIcon from '$lib/components/frameleaf/AlbumIcon.svelte';
+  import AlbumInlineEdit from '$lib/components/frameleaf/AlbumInlineEdit.svelte';
+  import IconChooser from '$lib/components/frameleaf/IconChooser.svelte';
+  import Menu from '$lib/components/frameleaf/Menu.svelte';
+  import MenuItem from '$lib/components/frameleaf/MenuItem.svelte';
   import ResultsAssetViewer from '$lib/components/frameleaf/ResultsAssetViewer.svelte';
   import SegmentedControl from '$lib/components/frameleaf/SegmentedControl.svelte';
   import SharedSpaceActivity from '$lib/components/frameleaf/SharedSpaceActivity.svelte';
@@ -13,6 +18,7 @@
   import SharedSpaceMembers from '$lib/components/frameleaf/SharedSpaceMembers.svelte';
   import SharedSpaceNewSince from '$lib/components/frameleaf/SharedSpaceNewSince.svelte';
   import SharedSpacePeople from '$lib/components/frameleaf/SharedSpacePeople.svelte';
+  import SharedLinkForm from '$lib/components/frameleaf/SharedLinkForm.svelte';
   import SharedSpaceTimeline from '$lib/components/frameleaf/SharedSpaceTimeline.svelte';
   import SpaceMediaComments from '$lib/components/frameleaf/SpaceMediaComments.svelte';
   import Status from '$lib/components/frameleaf/Status.svelte';
@@ -31,18 +37,23 @@
     SPACE_PANELS,
     type SpacePanel,
   } from '$lib/frameleaf/shared-space';
-  import { removalOutcome, type AlbumDetailsDraft } from '$lib/frameleaf/album-directory';
+  import { defaultIconFor, othersOf, removalOutcome, type AlbumDetailsDraft } from '$lib/frameleaf/album-directory';
   import { Route } from '$lib/route';
   import {
     handleDeleteAlbum,
     handleDownloadAlbum,
     handleEditAlbumDetails,
     handleLeaveAlbum,
+    handleUpdateAlbumInfo,
     leftLocally,
   } from '$lib/services/album.service';
+  import { SlideshowNavigation, SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
+  import { openFileUploadDialog } from '$lib/utils/file-uploader';
   import { handleError } from '$lib/utils/handle-error';
   import {
     AlbumKind,
+    getAllSharedLinks,
+    SharedLinkType,
     type AlbumResponseDto,
     type AssetResponseDto,
     type SharedSpaceActivityResponseDto,
@@ -53,12 +64,22 @@
   } from '@immich/sdk';
   import { Icon, toastManager } from '@immich/ui';
   import {
-    mdiArrowLeft,
+    mdiAccountMultipleOutline,
+    mdiAccountPlusOutline,
+    mdiChevronRight,
+    mdiCommentTextOutline,
     mdiDeleteOutline,
+    mdiDotsHorizontal,
     mdiDownloadOutline,
+    mdiFolderOpenOutline,
     mdiImageMultipleOutline,
+    mdiLinkVariant,
     mdiLogoutVariant,
+    mdiMapOutline,
     mdiPencilOutline,
+    mdiPlayCircleOutline,
+    mdiPlus,
+    mdiUpload,
   } from '@mdi/js';
   import { onMount, untrack } from 'svelte';
   import { t } from 'svelte-i18n';
@@ -112,6 +133,8 @@
   const owner = $derived(isSpaceOwner(space, currentUserId));
   const contributor = $derived(canContribute(space, currentUserId));
   const ownerUser = $derived(spaceOwner(space));
+  const others = $derived(othersOf(space, currentUserId));
+  const name = $derived(space.albumName || $t('unnamed_album'));
 
   /* ------------------------------------------------------------------ */
   /* Panels                                                              */
@@ -254,6 +277,93 @@
   let editOpen = $state(false);
   let leaveOpen = $state(false);
   let deleteOpen = $state(false);
+  let iconOpen = $state(false);
+  let linkFormOpen = $state(false);
+
+  /* ------------------------------------------------------------------ */
+  /* The collection header (CollectionHeader.jsx:1100-1352), AL-42       */
+  /* ------------------------------------------------------------------ */
+  /** Inline title, description and icon: `PATCH /albums/{id}`, since a space is an album underneath. */
+  const save = async (dto: Parameters<typeof handleUpdateAlbumInfo>[1], message: string) => {
+    const updated = await handleUpdateAlbumInfo(space.id, dto, { message });
+    if (!updated) {
+      return false;
+    }
+    status = message;
+    await onRefresh();
+    return true;
+  };
+
+  /** The space's own public links (`GET /shared-links?albumId=`): the owner creates and manages them. */
+  let linkCount = $state(0);
+  $effect(() => {
+    const id = space.id;
+    if (!owner) {
+      linkCount = 0;
+      return;
+    }
+    let cancelled = false;
+    getAllSharedLinks({ albumId: id })
+      .then((links) => {
+        if (!cancelled) {
+          linkCount = links?.length ?? 0;
+        }
+      })
+      .catch(() => {
+        // Without the list the button offers to create a link; the Shared links page lists them all.
+        if (!cancelled) {
+          linkCount = 0;
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  });
+  const openLinks = () => {
+    if (linkCount > 0) {
+      void goto(Route.sharedLinks());
+      return;
+    }
+    linkFormOpen = true;
+  };
+  const linkTarget = $derived({
+    type: SharedLinkType.Album,
+    albumId: space.id,
+    name,
+    previewAssetIds: space.albumThumbnailAssetId ? [space.albumThumbnailAssetId] : [],
+    count: space.assetCount,
+  });
+
+  /** "Select from library": the Library picks, its selection bar's "Add to album" adds (as on an album). */
+  const addFromLibrary = async () => {
+    await goto(Route.photos());
+    toastManager.primary($t('frameleaf_album_add_photos_hint'));
+  };
+  const upload = async () => {
+    try {
+      await openFileUploadDialog({ albumId: space.id });
+    } catch (error) {
+      handleError(error, $t('errors.unable_to_upload_file'));
+    }
+  };
+
+  /** The slideshow plays in the space's own viewer, over the space's photos in the grid's order. */
+  const { slideshowState, slideshowNavigation } = slideshowStore;
+  const startSlideshow = async () => {
+    if (photos.assets.length === 0) {
+      await photos.reload();
+    }
+    const list = photos.assets;
+    if (list.length === 0) {
+      return;
+    }
+    const first =
+      $slideshowNavigation === SlideshowNavigation.Shuffle ? list[Math.floor(Math.random() * list.length)] : list[0];
+    await openAsset(first.id);
+    slideshowState.set(SlideshowState.PlaySlideshow);
+  };
+
+  const activityCount = $derived(activityFeed?.unreadCount ?? 0);
 
   /** The Frameleaf edit dialog (`CollectionFormDialog`) in place of the legacy modal (AL-42). */
   const saveDetails = async (draft: AlbumDetailsDraft) => {
@@ -289,55 +399,200 @@
   };
 </script>
 
-<section class="space" aria-labelledby="frameleaf-space-heading">
-  <a class="back" href={Route.sharing()}>
-    <Icon icon={mdiArrowLeft} size="16" aria-hidden={true} />
-    {$t('frameleaf_spaces_all')}
-  </a>
+<section class="space" aria-label={name}>
+  <header class="head" aria-label={$t('frameleaf_album_kind_space')}>
+    <nav class="crumbs" aria-label={$t('frameleaf_album_breadcrumb')}>
+      <a href={Route.sharing()}>{$t('frameleaf_shared_spaces')}</a>
+      <span aria-hidden="true"><Icon icon={mdiChevronRight} size="16" /></span>
+      <span aria-current="page">{name}</span>
+    </nav>
 
-  <header class="head">
-    <AlbumIcon name={space.icon} size="36" />
-    <div class="heading">
-      <h1 id="frameleaf-space-heading">{space.albumName}</h1>
-      <p>
-        {#if ownerUser}
-          {$t('frameleaf_spaces_owned_by', { values: { name: ownerUser.name } })} ·
+    <div class="main">
+      <div class="icon-wrap">
+        {#if contributor}
+          <button
+            type="button"
+            class="icon-button"
+            class:open={iconOpen}
+            aria-haspopup="dialog"
+            aria-expanded={iconOpen}
+            aria-label={$t('frameleaf_album_change_icon')}
+            onclick={() => (iconOpen = !iconOpen)}
+          >
+            <AlbumIcon name={space.icon ?? defaultIconFor(space.kind)} size="26" />
+            <span class="badge" aria-hidden="true"><Icon icon={mdiPencilOutline} size="12" /></span>
+          </button>
+          {#if iconOpen}
+            <div class="popover">
+              <IconChooser
+                value={space.icon ?? defaultIconFor(space.kind)}
+                label={$t('frameleaf_album_icon_for', { values: { name } })}
+                onClose={() => (iconOpen = false)}
+                onChange={(icon) => void save({ icon }, $t('frameleaf_album_icon_updated'))}
+              />
+            </div>
+          {/if}
+        {:else}
+          <span class="icon-button static" aria-hidden="true">
+            <AlbumIcon name={space.icon ?? defaultIconFor(space.kind)} size="26" />
+          </span>
         {/if}
-        {$t('frameleaf_albums_items', { values: { count: space.assetCount } })}
-      </p>
-      {#if space.description}
-        <p class="description">{space.description}</p>
-      {/if}
+      </div>
+
+      <div class="text">
+        <div class="title-row">
+          <AlbumInlineEdit
+            as="h1"
+            label={$t('frameleaf_album_edit_title')}
+            value={space.albumName}
+            editable={contributor}
+            placeholder={$t('unnamed_album')}
+            onSave={(albumName) => save({ albumName }, $t('frameleaf_album_title_saved'))}
+          />
+          <span class="badge-pill">{$t('frameleaf_album_kind_space')}</span>
+          {#if !owner && ownerUser}
+            <span class="shared-by">{$t('frameleaf_spaces_owned_by', { values: { name: ownerUser.name } })}</span>
+          {/if}
+        </div>
+
+        <AlbumInlineEdit
+          as="p"
+          label={$t('frameleaf_album_edit_description')}
+          value={space.description}
+          editable={contributor}
+          multiline
+          placeholder={contributor ? $t('frameleaf_album_add_description') : ''}
+          onSave={(description) => save({ description }, $t('frameleaf_album_description_saved'))}
+        />
+
+        <div class="summary">
+          <span>{$t('frameleaf_albums_items', { values: { count: space.assetCount } })}</span>
+          <span class="dot" aria-hidden="true"></span>
+          {#if others.length > 0}
+            <button
+              type="button"
+              class="members"
+              aria-label={$t('frameleaf_spaces_manage_members', { values: { count: others.length } })}
+              onclick={() => choosePanel('members')}
+            >
+              <AlbumAvatarStack users={others} />
+              <span>{$t('frameleaf_album_shared_with_count', { values: { count: others.length } })}</span>
+            </button>
+          {:else if owner}
+            <button type="button" class="members" onclick={() => choosePanel('members')}>
+              <span aria-hidden="true"><Icon icon={mdiAccountPlusOutline} size="16" /></span>
+              <span>{$t('frameleaf_album_private_share_it')}</span>
+            </button>
+          {:else}
+            <span>{$t('frameleaf_album_private')}</span>
+          {/if}
+        </div>
+      </div>
     </div>
 
-    <div class="actions">
-      <a class="button primary" href={Route.viewAlbum({ id: space.id })}>
-        <Icon icon={mdiImageMultipleOutline} size="16" aria-hidden={true} />
-        {$t('frameleaf_spaces_open_photos')}
-      </a>
+    <div class="actions" role="toolbar" aria-label={$t('frameleaf_album_actions', { values: { kind: name } })}>
       {#if contributor}
-        <button type="button" onclick={() => (editOpen = true)}>
-          <Icon icon={mdiPencilOutline} size="16" aria-hidden={true} />
-          {$t('edit')}
-        </button>
+        <Menu label={$t('add_photos')} align="start">
+          {#snippet trigger()}
+            <span class="trigger-content"><Icon icon={mdiPlus} size="18" />{$t('add_photos')}</span>
+          {/snippet}
+          <MenuItem onSelect={() => void addFromLibrary()}>
+            <Icon icon={mdiImageMultipleOutline} size="18" />
+            {$t('frameleaf_album_select_from_library')}
+          </MenuItem>
+          <MenuItem onSelect={() => void upload()}>
+            <Icon icon={mdiUpload} size="18" />
+            {$t('frameleaf_album_upload_from_computer')}
+          </MenuItem>
+        </Menu>
       {/if}
-      {#if space.assetCount > 0}
-        <button type="button" onclick={() => handleDownloadAlbum(space)}>
-          <Icon icon={mdiDownloadOutline} size="16" aria-hidden={true} />
-          {$t('download')}
-        </button>
-      {/if}
+
+      <!-- A space's people are invitations and roles, managed on its Members panel. -->
+      <button type="button" class="action" onclick={() => choosePanel('members')}>
+        <Icon icon={owner ? mdiAccountPlusOutline : mdiAccountMultipleOutline} size="18" />
+        <span>{owner ? $t('share') : $t('frameleaf_albums_members')}</span>
+      </button>
+
       {#if owner}
-        <button type="button" class="danger" disabled={busy} onclick={() => (deleteOpen = true)}>
-          <Icon icon={mdiDeleteOutline} size="16" aria-hidden={true} />
-          {$t('frameleaf_spaces_delete')}
-        </button>
-      {:else}
-        <button type="button" class="danger" disabled={busy} onclick={() => (leaveOpen = true)}>
-          <Icon icon={mdiLogoutVariant} size="16" aria-hidden={true} />
-          {$t('frameleaf_spaces_leave')}
+        <button
+          type="button"
+          class="action"
+          aria-label={linkCount > 0
+            ? $t('frameleaf_spaces_links_count', { values: { count: linkCount } })
+            : $t('frameleaf_albums_create_link')}
+          onclick={openLinks}
+        >
+          <Icon icon={mdiLinkVariant} size="18" />
+          <span>{$t('frameleaf_spaces_links')}</span>
+          {#if linkCount > 0}
+            <span class="count" aria-hidden="true">{linkCount}</span>
+          {/if}
         </button>
       {/if}
+
+      <!-- The space's own map and conversation are its Places and Activity panels. -->
+      <button type="button" class="action" disabled={space.assetCount === 0} onclick={() => choosePanel('places')}>
+        <Icon icon={mdiMapOutline} size="18" />
+        <span>{$t('map')}</span>
+      </button>
+
+      <button type="button" class="action" disabled={space.assetCount === 0} onclick={() => void startSlideshow()}>
+        <Icon icon={mdiPlayCircleOutline} size="18" />
+        <span>{$t('slideshow')}</span>
+      </button>
+
+      <button type="button" class="action" disabled={space.assetCount === 0} onclick={() => handleDownloadAlbum(space)}>
+        <Icon icon={mdiDownloadOutline} size="18" />
+        <span>{$t('download')}</span>
+      </button>
+
+      <button
+        type="button"
+        class="action"
+        aria-pressed={panel === 'activity'}
+        aria-label={$t('frameleaf_album_activity_button', { values: { count: activityCount } })}
+        onclick={() => choosePanel('activity')}
+      >
+        <Icon icon={mdiCommentTextOutline} size="18" />
+        <span>{$t('activity')}</span>
+        {#if activityCount > 0}
+          <span class="count" aria-hidden="true">{activityCount}</span>
+        {/if}
+      </button>
+
+      <span class="spacer"></span>
+
+      <Menu label={$t('frameleaf_album_more_actions')} align="end">
+        {#snippet trigger()}
+          <span class="trigger-content"><Icon icon={mdiDotsHorizontal} size="18" /></span>
+        {/snippet}
+        <MenuItem onSelect={() => goto(Route.viewAlbum({ id: space.id }))}>
+          <Icon icon={mdiFolderOpenOutline} size="18" />
+          {$t('frameleaf_spaces_open_photos')}
+        </MenuItem>
+        {#if contributor}
+          <MenuItem onSelect={() => (editOpen = true)}>
+            <Icon icon={mdiPencilOutline} size="18" />
+            {$t('frameleaf_album_edit_details')}
+          </MenuItem>
+        {/if}
+        <div class="menu-separator" role="separator"></div>
+        {#if owner}
+          <MenuItem disabled={busy} onSelect={() => (deleteOpen = true)}>
+            <span class="danger-item">
+              <Icon icon={mdiDeleteOutline} size="18" />
+              {$t('frameleaf_spaces_delete')}
+            </span>
+          </MenuItem>
+        {:else}
+          <MenuItem disabled={busy} onSelect={() => (leaveOpen = true)}>
+            <span class="danger-item">
+              <Icon icon={mdiLogoutVariant} size="18" />
+              {$t('frameleaf_spaces_leave')}
+            </span>
+          </MenuItem>
+        {/if}
+      </Menu>
     </div>
   </header>
 
@@ -411,6 +666,10 @@
   onSave={saveDetails}
 />
 
+{#if owner}
+  <SharedLinkForm bind:open={linkFormOpen} target={linkTarget} />
+{/if}
+
 <AlbumConfirmDialog
   title={$t('frameleaf_album_delete_title', { values: { name: space.albumName || $t('unnamed_album') } })}
   body={$t('frameleaf_album_delete_space_body')}
@@ -465,27 +724,197 @@
     padding: 1rem;
     color: var(--fl-text);
   }
-  .back {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.25rem;
-    color: var(--fl-muted);
-    font-size: 0.8125rem;
-    text-decoration: none;
-    width: fit-content;
-  }
   .head {
     display: flex;
-    flex-wrap: wrap;
-    align-items: flex-start;
+    flex-direction: column;
     gap: 0.75rem;
   }
-  .heading {
+  .crumbs {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.75rem;
+    color: var(--fl-muted);
+    flex-wrap: wrap;
+  }
+  .crumbs a {
+    color: var(--fl-muted);
+    text-decoration: none;
+    padding: 0.125rem 0.25rem;
+    border-radius: var(--fl-radius);
+  }
+  .crumbs a:hover {
+    background: var(--fl-raised);
+    color: var(--fl-text);
+  }
+  .crumbs span[aria-current='page'] {
+    color: var(--fl-text);
+  }
+  .main {
+    display: flex;
+    gap: 0.875rem;
+    align-items: flex-start;
+  }
+  .icon-wrap {
+    position: relative;
+    flex-shrink: 0;
+  }
+  .icon-button {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    inline-size: 3rem;
+    block-size: 3rem;
+    padding: 0;
+    color: var(--fl-text);
+    background: var(--fl-raised);
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius-card);
+  }
+  .icon-button.static {
+    cursor: default;
+  }
+  .badge {
+    position: absolute;
+    inset-block-end: -0.25rem;
+    inset-inline-end: -0.25rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    inline-size: 1.25rem;
+    block-size: 1.25rem;
+    color: var(--fl-accent-text);
+    background: var(--fl-accent);
+    border-radius: 50%;
+    opacity: 0;
+    transition: opacity var(--fl-motion-fast) var(--fl-ease);
+  }
+  .icon-button:hover .badge,
+  .icon-button:focus-visible .badge,
+  .icon-button.open .badge {
+    opacity: 1;
+  }
+  .popover {
+    position: absolute;
+    inset-block-start: calc(100% + 0.375rem);
+    inset-inline-start: 0;
+    z-index: 40;
+  }
+  .text {
     flex: 1;
-    min-width: 12rem;
+    min-inline-size: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+  .title-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+  .badge-pill {
+    padding: 0.125rem 0.5rem;
+    font-size: 0.75rem;
+    color: var(--fl-muted);
+    background: var(--fl-raised);
+    border: 1px solid var(--fl-border);
+    border-radius: 999px;
+  }
+  .badge-pill::first-letter {
+    text-transform: uppercase;
+  }
+  .shared-by {
+    font-size: 0.75rem;
+    color: var(--fl-muted);
+  }
+  .summary {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    font-size: 0.75rem;
+    color: var(--fl-muted);
+  }
+  .dot {
+    inline-size: 3px;
+    block-size: 3px;
+    border-radius: 50%;
+    background: currentColor;
+  }
+  .members {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.125rem 0.375rem;
+    font: inherit;
+    color: var(--fl-muted);
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: var(--fl-radius);
+  }
+  .members:hover {
+    background: var(--fl-raised);
+    border-color: var(--fl-border);
+    color: var(--fl-text);
+  }
+  .actions {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    flex-wrap: wrap;
+  }
+  .action,
+  .trigger-content {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    white-space: nowrap;
+  }
+  .action {
+    padding: 0 0.6875rem;
+    min-height: 44px;
+    font: inherit;
+    color: var(--fl-text);
+    background: var(--fl-raised);
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius-control);
+  }
+  .action:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--fl-raised), var(--fl-text) 8%);
+  }
+  .action[aria-pressed='true'] {
+    color: var(--fl-accent);
+    border-color: var(--fl-accent);
+  }
+  .action:disabled {
+    color: var(--fl-muted);
+    background: var(--fl-canvas);
+  }
+  .count {
+    padding: 0 0.375rem;
+    font-size: 0.75rem;
+    color: var(--fl-accent-text);
+    background: var(--fl-accent);
+    border-radius: 999px;
+  }
+  .spacer {
+    flex: 1;
+  }
+  .menu-separator {
+    height: 1px;
+    margin: 0.25rem 0.375rem;
+    background: var(--fl-border);
+  }
+  .danger-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--fl-danger);
   }
   /* The collection header's large title, shrinking as the page scrolls (apple-style.css:219-244). */
-  h1 {
+  .title-row :global(h1) {
     margin: 0;
     font-size: 30px;
     font-weight: 700;
@@ -493,13 +922,13 @@
     transform-origin: left bottom;
   }
   @supports (animation-timeline: scroll()) {
-    h1 {
+    .title-row :global(h1) {
       animation: fl-space-title-shrink linear both;
       animation-timeline: scroll(nearest block);
       animation-range: 0 90px;
     }
     @media (prefers-reduced-motion: reduce) {
-      h1 {
+      .title-row :global(h1) {
         animation-name: fl-space-title-fade;
       }
     }
@@ -514,45 +943,6 @@
     to {
       opacity: 0.2;
     }
-  }
-  .heading p {
-    margin: 0.125rem 0 0;
-    color: var(--fl-muted);
-    font-size: 0.875rem;
-  }
-  .heading .description {
-    max-width: 40rem;
-  }
-  .actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-  }
-  button,
-  .button {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.375rem;
-    padding: 0 0.875rem;
-    min-height: 36px;
-    border: 1px solid var(--fl-border);
-    border-radius: var(--fl-radius);
-    background: var(--fl-raised);
-    color: var(--fl-text);
-    font-size: 0.8125rem;
-    font-weight: 600;
-    text-decoration: none;
-  }
-  .button.primary {
-    border-color: var(--fl-accent);
-    background: var(--fl-accent);
-    color: var(--fl-accent-text);
-  }
-  button.danger {
-    color: var(--fl-danger, #c0392b);
-  }
-  button:disabled {
-    opacity: 0.6;
   }
   /* Six panels do not fit a phone's width; the row scrolls sideways instead of the page. */
   .panels {

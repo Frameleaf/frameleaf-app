@@ -66,7 +66,17 @@
 
   let dialog:
     | { kind: 'pick' }
-    | { kind: 'create'; target: { type: SharedLinkType; albumId?: string; assetIds?: string[]; name: string } }
+    | {
+        kind: 'create';
+        target: {
+          type: SharedLinkType;
+          albumId?: string;
+          assetIds?: string[];
+          name: string;
+          previewAssetIds?: string[];
+          count?: number;
+        };
+      }
     | { kind: 'edit'; link: SharedLinkResponseDto }
     | { kind: 'qr'; link: SharedLinkResponseDto }
     | { kind: 'delete'; link: SharedLinkResponseDto }
@@ -255,7 +265,16 @@
       return;
     }
     pickOpen = false;
-    dialog = { kind: 'create', target: { type: SharedLinkType.Album, albumId: album.id, name: album.albumName } };
+    dialog = {
+      kind: 'create',
+      target: {
+        type: SharedLinkType.Album,
+        albumId: album.id,
+        name: album.albumName,
+        previewAssetIds: album.albumThumbnailAssetId ? [album.albumThumbnailAssetId] : [],
+        count: album.assetCount,
+      },
+    };
     formOpen = true;
   };
 

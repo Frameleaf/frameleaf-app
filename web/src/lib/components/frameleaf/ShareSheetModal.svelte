@@ -7,9 +7,17 @@
    * place of the legacy `SharedLinkCreateModal`. It resolves once the sheet and any link form it
    * opened have closed.
    */
-  let { assetIds, onClose }: { assetIds: string[]; onClose: () => void } = $props();
+  let {
+    assetIds,
+    assets,
+    onClose,
+  }: {
+    assetIds: string[];
+    assets?: { id: string; isVideo: boolean; originalFileName?: string; size?: number }[];
+    onClose: () => void;
+  } = $props();
 
   let open = $state(true);
 </script>
 
-<ShareSheet bind:open {assetIds} onClosed={onClose} />
+<ShareSheet bind:open {assetIds} {assets} onClosed={onClose} />

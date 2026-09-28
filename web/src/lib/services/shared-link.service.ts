@@ -1,6 +1,7 @@
 import {
   createSharedLink,
   getSharedLinkById,
+  isHttpError,
   removeSharedLinkAssets,
   updateSharedLink,
   type SharedLinkCreateDto,
@@ -11,7 +12,7 @@ import { modalManager, toastManager } from '@immich/ui';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { serverConfigManager } from '$lib/managers/server-config-manager.svelte';
 import { Route } from '$lib/route';
-import { handleError } from '$lib/utils/handle-error';
+import { getServerErrorMessage, handleError } from '$lib/utils/handle-error';
 import { getFormatter } from '$lib/utils/i18n';
 
 export const asUrl = (sharedLink: SharedLinkResponseDto) => {
@@ -19,7 +20,18 @@ export const asUrl = (sharedLink: SharedLinkResponseDto) => {
   return new URL(path, serverConfigManager.value.externalDomain || location.origin).href;
 };
 
-export const handleCreateSharedLink = async (dto: SharedLinkCreateDto) => {
+/** The server's refusal when a custom address (slug) is held by another link (FL-83 AL-26). */
+export const SHARED_LINK_SLUG_TAKEN = 'Shared link slug is already in use';
+
+export const isSlugTakenError = (error: unknown) =>
+  isHttpError(error) && error.status === 400 && getServerErrorMessage(error) === SHARED_LINK_SLUG_TAKEN;
+
+type SaveOptions = {
+  /** Called instead of the generic failure toast when the custom address is already used. */
+  onSlugTaken?: () => void;
+};
+
+export const handleCreateSharedLink = async (dto: SharedLinkCreateDto, options?: SaveOptions) => {
   const $t = await getFormatter();
 
   try {
@@ -34,11 +46,19 @@ export const handleCreateSharedLink = async (dto: SharedLinkCreateDto) => {
     // The caller shows the design's "Link ready" step (SharedLinkForm.jsx:237-303) with this link.
     return sharedLink;
   } catch (error) {
+    if (options?.onSlugTaken && isSlugTakenError(error)) {
+      options.onSlugTaken();
+      return;
+    }
     handleError(error, $t('errors.failed_to_create_shared_link'));
   }
 };
 
-export const handleUpdateSharedLink = async (sharedLink: SharedLinkResponseDto, dto: SharedLinkEditDto) => {
+export const handleUpdateSharedLink = async (
+  sharedLink: SharedLinkResponseDto,
+  dto: SharedLinkEditDto,
+  options?: SaveOptions,
+) => {
   const $t = await getFormatter();
 
   try {
@@ -49,6 +69,10 @@ export const handleUpdateSharedLink = async (sharedLink: SharedLinkResponseDto, 
 
     return true;
   } catch (error) {
+    if (options?.onSlugTaken && isSlugTakenError(error)) {
+      options.onSlugTaken();
+      return false;
+    }
     handleError(error, $t('errors.failed_to_edit_shared_link'));
     return false;
   }

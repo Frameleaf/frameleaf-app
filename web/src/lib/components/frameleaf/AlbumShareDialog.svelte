@@ -155,6 +155,8 @@
     type: SharedLinkType.Album,
     albumId: album.id,
     name: album.albumName || $t('unnamed_album'),
+    previewAssetIds: album.albumThumbnailAssetId ? [album.albumThumbnailAssetId] : [],
+    count: album.assetCount,
   });
 </script>
 
