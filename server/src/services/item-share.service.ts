@@ -4,7 +4,6 @@ import type { ArgOf } from 'src/repositories/event.repository.js';
 import type { ItemShareRow } from 'src/repositories/item-share.repository.js';
 import { OnEvent } from 'src/decorators.js';
 import { mapAsset } from 'src/dtos/asset-response.dto.js';
-import { AssetVisibility } from 'src/enum.js';
 import {
   ItemShareChangeDto,
   ItemShareChangeResponseDto,
@@ -13,6 +12,7 @@ import {
   ItemShareResponseDto,
 } from 'src/dtos/item-share.dto.js';
 import { UserResponseDto, mapUser } from 'src/dtos/user.dto.js';
+import { AssetVisibility } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { resolveShareBaseUrl } from 'src/utils/public-url.js';
