@@ -26,7 +26,7 @@ const setup = () => {
     status: MediaOperationStatus.Preparing,
     claimExpiresAt: new Date(Date.now() + 120_000),
     snapshot: { kind: 'studio-source-reverse', projectId, revision: 1, digest: 'revision-digest', sourceKey, checksum },
-  } as MediaOperation;
+  } as unknown as MediaOperation;
   const operations = {
     create: vi.fn().mockResolvedValue(operation),
     createStudioReverseCommand: vi.fn().mockResolvedValue(operation),
