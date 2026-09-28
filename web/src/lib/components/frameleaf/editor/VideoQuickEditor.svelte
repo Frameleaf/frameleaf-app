@@ -135,6 +135,7 @@
     saveEditorContinuity,
     secondsToRational,
   } from '$lib/frameleaf/editor-continuity';
+  import { getPrivateBrowserStateGeneration } from '$lib/frameleaf/private-browser-state';
   import { t, type Translations } from 'svelte-i18n';
 
   type Tool = 'trim' | 'speed' | 'adjust' | 'crop' | 'audio' | 'text' | 'enhance' | 'presets';
@@ -147,6 +148,7 @@
     /** `refreshAsset` is true when a saved version changed what the viewer should show. */
     onClose: (refreshAsset?: boolean) => void;
   } = $props();
+  const privateStateGeneration = getPrivateBrowserStateGeneration();
 
   // Editor.jsx TOOLS (lines 46-55), in the prototype's order; Restore follows as on photos (E-9).
   const tools: { id: Tool; label: Translations; icon: string }[] = [
@@ -196,6 +198,7 @@
   const duration = $derived(source ? Math.max(MIN_SPAN, source.durationMs / 1000) : 0);
   let draft = $state<VideoDraft>(createVideoDraft(initialVideoEdit(0)));
   let opened = $state<VideoEdit>(initialVideoEdit(0));
+  let draftReady = $state(false);
   const edit = $derived(draft.edit);
   const values = $derived(Object.fromEntries(DEVELOP_KEYS.map((key) => [key, edit[key]])) as DevelopValues);
   const dirty = $derived(!!source && !sameVideoEdit(edit, opened));
@@ -223,7 +226,10 @@
       opened = start;
       // FL-113: the draft, tool and playhead carried to Studio come back with the person (App.jsx
       // shares `edit`, its history and `session.playbackPosition` across the editor and Studio).
-      const resumed = resumeEditorContinuity<VideoDraft>(asset.id, continuityBase(start));
+      const resumed = resumeEditorContinuity<VideoDraft>(
+        asset.id,
+        continuityBase({ ownerId: asset.ownerId, edit: start }),
+      );
       if (resumed.status === 'resumed') {
         draft = resumed.draft;
         if (tools.some((item) => item.id === resumed.tool)) {
@@ -234,6 +240,7 @@
       } else if (resumed.status === 'stale') {
         toastManager.primary($t('frameleaf_editor_continuity_stale'));
       }
+      draftReady = true;
     } catch (error) {
       loadFailed = true;
       handleError(error, $t('frameleaf_video_editor_load_error'));
@@ -249,6 +256,55 @@
   let split = $state(false);
   let splitAt = $state(0.5);
   let time = $state(0);
+  let lastPlayheadSavedAt = 0;
+
+  const saveDraftAt = (playhead: number) => {
+    if (
+      !draftReady ||
+      privateStateGeneration !== getPrivateBrowserStateGeneration() ||
+      !(dirty || draft.undo.length > 0 || draft.redo.length > 0)
+    ) {
+      return;
+    }
+    saveEditorContinuity({
+      assetId: asset.id,
+      kind: 'video',
+      draft: $state.snapshot(draft),
+      base: continuityBase({ ownerId: asset.ownerId, edit: opened }),
+      tool,
+      playhead: secondsToRational(playhead),
+    });
+    lastPlayheadSavedAt = Date.now();
+  };
+
+  // Playback produces many timeupdate events. Save at most once a second while it runs, then
+  // capture the exact position on pause, teardown or page unload.
+  const persistPlaybackAt = (playhead: number) => {
+    if (!playing || Date.now() - lastPlayheadSavedAt >= 1000) {
+      saveDraftAt(playhead);
+    }
+  };
+
+  $effect(() => {
+    if (!draftReady) {
+      return;
+    }
+    if (dirty || draft.undo.length > 0 || draft.redo.length > 0) {
+      saveDraftAt(untrack(() => pendingSeek ?? time));
+    } else {
+      clearEditorContinuity(asset.id);
+    }
+  });
+  $effect(() => {
+    if (!playing) {
+      untrack(() => saveDraftAt(time));
+    }
+  });
+  onMount(() => {
+    const flushPlayhead = () => saveDraftAt(time);
+    addEventListener('pagehide', flushPlayhead);
+    return () => removeEventListener('pagehide', flushPlayhead);
+  });
   let natural = $state<{ w: number; h: number } | null>(null);
   let videoError = $state(false);
   let dragRect = $state<CropRect | null>(null);
@@ -345,6 +401,7 @@
     const timer = setInterval(() => {
       const next = time + 0.2 * edit.speed;
       time = next >= edit.end ? edit.start : round(next);
+      persistPlaybackAt(time);
     }, 200);
     return () => clearInterval(timer);
   });
@@ -383,7 +440,13 @@
 
   const seek = (next: number) => {
     const value = round(clamp(next, 0, duration));
+    const previous = time;
     time = value;
+    if (previous !== value) {
+      // A scrub can follow an edit without changing the recipe. Keep its bounded playhead across
+      // a reload instead of waiting for another recipe change to trigger the draft effect.
+      saveDraftAt(value);
+    }
     const element = videoEl;
     if (element && !videoError && Math.abs(element.currentTime - value) > 0.02) {
       element.currentTime = value;
@@ -399,6 +462,7 @@
     }
     element.playbackRate = clamp(speedAt(edit, element.currentTime), 0.0625, 16);
     time = round(element.currentTime);
+    persistPlaybackAt(time);
     tick += 1;
   };
 
@@ -790,6 +854,7 @@
     if (dirty) {
       toastManager.primary($t('frameleaf_editor_edits_discarded'));
     }
+    draftReady = false;
     clearEditorContinuity(asset.id);
     onClose(saveChangedCurrent);
   };
@@ -799,12 +864,15 @@
    */
   const openStudio = () => {
     const playhead = secondsToRational(time);
-    if (dirty || draft.undo.length > 0 || time > 0) {
+    if (
+      privateStateGeneration === getPrivateBrowserStateGeneration() &&
+      (dirty || draft.undo.length > 0 || draft.redo.length > 0 || time > 0)
+    ) {
       saveEditorContinuity({
         assetId: asset.id,
         kind: 'video',
         draft: $state.snapshot(draft),
-        base: continuityBase(opened),
+        base: continuityBase({ ownerId: asset.ownerId, edit: opened }),
         tool,
         playhead,
       });
@@ -898,6 +966,8 @@
     const edits = toVideoEdits(edit, source);
     // Saving the original over the original would only add an empty version.
     if (edits.length === 0 && !asset.isEdited) {
+      draftReady = false;
+      clearEditorContinuity(asset.id);
       onClose(saveChangedCurrent);
       return;
     }
@@ -908,6 +978,7 @@
         : editAsset({ id: asset.id, assetEditsCreateDto: { edits } }));
       eventManager.emit('AssetEditsApplied', asset.id);
       opened = edit;
+      draftReady = false;
       clearEditorContinuity(asset.id);
       toastManager.primary($t('frameleaf_video_editor_saved'));
       onClose(true);
@@ -997,6 +1068,7 @@
   };
 
   onDestroy(() => {
+    saveDraftAt(time);
     videoEl?.pause();
   });
 

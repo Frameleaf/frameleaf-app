@@ -32,6 +32,8 @@ describe('watchSessionPrivacy', () => {
   let guard: ReturnType<typeof watchSessionPrivacy> | undefined;
   beforeEach(() => {
     setSessionLockPending(false);
+    sessionStorage.clear();
+    localStorage.clear();
     vi.useFakeTimers();
     vi.resetAllMocks();
     vi.setSystemTime(new Date('2026-09-21T12:00:00Z'));
@@ -52,6 +54,7 @@ describe('watchSessionPrivacy', () => {
     guard = watchSessionPrivacy(() => true);
     await vi.advanceTimersByTimeAsync(0);
     expect(revokeSessionView).not.toHaveBeenCalled();
+    expect(sessionStorage.getItem('frameleaf:session:elevated-tab')).toBe('1');
     await vi.advanceTimersByTimeAsync(9000);
     expect(revokeSessionView).toHaveBeenCalledOnce();
   });
@@ -93,6 +96,31 @@ describe('watchSessionPrivacy', () => {
     finish();
     await vi.advanceTimersByTimeAsync(0);
     expect(gate).toHaveBeenLastCalledWith('ready');
+  });
+
+  it('clears an expired elevated tab before releasing a locked first view', async () => {
+    sessionStorage.setItem('frameleaf:session:elevated-tab', '1');
+    sessionStorage.setItem('frameleaf:library:tab:v1:user-1', '{"selection":["locked-asset"]}');
+    sessionStorage.setItem('frameleaf.editor.continuity.locked-asset', '{"draft":"private"}');
+    const gate = vi.fn((state: string) => {
+      if (state === 'ready') {
+        expect(sessionStorage.getItem('frameleaf:library:tab:v1:user-1')).toBeNull();
+        expect(sessionStorage.getItem('frameleaf.editor.continuity.locked-asset')).toBeNull();
+      }
+    });
+    vi.mocked(getAuthStatus).mockImplementationOnce(respond(status(false)));
+    guard = watchSessionPrivacy(() => true, gate);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(gate).toHaveBeenLastCalledWith('ready');
+    expect(sessionStorage.getItem('frameleaf:session:elevated-tab')).toBeNull();
+  });
+
+  it('keeps an ordinary locked tab draft when no prior elevation was recorded', async () => {
+    sessionStorage.setItem('frameleaf:library:tab:v1:user-1', '{"selection":["ordinary-asset"]}');
+    vi.mocked(getAuthStatus).mockImplementationOnce(respond(status(false)));
+    guard = watchSessionPrivacy(() => true);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(sessionStorage.getItem('frameleaf:library:tab:v1:user-1')).not.toBeNull();
   });
 
   // Review P3-6: reloading would get the same unbounded answer and loop, so the elevation is ended

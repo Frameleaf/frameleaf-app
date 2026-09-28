@@ -15,6 +15,7 @@
   import ViewerFooter from '$lib/components/frameleaf/ViewerFooter.svelte';
   import ViewerLiveBadge from '$lib/components/frameleaf/ViewerLiveBadge.svelte';
   import { sessionAccess } from '$lib/frameleaf/session-access.svelte';
+  import { readEditorContinuity } from '$lib/frameleaf/editor-continuity';
   import ViewerOfflineBanner from '$lib/components/frameleaf/ViewerOfflineBanner.svelte';
   import { bumpPlaybackRevision, playbackCacheKey } from '$lib/frameleaf/playback-revision.svelte';
   import ViewerStackStrip from '$lib/components/frameleaf/ViewerStackStrip.svelte';
@@ -204,6 +205,25 @@
     }
     pendingNavigation = undefined;
     queuedWhileBusy = undefined;
+  });
+
+  // A reload reconstructs the viewer with isShowEditor=false. If this tab has an unsaved draft,
+  // reopen its editor only after the owner asset has passed the usual route and privacy checks.
+  let resumedEditorFor: string | undefined;
+  $effect(() => {
+    const editable =
+      authManager.authenticated &&
+      !authManager.isSharedLink &&
+      asset.ownerId === authManager.user.id &&
+      !asset.isTrashed &&
+      (asset.type === AssetTypeEnum.Image || asset.type === AssetTypeEnum.Video);
+    if (!editable || resumedEditorFor === asset.id) {
+      return;
+    }
+    resumedEditorFor = asset.id;
+    if (readEditorContinuity(asset.id)) {
+      untrack(() => assetViewerManager.openEditor());
+    }
   });
 
   let isPlayingOriginalVideo = $state($alwaysLoadOriginalVideo);
@@ -1155,7 +1175,10 @@
     not a side panel. Photos edit through the server develop recipe pipeline; videos keep the
     production video editor's commands inside the same frame.
   -->
-  {#if assetViewerManager.isShowEditor}
+  {#if assetViewerManager.isShowEditor &&
+    authManager.authenticated &&
+    !authManager.isSharedLink &&
+    asset.ownerId === authManager.user.id}
     <QuickEditor {asset} onClose={closeEditor} />
   {/if}
 

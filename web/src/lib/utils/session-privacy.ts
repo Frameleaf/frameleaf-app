@@ -1,5 +1,6 @@
 import { browser } from '$app/environment';
 import { downloadManager } from '$lib/managers/download-manager.svelte';
+import { clearPrivateBrowserState } from '$lib/frameleaf/private-browser-state';
 
 /** Discard route-independent protected state when elevated access is revoked. */
 export const revokeSessionView = (destination: string) => {
@@ -11,6 +12,7 @@ export const revokeSessionView = (destination: string) => {
   // Keep the old document concealed if navigation fails: a reload must authorize
   // fresh results before they can be displayed again.
   document.documentElement.style.setProperty('display', 'none', 'important');
+  clearPrivateBrowserState();
   const exitingPictureInPicture = clearSessionMedia();
 
   // A SvelteKit navigation retains singleton result caches and in-flight work.

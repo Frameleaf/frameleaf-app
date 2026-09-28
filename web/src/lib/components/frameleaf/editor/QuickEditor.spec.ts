@@ -15,7 +15,8 @@ import { toastManager } from '@immich/ui';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { goto } from '$app/navigation';
 import { continuityBase, readEditorContinuity, saveEditorContinuity } from '$lib/frameleaf/editor-continuity';
-import { openingRecipe } from '$lib/frameleaf/editor-draft';
+import { clearPrivateBrowserState } from '$lib/frameleaf/private-browser-state';
+import { openingRecipe, type EditorDraft } from '$lib/frameleaf/editor-draft';
 import { assetFactory } from '@test-data/factories/asset-factory';
 import QuickEditor from './QuickEditor.svelte';
 
@@ -94,6 +95,7 @@ describe('QuickEditor', () => {
   });
 
   beforeEach(() => {
+    sessionStorage.clear();
     vi.mocked(getAssetDevelop).mockResolvedValue({ assetId: photo.id, currentRevisionId: null, revisions: [] });
     vi.mocked(previewAssetDevelop).mockResolvedValue(new Blob(['jpeg']));
     vi.stubGlobal(
@@ -181,6 +183,7 @@ describe('QuickEditor', () => {
     expect('aspect' in sent).toBe(false);
     await waitFor(() => expect(onClose).toHaveBeenCalledWith(false));
     expect(toastManager.primary).toHaveBeenCalledWith('frameleaf_editor_version_queued');
+    expect(readEditorContinuity(photo.id)).toBeNull();
   });
 
   it('discards unsaved edits at once with a toast, and closes quietly when clean', async () => {
@@ -198,6 +201,7 @@ describe('QuickEditor', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'cancel' }));
     expect(toastManager.primary).toHaveBeenCalledWith('frameleaf_editor_edits_discarded');
     expect(onClose).toHaveBeenCalledWith(false);
+    expect(readEditorContinuity(photo.id)).toBeNull();
   });
 
   describe('hold to compare (September 24 design)', () => {
@@ -396,7 +400,7 @@ describe('QuickEditor', () => {
         assetId: photo.id,
         kind: 'photo',
         draft: { recipe: { ...start, contrast: 25 }, undo: [start], redo: [] },
-        base: continuityBase(start),
+        base: continuityBase({ ownerId: photo.ownerId, edit: start }),
         tool: 'adjust',
         playhead: { num: 0, den: 1 },
       });
@@ -409,6 +413,54 @@ describe('QuickEditor', () => {
       );
       expect(toastManager.primary).toHaveBeenCalledWith('frameleaf_editor_continuity_resumed');
       expect(screen.getByRole('button', { name: 'undo' })).not.toBeDisabled();
+      expect(readEditorContinuity(photo.id)?.draft).toBeDefined();
+    });
+
+    it('restores an unsaved photo draft and undo history after reload without opening Studio', async () => {
+      const first = render(QuickEditor, { asset: photo, onClose: vi.fn() });
+      await ready();
+      await fireEvent.input(screen.getByRole('slider', { name: 'frameleaf_editor_param_contrast' }), {
+        target: { value: '40' },
+      });
+      await waitFor(() => expect(readEditorContinuity<EditorDraft>(photo.id)?.draft.recipe.contrast).toBe(40));
+      first.unmount();
+
+      render(QuickEditor, { asset: photo, onClose: vi.fn() });
+      await waitFor(() => expect(screen.getByRole('slider', { name: 'frameleaf_editor_param_contrast' })).toHaveValue('40'));
+      expect(screen.getByRole('button', { name: 'undo' })).not.toBeDisabled();
+    });
+
+    it('keeps photo redo history after undo returns to the opening recipe', async () => {
+      const first = render(QuickEditor, { asset: photo, onClose: vi.fn() });
+      await ready();
+      await fireEvent.input(screen.getByRole('slider', { name: 'frameleaf_editor_param_contrast' }), {
+        target: { value: '40' },
+      });
+      await fireEvent.click(screen.getByRole('button', { name: 'undo' }));
+      await waitFor(() => expect(readEditorContinuity<EditorDraft>(photo.id)?.draft.redo.length).toBe(1));
+      first.unmount();
+
+      render(QuickEditor, { asset: photo, onClose: vi.fn() });
+      await ready();
+      const redo = screen.getByRole('button', { name: 'frameleaf_editor_redo' });
+      expect(redo).not.toBeDisabled();
+      await fireEvent.click(redo);
+      expect(screen.getByRole('slider', { name: 'frameleaf_editor_param_contrast' })).toHaveValue('40');
+    });
+
+    it('does not rewrite a cleared photo draft from a late editor update', async () => {
+      const first = render(QuickEditor, { asset: photo, onClose: vi.fn() });
+      await ready();
+      await fireEvent.input(screen.getByRole('slider', { name: 'frameleaf_editor_param_contrast' }), {
+        target: { value: '40' },
+      });
+      await waitFor(() => expect(readEditorContinuity(photo.id)?.kind).toBe('photo'));
+
+      clearPrivateBrowserState();
+      await fireEvent.input(screen.getByRole('slider', { name: 'frameleaf_editor_param_contrast' }), {
+        target: { value: '50' },
+      });
+      first.unmount();
       expect(readEditorContinuity(photo.id)).toBeNull();
     });
 
