@@ -98,6 +98,7 @@ import { StudioPreviewStreamService } from 'src/services/studio-preview-stream.s
 import { StudioPreviewService } from 'src/services/studio-preview.service.js';
 import { StudioProjectService } from 'src/services/studio-project.service.js';
 import { StudioResourceService } from 'src/services/studio-resource.service.js';
+import { StudioReverseConformCommandService } from 'src/services/studio-reverse-conform-command.service.js';
 import { StudioReverseConformService } from 'src/services/studio-reverse-conform.service.js';
 import { StudioRevocationService } from 'src/services/studio-revocation.service.js';
 import { StudioWorkspaceService } from 'src/services/studio-workspace.service.js';
@@ -223,6 +224,7 @@ export const services = [
   StudioBundleService,
   StudioProjectService,
   StudioReverseConformService,
+  StudioReverseConformCommandService,
   StudioResourceService,
   StudioRevocationService,
   StudioWorkspaceService,
