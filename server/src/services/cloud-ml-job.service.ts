@@ -639,7 +639,11 @@ export class CloudMlJobService {
       );
     }
     if (quoted !== undefined && quoted !== expected) {
-      this.logger.warn(`Frameleaf Cloud quoted ${quoted}× for a photo this server expected at ${expected}×`);
+      throw new CloudMlJobFailure(
+        'cloud_ml_estimate_unstable',
+        `Frameleaf Cloud quoted ${quoted}× for a photo this server expected at ${expected}×; request a new estimate`,
+        false,
+      );
     }
     const appliedScale = quoted ?? expected;
     return {
@@ -1457,6 +1461,17 @@ export class CloudMlJobService {
       );
     }
     if (
+      snapshot.upscale &&
+      this.upscaleQuote(sealed, snapshot.upscale.requestedScale, snapshot.upscale.input).appliedScale !==
+        snapshot.upscale.appliedScale
+    ) {
+      throw new CloudMlJobFailure(
+        'cloud_ml_estimate_unstable',
+        'Frameleaf Cloud changed the upscale factor after confirmation. Nothing was sent; estimate again.',
+        false,
+      );
+    }
+    if (
       sealed.cost.p90 > snapshot.approved.p90Usd * CLOUD_ML_JOB_PRICE_TOLERANCE ||
       sealed.cost.hold > snapshot.approved.holdUsd * CLOUD_ML_JOB_PRICE_TOLERANCE
     ) {
@@ -1959,9 +1974,7 @@ export class CloudMlJobService {
       throw invalid('describes another photo than the one sent');
     }
     if (snapshot.upscale && item.scale !== snapshot.upscale.appliedScale) {
-      this.logger.warn(
-        `Frameleaf Cloud job ${run.operation.id}: upscaled at ${item.scale}×, quoted at ${snapshot.upscale.appliedScale}×`,
-      );
+      throw invalid(`says ${item.scale}×, but the owner approved ${snapshot.upscale.appliedScale}×`);
     }
     return item.scale;
   }
