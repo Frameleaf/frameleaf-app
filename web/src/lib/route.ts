@@ -180,8 +180,9 @@ export const Route = {
     slug ? `/s/${encodeURIComponent(slug)}` : `/share/${key}`,
 
   // imports
-  /** The Google Photos import wizard (FL-65); `import` opens one import. */
-  takeout: (params?: { import?: string }) => '/takeout' + asQueryString(params),
+  /** The Google Photos import dialog in Command Center → Backup & import (FL-83), optionally on one import. */
+  takeout: (params?: { import?: string }) =>
+    commandCenterUrl('backup', 'takeout', { workflow: 'import', import: params?.import }),
 
   // settings
   /**
