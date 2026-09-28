@@ -32,6 +32,34 @@ export const billingValues = (
 });
 
 /**
+ * FC-46 (owner decision 2026-09-27): the upscale a photo really gets, as the dialog shows it before
+ * confirming. The 64 MP output cap stays, so a photo the requested factor would take over it is
+ * upscaled by a smaller one (a 12 MP photo asked for 4× gets 2×), and the estimate is for that factor.
+ * Null for work that is not a photo upscale.
+ */
+export const upscaleFact = (
+  estimate: Pick<CloudMlJobEstimateResponseDto, 'upscale'>,
+): { valueKey: Translations; helpKey: Translations | null; values: Record<string, number | string> } | null => {
+  const upscale = estimate.upscale;
+  if (!upscale) {
+    return null;
+  }
+  const values = {
+    scale: upscale.appliedScale,
+    requested: upscale.requestedScale,
+    width: upscale.outputWidth.toLocaleString(),
+    height: upscale.outputHeight.toLocaleString(),
+  };
+  return upscale.lowered
+    ? {
+        valueKey: 'frameleaf_cloud_job_upscale_lowered',
+        helpKey: 'frameleaf_cloud_job_upscale_lowered_help',
+        values,
+      }
+    : { valueKey: 'frameleaf_cloud_job_upscale_value', helpKey: null, values };
+};
+
+/**
  * What an estimate or confirmation refusal asks of the person (FL-162). `model` goes back to the
  * model slider (409 `model-mismatch`), `estimate` estimates again (409 `estimate-expired`, or the
  * terms changed), `preparing` asks again shortly (409 `input-preparing`: a whole video is being
