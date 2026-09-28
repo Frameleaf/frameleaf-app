@@ -12,7 +12,7 @@ import {
   type AssetDevelopRevisionResponseDto,
 } from '@immich/sdk';
 import { toastManager } from '@immich/ui';
-import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { goto } from '$app/navigation';
 import { continuityBase, readEditorContinuity, saveEditorContinuity } from '$lib/frameleaf/editor-continuity';
 import { openingRecipe } from '$lib/frameleaf/editor-draft';
@@ -451,8 +451,8 @@ describe('QuickEditor', () => {
     );
     await waitFor(() => expect(getAssetEdits).toHaveBeenCalledWith({ id: video.id }));
     expect(getAssetDevelop).not.toHaveBeenCalled();
-    // The photo Masks tool is not offered for a clip.
-    expect(screen.queryByRole('tab', { name: 'frameleaf_editor_tool_masks' })).not.toBeInTheDocument();
+    // The photo Masks entry is not offered for a clip.
+    expect(screen.queryByRole('button', { name: /frameleaf_editor_tool_masks/ })).not.toBeInTheDocument();
   });
 
   it('opens the video Versions menu without discarding the open draft (FL-39)', async () => {
@@ -491,6 +491,42 @@ describe('QuickEditor', () => {
     expect(compare).toHaveAttribute('aria-pressed', 'false');
   });
 
+  describe('the prototype tool rail (FL-83 E-9)', () => {
+    it('offers Adjust, Crop, Enhance and Presets, with restoration under Enhance', async () => {
+      render(QuickEditor, { asset: photo, onClose: vi.fn() });
+      await waitFor(() => expect(getAssetDevelop).toHaveBeenCalled());
+
+      expect(screen.getAllByRole('tab').map((tab) => tab.dataset.tool)).toEqual([
+        'adjust',
+        'crop',
+        'enhance',
+        'presets',
+      ]);
+      await fireEvent.click(screen.getByRole('tab', { name: 'frameleaf_editor_tool_enhance' }));
+      const panel = screen.getByRole('tabpanel', { name: 'frameleaf_editor_tool_enhance' });
+      expect(within(panel).getByTestId('restoration-panel')).toBeInTheDocument();
+      expect(within(panel).getByRole('heading', { level: 2, name: 'frameleaf_editor_tool_enhance' })).toBeTruthy();
+    });
+
+    it('opens Masks from the Adjust panel, keeps Adjust selected and returns to it', async () => {
+      render(QuickEditor, { asset: photo, onClose: vi.fn() });
+      await waitFor(() => expect(getAssetDevelop).toHaveBeenCalled());
+
+      await fireEvent.click(screen.getByRole('button', { name: /frameleaf_editor_tool_masks/ }));
+      expect(screen.getByRole('tabpanel', { name: 'frameleaf_editor_tool_masks' })).toBeInTheDocument();
+      expect(screen.getByRole('tab', { name: 'frameleaf_editor_tool_adjust' })).toHaveAttribute(
+        'aria-selected',
+        'true',
+      );
+      await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_editor_mask_add_radial' }));
+
+      await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_editor_masks_back' }));
+      expect(screen.getByRole('tabpanel', { name: 'frameleaf_editor_tool_adjust' })).toBeInTheDocument();
+      // The entry counts the masks the photo has.
+      expect(screen.getByRole('button', { name: /frameleaf_editor_tool_masks/ })).toHaveTextContent('1');
+    });
+  });
+
   describe('selective photo tools (FL-64)', () => {
     it('adds a mask from the Masks tool, previews it on the server and saves it with the version', async () => {
       vi.useFakeTimers({ shouldAdvanceTime: true });
@@ -498,7 +534,7 @@ describe('QuickEditor', () => {
       render(QuickEditor, { asset: photo, onClose: vi.fn() });
       await waitFor(() => expect(getAssetDevelop).toHaveBeenCalled());
 
-      await fireEvent.click(screen.getByRole('tab', { name: 'frameleaf_editor_tool_masks' }));
+      await fireEvent.click(screen.getByRole('button', { name: /frameleaf_editor_tool_masks/ }));
       await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_editor_mask_add_radial' }));
       expect(screen.getByRole('radio', { name: /frameleaf_editor_mask_number/ })).toHaveAttribute(
         'aria-checked',
@@ -532,7 +568,7 @@ describe('QuickEditor', () => {
       vi.mocked(saveAssetDevelop).mockResolvedValue(revision({ status: AssetDevelopRevisionStatus.Queued }));
       render(QuickEditor, { asset: photo, onClose: vi.fn() });
       await waitFor(() => expect(getAssetDevelop).toHaveBeenCalled());
-      await fireEvent.click(screen.getByRole('tab', { name: 'frameleaf_editor_tool_masks' }));
+      await fireEvent.click(screen.getByRole('button', { name: /frameleaf_editor_tool_masks/ }));
       await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_editor_mask_add_linear' }));
       await fireEvent.click(screen.getByRole('tab', { name: 'frameleaf_editor_tool_crop' }));
       await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_editor_rotate_right' }));
