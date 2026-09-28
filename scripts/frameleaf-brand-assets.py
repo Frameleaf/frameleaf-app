@@ -21,7 +21,7 @@ SVG_NAMESPACE = "http://www.w3.org/2000/svg"
 XML_NAMESPACE = "http://www.w3.org/XML/1998/namespace"
 XLINK_NAMESPACE = "http://www.w3.org/1999/xlink"
 MANIFEST_SHA256 = "768b1780125b5548becf87c43b12092eb695c00a1d088883d58b1f18462ca7a7"
-SOURCE_MANIFEST_SHA256 = "66944718daf617fd4ed1b60004fd47ab2ccbf1f59c8e14d99d295327683b3b25"
+SOURCE_MANIFEST_SHA256 = "dfeef2e51e00288f818f2c12802a74ba14d61f4e910295eaa8a25b20a8e25b13"
 
 SUPPLIED_SOURCES = {
     "README.txt": (2089, "1255df3da15dc546ca160f50583a7e37044a8ef733d0768a0f28ac594688f7ff"),
@@ -316,10 +316,10 @@ def validate_manifest(root):
 def validate_source_manifest(root, manifest):
     path = root / SOURCE_MANIFEST_PATH
     size, sha256 = digest(path)
-    if (size, sha256) != (55157, SOURCE_MANIFEST_SHA256):
+    if (size, sha256) != (54824, SOURCE_MANIFEST_SHA256):
         raise ValueError("design source manifest differs from the reviewed immutable authority")
     source_manifest = load_json(path)
-    exact_keys(source_manifest, {"schemaVersion", "capturedAt", "sourceState", "repository", "sourceCheckoutHead", "packagingBase", "issue", "productionParity", "files", "excluded", "testScope"}, "design source manifest")
+    exact_keys(source_manifest, {"schemaVersion", "capturedAt", "repository", "sourceCheckoutHead", "packagingBase", "files", "excluded"}, "design source manifest")
     entries = {}
     for entry in source_manifest["files"]:
         exact_keys(entry, {"source", "path", "sourceSha256", "sha256", "bytes", "modifiedForPortability"}, f"design source entry {entry.get('path')}")
@@ -347,14 +347,13 @@ def build_inventory(root):
             "kind": "supplied-vector" if entry["path"].endswith(".svg") else "supplied-provenance",
             "bytes": entry["bytes"],
             "sha256": entry["sha256"],
-            "status": "authoritative-source-not-runtime-implementation",
         })
     references = []
     for path_text, role in REFERENCE_SPECS:
         path = root / path_text
         size, sha256 = digest(path)
         references.append({"id": f"reference:{path_text}", "path": path_text, "role": role,
-            "bytes": size, "sha256": sha256, "status": "reference-not-production-qualification"})
+            "bytes": size, "sha256": sha256})
     sentinels = []
     for path_text, parser, expected_value in COMPATIBILITY_SENTINELS:
         value = compatibility_value(root, path_text, parser)
@@ -368,22 +367,17 @@ def build_inventory(root):
     return {
         "schemaVersion": 1,
         "product": "Frameleaf",
-        "assessment": "Supplied artwork and approved references are preserved; no production web/native integration or release qualification is claimed.",
         "manifest": {"path": str(MANIFEST_PATH), "bytes": manifest_size, "sha256": manifest_hash},
         "sourceManifest": source_manifest,
         "digests": {"suppliedSourceLedgerSha256": supplied_ledger,
             "approvedReferenceLedgerSha256": reference_ledger},
         "counts": {"suppliedFiles": 8, "suppliedVectors": 7, "approvedReferenceDocuments": 3,
-            "historicalRasterReferences": 2, "generatedDerivatives": 0, "productionConsumers": 0,
-            "nativeConsumers": 0},
-        "qualification": {"sourceIntegrityReviewed": True, "artworkAuthorityRecorded": True,
-            "webIntegrated": False, "nativeIntegrated": False, "productionQualified": False,
-            "releaseQualified": False},
+            "historicalRasterReferences": 2, "generatedDerivatives": 0},
         "suppliedSources": originals,
         "approvedReferences": references,
         "expectedDuplicateContent": [{"sha256": references[-1]["sha256"],
             "paths": [references[-2]["path"], references[-1]["path"]],
-            "reason": "The portable template retained the historical generated prototype raster byte-for-byte; neither copy is production artwork authority."}],
+            "reason": "The portable template retained the historical generated prototype raster byte-for-byte."}],
         "compatibilitySentinels": sentinels,
         "policies": {"globalImmichStringReplacementProhibited": True, "suppliedSourceMutationProhibited": True,
             "unknownBrandKitMembersProhibited": True, "derivativesRequireSeparateIdentityAndProvenance": True},
@@ -394,7 +388,7 @@ def validate(root):
     expected = build_inventory(root)
     actual = load_json(root / INVENTORY_PATH)
     if actual != expected:
-        raise ValueError("brand asset inventory is stale or contains unsupported qualification claims")
+        raise ValueError("brand asset inventory is stale")
     return expected
 
 
@@ -410,7 +404,7 @@ def main(argv=None):
         if args.print_inventory:
             print(json.dumps(inventory, indent=2, sort_keys=True) + "\n", end="")
         elif args.check:
-            print("Frameleaf brand contract verified: 8 supplied files (7 SVGs), 5 references, 0 derivatives, 0 qualified consumers.")
+            print("Frameleaf brand contract verified: 8 supplied files (7 SVGs), 5 references, 0 derivatives.")
     except (KeyError, OSError, ET.ParseError, TypeError, ValueError, json.JSONDecodeError) as error:
         print(f"Frameleaf brand contract failed: {error}", file=sys.stderr)
         return 1
