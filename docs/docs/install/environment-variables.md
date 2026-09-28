@@ -89,7 +89,7 @@ These environment variables are used by the `docker-compose.yml` file and do **N
 | `FRAMELEAF_EDGE_SECRET`        | Per-boot secret the edge worker sends with each request, so the server can tell how a visitor arrived. The server generates a new one on every start; set it only when the edge worker runs in another container, to the same value in both. Without it the edge worker serves nothing. |                              | server     | api, edge                |
 | `FRAMELEAF_LOCAL_URL`          | This server's address on the home network, offered to a remote-access visitor who is on the same network. The edge worker publishes the LAN name for its address when it is an IPv4 address; in a container, that is the only LAN name.                                                 |                              | server     | api, edge                |
 
-\*1: The address is deployment configuration, never a setting, and no default host is ever used. See [Frameleaf Cloud](/administration/frameleaf-cloud).
+\*1: The address is deployment configuration, never a setting, and no default host is ever used.
 
 \*2: The key is created once, readable by the server only. Losing it gives the server a new identity: every link and licence tied to the old one stops working until you link and activate again.
 

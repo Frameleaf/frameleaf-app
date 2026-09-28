@@ -18,7 +18,7 @@ If you are a programmer or developer, take a look at the [technology stack](/dev
 
 ## Supporter key
 
-Frameleaf is made by a small team and funded by the people who use it. Supporting Frameleaf with a supporter key, for one account or for your whole server, gives you access to Frameleaf Cloud, enhanced machine learning features and more. Frameleaf Cloud replaces the licensing system inherited from the upstream project.
+Frameleaf is made by a small team and funded by the people who use it. You can support Frameleaf with a supporter key for one account or for your whole server.
 
 If you already have a key, activate it in the web app under **Account settings → Supporter status**. Details on getting a key will be published in the [Frameleaf repository][github-repo].
 

@@ -61,7 +61,7 @@ When description and tag generation is enabled, Frameleaf sends the asset previe
 - Tags are plain searchable tags, deduplicated against existing tags.
 - Sidecar write jobs are queued after visible description or tag changes.
 
-The default description model setting is `Qwen/Qwen2.5-VL-3B-Instruct`. In this branch, that model is mapped internally to the OpenVINO-converted `llmware/qwen2.5-vl-3b-ov` model. The lower-resource fallback setting is `microsoft/Florence-2-base-ft`. See [Hardware and Model Notes](#hardware-and-model-notes) below for the full curated model dropdown, VRAM estimates per model, and an explanation of how the fallback behavior differs between local workers and Frameleaf Cloud.
+The default description model setting is `Qwen/Qwen2.5-VL-3B-Instruct`. In this branch, that model is mapped internally to the OpenVINO-converted `llmware/qwen2.5-vl-3b-ov` model. The lower-resource fallback setting is `microsoft/Florence-2-base-ft`. See [Hardware and Model Notes](#hardware-and-model-notes) below for the full curated model dropdown, VRAM estimates per model, and local fallback behavior.
 
 ## NSFW Detection
 
@@ -130,18 +130,13 @@ Only the **Qwen2.5-VL**, **Qwen3-VL**, **Phi-3/3.5-vision**, and **Florence-2** 
 
 On OpenVINO, the 3B/7B Qwen entries resolve transparently to pre-quantized int4 builds (`llmware/qwen2.5-vl-Nb-ov`). The 32B, 72B, and Qwen3-VL 30B-A3B entries are CUDA only — there is no OpenVINO alias.
 
-The same description models, with Florence-2 base and large, are the white and green stops of the descriptions slider in **Where each job runs** and on the Cloud processing **Models** card. The slider colours each one by the last Hardware & GPU check and changes the same description model setting, saved with the settings bar. A model the machine-learning container doesn't have yet downloads the first time a job uses it. See [Hardware acceleration → Model licences and Frameleaf Cloud](/features/ml-hardware-acceleration#model-licences-and-frameleaf-cloud).
+The same description models, with Florence-2 base and large, are the white and green stops of the descriptions slider in **Where each job runs**. The slider colours each one by the last Hardware & GPU check and changes the same description model setting, saved with the settings bar. A model the machine-learning container doesn't have yet downloads the first time a job uses it. See [Hardware acceleration → Model licences](/features/ml-hardware-acceleration#model-licences).
 
 ### Fallback model behavior
 
 The dropdown also exposes a **fallback model** field. Florence-2 is the typical choice for local CUDA setups, since it's small enough to fit alongside other models on the same GPU.
 
-The fallback logic is **split by destination**:
-
-- **Local URLs**: if the primary model fails (HTTP 5xx), Frameleaf retries the same request with the fallback model name. Local Florence-2 then takes the call.
-- **Frameleaf Cloud**: the fallback is **never** attempted. The model chosen for cloud work is the contract; silently switching to another model in the cloud would be surprising.
-
-If descriptions run only on Frameleaf Cloud, the fallback never runs; leaving it set is harmless.
+For local URLs, if the primary model fails (HTTP 5xx), Frameleaf retries the same request with the fallback model name. Local Florence-2 then takes the call.
 
 For Intel iGPU deployments, use the OpenVINO machine-learning image/extra and keep the description device at `AUTO` unless you need to pin it. `AUTO` lets OpenVINO choose the best available device and fall back when the GPU is unavailable.
 
