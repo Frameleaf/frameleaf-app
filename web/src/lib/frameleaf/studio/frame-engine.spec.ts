@@ -351,32 +351,47 @@ it.each(['source', 'project'] as const)(
     const draft = { timeline: { items: [{ id: 'clip', generatedId, from: 42 }] } };
     const frame = fakeFrame({
       respond: (port, message) => {
-        if (message.type === 'mount') {
-          expect(message).toMatchObject({
-            context: { generatedMedia: [{ generatedId, id: generatedMediaAlias(generatedId) }] },
-          });
-          port.postMessage({ type: 'mounted' });
-        } else if (message.type === 'revoke-generated') {
-          port.postMessage({
-            type: 'service',
-            callId: 99,
-            name: 'stageDraft',
-            args: [
-              {
-                timeline: {
-                  items: [
-                    { ...draft.timeline.items[0], mediaId: generatedMediaAlias(generatedId), src: '/private-preview' },
-                  ],
+        switch (message.type) {
+          case 'mount': {
+            expect(message).toMatchObject({
+              context: { generatedMedia: [{ generatedId, id: generatedMediaAlias(generatedId) }] },
+            });
+            port.postMessage({ type: 'mounted' });
+
+            break;
+          }
+          case 'revoke-generated': {
+            port.postMessage({
+              type: 'service',
+              callId: 99,
+              name: 'stageDraft',
+              args: [
+                {
+                  timeline: {
+                    items: [
+                      {
+                        ...draft.timeline.items[0],
+                        mediaId: generatedMediaAlias(generatedId),
+                        src: '/private-preview',
+                      },
+                    ],
+                  },
                 },
-              },
-              ['editor.save'],
-              2,
-              0,
-            ],
-          });
-        } else if (message.type === 'service-result') {
-          expect(host.stageDraft).toHaveBeenCalledWith(draft, ['editor.save'], 2, 0);
-          port.postMessage({ type: 'disposed' });
+                ['editor.save'],
+                2,
+                0,
+              ],
+            });
+
+            break;
+          }
+          case 'service-result': {
+            expect(host.stageDraft).toHaveBeenCalledWith(draft, ['editor.save'], 2, 0);
+            port.postMessage({ type: 'disposed' });
+
+            break;
+          }
+          // No default
         }
       },
     });
@@ -388,8 +403,9 @@ it.each(['source', 'project'] as const)(
         initial,
         host,
       );
-      if (kind === 'source') eventManager.emit('AssetsDelete', ['source']);
-      else {
+      if (kind === 'source') {
+        eventManager.emit('AssetsDelete', ['source']);
+      } else {
         const invalidate = listen.mock.calls.find(([event]) => event === 'StudioProjectInvalidatedV1')![1] as (data: {
           projectId: string | null;
         }) => void;
@@ -447,8 +463,9 @@ it.each(['disconnect', 'project'] as const)('rejects an in-flight command on %s 
       graph,
       generatedMedia: [{ generatedId, id: generatedMediaAlias(generatedId) }],
     });
-    if (kind === 'disconnect') websocketStore.connected.set(false);
-    else {
+    if (kind === 'disconnect') {
+      websocketStore.connected.set(false);
+    } else {
       const invalidate = listen.mock.calls.find(([event]) => event === 'StudioProjectInvalidatedV1')![1] as (data: {
         projectId: string | null;
       }) => void;

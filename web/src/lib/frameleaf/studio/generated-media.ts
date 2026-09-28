@@ -11,16 +11,24 @@ export interface StudioGeneratedMedia extends StudioAssetRef {
 }
 
 export const generatedMediaAlias = (id: string): string => {
-  if (!REVERSE_ID.test(id)) throw new Error('Unsupported generated Studio resource');
+  if (!REVERSE_ID.test(id)) {
+    throw new Error('Unsupported generated Studio resource');
+  }
   return `${ALIAS}${id}`;
 };
 
 function mapGraph(graph: unknown, visit: (node: Record<string, unknown>) => Record<string, unknown>): unknown {
   let remaining = 100_000;
   const walk = (value: unknown, depth: number): unknown => {
-    if (--remaining < 0 || depth > 64) throw new Error('Studio graph exceeds resource limits');
-    if (Array.isArray(value)) return value.map((item) => walk(item, depth + 1));
-    if (!value || typeof value !== 'object') return value;
+    if (--remaining < 0 || depth > 64) {
+      throw new Error('Studio graph exceeds resource limits');
+    }
+    if (Array.isArray(value)) {
+      return value.map((item) => walk(item, depth + 1));
+    }
+    if (!value || typeof value !== 'object') {
+      return value;
+    }
     return visit(Object.fromEntries(Object.entries(value).map(([key, item]) => [key, walk(item, depth + 1)])));
   };
   return walk(graph, 0);
@@ -32,7 +40,9 @@ export function storeGeneratedMedia(graph: unknown): unknown {
     const alias =
       typeof node.mediaId === 'string' && node.mediaId.startsWith(ALIAS) ? node.mediaId.slice(ALIAS.length) : null;
     const id = alias ?? node.generatedId;
-    if (id === undefined) return node;
+    if (id === undefined) {
+      return node;
+    }
     if (
       typeof id !== 'string' ||
       !REVERSE_ID.test(id) ||
@@ -48,8 +58,9 @@ export function storeGeneratedMedia(graph: unknown): unknown {
       if (
         ['mediaId', 'src', 'audioSrc', 'thumbnailUrl', 'waveformData'].includes(key) ||
         key.startsWith('reverseConform')
-      )
+      ) {
         delete stored[key];
+      }
     }
     return stored;
   });
@@ -58,10 +69,14 @@ export function storeGeneratedMedia(graph: unknown): unknown {
 export function generatedMediaIds(graph: unknown): string[] {
   const ids = new Set<string>();
   mapGraph(storeGeneratedMedia(graph), (node) => {
-    if (typeof node.generatedId === 'string') ids.add(node.generatedId);
+    if (typeof node.generatedId === 'string') {
+      ids.add(node.generatedId);
+    }
     return node;
   });
-  if (ids.size > 200) throw new Error('Too many generated Studio resources');
+  if (ids.size > 200) {
+    throw new Error('Too many generated Studio resources');
+  }
   return [...ids].sort();
 }
 
@@ -69,7 +84,9 @@ export function generatedMediaIds(graph: unknown): string[] {
 export function hydrateGeneratedMedia(graph: unknown, admitted: readonly StudioGeneratedMedia[]): unknown {
   const byId = new Map(admitted.map((media) => [media.generatedId, media]));
   return mapGraph(storeGeneratedMedia(graph), (node) => {
-    if (typeof node.generatedId !== 'string') return node;
+    if (typeof node.generatedId !== 'string') {
+      return node;
+    }
     const media = byId.get(node.generatedId);
     if (!media || media.isOffline || media.id !== generatedMediaAlias(node.generatedId) || !media.playbackUrl) {
       throw new Error('Generated Studio media is not authorized');

@@ -309,16 +309,17 @@ export const createFrameStudioEngine = ({
               ? serviceCalls[message.name]
               : undefined;
           const args = Array.isArray(message.args) ? message.args : [];
-          const run = Promise.resolve().then(() =>
-            message.name === 'authorizeGeneratedMedia'
+          const run = (async () => {
+            await Promise.resolve();
+            return message.name === 'authorizeGeneratedMedia'
               ? access.recheck()
               : handler
                 ? handler(
                     services,
                     message.name === 'stageDraft' ? [storeGeneratedMedia(args[0]), ...args.slice(1)] : args,
                   )
-                : Promise.reject(new Error(`Unknown service ${String((message as { name: unknown }).name)}`)),
-          );
+                : Promise.reject(new Error(`Unknown service ${String((message as { name: unknown }).name)}`));
+          })();
           void run
             .then((value) =>
               send({ type: 'service-result', callId: message.callId, ok: true, value: toFrameData(value) }),
@@ -391,7 +392,9 @@ export const createFrameStudioEngine = ({
     };
 
     revoke = (error) => {
-      if (revoking || disposed || disposing) return;
+      if (revoking || disposed || disposing) {
+        return;
+      }
       revoking = true;
       frame.style.visibility = 'hidden';
       access.dispose();
@@ -411,7 +414,9 @@ export const createFrameStudioEngine = ({
     };
 
     try {
-      if (pendingRevocation) throw pendingRevocation;
+      if (pendingRevocation) {
+        throw pendingRevocation;
+      }
       await new Promise<void>((resolve, reject) => {
         settleMount = { resolve, reject };
         send({ type: 'mount', protocolVersion: STUDIO_FRAME_PROTOCOL_VERSION, context: toFrameData(current) });
@@ -428,16 +433,22 @@ export const createFrameStudioEngine = ({
       update(next) {
         updating = updating
           .then(async () => {
-            if (disposed || revoking || disposing) return;
+            if (disposed || revoking || disposing) {
+              return;
+            }
             const generatedMedia = await access.admit(next.project.id, next.project.graph, next.project.revision);
-            if (disposed || revoking || disposing) return;
+            if (disposed || revoking || disposing) {
+              return;
+            }
             current = { ...next, generatedMedia };
             send({ type: 'update', context: toFrameData(current) });
           })
           .catch((error) => revoke(error instanceof Error ? error : new Error(String(error))));
       },
       dispose() {
-        if (disposed) return Promise.resolve();
+        if (disposed) {
+          return Promise.resolve();
+        }
         access.dispose();
         disposing ??= (async () => {
           await new Promise<void>((resolve) => {
@@ -486,12 +497,12 @@ export const createFrameStudioEngine = ({
         projectId?: string,
       ) {
         if (closed) {
-          return Promise.resolve({
+          return {
             status: 'rejected',
             index: 0,
             reason: 'failed',
             detail: 'The command engine was released',
-          });
+          };
         }
         let generatedMedia;
         try {
@@ -499,7 +510,9 @@ export const createFrameStudioEngine = ({
         } catch (error) {
           return { status: 'rejected', index: 0, reason: 'failed', detail: String(error) };
         }
-        if (closed) return { status: 'rejected', index: 0, reason: 'failed', detail: 'Generated media was revoked' };
+        if (closed) {
+          return { status: 'rejected', index: 0, reason: 'failed', detail: 'Generated media was revoked' };
+        }
         const requestId = nextRequest++;
         const request: StudioCommandApplyRequest = {
           type: 'apply',

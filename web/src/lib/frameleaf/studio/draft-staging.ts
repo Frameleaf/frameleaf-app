@@ -49,7 +49,7 @@ export const decideStudioDraft = (
  * (after Reload) nothing is held, so the editor shows the head it will be judged against.
  */
 export const studioDraftHeld = (status: StudioProjectStatus | undefined, hasDraft: boolean): boolean =>
-  hasDraft && (status === 'conflict' || status === 'lease-lost' || status === 'review');
+  hasDraft && ['conflict', 'lease-lost', 'review'].includes(status ?? '');
 
 /**
  * What the editor is told after the session judged its draft. `superseded` (FL-174): the draft was
