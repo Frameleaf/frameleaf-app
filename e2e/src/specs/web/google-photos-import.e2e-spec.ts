@@ -3,6 +3,7 @@ import {
   createTakeoutImport,
   getTakeoutImport,
   getTakeoutItems,
+  getTakeoutPairs,
   uploadTakeoutArchiveChunk,
   type LoginResponseDto,
 } from '@immich/sdk';
@@ -161,5 +162,81 @@ test.describe('Google Photos import (FL-144)', () => {
     const csvDownload = await csvEvent;
     expect(csvDownload.suggestedFilename()).toMatch(/-report\.csv$/);
     expect(await readFile(await csvDownload.path(), 'utf8')).toContain('Trip/IMG_1.png,takeout.zip,image,ready,');
+  });
+
+  test('reviews Live Photo pairs from split archives and keeps each decision after reload', async ({ context, page }) => {
+    test.setTimeout(60_000);
+    const auth = { headers: asBearerAuth(admin.accessToken) };
+    const takeout = await createTakeoutImport({ takeoutCreateDto: { name: 'Live Photo review' } }, auth);
+    const stills = zip(
+      ['Trip', 'Other'].map((folder) => ({
+        name: `Takeout/Google Photos/${folder}/IMG_1.png`,
+        data: makeRandomImage(),
+      })),
+    );
+    const clips = zip(
+      ['Trip', 'Other'].map((folder) => ({
+        name: `Takeout/Google Photos/${folder}/IMG_1.MP4`,
+        data: Buffer.from(`motion in ${folder}`),
+      })),
+    );
+    for (const [name, bytes] of [
+      ['photos.zip', stills],
+      ['videos.zip', clips],
+    ] as const) {
+      const archive = await createTakeoutArchive(
+        { id: takeout.id, takeoutArchiveCreateDto: { name, size: bytes.length } },
+        auth,
+      );
+      await uploadTakeoutArchiveChunk(
+        { id: takeout.id, archiveId: archive.id, offset: 0, body: new Blob([bytes]) },
+        { ...auth, headers: { ...auth.headers, 'Content-Type': 'application/octet-stream' } },
+      );
+    }
+
+    await utils.setAuthCookies(context, admin.accessToken);
+    await page.goto(`/user-settings?area=backup&section=takeout&workflow=import&import=${takeout.id}`);
+    const dialog = page.getByRole('dialog', { name: 'Import Google Photos' });
+    await dialog.getByRole('button', { name: 'Continue' }).click();
+    await expect
+      .poll(async () => (await getTakeoutImport({ id: takeout.id }, auth)).state, { timeout: 30_000 })
+      .toBe('review');
+
+    const { items } = await getTakeoutItems({ id: takeout.id }, auth);
+    expect(items).toHaveLength(4);
+    const byPath = new Map(items.map((item) => [item.path, item]));
+    for (const folder of ['Trip', 'Other']) {
+      expect(byPath.get(`${folder}/IMG_1.png`)?.source).toBe('photos.zip');
+      expect(byPath.get(`${folder}/IMG_1.MP4`)?.source).toBe('videos.zip');
+    }
+    const { pairs, total } = await getTakeoutPairs({ id: takeout.id }, auth);
+    expect(total).toBe(2);
+    for (const pair of pairs) {
+      const folder = pair.photoPath.split('/')[0];
+      expect(pair.photoItemId).toBe(byPath.get(`${folder}/IMG_1.png`)?.id);
+      expect(pair.videoItemId).toBe(byPath.get(`${folder}/IMG_1.MP4`)?.id);
+      expect(pair.state).toBe('suggested');
+    }
+
+    const tabs = dialog.getByRole('group', { name: 'Import details' });
+    await tabs.getByRole('button', { name: 'Live Photos' }).click();
+    const trip = dialog.locator('li').filter({ hasText: 'Trip/IMG_1.png' });
+    const other = dialog.locator('li').filter({ hasText: 'Other/IMG_1.png' });
+    await expect(trip.getByText('Trip/IMG_1.MP4')).toBeVisible();
+    await expect(other.getByText('Other/IMG_1.MP4')).toBeVisible();
+    await trip.getByRole('button', { name: 'These belong together' }).click();
+    await other.getByRole('button', { name: 'Keep separate' }).click();
+    await expect
+      .poll(async () =>
+        Object.fromEntries(
+          (await getTakeoutPairs({ id: takeout.id }, auth)).pairs.map((pair) => [pair.photoPath, pair.state]),
+        ),
+      )
+      .toEqual({ 'Other/IMG_1.png': 'skipped', 'Trip/IMG_1.png': 'approved' });
+
+    await page.reload();
+    await tabs.getByRole('button', { name: 'Live Photos' }).click();
+    await expect(trip.getByText('Linked together')).toBeVisible();
+    await expect(other.getByText('Kept separate')).toBeVisible();
   });
 });
