@@ -18,6 +18,7 @@
   } from '$lib/components/discovery/query';
   import { isCommandQuery, navigationCommands, searchCommands, type CommandItem } from '$lib/frameleaf/command-palette';
   import { onLibraryAccessChange } from '$lib/frameleaf/library-access';
+  import { applyFilterQuery } from '$lib/frameleaf/search-shortcuts';
   import { prefersReducedMotion } from '$lib/frameleaf/motion';
   import { describeFilterChips } from '$lib/frameleaf/search-filters';
   import {
@@ -741,6 +742,10 @@
       return;
     }
     remember();
+    if (section && applyFilterQuery(query)) {
+      onClose();
+      return;
+    }
     handlePromiseError(goto(isEmptyDiscoverySearch(query) ? '/search' : discoveryUrl(query)));
     onClose();
   };

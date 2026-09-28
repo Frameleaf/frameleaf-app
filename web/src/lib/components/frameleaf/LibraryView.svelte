@@ -49,6 +49,7 @@
     withoutDiscoveryFilter,
     type DiscoveryDestination,
     type DiscoveryFilterSection,
+    type DiscoveryQuery,
   } from '$lib/components/discovery/query';
   import { namedEntitySegments, withArchiveDetail } from '$lib/frameleaf/archive-name';
   import { preparesArchiveOnServer } from '$lib/frameleaf/archive-operations';
@@ -72,6 +73,7 @@
   import { isTypingTarget, matchLibraryShortcut, type LibraryShortcut } from '$lib/frameleaf/library-shortcuts';
   import type { SelectionBarLeadingAction } from '$lib/frameleaf/selection-bar';
   import { revealsLocks } from '$lib/frameleaf/session-access.svelte';
+  import { FILTER_APPLY_EVENT } from '$lib/frameleaf/search-shortcuts';
   import { tileActionAvailability, type TileQuickActions } from '$lib/frameleaf/tile-actions';
   import { captureTimeOf, type CaptureTime } from '$lib/frameleaf/time-zones';
   import { maxStudioHandoffAssets } from '$lib/frameleaf/studio/handoff';
@@ -296,6 +298,32 @@
       ? timelineQueryOptions(session.query, options)
       : { options, unapplied: [] as string[] },
   );
+
+  // FL-40: applying the album's Filter keeps its sort, layouts and viewer in the same session.
+  // Queries beyond the timeline contract continue through the palette's search route.
+  $effect(() => {
+    const apply = (event: Event) => {
+      const query = (event as CustomEvent<DiscoveryQuery>).detail;
+      if (
+        event.defaultPrevented ||
+        publicView ||
+        selectionMode ||
+        !options?.albumId ||
+        query.spaceId ||
+        query.imageEnrichment ||
+        query.queryAssetId ||
+        query.view !== 'photos' ||
+        timelineQueryOptions(query, {}).options.albumId !== options.albumId ||
+        timelineQueryOptions(query, options).unapplied.length > 0
+      ) {
+        return;
+      }
+      session.setQuery(query);
+      event.preventDefault();
+    };
+    addEventListener(FILTER_APPLY_EVENT, apply);
+    return () => removeEventListener(FILTER_APPLY_EVENT, apply);
+  });
   /**
    * A condition the buckets cannot apply never stays on a library page (review M3): "View in library"
    * sends such queries to the search results instead, and one restored with the session is dropped

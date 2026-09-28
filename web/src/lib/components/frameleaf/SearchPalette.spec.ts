@@ -7,6 +7,7 @@ import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { emptyDiscoveryQuery, type DiscoveryQuery } from '$lib/components/discovery/query';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { searchStore } from '$lib/stores/search.svelte';
+import { FILTER_APPLY_EVENT } from '$lib/frameleaf/search-shortcuts';
 import { renderWithTooltips } from '$tests/helpers';
 import SearchPalette from './SearchPalette.svelte';
 
@@ -130,6 +131,24 @@ describe('SearchPalette', () => {
   };
 
   const type = (input: HTMLElement, value: string) => fireEvent.input(input, { target: { value } });
+
+  it('submits a toolbar filter to the mounted album without navigating away (FL-40)', async () => {
+    const query = { ...emptyDiscoveryQuery(), filter: { albumIds: { any: [ALBUM] } } };
+    const apply = vi.fn((event: Event) => event.preventDefault());
+    addEventListener(FILTER_APPLY_EVENT, apply);
+    try {
+      const { input, onClose } = setup(query, { section: 'all' });
+      await fireEvent.keyDown(input, { key: 'Enter' });
+      expect(apply).toHaveBeenCalledOnce();
+      expect((apply.mock.calls[0][0] as CustomEvent<DiscoveryQuery>).detail.filter.albumIds).toEqual({
+        any: [ALBUM],
+      });
+      expect(goto).not.toHaveBeenCalled();
+      expect(onClose).toHaveBeenCalledOnce();
+    } finally {
+      removeEventListener(FILTER_APPLY_EVENT, apply);
+    }
+  });
 
   it('keeps the Places section when the library has no places, as the prototype does', async () => {
     sdkMock.searchFacets.mockResolvedValue({

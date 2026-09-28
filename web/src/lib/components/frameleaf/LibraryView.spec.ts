@@ -6,6 +6,7 @@ import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { emptyDiscoveryQuery } from '$lib/components/discovery/query';
 import { libraryGridPreferences } from '$lib/frameleaf/library-grid-preferences.svelte';
 import { librarySession } from '$lib/frameleaf/library-session.svelte';
+import { applyFilterQuery } from '$lib/frameleaf/search-shortcuts';
 import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
@@ -63,6 +64,47 @@ const setup = async (publicView: boolean) => {
 };
 
 describe('LibraryView', () => {
+  it('applies supported album filters in place and preserves the resulting session across layouts (FL-40)', async () => {
+    await setup(false);
+    const sort = screen.getByRole('combobox', { name: 'frameleaf_library_sort' });
+    await fireEvent.change(sort, { target: { value: 'captured-asc' } });
+    const query = {
+      ...emptyDiscoveryQuery(),
+      filter: { albumIds: { any: ['album-1'] }, isFavorite: { eq: true } },
+    };
+    expect(applyFilterQuery(query)).toBe(true);
+    await waitFor(() =>
+      expect(sdkMock.getTimeBuckets).toHaveBeenLastCalledWith(
+        expect.objectContaining({ albumId: 'album-1', isFavorite: true, order: AssetOrder.Asc }),
+      ),
+    );
+    librarySession.select('selected');
+    librarySession.open('viewed', 12);
+    librarySession.setLayout('browse');
+    librarySession.setLayout('work');
+    expect(librarySession.query).toEqual(query);
+    expect(librarySession.selection).toEqual(['selected']);
+    expect(librarySession.openAssetId).toBe('viewed');
+    expect(librarySession.playbackPosition).toBe(12);
+    expect(sort).toHaveValue('captured-asc');
+
+    // Scope changes and queries the album cannot execute must still reach the search route.
+    for (const unsupported of [
+      emptyDiscoveryQuery(),
+      { ...query, text: 'beach' },
+      { ...query, queryAssetId: 'similar' },
+      { ...query, spaceId: 'space' },
+      { ...query, filter: { ...query.filter, albumIds: { any: ['other-album'] } } },
+      { ...query, filter: { ...query.filter, city: { eq: 'Banff' } } },
+    ]) {
+      expect(applyFilterQuery(unsupported)).toBe(false);
+      expect(librarySession.query).toEqual(query);
+    }
+    librarySession.clearSelection();
+    librarySession.close();
+    librarySession.setQuery(emptyDiscoveryQuery());
+  });
+
   it('keeps the results toolbar and the Work panel on a private library page', async () => {
     await setup(false);
     expect(screen.getByTestId('frameleaf-results-toolbar')).toBeInTheDocument();
