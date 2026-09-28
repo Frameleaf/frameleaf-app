@@ -1,7 +1,6 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 import { ExtraModel } from 'src/decorators.js';
-import { AssetEditActionSchema } from 'src/dtos/editing.dto.js';
 import {
   AlbumUserRole,
   AlbumUserRoleSchema,
@@ -181,7 +180,7 @@ const SyncAssetEditV1Schema = z
   .object({
     id: z.uuidv4().describe('Edit ID'),
     assetId: z.uuidv4().describe('Asset ID'),
-    action: AssetEditActionSchema,
+    action: z.string().describe('Edit action; future values pass through unchanged'),
     parameters: z.record(z.string(), z.unknown()).describe('Edit parameters'),
     sequence: z.int().describe('Edit sequence'),
   })

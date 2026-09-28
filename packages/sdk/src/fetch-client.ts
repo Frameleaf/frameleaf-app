@@ -10910,7 +10910,8 @@ export type SyncAssetEditDeleteV1 = {
     editId: string;
 };
 export type SyncAssetEditV1 = {
-    action: AssetEditAction;
+    /** Edit action; future values pass through unchanged */
+    action: string;
     /** Asset ID */
     assetId: string;
     /** Edit ID */
