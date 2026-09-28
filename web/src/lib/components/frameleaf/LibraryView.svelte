@@ -247,6 +247,8 @@
 
   let helpOpen = $state(false);
   let restored = false;
+  let restoredFor: string | undefined;
+  let restoredContext: string | undefined;
   // FL-34: mounted by the session privacy gate after the first navigation, the router is ready already
   let routerReady = $state(hasRouterStarted());
   afterNavigate(() => {
@@ -426,15 +428,19 @@
   const storageUserId = $derived(
     publicView || authManager.isSharedLink || !authManager.authenticated ? undefined : authManager.user.id,
   );
+  // The same portable view can be shown through different routes or timeline options (including
+  // Locked). Selection and drafts must never cross that resource context.
+  const storageContext = $derived(JSON.stringify({ route: page.route?.id, options }));
 
-  // Restore once per mount: the URL's portable state wins over the stored view, and layout comes
-  // from storage because it is device-local.
+  // Restore for each authenticated account context, including a transition to a public share.
   $effect(() => {
-    if (restored || !browser) {
+    if (!browser || (restored && restoredFor === storageUserId && restoredContext === storageContext)) {
       return;
     }
     restored = true;
-    session.restore(page.url, storageUserId);
+    restoredFor = storageUserId;
+    restoredContext = storageContext;
+    session.restore(page.url, storageUserId, storageContext);
     // FL-48: a link this version cannot read is refused out loud and left in the address bar, rather
     // than being quietly replaced by the stored view.
     if (session.refusedView) {
@@ -456,7 +462,8 @@
     // Read both so the effect re-runs when either changes.
     const state = JSON.stringify(session.state);
     const layout = session.layout;
-    if (!browser || !restored || !state || !layout) {
+    const context = storageContext;
+    if (!browser || !restored || !state || !layout || !context) {
       return;
     }
     savedOnDevice = session.persist(storageUserId);

@@ -152,6 +152,7 @@
     resumeEditorContinuity,
     saveEditorContinuity,
   } from '$lib/frameleaf/editor-continuity';
+  import { getPrivateBrowserStateGeneration } from '$lib/frameleaf/private-browser-state';
   import { t, type Translations } from 'svelte-i18n';
 
   type Tool = 'adjust' | 'crop' | 'masks' | 'presets' | 'enhance' | 'versions';
@@ -166,6 +167,7 @@
   } = $props();
 
   const isVideo = isVideoAsset(asset);
+  const privateStateGeneration = getPrivateBrowserStateGeneration();
   const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');
   const originalPreviewUrl = getAssetMediaUrl({
     id: asset.id,
@@ -208,6 +210,7 @@
   /* Draft --------------------------------------------------------------- */
   let draft = $state<EditorDraft>(createDraft());
   let opened = $state<EditorRecipe>(initialRecipe());
+  let draftReady = $state(false);
   const recipe = $derived(draft.recipe);
   const values = $derived(Object.fromEntries(DEVELOP_KEYS.map((key) => [key, recipe[key]])) as DevelopValues);
   const dirty = $derived(!sameRecipe(recipe, opened));
@@ -264,7 +267,10 @@
       opened = start;
       // FL-113: back from Studio (or a reload) with the draft the person left, when it was built on
       // the version the editor has now (App.jsx keeps one edit across the editor and Studio).
-      const resumed = resumeEditorContinuity<EditorDraft>(asset.id, continuityBase(start));
+      const resumed = resumeEditorContinuity<EditorDraft>(
+        asset.id,
+        continuityBase({ ownerId: asset.ownerId, edit: start }),
+      );
       if (resumed.status === 'resumed') {
         draft = { ...resumed.draft, recipe: normalizeRecipe(resumed.draft.recipe) };
         // A draft left on the earlier Restore tool resumes on Enhance, where restoration now lives.
@@ -276,6 +282,7 @@
       } else if (resumed.status === 'stale') {
         toastManager.primary($t('frameleaf_editor_continuity_stale'));
       }
+      draftReady = true;
       if (anyRevisionBusy(develop.revisions)) {
         follow();
       }
@@ -355,6 +362,25 @@
 
   /* Stage ---------------------------------------------------------------- */
   let tool = $state<Tool>('adjust');
+
+  // Keep the real editor draft recoverable after a reload; the saved server recipe remains authoritative.
+  $effect(() => {
+    if (!draftReady || isVideo || privateStateGeneration !== getPrivateBrowserStateGeneration()) {
+      return;
+    }
+    if (dirty || draft.undo.length > 0 || draft.redo.length > 0) {
+      saveEditorContinuity({
+        assetId: asset.id,
+        kind: 'photo',
+        draft: $state.snapshot(draft),
+        base: continuityBase({ ownerId: asset.ownerId, edit: opened }),
+        tool,
+        playhead: { num: 0, den: 1 },
+      });
+    } else {
+      clearEditorContinuity(asset.id);
+    }
+  });
   /* Restoration (FL-115) ------------------------------------------------- */
   // Clips are edited by VideoQuickEditor, which takes the dialog's keys (Editor.jsx:1080-1104).
   let videoQuickEditor = $state<VideoQuickEditor>();
@@ -615,6 +641,7 @@
     onClose(saveChangedCurrent);
   };
   const cancel = () => {
+    draftReady = false;
     clearEditorContinuity(asset.id);
     discardAndClose();
   };
@@ -623,8 +650,11 @@
    * to Studio and offered back when the person returns, instead of being discarded.
    */
   const openStudio = () => {
-    const base = continuityBase(opened);
-    if (dirty || draft.undo.length > 0) {
+    const base = continuityBase({ ownerId: asset.ownerId, edit: opened });
+    if (
+      privateStateGeneration === getPrivateBrowserStateGeneration() &&
+      (dirty || draft.undo.length > 0 || draft.redo.length > 0)
+    ) {
       saveEditorContinuity({
         assetId: asset.id,
         kind: 'photo',
@@ -665,6 +695,7 @@
         revisions: [revision, ...(develop?.revisions ?? []).filter((item) => item.id !== revision.id)],
       };
       opened = normalizeRecipe(recipe);
+      draftReady = false;
       clearEditorContinuity(asset.id);
       announce = $t('frameleaf_editor_version_queued', { values: { revision: revision.revision } });
       toastManager.primary(announce);

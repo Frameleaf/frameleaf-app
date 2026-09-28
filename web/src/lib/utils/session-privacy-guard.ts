@@ -1,5 +1,6 @@
 import { getAuthStatus, isHttpError, lockAuthSession } from '@immich/sdk';
 import { hasPendingSessionUnlocks, sessionAccess } from '$lib/frameleaf/session-access.svelte';
+import { clearPrivateBrowserState } from '$lib/frameleaf/private-browser-state';
 import { requestSessionLock } from '$lib/frameleaf/session-lock';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { Route } from '$lib/route';
@@ -21,6 +22,17 @@ const isAuthenticationGone = (error: unknown) =>
  * page (for example the asset in the URL is no longer the caller's to see), so nothing is released.
  */
 export type PreloadedDataResult = void | 'replaced';
+
+// Tab storage can outlive the server's PIN elevation across a reload. The first status check must
+// discard records written while elevated before the privacy gate mounts any library or editor.
+const ELEVATED_TAB_KEY = 'frameleaf:session:elevated-tab';
+const elevatedTabStorage = () => {
+  try {
+    return sessionStorage;
+  } catch {
+    return null;
+  }
+};
 
 /**
  * FL-34 (ported from PR131 bebfed12ff and 25990c373c): keeps what an elevated (PIN-unlocked) session
@@ -190,6 +202,21 @@ export const watchSessionPrivacy = (
         elevationRequested = true;
         revoke();
         return;
+      }
+      if (active) {
+        try {
+          elevatedTabStorage()?.setItem(ELEVATED_TAB_KEY, '1');
+        } catch {
+          // Blocked tab storage cannot hold a recoverable record either.
+        }
+      } else if (!verified) {
+        try {
+          if (elevatedTabStorage()?.getItem(ELEVATED_TAB_KEY)) {
+            clearPrivateBrowserState();
+          }
+        } catch {
+          // The gate still revalidates route data before release.
+        }
       }
       elevated = active;
       elevationRequested = false;

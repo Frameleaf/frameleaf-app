@@ -9,6 +9,9 @@ describe('clearPrivateBrowserState (FL-80)', () => {
     localStorage.setItem('frameleaf-thumbnail-size', '200');
     localStorage.setItem('locale', 'en');
     sessionStorage.setItem('frameleaf:system-settings-draft:v1:user-1', '{}');
+    localStorage.setItem('frameleaf:library:v1:user-1', '{"state":"private"}');
+    sessionStorage.setItem('frameleaf:library:tab:v1:user-1', '{"selection":["asset-1"]}');
+    sessionStorage.setItem('frameleaf.editor.continuity.asset-1', '{"draft":"private"}');
     sessionStorage.setItem('frameleaf.auth.rememberMe', 'false');
 
     clearPrivateBrowserState();
@@ -17,6 +20,9 @@ describe('clearPrivateBrowserState (FL-80)', () => {
     expect(localStorage.getItem('frameleaf:job-manager-history:v1')).toBeNull();
     expect(localStorage.getItem('frameleaf.enrichment.lastPlan.user-1')).toBeNull();
     expect(sessionStorage.getItem('frameleaf:system-settings-draft:v1:user-1')).toBeNull();
+    expect(localStorage.getItem('frameleaf:library:v1:user-1')).toBeNull();
+    expect(sessionStorage.getItem('frameleaf:library:tab:v1:user-1')).toBeNull();
+    expect(sessionStorage.getItem('frameleaf.editor.continuity.asset-1')).toBeNull();
     expect(localStorage.getItem('frameleaf-thumbnail-size')).toBe('200');
     expect(localStorage.getItem('locale')).toBe('en');
     expect(sessionStorage.getItem('frameleaf.auth.rememberMe')).toBe('false');

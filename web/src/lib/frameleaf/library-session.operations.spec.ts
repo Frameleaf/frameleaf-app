@@ -6,6 +6,7 @@ import {
   operationScope,
   reduceLibrarySession,
   toStoredLibrarySession,
+  toStoredLibraryTransient,
   type LibrarySession,
   type LibrarySessionAction,
 } from '$lib/frameleaf/library-session';
@@ -171,9 +172,13 @@ describe('background bulk operations', () => {
     expect(reduceLibrarySession(session, { type: 'operation-dismiss', requestId: 'request-1' }).operations).toEqual([]);
   });
 
-  it('never persists operations or the selection across a reload', () => {
-    const stored = toStoredLibrarySession(started());
+  it('never persists operations, even while restoring the selection in this tab', () => {
+    const session = started();
+    const stored = toStoredLibrarySession(session);
+    const transient = toStoredLibraryTransient(session);
     expect(JSON.stringify(stored)).not.toContain('operations');
+    expect(JSON.stringify(transient)).not.toContain('operations');
+    expect(transient.selection).toEqual(session.selection);
     expect(createLibrarySession().operations).toEqual([]);
   });
 });

@@ -10,6 +10,9 @@ import {
 import { toastManager } from '@immich/ui';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { assetFactory } from '@test-data/factories/asset-factory';
+import { readEditorContinuity } from '$lib/frameleaf/editor-continuity';
+import { clearPrivateBrowserState } from '$lib/frameleaf/private-browser-state';
+import type { VideoDraft } from '$lib/frameleaf/video-edit';
 import VideoQuickEditor from './VideoQuickEditor.svelte';
 
 /**
@@ -62,6 +65,7 @@ const opened = async (edits: Array<{ action: AssetEditAction; parameters: object
 describe('VideoQuickEditor', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    sessionStorage.clear();
     vi.mocked(editAsset).mockResolvedValue({ assetId: 'asset', edits: [] } as never);
     vi.mocked(removeAssetEdits).mockResolvedValue(undefined as never);
   });
@@ -89,6 +93,92 @@ describe('VideoQuickEditor', () => {
     expect(screen.getByRole('radio', { name: 'frameleaf_video_editor_trim_fast' })).toBeInTheDocument();
   });
 
+  it('restores an unsaved video draft after reload', async () => {
+    vi.mocked(getAssetEdits).mockResolvedValue({ assetId: 'asset', edits: [], originalVideo } as never);
+    const asset = video();
+    const first = render(VideoQuickEditor, { asset, onClose: vi.fn() });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'frameleaf_editor_save_version' })).toBeEnabled());
+    await fireEvent.click(screen.getByRole('tab', { name: 'frameleaf_video_editor_tool_audio' }));
+    await fireEvent.click(screen.getByRole('switch', { name: 'frameleaf_video_editor_mute' }));
+    await waitFor(() => expect(readEditorContinuity<VideoDraft>(asset.id)?.draft.edit.volume).toBe(0));
+    await fireEvent.input(screen.getByRole('slider', { name: 'frameleaf_video_editor_playhead' }), {
+      target: { value: '6' },
+    });
+    await waitFor(() => expect(readEditorContinuity(asset.id)?.playhead).toEqual({ num: 6, den: 1 }));
+    first.unmount();
+
+    render(VideoQuickEditor, { asset, onClose: vi.fn() });
+    await waitFor(() => expect(readEditorContinuity(asset.id)?.kind).toBe('video'));
+    expect(readEditorContinuity(asset.id)?.playhead).toEqual({ num: 6, den: 1 });
+    await fireEvent.click(screen.getByRole('tab', { name: 'frameleaf_video_editor_tool_audio' }));
+    expect(screen.getByRole('switch', { name: 'frameleaf_video_editor_mute' })).toHaveAttribute('aria-checked', 'true');
+  });
+
+  it('keeps a playing video draft at its latest timeupdate when the page reloads', async () => {
+    const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+    const asset = video();
+    vi.mocked(getAssetEdits).mockResolvedValue({ assetId: asset.id, edits: [], originalVideo } as never);
+    const first = render(VideoQuickEditor, { asset, onClose: vi.fn() });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'frameleaf_editor_save_version' })).toBeEnabled());
+    await fireEvent.click(screen.getByRole('tab', { name: 'frameleaf_video_editor_tool_audio' }));
+    await fireEvent.click(screen.getByRole('switch', { name: 'frameleaf_video_editor_mute' }));
+    await waitFor(() => expect(readEditorContinuity(asset.id)?.kind).toBe('video'));
+
+    await fireEvent.click(screen.getByRole('button', { name: 'play' }));
+    const media = first.container.querySelector('video')!;
+    media.currentTime = 7;
+    await fireEvent.timeUpdate(media);
+    await fireEvent.click(screen.getByRole('button', { name: 'pause' }));
+    await waitFor(() => expect(readEditorContinuity(asset.id)?.playhead).toEqual({ num: 7, den: 1 }));
+    await fireEvent.click(screen.getByRole('button', { name: 'play' }));
+    media.currentTime = 9;
+    await fireEvent.timeUpdate(media);
+    dispatchEvent(new Event('pagehide'));
+    expect(readEditorContinuity(asset.id)?.playhead).toEqual({ num: 9, den: 1 });
+    first.unmount();
+
+    render(VideoQuickEditor, { asset, onClose: vi.fn() });
+    await waitFor(() => expect(readEditorContinuity(asset.id)?.playhead).toEqual({ num: 9, den: 1 }));
+    await waitFor(() =>
+      expect(screen.getByRole('slider', { name: 'frameleaf_video_editor_playhead' })).toHaveValue('9'),
+    );
+    play.mockRestore();
+  });
+
+  it('does not recreate a cleared private draft on pagehide or editor teardown', async () => {
+    const asset = video();
+    vi.mocked(getAssetEdits).mockResolvedValue({ assetId: asset.id, edits: [], originalVideo } as never);
+    const first = render(VideoQuickEditor, { asset, onClose: vi.fn() });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'frameleaf_editor_save_version' })).toBeEnabled());
+    await fireEvent.click(screen.getByRole('tab', { name: 'frameleaf_video_editor_tool_text' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_video_editor_add_text' }));
+    await waitFor(() => expect(readEditorContinuity(asset.id)?.kind).toBe('video'));
+
+    clearPrivateBrowserState();
+    expect(readEditorContinuity(asset.id)).toBeNull();
+    dispatchEvent(new Event('pagehide'));
+    first.unmount();
+    expect(readEditorContinuity(asset.id)).toBeNull();
+  });
+
+  it('keeps video redo history after undo returns to the opening edit', async () => {
+    const asset = video();
+    vi.mocked(getAssetEdits).mockResolvedValue({ assetId: asset.id, edits: [], originalVideo } as never);
+    const first = render(VideoQuickEditor, { asset, onClose: vi.fn() });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'frameleaf_editor_save_version' })).toBeEnabled());
+    await fireEvent.click(screen.getByRole('tab', { name: 'frameleaf_video_editor_tool_audio' }));
+    await fireEvent.click(screen.getByRole('switch', { name: 'frameleaf_video_editor_mute' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'undo' }));
+    await waitFor(() => expect(readEditorContinuity<VideoDraft>(asset.id)?.draft.redo.length).toBe(1));
+    first.unmount();
+
+    render(VideoQuickEditor, { asset, onClose: vi.fn() });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'frameleaf_editor_redo' })).not.toBeDisabled());
+    await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_editor_redo' }));
+    await fireEvent.click(screen.getByRole('tab', { name: 'frameleaf_video_editor_tool_audio' }));
+    expect(screen.getByRole('switch', { name: 'frameleaf_video_editor_mute' })).toHaveAttribute('aria-checked', 'true');
+  });
+
   it('saves a fast trim, a whole-clip speed and muted audio as one version', async () => {
     const { asset, onClose } = await opened();
 
@@ -114,6 +204,7 @@ describe('VideoQuickEditor', () => {
     );
     expect(onClose).toHaveBeenCalledWith(true);
     expect(toastManager.primary).toHaveBeenCalledWith('frameleaf_video_editor_saved');
+    expect(readEditorContinuity(asset.id)).toBeNull();
   });
 
   it('shows where a fast trim really cuts once the keyframes are known', async () => {
@@ -168,13 +259,14 @@ describe('VideoQuickEditor', () => {
   });
 
   it('discards an unsaved edit on Cancel and says so', async () => {
-    const { onClose } = await opened();
+    const { asset, onClose } = await opened();
     await fireEvent.click(screen.getByRole('tab', { name: 'frameleaf_video_editor_tool_audio' }));
     await fireEvent.click(screen.getByRole('switch', { name: 'frameleaf_video_editor_mute' }));
     await fireEvent.click(screen.getByRole('button', { name: 'cancel' }));
     expect(toastManager.primary).toHaveBeenCalledWith('frameleaf_editor_edits_discarded');
     expect(onClose).toHaveBeenCalledWith(false);
     expect(editAsset).not.toHaveBeenCalled();
+    expect(readEditorContinuity(asset.id)).toBeNull();
   });
 
   it('undoes and redoes from the top bar', async () => {

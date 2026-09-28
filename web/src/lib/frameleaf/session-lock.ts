@@ -4,6 +4,7 @@ import { get } from 'svelte/store';
 import { goto, invalidateAll } from '$app/navigation';
 import { page } from '$app/state';
 import { assetCacheManager } from '$lib/managers/AssetCacheManager.svelte';
+import { clearPrivateBrowserState } from '$lib/frameleaf/private-browser-state';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { Route } from '$lib/route';
 import { getServerErrorMessage, handleError } from '$lib/utils/handle-error';
@@ -64,6 +65,7 @@ export const requestSessionLock = (): Promise<void> => {
       await waitForSessionLockRefreshes();
       await mediaCleared;
       await releaseSessionLock();
+      clearPrivateBrowserState();
       sessionAccess.lockStatus = 'idle';
       if (pathname !== Route.pinPrompt()) {
         // Mounted views have independent caches and requests; retain PR131's whole-document boundary.

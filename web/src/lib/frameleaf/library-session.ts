@@ -24,7 +24,7 @@ import type { BulkActionId } from '$lib/frameleaf/bulk-actions';
  *   shift-click selects a range, and a day header selects its group.
  * - Page state (scope, query, sort, filter, grouping, view, layout) survives a layout switch and
  *   survives a mutation of the assets on the page.
- * - Selection is never persisted across reloads.
+ * - Selection and drafts survive a reload in this tab, bound to the signed-in account.
  * - Structured filtering lives behind one Filter control; the session carries which panel section
  *   the control deep-links into.
  * - Paging is cumulative: Show more raises the page count, it does not replace the page.
@@ -113,7 +113,7 @@ export type LibrarySession = {
   /** Device-local, never portable. */
   layout: LibraryLayout;
   state: LibraryViewState;
-  /** Ordered multi-select. Separate from `openAssetId`; empty on load and after a scope change. */
+  /** Ordered multi-select. Separate from `openAssetId`; empty on first load and after a scope change. */
   selection: string[];
   /** The last item a plain click landed on; the origin of the next shift-click range. */
   anchorId: string | null;
@@ -654,56 +654,106 @@ export const writeLibraryView = (url: URL, state: LibraryViewState): URL => {
 
 /** Callers must use the authenticated user ID; never reuse another user's session. */
 export const libraryPreferenceKey = (userId: string) => `frameleaf:library:v1:${encodeURIComponent(userId)}`;
+export const libraryTransientKey = (userId: string) => `frameleaf:library:tab:v1:${encodeURIComponent(userId)}`;
 
 /**
  * What survives a reload. Layout is device-local so it is stored rather than put in the URL.
- * Selection is deliberately absent: it is never persisted across reloads.
+ * Account preferences only. Asset ids and drafts belong in tab storage below.
  */
 export type StoredLibrarySession = {
   version: 1;
   layout: LibraryLayout;
   state: LibraryViewState;
-  openAssetId?: string;
-  playbackPosition?: number;
 };
 
 export const toStoredLibrarySession = (session: LibrarySession): StoredLibrarySession => ({
   version: 1,
   layout: session.layout,
   state: structuredClone(session.state),
-  ...(session.openAssetId && { openAssetId: session.openAssetId }),
-  ...(session.playbackPosition > 0 && { playbackPosition: session.playbackPosition }),
 });
+
+/** Recoverable UI state for this account and tab; never resource authority. */
+export const toStoredLibraryTransient = (session: LibrarySession, context = '') => ({
+  version: 1,
+  context,
+  state: structuredClone(session.state),
+  selection: [...session.selection],
+  anchorId: session.anchorId,
+  selectionSnapshot: session.selectionSnapshot && structuredClone(session.selectionSnapshot),
+  scrollAnchor: session.scrollAnchor,
+  draft: session.draft && structuredClone(session.draft),
+  page: session.page,
+  openAssetId: session.openAssetId,
+  playbackPosition: session.playbackPosition,
+});
+
+const storedObject = (raw: unknown): Record<string, unknown> => {
+  try {
+    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    return object(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+};
+
+const storedId = (value: unknown): value is string =>
+  typeof value === 'string' && value.length > 0 && value.length <= 128;
 
 /**
  * Restore a session. `incoming` is the portable state from the URL and wins over the stored view,
- * so a shared link opens what it describes. Selection always comes back empty.
+ * so a shared link opens what it describes. Tab state is restored only for the same view;
+ * another link cannot carry a previous selection or draft into a different context.
  */
-export const fromStoredLibrarySession = (raw: unknown, incoming: LibraryViewState | null = null): LibrarySession => {
+export const fromStoredLibrarySession = (
+  raw: unknown,
+  incoming: LibraryViewState | null = null,
+  transientRaw: unknown = null,
+  context = '',
+): LibrarySession => {
   const session = createLibrarySession();
-  let stored: unknown = raw;
-  if (typeof raw === 'string') {
-    try {
-      stored = JSON.parse(raw);
-    } catch {
-      stored = null;
-    }
-  }
-  const value = object(stored) ? stored : {};
+  const value = storedObject(raw);
+  const transient = storedObject(transientRaw);
   session.layout = oneOf(value.layout, LIBRARY_LAYOUTS) ? (value.layout as LibraryLayout) : DEFAULT_LIBRARY_LAYOUT;
-  const state = incoming ?? readLibraryViewValue(value.state);
+  const transientState = transient.version === 1 ? readLibraryViewValue(transient.state) : null;
+  const state = incoming ?? readLibraryViewValue(value.state) ?? transientState;
   if (state) {
     session.state = structuredClone(state);
   }
-  if (typeof value.openAssetId === 'string' && value.openAssetId.length <= 128) {
-    session.openAssetId = value.openAssetId;
+  if (transient.context === context && transientState && sameValue(transientState, session.state)) {
+    if (Array.isArray(transient.selection) && transient.selection.every(storedId)) {
+      session.selection = [...new Set(transient.selection)];
+    }
+    session.anchorId = storedId(transient.anchorId) ? transient.anchorId : null;
+    const snapshot = readLibraryViewValue(transient.selectionSnapshot);
+    if (snapshot && sameValue(snapshot.scope, session.state.scope) && sameValue(snapshot.query, session.state.query)) {
+      session.selectionSnapshot = snapshot;
+    }
+    if (storedId(transient.scrollAnchor)) {
+      session.scrollAnchor = transient.scrollAnchor;
+    }
+    if (
+      object(transient.draft) &&
+      storedId(transient.draft.assetId) &&
+      Array.isArray(transient.draft.recipe) &&
+      Array.isArray(transient.draft.undo) &&
+      Array.isArray(transient.draft.redo)
+    ) {
+      session.draft = {
+        assetId: transient.draft.assetId,
+        recipe: transient.draft.recipe,
+        undo: transient.draft.undo,
+        redo: transient.draft.redo,
+      };
+    }
+    if (Number.isSafeInteger(transient.page) && (transient.page as number) > 0) {
+      session.page = transient.page as number;
+    }
+    if (storedId(transient.openAssetId)) {
+      session.openAssetId = transient.openAssetId;
+    }
+    if (typeof transient.playbackPosition === 'number' && Number.isFinite(transient.playbackPosition)) {
+      session.playbackPosition = Math.max(0, transient.playbackPosition);
+    }
   }
-  if (typeof value.playbackPosition === 'number' && Number.isFinite(value.playbackPosition)) {
-    session.playbackPosition = Math.max(0, value.playbackPosition);
-  }
-  // Selection, anchor, snapshot, draft and paging are session-local and start clean.
-  session.selection = [];
-  session.anchorId = null;
-  session.page = 1;
   return session;
 };
