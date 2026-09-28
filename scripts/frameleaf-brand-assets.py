@@ -35,7 +35,6 @@ SUPPLIED_SOURCES = {
 }
 
 REFERENCE_SPECS = (
-    ("design/frameleaf/README.md", "approved-design-handoff"),
     ("design/frameleaf/INTERACTION-REQUIREMENTS.md", "approved-interaction-contract"),
     ("design/frameleaf/tokens.json", "approved-token-reference"),
     ("design/frameleaf/template/README.md", "approved-prototype-usage-contract"),
@@ -375,7 +374,7 @@ def build_inventory(root):
         "sourceManifest": source_manifest,
         "digests": {"suppliedSourceLedgerSha256": supplied_ledger,
             "approvedReferenceLedgerSha256": reference_ledger},
-        "counts": {"suppliedFiles": 8, "suppliedVectors": 7, "approvedReferenceDocuments": 5,
+        "counts": {"suppliedFiles": 8, "suppliedVectors": 7, "approvedReferenceDocuments": 4,
             "historicalRasterReferences": 2, "generatedDerivatives": 0, "productionConsumers": 0,
             "nativeConsumers": 0},
         "qualification": {"sourceIntegrityReviewed": True, "artworkAuthorityRecorded": True,
@@ -412,7 +411,7 @@ def main(argv=None):
         if args.print_inventory:
             print(json.dumps(inventory, indent=2, sort_keys=True) + "\n", end="")
         elif args.check:
-            print("Frameleaf brand contract verified: 8 supplied files (7 SVGs), 7 references, 0 derivatives, 0 qualified consumers.")
+            print("Frameleaf brand contract verified: 8 supplied files (7 SVGs), 6 references, 0 derivatives, 0 qualified consumers.")
     except (KeyError, OSError, ET.ParseError, TypeError, ValueError, json.JSONDecodeError) as error:
         print(f"Frameleaf brand contract failed: {error}", file=sys.stderr)
         return 1
