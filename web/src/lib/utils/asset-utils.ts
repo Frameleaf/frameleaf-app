@@ -621,6 +621,24 @@ export const copyImageToClipboard = async (source: HTMLImageElement) => {
   await navigator.clipboard.write([new ClipboardItem({ ['image/png']: imgToBlob(source) })]);
 };
 
+const loadImage = (src: string) =>
+  new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image();
+    image.addEventListener('load', () => resolve(image), { once: true });
+    image.addEventListener('error', () => reject(new Error('The image could not be loaded')), { once: true });
+    image.src = src;
+  });
+
+/**
+ * Copies an item's image to the clipboard without it being on screen, for the share sheet's
+ * "Copy image" (FL-83 AL-31, `SharedLinks.jsx:598-604`). The preview is loaded inside the clipboard
+ * item, so the write still starts within the user's click (Safari).
+ */
+export const copyAssetImageToClipboard = async (id: string) => {
+  const blob = loadImage(getAssetMediaUrl({ id, size: AssetMediaSize.Preview })).then((image) => imgToBlob(image));
+  await navigator.clipboard.write([new ClipboardItem({ ['image/png']: blob })]);
+};
+
 export const navigateToAsset = async (targetAsset: Pick<AssetResponseDto, 'id'> | undefined | null) => {
   if (!targetAsset) {
     return false;

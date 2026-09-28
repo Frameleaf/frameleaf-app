@@ -1500,7 +1500,11 @@
   emptyRoute={memoryManager.memoriesHref}
 />
 
-<ShareSheet bind:open={shareOpen} assetIds={currentTimelineAssets.map((asset) => asset.id)} />
+<ShareSheet
+  bind:open={shareOpen}
+  assetIds={currentTimelineAssets.map((asset) => asset.id)}
+  assets={currentTimelineAssets.map((asset) => ({ id: asset.id, isVideo: asset.isVideo }))}
+/>
 
 <Dialog title={$t('frameleaf_memories_rename')} closeLabel={$t('close')} bind:open={renameOpen}>
   <form class="fmp-rename" onsubmit={saveRename}>

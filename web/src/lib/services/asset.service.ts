@@ -94,7 +94,18 @@ export const getAssetActions = (
     icon: mdiShareVariantOutline,
     // FL-56: a public link offers no sharing of its own, whoever is signed in.
     $if: () => !!(authUser && !sharedLink && !asset.isTrashed && asset.visibility !== AssetVisibility.Locked),
-    onAction: () => modalManager.show(ShareSheetModal, { assetIds: [asset.id] }),
+    onAction: () =>
+      modalManager.show(ShareSheetModal, {
+        assetIds: [asset.id],
+        assets: [
+          {
+            id: asset.id,
+            isVideo: asset.type === AssetTypeEnum.Video,
+            originalFileName: asset.originalFileName,
+            size: asset.exifInfo?.fileSizeInByte ?? undefined,
+          },
+        ],
+      }),
   };
 
   const Download: ActionItem = {
