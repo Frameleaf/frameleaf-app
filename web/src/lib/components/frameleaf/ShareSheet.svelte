@@ -452,8 +452,9 @@
   }
   .ss-people {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(4.5rem, 1fr));
-    gap: 0.75rem;
+    grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+    gap: 8px;
+    margin: 18px 0 6px;
     max-height: 16rem;
     overflow-y: auto;
   }
@@ -461,38 +462,56 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 0.375rem;
+    gap: 9px;
+    padding: 12px 8px 10px;
+    border-radius: var(--fl-radius-card);
+    border: 1px solid transparent;
     background: transparent;
-    border: 0;
+    color: var(--fl-muted);
+    transition:
+      background var(--fl-motion-fast) var(--fl-ease),
+      border-color var(--fl-motion-fast) var(--fl-ease),
+      color var(--fl-motion-fast) var(--fl-ease);
+  }
+  .ss-person:hover {
+    background: var(--fl-raised);
+    color: var(--fl-text);
+  }
+  .ss-person.is-selected {
+    background: var(--fl-accent-soft);
+    border-color: color-mix(in srgb, var(--fl-accent) 55%, transparent);
     color: var(--fl-text);
   }
   .ss-person-avatar {
     position: relative;
     display: inline-flex;
     border-radius: 50%;
-    outline: 2px solid transparent;
-    outline-offset: 2px;
+    transition: box-shadow var(--fl-motion-fast) var(--fl-ease);
   }
   .ss-person.is-selected .ss-person-avatar {
-    outline-color: var(--fl-accent);
+    box-shadow:
+      0 0 0 3px var(--fl-panel),
+      0 0 0 5px var(--fl-accent);
   }
   .ss-person-check {
     position: absolute;
-    right: -2px;
-    bottom: -2px;
+    right: -3px;
+    bottom: -3px;
     display: none;
     place-items: center;
-    width: 20px;
-    height: 20px;
+    width: 22px;
+    height: 22px;
     border-radius: 50%;
     background: var(--fl-accent);
     color: var(--fl-accent-text);
+    border: 2px solid var(--fl-panel);
   }
   .ss-person.is-selected .ss-person-check {
     display: grid;
   }
   .ss-person-name {
-    font-size: 0.75rem;
+    font-size: 13px;
+    font-weight: 500;
     overflow-wrap: anywhere;
     text-align: center;
   }
