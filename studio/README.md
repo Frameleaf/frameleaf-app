@@ -8,12 +8,7 @@ This directory contains preservation metadata and an explicit isolated engine bu
 
 The provenance ledger was cross-checked during FL-25 against a temporary clean checkout of `walterlow/freecut@4d62e8082c5eb387a96275bcbd323d28f6e41a62`. The clean tree contained 2,646 files and matched every recorded path and SHA-256 digest. SHA-256 of the UTF-8 bytes of `JSON.stringify(files)` in recorded order is `a56d57c4bcd2c996c389bb7470216b185caa28de389def109bf4d86fd95e3adb`, covering every row whether or not a feature references it. The exact codeload URL is pinned, and its archive matched SHA-256 `b4224e5c219a6302586cbe2242e9e6d299dfd1878f1fcd0f2d77ea3db12a5d32`. This is source-identity evidence only, not execution or qualification evidence.
 
-All contract JSON is parsed with duplicate-key rejection before these identities are evaluated. Run the metadata-only contract checks from the repository root:
-
-```sh
-node scripts/frameleaf-studio-contracts.mjs --repository .
-node --test scripts/frameleaf-studio-contracts.test.mjs
-```
+The engine tooling rejects duplicate keys in its contract JSON and verifies the pinned source identity.
 
 ## Reproducible engine workspace (FL-84)
 

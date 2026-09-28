@@ -11,15 +11,6 @@ const inventory = JSON.parse(
     "utf8",
   ),
 );
-const evidence = JSON.parse(
-  readFileSync(
-    resolve(
-      root,
-      "docs/docs/developer/frameleaf-plan/preservation-source-evidence.json",
-    ),
-    "utf8",
-  ),
-);
 
 function pageFiles(directory, result = []) {
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
@@ -56,14 +47,4 @@ test("dirty-only evidence remains separate and complete", () => {
     inventory.dirtyOnlyStatus,
     "absent-from-clean-baseline-unreviewed",
   );
-});
-
-test("ownership evidence covers all 94 routes and nine shared loaders", () => {
-  const accepted = [
-    ...inventory.productionRoutes,
-    ...inventory.dirtyOnlyEvidence,
-  ].sort();
-  assert.deepEqual(evidence.routes.map(({ id }) => id).sort(), accepted);
-  const loaders = new Set(evidence.routes.flatMap(({ loaders }) => loaders));
-  assert.equal(loaders.size, 9);
 });

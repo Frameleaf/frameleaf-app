@@ -10,8 +10,7 @@
 //
 //   node scripts/frameleaf-logo-exports.mjs   # web + docs
 //
-// Visually qualify outputs against light/dark chrome before committing, per
-// docs/docs/developer/frameleaf-plan/06-brand-assets.md. The only non-kit source is
+// Visually qualify outputs against light/dark chrome before committing. The only non-kit source is
 // design/frameleaf/derivatives/frameleaf-logo-light.svg, the tracked dark-ink derivative of
 // frameleaf-logo-dark.svg ("Frame" lettering filled with the kit's #111D26 canvas colour) that
 // light surfaces (README, docs, email) need because the kit ships no light-background wordmark.
