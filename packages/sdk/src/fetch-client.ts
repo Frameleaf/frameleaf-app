@@ -2853,6 +2853,8 @@ export type AlbumResponseDto = {
     parentId: string | null;
     /** Is shared album */
     shared: boolean;
+    /** Built-in smart album kind behind this album, when it is a built-in smart album */
+    smartKind?: (SmartAlbumBuiltInKind) | null;
     /** Your classification rule behind this smart album, when it is one of yours */
     smartRuleId?: string | null;
     /** Sibling display position. Lower values appear first. */
@@ -21923,6 +21925,14 @@ export enum AlbumKind {
     Collection = "collection",
     Space = "space"
 }
+export enum SmartAlbumBuiltInKind {
+    Travel = "travel",
+    Documents = "documents",
+    Screenshots = "screenshots",
+    Food = "food",
+    Pets = "pets",
+    Nature = "nature"
+}
 export enum BulkIdErrorReason {
     Duplicate = "duplicate",
     NoPermission = "no_permission",
@@ -23350,14 +23360,6 @@ export enum SyncRequestType {
     AssetFacesV2 = "AssetFacesV2",
     AssetFacesV3 = "AssetFacesV3",
     UserMetadataV1 = "UserMetadataV1"
-}
-export enum SmartAlbumBuiltInKind {
-    Travel = "travel",
-    Documents = "documents",
-    Screenshots = "screenshots",
-    Food = "food",
-    Pets = "pets",
-    Nature = "nature"
 }
 export enum FrameleafSetupFlow {
     New = "new",
