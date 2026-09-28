@@ -1,4 +1,4 @@
-import { ColorTransfer } from 'src/enum.js';
+import { ColorPrimaries, ColorTransfer } from 'src/enum.js';
 import { checkStudioReverseOutput, checkStudioReverseSource } from 'src/utils/studio-reverse-conform.js';
 import { reversePackets, reverseVideoInfo } from 'test/fixtures/studio-reverse-conform.stub.js';
 
@@ -24,6 +24,22 @@ describe('local source reversal contract', () => {
     partial.videoStreams[0].frameCount = 2;
     expect(() => checkStudioReverseOutput(source, partial)).toThrow('output does not match');
   });
+
+  it.each(['primaries', 'transfer'])('continues to refuse unknown input color %s', (field) => {
+    const info = reverseVideoInfo();
+    if (field === 'primaries') {
+      info.videoStreams[0].colorPrimaries = ColorPrimaries.Unknown;
+    } else {
+      info.videoStreams[0].colorTransfer = ColorTransfer.Unknown;
+    }
+    expect(() =>
+      checkStudioReverseSource(info, reversePackets(), {
+        width: 32,
+        height: 32,
+        sampleAspectRatio: '1:1',
+      }),
+    ).toThrow('Local source reversal currently requires');
+  });
   it.each(['vfr', 'packet-gaps', 'hdr', 'too-long', 'rotated', 'unaligned-audio', 'unknown-origin'])(
     'refuses %s instead of silently changing the source',
     (caseName) => {
@@ -31,23 +47,17 @@ describe('local source reversal contract', () => {
       const packets = reversePackets();
       if (caseName === 'vfr') {
         packets.variableFrameRate = true;
-      }
-      if (caseName === 'packet-gaps') {
+      } else if (caseName === 'packet-gaps') {
         packets.outputFrames = 4;
-      }
-      if (caseName === 'hdr') {
+      } else if (caseName === 'hdr') {
         info.videoStreams[0].colorTransfer = ColorTransfer.Smpte2084;
-      }
-      if (caseName === 'too-long') {
+      } else if (caseName === 'too-long') {
         info.format.duration = 11;
-      }
-      if (caseName === 'rotated') {
+      } else if (caseName === 'rotated') {
         info.videoStreams[0].rotation = 90;
-      }
-      if (caseName === 'unknown-origin') {
+      } else if (caseName === 'unknown-origin') {
         info.videoStreams[0].startTime = null;
-      }
-      if (caseName === 'unaligned-audio') {
+      } else if (caseName === 'unaligned-audio') {
         info.audioStreams = [
           {
             index: 1,
@@ -55,7 +65,7 @@ describe('local source reversal contract', () => {
             profile: null,
             bitrate: 1000,
             channels: 2,
-            sampleRate: 48000,
+            sampleRate: 48_000,
             duration: 1,
             startTime: 0.5,
           },

@@ -77,7 +77,7 @@ export const checkStudioReverseSource = (
         !audio.channels ||
         audio.channels > 2 ||
         !audio.sampleRate ||
-        audio.sampleRate > 48000))
+        audio.sampleRate > 48_000))
   ) {
     throw new BadRequestException(
       'Local source reversal currently requires zero-origin, square-pixel, constant-rate BT.709 limited-range 8-bit video up to 720p, 10 seconds and 300 frames, with at most one aligned mono/stereo audio stream',
