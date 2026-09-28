@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { sql } from 'kysely';
 import { jsonObjectFrom } from 'kysely/helpers/postgres';
 import { DateTime } from 'luxon';
 import { InjectKysely } from 'nestjs-kysely';
@@ -94,18 +95,73 @@ export class SessionRepository {
       .executeTakeFirstOrThrow();
   }
 
+  /**
+   * Extends a still-elevated session's PIN expiry (FL-34). The update only applies while the session
+   * is elevated and unexpired at write time: PostgreSQL rechecks this predicate after a concurrent
+   * row update, so a lock (or `lockAll`) that cleared the expiry after the caller read the session
+   * wins over the caller's stale snapshot. Returns whether the session is still elevated.
+   */
+  async refreshPinExpiry(id: string, pinExpiresAt: Date): Promise<boolean> {
+    const result = await this.db
+      .updateTable('session')
+      .set({ pinExpiresAt })
+      .where('id', '=', asUuid(id))
+      .where('pinExpiresAt', '>', sql<Date>`clock_timestamp()`)
+      .where((eb) => eb.or([eb('expiresAt', 'is', null), eb('expiresAt', '>', sql<Date>`clock_timestamp()`)]))
+      .returning('id')
+      .executeTakeFirst();
+    return !!result;
+  }
+
+  /**
+   * Elevates a session after its PIN was checked (FL-34), only while the account's PIN and password
+   * are still the ones that check read. A PIN change or reset, or a password change, that commits
+   * (with its `lockAll`) between the check and this write is never undone by it: PostgreSQL
+   * re-evaluates the predicate against the committed user row. Returns whether it applied.
+   */
+  async elevate(
+    id: string,
+    userId: string,
+    verified: { pinCode: string | null; password: string | null },
+    pinExpiresAt: Date,
+  ): Promise<boolean> {
+    const result = await this.db
+      .updateTable('session')
+      .set({ pinExpiresAt })
+      .where('session.id', '=', asUuid(id))
+      .where('session.userId', '=', asUuid(userId))
+      .where((eb) =>
+        eb.exists(
+          eb
+            .selectFrom('user')
+            .select('user.id')
+            .whereRef('user.id', '=', 'session.userId')
+            .where('user.deletedAt', 'is', null)
+            .where(sql<boolean>`"user"."pinCode" is not distinct from ${verified.pinCode}`)
+            .where(sql<boolean>`"user"."password" is not distinct from ${verified.password}`)
+            .forShare(),
+        ),
+      )
+      .returning('session.id')
+      .executeTakeFirst();
+    return !!result;
+  }
+
   @GenerateSql({ params: [DummyValue.UUID] })
   async delete(id: string) {
     await this.db.deleteFrom('session').where('id', '=', asUuid(id)).execute();
   }
 
   @GenerateSql({ params: [{ userId: DummyValue.UUID, excludeId: DummyValue.UUID }] })
-  async invalidateAll({ userId, excludeId }: { userId: string; excludeId?: string }) {
-    await this.db
+  async invalidateAll({ userId, excludeId }: { userId: string; excludeId?: string }): Promise<string[]> {
+    // the deleted ids, so each revoked session's open tabs can be told (FL-34)
+    const deleted = await this.db
       .deleteFrom('session')
       .where('userId', '=', userId)
       .$if(!!excludeId, (qb) => qb.where('id', '!=', excludeId!))
+      .returning('id')
       .execute();
+    return deleted.map(({ id }) => id);
   }
 
   @GenerateSql({ params: [DummyValue.STRING, DummyValue.STRING] })

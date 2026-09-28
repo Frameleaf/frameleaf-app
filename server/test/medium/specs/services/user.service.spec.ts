@@ -1,9 +1,10 @@
 import { Kysely } from 'kysely';
 import { DateTime } from 'luxon';
-import { ImmichEnvironment, JobName, JobStatus, UserAvatarColor } from 'src/enum.js';
+import { ImmichEnvironment, JobName, JobStatus, UserAvatarColor, UserMetadataKey } from 'src/enum.js';
 import { ClusterGroupRepository } from 'src/repositories/cluster-group.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
+import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -17,12 +18,6 @@ import { mediumFactory, newMediumService } from 'test/medium.factory.js';
 import { factory, newUuid } from 'test/small.factory.js';
 import { getKyselyDB } from 'test/utils.js';
 
-const userLicense = {
-  licenseKey: 'IMCL-FF69-TUK1-RWZU-V9Q8-QGQS-S5GC-X4R2-UFK4',
-  activationKey:
-    'KuX8KsktrBSiXpQMAH0zLgA5SpijXVr_PDkzLdWUlAogCTMBZ0I3KCHXK0eE9EEd7harxup8_EHMeqAWeHo5VQzol6LGECpFv585U9asXD4Zc-UXt3mhJr2uhazqipBIBwJA2YhmUCDy8hiyiGsukDQNu9Rg9C77UeoKuZBWVjWUBWG0mc1iRqfvF0faVM20w53czAzlhaMxzVGc3Oimbd7xi_CAMSujF_2y8QpA3X2fOVkQkzdcH9lV0COejl7IyH27zQQ9HrlrXv3Lai5Hw67kNkaSjmunVBxC5PS0TpKoc9SfBJMaAGWnaDbjhjYUrm-8nIDQnoeEAidDXVAdPw',
-};
-
 let defaultDatabase: Kysely<DB>;
 
 const setup = (db?: Kysely<DB>) => {
@@ -34,6 +29,8 @@ const setup = (db?: Kysely<DB>) => {
       ClusterGroupRepository,
       CryptoRepository,
       ConfigRepository,
+      // FL-67: preference saves run under DatabaseRepository.withUserPreferencesLock
+      DatabaseRepository,
       SystemMetadataRepository,
       UserRepository,
       SessionRepository,
@@ -45,7 +42,7 @@ const setup = (db?: Kysely<DB>) => {
 beforeAll(async () => {
   defaultDatabase = await getKyselyDB();
   const { ctx } = setup();
-  await ctx.newUser({ isAdmin: true, email: 'admin@immich.cloud' });
+  await ctx.newUser({ isAdmin: true, email: 'admin@example.com' });
 });
 
 describe(UserService.name, () => {
@@ -137,14 +134,25 @@ describe(UserService.name, () => {
       );
     });
 
-    it('should include license info', async () => {
+    it('should include the supporter key summary, and ignore a previous product key (FL-156)', async () => {
       const { sut, ctx } = setup();
       const { user } = await ctx.newUser();
       const auth = factory.auth({ user: { id: user.id } });
+      const userRepo = ctx.get(UserRepository);
 
-      await sut.setLicense(auth, userLicense);
+      await userRepo.upsertMetadata(user.id, {
+        key: UserMetadataKey.License,
+        value: { licenseKey: 'IMCL-FF69', activationKey: 'x', activatedAt: '2026-09-01T00:00:00.000Z' } as never,
+      });
+      await expect(sut.getMe(auth)).resolves.toMatchObject({ license: null });
 
-      await expect(sut.getMe(auth)).resolves.toMatchObject({ license: userLicense });
+      await userRepo.upsertMetadata(user.id, {
+        key: UserMetadataKey.License,
+        value: { kind: 'individual', keyHint: 'CMSF', activatedAt: '2026-09-25T00:00:00.000Z' },
+      });
+      await expect(sut.getMe(auth)).resolves.toMatchObject({
+        license: { kind: 'individual', keyHint: 'CMSF', activatedAt: new Date('2026-09-25T00:00:00.000Z') },
+      });
     });
   });
 
@@ -181,7 +189,7 @@ describe(UserService.name, () => {
       const { user } = await ctx.newUser();
       const auth = factory.auth({ user: { id: user.id } });
 
-      const dto = { email: 'updated@immich.cloud' };
+      const dto = { email: 'updated@example.com' };
 
       await expect(sut.updateMe(auth, dto)).resolves.toMatchObject(dto);
       await expect(sut.getMe(auth)).resolves.toMatchObject(dto);
@@ -220,6 +228,40 @@ describe(UserService.name, () => {
   });
 
   describe('updateMyPreferences', () => {
+    it('stores saved searches and keeps any naming a Locked person from a locked session (FL-49)', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const unlocked = factory.auth({ user: { id: user.id }, session: { hasElevatedPermission: true } });
+      const locked = factory.auth({ user: { id: user.id } });
+      const lockedPerson = newUuid();
+      const savedSearches = [
+        { name: 'Beach', query: { filter: { city: { eq: 'Lisbon' } } } },
+        { name: 'Private', query: { filter: { personIds: { any: [lockedPerson] } } } },
+      ];
+
+      await expect(sut.getMyPreferences(locked)).resolves.toMatchObject({ savedSearches: [] });
+      await sut.updateMyPreferences(unlocked, {
+        savedSearches,
+        privacy: { suppression: { personIds: [lockedPerson] } },
+      });
+
+      await expect(sut.getMyPreferences(unlocked)).resolves.toMatchObject({ savedSearches });
+      const lockedView = await sut.getMyPreferences(locked);
+      expect(lockedView.savedSearches).toEqual([savedSearches[0]]);
+
+      // a locked session may replace the list, but the searches it cannot see are kept
+      const added = { name: 'Snow', query: { filter: { city: { eq: 'Banff' } } } };
+      await sut.updateMyPreferences(locked, { savedSearches: [added], expectedRevision: lockedView.revision });
+      await expect(sut.getMyPreferences(unlocked)).resolves.toMatchObject({
+        savedSearches: [added, savedSearches[1]],
+      });
+      await expect(sut.getMyPreferences(locked)).resolves.toMatchObject({ savedSearches: [added] });
+
+      // an unlocked session replaces the whole list
+      await sut.updateMyPreferences(unlocked, { savedSearches: [] });
+      await expect(sut.getMyPreferences(unlocked)).resolves.toMatchObject({ savedSearches: [] });
+    });
+
     it('should update memories enabled', async () => {
       const { sut, ctx } = setup();
       const { user } = await ctx.newUser();
@@ -271,56 +313,50 @@ describe(UserService.name, () => {
       await expect(sut.updateMyPreferences(auth, dto)).resolves.toMatchObject(dto);
       await expect(sut.getMyPreferences(auth)).resolves.toMatchObject(dto);
     });
-  });
 
-  describe('setLicense', () => {
-    it('should set a license', async () => {
+    it('should change Locked rules only from an unlocked session and hide them from other sessions (FL-67)', async () => {
       const { sut, ctx } = setup();
       const { user } = await ctx.newUser();
-      const auth = factory.auth({ user: { id: user.id } });
-      await expect(sut.getLicense(auth)).rejects.toThrowError();
-      const after = await sut.setLicense(auth, userLicense);
-      expect(after.licenseKey).toEqual(userLicense.licenseKey);
-      expect(after.activationKey).toEqual(userLicense.activationKey);
-      const response = await sut.getLicense(auth);
-      expect(response).toEqual(after);
-      await expect(sut.getMe(auth)).resolves.toMatchObject({ license: after });
-    });
+      const locked = factory.auth({ user: { id: user.id } });
+      const unlocked = { ...locked, session: { id: newUuid(), hasElevatedPermission: true } } as typeof locked;
+      const tagId = newUuid();
 
-    it('should reject a license key that does not start with IMCL-', async () => {
-      const { sut, ctx } = setup();
-      const { user } = await ctx.newUser();
-      const auth = factory.auth({ user: { id: user.id } });
+      await expect(sut.updateMyPreferences(locked, { privacy: { suppression: { tagIds: [tagId] } } })).rejects.toThrow(
+        'Unlock with your PIN before changing Locked rules',
+      );
 
       await expect(
-        sut.setLicense(auth, {
-          licenseKey: 'IMSV-ABCD-ABCD-ABCD-ABCD-ABCD-ABCD-ABCD-ABCD',
-          activationKey: 'activationKey',
+        sut.updateMyPreferences(unlocked, { privacy: { suppression: { tagIds: [tagId], scope: 'visible' } } }),
+      ).resolves.toMatchObject({ privacy: { suppression: { tagIds: [tagId], scope: 'visible' } } });
+
+      await expect(sut.getMyPreferences(locked)).resolves.toMatchObject({
+        privacy: { suppression: { tagIds: [], personIds: [], petIds: [], scope: 'visible' } },
+      });
+      await expect(sut.getMyPreferences(unlocked)).resolves.toMatchObject({
+        privacy: { suppression: { tagIds: [tagId] } },
+      });
+    });
+
+    it('should let only one of two saves made against the same revision through (FL-67)', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const auth = factory.auth({ user: { id: user.id } });
+      const unlocked = { ...auth, session: { id: newUuid(), hasElevatedPermission: true } } as typeof auth;
+      const { revision } = await sut.getMyPreferences(unlocked);
+
+      const results = await Promise.allSettled([
+        sut.updateMyPreferences(unlocked, {
+          expectedRevision: revision,
+          privacy: { suppression: { tagIds: [newUuid()] } },
         }),
-      ).rejects.toThrow('Invalid license key');
-    });
+        sut.updateMyPreferences(unlocked, {
+          expectedRevision: revision,
+          privacy: { suppression: { scope: 'visible' } },
+        }),
+      ]);
 
-    it('should reject an invalid activation key', async () => {
-      const { sut, ctx } = setup();
-      const { user } = await ctx.newUser();
-      const auth = factory.auth({ user: { id: user.id } });
-
-      await expect(
-        sut.setLicense(auth, { ...userLicense, activationKey: `invalid${userLicense.activationKey}` }),
-      ).rejects.toThrow('Invalid license key');
-    });
-  });
-
-  describe('deleteLicense', () => {
-    it('should delete the license', async () => {
-      const { sut, ctx } = setup();
-      const { user } = await ctx.newUser();
-      const auth = factory.auth({ user: { id: user.id } });
-
-      await sut.setLicense(auth, userLicense);
-      await sut.deleteLicense(auth);
-
-      await expect(sut.getLicense(auth)).rejects.toThrowError();
+      expect(results.filter(({ status }) => status === 'fulfilled')).toHaveLength(1);
+      expect(results.filter(({ status }) => status === 'rejected')).toHaveLength(1);
     });
   });
 

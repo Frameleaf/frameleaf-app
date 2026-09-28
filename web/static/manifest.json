@@ -1,9 +1,15 @@
 {
   "background_color": "#ffffff",
-  "description": "Self-hosted photo and video backup solution directly from your mobile phone.",
+  "description": "Frameleaf, self-hosted photo and video backup directly from your mobile phone.",
   "dir": "auto",
   "display": "standalone",
   "icons": [
+    {
+      "purpose": "any",
+      "sizes": "any",
+      "src": "favicon.svg",
+      "type": "image/svg+xml"
+    },
     {
       "purpose": "any",
       "sizes": "192x192",
@@ -24,8 +30,8 @@
     }
   ],
   "lang": "en",
-  "name": "Immich",
-  "short_name": "Immich",
+  "name": "Frameleaf",
+  "short_name": "Frameleaf",
   "shortcuts": [
     {
       "name": "Photos",

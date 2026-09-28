@@ -43,11 +43,155 @@ beforeAll(async () => {
 });
 
 describe(AuthService.name, () => {
+  // FL-34 (ported from PR131 bebfed12ff): a stale authentication read never reverses a lock
+  describe('PIN refresh revocation race', () => {
+    it('elevates only while the PIN and password are the ones the unlock checked', async () => {
+      const { ctx } = setup();
+      const repository = ctx.get(SessionRepository);
+      const { user } = await ctx.newUser({ pinCode: 'old-pin-hash', password: 'password-hash' });
+      const { session } = await ctx.newSession({ userId: user.id });
+      const deadline = new Date(Date.now() + 3_600_000);
+      const checked = { pinCode: 'old-pin-hash', password: 'password-hash' };
+
+      await expect(repository.elevate(session.id, user.id, checked, deadline)).resolves.toBe(true);
+      await repository.update(session.id, { pinExpiresAt: null });
+      // a PIN change (with its lockAll) lands between the check and the write
+      await ctx.get(UserRepository).update(user.id, { pinCode: 'new-pin-hash' });
+      await expect(repository.elevate(session.id, user.id, checked, deadline)).resolves.toBe(false);
+      expect(await repository.get(session.id)).toEqual(expect.objectContaining({ pinExpiresAt: null }));
+      // another account's session is never elevated
+      const { user: other } = await ctx.newUser({ pinCode: 'old-pin-hash', password: 'password-hash' });
+      await expect(repository.elevate(session.id, other.id, checked, deadline)).resolves.toBe(false);
+    });
+
+    it('refreshes an active elevation but cannot resurrect an expired or deleted session', async () => {
+      const { ctx } = setup();
+      const repository = ctx.get(SessionRepository);
+      const { user } = await ctx.newUser();
+      const { session } = await ctx.newSession({ userId: user.id, pinExpiresAt: new Date(Date.now() + 60_000) });
+      const deadline = new Date(Date.now() + 3_600_000);
+      await expect(repository.refreshPinExpiry(session.id, deadline)).resolves.toBe(true);
+      expect(await repository.get(session.id)).toEqual(expect.objectContaining({ pinExpiresAt: deadline }));
+      const expired = new Date(Date.now() - 1000);
+      await repository.update(session.id, { pinExpiresAt: expired });
+      await expect(repository.refreshPinExpiry(session.id, deadline)).resolves.toBe(false);
+      expect(await repository.get(session.id)).toEqual(expect.objectContaining({ pinExpiresAt: expired }));
+      await repository.delete(session.id);
+      await expect(repository.refreshPinExpiry(session.id, deadline)).resolves.toBe(false);
+    });
+
+    it.each(['lock', 'lockAll'] as const)(
+      'does not renew elevation after %s supersedes a session read',
+      async (lock) => {
+        const { sut, ctx } = setup();
+        const repository = ctx.get(SessionRepository);
+        const { user } = await ctx.newUser();
+        const token = 'pin-refresh-race-token';
+        const { session } = await ctx.newSession({
+          userId: user.id,
+          token: ctx.get(CryptoRepository).hashSha256(token),
+          pinExpiresAt: new Date(Date.now() + 60_000),
+          updatedAt: new Date(),
+        });
+        const read = repository.getByToken.bind(repository);
+        const snapshotRead = Promise.withResolvers<void>();
+        const releaseRead = Promise.withResolvers<void>();
+        const spy = vi.spyOn(repository, 'getByToken').mockImplementationOnce(async (token) => {
+          const snapshot = await read(token);
+          snapshotRead.resolve();
+          await releaseRead.promise;
+          return snapshot;
+        });
+        const pending = sut.authenticate({
+          headers: { cookie: `immich_access_token=${token}` },
+          queryParams: {},
+          metadata: { adminRoute: false, sharedLinkRoute: false, uri: 'test' },
+        });
+        try {
+          await snapshotRead.promise;
+          if (lock === 'lock') {
+            await repository.update(session.id, { pinExpiresAt: null });
+          } else {
+            await repository.lockAll(user.id);
+          }
+          releaseRead.resolve();
+          const auth = await pending;
+          expect(auth.session?.hasElevatedPermission).toBe(false);
+          const stored = await repository.get(session.id);
+          expect(stored?.pinExpiresAt).toBeNull();
+        } finally {
+          releaseRead.resolve();
+          await pending.catch(() => {});
+          spy.mockRestore();
+        }
+      },
+    );
+
+    it.each(['delete', 'expire'] as const)('rejects a session %sd after its stale PIN snapshot', async (change) => {
+      const { sut, ctx } = setup();
+      const repository = ctx.get(SessionRepository);
+      const { user } = await ctx.newUser();
+      const token = `pin-refresh-${change}`;
+      const { session } = await ctx.newSession({
+        userId: user.id,
+        token: ctx.get(CryptoRepository).hashSha256(token),
+        pinExpiresAt: new Date(Date.now() + 60_000),
+        updatedAt: new Date(),
+      });
+      const read = repository.getByToken.bind(repository);
+      const snapshotRead = Promise.withResolvers<void>();
+      const releaseRead = Promise.withResolvers<void>();
+      const spy = vi.spyOn(repository, 'getByToken').mockImplementationOnce(async (hashed) => {
+        const snapshot = await read(hashed);
+        snapshotRead.resolve();
+        await releaseRead.promise;
+        return snapshot;
+      });
+      const pending = sut.authenticate({
+        headers: { cookie: `immich_access_token=${token}` },
+        queryParams: {},
+        metadata: { adminRoute: false, sharedLinkRoute: false, uri: 'test' },
+      });
+      try {
+        await snapshotRead.promise;
+        await (change === 'delete'
+          ? repository.delete(session.id)
+          : repository.update(session.id, { expiresAt: new Date(Date.now() - 1000) }));
+        releaseRead.resolve();
+        await expect(pending).rejects.toThrow('Invalid user token');
+      } finally {
+        releaseRead.resolve();
+        await pending.catch(() => {});
+        spy.mockRestore();
+      }
+    });
+  });
+
+  // FL-34: every revocation tells the revoked sessions' tabs, so the bulk delete names what it removed
+  describe('session deletion notices', () => {
+    it('returns exactly the sessions a bulk revocation deleted', async () => {
+      const { ctx } = setup();
+      const repository = ctx.get(SessionRepository);
+      const { user } = await ctx.newUser();
+      const { user: other } = await ctx.newUser();
+      const { session: current } = await ctx.newSession({ userId: user.id });
+      const { session: first } = await ctx.newSession({ userId: user.id });
+      const { session: second } = await ctx.newSession({ userId: user.id });
+      const { session: foreign } = await ctx.newSession({ userId: other.id });
+
+      const deleted = await repository.invalidateAll({ userId: user.id, excludeId: current.id });
+      expect(deleted.toSorted()).toEqual([first.id, second.id].toSorted());
+      await expect(repository.invalidateAll({ userId: user.id, excludeId: current.id })).resolves.toEqual([]);
+      await expect(repository.invalidateAll({ userId: user.id })).resolves.toEqual([current.id]);
+      expect(await repository.get(foreign.id)).toBeDefined();
+    });
+  });
+
   describe('adminSignUp', () => {
     it(`should sign up the admin`, async () => {
       const { sut, ctx } = setup();
       ctx.getMock(EventRepository).emit.mockResolvedValue();
-      const dto = { name: 'Admin', email: 'admin@immich.cloud', password: 'password' };
+      const dto = { name: 'Admin', email: 'admin@example.com', password: 'password' };
 
       await expect(sut.adminSignUp(dto)).resolves.toEqual(
         expect.objectContaining({

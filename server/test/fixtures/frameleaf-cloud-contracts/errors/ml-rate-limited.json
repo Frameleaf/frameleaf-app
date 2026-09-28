@@ -1,0 +1,7 @@
+{
+  "code": "rate-limited",
+  "message": "Too many requests from this server. Try again shortly.",
+  "retryable": true,
+  "refusal": "quota-exceeded",
+  "requestId": "req_01J8ZK3M4N5P6Q7W"
+}

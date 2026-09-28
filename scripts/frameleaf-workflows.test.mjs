@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import {
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
@@ -24,7 +25,7 @@ const workflow = (name) =>
 const excluded = new Set([
   "docker.yml",
   "local-multi-runner-build.yml",
-  "fork-release.yml",
+  "deploy-production.yml",
   "fork-roundtrip.yml",
   "fork-integration.yml",
   "nsfw-unraid-docker.yml",
@@ -106,6 +107,7 @@ test("standalone script tests install their locked JavaScript dependencies first
   for (const command of [
     "pnpm --filter @immich/scripts test",
     "node --test scripts/frameleaf-workflows.test.mjs",
+    "node --test scripts/frameleaf-branding.test.mjs",
   ]) {
     assert.ok(scripts.findIndex((step) => step.run === command) > install);
   }
@@ -164,11 +166,23 @@ test("retired mobile workflows and jobs remain absent", () => {
   );
   assert.match(apiGeneration, /\/\/server:sync-open-api/u);
   assert.match(apiGeneration, /\/\/:open-api-typescript/u);
+  const mise = readFileSync(path.join(root, "mise.toml"), "utf8");
+  assert.doesNotMatch(mise, /open-api-dart|openapi-generator-cli|^java\s*=/mu);
+  for (const retired of [
+    "mobile",
+    "fastlane",
+    ".devcontainer/mobile",
+    "open-api/openapitools.json",
+    "open-api/templates",
+    "open-api/bin/generate-dart-sdk.sh",
+  ]) {
+    assert.equal(existsSync(path.join(root, retired)), false, retired);
+  }
 });
 
-test("locked Java and media tools include artifact URLs and checksums for hosted platforms", () => {
+test("locked media tools include artifact URLs and checksums for hosted platforms", () => {
   const lockfile = readFileSync(path.join(root, "mise.lock"), "utf8");
-  for (const tool of ["java", '"github:jellyfin/jellyfin-ffmpeg"']) {
+  for (const tool of ['"github:jellyfin/jellyfin-ffmpeg"']) {
     for (const platform of ["linux-x64", "linux-arm64", "windows-x64"]) {
       const section = `[tools.${tool}."platforms.${platform}"]`;
       assert.ok(
@@ -307,11 +321,14 @@ test("CLI has one opt-in GHCR publisher and read-only no-push PR builds", () => 
     admission(publish.if, "Frameleaf/frameleaf-app", "", "release"),
     false,
   );
+  // FL-191: releases are created with the workflow token and never trigger this workflow, so
+  // publication is only the gated manual dispatch; promotion checks that the image exists.
+  assert.equal(w.on.release, undefined);
   assert.equal(
     admission(publish.if, "Frameleaf/frameleaf-app", "", "release", {
       vars: { FRAMELEAF_ENABLE_CLI_PUBLISH: "true" },
     }),
-    true,
+    false,
   );
   assert.equal(
     admission(publish.if, "immich-app/immich", "", "release", {
@@ -462,5 +479,303 @@ test("all inline bash steps remain syntactically valid", () => {
         }
       }
     }
+  }
+});
+
+test("integration image is a guarded manual pre-release that never writes release-pipeline tags", () => {
+  const w = workflow("integration-image.yml");
+  // A workflow off the default branch cannot be dispatched: pushes to the integration branch build it.
+  assert.deepEqual(Object.keys(w.on), ["push", "workflow_dispatch"]);
+  assert.deepEqual(w.on.push, {
+    branches: ["master/frameleaf-implementation"],
+  });
+  assert.equal(w.on.workflow_dispatch, null);
+  assert.deepEqual(w.concurrency, {
+    group: "integration-image",
+    // A running build finishes; GitHub keeps only the newest queued run in the group.
+    "cancel-in-progress": false,
+  });
+  assert.deepEqual(w.permissions, {});
+  assert.equal(w.env.IMAGE, "ghcr.io/frameleaf/frameleaf-server");
+  assert.equal(w.env.DATABASE_IMAGE, "ghcr.io/frameleaf/frameleaf-postgres");
+  assert.deepEqual(Object.keys(w.jobs), [
+    "guard",
+    "build",
+    "deploy-test",
+    "publish",
+  ]);
+  assert.deepEqual(w.jobs.guard.permissions, {});
+  // FL-142: nothing is pushed before the deployment test; only publish can write packages.
+  for (const [id, packages] of [
+    ["build", "read"],
+    ["deploy-test", "read"],
+    ["publish", "write"],
+  ]) {
+    const j = w.jobs[id];
+    assert.deepEqual(j.permissions, { contents: "read", packages });
+    const dispatch = (repository, ref, event = "workflow_dispatch") =>
+      admission(j.if, repository, "", event, {
+        github: { repository, event_name: event, ref },
+      });
+    const branch = "refs/heads/master/frameleaf-implementation";
+    assert.equal(dispatch("Frameleaf/frameleaf-app", branch), true, id);
+    assert.equal(dispatch("Frameleaf/frameleaf-app", branch, "push"), true, id);
+    for (const [repository, ref, event] of [
+      ["Frameleaf/frameleaf-app", "refs/heads/fork/main"],
+      ["Frameleaf/frameleaf-app", "refs/heads/fork/main", "push"],
+      ["Frameleaf/frameleaf-app", "refs/heads/feature"],
+      ["Frameleaf/frameleaf-app", "refs/tags/frameleaf-v1"],
+      ["someone/frameleaf-app", branch],
+      ["someone/frameleaf-app", branch, "push"],
+      ["Frameleaf/frameleaf-app", branch, "pull_request"],
+      ["Frameleaf/frameleaf-app", branch, "workflow_run"],
+    ])
+      assert.equal(dispatch(repository, ref, event), false, `${id} ${ref}`);
+  }
+  assert.deepEqual(w.jobs.build.needs, "guard");
+  assert.deepEqual(w.jobs["deploy-test"].needs, "build");
+  assert.deepEqual(w.jobs.publish.needs, "deploy-test");
+  assert.equal(
+    w.jobs["deploy-test"].steps.at(-1).run,
+    "node .github/frameleaf-deploy-test.cjs",
+  );
+  assert.deepEqual(w.jobs["deploy-test"].strategy.matrix.runner, [
+    "ubuntu-24.04",
+    "ubuntu-24.04-arm",
+  ]);
+  const guard = w.jobs.guard.steps[0].run;
+  const sha = "a".repeat(40);
+  for (const [repository, ref, event, expected] of [
+    [
+      "Frameleaf/frameleaf-app",
+      "refs/heads/master/frameleaf-implementation",
+      "workflow_dispatch",
+      0,
+    ],
+    ["Frameleaf/frameleaf-app", "refs/heads/fork/main", "workflow_dispatch", 1],
+    [
+      "attacker/frameleaf-app",
+      "refs/heads/master/frameleaf-implementation",
+      "workflow_dispatch",
+      1,
+    ],
+    [
+      "Frameleaf/frameleaf-app",
+      "refs/heads/master/frameleaf-implementation",
+      "push",
+      0,
+    ],
+    ["Frameleaf/frameleaf-app", "refs/heads/fork/main", "push", 1],
+    [
+      "Frameleaf/frameleaf-app",
+      "refs/heads/master/frameleaf-implementation",
+      "pull_request",
+      1,
+    ],
+  ])
+    assert.equal(
+      spawnSync("bash", ["-c", guard], {
+        env: {
+          ...process.env,
+          REPOSITORY: repository,
+          REF: ref,
+          EVENT: event,
+          SHA: sha,
+        },
+      }).status,
+      expected,
+      `${repository} ${ref} ${event}`,
+    );
+
+  // Same build as Deploy's server image: Dockerfile, target, device, native platforms.
+  const deploy = workflow("docker.yml").jobs.server.with;
+  const build = w.jobs.build.steps.find((s) => s.id === "build").with;
+  assert.equal(build.file, deploy.dockerfile);
+  assert.equal(build.context, deploy.context);
+  assert.equal(build.target, deploy.target);
+  assert.match(
+    build["build-args"],
+    new RegExp(`^DEVICE=${deploy.device}$`, "m"),
+  );
+  assert.deepEqual(
+    w.jobs.build.strategy.matrix.include.map((row) => row.platform).join(","),
+    deploy.platforms,
+  );
+  assert.match(build.outputs, /^type=oci,dest=/);
+  assert.doesNotMatch(build.outputs, /push=true|type=image|type=registry/);
+  const push = w.jobs.publish.steps.find((s) =>
+    /oras cp --from-oci-layout/.test(s.run ?? ""),
+  ).run;
+  assert.match(push, /oras resolve/);
+  assert.match(push, /^\s*push server "\$IMAGE" ""$/m);
+  assert.match(push, /^\s*push database "\$DATABASE_IMAGE" \/postgres$/m);
+
+  // The database image is built from docker/postgres on the same runners, tested by the same
+  // deployment test (DATABASE_ARCHIVE), and only then pushed: the pushed digest is the tested one.
+  const database = w.jobs.build.steps.find((s) => s.id === "database").with;
+  assert.equal(database.context, "docker/postgres");
+  assert.equal(database.file, "docker/postgres/Dockerfile");
+  assert.equal(database.platforms, "${{ matrix.platform }}");
+  assert.match(
+    database.outputs,
+    /^type=oci,dest=\$\{\{ runner\.temp \}\}\/archive\/postgres\/image\.tar,/,
+  );
+  assert.equal(database["cache-to"], undefined);
+  assert.match(
+    database.labels,
+    /^org\.opencontainers\.image\.version=integration-\$\{\{ github\.sha \}\}$/m,
+  );
+  assert.match(
+    database.labels,
+    /^org\.opencontainers\.image\.description=Pre-release integration build, not a release$/m,
+  );
+  assert.equal(
+    w.jobs["deploy-test"].steps.at(-1).env.DATABASE_ARCHIVE,
+    "${{ runner.temp }}/server/postgres/image.tar",
+  );
+  assert.equal(
+    build["cache-to"],
+    undefined,
+    "must not write the Deploy build cache",
+  );
+  assert.match(
+    build.labels,
+    /^org\.opencontainers\.image\.version=integration-\$\{\{ github\.sha \}\}$/m,
+  );
+  assert.match(
+    build.labels,
+    /^org\.opencontainers\.image\.description=Pre-release integration build, not a release$/m,
+  );
+  assert.match(
+    build["build-args"],
+    /^BUILD_IMAGE=integration-\$\{\{ github\.sha \}\}$/m,
+  );
+
+  const publish = w.jobs.publish.steps.find((s) => s.id === "manifest").run;
+  const tags = [...publish.matchAll(/--tag "([^"]+)"/g)].map((m) => m[1]);
+  assert.deepEqual(tags, ["${IMAGE_REF}:${full}", "${IMAGE_REF}:${short}"]);
+  assert.match(publish, /for name in server database; do/);
+  assert.match(publish, /full="integration-\$\{SHA\}"/);
+  assert.match(publish, /short="integration-\$\{SHA:0:12\}"/);
+  assert.doesNotMatch(
+    JSON.stringify(w),
+    /:latest|:release|:edge|frameleaf-v|commit-\$|type=registry[^"]*mode=max/,
+  );
+});
+
+test("only the integration image compiles the integration build channel (extra licence keys)", () => {
+  // Owner decision 2026-09-27: an integration build may trust extra licence-signing keys from
+  // FRAMELEAF_LICENSE_EXTRA_JWKS_FILE; a release build never does. The channel is a Docker build
+  // argument compiled into the server, set by integration-image.yml and by nothing else.
+  const channelSource = "server/src/utils/frameleaf-build-channel.ts";
+  const releaseLine =
+    "export const FRAMELEAF_BUILD_CHANNEL: FrameleafBuildChannel = 'release' as FrameleafBuildChannel;";
+  const integrationLine =
+    "export const FRAMELEAF_BUILD_CHANNEL: FrameleafBuildChannel = 'integration' as FrameleafBuildChannel;";
+  const source = readFileSync(path.join(root, channelSource), "utf8");
+  assert.equal(
+    source
+      .split("\n")
+      .filter((line) => line.startsWith("export const FRAMELEAF_BUILD_CHANNEL"))
+      .length,
+    1,
+  );
+  assert.ok(
+    source.split("\n").includes(releaseLine),
+    "the source must say release",
+  );
+
+  // Every file that drives a build (.github, docker/, Dockerfiles, compose, mise, package scripts):
+  // only integration-image.yml may name the argument, and it sets exactly integration.
+  const tracked = execFileSync("git", ["ls-files", "-z"], {
+    cwd: root,
+    encoding: "utf8",
+  })
+    .split("\0")
+    .filter(Boolean);
+  const buildFiles = tracked.filter(
+    (file) =>
+      file.startsWith(".github/") ||
+      file.startsWith("docker/") ||
+      /(^|\/)Dockerfile[^/]*$/.test(file) ||
+      /(^|\/)(docker-)?compose[^/]*\.ya?ml$/.test(file) ||
+      /(^|\/)mise\.toml$/.test(file) ||
+      /(^|\/)package\.json$/.test(file) ||
+      /\.(sh|bake\.hcl)$/.test(file),
+  );
+  const naming = buildFiles.filter((file) =>
+    readFileSync(path.join(root, file), "utf8").includes(
+      "FRAMELEAF_BUILD_CHANNEL",
+    ),
+  );
+  assert.deepEqual(naming.sort(), [
+    ".github/workflows/integration-image.yml",
+    "server/Dockerfile",
+  ]);
+
+  const build = workflow("integration-image.yml").jobs.build.steps.find(
+    (s) => s.id === "build",
+  ).with;
+  const channelArgs = build["build-args"]
+    .split("\n")
+    .filter((line) => line.includes("FRAMELEAF_BUILD_CHANNEL"));
+  assert.deepEqual(channelArgs, ["FRAMELEAF_BUILD_CHANNEL=integration"]);
+  // Release builds (Deploy -> local-multi-runner-build, Deploy production) pass no channel.
+  for (const name of [
+    "docker.yml",
+    "local-multi-runner-build.yml",
+    "deploy-production.yml",
+  ])
+    assert.doesNotMatch(
+      readFileSync(path.join(root, ".github/workflows", name), "utf8"),
+      /FRAMELEAF_BUILD_CHANNEL/,
+    );
+
+  // The Dockerfile defaults to release and rewrites only that one line; run its step as written.
+  const dockerfile = readFileSync(path.join(root, "server/Dockerfile"), "utf8");
+  assert.match(dockerfile, /^ARG FRAMELEAF_BUILD_CHANNEL=release$/m);
+  assert.equal(
+    (dockerfile.match(/^ARG FRAMELEAF_BUILD_CHANNEL/gm) ?? []).length,
+    1,
+  );
+  assert.doesNotMatch(
+    dockerfile,
+    /^ENV .*FRAMELEAF_BUILD_CHANNEL/m,
+    "never a runtime environment variable",
+  );
+  const step = dockerfile
+    .split(/^ARG FRAMELEAF_BUILD_CHANNEL=release\n/m)[1]
+    .split(/\n(?=RUN |FROM |COPY |ARG |ENV )/)[0]
+    .replace(/^RUN /, "")
+    .replaceAll("\\\n", "\n");
+  const dir = mkdtempSync(path.join(tmpdir(), "frameleaf-channel-"));
+  try {
+    const run = (channel) => {
+      mkdirSync(path.join(dir, "server/src/utils"), { recursive: true });
+      writeFileSync(path.join(dir, channelSource), source);
+      const status = spawnSync("sh", ["-c", step], {
+        cwd: dir,
+        env: { ...process.env, FRAMELEAF_BUILD_CHANNEL: channel },
+      }).status;
+      return {
+        status,
+        lines: readFileSync(path.join(dir, channelSource), "utf8").split("\n"),
+      };
+    };
+    const release = run("release");
+    assert.equal(release.status, 0);
+    assert.ok(release.lines.includes(releaseLine));
+    const integration = run("integration");
+    assert.equal(integration.status, 0);
+    assert.ok(integration.lines.includes(integrationLine));
+    assert.ok(!integration.lines.includes(releaseLine));
+    for (const channel of ["", "Integration", "production", "integration "])
+      assert.notEqual(
+        run(channel).status,
+        0,
+        `channel ${JSON.stringify(channel)}`,
+      );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
   }
 });

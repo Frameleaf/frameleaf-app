@@ -34,6 +34,13 @@ export class PartnerService extends BaseService {
     }
 
     await this.partnerRepository.remove(partnerId);
+
+    // FL-54: revocation takes effect on open pages too. Access is always checked live on the server,
+    // so this only tells the clients to drop what they already loaded (timeline months, the partner
+    // page, an open viewer) instead of showing it until the next reload.
+    for (const userId of [sharedWithId, auth.user.id]) {
+      this.websocketRepository.clientSend('PartnerRevokeV1', userId, partnerId);
+    }
   }
 
   async search(auth: AuthDto, { direction }: PartnerSearchDto): Promise<PartnerResponseDto[]> {
@@ -45,12 +52,32 @@ export class PartnerService extends BaseService {
       .map((partner) => this.mapPartner(partner, direction));
   }
 
-  async update(auth: AuthDto, sharedById: string, dto: PartnerUpdateDto): Promise<PartnerResponseDto> {
-    await this.requireAccess({ auth, permission: Permission.PartnerUpdate, ids: [sharedById] });
-    const partnerId: PartnerIds = { sharedById, sharedWithId: auth.user.id };
+  async update(auth: AuthDto, partnerUserId: string, dto: PartnerUpdateDto): Promise<PartnerResponseDto> {
+    const hasInTimeline = dto.inTimeline !== undefined;
+    const hasShareLocation = dto.shareLocation !== undefined;
+    if (hasInTimeline === hasShareLocation) {
+      throw new BadRequestException('Specify exactly one of inTimeline or shareLocation');
+    }
 
-    const entity = await this.partnerRepository.update(partnerId, { inTimeline: dto.inTimeline });
-    return this.mapPartner(entity, PartnerDirection.SharedWith);
+    if (hasInTimeline) {
+      // recipient preference: the partner identified by `:id` shares with me
+      await this.requireAccess({ auth, permission: Permission.PartnerUpdate, ids: [partnerUserId] });
+      const partnerId: PartnerIds = { sharedById: partnerUserId, sharedWithId: auth.user.id };
+
+      const entity = await this.partnerRepository.update(partnerId, { inTimeline: dto.inTimeline });
+      return this.mapPartner(entity, PartnerDirection.SharedWith);
+    }
+
+    // sharer setting: I share with the partner identified by `:id`; only the row owned by the caller
+    // as `sharedById` can be changed, so the recipient can never grant themselves location access
+    const partnerId: PartnerIds = { sharedById: auth.user.id, sharedWithId: partnerUserId };
+    const partner = await this.partnerRepository.get(partnerId);
+    if (!partner) {
+      throw new BadRequestException('Partner not found');
+    }
+
+    const entity = await this.partnerRepository.update(partnerId, { shareLocation: dto.shareLocation });
+    return this.mapPartner(entity, PartnerDirection.SharedBy);
   }
 
   private mapPartner(partner: Partner, direction: PartnerDirection): PartnerResponseDto {
@@ -58,6 +85,6 @@ export class PartnerService extends BaseService {
     const sharedUser = direction === PartnerDirection.SharedBy ? partner.sharedWith : partner.sharedBy;
     const user = mapUser(sharedUser);
 
-    return { ...user, inTimeline: partner.inTimeline };
+    return { ...user, inTimeline: partner.inTimeline, shareLocation: partner.shareLocation };
   }
 }

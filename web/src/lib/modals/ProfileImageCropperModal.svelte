@@ -68,7 +68,8 @@
         return;
       }
       const file = new File([blob], 'profile-picture.png', { type: 'image/png' });
-      await createProfileImage({ createProfileImageDto: { file } });
+      // the photo is recorded so the picture is replaced if the photo is later Locked
+      await createProfileImage({ createProfileImageDto: { file, assetId: asset.id } });
       toastManager.primary($t('profile_picture_set'));
 
       await authManager.refresh();

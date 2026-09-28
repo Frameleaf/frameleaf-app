@@ -3,24 +3,39 @@ import { type ExpressionBuilder, type Insertable, type Kysely, type Updateable }
 import { jsonArrayFrom } from 'kysely/helpers/postgres';
 import { InjectKysely } from 'nestjs-kysely';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { columns } from 'src/database.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { DB } from 'src/schema/index.js';
 import { StackTable } from 'src/schema/tables/stack.table.js';
-import { asUuid, getHiddenContentFilter, withDefaultVisibility, withHiddenContentFilter } from 'src/utils/database.js';
+import {
+  asUuid,
+  getHiddenContentFilter,
+  hasHiddenLockedPrimary,
+  withAlbumVisibility,
+  withHiddenContentFilter,
+} from 'src/utils/database.js';
+import { onStacksJoined } from 'src/utils/locked-stacks.js';
+import { isLocked } from 'src/utils/locked.js';
 
-export interface StackSearch extends HiddenContentQueryOptions {
+export interface StackSearch extends HiddenContentQueryOptions, LockedVisibilityOptions {
   ownerId: string;
   primaryAssetId?: string;
 }
 
-type StackPrivacyOptions = HiddenContentQueryOptions;
+/**
+ * `lockedOwnerId`: the viewer, when their session is elevated. Only then are their own Locked
+ * members listed, and only then is a stack whose primary is Locked returned at all (FL-34).
+ */
+type StackPrivacyOptions = HiddenContentQueryOptions & LockedVisibilityOptions;
 
 const withAssets = (eb: ExpressionBuilder<DB, 'stack'>, withTags = false, options: StackPrivacyOptions = {}) => {
   return jsonArrayFrom(
     eb
       .selectFrom('asset')
       .selectAll('asset')
+      // FL-34: the lock, so a response reports `locked` and `mapStack` can leave it out
+      .select(isLocked('asset').as('isLocked'))
       .innerJoinLateral(
         (eb) =>
           eb
@@ -44,7 +59,7 @@ const withAssets = (eb: ExpressionBuilder<DB, 'stack'>, withTags = false, option
       .select((eb) => eb.fn.toJson('exifInfo').as('exifInfo'))
       .where('asset.deletedAt', 'is', null)
       .whereRef('asset.stackId', '=', 'stack.id')
-      .$call(withDefaultVisibility)
+      .$call((qb) => withAlbumVisibility(qb, options.lockedOwnerId))
       .$call((qb) => withHiddenContentFilter(qb, options))
       .orderBy('asset.fileCreatedAt', 'asc'),
   ).as('assets');
@@ -61,6 +76,7 @@ export class StackRepository {
       .selectAll('stack')
       .select((eb) => withAssets(eb, false, query))
       .where('stack.ownerId', '=', query.ownerId)
+      .where((eb) => eb.not(hasHiddenLockedPrimary(eb, query.lockedOwnerId)))
       .$if(!!query.primaryAssetId, (eb) => eb.where('stack.primaryAssetId', '=', query.primaryAssetId!))
       .$if(!!getHiddenContentFilter(query), (qb) =>
         qb
@@ -126,12 +142,18 @@ export class StackRepository {
         .where('id', 'in', [...uniqueIds])
         .execute();
 
-      return tx
+      // a stack that holds a Locked photo is Locked as a whole (FL-53)
+      const lockedAssetIds = await onStacksJoined(tx, [newRecord.id]);
+
+      const stack = await tx
         .selectFrom('stack')
         .selectAll('stack')
         .select(withAssets)
         .where('id', '=', newRecord.id)
         .executeTakeFirstOrThrow();
+
+      // the photos that became Locked by joining it, for the caller's follow-up
+      return { ...stack, lockedAssetIds };
     });
   }
 
@@ -161,6 +183,7 @@ export class StackRepository {
       .selectAll()
       .select((eb) => withAssets(eb, true, options))
       .where('id', '=', asUuid(id))
+      .where((eb) => eb.not(hasHiddenLockedPrimary(eb, options.lockedOwnerId)))
       .$if(!!getHiddenContentFilter(options), (qb) =>
         qb
           .innerJoin('asset as primaryAsset', 'primaryAsset.id', 'stack.primaryAssetId')
@@ -181,7 +204,11 @@ export class StackRepository {
   }
 
   @GenerateSql({ params: [{ sourceId: DummyValue.UUID, targetId: DummyValue.UUID }] })
-  merge({ sourceId, targetId }: { sourceId: string; targetId: string }) {
-    return this.db.updateTable('asset').set({ stackId: targetId }).where('asset.stackId', '=', sourceId).execute();
+  async merge({ sourceId, targetId }: { sourceId: string; targetId: string }): Promise<void> {
+    await this.db.transaction().execute(async (tx) => {
+      await tx.updateTable('asset').set({ stackId: targetId }).where('asset.stackId', '=', sourceId).execute();
+      // a stack that holds a Locked photo is Locked as a whole (FL-53)
+      await onStacksJoined(tx, [targetId]);
+    });
   }
 }

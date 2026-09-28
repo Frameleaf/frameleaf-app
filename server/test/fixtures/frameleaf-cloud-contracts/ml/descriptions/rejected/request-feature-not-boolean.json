@@ -1,0 +1,9 @@
+{
+  "language": "en",
+  "length": "standard",
+  "style": "natural",
+  "maxTags": 8,
+  "features": {
+    "medicalSignals": "yes"
+  }
+}

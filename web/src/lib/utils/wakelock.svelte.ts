@@ -5,8 +5,14 @@ const isSupported = browser && 'wakeLock' in navigator;
 
 let sentinel: WakeLockSentinel | undefined;
 let acquiring = false;
+/**
+ * Who currently wants the screen kept on (uploads, a playing slideshow). The lock is held
+ * while anyone does, so one holder finishing never switches the screen off under another.
+ */
+const holders = new Set<string>();
 
-export async function acquireWakeLock() {
+export async function acquireWakeLock(holder = 'default') {
+  holders.add(holder);
   if (!isSupported) {
     return;
   }
@@ -20,7 +26,14 @@ export async function acquireWakeLock() {
   acquiring = true;
   try {
     // eslint-disable-next-line tscompat/tscompat
-    sentinel = await navigator.wakeLock.request('screen');
+    const lock = await navigator.wakeLock.request('screen');
+    if (holders.size === 0) {
+      // everyone let go while the request was in flight
+      // eslint-disable-next-line tscompat/tscompat
+      await lock.release().catch((error: unknown) => console.warn('Failed to release wake lock:', error));
+    } else {
+      sentinel = lock;
+    }
   } catch (error) {
     console.warn('Failed to acquire wake lock:', error);
   } finally {
@@ -28,8 +41,9 @@ export async function acquireWakeLock() {
   }
 }
 
-export async function releaseWakeLock() {
-  if (!sentinel) {
+export async function releaseWakeLock(holder = 'default') {
+  holders.delete(holder);
+  if (holders.size > 0 || !sentinel) {
     return;
   }
 
@@ -37,16 +51,21 @@ export async function releaseWakeLock() {
   // Unset first to avoid race condition after await
   sentinel = undefined;
 
-  // eslint-disable-next-line tscompat/tscompat
-  await toReleaseSentinel.release();
+  try {
+    // eslint-disable-next-line tscompat/tscompat
+    await toReleaseSentinel.release();
+  } catch (error) {
+    // an already released lock (the tab was hidden) can reject; nothing is left to undo
+    console.warn('Failed to release wake lock:', error);
+  }
 }
 
 if (isSupported) {
   // Wake lock is cleared when user changes to a different tab,
   // so we need to reacquire the wake lock when they come back.
   on(globalThis, 'visibilitychange', () => {
-    if (sentinel && document.visibilityState === 'visible') {
-      void acquireWakeLock();
+    if (holders.size > 0 && document.visibilityState === 'visible') {
+      void acquireWakeLock([...holders][0]);
     }
   });
 }

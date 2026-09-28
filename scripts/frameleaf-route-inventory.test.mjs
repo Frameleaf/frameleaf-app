@@ -37,15 +37,15 @@ function routeForPage(path) {
   return `/${segments.join("/")}`;
 }
 
-test("committed Svelte routes exactly match the accepted 70-route inventory", () => {
+test("committed Svelte routes exactly match the accepted 83-route inventory", () => {
   const actual = [...new Set(pageFiles(routesRoot).map(routeForPage))].sort();
-  assert.equal(actual.length, 70);
+  assert.equal(actual.length, 83);
   assert.deepEqual(actual, [...inventory.productionRoutes].sort());
 });
 
 test("dirty-only evidence remains separate and complete", () => {
-  assert.equal(inventory.dirtyOnlyEvidence.length, 14);
-  assert.equal(new Set(inventory.dirtyOnlyEvidence).size, 14);
+  assert.equal(inventory.dirtyOnlyEvidence.length, 11);
+  assert.equal(new Set(inventory.dirtyOnlyEvidence).size, 11);
   assert.deepEqual(
     inventory.dirtyOnlyEvidence.filter((route) =>
       inventory.productionRoutes.includes(route),
@@ -58,7 +58,7 @@ test("dirty-only evidence remains separate and complete", () => {
   );
 });
 
-test("ownership evidence covers all 84 routes and nine shared loaders", () => {
+test("ownership evidence covers all 94 routes and nine shared loaders", () => {
   const accepted = [
     ...inventory.productionRoutes,
     ...inventory.dirtyOnlyEvidence,

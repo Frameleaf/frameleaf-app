@@ -22,6 +22,11 @@
     use?: ActionArray;
     actions?: Array<HeaderButtonActionItem | MenuItemType>;
     sidebar?: Snippet;
+    /**
+     * Show the library rail. Studio has none, as in the prototype, where the rail belongs to the
+     * library workspace and the Studio screen gives the whole width to its own work.
+     */
+    rail?: boolean;
     buttons?: Snippet;
     children?: Snippet;
   }
@@ -34,6 +39,7 @@
     use = [],
     actions = [],
     sidebar,
+    rail = true,
     buttons,
     children,
   }: Props = $props();
@@ -46,6 +52,12 @@
 
   let scrollbarClass = $derived(scrollbar ? 'immich-scrollbar' : 'scrollbar-hidden');
   let hasTitleClass = $derived(title ? 'top-16 h-[calc(100%-(--spacing(16)))]' : 'top-0 h-full');
+  // Everything below the Frameleaf top bar (FL-30), which is 56px, or two rows on phones.
+  const heightClass = $derived(
+    hideNavbar
+      ? 'h-dvh'
+      : 'h-[calc(100dvh-var(--fl-topbar-height))] max-md:h-[calc(100dvh-var(--fl-topbar-height-phone))]',
+  );
 
   const MIN_SIDEBAR_WIDTH = 200;
   const MAX_SIDEBAR_WIDTH = 500;
@@ -93,26 +105,30 @@
 
 <header>
   {#if !hideNavbar}
-    <NavigationBar onUploadClick={() => openFileUploadDialog()} />
+    <NavigationBar onUploadClick={() => openFileUploadDialog()} hasRail={rail} />
   {/if}
 </header>
 <div
   bind:this={container}
   tabindex="-1"
   style="--sidebar-width: {railWidth}"
-  class="relative z-0 grid grid-cols-[--spacing(0)_auto] overflow-hidden sidebar:grid-cols-[var(--sidebar-width)_auto]
+  class="relative z-0 grid overflow-hidden
+    {rail ? 'grid-cols-[--spacing(0)_auto] sidebar:grid-cols-[var(--sidebar-width)_auto]' : 'grid-cols-1'}
     {sidebarStore.isResizing ? '' : 'transition-[grid-template-columns] duration-200'}
-    {hideNavbar ? 'h-dvh' : 'h-[calc(100dvh-var(--navbar-height))] max-md:h-[calc(100dvh-var(--navbar-height-md))]'}
+    {heightClass}
     {hideNavbar ? 'pt-(--navbar-height)' : ''}
     {hideNavbar ? 'max-md:pt-(--navbar-height-md)' : ''}"
 >
-  {#if sidebar}
-    {@render sidebar()}
-  {:else}
-    <UserSidebar />
+  <!-- Without the rail the grid has one column and the content takes the whole width. -->
+  {#if rail}
+    {#if sidebar}
+      {@render sidebar()}
+    {:else}
+      <UserSidebar />
+    {/if}
   {/if}
 
-  {#if !$sidebarCollapsed}
+  {#if rail && !$sidebarCollapsed}
     <!-- Drag handle to resize the sidebar; sits on the sidebar/content boundary (desktop only). -->
     <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
     <div
@@ -131,7 +147,12 @@
   {/if}
 
   <main class="relative">
-    <div class="{scrollbarClass} absolute {hasTitleClass} w-full overflow-y-auto p-2" use:useActions={use}>
+    <!-- On phones the frosted tab bar floats over the foot of the page (TabBar.svelte). -->
+    <div
+      class="{scrollbarClass} absolute {hasTitleClass} w-full overflow-y-auto p-2"
+      style:padding-bottom="max(0.5rem, var(--fl-tabbar-space, 0px))"
+      use:useActions={use}
+    >
       {@render children?.()}
     </div>
 

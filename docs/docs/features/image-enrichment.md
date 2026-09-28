@@ -2,7 +2,9 @@
 
 Image enrichment adds optional machine learning jobs that can generate searchable descriptions and tags for image assets, detect NSFW images, or do both. These jobs are disabled by default and can be enabled independently in `Administration > Settings > Machine Learning Settings`.
 
-Image enrichment processes image assets only. It skips deleted, hidden, and locked assets, and it does not change album membership.
+Image enrichment processes image assets only. It skips deleted and hidden assets, processes locked ones like any other (background work always reaches them), and it does not change album membership. A detection locks an asset only while `Hide detected NSFW assets` is enabled; see [Locked](./locked.md).
+
+To try a model or prompt on a few samples before it reaches the library, and to run chosen stages on chosen items as a background plan, see [Sample-first enrichment and plans](./descriptions-and-smart-albums.md#sample-first-enrichment-and-plans). Videos are described from their reusable moment frames; see [Video moments](./descriptions-and-smart-albums.md#video-moments).
 
 ## Recommended Rollout
 
@@ -39,7 +41,7 @@ Use this checklist when validating image enrichment against a real library or lo
 1. Enable `Generate AI descriptions and tags` only, upload a new image, and confirm an `ImageDescription` job is queued after thumbnail generation.
 2. Enable `Detect NSFW images` only, upload a new image, and confirm an `NsfwDetection` job is queued after thumbnail generation.
 3. Enable both settings, upload a new image, and confirm only `ImageDescription` is queued directly after thumbnail generation. The description job runs NSFW detection first and passes that result to the description model.
-4. Run `NSFW Detection > All` and `Image descriptions and tags > All` from `Administration > Jobs`, then confirm video, hidden, locked, deleted, and already-successful images are skipped unless the run is forced.
+4. Run `NSFW Detection > All` and `Image descriptions and tags > All` from `Administration > Jobs`, then confirm video, hidden, deleted, and already-successful images are skipped unless the run is forced.
 5. Open an enriched image's detail panel and verify the private status, model name, labels, score, review state, and errors are visible to admins.
 6. Use the search filter modal to review `NSFW`, `NSFW review`, `NSFW reviewed`, `NSFW overridden`, failed, and missing-result states.
 7. Confirm generated descriptions append only one `AI description:` block and never remove user-written text.
@@ -52,24 +54,24 @@ Use this checklist when validating image enrichment against a real library or lo
 
 ## Descriptions and Tags
 
-When description and tag generation is enabled, Immich sends the asset preview image to the machine learning service and stores the model result as private enrichment metadata. Immich then applies visible metadata according to the admin settings:
+When description and tag generation is enabled, Frameleaf sends the asset preview image to the machine learning service and stores the model result as private enrichment metadata. Frameleaf then applies visible metadata according to the admin settings:
 
 - Descriptions are written to the asset description field.
 - Existing user descriptions are preserved, with a generated block appended once.
 - Tags are plain searchable tags, deduplicated against existing tags.
 - Sidecar write jobs are queued after visible description or tag changes.
 
-The default description model setting is `Qwen/Qwen2.5-VL-3B-Instruct`. In this branch, that model is mapped internally to the OpenVINO-converted `llmware/qwen2.5-vl-3b-ov` model. The lower-resource fallback setting is `microsoft/Florence-2-base-ft`. See [Hardware and Model Notes](#hardware-and-model-notes) below for the full curated model dropdown, VRAM estimates per model, and an explanation of how the fallback behavior differs between local and RunPod URLs.
+The default description model setting is `Qwen/Qwen2.5-VL-3B-Instruct`. In this branch, that model is mapped internally to the OpenVINO-converted `llmware/qwen2.5-vl-3b-ov` model. The lower-resource fallback setting is `microsoft/Florence-2-base-ft`. See [Hardware and Model Notes](#hardware-and-model-notes) below for the full curated model dropdown, VRAM estimates per model, and an explanation of how the fallback behavior differs between local workers and Frameleaf Cloud.
 
 ## NSFW Detection
 
-When NSFW detection is enabled, Immich sends the asset preview image to a dedicated classifier. The private enrichment metadata stores the NSFW flag, score, labels, model name, status, and timestamps.
+When NSFW detection is enabled, Frameleaf sends the asset preview image to a dedicated classifier. The private enrichment metadata stores the NSFW flag, score, labels, model name, status, and timestamps.
 
-The default NSFW model is `onnx-community/nsfw_image_detection-ONNX`, with a default threshold of `0.85`. When an image is detected as NSFW, Immich can add an `nsfw` tag and specific visible reason tags when they are supported by the classifier result and the visible image content.
+The default NSFW model is `onnx-community/nsfw_image_detection-ONNX`, with a default threshold of `0.85`. When an image is detected as NSFW, Frameleaf can add an `nsfw` tag and specific visible reason tags when they are supported by the classifier result and the visible image content.
 
 The private NSFW flag is the source of truth for privacy features. Tags are searchable metadata, not a security boundary.
 
-When `Hide detected NSFW assets` is enabled, privately flagged NSFW assets are hidden from library views such as the timeline, search results, albums, album thumbnails and counts, maps, shared-link payloads, downloads, and direct asset access unless the current session has been unlocked with the locked-folder PIN.
+When `Hide detected NSFW assets` is enabled, a detection locks the asset (see [Locked](./locked.md)): it is hidden from library views such as the timeline, search results, albums, album thumbnails and counts, maps, shared-link payloads, downloads, and direct asset access unless the current session has been unlocked with the PIN, and it is listed in Locked.
 
 Sync streams apply the same private NSFW filter to asset payloads, album asset payloads, album-to-asset relations, exif, edit, face, memory, partner, and stack payloads, album thumbnails, person face thumbnails, and generic asset metadata. Private `ml-enrichment` metadata is never exposed through generic asset metadata sync.
 
@@ -83,13 +85,13 @@ Locked-folder behavior is session based. Unlocking the locked folder elevates th
 
 ## Running Both Jobs
 
-If both settings are enabled, Immich runs NSFW detection first and passes the result into the description and tag prompt. This allows the generated description and tags to remain factual while including visible NSFW reasons when they are supported.
+If both settings are enabled, Frameleaf runs NSFW detection first and passes the result into the description and tag prompt. This allows the generated description and tags to remain factual while including visible NSFW reasons when they are supported.
 
 To process existing libraries, go to `Administration > Jobs` and run the `All` action for the specific enrichment task you want to backfill. Use `NSFW Detection` first if you want classifier results available before description/tag generation, then run `Image descriptions and tags`. The legacy `Image Enrichment` queue command still queues every enabled enrichment task for API compatibility, but the admin Jobs page exposes the two backfills separately.
 
 Backfills skip images that already have a successful result for the selected task unless the job is forced. A forced run recalculates the selected task, but visible descriptions and tags are still protected by stored applied hashes so generated metadata is not appended repeatedly.
 
-Single-asset jobs also re-check eligibility before calling machine learning. If an asset is deleted, trashed, hidden, locked, missing a preview, or no longer an image, the job is skipped or failed without applying metadata.
+Single-asset jobs also re-check eligibility before calling machine learning. If an asset is deleted, trashed, hidden, missing a preview, or no longer an image, the job is skipped or failed without applying metadata.
 
 ## Visible Metadata
 
@@ -128,16 +130,18 @@ Only the **Qwen2.5-VL**, **Qwen3-VL**, **Phi-3/3.5-vision**, and **Florence-2** 
 
 On OpenVINO, the 3B/7B Qwen entries resolve transparently to pre-quantized int4 builds (`llmware/qwen2.5-vl-Nb-ov`). The 32B, 72B, and Qwen3-VL 30B-A3B entries are CUDA only — there is no OpenVINO alias.
 
+The same description models, with Florence-2 base and large, are the white and green stops of the descriptions slider in **Where each job runs** and on the Cloud processing **Models** card. The slider colours each one by the last Hardware & GPU check and changes the same description model setting, saved with the settings bar. A model the machine-learning container doesn't have yet downloads the first time a job uses it. See [Hardware acceleration → Model licences and Frameleaf Cloud](/features/ml-hardware-acceleration#model-licences-and-frameleaf-cloud).
+
 ### Fallback model behavior
 
 The dropdown also exposes a **fallback model** field. Florence-2 is the typical choice for local CUDA setups, since it's small enough to fit alongside other models on the same GPU.
 
 The fallback logic is **split by destination**:
 
-- **Local URLs**: if the primary model fails (HTTP 5xx), Immich retries the same request with the fallback model name. Local Florence-2 then takes the call.
-- **RunPod managed URL**: the fallback is **never** attempted. The admin's model choice is the contract; silently switching to Florence on RunPod would be both surprising and broken (Florence's `trust_remote_code` modeling code is incompatible with the transformers 5.x pin on the cuda-runpod image).
+- **Local URLs**: if the primary model fails (HTTP 5xx), Frameleaf retries the same request with the fallback model name. Local Florence-2 then takes the call.
+- **Frameleaf Cloud**: the fallback is **never** attempted. The model chosen for cloud work is the contract; silently switching to another model in the cloud would be surprising.
 
-If you only use RunPod (no local URLs configured), the fallback never runs — leaving it set is harmless.
+If descriptions run only on Frameleaf Cloud, the fallback never runs; leaving it set is harmless.
 
 For Intel iGPU deployments, use the OpenVINO machine-learning image/extra and keep the description device at `AUTO` unless you need to pin it. `AUTO` lets OpenVINO choose the best available device and fall back when the GPU is unavailable.
 

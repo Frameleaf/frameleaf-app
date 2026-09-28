@@ -4,6 +4,10 @@ set -Eeuo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 COMPOSE_FILE="$ROOT/e2e/docker-compose.fork-roundtrip.yml"
 STATE_DIR="${FORK_ROUNDTRIP_STATE_DIR:-$ROOT/.cache/fork-roundtrip}"
+# FL-44: certification evidence outlives reset_lane (which empties STATE_DIR) and names the exact
+# candidate and official images the proof ran against.
+EVIDENCE_DIR="${FORK_ROUNDTRIP_EVIDENCE_DIR:-$ROOT/.cache/fork-roundtrip-evidence}"
+CANDIDATE_IMAGE='immich-fork-roundtrip:local'
 DATABASE_URL='postgres://postgres:postgres@127.0.0.1:5437/immich'
 API_URL='http://127.0.0.1:2287/api'
 BACKUP_ID='fork-roundtrip-db-v3.1.0'
@@ -34,6 +38,13 @@ export FORK_ROUNDTRIP_API_URL="$API_URL"
 export FORK_ROUNDTRIP_DATABASE_URL="$DATABASE_URL"
 export FORK_ROUNDTRIP_STATE_DIR="$STATE_DIR"
 export VITEST_DISABLE_DOCKER_SETUP=true
+
+selected_lane="${FORK_ROUNDTRIP_LANE:-all}"
+case "$selected_lane" in
+  all|origin-v3.1.0-to-fork|current-fork-to-official-v3.1.0|official-v3.1.0-to-fork-return|official-v3.1.0-to-fork-to-official-v3.1.0-to-fork) ;;
+  *) echo "Unknown certification lane: $selected_lane" >&2; exit 1 ;;
+esac
+EVIDENCE_FILE="$EVIDENCE_DIR/fork-roundtrip-$selected_lane.json"
 
 compose() { docker compose -f "$COMPOSE_FILE" "$@"; }
 phase() {
@@ -97,7 +108,7 @@ start_fork_normal() {
   id="$(compose ps -q fork-server)"
   for _ in {1..120}; do
     logs="$(docker logs --since 5m "$id" 2>&1)"
-    grep -Fq 'Immich Microservices is running' <<<"$logs" && return 0
+    grep -Fq 'Frameleaf Microservices is running' <<<"$logs" && return 0
     sleep 1
   done
   docker logs "$id" >&2
@@ -117,6 +128,191 @@ interrupt_fork() {
 psql_sql() { compose exec -T database psql -v ON_ERROR_STOP=1 -U postgres -d immich "$@"; }
 admin() { compose exec -T fork-server immich-admin "$@"; }
 
+# FL-44 (FN-304): the proof is tied to the exact candidate commit. A tree with uncommitted changes
+# is refused unless FORK_ROUNDTRIP_ALLOW_DIRTY=true, and then recorded as dirty. The harness's own
+# state and evidence under .cache are not part of the candidate.
+resolve_candidate_commit() {
+  local sha tree
+  sha="$(git -C "$ROOT" rev-parse --verify HEAD 2>/dev/null)" || {
+    echo 'Cannot determine the candidate git commit' >&2
+    return 1
+  }
+  [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || { echo "Candidate commit is not a full SHA: $sha" >&2; return 1; }
+  tree="$(git -C "$ROOT" status --porcelain -- . ':(exclude).cache')" || {
+    echo 'Cannot determine whether the candidate tree is clean' >&2
+    return 1
+  }
+  candidate_dirty=false
+  if [[ -n "$tree" ]]; then
+    if [[ "${FORK_ROUNDTRIP_ALLOW_DIRTY:-false}" != true ]]; then
+      echo 'The candidate tree has uncommitted changes; commit them, or set FORK_ROUNDTRIP_ALLOW_DIRTY=true to certify it recorded as dirty' >&2
+      return 1
+    fi
+    candidate_dirty=true
+  fi
+  candidate_commit="$sha"
+}
+# The built image must carry the candidate commit as its revision label (server/Dockerfile sets it
+# from BUILD_SOURCE_COMMIT = FORK_ROUNDTRIP_CANDIDATE_SHA), so the image id recorded is the candidate's.
+resolve_candidate_image() {
+  local id revision digests
+  id="$(docker image inspect "$CANDIDATE_IMAGE" --format '{{.Id}}' 2>/dev/null)" || {
+    echo "Cannot inspect the candidate image $CANDIDATE_IMAGE" >&2
+    return 1
+  }
+  [[ "$id" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "Candidate image id is not a digest: $id" >&2; return 1; }
+  revision="$(docker image inspect "$CANDIDATE_IMAGE" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')"
+  [[ "$revision" == "$candidate_commit" ]] || {
+    echo "Candidate image $CANDIDATE_IMAGE is labelled with revision '$revision', not $candidate_commit" >&2
+    return 1
+  }
+  digests="$(docker image inspect "$CANDIDATE_IMAGE" --format '{{json .RepoDigests}}')"
+  jq -e 'type == "array"' <<<"$digests" >/dev/null || { echo "Cannot read candidate repo digests: $digests" >&2; return 1; }
+  candidate_image_id="$id"
+  candidate_repo_digests="$digests"
+}
+write_evidence() {
+  local status="$1"
+  [[ -n "${candidate_commit:-}" && -n "${candidate_image_id:-}" && -n "${official_digest:-}" && -n "${official_image_id:-}" ]] || {
+    echo 'Certification evidence is incomplete: candidate commit, candidate image and official image must all be known' >&2
+    return 1
+  }
+  mkdir -p "$EVIDENCE_DIR"
+  jq -n \
+    --arg lane "$selected_lane" \
+    --arg status "$status" \
+    --arg recordedAt "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    --arg commit "$candidate_commit" \
+    --argjson dirty "$candidate_dirty" \
+    --arg image "$CANDIDATE_IMAGE" \
+    --arg imageId "$candidate_image_id" \
+    --argjson repoDigests "$candidate_repo_digests" \
+    --arg officialTag "$OFFICIAL_IMMICH_TAG" \
+    --arg officialImage "ghcr.io/immich-app/immich-server:$OFFICIAL_IMMICH_TAG" \
+    --arg officialDigest "$official_digest" \
+    --arg officialImageId "$official_image_id" \
+    --arg officialArchitecture "$official_architecture" \
+    --arg officialCorePluginDigest "$expected_official_core_digest" \
+    '{
+      lane: $lane,
+      status: $status,
+      recordedAt: $recordedAt,
+      candidate: { commit: $commit, dirty: $dirty, image: $image, imageId: $imageId, repoDigests: $repoDigests },
+      official: {
+        tag: $officialTag,
+        image: $officialImage,
+        repoDigest: $officialDigest,
+        imageId: $officialImageId,
+        architecture: $officialArchitecture,
+        corePluginDigest: $officialCorePluginDigest
+      }
+    }' >"$EVIDENCE_FILE.tmp"
+  mv "$EVIDENCE_FILE.tmp" "$EVIDENCE_FILE"
+  echo "Certification evidence ($status): $EVIDENCE_FILE"
+}
+
+# From a verified fork backfill to the official server running on the handed-over database: the
+# destructive storage pass, storage verification, the locked cutover and prepare-official.
+handoff_to_official() {
+  local expected_assets="$1" cutover_phase="$2" cutover_spec="$3" interrupt="${4:-false}"
+  # Steady-state backfills preserve physical deduplication; convert storage to
+  # the destructive official form the cutover evidence requires.
+  prepare_output="$(admin fork-schema-cutover prepare --batch-size 32)"
+  echo "$prepare_output"
+  grep -q '^Error:' <<<"$prepare_output" && exit 1
+  grep -q 'Verified: yes' <<<"$prepare_output" || { echo 'Official handoff preparation did not verify' >&2; exit 1; }
+  admin fork-schema-cutover verify-storage start --database-backup-id "$BACKUP_ID" --media-snapshot-id "$SNAPSHOT_ID"
+  if [[ "$interrupt" == true ]]; then
+    storage_status="$(admin fork-schema-cutover verify-storage resume --database-backup-id "$BACKUP_ID" --media-snapshot-id "$SNAPSHOT_ID" --batch-size 1)"
+    jq -e '.status == "running" and .verifiedCount > 0 and .verifiedCount < .applicableAssetCount' <<<"$storage_status" >/dev/null || exit 1
+    interrupt_fork
+    start_fork
+  fi
+  for _ in {1..600}; do
+    storage_status="$(admin fork-schema-cutover verify-storage resume --database-backup-id "$BACKUP_ID" --media-snapshot-id "$SNAPSHOT_ID" --batch-size 32)"
+    jq -e '.status == "completed"' <<<"$storage_status" >/dev/null && break
+  done
+  jq -e '.status == "completed" and .verifiedCount == .applicableAssetCount' <<<"$storage_status" >/dev/null || exit 1
+
+  maintenance_output="$(admin enable-maintenance-mode)"
+  echo "$maintenance_output"
+  grep -q '^Error:' <<<"$maintenance_output" && exit 1
+  report_digest="$(admin fork-schema-cutover preflight --database-backup-id "$BACKUP_ID" --media-snapshot-id "$SNAPSHOT_ID" --format digest)"
+  [[ "$report_digest" =~ ^[0-9a-f]{64}$ ]] || { echo 'Cutover preflight did not return a digest' >&2; exit 1; }
+  cutover_output="$(admin fork-schema-cutover apply --database-backup-id "$BACKUP_ID" --media-snapshot-id "$SNAPSHOT_ID" --report-digest "$report_digest")"
+  echo "$cutover_output"
+  grep -q '^Error:' <<<"$cutover_output" && exit 1
+  phase "$cutover_phase" "$cutover_spec"
+  handoff_output="$(admin fork-handoff prepare-official)"
+  echo "$handoff_output"
+  grep -q '^Error:' <<<"$handoff_output" && exit 1
+  jq -e --arg backup "$BACKUP_ID" --arg snapshot "$SNAPSHOT_ID" --argjson assets "$expected_assets" '
+    .officialImage == "ghcr.io/immich-app/immich-server:v3.1.0"
+    and .databaseBackupId == $backup
+    and .mediaSnapshotId == $snapshot
+    and (.reportDigest | test("^[0-9a-f]{64}$"))
+    and (.storageVerificationDigest | test("^[0-9a-f]{64}$"))
+    and .storageVerificationAssetCount == $assets
+  ' <<<"$handoff_output" >/dev/null || exit 1
+  stop_fork
+  set +e
+  maintenance_output="$(compose run --rm --no-deps --entrypoint immich-admin fork-server disable-maintenance-mode 2>&1)"
+  maintenance_code=$?
+  set -e
+  echo "$maintenance_output"
+  [[ "$maintenance_code" -eq 0 ]] || exit "$maintenance_code"
+  grep -q '^Error:' <<<"$maintenance_output" && exit 1
+  start_official
+}
+# From the official server back to the fork: maintenance through the official API, the certified
+# return reconciliation and a normal fork boot. The admin token comes from the state file named.
+return_to_fork() {
+  local token_state="$1"
+  official_token="$(jq -r '.admin.accessToken' "$token_state")"
+  curl --fail --silent --show-error \
+    --request POST \
+    --header "Authorization: Bearer $official_token" \
+    --header 'Content-Type: application/json' \
+    --data '{"action":"start"}' \
+    "$API_URL/admin/maintenance"
+  for _ in {1..60}; do
+    official_maintenance="$(psql_sql -Atc "SELECT coalesce((value->>'isMaintenanceMode')::boolean, false) FROM public.system_metadata WHERE key = 'maintenance-mode'")"
+    [[ "$official_maintenance" == t ]] && break
+    sleep 0.1
+  done
+  [[ "${official_maintenance:-f}" == t ]] || { echo 'Official API did not enable maintenance mode' >&2; exit 1; }
+  stop_official
+  export FORK_IMMICH_ENV=production FORK_DB_SKIP_MIGRATIONS=false FORK_WORKERS_INCLUDE=api,microservices
+  # Startup validates the exact official ledger before any provider runs.
+  start_fork
+  set +e
+  fork_return_output="$(admin fork-handoff prepare-fork --batch-size 1)"
+  fork_return_code=$?
+  set -e
+  echo "$fork_return_output"
+  [[ "$fork_return_code" -eq 0 ]] || exit "$fork_return_code"
+  grep -q '^Error:' <<<"$fork_return_output" && exit 1
+  jq -e '
+    .active == true
+    and .phase == "active"
+    and .schemaVersion == "2"
+    and .reconciliationStatus == "complete"
+    and .verified == true
+    and (.progress | length == 7)
+    and all(.progress[]; .remaining == 0 and .cursor == null and .lastError == null)
+  ' <<<"$fork_return_output" >/dev/null || { echo 'Fork return did not report completed activation' >&2; exit 1; }
+  stop_fork
+  set +e
+  maintenance_output="$(compose run --rm --no-deps --entrypoint immich-admin fork-server disable-maintenance-mode 2>&1)"
+  maintenance_code=$?
+  set -e
+  echo "$maintenance_output"
+  [[ "$maintenance_code" -eq 0 ]] || exit "$maintenance_code"
+  grep -q '^Error:' <<<"$maintenance_output" && exit 1
+  fork_maintenance="$(psql_sql -Atc "SELECT coalesce((value->>'isMaintenanceMode')::boolean, false) FROM public.system_metadata WHERE key = 'maintenance-mode'")"
+  [[ "$fork_maintenance" == f ]] || { echo 'Fork return did not leave maintenance mode' >&2; exit 1; }
+  start_fork_normal
+}
 cleanup() {
   if [[ "${FORK_ROUNDTRIP_KEEP_ON_FAILURE:-false}" == true && "${roundtrip_failed:-false}" == true ]]; then
     echo 'Preserving fork-roundtrip containers after failure for diagnosis' >&2
@@ -128,16 +324,27 @@ on_error() {
   local status="$?"
   roundtrip_failed=true
   echo "Roundtrip failed with status $status at line ${BASH_LINENO[0]}: ${BASH_COMMAND}" >&2
+  # An API 500 only says which call failed; the servers' logs say why, and cleanup removes them next.
+  compose logs --no-color --tail 300 >&2 || true
+  if [[ -n "${candidate_image_id:-}" ]]; then
+    write_evidence failed || true
+  fi
   exit "$status"
 }
 trap on_error ERR
 trap cleanup EXIT
 
-echo "Pulling official image $OFFICIAL_IMMICH_TAG and pinned database/Redis dependencies"
+resolve_candidate_commit
+export FORK_ROUNDTRIP_CANDIDATE_SHA="$candidate_commit"
+echo "Candidate commit: $candidate_commit (dirty: $candidate_dirty)"
+
+echo "Pulling official image $OFFICIAL_IMMICH_TAG and the pinned Redis dependency"
+# The official server is the compatibility target the handoff is certified against, so it is the one
+# upstream image this lane pulls. The database is Frameleaf's own image, built below from docker/postgres.
 # Registries can rate-limit any remote service when parallel CI lanes pull at once.
 pulled=false
 for attempt in 1 2 3 4 5; do
-  if compose pull official-server database redis; then
+  if compose pull official-server redis; then
     pulled=true
     break
   fi
@@ -157,6 +364,11 @@ expected_official_digest="ghcr.io/immich-app/immich-server@$manifest_digest"
   exit 1
 }
 echo "Official image digest: $official_digest"
+official_image_id="$(docker image inspect "ghcr.io/immich-app/immich-server:$OFFICIAL_IMMICH_TAG" --format '{{.Id}}')"
+[[ "$official_image_id" =~ ^sha256:[0-9a-f]{64}$ ]] || {
+  echo "Cannot determine the official image id: $official_image_id" >&2
+  exit 1
+}
 official_architecture="$(docker image inspect "ghcr.io/immich-app/immich-server:$OFFICIAL_IMMICH_TAG" --format '{{.Architecture}}')"
 expected_official_core_digest="$(node -e '
   const manifest = require(process.argv[1]);
@@ -166,13 +378,10 @@ expected_official_core_digest="$(node -e '
   process.stdout.write(digest);
 ' "$ROOT/server/src/fork-schema/supported-versions.json" "$official_architecture")"
 
-compose build fork-server
-
-selected_lane="${FORK_ROUNDTRIP_LANE:-all}"
-case "$selected_lane" in
-  all|origin-v3.1.0-to-fork|current-fork-to-official-v3.1.0|official-v3.1.0-to-fork-return) ;;
-  *) echo "Unknown certification lane: $selected_lane" >&2; exit 1 ;;
-esac
+compose build database fork-server
+resolve_candidate_image
+echo "Candidate image: $CANDIDATE_IMAGE $candidate_image_id"
+write_evidence running
 
 if [[ "$selected_lane" == all || "$selected_lane" == origin-v3.1.0-to-fork ]]; then
 echo 'Lane: origin-v3.1.0-to-fork'
@@ -303,52 +512,7 @@ for _ in {1..120}; do
   sleep 1
 done
 grep -q 'Verified: yes' <<<"${status:-}" || { echo 'Backfill did not verify' >&2; exit 1; }
-# Steady-state backfills preserve physical deduplication; convert storage to
-# the destructive official form the cutover evidence requires.
-prepare_output="$(admin fork-schema-cutover prepare --batch-size 32)"
-echo "$prepare_output"
-grep -q '^Error:' <<<"$prepare_output" && exit 1
-grep -q 'Verified: yes' <<<"$prepare_output" || { echo 'Official handoff preparation did not verify' >&2; exit 1; }
-admin fork-schema-cutover verify-storage start --database-backup-id "$BACKUP_ID" --media-snapshot-id "$SNAPSHOT_ID"
-storage_status="$(admin fork-schema-cutover verify-storage resume --database-backup-id "$BACKUP_ID" --media-snapshot-id "$SNAPSHOT_ID" --batch-size 1)"
-jq -e '.status == "running" and .verifiedCount > 0 and .verifiedCount < .applicableAssetCount' <<<"$storage_status" >/dev/null || exit 1
-interrupt_fork
-start_fork
-for _ in {1..600}; do
-  storage_status="$(admin fork-schema-cutover verify-storage resume --database-backup-id "$BACKUP_ID" --media-snapshot-id "$SNAPSHOT_ID" --batch-size 32)"
-  jq -e '.status == "completed"' <<<"$storage_status" >/dev/null && break
-done
-jq -e '.status == "completed" and .verifiedCount == .applicableAssetCount' <<<"$storage_status" >/dev/null || exit 1
-
-maintenance_output="$(admin enable-maintenance-mode)"
-echo "$maintenance_output"
-grep -q '^Error:' <<<"$maintenance_output" && exit 1
-report_digest="$(admin fork-schema-cutover preflight --database-backup-id "$BACKUP_ID" --media-snapshot-id "$SNAPSHOT_ID" --format digest)"
-[[ "$report_digest" =~ ^[0-9a-f]{64}$ ]] || { echo 'Cutover preflight did not return a digest' >&2; exit 1; }
-cutover_output="$(admin fork-schema-cutover apply --database-backup-id "$BACKUP_ID" --media-snapshot-id "$SNAPSHOT_ID" --report-digest "$report_digest")"
-echo "$cutover_output"
-grep -q '^Error:' <<<"$cutover_output" && exit 1
-phase current-fork-cutover src/specs/server/fork-schema-current-fork-cutover.e2e-spec.ts
-handoff_output="$(admin fork-handoff prepare-official)"
-echo "$handoff_output"
-grep -q '^Error:' <<<"$handoff_output" && exit 1
-jq -e --arg backup "$BACKUP_ID" --arg snapshot "$SNAPSHOT_ID" '
-  .officialImage == "ghcr.io/immich-app/immich-server:v3.1.0"
-  and .databaseBackupId == $backup
-  and .mediaSnapshotId == $snapshot
-  and (.reportDigest | test("^[0-9a-f]{64}$"))
-  and (.storageVerificationDigest | test("^[0-9a-f]{64}$"))
-  and .storageVerificationAssetCount == 256
-' <<<"$handoff_output" >/dev/null || exit 1
-stop_fork
-set +e
-maintenance_output="$(compose run --rm --no-deps --entrypoint immich-admin fork-server disable-maintenance-mode 2>&1)"
-maintenance_code=$?
-set -e
-echo "$maintenance_output"
-[[ "$maintenance_code" -eq 0 ]] || exit "$maintenance_code"
-grep -q '^Error:' <<<"$maintenance_output" && exit 1
-start_official
+handoff_to_official 256 current-fork-cutover src/specs/server/fork-schema-current-fork-cutover.e2e-spec.ts true
 phase current-fork-official src/specs/server/fork-schema-current-fork-cutover.e2e-spec.ts
 
 if [[ "$selected_lane" == all || "$selected_lane" == official-v3.1.0-to-fork-return ]]; then
@@ -362,52 +526,115 @@ phase official-operations-before-restart src/specs/server/fork-schema-roundtrip.
 stop_official
 start_official
 phase official-operations-after-restart src/specs/server/fork-schema-roundtrip.e2e-spec.ts
-official_token="$(jq -r '.admin.accessToken' "$STATE_DIR/origin-v3.1.0-to-fork.json")"
-curl --fail --silent --show-error \
-  --request POST \
-  --header "Authorization: Bearer $official_token" \
-  --header 'Content-Type: application/json' \
-  --data '{"action":"start"}' \
-  "$API_URL/admin/maintenance"
-for _ in {1..60}; do
-  official_maintenance="$(psql_sql -Atc "SELECT coalesce((value->>'isMaintenanceMode')::boolean, false) FROM public.system_metadata WHERE key = 'maintenance-mode'")"
-  [[ "$official_maintenance" == t ]] && break
-  sleep 0.1
-done
-[[ "${official_maintenance:-f}" == t ]] || { echo 'Official API did not enable maintenance mode' >&2; exit 1; }
-stop_official
-export FORK_IMMICH_ENV=production FORK_DB_SKIP_MIGRATIONS=false FORK_WORKERS_INCLUDE=api,microservices
-# Startup validates the exact official ledger before any provider runs.
-start_fork
-set +e
-fork_return_output="$(admin fork-handoff prepare-fork --batch-size 1)"
-fork_return_code=$?
-set -e
-echo "$fork_return_output"
-[[ "$fork_return_code" -eq 0 ]] || exit "$fork_return_code"
-grep -q '^Error:' <<<"$fork_return_output" && exit 1
-jq -e '
-  .active == true
-  and .phase == "active"
-  and .schemaVersion == "2"
-  and .reconciliationStatus == "complete"
-  and .verified == true
-  and (.progress | length == 7)
-  and all(.progress[]; .remaining == 0 and .cursor == null and .lastError == null)
-' <<<"$fork_return_output" >/dev/null || { echo 'Fork return did not report completed activation' >&2; exit 1; }
-stop_fork
-set +e
-maintenance_output="$(compose run --rm --no-deps --entrypoint immich-admin fork-server disable-maintenance-mode 2>&1)"
-maintenance_code=$?
-set -e
-echo "$maintenance_output"
-[[ "$maintenance_code" -eq 0 ]] || exit "$maintenance_code"
-grep -q '^Error:' <<<"$maintenance_output" && exit 1
-fork_maintenance="$(psql_sql -Atc "SELECT coalesce((value->>'isMaintenanceMode')::boolean, false) FROM public.system_metadata WHERE key = 'maintenance-mode'")"
-[[ "$fork_maintenance" == f ]] || { echo 'Fork return did not leave maintenance mode' >&2; exit 1; }
-start_fork_normal
+# FL-180: make this library look as if it had been cut over on a version without
+# 2100000000610-AddClassificationRule: its tables and its cutover ledger row go. The return must
+# apply it again as a Frameleaf-recorded change and leave the certified official ledger alone.
+psql_sql -v ON_ERROR_STOP=1 <<'SQL'
+BEGIN;
+DROP TABLE public.classification_match;
+DROP TABLE public.classification_rule;
+DELETE FROM immich_fork.migration_audit
+WHERE name = '2100000000610-AddClassificationRule' AND phase = 'ledger-cutover';
+COMMIT;
+SQL
+return_to_fork "$STATE_DIR/origin-v3.1.0-to-fork.json"
+psql_sql -v ON_ERROR_STOP=1 <<'SQL'
+DO $$
+BEGIN
+  IF to_regclass('public.classification_rule') IS NULL OR to_regclass('public.classification_match') IS NULL THEN
+    RAISE EXCEPTION 'the return did not apply 2100000000610-AddClassificationRule';
+  END IF;
+  IF (SELECT count(*) FROM immich_fork.migration_audit
+      WHERE name = '2100000000610-AddClassificationRule' AND phase = 'frameleaf-public'
+        AND status = 'applied' AND details->>'context' = 'return') <> 1 THEN
+    RAISE EXCEPTION 'the return did not record 2100000000610-AddClassificationRule exactly once';
+  END IF;
+  IF EXISTS (SELECT 1 FROM public.kysely_migrations WHERE name LIKE '2100%') THEN
+    RAISE EXCEPTION 'a Frameleaf migration was recorded in the official ledger';
+  END IF;
+END
+$$;
+SQL
 phase fork-return src/specs/server/fork-schema-roundtrip.e2e-spec.ts
 fi
 fi
 
+if [[ "$selected_lane" == all || "$selected_lane" == official-v3.1.0-to-fork-to-official-v3.1.0-to-fork ]]; then
+echo 'Lane: official-v3.1.0-to-fork-to-official-v3.1.0-to-fork'
+# FL-44 (FN-304): the whole chain runs on one isolated volume set, reset once here and never
+# between legs, so the fork return certifies the data the official → fork leg produced.
+reset_lane
+start_official
+phase origin-seed src/specs/server/fork-schema-origin-upgrade.e2e-spec.ts
+stop_official
+export FORK_DB_SKIP_MIGRATIONS=false FORK_IMMICH_ENV=production FORK_WORKERS_INCLUDE=api
+start_fork
+phase origin-pre-migrator src/specs/server/fork-schema-origin-upgrade.e2e-spec.ts
+stop_fork
+export FORK_WORKERS_INCLUDE=api,microservices
+start_fork
+phase origin-post-migrator src/specs/server/fork-schema-origin-upgrade.e2e-spec.ts
+# FL-44: starting Frameleaf on the official library keeps it certified-upstream (the origin phases
+# above prove that). The explicit adoption makes it a full Frameleaf library before any Frameleaf row
+# is written. As documented for operators, it runs in maintenance mode from a one-shot admin process
+# with every server stopped; the next start then boots the library the way every later start will.
+stop_fork
+one_shot_admin() {
+  local output code
+  set +e
+  output="$(compose run --rm --no-deps --entrypoint immich-admin fork-server "$@" 2>&1)"
+  code=$?
+  set -e
+  echo "$output"
+  [[ "$code" -eq 0 ]] || exit "$code"
+  if grep -q '^Error:' <<<"$output"; then exit 1; fi
+}
+one_shot_admin enable-maintenance-mode
+set +e
+adopt_output="$(printf 'y\n' | compose run --rm -T --no-deps --entrypoint immich-admin fork-server fork-schema adopt 2>&1)"
+adopt_code=$?
+set -e
+echo "$adopt_output"
+[[ "$adopt_code" -eq 0 ]] || exit "$adopt_code"
+grep -q '^Error:' <<<"$adopt_output" && exit 1
+grep -q '^Adopted: yes' <<<"$adopt_output" || { echo 'Official library was not adopted' >&2; exit 1; }
+grep -q '^Phase: legacy' <<<"$adopt_output" || { echo 'Adopted library did not enter the legacy phase' >&2; exit 1; }
+psql_sql -v ON_ERROR_STOP=1 <<'SQL'
+DO $$
+BEGIN
+  IF (SELECT count(*) FROM public.kysely_migrations WHERE name = '1787148183729-ClusterGroups') <> 1 THEN
+    RAISE EXCEPTION 'adoption did not apply 1787148183729-ClusterGroups exactly once';
+  END IF;
+  IF (SELECT count(*) FROM public.kysely_migrations WHERE name = '2100000000570-AddWorkflowDefinitions') <> 1 THEN
+    RAISE EXCEPTION 'adoption did not apply the Frameleaf public migrations';
+  END IF;
+  IF EXISTS (SELECT 1 FROM public.kysely_migrations WHERE name = '1779400000000-UpdateWorkflowTables') THEN
+    RAISE EXCEPTION 'adoption ran the Frameleaf copy of the official workflow rewrite';
+  END IF;
+  IF (SELECT count(*) FROM immich_fork.migration_audit
+      WHERE name = 'official-origin-adoption' AND status = 'applied') <> 1 THEN
+    RAISE EXCEPTION 'adoption left no audit record';
+  END IF;
+END
+$$;
+SQL
+one_shot_admin disable-maintenance-mode
+start_fork
+phase chain-fork-seed src/specs/server/fork-schema-chained-roundtrip.e2e-spec.ts
+printf 'y\n' | compose exec -T fork-server immich-admin fork-schema start --batch-size 32
+for _ in {1..600}; do
+  status="$(admin fork-schema verify)"
+  grep -q 'Verified: yes' <<<"$status" && break
+  sleep 1
+done
+grep -q 'Verified: yes' <<<"${status:-}" || { echo 'Chained backfill did not verify' >&2; exit 1; }
+chain_assets="$(psql_sql -Atc 'SELECT count(*) FROM public.asset')"
+[[ "$chain_assets" =~ ^[0-9]+$ ]] || { echo "Cannot count chained assets: $chain_assets" >&2; exit 1; }
+handoff_to_official "$chain_assets" chain-fork-handed-over src/specs/server/fork-schema-chained-roundtrip.e2e-spec.ts
+phase chain-official src/specs/server/fork-schema-chained-roundtrip.e2e-spec.ts
+return_to_fork "$STATE_DIR/origin-v3.1.0-to-fork.json"
+phase chain-fork-return src/specs/server/fork-schema-chained-roundtrip.e2e-spec.ts
+fi
+
+write_evidence passed
 echo "Local synthetic certification completed for: $selected_lane"

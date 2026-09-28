@@ -1,0 +1,19 @@
+# Reverse-geocoding inputs, pinned by SHA-256 (FL-191).
+#
+# Each file is fetched from Frameleaf's own host first,
+# https://static.frameleaf.cloud/geodata/2026-09-11/<file>, and from the capture URL below second. Both
+# copies must match the checksum. GeoNames publishes no versioned files, so the GeoNames entries are
+# Internet Archive captures of its daily dumps; the capture time is in each URL.
+#
+# Attribution: the GeoNames files are © GeoNames (https://www.geonames.org/), licensed under CC BY 4.0
+# (https://creativecommons.org/licenses/by/4.0/). The Natural Earth file (release v5.1.2) is public domain.
+#
+# Capture dates: cities500.zip 2026-09-11T00:21:05Z, admin1CodesASCII.txt 2026-09-11T00:20:39Z,
+# admin2Codes.txt 2026-09-11T00:21:12Z, countryInfo.txt 2026-09-13T00:06:31Z.
+#
+# sha256  file  capture-url
+c4ec45f18921948fc2bce5b1e89bcef98c0236c7bea986918999b3e3f71bd3ef  cities500.zip  https://web.archive.org/web/20260911002105id_/https://download.geonames.org/export/dump/cities500.zip
+590651498043f674accda2b7f46d21286cda0e290b02f8561c5005eee9a5448c  admin1CodesASCII.txt  https://web.archive.org/web/20260911002039id_/https://download.geonames.org/export/dump/admin1CodesASCII.txt
+fe8196f90676f40a8845f24cc0687dadc668fe8c0f9de6458da65fda50b48aba  admin2Codes.txt  https://web.archive.org/web/20260911002112id_/https://download.geonames.org/export/dump/admin2Codes.txt
+93bafc525813f22e4711ff9ed6d626343094ce48c26388dc7c49189b3d7d5512  countryInfo.txt  https://web.archive.org/web/20260913000631id_/https://download.geonames.org/export/dump/countryInfo.txt
+239eec57ac17f100a11e2536cffc56752c318b50ae765b0918ff7aab4ce8f255  ne_10m_admin_0_countries.geojson  https://raw.githubusercontent.com/nvkelso/natural-earth-vector/v5.1.2/geojson/ne_10m_admin_0_countries.geojson

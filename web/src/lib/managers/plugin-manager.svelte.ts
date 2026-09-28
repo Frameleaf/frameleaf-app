@@ -15,6 +15,7 @@ import { eventManager } from '$lib/managers/event-manager.svelte';
 
 class PluginManager {
   #loading: Promise<void> | undefined;
+  #generation = 0;
   #methodMap = new SvelteMap<string, PluginMethodResponseDto>();
   #methods = $state<PluginMethodResponseDto[]>([]);
   #triggers = $state<WorkflowTriggerResponseDto[]>([]);
@@ -23,13 +24,18 @@ class PluginManager {
   constructor() {
     eventManager.on({
       AuthLogout: () => this.clearCache(),
-      AuthUserLoaded: () => this.initialize(),
+      // The event bus does not await listeners; pages call ready() to surface discovery errors.
+      AuthUserLoaded: () => void this.initialize().catch(() => {}),
     });
 
     // loaded event might have already happened
     if (authManager.authenticated) {
-      void this.initialize();
+      void this.initialize().catch(() => {});
     }
+  }
+
+  get methods() {
+    return this.#methods;
   }
 
   get triggers() {
@@ -64,24 +70,38 @@ class PluginManager {
   }
 
   private clearCache() {
+    this.#generation++;
     this.#loading = undefined;
     this.#methodMap = new SvelteMap();
+    this.#methods = [];
+    this.#triggers = [];
+    this.#templates = [];
   }
 
   private initialize() {
     if (!this.#loading) {
-      this.#loading = this.load();
+      const generation = this.#generation;
+      this.#loading = this.load().catch((error: unknown) => {
+        if (generation === this.#generation) {
+          this.#loading = undefined;
+        }
+        throw error;
+      });
     }
 
     return this.#loading;
   }
 
   private async load() {
+    const generation = this.#generation;
     const [methods, triggers, templates] = await Promise.all([
       searchPluginMethods({}),
       getWorkflowTriggers(),
       searchPluginTemplates(),
     ]);
+    if (generation !== this.#generation) {
+      return;
+    }
 
     this.#methods = methods;
     for (const method of this.#methods) {

@@ -319,8 +319,14 @@ describe(AssetController.name, () => {
 
     it('should reject invalid gps coordinates', async () => {
       for (const [test, errors] of [
-        [{ latitude: 12 }, [{ path: [], message: 'Latitude and longitude must be provided together' }]],
-        [{ longitude: 12 }, [{ path: [], message: 'Latitude and longitude must be provided together' }]],
+        [
+          { latitude: 12 },
+          [{ path: [], message: 'Latitude and longitude must be provided together, both as numbers or both as null' }],
+        ],
+        [
+          { longitude: 12 },
+          [{ path: [], message: 'Latitude and longitude must be provided together, both as numbers or both as null' }],
+        ],
         [
           { latitude: 12, longitude: 'abc' },
           [{ path: ['longitude'], message: 'Invalid input: expected number, received string' }],
@@ -331,11 +337,11 @@ describe(AssetController.name, () => {
         ],
         [
           { latitude: null, longitude: 12 },
-          [{ path: ['latitude'], message: 'Invalid input: expected number, received null' }],
+          [{ path: [], message: 'Latitude and longitude must be provided together, both as numbers or both as null' }],
         ],
         [
           { latitude: 12, longitude: null },
-          [{ path: ['longitude'], message: 'Invalid input: expected number, received null' }],
+          [{ path: [], message: 'Latitude and longitude must be provided together, both as numbers or both as null' }],
         ],
         [{ latitude: 91, longitude: 12 }, [{ path: ['latitude'], message: 'Too big: expected number to be <=90' }]],
         [{ latitude: -91, longitude: 12 }, [{ path: ['latitude'], message: 'Too small: expected number to be >=-90' }]],
@@ -349,6 +355,12 @@ describe(AssetController.name, () => {
         expect(status).toBe(400);
         expect(body).toEqual(factory.responses.validationError(errors));
       }
+    });
+
+    it('accepts null coordinates to remove the location (FL-51)', async () => {
+      const id = factory.uuid();
+      await request(ctx.getHttpServer()).put(`/assets/${id}`).send({ latitude: null, longitude: null });
+      expect(service.update).toHaveBeenCalledWith(undefined, id, { latitude: null, longitude: null });
     });
 
     it('should reject invalid rating', async () => {
@@ -546,6 +558,63 @@ describe(AssetController.name, () => {
       const { status, body } = await request(ctx.getHttpServer()).delete(`/assets/123/metadata/mobile-app`);
       expect(status).toBe(400);
       expect(body).toEqual(factory.responses.validationError([{ path: ['id'], message: 'Invalid UUID' }]));
+    });
+  });
+
+  describe('video edit versions (FL-39)', () => {
+    const expectPermission = (permission: Permission) =>
+      expect(ctx.authenticate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          metadata: expect.objectContaining({ permission, sharedLinkRoute: false }),
+        }),
+      );
+
+    it('lists history with edit read permission', async () => {
+      const id = factory.uuid();
+      service.getVideoEditVersions.mockResolvedValue([]);
+      const { status } = await request(ctx.getHttpServer()).get(`/assets/${id}/edit-versions`);
+      expect(status).toBe(200);
+      expectPermission(Permission.AssetEditGet);
+      expect(service.getVideoEditVersions).toHaveBeenCalledWith(undefined, id);
+    });
+
+    it('queues a master export with edit create permission and a master profile only', async () => {
+      const id = factory.uuid();
+      const { status } = await request(ctx.getHttpServer())
+        .post(`/assets/${id}/edit-versions/export`)
+        .send({ profile: 'master' });
+      expect(status).toBe(201);
+      expectPermission(Permission.AssetEditCreate);
+      expect(service.exportVideoEditVersion).toHaveBeenCalledWith(undefined, id);
+
+      service.exportVideoEditVersion.mockClear();
+      const invalid = await request(ctx.getHttpServer())
+        .post(`/assets/${id}/edit-versions/export`)
+        .send({ profile: 'proxy' });
+      expect(invalid.status).toBe(400);
+      expect(service.exportVideoEditVersion).not.toHaveBeenCalled();
+    });
+
+    it('restores a version with edit create permission', async () => {
+      const [id, versionId] = [factory.uuid(), factory.uuid()];
+      const { status } = await request(ctx.getHttpServer()).post(`/assets/${id}/edit-versions/${versionId}/restore`);
+      expect(status).toBe(204);
+      expectPermission(Permission.AssetEditCreate);
+      expect(service.restoreVideoEditVersion).toHaveBeenCalledWith(undefined, id, versionId);
+    });
+
+    it('prunes a version with edit delete permission and validates both ids', async () => {
+      const [id, versionId] = [factory.uuid(), factory.uuid()];
+      const { status } = await request(ctx.getHttpServer()).delete(`/assets/${id}/edit-versions/${versionId}`);
+      expect(status).toBe(204);
+      expectPermission(Permission.AssetEditDelete);
+      expect(service.pruneVideoEditVersion).toHaveBeenCalledWith(undefined, id, versionId);
+
+      const invalid = await request(ctx.getHttpServer()).delete(`/assets/${id}/edit-versions/123`);
+      expect(invalid.status).toBe(400);
+      expect(invalid.body).toEqual(
+        factory.responses.validationError([{ path: ['versionId'], message: 'Invalid UUID' }]),
+      );
     });
   });
 });

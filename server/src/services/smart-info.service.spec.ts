@@ -215,6 +215,7 @@ describe(SmartInfoService.name, () => {
       expect(await sut.handleEncodeClip({ id: asset.id })).toEqual(JobStatus.Success);
 
       expect(mocks.machineLearning.encodeImage).toHaveBeenCalledWith(
+        expect.objectContaining({ destinationId: expect.any(String), workload: expect.any(String) }),
         asset.files[0].path,
         expect.objectContaining({ modelName: 'ViT-B-16-SigLIP-384__webli' }),
       );
@@ -252,6 +253,7 @@ describe(SmartInfoService.name, () => {
 
       expect(mocks.database.wait).toHaveBeenCalledWith(512);
       expect(mocks.machineLearning.encodeImage).toHaveBeenCalledWith(
+        expect.objectContaining({ destinationId: expect.any(String), workload: expect.any(String) }),
         asset.files[0].path,
         expect.objectContaining({ modelName: 'ViT-B-16-SigLIP-384__webli' }),
       );

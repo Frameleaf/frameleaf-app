@@ -27,6 +27,9 @@ const PluginMethodResponseSchema = z
     // TODO fix this
     schema: z.object().optional(),
     hostFunctions: z.boolean(),
+    allowedHosts: z
+      .array(z.string())
+      .describe('Hosts this method may send requests to; empty when it cannot reach other servers'),
   })
   .meta({ id: 'PluginMethodResponseDto' });
 
@@ -131,6 +134,7 @@ type PluginMethod = {
   types: WorkflowType[];
   schema: JsonSchemaDto | null;
   hostFunctions: boolean;
+  allowedHosts?: string[] | null;
   uiHints: string[];
 };
 
@@ -154,6 +158,7 @@ export const mapMethod = (method: PluginMethod): PluginMethodResponseDto => {
     name: method.name,
     title: method.title,
     hostFunctions: method.hostFunctions,
+    allowedHosts: method.allowedHosts ?? [],
     uiHints: method.uiHints,
     description: method.description,
     types: method.types,

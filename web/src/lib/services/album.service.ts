@@ -4,28 +4,29 @@ import {
   addUsersToAlbum,
   AlbumUserRole,
   BulkIdErrorReason,
+  createAlbum,
   deleteAlbum,
-  getAlbumDescendantCount,
+  moveAlbumToCollection,
   removeUserFromAlbum,
+  setAlbumOrder,
   updateAlbumInfo,
   updateAlbumUser,
   type AlbumResponseDto,
   type AlbumsAddAssetsResponseDto,
+  type AlbumUserCreateDto,
   type AssetResponseDto,
   type BulkIdResponseDto,
+  type CreateAlbumDto,
   type UpdateAlbumDto,
   type UserResponseDto,
 } from '@immich/sdk';
-import { modalManager, toastManager, type ActionItem } from '@immich/ui';
-import { mdiImageOutline, mdiLink, mdiPlus, mdiPlusBoxOutline, mdiShareVariantOutline, mdiUpload } from '@mdi/js';
+import { toastManager, type ActionItem } from '@immich/ui';
+import { mdiImageOutline, mdiPlusBoxOutline, mdiUpload } from '@mdi/js';
 import { type MessageFormatter } from 'svelte-i18n';
 import { goto } from '$app/navigation';
+import { type AlbumDetailsDraft } from '$lib/frameleaf/album-directory';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
-import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
-import AlbumAddUsersModal from '$lib/modals/AlbumAddUsersModal.svelte';
-import AlbumOptionsModal from '$lib/modals/AlbumOptionsModal.svelte';
-import SharedLinkCreateModal from '$lib/modals/SharedLinkCreateModal.svelte';
 import { Route } from '$lib/route';
 import { createAlbumAndRedirect } from '$lib/utils/album-utils';
 import { downloadArchive } from '$lib/utils/asset-utils';
@@ -43,33 +44,6 @@ export const getAlbumsActions = ($t: MessageFormatter) => {
   return { Create };
 };
 
-export const getAlbumActions = ($t: MessageFormatter, album: AlbumResponseDto) => {
-  const isOwned = album.albumUsers[0].user.id === authManager.user.id;
-
-  const Share: ActionItem = {
-    title: $t('share'),
-    icon: mdiShareVariantOutline,
-    $if: () => isOwned,
-    onAction: () => modalManager.show(AlbumOptionsModal, { album }),
-  };
-
-  const AddUsers: ActionItem = {
-    title: $t('invite_people'),
-    icon: mdiPlus,
-    color: 'primary',
-    onAction: () => modalManager.show(AlbumAddUsersModal, { album }),
-  };
-
-  const CreateSharedLink: ActionItem = {
-    title: $t('create_link'),
-    icon: mdiLink,
-    color: 'primary',
-    onAction: () => modalManager.show(SharedLinkCreateModal, { albumId: album.id }),
-  };
-
-  return { Share, AddUsers, CreateSharedLink };
-};
-
 export const getAlbumAssetActions = ($t: MessageFormatter, album: AlbumResponseDto, asset: AssetResponseDto) => {
   const SetCover: ActionItem = {
     title: $t('set_as_album_cover'),
@@ -80,20 +54,7 @@ export const getAlbumAssetActions = ($t: MessageFormatter, album: AlbumResponseD
   return { SetCover };
 };
 
-export const getAlbumAssetsActions = ($t: MessageFormatter, album: AlbumResponseDto, assets: TimelineAsset[]) => {
-  const AddAssets: ActionItem = {
-    title: $t('add_assets'),
-    color: 'primary',
-    icon: mdiPlusBoxOutline,
-    $if: () => assets.length > 0,
-    onAction: () =>
-      addAssetsToAlbums(
-        [album.id],
-        assets.map(({ id }) => id),
-        { notify: true },
-      ).then(() => undefined),
-  };
-
+export const getAlbumAssetsActions = ($t: MessageFormatter, album: AlbumResponseDto) => {
   const Upload: ActionItem = {
     title: $t('select_from_computer'),
     description: $t('album_upload_assets'),
@@ -101,7 +62,7 @@ export const getAlbumAssetsActions = ($t: MessageFormatter, album: AlbumResponse
     onAction: () => void openFileUploadDialog({ albumId: album.id }),
   };
 
-  return { AddAssets, Upload };
+  return { Upload };
 };
 
 export const addAssetsToAlbums = async (albumIds: string[], assetIds: string[], { notify }: { notify: boolean }) => {
@@ -206,24 +167,77 @@ export const handleAddUsersToAlbum = async (album: AlbumResponseDto, users: User
   }
 };
 
-export const handleRemoveUserFromAlbum = async (album: AlbumResponseDto, albumUser: UserResponseDto) => {
+/**
+ * Invite people to an album, a collection or a shared space with an explicit role (FL-53).
+ *
+ * `handleAddUsersToAlbum` above is the picker's call and lets the server apply its default
+ * role; the Frameleaf share dialog chooses Editor or Viewer at invitation time, so it sends
+ * the role with each member. The grant is the album membership the server stores — never a
+ * local recipient list.
+ */
+export const handleInviteAlbumUsers = async (album: AlbumResponseDto, albumUsers: AlbumUserCreateDto[]) => {
   const $t = await getFormatter();
 
-  const confirmed = await modalManager.showDialog({
-    title: $t('album_remove_user'),
-    prompt: $t('album_remove_user_confirmation', { values: { user: albumUser.name } }),
-    confirmText: $t('remove_user'),
-  });
-
-  if (!confirmed) {
-    return;
+  try {
+    await addUsersToAlbum({ id: album.id, addUsersDto: { albumUsers } });
+    eventManager.emit('AlbumShare');
+    return true;
+  } catch (error) {
+    handleError(error, $t('errors.error_adding_users_to_album'));
+    return false;
   }
+};
+
+/**
+ * Remove a member from an album, a collection or a shared space. The caller has already asked
+ * in the Frameleaf confirmation: re-inviting cannot undo a removal from a shared space, whose
+ * members come back only by accepting a new invitation.
+ */
+export const handleRemoveUserFromAlbum = async (album: AlbumResponseDto, albumUser: UserResponseDto) => {
+  const $t = await getFormatter();
 
   try {
     await removeUserFromAlbum({ id: album.id, userId: albumUser.id });
     eventManager.emit('AlbumUserDelete', { albumId: album.id, userId: albumUser.id });
+    return true;
   } catch (error) {
     handleError(error, $t('errors.unable_to_remove_album_users'));
+    return false;
+  }
+};
+
+/**
+ * Leave an album, a collection or a shared space you are a member of (FL-53).
+ *
+ * `DELETE /albums/{id}/user/me` is the server's own "remove myself" form, so the caller can
+ * never be tricked into removing someone else. The confirmation is the Frameleaf dialog's
+ * job; this only performs the removal and announces it so the page can navigate away.
+ */
+/**
+ * Albums this tab left itself, and when (FL-53). The leave action navigates away on its own, so the
+ * "you were removed" handling on an open album or space page ignores the removal it caused — the
+ * local announcement and the server's websocket echo alike — and exactly one navigation happens.
+ */
+const localLeaves = new Map<string, number>();
+const LOCAL_LEAVE_WINDOW = 60_000;
+
+export const leftLocally = (albumId: string, now = Date.now()) => {
+  const at = localLeaves.get(albumId);
+  return at !== undefined && now - at < LOCAL_LEAVE_WINDOW;
+};
+
+export const handleLeaveAlbum = async (album: AlbumResponseDto) => {
+  const $t = await getFormatter();
+
+  localLeaves.set(album.id, Date.now());
+  try {
+    await removeUserFromAlbum({ id: album.id, userId: 'me' });
+    eventManager.emit('AlbumUserDelete', { albumId: album.id, userId: authManager.user.id });
+    return true;
+  } catch (error) {
+    localLeaves.delete(album.id);
+    handleError(error, $t('errors.unable_to_remove_album_users'));
+    return false;
   }
 };
 
@@ -244,6 +258,27 @@ const handleUpdateThumbnail = async (album: AlbumResponseDto, assetId: string) =
   }
 };
 
+/**
+ * Write album details from the album detail page (FL-53) and return what the server stored,
+ * so the page renders the saved album rather than an optimistic guess. `handleUpdateAlbum`
+ * below is the one the album list uses: it reports success with a "view album" button,
+ * which is wrong when you are already on the album.
+ */
+export const handleUpdateAlbumInfo = async (id: string, dto: UpdateAlbumDto, options?: { message?: string }) => {
+  const $t = await getFormatter();
+
+  try {
+    const response = await updateAlbumInfo({ id, updateAlbumDto: dto });
+    eventManager.emit('AlbumUpdate', response);
+    if (options?.message) {
+      toastManager.primary(options.message);
+    }
+    return response;
+  } catch (error) {
+    handleError(error, $t('errors.unable_to_update_album_info'));
+  }
+};
+
 export const handleUpdateAlbum = async ({ id }: { id: string }, dto: UpdateAlbumDto) => {
   const $t = await getFormatter();
 
@@ -261,34 +296,113 @@ export const handleUpdateAlbum = async ({ id }: { id: string }, dto: UpdateAlbum
   }
 };
 
-export const handleDeleteAlbum = async (album: AlbumResponseDto, options?: { prompt?: boolean; notify?: boolean }) => {
+/**
+ * Save the Frameleaf edit dialog (`CollectionFormDialog`, FL-52): name, description and icon
+ * through `PATCH /albums/{id}`, then the move when the dialog offered the collection field and
+ * it changed. Returns the album as the server stored it, or nothing when anything failed.
+ *
+ * The two writes are separate requests. If the details save but the move fails, the saved
+ * details are still announced (`AlbumUpdate`) so every view shows them, and the move error is
+ * reported on its own; the dialog stays open so the move can be tried again.
+ */
+export const handleEditAlbumDetails = async (album: AlbumResponseDto, draft: AlbumDetailsDraft) => {
   const $t = await getFormatter();
-  const { prompt = true, notify = true } = options ?? {};
+  const { parentId, ...details } = draft;
 
-  if (prompt) {
-    let descendantCount = 0;
-    try {
-      const result = await getAlbumDescendantCount({ id: album.id });
-      descendantCount = result.count;
-    } catch {
-      // Permission denied or network error — fall back to the simple confirmation
-      // rather than blocking the delete on the count lookup.
-    }
-
-    const baseConfirmation =
-      album.albumName.length > 0
-        ? $t('album_delete_confirmation', { values: { album: album.albumName } })
-        : $t('unnamed_album_delete_confirmation');
-    const description = $t('album_delete_confirmation_description');
-    const nestedNotice =
-      descendantCount > 0 ? $t('album_delete_confirmation_nested', { values: { count: descendantCount } }) : '';
-
-    const promptText = [baseConfirmation, nestedNotice, description].filter(Boolean).join(' ');
-    const success = await modalManager.showDialog({ prompt: promptText });
-    if (!success) {
-      return false;
-    }
+  let saved: AlbumResponseDto;
+  try {
+    saved = await updateAlbumInfo({ id: album.id, updateAlbumDto: details });
+  } catch (error) {
+    handleError(error, $t('errors.unable_to_update_album_info'));
+    return;
   }
+
+  if (parentId === undefined || parentId === (album.parentId ?? null)) {
+    eventManager.emit('AlbumUpdate', saved);
+    return saved;
+  }
+
+  try {
+    saved = await moveAlbumToCollection({ id: album.id, moveAlbumDto: { collectionId: parentId } });
+  } catch (error) {
+    eventManager.emit('AlbumUpdate', saved);
+    handleError(error, $t('frameleaf_albums_move_failed'));
+    return;
+  }
+  eventManager.emit('AlbumUpdate', saved);
+  return saved;
+};
+
+/**
+ * Move an album into a collection, or out of one (`collectionId: null`) so it
+ * stands on its own. The server enforces the one-level rule and ownership; the
+ * caller decides whether to refresh the directory.
+ */
+/** A 409 from the album directory endpoints: the change was decided on an outdated directory (FL-52). */
+export const isStaleDirectoryError = (error: unknown) => (error as { status?: number } | undefined)?.status === 409;
+
+/**
+ * Move an album into or out of a collection. The server is told where this page last saw the album,
+ * so a move made from an outdated directory (it was moved elsewhere since) comes back as `'stale'`
+ * for the caller to reload, instead of silently undoing the other move (FL-52).
+ */
+export const handleMoveAlbumToCollection = async (album: AlbumResponseDto, collectionId: string | null) => {
+  const $t = await getFormatter();
+
+  try {
+    const response = await moveAlbumToCollection({
+      id: album.id,
+      moveAlbumDto: { collectionId, expectedParentId: album.parentId },
+    });
+    eventManager.emit('AlbumUpdate', response);
+    return response;
+  } catch (error) {
+    if (isStaleDirectoryError(error)) {
+      return 'stale' as const;
+    }
+    handleError(error, $t('errors.unable_to_update_album_info'));
+  }
+};
+
+/**
+ * Save the person's own order for one group of their album directory (FL-52). `'stale'` when the
+ * group changed since the page loaded it (the caller reloads); `false` on any other failure.
+ */
+export const handleSetAlbumOrder = async (parentId: string | null, albumIds: string[]) => {
+  const $t = await getFormatter();
+
+  try {
+    await setAlbumOrder({ albumOrderDto: { parentId, albumIds } });
+    return true;
+  } catch (error) {
+    if (isStaleDirectoryError(error)) {
+      return 'stale' as const;
+    }
+    handleError(error, $t('frameleaf_albums_order_failed'));
+    return false;
+  }
+};
+
+/** Create an album, a collection or a shared space from the Albums page. */
+export const handleCreateAlbumEntry = async (dto: CreateAlbumDto) => {
+  const $t = await getFormatter();
+
+  try {
+    const album = await createAlbum({ createAlbumDto: dto });
+    eventManager.emit('AlbumCreate', album);
+    return album;
+  } catch (error) {
+    handleError(error, $t('errors.failed_to_create_album'));
+  }
+};
+
+/**
+ * Delete an album, a collection or a shared space. Every caller asks first in the Frameleaf
+ * `AlbumConfirmDialog` (the design's `DeleteDialog`, AL-4), so this only performs the delete.
+ */
+export const handleDeleteAlbum = async (album: AlbumResponseDto, options?: { notify?: boolean }) => {
+  const $t = await getFormatter();
+  const { notify = true } = options ?? {};
 
   try {
     await deleteAlbum({ id: album.id });
@@ -304,5 +418,7 @@ export const handleDeleteAlbum = async (album: AlbumResponseDto, options?: { pro
 };
 
 export const handleDownloadAlbum = async (album: AlbumResponseDto) => {
-  await downloadArchive(album.albumName, { albumId: album.id });
+  // The download's row (panel or public strip) shows a failure or a cancel with its recovery, so
+  // callers that fire and forget get no unhandled rejection.
+  await downloadArchive(album.albumName, { albumId: album.id }).catch(() => {});
 };

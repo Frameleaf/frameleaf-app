@@ -1,0 +1,17 @@
+{
+  "items": [
+    {
+      "jobId": "0192f1b0-1a2b-7c3d-8e4f-5a6b7c8d9e0f",
+      "clientRef": null,
+      "settledUsd": 0.02,
+      "credits": null,
+      "settledAt": "2026-09-26T04:03:00.000Z",
+      "modelSku": null,
+      "modelId": "qwen3.5-9b@1",
+      "computeSku": null,
+      "gpuSeconds": null,
+      "workers": null,
+      "estimateUsd": null
+    }
+  ]
+}

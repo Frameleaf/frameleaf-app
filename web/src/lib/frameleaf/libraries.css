@@ -1,0 +1,640 @@
+/*
+ * The Libraries area (FL-78), ported from the design template's `accounts-libraries.css`.
+ * Every rule is scoped under `.fl-libraries` so the template's `resource-*` names cannot reach the
+ * account pages, which carry their own scoped copies. Values are the template's; colours come
+ * from the Frameleaf tokens.
+ */
+
+.fl-libraries {
+  color: var(--fl-text);
+  min-width: 0;
+  container-type: inline-size;
+}
+
+.fl-libraries .resource-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 24px;
+  margin-bottom: 28px;
+}
+
+.fl-libraries .resource-heading h1 {
+  font-size: 28px;
+  letter-spacing: -0.035em;
+  font-weight: 580;
+  margin: 8px 0;
+}
+
+.fl-libraries .resource-heading p,
+.fl-libraries .resource-profile p {
+  color: var(--fl-muted);
+  font-size: 13px;
+  line-height: 1.6;
+  margin: 0;
+}
+
+.fl-libraries .resource-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.fl-libraries .resource-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 34px;
+  border: 1px solid var(--fl-border);
+  border-radius: 6px;
+  padding: 7px 12px;
+  background: var(--fl-raised);
+  color: var(--fl-text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.fl-libraries .resource-button:hover {
+  border-color: var(--fl-muted);
+}
+
+.fl-libraries .resource-button.primary {
+  background: var(--fl-accent);
+  color: var(--fl-accent-text);
+  border-color: transparent;
+  font-weight: 650;
+}
+
+.fl-libraries .resource-button.danger {
+  color: var(--fl-danger);
+}
+
+.fl-libraries .resource-button:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+.fl-libraries :focus-visible {
+  outline: 2px solid var(--fl-accent);
+  outline-offset: 3px;
+}
+
+.fl-libraries .resource-toolbar {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.fl-libraries .resource-toolbar > input {
+  flex: 1;
+  min-width: 180px;
+}
+
+.fl-libraries .resource-toolbar > span {
+  font-size: 11px;
+  color: var(--fl-muted);
+}
+
+.fl-libraries .resource-toolbar input,
+.fl-libraries .resource-toolbar select,
+.fl-libraries .resource-field input,
+.fl-libraries .resource-field select,
+.fl-libraries .resource-path-list input {
+  min-height: 36px;
+  background: var(--fl-canvas);
+  border: 1px solid var(--fl-border);
+  border-radius: 5px;
+  color: var(--fl-text);
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 12px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.fl-libraries .resource-field input:disabled,
+.fl-libraries .resource-field select:disabled {
+  opacity: 0.65;
+}
+
+.fl-libraries .resource-live {
+  font-size: 12px;
+  color: var(--fl-accent);
+  min-height: 18px;
+  margin: 8px 0;
+}
+
+.fl-libraries .resource-table-scroll {
+  overflow: auto;
+  border: 1px solid var(--fl-border);
+  border-radius: 8px;
+  background: var(--fl-panel);
+}
+
+.fl-libraries .resource-table {
+  border-collapse: collapse;
+  min-width: 660px;
+  width: 100%;
+  text-align: left;
+  font-size: 12px;
+}
+
+.fl-libraries .resource-table thead {
+  background: var(--fl-raised);
+}
+
+.fl-libraries .resource-table th,
+.fl-libraries .resource-table td {
+  padding: 16px;
+  border-bottom: 1px solid var(--fl-border);
+  vertical-align: middle;
+  font-weight: 400;
+}
+
+.fl-libraries .resource-table thead th {
+  font-size: 10px;
+  font-weight: 550;
+  text-transform: uppercase;
+  letter-spacing: 0.065em;
+  color: var(--fl-muted);
+}
+
+.fl-libraries .resource-table tbody tr:last-child > * {
+  border-bottom: 0;
+}
+
+.fl-libraries .resource-table tr[data-selected='true'] {
+  background: color-mix(in srgb, var(--fl-accent) 8%, var(--fl-panel));
+}
+
+.fl-libraries .resource-table small,
+.fl-libraries .resource-row-name small,
+.fl-libraries .resource-list small {
+  display: block;
+  color: var(--fl-muted);
+  font-size: 11px;
+  line-height: 1.7;
+}
+
+.fl-libraries .resource-row-name {
+  border: 0;
+  background: none;
+  color: inherit;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-align: left;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+}
+
+.fl-libraries .resource-row-name strong {
+  display: block;
+  font-weight: 580;
+}
+
+.fl-libraries .resource-row-name:hover strong {
+  text-decoration: underline;
+}
+
+.fl-libraries .resource-status {
+  display: inline-block;
+  font-size: 10px;
+  line-height: 1.6;
+  padding: 2px 7px;
+  border: 1px solid var(--fl-border);
+  border-radius: 4px;
+  color: var(--fl-muted);
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+
+.fl-libraries .resource-status.warning {
+  color: var(--fl-warning);
+}
+
+.fl-libraries progress {
+  height: 4px;
+  width: 100%;
+  max-width: 280px;
+  accent-color: var(--fl-accent);
+  display: block;
+  border: 0;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--fl-border);
+}
+
+.fl-libraries progress::-webkit-progress-bar {
+  background: var(--fl-border);
+}
+
+.fl-libraries progress::-webkit-progress-value {
+  background: var(--fl-accent);
+}
+
+.fl-libraries .resource-detail {
+  margin-top: 24px;
+  border: 1px solid var(--fl-border);
+  border-radius: 8px;
+  padding: 24px;
+  background: var(--fl-panel);
+}
+
+.fl-libraries .resource-detail > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.fl-libraries .resource-profile {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.fl-libraries .resource-profile h2 {
+  font-size: 22px;
+  font-weight: 550;
+  letter-spacing: -0.025em;
+  margin: 0 0 4px;
+}
+
+.fl-libraries .resource-tabs {
+  display: flex;
+  gap: 20px;
+  border-bottom: 1px solid var(--fl-border);
+  margin: 22px 0;
+  overflow: auto;
+}
+
+.fl-libraries .resource-tabs button {
+  border: 0;
+  border-bottom: 2px solid transparent;
+  color: var(--fl-muted);
+  background: none;
+  padding: 10px 0;
+  font: inherit;
+  font-size: 12px;
+  text-transform: capitalize;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.fl-libraries .resource-tabs button[aria-current] {
+  border-bottom-color: var(--fl-accent);
+  color: var(--fl-text);
+}
+
+.fl-libraries .resource-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+  margin: 24px 0 10px;
+}
+
+.fl-libraries .resource-stats div {
+  border-left: 1px solid var(--fl-border);
+  padding-left: 18px;
+}
+
+.fl-libraries .resource-stats div:first-child {
+  border: 0;
+  padding-left: 0;
+}
+
+.fl-libraries .resource-stats dt {
+  font-size: 10px;
+  color: var(--fl-muted);
+  margin-bottom: 8px;
+}
+
+.fl-libraries .resource-stats dd {
+  font-size: 22px;
+  letter-spacing: -0.025em;
+  margin: 0;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.fl-libraries .resource-footnote {
+  font-size: 11px;
+  line-height: 1.7;
+  color: var(--fl-muted);
+  margin: 12px 0;
+}
+
+.fl-libraries .resource-two-column {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 32px;
+  margin: 28px 0;
+}
+
+.fl-libraries .resource-detail h3 {
+  font-size: 13px;
+  font-weight: 580;
+  margin: 20px 0 12px;
+}
+
+.fl-libraries .resource-facts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 12px 24px;
+  font-size: 12px;
+  align-content: start;
+}
+
+.fl-libraries .resource-facts dt {
+  color: var(--fl-muted);
+}
+
+.fl-libraries .resource-facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.fl-libraries .resource-danger-zone {
+  border-top: 1px solid var(--fl-border);
+  padding-top: 18px;
+  margin-top: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.fl-libraries .resource-danger-zone p {
+  font-size: 11px;
+  line-height: 1.7;
+  color: var(--fl-muted);
+  max-width: 520px;
+}
+
+.fl-libraries .resource-list > div {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--fl-border);
+  padding: 16px 0;
+  font-size: 12px;
+}
+
+.fl-libraries .resource-list > div:last-child {
+  border-bottom: 0;
+}
+
+.fl-libraries .resource-list > div > div:first-child {
+  flex: 1;
+  min-width: 0;
+}
+
+.fl-libraries .resource-list strong {
+  font-weight: 550;
+}
+
+.fl-libraries .resource-list code {
+  font-size: 10px;
+}
+
+.fl-libraries .resource-empty {
+  padding: 24px;
+  color: var(--fl-muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+.fl-libraries .resource-history {
+  list-style: none;
+  padding: 0;
+  font-size: 12px;
+}
+
+.fl-libraries .resource-history li {
+  display: grid;
+  gap: 5px;
+  padding: 15px 0;
+  border-bottom: 1px solid var(--fl-border);
+}
+
+.fl-libraries .resource-history strong {
+  font-weight: 500;
+}
+
+.fl-libraries .resource-history span {
+  font-size: 11px;
+  color: var(--fl-muted);
+}
+
+.fl-libraries .resource-path {
+  background: var(--fl-canvas);
+  border: 1px solid var(--fl-border);
+  border-radius: 5px;
+  padding: 12px;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+
+.fl-libraries .resource-scan {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+  margin-top: 24px;
+  padding: 20px;
+  background: var(--fl-raised);
+  border-radius: 6px;
+}
+
+.fl-libraries .resource-scan > div {
+  flex: 1;
+}
+
+.fl-libraries .resource-scan h3 {
+  margin: 0 0 8px;
+}
+
+.fl-libraries .resource-scan p {
+  font-size: 11px;
+  color: var(--fl-muted);
+  margin: 0;
+}
+
+.fl-libraries .resource-error {
+  border: 1px solid var(--fl-danger);
+  color: var(--fl-danger);
+  padding: 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.fl-libraries .resource-notice {
+  background: var(--fl-raised);
+  border-left: 2px solid var(--fl-muted);
+  padding: 12px 14px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--fl-muted);
+}
+
+.fl-libraries .resource-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  margin-bottom: 20px;
+}
+
+.fl-libraries .resource-field {
+  display: grid;
+  gap: 8px;
+  font-size: 12px;
+  margin-bottom: 14px;
+}
+
+.fl-libraries .resource-field small {
+  font-size: 10px;
+  line-height: 1.6;
+  color: var(--fl-muted);
+}
+
+.fl-libraries .resource-check {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 16px 0;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.fl-libraries .resource-check input {
+  width: 16px;
+  accent-color: var(--fl-accent);
+  margin-top: 4px;
+  flex-shrink: 0;
+}
+
+.fl-libraries .resource-path-list {
+  border: 0;
+  padding: 0;
+  margin: 24px 0;
+}
+
+.fl-libraries .resource-path-list legend {
+  font-size: 12px;
+  font-weight: 550;
+  margin-bottom: 12px;
+}
+
+.fl-libraries .resource-path-list > div {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.fl-libraries .resource-path-list input {
+  flex: 1;
+}
+
+.fl-libraries .resource-validation {
+  font-size: 11px;
+  color: var(--fl-muted);
+  overflow-wrap: anywhere;
+}
+
+.fl-libraries .resource-validation p {
+  margin: 6px 0;
+}
+
+/* The template's container rules, against the page's own width. */
+.fl-libraries {
+  container-type: inline-size;
+}
+@container (max-width: 780px) {
+  .fl-libraries .resource-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .fl-libraries .resource-stats {
+    grid-template-columns: 1fr 1fr;
+    row-gap: 24px;
+  }
+  .fl-libraries .resource-stats div:nth-child(3) {
+    border: 0;
+    padding-left: 0;
+  }
+  .fl-libraries .resource-two-column {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+  .fl-libraries .resource-detail {
+    padding: 18px;
+  }
+  .fl-libraries .resource-danger-zone {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .fl-libraries .resource-heading h1 {
+    font-size: 25px;
+  }
+}
+@media (max-width: 540px) {
+  .fl-libraries .resource-form-grid {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+  .fl-libraries .resource-heading h1 {
+    font-size: 24px;
+  }
+  .fl-libraries .resource-profile h2 {
+    font-size: 20px;
+  }
+  .fl-libraries .resource-stats dd {
+    font-size: 19px;
+  }
+  .fl-libraries .resource-toolbar > select {
+    max-width: calc(50% - 6px);
+  }
+  .fl-libraries .resource-toolbar > input {
+    flex-basis: 100%;
+  }
+}
+
+/* The template's `.resource-dialog` inner rules; the Frameleaf Dialog draws the chrome. */
+.fl-libraries dialog p {
+  font-size: 12px;
+  line-height: 1.7;
+}
+.fl-libraries dialog footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 28px;
+  padding-top: 20px;
+  border-top: 1px solid var(--fl-border);
+}
+/* The template's resource dialog is 620px, wider than the shared Dialog's 510px default. */
+.fl-libraries dialog.dialog {
+  width: min(620px, calc(100vw - 32px));
+  max-width: min(620px, calc(100vw - 32px));
+  box-sizing: border-box;
+  overflow: auto;
+}
+.fl-libraries .resource-consequences {
+  margin: 12px 0;
+  padding-left: 18px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--fl-muted);
+}

@@ -1,14 +1,16 @@
 import AsyncLock from 'async-lock';
 import { load as loadYaml } from 'js-yaml';
 import { cloneDeep, get, isEmpty, isEqual, set } from 'lodash-es';
+import { createHash } from 'node:crypto';
 import type { DeepPartial } from 'src/types.js';
-import { AdminConfigDto, SystemConfig, defaults } from 'src/dtos/config.dto.js';
+import { AdminConfigDto, SystemConfig, defaults, mapAdminConfig } from 'src/dtos/config.dto.js';
 import { DatabaseLock, SystemMetadataKey } from 'src/enum.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { ForkSchemaRepository } from 'src/repositories/fork-schema.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { getKeysDeep, unsetDeep } from 'src/utils/misc.js';
+import { canonicalJson } from 'src/utils/object.js';
 
 type RepoDeps = {
   configRepo: ConfigRepository;
@@ -42,6 +44,53 @@ export const getConfig = async (repos: RepoDeps, { withCache }: { withCache: boo
   return repos.forkSchemaRepo ? repos.forkSchemaRepo.overlayConfig(config!) : config!;
 };
 
+/**
+ * FL-66: the saved configuration read straight from storage, never from the cache. A cached read
+ * can hand back a configuration built before another save committed, which must not be what a
+ * revision check or a read-modify-write under the settings lock starts from.
+ */
+export const readConfig = async (repos: RepoDeps): Promise<SystemConfig> => {
+  const config = await buildConfig(repos);
+  return repos.forkSchemaRepo ? repos.forkSchemaRepo.overlayConfig(config) : config;
+};
+
+/**
+ * FL-66: values the server writes on its own (bookkeeping for the image description re-queue
+ * reminder). Every update keeps the stored values whatever a client sends, so they are left out
+ * of the revision: deferring a re-queue must not make another administrator's draft stale.
+ */
+export const SERVER_MANAGED_CONFIG_PATHS = [
+  'machineLearning.imageDescription.pendingRequeueAt',
+  'machineLearning.imageDescription.lastConfigChangeAt',
+] as const;
+
+export const SYSTEM_CONFIG_CHANGED_MESSAGE =
+  'The system settings changed after they were loaded. Load the latest settings and try again.';
+
+/**
+ * FL-66: a digest of the effective system configuration (stored values merged over the
+ * defaults, including the fork's configuration sidecar), reported to the settings editor as
+ * `revision`. It changes whenever a saved value changes, so a save made against settings that
+ * another administrator (or a server action) changed since they
+ * were loaded can be refused instead of silently overwriting them. The revision is never
+ * stored, so no schema change is needed.
+ *
+ * It digests exactly what an administrator can read (`mapAdminConfig`): write-only credentials
+ * (FL-67: the SMTP password and the OAuth client secret)
+ * only count through their "configured" flags, so the revision can never be used to test guesses
+ * of a secret the API does not show. A credential replaced by another value therefore leaves the
+ * revision unchanged; saves resolve "keep the stored credential" again under the settings lock
+ * (SystemConfigService.saveAdminConfig) so such a replacement is never overwritten.
+ */
+export const getConfigRevision = (config: SystemConfig): string => {
+  const comparable = cloneDeep(mapAdminConfig(config)) as unknown as Record<string, unknown>;
+  for (const path of SERVER_MANAGED_CONFIG_PATHS) {
+    set(comparable, path, undefined);
+  }
+
+  return createHash('sha256').update(canonicalJson(comparable)).digest('hex').slice(0, 32);
+};
+
 export const updateConfig = async (repos: RepoDeps, newConfig: SystemConfig): Promise<SystemConfig> => {
   const { metadataRepo } = repos;
   // get the difference between the new config and the default config
@@ -65,7 +114,8 @@ export const updateConfig = async (repos: RepoDeps, newConfig: SystemConfig): Pr
 
   clearConfigCache();
 
-  return getConfig(repos, { withCache: false });
+  // FL-66: what was just written, read from storage, so the revision a save reports is its own.
+  return readConfig(repos);
 };
 
 const loadFromFile = async ({ metadataRepo, logger }: RepoDeps, filepath: string) => {
@@ -93,9 +143,6 @@ const buildConfig = async (repos: RepoDeps) => {
   for (const property of getKeysDeep(partial)) {
     set(rawConfig, property, get(partial, property));
   }
-
-  // Legacy database/file settings cannot re-enable automatic external reporting.
-  rawConfig.newVersionCheck.enabled = false;
 
   // check for extra properties
   const unknownKeys = cloneDeep(rawConfig);

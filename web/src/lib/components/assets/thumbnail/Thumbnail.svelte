@@ -23,7 +23,7 @@
   } from '@mdi/js';
   import { onMount } from 'svelte';
   import type { ClassValue } from 'svelte/elements';
-  import { fade } from 'svelte/transition';
+  import { motionFade } from '$lib/frameleaf/motion';
   import Thumbhash from '$lib/components/Thumbhash.svelte';
   import ImageThumbnail from './ImageThumbnail.svelte';
   import VideoThumbnail from './VideoThumbnail.svelte';
@@ -385,8 +385,8 @@
     {#if selectionCandidate}
       <div
         class={['absolute top-0 z-2 size-full bg-immich-primary opacity-40', { 'rounded-xl': selected }]}
-        in:fade={{ duration: 100 }}
-        out:fade={{ duration: 100 }}
+        in:motionFade={{ duration: 100 }}
+        out:motionFade={{ duration: 100 }}
       ></div>
     {/if}
 
@@ -423,7 +423,7 @@
           onPreview?.($state.snapshot(asset));
         }}
         class="absolute inset-e-1 bottom-1 z-2 rounded-full bg-black/25 p-1.5 transition-colors hover:bg-black/50 focus:outline-none"
-        in:fade={{ duration: 100 }}
+        in:motionFade={{ duration: 100 }}
         tabindex={-1}
         aria-label="Preview asset"
       >

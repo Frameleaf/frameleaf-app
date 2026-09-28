@@ -1,9 +1,10 @@
 <script lang="ts">
-  import SettingAccordion from '$lib/components/shared-components/settings/SettingAccordion.svelte';
-  import SettingInputField from '$lib/components/shared-components/settings/SettingInputField.svelte';
-  import SettingSwitch from '$lib/components/shared-components/settings/SettingSwitch.svelte';
+  import SettingGroup from '$lib/components/frameleaf/settings/SettingGroup.svelte';
+  import SettingField from '$lib/components/frameleaf/settings/SettingField.svelte';
+  import SettingToggle from '$lib/components/frameleaf/settings/SettingToggle.svelte';
   import { SettingInputFieldType } from '$lib/constants';
   import FormatMessage from '$lib/elements/FormatMessage.svelte';
+  import { helpLinks } from '$lib/frameleaf/help-links.svelte';
   import type { AdminConfigMachineLearningDto } from '@immich/sdk';
   import { t } from 'svelte-i18n';
 
@@ -14,15 +15,18 @@
   }
 
   let { workingConfig, savedConfig, disabled }: Props = $props();
+
+  // FL-135 / FL-192: the model list in this installation's documentation, or no link at all
+  const clipModelsDocs = $derived(helpLinks.docs('features/searching#clip-models'));
 </script>
 
-<SettingAccordion
+<SettingGroup
   key="smart-search"
   title={$t('admin.machine_learning_smart_search')}
   subtitle={$t('admin.machine_learning_smart_search_description')}
 >
-  <div class="ms-4 mt-4 flex flex-col gap-4">
-    <SettingSwitch
+  <div class="flex flex-col gap-4">
+    <SettingToggle
       title={$t('admin.machine_learning_smart_search_enabled')}
       subtitle={$t('admin.machine_learning_smart_search_enabled_description')}
       bind:checked={workingConfig.clip.enabled}
@@ -31,7 +35,7 @@
 
     <hr />
 
-    <SettingInputField
+    <SettingField
       inputType={SettingInputFieldType.TEXT}
       label={$t('admin.machine_learning_clip_model')}
       bind:value={workingConfig.clip.modelName}
@@ -41,13 +45,17 @@
     >
       {#snippet descriptionSnippet()}
         <p class="pb-2 text-sm immich-form-label">
-          <FormatMessage key="admin.machine_learning_clip_model_description">
-            {#snippet children({ message })}
-              <a target="_blank" href="https://huggingface.co/immich-app"><u>{message}</u></a>
-            {/snippet}
-          </FormatMessage>
+          {#if clipModelsDocs}
+            <FormatMessage key="admin.machine_learning_clip_model_description">
+              {#snippet children({ message })}
+                <a target="_blank" rel="noreferrer" href={clipModelsDocs}><u>{message}</u></a>
+              {/snippet}
+            </FormatMessage>
+          {:else}
+            {$t('admin.machine_learning_clip_model_description_unlinked')}
+          {/if}
         </p>
       {/snippet}
-    </SettingInputField>
+    </SettingField>
   </div>
-</SettingAccordion>
+</SettingGroup>

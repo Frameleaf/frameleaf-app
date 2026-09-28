@@ -17,7 +17,7 @@ export const load = (async ({ url }) => {
 
   return {
     meta: {
-      title: $t('locked_folder'),
+      title: $t('frameleaf_locked'),
     },
   };
 }) satisfies PageLoad;

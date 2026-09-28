@@ -22,4 +22,4 @@ export type Action = {
   [K in AssetAction]: { type: K } & ActionMap[K];
 }[AssetAction];
 export type OnAction = (action: Action) => void;
-export type PreAction = (action: Action) => void;
+export type PreAction = (action: Action) => void | Promise<void>;

@@ -1,0 +1,465 @@
+<script lang="ts">
+  import AssetCollage from './AssetCollage.svelte';
+  import Dialog from './Dialog.svelte';
+  import SharedLinkForm from './SharedLinkForm.svelte';
+  import UserAvatar from '$lib/components/shared-components/UserAvatar.svelte';
+  import { authManager } from '$lib/managers/auth-manager.svelte';
+  import { canSendCopies, sendCopiesWithFeedback, sendCopyPermitted } from '$lib/frameleaf/send-copy';
+  import {
+    canCopyImageToClipboard,
+    copyAssetImageToClipboard,
+    downloadArchive,
+    downloadAssetFile,
+    ignoreCancelledDownload,
+  } from '$lib/utils/asset-utils';
+  import { handleError } from '$lib/utils/handle-error';
+  import {
+    getItemShares,
+    searchUsers,
+    shareItems,
+    SharedLinkType,
+    unshareItems,
+    type UserResponseDto,
+  } from '@immich/sdk';
+  import { Icon, toastManager } from '@immich/ui';
+  import { mdiAccountMultipleOutline, mdiCheck, mdiContentCopy, mdiDownloadOutline, mdiLinkVariant } from '@mdi/js';
+  import { t } from 'svelte-i18n';
+
+  /**
+   * The share sheet for a set of items, from the prototype's `ShareSheet` (`SharedLinks.jsx:437-614`).
+   *
+   * FL-83 (AL-30b, owner decision 2026-09-27): two ways to share, as in the prototype. "Share with
+   * people in this library" shares the items themselves with the chosen people (`/item-shares`):
+   * they see them in their own Frameleaf, under Sharing › Shared with you, and are notified; nothing
+   * leaves the server. It is not partner sharing, which exposes a whole library. Only the owner's own
+   * items can be shared this way, so the option is offered only when every item is theirs. People
+   * already sharing every item start selected; saving adds the newly chosen and stops sharing with
+   * the ones turned off. "Create a public link" opens the shared-link form.
+   *
+   * FL-35 / FL-54: "Send a copy…" sits beside Cancel as in the prototype (SharedLinks.jsx:477-482)
+   * where the browser can share files. It hands copies of the originals to the native share sheet and
+   * creates no link, so it stays separate from Frameleaf sharing.
+   *
+   * FL-83 AL-31: the strip above shows the items as a collage with "N items · X photos, Y videos"
+   * (SharedLinks.jsx:510-517), and the shortcuts below offer "Copy image" for exactly one photo and
+   * "Download" (SharedLinks.jsx:598-612), through the web client's clipboard and download helpers.
+   */
+  type ShareItem = { id: string; isVideo: boolean; originalFileName?: string; size?: number; ownerId?: string };
+  let {
+    open = $bindable(false),
+    assetIds,
+    assets,
+    onClosed,
+  }: {
+    open?: boolean;
+    assetIds: string[];
+    /** The same items with their kind, for the count line and the shortcuts. */
+    assets?: ShareItem[];
+    /** Called once the sheet and the link form it opened have both closed. */
+    onClosed?: () => void;
+  } = $props();
+
+  let linkFormOpen = $state(false);
+
+  /* Share with people in this library (AL-30b) ------------------------------------------------- */
+  const ownItems = $derived(
+    !assets || assets.every((asset) => !asset.ownerId || asset.ownerId === authManager.user.id),
+  );
+  let mode = $state<'people' | 'link'>('people');
+  const peopleMode = $derived(ownItems && mode === 'people');
+  let people = $state<UserResponseDto[]>([]);
+  let recipients = $state<Set<string>>(new Set());
+  let initialRecipients = new Set<string>();
+  let loading = $state(false);
+  let saving = $state(false);
+  let loadedFor = '';
+
+  const loadPeople = async () => {
+    const key = assetIds.join(',');
+    if (loadedFor === key) {
+      return;
+    }
+    loadedFor = key;
+    loading = true;
+    try {
+      const [users, shares] = await Promise.all([searchUsers(), getItemShares({ itemShareQueryDto: { assetIds } })]);
+      people = users.filter((user) => user.id !== authManager.user.id);
+      // Someone counts as already chosen only when every one of these items is shared with them.
+      const perPerson = new Map<string, Set<string>>();
+      for (const share of shares) {
+        const items = perPerson.get(share.sharedWith.id) ?? new Set<string>();
+        items.add(share.assetId);
+        perPerson.set(share.sharedWith.id, items);
+      }
+      initialRecipients = new Set(
+        [...perPerson].filter(([, items]) => assetIds.every((id) => items.has(id))).map(([id]) => id),
+      );
+      recipients = new Set(initialRecipients);
+    } catch (error) {
+      loadedFor = '';
+      handleError(error, $t('frameleaf_sharing.people_load_failed'));
+    } finally {
+      loading = false;
+    }
+  };
+
+  $effect(() => {
+    if (open && ownItems) {
+      void loadPeople();
+    }
+  });
+
+  const toggle = (id: string) => {
+    const next = new Set(recipients);
+    if (next.has(id)) {
+      next.delete(id);
+    } else {
+      next.add(id);
+    }
+    recipients = next;
+  };
+
+  const chosen = $derived(people.filter((person) => recipients.has(person.id)));
+  const primaryLabel = $derived(
+    chosen.length === 1
+      ? $t('frameleaf_sharing.share_with_person', { values: { name: chosen[0].name } })
+      : chosen.length > 1
+        ? $t('frameleaf_sharing.share_with_people', { values: { count: chosen.length } })
+        : $t('frameleaf_sharing.save_sharing'),
+  );
+
+  /** The ids in `from` that are not in `other` (Set#difference is not in every supported browser). */
+  const without = (from: Set<string>, other: Set<string>) => {
+    const result: string[] = [];
+    for (const id of from) {
+      if (!other.has(id)) {
+        result.push(id);
+      }
+    }
+    return result;
+  };
+
+  const saveSharing = async () => {
+    const toAdd = without(recipients, initialRecipients);
+    const toRemove = without(initialRecipients, recipients);
+    saving = true;
+    try {
+      if (toAdd.length > 0) {
+        await shareItems({ itemShareChangeDto: { assetIds, userIds: toAdd } });
+      }
+      if (toRemove.length > 0) {
+        await unshareItems({ itemShareChangeDto: { assetIds, userIds: toRemove } });
+      }
+      initialRecipients = new Set(recipients);
+      toastManager.primary($t('frameleaf_sharing.sharing_saved'));
+      open = false;
+    } catch (error) {
+      handleError(error, $t('frameleaf_sharing.sharing_save_failed'));
+    } finally {
+      saving = false;
+    }
+  };
+
+  const modeKeys = (event: KeyboardEvent) => {
+    if (!['ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp'].includes(event.key)) {
+      return;
+    }
+    event.preventDefault();
+    const next = mode === 'people' ? 'link' : 'people';
+    mode = next;
+    (event.currentTarget as HTMLElement).querySelector<HTMLElement>(`[data-mode="${CSS.escape(next)}"]`)?.focus();
+  };
+
+  let wasActive = false;
+  $effect(() => {
+    const active = open || linkFormOpen;
+    if (active) {
+      wasActive = true;
+    } else if (wasActive) {
+      wasActive = false;
+      onClosed?.();
+    }
+  });
+
+  const subject = $derived($t('frameleaf_sharing.individual_items', { values: { count: assetIds.length } }));
+  const linkTarget = $derived({ type: SharedLinkType.Individual, assetIds, name: subject });
+
+  const videos = $derived(assets?.filter((asset) => asset.isVideo).length ?? 0);
+  const photos = $derived(assets ? assets.length - videos : 0);
+  const countLine = $derived.by(() => {
+    const items = $t('frameleaf_sharing.individual_items', { values: { count: assetIds.length } });
+    if (assetIds.length < 2 || !assets) {
+      return items;
+    }
+    const kinds = [$t('frameleaf_sharing.share_photos', { values: { count: photos } })];
+    if (videos) {
+      kinds.push($t('frameleaf_sharing.share_videos', { values: { count: videos } }));
+    }
+    return `${items} · ${kinds.join(', ')}`;
+  });
+  const single = $derived(assets?.length === 1 && assetIds.length === 1 ? assets[0] : undefined);
+  const canCopyImage = $derived(!!single && !single.isVideo && canCopyImageToClipboard());
+
+  const copyImage = async () => {
+    if (!single) {
+      return;
+    }
+    try {
+      await copyAssetImageToClipboard(single.id);
+      toastManager.primary($t('frameleaf_sharing.image_copied'));
+      open = false;
+    } catch (error) {
+      handleError(error, $t('frameleaf_sharing.copy_image_failed'));
+    }
+  };
+
+  const download = () => {
+    open = false;
+    if (single?.originalFileName) {
+      downloadAssetFile({ id: single.id, filename: single.originalFileName, edited: true, size: single.size });
+      return;
+    }
+    void downloadArchive('frameleaf', { assetIds }).catch(ignoreCancelledDownload);
+  };
+
+  const sendCopy = () => {
+    open = false;
+    void sendCopiesWithFeedback(assetIds);
+  };
+
+  const openLinkForm = () => {
+    open = false;
+    linkFormOpen = true;
+  };
+</script>
+
+<Dialog title={$t('frameleaf_sharing.share_subject', { values: { subject } })} closeLabel={$t('close')} bind:open>
+  <div class="ss-strip">
+    <AssetCollage ids={assetIds} class="ss-collage" />
+    <span>{countLine}</span>
+  </div>
+  {#if ownItems}
+    <div
+      class="ss-options"
+      role="radiogroup"
+      aria-label={$t('frameleaf_sharing.how_to_share')}
+      tabindex="-1"
+      onkeydown={modeKeys}
+    >
+      <button
+        type="button"
+        role="radio"
+        data-mode="people"
+        aria-checked={mode === 'people'}
+        tabindex={mode === 'people' ? 0 : -1}
+        class="ss-option"
+        onclick={() => (mode = 'people')}
+      >
+        <Icon icon={mdiAccountMultipleOutline} size="20" aria-hidden={true} />
+        <strong>{$t('frameleaf_sharing.people_option_title')}</strong>
+        <small>{$t('frameleaf_sharing.people_option_description')}</small>
+      </button>
+      <button
+        type="button"
+        role="radio"
+        data-mode="link"
+        aria-checked={mode === 'link'}
+        tabindex={mode === 'link' ? 0 : -1}
+        class="ss-option"
+        onclick={() => (mode = 'link')}
+      >
+        <Icon icon={mdiLinkVariant} size="20" aria-hidden={true} />
+        <strong>{$t('frameleaf_sharing.link_option_title')}</strong>
+        <small>{$t('frameleaf_sharing.link_option_description')}</small>
+      </button>
+    </div>
+  {/if}
+  {#if peopleMode}
+    {#if loading}
+      <p role="status" class="ss-link-copy">{$t('loading')}</p>
+    {:else if people.length > 0}
+      <div class="ss-people" role="group" aria-label={$t('frameleaf_sharing.people_to_share_with')}>
+        {#each people as person (person.id)}
+          {@const selected = recipients.has(person.id)}
+          <button
+            type="button"
+            class="ss-person"
+            class:is-selected={selected}
+            aria-pressed={selected}
+            aria-label={person.name}
+            onclick={() => toggle(person.id)}
+          >
+            <span class="ss-person-avatar" aria-hidden="true">
+              <UserAvatar user={person} size="lg" />
+              <span class="ss-person-check"><Icon icon={mdiCheck} size="14" /></span>
+            </span>
+            <span class="ss-person-name" aria-hidden="true">{person.name}</span>
+          </button>
+        {/each}
+      </div>
+    {:else}
+      <p class="ss-link-copy">{$t('frameleaf_sharing.no_other_people')}</p>
+    {/if}
+  {:else}
+    <p class="ss-link-copy">
+      {ownItems ? $t('frameleaf_sharing.link_form_hint') : $t('frameleaf_sharing.link_option_description')}
+    </p>
+  {/if}
+  <div class="ss-shortcuts">
+    <button type="button" disabled={!canCopyImage} onclick={() => void copyImage()}>
+      <Icon icon={mdiContentCopy} size="18" aria-hidden={true} />
+      {$t('frameleaf_sharing.copy_image')}
+    </button>
+    <button type="button" onclick={download}>
+      <Icon icon={mdiDownloadOutline} size="18" aria-hidden={true} />
+      {$t('download')}
+    </button>
+  </div>
+  <div class="ss-actions">
+    {#if canSendCopies() && sendCopyPermitted()}
+      <button type="button" onclick={sendCopy}>{$t('frameleaf_send_copy')}</button>
+    {/if}
+    <button type="button" onclick={() => (open = false)}>{$t('cancel')}</button>
+    {#if peopleMode}
+      <button type="button" class="primary" disabled={saving || loading} onclick={() => void saveSharing()}>
+        {primaryLabel}
+      </button>
+    {:else}
+      <button type="button" class="primary" onclick={openLinkForm}>{$t('frameleaf_sharing.create_public_link')}</button>
+    {/if}
+  </div>
+</Dialog>
+
+<SharedLinkForm bind:open={linkFormOpen} target={linkTarget} />
+
+<style>
+  .ss-strip {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    color: var(--fl-muted);
+    font-size: 0.875rem;
+  }
+  .ss-strip :global(.ss-collage) {
+    width: 96px;
+    flex: none;
+    border-radius: var(--fl-radius);
+  }
+  .ss-shortcuts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+  }
+  .ss-shortcuts button {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    min-height: 36px;
+    background: var(--fl-raised);
+    color: var(--fl-text);
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius);
+    padding: 0 0.75rem;
+  }
+  .ss-shortcuts button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .ss-link-copy {
+    color: var(--fl-muted);
+  }
+  .ss-options {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5rem;
+    margin: 0.75rem 0;
+  }
+  .ss-option {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    text-align: start;
+    background: var(--fl-raised);
+    color: var(--fl-text);
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius);
+    padding: 0.75rem;
+  }
+  .ss-option[aria-checked='true'] {
+    border-color: var(--fl-accent);
+    box-shadow: 0 0 0 1px var(--fl-accent);
+  }
+  .ss-option small {
+    color: var(--fl-muted);
+  }
+  .ss-people {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(4.5rem, 1fr));
+    gap: 0.75rem;
+    max-height: 16rem;
+    overflow-y: auto;
+  }
+  .ss-person {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.375rem;
+    background: transparent;
+    border: 0;
+    color: var(--fl-text);
+  }
+  .ss-person-avatar {
+    position: relative;
+    display: inline-flex;
+    border-radius: 50%;
+    outline: 2px solid transparent;
+    outline-offset: 2px;
+  }
+  .ss-person.is-selected .ss-person-avatar {
+    outline-color: var(--fl-accent);
+  }
+  .ss-person-check {
+    position: absolute;
+    right: -2px;
+    bottom: -2px;
+    display: none;
+    place-items: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--fl-accent);
+    color: var(--fl-accent-text);
+  }
+  .ss-person.is-selected .ss-person-check {
+    display: grid;
+  }
+  .ss-person-name {
+    font-size: 0.75rem;
+    overflow-wrap: anywhere;
+    text-align: center;
+  }
+  @media (max-width: 480px) {
+    .ss-options {
+      grid-template-columns: 1fr;
+    }
+  }
+  .ss-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    margin-top: 1rem;
+  }
+  .ss-actions button {
+    background: var(--fl-raised);
+    color: var(--fl-text);
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius);
+    padding: 0 0.75rem;
+  }
+  .ss-actions button.primary {
+    background: var(--fl-accent);
+    color: var(--fl-accent-text);
+    border-color: var(--fl-accent);
+  }
+</style>

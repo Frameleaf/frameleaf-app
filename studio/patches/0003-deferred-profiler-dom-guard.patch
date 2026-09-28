@@ -1,0 +1,38 @@
+--- a/src/shared/logging/preview-scrub-performance.ts
++++ b/src/shared/logging/preview-scrub-performance.ts
+@@ -168,6 +168,7 @@
+   if (typeof document === 'undefined' || snapshotTimer !== null) return
+   snapshotTimer = setTimeout(() => {
+     snapshotTimer = null
++    if (typeof document === 'undefined') return
+     let snapshot = document.getElementById(PERF_SNAPSHOT_ELEMENT_ID)
+     if (!snapshot) {
+       snapshot = document.createElement('script')
+--- a/src/shared/logging/preview-scrub-performance.test.ts
++++ b/src/shared/logging/preview-scrub-performance.test.ts
+@@ -1,6 +1,6 @@
+ // @vitest-environment node
+ 
+-import { beforeEach, describe, expect, it } from 'vite-plus/test'
++import { beforeEach, describe, expect, it, vi } from 'vite-plus/test'
+ import {
+   recordPreviewScrubPresentationQuality,
+   recordPreviewScrubRequest,
+@@ -64,3 +64,17 @@
+     expect(getState().fallbacks[0]!.exactReplacementMs).toEqual(expect.any(Number))
+   })
+ })
++
++
++it('skips a deferred DOM snapshot after the document is removed', () => {
++  vi.useFakeTimers()
++  vi.stubGlobal('document', {})
++  try {
++    recordPreviewScrubRequest('color', 120, 1)
++    vi.stubGlobal('document', undefined)
++    expect(() => vi.runAllTimers()).not.toThrow()
++  } finally {
++    vi.unstubAllGlobals()
++    vi.useRealTimers()
++  }
++})

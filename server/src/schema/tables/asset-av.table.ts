@@ -17,6 +17,19 @@ export class AssetAudioTable {
 
   @Column({ type: 'text' })
   codecName!: string;
+
+  /**
+   * FL-102 (VID-104): channel-aware audio. Nullable and additive — every row written before
+   * migration 2100000000130 has them null, and null means "not probed", never "stereo".
+   */
+  @Column({ type: 'smallint', nullable: true })
+  channels!: number | null;
+
+  @Column({ type: 'text', nullable: true })
+  channelLayout!: string | null;
+
+  @Column({ type: 'integer', nullable: true })
+  sampleRate!: number | null;
 }
 
 @Table('asset_video')

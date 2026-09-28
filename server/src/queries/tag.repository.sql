@@ -141,6 +141,14 @@ where
               end
             )
         )
+        and not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "tag_asset"."assetId"
+        )
     )
   )
 order by
@@ -181,19 +189,29 @@ from
 -- TagRepository.update
 begin
 select
-  "value"
+  "id"
+from
+  "tag"
+where
+  "userId" = (
+    select
+      "moved"."userId"
+    from
+      "tag" as "moved"
+    where
+      "moved"."id" = $1
+  )
+order by
+  "id"
+for update
+select
+  "userId",
+  "value",
+  "parentId"
 from
   "tag"
 where
   "id" = $1
-update "tag"
-set
-  "value" = $1,
-  "color" = $2
-where
-  "id" = $3
-returning
-  *
 rollback
 
 -- TagRepository.delete
@@ -206,6 +224,7 @@ insert into
   "tag_asset" ("tagId", "assetId")
 values
   ($1, $2)
+on conflict do nothing
 
 -- TagRepository.removeAssetIds
 delete from "tag_asset"
@@ -221,6 +240,20 @@ values
 on conflict do nothing
 returning
   *
+
+-- TagRepository.removeAssetTagValues
+delete from "tag_asset"
+where
+  "assetId" = $1
+  and "tagId" in (
+    select
+      "tag"."id"
+    from
+      "tag"
+    where
+      "tag"."userId" = $2
+      and "tag"."value" in ($3)
+  )
 
 -- TagRepository.replaceAssetTags
 begin

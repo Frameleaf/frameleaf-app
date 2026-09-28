@@ -1,5 +1,5 @@
 import { Kysely, sql } from 'kysely';
-import { AssetStatus, MediaHealthCategory, MediaHealthSeverity, MediaHealthStatus } from 'src/enum.js';
+import { AssetStatus, AssetVisibility, MediaHealthCategory, MediaHealthSeverity, MediaHealthStatus } from 'src/enum.js';
 import { getCatalogEvidence } from 'src/fork-schema/catalog.js';
 import forkCatalog from 'src/fork-schema/manifests/fork-v2-catalog.json' with { type: 'json' };
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -16,6 +16,13 @@ import {
 import { BaseService } from 'src/services/base.service.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { getActiveForkKyselyDB as getKyselyDB } from 'test/utils.js';
+
+const pointDuplicateFrameTrigger = (db: Kysely<DB>, fn: 'updated_at' | 'media_health_updated_at') =>
+  sql
+    .raw(
+      `CREATE OR REPLACE TRIGGER "asset_video_duplicate_frame_updatedAt" BEFORE UPDATE ON "asset_video_duplicate_frame" FOR EACH ROW EXECUTE FUNCTION ${fn}()`,
+    )
+    .execute(db);
 
 let defaultDatabase: Kysely<DB>;
 
@@ -212,6 +219,9 @@ describe(MediaHealthRepository.name, () => {
     it('upgrades populated legacy health tables without rewriting rows or changing asset sync triggers', async () => {
       await sql`UPDATE immich_fork.state SET phase = 'legacy' WHERE id = 1`.execute(defaultDatabase);
       try {
+        // 2100000000530 later points the duplicate-frame trigger at the same function; a downgrade takes
+        // that back first, as migrations revert newest first
+        await pointDuplicateFrameTrigger(defaultDatabase, 'updated_at');
         await revertHealthTriggers(defaultDatabase);
         const { asset, finding, candidate, sut } = await arrangeManagedRelink();
         const before = await sql`SELECT oid, relfilenode FROM pg_class
@@ -220,6 +230,7 @@ describe(MediaHealthRepository.name, () => {
         );
         await repairHealthTriggers(defaultDatabase);
         await repairHealthTriggers(defaultDatabase);
+        await pointDuplicateFrameTrigger(defaultDatabase, 'media_health_updated_at');
 
         expect(await sut.getByIds([finding.id])).toEqual([finding]);
         expect(await sut.getCandidatesByHealthIds([finding.id])).toEqual([candidate]);
@@ -263,6 +274,7 @@ describe(MediaHealthRepository.name, () => {
         }
       } finally {
         await repairHealthTriggers(defaultDatabase);
+        await pointDuplicateFrameTrigger(defaultDatabase, 'media_health_updated_at');
         await sql`UPDATE immich_fork.state SET phase = 'active' WHERE id = 1`.execute(defaultDatabase);
       }
     });
@@ -750,6 +762,37 @@ describe(MediaHealthRepository.name, () => {
       [row] = await sut.getByIds([finding.id]);
       expect(row.status).toBe(MediaHealthStatus.Relinked);
     });
+
+    it('records the status a dismissal replaced and reopens to it only while still dismissed (FL-69, UT-2)', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      const run = await sut.createRun(MediaHealthCategory.Missing);
+      const finding = await sut.upsertFinding({
+        ...findingDto(asset.id, asset.originalPath, run.id),
+        resolution: { autoRelinkable: false },
+      });
+      assert.isDefined(finding);
+
+      await sut.markDismissed([finding.id]);
+      await sut.markDismissed([finding.id]);
+      let [row] = await sut.getByIds([finding.id]);
+      expect(row.resolution).toEqual({ autoRelinkable: false, dismissedFrom: MediaHealthStatus.Missing });
+
+      await expect(sut.reopenFinding(finding.id, MediaHealthStatus.Trashed, MediaHealthStatus.Missing)).resolves.toBe(
+        false,
+      );
+      await expect(sut.reopenFinding(finding.id, MediaHealthStatus.Dismissed, MediaHealthStatus.Missing)).resolves.toBe(
+        true,
+      );
+      [row] = await sut.getByIds([finding.id]);
+      expect(row).toMatchObject({
+        status: MediaHealthStatus.Missing,
+        dismissedAt: null,
+        resolution: { autoRelinkable: false },
+      });
+      expect(row.resolution).not.toHaveProperty('dismissedFrom');
+    });
   });
 
   describe('replaceCandidates', () => {
@@ -798,6 +841,42 @@ describe(MediaHealthRepository.name, () => {
           },
         ]),
       ).rejects.toThrow('Cannot replace media-health candidates for multiple findings');
+    });
+  });
+
+  describe('Locked media (FL-34)', () => {
+    it("lists Locked media to an interactive read only for its owner's elevated session", async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { result: timeline } = await ctx.newAsset({ ownerId: user.id });
+      const { result: locked } = await ctx.newAsset({ ownerId: user.id, visibility: AssetVisibility.Locked });
+      await sut.upsertFinding(findingDto(timeline.id, timeline.originalPath, null));
+      const lockedFinding = await sut.upsertFinding(findingDto(locked.id, locked.originalPath, null));
+      assert.isDefined(lockedFinding);
+
+      const ordinary = {};
+      const elevated = { lockedOwnerId: user.id };
+      const listed = async (privacy?: { lockedOwnerId?: string }) =>
+        (await sut.list({ ownerId: user.id, privacy, size: 10 })).map(({ assetId }) => assetId).sort();
+
+      await expect(listed(ordinary)).resolves.toEqual([timeline.id]);
+      await expect(listed(elevated)).resolves.toEqual([timeline.id, locked.id].sort());
+      await expect(sut.count({ ownerId: user.id, privacy: ordinary })).resolves.toBe(1);
+      await expect(sut.getByIds([lockedFinding.id], user.id, ordinary)).resolves.toEqual([]);
+      await expect(sut.getAssets([locked.id], user.id, ordinary)).resolves.toEqual([]);
+      // the row carries the lock, so the response reports it as `locked`
+      await expect(sut.getAssets([locked.id], user.id, elevated)).resolves.toEqual([
+        expect.objectContaining({ id: locked.id, isLocked: true }),
+      ]);
+      await expect(sut.getAssets([timeline.id], user.id, elevated)).resolves.toEqual([
+        expect.objectContaining({ id: timeline.id, isLocked: false }),
+      ]);
+
+      // a background job passes no privacy and still sees the Locked finding
+      await expect(listed()).resolves.toEqual([timeline.id, locked.id].sort());
+      await expect(sut.getByIds([lockedFinding.id], user.id)).resolves.toEqual([
+        expect.objectContaining({ id: lockedFinding.id }),
+      ]);
     });
   });
 });

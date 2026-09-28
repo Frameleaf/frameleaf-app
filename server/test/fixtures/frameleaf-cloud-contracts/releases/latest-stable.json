@@ -1,0 +1,18 @@
+{
+  "version": "3.2.1",
+  "tag": "frameleaf-v3.2.1-4",
+  "publishedAt": "2026-09-10T12:00:00Z",
+  "url": "https://github.com/Frameleaf/frameleaf-app/releases/tag/frameleaf-v3.2.1-4",
+  "notesUrl": "https://github.com/Frameleaf/frameleaf-app/releases/tag/frameleaf-v3.2.1-4",
+  "minimumSupported": "3.0.0",
+  "rolloutPercent": 25,
+  "fallback": {
+    "version": "3.2.0",
+    "tag": "frameleaf-v3.2.0-2",
+    "publishedAt": "2026-08-20T09:00:00Z",
+    "url": "https://github.com/Frameleaf/frameleaf-app/releases/tag/frameleaf-v3.2.0-2",
+    "notesUrl": "https://github.com/Frameleaf/frameleaf-app/releases/tag/frameleaf-v3.2.0-2",
+    "minimumSupported": "3.0.0",
+    "rolloutPercent": 100
+  }
+}

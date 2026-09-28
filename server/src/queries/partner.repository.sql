@@ -151,3 +151,59 @@ delete from "partner"
 where
   "sharedWithId" = $1
   and "sharedById" = $2
+
+-- PartnerRepository.getLocationHiddenOwnerIdsForAlbums
+select distinct
+  "partner"."sharedById"
+from
+  "partner"
+  inner join "album_user" as "album_owner" on "album_owner"."userId" = "partner"."sharedWithId"
+  and "album_owner"."role" = 'owner'
+where
+  "album_owner"."albumId" in ($1)
+  and "partner"."shareLocation" = $2
+  and "partner"."sharedById" != "partner"."sharedWithId"
+  and not exists (
+    select
+    from
+      "partner" as "direct"
+    where
+      "direct"."sharedById" = "partner"."sharedById"
+      and "direct"."sharedWithId" = $3
+      and "direct"."shareLocation" = $4
+  )
+
+-- PartnerRepository.getLocationHiddenThroughAlbums
+select distinct
+  "album_asset"."assetId"
+from
+  "album_asset"
+  inner join "album" on "album"."id" = "album_asset"."albumId"
+  and "album"."deletedAt" is null
+  inner join "album_user" as "album_owner" on "album_owner"."albumId" = "album"."id"
+  and "album_owner"."role" = 'owner'
+  inner join "asset" on "asset"."id" = "album_asset"."assetId"
+  inner join "partner" on "partner"."sharedById" = "asset"."ownerId"
+  and "partner"."sharedWithId" = "album_owner"."userId"
+  and "partner"."shareLocation" = $1
+where
+  "album_asset"."assetId" in ($2)
+  and "asset"."ownerId" != $3
+  and "asset"."ownerId" != "album_owner"."userId"
+  and exists (
+    select
+    from
+      "album_user" as "member"
+    where
+      "member"."albumId" = "album"."id"
+      and "member"."userId" = $4
+  )
+  and not exists (
+    select
+    from
+      "partner" as "direct"
+    where
+      "direct"."sharedById" = "asset"."ownerId"
+      and "direct"."sharedWithId" = $5
+      and "direct"."shareLocation" = $6
+  )

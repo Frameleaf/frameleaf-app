@@ -1,9 +1,10 @@
 import request from 'supertest';
 import { AssetMediaController } from 'src/controllers/asset-media.controller.js';
 import { AssetMediaStatus } from 'src/dtos/asset-media-response.dto.js';
-import { AssetMetadataKey } from 'src/enum.js';
+import { AssetMetadataKey, Permission } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { AssetMediaService } from 'src/services/asset-media.service.js';
+import { AssetRestorationService } from 'src/services/asset-restoration.service.js';
 import { factory } from 'test/small.factory.js';
 import { ControllerContext, automock, controllerSetup, mockBaseService } from 'test/utils.js';
 
@@ -27,11 +28,14 @@ describe(AssetMediaController.name, () => {
   const assetData = Buffer.from('123');
   const filename = 'example.png';
   const service = mockBaseService(AssetMediaService);
+  // FL-115: no restoration is chosen, so every route serves the ordinary file.
+  const restorationService = { getPlaybackChoice: vi.fn().mockResolvedValue({ file: null, revalidate: false }) };
 
   beforeAll(async () => {
     ctx = await controllerSetup(AssetMediaController, [
       { provide: LoggingRepository, useValue: automock(LoggingRepository, { strict: false }) },
       { provide: AssetMediaService, useValue: service },
+      { provide: AssetRestorationService, useValue: restorationService },
     ]);
     return () => ctx.close();
   });
@@ -166,6 +170,26 @@ describe(AssetMediaController.name, () => {
     });
 
     // TODO figure out how to deal with `sendFile`
+
+    describe('GET /assets/:id/edit-versions/:versionId/download (FL-39)', () => {
+      it('requires download permission without a shared-link route', async () => {
+        await request(ctx.getHttpServer()).get(`/assets/${factory.uuid()}/edit-versions/${factory.uuid()}/download`);
+        expect(ctx.authenticate).toHaveBeenCalledWith(
+          expect.objectContaining({
+            metadata: expect.objectContaining({ permission: Permission.AssetDownload, sharedLinkRoute: false }),
+          }),
+        );
+      });
+
+      it('requires a valid version id', async () => {
+        const { status, body } = await request(ctx.getHttpServer()).get(
+          `/assets/${factory.uuid()}/edit-versions/123/download`,
+        );
+        expect(status).toBe(400);
+        expect(body).toEqual(factory.responses.validationError([{ path: ['versionId'], message: 'Invalid UUID' }]));
+        expect(service.downloadVideoEditVersion).not.toHaveBeenCalled();
+      });
+    });
 
     // TODO figure out how to deal with `sendFile`
     describe('GET /assets/:id/thumbnail', () => {

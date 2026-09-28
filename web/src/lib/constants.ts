@@ -64,7 +64,6 @@ export enum QueryParameter {
 }
 
 export enum SessionStorageKey {
-  INFINITE_SCROLL_PAGE = 'infiniteScrollPage',
   SCROLL_POSITION = 'scrollPosition',
 }
 
@@ -76,9 +75,13 @@ export enum OpenQueryParam {
   NOTIFICATIONS = 'notifications',
   PURCHASE_SETTINGS = 'user-purchase-settings',
   SHARING = 'sharing',
+  /** The trash retention settings, from the Trash page (FL-47). */
+  TRASH = 'trash',
+  /** The image description / enrichment settings, from the Jobs manager's Enrichment tasks entry (FL-59). */
+  IMAGE_DESCRIPTION = 'machine-learning',
+  /** Originals & preservation, from Library Care's preservation verification (FL-74). */
+  PRESERVATION = 'preservation',
 }
-
-export const maximumLengthSearchPeople = 100;
 
 // time to load the map before displaying the loading spinner
 export const timeToLoadTheMap: number = 100;
@@ -254,11 +257,6 @@ export interface Lang {
 
 export const defaultLang: Lang = { name: 'English', code: 'en', loader: () => import('$i18n/en.json') };
 
-export enum ImmichProduct {
-  Client = 'immich-client',
-  Server = 'immich-server',
-}
-
 export enum SettingInputFieldType {
   EMAIL = 'email',
   TEXT = 'text',
@@ -266,26 +264,6 @@ export enum SettingInputFieldType {
   PASSWORD = 'password',
   COLOR = 'color',
   NAME = 'name',
-}
-
-export const AlbumPageViewMode = {
-  SELECT_THUMBNAIL: 'select-thumbnail',
-  SELECT_ASSETS: 'select-assets',
-  VIEW: 'view',
-  OPTIONS: 'options',
-};
-
-export type AlbumPageViewMode =
-  | typeof AlbumPageViewMode.SELECT_THUMBNAIL
-  | typeof AlbumPageViewMode.SELECT_ASSETS
-  | typeof AlbumPageViewMode.VIEW
-  | typeof AlbumPageViewMode.OPTIONS;
-
-export enum PersonPageViewMode {
-  VIEW_ASSETS = 'view-assets',
-  SELECT_PERSON = 'select-person',
-  MERGE_PEOPLE = 'merge-people',
-  UNASSIGN_ASSETS = 'unassign-faces',
 }
 
 export enum MediaType {
@@ -297,12 +275,6 @@ export enum MediaType {
 export enum ProgressBarStatus {
   Playing = 'playing',
   Paused = 'paused',
-}
-
-export enum ToggleVisibility {
-  HIDE_ALL = 'hide-all',
-  HIDE_UNNANEMD = 'hide-unnamed',
-  SHOW_ALL = 'show-all',
 }
 
 export enum BackupFileStatus {

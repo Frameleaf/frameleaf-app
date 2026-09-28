@@ -39,8 +39,8 @@ services:
       - /etc/localtime:/etc/localtime:ro
 ```
 
-After making this change, you have to move the files over to the new folders to make sure Immich can find everything it needs. If you haven't uploaded anything important yet, you can also reset Immich entirely by deleting the database folder.
-Then restart Immich to register the changes:
+After making this change, you have to move the files over to the new folders to make sure Frameleaf can find everything it needs. If you haven't uploaded anything important yet, you can also reset Frameleaf entirely by deleting the database folder.
+Then restart Frameleaf to register the changes:
 
 ```
 docker compose up -d
@@ -52,5 +52,5 @@ For this reason, we mount the HDD or the network storage (NAS) to `/data` and th
 
 The `thumbs/` folder contains both the small thumbnails displayed in the timeline and the larger previews shown when clicking into an image. These cannot be separated.
 
-The storage metrics of the Immich server will track available storage at `UPLOAD_LOCATION`, so the administrator must set up some sort of monitoring to ensure the storage does not run out of space. The `profile/` folder is much smaller, usually less than 1 MB.
+The storage metrics of the Frameleaf server will track available storage at `UPLOAD_LOCATION`, so the administrator must set up some sort of monitoring to ensure the storage does not run out of space. The `profile/` folder is much smaller, usually less than 1 MB.
 :::

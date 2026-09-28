@@ -1,91 +1,46 @@
 <script lang="ts">
-  import { copyToClipboard } from '$lib/utils';
-  import {
-    Card,
-    CardBody,
-    CardFooter,
-    CardHeader,
-    CardTitle,
-    Icon,
-    IconButton,
-    Link,
-    Logo,
-    Text,
-    VStack,
-  } from '@immich/ui';
-  import { mdiAlarmLight, mdiCodeTags, mdiContentCopy, mdiMessage, mdiPartyPopper } from '@mdi/js';
+  import FrameleafErrorPage from '$lib/components/frameleaf/FrameleafErrorPage.svelte';
+  import { ERROR_COPY, errorKind, errorStatus, type ErrorPageAction } from '$lib/frameleaf/error-page';
+  import { Route } from '$lib/route';
+  import { mdiAlertCircleOutline, mdiImageOffOutline, mdiLockOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
 
+  /**
+   * The app-wide error page (FL-55): every route without an error page of its own, and a server the
+   * app could not reach at start-up, land here.
+   *
+   * It explains the failure as one of three things a person can act on — not found, no access, or
+   * a problem on our side — with the ways on. What the server said, and any stack trace, stay in the
+   * console and the logs; they are never shown to the person using Frameleaf.
+   */
   interface Props {
-    error?: { message: string; code?: string | number; stack?: string } | undefined | null;
+    /** The SvelteKit error, or the start-up failure the root layout caught. */
+    error?: unknown;
+    /** SvelteKit's status for the page, when there is one. */
+    status?: number;
   }
 
-  let { error = undefined }: Props = $props();
+  let { error = undefined, status = undefined }: Props = $props();
 
-  const handleCopy = async () => {
-    if (!error) {
-      return;
+  const code = $derived(errorStatus(status, error));
+  const kind = $derived(errorKind(code));
+  const copy = $derived(ERROR_COPY[kind]);
+  const icon = $derived(
+    kind === 'not-found' ? mdiImageOffOutline : kind === 'forbidden' ? mdiLockOutline : mdiAlertCircleOutline,
+  );
+
+  const canGoBack = typeof history !== 'undefined' && history.length > 1;
+
+  const actions = $derived.by(() => {
+    const list: ErrorPageAction[] = [{ label: $t('frameleaf_error_go_photos'), href: Route.photos(), primary: true }];
+    if (kind === 'server') {
+      list.push({ label: $t('frameleaf_error_retry'), onclick: () => location.reload() });
     }
-
-    await copyToClipboard(`${error.message} - ${error.code}\n${error.stack}`);
-  };
+    if (canGoBack) {
+      list.push({ label: $t('frameleaf_error_go_back'), onclick: () => history.back() });
+    }
+    return list;
+  });
 </script>
 
-<div class="flex h-dvh w-dvw flex-col">
-  <section>
-    <div class="flex place-items-center border-b px-6 py-4 dark:border-b-immich-dark-gray">
-      <Link href="/photos">
-        <Logo variant="inline" />
-      </Link>
-    </div>
-  </section>
-
-  <div class="flex w-full flex-1 place-content-center place-items-center overflow-hidden bg-black/30">
-    <div class="max-w-[95vw]">
-      <Card color="secondary">
-        <CardHeader class="flex-row justify-between gap-12">
-          <CardTitle tag="h1" size="medium" class="flex place-items-center gap-4 text-primary">
-            <Icon icon={mdiAlarmLight} color="red" size="32" />
-            {$t('error_title')}
-          </CardTitle>
-          <IconButton
-            shape="round"
-            color="primary"
-            icon={mdiContentCopy}
-            aria-label={$t('copy_error')}
-            onclick={handleCopy}
-          />
-        </CardHeader>
-
-        <CardBody class="flex flex-col gap-2">
-          <Text color="danger">{error?.message} (HTTP {error?.code})</Text>
-          {#if error?.stack}
-            <label for="stacktrace">{$t('stacktrace')}</label>
-            <pre id="stacktrace" class="text-xs">{error.stack}</pre>
-          {/if}
-        </CardBody>
-
-        <CardFooter class="items-start">
-          <Link href="https://discord.immich.app" class="flex grow basis-0 justify-center">
-            <VStack>
-              <Icon icon={mdiMessage} size="24" />
-              <Text size="small" class="text-center">{$t('get_help')}</Text>
-            </VStack>
-          </Link>
-          <Link href="https://github.com/immich-app/immich/releases" class="flex grow basis-0 justify-center">
-            <VStack>
-              <Icon icon={mdiPartyPopper} size="24" />
-              <Text size="small" class="text-center">{$t('read_changelog')}</Text>
-            </VStack>
-          </Link>
-          <Link href="https://docs.immich.app/guides/docker-help" class="flex grow basis-0 justify-center">
-            <VStack>
-              <Icon icon={mdiCodeTags} size="24" />
-              <Text size="small" class="text-center">{$t('check_logs')}</Text>
-            </VStack>
-          </Link>
-        </CardFooter>
-      </Card>
-    </div>
-  </div>
-</div>
+<FrameleafErrorPage standalone title={$t(copy.title)} message={$t(copy.body)} {code} {icon} {actions} />

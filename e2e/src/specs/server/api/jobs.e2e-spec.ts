@@ -1,8 +1,19 @@
-import { LoginResponseDto, QueueCommand, QueueName, updateConfig } from '@immich/sdk';
+import {
+  AssetJobName,
+  LoginResponseDto,
+  QueueCommand,
+  QueueName,
+  getAssetInfo,
+  getQueue,
+  runAssetJobs,
+  updateConfig,
+} from '@immich/sdk';
 import { cpSync, rmSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { basename } from 'node:path';
-import { asBearerAuth, testAssetDir, utils } from 'src/utils.js';
+import { createUserDto } from 'src/fixtures.js';
+import { app, asBearerAuth, testAssetDir, utils } from 'src/utils.js';
+import request from 'supertest';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 describe('/jobs', () => {
@@ -212,6 +223,67 @@ describe('/jobs', () => {
       expect(assetAfter.thumbhash).toEqual(assetBefore.thumbhash);
 
       rmSync(path);
+    });
+  });
+
+  describe('POST /queues/:name/jobs/retry-failed (FL-71)', () => {
+    let failed = 0;
+    let assetId = '';
+
+    beforeAll(async () => {
+      // A thumbnail job that fails deterministically: an image whose original is removed from disk
+      // after upload, then asked for new thumbnails. (An unreadable upload is not a failure: the
+      // thumbnail handler skips an unsupported format.)
+      const asset = await utils.createAsset(admin.accessToken);
+      assetId = asset.id;
+      await utils.waitForQueueFinish(admin.accessToken, 'metadataExtraction');
+      await utils.waitForQueueFinish(admin.accessToken, 'thumbnailGeneration');
+      const { originalPath } = await getAssetInfo({ id: asset.id }, { headers: asBearerAuth(admin.accessToken) });
+      await utils.deleteFile(originalPath);
+      await runAssetJobs(
+        { assetJobsDto: { assetIds: [asset.id], name: AssetJobName.RegenerateThumbnail } },
+        { headers: asBearerAuth(admin.accessToken) },
+      );
+      await utils.waitForQueueFinish(admin.accessToken, 'thumbnailGeneration');
+      const queue = await getQueue(
+        { name: QueueName.ThumbnailGeneration },
+        { headers: asBearerAuth(admin.accessToken) },
+      );
+      failed = queue.statistics.failed;
+    });
+
+    it('lists the failed job with the account that owns its asset and the server as its worker', async () => {
+      expect(failed).toBeGreaterThan(0);
+      const { status, body } = await request(app)
+        .get(`/queues/${QueueName.ThumbnailGeneration}/jobs`)
+        .query({ status: ['failed'] })
+        .set('Authorization', `Bearer ${admin.accessToken}`);
+
+      expect(status).toBe(200);
+      // Failed jobs live in Redis and outlive the database reset between specs, so look at this spec's own job.
+      const job = body.find((job: { data: { id?: string } }) => job.data.id === assetId);
+      expect(job).toBeDefined();
+      expect(job.account).toEqual({ id: admin.userId, name: expect.any(String) });
+      expect(job.worker).toEqual({ kind: 'server', name: null });
+    });
+
+    it('is for administrators only', async () => {
+      const user = await utils.userSetup(admin.accessToken, createUserDto.user1);
+      const { status } = await request(app)
+        .post(`/queues/${QueueName.ThumbnailGeneration}/jobs/retry-failed`)
+        .set('Authorization', `Bearer ${user.accessToken}`);
+
+      expect(status).toBe(403);
+    });
+
+    it('puts every failed job back in the queue and reports how many', async () => {
+      expect(failed).toBeGreaterThan(0);
+      const { status, body } = await request(app)
+        .post(`/queues/${QueueName.ThumbnailGeneration}/jobs/retry-failed`)
+        .set('Authorization', `Bearer ${admin.accessToken}`);
+
+      expect(status).toBe(200);
+      expect(body).toEqual({ count: failed });
     });
   });
 });

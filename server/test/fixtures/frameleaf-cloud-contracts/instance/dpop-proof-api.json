@@ -1,0 +1,19 @@
+{
+  "header": {
+    "typ": "dpop+jwt",
+    "alg": "EdDSA",
+    "jwk": {
+      "kty": "OKP",
+      "crv": "Ed25519",
+      "x": "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo"
+    }
+  },
+  "payload": {
+    "jti": "b7e03d51-2c8a-4f6e-9d14-0a3b5c7e9f21",
+    "htm": "POST",
+    "htu": "https://api.frameleaf.cloud/v1/instance/heartbeat",
+    "iat": 1790395201,
+    "nonce": "AljIAxsuUF8ZNxTTTtqPkWk9XluZizc-A7gYLBvl48o",
+    "ath": "-bOxoleeEk7pKw-QYaafIZrad6gM1rbzTe_N1A2POlk"
+  }
+}

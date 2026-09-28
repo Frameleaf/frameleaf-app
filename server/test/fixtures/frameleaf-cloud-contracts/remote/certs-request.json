@@ -1,0 +1,7 @@
+{
+  "serial": "04:1f:9a:7c:2e:55:0b:13:77:aa:c0:de:12:34:56:78:9a:bc",
+  "issuer": "C=US, O=Let's Encrypt, CN=R11",
+  "notBefore": "2026-09-25T16:00:00.000Z",
+  "notAfter": "2026-11-09T16:00:00.000Z",
+  "names": ["*.u225vlzhsdlhwh4l.frameleaf.net", "u225vlzhsdlhwh4l.frameleaf.net"]
+}

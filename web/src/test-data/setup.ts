@@ -3,9 +3,11 @@ import { init } from 'svelte-i18n';
 
 beforeAll(async () => {
   await init({ fallbackLocale: 'dev' });
-  Element.prototype.animate = vi.fn().mockImplementation(function () {
-    return { cancel: () => {}, finished: Promise.resolve() };
-  });
+  // A plain function, not `vi.fn()`: a spec's `vi.resetAllMocks()` would otherwise strip the
+  // implementation and every later animation (toasts, transitions) would get `undefined` back.
+  Element.prototype.animate = function () {
+    return { cancel: () => {}, finished: Promise.resolve() } as unknown as Animation;
+  };
 });
 
 if (!('part' in HTMLElement.prototype)) {
@@ -64,3 +66,22 @@ vi.mock('$env/dynamic/public', () => {
     },
   };
 });
+
+// happy-dom's `:checked` never matches a selected <option>, and Svelte's `bind:value` on a
+// <select> reads the chosen option through `select.querySelector(':checked')`, so every bound
+// select would read back its first option. Answer that one query from the element's real
+// selectedness; every other selector goes to happy-dom unchanged.
+const nativeSelectQuery = HTMLSelectElement.prototype.querySelector;
+const nativeSelectQueryAll = HTMLSelectElement.prototype.querySelectorAll;
+HTMLSelectElement.prototype.querySelector = function (this: HTMLSelectElement, selector: string) {
+  if (selector === ':checked') {
+    return [...this.options].find((option) => option.selected) ?? null;
+  }
+  return nativeSelectQuery.call(this, selector);
+} as typeof HTMLSelectElement.prototype.querySelector;
+HTMLSelectElement.prototype.querySelectorAll = function (this: HTMLSelectElement, selector: string) {
+  if (selector === ':checked') {
+    return [...this.options].filter((option) => option.selected) as unknown as NodeListOf<HTMLOptionElement>;
+  }
+  return nativeSelectQueryAll.call(this, selector);
+} as typeof HTMLSelectElement.prototype.querySelectorAll;

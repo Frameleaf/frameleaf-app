@@ -1,54 +1,85 @@
 <script lang="ts">
+  import { Icon } from '@immich/ui';
+  import { mdiAlertCircleOutline } from '@mdi/js';
   import { goto } from '$app/navigation';
-  import AuthPageLayout from '$lib/components/layouts/AuthPageLayout.svelte';
+  import AuthShell from '$lib/components/frameleaf/AuthShell.svelte';
+  import AuthPasswordField from '$lib/components/frameleaf/AuthPasswordField.svelte';
+  import AuthPasswordQuality from '$lib/components/frameleaf/AuthPasswordQuality.svelte';
+  import { preservePreferenceForPasswordChange } from '$lib/frameleaf/auth-session-preference';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { Route } from '$lib/route';
+  import { getServerErrorMessage } from '$lib/utils/handle-error';
   import { updateMyUser } from '@immich/sdk';
-  import { Alert, Button, Field, HelperText, PasswordInput, Stack, Text } from '@immich/ui';
   import { t } from 'svelte-i18n';
-  import type { PageData } from './$types';
-
-  interface Props {
-    data: PageData;
-  }
-
-  let { data }: Props = $props();
 
   let password = $state('');
   let passwordConfirm = $state('');
-  const valid = $derived(password === passwordConfirm && passwordConfirm.length > 0);
-  const errorMessage = $derived(passwordConfirm.length === 0 || valid ? '' : $t('password_does_not_match'));
+  let loading = $state(false);
+  let errorMessage = $state('');
+  const mismatch = $derived(passwordConfirm.length > 0 && password !== passwordConfirm);
+  // The strength meter is advisory only: the server decides which passwords it accepts.
+  const ready = $derived(password.length > 0 && password === passwordConfirm);
 
-  const onSubmit = async () => {
-    if (!valid) {
+  const onSubmit = async (event: SubmitEvent) => {
+    event.preventDefault();
+    if (!ready || loading) {
       return;
     }
-
-    await updateMyUser({ userUpdateMeDto: { password } });
-    await goto(Route.logout());
+    if (!preservePreferenceForPasswordChange()) {
+      errorMessage = $t('frameleaf_auth_error_storage_session_choice');
+      return;
+    }
+    loading = true;
+    errorMessage = '';
+    try {
+      await updateMyUser({ userUpdateMeDto: { password } });
+      await goto(Route.logout());
+    } catch (error) {
+      errorMessage = getServerErrorMessage(error) || $t('frameleaf_auth_change_password_failed');
+    } finally {
+      loading = false;
+    }
   };
 </script>
 
-<AuthPageLayout title={data.meta.title}>
-  <form onsubmit={onSubmit} class="flex flex-col gap-4">
-    <Alert color="primary" size="small" class="mb-2">
-      <Stack gap={4}>
-        <Text>{$t('hi_user', { values: { name: authManager.user.name, email: authManager.user.email } })}</Text>
-        <Text>{$t('change_password_description')}</Text>
-      </Stack>
-    </Alert>
-
-    <Field label={$t('new_password')} required>
-      <PasswordInput bind:value={password} autocomplete="new-password" />
-    </Field>
-
-    <Field label={$t('confirm_password')} required>
-      <PasswordInput bind:value={passwordConfirm} autocomplete="new-password" />
-      <HelperText color="danger">{errorMessage}</HelperText>
-    </Field>
-
-    <Button class="mt-2" type="submit" size="large" shape="round" fullWidth disabled={!valid}
-      >{$t('to_change_password')}</Button
+<AuthShell>
+  <div class="auth-heading">
+    <h1>{$t('frameleaf_auth_change_password_title')}</h1>
+    <p>{$t('frameleaf_auth_change_password_body')}</p>
+  </div>
+  <form class="auth-card auth-form" onsubmit={onSubmit} novalidate>
+    {#if errorMessage}<p class="auth-error" role="alert">
+        <Icon icon={mdiAlertCircleOutline} size="16" /><span>{errorMessage}</span>
+      </p>{/if}
+    <div class="auth-field">
+      <label for="account-email">{$t('frameleaf_auth_account')}</label><input
+        id="account-email"
+        value={authManager.user.email}
+        readonly
+        autocomplete="username"
+      />
+    </div>
+    <AuthPasswordField
+      id="new-password"
+      label={$t('frameleaf_auth_new_password')}
+      autofocus
+      bind:value={password}
+      describedBy="new-password-quality"
+    />
+    <AuthPasswordQuality id="new-password-quality" {password} />
+    <AuthPasswordField
+      id="confirm-password"
+      label={$t('frameleaf_auth_confirm_new_password')}
+      bind:value={passwordConfirm}
+      invalid={mismatch}
+      describedBy={mismatch ? 'new-password-match' : undefined}
+    />
+    {#if mismatch}<span class="auth-field-hint" id="new-password-match"
+        >{$t('frameleaf_auth_passwords_mismatch_hint')}</span
+      >{/if}
+    <button type="submit" class="button primary auth-submit" disabled={!ready || loading}
+      >{loading ? $t('frameleaf_auth_saving') : $t('frameleaf_auth_save_and_continue')}</button
     >
+    <a href={Route.logout()} class="auth-link">{$t('frameleaf_auth_sign_out_instead')}</a>
   </form>
-</AuthPageLayout>
+</AuthShell>

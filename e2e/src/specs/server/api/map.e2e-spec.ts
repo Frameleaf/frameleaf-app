@@ -7,6 +7,8 @@ import { app, testAssetDir, utils } from 'src/utils.js';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+const countOf = (buckets: { count: number }[]) => buckets.reduce((sum, bucket) => sum + bucket.count, 0);
+
 describe('/map', () => {
   let websocket: Socket;
   let partnerWebsocket: Socket;
@@ -70,6 +72,10 @@ describe('/map', () => {
           lat: expect.closeTo(39.115),
           lon: expect.closeTo(-108.400968),
           state: 'Colorado',
+          originalFileName: expect.any(String),
+          type: 'IMAGE',
+          fileCreatedAt: expect.any(String),
+          localDateTime: expect.any(String),
         },
         {
           city: 'Ralston',
@@ -78,6 +84,10 @@ describe('/map', () => {
           lat: expect.closeTo(41.2203),
           lon: expect.closeTo(-96.071625),
           state: 'Nebraska',
+          originalFileName: expect.any(String),
+          type: 'IMAGE',
+          fileCreatedAt: expect.any(String),
+          localDateTime: expect.any(String),
         },
       ]);
     });
@@ -118,6 +128,10 @@ describe('/map', () => {
           lat: expect.closeTo(39.115),
           lon: expect.closeTo(-108.400968),
           state: 'Colorado',
+          originalFileName: expect.any(String),
+          type: 'IMAGE',
+          fileCreatedAt: expect.any(String),
+          localDateTime: expect.any(String),
         },
         {
           city: 'Ralston',
@@ -126,8 +140,122 @@ describe('/map', () => {
           lat: expect.closeTo(41.2203),
           lon: expect.closeTo(-96.071625),
           state: 'Nebraska',
+          originalFileName: expect.any(String),
+          type: 'IMAGE',
+          fileCreatedAt: expect.any(String),
+          localDateTime: expect.any(String),
         },
       ]);
+    });
+  });
+
+  describe('GET /map/statistics (FL-51)', () => {
+    it("counts the viewer's own archived items and never a partner's archived ones", async () => {
+      const { status, body } = await request(app)
+        .get('/map/statistics')
+        .set('Authorization', `Bearer ${admin.accessToken}`);
+
+      expect(status).toBe(200);
+      expect(body).toEqual({ archived: 1, partner: 0, unlocated: 0 });
+    });
+
+    it('requires authentication', async () => {
+      const { status } = await request(app).get('/map/statistics');
+      expect(status).toBe(401);
+    });
+  });
+
+  describe('partner revocation and bounds (FL-51)', () => {
+    it("drops a partner's located items from the markers, the counts and the bounds once the partner stops sharing", async () => {
+      const { id: partnerLocatedId } = await utils.createAsset(partner.accessToken, {
+        assetData: {
+          // not the partner's archived thompson-springs.jpg, which the upload would answer as a duplicate
+          bytes: await readFile(join(testAssetDir, 'metadata/dates/datetimeoriginal-gps.jpg')),
+          filename: 'datetimeoriginal-gps.jpg',
+        },
+      });
+      await utils.waitForWebsocketEvent({ event: 'assetUpload', id: partnerLocatedId });
+
+      const markerIds = async () => {
+        const { body } = await request(app)
+          .get('/map/markers')
+          .query({ withPartners: true })
+          .set('Authorization', `Bearer ${admin.accessToken}`);
+        return body.map((marker: { id: string }) => marker.id);
+      };
+      const statistics = async () => {
+        const { body } = await request(app).get('/map/statistics').set('Authorization', `Bearer ${admin.accessToken}`);
+        return body;
+      };
+      const bucketsInBounds = async (bbox: string) => {
+        const { body } = await request(app)
+          .get('/timeline/buckets')
+          .query({ bbox, withPartners: true, visibility: AssetVisibility.Timeline })
+          .set('Authorization', `Bearer ${admin.accessToken}`);
+        return body as { count: number }[];
+      };
+
+      // the timeline (and so its bounds) shows a partner only once the viewer turns them on
+      const { status: shown } = await request(app)
+        .put(`/partners/${partner.userId}`)
+        .set('Authorization', `Bearer ${admin.accessToken}`)
+        .send({ inTimeline: true });
+      expect(shown).toBe(200);
+
+      expect(await markerIds()).toContain(partnerLocatedId);
+      expect(await statistics()).toEqual(expect.objectContaining({ partner: 1 }));
+      // the whole world holds the admin's two located timeline items and the partner's one; an empty
+      // sea holds nothing, and archived items stay out of the bounds as they stay off the timeline
+      expect(countOf(await bucketsInBounds('-180,-90,180,90'))).toBe(3);
+      expect(await bucketsInBounds('-150,-65,-140,-55')).toEqual([]);
+
+      const { status } = await request(app)
+        .delete(`/partners/${admin.userId}`)
+        .set('Authorization', `Bearer ${partner.accessToken}`);
+      expect(status).toBe(204);
+
+      expect(await markerIds()).not.toContain(partnerLocatedId);
+      expect(await statistics()).toEqual(expect.objectContaining({ partner: 0 }));
+      expect(countOf(await bucketsInBounds('-180,-90,180,90'))).toBe(2);
+    });
+  });
+
+  describe('batch location changes (FL-51)', () => {
+    it('refuses invalid coordinates and foreign items, and the markers follow a move and a removal', async () => {
+      const markers = async () => {
+        const { body } = await request(app).get('/map/markers').set('Authorization', `Bearer ${admin.accessToken}`);
+        return body as { id: string; lat: number; lon: number }[];
+      };
+      const [first, second] = await markers();
+      const put = (body: object) =>
+        request(app).put('/assets').set('Authorization', `Bearer ${admin.accessToken}`).send(body);
+
+      for (const coordinates of [
+        { latitude: 91, longitude: 0 },
+        { latitude: 0, longitude: -181 },
+        { latitude: 10 },
+        { latitude: null, longitude: 10 },
+      ]) {
+        const { status } = await put({ ids: [first.id], ...coordinates });
+        expect(status).toBe(400);
+      }
+      // the partner's archived item is not the admin's to change: the whole batch is refused
+      const { status: foreign } = await put({ ids: [first.id, partnerArchivedAssetId], latitude: 1, longitude: 2 });
+      expect(foreign).toBe(400);
+      expect(await markers()).toEqual(
+        expect.arrayContaining([expect.objectContaining({ id: first.id, lat: first.lat })]),
+      );
+
+      const { status: moved } = await put({ ids: [first.id], latitude: 12.5, longitude: 34.5 });
+      expect(moved).toBe(204);
+      const { status: removed } = await put({ ids: [second.id], latitude: null, longitude: null });
+      expect(removed).toBe(204);
+
+      const after = await markers();
+      expect(after).toContainEqual(expect.objectContaining({ id: first.id, lat: 12.5, lon: 34.5 }));
+      expect(after.map(({ id }) => id)).not.toContain(second.id);
+      const { body } = await request(app).get('/map/statistics').set('Authorization', `Bearer ${admin.accessToken}`);
+      expect(body).toEqual(expect.objectContaining({ unlocated: 1 }));
     });
   });
 

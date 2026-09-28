@@ -25,7 +25,25 @@ where
         inner join "asset" on "asset"."id" = "memory_asset"."assetId"
       where
         "memory_asset"."memoriesId" = "memory"."id"
-        and "asset"."visibility" = 'timeline'
+        and not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "asset"."id"
+        )
+        and (
+          "asset"."visibility" = 'timeline'
+          and not exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "asset"."id"
+          )
+        )
         and "asset"."deletedAt" is null
         and not (
           case
@@ -69,6 +87,66 @@ where
           end
         )
     )
+  )
+  and not exists (
+    select
+      1
+    from
+      memory_asset as hidden_memory_asset
+      inner join asset as hidden_memory_item on hidden_memory_item.id = hidden_memory_asset."assetId"
+    where
+      hidden_memory_asset."memoriesId" = "memory"."id"
+      and (
+        not not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "hidden_memory_item"."id"
+        )
+        or (
+          case
+            when "hidden_memory_item"."id" is null then false
+            when coalesce(
+              (
+                select
+                  phase
+                from
+                  immich_fork.state
+                where
+                  id = 1
+              ),
+              'inactive'
+            ) in ('legacy', 'dual-write', 'ready') then exists (
+              select
+                1
+              from
+                asset as nsfw_asset
+              where
+                nsfw_asset.id = "hidden_memory_item"."id"
+                and nsfw_asset.is_nsfw = true
+            )
+            when (
+              select
+                phase
+              from
+                immich_fork.state
+              where
+                id = 1
+            ) = 'active' then not exists (
+              select
+                1
+              from
+                immich_fork.asset_privacy as privacy_asset
+              where
+                privacy_asset."assetId" = "hidden_memory_item"."id"
+                and privacy_asset."isNsfw" = false
+            )
+            else false
+          end
+        )
+      )
   )
 
 -- MemoryRepository.statistics (date filter)
@@ -104,7 +182,25 @@ where
         inner join "asset" on "asset"."id" = "memory_asset"."assetId"
       where
         "memory_asset"."memoriesId" = "memory"."id"
-        and "asset"."visibility" = 'timeline'
+        and not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "asset"."id"
+        )
+        and (
+          "asset"."visibility" = 'timeline'
+          and not exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "asset"."id"
+          )
+        )
         and "asset"."deletedAt" is null
         and not (
           case
@@ -149,6 +245,66 @@ where
         )
     )
   )
+  and not exists (
+    select
+      1
+    from
+      memory_asset as hidden_memory_asset
+      inner join asset as hidden_memory_item on hidden_memory_item.id = hidden_memory_asset."assetId"
+    where
+      hidden_memory_asset."memoriesId" = "memory"."id"
+      and (
+        not not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "hidden_memory_item"."id"
+        )
+        or (
+          case
+            when "hidden_memory_item"."id" is null then false
+            when coalesce(
+              (
+                select
+                  phase
+                from
+                  immich_fork.state
+                where
+                  id = 1
+              ),
+              'inactive'
+            ) in ('legacy', 'dual-write', 'ready') then exists (
+              select
+                1
+              from
+                asset as nsfw_asset
+              where
+                nsfw_asset.id = "hidden_memory_item"."id"
+                and nsfw_asset.is_nsfw = true
+            )
+            when (
+              select
+                phase
+              from
+                immich_fork.state
+              where
+                id = 1
+            ) = 'active' then not exists (
+              select
+                1
+              from
+                immich_fork.asset_privacy as privacy_asset
+              where
+                privacy_asset."assetId" = "hidden_memory_item"."id"
+                and privacy_asset."isNsfw" = false
+            )
+            else false
+          end
+        )
+      )
+  )
 
 -- MemoryRepository.search
 select
@@ -164,7 +320,17 @@ select
           inner join "memory_asset" on "asset"."id" = "memory_asset"."assetId"
         where
           "memory_asset"."memoriesId" = "memory"."id"
-          and "asset"."visibility" = 'timeline'
+          and (
+            "asset"."visibility" = 'timeline'
+            and not exists (
+              select
+                1
+              from
+                asset_lock
+              where
+                asset_lock."assetId" = "asset"."id"
+            )
+          )
           and "asset"."deletedAt" is null
           and not (
             case
@@ -217,6 +383,46 @@ select
             where
               "asset_face"."assetId" = "asset"."id"
               and "person"."isHidden" = $2
+          )
+          and not exists (
+            select
+              "pet_observation"."assetId"
+            from
+              "pet_observation"
+              inner join "pet" on "pet"."id" = "pet_observation"."petId"
+              and "pet"."ownerId" = "asset"."ownerId"
+            where
+              "pet_observation"."assetId" = "asset"."id"
+              and "pet_observation"."state" = 'confirmed'
+              and "pet"."isHidden" is true
+          )
+          and (
+            "memory"."type" not in ('birthday', 'person_recap')
+            or (
+              "memory"."data" ->> 'subject' = 'person'
+              and exists (
+                select
+                from
+                  "asset_face"
+                where
+                  "asset_face"."assetId" = "asset"."id"
+                  and "asset_face"."deletedAt" is null
+                  and "asset_face"."isVisible" = true
+                  and "asset_face"."personGroupId"::text = "memory"."data" ->> 'subjectId'
+              )
+            )
+            or (
+              "memory"."data" ->> 'subject' = 'pet'
+              and exists (
+                select
+                from
+                  "pet_observation"
+                where
+                  "pet_observation"."assetId" = "asset"."id"
+                  and "pet_observation"."state" = 'confirmed'
+                  and "pet_observation"."petId"::text = "memory"."data" ->> 'subjectId'
+              )
+            )
           )
         order by
           "asset"."fileCreatedAt" asc
@@ -245,7 +451,25 @@ where
         inner join "asset" on "asset"."id" = "memory_asset"."assetId"
       where
         "memory_asset"."memoriesId" = "memory"."id"
-        and "asset"."visibility" = 'timeline'
+        and not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "asset"."id"
+        )
+        and (
+          "asset"."visibility" = 'timeline'
+          and not exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "asset"."id"
+          )
+        )
         and "asset"."deletedAt" is null
         and not (
           case
@@ -290,6 +514,66 @@ where
         )
     )
   )
+  and not exists (
+    select
+      1
+    from
+      memory_asset as hidden_memory_asset
+      inner join asset as hidden_memory_item on hidden_memory_item.id = hidden_memory_asset."assetId"
+    where
+      hidden_memory_asset."memoriesId" = "memory"."id"
+      and (
+        not not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "hidden_memory_item"."id"
+        )
+        or (
+          case
+            when "hidden_memory_item"."id" is null then false
+            when coalesce(
+              (
+                select
+                  phase
+                from
+                  immich_fork.state
+                where
+                  id = 1
+              ),
+              'inactive'
+            ) in ('legacy', 'dual-write', 'ready') then exists (
+              select
+                1
+              from
+                asset as nsfw_asset
+              where
+                nsfw_asset.id = "hidden_memory_item"."id"
+                and nsfw_asset.is_nsfw = true
+            )
+            when (
+              select
+                phase
+              from
+                immich_fork.state
+              where
+                id = 1
+            ) = 'active' then not exists (
+              select
+                1
+              from
+                immich_fork.asset_privacy as privacy_asset
+              where
+                privacy_asset."assetId" = "hidden_memory_item"."id"
+                and privacy_asset."isNsfw" = false
+            )
+            else false
+          end
+        )
+      )
+  )
 order by
   "showAt" desc nulls last,
   "memoryAt" desc
@@ -308,7 +592,17 @@ select
           inner join "memory_asset" on "asset"."id" = "memory_asset"."assetId"
         where
           "memory_asset"."memoriesId" = "memory"."id"
-          and "asset"."visibility" = 'timeline'
+          and (
+            "asset"."visibility" = 'timeline'
+            and not exists (
+              select
+                1
+              from
+                asset_lock
+              where
+                asset_lock."assetId" = "asset"."id"
+            )
+          )
           and "asset"."deletedAt" is null
           and not (
             case
@@ -361,6 +655,46 @@ select
             where
               "asset_face"."assetId" = "asset"."id"
               and "person"."isHidden" = $2
+          )
+          and not exists (
+            select
+              "pet_observation"."assetId"
+            from
+              "pet_observation"
+              inner join "pet" on "pet"."id" = "pet_observation"."petId"
+              and "pet"."ownerId" = "asset"."ownerId"
+            where
+              "pet_observation"."assetId" = "asset"."id"
+              and "pet_observation"."state" = 'confirmed'
+              and "pet"."isHidden" is true
+          )
+          and (
+            "memory"."type" not in ('birthday', 'person_recap')
+            or (
+              "memory"."data" ->> 'subject' = 'person'
+              and exists (
+                select
+                from
+                  "asset_face"
+                where
+                  "asset_face"."assetId" = "asset"."id"
+                  and "asset_face"."deletedAt" is null
+                  and "asset_face"."isVisible" = true
+                  and "asset_face"."personGroupId"::text = "memory"."data" ->> 'subjectId'
+              )
+            )
+            or (
+              "memory"."data" ->> 'subject' = 'pet'
+              and exists (
+                select
+                from
+                  "pet_observation"
+                where
+                  "pet_observation"."assetId" = "asset"."id"
+                  and "pet_observation"."state" = 'confirmed'
+                  and "pet_observation"."petId"::text = "memory"."data" ->> 'subjectId'
+              )
+            )
           )
         order by
           "asset"."fileCreatedAt" asc
@@ -397,7 +731,25 @@ where
         inner join "asset" on "asset"."id" = "memory_asset"."assetId"
       where
         "memory_asset"."memoriesId" = "memory"."id"
-        and "asset"."visibility" = 'timeline'
+        and not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "asset"."id"
+        )
+        and (
+          "asset"."visibility" = 'timeline'
+          and not exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "asset"."id"
+          )
+        )
         and "asset"."deletedAt" is null
         and not (
           case
@@ -442,6 +794,66 @@ where
         )
     )
   )
+  and not exists (
+    select
+      1
+    from
+      memory_asset as hidden_memory_asset
+      inner join asset as hidden_memory_item on hidden_memory_item.id = hidden_memory_asset."assetId"
+    where
+      hidden_memory_asset."memoriesId" = "memory"."id"
+      and (
+        not not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "hidden_memory_item"."id"
+        )
+        or (
+          case
+            when "hidden_memory_item"."id" is null then false
+            when coalesce(
+              (
+                select
+                  phase
+                from
+                  immich_fork.state
+                where
+                  id = 1
+              ),
+              'inactive'
+            ) in ('legacy', 'dual-write', 'ready') then exists (
+              select
+                1
+              from
+                asset as nsfw_asset
+              where
+                nsfw_asset.id = "hidden_memory_item"."id"
+                and nsfw_asset.is_nsfw = true
+            )
+            when (
+              select
+                phase
+              from
+                immich_fork.state
+              where
+                id = 1
+            ) = 'active' then not exists (
+              select
+                1
+              from
+                immich_fork.asset_privacy as privacy_asset
+              where
+                privacy_asset."assetId" = "hidden_memory_item"."id"
+                and privacy_asset."isNsfw" = false
+            )
+            else false
+          end
+        )
+      )
+  )
 order by
   "showAt" desc nulls last,
   "memoryAt" desc
@@ -460,7 +872,17 @@ select
           inner join "memory_asset" on "asset"."id" = "memory_asset"."assetId"
         where
           "memory_asset"."memoriesId" = "memory"."id"
-          and "asset"."visibility" = 'timeline'
+          and (
+            "asset"."visibility" = 'timeline'
+            and not exists (
+              select
+                1
+              from
+                asset_lock
+              where
+                asset_lock."assetId" = "asset"."id"
+            )
+          )
           and "asset"."deletedAt" is null
           and not (
             case
@@ -513,6 +935,46 @@ select
             where
               "asset_face"."assetId" = "asset"."id"
               and "person"."isHidden" = $2
+          )
+          and not exists (
+            select
+              "pet_observation"."assetId"
+            from
+              "pet_observation"
+              inner join "pet" on "pet"."id" = "pet_observation"."petId"
+              and "pet"."ownerId" = "asset"."ownerId"
+            where
+              "pet_observation"."assetId" = "asset"."id"
+              and "pet_observation"."state" = 'confirmed'
+              and "pet"."isHidden" is true
+          )
+          and (
+            "memory"."type" not in ('birthday', 'person_recap')
+            or (
+              "memory"."data" ->> 'subject' = 'person'
+              and exists (
+                select
+                from
+                  "asset_face"
+                where
+                  "asset_face"."assetId" = "asset"."id"
+                  and "asset_face"."deletedAt" is null
+                  and "asset_face"."isVisible" = true
+                  and "asset_face"."personGroupId"::text = "memory"."data" ->> 'subjectId'
+              )
+            )
+            or (
+              "memory"."data" ->> 'subject' = 'pet'
+              and exists (
+                select
+                from
+                  "pet_observation"
+                where
+                  "pet_observation"."assetId" = "asset"."id"
+                  and "pet_observation"."state" = 'confirmed'
+                  and "pet_observation"."petId"::text = "memory"."data" ->> 'subjectId'
+              )
+            )
           )
         order by
           "asset"."fileCreatedAt" asc
@@ -542,7 +1004,25 @@ where
         inner join "asset" on "asset"."id" = "memory_asset"."assetId"
       where
         "memory_asset"."memoriesId" = "memory"."id"
-        and "asset"."visibility" = 'timeline'
+        and not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "asset"."id"
+        )
+        and (
+          "asset"."visibility" = 'timeline'
+          and not exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "asset"."id"
+          )
+        )
         and "asset"."deletedAt" is null
         and not (
           case
@@ -587,6 +1067,66 @@ where
         )
     )
   )
+  and not exists (
+    select
+      1
+    from
+      memory_asset as hidden_memory_asset
+      inner join asset as hidden_memory_item on hidden_memory_item.id = hidden_memory_asset."assetId"
+    where
+      hidden_memory_asset."memoriesId" = "memory"."id"
+      and (
+        not not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "hidden_memory_item"."id"
+        )
+        or (
+          case
+            when "hidden_memory_item"."id" is null then false
+            when coalesce(
+              (
+                select
+                  phase
+                from
+                  immich_fork.state
+                where
+                  id = 1
+              ),
+              'inactive'
+            ) in ('legacy', 'dual-write', 'ready') then exists (
+              select
+                1
+              from
+                asset as nsfw_asset
+              where
+                nsfw_asset.id = "hidden_memory_item"."id"
+                and nsfw_asset.is_nsfw = true
+            )
+            when (
+              select
+                phase
+              from
+                immich_fork.state
+              where
+                id = 1
+            ) = 'active' then not exists (
+              select
+                1
+              from
+                immich_fork.asset_privacy as privacy_asset
+              where
+                privacy_asset."assetId" = "hidden_memory_item"."id"
+                and privacy_asset."isNsfw" = false
+            )
+            else false
+          end
+        )
+      )
+  )
 order by
   "showAt" desc nulls last,
   "memoryAt" desc
@@ -605,7 +1145,17 @@ select
           inner join "memory_asset" on "asset"."id" = "memory_asset"."assetId"
         where
           "memory_asset"."memoriesId" = "memory"."id"
-          and "asset"."visibility" = 'timeline'
+          and (
+            "asset"."visibility" = 'timeline'
+            and not exists (
+              select
+                1
+              from
+                asset_lock
+              where
+                asset_lock."assetId" = "asset"."id"
+            )
+          )
           and "asset"."deletedAt" is null
           and not (
             case
@@ -658,6 +1208,46 @@ select
             where
               "asset_face"."assetId" = "asset"."id"
               and "person"."isHidden" = $2
+          )
+          and not exists (
+            select
+              "pet_observation"."assetId"
+            from
+              "pet_observation"
+              inner join "pet" on "pet"."id" = "pet_observation"."petId"
+              and "pet"."ownerId" = "asset"."ownerId"
+            where
+              "pet_observation"."assetId" = "asset"."id"
+              and "pet_observation"."state" = 'confirmed'
+              and "pet"."isHidden" is true
+          )
+          and (
+            "memory"."type" not in ('birthday', 'person_recap')
+            or (
+              "memory"."data" ->> 'subject' = 'person'
+              and exists (
+                select
+                from
+                  "asset_face"
+                where
+                  "asset_face"."assetId" = "asset"."id"
+                  and "asset_face"."deletedAt" is null
+                  and "asset_face"."isVisible" = true
+                  and "asset_face"."personGroupId"::text = "memory"."data" ->> 'subjectId'
+              )
+            )
+            or (
+              "memory"."data" ->> 'subject' = 'pet'
+              and exists (
+                select
+                from
+                  "pet_observation"
+                where
+                  "pet_observation"."assetId" = "asset"."id"
+                  and "pet_observation"."state" = 'confirmed'
+                  and "pet_observation"."petId"::text = "memory"."data" ->> 'subjectId'
+              )
+            )
           )
         order by
           "asset"."fileCreatedAt" asc
@@ -690,7 +1280,25 @@ where
         inner join "asset" on "asset"."id" = "memory_asset"."assetId"
       where
         "memory_asset"."memoriesId" = "memory"."id"
-        and "asset"."visibility" = 'timeline'
+        and not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "asset"."id"
+        )
+        and (
+          "asset"."visibility" = 'timeline'
+          and not exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "asset"."id"
+          )
+        )
         and "asset"."deletedAt" is null
         and not (
           case
@@ -735,6 +1343,66 @@ where
         )
     )
   )
+  and not exists (
+    select
+      1
+    from
+      memory_asset as hidden_memory_asset
+      inner join asset as hidden_memory_item on hidden_memory_item.id = hidden_memory_asset."assetId"
+    where
+      hidden_memory_asset."memoriesId" = "memory"."id"
+      and (
+        not not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "hidden_memory_item"."id"
+        )
+        or (
+          case
+            when "hidden_memory_item"."id" is null then false
+            when coalesce(
+              (
+                select
+                  phase
+                from
+                  immich_fork.state
+                where
+                  id = 1
+              ),
+              'inactive'
+            ) in ('legacy', 'dual-write', 'ready') then exists (
+              select
+                1
+              from
+                asset as nsfw_asset
+              where
+                nsfw_asset.id = "hidden_memory_item"."id"
+                and nsfw_asset.is_nsfw = true
+            )
+            when (
+              select
+                phase
+              from
+                immich_fork.state
+              where
+                id = 1
+            ) = 'active' then not exists (
+              select
+                1
+              from
+                immich_fork.asset_privacy as privacy_asset
+              where
+                privacy_asset."assetId" = "hidden_memory_item"."id"
+                and privacy_asset."isNsfw" = false
+            )
+            else false
+          end
+        )
+      )
+  )
 order by
   "showAt" desc nulls last,
   "memoryAt" desc
@@ -754,7 +1422,17 @@ select
           inner join "memory_asset" on "asset"."id" = "memory_asset"."assetId"
         where
           "memory_asset"."memoriesId" = "memory"."id"
-          and "asset"."visibility" = 'timeline'
+          and (
+            "asset"."visibility" = 'timeline'
+            and not exists (
+              select
+                1
+              from
+                asset_lock
+              where
+                asset_lock."assetId" = "asset"."id"
+            )
+          )
           and "asset"."deletedAt" is null
           and not (
             case
@@ -797,6 +1475,57 @@ select
               else false
             end
           )
+          and not exists (
+            select
+              $1 as "one"
+            from
+              "asset_face"
+              inner join "person" on "person"."personGroupId" = "asset_face"."personGroupId"
+              and "person"."ownerId" = "asset"."ownerId"
+            where
+              "asset_face"."assetId" = "asset"."id"
+              and "person"."isHidden" = $2
+          )
+          and not exists (
+            select
+              "pet_observation"."assetId"
+            from
+              "pet_observation"
+              inner join "pet" on "pet"."id" = "pet_observation"."petId"
+              and "pet"."ownerId" = "asset"."ownerId"
+            where
+              "pet_observation"."assetId" = "asset"."id"
+              and "pet_observation"."state" = 'confirmed'
+              and "pet"."isHidden" is true
+          )
+          and (
+            "memory"."type" not in ('birthday', 'person_recap')
+            or (
+              "memory"."data" ->> 'subject' = 'person'
+              and exists (
+                select
+                from
+                  "asset_face"
+                where
+                  "asset_face"."assetId" = "asset"."id"
+                  and "asset_face"."deletedAt" is null
+                  and "asset_face"."isVisible" = true
+                  and "asset_face"."personGroupId"::text = "memory"."data" ->> 'subjectId'
+              )
+            )
+            or (
+              "memory"."data" ->> 'subject' = 'pet'
+              and exists (
+                select
+                from
+                  "pet_observation"
+                where
+                  "pet_observation"."assetId" = "asset"."id"
+                  and "pet_observation"."state" = 'confirmed'
+                  and "pet_observation"."petId"::text = "memory"."data" ->> 'subjectId'
+              )
+            )
+          )
         order by
           "asset"."fileCreatedAt" asc
       ) as agg
@@ -804,7 +1533,7 @@ select
 from
   "memory"
 where
-  "id" = $1
+  "id" = $3
   and "deletedAt" is null
   and (
     not exists (
@@ -823,7 +1552,25 @@ where
         inner join "asset" on "asset"."id" = "memory_asset"."assetId"
       where
         "memory_asset"."memoriesId" = "memory"."id"
-        and "asset"."visibility" = 'timeline'
+        and not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "asset"."id"
+        )
+        and (
+          "asset"."visibility" = 'timeline'
+          and not exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "asset"."id"
+          )
+        )
         and "asset"."deletedAt" is null
         and not (
           case
@@ -867,6 +1614,66 @@ where
           end
         )
     )
+  )
+  and not exists (
+    select
+      1
+    from
+      memory_asset as hidden_memory_asset
+      inner join asset as hidden_memory_item on hidden_memory_item.id = hidden_memory_asset."assetId"
+    where
+      hidden_memory_asset."memoriesId" = "memory"."id"
+      and (
+        not not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "hidden_memory_item"."id"
+        )
+        or (
+          case
+            when "hidden_memory_item"."id" is null then false
+            when coalesce(
+              (
+                select
+                  phase
+                from
+                  immich_fork.state
+                where
+                  id = 1
+              ),
+              'inactive'
+            ) in ('legacy', 'dual-write', 'ready') then exists (
+              select
+                1
+              from
+                asset as nsfw_asset
+              where
+                nsfw_asset.id = "hidden_memory_item"."id"
+                and nsfw_asset.is_nsfw = true
+            )
+            when (
+              select
+                phase
+              from
+                immich_fork.state
+              where
+                id = 1
+            ) = 'active' then not exists (
+              select
+                1
+              from
+                immich_fork.asset_privacy as privacy_asset
+              where
+                privacy_asset."assetId" = "hidden_memory_item"."id"
+                and privacy_asset."isNsfw" = false
+            )
+            else false
+          end
+        )
+      )
   )
 
 -- MemoryRepository.update
@@ -890,7 +1697,17 @@ select
           inner join "memory_asset" on "asset"."id" = "memory_asset"."assetId"
         where
           "memory_asset"."memoriesId" = "memory"."id"
-          and "asset"."visibility" = 'timeline'
+          and (
+            "asset"."visibility" = 'timeline'
+            and not exists (
+              select
+                1
+              from
+                asset_lock
+              where
+                asset_lock."assetId" = "asset"."id"
+            )
+          )
           and "asset"."deletedAt" is null
           and not (
             case
@@ -933,6 +1750,57 @@ select
               else false
             end
           )
+          and not exists (
+            select
+              $1 as "one"
+            from
+              "asset_face"
+              inner join "person" on "person"."personGroupId" = "asset_face"."personGroupId"
+              and "person"."ownerId" = "asset"."ownerId"
+            where
+              "asset_face"."assetId" = "asset"."id"
+              and "person"."isHidden" = $2
+          )
+          and not exists (
+            select
+              "pet_observation"."assetId"
+            from
+              "pet_observation"
+              inner join "pet" on "pet"."id" = "pet_observation"."petId"
+              and "pet"."ownerId" = "asset"."ownerId"
+            where
+              "pet_observation"."assetId" = "asset"."id"
+              and "pet_observation"."state" = 'confirmed'
+              and "pet"."isHidden" is true
+          )
+          and (
+            "memory"."type" not in ('birthday', 'person_recap')
+            or (
+              "memory"."data" ->> 'subject' = 'person'
+              and exists (
+                select
+                from
+                  "asset_face"
+                where
+                  "asset_face"."assetId" = "asset"."id"
+                  and "asset_face"."deletedAt" is null
+                  and "asset_face"."isVisible" = true
+                  and "asset_face"."personGroupId"::text = "memory"."data" ->> 'subjectId'
+              )
+            )
+            or (
+              "memory"."data" ->> 'subject' = 'pet'
+              and exists (
+                select
+                from
+                  "pet_observation"
+                where
+                  "pet_observation"."assetId" = "asset"."id"
+                  and "pet_observation"."state" = 'confirmed'
+                  and "pet_observation"."petId"::text = "memory"."data" ->> 'subjectId'
+              )
+            )
+          )
         order by
           "asset"."fileCreatedAt" asc
       ) as agg
@@ -940,7 +1808,7 @@ select
 from
   "memory"
 where
-  "id" = $1
+  "id" = $3
   and "deletedAt" is null
   and (
     not exists (
@@ -959,7 +1827,25 @@ where
         inner join "asset" on "asset"."id" = "memory_asset"."assetId"
       where
         "memory_asset"."memoriesId" = "memory"."id"
-        and "asset"."visibility" = 'timeline'
+        and not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "asset"."id"
+        )
+        and (
+          "asset"."visibility" = 'timeline'
+          and not exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "asset"."id"
+          )
+        )
         and "asset"."deletedAt" is null
         and not (
           case
@@ -1004,6 +1890,66 @@ where
         )
     )
   )
+  and not exists (
+    select
+      1
+    from
+      memory_asset as hidden_memory_asset
+      inner join asset as hidden_memory_item on hidden_memory_item.id = hidden_memory_asset."assetId"
+    where
+      hidden_memory_asset."memoriesId" = "memory"."id"
+      and (
+        not not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "hidden_memory_item"."id"
+        )
+        or (
+          case
+            when "hidden_memory_item"."id" is null then false
+            when coalesce(
+              (
+                select
+                  phase
+                from
+                  immich_fork.state
+                where
+                  id = 1
+              ),
+              'inactive'
+            ) in ('legacy', 'dual-write', 'ready') then exists (
+              select
+                1
+              from
+                asset as nsfw_asset
+              where
+                nsfw_asset.id = "hidden_memory_item"."id"
+                and nsfw_asset.is_nsfw = true
+            )
+            when (
+              select
+                phase
+              from
+                immich_fork.state
+              where
+                id = 1
+            ) = 'active' then not exists (
+              select
+                1
+              from
+                immich_fork.asset_privacy as privacy_asset
+              where
+                privacy_asset."assetId" = "hidden_memory_item"."id"
+                and privacy_asset."isNsfw" = false
+            )
+            else false
+          end
+        )
+      )
+  )
 
 -- MemoryRepository.delete
 delete from "memory"
@@ -1024,3 +1970,62 @@ insert into
   "memory_asset" ("memoriesId", "assetId")
 values
   ($1, $2)
+
+-- MemoryRepository.getHiddenItemIds
+select
+  "asset"."id"
+from
+  "asset"
+where
+  "asset"."id" in ($1)
+  and (
+    not not exists (
+      select
+        1
+      from
+        asset_lock
+      where
+        asset_lock."assetId" = "asset"."id"
+    )
+    or (
+      case
+        when "asset"."id" is null then false
+        when coalesce(
+          (
+            select
+              phase
+            from
+              immich_fork.state
+            where
+              id = 1
+          ),
+          'inactive'
+        ) in ('legacy', 'dual-write', 'ready') then exists (
+          select
+            1
+          from
+            asset as nsfw_asset
+          where
+            nsfw_asset.id = "asset"."id"
+            and nsfw_asset.is_nsfw = true
+        )
+        when (
+          select
+            phase
+          from
+            immich_fork.state
+          where
+            id = 1
+        ) = 'active' then not exists (
+          select
+            1
+          from
+            immich_fork.asset_privacy as privacy_asset
+          where
+            privacy_asset."assetId" = "asset"."id"
+            and privacy_asset."isNsfw" = false
+        )
+        else false
+      end
+    )
+  )

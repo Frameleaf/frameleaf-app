@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import type { JobItem } from 'src/types.js';
+import { JOBS_NOT_RETRIED } from 'src/constants.js';
 import { OnEvent } from 'src/decorators.js';
 import { mapAsset } from 'src/dtos/asset-response.dto.js';
 import { JobCreateDto } from 'src/dtos/job.dto.js';
@@ -8,6 +9,7 @@ import { ArgsOf } from 'src/repositories/event.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { hexOrBufferToBase64 } from 'src/utils/bytes.js';
 
+import { effectiveVisibilityOf, isLockedRow } from 'src/utils/locked.js';
 import { isFacialRecognitionEnabled, isImageDescriptionEnabled, isNsfwDetectionEnabled } from 'src/utils/misc.js';
 
 const asJobItem = (dto: JobCreateDto): JobItem => {
@@ -36,6 +38,10 @@ const asJobItem = (dto: JobCreateDto): JobItem => {
       return { name: JobName.DatabaseBackup };
     }
 
+    case ManualJobName.AnalyticsCollect: {
+      return { name: JobName.AnalyticsCollect };
+    }
+
     case ManualJobName.BestPhotosBackfill: {
       return { name: JobName.BestPhotosScoreQueueAll, data: { force: true } };
     }
@@ -45,7 +51,8 @@ const asJobItem = (dto: JobCreateDto): JobItem => {
     }
 
     case ManualJobName.PhysicalDeduplicationApply: {
-      return { name: JobName.PhysicalDeduplicationMigrationApply };
+      // FL-73: applying needs one specific reviewed plan, never a whole-server queue button.
+      throw new BadRequestException('Apply a reviewed plan from the Physical deduplication page');
     }
 
     case ManualJobName.IntegrityMissingFiles: {
@@ -99,22 +106,98 @@ export class JobService extends BaseService {
   @OnEvent({ name: 'JobRun' })
   async onJobRun(...[queueName, job]: ArgsOf<'JobRun'>) {
     try {
-      await this.eventRepository.emit('JobStart', queueName, job);
-      const response = await this.jobRepository.run(job);
-      await this.eventRepository.emit('JobSuccess', { job, response });
-      const shouldRunFollowUp =
-        response &&
-        typeof response === 'string' &&
-        [JobStatus.Success, JobStatus.Skipped].includes(response) &&
-        !(job.name === JobName.AssetGenerateVideoDuplicateFrames && response === JobStatus.Skipped);
-      if (shouldRunFollowUp) {
-        await this.onDone(job);
+      let response: JobStatus | undefined;
+      try {
+        await this.eventRepository.emit('JobStart', queueName, job);
+        response = await this.jobRepository.run(job);
+      } catch (error: any) {
+        await this.reportJobError(job, error);
+        // FL-71: a job whose handler throws is a failed job. Rethrown, BullMQ records it as failed with
+        // its reason and attempts, which the Job manager's Failed tab, "Retry failed" and "Remove failed
+        // records" work on. Jobs that are unsafe to run again, or whose data is sensitive, are reported
+        // but not kept (JOBS_NOT_RETRIED).
+        if (JOBS_NOT_RETRIED.has(job.name)) {
+          return;
+        }
+        throw error;
       }
-    } catch (error: any) {
-      await this.eventRepository.emit('JobError', { job, error });
+
+      // FL-71: the handler has succeeded from here on. An error in the events or follow-up jobs below
+      // is logged, not rethrown, so it cannot record the job as failed and have a retry repeat it.
+      try {
+        await this.onSuccess(job, response);
+      } catch (error: any) {
+        this.logger.error(`Unable to finish job ${job.name} after it succeeded: ${error}`, error?.stack);
+      }
     } finally {
       await this.eventRepository.emit('JobComplete', queueName, job);
     }
+  }
+
+  /** Reports a handler error; a failing listener is logged and never replaces the handler's error. */
+  private async reportJobError(job: JobItem, error: any) {
+    try {
+      await this.eventRepository.emit('JobError', { job, error });
+    } catch (listenerError: any) {
+      this.logger.error(`Unable to report the error of job ${job.name}: ${listenerError}`, listenerError?.stack);
+    }
+  }
+
+  private async onSuccess(job: JobItem, response: JobStatus | undefined) {
+    await this.eventRepository.emit('JobSuccess', { job, response });
+    const shouldRunFollowUp =
+      response &&
+      typeof response === 'string' &&
+      [JobStatus.Success, JobStatus.Skipped].includes(response) &&
+      !(job.name === JobName.AssetGenerateVideoDuplicateFrames && response === JobStatus.Skipped);
+    if (shouldRunFollowUp) {
+      await this.onDone(job);
+    } else if (job.name === JobName.AssetVideoEditGeneration && response === JobStatus.Failed) {
+      // FL-39: a failed version render still settles. Only the fork's history view listens for
+      // this; official clients would treat AssetEditReadyV2 as a published edit and refetch.
+      const asset = await this.assetRepository.getById(job.data.id);
+      if (asset) {
+        this.websocketRepository.clientSend('VideoEditVersionFailedV1', asset.ownerId, {
+          assetId: asset.id,
+          versionId: job.data.versionId ?? null,
+        });
+      }
+    }
+  }
+
+  /** Tells the owner's clients that a video edit job settled, whatever its outcome. */
+  private async sendAssetEditReady(id: string) {
+    const asset = await this.assetRepository.getById(id);
+    if (!asset) {
+      return;
+    }
+    const edits = await this.assetEditRepository.getWithSyncInfo(id);
+    this.websocketRepository.clientSend('AssetEditReadyV2', asset.ownerId, {
+      asset: {
+        id: asset.id,
+        ownerId: asset.ownerId,
+        originalFileName: asset.originalFileName,
+        thumbhash: asset.thumbhash ? hexOrBufferToBase64(asset.thumbhash) : null,
+        checksum: hexOrBufferToBase64(asset.checksum),
+        fileCreatedAt: asset.fileCreatedAt,
+        fileModifiedAt: asset.fileModifiedAt,
+        createdAt: asset.createdAt,
+        localDateTime: asset.localDateTime,
+        duration: asset.duration,
+        type: asset.type,
+        deletedAt: asset.deletedAt,
+        isFavorite: asset.isFavorite,
+        visibility: effectiveVisibilityOf(asset),
+        livePhotoVideoId: asset.livePhotoVideoId,
+        stackId: asset.stackId,
+        libraryId: asset.libraryId,
+        width: asset.width,
+        height: asset.height,
+        isEdited: asset.isEdited,
+      },
+      edit: edits,
+    });
+    return asset;
   }
 
   /**
@@ -168,7 +251,7 @@ export class JobService extends BaseService {
               type: asset.type,
               deletedAt: asset.deletedAt,
               isFavorite: asset.isFavorite,
-              visibility: asset.visibility,
+              visibility: effectiveVisibilityOf(asset),
               livePhotoVideoId: asset.livePhotoVideoId,
               stackId: asset.stackId,
               libraryId: asset.libraryId,
@@ -186,35 +269,19 @@ export class JobService extends BaseService {
       }
 
       case JobName.AssetVideoEditGeneration: {
-        const asset = await this.assetRepository.getById(item.data.id);
-        const edits = await this.assetEditRepository.getWithSyncInfo(item.data.id);
-
+        const asset = await this.sendAssetEditReady(item.data.id);
         if (asset) {
-          this.websocketRepository.clientSend('AssetEditReadyV2', asset.ownerId, {
-            asset: {
-              id: asset.id,
-              ownerId: asset.ownerId,
-              originalFileName: asset.originalFileName,
-              thumbhash: asset.thumbhash ? hexOrBufferToBase64(asset.thumbhash) : null,
-              checksum: hexOrBufferToBase64(asset.checksum),
-              fileCreatedAt: asset.fileCreatedAt,
-              fileModifiedAt: asset.fileModifiedAt,
-              createdAt: asset.createdAt,
-              localDateTime: asset.localDateTime,
-              duration: asset.duration,
-              type: asset.type,
-              deletedAt: asset.deletedAt,
-              isFavorite: asset.isFavorite,
-              visibility: asset.visibility,
-              livePhotoVideoId: asset.livePhotoVideoId,
-              stackId: asset.stackId,
-              libraryId: asset.libraryId,
-              width: asset.width,
-              height: asset.height,
-              isEdited: asset.isEdited,
-            },
-            edit: edits,
-          });
+          // Export completion updates history only. A ready save/revert also refreshes
+          // viewers and caches through the application-wide asset update subscription.
+          const version = item.data.versionId
+            ? await this.assetEditRepository.getVideoVersion(item.data.id, item.data.versionId)
+            : undefined;
+          if (!item.data.versionId || (version?.status === 'ready' && version.purpose !== 'export')) {
+            const [updatedAsset] = await this.assetRepository.getByIdsWithAllRelationsButStacks([asset.id]);
+            if (updatedAsset) {
+              this.websocketRepository.clientSend('on_asset_update', updatedAsset.ownerId, mapAsset(updatedAsset));
+            }
+          }
         }
 
         break;
@@ -257,8 +324,18 @@ export class JobService extends BaseService {
         }
 
         await this.jobRepository.queueAll(jobs);
-        if (asset.visibility === AssetVisibility.Timeline || asset.visibility === AssetVisibility.Archive) {
-          this.websocketRepository.clientSend('on_upload_success', asset.ownerId, mapAsset(asset));
+        // a locked upload (FL-34) stays out of every open timeline; the Locked view fetches it itself
+        if (
+          (asset.visibility === AssetVisibility.Timeline || asset.visibility === AssetVisibility.Archive) &&
+          !isLockedRow(asset)
+        ) {
+          // FL-169: an upload trashed before its thumbnails were ready is not announced as a new timeline
+          // item. Clients treat `on_upload_success` as "add this to the timeline", so a trashed (or
+          // permanently deleted, still awaiting removal) asset would reappear in every open timeline.
+          // The v2 event below carries `deletedAt`, so its clients place the asset correctly.
+          if (!asset.deletedAt) {
+            this.websocketRepository.clientSend('on_upload_success', asset.ownerId, mapAsset(asset));
+          }
           if (asset.exifInfo) {
             const exif = asset.exifInfo;
             this.websocketRepository.clientSend('AssetUploadReadyV2', asset.ownerId, {
@@ -277,7 +354,7 @@ export class JobService extends BaseService {
                 type: asset.type,
                 deletedAt: asset.deletedAt,
                 isFavorite: asset.isFavorite,
-                visibility: asset.visibility,
+                visibility: effectiveVisibilityOf(asset),
                 livePhotoVideoId: asset.livePhotoVideoId,
                 stackId: asset.stackId,
                 libraryId: asset.libraryId,
@@ -320,6 +397,9 @@ export class JobService extends BaseService {
       }
 
       case JobName.SmartSearch: {
+        // FL-58: a fresh CLIP embedding is what pet recognition reads. The handler returns at once
+        // for an owner who has not confirmed a pet yet, before any destination is contacted.
+        await this.jobRepository.queue({ name: JobName.PetRecognition, data: { id: item.data.id } });
         if (item.data.source === 'upload') {
           const asset = await this.assetRepository.getById(item.data.id);
           await this.jobRepository.queue({

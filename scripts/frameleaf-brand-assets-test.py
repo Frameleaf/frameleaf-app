@@ -141,19 +141,13 @@ class BrandAssetContractTests(unittest.TestCase):
 
     def test_global_rebrand_compatibility_sentinel_is_rejected(self):
         def mutation(root):
-            path = root / "mobile/pubspec.yaml"
-            path.write_text(path.read_text().replace("immich_mobile", "frameleaf_mobile"))
+            path = root / "server/package.json"
+            value = json.loads(path.read_text())
+            value["name"] = "frameleaf"
+            path.write_text(json.dumps(value))
         self.assert_invalid(mutation)
 
     def test_commented_and_disabled_compatibility_decoys_are_rejected(self):
-        def yaml_decoy(root):
-            path = root / "mobile/pubspec.yaml"
-            path.write_text(path.read_text().replace("name: immich_mobile", "# name: immich_mobile\nname: frameleaf_mobile"))
-
-        def yaml_asset_decoy(root):
-            path = root / "mobile/pubspec.yaml"
-            path.write_text(path.read_text().replace("image_path_android: 'assets/immich-logo.png'", "# image_path_android: 'assets/immich-logo.png'\n  image_path_android: 'assets/frameleaf-logo.png'"))
-
         def json_decoy(root):
             path = root / "packages/sdk/package.json"
             value = json.loads(path.read_text())
@@ -169,7 +163,7 @@ class BrandAssetContractTests(unittest.TestCase):
             path = root / "web/src/routes/+layout.svelte"
             path.write_text(path.read_text().replace("from '@immich/sdk'", "from '@frameleaf/sdk'\n  // import x from '@immich/sdk'"))
 
-        for mutation in (yaml_decoy, yaml_asset_decoy, json_decoy, toml_decoy, svelte_decoy):
+        for mutation in (json_decoy, toml_decoy, svelte_decoy):
             with self.subTest(mutation=mutation):
                 self.assert_invalid(mutation)
 

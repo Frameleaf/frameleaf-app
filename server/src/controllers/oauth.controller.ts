@@ -13,6 +13,7 @@ import {
 import { UserAdminResponseDto } from 'src/dtos/user.dto.js';
 import { ApiTag, AuthType, ImmichCookie } from 'src/enum.js';
 import { Auth, Authenticated, GetLoginDetails } from 'src/middleware/auth.guard.js';
+import { RATE_LIMITS, RateLimited } from 'src/middleware/rate-limit.guard.js';
 import { AuthService, type LoginDetails } from 'src/services/auth.service.js';
 import { respondWithCookie } from 'src/utils/response.js';
 
@@ -33,6 +34,22 @@ export class OAuthController {
   redirectOAuthToMobile(@Req() request: Request) {
     return {
       url: this.service.getMobileRedirect(request.url),
+      statusCode: HttpStatus.TEMPORARY_REDIRECT,
+    };
+  }
+
+  @Get('frameleaf-mobile-redirect')
+  @Authenticated({ public: true })
+  @Redirect()
+  @Endpoint({
+    summary: 'Redirect OAuth to the Frameleaf mobile app',
+    description:
+      'Requests to this URL are automatically forwarded to the Frameleaf mobile app (frameleaf-auth:///oauth-callback), and is used when an identity provider only accepts HTTP callbacks.',
+    history: new HistoryBuilder().added('v3'),
+  })
+  redirectOAuthToFrameleafMobile(@Req() request: Request) {
+    return {
+      url: this.service.getFrameleafMobileRedirect(request.url),
       statusCode: HttpStatus.TEMPORARY_REDIRECT,
     };
   }
@@ -65,6 +82,7 @@ export class OAuthController {
 
   @Post('callback')
   @Authenticated({ public: true })
+  @RateLimited(RATE_LIMITS.oauthCallback)
   @Endpoint({
     summary: 'Finish OAuth',
     description: 'Complete the OAuth authorization process by exchanging the authorization code for a session token.',
@@ -81,6 +99,7 @@ export class OAuthController {
     res.clearCookie(ImmichCookie.OAuthCodeVerifier);
     return respondWithCookie(res, body, {
       isSecure: loginDetails.isSecure,
+      rememberMe: dto.rememberMe,
       values: [
         { key: ImmichCookie.AccessToken, value: body.accessToken },
         { key: ImmichCookie.AuthType, value: AuthType.OAuth },
@@ -91,6 +110,7 @@ export class OAuthController {
 
   @Post('link')
   @Authenticated()
+  @RateLimited(RATE_LIMITS.oauthCallback)
   @HttpCode(HttpStatus.OK)
   @Endpoint({
     summary: 'Link OAuth account',

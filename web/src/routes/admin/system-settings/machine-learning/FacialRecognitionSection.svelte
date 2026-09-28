@@ -1,11 +1,11 @@
 <script lang="ts">
-  import SettingAccordion from '$lib/components/shared-components/settings/SettingAccordion.svelte';
-  import SettingInputField from '$lib/components/shared-components/settings/SettingInputField.svelte';
-  import SettingSwitch from '$lib/components/shared-components/settings/SettingSwitch.svelte';
+  import SettingGroup from '$lib/components/frameleaf/settings/SettingGroup.svelte';
+  import SettingField from '$lib/components/frameleaf/settings/SettingField.svelte';
+  import SettingToggle from '$lib/components/frameleaf/settings/SettingToggle.svelte';
   import { SettingInputFieldType } from '$lib/constants';
   import type { AdminConfigMachineLearningDto } from '@immich/sdk';
   import { t } from 'svelte-i18n';
-  import SettingSelect from '../SettingSelect.svelte';
+  import SettingSelect from '$lib/components/frameleaf/settings/SettingSelect.svelte';
 
   interface Props {
     workingConfig: AdminConfigMachineLearningDto;
@@ -16,13 +16,13 @@
   let { workingConfig, savedConfig, disabled }: Props = $props();
 </script>
 
-<SettingAccordion
+<SettingGroup
   key="facial-recognition"
   title={$t('admin.machine_learning_facial_recognition')}
   subtitle={$t('admin.machine_learning_facial_recognition_description')}
 >
-  <div class="ms-4 mt-4 flex flex-col gap-4">
-    <SettingSwitch
+  <div class="flex flex-col gap-4">
+    <SettingToggle
       title={$t('admin.machine_learning_facial_recognition_setting')}
       subtitle={$t('admin.machine_learning_facial_recognition_setting_description')}
       bind:checked={workingConfig.facialRecognition.enabled}
@@ -46,7 +46,7 @@
       isEdited={workingConfig.facialRecognition.modelName !== savedConfig.facialRecognition.modelName}
     />
 
-    <SettingInputField
+    <SettingField
       inputType={SettingInputFieldType.NUMBER}
       label={$t('admin.machine_learning_min_detection_score')}
       description={$t('admin.machine_learning_min_detection_score_description')}
@@ -58,7 +58,7 @@
       isEdited={workingConfig.facialRecognition.minScore !== savedConfig.facialRecognition.minScore}
     />
 
-    <SettingInputField
+    <SettingField
       inputType={SettingInputFieldType.NUMBER}
       label={$t('admin.machine_learning_max_recognition_distance')}
       description={$t('admin.machine_learning_max_recognition_distance_description')}
@@ -70,7 +70,7 @@
       isEdited={workingConfig.facialRecognition.maxDistance !== savedConfig.facialRecognition.maxDistance}
     />
 
-    <SettingInputField
+    <SettingField
       inputType={SettingInputFieldType.NUMBER}
       label={$t('admin.machine_learning_min_recognized_faces')}
       description={$t('admin.machine_learning_min_recognized_faces_description')}
@@ -81,4 +81,4 @@
       isEdited={workingConfig.facialRecognition.minFaces !== savedConfig.facialRecognition.minFaces}
     />
   </div>
-</SettingAccordion>
+</SettingGroup>

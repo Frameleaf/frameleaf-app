@@ -7,47 +7,18 @@ import {
   type ApiKeyResponseDto,
   type ApiKeyUpdateDto,
 } from '@immich/sdk';
-import { modalManager, toastManager, type ActionItem } from '@immich/ui';
-import { mdiAutorenew, mdiPencilOutline, mdiPlus, mdiTrashCanOutline } from '@mdi/js';
-import type { MessageFormatter } from 'svelte-i18n';
+import { toastManager } from '@immich/ui';
+import { confirmFrameleaf } from '$lib/frameleaf/confirm';
 import { eventManager } from '$lib/managers/event-manager.svelte';
-import ApiKeyCreateModal from '$lib/modals/ApiKeyCreateModal.svelte';
-import ApiKeySecretModal from '$lib/modals/ApiKeySecretModal.svelte';
-import ApiKeyUpdateModal from '$lib/modals/ApiKeyUpdateModal.svelte';
 import { handleError } from '$lib/utils/handle-error';
 import { getFormatter } from '$lib/utils/i18n';
 
-export const getApiKeysActions = ($t: MessageFormatter) => {
-  const Create: ActionItem = {
-    title: $t('new_api_key'),
-    icon: mdiPlus,
-    onAction: () => modalManager.show(ApiKeyCreateModal, {}),
-  };
-
-  return { Create };
-};
-
-export const getApiKeyActions = ($t: MessageFormatter, apiKey: ApiKeyResponseDto) => {
-  const Update: ActionItem = {
-    title: $t('edit_key'),
-    icon: mdiPencilOutline,
-    onAction: () => modalManager.show(ApiKeyUpdateModal, { apiKey }),
-  };
-
-  const Rotate: ActionItem = {
-    title: $t('rotate_key'),
-    icon: mdiAutorenew,
-    onAction: () => handleRotateApiKey(apiKey),
-  };
-
-  const Delete: ActionItem = {
-    title: $t('delete_key'),
-    icon: mdiTrashCanOutline,
-    onAction: () => handleDeleteApiKey(apiKey),
-  };
-
-  return { Update, Rotate, Delete };
-};
+/*
+ * API key actions for the signed-in account. FL-67: the dialogs live in the Frameleaf account
+ * access section (`$lib/components/frameleaf/access`); these functions keep the validation,
+ * events and messages every caller shares. A key value is returned to the caller to show once
+ * and is never kept here.
+ */
 
 export const handleCreateApiKey = async (dto: ApiKeyCreateDto) => {
   const $t = await getFormatter();
@@ -64,7 +35,8 @@ export const handleCreateApiKey = async (dto: ApiKeyCreateDto) => {
     }
 
     const response = await createApiKey({ apiKeyCreateDto: dto });
-    eventManager.emit('ApiKeyCreate', response);
+    // FL-67: listeners get the key without its value
+    eventManager.emit('ApiKeyCreate', response.apiKey);
 
     return response;
   } catch (error) {
@@ -95,18 +67,26 @@ export const handleUpdateApiKey = async (apiKey: { id: string }, dto: ApiKeyUpda
   }
 };
 
+/**
+ * Replace a key's value after a confirmation. The old value stops working at once; the new one is
+ * returned for the caller to show once.
+ */
 export const handleRotateApiKey = async (apiKey: ApiKeyResponseDto) => {
   const $t = await getFormatter();
 
-  const confirmed = await modalManager.showDialog({ prompt: $t('rotate_api_key_prompt') });
+  const confirmed = await confirmFrameleaf({
+    title: $t('frameleaf_access_key_rotate_title', { values: { name: apiKey.name } }),
+    prompt: $t('frameleaf_access_key_rotate_prompt', { values: { name: apiKey.name } }),
+    confirmText: $t('frameleaf_access_key_rotate'),
+  });
   if (!confirmed) {
     return;
   }
 
   try {
     const response = await rotateApiKey({ id: apiKey.id });
-    eventManager.emit('ApiKeyUpdate', response);
-    await modalManager.show(ApiKeySecretModal, { secret: response.secret });
+    eventManager.emit('ApiKeyUpdate', response.apiKey);
+    return response;
   } catch (error) {
     handleError(error, $t('errors.something_went_wrong'));
   }
@@ -115,7 +95,12 @@ export const handleRotateApiKey = async (apiKey: ApiKeyResponseDto) => {
 export const handleDeleteApiKey = async (apiKey: ApiKeyResponseDto) => {
   const $t = await getFormatter();
 
-  const confirmed = await modalManager.showDialog({ prompt: $t('delete_api_key_prompt') });
+  const confirmed = await confirmFrameleaf({
+    title: $t('frameleaf_access_key_delete_title', { values: { name: apiKey.name } }),
+    prompt: $t('frameleaf_access_key_delete_prompt', { values: { name: apiKey.name } }),
+    confirmText: $t('frameleaf_access_key_delete'),
+    danger: true,
+  });
   if (!confirmed) {
     return;
   }

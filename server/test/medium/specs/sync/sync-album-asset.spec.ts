@@ -1,5 +1,5 @@
 import { Kysely } from 'kysely';
-import { AlbumUserRole, SyncEntityType, SyncRequestType } from 'src/enum.js';
+import { AlbumUserRole, AssetVisibility, SyncEntityType, SyncRequestType } from 'src/enum.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { DB } from 'src/schema/index.js';
 import { SyncTestContext } from 'test/medium.factory.js';
@@ -340,5 +340,63 @@ describe(SyncRequestType.AlbumAssetsV2, () => {
         }),
       ]),
     );
+  });
+
+  describe('Locked media (FL-32)', () => {
+    it("should not sync another member's Locked asset", async () => {
+      const { auth, ctx } = await setup();
+      const { user: user2 } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ ownerId: user2.id, visibility: AssetVisibility.Locked });
+      const { album } = await ctx.newAlbum({ ownerId: user2.id });
+      await ctx.newAlbumAsset({ albumId: album.id, assetId: asset.id });
+      await ctx.newAlbumUser({ albumId: album.id, userId: auth.user.id, role: AlbumUserRole.Editor });
+
+      const response = await ctx.syncStream(auth, [SyncRequestType.AlbumAssetsV2]);
+      const types = response.map(({ type }) => type);
+      expect(types).not.toContain(SyncEntityType.AlbumAssetCreateV2);
+      expect(types).not.toContain(SyncEntityType.AlbumAssetBackfillV2);
+      expect(response.at(-1)).toEqual(expect.objectContaining({ type: SyncEntityType.SyncCompleteV1 }));
+    });
+
+    it("should sync the user's own Locked asset in somebody else's album", async () => {
+      const { auth, ctx } = await setup();
+      const { user: user2 } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ ownerId: auth.user.id, visibility: AssetVisibility.Locked });
+      const { album } = await ctx.newAlbum({ ownerId: user2.id });
+      await ctx.newAlbumAsset({ albumId: album.id, assetId: asset.id });
+      await ctx.newAlbumUser({ albumId: album.id, userId: auth.user.id, role: AlbumUserRole.Viewer });
+
+      const response = await ctx.syncStream(auth, [SyncRequestType.AlbumAssetsV2]);
+      expect(response).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            data: expect.objectContaining({ id: asset.id, visibility: AssetVisibility.Locked }),
+            type: SyncEntityType.AlbumAssetCreateV2,
+          }),
+        ]),
+      );
+    });
+
+    it("should not forward another member's asset once it moves into the Locked folder", async () => {
+      // The stream is filtered, so a device that already holds the item keeps its copy until the item
+      // leaves the album; a server-side delete cannot be sent without removing the membership.
+      const { auth, ctx } = await setup();
+      const { user: user2 } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ ownerId: user2.id });
+      const { album } = await ctx.newAlbum({ ownerId: user2.id });
+      await ctx.newAlbumAsset({ albumId: album.id, assetId: asset.id });
+      await ctx.newAlbumUser({ albumId: album.id, userId: auth.user.id, role: AlbumUserRole.Editor });
+
+      const response = await ctx.syncStream(auth, [SyncRequestType.AlbumAssetsV2]);
+      expect(response).toEqual(
+        expect.arrayContaining([expect.objectContaining({ data: expect.objectContaining({ id: asset.id }) })]),
+      );
+      await ctx.syncAckAll(auth, response);
+
+      await ctx.get(AssetRepository).update({ id: asset.id, visibility: AssetVisibility.Locked });
+      await wait(2);
+
+      await ctx.assertSyncIsComplete(auth, [SyncRequestType.AlbumAssetsV2]);
+    });
   });
 });

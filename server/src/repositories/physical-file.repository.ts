@@ -3,12 +3,27 @@ import { Kysely, Selectable, Transaction, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { createHash, randomUUID } from 'node:crypto';
 import { dirname, join, parse } from 'node:path';
+import type { PhysicalDeduplicationEvidenceRow } from 'src/utils/physical-deduplication-plan.js';
 import { AssetFileType, AssetStatus, ChecksumAlgorithm, PhysicalFileType } from 'src/enum.js';
+import { lockPublicForkWrites, withPublicForkWrites } from 'src/repositories/fork-write-guard.js';
 import { DB } from 'src/schema/index.js';
 import { PhysicalFileTable } from 'src/schema/tables/physical-file.table.js';
-import { asUuid } from 'src/utils/database.js';
+import { anyUuid, asUuid } from 'src/utils/database.js';
 
 type PhysicalFile = Selectable<PhysicalFileTable>;
+
+export const PHYSICAL_FILE_HANDOFF_REFUSAL = 'Shared files cannot change during database handoff';
+
+/**
+ * Takes the transaction-scoped advisory lock that guards one file path against concurrent reference
+ * changes (see `deleteUnreferencedPath`). Released on commit or rollback. The key is derived in JS
+ * rather than via `hashtext` so every caller agrees on it without depending on an undocumented
+ * Postgres builtin. A caller taking several paths takes them in sorted order.
+ */
+export const lockFilePath = async (db: Kysely<DB>, path: string): Promise<void> => {
+  const key = createHash('sha1').update(path).digest().readBigInt64BE(0);
+  await sql`SELECT pg_advisory_xact_lock(${key.toString()}::bigint)`.execute(db);
+};
 
 export type PhysicalNormalizationAsset = {
   id: string;
@@ -111,8 +126,13 @@ export class PhysicalFileRepository {
       .select([
         'asset.id',
         'asset.originalPath',
+        'asset.originalFileName',
+        'asset.type',
         'asset.physicalOriginalFileId',
         'asset.checksum',
+        'asset.width',
+        'asset.height',
+        'asset.duration',
         'asset_exif.fileSizeInByte as sizeInBytes',
       ])
       .where('asset.ownerId', '=', asUuid(masterUserId))
@@ -126,6 +146,75 @@ export class PhysicalFileRepository {
       .orderBy('asset.id', 'asc')
       .limit(1)
       .executeTakeFirst();
+  }
+
+  /**
+   * Active assets whose original is backed by this physical file, including the canonical
+   * asset itself. Used by the deduplication preview for its reference counts.
+   */
+  async countOriginalReferences(physicalFileId: string): Promise<number> {
+    const { count } = await this.db
+      .selectFrom('asset')
+      .select((eb) => eb.fn.countAll<number>().as('count'))
+      .where('asset.physicalOriginalFileId', '=', asUuid(physicalFileId))
+      .where('asset.deletedAt', 'is', null)
+      .executeTakeFirstOrThrow();
+    return Number(count);
+  }
+
+  /**
+   * Physical files' reference counts, as `countOriginalReferences` counts one (FL-73). A file
+   * nothing references is absent from the map.
+   */
+  async countOriginalReferencesFor(physicalFileIds: string[]): Promise<Map<string, number>> {
+    const ids = [...new Set(physicalFileIds)];
+    if (ids.length === 0) {
+      return new Map();
+    }
+
+    const rows = await this.db
+      .selectFrom('asset')
+      .select(['asset.physicalOriginalFileId'])
+      .select((eb) => eb.fn.countAll<number>().as('count'))
+      .where('asset.physicalOriginalFileId', '=', anyUuid(ids))
+      .where('asset.deletedAt', 'is', null)
+      .groupBy('asset.physicalOriginalFileId')
+      .execute();
+    return new Map(rows.map((row) => [row.physicalOriginalFileId as string, Number(row.count)]));
+  }
+
+  /**
+   * What a reviewed deduplication plan is checked against before review, before apply and before
+   * each copy's file is touched (FL-73): owner, path, checksum, size, state and physical original
+   * of every named asset, whatever its visibility. Background work reaches Locked assets.
+   */
+  async getPlanEvidence(assetIds: string[]): Promise<PhysicalDeduplicationEvidenceRow[]> {
+    const ids = [...new Set(assetIds)];
+    if (ids.length === 0) {
+      return [];
+    }
+
+    const rows = await this.db
+      .selectFrom('asset')
+      .leftJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
+      .select([
+        'asset.id',
+        'asset.ownerId',
+        'asset.originalPath',
+        'asset.checksum',
+        'asset.deletedAt',
+        'asset.status',
+        'asset.isExternal',
+        'asset.isOffline',
+        'asset.libraryId',
+        'asset.physicalOriginalFileId',
+        'asset.originalFileName',
+        'asset.type',
+        'asset_exif.fileSizeInByte as sizeInBytes',
+      ])
+      .where('asset.id', '=', anyUuid(ids))
+      .execute();
+    return rows as unknown as PhysicalDeduplicationEvidenceRow[];
   }
 
   getPhysicalFile(id: string): Promise<PhysicalFile | undefined> {
@@ -575,7 +664,7 @@ export class PhysicalFileRepository {
           ${sizeInBytes},
           ${verifiedPaths},
           ${linkCount},
-          ${JSON.stringify(evidence)}::jsonb,
+          ${JSON.stringify(evidence)}::text::jsonb,
           now(),
           now()
         )
@@ -619,23 +708,29 @@ export class PhysicalFileRepository {
   }
 
   async upsertPhysicalFile(input: PhysicalFileInput): Promise<PhysicalFile> {
-    return this.db
-      .insertInto('physical_file')
-      .values(input)
-      .onConflict((oc) =>
-        oc.column('path').doUpdateSet((eb) => ({
-          checksum: eb.ref('excluded.checksum'),
-          sizeInBytes: eb.ref('excluded.sizeInBytes'),
-          type: eb.ref('excluded.type'),
-          canonicalAssetId: eb.ref('excluded.canonicalAssetId'),
-        })),
-      )
-      .returningAll()
-      .executeTakeFirstOrThrow();
+    return withPublicForkWrites(
+      this.db,
+      (trx) =>
+        trx
+          .insertInto('physical_file')
+          .values(input)
+          .onConflict((oc) =>
+            oc.column('path').doUpdateSet((eb) => ({
+              checksum: eb.ref('excluded.checksum'),
+              sizeInBytes: eb.ref('excluded.sizeInBytes'),
+              type: eb.ref('excluded.type'),
+              canonicalAssetId: eb.ref('excluded.canonicalAssetId'),
+            })),
+          )
+          .returningAll()
+          .executeTakeFirstOrThrow(),
+      PHYSICAL_FILE_HANDOFF_REFUSAL,
+    );
   }
 
   async ensureOriginalPhysicalFile(assetId: string): Promise<PhysicalFile | undefined> {
     return this.db.transaction().execute(async (trx) => {
+      await lockPublicForkWrites(trx, PHYSICAL_FILE_HANDOFF_REFUSAL);
       const asset = await trx
         .selectFrom('asset')
         .innerJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
@@ -712,6 +807,46 @@ export class PhysicalFileRepository {
   async isOriginalCanonical(assetId: string, physicalFileId: string): Promise<boolean> {
     const physicalFile = await this.getPhysicalFile(physicalFileId);
     return physicalFile?.canonicalAssetId === assetId;
+  }
+
+  /**
+   * Point an asset back at its own original file (FL-73): the rollback a verified physical
+   * deduplication offers for a copy whose own file is still on disk. The file gets (or keeps) its
+   * own physical file row with the asset as canonical owner, under the path's lock so a concurrent
+   * removal cannot count the path unreferenced in between. Nothing on disk is written.
+   */
+  async restoreOriginalPhysicalFile(
+    assetId: string,
+    file: { path: string; checksum: Buffer; sizeInBytes: number },
+  ): Promise<PhysicalFile> {
+    return this.withPathLock(file.path, async (trx) => {
+      const physicalFile = await trx
+        .insertInto('physical_file')
+        .values({
+          canonicalAssetId: assetId,
+          checksum: file.checksum,
+          path: file.path,
+          sizeInBytes: file.sizeInBytes,
+          type: PhysicalFileType.Original,
+        })
+        .onConflict((oc) =>
+          oc.column('path').doUpdateSet((eb) => ({
+            checksum: eb.ref('excluded.checksum'),
+            sizeInBytes: eb.ref('excluded.sizeInBytes'),
+            canonicalAssetId: eb.ref('excluded.canonicalAssetId'),
+          })),
+        )
+        .returningAll()
+        .executeTakeFirstOrThrow();
+
+      await trx
+        .updateTable('asset')
+        .set({ physicalOriginalFileId: physicalFile.id, originalPath: physicalFile.path })
+        .where('id', '=', asUuid(assetId))
+        .execute();
+
+      return physicalFile;
+    });
   }
 
   // Moves a physical file onto `path`, which makes that path referenced.
@@ -794,22 +929,65 @@ export class PhysicalFileRepository {
       )
       .executeTakeFirstOrThrow();
 
-    return Number(assetRefs.count) + Number(fileRefs.count);
+    // Saved versions remain owners of their rendered files (and a master's lineage sidecar) even
+    // after they leave the current asset projection. A version's source is its asset's original,
+    // which the asset row already protects, so the recorded source path is not a reference.
+    const historyRefs = await sql<{ count: string }>`SELECT count(*) FROM (
+      SELECT 1 FROM immich_fork.video_edit_version v
+      WHERE v."masterPath"=${path} OR v."proxyPath"=${path} OR v."masterPath" || '.lineage.json'=${path}
+        OR EXISTS(SELECT 1 FROM jsonb_array_elements(v.files) f WHERE f->>'path'=${path})
+      UNION ALL SELECT 1 FROM immich_fork.orphaned_records o
+      WHERE o."sourceTable"='video_edit_version' AND (
+        o.payload->>'masterPath'=${path} OR o.payload->>'proxyPath'=${path}
+        OR (o.payload->>'masterPath') || '.lineage.json'=${path}
+        OR EXISTS(SELECT 1 FROM jsonb_array_elements(o.payload->'files') f WHERE f->>'path'=${path}))
+    ) retained`.execute(trx);
+
+    // FL-44 (FN-304): after cutover a live asset's original can be recorded only in its fork
+    // mapping (asset.repository deleteAll resolves `upstreamPath` first), and the fork physical
+    // file keeps the canonical path its sharers resolve to. A mapping of an asset that no longer
+    // exists holds nothing: its row is swept with the asset and must not pin the file forever.
+    // Outputs a Frameleaf feature still serves are owned by their rows the same way: a Studio
+    // export version, a preservation package not yet removed, and a restoration's preview or
+    // result (each clears its path before queueing the file's deletion).
+    const retainedRefs = await sql<{ count: string }>`SELECT count(*) FROM (
+      SELECT 1 FROM immich_fork.asset_physical_file mapping
+      JOIN public.asset asset ON asset.id = mapping."assetId"
+      WHERE mapping."upstreamPath" = ${path}
+      UNION ALL SELECT 1 FROM immich_fork.physical_file physical
+      WHERE physical."canonicalPath" = ${path}
+        AND EXISTS (
+          SELECT 1 FROM immich_fork.asset_physical_file mapping
+          JOIN public.asset asset ON asset.id = mapping."assetId"
+          WHERE mapping."physicalFileId" = physical.id
+        )
+      UNION ALL SELECT 1 FROM public.studio_export_version version WHERE version."outputPath" = ${path}
+      UNION ALL SELECT 1 FROM public.preservation_package package
+      WHERE package.path = ${path} AND package."removedAt" IS NULL
+      UNION ALL SELECT 1 FROM public.asset_restoration restoration
+      WHERE ${path} IN (
+        restoration."previewBeforePath", restoration."previewAfterPath",
+        restoration."resultPath", restoration."resultPreviewPath"
+      )
+    ) retained`.execute(trx);
+    return (
+      Number(assetRefs.count) +
+      Number(fileRefs.count) +
+      Number(historyRefs.rows[0].count) +
+      Number(retainedRefs.rows[0].count)
+    );
   }
 
-  /**
-   * Advisory lock guarding one path against concurrent reference changes.
-   * Transaction-scoped, so it is released on commit or rollback. The key is
-   * derived in JS rather than via `hashtext` so every caller agrees on it
-   * without depending on an undocumented Postgres builtin.
-   */
+  /** Advisory lock guarding one path against concurrent reference changes (`lockFilePath`). */
   private async lockPath(trx: Transaction<DB>, path: string): Promise<void> {
-    const key = createHash('sha1').update(path).digest().readBigInt64BE(0);
-    await sql`SELECT pg_advisory_xact_lock(${key.toString()}::bigint)`.execute(trx);
+    await lockFilePath(trx, path);
   }
 
+  // Every caller changes which rows reference a file (or deletes it), so it is refused while a
+  // database handoff holds the schema (FL-44), before the path lock is taken.
   private async withPathLock<T>(path: string, callback: (trx: Transaction<DB>) => Promise<T>): Promise<T> {
     return this.db.transaction().execute(async (trx) => {
+      await lockPublicForkWrites(trx, PHYSICAL_FILE_HANDOFF_REFUSAL);
       await this.lockPath(trx, path);
       return callback(trx);
     });
@@ -824,12 +1002,29 @@ export class PhysicalFileRepository {
    *
    * The physical_file row is cleaned up in the same transaction, so a failed
    * unlink leaves both the file and its row intact.
+   *
+   * FL-169: `removedAssetId` names an asset whose removal queued this delete inside its transaction
+   * while holding this path's lock. Holding the lock here means that transaction has ended; if the
+   * asset still exists it rolled back, and the path is kept even when no counted row names it (a
+   * video duplicate frame, a storage reservation, a develop revision output).
    */
   async deleteUnreferencedPath(
     path: string,
     unlink: () => Promise<void>,
+    options: { removedAssetId?: string } = {},
   ): Promise<{ deleted: boolean; references: number }> {
     return this.withPathLock(path, async (trx) => {
+      if (options.removedAssetId) {
+        const kept = await trx
+          .selectFrom('asset')
+          .select('id')
+          .where('id', '=', asUuid(options.removedAssetId))
+          .executeTakeFirst();
+        if (kept) {
+          return { deleted: false, references: 1 };
+        }
+      }
+
       const physicalFile = await trx
         .selectFrom('physical_file')
         .select(['id'])
@@ -859,11 +1054,16 @@ export class PhysicalFileRepository {
         'asset.id',
         'asset.ownerId',
         'asset.originalPath',
+        'asset.originalFileName',
+        'asset.type',
         'asset.checksum',
         'asset.isExternal',
         'asset.isOffline',
         'asset.libraryId',
         'asset.physicalOriginalFileId',
+        'asset.width',
+        'asset.height',
+        'asset.duration',
         'asset_exif.fileSizeInByte as sizeInBytes',
       ])
       .where('asset.ownerId', '!=', asUuid(masterUserId))

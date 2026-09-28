@@ -1,0 +1,57 @@
+{
+  "jobId": "0192f1b0-1a2b-7c3d-8e4f-5a6b7c8d9e0f",
+  "status": "completed",
+  "modelSku": "ms_K6WT70CS",
+  "modelRev": "mr_B2H147RBJBQ0",
+  "computeSku": "cs_KGECTVQ0",
+  "clientRef": "batch-2026-09-26",
+  "progress": {
+    "done": 2,
+    "total": 2,
+    "unit": "items",
+    "etaSeconds": 0
+  },
+  "run": {
+    "startedAt": "2026-09-26T04:02:10.000Z",
+    "meteredSeconds": 2,
+    "workers": 1,
+    "startFees": 1
+  },
+  "charges": {
+    "meteredUsd": 0.2026,
+    "holdUsd": 0.203251,
+    "ceilingUsd": 0.223577
+  },
+  "cost": {
+    "outcome": "charged",
+    "totalUsd": 0.2026,
+    "heldUsd": 0.203251,
+    "releasedUsd": 0.000651,
+    "lines": [
+      {
+        "kind": "start_fees",
+        "label": "Worker starts",
+        "sign": "charge",
+        "quantity": 1,
+        "unit": "starts",
+        "amountUsd": 0.2,
+        "gpuType": "L40S"
+      },
+      {
+        "kind": "gpu_time",
+        "label": "GPU time",
+        "sign": "charge",
+        "quantity": 2,
+        "unit": "seconds",
+        "amountUsd": 0.0026
+      }
+    ],
+    "note": "Charged for the GPU time and worker starts this job used. The rest of the hold went back to your AI Wallet.",
+    "settledAt": "2026-09-26T04:02:18.000Z"
+  },
+  "result": null,
+  "error": null,
+  "purgeAfter": "2026-09-27T04:02:13.000Z",
+  "createdAt": "2026-09-26T04:01:00.000Z",
+  "updatedAt": "2026-09-26T04:02:13.000Z"
+}

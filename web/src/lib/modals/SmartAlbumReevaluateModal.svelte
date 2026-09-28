@@ -2,7 +2,7 @@
   import { handleError } from '$lib/utils/handle-error';
   import {
     getSmartAlbumReevaluateEstimate,
-    Kind,
+    type SmartAlbumBuiltInKind as SmartAlbumKind,
     triggerSmartAlbumReevaluate,
     type SmartAlbumReevaluateEstimateDto,
     type SmartAlbumReevaluateRequestDto,
@@ -17,7 +17,7 @@
     onClose: (result?: { queued: boolean }) => void;
     // Optional built-in kind to scope the re-evaluation to (e.g. "food").
     // When omitted, the job runs against every enabled kind.
-    kind?: Kind;
+    kind?: SmartAlbumKind;
     // Human-readable name of the scoped kind, shown in the modal title and
     // descriptive copy (e.g. "Food"). Falls back to the raw kind id.
     kindLabel?: string;

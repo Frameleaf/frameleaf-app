@@ -1,7 +1,14 @@
-import { BadRequestException, Injectable, InternalServerErrorException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  InternalServerErrorException,
+  NotFoundException,
+} from '@nestjs/common';
 import sanitize from 'sanitize-filename';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { UploadFile, UploadRequest } from 'src/types.js';
+import type { FrameleafVia } from 'src/utils/frameleaf-sign-in.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { Asset, AuthSharedLink } from 'src/database.js';
 import {
@@ -21,6 +28,7 @@ import {
 import { AssetDownloadOriginalDto } from 'src/dtos/asset.dto.js';
 import {
   AssetFileType,
+  AssetLockReason,
   AssetVisibility,
   CacheControl,
   ChecksumAlgorithm,
@@ -35,7 +43,14 @@ import { asUploadRequest, onBeforeLink } from 'src/utils/asset.util.js';
 import { isAssetChecksumConstraint } from 'src/utils/database.js';
 import { ImmichFileResponse, getFileNameWithoutExtension, getFilenameExtension } from 'src/utils/file.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import { getLockedOwnerId, getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
+import {
+  OriginalAsset,
+  OriginalLocationPolicy,
+  OriginalPurpose,
+  getOriginalLocationPolicies,
+} from 'src/utils/partner-location.js';
 import { fromChecksum } from 'src/utils/request.js';
 
 export interface AssetMediaRedirectResponse {
@@ -151,25 +166,33 @@ export class AssetMediaService extends BaseService {
       }
 
       const physicalDeduplication = await this.getPhysicalDeduplicationCandidate(auth.user.id, file);
-      asset = await this.assetRepository.create({
-        ownerId: auth.user.id,
-        libraryId: null,
+      asset = await this.assetRepository.create(
+        {
+          ownerId: auth.user.id,
+          libraryId: null,
 
-        checksum: file.checksum,
-        checksumAlgorithm: ChecksumAlgorithm.sha256File,
-        originalPath: file.originalPath,
+          checksum: file.checksum,
+          checksumAlgorithm: ChecksumAlgorithm.sha256File,
+          originalPath: file.originalPath,
 
-        fileCreatedAt: dto.fileCreatedAt,
-        fileModifiedAt: dto.fileModifiedAt,
-        localDateTime: dto.fileCreatedAt,
+          fileCreatedAt: dto.fileCreatedAt,
+          fileModifiedAt: dto.fileModifiedAt,
+          localDateTime: dto.fileCreatedAt,
 
-        type: mimeTypes.assetType(file.originalPath),
-        isFavorite: dto.isFavorite,
-        duration: dto.duration || null,
-        visibility: dto.visibility ?? AssetVisibility.Timeline,
-        livePhotoVideoId: dto.livePhotoVideoId,
-        originalFileName: dto.filename || file.originalName,
-      });
+          type: mimeTypes.assetType(file.originalPath),
+          isFavorite: dto.isFavorite,
+          duration: dto.duration || null,
+          // `locked` is a lock record, never a stored visibility (FL-34): an upload into the Locked view
+          // is stored on the timeline and locked in the same transaction, so nothing lists it unlocked
+          visibility:
+            dto.visibility && dto.visibility !== AssetVisibility.Locked ? dto.visibility : AssetVisibility.Timeline,
+          livePhotoVideoId: dto.livePhotoVideoId,
+          originalFileName: dto.filename || file.originalName,
+        },
+        dto.visibility === AssetVisibility.Locked
+          ? { reason: AssetLockReason.Marked, lockedBy: auth.user.id }
+          : undefined,
+      );
 
       if (dto.metadata?.length) {
         await this.assetRepository.upsertMetadata(asset.id, dto.metadata);
@@ -235,8 +258,10 @@ export class AssetMediaService extends BaseService {
           ? await this.assetRepository.getUploadAssetIdByChecksum(auth.user.id, file.checksum, duplicateOptions)
           : await this.assetRepository.getUploadAssetIdByChecksum(auth.user.id, file.checksum);
         if (!duplicateId) {
-          if (auth.hideNsfwAssets) {
-            this.logger.debug('Duplicate asset upload rejected while existing asset is hidden by NSFW privacy mode');
+          // the existing asset is hidden from this session: NSFW privacy mode, or Locked media the session
+          // has not unlocked (a shared-link session never has)
+          if (auth.hideNsfwAssets || (await this.isWithheldLockedDuplicate(auth, file.checksum))) {
+            this.logger.debug('Duplicate asset upload rejected while the existing asset is hidden');
             // Return a nil UUID rather than an empty string so clients that
             // strictly type the asset id (e.g. immich-go's AssetResponse.ID)
             // don't crash. The real duplicate id is still withheld, preserving
@@ -273,14 +298,14 @@ export class AssetMediaService extends BaseService {
       dto.edited = true;
     }
 
-    const { originalPath, originalFileName, editedPath } = await this.assetRepository.getForOriginal(
+    const { ownerId, originalPath, originalFileName, editedPath } = await this.assetRepository.getForOriginal(
       id,
       dto.edited ?? false,
     );
 
     const path = editedPath ?? originalPath!;
 
-    return new ImmichFileResponse({
+    return this.withOriginalLocationPolicy(auth, { id, ownerId }, 'download', {
       path,
       fileName: getFileNameWithoutExtension(originalFileName) + getFilenameExtension(path),
       contentType: mimeTypes.lookup(path),
@@ -288,10 +313,60 @@ export class AssetMediaService extends BaseService {
     });
   }
 
+  /**
+   * FL-54: a file served as-is carries its embedded EXIF/XMP/QuickTime location. For a partner who may not
+   * see the owner's locations (and for playback through a link that hides metadata) serve a verified
+   * location-free copy instead; when none can be made, refuse rather than send the original bytes. A
+   * link that hides metadata never downloads (AL-27). Every other case is the untouched original.
+   */
+  private async withOriginalLocationPolicy(
+    auth: AuthDto,
+    asset: OriginalAsset,
+    purpose: OriginalPurpose,
+    response: ImmichFileResponse,
+  ): Promise<ImmichFileResponse> {
+    const policyFor = await getOriginalLocationPolicies({
+      auth,
+      assets: [asset],
+      purpose,
+      repository: this.partnerRepository,
+    });
+
+    switch (policyFor(asset)) {
+      case OriginalLocationPolicy.Serve: {
+        return new ImmichFileResponse(response);
+      }
+
+      case OriginalLocationPolicy.Refuse: {
+        throw new ForbiddenException('Downloads are turned off while metadata is hidden');
+      }
+
+      case OriginalLocationPolicy.RemoveLocation: {
+        const lease = await this.metadataRepository.acquireLocationFreeOriginal(response.path).catch(() => {
+          throw new ForbiddenException('The location of this file could not be removed');
+        });
+        return new ImmichFileResponse({ ...response, path: lease.path, release: lease.release });
+      }
+    }
+  }
+
+  /**
+   * FL-161: whether full-resolution files may go to a request that arrived this way: always, except
+   * through the relay while an administrator has not allowed originals there.
+   */
+  async fullSizeAllowed(via: FrameleafVia | null): Promise<boolean> {
+    if (via !== 'relay') {
+      return true;
+    }
+    const { frameleafCloud } = await this.getConfig({ withCache: true });
+    return frameleafCloud.remoteAccess.allowOriginalsOverRelay;
+  }
+
   async viewThumbnail(
     auth: AuthDto,
     id: string,
     dto: AssetMediaOptionsDto,
+    via: FrameleafVia | null = null,
   ): Promise<ImmichFileResponse | AssetMediaRedirectResponse> {
     await this.requireAccess({ auth, permission: Permission.AssetView, ids: [id] });
 
@@ -304,13 +379,18 @@ export class AssetMediaService extends BaseService {
     }
 
     const size = (dto.size ?? AssetMediaSize.THUMBNAIL) as unknown as AssetFileType;
-    const { originalPath, originalFileName, path } = await this.assetRepository.getForThumbnail(
+    const { ownerId, originalPath, originalFileName, path } = await this.assetRepository.getForThumbnail(
       id,
       size,
       dto.edited ?? false,
     );
 
     if (size === AssetFileType.FullSize && mimeTypes.isWebSupportedImage(originalPath) && !dto.edited) {
+      // FL-161: through the relay the original is refused unless an administrator allowed it, so the
+      // viewer gets the preview instead of a redirect it cannot follow
+      if (!(await this.fullSizeAllowed(via))) {
+        return { targetSize: AssetMediaSize.PREVIEW };
+      }
       // use original file for web supported images
       return { targetSize: 'original' };
     }
@@ -328,16 +408,38 @@ export class AssetMediaService extends BaseService {
     const fileNameBase =
       auth.sharedLink && !auth.sharedLink.showExif ? id : getFileNameWithoutExtension(originalFileName);
     const fileName = `${fileNameBase}_${size}${getFilenameExtension(path)}`;
-
-    return new ImmichFileResponse({
+    const response = new ImmichFileResponse({
       fileName,
       path,
       contentType: mimeTypes.lookup(path),
       cacheControl: CacheControl.PrivateWithCache,
     });
+
+    // FL-54: a fullsize preview extracted from a RAW before generation-time stripping still carries the
+    // camera's GPS. Rather than a one-time regeneration job, those files are cleaned lazily: a viewer who
+    // may not see the owner's location gets a verified location-free copy (a clean file is served as is).
+    // Thumbnails and previews are re-encoded without metadata, so only fullsize needs the check.
+    if (size === AssetFileType.FullSize) {
+      return this.withOriginalLocationPolicy(auth, { id, ownerId }, 'playback', response);
+    }
+
+    return response;
   }
 
-  async playbackVideo(auth: AuthDto, id: string): Promise<ImmichFileResponse> {
+  async downloadVideoEditVersion(auth: AuthDto, id: string, versionId: string): Promise<ImmichFileResponse> {
+    await this.requireAccess({ auth, permission: Permission.AssetDownload, ids: [id] });
+    const version = await this.assetEditRepository.getVideoVersion(id, versionId);
+    if (!version || version.ownerId !== auth.user.id || version.status !== 'ready' || !version.masterPath)
+      throw new NotFoundException('Video version is unavailable');
+    return new ImmichFileResponse({
+      path: version.masterPath,
+      fileName: `${id}-${version.id}.mp4`,
+      contentType: 'video/mp4',
+      cacheControl: CacheControl.PrivateWithCache,
+    });
+  }
+
+  async playbackVideo(auth: AuthDto, id: string, edited = true): Promise<ImmichFileResponse> {
     await this.requireAccess({ auth, permission: Permission.AssetView, ids: [id] });
 
     const asset = await this.assetRepository.getForVideo(id);
@@ -346,9 +448,12 @@ export class AssetMediaService extends BaseService {
       throw new NotFoundException('Asset not found or asset is not a video');
     }
 
-    const filepath = asset.editedVideoPath || asset.encodedVideoPath || asset.originalPath;
+    // The unedited source is the owner's working copy in the quick editor (FL-113). Anyone else,
+    // including a shared link or a partner, is always given what the owner published.
+    const unedited = !edited && auth.user?.id === asset.ownerId && !auth.sharedLink;
+    const filepath = (unedited ? null : asset.editedVideoPath) || asset.encodedVideoPath || asset.originalPath;
 
-    return new ImmichFileResponse({
+    return this.withOriginalLocationPolicy(auth, { id, ownerId: asset.ownerId }, 'playback', {
       path: filepath,
       contentType: mimeTypes.lookup(filepath),
       cacheControl: CacheControl.PrivateWithCache,
@@ -421,8 +526,32 @@ export class AssetMediaService extends BaseService {
     });
   }
 
+  /**
+   * A duplicate lookup names only what this session may see: the caller's hidden-content settings
+   * apply, and a Locked match is named only for the owner's elevated session (FL-34). Left out, the
+   * repository withholds Locked matches.
+   */
+  /**
+   * Whether the owner's copy of this checksum is Locked media the session may not name. Checked
+   * server side only, after the named lookup came back empty; its id never leaves this method.
+   */
+  private async isWithheldLockedDuplicate(auth: AuthDto, checksum: Buffer) {
+    if (getLockedOwnerId(auth)) {
+      return false;
+    }
+
+    const lockedId = await this.assetRepository.getUploadAssetIdByChecksum(auth.user.id, checksum, {
+      lockedOwnerId: auth.user.id,
+    });
+    return !!lockedId;
+  }
+
   private getDuplicateCheckOptions(auth: AuthDto) {
-    return auth.hideNsfwAssets ? getHiddenContentQueryOptions(auth) : undefined;
+    const options = {
+      ...(auth.hideNsfwAssets && getHiddenContentQueryOptions(auth)),
+      ...getLockedVisibilityOptions(auth),
+    };
+    return Object.keys(options).length > 0 ? options : undefined;
   }
 
   private async getPhysicalDeduplicationCandidate(ownerId: string, file: UploadFile) {

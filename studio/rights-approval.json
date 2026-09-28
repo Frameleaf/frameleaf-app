@@ -1,0 +1,858 @@
+{
+  "approvedBy": "Owner (AJ Taylor)",
+  "approvedOn": "2026-09-25",
+  "resources": [
+    {
+      "id": "asset:lottiefiles",
+      "sha256": "c01e504b7e135007df3671e52c6a7ece3001d666fd991c54107fe12515dc9b34"
+    },
+    {
+      "id": "asset:user-import",
+      "sha256": "ab5f831b9f23fac2497a2f790f6d425334438e1c992af1fc96d49b6efa5922e9"
+    },
+    {
+      "id": "font:Abel",
+      "sha256": "bc2796d681972f7b12555877af3d0de169067a9300e5e38ead183e7fa9101d18"
+    },
+    {
+      "id": "font:Alfa Slab One",
+      "sha256": "c0ef267bc40335d93343d3840c12c5f37203b0a62bd59755ddf2f0e089091912"
+    },
+    {
+      "id": "font:Almarai",
+      "sha256": "94383fd38173f9e6b9ccc3521762e0b508116a8d6bcac2c45ad87d9ca1fbc00a"
+    },
+    {
+      "id": "font:Anek Telugu",
+      "sha256": "ebed18c5479f4bc4ef2177d7a6eb0e5dbc9dd60524df1dc76227c427324d5bd9"
+    },
+    {
+      "id": "font:Anton",
+      "sha256": "951000ef8870f55278a5aad60b66c83dec453e81c075fd6787b055bcb7b1b469"
+    },
+    {
+      "id": "font:Archivo",
+      "sha256": "30f045c2a7554a914fdaf9186cc9d97da2e55f8d5e0d2b7da71ebdfa6e97974f"
+    },
+    {
+      "id": "font:Archivo Black",
+      "sha256": "c9f444d243bcf5e91185b33ffec9a79ea4aca0e40c781a69f6149b2624e6a117"
+    },
+    {
+      "id": "font:Arimo",
+      "sha256": "c829c9f04aefffb44d0e716d6ac3de9ddbdc2beb8a3c7c33507b207fdff01a5b"
+    },
+    {
+      "id": "font:Arvo",
+      "sha256": "f11982bb9d8fe809f833b903d3096cd76aaab278c99c264a8c1ab22d7a62a947"
+    },
+    {
+      "id": "font:Assistant",
+      "sha256": "850446ee486275e0326e71f195c609d1122dd42ff9aa5dad8d8bebed44d79e70"
+    },
+    {
+      "id": "font:Barlow",
+      "sha256": "6fa925d1425f5aac08fb75d16c346b5cea523d8f29de4949a1af4154b3130bd3"
+    },
+    {
+      "id": "font:Barlow Condensed",
+      "sha256": "753c527d6ba73a714ccdb8c3616946fa226eff7232a879243e65de8db9164414"
+    },
+    {
+      "id": "font:Barlow Semi Condensed",
+      "sha256": "1074984a5002bfbc7cae9a91b75c8cbef3fc455042dba90d808b25fa153029d8"
+    },
+    {
+      "id": "font:Bebas Neue",
+      "sha256": "c46ef2ee63ca7980064dca41cc78a25ce670a44e13eaa77bcb200c2418ad555c"
+    },
+    {
+      "id": "font:Bitter",
+      "sha256": "011b243f62029fcb6949a379db92556a59966ba8e028497d21b901f4729e5a56"
+    },
+    {
+      "id": "font:Bricolage Grotesque",
+      "sha256": "7bbc42242341bbd99300a8ad9c1150ada65cbae799dde0e26a875c1bff670d31"
+    },
+    {
+      "id": "font:Bungee",
+      "sha256": "8de1081dd96a9c3d549077bef29e111dd3a8e68f1805e867a51ed97e4bb6dabf"
+    },
+    {
+      "id": "font:Cabin",
+      "sha256": "73a8ce4bcde0956ed90564ed3d8cda6e3d54bdcd3576b564e6aa92baecbbddba"
+    },
+    {
+      "id": "font:Cairo",
+      "sha256": "89b4ae434670a586d809efb8265f837f8ba0ec524639eaa0689433865f77d44e"
+    },
+    {
+      "id": "font:Caveat",
+      "sha256": "7e4aff9d7b1a87ffb19e10eb3dba1428fbd062fc9160de77aaa33ba4d0618298"
+    },
+    {
+      "id": "font:Changa One",
+      "sha256": "b753d5846b35ae5a1044b1364f9d724f27741b6b423aa01969316f04927ac2b3"
+    },
+    {
+      "id": "font:Comfortaa",
+      "sha256": "018807fbb8478227099bb904f9c6abcb71f615047b635bee53c5fc663e27e591"
+    },
+    {
+      "id": "font:Cormorant Garamond",
+      "sha256": "f49d1ffc756eb050fd1a7808bce179e4dbe1907c924e65e886a61de6ff9eb50b"
+    },
+    {
+      "id": "font:Crimson Text",
+      "sha256": "c7f3802067aa20ca2e95c3da908409df889cd0e13f8a6c619e5725583f22fcf0"
+    },
+    {
+      "id": "font:DM Sans",
+      "sha256": "a1f7efe24714abcc46cc33cfd08f321ae3b7db3faa76f050b143db8891703720"
+    },
+    {
+      "id": "font:DM Serif Display",
+      "sha256": "e446befa4b35dc57ef79dcc1c585a8dd97410a4e4492248764ca1168c011c442"
+    },
+    {
+      "id": "font:Dancing Script",
+      "sha256": "9b922a08428391358b25755b44ba62624eef27de58271d60cfc78a81f946d277"
+    },
+    {
+      "id": "font:Domine",
+      "sha256": "19966f66c6d83ab9cfda2ca713ac2405c6c375995f8af258b6b061ec76e6a634"
+    },
+    {
+      "id": "font:Dosis",
+      "sha256": "5e31c83e3aaafe1c24101c1e2eae5eed28f75f98cfa5d2a552ca1747b86d05d6"
+    },
+    {
+      "id": "font:EB Garamond",
+      "sha256": "9cb7d40f41256f1ba47deee80c209608cd0eae4da873f028f7cfec398790e553"
+    },
+    {
+      "id": "font:Exo 2",
+      "sha256": "773ef2c8300d1670f8628e1bd340bbffc29c6a8384d229cb4c2727593ec106b1"
+    },
+    {
+      "id": "font:Figtree",
+      "sha256": "842e0a9800bea3a3456720e39790a28a1636ef3e1660a6e796cffe1199eee9b8"
+    },
+    {
+      "id": "font:Fira Sans",
+      "sha256": "43ad00541442b05d66786763310096792411b247ea27d99ec244a79895b04759"
+    },
+    {
+      "id": "font:Fjalla One",
+      "sha256": "e2876b59c1bca08b89b4054100213902b3ea9cbae9d24b65edfab336e254adf8"
+    },
+    {
+      "id": "font:Google Sans",
+      "sha256": "e9c0bb6065748545fef4287730d0caad252043cc82777f6036f3af1781d7406b"
+    },
+    {
+      "id": "font:Gravitas One",
+      "sha256": "d800e1681f474ab9c0616fcbf80a10d85c6ee278a85518867a256b69658cc934"
+    },
+    {
+      "id": "font:Heebo",
+      "sha256": "ad547c2f2938187e00698ab63fadd6ede52e43c677ea593456e9a549df597838"
+    },
+    {
+      "id": "font:Hind",
+      "sha256": "612a4dc84cafba4d26b287ca8808565524386f296838d9fe8b7ffa80adf6275d"
+    },
+    {
+      "id": "font:Hind Siliguri",
+      "sha256": "b7a4ea2e5291360e099feaa17552b779138f61c3f4bd10d66bca3f4d4a44b466"
+    },
+    {
+      "id": "font:IBM Plex Mono",
+      "sha256": "700dfe0e260c3a50ba36e4aac79ec938c519399db61c93b029af7daac906130b"
+    },
+    {
+      "id": "font:IBM Plex Sans",
+      "sha256": "8e23e95366c28cbe6dd0db8fca1d9d195ef42c579c9cba0391b1a33a5c5a8972"
+    },
+    {
+      "id": "font:Inconsolata",
+      "sha256": "c3aa10212a208482df4c4940217892ac9a7a5d537dacb55c23303b12186bbcaa"
+    },
+    {
+      "id": "font:Inter",
+      "sha256": "a4db8c7a3f8890cd764e110b32323c4991dfd64ed744365ba0e2480aa83f9c43"
+    },
+    {
+      "id": "font:Inter Tight",
+      "sha256": "83d44e772cc0f3fc0dba1f35605d410e3b7c757d3c48ff3000811600f2d8b60f"
+    },
+    {
+      "id": "font:Josefin Sans",
+      "sha256": "e14d1278735bc9944281f947fbd0c108c1d848b1594ff305c170d7bf725f4eeb"
+    },
+    {
+      "id": "font:Jost",
+      "sha256": "3c6863f4b19c82f27f42bda143668d5a862d37b29a3c3b21dca2caf6163c4d02"
+    },
+    {
+      "id": "font:Kanit",
+      "sha256": "aa2534180e1496066082bb6444a4135bf58197a57e2bf0724385a97f42d0c2df"
+    },
+    {
+      "id": "font:Karla",
+      "sha256": "ce999f25e4685b9646749597b83cac64088e2d4f09cdb02d520eb19d8355d3e4"
+    },
+    {
+      "id": "font:Lato",
+      "sha256": "2cb18ae1e67c4ac99a92962ee7e4fe4e5a1b000e222be2e271cee78d33214015"
+    },
+    {
+      "id": "font:Lexend",
+      "sha256": "73d3ce12b9ed3dbb9a44858dc661a87739dd84eddf85a136a511fef6c7f826ac"
+    },
+    {
+      "id": "font:Lexend Deca",
+      "sha256": "279a2c2385ed9918fab58333a8ec6e6fbc9d2e59e56d6bd160ccc056186fd4cf"
+    },
+    {
+      "id": "font:Libre Baskerville",
+      "sha256": "4fd3209fe3c0a6610953b1eb1ab74e1be542763fb4f04541c3030ff4c03daac9"
+    },
+    {
+      "id": "font:Libre Franklin",
+      "sha256": "788d50eaa08d08efd646def70094855d36bbd138aefb427f4d32bdce91dc3893"
+    },
+    {
+      "id": "font:Lobster",
+      "sha256": "e4268ef94956f305b2b67ab3a397b490bdbef0ab2ea62868ea14e562230e96b5"
+    },
+    {
+      "id": "font:Lobster Two",
+      "sha256": "8d0f03939198e61a1dc5aa2b9e278908e8d4b65b361e7d05a5011ce32bdd0694"
+    },
+    {
+      "id": "font:Lora",
+      "sha256": "db707334568ea37960af2be2c527ad345e7af3b2d01606ed6c4f7d0340d8301f"
+    },
+    {
+      "id": "font:M PLUS 1p",
+      "sha256": "8ed6efba362d77396446158cca7f497edde5e4f3d10f6fcfbb92b468a0c16bdb"
+    },
+    {
+      "id": "font:M PLUS Rounded 1c",
+      "sha256": "bfa4637951984f8c32e955f720b5729ac4bd7c1815c73c27349211b1f3c1b60f"
+    },
+    {
+      "id": "font:Manrope",
+      "sha256": "1282d4cdf3b3d6f5282a5f8c45efd2521907ad336440a0dc9faa8379e7bd478e"
+    },
+    {
+      "id": "font:Merriweather",
+      "sha256": "5da67f9cbf8ff65f0924899ce107ce3b284c3b7155764f48f9f9e1a54948d354"
+    },
+    {
+      "id": "font:Merriweather Sans",
+      "sha256": "287144473be08c612695f14e99e63e67f8f0d9ebfe7e1552be7006366621802a"
+    },
+    {
+      "id": "font:Montserrat",
+      "sha256": "3faea55be79e03e0a933791455ec79c7ebc53aa5445dbc28bdf8562dff646882"
+    },
+    {
+      "id": "font:Mukta",
+      "sha256": "597551dbb2b8a1d07089c10f9e0cfd84b256a21562a3dddb4b19eb095f86538d"
+    },
+    {
+      "id": "font:Mulish",
+      "sha256": "0aa5a5f8832ee2991a194bf308680d27b57ede2e329d0389cc4df4aad04aaf55"
+    },
+    {
+      "id": "font:Nanum Gothic",
+      "sha256": "fc7cbdc28ae6f0c820ebeaf1baebddbda385d67accbd5d5ca44ec49e7ce93772"
+    },
+    {
+      "id": "font:Noto Color Emoji",
+      "sha256": "f4cf0695ae7ec3c47cf685acb598eef484dd37245186590715d628cf6fae0e2d"
+    },
+    {
+      "id": "font:Noto Sans",
+      "sha256": "336a8df47829c70e537334a968a7594829a870a2ef7f52939256e7f5beaf4f67"
+    },
+    {
+      "id": "font:Noto Sans Arabic",
+      "sha256": "9c5557909457bac6cdac9960a566afbf7420cdf5526a397a605fb3b338f81741"
+    },
+    {
+      "id": "font:Noto Sans JP",
+      "sha256": "02112d0bfadeae50529342efa689d0a2d42e330892750e131616a7d9c77156c4"
+    },
+    {
+      "id": "font:Noto Sans KR",
+      "sha256": "e8c6ba8c9e36915a1a134184a6f4bbbe863a0305c98c76986bc820ccc785f261"
+    },
+    {
+      "id": "font:Noto Sans SC",
+      "sha256": "2cf8f885eea1730e66a99a057689b832b74832745db4b5c55601008d1032fc3e"
+    },
+    {
+      "id": "font:Noto Sans TC",
+      "sha256": "6a5f231ff9a8a06cf9e98d4502639f8e038a913cc285d2de816cbd1a2bbcdfe3"
+    },
+    {
+      "id": "font:Noto Sans Telugu",
+      "sha256": "15c645087daeed4efc521763b7caa412d98252e20badba335cc779d6704a3040"
+    },
+    {
+      "id": "font:Noto Serif",
+      "sha256": "f5fda114a59fbf699490520743462227803c21af62ed48752d12dd42d1ddffff"
+    },
+    {
+      "id": "font:Noto Serif JP",
+      "sha256": "dd3eadc6670cb31dd08e952c95b4005a52080d7a2cb30900dfa4e9872883aed5"
+    },
+    {
+      "id": "font:Nunito",
+      "sha256": "51149b65082b601d9a24a0b2fdda675528a12c072d7c19b8dc2cde433b9b19ee"
+    },
+    {
+      "id": "font:Nunito Sans",
+      "sha256": "45e025418c6b5dabd54f15dae58c37676b0be6eb62b012a35891371ec8f61d5d"
+    },
+    {
+      "id": "font:Open Sans",
+      "sha256": "76b63b1e9aa39e2d316c4958740ac871ba8dccef83a3a15374c566a961453002"
+    },
+    {
+      "id": "font:Orbitron",
+      "sha256": "176fc9323770ef7221451509de191951f9e866bc776115fc83d4b8c2ea5a7ca9"
+    },
+    {
+      "id": "font:Oswald",
+      "sha256": "f299ddd2917b86ac69c7b795df603640270285ee6ebf28055d15802fc32bf091"
+    },
+    {
+      "id": "font:Outfit",
+      "sha256": "f94aa80dc27cfbc6c5f7d36c3b890c5961053db5186ee5bec4a237b29e75239e"
+    },
+    {
+      "id": "font:Overpass",
+      "sha256": "3014e9947d80fa629036c8130828021f4f09375802bebb9d90069da52a2ea61a"
+    },
+    {
+      "id": "font:Oxygen",
+      "sha256": "c1241c8f89027103a726cb0ce35212b6fdd262b9c1cb2250a7e23f472b183376"
+    },
+    {
+      "id": "font:PT Sans",
+      "sha256": "0e1ade62ddbe75824a762aceac8746fafa273529c80285ab7f073a4b2412bee7"
+    },
+    {
+      "id": "font:PT Sans Narrow",
+      "sha256": "179cb14d66578bbd83b0e2256d18004d71286acae8f1376db4fcbca3afae7eb4"
+    },
+    {
+      "id": "font:PT Serif",
+      "sha256": "d3ed5f89de259dcdcc34e5ea866ce992e635205a3b4d379f3b6e838689c3c619"
+    },
+    {
+      "id": "font:Pacifico",
+      "sha256": "b390e4034fc19a57d6c09d4aec198f9b5367fd4594816a186e4ca0337d93e6d5"
+    },
+    {
+      "id": "font:Playfair Display",
+      "sha256": "e28bfbc42ed8938c707e40b41dad7c815a9b0f38be1856a9a2731f5869c46418"
+    },
+    {
+      "id": "font:Plus Jakarta Sans",
+      "sha256": "02fb0d7f5b7089e2e931cf801e491870a56d5ef28f431279546b9f6293b59105"
+    },
+    {
+      "id": "font:Poppins",
+      "sha256": "d104b574094419ab28d1e41e489e68979dbef4201899faebd32874e5bc008121"
+    },
+    {
+      "id": "font:Prompt",
+      "sha256": "5457c4dc8a181a811742509c39c3ca83066c08c21ada68507a912f2ccf1c73ac"
+    },
+    {
+      "id": "font:Public Sans",
+      "sha256": "d306f4800b99d0e9e288a441869170b22b15c53a8d23eece799f345385c0a767"
+    },
+    {
+      "id": "font:Quicksand",
+      "sha256": "b9a943e35d4b2664b71e79ed9eccb20b2556ae0402b5b061e436cfa48fb0d943"
+    },
+    {
+      "id": "font:Rajdhani",
+      "sha256": "267d9b3fc5b4f4a2f5697bc02a7ac57e0b87a0689673406e0377e3366a1a69ee"
+    },
+    {
+      "id": "font:Raleway",
+      "sha256": "80d50f5d083f05c8e3bfe0ad36a03713e086450792c7df6840d2ba62c575d495"
+    },
+    {
+      "id": "font:Ramabhadra",
+      "sha256": "3cb227cc489ab26f8dd311dec2f6384e32b880aa5492522df61ac7b14ce08d3d"
+    },
+    {
+      "id": "font:Red Hat Display",
+      "sha256": "95e4b3ca611da7c4c014bff402f761f2c242f8d5b492db6d1cc97c7aabcf0b45"
+    },
+    {
+      "id": "font:Roboto",
+      "sha256": "48b847c9e30e5a85d42e0d1c0cd384de76e4e00af497d744b7799d483f036439"
+    },
+    {
+      "id": "font:Roboto Condensed",
+      "sha256": "ea930ff7031f7ffc5305b01c771a4d798005605c1185fc0d79106b5959f7370b"
+    },
+    {
+      "id": "font:Roboto Flex",
+      "sha256": "c7a38732b39397ecb40fdf62bc589d1ae16408eb7ee1edde28740423033dd8e5"
+    },
+    {
+      "id": "font:Roboto Mono",
+      "sha256": "f7cea3cbffd55566be0390ddd03b41a3269712dc686f736c73cf4be80617514c"
+    },
+    {
+      "id": "font:Roboto Slab",
+      "sha256": "2f76bad4dafc84048531089ca61a9d3aec72c3a5a5d8a342678537f040cbce33"
+    },
+    {
+      "id": "font:Rubik",
+      "sha256": "c7e0cd12bb78799d24eb97941350623fcfdd4f010e6e3a0f4338b42b5ab7d085"
+    },
+    {
+      "id": "font:Saira",
+      "sha256": "b774ea4c80747df833832ce73545386b20075529479286bda110eae78842afcc"
+    },
+    {
+      "id": "font:Satisfy",
+      "sha256": "3b39bc392a16856de626d916ac465e38a8f313eaaa25b0fe66b9ee565cfd041d"
+    },
+    {
+      "id": "font:Schibsted Grotesk",
+      "sha256": "c5aad5157e669c127775126c64289fdfac0861f084c24ef0c49610cb39fc269f"
+    },
+    {
+      "id": "font:Shadows Into Light",
+      "sha256": "2a1db8b0f87695aa860466ebd3650006be0c70071a3053e22ef66aa0974c2275"
+    },
+    {
+      "id": "font:Share Tech",
+      "sha256": "951c7c5a9c7b217a3bbd428902128a73419715a15f0925c1843c06c356bc6ee9"
+    },
+    {
+      "id": "font:Slabo 27px",
+      "sha256": "591240a5b4f45107a12d70010220ab69886defc3744cca72202dc88e57456828"
+    },
+    {
+      "id": "font:Smooch Sans",
+      "sha256": "71c4902f90a8dc422acd6f818a4f6f60a3eeaf55b8a140f92265a875755268ad"
+    },
+    {
+      "id": "font:Sora",
+      "sha256": "9945dc136e2611a3d9f20cfd33e35c84cdd7784842012cc6768acdd9a4a5e4eb"
+    },
+    {
+      "id": "font:Source Code Pro",
+      "sha256": "5f31055c4d5f7a3859417c022b414ff2e9e083c406047f2243ef1d21c81aad36"
+    },
+    {
+      "id": "font:Source Sans 3",
+      "sha256": "81cdc8560f3d0f0fc9687d38ad1be4a3374922079192d561c6a2fc71e24e4540"
+    },
+    {
+      "id": "font:Source Serif 4",
+      "sha256": "a77c227d1d604527f400976affbe244680a97787c4ef5b841ec306ffb634b0bd"
+    },
+    {
+      "id": "font:Space Grotesk",
+      "sha256": "4fe9900c2e1eed26d2a1b4fc218d8453279b2ec76976f0cb69c2834325911d3a"
+    },
+    {
+      "id": "font:Tajawal",
+      "sha256": "0b7b545db674501cb0272e4bd144701ef8e020a98fd649f2b3cf63db1e75f5b0"
+    },
+    {
+      "id": "font:Teko",
+      "sha256": "a84f14959e3a94e63be99f88a1b3f481c46de6d1fb779c88c406c6e58437ba90"
+    },
+    {
+      "id": "font:Titillium Web",
+      "sha256": "37872cf3082ed4973733f4a007e70d3a401d0f405d847df9cd756bad5ba48b94"
+    },
+    {
+      "id": "font:Ubuntu",
+      "sha256": "246c4428dae24decbc8c67c2ac8a29d710f67b09ce26b56c48957e18fa02803e"
+    },
+    {
+      "id": "font:Urbanist",
+      "sha256": "97298f8f1b0c27e773a77f88f8dd7a3b28ee4063314fb4572d6081ab96c847d5"
+    },
+    {
+      "id": "font:Work Sans",
+      "sha256": "259b8ebdcc987a4c2025c89cfb58b428bcfd23d15ff7e9cf7bb038f578ec4115"
+    },
+    {
+      "id": "model:LiquidAI/LFM2.5-VL-450M-ONNX",
+      "sha256": "19d560c27f4cd0d95c4e8c08831994b0835c9b02cb997947e75752dcd419100b"
+    },
+    {
+      "id": "model:Olicorne/parakeet-tdt-0.6b-v3-smoothquant-onnx",
+      "sha256": "56adf754b9908165cb179ee4cee705c8b554e85626d1e4e3f22256518cbeb162"
+    },
+    {
+      "id": "model:OpenMOSS-Team/MOSS-Audio-Tokenizer-Nano-ONNX",
+      "sha256": "6f00deb50f16c35378c51c3df4d6cf2bdeddbf44d4f28ceb2278a1ad6ec6fdd8"
+    },
+    {
+      "id": "model:OpenMOSS-Team/MOSS-TTS-Nano-100M-ONNX",
+      "sha256": "12eb5effe688f1af3d655fa5f644a980cb2590b6dfd5fbd090a636a036465daa"
+    },
+    {
+      "id": "model:Xenova/all-MiniLM-L6-v2",
+      "sha256": "a24cc58cb1b445bc344eea45b3cbf504dad8933cc4d6da3ccf9a12a95ff3a617"
+    },
+    {
+      "id": "model:Xenova/clap-htsat-unfused",
+      "sha256": "2c63b7bfb4ab4da970b342b80c947bbeda9cb7edd4eed1e6fe332978a2c4ec25"
+    },
+    {
+      "id": "model:Xenova/clip-vit-base-patch32",
+      "sha256": "789cfd20142d6cfcd9f62daf25a22e9bca279bff26d857fa9b2fdf2bc8ec2267"
+    },
+    {
+      "id": "model:Xenova/musicgen-small",
+      "sha256": "ad5eb23fa07eb3ad7a7f41034c9250e041b3d5bdcd0d33fa609ce96451d2f650",
+      "excludedUses": {
+        "hostedUse": "CC-BY-NC-4.0 (non-commercial) licence, so it is not offered on Frameleaf Cloud; local use on this server or a LAN worker stays approved. Owner decision, Jira FL-146 comment 34944 (2026-09-25)."
+      }
+    },
+    {
+      "id": "model:onnx-community/Kokoro-82M-v1.0-ONNX",
+      "sha256": "9d949c1feecd8dc0ea013b9f3e02b03ade6b1c397a060410897468c2c7f9a8f4"
+    },
+    {
+      "id": "model:onnx-community/gemma-4-E4B-it-ONNX",
+      "sha256": "158fe4270960b788c30615f724756fc05fd62380db7e314fb45b4363e1b91b7d"
+    },
+    {
+      "id": "model:onnx-community/whisper-base_timestamped",
+      "sha256": "41afce1844f21ff598a57d78a7cf198cc243027200ed224f0e78d468e85f955b"
+    },
+    {
+      "id": "model:onnx-community/whisper-large-v3-turbo_timestamped",
+      "sha256": "40a50aef30fd1f5c09d959ef6ea0e6c73f02d0c4db4a344826501e7e4023bfad"
+    },
+    {
+      "id": "model:onnx-community/whisper-small_timestamped",
+      "sha256": "917c470595ad194096ca3b83603611b5a02d71dde672e3f1ad12288f4f377882"
+    },
+    {
+      "id": "model:onnx-community/whisper-tiny_timestamped",
+      "sha256": "7ec15caa875a55edadb70b32d1d88274464a69d0f0433aa6c7d89b13de6d1d75"
+    },
+    {
+      "id": "model:supertonic-3",
+      "sha256": "821e6d98089d088619d0031c65eeaa280556e770a9d38f2a4235752f401bde2f"
+    },
+    {
+      "id": "model:walterlow/RIFE_fp32_timestep",
+      "sha256": "cec1dd74fe0235b1dfb4ef7d07fdbfd531726506b673cdb429fae9b33862b37a"
+    },
+    {
+      "id": "runtime:onnx-cdn",
+      "sha256": "f83f307d308ee2cfb37c24f9f7ad05943d288e4082e297db9b15d45360658dec"
+    },
+    {
+      "id": "runtime:whisper-transformers",
+      "sha256": "c0f90f856c78bc23f9bdcf6cf8b6457f4f4836c6c042085b83a832a450fcb931"
+    },
+    {
+      "id": "tool:dolby-artistic-trim",
+      "sha256": "d0a5476ba9a9ea3c48d0fde385bc683a318fdb9e9f157fe97f007cc0484df4ce"
+    },
+    {
+      "id": "tool:dolby-portal",
+      "sha256": "ef9fdf1bdc701032c9492c2934284d287d31f3c882d4f157eff12f6c499badc7"
+    },
+    {
+      "id": "voice:kokoro-af_alloy",
+      "sha256": "7ac2544b31e6530a5fef35e1f5f52219db4baf6ff70d3a3521edfc8b0d37372c"
+    },
+    {
+      "id": "voice:kokoro-af_aoede",
+      "sha256": "68dd139ef50e390d302299447325c1c940d9dd45edfadaba66998a63b784da75"
+    },
+    {
+      "id": "voice:kokoro-af_bella",
+      "sha256": "9c21c46cc603e39dc34ba911fac7f297d946f87cc9af1c43c1140c5897568100"
+    },
+    {
+      "id": "voice:kokoro-af_heart",
+      "sha256": "38a13bd459ab7358a9eff468833574b6c3c437afae8e8efad907fc08cc8389a6"
+    },
+    {
+      "id": "voice:kokoro-af_jessica",
+      "sha256": "5cbd2a2a310945e93823994047f373d3f301cb63f1c3ba4905523cdf2316c6cf"
+    },
+    {
+      "id": "voice:kokoro-af_kore",
+      "sha256": "ad284ad602d2a16027a420f3965842eb029000728c4a05b1c86f672467399971"
+    },
+    {
+      "id": "voice:kokoro-af_nicole",
+      "sha256": "dae4b9dc2198a7648505449b3c68385660e9e135c81b82151044e0df9d693759"
+    },
+    {
+      "id": "voice:kokoro-af_nova",
+      "sha256": "99c6c940eb855ae16d3332875b95c931d3cae90a5a703dd86ceb40ffd37a7700"
+    },
+    {
+      "id": "voice:kokoro-af_river",
+      "sha256": "d3dc866fa9d16b1fc566a7512cd614a82f5ab5c2d7678ee0f2c7ee9ba676f956"
+    },
+    {
+      "id": "voice:kokoro-af_sarah",
+      "sha256": "fa991d05fd6cdab85cdf3069d878f71547455f1374a5b5a76d15b366b7853d26"
+    },
+    {
+      "id": "voice:kokoro-af_sky",
+      "sha256": "b7f3ad6e4c80d043185990385e5e497c80e057aa9e4da5f75365ed25b67c5210"
+    },
+    {
+      "id": "voice:kokoro-am_adam",
+      "sha256": "44ad77fd3f623351f23b4a13e7be8f6cdd1c4ce660ef688eb09e4595169e72f6"
+    },
+    {
+      "id": "voice:kokoro-am_echo",
+      "sha256": "b630a9885f479dd0a861add6f9804dbc340531df6e5e3ab638d3ceb0a571752b"
+    },
+    {
+      "id": "voice:kokoro-am_eric",
+      "sha256": "4b035df83a90e65529c2a33bfce32d3722bf1f44e95e55ddc11b89435d7716bb"
+    },
+    {
+      "id": "voice:kokoro-am_fenrir",
+      "sha256": "49ac67ab3e960a60e3dc63a7c847bfcf9f789b33aaa79504272d5ea7dc548b93"
+    },
+    {
+      "id": "voice:kokoro-am_liam",
+      "sha256": "a443770f65908aadc5315b5f60a0b1e1d8746574b6416e7adbcdf8091ddb69d3"
+    },
+    {
+      "id": "voice:kokoro-am_michael",
+      "sha256": "5e520f1779afa44b7f92e35e1632b2b448f88b23568ac877be0c894ad02c6efd"
+    },
+    {
+      "id": "voice:kokoro-am_onyx",
+      "sha256": "9a0eeae574bde232773d0afcd82b1c4a3e092782d51bcfc1db4a5f568b86aa29"
+    },
+    {
+      "id": "voice:kokoro-am_puck",
+      "sha256": "99b2fb8e35ad00d5cc5a8d408a4aa4f204cead69d0446edffa755877e0088365"
+    },
+    {
+      "id": "voice:kokoro-am_santa",
+      "sha256": "58139b3117cdf9d123b231071ac0d07a3e24826439161050c4bddeb936e363d0"
+    },
+    {
+      "id": "voice:kokoro-bf_alice",
+      "sha256": "62b30c3f889ca51c5ed508324524a94fbe4a26db12f15a1cc6a47e1e8c4a76ed"
+    },
+    {
+      "id": "voice:kokoro-bf_emma",
+      "sha256": "ddb325d5a4d5e87cec297488c94289638581f704683965552758719f8ac6d2de"
+    },
+    {
+      "id": "voice:kokoro-bf_isabella",
+      "sha256": "075c77a5c1c87529ee85875e2b8851be2f82d8833a018e37a79f10b35d3a8372"
+    },
+    {
+      "id": "voice:kokoro-bf_lily",
+      "sha256": "958c8f520206b71d796817efe69ef06336fd37f4db4bc1f991bfd012c4617cde"
+    },
+    {
+      "id": "voice:kokoro-bm_daniel",
+      "sha256": "c8a002ceb848389d72cdc21359100c55847a01ecfcf68e5d3bea52c3fb1d4ce8"
+    },
+    {
+      "id": "voice:kokoro-bm_fable",
+      "sha256": "dd1f7486990011dc8e2053790965ab757462bf6aab2065c77344c205d5ed1e31"
+    },
+    {
+      "id": "voice:kokoro-bm_george",
+      "sha256": "744861001f0e17b141c369d27bdfeaad0270a4b4aded20c3fe8e6b961bf346bd"
+    },
+    {
+      "id": "voice:kokoro-bm_lewis",
+      "sha256": "0625ee5c6fa8b9d3375962fe7f42ce1f66de580649bbf36daabb4a7f902c4d9e"
+    },
+    {
+      "id": "voice:kokoro-ef_dora",
+      "sha256": "e3ce68881f68f68c05232ad9cf56862d05ec5f0c987700ec330b0054f66f0bc8"
+    },
+    {
+      "id": "voice:kokoro-em_alex",
+      "sha256": "98023e11adb6931af65e513eaf055223b32f05f7ecc99a40cc2a9833f123455c"
+    },
+    {
+      "id": "voice:kokoro-em_santa",
+      "sha256": "a9465be74a2ad8363f9f51df3aa28674e449b1dace2f2b01968875c1dbe5b8fb"
+    },
+    {
+      "id": "voice:kokoro-ff_siwis",
+      "sha256": "2c4672f1b05cb9bcf3a04ea5bd7c88993c7c122d09c127a249a5edbebc502403"
+    },
+    {
+      "id": "voice:kokoro-hf_alpha",
+      "sha256": "93367d4cb8d9826f3a652a139a1ac7e10078ed4fd7fce05bdacd3aa339a5bbe8"
+    },
+    {
+      "id": "voice:kokoro-hf_beta",
+      "sha256": "741cf64edaf6d4458e89baa85a613aeb908f68b751fa876f74acf39dd082c579"
+    },
+    {
+      "id": "voice:kokoro-hm_omega",
+      "sha256": "f63a5fe0fd30df3e75c51521061633ea9361c838f90147e044ee41786e2043af"
+    },
+    {
+      "id": "voice:kokoro-hm_psi",
+      "sha256": "a496dbe0cd1f02d745140659dc0d14fcd8381279db967b518cc22e476a52c3c2"
+    },
+    {
+      "id": "voice:kokoro-if_sara",
+      "sha256": "27f91999946b7aaa0f5f4978085b5a6136f98a494d4d97613f40e4db598f09db"
+    },
+    {
+      "id": "voice:kokoro-im_nicola",
+      "sha256": "0a426269f08b917245e51dcfdd8a5096782673fed7917eaffc753c49654a96ab"
+    },
+    {
+      "id": "voice:kokoro-jf_alpha",
+      "sha256": "ad4cf14ed8b26f1da4f1ecd1295b9d8a41364b769fa6a895032ded3700e55fb1"
+    },
+    {
+      "id": "voice:kokoro-jf_gongitsune",
+      "sha256": "25b938de37d2f2287f7bc31ce47b7fec8c7eecff7d3a2c70ebdcda7695270c4c"
+    },
+    {
+      "id": "voice:kokoro-jf_nezumi",
+      "sha256": "47da645b4ff4538669aea6e8009d1eac8ce9e4ced6938885c3f2d2d0b3fca52b"
+    },
+    {
+      "id": "voice:kokoro-jf_tebukuro",
+      "sha256": "1f8dd6c1d769160b51b872c3fdaba2fe462cfb4882839d0cf34b66061b628e19"
+    },
+    {
+      "id": "voice:kokoro-jm_kumo",
+      "sha256": "aca30925a07c03bba12e98dec7b04a24c2e87464bbe2d948b4a4ba78356587ef"
+    },
+    {
+      "id": "voice:kokoro-pf_dora",
+      "sha256": "97c7167219669d5eb44582f975811c9634b16207198284f48e50d388e8eeaff1"
+    },
+    {
+      "id": "voice:kokoro-pm_alex",
+      "sha256": "e4ce4301d74014900c8c012bda093519d14c8cb16de7a1ce5e349720128fdfd6"
+    },
+    {
+      "id": "voice:kokoro-pm_santa",
+      "sha256": "b70c4e7487c16216b8dd485e98406cbb1f80a84d33c142a8a9e239b1208d775f"
+    },
+    {
+      "id": "voice:kokoro-zf_xiaobei",
+      "sha256": "33ff61db0997632c0b9e68f2442d897be681bab22fb49539327ba849e19f7dbc"
+    },
+    {
+      "id": "voice:kokoro-zf_xiaoni",
+      "sha256": "62bf8c5532547947712960f953591c423722b68fd7dfda693e4128269a90423c"
+    },
+    {
+      "id": "voice:kokoro-zf_xiaoxiao",
+      "sha256": "d75385e86d65f3697f7acb02b7d8756fac14916bc931eefca9d0cca2034e0e83"
+    },
+    {
+      "id": "voice:kokoro-zf_xiaoyi",
+      "sha256": "8c8afdecab5866b68585f3365a41bbd4e65c86a428567bb7cf986c52d4c226ca"
+    },
+    {
+      "id": "voice:kokoro-zm_yunjian",
+      "sha256": "75525b454f6cfbac01d095082c5a6a0c0e86bb2dde38aca46f1c75270549b17d"
+    },
+    {
+      "id": "voice:kokoro-zm_yunxi",
+      "sha256": "40d1abc5c6bb4fddf2c96e8c08aa33222665ebfb718c15cccbb75591d2c68f74"
+    },
+    {
+      "id": "voice:kokoro-zm_yunxia",
+      "sha256": "5c107666158a98f50194192157ca8a6ef086a08d8558808ffd6e1aa284426106"
+    },
+    {
+      "id": "voice:kokoro-zm_yunyang",
+      "sha256": "297327562ed4e8fa997cf82cce5279b79f5f977e072a0bf596f6c73cce4014bc"
+    },
+    {
+      "id": "voice:supertonic-F1",
+      "sha256": "84a2b10207adb08906c577689cf177c65ad278ac96147f93ecd09cc7b22624bf"
+    },
+    {
+      "id": "voice:supertonic-F2",
+      "sha256": "0ef9a6c487b26a7e7499b0848988d6f09ea8b9ead017331eeb870019ef9ea902"
+    },
+    {
+      "id": "voice:supertonic-F3",
+      "sha256": "b67efdb1f733c69fe2b587f51f0cd41abff55437ed2fb86428b77664a69d9de3"
+    },
+    {
+      "id": "voice:supertonic-F4",
+      "sha256": "b7e88e8c1d3953e9474aa16aa91daa858e0cfff8c609454dcacc7fc22871fbc0"
+    },
+    {
+      "id": "voice:supertonic-F5",
+      "sha256": "e52cf2fc69a051226f9b263d0ec1307d6e171bb10e5177536f9ce00f1fc63055"
+    },
+    {
+      "id": "voice:supertonic-M1",
+      "sha256": "7f1fd5a38dc0497e6f65618595055717e4bb8a7d60e1d6dd141ea809eb1b3d82"
+    },
+    {
+      "id": "voice:supertonic-M2",
+      "sha256": "0a32644f6f59870c7dde616571576a980c76dfb9b3b8fa58105eccab2baae04d"
+    },
+    {
+      "id": "voice:supertonic-M3",
+      "sha256": "7ec7c30f73b71b4ca4aec2d9a81ccbe2a6d5aa06a4143fc57cca7765c8989a10"
+    },
+    {
+      "id": "voice:supertonic-M4",
+      "sha256": "a4f72e6845cc01db26bc1c3b72674c80dc3536f1f0c53f3e0cc8cea619d0b9fd"
+    },
+    {
+      "id": "voice:supertonic-M5",
+      "sha256": "6188bc5bb5189685275347f980680caddf56e7e2cdb274a74e60815ae2e78d42"
+    },
+    {
+      "id": "weights:anime4k-3d",
+      "sha256": "4fbf58a874ae1a997388f7533155fa6c62ace3da8413039ed15c52659337386e"
+    },
+    {
+      "id": "weights:anime4k-an",
+      "sha256": "ebdc1b9e4cf04adb52884e76b57aa0ddba2971027a523abedfced3fe2767b776"
+    },
+    {
+      "id": "weights:anime4k-rl",
+      "sha256": "178e09778f2fbc19c8a9ea60dcfc51d1a44f4a354570f85f14519e4334be3317"
+    }
+  ],
+  "rowDigest": "sha256 of the canonical JSON of the resource's id, kind, locator, revision, licenseDeclared and files in studio/dependency-attribution.json. A row that changes after approval is no longer approved.",
+  "schemaVersion": 1,
+  "source": "Jira FL-146, comment 34941: Owner decisions (2026-09-25, afternoon), \"Studio resource rights: all 210 bundled resources (fonts, LUTs, tracks, models) are approved. Rights enforcement stays in place for anything new or unknown.\"",
+  "uses": [
+    "redistribution",
+    "localRuntime",
+    "hostedUse"
+  ],
+  "exclusionsSource": "Jira FL-146, comment 34944: Owner decision (2026-09-25), model licences: \"Removed from the Frameleaf Cloud offering (hosted use): nllb-clip ... and MusicGen-small (CC-BY-NC-4.0). Both stay available locally, on the server or a LAN worker.\""
+}

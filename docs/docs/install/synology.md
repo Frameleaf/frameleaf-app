@@ -5,25 +5,25 @@ sidebar_position: 85
 # Synology [Community]
 
 :::note
-This is a community contribution and not officially supported by the Immich team, but included here for convenience.
+This is a community contribution and not officially supported by Frameleaf, but included here for convenience.
 
 Community support should be directed to Synology-specific support platforms.
 :::
 
-Immich can easily be installed on a Synology NAS using Container Manager within DSM. If you have not installed Container Manager already, you can install it in the Packages Center. Refer to the [Container Manager docs](https://kb.synology.com/en-us/DSM/help/ContainerManager/docker_desc?version=7) for more information on using Container Manager.
+Frameleaf can easily be installed on a Synology NAS using Container Manager within DSM. If you have not installed Container Manager already, you can install it in the Packages Center. Refer to the [Container Manager docs](https://kb.synology.com/en-us/DSM/help/ContainerManager/docker_desc?version=7) for more information on using Container Manager.
 
 ## Step 1 - Download the required files
 
-Create a directory of your choice (e.g. `./immich-app`) to house Immich. In general, it's best practice to have all Docker-based applications running under the `./docker` directory, so in this case, your directory structure will look like `./docker/immich-app`.
+Create a directory of your choice (e.g. `./frameleaf`) to house Frameleaf. In general, it's best practice to have all Docker-based applications running under the `./docker` directory, so in this case, your directory structure will look like `./docker/frameleaf`.
 
-Now create a `./postgres` and `./library` directory as sub-directories of the `./docker/immich-app`.
+Now create a `./postgres` and `./library` directory as sub-directories of the `./docker/frameleaf`.
 
 When you're all done, you should have the following:
 
 - `./docker/immich-app/postgres`
 - `./docker/immich-app/library`
 
-Download [`docker-compose.yml`](https://github.com/immich-app/immich/releases/latest/download/docker-compose.yml) and [`example.env`](https://github.com/immich-app/immich/releases/latest/download/example.env) to your computer. Upload the files to the `./docker/immich-app` directory, and rename `example.env` to `.env`. Note: If you plan to use the Synology Text editor to edit the `.env` file on the NAS within File Station, you will need to rename it to a temporary name (e.g. `example.txt`) in order to see 'Open with Text Editor' in the file context menu. Once saved, rename it back to `.env`.
+Download [`docker-compose.yml`](https://github.com/Frameleaf/frameleaf-app/releases/latest/download/docker-compose.yml) and [`example.env`](https://github.com/Frameleaf/frameleaf-app/releases/latest/download/example.env) to your computer. Upload the files to the `./docker/frameleaf` directory, and rename `example.env` to `.env`. Note: If you plan to use the Synology Text editor to edit the `.env` file on the NAS within File Station, you will need to rename it to a temporary name (e.g. `example.txt`) in order to see 'Open with Text Editor' in the file context menu. Once saved, rename it back to `.env`.
 
 ## Step 2 - Populate the .env file with custom values
 
@@ -34,25 +34,21 @@ Follow [Step 2 in Docker Compose](/install/docker-compose#step-2---populate-the-
 Open Container Manager, and select the "**Project**" action on the left navigation bar and then click "**Create**".
 ![Create project](../../static/img/synology-container-manager-create-project.png)
 
-In the settings of your new project, set "**Project name**" to a name you'll remember, such as _immich-app_. When setting the "**Path**", select the `./docker/immich-app` directory you created earlier. Doing so will prompt a message to use the existing `docker-compose.yml` already present in the directory for your project. Click "**OK**" to continue.
+In the settings of your new project, set "**Project name**" to a name you'll remember, such as _frameleaf_. When setting the "**Path**", select the `./docker/frameleaf` directory you created earlier. Doing so will prompt a message to use the existing `docker-compose.yml` already present in the directory for your project. Click "**OK**" to continue.
 
 ![Set path](../../static/img/synology-container-manager-set-path.png)
 
 The following screen will give you the option to further customize your `docker-compose.yml` file. Take note of `DB_STORAGE_TYPE: 'HDD'` and uncomment if applicable for your Synology setup.
 
-![DB storage](../../static/img/synology-container-manager-customize-docker-compose.png)
-
 Skip the section asking to set-up a portal for Web Station, and then complete the wizard which will build and start the containers for your project.
 
-Once your containers are successfully running, navigate to the "**Container**" section of Container Manager, right-click on the "**immich-server**" container, and choose the "**Details**".
+Once your containers are running, navigate to the "**Container**" section of Container Manager, right-click on the server container ("**frameleaf_server**"), and choose the "**Details**".
 
 Scroll to the bottom of the "**Details**" section and find the `IP Address` listed in the `Network` section. Take note of the container's IP address as you will need it for **Step 4**.
 
-![Container details](../../static/img/synology-container-manager-container-details.png)
-
 ## Step 4 - Configure Firewall Settings
 
-Once your project completes the build process, your containers will start. In order to be able to access Immich from your browser, you need to configure the firewall settings for your Synology NAS to allow communication between the Immich containers.
+Once your project completes the build process, your containers will start. In order to be able to access Frameleaf from your browser, you need to configure the firewall settings for your Synology NAS to allow communication between the Frameleaf containers.
 
 Open "**Control Panel**" on your Synology NAS, and select "**Security**". Navigate to "**Firewall**"
 
@@ -73,7 +69,7 @@ Click "**Edit Rules**" and add the following firewall rules:
 Read the [Post Installation](/install/post-install.mdx) steps and [upgrade instructions](/install/upgrading.md).
 
 <details>
-  <summary>Updating Immich using Container Manager</summary>
+  <summary>Updating Frameleaf using Container Manager</summary>
 
 Check the post installation and upgrade instructions at the links above before proceeding with this section.
 
@@ -83,38 +79,24 @@ Ensure your photos and videos are backed up. Your `.env` settings will define wh
 
 ## Step 2. Check release notes
 
-Always check the [release notes](https://github.com/immich-app/immich/releases) before proceeding with an update!
+Always check the [release notes](https://github.com/Frameleaf/frameleaf-app/releases) before proceeding with an update!
 
 ## Step 3. Stop containers & clean up
 
-Open **Container Manager**. Select **Project** then your Immich app
-
-![Select project](../../static/img/synology-select-proj.png)
-
-Select **Stop**
-
-![Stop project](../../static/img/synology-project-stop.png)
-
-Select **Action** then **Clean**. This removes the containers.
-
-![Clean project](../../static/img/synology-action-clean.png)
-
-Go to **Image** and select **Remove Unused Images**.
-
-![Remove unused](../../static/img/synology-remove-unused.png)
+1. Open **Container Manager**, select **Project** in the left navigation bar, then select your Frameleaf project in the list.
+2. Select **Stop** at the top right of the project page and wait for all containers to stop.
+3. Select **Action**, then **Clean**. This removes the containers.
+4. Select **Image** in the left navigation bar, then select **Remove Unused Images**.
 
 ## Step 4. Build
 
-Go to **Project**, select **Action** then **Build**. This will download, unpack, install and start the containers.
-
-![Build](../../static/img/synology-build.png)
+Go to **Project**, select your Frameleaf project, then select **Action** and **Build**. This will download, unpack, install and start the containers.
 
 ## Step 5. Update firewall rule
 
-Without a fixed subnet, the default behavior is to automatically start the containers once installed. If `immich_server` runs for a few seconds and then stops, it may be because the firewall rule no longer matches the server IP address.
+Without a fixed subnet, the default behavior is to automatically start the containers once installed. If `frameleaf_server` runs for a few seconds and then stops, it may be because the firewall rule no longer matches the server IP address.
 
-Go to the **Container** section. Click on `immich_server` and scroll down on **General** to find the IP address.
-![Container IP](../../static/img/synology-container-ip.png)
+Go to the **Container** section. Click on `frameleaf_server`, stay on the **General** tab, and scroll down to the **Network** section to find the **IP address**.
 
 Go to Synology **Control Panel**. Select **Security** and **Firewall**.
 
@@ -135,8 +117,7 @@ Docker by default assigns dynamic subnets to bridge networks which can change wh
 
 ## Step 1. Determine current subnet
 
-Go to the **Container** section. Click on `immich_server` and scroll down on **General** to find the IP address.
-![Container IP](../../static/img/synology-container-ip.png)
+Go to the **Container** section. Click on `frameleaf_server`, stay on the **General** tab, and scroll down to the **Network** section. The **IP address** and **Gateway** show the subnet the container currently uses.
 
 ## Step 2. Add network configuration
 
@@ -144,7 +125,7 @@ Add the following network configuration at the end of your `docker-compose.yml` 
 
 ```yaml
 networks:
-  immich-network:
+  frameleaf-network:
     driver: bridge
     ipam:
       config:
@@ -163,22 +144,22 @@ services:
   immich-server:
     # other config options
     networks:
-      - immich-network
+      - frameleaf-network
 
   immich-machine-learning:
     # other config options
     networks:
-      - immich-network
+      - frameleaf-network
 
   redis:
     # other config options
     networks:
-      - immich-network
+      - frameleaf-network
 
   database:
     # other config options
     networks:
-      - immich-network
+      - frameleaf-network
 ```
 
 Save your changes. Synology will ask if you want to save changes only or rebuild containers. Select rebuild containers.

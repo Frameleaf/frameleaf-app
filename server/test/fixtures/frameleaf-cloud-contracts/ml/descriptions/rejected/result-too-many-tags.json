@@ -1,0 +1,48 @@
+{
+  "schema": "frameleaf.descriptions/v1",
+  "modelSku": "ms_K6WT70CS",
+  "modelRev": "mr_B2H147RBJBQ0",
+  "language": "en",
+  "items": [
+    {
+      "inputId": "a1",
+      "description": "A golden retriever runs along a sandy beach at sunset, kicking up spray at the edge of the waves.",
+      "tags": [
+        "tag0",
+        "tag1",
+        "tag2",
+        "tag3",
+        "tag4",
+        "tag5",
+        "tag6",
+        "tag7",
+        "tag8",
+        "tag9",
+        "tag10",
+        "tag11",
+        "tag12",
+        "tag13",
+        "tag14",
+        "tag15",
+        "tag16",
+        "tag17",
+        "tag18",
+        "tag19",
+        "tag20",
+        "tag21",
+        "tag22",
+        "tag23",
+        "tag24",
+        "tag25",
+        "tag26",
+        "tag27",
+        "tag28",
+        "tag29",
+        "tag30"
+      ],
+      "moment": "An evening run on the beach",
+      "confidence": 0.87,
+      "warnings": []
+    }
+  ]
+}

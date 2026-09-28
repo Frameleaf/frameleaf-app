@@ -4,13 +4,14 @@ import type { NextFunction, Response } from 'express';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
+  IntegrityCheckRunsResponseDto,
   IntegrityGetReportDto,
   IntegrityReportResponseDto,
   IntegrityReportSummaryResponseDto,
   IntegrityReportTypeParamDto,
 } from 'src/dtos/integrity.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
-import { Auth, Authenticated, FileResponse } from 'src/middleware/auth.guard.js';
+import { Auth, Authenticated, FileResponse, OriginalTransfer } from 'src/middleware/auth.guard.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { IntegrityService } from 'src/services/integrity.service.js';
 import { sendFile } from 'src/utils/file.js';
@@ -35,6 +36,17 @@ export class IntegrityAdminController {
     return this.service.getIntegrityReportSummary();
   }
 
+  @Get('runs')
+  @Endpoint({
+    summary: 'Get integrity check runs',
+    description: 'Get when each integrity check last completed a full run',
+    history: new HistoryBuilder().added('v3').alpha('v3'),
+  })
+  @Authenticated({ permission: Permission.Maintenance, admin: true })
+  getIntegrityCheckRuns(): Promise<IntegrityCheckRunsResponseDto> {
+    return this.service.getIntegrityCheckRuns();
+  }
+
   @Get('report')
   @HttpCode(HttpStatus.OK)
   @Endpoint({
@@ -55,6 +67,8 @@ export class IntegrityAdminController {
   })
   @FileResponse()
   @Authenticated({ permission: Permission.Maintenance, admin: true })
+  // FL-161: the flagged file itself, usually an original
+  @OriginalTransfer()
   async getIntegrityReportFile(
     @Param() { id }: UUIDv7ParamDto,
     @Res() res: Response,

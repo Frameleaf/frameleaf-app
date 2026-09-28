@@ -150,6 +150,7 @@ export const getForMetadataExtraction = (
   fileModifiedAt: asset.fileModifiedAt,
   isExternal: asset.isExternal,
   visibility: asset.visibility,
+  isLocked: asset.isLocked,
   libraryId: asset.libraryId,
   livePhotoVideoId: asset.livePhotoVideoId,
   localDateTime: asset.localDateTime,
@@ -173,12 +174,14 @@ export const getForGenerateThumbnail = (asset: ReturnType<AssetFactory['build']>
   ownerId: asset.ownerId,
   thumbhash: asset.thumbhash,
   type: asset.type,
+  checksum: asset.checksum,
   files: asset.files.map((file) => getDehydrated(file)),
   exifInfo: getDehydrated(asset.exifInfo),
   edits: asset.edits.map(({ action, parameters }) => ({ action, parameters })) as AssetEditActionItem[],
   videoStream: null as (VideoStreamInfo & { timeBase: number }) | null,
   audioStream: null as AudioStreamInfo | null,
   format: null as VideoFormat | null,
+  coverTimestampMs: null as number | null,
 });
 
 export const getForAssetFace = (face: ReturnType<AssetFaceFactory['build']>) => ({
@@ -189,6 +192,7 @@ export const getForAssetFace = (face: ReturnType<AssetFaceFactory['build']>) => 
 export const getForDetectedFaces = (asset: ReturnType<AssetFactory['build']>) => ({
   id: asset.id,
   visibility: asset.visibility,
+  checksum: asset.checksum,
   exifInfo: getDehydrated(asset.exifInfo),
   faces: asset.faces.map((face) => getDehydrated(face)),
   files: asset.files.map((file) => getDehydrated(file)),
@@ -215,6 +219,8 @@ export const getForAssetDeletion = (asset: ReturnType<AssetFactory['build']>) =>
   livePhotoVideoId: asset.livePhotoVideoId,
   originalPath: asset.originalPath,
   isOffline: asset.isOffline,
+  // a deletion job runs on an asset in the trash
+  deletedAt: asset.deletedAt ?? new Date('2024-01-01T00:00:00.000Z'),
   exifInfo: asset.exifInfo ? getDehydrated(asset.exifInfo) : null,
   files: asset.files.map((file) => getDehydrated(file)),
   stack: asset.stack

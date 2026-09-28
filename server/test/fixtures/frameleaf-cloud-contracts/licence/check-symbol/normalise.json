@@ -1,0 +1,25 @@
+{
+  "description": "Lower case, missing hyphens and stray spaces normalise to the printed key",
+  "cases": [
+    {
+      "input": "fl-sabc-defg-h23j",
+      "key": "FL-SABC-DEFG-H23J"
+    },
+    {
+      "input": "FLSABCDEFGH23J",
+      "key": "FL-SABC-DEFG-H23J"
+    },
+    {
+      "input": "flsabcdefgh23j",
+      "key": "FL-SABC-DEFG-H23J"
+    },
+    {
+      "input": " FL SABC DEFG H23J ",
+      "key": "FL-SABC-DEFG-H23J"
+    },
+    {
+      "input": "FL-IABCdefg-h233",
+      "key": "FL-IABC-DEFG-H233"
+    }
+  ]
+}

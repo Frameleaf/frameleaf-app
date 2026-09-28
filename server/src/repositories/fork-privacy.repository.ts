@@ -65,6 +65,33 @@ export class ForkPrivacyRepository {
     return result.rows[0];
   }
 
+  /**
+   * Writes the privacy projection for one asset's classification (FL-34). Called with the enrichment
+   * writer's transaction and per-asset metadata lock, so the projection every read filters on commits
+   * with the review that produced it. A missing row means "no classification yet" (not sensitive, no
+   * review), so any write creates it: with the effective verdict when there is one, otherwise the
+   * asset's legacy flag (as `mirrorFromLegacy` does), otherwise not sensitive. An existing row keeps
+   * its verdict when this write has none; the review (`suppression`) is always the one written.
+   */
+  async saveClassification(
+    assetId: string,
+    isNsfw: boolean | undefined,
+    suppression: Record<string, unknown> | null,
+    kysely: Kysely<DB>,
+  ): Promise<void> {
+    await sql`
+      INSERT INTO immich_fork.asset_privacy ("assetId", "isNsfw", suppression)
+      VALUES (
+        ${assetId}::uuid,
+        COALESCE(${isNsfw ?? null}::boolean, (SELECT is_nsfw FROM asset WHERE id = ${assetId}::uuid), false),
+        ${suppression}::jsonb
+      )
+      ON CONFLICT ("assetId") DO UPDATE
+      SET "isNsfw" = COALESCE(${isNsfw ?? null}::boolean, asset_privacy."isNsfw"),
+        suppression = EXCLUDED.suppression, "updatedAt" = now()
+    `.execute(kysely);
+  }
+
   async delete(assetIds: string[], kysely: Kysely<DB> = this.db): Promise<void> {
     if (assetIds.length > 0 && isForkWriteEnabled(await this.getPhase(kysely))) {
       await sql`DELETE FROM immich_fork.asset_privacy WHERE "assetId" = ANY(${assetIds}::uuid[])`.execute(kysely);

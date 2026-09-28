@@ -8,10 +8,19 @@ import {
   deleteUserAdmin,
 } from '@immich/sdk';
 import { createUserDto, uuidDto } from 'src/fixtures.js';
+import { makeRandomImage } from 'src/generators.js';
 import { errorDto } from 'src/responses.js';
 import { app, asBearerAuth, baseUrl, shareUrl, utils } from 'src/utils.js';
 import request from 'supertest';
 import { beforeAll, describe, expect, it } from 'vitest';
+
+const uploadWithKey = (key: string) =>
+  request(app)
+    .post('/assets')
+    .query({ key })
+    .attach('assetData', makeRandomImage(), 'guest.png')
+    .field('fileCreatedAt', new Date().toISOString())
+    .field('fileModifiedAt', new Date().toISOString());
 
 describe('/shared-links', () => {
   let admin: LoginResponseDto;
@@ -109,11 +118,12 @@ describe('/shared-links', () => {
       expect(resp.text).toContain(`<meta property="og:image" content="http://127.0.0.1:2285`);
     });
 
-    it('should fall back to my.immich.app og:image meta tag for shared asset if Host header is not present', async () => {
+    it('should leave out the og:image meta tag if Host header is not present (FL-190)', async () => {
       const resp = await request(shareUrl).get(`/${linkWithAssets.key}`).set('Host', '');
       expect(resp.status).toBe(200);
       expect(resp.header['content-type']).toContain('text/html');
-      expect(resp.text).toContain(`<meta property="og:image" content="https://my.immich.app`);
+      expect(resp.text).not.toContain('og:image');
+      expect(resp.text).not.toContain('immich.app');
     });
 
     it('should return 404 for an invalid shared link', async () => {
@@ -213,6 +223,20 @@ describe('/shared-links', () => {
 
       expect(status).toBe(401);
       expect(body).toEqual({ message: 'Invalid share key' });
+    });
+
+    it('says an expired link expired, with the same message and nothing about the link', async () => {
+      const expired = await utils.createSharedLink(user1.accessToken, {
+        type: SharedLinkType.Album,
+        albumId: album.id,
+      });
+      const client = await utils.connectDatabase();
+      await client.query(`UPDATE shared_link SET "expiresAt" = now() - interval '1 day' WHERE id = $1`, [expired.id]);
+
+      const { status, body } = await request(app).get('/shared-links/me').query({ key: expired.key });
+
+      expect(status).toBe(401);
+      expect(body).toEqual({ message: 'Invalid share key', reason: 'expired' });
     });
 
     it('should return unauthorized if target has been soft deleted', async () => {
@@ -411,6 +435,152 @@ describe('/shared-links', () => {
 
       expect(body).toEqual([{ assetId: asset2.id, success: true }]);
       expect(status).toBe(200);
+    });
+  });
+
+  // FL-56: what a link allows is enforced on the server, whatever a client offers.
+  describe('link permissions', () => {
+    let owned: AssetMediaResponseDto;
+    let outside: AssetMediaResponseDto;
+    let shared: AlbumResponseDto;
+    let other: AlbumResponseDto;
+    let noDownload: SharedLinkResponseDto;
+    let noUpload: SharedLinkResponseDto;
+    let withUpload: SharedLinkResponseDto;
+
+    beforeAll(async () => {
+      [owned, outside] = await Promise.all([
+        utils.createAsset(user1.accessToken),
+        utils.createAsset(user1.accessToken),
+      ]);
+      [shared, other] = await Promise.all([
+        createAlbum(
+          { createAlbumDto: { albumName: 'guest album', assetIds: [owned.id] } },
+          { headers: asBearerAuth(user1.accessToken) },
+        ),
+        createAlbum(
+          { createAlbumDto: { albumName: 'private album', assetIds: [outside.id] } },
+          { headers: asBearerAuth(user1.accessToken) },
+        ),
+      ]);
+      [noDownload, noUpload, withUpload] = await Promise.all([
+        utils.createSharedLink(user1.accessToken, {
+          type: SharedLinkType.Album,
+          albumId: shared.id,
+          allowDownload: false,
+          allowUpload: false,
+        }),
+        utils.createSharedLink(user1.accessToken, {
+          type: SharedLinkType.Album,
+          albumId: shared.id,
+          allowDownload: true,
+          allowUpload: false,
+        }),
+        utils.createSharedLink(user1.accessToken, {
+          type: SharedLinkType.Album,
+          albumId: shared.id,
+          allowDownload: true,
+          allowUpload: true,
+        }),
+      ]);
+    });
+
+    describe('allowDownload=false', () => {
+      it('refuses the original of a shared item', async () => {
+        // File routes answer every refusal, access included, with 404 (sendFile in utils/file.ts);
+        // the access check itself is proven in the shared-link medium spec.
+        const { status } = await request(app).get(`/assets/${owned.id}/original`).query({ key: noDownload.key });
+        expect(status).toBe(404);
+      });
+
+      it('refuses an archive of the album or of its items', async () => {
+        const info = await request(app)
+          .post('/download/info')
+          .query({ key: noDownload.key })
+          .send({ albumId: shared.id });
+        expect(info.status).toBe(400);
+
+        const archive = await request(app)
+          .post('/download/archive')
+          .query({ key: noDownload.key })
+          .send({ assetIds: [owned.id] });
+        expect(archive.status).toBe(400);
+      });
+
+      it('still shows the shared item', async () => {
+        const { status } = await request(app).get(`/assets/${owned.id}/thumbnail`).query({ key: noDownload.key });
+        expect(status).toBe(200);
+      });
+    });
+
+    it('lets a link that allows download take the original of a shared item only', async () => {
+      const shareItem = await request(app).get(`/assets/${owned.id}/original`).query({ key: noUpload.key });
+      expect(shareItem.status).toBe(200);
+
+      const outsideItem = await request(app).get(`/assets/${outside.id}/original`).query({ key: noUpload.key });
+      expect(outsideItem.status).toBe(404);
+    });
+
+    it('refuses an upload through a link that does not allow one', async () => {
+      // The upload interceptor refuses before any byte is stored (requireUploadAccess).
+      const { status } = await uploadWithKey(noUpload.key);
+      expect(status).toBe(401);
+    });
+
+    describe('allowUpload=true', () => {
+      it('adds the upload to the shared album and nowhere else', async () => {
+        const { status, body } = await uploadWithKey(withUpload.key);
+        expect(status).toBe(201);
+        expect(body).toEqual(expect.objectContaining({ id: expect.any(String), status: 'created' }));
+
+        // The link reads only what its album holds, so reading the upload through it proves where it went.
+        const throughLink = await request(app).get(`/assets/${body.id}`).query({ key: withUpload.key });
+        expect(throughLink.status).toBe(200);
+
+        const album = await request(app)
+          .get(`/albums/${shared.id}`)
+          .set('Authorization', `Bearer ${user1.accessToken}`);
+        expect(album.body.assetCount).toBe(2);
+        const elsewhere = await request(app)
+          .get(`/albums/${other.id}`)
+          .set('Authorization', `Bearer ${user1.accessToken}`);
+        expect(elsewhere.body.assetCount).toBe(1);
+      });
+
+      it('cannot reach or add to any other album', async () => {
+        const read = await request(app).get(`/albums/${other.id}`).query({ key: withUpload.key });
+        expect(read.status).toBe(400);
+
+        // Adding to an album is not a shared-link route at all.
+        const add = await request(app)
+          .put(`/albums/${other.id}/assets`)
+          .query({ key: withUpload.key })
+          .send({ ids: [owned.id] });
+        expect(add.status).toBe(403);
+
+        const outsideItem = await request(app).get(`/assets/${outside.id}`).query({ key: withUpload.key });
+        expect(outsideItem.status).toBe(400);
+      });
+    });
+
+    it('refuses everything once the link is revoked', async () => {
+      const revoked = await utils.createSharedLink(user1.accessToken, {
+        type: SharedLinkType.Album,
+        albumId: shared.id,
+        allowDownload: true,
+        allowUpload: true,
+      });
+      await request(app)
+        .delete(`/shared-links/${revoked.id}`)
+        .set('Authorization', `Bearer ${user1.accessToken}`)
+        .expect(204);
+
+      const me = await request(app).get('/shared-links/me').query({ key: revoked.key });
+      expect(me.status).toBe(401);
+      const original = await request(app).get(`/assets/${owned.id}/original`).query({ key: revoked.key });
+      expect(original.status).toBe(401);
+      const upload = await uploadWithKey(revoked.key);
+      expect(upload.status).toBe(401);
     });
   });
 

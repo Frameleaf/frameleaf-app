@@ -1,0 +1,34 @@
+{
+  "description": "Valid signed activation from an unlinked server",
+  "header": {
+    "alg": "EdDSA",
+    "typ": "JWT",
+    "kid": "Xj3gtXILdiQF1FeweQax-XIzrYotSJ6ToTJmOc04wRE",
+    "jwk": {
+      "kty": "OKP",
+      "crv": "Ed25519",
+      "x": "6LH2zTHunfRJKd-U98-eD96466xMLN3OF6hR9jtMKYM"
+    }
+  },
+  "payload": {
+    "key": "FL-SABC-DEFG-H23J",
+    "fingerprint": {
+      "instanceId": "0192a1b2-c3d4-7e5f-9a6b-000000000001",
+      "jkt": "Xj3gtXILdiQF1FeweQax-XIzrYotSJ6ToTJmOc04wRE"
+    },
+    "instanceName": "Basement NAS",
+    "aud": "https://api.frameleaf.cloud/v1/licenses/activate",
+    "iat": 1790380800,
+    "exp": 1790381100,
+    "jti": "act_01J8ZK3M4N5P6Q7R8S9T"
+  },
+  "jws": "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCIsImtpZCI6IlhqM2d0WElMZGlRRjFGZXdlUWF4LVhJenJZb3RTSjZUb1RKbU9jMDR3UkUiLCJqd2siOnsia3R5IjoiT0tQIiwiY3J2IjoiRWQyNTUxOSIsIngiOiI2TEgyelRIdW5mUkpLZC1VOTgtZUQ5NjQ2NnhNTE4zT0Y2aFI5anRNS1lNIn19.eyJrZXkiOiJGTC1TQUJDLURFRkctSDIzSiIsImZpbmdlcnByaW50Ijp7Imluc3RhbmNlSWQiOiIwMTkyYTFiMi1jM2Q0LTdlNWYtOWE2Yi0wMDAwMDAwMDAwMDEiLCJqa3QiOiJYajNndFhJTGRpUUYxRmV3ZVFheC1YSXpyWW90U0o2VG9USm1PYzA0d1JFIn0sImluc3RhbmNlTmFtZSI6IkJhc2VtZW50IE5BUyIsImF1ZCI6Imh0dHBzOi8vYXBpLmZyYW1lbGVhZi5jbG91ZC92MS9saWNlbnNlcy9hY3RpdmF0ZSIsImlhdCI6MTc5MDM4MDgwMCwiZXhwIjoxNzkwMzgxMTAwLCJqdGkiOiJhY3RfMDFKOFpLM000TjVQNlE3UjhTOVQifQ.EqG-hETYidWhwIOo19-pP6IFTqHm3WN82frqA8mWz6rjIl9eQ-Iw44LlcQbHuXCOSmavc77IzXQ7fDC60kDmDQ",
+  "context": {
+    "aud": "https://api.frameleaf.cloud/v1/licenses/activate",
+    "now": 1790380830
+  },
+  "expect": {
+    "accepted": true,
+    "cnfJkt": "Xj3gtXILdiQF1FeweQax-XIzrYotSJ6ToTJmOc04wRE"
+  }
+}

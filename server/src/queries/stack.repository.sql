@@ -10,6 +10,14 @@ select
       (
         select
           "asset".*,
+          exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "asset"."id"
+          ) as "isLocked",
           to_json("exifInfo") as "exifInfo"
         from
           "asset"
@@ -53,7 +61,17 @@ select
         where
           "asset"."deletedAt" is null
           and "asset"."stackId" = "stack"."id"
-          and "asset"."visibility" in ('archive', 'timeline')
+          and (
+            "asset"."visibility" in ('archive', 'timeline')
+            and not exists (
+              select
+                1
+              from
+                asset_lock
+              where
+                asset_lock."assetId" = "asset"."id"
+            )
+          )
           and not (
             case
               when "asset"."id" is null then false
@@ -104,6 +122,22 @@ from
   inner join "asset" as "primaryAsset" on "primaryAsset"."id" = "stack"."primaryAssetId"
 where
   "stack"."ownerId" = $1
+  and not exists (
+    select
+      1 as "exists"
+    from
+      "asset" as "lockedPrimary"
+    where
+      "lockedPrimary"."id" = "stack"."primaryAssetId"
+      and exists (
+        select
+          1
+        from
+          asset_lock
+        where
+          asset_lock."assetId" = "lockedPrimary"."id"
+      )
+  )
   and "primaryAsset"."deletedAt" is null
   and not (
     case
@@ -162,6 +196,14 @@ select
       (
         select
           "asset".*,
+          exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "asset"."id"
+          ) as "isLocked",
           (
             select
               coalesce(json_agg(agg), '[]')
@@ -224,7 +266,17 @@ select
         where
           "asset"."deletedAt" is null
           and "asset"."stackId" = "stack"."id"
-          and "asset"."visibility" in ('archive', 'timeline')
+          and (
+            "asset"."visibility" in ('archive', 'timeline')
+            and not exists (
+              select
+                1
+              from
+                asset_lock
+              where
+                asset_lock."assetId" = "asset"."id"
+            )
+          )
           and not (
             case
               when "asset"."id" is null then false
@@ -275,6 +327,22 @@ from
   inner join "asset" as "primaryAsset" on "primaryAsset"."id" = "stack"."primaryAssetId"
 where
   "id" = $1::uuid
+  and not exists (
+    select
+      1 as "exists"
+    from
+      "asset" as "lockedPrimary"
+    where
+      "lockedPrimary"."id" = "stack"."primaryAssetId"
+      and exists (
+        select
+          1
+        from
+          asset_lock
+        where
+          asset_lock."assetId" = "lockedPrimary"."id"
+      )
+  )
   and "primaryAsset"."deletedAt" is null
   and not (
     case
@@ -329,8 +397,71 @@ where
   "asset"."id" = $1
 
 -- StackRepository.merge
+begin
 update "asset"
 set
   "stackId" = $1
 where
   "asset"."stackId" = $2
+select
+  member.id
+from
+  asset as member
+where
+  member."stackId" = any ($1::uuid[])
+union
+select
+  member."livePhotoVideoId"
+from
+  asset as member
+where
+  member."stackId" = any ($2::uuid[])
+  and member."livePhotoVideoId" is not null
+with
+  source as (
+    select distinct
+      on (asset."stackId") asset."stackId",
+      asset_lock."reason",
+      asset_lock."lockedBy"
+    from
+      asset_lock
+      inner join asset on asset.id = asset_lock."assetId"
+      inner join stack on stack.id = asset."stackId"
+    where
+      asset."stackId" = any ($1::uuid[])
+    order by
+      asset."stackId",
+      (asset.id = stack."primaryAssetId") desc,
+      asset_lock."lockedAt"
+  ),
+  target as (
+    select
+      member.id,
+      source."reason",
+      source."lockedBy"
+    from
+      asset as member
+      inner join source on source."stackId" = member."stackId"
+    union
+    select
+      member."livePhotoVideoId" as id,
+      source."reason",
+      source."lockedBy"
+    from
+      asset as member
+      inner join source on source."stackId" = member."stackId"
+    where
+      member."livePhotoVideoId" is not null
+  )
+insert into
+  asset_lock ("assetId", "reason", "lockedBy")
+select
+  target.id,
+  target."reason",
+  target."lockedBy"
+from
+  target
+on conflict ("assetId") do nothing
+returning
+  "assetId"
+commit

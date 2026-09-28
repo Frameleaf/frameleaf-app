@@ -10,6 +10,8 @@
   import Picker from '$lib/components/frameleaf/Picker.svelte';
   import PickerHarness from './PickerHarness.svelte';
   import DialogHarness from './DialogHarness.svelte';
+  import ControlsHarness from './ControlsHarness.svelte';
+  import MenuHarness from './MenuHarness.svelte';
   let theme: 'dark' | 'light' = $state('dark');
   let collapsed = $state(false);
   let chip = $state(true);
@@ -23,6 +25,9 @@
       <button type="button" onclick={() => (theme = theme === 'dark' ? 'light' : 'dark')}>Change theme</button>
       <PickerHarness {theme} />
       <PickerHarness {theme} disabled />
+      <ControlsHarness {theme} />
+      <ControlsHarness {theme} disabled />
+      <MenuHarness {theme} />
       <div class="workspace">
         <Rail label="Library" toggleLabel="Toggle navigation" bind:collapsed>
           {#snippet children(isCollapsed)}

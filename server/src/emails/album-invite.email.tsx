@@ -2,6 +2,7 @@ import { Img, Link, Section, Text } from '@react-email/components';
 import * as React from 'react';
 import { ImmichButton } from 'src/emails/components/button.component.js';
 import ImmichLayout from 'src/emails/components/immich.layout.js';
+import { NO_LINK_ALBUM } from 'src/emails/components/no-link.js';
 import { AlbumInviteEmailProps } from 'src/repositories/email.repository.js';
 import { replaceTemplateTags } from 'src/utils/replace-template-tags.js';
 
@@ -19,7 +20,7 @@ export const AlbumInviteEmail = ({
     recipientName,
     senderName,
     albumId,
-    baseUrl,
+    baseUrl: baseUrl ?? '',
   };
 
   const emailContent = customTemplate ? (
@@ -37,7 +38,10 @@ export const AlbumInviteEmail = ({
   );
 
   return (
-    <ImmichLayout preview={customTemplate ? emailContent.toString() : 'You have been added to a shared album.'}>
+    <ImmichLayout
+      baseUrl={baseUrl}
+      preview={customTemplate ? emailContent.toString() : 'You have been added to a shared album.'}
+    >
       {customTemplate && (
         <Text className="m-0">
           <div dangerouslySetInnerHTML={{ __html: emailContent }}></div>
@@ -58,21 +62,27 @@ export const AlbumInviteEmail = ({
         </Section>
       )}
 
-      <Section className="flex justify-center my-6">
-        <ImmichButton href={`${baseUrl}/albums/${albumId}`}>View Album</ImmichButton>
-      </Section>
+      {baseUrl ? (
+        <>
+          <Section className="flex justify-center my-6">
+            <ImmichButton href={`${baseUrl}/albums/${albumId}`}>View Album</ImmichButton>
+          </Section>
 
-      <Text className="text-xs">
-        If you cannot click the button use the link below to view the album.
-        <br />
-        <Link href={`${baseUrl}/albums/${albumId}`}>{`${baseUrl}/albums/${albumId}`}</Link>
-      </Text>
+          <Text className="text-xs">
+            If you cannot click the button use the link below to view the album.
+            <br />
+            <Link href={`${baseUrl}/albums/${albumId}`}>{`${baseUrl}/albums/${albumId}`}</Link>
+          </Text>
+        </>
+      ) : (
+        <Text>{NO_LINK_ALBUM}</Text>
+      )}
     </ImmichLayout>
   );
 };
 
 AlbumInviteEmail.PreviewProps = {
-  baseUrl: 'https://demo.immich.app',
+  baseUrl: 'https://photos.example.com',
   albumName: 'Trip to Europe',
   albumId: 'b63f6dae-e1c9-401b-9a85-9dbbf5612539',
   senderName: 'Owner User',

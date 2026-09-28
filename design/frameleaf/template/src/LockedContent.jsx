@@ -24,6 +24,7 @@ export function LockedControl({
   const [resources, setResources] = useState(loadResourceState);
   const [open, setOpen] = useState(false);
   const [pin, setPin] = useState("");
+  const [pinFocused, setPinFocused] = useState(false);
   const [error, setError] = useState("");
   const dialog = useRef(null);
   const priorFocus = useRef(null);
@@ -196,23 +197,38 @@ export function LockedControl({
                   Reveal photos hidden by your rules and open your Locked
                   collection.
                 </p>
-                <label className="locked-pin-label">
-                  Six-digit PIN
+                <div
+                  className={`pin-cells locked-pin-cells ${error ? "error" : ""} ${pinFocused ? "focused" : ""}`}
+                >
+                  {Array.from({ length: 6 }, (_, index) => (
+                    <span
+                      key={index}
+                      aria-hidden="true"
+                      className={`pin-cell ${index < pin.length ? "filled" : ""} ${
+                        index === Math.min(pin.length, 5) ? "active" : ""
+                      }`}
+                    />
+                  ))}
                   <input
+                    className="pin-input"
                     type="password"
                     inputMode="numeric"
-                    autoComplete="off"
+                    autoComplete="one-time-code"
                     autoFocus
                     maxLength={6}
-                    pattern="[0-9]{6}"
+                    pattern="[0-9]*"
                     value={pin}
+                    aria-label="Six-digit PIN"
                     aria-describedby={hintId}
+                    aria-invalid={error ? true : undefined}
+                    onFocus={() => setPinFocused(true)}
+                    onBlur={() => setPinFocused(false)}
                     onChange={(event) => {
                       setPin(event.target.value.replace(/\D/g, "").slice(0, 6));
                       setError("");
                     }}
                   />
-                </label>
+                </div>
                 <p className="locked-hint" id={hintId}>
                   Sample library: enter any six digits. Your PIN is not stored.
                 </p>

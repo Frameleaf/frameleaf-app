@@ -5,13 +5,22 @@ import {
   captureDateHasCustomCondition,
   customConditionValue,
   equalityControlValue,
+  flagToggleActive,
   moveSetGroup,
   ratingConditionForValue,
   ratingControlValue,
+  statusConditionForValue,
+  statusControlValue,
+  toggleFlagCondition,
   updateCaptureDate,
   updateSetGroup,
 } from "../src/filter-state.mjs";
-import { resolveSamplePhrase, searchSampleAssets } from "../src/search.mjs";
+import {
+  descriptionStatuses,
+  resolveSamplePhrase,
+  searchSampleAssets,
+  sensitiveStatuses,
+} from "../src/search.mjs";
 
 const assets = [
   {
@@ -216,4 +225,73 @@ test("rating choices round-trip exact/minimum/null/zero without changing their r
   assert.equal(ratingControlValue({ gte: 3, lte: 4 }), customConditionValue);
   assert.equal(ratingControlValue({ ne: 5 }), customConditionValue);
   assert.equal(ratingConditionForValue(customConditionValue), undefined);
+});
+
+test("quick toggles set and clear one boolean equality without touching custom conditions", () => {
+  assert.equal(flagToggleActive(undefined, false), false);
+  assert.deepEqual(toggleFlagCondition(null, false), { eq: false });
+  assert.equal(flagToggleActive({ eq: false }, false), true);
+  assert.equal(toggleFlagCondition({ eq: false }, false), null);
+  assert.deepEqual(toggleFlagCondition({ eq: true }, false), { eq: false });
+  assert.equal(flagToggleActive({ ne: false }, false), false);
+  assert.deepEqual(toggleFlagCondition({ ne: false }, false), { eq: false });
+  assert.deepEqual(toggleFlagCondition({ eq: false }, "false"), { eq: false });
+  assert.deepEqual(matches({ hasAlbums: toggleFlagCondition(null, false) }), [
+    "both",
+    "jamie",
+    "excluded",
+    "none",
+  ]);
+});
+
+test("enrichment status controls round-trip fixed vocabularies and flag other conditions", () => {
+  for (const value of ["", ...descriptionStatuses]) {
+    assert.equal(
+      statusControlValue(
+        statusConditionForValue(value, descriptionStatuses),
+        descriptionStatuses,
+      ),
+      value,
+    );
+  }
+  assert.equal(
+    statusControlValue({ ne: "generated" }, descriptionStatuses),
+    customConditionValue,
+  );
+  assert.equal(
+    statusControlValue({ eq: "unknown" }, sensitiveStatuses),
+    customConditionValue,
+  );
+  assert.equal(statusConditionForValue("bogus", sensitiveStatuses), undefined);
+  assert.deepEqual(
+    statusConditionForValue("needs-review", sensitiveStatuses),
+    { eq: "needs-review" },
+  );
+  const enriched = [
+    {
+      id: "generated",
+      description: "A lake",
+      enrichment: {
+        description: { status: "generated" },
+        sensitive: { status: "reviewed" },
+      },
+    },
+    {
+      id: "missing",
+      description: "",
+      enrichment: { sensitive: { status: "needs-review" } },
+    },
+  ];
+  assert.deepEqual(
+    searchSampleAssets(enriched, {
+      filter: { descriptionStatus: { eq: "missing" } },
+    }).map((asset) => asset.id),
+    ["missing"],
+  );
+  assert.deepEqual(
+    searchSampleAssets(enriched, {
+      filter: { sensitiveStatus: statusConditionForValue("needs-review", sensitiveStatuses) },
+    }).map((asset) => asset.id),
+    ["missing"],
+  );
 });

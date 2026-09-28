@@ -9,8 +9,12 @@ import { UserPreferencesResponseDto, UserPreferencesUpdateDto } from 'src/dtos/u
 import {
   UserAdminCreateDto,
   UserAdminDeleteDto,
+  UserAdminHistoryResponseDto,
+  UserAdminHistorySearchDto,
+  UserAdminPinCodeStateResponseDto,
   UserAdminResponseDto,
   UserAdminSearchDto,
+  UserAdminSessionParamDto,
   UserAdminUpdateDto,
 } from 'src/dtos/user.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
@@ -41,8 +45,8 @@ export class UserAdminController {
     description: 'Create a new user.',
     history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
   })
-  createUserAdmin(@Body() createUserDto: UserAdminCreateDto): Promise<UserAdminResponseDto> {
-    return this.service.create(createUserDto);
+  createUserAdmin(@Auth() auth: AuthDto, @Body() createUserDto: UserAdminCreateDto): Promise<UserAdminResponseDto> {
+    return this.service.create(auth, createUserDto);
   }
 
   @Get(':id')
@@ -116,6 +120,26 @@ export class UserAdminController {
     return this.service.getCalendarHeatmap(auth, id, dto);
   }
 
+  /**
+   * FL-76: the account detail's Activity tab. What administrators did to this account and its
+   * libraries, newest first, recorded by the services that made each change.
+   */
+  @Get(':id/history')
+  @Authenticated({ permission: Permission.AdminUserRead, admin: true })
+  @Endpoint({
+    summary: 'Retrieve user history',
+    description:
+      'What administrators did to a specific user and their libraries, newest first: account creation, profile, role, quota and storage label changes, password and PIN resets, signed-out devices, preference changes, deletion and restore, and library changes and scans. Page with `before` and `take`.',
+    history: new HistoryBuilder().added('v3').stable('v3'),
+  })
+  getUserHistoryAdmin(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @Query() dto: UserAdminHistorySearchDto,
+  ): Promise<UserAdminHistoryResponseDto> {
+    return this.service.getHistory(auth, id, dto);
+  }
+
   @Get(':id/sessions')
   @Authenticated({ permission: Permission.AdminSessionRead, admin: true })
   @Endpoint({
@@ -125,6 +149,37 @@ export class UserAdminController {
   })
   getUserSessionsAdmin(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<SessionResponseDto[]> {
     return this.service.getSessions(auth, id);
+  }
+
+  /**
+   * FL-76: `SessionService.delete` only checks `Permission.AuthDeviceDelete` over the caller's
+   * own sessions, so an administrator could never revoke a foreign session through it. This is
+   * the explicit, audited admin path the account detail's Security tab needs instead.
+   */
+  @Delete(':id/sessions/:sessionId')
+  @Authenticated({ permission: Permission.AdminSessionDelete, admin: true })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Endpoint({
+    summary: 'Delete a user session',
+    description: 'Delete a specific session for a specific user, signing that device out.',
+    history: new HistoryBuilder().added('v3').stable('v3'),
+  })
+  deleteUserSessionAdmin(@Auth() auth: AuthDto, @Param() { id, sessionId }: UserAdminSessionParamDto): Promise<void> {
+    return this.service.deleteSession(auth, id, sessionId);
+  }
+
+  @Get(':id/pin-code')
+  @Authenticated({ permission: Permission.AdminUserRead, admin: true })
+  @Endpoint({
+    summary: 'Retrieve whether a user has a PIN',
+    description: 'Retrieve whether a specific user has a PIN code set, never the PIN itself.',
+    history: new HistoryBuilder().added('v3').alpha('v3'),
+  })
+  getUserPinCodeStateAdmin(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+  ): Promise<UserAdminPinCodeStateResponseDto> {
+    return this.service.getPinCodeState(auth, id);
   }
 
   @Get(':id/statistics')

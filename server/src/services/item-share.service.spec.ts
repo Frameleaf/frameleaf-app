@@ -1,0 +1,188 @@
+import { BadRequestException } from '@nestjs/common';
+import { NotificationType } from 'src/enum.js';
+import { ITEM_SHARE_LOCKED, ItemShareService, SHARED_WITH_YOU_PATH } from 'src/services/item-share.service.js';
+import { AssetFactory } from 'test/factories/asset.factory.js';
+import { AuthFactory } from 'test/factories/auth.factory.js';
+import { UserFactory } from 'test/factories/user.factory.js';
+import { newUuid } from 'test/small.factory.js';
+import { ServiceMocks, newTestService } from 'test/utils.js';
+
+/**
+ * FL-83 (AL-30b, owner decision 2026-09-27): sharing individual items with a person in this library.
+ */
+describe(ItemShareService.name, () => {
+  let sut: ItemShareService;
+  let mocks: ServiceMocks;
+
+  const owner = UserFactory.create({ name: 'Taylor' });
+  const jamie = UserFactory.create({ name: 'Jamie' });
+  const auth = AuthFactory.create(owner);
+  const row = (assetId: string, sharedWithId = jamie.id) => ({
+    id: newUuid(),
+    assetId,
+    ownerId: owner.id,
+    sharedWithId,
+    createdAt: new Date('2026-09-27T12:00:00Z'),
+  });
+
+  const users = (...list: (typeof owner)[]) =>
+    mocks.user.get.mockImplementation((id: string) => Promise.resolve(list.find((user) => user.id === id) as never));
+
+  beforeEach(() => {
+    ({ sut, mocks } = newTestService(ItemShareService));
+    mocks.asset.getLockedAssetIds.mockResolvedValue(new Set());
+    mocks.asset.getHiddenContentAssetIds.mockResolvedValue(new Set());
+    mocks.itemShare.getForAssets.mockResolvedValue([]);
+    users(owner, jamie);
+  });
+
+  describe('share', () => {
+    it('shares the owner’s items, notifies each new recipient once and returns the link', async () => {
+      const [a, b] = [newUuid(), newUuid()];
+      mocks.systemMetadata.get.mockResolvedValue({ server: { externalDomain: 'https://photos.family.example' } });
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([a, b]));
+      mocks.itemShare.add.mockResolvedValue([row(a), row(b)]);
+      mocks.itemShare.getForAssets.mockResolvedValue([row(a), row(b)]);
+
+      const result = await sut.share(auth, { assetIds: [a, b], userIds: [jamie.id] });
+
+      expect(mocks.itemShare.add).toHaveBeenCalledWith(owner.id, [a, b], [jamie.id]);
+      expect(result).toMatchObject({
+        added: 2,
+        removed: 0,
+        link: `https://photos.family.example${SHARED_WITH_YOU_PATH}`,
+      });
+      expect(result.shares.map(({ sharedWith }) => sharedWith.id)).toEqual([jamie.id, jamie.id]);
+      expect(mocks.event.emit).toHaveBeenCalledTimes(1);
+      expect(mocks.event.emit).toHaveBeenCalledWith('ItemShare', {
+        ownerId: owner.id,
+        userId: jamie.id,
+        senderName: 'Taylor',
+        count: 2,
+        link: `https://photos.family.example${SHARED_WITH_YOU_PATH}`,
+      });
+    });
+
+    it('does not notify again for items that were already shared', async () => {
+      const a = newUuid();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([a]));
+      mocks.itemShare.add.mockResolvedValue([]);
+
+      await expect(sut.share(auth, { assetIds: [a], userIds: [jamie.id] })).resolves.toMatchObject({ added: 0 });
+      expect(mocks.event.emit).not.toHaveBeenCalled();
+    });
+
+    it('gives no link when the server has no address to hand out', async () => {
+      const a = newUuid();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([a]));
+      mocks.itemShare.add.mockResolvedValue([row(a)]);
+
+      await expect(sut.share(auth, { assetIds: [a], userIds: [jamie.id] })).resolves.toMatchObject({ link: null });
+    });
+
+    it('refuses items that are not the caller’s own, even ones they can see', async () => {
+      const [mine, theirs] = [newUuid(), newUuid()];
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([mine]));
+
+      await expect(sut.share(auth, { assetIds: [mine, theirs], userIds: [jamie.id] })).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(mocks.itemShare.add).not.toHaveBeenCalled();
+    });
+
+    it('refuses a locked item, and one hidden by the owner’s Locked rules, as a whole', async () => {
+      const [a, b] = [newUuid(), newUuid()];
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([a, b]));
+      mocks.asset.getLockedAssetIds.mockResolvedValue(new Set([b]));
+
+      await expect(sut.share(auth, { assetIds: [a, b], userIds: [jamie.id] })).rejects.toThrow(ITEM_SHARE_LOCKED);
+
+      mocks.asset.getLockedAssetIds.mockResolvedValue(new Set());
+      mocks.asset.getHiddenContentAssetIds.mockResolvedValue(new Set([a]));
+      const suppressed = { ...auth, suppressedContent: { userId: owner.id } as never };
+      await expect(sut.share(suppressed, { assetIds: [a, b], userIds: [jamie.id] })).rejects.toThrow(ITEM_SHARE_LOCKED);
+      expect(mocks.itemShare.add).not.toHaveBeenCalled();
+    });
+
+    it('refuses sharing with yourself or with someone who has no account here', async () => {
+      const a = newUuid();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([a]));
+
+      await expect(sut.share(auth, { assetIds: [a], userIds: [owner.id] })).rejects.toThrow('yourself');
+      await expect(sut.share(auth, { assetIds: [a], userIds: [newUuid()] })).rejects.toThrow(BadRequestException);
+      expect(mocks.itemShare.add).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('unshare', () => {
+    it('revokes the shares and tells the recipient’s open pages to drop the items', async () => {
+      const a = newUuid();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([a]));
+      mocks.itemShare.remove.mockResolvedValue([row(a)]);
+
+      await expect(sut.unshare(auth, { assetIds: [a], userIds: [jamie.id] })).resolves.toMatchObject({
+        added: 0,
+        removed: 1,
+        shares: [],
+      });
+      expect(mocks.itemShare.remove).toHaveBeenCalledWith(owner.id, [a], [jamie.id]);
+      expect(mocks.websocket.clientSend).toHaveBeenCalledWith('on_asset_hidden', jamie.id, a);
+    });
+
+    it('only revokes the caller’s own items', async () => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set());
+      await expect(sut.unshare(auth, { assetIds: [newUuid()], userIds: [jamie.id] })).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(mocks.itemShare.remove).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getReceived', () => {
+    it('lists what was shared with the recipient, with who shared it, and never a locked item', async () => {
+      const [visible, locked, trashed] = [
+        AssetFactory.create({ ownerId: owner.id }),
+        AssetFactory.create({ ownerId: owner.id }),
+        AssetFactory.create({ ownerId: owner.id, deletedAt: new Date() }),
+      ];
+      const recipient = AuthFactory.create(jamie);
+      mocks.itemShare.getReceived.mockResolvedValue([
+        { ...row(visible.id), createdAt: new Date('2026-09-27T12:00:00Z') },
+        row(locked.id),
+        row(trashed.id),
+      ]);
+      mocks.asset.getByIds.mockResolvedValue([
+        { ...visible, isLocked: false },
+        { ...locked, isLocked: true },
+        { ...trashed, isLocked: false },
+      ] as never);
+
+      const { items, link } = await sut.getReceived(recipient);
+
+      expect(items).toHaveLength(1);
+      expect(items[0]).toMatchObject({
+        sharedAt: '2026-09-27T12:00:00.000Z',
+        owner: { id: owner.id, name: 'Taylor' },
+        asset: { id: visible.id },
+      });
+      expect(link).toBeNull();
+      expect(mocks.itemShare.getReceived).toHaveBeenCalledWith(jamie.id);
+    });
+
+    it('applies the recipient’s own hidden content', async () => {
+      const [a, b] = [AssetFactory.create({ ownerId: owner.id }), AssetFactory.create({ ownerId: owner.id })];
+      mocks.itemShare.getReceived.mockResolvedValue([row(a.id), row(b.id)]);
+      mocks.asset.getHiddenContentAssetIds.mockResolvedValue(new Set([b.id]));
+      mocks.asset.getByIds.mockResolvedValue([{ ...a, isLocked: false }] as never);
+
+      const { items } = await sut.getReceived({ ...AuthFactory.create(jamie), hideNsfwAssets: true });
+
+      expect(mocks.asset.getByIds).toHaveBeenCalledWith([a.id]);
+      expect(items.map(({ asset }) => asset.id)).toEqual([a.id]);
+    });
+  });
+
+  it('uses the notification type album invitations use, with its own kind', () => {
+    expect(NotificationType.ItemShare).toBe('ItemShare');
+  });
+});

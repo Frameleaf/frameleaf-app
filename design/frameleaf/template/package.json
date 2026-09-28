@@ -6,8 +6,9 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "build": "vite build",
+    "capture": "node scripts/capture.mjs",
     "preview": "vite preview --host 127.0.0.1",
-    "test": "node --test tests/*.test.mjs"
+    "test": "node --test --test-concurrency=1 tests/*.test.mjs"
   },
   "dependencies": {
     "@fontsource/inter": "^5.3.0",
@@ -19,6 +20,7 @@
     "vite": "6.4.2"
   },
   "devDependencies": {
-    "happy-dom": "20.11.8"
+    "happy-dom": "20.11.8",
+    "playwright-core": "1.62.1"
   }
 }

@@ -1,6 +1,7 @@
 import { Kysely, sql } from 'kysely';
 import { CommandFactory } from 'nest-commander';
 import { ChildProcess, fork } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import { Worker } from 'node:worker_threads';
 import { PostgresError } from 'postgres';
@@ -9,6 +10,21 @@ import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { type DB } from 'src/schema/index.js';
 import { getKyselyConfig } from 'src/utils/database.js';
+
+/**
+ * FL-161: an `FRAMELEAF_EDGE_SECRET` set in the environment, kept for installs that set one on purpose.
+ * Read once, before the supervisor writes its own.
+ */
+const configuredEdgeSecret = process.env.FRAMELEAF_EDGE_SECRET;
+
+/**
+ * FL-161 (instance contract "Via-header contract"): the secret the edge worker sends as
+ * `X-Frameleaf-Via-Auth`, handed to every worker through the environment. Unless the administrator set
+ * one, it is generated again on every boot (and restart), so it never exists anywhere but in memory.
+ */
+const setEdgeSecret = () => {
+  process.env.FRAMELEAF_EDGE_SECRET = configuredEdgeSecret || randomBytes(32).toString('base64url');
+};
 
 /**
  * Manages worker lifecycle
@@ -24,10 +40,21 @@ class Workers {
    */
   restarting = false;
 
+  /** FL-165: the edge worker was asked to stop for a restart. */
+  stoppingEdge = false;
+
+  /** FL-165: when the edge worker last started, and how often in a row it failed. */
+  edgeStartedAt = 0;
+  edgeFailures = 0;
+  /** FL-165: set when this supervisor stops the edge worker itself; any other exit is a failure. */
+  edgeStopRequested = false;
+  edgeRestartTimer?: NodeJS.Timeout;
+
   /**
    * Boot all enabled workers
    */
   async bootstrap() {
+    setEdgeSecret();
     const isMaintenanceMode = await this.isMaintenanceMode();
     const { workers } = new ConfigRepository().getEnv();
 
@@ -104,9 +131,14 @@ class Workers {
     let anyWorker: Worker | ChildProcess;
     let kill: (signal?: NodeJS.Signals) => Promise<void> | void;
 
-    if (name === ImmichWorker.Api) {
+    // FL-165: the edge worker is a process of its own like the API: it holds the remote access
+    // certificate keys and every remote socket, apart from the workers that run jobs
+    if (name === ImmichWorker.Api || name === ImmichWorker.Edge) {
+      const inspectPort = name === ImmichWorker.Api ? 9231 : 9232;
       const worker = fork(workerFile, [], {
-        execArgv: process.execArgv.map((arg) => (arg.startsWith('--inspect') ? '--inspect=0.0.0.0:9231' : arg)),
+        execArgv: process.execArgv.map((arg) =>
+          arg.startsWith('--inspect') ? `--inspect=0.0.0.0:${inspectPort}` : arg,
+        ),
       });
 
       kill = (signal) => void worker.kill(signal);
@@ -123,6 +155,10 @@ class Workers {
     anyWorker.on('exit', (exitCode) => this.onExit(name, exitCode));
 
     this.workers[name] = { kill };
+    if (name === ImmichWorker.Edge) {
+      this.edgeStartedAt = Date.now();
+      this.edgeStopRequested = false;
+    }
   }
 
   onError(name: ImmichWorker, error: Error) {
@@ -133,16 +169,50 @@ class Workers {
     // restart immich server
     if (exitCode === ExitCode.AppRestart || this.restarting) {
       this.restarting = true;
+      // a pending edge restart would race the bootstrap that starts it again
+      clearTimeout(this.edgeRestartTimer);
 
       console.info(`${name} worker shutdown for restart`);
       delete this.workers[name];
+
+      // FL-165: the edge worker does not listen for restart events; it is stopped here (it closes
+      // its connections within 5 seconds) and starts again with the others
+      const edge = this.workers[ImmichWorker.Edge];
+      if (edge && name !== ImmichWorker.Edge && !this.stoppingEdge) {
+        this.stoppingEdge = true;
+        this.edgeStopRequested = true;
+        void edge.kill('SIGTERM');
+      }
 
       // once all workers shut down, bootstrap again
       if (Object.keys(this.workers).length === 0) {
         void this.bootstrap();
         this.restarting = false;
+        this.stoppingEdge = false;
       }
 
+      return;
+    }
+
+    // FL-165: the edge worker ending takes nothing else down. Stopped by this supervisor it stays
+    // stopped; ending any other way (an error, a crash, a kill from outside) it starts again on its
+    // own, waiting 1 s, then 2 s, 4 s … up to a minute while it keeps failing (a minute of running
+    // resets that)
+    if (name === ImmichWorker.Edge) {
+      delete this.workers[name];
+      if (this.edgeStopRequested) {
+        return;
+      }
+      const ranMs = Date.now() - this.edgeStartedAt;
+      this.edgeFailures = ranMs > 60_000 ? 1 : this.edgeFailures + 1;
+      const delay = Math.min(60_000, 1000 * 2 ** (this.edgeFailures - 1));
+      console.error(`edge worker exited with code ${exitCode}; starting it again in ${delay / 1000} s`);
+      clearTimeout(this.edgeRestartTimer);
+      this.edgeRestartTimer = setTimeout(() => {
+        if (!this.restarting && !this.workers[ImmichWorker.Edge]) {
+          this.startWorker(ImmichWorker.Edge);
+        }
+      }, delay);
       return;
     }
 
@@ -156,6 +226,12 @@ class Workers {
         console.error('Killing api process');
         void this.workers[ImmichWorker.Api]!.kill('SIGTERM');
       }
+    }
+    // FL-165: the edge worker is a process of its own; it must not outlive the server and keep the port
+    // (an ending edge worker returned above, so the worker ending here is never the edge)
+    if (Object.hasOwn(this.workers, ImmichWorker.Edge)) {
+      this.edgeStopRequested = true;
+      void this.workers[ImmichWorker.Edge]!.kill('SIGTERM');
     }
 
     process.exit(exitCode);
@@ -186,7 +262,7 @@ async function main() {
 
   if (immichApp === 'immich' || immichApp === 'microservices') {
     console.error(
-      `Using "start.sh ${immichApp}" has been deprecated. See https://github.com/immich-app/immich/releases/tag/v1.118.0 for more information.`,
+      `Using "start.sh ${immichApp}" has been deprecated. Start the container without a command; the server runs every worker by default.`,
     );
     process.exit(1);
   }

@@ -2,10 +2,12 @@ import { Injectable } from '@nestjs/common';
 
 import type { JobOf } from 'src/types.js';
 import { OnJob } from 'src/decorators.js';
-import { AssetVisibility, JobName, JobStatus, QueueName } from 'src/enum.js';
+import { AssetVisibility, JobName, JobStatus, MlWorkload, QueueName } from 'src/enum.js';
 import { OCR } from 'src/repositories/machine-learning.repository.js';
 import { BaseService } from 'src/services/base.service.js';
+import { getDimensions } from 'src/utils/asset.util.js';
 import { tokenizeForSearch } from 'src/utils/database.js';
+import { DocumentRegion, cropBoxOf, isRegionInsideCrop } from 'src/utils/documents.js';
 import { batched, isOcrEnabled } from 'src/utils/misc.js';
 
 @Injectable()
@@ -44,8 +46,13 @@ export class OcrService extends BaseService {
       return JobStatus.Skipped;
     }
 
-    const ocrResults = await this.machineLearningRepository.ocr(asset.previewFile, machineLearning.ocr);
-    const { ocrDataList, searchText } = this.parseOcrResults(id, ocrResults);
+    const selection = await this.selectRoutedMlDestination({
+      workload: MlWorkload.Ocr,
+      jobId: id,
+      jobName: JobName.Ocr,
+    });
+    const ocrResults = await this.machineLearningRepository.ocr(selection, asset.previewFile, machineLearning.ocr);
+    const { ocrDataList, searchText } = this.parseOcrResults(id, ocrResults, await this.getCropVisibility(id));
     await this.ocrRepository.upsert(id, ocrDataList, searchText);
 
     await this.assetRepository.upsertJobStatus({ assetId: id, ocrAt: new Date() });
@@ -54,14 +61,32 @@ export class OcrService extends BaseService {
     return JobStatus.Success;
   }
 
-  private parseOcrResults(id: string, { box, boxScore, text, textScore }: OCR) {
+  /**
+   * FL-63: the preview is read uncropped, so a cropped photo's lines are checked against the crop as
+   * they are stored, the way an edit checks them (`checkOcrVisibility`). Reading a cropped photo again
+   * must not make the text the crop removed visible or searchable again.
+   */
+  private async getCropVisibility(id: string) {
+    const asset = await this.assetRepository.getForOcr(id);
+    const crop = asset ? cropBoxOf(asset.edits) : undefined;
+    if (!asset || !crop) {
+      return;
+    }
+    const dimensions = getDimensions(asset);
+    return (region: DocumentRegion) => isRegionInsideCrop(region, dimensions, crop);
+  }
+
+  private parseOcrResults(
+    id: string,
+    { box, boxScore, text, textScore }: OCR,
+    isVisible?: (region: DocumentRegion) => boolean,
+  ) {
     const ocrDataList = [];
     const searchTokens = [];
     for (let i = 0; i < text.length; i++) {
       const rawText = text[i];
       const boxOffset = i * 8;
-      ocrDataList.push({
-        assetId: id,
+      const region = {
         x1: box[boxOffset],
         y1: box[boxOffset + 1],
         x2: box[boxOffset + 2],
@@ -70,11 +95,19 @@ export class OcrService extends BaseService {
         y3: box[boxOffset + 5],
         x4: box[boxOffset + 6],
         y4: box[boxOffset + 7],
+      };
+      const visible = isVisible ? isVisible(region) : true;
+      ocrDataList.push({
+        assetId: id,
+        ...region,
         boxScore: boxScore[i],
         textScore: textScore[i],
         text: rawText,
+        ...(isVisible && { isVisible: visible }),
       });
-      searchTokens.push(...tokenizeForSearch(rawText));
+      if (visible) {
+        searchTokens.push(...tokenizeForSearch(rawText));
+      }
     }
 
     return { ocrDataList, searchText: searchTokens.join(' ') };

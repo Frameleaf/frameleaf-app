@@ -30,7 +30,7 @@ describe('iCloud retained edit and staging admission (PostgreSQL)', () => {
   beforeEach(async () => {
     vi.unstubAllEnvs();
     await sql`TRUNCATE immich_fork.icloud_connection CASCADE`.execute(db);
-    connection = await repository.create(randomUUID(), 'Photos', ICloudConfigSchema.parse({ concurrency: 4 }));
+    connection = (await repository.create(randomUUID(), 'Photos', ICloudConfigSchema.parse({ concurrency: 4 })))!;
     await repository.update(connection.id, connection.ownerId, { state: 'connected' });
   });
   afterEach(() => vi.unstubAllEnvs());
@@ -152,7 +152,7 @@ describe('iCloud retained edit and staging admission (PostgreSQL)', () => {
       reserved: 90,
       staged: true,
     });
-    connection = await repository.create(randomUUID(), 'Other photos', ICloudConfigSchema.parse({}));
+    connection = (await repository.create(randomUUID(), 'Other photos', ICloudConfigSchema.parse({})))!;
     await repository.update(connection.id, connection.ownerId, { state: 'connected' });
     await resource('new', { role: 'original' });
     vi.stubEnv('IMMICH_ICLOUD_MAX_STAGING_BYTES', '95');

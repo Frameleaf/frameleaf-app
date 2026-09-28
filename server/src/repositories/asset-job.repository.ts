@@ -20,6 +20,7 @@ import {
   withVideoFormat,
   withVideoStream,
 } from 'src/utils/database.js';
+import { effectiveVisibility, isLocked, isNotLocked } from 'src/utils/locked.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 
 @Injectable()
@@ -28,13 +29,24 @@ export class AssetJobRepository {
 
   @GenerateSql({ params: [DummyValue.UUID] })
   getForSearchDuplicatesJob(id: string) {
-    return this.db
-      .selectFrom('asset')
-      .where('asset.id', '=', asUuid(id))
-      .leftJoin('smart_search', 'asset.id', 'smart_search.assetId')
-      .select(['id', 'type', 'ownerId', 'duplicateId', 'stackId', 'visibility', 'smart_search.embedding'])
-      .limit(1)
-      .executeTakeFirst();
+    return (
+      this.db
+        .selectFrom('asset')
+        .where('asset.id', '=', asUuid(id))
+        .leftJoin('smart_search', 'asset.id', 'smart_search.assetId')
+        // `locked` for a locked asset (FL-34): duplicate review never groups locked media
+        .select([
+          'id',
+          'type',
+          'ownerId',
+          'duplicateId',
+          'stackId',
+          effectiveVisibility('asset').as('visibility'),
+          'smart_search.embedding',
+        ])
+        .limit(1)
+        .executeTakeFirst()
+    );
   }
 
   @GenerateSql({ params: [DummyValue.UUID] })
@@ -115,33 +127,45 @@ export class AssetJobRepository {
 
   @GenerateSql({ params: [DummyValue.UUID] })
   getForGenerateThumbnailJob(id: string) {
-    return this.db
-      .selectFrom('asset')
-      .select([
-        'asset.id',
-        'asset.visibility',
-        'asset.originalFileName',
-        'asset.originalPath',
-        'asset.ownerId',
-        'asset.thumbhash',
-        'asset.type',
-      ])
-      .select((eb) =>
-        jsonArrayFrom(
+    return (
+      this.db
+        .selectFrom('asset')
+        .select([
+          'asset.id',
+          'asset.visibility',
+          'asset.originalFileName',
+          'asset.originalPath',
+          'asset.ownerId',
+          'asset.thumbhash',
+          'asset.type',
+          // `checksum` identifies the exact original a still edited master was rendered from (FL-39 lineage).
+          'asset.checksum',
+        ])
+        .select((eb) =>
+          jsonArrayFrom(
+            eb
+              .selectFrom('asset_file')
+              .select(columns.assetFilesForThumbnail)
+              .whereRef('asset_file.assetId', '=', 'asset.id')
+              .where('asset_file.type', 'in', [AssetFileType.Thumbnail, AssetFileType.Preview, AssetFileType.FullSize]),
+          ).as('files'),
+        )
+        .select(withEdits)
+        .$call(withExifInner)
+        .leftJoin('asset_video', 'asset_video.assetId', 'asset.id')
+        .select((eb) => withVideoStream(eb).as('videoStream'))
+        .select((eb) => withVideoFormat(eb).as('format'))
+        // FL-59: the owner's chosen video cover (a time in the video) is where the thumbnail is cut.
+        .select((eb) =>
           eb
-            .selectFrom('asset_file')
-            .select(columns.assetFilesForThumbnail)
-            .whereRef('asset_file.assetId', '=', 'asset.id')
-            .where('asset_file.type', 'in', [AssetFileType.Thumbnail, AssetFileType.Preview, AssetFileType.FullSize]),
-        ).as('files'),
-      )
-      .select(withEdits)
-      .$call(withExifInner)
-      .leftJoin('asset_video', 'asset_video.assetId', 'asset.id')
-      .select((eb) => withVideoStream(eb).as('videoStream'))
-      .select((eb) => withVideoFormat(eb).as('format'))
-      .where('asset.id', '=', id)
-      .executeTakeFirst();
+            .selectFrom('video_moment_index')
+            .select('video_moment_index.coverTimestampMs')
+            .whereRef('video_moment_index.assetId', '=', 'asset.id')
+            .as('coverTimestampMs'),
+        )
+        .where('asset.id', '=', id)
+        .executeTakeFirst()
+    );
   }
 
   @GenerateSql({ params: [DummyValue.UUID] })
@@ -149,6 +173,7 @@ export class AssetJobRepository {
     return this.db
       .selectFrom('asset')
       .select(columns.asset)
+      .select(isLocked('asset').as('isLocked'))
       .select(withFaces)
       .select((eb) => withFiles(eb, AssetFileType.Sidecar))
       .innerJoin('user', 'user.id', 'asset.ownerId')
@@ -218,7 +243,7 @@ export class AssetJobRepository {
       .where('asset.type', '=', sql.lit(AssetType.Video))
       .where('asset.deletedAt', 'is', null)
       .where('asset.visibility', '!=', sql.lit(AssetVisibility.Hidden))
-      .where('asset.visibility', '!=', sql.lit(AssetVisibility.Locked))
+      .where(isNotLocked('asset'))
       .groupBy('asset.id')
       .$if(!options.force, (qb) => qb.having((eb) => eb.fn.count('frame.assetId'), '<', options.frameCount))
       .stream();
@@ -230,7 +255,7 @@ export class AssetJobRepository {
       .selectFrom('asset')
       .innerJoin('asset_video', 'asset_video.assetId', 'asset.id')
       .innerJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
-      .select(['asset.id', 'asset.ownerId', 'asset.originalPath', 'asset.visibility'])
+      .select(['asset.id', 'asset.ownerId', 'asset.originalPath', effectiveVisibility('asset').as('visibility')])
       .select((eb) => withVideoStream(eb).$notNull().as('videoStream'))
       .select((eb) => withVideoFormat(eb).$notNull().as('format'))
       .where('asset.id', '=', id)
@@ -260,14 +285,17 @@ export class AssetJobRepository {
 
   @GenerateSql({ params: [DummyValue.UUID] })
   getForDetectFacesJob(id: string) {
-    return this.db
-      .selectFrom('asset')
-      .select(['asset.id', 'asset.visibility'])
-      .$call(withExifInner)
-      .select((eb) => withFaces(eb, true, true))
-      .select((eb) => withFiles(eb, AssetFileType.Preview))
-      .where('asset.id', '=', id)
-      .executeTakeFirst();
+    return (
+      this.db
+        .selectFrom('asset')
+        // FL-57: the checksum tells whether a face decision was made about this original
+        .select(['asset.id', 'asset.visibility', 'asset.checksum'])
+        .$call(withExifInner)
+        .select((eb) => withFaces(eb, true, true))
+        .select((eb) => withFiles(eb, AssetFileType.Preview))
+        .where('asset.id', '=', id)
+        .executeTakeFirst()
+    );
   }
 
   @GenerateSql({ params: [DummyValue.UUID] })
@@ -300,39 +328,42 @@ export class AssetJobRepository {
 
   @GenerateSql({ params: [{ force: false, scoreVersion: 1 }], stream: true })
   streamForBestPhotosScoring(options: { force?: boolean; scoreVersion: number }) {
-    return this.db
-      .selectFrom('asset')
-      .select(['asset.id'])
-      .where('asset.type', 'in', [sql.lit(AssetType.Image), sql.lit(AssetType.Video)])
-      .where('asset.status', '=', sql.lit(AssetStatus.Active))
-      .where('asset.deletedAt', 'is', null)
-      .$call(withDefaultVisibility)
-      .where((eb) =>
-        eb.exists((qb) =>
-          qb
-            .selectFrom('asset_file')
-            .whereRef('asset_file.assetId', '=', 'asset.id')
-            .where('asset_file.type', '=', sql.lit(AssetFileType.Preview)),
-        ),
-      )
-      .$if(!options.force, (qb) =>
-        qb.where((eb) =>
-          eb.or([
-            eb.not(
-              eb.exists(
-                eb.selectFrom('asset_best_photo_score').whereRef('asset_best_photo_score.assetId', '=', 'asset.id'),
+    return (
+      this.db
+        .selectFrom('asset')
+        .select(['asset.id'])
+        .where('asset.type', 'in', [sql.lit(AssetType.Image), sql.lit(AssetType.Video)])
+        .where('asset.status', '=', sql.lit(AssetStatus.Active))
+        .where('asset.deletedAt', 'is', null)
+        // background work includes locked media (owner decision, September 22, 2026): stored visibility only
+        .where('asset.visibility', 'in', [sql.lit(AssetVisibility.Archive), sql.lit(AssetVisibility.Timeline)])
+        .where((eb) =>
+          eb.exists((qb) =>
+            qb
+              .selectFrom('asset_file')
+              .whereRef('asset_file.assetId', '=', 'asset.id')
+              .where('asset_file.type', '=', sql.lit(AssetFileType.Preview)),
+          ),
+        )
+        .$if(!options.force, (qb) =>
+          qb.where((eb) =>
+            eb.or([
+              eb.not(
+                eb.exists(
+                  eb.selectFrom('asset_best_photo_score').whereRef('asset_best_photo_score.assetId', '=', 'asset.id'),
+                ),
               ),
-            ),
-            eb.exists(
-              eb
-                .selectFrom('asset_best_photo_score')
-                .whereRef('asset_best_photo_score.assetId', '=', 'asset.id')
-                .where('asset_best_photo_score.scoreVersion', '<', options.scoreVersion),
-            ),
-          ]),
-        ),
-      )
-      .stream();
+              eb.exists(
+                eb
+                  .selectFrom('asset_best_photo_score')
+                  .whereRef('asset_best_photo_score.assetId', '=', 'asset.id')
+                  .where('asset_best_photo_score.scoreVersion', '<', options.scoreVersion),
+              ),
+            ]),
+          ),
+        )
+        .stream()
+    );
   }
 
   @GenerateSql({ params: [DummyValue.UUID] })
@@ -390,6 +421,7 @@ export class AssetJobRepository {
         'asset.livePhotoVideoId',
         'asset.originalPath',
         'asset.isOffline',
+        'asset.deletedAt',
       ])
       .$call(withExif)
       .select(withFiles)
@@ -451,19 +483,22 @@ export class AssetJobRepository {
 
   @GenerateSql({ params: [DummyValue.UUID] })
   getForVideoConversion(id: string) {
-    return this.db
-      .selectFrom('asset')
-      .innerJoin('asset_exif', 'asset.id', 'asset_exif.assetId')
-      .innerJoin('asset_video', 'asset_video.assetId', 'asset.id')
-      .leftJoin('asset_audio', 'asset_audio.assetId', 'asset.id')
-      .select(['asset.id', 'asset.ownerId', 'asset.originalPath'])
-      .select(withFiles)
-      .select((eb) => withAudioStream(eb).as('audioStream'))
-      .select((eb) => withVideoStream(eb).$notNull().as('videoStream'))
-      .select((eb) => withVideoFormat(eb).$notNull().as('format'))
-      .where('asset.id', '=', id)
-      .where('asset.type', '=', sql.lit(AssetType.Video))
-      .executeTakeFirst();
+    return (
+      this.db
+        .selectFrom('asset')
+        .innerJoin('asset_exif', 'asset.id', 'asset_exif.assetId')
+        .innerJoin('asset_video', 'asset_video.assetId', 'asset.id')
+        .leftJoin('asset_audio', 'asset_audio.assetId', 'asset.id')
+        // `checksum` identifies the exact original an edited master was rendered from (FL-39 lineage).
+        .select(['asset.id', 'asset.ownerId', 'asset.originalPath', 'asset.checksum'])
+        .select(withFiles)
+        .select((eb) => withAudioStream(eb).as('audioStream'))
+        .select((eb) => withVideoStream(eb).$notNull().as('videoStream'))
+        .select((eb) => withVideoFormat(eb).$notNull().as('format'))
+        .where('asset.id', '=', id)
+        .where('asset.type', '=', sql.lit(AssetType.Video))
+        .executeTakeFirst()
+    );
   }
 
   @GenerateSql({ params: [], stream: true })
@@ -577,68 +612,59 @@ export class AssetJobRepository {
   }
 
   private streamForImageEnrichmentTask(force: boolean | undefined, task: 'description' | 'nsfwDetection') {
-    return this.assetsWithPreviews()
-      .select(['asset.id'])
-      .where('asset.type', '=', sql.lit(AssetType.Image))
-      .$call(withDefaultVisibility)
-      .$if(!force, (qb) =>
-        qb.where((eb) =>
-          eb.not(
-            eb.exists(
-              eb
-                .selectFrom('asset_metadata')
-                .select('asset_metadata.assetId')
-                .whereRef('asset_metadata.assetId', '=', 'asset.id')
-                .where('asset_metadata.key', '=', AssetMetadataKey.MlEnrichment)
-                .where(sql<string>`asset_metadata.value -> ${task} ->> 'status'`, '=', 'success'),
+    return (
+      this.assetsWithPreviews()
+        .select(['asset.id'])
+        .where('asset.type', '=', sql.lit(AssetType.Image))
+        // background work includes locked media (owner decision, September 22, 2026): stored visibility only
+        .where('asset.visibility', 'in', [sql.lit(AssetVisibility.Archive), sql.lit(AssetVisibility.Timeline)])
+        .$if(!force, (qb) =>
+          qb.where((eb) =>
+            eb.not(
+              eb.exists(
+                eb
+                  .selectFrom('asset_metadata')
+                  .select('asset_metadata.assetId')
+                  .whereRef('asset_metadata.assetId', '=', 'asset.id')
+                  .where('asset_metadata.key', '=', AssetMetadataKey.MlEnrichment)
+                  .where(sql<string>`asset_metadata.value -> ${task} ->> 'status'`, '=', 'success'),
+              ),
             ),
           ),
-        ),
-      )
-      .orderBy('asset.fileCreatedAt', 'desc')
-      .stream();
+        )
+        .orderBy('asset.fileCreatedAt', 'desc')
+        .stream()
+    );
   }
 
   @GenerateSql({ params: [], stream: true })
   streamForImageDescriptionJob(force?: boolean) {
-    // Image descriptions also run on videos that have persisted
-    // duplicate-detection frames (those frames are composited into a grid that
-    // feeds the single-image VLM endpoint). Videos without persisted frames
-    // are excluded — the handler would skip them anyway with
-    // `video-frames-unavailable`.
-    return this.assetsWithPreviews()
-      .select(['asset.id'])
-      .$call(withDefaultVisibility)
-      .where((eb) =>
-        eb.or([
-          eb('asset.type', '=', sql.lit(AssetType.Image)),
-          eb.and([
-            eb('asset.type', '=', sql.lit(AssetType.Video)),
-            eb.exists((qb) =>
-              qb
-                .selectFrom('asset_video_duplicate_frame')
-                .select('asset_video_duplicate_frame.assetId')
-                .whereRef('asset_video_duplicate_frame.assetId', '=', 'asset.id'),
-            ),
-          ]),
-        ]),
-      )
-      .$if(!force, (qb) =>
-        qb.where((eb) =>
-          eb.not(
-            eb.exists(
-              eb
-                .selectFrom('asset_metadata')
-                .select('asset_metadata.assetId')
-                .whereRef('asset_metadata.assetId', '=', 'asset.id')
-                .where('asset_metadata.key', '=', AssetMetadataKey.MlEnrichment)
-                .where(sql<string>`asset_metadata.value -> 'description' ->> 'status'`, '=', 'success'),
+    // Image descriptions run on photos and videos. A video is described from its reusable moment
+    // frames (FL-59), which the description job cuts itself when the video has none yet; duplicate
+    // detection is no longer a prerequisite, so videos are not filtered on its frames here.
+    return (
+      this.assetsWithPreviews()
+        .select(['asset.id'])
+        // background work includes locked media (owner decision, September 22, 2026): stored visibility only
+        .where('asset.visibility', 'in', [sql.lit(AssetVisibility.Archive), sql.lit(AssetVisibility.Timeline)])
+        .where('asset.type', 'in', [sql.lit(AssetType.Image), sql.lit(AssetType.Video)])
+        .$if(!force, (qb) =>
+          qb.where((eb) =>
+            eb.not(
+              eb.exists(
+                eb
+                  .selectFrom('asset_metadata')
+                  .select('asset_metadata.assetId')
+                  .whereRef('asset_metadata.assetId', '=', 'asset.id')
+                  .where('asset_metadata.key', '=', AssetMetadataKey.MlEnrichment)
+                  .where(sql<string>`asset_metadata.value -> 'description' ->> 'status'`, '=', 'success'),
+              ),
             ),
           ),
-        ),
-      )
-      .orderBy('asset.fileCreatedAt', 'desc')
-      .stream();
+        )
+        .orderBy('asset.fileCreatedAt', 'desc')
+        .stream()
+    );
   }
 
   /**
@@ -654,31 +680,34 @@ export class AssetJobRepository {
    */
   @GenerateSql({ params: [], stream: true })
   streamForSmartAlbumReevaluation() {
-    return this.db
-      .selectFrom('asset')
-      .innerJoin('asset_metadata', (join) =>
-        join
-          .onRef('asset_metadata.assetId', '=', 'asset.id')
-          .on('asset_metadata.key', '=', AssetMetadataKey.MlEnrichment),
-      )
-      .select([
-        'asset.id',
-        'asset.ownerId',
-        sql<string[]>`COALESCE(asset_metadata.value -> 'description' -> 'result' -> 'tags', '[]'::jsonb)`.as('tags'),
-      ])
-      .where('asset.deletedAt', 'is', null)
-      .$call(withDefaultVisibility)
-      .where((eb) =>
-        eb.exists((qb) =>
-          qb
-            .selectFrom('asset_file')
-            .whereRef('asset_file.assetId', '=', 'asset.id')
-            .where('asset_file.type', '=', sql.lit(AssetFileType.Preview)),
-        ),
-      )
-      .where(sql<string>`asset_metadata.value -> 'description' ->> 'status'`, '=', 'success')
-      .orderBy('asset.fileCreatedAt', 'desc')
-      .stream();
+    return (
+      this.db
+        .selectFrom('asset')
+        .innerJoin('asset_metadata', (join) =>
+          join
+            .onRef('asset_metadata.assetId', '=', 'asset.id')
+            .on('asset_metadata.key', '=', AssetMetadataKey.MlEnrichment),
+        )
+        .select([
+          'asset.id',
+          'asset.ownerId',
+          sql<string[]>`COALESCE(asset_metadata.value -> 'description' -> 'result' -> 'tags', '[]'::jsonb)`.as('tags'),
+        ])
+        .where('asset.deletedAt', 'is', null)
+        // background work includes locked media (owner decision, September 22, 2026): stored visibility only
+        .where('asset.visibility', 'in', [sql.lit(AssetVisibility.Archive), sql.lit(AssetVisibility.Timeline)])
+        .where((eb) =>
+          eb.exists((qb) =>
+            qb
+              .selectFrom('asset_file')
+              .whereRef('asset_file.assetId', '=', 'asset.id')
+              .where('asset_file.type', '=', sql.lit(AssetFileType.Preview)),
+          ),
+        )
+        .where(sql<string>`asset_metadata.value -> 'description' ->> 'status'`, '=', 'success')
+        .orderBy('asset.fileCreatedAt', 'desc')
+        .stream()
+    );
   }
 
   @GenerateSql({ params: [], stream: true })

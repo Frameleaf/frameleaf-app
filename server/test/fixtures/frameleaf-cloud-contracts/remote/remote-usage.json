@@ -1,0 +1,22 @@
+{
+  "period": "2026-09",
+  "periodStart": "2026-09-01T00:00:00.000Z",
+  "periodEnd": "2026-10-01T00:00:00.000Z",
+  "bytes": 171798691840,
+  "limitBytes": 214748364800,
+  "throttle": null,
+  "days": [
+    {
+      "date": "2026-09-21",
+      "bytesIn": 104857600,
+      "bytesOut": 2147483648,
+      "connectionSeconds": 5400
+    },
+    {
+      "date": "2026-09-22",
+      "bytesIn": 52428800,
+      "bytesOut": 1073741824,
+      "connectionSeconds": 1800
+    }
+  ]
+}

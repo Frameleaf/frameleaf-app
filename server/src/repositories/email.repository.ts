@@ -5,6 +5,7 @@ import React, { createElement } from 'react';
 import type { EmailImageAttachment } from 'src/types.js';
 import { AlbumInviteEmail } from 'src/emails/album-invite.email.js';
 import { AlbumUpdateEmail } from 'src/emails/album-update.email.js';
+import { ItemShareEmail } from 'src/emails/item-share.email.js';
 import { TestEmail } from 'src/emails/test.email.js';
 import { WelcomeEmail } from 'src/emails/welcome.email.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -39,10 +40,15 @@ export enum EmailTemplate {
   // ALBUM
   ALBUM_INVITE = 'album-invite',
   ALBUM_UPDATE = 'album-update',
+  ITEM_SHARE = 'item-share',
 }
 
 interface BaseEmailProps {
-  baseUrl: string;
+  /**
+   * FL-190: this server's public address. Absent when the server has none; the email then carries
+   * no link and asks the recipient to open Frameleaf on their server.
+   */
+  baseUrl?: string;
   customTemplate?: string;
 }
 
@@ -62,6 +68,14 @@ export interface AlbumInviteEmailProps extends BaseEmailProps {
   senderName: string;
   recipientName: string;
   cid?: string;
+}
+
+/** FL-83 (AL-30b): items shared with a person; `link` opens Sharing › Shared with you. */
+export interface ItemShareEmailProps extends BaseEmailProps {
+  senderName: string;
+  recipientName: string;
+  count: number;
+  link?: string;
 }
 
 export interface AlbumUpdateEmailProps extends BaseEmailProps {
@@ -90,6 +104,11 @@ export type EmailRenderRequest =
   | {
       template: EmailTemplate.ALBUM_UPDATE;
       data: AlbumUpdateEmailProps;
+      customTemplate: string;
+    }
+  | {
+      template: EmailTemplate.ITEM_SHARE;
+      data: ItemShareEmailProps;
       customTemplate: string;
     };
 
@@ -153,6 +172,10 @@ export class EmailRepository {
 
       case EmailTemplate.ALBUM_UPDATE: {
         return createElement(AlbumUpdateEmail, { ...data, customTemplate });
+      }
+
+      case EmailTemplate.ITEM_SHARE: {
+        return createElement(ItemShareEmail, { ...data, customTemplate });
       }
     }
   }

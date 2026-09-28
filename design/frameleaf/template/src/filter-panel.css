@@ -1,0 +1,82 @@
+.filter-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.filter-toggles button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 4px 10px;
+  border: 1px solid var(--fl-border);
+  border-radius: var(--fl-radius-pill);
+  background: transparent;
+  color: var(--fl-muted);
+  font-size: var(--fl-font-small);
+  transition:
+    background var(--fl-motion-fast) var(--fl-ease),
+    color var(--fl-motion-fast) var(--fl-ease);
+}
+.filter-toggles button:hover {
+  color: var(--fl-text);
+}
+.filter-toggles button[aria-pressed="true"] {
+  background: var(--fl-raised);
+  color: var(--fl-text);
+  border-color: var(--fl-muted);
+}
+.filter-toggles button svg {
+  width: 15px;
+  height: 15px;
+}
+.filter-toggles small {
+  color: var(--fl-muted);
+}
+.filter-status-options {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.filter-status-options label {
+  display: flex;
+  flex-direction: row; /* the global label rule stacks radio over text */
+  align-items: center;
+  gap: 9px;
+  min-height: 32px;
+  padding: 4px 8px;
+  border-radius: var(--fl-radius-control);
+  font-size: var(--fl-font-small);
+  cursor: pointer;
+}
+.filter-status-options label:hover {
+  background: color-mix(in srgb, var(--fl-raised), transparent 40%);
+}
+.filter-status-options label.is-selected {
+  background: var(--fl-raised);
+}
+.filter-status-options input[type="radio"] {
+  accent-color: var(--fl-accent);
+  width: auto;
+  height: auto;
+  margin: 0;
+}
+.filter-status-options span {
+  flex: 1;
+}
+.filter-status-options small {
+  color: var(--fl-muted);
+}
+.filter-section-help {
+  font-size: var(--fl-font-micro);
+  color: var(--fl-muted);
+  margin: -4px 0 10px;
+  line-height: 1.5;
+}
+@media (max-width: 700px) {
+  .filter-toggles button,
+  .filter-status-options label {
+    min-height: 44px;
+  }
+}

@@ -476,6 +476,7 @@ describe.each([
         includeNsfw: false,
         tagIds: [tag.id!],
         personIds: [],
+        petIds: [],
         scope: 'visible' as const,
       },
     };

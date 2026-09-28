@@ -15,6 +15,7 @@ import {
   validateImportPaths,
   providerAccountManagementLink,
 } from "./account-library-data.mjs";
+import { FrameleafAccountLink } from "./FrameleafCloud";
 import "./accounts-libraries.css";
 
 const count = (value) => value.toLocaleString("en-CA");
@@ -307,7 +308,7 @@ function UserForm({
         </Field>
         <Field
           label="Storage quota (GiB)"
-          hint="Leave blank for unlimited. A zero quota prevents new uploads."
+          hint="Leave blank for no limit. A quota of 0 blocks new uploads while keeping existing photos."
         >
           <input
             type="number"
@@ -547,32 +548,86 @@ function LibraryForm({ library, state, onSave, onClose, ownerId }) {
   );
 }
 
+const passwordAlphabet = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789";
+export function generateTemporaryPassword(length = 16) {
+  const values = new Uint32Array(length);
+  if (globalThis.crypto?.getRandomValues) crypto.getRandomValues(values);
+  else for (let i = 0; i < length; i += 1) values[i] = Math.floor(Math.random() * 2 ** 32);
+  const characters = [...values].map(
+    (value) => passwordAlphabet[value % passwordAlphabet.length],
+  );
+  return characters.join("").replace(/(.{4})(?=.)/g, "$1-");
+}
 function ResourceAction({ action, state, run, onClose, deleteDelay = 7 }) {
   const [confirmation, setConfirmation] = useState("");
   const [approved, setApproved] = useState(false);
   const [password, setPassword] = useState("");
   const [force, setForce] = useState(false);
+  const [issued, setIssued] = useState("");
+  const [copied, setCopied] = useState(false);
   const user = state.users.find((u) => u.id === action.userId);
   const library = state.libraries.find((l) => l.id === action.libraryId);
   const deleting = action.type === "delete-user";
   const removing = action.type === "remove-library";
+  const resetting = action.type === "reset-password";
+  if (issued)
+    return (
+      <div className="resource-issued">
+        <p>
+          Give this temporary password to {user.name}. It is shown once and must
+          be changed at their next sign-in.
+        </p>
+        <div className="resource-secret">
+          <code aria-label="Temporary password">{issued}</code>
+          <Button
+            onClick={async () => {
+              try {
+                await navigator.clipboard.writeText(issued);
+                setCopied(true);
+              } catch {
+                setCopied(false);
+              }
+            }}
+          >
+            {copied ? "Copied" : "Copy"}
+          </Button>
+        </div>
+        <p role="status" className="resource-footnote">
+          {copied
+            ? "Copied to the clipboard."
+            : "Copy it now. Closing this dialog hides it for good."}
+        </p>
+        <footer>
+          <button
+            type="button"
+            className="resource-button primary"
+            onClick={onClose}
+          >
+            Done
+          </button>
+        </footer>
+      </div>
+    );
   return (
     <form
       onSubmit={(event) => {
         event.preventDefault();
+        const temporary = resetting ? generateTemporaryPassword() : "";
         if (
           run({
             ...action,
             confirmEmail: confirmation,
             confirmName: confirmation,
             confirmAssets: approved,
-            password,
+            password: resetting ? temporary.replace(/-/g, "") : password,
             pin: password,
             force,
             deleteDelay,
           })
-        )
-          onClose();
+        ) {
+          if (resetting) setIssued(temporary);
+          else onClose();
+        }
       }}
     >
       {deleting ? (
@@ -624,24 +679,16 @@ function ResourceAction({ action, state, run, onClose, deleteDelay = 7 }) {
             onChange={(e) => setApproved(e.target.checked)}
           />
         </>
-      ) : action.type === "reset-password" ? (
+      ) : resetting ? (
         <>
           <p>
-            Set a temporary password for {user.name}. They must change it when
-            they next sign in.
+            A one-time temporary password will be generated for {user.name}.
+            Their current password stops working, their devices stay signed in,
+            and they must choose a new password at their next sign-in.
           </p>
-          <Field label="Temporary password">
-            <input
-              autoFocus
-              required
-              type="password"
-              autoComplete="new-password"
-              minLength={8}
-              maxLength={256}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
-          </Field>
+          <p className="resource-footnote">
+            The temporary password is shown once, right after you confirm.
+          </p>
         </>
       ) : action.type === "set-pin" ? (
         <Field label="New six-digit PIN">
@@ -680,7 +727,7 @@ function ResourceAction({ action, state, run, onClose, deleteDelay = 7 }) {
           type="submit"
           className={`resource-button ${deleting || removing ? "danger" : "primary"}`}
         >
-          {action.label || "Confirm"}
+          {resetting ? "Generate temporary password" : action.label || "Confirm"}
         </button>
       </footer>
     </form>
@@ -814,13 +861,9 @@ export function AccountsLibraries({
       <header className="resource-heading">
         <div>
           <p className="resource-eyebrow">
-            Command center / {usersView ? "Users" : "Libraries"}
+            {usersView ? "Your server" : "Your library"}
           </p>
-          <h1>
-            {usersView
-              ? "A place for everyone"
-              : "Every library, accounted for"}
-          </h1>
+          <h1>{usersView ? "Users" : "Libraries"}</h1>
           <p>
             {usersView
               ? "Manage profiles, features, preferences, storage and sign-in."
@@ -909,7 +952,7 @@ export function AccountsLibraries({
               <th scope="col">{usersView ? "Role" : "Owner / source"}</th>
               <th scope="col">Items</th>
               <th scope="col">
-                {usersView ? "Storage / quota" : "Originals · logical"}
+                {usersView ? "Storage used / quota" : "Originals · logical"}
               </th>
               <th scope="col">Status</th>
             </tr>
@@ -1137,6 +1180,19 @@ export function AccountsLibraries({
                       not give one account free access to another account’s
                       originals.
                     </p>
+                    <div className="resource-actions">
+                      <Button
+                        onClick={() => {
+                          setTab("features");
+                          setPreferenceSection("features");
+                        }}
+                      >
+                        Feature settings
+                      </Button>
+                      <Button onClick={() => setTab("security")}>
+                        Sign-in & security
+                      </Button>
+                    </div>
                   </div>
                   <dl className="resource-facts">
                     <dt>Role</dt>
@@ -1902,8 +1958,18 @@ export function PersonalAccess({
     <div className="personal-access" aria-label="Personal account security">
       <header className="resource-heading">
         <div>
-          <p className="resource-eyebrow">Your account / Access & security</p>
-          <h1>Keep your account yours</h1>
+          <p className="resource-eyebrow">Settings / Your account</p>
+          <h1>
+            {
+              {
+                profile: "Your profile",
+                security: "Account access",
+                devices: "Devices & API access",
+                supporter: "Supporter status",
+                frameleaf: "Frameleaf account",
+              }[selected] || "Your account"
+            }
+          </h1>
           <p>
             {actor.name} · {actor.email}
           </p>
@@ -2090,6 +2156,11 @@ export function PersonalAccess({
           )}
         </section>
       )}
+      {show("frameleaf") && (
+        <section>
+          <FrameleafAccountLink userId={actor.id} email={actor.email} />
+        </section>
+      )}
       {show("devices") && (
         <section>
           <h2>Signed-in devices</h2>
@@ -2211,6 +2282,7 @@ export function PersonalAccess({
         "devices",
         "supporter",
         "profile",
+        "frameleaf",
       ].includes(selected) && (
         <p className="resource-empty">
           Select a security category to review its settings.

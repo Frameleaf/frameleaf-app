@@ -1,0 +1,352 @@
+/*
+ * The cascade layer order, repeated from web/src/app.css so it holds whichever stylesheet the
+ * browser meets first: the prototype baseline sits above Tailwind's preflight and below
+ * Tailwind / @immich/ui components and utilities, and every unlayered rule (a Svelte
+ * component's own scoped styles, tokens.css) beats all of them.
+ */
+@layer properties, theme, base, frameleaf-base, components, utilities;
+
+/*
+ * Inter 400/500/600, bundled from the September 22 template (@fontsource/inter 5.3.0, see
+ * ../assets/fonts/Inter/README.md). It is the fallback in the tokens.css font stack: Apple
+ * devices render SF Pro through -apple-system/system-ui first (SF Pro cannot be licensed for
+ * web delivery), and every other platform gets this bundled Inter. No remote font service is used.
+ */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url('../assets/fonts/Inter/inter-latin-400-normal.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 500;
+  src: url('../assets/fonts/Inter/inter-latin-500-normal.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 600;
+  src: url('../assets/fonts/Inter/inter-latin-600-normal.woff2') format('woff2');
+}
+
+/*
+ * September 22 prototype styles.css: the shared element and control baseline, scoped to
+ * .frameleaf. It lives in the `frameleaf-base` cascade layer, so a Tailwind or @immich/ui
+ * utility (bg-primary on an @immich/ui Button, `hidden`, `mb-4`, `text-sm`) still wins over
+ * it, and every selector is wrapped in :where() so the baseline also carries zero
+ * specificity inside that layer. A component's own scoped styles always win over it, and so
+ * do the 44px/48px control floors in tokens.css. The prototype's 34px `.button` height is
+ * therefore not ported; hit targets stay at the token floor.
+ */
+@layer frameleaf-base {
+  :where(.frameleaf *, .frameleaf *::before, .frameleaf *::after) {
+    box-sizing: border-box;
+  }
+
+  :where(.frameleaf button, .frameleaf input, .frameleaf select, .frameleaf textarea) {
+    font: inherit;
+  }
+
+  :where(.frameleaf button) {
+    color: inherit;
+    background: none;
+    border: 0;
+  }
+
+  /* IconButton draws its own muted disabled state and opts out, so it is not dimmed twice. */
+  :where(.frameleaf button:disabled) {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  :where(.frameleaf img) {
+    display: block;
+    max-width: 100%;
+  }
+
+  :where(.frameleaf svg) {
+    flex-shrink: 0;
+  }
+
+  :where(.frameleaf h1, .frameleaf h2, .frameleaf h3) {
+    margin: 0;
+  }
+
+  :where(.frameleaf h1) {
+    font-size: 28px;
+    font-weight: 600;
+    letter-spacing: -0.6px;
+    line-height: 1.3;
+  }
+
+  :where(.frameleaf h2) {
+    font-size: 18px;
+    font-weight: 600;
+  }
+
+  :where(.frameleaf h3) {
+    font-size: 14px;
+    font-weight: 500;
+  }
+
+  /* Balanced, slightly tightened titles and tabular numbers (apple-style.css:59-69). */
+  :where(.frameleaf h1, .frameleaf h2, .frameleaf h3) {
+    text-wrap: balance;
+    letter-spacing: -0.015em;
+  }
+
+  :where(
+    .frameleaf kbd,
+    .frameleaf small,
+    .frameleaf time,
+    .frameleaf td,
+    .frameleaf .result-count,
+    .frameleaf .stars,
+    .frameleaf .duration,
+    .frameleaf .fl-tabular,
+    .frameleaf [aria-live]
+  ) {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /*
+   * Frosted material (apple-style.css:150-163, 194-210) for any bar, card or popover that
+   * floats over content: the translucent panel, a hairline edge and a backdrop blur. tokens.css
+   * turns it solid under Increase Contrast and Reduce Transparency. `fl-material-capsule` is the
+   * floating toolbar shape; `fl-material-sheet` a sheet or floating card.
+   */
+  :where(.frameleaf .fl-material, .frameleaf.fl-material) {
+    background: var(--fl-material);
+    border-color: var(--fl-material-edge);
+    -webkit-backdrop-filter: var(--fl-material-blur);
+    backdrop-filter: var(--fl-material-blur);
+  }
+
+  :where(.frameleaf .fl-material-capsule, .frameleaf.fl-material-capsule) {
+    border: 1px solid var(--fl-material-edge);
+    border-radius: 18px;
+    box-shadow: 0 10px 40px rgb(0 0 0 / 40%);
+  }
+
+  :where(.frameleaf .fl-material-sheet, .frameleaf.fl-material-sheet) {
+    border: 1px solid var(--fl-material-edge);
+    border-radius: var(--fl-radius-sheet);
+    box-shadow: 0 24px 80px rgb(0 0 0 / 67%);
+  }
+
+  :where(.frameleaf .fl-card) {
+    border-radius: var(--fl-radius-card);
+  }
+
+  /*
+   * Continuous corners where the engine supports them (apple-style.css:109-135): controls and
+   * chips keep their radius, cards and sheets grow it so the squircle reads at the same size.
+   */
+  @supports (corner-shape: squircle) {
+    :where(
+      .frameleaf .button,
+      .frameleaf .chip,
+      .frameleaf select,
+      .frameleaf input:not([type='checkbox'], [type='radio'], [type='range']),
+      .frameleaf .fl-card,
+      .frameleaf .fl-material-sheet,
+      .frameleaf.fl-material-sheet
+    ) {
+      corner-shape: squircle;
+    }
+
+    :where(.frameleaf .fl-card) {
+      border-radius: calc(var(--fl-radius-card) * 1.8);
+    }
+
+    /*
+     * FL-33 library tiles and Timeline cards (apple-style.css:109-135 `.asset-tile:not([data-layout="browse"])
+     * .at-open`); Browse's dense grid keeps square corners, and a Work tile rounds only its photo.
+     */
+    :where(
+      .frameleaf .fl-tile:not([data-layout='browse'], .has-caption),
+      .frameleaf .fl-tile.has-caption .fl-tile-open,
+      .frameleaf .fl-tl-card-open
+    ) {
+      corner-shape: squircle;
+      border-radius: calc(var(--fl-radius-card) * 1.8);
+    }
+
+    :where(.frameleaf .fl-material-sheet, .frameleaf.fl-material-sheet) {
+      border-radius: calc(var(--fl-radius-sheet) * 1.8);
+    }
+  }
+
+  :where(.frameleaf p) {
+    margin: 12px 0;
+  }
+
+  :where(.frameleaf .muted) {
+    color: var(--fl-muted);
+  }
+
+  :where(.frameleaf .grow) {
+    flex: 1;
+  }
+
+  :where(.frameleaf .sr-only) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  :where(.frameleaf .button) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius-control);
+    background: var(--fl-raised);
+    color: var(--fl-text);
+    padding: 7px 11px;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  :where(.frameleaf .button:hover:not(:disabled)) {
+    background: color-mix(in srgb, var(--fl-raised), var(--fl-text) 8%);
+  }
+
+  :where(.frameleaf .button.active) {
+    background: color-mix(in srgb, var(--fl-text) 12%, var(--fl-raised));
+    border-color: color-mix(in srgb, var(--fl-text) 28%, var(--fl-border));
+    color: var(--fl-text);
+  }
+
+  /*
+   * September 24 press feedback (apple-style.css:287-296): buttons settle back on the spring
+   * and shrink slightly while pressed. The one transition list also carries the colour and
+   * border changes of `.button`. Drag handles (`fl-no-press`: face boxes and their resize grip,
+   * editor mask handles) must track the pointer, so they never scale. Under Reduce Motion the
+   * press does not move (:473-490).
+   */
+  :where(.frameleaf button, .frameleaf .button) {
+    transition:
+      transform var(--fl-duration) var(--fl-spring),
+      background-color 160ms ease,
+      border-color 160ms ease,
+      color 160ms ease,
+      box-shadow 200ms ease;
+  }
+
+  :where(
+    .frameleaf button:active:not(:disabled, .fl-no-press),
+    .frameleaf .button:active:not(:disabled, .fl-no-press)
+  ) {
+    transform: scale(0.96);
+    transition-duration: 90ms;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    :where(.frameleaf button:active:not(:disabled), .frameleaf .button:active:not(:disabled)) {
+      transform: none;
+    }
+  }
+
+  :where(.frameleaf .button.primary) {
+    background: var(--fl-accent);
+    color: var(--fl-accent-text);
+    border-color: var(--fl-accent);
+    font-weight: 600;
+  }
+
+  /* The prototype's hover mix per theme; see --fl-accent-hover in tokens.css. */
+  :where(.frameleaf .button.primary:hover:not(:disabled)) {
+    background: var(--fl-accent-hover);
+  }
+
+  /*
+   * The field chrome skips @immich/ui form controls: an Input or PasswordInput draws its ring
+   * on the container around the <input>, and a Textarea on itself, both with the `ring-1`
+   * utility (as does the legacy `immich-form-input`). A second 1px border inside that ring
+   * would otherwise show, and turn accent on focus.
+   */
+  :where(.frameleaf :is(input, select, textarea):not([class~='ring-1'], .immich-form-input, [class~='ring-1'] > *)) {
+    background: var(--fl-raised);
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius-control);
+    color: var(--fl-text);
+    padding: 9px 10px;
+    min-width: 0;
+    transition: border-color var(--fl-motion-fast) var(--fl-ease);
+  }
+
+  :where(
+    .frameleaf
+      :is(input, select, textarea):not([class~='ring-1'], .immich-form-input, [class~='ring-1'] > *):focus-visible
+  ) {
+    border-color: var(--fl-accent);
+  }
+
+  :where(.frameleaf input::placeholder, .frameleaf textarea::placeholder) {
+    color: var(--fl-muted);
+  }
+
+  :where(.frameleaf input[type='range']) {
+    padding: 0;
+    accent-color: var(--fl-accent);
+    height: 20px;
+    cursor: pointer;
+  }
+
+  :where(.frameleaf input[type='checkbox'], .frameleaf input[type='radio']) {
+    accent-color: var(--fl-accent);
+  }
+
+  /*
+   * The prototype stacks every label over its field (styles.css `label`) and spaces the
+   * fields in a dialog (`.dialog label`). The dialog spacing applies only to a field placed
+   * directly in the dialog or its body: a form or row that spaces its fields with a grid or
+   * flex gap would otherwise get both. Here that applies only to the prototype's field
+   * markup, a label whose first element is its caption <span> followed by the control. Search
+   * bars (an icon then an input), text-plus-control rows and checkbox or radio labels keep
+   * the inline layout the production screens were built on.
+   */
+  :where(
+    .frameleaf label:has(> span:first-child + :is(input:not([type='checkbox'], [type='radio']), select, textarea))
+  ) {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    color: var(--fl-muted);
+  }
+
+  :where(
+    .frameleaf
+      label:has(> span:first-child + :is(input:not([type='checkbox'], [type='radio']), select, textarea))
+      > :is(input, select, textarea)
+  ) {
+    width: 100%;
+  }
+
+  :where(
+    :is(.frameleaf.dialog, .frameleaf.dialog > .dialog-body)
+      > label:has(> span:first-child + :is(input:not([type='checkbox'], [type='radio']), select, textarea))
+  ) {
+    margin-bottom: 18px;
+  }
+
+  :where(.frameleaf textarea) {
+    resize: vertical;
+    min-height: 70px;
+  }
+}

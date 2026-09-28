@@ -1,0 +1,6 @@
+{
+  "code": "clone_suspected",
+  "message": "This server looks like a copy of another one. Confirm it in your Frameleaf account to use cloud backup again.",
+  "retryable": false,
+  "requestId": "req_01J8ZK3M4N5P6Q7T"
+}
