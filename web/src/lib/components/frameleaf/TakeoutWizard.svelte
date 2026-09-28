@@ -70,9 +70,11 @@
 
   /**
    * The Google Photos import wizard (FL-65), ported from the prototype's `Import Google Photos`
-   * workflow: the same title, the same three stages — Stage, Scan, Reconcile — the same facts
-   * (Source, New assets, Matched originals, Needs review), and the same closing notice when flagged
-   * items remain. Everything the prototype simulated is a server request here.
+   * workflow: the same three stages — Stage, Scan, Reconcile — the same facts (Source, New photos
+   * and videos, Matched originals, Needs review), and the same closing notice when flagged items
+   * remain. Everything the prototype simulated is a server request here. As in the prototype it is
+   * the body of a wide Command Center dialog (FL-83, `TakeoutSettingsSection`), which carries the
+   * title.
    *
    * Staging archives needs this page open; it resumes by checking every byte already on the server.
    * Scanning and importing are background jobs on the server, shown in Activity and the running-jobs
@@ -83,10 +85,21 @@
   let {
     imports = [],
     current: initial,
+    onClose,
   }: {
     imports?: TakeoutResponseDto[];
     current?: TakeoutResponseDto;
+    /** Closes the Command Center dialog that hosts the wizard (Cancel, Done). */
+    onClose?: () => void;
   } = $props();
+
+  /**
+   * Moves the hosting dialog to another import, or to the list. The host reads the import from the
+   * address and loads it from the server, so the page's own data is never reloaded.
+   */
+  const openImport = (id?: string) =>
+    goto(Route.takeout(id ? { import: id } : undefined), { noScroll: true, keepFocus: true });
+  const close = () => (onClose ? onClose() : history.back());
 
   type ReconcileTab = 'review' | 'live-photos' | 'albums' | 'options' | 'report';
   const PAGE = 50;
@@ -282,8 +295,8 @@
       const created = await createTakeoutImport({
         takeoutCreateDto: source === 'folder' ? { name, rootId, directory: folder.trim() } : { name },
       });
-      // The page is keyed by the import, so this opens a fresh wizard on the new one.
-      await goto(Route.takeout({ import: created.id }), { invalidateAll: true });
+      // The host is keyed by the import, so this opens a fresh wizard on the new one.
+      await openImport(created.id);
     });
 
   /* Stage ------------------------------------------------------------- */
@@ -440,7 +453,7 @@
       }
       await deleteTakeoutImport({ id: current.id });
       deleteOpen = false;
-      await goto(Route.takeout(), { invalidateAll: true });
+      await openImport();
     });
 
   /* Footer ------------------------------------------------------------ */
@@ -470,7 +483,7 @@
         : { label: $t('frameleaf_takeout_continue'), disabled: true, action: () => {} };
     }
     if (current.state === TakeoutState.Completed && !pendingImport) {
-      return { label: $t('frameleaf_takeout_done'), disabled: false, action: () => void goto(Route.takeout()) };
+      return { label: $t('frameleaf_takeout_done'), disabled: false, action: close };
     }
     const label =
       current.state === TakeoutState.Failed || current.state === TakeoutState.Cancelled
@@ -482,12 +495,8 @@
   });
 
   const secondary = () => {
-    if (!current) {
-      history.back();
-      return;
-    }
-    if (stageIndex === 0) {
-      void goto(Route.takeout());
+    if (!current || stageIndex === 0) {
+      close();
       return;
     }
     viewing = TAKEOUT_STAGES[stageIndex - 1];
@@ -544,17 +553,7 @@
 </script>
 
 <div class="fl-takeout">
-  <header class="head">
-    <div>
-      <p class="eyebrow">{$t('frameleaf_settings_area_backup')}</p>
-      <h1>{$t('frameleaf_takeout_title')}</h1>
-      <p class="intro">{$t('frameleaf_takeout_intro')}</p>
-    </div>
-    {#if current}
-      <a class="all" href={Route.takeout()}>{$t('frameleaf_takeout_all_imports')}</a>
-    {/if}
-  </header>
-
+  <!-- The hosting dialog carries the title; the stepper and intro follow it as in the prototype. -->
   <ol class="stepper" aria-label={$t('frameleaf_takeout_steps_label')}>
     {#each TAKEOUT_STAGES as item, index (item)}
       <li aria-current={stage === item ? 'step' : undefined} class:done={stepDone(index)}>
@@ -562,6 +561,13 @@
       </li>
     {/each}
   </ol>
+
+  <div class="head">
+    <p class="intro">{$t('frameleaf_takeout_intro')}</p>
+    {#if current}
+      <a class="all" href={Route.takeout()}>{$t('frameleaf_takeout_all_imports')}</a>
+    {/if}
+  </div>
 
   {#if error}
     <p class="alert" role="alert">{error}</p>
@@ -1127,30 +1133,15 @@
   .fl-takeout {
     display: grid;
     gap: 1rem;
-    max-width: 60rem;
-    margin-inline: auto;
-    padding: 1.5rem 1rem 5rem;
     color: var(--fl-text);
     font-size: var(--fl-font-size);
   }
   .head {
     display: flex;
     flex-wrap: wrap;
-    align-items: flex-end;
+    align-items: baseline;
     justify-content: space-between;
     gap: 1rem;
-  }
-  .eyebrow {
-    margin: 0;
-    font-size: var(--fl-font-small);
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: var(--fl-muted);
-  }
-  h1 {
-    margin: 0.125rem 0 0;
-    font-size: 1.375rem;
-    font-weight: 600;
   }
   h2 {
     margin: 0;
@@ -1165,7 +1156,6 @@
     font-size: var(--fl-font-small);
   }
   .intro {
-    margin-top: 0.25rem;
     font-size: var(--fl-font-size);
   }
   .all,
@@ -1368,8 +1358,8 @@
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    padding: 0.75rem 0;
-    background: var(--fl-canvas);
+    padding: 0.75rem 0 0;
+    background: var(--fl-panel);
     border-top: 1px solid var(--fl-border);
   }
   .spacer {

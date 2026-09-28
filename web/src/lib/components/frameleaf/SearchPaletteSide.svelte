@@ -221,7 +221,8 @@
     </section>
   {/if}
 
-  {#if !typing && (facets[SearchFacetField.City] ?? []).length > 0}
+  <!-- As in the prototype, Places stays while not typing even when the library has none yet. -->
+  {#if !typing}
     <section>
       <h3>{$t('places')}</h3>
       <div class="sp-facets">

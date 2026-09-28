@@ -1,8 +1,17 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
+  import { page } from '$app/state';
   import Button from '$lib/components/frameleaf/Button.svelte';
+  import Dialog from '$lib/components/frameleaf/Dialog.svelte';
+  import TakeoutWizard from '$lib/components/frameleaf/TakeoutWizard.svelte';
   import { Route } from '$lib/route';
-  import { getTakeoutRoots, type TakeoutRootDto } from '@immich/sdk';
+  import {
+    getTakeoutImport,
+    getTakeoutRoots,
+    listTakeoutImports,
+    type TakeoutResponseDto,
+    type TakeoutRootDto,
+  } from '@immich/sdk';
   import { Icon } from '@immich/ui';
   import { mdiChevronRight } from '@mdi/js';
   import { onMount } from 'svelte';
@@ -10,9 +19,15 @@
 
   /**
    * The settings entry to Google Photos imports (FL-65), the prototype's "Google Photos & server
-   * imports" section with its "Preview import workflow" action. The import itself is a wizard page;
-   * its two switches ("Recreate album memberships", "Review ambiguous sidecars") are choices made for
-   * each import there, where they apply.
+   * imports" section in Backup & import. Its "Preview import workflow" action opens the import
+   * workflow in place (FL-83), as the prototype's wide "Import Google Photos" dialog
+   * (`CommandCenter.jsx` `showWorkflow` / `workflows.import`). The address says the dialog is open
+   * (`workflow=import`) and on which import (`import`), so the old `/takeout` page, links from
+   * elsewhere and a reload all land in it. The wizard's two switches ("Recreate album memberships",
+   * "Review ambiguous sidecars") are choices made for each import there, where they apply.
+   *
+   * The imports are read from the server every time the dialog opens or moves to another import;
+   * nothing about an import lives in the browser.
    *
    * With `showRoots`, an administrator also sees which server folders imports may read from. That
    * list is the operator's `IMMICH_IMPORT_ROOTS`; it is read from the server, never typed here.
@@ -20,6 +35,44 @@
   let { showRoots = false }: { showRoots?: boolean } = $props();
 
   let roots = $state<TakeoutRootDto[] | undefined>();
+
+  const importId = $derived(page.url.searchParams.get('import') ?? undefined);
+  const open = $derived(page.url.searchParams.get('workflow') === 'import' || !!importId);
+  let loaded = $state<{ key: string; imports: TakeoutResponseDto[]; current?: TakeoutResponseDto }>();
+  let failed = $state(false);
+  const key = $derived(importId ?? '');
+
+  $effect(() => {
+    if (!open) {
+      loaded = undefined;
+      return;
+    }
+    const requested = key;
+    const id = importId;
+    failed = false;
+    void Promise.all([
+      listTakeoutImports(),
+      id ? getTakeoutImport({ id }).catch(() => undefined) : Promise.resolve(undefined),
+    ])
+      .then(([imports, current]) => {
+        if (requested === key) {
+          loaded = { key: requested, imports, current };
+        }
+      })
+      .catch(() => {
+        if (requested === key) {
+          failed = true;
+        }
+      });
+  });
+
+  const navigate = (url: string) => goto(url, { noScroll: true, keepFocus: true });
+  const close = () => {
+    const url = new URL(page.url);
+    url.searchParams.delete('workflow');
+    url.searchParams.delete('import');
+    void navigate(`${url.pathname}${url.search}`);
+  };
 
   onMount(() => {
     if (showRoots) {
@@ -48,12 +101,24 @@
     </div>
   {/if}
   <div class="action">
-    <Button onclick={() => void goto(Route.takeout())}>
+    <Button onclick={() => void navigate(Route.takeout())}>
       {$t('frameleaf_takeout_settings_action')}
       <span aria-hidden="true"><Icon icon={mdiChevronRight} size="16" /></span>
     </Button>
   </div>
 </div>
+
+<Dialog wide title={$t('frameleaf_takeout_title')} closeLabel={$t('close')} {open} onRequestClose={close}>
+  {#if loaded && loaded.key === key}
+    <!-- Another import, or none, unmounts the wizard until the server has answered for it, so each
+         wizard starts from the server's state, never the last one's. -->
+    <TakeoutWizard imports={loaded.imports} current={loaded.current} onClose={close} />
+  {:else if failed}
+    <p class="note" role="alert">{$t('frameleaf_takeout_error_generic')}</p>
+  {:else}
+    <p class="note">{$t('loading')}</p>
+  {/if}
+</Dialog>
 
 <style>
   .takeout-section {
