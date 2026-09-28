@@ -7936,6 +7936,7 @@
   "frameleaf_search_no_matches_in": "No matching {label}.",
   "frameleaf_search_no_matches_in_library": "No matches in your library.",
   "frameleaf_search_no_matches_in_scope": "No matches in {scope}.",
+  "frameleaf_search_no_matching_options": "No matching options",
   "frameleaf_search_no_people": "No people",
   "frameleaf_search_not_encoded": "Not encoded",
   "frameleaf_search_not_favorites": "Not favorites",

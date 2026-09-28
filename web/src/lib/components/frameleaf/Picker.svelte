@@ -1,5 +1,10 @@
 <script lang="ts">
+  /**
+   * The Filters panel's single-choice picker, the prototype's `SearchableSelect`: a search that
+   * matches nothing says "No matching options" (SearchableSelect.jsx:218-222).
+   */
   import Combobox, { type ComboBoxOption } from '$lib/components/shared-components/Combobox.svelte';
+  import { t } from 'svelte-i18n';
   let {
     label,
     options,
@@ -16,7 +21,14 @@
 </script>
 
 <fieldset class="picker" {disabled}>
-  <Combobox {label} {options} bind:selectedOption {disabled} {onSelect} />
+  <Combobox
+    {label}
+    {options}
+    bind:selectedOption
+    {disabled}
+    {onSelect}
+    emptyText={$t('frameleaf_search_no_matching_options')}
+  />
 </fieldset>
 
 <style>
