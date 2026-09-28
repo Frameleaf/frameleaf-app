@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/sve
 import userEvent from '@testing-library/user-event';
 import { addMessages } from 'svelte-i18n';
 import en from '../../../../../i18n/en.json';
-import { mapStub } from '../../../test-data/frameleaf/UtilityMapStub.svelte';
+import { mapStub } from '../../../test-data/frameleaf/utility-map-stub';
 import GeolocationUtility from './GeolocationUtility.svelte';
 
 const state = vi.hoisted(() => ({ search: vi.fn(), info: vi.fn(), run: vi.fn() }));

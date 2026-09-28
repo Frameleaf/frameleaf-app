@@ -50,8 +50,8 @@ describe('ViewerStackStrip', () => {
   it('keeps the viewed item and deletes the others after confirmation', async () => {
     const { current, primary, other, onAction } = setup();
     vi.spyOn(modalManager, 'showDialog').mockResolvedValue(true);
-    sdkMock.deleteAssets.mockResolvedValue();
-    sdkMock.deleteStacks.mockResolvedValue();
+    sdkMock.deleteAssets.mockResolvedValue(undefined as never);
+    sdkMock.deleteStacks.mockResolvedValue(undefined as never);
 
     await userEvent.click(screen.getByRole('button', { name: en.keep_this_delete_others }));
 

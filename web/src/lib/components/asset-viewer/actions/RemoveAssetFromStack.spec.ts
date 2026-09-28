@@ -17,7 +17,7 @@ describe('RemoveAssetFromStack', () => {
     const [primary, current, other] = assetFactory.buildList(3);
     const stack: StackResponseDto = { id: 'stack-1', primaryAssetId: primary.id, assets: [primary, current, other] };
     const onAction = vi.fn();
-    sdkMock.removeAssetFromStack.mockResolvedValue();
+    sdkMock.removeAssetFromStack.mockResolvedValue(undefined as never);
 
     render(RemoveAssetFromStack, { asset: current, stack, onAction });
     await userEvent.click(screen.getByText(en.viewer_remove_from_stack));

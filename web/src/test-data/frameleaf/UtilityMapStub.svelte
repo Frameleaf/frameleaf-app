@@ -1,14 +1,6 @@
-<script lang="ts" module>
-  /** What the utility asked the map to do, and what the map reports back, for the map picker specs. */
-  export const mapStub = {
-    calls: [] as string[],
-    inside: true,
-    center: { lng: 0, lat: 0 },
-    viewChanged: () => {},
-  };
-</script>
-
 <script lang="ts">
+  import { mapStub } from './utility-map-stub';
+
   let { mapMarkers = [], onViewChange }: { mapMarkers?: { id: string }[]; onViewChange?: () => void } = $props();
   $effect(() => {
     mapStub.viewChanged = () => onViewChange?.();
