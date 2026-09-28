@@ -403,7 +403,10 @@ export class StudioResourceService extends BaseService {
       StudioResourceKind.GeneratedIntermediate,
     ]);
     const seen = new Set(references.map((reference) => studioReferenceKey(reference)));
-    for (const reference of references) {
+    // Walk a growing work queue by cursor: appended lineage must also be expanded.
+    let cursor = 0;
+    while (cursor < references.length) {
+      const reference = references[cursor++];
       if (
         reference.kind !== StudioResourceKind.GeneratedIntermediate &&
         !(reference.kind === StudioResourceKind.Audio && reference.source === 'generated')
