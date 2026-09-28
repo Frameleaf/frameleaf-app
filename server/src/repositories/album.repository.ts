@@ -287,7 +287,21 @@ export class AlbumRepository {
   }
 
   async softDeleteAll(userId: string): Promise<void> {
-    await this.db.updateTable('album').set({ deletedAt: new Date() }).where(isAlbumOwned(userId)).execute();
+    await this.db.transaction().execute(async (tx) => {
+      // Match derivative publication's album order before the bulk update acquires any row locks.
+      const albums = await tx
+        .selectFrom('album')
+        .select('id')
+        .where(isAlbumOwned(userId))
+        .orderBy('id')
+        .forNoKeyUpdate()
+        .execute();
+      await tx
+        .updateTable('album')
+        .set({ deletedAt: new Date() })
+        .where('id', '=', anyUuid(albums.map(({ id }) => id)))
+        .execute();
+    });
   }
 
   async deleteAll(userId: string): Promise<void> {

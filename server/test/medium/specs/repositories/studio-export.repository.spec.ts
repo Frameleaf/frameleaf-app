@@ -11,6 +11,7 @@ import {
   StudioExportScope,
   StudioExportVersionState,
 } from 'src/enum.js';
+import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { DerivativePrivacyRepository } from 'src/repositories/derivative-privacy.repository.js';
 import { ForkEnrichmentRepository } from 'src/repositories/fork-enrichment.repository.js';
@@ -510,6 +511,137 @@ describe(StudioExportRepository.name, () => {
 
       await expectRefusal(publishing, 'source-access-lost');
     });
+
+    it('refuses publication when the sharing album is deleted while its access check waits', async () => {
+      const context = setup();
+      const { user: owner } = await context.ctx.newUser();
+      const { user: other } = await context.ctx.newUser();
+      const shared = { ...(await ownSource(context.ctx, other.id)), access: 'shared' as const };
+      const { album } = await context.ctx.newAlbum({ ownerId: other.id }, [shared.id]);
+      await context.ctx.newAlbumUser({ albumId: album.id, userId: owner.id });
+      const staged = await stagedExport(context, owner.id, [shared]);
+
+      const release = deferred();
+      const { promise: locked, resolve: signalLocked } = Promise.withResolvers<number>();
+      const revocation = defaultDatabase.transaction().execute(async (trx) => {
+        await trx.updateTable('album').set({ deletedAt: new Date() }).where('id', '=', album.id).execute();
+        const { rows } = await sql<{ pid: number }>`SELECT pg_backend_pid() AS pid`.execute(trx);
+        signalLocked(rows[0].pid);
+        await release.promise;
+      });
+      const blockerPid = await locked;
+      const publishing = context.sut.publish(publication(staged, [shared]));
+      let settled: PromiseSettledResult<unknown>[];
+      try {
+        await vi.waitFor(
+          async () => {
+            const { rows } = await sql<{ waiting: boolean }>`
+              SELECT EXISTS (
+                SELECT 1 FROM pg_stat_activity
+                WHERE wait_event_type = 'Lock'
+                  AND pg_blocking_pids(pid) @> ARRAY[${blockerPid}]::integer[]
+              ) AS waiting
+            `.execute(defaultDatabase);
+            expect(rows[0].waiting).toBe(true);
+          },
+          { timeout: 5000 },
+        );
+      } finally {
+        release.resolve();
+        settled = await Promise.allSettled([revocation, publishing]);
+      }
+
+      expect(settled[0]).toEqual({ status: 'fulfilled', value: undefined });
+      expect(settled[1]).toMatchObject({ status: 'rejected', reason: { code: 'source-access-lost' } });
+      expect((await context.sut.getById(staged.version.id))!.state).toBe(StudioExportVersionState.Staged);
+    }, 10_000);
+
+    it('orders publication and bulk revocation locks when albums were inserted in the opposite order', async () => {
+      const context = setup();
+      const { user: owner } = await context.ctx.newUser();
+      const { user: other } = await context.ctx.newUser();
+      const albumIds = [randomUUID(), randomUUID()].toSorted();
+      const sources: Source[] = [];
+      for (const id of albumIds.toReversed()) {
+        const shared = { ...(await ownSource(context.ctx, other.id)), access: 'shared' as const };
+        await context.ctx.newAlbum({ id, ownerId: other.id }, [shared.id]);
+        await context.ctx.newAlbumUser({ albumId: id, userId: owner.id });
+        sources.push(shared);
+      }
+      const staged = await stagedExport(context, owner.id, sources);
+      const release = deferred();
+      const locked = deferred();
+      const blocker = defaultDatabase.transaction().execute(async (trx) => {
+        await sql`SELECT id FROM album WHERE id = ${albumIds[0]}::uuid FOR UPDATE`.execute(trx);
+        locked.resolve();
+        await release.promise;
+      });
+      await locked.promise;
+
+      const run = (action: (db: Kysely<DB>) => Promise<unknown>) => {
+        const { promise: started, resolve: signalStarted, reject: signalFailed } = Promise.withResolvers<number>();
+        const operation = defaultDatabase.connection().execute(async (connection) => {
+          // Make an unordered scan follow insertion order, opposing the required UUID lock order.
+          const settings = ['enable_indexscan', 'enable_bitmapscan', 'enable_mergejoin', 'enable_hashjoin'];
+          const { rows } = await sql<{ name: string; value: string }>`
+            SELECT name, setting AS value FROM pg_settings WHERE name = ANY(${settings}::text[])
+          `.execute(connection);
+          try {
+            for (const { name } of rows) {
+              await sql`SELECT set_config(${name}, 'off', false)`.execute(connection);
+            }
+            const backend = await sql<{ pid: number }>`SELECT pg_backend_pid() AS pid`.execute(connection);
+            signalStarted(backend.rows[0].pid);
+            return await action(connection);
+          } catch (error) {
+            signalFailed(error);
+            throw error;
+          } finally {
+            for (const { name, value } of rows) {
+              await sql`SELECT set_config(${name}, ${value}, false)`.execute(connection);
+            }
+          }
+        });
+        return { started, settled: Promise.allSettled([operation]) };
+      };
+      const waitForLock = async (pid: number) =>
+        vi.waitFor(
+          async () => {
+            const { rows } = await sql<{ waiting: boolean }>`
+              SELECT EXISTS (
+                SELECT 1 FROM pg_stat_activity WHERE pid = ${pid} AND wait_event_type = 'Lock'
+              ) AS waiting
+            `.execute(defaultDatabase);
+            expect(rows[0].waiting).toBe(true);
+          },
+          { timeout: 5000 },
+        );
+
+      const revocation = run((db) => new AlbumRepository(db).softDeleteAll(other.id));
+      let publishing: ReturnType<typeof run> | undefined;
+      try {
+        await waitForLock(await revocation.started);
+        publishing = run((db) => setup(db).sut.publish(publication(staged, sources)));
+        await waitForLock(await publishing.started);
+        await defaultDatabase.transaction().execute(async (trx) => {
+          await sql`SELECT id FROM album WHERE id = ${albumIds[1]}::uuid FOR UPDATE NOWAIT`.execute(trx);
+        });
+      } finally {
+        release.resolve();
+        await Promise.all([blocker, revocation.settled, publishing?.settled]);
+      }
+
+      expect(await revocation.settled).toEqual([{ status: 'fulfilled', value: undefined }]);
+      expect(await publishing!.settled).toMatchObject([{ status: 'rejected', reason: { code: 'source-access-lost' } }]);
+      const albums = await defaultDatabase
+        .selectFrom('album')
+        .select('deletedAt')
+        .where('id', 'in', albumIds)
+        .execute();
+      expect(albums).toHaveLength(2);
+      expect(albums.every((album) => album.deletedAt !== null)).toBe(true);
+      expect((await context.sut.getById(staged.version.id))!.state).toBe(StudioExportVersionState.Staged);
+    }, 20_000);
 
     it('refuses when a source was deleted, and lists the pending export as orphaned', async () => {
       const context = setup();
