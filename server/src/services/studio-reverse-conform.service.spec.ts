@@ -310,7 +310,9 @@ describe(StudioReverseConformService.name, () => {
     await expect(sut.readPreview(owner, operationId)).rejects.toThrow('Reverse preview not found');
     expect(storage.openForRandomRead).toHaveBeenCalledTimes(4);
     operations.getForOwner.mockResolvedValue(undefined);
-    await expect(sut.readPreview(authStub.user2, operationId)).rejects.toThrow('Reverse preview not found');
+    await expect(
+      sut.readPreview({ ...owner, user: { ...owner.user, id: '0195e2a0-0000-7000-8000-000000000015' } }, operationId),
+    ).rejects.toThrow('Reverse preview not found');
     await expect(sut.readPreview({ ...owner, sharedLink: {} } as never, operationId)).rejects.toThrow(
       'Reverse preview not found',
     );
