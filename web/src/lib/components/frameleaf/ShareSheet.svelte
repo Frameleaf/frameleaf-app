@@ -22,7 +22,14 @@
     type UserResponseDto,
   } from '@immich/sdk';
   import { Icon, toastManager } from '@immich/ui';
-  import { mdiAccountMultipleOutline, mdiCheck, mdiContentCopy, mdiDownloadOutline, mdiLinkVariant } from '@mdi/js';
+  import {
+    mdiAccountMultipleOutline,
+    mdiCheck,
+    mdiContentCopy,
+    mdiDownloadOutline,
+    mdiExportVariant,
+    mdiLinkVariant,
+  } from '@mdi/js';
   import { t } from 'svelte-i18n';
 
   /**
@@ -323,7 +330,7 @@
             onclick={() => toggle(person.id)}
           >
             <span class="ss-person-avatar" aria-hidden="true">
-              <UserAvatar user={person} size="lg" />
+              <UserAvatar user={person} size="full" />
               <span class="ss-person-check"><Icon icon={mdiCheck} size="14" /></span>
             </span>
             <span class="ss-person-name" aria-hidden="true">{person.name}</span>
@@ -351,7 +358,10 @@
   </div>
   {#snippet actions()}
     {#if canSendCopies() && sendCopyPermitted()}
-      <button type="button" class="button" onclick={sendCopy}>{$t('frameleaf_send_copy')}</button>
+      <button type="button" class="button" onclick={sendCopy}>
+        <Icon icon={mdiExportVariant} size="18" aria-hidden={true} />
+        {$t('frameleaf_send_copy')}
+      </button>
     {/if}
     <button type="button" class="button" onclick={() => (open = false)}>{$t('cancel')}</button>
     {#if peopleMode}
@@ -359,9 +369,10 @@
         {primaryLabel}
       </button>
     {:else}
-      <button type="button" class="button primary" onclick={openLinkForm}
-        >{$t('frameleaf_sharing.create_public_link')}</button
-      >
+      <button type="button" class="button primary" onclick={openLinkForm}>
+        <Icon icon={mdiLinkVariant} size="18" aria-hidden={true} />
+        {$t('frameleaf_sharing.create_public_link')}
+      </button>
     {/if}
   {/snippet}
 </Dialog>
@@ -476,6 +487,8 @@
   .ss-person-avatar {
     position: relative;
     display: inline-flex;
+    width: 60px;
+    height: 60px;
     border-radius: 50%;
     transition: box-shadow var(--fl-motion-fast) var(--fl-ease);
   }
