@@ -47,6 +47,8 @@
     defaultFirstOption?: boolean;
     onSelect?: (option: ComboBoxOption | undefined) => void;
     forceFocus?: boolean;
+    /** What the list says when a search matches nothing; "No results" by default. */
+    emptyText?: string;
   }
 
   let {
@@ -60,6 +62,7 @@
     defaultFirstOption = false,
     onSelect = () => {},
     forceFocus = false,
+    emptyText,
   }: Props = $props();
 
   /**
@@ -406,7 +409,7 @@
           id={`${listboxId}-0`}
           onclick={closeDropdown}
         >
-          {allowCreate ? searchQuery : $t('no_results')}
+          {allowCreate ? searchQuery : (emptyText ?? $t('no_results'))}
         </li>
       {/if}
       {#each filteredOptions as option, index (option.id || option.label)}
