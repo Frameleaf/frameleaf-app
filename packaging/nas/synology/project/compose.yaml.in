@@ -1,0 +1,50 @@
+name: frameleaf
+services:
+  server:
+    image: @SERVER_REF@
+    env_file: .env
+    environment:
+      DB_HOSTNAME: database
+      DB_USERNAME: immich
+      DB_DATABASE_NAME: immich
+      REDIS_HOSTNAME: redis
+      IMMICH_MACHINE_LEARNING_ENABLED: ${ENABLE_ML}
+      IMMICH_MACHINE_LEARNING_URL: http://machine-learning:3003
+    volumes:
+      - ${UPLOAD_LOCATION}:/data
+    ports:
+      - ${WEB_PORT}:2283
+    depends_on:
+      - database
+      - redis
+    restart: unless-stopped
+    healthcheck:
+      test: [CMD, immich-healthcheck]
+  machine-learning:
+    profiles: [ml]
+    image: @ML_REF@
+    volumes:
+      - model-cache:/cache
+    restart: unless-stopped
+    healthcheck:
+      test: [CMD, python3, healthcheck.py]
+  database:
+    image: @PG_REF@
+    environment:
+      POSTGRES_USER: immich
+      POSTGRES_DB: immich
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_INITDB_ARGS: --data-checksums
+    volumes:
+      - ${DB_DATA_LOCATION}:/var/lib/postgresql/data
+    shm_size: 128mb
+    restart: unless-stopped
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U immich -d immich]
+  redis:
+    image: @VALKEY_REF@
+    restart: unless-stopped
+    healthcheck:
+      test: [CMD, valkey-cli, ping]
+volumes:
+  model-cache:

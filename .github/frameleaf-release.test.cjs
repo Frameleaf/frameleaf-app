@@ -303,9 +303,14 @@ test("install bundle pins both Compose fallbacks and env while preserving data c
     await fs.mkdir(path.join(root, "server/src/fork-schema"), {
       recursive: true,
     });
+    await fs.mkdir(path.join(root, "packaging/nas"), { recursive: true });
+    await fs.writeFile(path.join(root, "packaging/nas/certified-sources.json"),
+      '{"officialImmich":[],"priorFrameleaf":[]}');
     for (const name of INSTALL_FILES) {
-      const text = name.startsWith("docker-compose")
-        ? "image: ghcr.io/frameleaf/frameleaf-server:${IMMICH_VERSION:-release}\nvolumes: [model-cache]\n"
+      const text = name === "docker-compose.yml"
+        ? `services:\n  server:\n    image: ghcr.io/frameleaf/frameleaf-server:\${IMMICH_VERSION:-release}\n  redis:\n    image: valkey/valkey:9@${digest(1)}\n  database:\n    image: postgres:14@${digest(2)}\nvolumes: [model-cache]\n`
+        : name.startsWith("docker-compose")
+          ? "image: ghcr.io/frameleaf/frameleaf-server:${IMMICH_VERSION:-release}\nvolumes: [model-cache]\n"
         : name === "example.env"
           ? "IMMICH_VERSION=v3\nUPLOAD_LOCATION=./library\nDB_DATA_LOCATION=./postgres\n"
           : "services: {}\n";
@@ -317,8 +322,14 @@ test("install bundle pins both Compose fallbacks and env while preserving data c
     );
     const dir = path.join(root, "bundle");
     const tag = "frameleaf-v3.1.0-12";
-    const files = await createBundle(dir, root, tag, { sourceCommit: sha });
-    assert.equal(files.length, 8);
+    const files = await createBundle(dir, root, tag, { sourceCommit: sha, images: [
+      { image: "ghcr.io/frameleaf/frameleaf-server", suffix: "", digest: digest(3), platforms: ["linux/amd64", "linux/arm64"] },
+      { image: "ghcr.io/frameleaf/frameleaf-machine-learning", suffix: "", digest: digest(4), platforms: ["linux/amd64", "linux/arm64"] },
+    ] });
+    assert.equal(files.length, 9);
+    const nas = JSON.parse(await fs.readFile(path.join(dir, "nas-manifest.json"), "utf8"));
+    assert.equal(nas.images.server, `ghcr.io/frameleaf/frameleaf-server@${digest(3)}`);
+    assert.deepEqual(nas.migration.officialImmich, []);
     const env = await fs.readFile(path.join(dir, "example.env"), "utf8");
     assert(
       env.includes(`IMMICH_VERSION=${tag}\n`) &&
@@ -340,7 +351,7 @@ test("install bundle pins both Compose fallbacks and env while preserving data c
     const sums = (await fs.readFile(path.join(dir, "SHA256SUMS"), "utf8"))
       .trim()
       .split("\n");
-    assert.equal(sums.length, 7);
+    assert.equal(sums.length, 8);
     for (const line of sums) {
       const [expected, name] = line.split("  ");
       assert.equal(

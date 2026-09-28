@@ -1,0 +1,22 @@
+<Container version="2">
+  <Name>frameleaf-server</Name>
+  <Repository>@SERVER_REF@</Repository>
+  <Registry>https://ghcr.io</Registry>
+  <Network>frameleaf</Network>
+  <Privileged>false</Privileged>
+  <Project>https://github.com/Frameleaf/frameleaf-app</Project>
+  <Support>https://github.com/Frameleaf/frameleaf-app/issues</Support>
+  <Overview>Self-hosted Frameleaf photo and video library. Requires compatible PostgreSQL 14 and Valkey containers on the frameleaf network.</Overview>
+  <Category>MediaApp:Photos</Category>
+  <Icon>https://raw.githubusercontent.com/Frameleaf/frameleaf-app/fork/main/design/frameleaf/brand-kit/frameleaf-app-icon.svg</Icon>
+  <WebUI>http://[IP]:[PORT:2283]</WebUI>
+  <TemplateURL>https://raw.githubusercontent.com/Frameleaf/frameleaf-app/nas-catalog/templates/frameleaf-server.xml</TemplateURL>
+  <Config Name="Web port" Target="2283" Default="2283" Mode="tcp" Description="Frameleaf web interface" Type="Port" Display="always" Required="true" Mask="false">2283</Config>
+  <Config Name="Library" Target="/data" Default="/mnt/user/appdata/frameleaf/library" Mode="rw" Description="Persistent original media and generated files; back up with the database" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/frameleaf/library</Config>
+  <Config Name="Database host" Target="DB_HOSTNAME" Default="frameleaf-postgres" Description="PostgreSQL 14 container name on the frameleaf network" Type="Variable" Display="always" Required="true" Mask="false">frameleaf-postgres</Config>
+  <Config Name="Database name" Target="DB_DATABASE_NAME" Default="immich" Description="Compatibility database name" Type="Variable" Display="advanced" Required="true" Mask="false">immich</Config>
+  <Config Name="Database user" Target="DB_USERNAME" Default="immich" Description="PostgreSQL user" Type="Variable" Display="always" Required="true" Mask="false">immich</Config>
+  <Config Name="Database password" Target="DB_PASSWORD" Default="" Description="Use the same generated secret configured in PostgreSQL" Type="Variable" Display="always" Required="true" Mask="true"></Config>
+  <Config Name="Cache host" Target="REDIS_HOSTNAME" Default="frameleaf-valkey" Description="Valkey container name on the frameleaf network" Type="Variable" Display="always" Required="true" Mask="false">frameleaf-valkey</Config>
+  <Config Name="Machine learning URL" Target="IMMICH_MACHINE_LEARNING_URL" Default="http://frameleaf-ml:3003" Description="Optional ML container on the frameleaf network" Type="Variable" Display="advanced" Required="false" Mask="false">http://frameleaf-ml:3003</Config>
+</Container>
