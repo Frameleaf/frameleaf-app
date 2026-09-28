@@ -477,6 +477,9 @@ export const createStudioPreviewClient = (options: StudioPreviewClientOptions): 
    */
   const supersede = (currentRevision: number) => {
     knownRevision = currentRevision;
+    if (pending && pending.revision < currentRevision) {
+      pending = null;
+    }
     const staleFrame = pruneTo(currentRevision);
     setPhase('stale', { frame: null, staleFrame, currentRevision, errorCode: null });
   };
@@ -505,26 +508,47 @@ export const createStudioPreviewClient = (options: StudioPreviewClientOptions): 
     return reason?.kind === 'stale-revision' ? (reason.currentRevision ?? fallback) : fallback;
   };
 
+  const isCurrent = (intent: StudioPreviewIntent, generation: number) =>
+    !disposed && generation === seekGeneration && intent.revision === knownRevision;
+
+  const handleTransportError = (error: unknown, intent: StudioPreviewIntent, generation: number, fallback: number) => {
+    if (disposed) {
+      return;
+    }
+    const kind = failureOf(error);
+    if (kind === 'forbidden') {
+      pending = null;
+      failure(kind);
+      return;
+    }
+    if (kind === 'stale-revision') {
+      const revision = staleRevisionOf(error, fallback);
+      if (revision > (knownRevision ?? 0) || (isCurrent(intent, generation) && revision === knownRevision)) {
+        supersede(revision);
+      } else if (isCurrent(intent, generation)) {
+        failure('failed');
+      }
+      return;
+    }
+    if (isCurrent(intent, generation)) {
+      failure(kind);
+    }
+  };
+
   const run = async (intent: StudioPreviewIntent, generation: number): Promise<void> => {
     let result: StudioPreviewRequestResult;
     try {
       result = await options.transport.request(intent, generation);
     } catch (error) {
-      if (failureOf(error) === 'stale-revision') {
-        supersede(staleRevisionOf(error, intent.revision));
-      } else {
-        failure(failureOf(error));
-      }
+      handleTransportError(error, intent, generation, intent.revision);
       return;
     }
 
-    if (disposed) {
-      return;
+    if (!disposed && result.currentRevision > (knownRevision ?? 0)) {
+      supersede(result.currentRevision);
     }
-
-    if (knownRevision !== null && intent.revision !== knownRevision) {
-      // The host moved to another stored revision while this request was in flight. Nothing it
-      // renders can be shown, and pruning to its revision would drop the current one's frames.
+    if (!isCurrent(intent, generation)) {
+      // A newer seek or stored revision arrived while this request was in flight.
       void options.transport.cancel(result.preview.id).catch(() => {});
       return;
     }
@@ -532,7 +556,8 @@ export const createStudioPreviewClient = (options: StudioPreviewClientOptions): 
     // The server is the authority on which revision is current. If it disagrees with the one
     // we asked about, nothing rendered for ours can be painted.
     if (result.currentRevision !== intent.revision) {
-      supersede(result.currentRevision);
+      failure('failed');
+      void options.transport.cancel(result.preview.id).catch(() => {});
       return;
     }
 
@@ -544,6 +569,11 @@ export const createStudioPreviewClient = (options: StudioPreviewClientOptions): 
     openPreviewIds.add(record.id);
 
     for (let attempt = 0; record.status !== 'ready' && attempt < maxPolls; attempt++) {
+      if (!isCurrent(intent, generation)) {
+        void options.transport.cancel(record.id).catch(() => {});
+        openPreviewIds.delete(record.id);
+        return;
+      }
       if (record.status === 'superseded') {
         supersede(result.currentRevision);
         return;
@@ -553,31 +583,26 @@ export const createStudioPreviewClient = (options: StudioPreviewClientOptions): 
         return;
       }
 
-      // A newer seek, or a newer stored revision, arrived while this one was rendering: stop
-      // paying for a frame nobody will look at rather than finishing it first.
-      if (generation < seekGeneration || intent.revision !== knownRevision) {
+      await wait(pollIntervalMs);
+      if (!isCurrent(intent, generation)) {
         void options.transport.cancel(record.id).catch(() => {});
         openPreviewIds.delete(record.id);
-        return;
-      }
-
-      await wait(pollIntervalMs);
-      if (disposed) {
         return;
       }
 
       try {
         record = await options.transport.poll(record.id);
       } catch (error) {
-        if (failureOf(error) === 'stale-revision') {
-          supersede(staleRevisionOf(error, result.currentRevision));
-        } else {
-          failure(failureOf(error));
-        }
+        handleTransportError(error, intent, generation, result.currentRevision);
         return;
       }
     }
 
+    if (!isCurrent(intent, generation)) {
+      void options.transport.cancel(record.id).catch(() => {});
+      openPreviewIds.delete(record.id);
+      return;
+    }
     if (record.status !== 'ready') {
       // Never a blank "ready" with no picture: an exhausted poll budget is `unavailable`.
       failure(record.errorCode ?? 'timeout');
@@ -588,11 +613,7 @@ export const createStudioPreviewClient = (options: StudioPreviewClientOptions): 
     try {
       frameBytes = await options.transport.fetchFrame(record.id, record.etag);
     } catch (error) {
-      if (failureOf(error) === 'stale-revision') {
-        supersede(staleRevisionOf(error, result.currentRevision));
-      } else {
-        failure(failureOf(error));
-      }
+      handleTransportError(error, intent, generation, result.currentRevision);
       return;
     }
 
@@ -607,9 +628,8 @@ export const createStudioPreviewClient = (options: StudioPreviewClientOptions): 
       toneMapped: record.toneMapped,
     };
 
-    if (disposed || (knownRevision !== null && record.revision !== knownRevision)) {
-      // Disposed, or the project moved to another stored revision while this one rendered: the
-      // frame belongs to a graph nobody is looking at, so it is neither painted nor cached.
+    if (!isCurrent(intent, generation) || record.revision !== intent.revision) {
+      // This frame no longer matches the seek and stored revision being shown.
       release(frame.objectUrl);
       return;
     }
@@ -646,7 +666,11 @@ export const createStudioPreviewClient = (options: StudioPreviewClientOptions): 
     pending = null;
 
     running = run(intent, generation)
-      .catch(() => failure('failed'))
+      .catch(() => {
+        if (isCurrent(intent, generation)) {
+          failure('failed');
+        }
+      })
       .finally(() => {
         running = null;
         pump();
@@ -655,7 +679,7 @@ export const createStudioPreviewClient = (options: StudioPreviewClientOptions): 
 
   return {
     request(intent) {
-      if (disposed) {
+      if (disposed || (knownRevision !== null && intent.revision < knownRevision)) {
         return seekGeneration;
       }
 
@@ -670,6 +694,7 @@ export const createStudioPreviewClient = (options: StudioPreviewClientOptions): 
 
       const cached = cache.get(intent);
       if (cached) {
+        pending = null;
         releaseRetained();
         setPhase('ready', {
           frame: cached,
@@ -689,7 +714,7 @@ export const createStudioPreviewClient = (options: StudioPreviewClientOptions): 
     view: () => view,
 
     revisionAdvanced(revision) {
-      if (disposed || revision === knownRevision) {
+      if (disposed || (knownRevision !== null && revision <= knownRevision)) {
         return;
       }
 

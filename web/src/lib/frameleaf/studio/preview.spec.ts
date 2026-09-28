@@ -228,6 +228,33 @@ describe('createStudioPreviewClient', () => {
     pollIntervalMs: 0,
   });
 
+  const delayedFetchAfterCachedSeek = async () => {
+    let rejectLate!: (error: Error) => void;
+    let fetchStarted!: () => void;
+    const started = new Promise<void>((resolve) => (fetchStarted = resolve));
+    const transport = stubTransport({
+      fetchFrame: vi.fn((previewId: string, etag: string) =>
+        previewId === 'preview-2'
+          ? new Promise<{ objectUrl: string; etag: string }>((_, reject) => {
+              rejectLate = reject;
+              fetchStarted();
+            })
+          : Promise.resolve({ objectUrl: `blob:${previewId}`, etag }),
+      ),
+    });
+    const release = vi.fn();
+    const client = createStudioPreviewClient(clientOptions(transport, release));
+    const cached = intent({ time: rational(1) });
+
+    client.request(cached);
+    await client.idle();
+    client.request(intent({ time: rational(2) }));
+    await started;
+    client.request(cached);
+    expect(client.view().frame?.previewId).toBe('preview-1');
+    return { client, cached, rejectLate, release };
+  };
+
   it('reports rendering, then the frame', async () => {
     const transport = stubTransport();
     const phases: string[] = [];
@@ -254,6 +281,68 @@ describe('createStudioPreviewClient', () => {
 
     expect(transport.request).toHaveBeenCalledTimes(1);
     expect(client.view().phase).toBe('ready');
+  });
+
+  it('keeps a cached current frame when an older fetch fails', async () => {
+    const { client, rejectLate } = await delayedFetchAfterCachedSeek();
+
+    rejectLate(transportError({ kind: 'offline' }));
+    await client.idle();
+    expect(client.view().phase).toBe('ready');
+    expect(client.view().frame?.previewId).toBe('preview-1');
+  });
+
+  it('revokes a cached frame when an older fetch reports forbidden', async () => {
+    const { client, rejectLate, release } = await delayedFetchAfterCachedSeek();
+
+    rejectLate(transportError({ kind: 'forbidden' }));
+    await client.idle();
+    expect(client.view().phase).toBe('unavailable');
+    expect(client.view().frame).toBeNull();
+    expect(client.view().staleFrame).toBeNull();
+    expect(release).toHaveBeenCalledWith('blob:preview-1');
+  });
+
+  it('accepts a newer revision reported by an older fetch without moving backward', async () => {
+    const { client, cached, rejectLate } = await delayedFetchAfterCachedSeek();
+
+    rejectLate(transportError({ kind: 'stale-revision', currentRevision: 2 }));
+    await client.idle();
+    expect(client.view().phase).toBe('stale');
+    expect(client.view().currentRevision).toBe(2);
+    expect(client.view().frame).toBeNull();
+    client.revisionAdvanced(1);
+    client.request(cached);
+    expect(client.view().currentRevision).toBe(2);
+  });
+
+  it('drops a queued seek when the newest seek is served from cache', async () => {
+    let finishFirst!: () => void;
+    const transport = stubTransport({
+      request: vi.fn(async (asked: StudioPreviewIntent) => {
+        if (asked.time.num === 2) {
+          await new Promise<void>((resolve) => (finishFirst = resolve));
+        }
+        return {
+          preview: record({ id: `preview-${asked.time.num}`, revision: asked.revision }),
+          currentRevision: asked.revision,
+          supersededPreviewIds: [],
+        };
+      }),
+    });
+    const client = createStudioPreviewClient(clientOptions(transport));
+    const cached = intent({ time: rational(1) });
+
+    client.request(cached);
+    await client.idle();
+    client.request(intent({ time: rational(2) }));
+    client.request(intent({ time: rational(3) }));
+    client.request(cached);
+    finishFirst();
+    await client.idle();
+
+    expect(transport.request).toHaveBeenCalledTimes(2);
+    expect(client.view().frame?.previewId).toBe('preview-1');
   });
 
   it('runs one request at a time and keeps only the newest seek', async () => {
@@ -423,20 +512,23 @@ describe('createStudioPreviewClient', () => {
     expect(transport.request).toHaveBeenCalledTimes(1);
   });
 
-  it('drops every cached frame of a revision that is superseded', async () => {
+  it('drops every cached frame of a superseded revision and ignores an older request', async () => {
+    const release = vi.fn();
     const transport = stubTransport();
-    const client = createStudioPreviewClient(clientOptions(transport));
+    const client = createStudioPreviewClient(clientOptions(transport, release));
 
     client.request(intent());
     await client.idle();
     client.request(intent({ revision: 2 }));
     await client.idle();
 
-    // Asking for the old frame again must render, not hit the cache.
+    // A stale editor must not move the known revision backward or revive its cache.
     client.request(intent({ revision: 1 }));
     await client.idle();
 
-    expect(transport.request).toHaveBeenCalledTimes(3);
+    expect(transport.request).toHaveBeenCalledTimes(2);
+    expect(release).toHaveBeenCalledWith('blob:preview-1');
+    expect(client.view().currentRevision).toBe(2);
   });
 
   it('polls a rendering preview and paints it when it is ready', async () => {
