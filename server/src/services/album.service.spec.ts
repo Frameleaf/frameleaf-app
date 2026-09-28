@@ -537,6 +537,147 @@ describe(AlbumService.name, () => {
     });
   });
 
+  describe('cover follows the newest item (FL-83 AL-13)', () => {
+    const setup = () => {
+      const album = AlbumFactory.create();
+      const { user: owner } = album.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([album.id]));
+      mocks.album.getById.mockResolvedValue(getForAlbum(album));
+      mocks.album.update.mockResolvedValue(getForAlbum(album));
+      return { album, auth: AuthFactory.create(owner) };
+    };
+
+    it('turns the mode on and reports it', async () => {
+      const { album, auth } = setup();
+
+      await expect(sut.update(auth, album.id, { coverFollowsNewest: true })).resolves.toMatchObject({
+        id: album.id,
+        coverFollowsNewest: true,
+      });
+
+      expect(mocks.album.setCoverFollowsNewest).toHaveBeenCalledWith(album.id, true);
+      // The mode is saved (and the newest item made the cover) before the album row is read back.
+      expect(mocks.album.setCoverFollowsNewest.mock.invocationCallOrder[0]).toBeLessThan(
+        mocks.album.update.mock.invocationCallOrder[0],
+      );
+    });
+
+    it('turns the mode off without touching the current cover', async () => {
+      const { album, auth } = setup();
+
+      await expect(sut.update(auth, album.id, { coverFollowsNewest: false })).resolves.toMatchObject({
+        coverFollowsNewest: false,
+      });
+
+      expect(mocks.album.setCoverFollowsNewest).toHaveBeenCalledWith(album.id, false);
+      expect(mocks.album.update).toHaveBeenCalledWith(
+        album.id,
+        expect.not.objectContaining({ albumThumbnailAssetId: expect.anything() }),
+        auth.user.id,
+      );
+    });
+
+    it('turns the mode off when a specific item is picked as the cover', async () => {
+      const album = AlbumFactory.from()
+        .asset({}, (builder) => builder.exif())
+        .build();
+      const asset = album.assets[0];
+      const { user: owner } = album.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([album.id]));
+      mocks.album.getById.mockResolvedValue(getForAlbum(album));
+      mocks.album.update.mockResolvedValue(getForAlbum(album));
+
+      await expect(
+        sut.update(AuthFactory.create(owner), album.id, { albumThumbnailAssetId: asset.id }),
+      ).resolves.toMatchObject({ coverFollowsNewest: false });
+
+      expect(mocks.album.setCoverFollowsNewest).toHaveBeenCalledWith(album.id, false);
+      expect(mocks.album.update).toHaveBeenCalledWith(
+        album.id,
+        expect.objectContaining({ albumThumbnailAssetId: asset.id }),
+        owner.id,
+      );
+    });
+
+    it('refuses a specific cover together with following the newest item', async () => {
+      const album = AlbumFactory.from()
+        .asset({}, (builder) => builder.exif())
+        .build();
+      const asset = album.assets[0];
+      const { user: owner } = album.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([album.id]));
+      mocks.album.getById.mockResolvedValue(getForAlbum(album));
+
+      await expect(
+        sut.update(AuthFactory.create(owner), album.id, { albumThumbnailAssetId: asset.id, coverFollowsNewest: true }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(mocks.album.setCoverFollowsNewest).not.toHaveBeenCalled();
+      expect(mocks.album.update).not.toHaveBeenCalled();
+    });
+
+    it('leaves the mode alone for other changes and reports the saved state', async () => {
+      const { album, auth } = setup();
+      mocks.album.isCoverFollowingNewest.mockResolvedValue(true);
+
+      await expect(sut.update(auth, album.id, { albumName: 'Renamed' })).resolves.toMatchObject({
+        coverFollowsNewest: true,
+      });
+
+      expect(mocks.album.setCoverFollowsNewest).not.toHaveBeenCalled();
+      expect(mocks.album.isCoverFollowingNewest).toHaveBeenCalledWith(album.id);
+    });
+
+    it('reports the mode when the album is read', async () => {
+      const { album, auth } = setup();
+      mocks.album.getMetadataForIds.mockResolvedValue([]);
+      mocks.album.isCoverFollowingNewest.mockResolvedValue(true);
+
+      await expect(sut.get(auth, album.id)).resolves.toMatchObject({ id: album.id, coverFollowsNewest: true });
+
+      expect(mocks.album.isCoverFollowingNewest).toHaveBeenCalledWith(album.id);
+    });
+
+    it('moves the cover to the newest item after items are added', async () => {
+      const { album, auth } = setup();
+      const asset = AssetFactory.create();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.album.getAssetIds.mockResolvedValueOnce(new Set());
+
+      await sut.addAssets(auth, album.id, { ids: [asset.id] });
+
+      expect(mocks.album.updateNewestCovers).toHaveBeenCalledWith([album.id]);
+      expect(mocks.album.updateNewestCovers.mock.invocationCallOrder[0]).toBeGreaterThan(
+        mocks.album.addAssetIds.mock.invocationCallOrder[0],
+      );
+    });
+
+    it('does not refresh covers when nothing was added', async () => {
+      const { album, auth } = setup();
+      const asset = AssetFactory.create();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.album.getAssetIds.mockResolvedValueOnce(new Set([asset.id]));
+
+      await sut.addAssets(auth, album.id, { ids: [asset.id] });
+
+      expect(mocks.album.updateNewestCovers).not.toHaveBeenCalled();
+    });
+
+    it('moves the cover to the newest item after items are added to several albums', async () => {
+      const { album, auth } = setup();
+      const asset = AssetFactory.create();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.album.getAssetIds.mockResolvedValue(new Set());
+
+      await sut.addAssetsToAlbums(auth, { albumIds: [album.id], assetIds: [asset.id] });
+
+      expect(mocks.album.updateNewestCovers).toHaveBeenCalledWith([album.id]);
+      expect(mocks.album.updateNewestCovers.mock.invocationCallOrder[0]).toBeGreaterThan(
+        mocks.album.addAssetIdsToAlbums.mock.invocationCallOrder[0],
+      );
+    });
+  });
+
   describe('delete', () => {
     it('should require permissions', async () => {
       const album = AlbumFactory.create();

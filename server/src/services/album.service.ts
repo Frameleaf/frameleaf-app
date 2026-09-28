@@ -221,6 +221,7 @@ export class AlbumService extends BaseService {
       contributorCounts: isShared
         ? await this.albumRepository.getContributorCounts(album.id, privacyOptions)
         : undefined,
+      coverFollowsNewest: (await this.albumRepository.isCoverFollowingNewest(album.id)) === true,
       ...(await this.smartStateOf(auth, album.id)),
     };
   }
@@ -359,6 +360,10 @@ export class AlbumService extends BaseService {
     // shown to, so the candidates are the assets that every viewer may see.
     const album = await this.findOrFail(id, auth, { withAssets: true, lockedOwnerId: undefined });
 
+    if (dto.albumThumbnailAssetId && dto.coverFollowsNewest) {
+      throw new BadRequestException('Pick a cover or follow the newest item, not both');
+    }
+
     if (dto.albumThumbnailAssetId) {
       const visibleAssetIds = new Set(album.assets?.map((asset) => asset.id));
       if (!visibleAssetIds.has(dto.albumThumbnailAssetId)) {
@@ -369,6 +374,13 @@ export class AlbumService extends BaseService {
 
     if (dto.parentId !== undefined && dto.parentId !== album.parentId) {
       await this.validateAndReparent(auth, album, dto.parentId);
+    }
+
+    // FL-83 (AL-13): picking a specific item stops the cover following the newest item. Saved before
+    // the album row is written and read back, so turning it on returns the newest item as the cover.
+    const coverFollowsNewest = dto.albumThumbnailAssetId ? false : dto.coverFollowsNewest;
+    if (coverFollowsNewest !== undefined) {
+      await this.albumRepository.setCoverFollowsNewest(album.id, coverFollowsNewest);
     }
 
     const updatedAlbum = await this.albumRepository.update(
@@ -391,7 +403,10 @@ export class AlbumService extends BaseService {
       [{ ...updatedAlbum, assets: album.assets }],
       privacyOptions,
     );
-    return mapAlbum(mappedAlbum);
+    return {
+      ...mapAlbum(mappedAlbum),
+      coverFollowsNewest: coverFollowsNewest ?? (await this.albumRepository.isCoverFollowingNewest(album.id)) === true,
+    };
   }
 
   async getDescendantCount(auth: AuthDto, id: string): Promise<AlbumDescendantCountResponseDto> {
@@ -497,6 +512,8 @@ export class AlbumService extends BaseService {
         },
         auth.user.id,
       );
+      // An album whose cover follows the newest item takes the newest of what was just added (FL-83).
+      await this.albumRepository.updateNewestCovers([id]);
 
       const userIds = album.albumUsers.map(({ user }) => user.id);
       const recipientIds = userIds.filter((userId) => userId !== auth.user.id);
@@ -567,6 +584,9 @@ export class AlbumService extends BaseService {
     }
 
     await this.albumRepository.addAssetIdsToAlbums(albumAssetValues);
+    if (events.length > 0) {
+      await this.albumRepository.updateNewestCovers(events.map(({ id }) => id));
+    }
     for (const albumId of allowedAlbumIds) {
       const added = albumAssetValues.filter((value) => value.albumId === albumId).map(({ assetId }) => assetId);
       await this.classificationRepository.recordAlbumAdditions(albumId, added, auth.user.id);

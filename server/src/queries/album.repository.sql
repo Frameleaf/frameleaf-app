@@ -550,6 +550,14 @@ FROM
 WHERE
   "userId" = $1::uuid
 
+-- AlbumRepository.isCoverFollowingNewest
+SELECT
+  "albumId"
+FROM
+  immich_fork.album_cover_follows_newest
+WHERE
+  "albumId" = $1::uuid
+
 -- AlbumRepository.getContributorCounts
 select
   "asset"."ownerId" as "userId",

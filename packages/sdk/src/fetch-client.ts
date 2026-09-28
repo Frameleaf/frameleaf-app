@@ -2827,6 +2827,8 @@ export type AlbumResponseDto = {
     /** Number of assets */
     assetCount: number;
     contributorCounts?: ContributorCountResponseDto[];
+    /** True when the cover always follows the newest item. Populated by GET /albums/{id} and PATCH /albums/{id}. */
+    coverFollowsNewest?: boolean;
     /** Creation date */
     createdAt: string;
     /** Album description */
@@ -2946,8 +2948,10 @@ export type AlbumTreeResponseDto = {
 export type UpdateAlbumDto = {
     /** Album name */
     albumName?: string;
-    /** Album thumbnail asset ID */
+    /** Album thumbnail asset ID. Picking an item stops the cover following the newest item. */
     albumThumbnailAssetId?: string;
+    /** Always use the newest item as the cover (true), or keep the current cover from now on (false). Cannot be true together with albumThumbnailAssetId. */
+    coverFollowsNewest?: boolean;
     /** Album description */
     description?: string | null;
     /** Icon: any Material Design Icons name (null = clear / use default icon) */

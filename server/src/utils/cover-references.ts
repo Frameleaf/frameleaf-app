@@ -123,6 +123,26 @@ export const albumCoverReplacement = (eb: ExpressionBuilder<DB, 'album'>, scores
     .orderBy('asset.fileCreatedAt', 'desc')
     .limit(sql.lit(1));
 
+/**
+ * The cover of an album whose cover follows its newest item (FL-83, AL-13): the item taken last
+ * (`fileCreatedAt`, the date the album timeline orders items by), under the same rules as any
+ * automatic cover — never Locked or trashed, never sensitive when someone besides the owner sees the
+ * album, and a sensitive item only when nothing else is left. None when it has no such item.
+ */
+export const albumNewestCover = (eb: ExpressionBuilder<DB, 'album'>) =>
+  eb
+    .selectFrom('album_asset')
+    .innerJoin('asset', 'asset.id', 'album_asset.assetId')
+    .select('album_asset.assetId')
+    .whereRef('album_asset.albumId', '=', 'album.id')
+    .where('asset.deletedAt', 'is', null)
+    .where(isUnlockedAsset())
+    .where((inner) => inner.or([inner.not(isSharedAlbum(eb)), isNotSensitive(sql.ref('asset.id'))]))
+    .orderBy(sensitiveLast(sql.ref('asset.id')), 'asc')
+    .orderBy('asset.fileCreatedAt', 'desc')
+    .orderBy('asset.id', 'desc')
+    .limit(sql.lit(1));
+
 const releaseAlbumCovers = async (db: Kysely<DB>, assetIds: string[], scores: BestPhotoScoreTable) => {
   await db
     .updateTable('album')
