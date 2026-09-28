@@ -444,7 +444,8 @@ describe('LibraryView', () => {
         });
         await waitFor(() => expect(persist).toHaveBeenCalled());
 
-        expect(restore).toHaveBeenCalledWith(expect.anything(), undefined);
+        expect(restore).toHaveBeenCalledWith(expect.anything(), undefined, expect.any(String));
+        expect(restore.mock.calls.every(([, userId]) => userId === undefined)).toBe(true);
         expect(persist.mock.calls.every(([userId]) => userId === undefined)).toBe(true);
       } finally {
         restore.mockRestore();

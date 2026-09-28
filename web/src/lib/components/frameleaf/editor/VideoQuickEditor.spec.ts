@@ -63,6 +63,8 @@ const opened = async (edits: Array<{ action: AssetEditAction; parameters: object
 };
 
 describe('VideoQuickEditor', () => {
+  afterEach(() => vi.restoreAllMocks());
+
   beforeEach(() => {
     vi.clearAllMocks();
     sessionStorage.clear();
@@ -115,7 +117,9 @@ describe('VideoQuickEditor', () => {
   });
 
   it('keeps a playing video draft at its latest timeupdate when the page reloads', async () => {
-    const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+    // The media stage renders only after layout supplies its dimensions.
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 800, 600));
+    vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
     const asset = video();
     vi.mocked(getAssetEdits).mockResolvedValue({ assetId: asset.id, edits: [], originalVideo } as never);
     const first = render(VideoQuickEditor, { asset, onClose: vi.fn() });
@@ -142,7 +146,6 @@ describe('VideoQuickEditor', () => {
     await waitFor(() =>
       expect(screen.getByRole('slider', { name: 'frameleaf_video_editor_playhead' })).toHaveValue('9'),
     );
-    play.mockRestore();
   });
 
   it('does not recreate a cleared private draft on pagehide or editor teardown', async () => {
