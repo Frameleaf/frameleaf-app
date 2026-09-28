@@ -371,7 +371,13 @@
     }
   };
 
-  const linkTarget = $derived({ type: SharedLinkType.Album, albumId: album.id, name });
+  const linkTarget = $derived({
+    type: SharedLinkType.Album,
+    albumId: album.id,
+    name,
+    previewAssetIds: album.albumThumbnailAssetId ? [album.albumThumbnailAssetId] : [],
+    count: assetCount,
+  });
 
   /** With links already on the album, the list is the useful place; otherwise create one. */
   const openLinks = async () => {
