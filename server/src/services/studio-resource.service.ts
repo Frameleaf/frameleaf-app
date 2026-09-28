@@ -55,6 +55,7 @@ import { DecodeSupport, qualifySourceDecode } from 'src/utils/media-decode.js';
 import { restoredVersionState } from 'src/utils/restoration.js';
 import {
   STUDIO_MAX_GRAPH_BYTES,
+  STUDIO_MAX_REFERENCES,
   StudioAudioSource,
   StudioDestination,
   StudioEgress,
@@ -66,6 +67,7 @@ import {
   getStudioResourceClass,
   isKnownStudioPreset,
   isStudioDestination,
+  isStudioIdentifier,
   isStudioUuid,
   measureStudioGraph,
   studioReferenceKey,
@@ -390,6 +392,41 @@ export class StudioResourceService extends BaseService {
     const generated = new Map((context.generated ?? []).map((item) => [item.id, item]));
 
     const { references, violations, sequences } = extractStudioResourceReferences(context.graph);
+    // A relinked clip may reference only its generated file. Resolve its declared media lineage
+    // through the same current-access checks as graph sources, including intermediate chains.
+    // Keys for audio, LUTs and presets omit required source/family metadata: do not guess it.
+    const lineageKinds = new Set([
+      StudioResourceKind.LibraryAsset,
+      StudioResourceKind.EditedMaster,
+      StudioResourceKind.RestoredVersion,
+      StudioResourceKind.ProjectImport,
+      StudioResourceKind.GeneratedIntermediate,
+    ]);
+    const seen = new Set(references.map((reference) => studioReferenceKey(reference)));
+    for (const reference of references) {
+      if (
+        reference.kind !== StudioResourceKind.GeneratedIntermediate &&
+        !(reference.kind === StudioResourceKind.Audio && reference.source === 'generated')
+      ) {
+        continue;
+      }
+      for (const key of generated.get(reference.id)?.derivedFrom ?? []) {
+        const separator = key.indexOf(':');
+        if (separator < 1) {
+          continue;
+        }
+        const kind = key.slice(0, separator) as StudioResourceKind;
+        const id = key.slice(separator + 1);
+        if (seen.has(key) || !lineageKinds.has(kind) || !isStudioIdentifier(id)) {
+          continue;
+        }
+        if (references.length >= STUDIO_MAX_REFERENCES) {
+          throw new BadRequestException(`Generated lineage exceeds ${STUDIO_MAX_REFERENCES} resource references`);
+        }
+        seen.add(key);
+        references.push({ kind, id, graphPath: reference.graphPath });
+      }
+    }
     const sequenceCheck = checkNestedSequences(sequences);
     const refusedSequences = new Map(sequenceCheck.refused.map((item) => [item.id, item]));
 
@@ -936,7 +973,7 @@ export class StudioResourceService extends BaseService {
       refuse(
         reference,
         StudioRefusalReason.DerivedInputRefused,
-        `Derives from ${record.derivedFrom.join(', ')}, which the graph does not authorize.`,
+        `Derives from ${record.derivedFrom.join(', ')}, which the manifest does not authorize.`,
       );
     }
 
