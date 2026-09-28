@@ -5,9 +5,9 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 import { goto } from '$app/navigation';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { emptyDiscoveryQuery, type DiscoveryQuery } from '$lib/components/discovery/query';
+import { FILTER_APPLY_EVENT } from '$lib/frameleaf/search-shortcuts';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { searchStore } from '$lib/stores/search.svelte';
-import { FILTER_APPLY_EVENT } from '$lib/frameleaf/search-shortcuts';
 import { renderWithTooltips } from '$tests/helpers';
 import SearchPalette from './SearchPalette.svelte';
 

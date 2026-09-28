@@ -51,7 +51,12 @@ describe(StudioProjectService.name, () => {
   let repository: Record<keyof StudioProjectRepository, AnyMock>;
   let access: {
     album: { checkOwnerAccess: AnyMock; checkSharedAlbumAccess: AnyMock };
-    asset: { checkOwnerAccess: AnyMock; checkAlbumAccess: AnyMock; checkPartnerAccess: AnyMock; checkItemShareAccess: AnyMock };
+    asset: {
+      checkOwnerAccess: AnyMock;
+      checkAlbumAccess: AnyMock;
+      checkPartnerAccess: AnyMock;
+      checkItemShareAccess: AnyMock;
+    };
   };
   /** The owner's items the session may not see (Locked while locked, or hidden by a rule). */
   let hiddenFromSession: Set<string>;
