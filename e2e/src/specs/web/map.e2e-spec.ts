@@ -251,7 +251,7 @@ test.describe('Map', () => {
     await page.getByRole('checkbox', { name: 'thompson-springs.jpg' }).check();
     await page.getByRole('button', { name: 'Remove location from 1 selected' }).click();
     const dialog = page.getByRole('dialog', { name: 'Remove location' });
-    await dialog.getByRole('button', { name: /Apply/ }).click();
+    await dialog.getByRole('button', { name: /Confirm 1 item/ }).click();
     await expect(dialog).toHaveCount(0);
 
     await page.goto('/map');
