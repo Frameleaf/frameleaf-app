@@ -1,4 +1,5 @@
 import {
+  AlbumUserRole,
   AssetEditAction,
   AssetMediaResponseDto,
   correctFace,
@@ -6,6 +7,8 @@ import {
   getFaces,
   LoginResponseDto,
   PersonResponseDto,
+  setUserOnboarding,
+  SharedLinkType,
 } from '@immich/sdk';
 import { expect, Page, test } from '@playwright/test';
 import { PNG } from 'pngjs';
@@ -189,6 +192,66 @@ test.describe('Face tagging (FL-38)', () => {
     await expect(dialog.getByText(/This image changed since you opened it/)).toBeVisible();
     await expect(dialog.getByText('1 face')).toBeVisible();
     expect(await getFaces({ id: asset.id }, { headers: headers() })).toHaveLength(0);
+  });
+
+  test('only the signed-in owner can tag a photo shared with an album viewer and a link visitor (FL-40)', async ({
+    browser,
+    page,
+  }) => {
+    const asset = await createPhoto('face-write-boundary.png');
+    const member = await utils.userSetup(admin.accessToken, {
+      name: 'Album Viewer',
+      email: 'face-album-viewer@example.com',
+      password: 'password',
+    });
+    await setUserOnboarding(
+      { onboardingDto: { isOnboarded: true } },
+      { headers: asBearerAuth(member.accessToken) },
+    );
+    const album = await utils.createAlbum(admin.accessToken, {
+      albumName: 'Face write boundary',
+      assetIds: [asset.id],
+      albumUsers: [{ userId: member.userId, role: AlbumUserRole.Viewer }],
+    });
+    const link = await utils.createSharedLink(admin.accessToken, {
+      type: SharedLinkType.Individual,
+      assetIds: [asset.id],
+    });
+
+    const memberContext = await browser.newContext();
+    const guestContext = await browser.newContext();
+    try {
+      await utils.setAuthCookies(memberContext, member.accessToken);
+      const memberPage = await memberContext.newPage();
+      await memberPage.goto(`/albums/${album.id}/photos/${asset.id}`);
+      await expect(memberPage.getByTestId('preview').filter({ visible: true })).toHaveAttribute('src', /.+/);
+      await memberPage.keyboard.press('i');
+      await expect(memberPage.locator('#detail-panel')).toBeVisible();
+      await expect(memberPage.getByRole('button', { name: 'Add person' })).toHaveCount(0);
+
+      const guestPage = await guestContext.newPage();
+      await guestPage.goto(`/share/${link.key}/photos/${asset.id}`);
+      await guestPage.getByRole('button', { name: 'Information', exact: true }).click();
+      await expect(guestPage.locator('#detail-panel')).toBeVisible();
+      await expect(guestPage.getByRole('button', { name: 'Add person' })).toHaveCount(0);
+      expect(await getFaces({ id: asset.id }, { headers: headers() })).toHaveLength(0);
+
+      const dialog = await openFaceTagger(page, asset);
+      await dialog.getByRole('button', { name: 'Add face' }).click();
+      await dialog.getByRole('button', { name: 'Jamie', exact: true }).click();
+      await dialog.getByRole('button', { name: 'Save face tags' }).click();
+      await expect(dialog).toBeHidden();
+      await expect.poll(async () => (await getFaces({ id: asset.id }, { headers: headers() }))[0]?.person?.id).toBe(
+        jamie.id,
+      );
+
+      await memberPage.reload();
+      await expect(memberPage.getByTestId('preview').filter({ visible: true })).toHaveAttribute('src', /.+/);
+      await expect(memberPage.locator('#detail-panel')).toBeVisible();
+      await expect(memberPage.getByRole('button', { name: 'Add person' })).toHaveCount(0);
+    } finally {
+      await Promise.all([memberContext.close(), guestContext.close()]);
+    }
   });
 
   test('reassigns a face from its People chip menu', async ({ page }) => {
