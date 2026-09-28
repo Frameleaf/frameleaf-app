@@ -1,5 +1,5 @@
 import { shouldIgnoreEvent } from '$lib/actions/shortcut';
-import type { DiscoveryFilterSection } from '$lib/components/discovery/query';
+import type { DiscoveryFilterSection, DiscoveryQuery } from '$lib/components/discovery/query';
 import { isMacPlatform } from '$lib/frameleaf/library-shortcuts';
 
 /**
@@ -61,6 +61,12 @@ export const installSearchShortcuts = (
  * search entry owns, so the toolbar asks for it with this event rather than mounting a second panel.
  */
 export const FILTER_PANEL_EVENT = 'frameleaf:open-filters';
+
+/** The mounted album accepts a filter only when its production source can apply the whole query. */
+export const FILTER_APPLY_EVENT = 'frameleaf:apply-filters';
+
+export const applyFilterQuery = (query: DiscoveryQuery) =>
+  !globalThis.dispatchEvent(new CustomEvent(FILTER_APPLY_EVENT, { detail: query, cancelable: true }));
 
 export type FilterPanelRequest = { section: DiscoveryFilterSection };
 
