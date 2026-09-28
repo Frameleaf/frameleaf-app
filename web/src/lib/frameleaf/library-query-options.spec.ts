@@ -1,4 +1,4 @@
-import { AssetVisibility } from '@immich/sdk';
+import { AssetTypeEnum, AssetVisibility } from '@immich/sdk';
 import { describe, expect, it } from 'vitest';
 import { emptyDiscoveryQuery, type DiscoveryQuery } from '$lib/components/discovery/query';
 import { timelineQueryOptions, viewInLibraryHref } from './library-query-options';
@@ -12,6 +12,28 @@ const query = (filter: DiscoveryQuery['filter'], text = ''): DiscoveryQuery => (
 const base = { visibility: AssetVisibility.Timeline, withStacked: true, withPartners: true };
 
 describe('timelineQueryOptions (FL-30, M3)', () => {
+  it('applies a media type without dropping other conditions or replacing the page type (FL-40)', () => {
+    for (const assetType of [AssetTypeEnum.Image, AssetTypeEnum.Video]) {
+      expect(timelineQueryOptions(query({ type: { eq: assetType } }), base)).toEqual({
+        options: { ...base, assetType },
+        unapplied: [],
+      });
+      expect(timelineQueryOptions(query({ type: { eq: assetType } }), { ...base, assetType }).unapplied).toEqual([]);
+    }
+    for (const type of [
+      { ne: AssetTypeEnum.Video },
+      { eq: AssetTypeEnum.Audio },
+      { eq: AssetTypeEnum.Image, notIn: [AssetTypeEnum.Image] },
+      { in: [AssetTypeEnum.Image, AssetTypeEnum.Video] },
+      { eq: AssetTypeEnum.Video },
+    ]) {
+      expect(timelineQueryOptions(query({ type }), { ...base, assetType: AssetTypeEnum.Image })).toEqual({
+        options: { ...base, assetType: AssetTypeEnum.Image },
+        unapplied: ['type'],
+      });
+    }
+  });
+
   it('applies a single tag, person, pet or album to the time buckets', () => {
     expect(timelineQueryOptions(query({ tagIds: { any: ['t1'] } }), base)).toEqual({
       options: { ...base, tagId: 't1' },

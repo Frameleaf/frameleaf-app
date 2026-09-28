@@ -20568,8 +20568,9 @@ export function scanTakeoutImport({ id }: {
 /**
  * Get time bucket
  */
-export function getTimeBucket({ albumId, bbox, dateType, isFavorite, isTrashed, key, lockReason, order, orderBy, personId, petId, slug, suppressedOnly, tagId, timeBucket, userId, visibility, withCoordinates, withPartners, withStacked }: {
+export function getTimeBucket({ albumId, assetType, bbox, dateType, isFavorite, isTrashed, key, lockReason, order, orderBy, personId, petId, slug, suppressedOnly, tagId, timeBucket, userId, visibility, withCoordinates, withPartners, withStacked }: {
     albumId?: string;
+    assetType?: AssetTypeEnum;
     bbox?: string;
     dateType?: TimeBucketDateType;
     isFavorite?: boolean;
@@ -20595,6 +20596,7 @@ export function getTimeBucket({ albumId, bbox, dateType, isFavorite, isTrashed, 
         data: TimeBucketAssetResponseDto;
     }>(`/timeline/bucket${QS.query(QS.explode({
         albumId,
+        assetType,
         bbox,
         dateType,
         isFavorite,
@@ -20621,8 +20623,9 @@ export function getTimeBucket({ albumId, bbox, dateType, isFavorite, isTrashed, 
 /**
  * Get time buckets
  */
-export function getTimeBuckets({ albumId, bbox, dateType, isFavorite, isTrashed, key, lockReason, order, orderBy, personId, petId, slug, suppressedOnly, tagId, userId, visibility, withCoordinates, withPartners, withStacked }: {
+export function getTimeBuckets({ albumId, assetType, bbox, dateType, isFavorite, isTrashed, key, lockReason, order, orderBy, personId, petId, slug, suppressedOnly, tagId, userId, visibility, withCoordinates, withPartners, withStacked }: {
     albumId?: string;
+    assetType?: AssetTypeEnum;
     bbox?: string;
     dateType?: TimeBucketDateType;
     isFavorite?: boolean;
@@ -20647,6 +20650,7 @@ export function getTimeBuckets({ albumId, bbox, dateType, isFavorite, isTrashed,
         data: TimeBucketsResponseDto[];
     }>(`/timeline/buckets${QS.query(QS.explode({
         albumId,
+        assetType,
         bbox,
         dateType,
         isFavorite,
@@ -20672,8 +20676,9 @@ export function getTimeBuckets({ albumId, bbox, dateType, isFavorite, isTrashed,
 /**
  * Get timeline highlights
  */
-export function getTimelineHighlights({ albumId, bbox, dateType, grouping, highlightCount, isFavorite, isTrashed, key, lockReason, order, orderBy, personId, petId, slug, suppressedOnly, tagId, userId, visibility, withCoordinates, withPartners, withStacked }: {
+export function getTimelineHighlights({ albumId, assetType, bbox, dateType, grouping, highlightCount, isFavorite, isTrashed, key, lockReason, order, orderBy, personId, petId, slug, suppressedOnly, tagId, userId, visibility, withCoordinates, withPartners, withStacked }: {
     albumId?: string;
+    assetType?: AssetTypeEnum;
     bbox?: string;
     dateType?: TimeBucketDateType;
     grouping?: TimelineHighlightGrouping;
@@ -20700,6 +20705,7 @@ export function getTimelineHighlights({ albumId, bbox, dateType, grouping, highl
         data: TimelineHighlightResponseDto[];
     }>(`/timeline/highlights${QS.query(QS.explode({
         albumId,
+        assetType,
         bbox,
         dateType,
         grouping,
@@ -20727,8 +20733,9 @@ export function getTimelineHighlights({ albumId, bbox, dateType, grouping, highl
 /**
  * Get the timeline in a flat order
  */
-export function getTimelineOrdered({ albumId, bbox, dateType, isFavorite, isTrashed, key, lockReason, order, orderBy, personId, petId, skip, slug, sort, suppressedOnly, tagId, take, userId, visibility, withCoordinates, withPartners, withStacked }: {
+export function getTimelineOrdered({ albumId, assetType, bbox, dateType, isFavorite, isTrashed, key, lockReason, order, orderBy, personId, petId, skip, slug, sort, suppressedOnly, tagId, take, userId, visibility, withCoordinates, withPartners, withStacked }: {
     albumId?: string;
+    assetType?: AssetTypeEnum;
     bbox?: string;
     dateType?: TimeBucketDateType;
     isFavorite?: boolean;
@@ -20756,6 +20763,7 @@ export function getTimelineOrdered({ albumId, bbox, dateType, isFavorite, isTras
         data: TimeBucketAssetResponseDto;
     }>(`/timeline/ordered${QS.query(QS.explode({
         albumId,
+        assetType,
         bbox,
         dateType,
         isFavorite,
