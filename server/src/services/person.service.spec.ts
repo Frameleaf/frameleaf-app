@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { BulkIdErrorReason } from 'src/dtos/asset-ids.response.dto.js';
+import { AssetEditAction } from 'src/dtos/editing.dto.js';
 import { mapFaces, mapPerson } from 'src/dtos/person.dto.js';
 import {
   AssetFileType,
@@ -11,6 +12,7 @@ import {
   SystemMetadataKey,
 } from 'src/enum.js';
 import { PersonService } from 'src/services/person.service.js';
+import { getFaceSourceRevision } from 'src/utils/face-source.js';
 import { ImmichFileResponse } from 'src/utils/file.js';
 import { AssetFaceFactory } from 'test/factories/asset-face.factory.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
@@ -761,6 +763,58 @@ describe(PersonService.name, () => {
   });
 
   describe('createFace', () => {
+    it('maps a revision-checked crop and rotation box to the original pixels', async () => {
+      const auth = AuthFactory.create();
+      const asset = AssetFactory.from({ width: 200, height: 150 })
+        .exif({ exifImageWidth: 200, exifImageHeight: 200, orientation: '1' })
+        .build();
+      const edits = [
+        { action: AssetEditAction.Crop, parameters: { x: 50, y: 0, width: 150, height: 200 } },
+        { action: AssetEditAction.Rotate, parameters: { angle: 90 } },
+      ] as const;
+      const faceSource = { ...getForAsset(asset), edits: [...edits] };
+      const person = PersonFactory.create({ faceAssetId: newUuid() });
+      const createdFace = AssetFaceFactory.create({
+        assetId: asset.id,
+        personGroupId: person.personGroupId,
+        sourceType: SourceType.Manual,
+      });
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.access.person.checkOwnerAccess.mockResolvedValue(new Set([person.personGroupId]));
+      mocks.asset.getById.mockResolvedValue(faceSource);
+      mocks.person.getByGroupId.mockResolvedValue(person);
+      mocks.person.getFaceForCorrection.mockResolvedValue(getForAssetFace(createdFace));
+      mocks.asset.getForFaces.mockResolvedValue({
+        edits: [],
+        exifImageHeight: 200,
+        exifImageWidth: 200,
+        orientation: '1',
+      });
+
+      await sut.createFace(auth, {
+        assetId: asset.id,
+        personId: person.personGroupId,
+        imageWidth: 200,
+        imageHeight: 150,
+        x: 50,
+        y: 25,
+        width: 10,
+        height: 20,
+        expectedSourceRevision: getFaceSourceRevision(faceSource),
+      });
+
+      expect(mocks.person.createAssetFace).toHaveBeenCalledWith(
+        expect.objectContaining({
+          imageWidth: 200,
+          imageHeight: 200,
+          boundingBoxX1: 75,
+          boundingBoxY1: 140,
+          boundingBoxX2: 95,
+          boundingBoxY2: 150,
+        }),
+      );
+    });
+
     it('should create a manual face and initialize the person feature photo creation', async () => {
       const auth = AuthFactory.create();
       const asset = AssetFactory.create();

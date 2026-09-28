@@ -197,6 +197,29 @@ describe(AssetMediaController.name, () => {
         const { status } = await request(ctx.getHttpServer()).get(`/assets/${factory.uuid()}/thumbnail?size=original`);
         expect(status).toBe(302);
       });
+
+      it('serves the ordinary edited face preview even when a restoration is selected', async () => {
+        const id = factory.uuid();
+        service.viewThumbnail.mockResolvedValue({ targetSize: 'original' });
+        restorationService.getPlaybackChoice.mockClear();
+        restorationService.getPlaybackChoice.mockResolvedValueOnce({
+          file: { path: '/restored.jpg' },
+          revalidate: false,
+        });
+
+        const { status } = await request(ctx.getHttpServer()).get(
+          `/assets/${id}/thumbnail?size=preview&edited=false&faceSource=true`,
+        );
+
+        expect(status).toBe(302);
+        expect(service.viewThumbnail).toHaveBeenCalledWith(
+          undefined,
+          id,
+          expect.objectContaining({ size: 'preview', edited: true, faceSource: true }),
+          null,
+        );
+        expect(restorationService.getPlaybackChoice).not.toHaveBeenCalled();
+      });
     });
   });
 });

@@ -26,6 +26,7 @@ const AssetMediaOptionsSchema = z
         .getExtensions(),
     ),
     edited: stringToBool.default(false).optional().describe('Return edited asset if available'),
+    faceSource: stringToBool.optional().describe('Return the ordinary edited preview used for face coordinates'),
   })
   .meta({ id: 'AssetMediaOptionsDto' });
 
