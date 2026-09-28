@@ -3,7 +3,7 @@ import type { AlbumCollectionResponseDto, AlbumResponseDto, AlbumTreeResponseDto
 /**
  * Album/collection/shared-space tree adapter for the Frameleaf rail (FL-30, FL-55).
  *
- * Vocabulary (see design/frameleaf/INTERACTION-REQUIREMENTS.md, September 22, 2026):
+ * Vocabulary from the approved template and authorized private design requirements:
  * an **album** holds photos, a **collection** is a named group of albums exactly one
  * level deep, and a **shared space** stays at the top level. Nothing is a
  * "subcollection".

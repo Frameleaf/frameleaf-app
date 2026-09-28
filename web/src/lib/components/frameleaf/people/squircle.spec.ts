@@ -10,8 +10,7 @@ import { personFactory } from '@test-data/factories/person-factory';
 import { userAdminFactory } from '@test-data/factories/user-factory';
 
 /**
- * FL-37 / FL-29: every people photo is a squircle (apple-style.css:137-148 and
- * INTERACTION-REQUIREMENTS.md "People photos use a squircle shape everywhere"), drawn by the
+ * FL-37 / FL-29: every people photo is a squircle (apple-style.css:137-148), drawn by the
  * global `fl-squircle` mask in app.css so the shape is identical in every engine.
  */
 describe('squircle people photos', () => {

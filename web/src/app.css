@@ -196,8 +196,7 @@
 }
 
 /*
- * FL-37 / FL-29: every people photo is a squircle (apple-style.css:49 and 137-148,
- * INTERACTION-REQUIREMENTS.md "People photos use a squircle shape everywhere"). A mask rather
+ * FL-37 / FL-29: every people photo is a squircle (apple-style.css:49 and 137-148). A mask rather
  * than `corner-shape`, so the shape is identical in every engine. It is global, not scoped to
  * .frameleaf, because people photos also render in the asset viewer's information panel and in
  * shared upstream components (UserAvatar). Anything inside the masked box that carried its own

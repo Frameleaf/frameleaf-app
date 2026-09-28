@@ -289,8 +289,8 @@
     'enrichment-care',
     'repair',
   ];
-  // A page named like its area does not repeat the name as a breadcrumb (INTERACTION-REQUIREMENTS
-  // "Settings"; CommandCenter.jsx:721-731): the overline names the area's group instead.
+  // A page named like its area does not repeat the name as a breadcrumb (CommandCenter.jsx:721-731):
+  // the overline names the area's group instead.
   const breadcrumb = $derived(selected !== undefined && selected.title !== areaCopy[area].title);
   // As in the template, the Users manager and the Job manager carry their own headings.
   const ownHeading = $derived(area === 'users' || (area === 'processing' && selected?.key === 'queues'));
