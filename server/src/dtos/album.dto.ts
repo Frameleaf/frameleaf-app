@@ -6,6 +6,7 @@ import { AlbumUser, AuthSharedLink } from 'src/database.js';
 import { HistoryBuilder } from 'src/decorators.js';
 import { BulkIdErrorReasonSchema } from 'src/dtos/asset-ids.response.dto.js';
 import { MapAsset } from 'src/dtos/asset-response.dto.js';
+import { SMART_ALBUM_BUILT_IN_KINDS } from 'src/dtos/system-config.dto.js';
 import { UserResponseSchema, mapUser } from 'src/dtos/user.dto.js';
 import {
   AlbumKind,
@@ -15,7 +16,6 @@ import {
   AssetOrder,
   AssetOrderSchema,
 } from 'src/enum.js';
-import { SMART_ALBUM_BUILT_IN_KINDS } from 'src/dtos/system-config.dto.js';
 import { MaybeDehydrated } from 'src/types.js';
 import { asDateTimeString } from 'src/utils/date.js';
 import { stringToBool } from 'src/validation.js';

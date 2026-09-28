@@ -29,6 +29,7 @@ it('shares every explicitly selected ID after part of the selection leaves the l
 
   expect(handleCreateSharedLink).toHaveBeenCalledWith(
     expect.objectContaining({ type: SharedLinkType.Individual, assetIds: ['loaded', 'offscreen'] }),
+    expect.objectContaining({ onSlugTaken: expect.any(Function) }),
   );
 });
 
