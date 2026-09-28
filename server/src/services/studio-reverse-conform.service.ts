@@ -1,6 +1,6 @@
-import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { sql } from 'kysely';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { StorageCore } from 'src/cores/storage.core.js';
@@ -130,6 +130,64 @@ export class StudioReverseConformService {
     return input.command
       ? this.operations.createStudioReverseCommand(operation, { ...input.command, revision: input.revision })
       : this.operations.create(operation);
+  }
+
+  /** Interactive owner read; a worker grant never authorizes browser delivery. */
+  async readPreview(auth: AuthDto, id: string): Promise<Buffer> {
+    if (auth.sharedLink) {
+      throw new NotFoundException('Reverse preview not found');
+    }
+    const operation = await this.operations.getForOwner(id, auth.user.id);
+    if (!operation || operation.status !== MediaOperationStatus.Completed) {
+      throw new NotFoundException('Reverse preview not found');
+    }
+    const snapshot = this.snapshot(operation);
+    this.requireBinding(
+      snapshot,
+      await this.source(auth, snapshot.projectId, snapshot.revision, snapshot.sourceKey),
+    );
+
+    const declarations = await this.projects.listGeneratedResources(snapshot.projectId);
+    const masterId = `reverse-${operation.id}`;
+    const master = declarations.find((entry) => entry.id === masterId);
+    const preview = declarations.find((entry) => entry.id === `reverse-preview-${operation.id}`);
+    if (
+      master?.producer !== 'reverse-conform' ||
+      master.derivedFrom.length !== 1 ||
+      master.derivedFrom[0] !== snapshot.sourceKey ||
+      preview?.producer !== 'proxy' ||
+      !preview.checksum ||
+      !/^[a-f0-9]{64}$/.test(preview.checksum) ||
+      preview.derivedFrom.length !== 2 ||
+      preview.derivedFrom[0] !== `${StudioResourceKind.GeneratedIntermediate}:${masterId}` ||
+      preview.derivedFrom[1] !== snapshot.sourceKey
+    ) {
+      throw new NotFoundException('Reverse preview not found');
+    }
+
+    // ponytail: buffer the producer's 64 MiB maximum; use verified temporary files if that limit grows.
+    // One descriptor and a bounded buffer: hashing a path then letting Express reopen it could
+    // serve different bytes. Read one extra byte to refuse a file that grew after the size check.
+    const file = await this.storage.openForRandomRead(preview.path);
+    let bytes: Buffer;
+    try {
+      if (file.size <= 0 || file.size > 64 * 1024 * 1024) {
+        throw new NotFoundException('Reverse preview not found');
+      }
+      bytes = await file.read(0, file.size + 1);
+      if (bytes.length !== file.size || createHash('sha256').update(bytes).digest('hex') !== preview.checksum) {
+        throw new NotFoundException('Reverse preview not found');
+      }
+    } finally {
+      await file.close();
+    }
+
+    // Access may change during disk I/O. Re-resolve interactively before releasing the bytes.
+    this.requireBinding(
+      snapshot,
+      await this.source(auth, snapshot.projectId, snapshot.revision, snapshot.sourceKey),
+    );
+    return bytes;
   }
 
   @OnEvent({ name: 'AppBootstrap', workers: [ImmichWorker.Microservices] })
@@ -296,8 +354,8 @@ export class StudioReverseConformService {
           profile: 'h264-main-3.2-aac-lc-v1',
           duration: (plan.frames * plan.frameRate.den) / plan.frameRate.num,
           audio: plan.audioIndex === null ? null : { channels: plan.channels, sampleRate: plan.sampleRate },
-          // Delivery is a separate access/revocation contract; this is not a browser URL.
-          delivery: 'unavailable',
+          // The authenticated operation route rechecks source access and the exact bytes.
+          delivery: 'authenticated',
         },
         frames: plan.frames,
         frameRate: plan.frameRate,

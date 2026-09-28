@@ -16187,6 +16187,19 @@ export function retryMediaOperation({ id }: {
     }));
 }
 /**
+ * View a source reversal preview
+ */
+export function viewMediaOperationReversePreview({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/media-operations/${encodeURIComponent(id)}/reverse-preview`, {
+        ...opts
+    }));
+}
+/**
  * Retrieve memories
  */
 export function searchMemories({ $for, id, isHidden, isSaved, isTrashed, isUpcoming, order, page, size, $type }: {

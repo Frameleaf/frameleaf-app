@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Header, HttpCode, HttpStatus, Param, Post, Query, StreamableFile } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
@@ -11,8 +11,9 @@ import {
   MediaOperationStatisticsDto,
 } from 'src/dtos/media-operation.dto.js';
 import { ApiTag } from 'src/enum.js';
-import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
+import { Auth, Authenticated, FileResponse } from 'src/middleware/auth.guard.js';
 import { MediaOperationService } from 'src/services/media-operation.service.js';
+import { StudioReverseConformService } from 'src/services/studio-reverse-conform.service.js';
 import { UUIDv7ParamDto } from 'src/validation.js';
 
 /**
@@ -26,7 +27,10 @@ import { UUIDv7ParamDto } from 'src/validation.js';
 @ApiTags(ApiTag.MediaOperations)
 @Controller('media-operations')
 export class MediaOperationController {
-  constructor(private service: MediaOperationService) {}
+  constructor(
+    private service: MediaOperationService,
+    private reverse: StudioReverseConformService,
+  ) {}
 
   @Get()
   @Authenticated()
@@ -80,6 +84,23 @@ export class MediaOperationController {
   })
   getMediaOperation(@Auth() auth: AuthDto, @Param() { id }: UUIDv7ParamDto): Promise<MediaOperationDetailDto> {
     return this.service.get(auth, id);
+  }
+
+  @Get(':id/reverse-preview')
+  @Authenticated()
+  @FileResponse()
+  @Header('Cache-Control', 'private, no-store')
+  @Endpoint({
+    summary: 'View a source reversal preview',
+    description:
+      'The checked H264/AAC derivative of your completed source reversal. Every read verifies current project and source access and the checksum of the returned bytes.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  async viewMediaOperationReversePreview(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDv7ParamDto,
+  ): Promise<StreamableFile> {
+    return new StreamableFile(await this.reverse.readPreview(auth, id), { type: 'video/mp4' });
   }
 
   @Post(':id/cancel')
