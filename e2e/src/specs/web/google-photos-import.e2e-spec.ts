@@ -21,9 +21,9 @@ const zip = (entries: { name: string; data: Buffer }[]) => {
     const filename = Buffer.from(name);
     const checksum = crc32(data);
     const local = Buffer.alloc(30 + filename.length);
-    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt32LE(0x04_03_4b_50, 0);
     local.writeUInt16LE(20, 4);
-    local.writeUInt16LE(0x800, 6);
+    local.writeUInt16LE(0x8_00, 6);
     local.writeUInt32LE(checksum, 14);
     local.writeUInt32LE(data.length, 18);
     local.writeUInt32LE(data.length, 22);
@@ -31,10 +31,10 @@ const zip = (entries: { name: string; data: Buffer }[]) => {
     filename.copy(local, 30);
 
     const central = Buffer.alloc(46 + filename.length);
-    central.writeUInt32LE(0x02014b50, 0);
+    central.writeUInt32LE(0x02_01_4b_50, 0);
     central.writeUInt16LE(20, 4);
     central.writeUInt16LE(20, 6);
-    central.writeUInt16LE(0x800, 8);
+    central.writeUInt16LE(0x8_00, 8);
     central.writeUInt32LE(checksum, 16);
     central.writeUInt32LE(data.length, 20);
     central.writeUInt32LE(data.length, 24);
@@ -47,7 +47,7 @@ const zip = (entries: { name: string; data: Buffer }[]) => {
   }
   const index = Buffer.concat(directory);
   const end = Buffer.alloc(22);
-  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt32LE(0x06_05_4b_50, 0);
   end.writeUInt16LE(entries.length, 8);
   end.writeUInt16LE(entries.length, 10);
   end.writeUInt32LE(index.length, 12);
@@ -88,17 +88,21 @@ test.describe('Google Photos import (FL-144)', () => {
 
     const chooser = dialog.locator('input[type="file"]');
     const wrongBytes = Buffer.from(bytes);
-    wrongBytes[0] = 'x'.charCodeAt(0);
+    wrongBytes[0] = 'x'.codePointAt(0)!;
     await chooser.setInputFiles({ name, mimeType: 'application/zip', buffer: wrongBytes });
     await expect(dialog.getByRole('alert')).toHaveText(
       'The selected archive differs from the one being uploaded. Select the original archive to resume.',
     );
-    expect((await getTakeoutImport({ id: takeout.id }, auth)).sources[0].received).toBe(8);
+    const incompleteImport = await getTakeoutImport({ id: takeout.id }, auth);
+    expect(incompleteImport.sources[0].received).toBe(8);
 
     await chooser.setInputFiles({ name, mimeType: 'application/zip', buffer: bytes });
     await expect(dialog.getByRole('status')).toContainText('Archives uploaded');
     await expect
-      .poll(async () => (await getTakeoutImport({ id: takeout.id }, auth)).sources[0].received)
+      .poll(async () => {
+        const currentImport = await getTakeoutImport({ id: takeout.id }, auth);
+        return currentImport.sources[0].received;
+      })
       .toBe(bytes.length);
     await expect(dialog.getByRole('button', { name: 'Continue' })).toBeEnabled();
   });
@@ -129,20 +133,32 @@ test.describe('Google Photos import (FL-144)', () => {
     const dialog = page.getByRole('dialog', { name: 'Import Google Photos' });
     await dialog.getByRole('button', { name: 'Continue' }).click();
     await expect
-      .poll(async () => (await getTakeoutImport({ id: takeout.id }, auth)).state, { timeout: 30_000 })
+      .poll(
+        async () => {
+          const currentImport = await getTakeoutImport({ id: takeout.id }, auth);
+          return currentImport.state;
+        },
+        { timeout: 30_000 },
+      )
       .toBe('review');
     await expect(dialog.getByRole('group', { name: 'Import details' })).toBeVisible();
     await expect(
       dialog.getByText('Several metadata sidecars disagree. Choose one, or import without one.'),
     ).toBeVisible();
 
-    const item = (await getTakeoutItems({ id: takeout.id }, auth)).items[0];
+    const takeoutItems = await getTakeoutItems({ id: takeout.id }, auth);
+    const item = takeoutItems.items[0];
     expect(item.candidates).toHaveLength(2);
     const chosen = item.candidates.find((candidate) => candidate.metadata.description === 'Chosen description');
     expect(chosen).toBeDefined();
     await dialog.getByLabel('Metadata sidecar').selectOption(chosen!.id);
     await dialog.getByRole('button', { name: 'Use this choice' }).click();
-    await expect.poll(async () => (await getTakeoutItems({ id: takeout.id }, auth)).items[0].state).toBe('ready');
+    await expect
+      .poll(async () => {
+        const currentItems = await getTakeoutItems({ id: takeout.id }, auth);
+        return currentItems.items[0].state;
+      })
+      .toBe('ready');
 
     await page.reload();
     await expect(dialog.getByText('Chosen description', { exact: true })).toBeVisible();
@@ -202,7 +218,13 @@ test.describe('Google Photos import (FL-144)', () => {
     const dialog = page.getByRole('dialog', { name: 'Import Google Photos' });
     await dialog.getByRole('button', { name: 'Continue' }).click();
     await expect
-      .poll(async () => (await getTakeoutImport({ id: takeout.id }, auth)).state, { timeout: 30_000 })
+      .poll(
+        async () => {
+          const currentImport = await getTakeoutImport({ id: takeout.id }, auth);
+          return currentImport.state;
+        },
+        { timeout: 30_000 },
+      )
       .toBe('review');
 
     const { items } = await getTakeoutItems({ id: takeout.id }, auth);
@@ -215,7 +237,7 @@ test.describe('Google Photos import (FL-144)', () => {
     const { pairs, total } = await getTakeoutPairs({ id: takeout.id }, auth);
     expect(total).toBe(2);
     for (const pair of pairs) {
-      const folder = pair.photoPath.split('/')[0];
+      const folder = pair.photoPath.split('/', 1)[0];
       expect(pair.photoItemId).toBe(byPath.get(`${folder}/IMG_1.png`)?.id);
       expect(pair.videoItemId).toBe(byPath.get(`${folder}/IMG_1.MP4`)?.id);
       expect(pair.state).toBe('suggested');
@@ -230,11 +252,10 @@ test.describe('Google Photos import (FL-144)', () => {
     await trip.getByRole('button', { name: 'These belong together' }).click();
     await other.getByRole('button', { name: 'Keep separate' }).click();
     await expect
-      .poll(async () =>
-        Object.fromEntries(
-          (await getTakeoutPairs({ id: takeout.id }, auth)).pairs.map((pair) => [pair.photoPath, pair.state]),
-        ),
-      )
+      .poll(async () => {
+        const currentPairs = await getTakeoutPairs({ id: takeout.id }, auth);
+        return Object.fromEntries(currentPairs.pairs.map((pair) => [pair.photoPath, pair.state]));
+      })
       .toEqual({ 'Other/IMG_1.png': 'skipped', 'Trip/IMG_1.png': 'approved' });
 
     await page.reload();

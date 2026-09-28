@@ -244,7 +244,8 @@ test.describe('Locked content in the browser (FL-34)', () => {
     await expect(page.getByTestId('frameleaf-document-fields')).toContainText('$19.25');
 
     const other = await login({ loginCredentialDto: { email: user.userEmail, password: 'password' } });
-    const session = (await getSessions({ headers })).find((item) => item.current);
+    const sessions = await getSessions({ headers });
+    const session = sessions.find((item) => item.current);
     expect(session).toBeDefined();
     await deleteSession({ id: session!.id }, { headers: asBearerAuth(other.accessToken) });
     await expect(page).toHaveURL(/\/auth\/login/);

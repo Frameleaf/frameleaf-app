@@ -12,11 +12,11 @@ The existing **GitHub for Atlassian** application connects the Frameleaf organiz
 
 Use the assigned issue key consistently:
 
-| Item               | Example                                |
-| ------------------ | -------------------------------------- |
-| Branch             | `codex/FL-123-description`              |
-| Commit subject     | `ci: FL-123 describe the change`        |
-| Pull request title | `ci: FL-123 describe the change`        |
+| Item               | Example                                  |
+| ------------------ | ---------------------------------------- |
+| Branch             | `codex/FL-123-description`               |
+| Commit subject     | `ci: FL-123 describe the change`         |
+| Pull request title | `ci: FL-123 describe the change`         |
 | Pull request base  | `fork/main` in `Frameleaf/frameleaf-app` |
 
 GitHub autolinks resolve `FL-123` to `https://heroit.atlassian.net/browse/FL-123`. The **Jira Issue Key** check validates a key in human PR titles; it does not execute Smart Commits, query Jira or establish that an issue exists. Dependabot-authored dependency branches have an explicit exception. The workflow reads event metadata without checking out PR code or granting write access.

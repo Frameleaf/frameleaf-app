@@ -239,7 +239,10 @@ test.describe('Face tagging (FL-38)', () => {
       await dialog.getByRole('button', { name: 'Save face tags' }).click();
       await expect(dialog).toBeHidden();
       await expect
-        .poll(async () => (await getFaces({ id: asset.id }, { headers: headers() }))[0]?.person?.id)
+        .poll(async () => {
+          const faces = await getFaces({ id: asset.id }, { headers: headers() });
+          return faces[0]?.person?.id;
+        })
         .toBe(jamie.id);
 
       await memberPage.reload();
