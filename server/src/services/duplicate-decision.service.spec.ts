@@ -89,6 +89,7 @@ describe(DuplicateDecisionService.name, () => {
   beforeEach(() => {
     repository = {
       getGroupMembers: vi.fn().mockResolvedValue(groupMembers(members)),
+      getOwnerNames: vi.fn().mockResolvedValue([]),
       getAssetStates: vi.fn().mockResolvedValue([]),
       getKeeperStates: vi.fn().mockResolvedValue(new Map([[keeper, keeperState()]])),
       getLockedIds: vi.fn().mockResolvedValue(new Set()),
@@ -189,6 +190,43 @@ describe(DuplicateDecisionService.name, () => {
         }),
       );
       expect(JSON.stringify(review)).not.toContain(other);
+    });
+
+    it('names the other owners of a blocked group, and nothing else about them (UT-20)', async () => {
+      const second = newUuid();
+      duplicates.getDuplicates.mockResolvedValue([
+        { duplicateId, assets: [asset(keeper), asset(copy)], suggestedKeepAssetIds: [keeper] },
+      ]);
+      repository.getGroupMembers.mockResolvedValue(
+        groupMembers([keeper, copy, other, second], (id) =>
+          id === other ? 'jamie-id' : id === second ? 'emma-id' : ownerId,
+        ),
+      );
+      repository.getOwnerNames.mockResolvedValue([
+        { id: 'jamie-id', name: 'Jamie' },
+        { id: 'emma-id', name: 'Emma' },
+      ]);
+
+      const [review] = await sut.getReview(owner);
+
+      expect(repository.getOwnerNames).toHaveBeenCalledExactlyOnceWith(['jamie-id', 'emma-id']);
+      expect(review.otherOwnerNames).toEqual(['Emma', 'Jamie']);
+      const json = JSON.stringify(review);
+      for (const hidden of ['jamie-id', 'emma-id', other, second]) {
+        expect(json).not.toContain(hidden);
+      }
+    });
+
+    it('names no one for a group the session may decide or that only hides its own photos', async () => {
+      duplicates.getDuplicates.mockResolvedValue([
+        { duplicateId, assets: [asset(keeper), asset(copy)], suggestedKeepAssetIds: [keeper] },
+      ]);
+
+      const [review] = await sut.getReview(owner);
+
+      expect(review.blockedReason).toBe(DuplicateGroupBlock.HiddenMembers);
+      expect(review.otherOwnerNames).toBeUndefined();
+      expect(repository.getOwnerNames).not.toHaveBeenCalled();
     });
 
     it('never suggests trashing frames of a burst', async () => {

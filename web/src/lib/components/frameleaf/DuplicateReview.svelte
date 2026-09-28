@@ -52,8 +52,8 @@
   import {
     mdiAlertCircleOutline,
     mdiCheckCircleOutline,
+    mdiChevronDoubleLeft,
     mdiChevronDown,
-    mdiChevronLeft,
     mdiChevronRight,
     mdiClose,
     mdiUndo,
@@ -316,7 +316,8 @@
       keyboardPaused ||
       event.defaultPrevented ||
       target?.closest?.('input,textarea,select,[contenteditable="true"]') ||
-      document.querySelector('dialog[open]')
+      // DuplicateReview.jsx:223: any open modal, native or ARIA (a menu sheet, a viewer overlay).
+      document.querySelector('dialog[open],[role="dialog"]')
     ) {
       return;
     }
@@ -630,7 +631,7 @@
               disabled={groups.length < 2}
               onclick={() => move(-1)}
             >
-              <Icon icon={mdiChevronLeft} size="18" aria-hidden={true} />
+              <Icon icon={mdiChevronDoubleLeft} size="18" aria-hidden={true} />
             </Button>
             <Button label={$t('frameleaf_duplicates_next_group')} disabled={groups.length < 2} onclick={() => move(1)}>
               <Icon icon={mdiChevronRight} size="18" aria-hidden={true} />
@@ -641,7 +642,14 @@
         {#if !active.editable}
           <p class="fl-dr-access">
             {active.blockedReason === DuplicateGroupBlock.OtherOwner
-              ? $t('frameleaf_duplicates_blocked_other_owner')
+              ? active.otherOwnerNames?.length
+                ? // DuplicateReview.jsx:493-497: "Only A and B can decide what to keep in this group."
+                  $t('frameleaf_duplicates_blocked_owners', {
+                    values: {
+                      owners: new Intl.ListFormat($locale, { type: 'conjunction' }).format(active.otherOwnerNames),
+                    },
+                  })
+                : $t('frameleaf_duplicates_blocked_other_owner')
               : $t('frameleaf_duplicates_blocked_hidden', { values: { count: active.hiddenMemberCount } })}
           </p>
         {:else if activeProgress?.state === 'pending'}

@@ -87,6 +87,22 @@ export class DuplicateDecisionRepository {
     );
   }
 
+  /**
+   * The display names of these accounts, for the review's "Only … can decide" line (UT-20). Only the
+   * name leaves the server; the ids are how the service matches them.
+   */
+  getOwnerNames(userIds: string[]): Promise<{ id: string; name: string }[]> {
+    if (userIds.length === 0) {
+      return Promise.resolve([]);
+    }
+
+    return this.db
+      .selectFrom('user')
+      .select(['user.id', 'user.name'])
+      .where('user.id', '=', anyUuid(userIds))
+      .execute();
+  }
+
   /** Where each of these photos stands now. Photos that no longer exist are simply absent. */
   getAssetStates(assetIds: string[]): Promise<DuplicateAssetState[]> {
     if (assetIds.length === 0) {

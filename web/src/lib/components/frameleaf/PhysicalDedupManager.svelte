@@ -889,7 +889,13 @@
                       : $t('frameleaf_dedup_evidence_no_match')}
                   </span>
                   <details>
-                    <summary>{$t(checksumAlgorithmKey(copy.checksum))}</summary>
+                    <!-- PhysicalDedupManager.jsx:438-440: the summary names the evidence, a line names the algorithm. -->
+                    <summary>{$t('frameleaf_dedup_checksum_evidence')}</summary>
+                    <small
+                      >{$t('frameleaf_dedup_checksum_algorithm', {
+                        values: { algorithm: $t(checksumAlgorithmKey(copy.checksum)) },
+                      })}</small
+                    >
                     <code>{copy.checksum}</code>
                     {#if retained}
                       <small>{$t('frameleaf_dedup_evidence_retained')}</small>
@@ -902,6 +908,7 @@
                     <strong>
                       {retained.referencesBefore} → {kept ? retained.referencesBefore : retained.referencesAfter}
                     </strong>
+                    <small>{$t('frameleaf_dedup_across_plan')}</small>
                   {:else}
                     <span class="muted">—</span>
                   {/if}
