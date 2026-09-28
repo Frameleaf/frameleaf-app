@@ -3,6 +3,7 @@ import type { Mock } from 'vitest';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { MediaOperationKind, StudioPreviewQuality, StudioPreviewStatus } from 'src/enum.js';
 import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
+import { StudioProjectRepository } from 'src/repositories/studio-project.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { StudioExportRepository } from 'src/repositories/studio-export.repository.js';
 import { StudioPreviewFrame, StudioPreviewRepository } from 'src/repositories/studio-preview.repository.js';
@@ -202,6 +203,63 @@ describe(StudioPreviewService.name, () => {
       storage as unknown as StorageRepository,
       sourceMedia as unknown as StudioExportRepository,
     );
+  });
+
+  it('keeps identical preview requests on one binding after a generated declaration is published', async () => {
+    const stored = authorization();
+    const generated = [
+      {
+        id: 'reverse',
+        producer: 'reverse-conform',
+        checksum: 'ab'.repeat(32),
+        path: '/private/reverse.mp4',
+        derivedFrom: ['library-asset:source'],
+      },
+    ];
+    const repository = {
+      getById: vi.fn().mockResolvedValue(stored.project),
+      getRevision: vi.fn().mockResolvedValue({ ...stored.revision, envelope: stored.envelope }),
+      listGeneratedResources: vi.fn().mockResolvedValue([]),
+    };
+    // A fresh resolution changes the signed manifest digest, just as a new issue timestamp does.
+    let issued = 0;
+    const resolveProjectResources = vi.fn().mockImplementation(async () => ({
+      manifest: manifest({ digest: `manifest-${++issued}` }),
+      refused: [],
+    }));
+    const projectService = new StudioProjectService(
+      mocks.logger as never,
+      repository as unknown as StudioProjectRepository,
+      {} as never,
+      { resolveProjectResources } as unknown as StudioResourceService,
+    );
+    await projectService.authorizeRevision(authStub.user1, { projectId: 'project-1' });
+    repository.listGeneratedResources.mockResolvedValue(generated);
+    projects.authorizeRevision.mockImplementation((...args: Parameters<StudioProjectService['authorizeRevision']>) =>
+      projectService.authorizeRevision(...args),
+    );
+    let latest: string | undefined;
+    vi.mocked(previews.getLatestRevisionDigest).mockImplementation(async () => latest);
+    vi.mocked(previews.upsert).mockImplementation(async (input) => {
+      latest = input.revisionDigest;
+      return {
+        frame: frameStub({
+          status: StudioPreviewStatus.Pending,
+          cacheKey: input.cacheKey,
+          revisionDigest: input.revisionDigest,
+        }),
+        created: false,
+      };
+    });
+    await sut.request(authStub.user1, request());
+    await sut.request(authStub.user1, request());
+    expect(resolveProjectResources).toHaveBeenCalledTimes(2);
+    expect(previews.upsert).toHaveBeenCalledTimes(2);
+    const [first, second] = vi.mocked(previews.upsert).mock.calls;
+    expect(second[0].cacheKey).toBe(first[0].cacheKey);
+    expect(second[0].revisionDigest).toBe(first[0].revisionDigest);
+    expect(previews.supersede).not.toHaveBeenCalled();
+    expect(operations.requestCancel).not.toHaveBeenCalled();
   });
 
   describe('render worker publication (FL-96)', () => {
