@@ -247,7 +247,11 @@
     // FL-35 / FL-34: an item Locked elsewhere is never shown to a session that has not unlocked; the
     // viewer moves on as if it had been removed.
     if (updatedAsset.visibility === AssetVisibility.Locked && !sessionAccess.isElevated) {
-      void onAssetsDelete([updatedAsset.id]);
+      if (onAssetSuppressed) {
+        void onAssetSuppressed(updatedAsset);
+      } else {
+        void onAssetsDelete([updatedAsset.id]);
+      }
       return;
     }
 
