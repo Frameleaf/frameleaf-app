@@ -109,11 +109,10 @@
 </div>
 
 <Dialog wide title={$t('frameleaf_takeout_title')} closeLabel={$t('close')} {open} onRequestClose={close}>
-  {#if loaded?.key === key}
-    <!-- A different import, or none, is a fresh wizard: its state is the server's, never the last one's. -->
-    {#key key}
-      <TakeoutWizard imports={loaded.imports} current={loaded.current} onClose={close} />
-    {/key}
+  {#if loaded && loaded.key === key}
+    <!-- Another import, or none, unmounts the wizard until the server has answered for it, so each
+         wizard starts from the server's state, never the last one's. -->
+    <TakeoutWizard imports={loaded.imports} current={loaded.current} onClose={close} />
   {:else if failed}
     <p class="note" role="alert">{$t('frameleaf_takeout_error_generic')}</p>
   {:else}
