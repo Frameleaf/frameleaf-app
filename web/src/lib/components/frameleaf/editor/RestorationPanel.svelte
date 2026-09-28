@@ -121,6 +121,13 @@
      * it the action opens Studio with that version, beside the original and never instead of it.
      */
     onUseInStudio?: (item: AssetRestorationResponseDto) => void;
+    /**
+     * FL-83 (E-9): the quick editor shows restoration under the prototype's Enhance tool
+     * (`Editor.jsx:1826-1930`): a photo's Enhance panel is this panel, titled Enhance; a clip's
+     * Enhance panel ends with it as its "Restore video" section (`subsection`).
+     */
+    title?: string;
+    subsection?: boolean;
   };
 
   let {
@@ -132,6 +139,8 @@
     onLoupeChange,
     currentFrameSeconds,
     onUseInStudio,
+    title,
+    subsection = false,
   }: Props = $props();
 
   const isVideo = isVideoAsset(asset);
@@ -646,10 +655,14 @@
   const formatDate = (value: string | null) => (value ? new Date(value).toLocaleString($locale ?? undefined) : '');
 </script>
 
-<div class="ed-panel-body" data-testid="restoration-panel">
-  <div class="ed-panel-head">
-    <h2>{$t('frameleaf_restoration_title')}</h2>
-  </div>
+<div class={subsection ? 'rs-subsection' : 'ed-panel-body'} data-testid="restoration-panel">
+  {#if subsection}
+    <h3 class="rs-subsection-title">{title ?? $t('frameleaf_restoration_title')}</h3>
+  {:else}
+    <div class="ed-panel-head">
+      <h2>{title ?? $t('frameleaf_restoration_title')}</h2>
+    </div>
+  {/if}
   <p class="rs-lead">{$t('frameleaf_restoration_lead')}</p>
 
   <h3>{$t('frameleaf_restoration_mode')}</h3>
