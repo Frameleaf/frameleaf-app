@@ -108,10 +108,11 @@ export const publishedLocalOrigins = async (remote: RemoteSettings, deps: Public
  * 1. The Public server URL the administrator set (`server.externalDomain`), always.
  * 2. Otherwise, the address the request arrived on, but only when it is one this server knows:
  *    the verified custom hostname (FL-165, the CNAME a person pointed at this server) or one of the
- *    remote-access addresses it publishes. The Host header is never trusted on its own.
+ *    remote-access addresses it currently publishes. The Host header is never trusted on its own.
  * 3. Otherwise the verified custom hostname when "Use my domain" is chosen, then the
  *    direct-connection address (the WAN name Frameleaf Cloud's probe reached, else the published
- *    one), then the address Frameleaf Cloud published for the link.
+ *    one), then the address Frameleaf Cloud published for the link if it is still in the current
+ *    connection list.
  *
  * `undefined` when the server knows none of these; the share then carries no link, never one
  * pointing at another project's host or at an unverified name.
@@ -129,10 +130,12 @@ export const resolveShareBaseUrl = async (
     return undefined;
   }
   const { connections, publicUrl } = await remoteAccessPublication(remote, deps);
-  const remoteOrigins = connections.filter((connection) => !connection.local).map(({ uri }) => httpsOrigin(uri));
   const custom = verifiedCustomHost(remote);
   const customOrigin = custom ? `https://${custom}` : null;
-  const known = new Set([...remoteOrigins, customOrigin].filter((origin): origin is string => !!origin));
+  const remoteOrigins = connections
+    .filter((connection) => !connection.local && (!connection.custom || connection.address === custom))
+    .map(({ uri }) => httpsOrigin(uri));
+  const known = new Set(remoteOrigins);
 
   const arrival = httpsOrigin(requestOrigin);
   if (arrival && known.has(arrival)) {
@@ -143,5 +146,6 @@ export const resolveShareBaseUrl = async (
   }
   const direct = connections.filter((connection) => connection.kind === 'wan' && !connection.custom);
   const directUri = (direct.find((connection) => connection.verified) ?? direct[0])?.uri;
-  return httpsOrigin(directUri) ?? httpsOrigin(publicUrl) ?? undefined;
+  const published = httpsOrigin(publicUrl);
+  return httpsOrigin(directUri) ?? (published && known.has(published) ? published : undefined);
 };

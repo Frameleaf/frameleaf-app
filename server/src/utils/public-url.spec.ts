@@ -129,6 +129,17 @@ describe('resolveShareBaseUrl (FL-83 AL-30b)', () => {
     ).resolves.toBe(DIRECT);
   });
 
+  it('does not accept a custom Host after its relay stops publishing that address', async () => {
+    await expect(
+      resolveShareBaseUrl(
+        { externalDomain: '' },
+        deps({ candidates: published.filter((entry) => !entry.custom) }),
+        remote(verifiedCustom),
+        `https://${CUSTOM}`,
+      ),
+    ).resolves.toBe(DIRECT);
+  });
+
   it('gives no link when the server has neither a Public server URL nor a Frameleaf Cloud link', async () => {
     await expect(
       resolveShareBaseUrl({ externalDomain: '' }, deps({ linked: false }), remote(), `https://${CUSTOM}`),
