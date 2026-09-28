@@ -49,7 +49,6 @@ const prose = (source: string) =>
 
 /** The documentation FL-168 covers: Frameleaf Cloud, its settings, workers, remote access and FAQ. */
 const CLOUD_DOCUMENTS = [
-  'docs/docs/administration/frameleaf-cloud.md',
   'docs/docs/administration/system-settings.md',
   'docs/docs/administration/workers-and-endpoints.md',
   'docs/docs/guides/remote-access.md',

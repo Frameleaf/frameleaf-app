@@ -42,7 +42,7 @@ variables. This applies to every machine-learning image built from Frameleaf.
 - Transformers loads downloaded model files locally. Required model downloads remain enabled;
   no global offline mode or network block is imposed.
 
-Photo uploads, sharing, model downloads, configured remote ML and Frameleaf Cloud processing, OAuth, email,
+Photo uploads, sharing, model downloads, configured remote ML, OAuth, email,
 and map tiles remain functional. Nothing is fetched from upstream-hosted services. Where each download
 comes from:
 

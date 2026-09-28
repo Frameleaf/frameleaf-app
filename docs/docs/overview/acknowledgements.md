@@ -39,7 +39,7 @@ Frameleaf is built on [Immich](https://github.com/immich-app/immich), the open-s
 | [Transformers.js](https://github.com/huggingface/transformers.js)                                                     | Hugging Face                                                 | Apache-2.0                                                                       | bundled            |
 | [dotLottie web player](https://github.com/LottieFiles/dotlottie-web)                                                  | LottieFiles                                                  | MIT                                                                              | bundled            |
 
-- **MusicGen small (ONNX conversion):** Local use only: not offered on Frameleaf Cloud (non-commercial licence; owner decision FL-146, 2026-09-25).
+- **MusicGen small (ONNX conversion):** Licensed for non-commercial use only.
 - **Supertonic-3 text to speech:** Supertonic-3 and its voices are licensed under the BigScience Open RAIL-M License. You may not use them, or speech made with them, for any of the use restrictions in Attachment A of that licence (reproduced in full below), and anyone you share them or their output with is bound by the same restrictions.
 - **Parakeet TDT 0.6B v3 speech recognition (quantized ONNX):** Parakeet TDT 0.6B v3 by NVIDIA, licensed under CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/). Changes: converted to ONNX and quantized (smoothquant) by Olicorne.
 - **Kokoro-82M text to speech voices:** `af_heart`, `af_bella`, `af_nicole`, `af_sky`, `af_sarah`, `af_alloy`, `af_aoede`, `af_jessica`, `af_kore`, `af_nova`, `af_river`, `am_michael`, `am_fenrir`, `am_puck`, `am_adam`, `am_echo`, `am_eric`, `am_liam`, `am_onyx`, `am_santa`, `bf_emma`, `bf_isabella`, `bf_alice`, `bf_lily`, `bm_george`, `bm_fable`, `bm_lewis`, `bm_daniel`, `ef_dora`, `em_alex`, `em_santa`, `ff_siwis`, `hf_alpha`, `hf_beta`, `hm_omega`, `hm_psi`, `if_sara`, `im_nicola`, `jf_alpha`, `jf_gongitsune`, `jf_nezumi`, `jf_tebukuro`, `jm_kumo`, `pf_dora`, `pm_alex`, `pm_santa`, `zf_xiaobei`, `zf_xiaoni`, `zf_xiaoxiao`, `zf_xiaoyi`, `zm_yunjian`, `zm_yunxi`, `zm_yunxia`, `zm_yunyang`.
@@ -69,9 +69,9 @@ Frameleaf is built on [Immich](https://github.com/immich-app/immich), the open-s
 | [Florence-2 (base, large; -ft) and Phi-3 / Phi-3.5 vision (photo descriptions)](https://huggingface.co/microsoft/Florence-2-base)         | Microsoft; OpenVINO conversions by OpenVINO               | MIT                                                                                                        | downloaded         |
 | [NSFW image detection (ONNX)](https://huggingface.co/Falconsai/nsfw_image_detection)                                                      | Falconsai; ONNX conversion by onnx-community              | Apache-2.0                                                                                                 | downloaded         |
 
-- **InsightFace face detection and recognition (buffalo_l, buffalo_m, buffalo_s, antelopev2):** buffalo_l is used under a commercial licence the owner obtained from InsightFace at no cost, in support of open source (FL-146, 2026-09-25). buffalo_m, buffalo_s and antelopev2 are provided under InsightFace’s model terms: non-commercial research only.
-- **NLLB-CLIP (base and large, SigLIP):** Local use only: not offered on Frameleaf Cloud (non-commercial licence; owner decision FL-146, 2026-09-25).
-- **Qwen2.5-VL Instruct 3B and 7B (photo descriptions):** The 3B model’s Qwen Research License does not permit commercial use; whether it may stay the default, and on Frameleaf Cloud, needs an owner decision.
+- **InsightFace face detection and recognition (buffalo_l, buffalo_m, buffalo_s, antelopev2):** buffalo_l is used under a separate commercial licence. buffalo_m, buffalo_s and antelopev2 are provided under InsightFace’s model terms: non-commercial research only.
+- **NLLB-CLIP (base and large, SigLIP):** Licensed for non-commercial use only.
+- **Qwen2.5-VL Instruct 3B and 7B (photo descriptions):** The 3B model’s Qwen Research License does not permit commercial use.
 
 ## Fonts (Studio titles)
 

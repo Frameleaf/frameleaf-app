@@ -524,28 +524,6 @@ The causes of possible corruption are many, but can include unexpected poweroffs
 
 We recommend using the same version of PostgreSQL as in our default docker-compose.yml, however newer versions are also supported. Do note that the major upgrade process is not as simple as just changing the version of the container image. See [the PostgreSQL documentation](https://www.postgresql.org/docs/current/upgrading.html) for more detail.
 
-## Frameleaf Cloud
-
-### Do I need Frameleaf Cloud?
-
-No. Frameleaf Cloud is optional: remote access, cloud processing and cloud backup are extras, and your server, its photos and every local feature work fully without them. Nothing is contacted until an administrator links the server under Settings → Frameleaf Cloud → **Account & link**, and a server deployed without `FRAMELEAF_CLOUD_URL` never contacts it at all (see [Frameleaf Cloud](/administration/frameleaf-cloud)).
-
-### What does Frameleaf Cloud see of my library?
-
-Nothing from your library is uploaded by linking. Check-ins carry only what **What this server sends** lists on the Account & link page. The relay carries remote connections without seeing inside them, and cloud backups are encrypted with a key Frameleaf Cloud never receives. Cloud processing sends photos only for the work you turn on or start, and shows the model and cost first.
-
-### What happens when my plan ends?
-
-If a renewal is missed, cloud features keep working through a grace period, and the Frameleaf Cloud tile on the Command Center Overview turns amber. After that, remote access and cloud backup pause. Nothing on your server is locked or deleted, and existing backups stay readable with your key. Every price is in US dollars.
-
-### Can people reach my server at my own domain?
-
-Yes, with remote access. Add a subdomain you own under Settings → Frameleaf Cloud → Remote access → **Use your own domain**, create the two CNAME records the page shows, and choose **Check DNS**. Once it is verified, **Use my domain** makes it the address in shared links and emails (see [Your own domain](/administration/workers-and-endpoints#your-own-domain)).
-
-### How do I get my library back if the server is lost?
-
-Restore from cloud backup with the recovery kit or key file you saved at setup, either from the Cloud backup page on a new server or with `immich-admin cloud-backup restore` without the web app (see [Disaster recovery](/administration/frameleaf-cloud#disaster-recovery)). Keep the kit and the identity folder somewhere other than the server.
-
 ## Other
 
 ### Will Frameleaf save me money?
@@ -554,7 +532,7 @@ Probably not. At first glance, it seems like it might: compared to cloud-hosted 
 
 ### I really want a particular feature. Can I sponsor development of it?
 
-No, we have no feature sponsorship scheme. Frameleaf is funded by the people who use it: [supporting Frameleaf](/overview/support-the-project#supporter-key) with a supporter key gives access to Frameleaf Cloud, enhanced machine learning features and more. We'd rather not let money influence the roadmap. If features could be bought, we'd end up building Frameleaf for the highest bidder instead of for all of our users.
+No, we have no feature sponsorship scheme. Frameleaf is funded by the people who use it: you can [support Frameleaf](/overview/support-the-project#supporter-key) with a supporter key. We do not sell development priorities.
 
 A common alternative suggestion is to offer bounties that can be collected by anyone who submits a pull request, but we don't want those either; the Zig project has [explained the reason well](https://ziglang.org/news/bounties-damage-open-source-projects/).
 
