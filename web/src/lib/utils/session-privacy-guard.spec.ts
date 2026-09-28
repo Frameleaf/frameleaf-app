@@ -103,10 +103,11 @@ describe('watchSessionPrivacy', () => {
     sessionStorage.setItem('frameleaf:library:tab:v1:user-1', '{"selection":["locked-asset"]}');
     sessionStorage.setItem('frameleaf.editor.continuity.locked-asset', '{"draft":"private"}');
     const gate = vi.fn((state: string) => {
-      if (state === 'ready') {
-        expect(sessionStorage.getItem('frameleaf:library:tab:v1:user-1')).toBeNull();
-        expect(sessionStorage.getItem('frameleaf.editor.continuity.locked-asset')).toBeNull();
+      if (state !== 'ready') {
+        return;
       }
+      expect(sessionStorage.getItem('frameleaf:library:tab:v1:user-1')).toBeNull();
+      expect(sessionStorage.getItem('frameleaf.editor.continuity.locked-asset')).toBeNull();
     });
     vi.mocked(getAuthStatus).mockImplementationOnce(respond(status(false)));
     guard = watchSessionPrivacy(() => true, gate);

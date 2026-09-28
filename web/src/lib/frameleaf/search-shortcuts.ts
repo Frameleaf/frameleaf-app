@@ -66,7 +66,7 @@ export const FILTER_PANEL_EVENT = 'frameleaf:open-filters';
 export const FILTER_APPLY_EVENT = 'frameleaf:apply-filters';
 
 export const applyFilterQuery = (query: DiscoveryQuery) =>
-  !globalThis.dispatchEvent(new CustomEvent(FILTER_APPLY_EVENT, { detail: query, cancelable: true }));
+  !dispatchEvent(new CustomEvent(FILTER_APPLY_EVENT, { detail: query, cancelable: true }));
 
 export type FilterPanelRequest = { section: DiscoveryFilterSection };
 
