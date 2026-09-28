@@ -8,7 +8,7 @@ import { parseJsonRejectingDuplicateKeys } from '../../scripts/frameleaf-studio-
 
 export const AXES = ['native', 'chromium', 'firefox', 'safari', 'command', 'graph', 'preview', 'export', 'timingColor', 'authorizationFailure', 'test'];
 const CATALOG_SHA256 = '74e65893486ef0f372c66e140915b8bb98ca32bb07be668efe30514b733c748b';
-const OWNERS_SHA256 = '685a8b513e13049ec76bab7064ced47ed5f5c900eea49b996355932ea459fc83';
+const OWNERS_SHA256 = 'b47de92810236fe47fcf296614737b79fba949e75bb4de14f46fb4195afda0f7';
 const SHA256 = /^[a-f0-9]{64}$/;
 const NON_RENDERING_ROWS = new Set([
   'readme.projects-storage.1', 'readme.projects-storage.2', 'readme.projects-storage.3',
@@ -88,7 +88,7 @@ export async function validateConformance(data, root, { release = false } = {}) 
     const requiredFixtures = fixtureIds(fixture);
     summary.fixtureCases += requiredFixtures.length;
     const owner = row.owner;
-    assert(/^FL-\d+$/.test(owner?.jiraKey) && owner.planId, `${row.id}: unowned`);
+    assert(/^FL-\d+$/.test(owner?.jiraKey) && !Object.hasOwn(owner, 'planId'), `${row.id}: unowned or private plan ID`);
     exact(Object.keys(row.axes), AXES, `${row.id}: independent axes`);
     let qualified = true;
     for (const axis of AXES) {
