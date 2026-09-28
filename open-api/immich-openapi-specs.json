@@ -12206,6 +12206,15 @@
             }
           },
           {
+            "name": "faceSource",
+            "required": false,
+            "in": "query",
+            "description": "Return the ordinary edited preview used for face coordinates",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
             "name": "id",
             "required": true,
             "in": "path",

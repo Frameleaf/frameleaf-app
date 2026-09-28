@@ -14259,8 +14259,9 @@ export function rejectAssetRestoration({ id, restorationId }: {
 /**
  * View asset thumbnail
  */
-export function viewAsset({ edited, id, key, size, slug }: {
+export function viewAsset({ edited, faceSource, id, key, size, slug }: {
     edited?: boolean;
+    faceSource?: boolean;
     id: string;
     key?: string;
     size?: AssetMediaSize;
@@ -14271,6 +14272,7 @@ export function viewAsset({ edited, id, key, size, slug }: {
         data: Blob;
     }>(`/assets/${encodeURIComponent(id)}/thumbnail${QS.query(QS.explode({
         edited,
+        faceSource,
         key,
         size,
         slug
