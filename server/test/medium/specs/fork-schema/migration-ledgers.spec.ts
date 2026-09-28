@@ -90,6 +90,7 @@ describe('fork schema migration ledgers', () => {
       { name: '0000000000203-FrameleafSessions' },
       { name: '0000000000204-FrameleafUserLicenses' },
       { name: '0000000000205-AlbumCoverFollowsNewest' },
+      { name: '0000000000206-AssetUserShares' },
     ]);
     expect(controlTables.rows.map(({ tableName }) => tableName)).toEqual([
       'backfill_progress',

@@ -5719,6 +5719,52 @@ export type ICloudInventoryResponseDto = {
         role: string;
     }[];
 };
+export type ItemShareChangeDto = {
+    /** The items (your own) to share or stop sharing */
+    assetIds: string[];
+    /** The people in this library to share them with, or to stop sharing them with */
+    userIds: string[];
+};
+export type ItemShareResponseDto = {
+    /** The shared item */
+    assetId: string;
+    /** When it was shared */
+    createdAt: string;
+    /** Share ID */
+    id: string;
+    /** Who the item is shared with */
+    sharedWith: UserResponseDto;
+};
+export type ItemShareChangeResponseDto = {
+    /** Shares this change added */
+    added: number;
+    /** Where recipients open what is shared with them: the Public server URL when set, otherwise the direct-connection address (or a custom hostname pointed at it); null when the server has no address */
+    link: string | null;
+    /** Shares this change removed */
+    removed: number;
+    /** Every share of these items after the change */
+    shares: ItemShareResponseDto[];
+};
+export type ItemShareQueryDto = {
+    /** The items (your own) to list the shares of */
+    assetIds: string[];
+};
+export type ItemShareReceivedDto = {
+    /** The shared item */
+    asset: AssetResponseDto;
+    /** Share ID */
+    id: string;
+    /** Who shared it */
+    owner: UserResponseDto;
+    /** When it was shared */
+    sharedAt: string;
+};
+export type ItemShareReceivedResponseDto = {
+    /** Items shared with you, newest share first */
+    items: ItemShareReceivedDto[];
+    /** The address of this list, as sent in share notifications */
+    link: string | null;
+};
 export type QueueStatisticsDto = {
     /** Number of active jobs */
     active: number;
@@ -15431,6 +15477,62 @@ export function removeICloudConnection({ id }: {
     }));
 }
 /**
+ * Stop sharing items with people
+ */
+export function unshareItems({ itemShareChangeDto }: {
+    itemShareChangeDto: ItemShareChangeDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ItemShareChangeResponseDto;
+    }>("/item-shares", oazapfts.json({
+        ...opts,
+        method: "DELETE",
+        body: itemShareChangeDto
+    })));
+}
+/**
+ * Share items with people
+ */
+export function shareItems({ itemShareChangeDto }: {
+    itemShareChangeDto: ItemShareChangeDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: ItemShareChangeResponseDto;
+    }>("/item-shares", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: itemShareChangeDto
+    })));
+}
+/**
+ * List who items are shared with
+ */
+export function getItemShares({ itemShareQueryDto }: {
+    itemShareQueryDto: ItemShareQueryDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ItemShareResponseDto[];
+    }>("/item-shares/query", oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: itemShareQueryDto
+    })));
+}
+/**
+ * Items shared with you
+ */
+export function getReceivedItemShares(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ItemShareReceivedResponseDto;
+    }>("/item-shares/received", {
+        ...opts
+    }));
+}
+/**
  * Retrieve queue counts and status
  */
 export function getQueuesLegacy(opts?: Oazapfts.RequestOpts) {
@@ -21642,6 +21744,7 @@ export enum NotificationType {
     SystemMessage = "SystemMessage",
     AlbumInvite = "AlbumInvite",
     AlbumUpdate = "AlbumUpdate",
+    ItemShare = "ItemShare",
     ClusterGroupRequest = "ClusterGroupRequest",
     SharedSpaceMention = "SharedSpaceMention",
     SharedSpaceReply = "SharedSpaceReply",

@@ -7534,7 +7534,7 @@
     },
     "/albums/{id}/collection": {
       "put": {
-        "description": "Move an album into a collection, or send null to take it out so it stands on its own. Only the album owner can move it; the destination must be a collection the user can edit. Collections and shared spaces cannot be moved.",
+        "description": "Move an album into a collection, or send null to take it out so it stands on its own. Only the album owner can move it (an editor gets 403); the destination must be a collection the user can edit. Collections and shared spaces cannot be moved.",
         "operationId": "moveAlbumToCollection",
         "parameters": [
           {
@@ -17413,6 +17413,201 @@
           }
         ],
         "x-immich-state": "Alpha"
+      }
+    },
+    "/item-shares": {
+      "delete": {
+        "description": "Stop sharing your own items with these people. They lose access at once.",
+        "operationId": "unshareItems",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ItemShareChangeDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ItemShareChangeResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Stop sharing items with people",
+        "tags": [
+          "Item shares"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "asset.share"
+      },
+      "post": {
+        "description": "Share your own items with people who have an account on this server. They see the items under Sharing, in their own library, and are notified. Locked items are refused.",
+        "operationId": "shareItems",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ItemShareChangeDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ItemShareChangeResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Share items with people",
+        "tags": [
+          "Item shares"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "asset.share"
+      }
+    },
+    "/item-shares/query": {
+      "put": {
+        "description": "The people each of your own items is shared with.",
+        "operationId": "getItemShares",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ItemShareQueryDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ItemShareResponseDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List who items are shared with",
+        "tags": [
+          "Item shares"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "asset.share"
+      }
+    },
+    "/item-shares/received": {
+      "get": {
+        "description": "Items other people shared with you one by one, newest first. Items that are locked, trashed or no longer shared are left out.",
+        "operationId": "getReceivedItemShares",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ItemShareReceivedResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Items shared with you",
+        "tags": [
+          "Item shares"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "asset.read"
       }
     },
     "/jobs": {
@@ -41883,6 +42078,10 @@
       "description": "A shared space is a top-level album that a group of people share. Its members hold the album roles - owner, editor or viewer - and somebody joins only by accepting an invitation, which they can preview first."
     },
     {
+      "name": "Item shares",
+      "description": "Share individual items with people who have an account on this server; they see them in their own library, under Sharing."
+    },
+    {
       "name": "Shared links",
       "description": "A shared link is a public url that provides access to a specific album, asset, or collection of assets. A shared link can be protected with a password, include a specific slug, allow or disallow downloads, and optionally include an expiration date."
     },
@@ -60237,6 +60436,174 @@
         ],
         "type": "object"
       },
+      "ItemShareChangeDto": {
+        "properties": {
+          "assetIds": {
+            "description": "The items (your own) to share or stop sharing",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "maxItems": 1000,
+            "minItems": 1,
+            "type": "array"
+          },
+          "userIds": {
+            "description": "The people in this library to share them with, or to stop sharing them with",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "assetIds",
+          "userIds"
+        ],
+        "type": "object"
+      },
+      "ItemShareChangeResponseDto": {
+        "properties": {
+          "added": {
+            "description": "Shares this change added",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "link": {
+            "description": "Where recipients open what is shared with them: the Public server URL when set, otherwise the direct-connection address (or a custom hostname pointed at it); null when the server has no address",
+            "nullable": true,
+            "type": "string"
+          },
+          "removed": {
+            "description": "Shares this change removed",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "shares": {
+            "description": "Every share of these items after the change",
+            "items": {
+              "$ref": "#/components/schemas/ItemShareResponseDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "added",
+          "link",
+          "removed",
+          "shares"
+        ],
+        "type": "object"
+      },
+      "ItemShareQueryDto": {
+        "properties": {
+          "assetIds": {
+            "description": "The items (your own) to list the shares of",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "maxItems": 1000,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "assetIds"
+        ],
+        "type": "object"
+      },
+      "ItemShareReceivedDto": {
+        "properties": {
+          "asset": {
+            "$ref": "#/components/schemas/AssetResponseDto",
+            "description": "The shared item"
+          },
+          "id": {
+            "description": "Share ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "owner": {
+            "$ref": "#/components/schemas/UserResponseDto",
+            "description": "Who shared it"
+          },
+          "sharedAt": {
+            "description": "When it was shared",
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "asset",
+          "id",
+          "owner",
+          "sharedAt"
+        ],
+        "type": "object"
+      },
+      "ItemShareReceivedResponseDto": {
+        "properties": {
+          "items": {
+            "description": "Items shared with you, newest share first",
+            "items": {
+              "$ref": "#/components/schemas/ItemShareReceivedDto"
+            },
+            "type": "array"
+          },
+          "link": {
+            "description": "The address of this list, as sent in share notifications",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "items",
+          "link"
+        ],
+        "type": "object"
+      },
+      "ItemShareResponseDto": {
+        "properties": {
+          "assetId": {
+            "description": "The shared item",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "createdAt": {
+            "description": "When it was shared",
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "description": "Share ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "sharedWith": {
+            "$ref": "#/components/schemas/UserResponseDto",
+            "description": "Who the item is shared with"
+          }
+        },
+        "required": [
+          "assetId",
+          "createdAt",
+          "id",
+          "sharedWith"
+        ],
+        "type": "object"
+      },
       "JobCreateDto": {
         "properties": {
           "name": {
@@ -66434,6 +66801,7 @@
           "SystemMessage",
           "AlbumInvite",
           "AlbumUpdate",
+          "ItemShare",
           "ClusterGroupRequest",
           "SharedSpaceMention",
           "SharedSpaceReply",

@@ -283,6 +283,8 @@ export const endpointTags: Record<ApiTag, string> = {
     'A session represents an authenticated login session for a user. Sessions also appear in the web application as "Authorized devices".',
   [ApiTag.SharedSpaces]:
     'A shared space is a top-level album that a group of people share. Its members hold the album roles - owner, editor or viewer - and somebody joins only by accepting an invitation, which they can preview first.',
+  [ApiTag.ItemShares]:
+    'Share individual items with people who have an account on this server; they see them in their own library, under Sharing.',
   [ApiTag.SharedLinks]:
     'A shared link is a public url that provides access to a specific album, asset, or collection of assets. A shared link can be protected with a password, include a specific slug, allow or disallow downloads, and optionally include an expiration date.',
   [ApiTag.Stacks]:

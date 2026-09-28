@@ -51,6 +51,7 @@ import { ICloudSyncRepository } from 'src/repositories/icloud-sync.repository.js
 import { ICloudTransportRepository } from 'src/repositories/icloud-transport.repository.js';
 import { InstanceIdentityRepository } from 'src/repositories/instance-identity.repository.js';
 import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
+import { ItemShareRepository } from 'src/repositories/item-share.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LibraryRepository } from 'src/repositories/library.repository.js';
 import { LivePhotoRepository } from 'src/repositories/live-photo.repository.js';
@@ -193,6 +194,7 @@ export const repositories = [
   SessionRepository,
   SharedLinkRepository,
   SharedLinkAssetRepository,
+  ItemShareRepository,
   StackRepository,
   StudioPreviewRepository,
   StorageRepository,

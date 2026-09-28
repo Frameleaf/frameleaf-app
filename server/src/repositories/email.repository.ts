@@ -5,6 +5,7 @@ import React, { createElement } from 'react';
 import type { EmailImageAttachment } from 'src/types.js';
 import { AlbumInviteEmail } from 'src/emails/album-invite.email.js';
 import { AlbumUpdateEmail } from 'src/emails/album-update.email.js';
+import { ItemShareEmail } from 'src/emails/item-share.email.js';
 import { TestEmail } from 'src/emails/test.email.js';
 import { WelcomeEmail } from 'src/emails/welcome.email.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -39,6 +40,7 @@ export enum EmailTemplate {
   // ALBUM
   ALBUM_INVITE = 'album-invite',
   ALBUM_UPDATE = 'album-update',
+  ITEM_SHARE = 'item-share',
 }
 
 interface BaseEmailProps {
@@ -68,6 +70,14 @@ export interface AlbumInviteEmailProps extends BaseEmailProps {
   cid?: string;
 }
 
+/** FL-83 (AL-30b): items shared with a person; `link` opens Sharing › Shared with you. */
+export interface ItemShareEmailProps extends BaseEmailProps {
+  senderName: string;
+  recipientName: string;
+  count: number;
+  link?: string;
+}
+
 export interface AlbumUpdateEmailProps extends BaseEmailProps {
   albumName: string;
   albumId: string;
@@ -94,6 +104,11 @@ export type EmailRenderRequest =
   | {
       template: EmailTemplate.ALBUM_UPDATE;
       data: AlbumUpdateEmailProps;
+      customTemplate: string;
+    }
+  | {
+      template: EmailTemplate.ITEM_SHARE;
+      data: ItemShareEmailProps;
       customTemplate: string;
     };
 
@@ -157,6 +172,10 @@ export class EmailRepository {
 
       case EmailTemplate.ALBUM_UPDATE: {
         return createElement(AlbumUpdateEmail, { ...data, customTemplate });
+      }
+
+      case EmailTemplate.ITEM_SHARE: {
+        return createElement(ItemShareEmail, { ...data, customTemplate });
       }
     }
   }
