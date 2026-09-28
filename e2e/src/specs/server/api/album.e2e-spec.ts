@@ -139,6 +139,8 @@ describe('/albums', () => {
         ...user1Albums[0],
         isSmart: false,
         smartRuleId: null,
+        smartKind: null,
+        coverFollowsNewest: false,
         contributorCounts: [{ userId: user1.userId, assetCount: 1 }],
         lastModifiedAssetTimestamp: expect.any(String),
         startDate: expect.any(String),
@@ -409,6 +411,8 @@ describe('/albums', () => {
         ...user1Albums[0],
         isSmart: false,
         smartRuleId: null,
+        smartKind: null,
+        coverFollowsNewest: false,
         contributorCounts: [{ userId: user1.userId, assetCount: 1 }],
         lastModifiedAssetTimestamp: expect.any(String),
         startDate: expect.any(String),
@@ -446,6 +450,8 @@ describe('/albums', () => {
         ...user1Albums[0],
         isSmart: false,
         smartRuleId: null,
+        smartKind: null,
+        coverFollowsNewest: false,
         contributorCounts: [{ userId: user1.userId, assetCount: 1 }],
         assetCount: 1,
         lastModifiedAssetTimestamp: expect.any(String),
@@ -594,6 +600,7 @@ describe('/albums', () => {
         updatedAt: expect.any(String),
         albumName: 'New album name',
         description: 'An album description',
+        coverFollowsNewest: false,
       });
     });
 
