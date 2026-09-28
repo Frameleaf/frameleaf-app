@@ -245,8 +245,8 @@ export class Ledger {
     })(records);
   }
 
-  // `bChecksum` is the checksum SERVER B actually stores (SHA-256). For a legacy SHA-1
-  // asset this differs from the source `checksum`, so the audit must verify against this.
+  // `bChecksum` is the checksum SERVER B actually stores (SHA-1 or SHA-256).
+  // It can differ from the source checksum, so the audit verifies against this.
   setAssetUploaded(aId: string, bId: string, via: 'upload' | 'duplicate' | 'present', bChecksum: string) {
     this.stmt('UPDATE asset SET b_id = ?, b_checksum = ?, via = ?, uploaded = 1, error = NULL WHERE a_id = ?').run(
       bId,
