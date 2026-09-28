@@ -8,6 +8,11 @@
 .claude/
 .worktrees/
 
+# Local planning and agent work products
+/.superpowers/
+/docs/superpowers/
+/docs/docs/developer/frameleaf-plan/
+
 docker/upload
 docker/library
 uploads
