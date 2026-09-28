@@ -1,4 +1,4 @@
-import { Kysely } from 'kysely';
+import { Kysely, sql } from 'kysely';
 import { AlbumKind, AlbumUserRole } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { StudioProjectRepository, StudioRevisionAppend } from 'src/repositories/studio-project.repository.js';
@@ -210,6 +210,75 @@ describe(StudioProjectRepository.name, () => {
       expect(await sut.releaseLease(project.id, owner.id, 'tab-a')).toBe(true);
       expect((await sut.getById(project.id))?.leaseClientId).toBeNull();
     });
+  });
+
+  describe('deletePurgeable', () => {
+    it('keeps a project restored while the retention sweep waits for its row', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const now = new Date();
+      const deadline = new Date(now.getTime() - 1_000);
+      const restored = await sut.create({ ownerId: user.id, name: 'Restored' });
+      const expired = await sut.create({ ownerId: user.id, name: 'Expired' });
+      await sut.trash(restored.id, deadline);
+      await sut.trash(expired.id, deadline);
+
+      let release!: () => void;
+      let signalLocked!: (pid: number) => void;
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const locked = new Promise<number>((resolve) => {
+        signalLocked = resolve;
+      });
+      const restoring = defaultDatabase.transaction().execute(async (trx) => {
+        await trx
+          .selectFrom('studio_project')
+          .select('id')
+          .where('id', '=', restored.id)
+          .forUpdate()
+          .executeTakeFirstOrThrow();
+        const { rows } = await sql<{ pid: number }>`select pg_backend_pid() as pid`.execute(trx);
+        signalLocked(rows[0].pid);
+        await held;
+        await trx
+          .updateTable('studio_project')
+          .set({ deletedAt: null, purgeAfter: null })
+          .where('id', '=', restored.id)
+          .execute();
+      });
+      const blockerPid = await locked;
+
+      const purging = sut.deletePurgeable(now);
+      let waiting = false;
+      let settled: PromiseSettledResult<unknown>[] = [];
+      try {
+        const timeout = Date.now() + 5_000;
+        while (!waiting && Date.now() < timeout) {
+          const { rows } = await sql<{ waiting: boolean }>`
+            select exists (
+              select 1 from pg_stat_activity
+              where wait_event_type = 'Lock'
+                and pg_blocking_pids(pid) @> array[${blockerPid}]::integer[]
+            ) as waiting
+          `.execute(defaultDatabase);
+          waiting = rows[0].waiting;
+          if (!waiting) {
+            await new Promise((resolve) => setTimeout(resolve, 20));
+          }
+        }
+        expect(waiting).toBe(true);
+      } finally {
+        release();
+        settled = await Promise.allSettled([restoring, purging]);
+      }
+
+      expect(settled).toEqual([
+        { status: 'fulfilled', value: undefined },
+        { status: 'fulfilled', value: [expired.id] },
+      ]);
+      expect(await sut.getById(restored.id)).toMatchObject({ deletedAt: null, purgeAfter: null });
+    }, 20_000);
   });
 
   describe('listVisible', () => {

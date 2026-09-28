@@ -525,6 +525,8 @@ export class StudioProjectRepository {
             .where('purgeAfter', '<', now)
             .limit(limit),
         )
+        .where('deletedAt', 'is not', null)
+        .where('purgeAfter', '<', now)
         .returning('id')
         .execute(),
     );
