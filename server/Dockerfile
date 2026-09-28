@@ -361,7 +361,6 @@ FROM node:24.21.0-bookworm@sha256:64af3819f9275802414d7cdc38c27e9d82bd564dec4d4d
 
 WORKDIR /usr/src/app
 COPY ./scripts/frameleaf-studio-contracts.mjs ./scripts/frameleaf-studio-contracts.mjs
-COPY ./docs/docs/developer/frameleaf-plan ./docs/docs/developer/frameleaf-plan/
 COPY ./studio ./studio/
 COPY ./web/src/lib/frameleaf/studio ./web/src/lib/frameleaf/studio/
 RUN node studio/tools/engine.mjs prepare && \
