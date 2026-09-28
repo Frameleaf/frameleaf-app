@@ -1,6 +1,6 @@
 # Frameleaf recovery checkpoint — 2026-09-23
 
-This is execution evidence, not a specification or a claim of release readiness. The September 22 prototype remains the UI authority. The original [agent handoff](https://github.com/Frameleaf/frameleaf-app/blob/20289e0cf8b4149bea6667b453e4fa0d1eef215d/docs/docs/developer/frameleaf-plan/12-agent-handoff-2026-09-23.md) remains historical; this checkpoint records the subsequent recovery. No default-branch merge, container publication, deployment, or complete prototype acceptance is claimed.
+This is execution evidence, not a specification or a claim of release readiness. The September 22 prototype remains the UI authority. The original [agent handoff](../frameleaf-plan/12-agent-handoff-2026-09-23.md) remains historical; this checkpoint records the subsequent recovery. No default-branch merge, container publication, deployment, or complete prototype acceptance is claimed.
 
 ## Reconciled sources
 
