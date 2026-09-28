@@ -4,7 +4,7 @@ import { MediaOperation, MediaOperationRepository } from 'src/repositories/media
 import { StudioReverseConformService } from 'src/services/studio-reverse-conform.service.js';
 import { StudioDestination, StudioResourceKind } from 'src/utils/studio-resources.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
-import { reversePackets, reverseVideoInfo } from 'test/fixtures/studio-reverse-conform.stub.js';
+import { reverseClipGraph, reversePackets, reverseVideoInfo } from 'test/fixtures/studio-reverse-conform.stub.js';
 import { getMocks } from 'test/utils.js';
 
 const projectId = '0195e2a0-0000-7000-8000-000000000010';
@@ -29,6 +29,7 @@ const setup = () => {
   } as MediaOperation;
   const operations = {
     create: vi.fn().mockResolvedValue(operation),
+    createStudioReverseCommand: vi.fn().mockResolvedValue(operation),
     getForWorker: vi.fn().mockResolvedValue(operation),
     heartbeat: vi.fn().mockResolvedValue(true),
     reportProgress: vi.fn().mockResolvedValue(true),
@@ -149,6 +150,28 @@ describe(StudioReverseConformService.name, () => {
         snapshot: expect.objectContaining({ checksum, sourceKey, revision: 1, digest: 'revision-digest' }),
       }),
     );
+  });
+
+  it('checks the command clip against probed source facts and persists the binding with the lease-checked insert', async () => {
+    const { sut, studio, operations } = setup();
+    studio.authorizeRevision.mockResolvedValue({
+      project: { ownerId: owner.user.id },
+      revision: { id: 'revision-id', digest: 'revision-digest' },
+      envelope: { graph: reverseClipGraph(sourceId) },
+    });
+    const command = { clipId: 'clip-a', clientId: 'tab-a', requestKey: 'command-a' };
+    await sut.enqueueSource(owner, {
+      projectId,
+      revision: 1,
+      sourceKey,
+      destination: StudioDestination.Local,
+      command,
+    });
+    expect(operations.createStudioReverseCommand).toHaveBeenCalledWith(
+      expect.objectContaining({ snapshot: expect.objectContaining(command) }),
+      { ...command, revision: 1 },
+    );
+    expect(operations.create).not.toHaveBeenCalled();
   });
 
   it('refuses coded dimensions hidden by display geometry before enqueuing work', async () => {
