@@ -162,10 +162,30 @@ export class DuplicateDecisionService {
       }
     }
 
+    // UT-20: a group blocked by another account names those accounts, by display name only.
+    const otherOwnerIds = [
+      ...new Set(members.filter(({ ownerId }) => ownerId !== auth.user.id).map(({ ownerId }) => ownerId)),
+    ];
+    const ownerNames = new Map(
+      otherOwnerIds.length === 0
+        ? []
+        : (await this.repository.getOwnerNames(otherOwnerIds)).map(({ id, name }) => [id, name] as const),
+    );
+
     return groups.map((group) => {
       const all = byGroup.get(group.duplicateId) ?? [];
       const shown = new Set(group.assets.map(({ id }) => id));
       const otherOwner = all.some((member) => member.ownerId !== auth.user.id);
+      const otherOwnerNames = otherOwner
+        ? [
+            ...new Set(
+              all
+                .filter(({ ownerId }) => ownerId !== auth.user.id)
+                .map(({ ownerId }) => ownerNames.get(ownerId))
+                .filter((name): name is string => !!name),
+            ),
+          ].toSorted((a, b) => a.localeCompare(b))
+        : undefined;
       const hiddenMemberCount = all.filter((member) => member.ownerId === auth.user.id && !shown.has(member.id)).length;
       const blockedReason = otherOwner
         ? DuplicateGroupBlock.OtherOwner
@@ -184,6 +204,7 @@ export class DuplicateDecisionService {
         editable: blockedReason === null,
         blockedReason,
         hiddenMemberCount,
+        ...(otherOwnerNames && { otherOwnerNames }),
         totalBytes: group.assets.reduce((sum, asset) => sum + (asset.exifInfo?.fileSizeInByte ?? 0), 0),
         qualities: group.assets.map((asset) => ({ assetId: asset.id, reasons: reasons.get(asset.id) ?? [] })),
       };

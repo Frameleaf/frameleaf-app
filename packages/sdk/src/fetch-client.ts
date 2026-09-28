@@ -5301,6 +5301,8 @@ export type DuplicateReviewGroupDto = {
     /** Photos of the group this session does not see */
     hiddenMemberCount: number;
     kind: DuplicateGroupKind;
+    /** Display names of the other accounts owning photos of a group blocked by another owner */
+    otherOwnerNames?: string[];
     qualities: DuplicateReviewQualityDto[];
     /** The suggested keeper, from resolution, format and original provenance. Never set for a burst */
     suggestedKeepAssetIds: string[];

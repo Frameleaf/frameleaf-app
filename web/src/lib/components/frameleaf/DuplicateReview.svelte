@@ -642,7 +642,14 @@
         {#if !active.editable}
           <p class="fl-dr-access">
             {active.blockedReason === DuplicateGroupBlock.OtherOwner
-              ? $t('frameleaf_duplicates_blocked_other_owner')
+              ? active.otherOwnerNames?.length
+                ? // DuplicateReview.jsx:493-497: "Only A and B can decide what to keep in this group."
+                  $t('frameleaf_duplicates_blocked_owners', {
+                    values: {
+                      owners: new Intl.ListFormat($locale, { type: 'conjunction' }).format(active.otherOwnerNames),
+                    },
+                  })
+                : $t('frameleaf_duplicates_blocked_other_owner')
               : $t('frameleaf_duplicates_blocked_hidden', { values: { count: active.hiddenMemberCount } })}
           </p>
         {:else if activeProgress?.state === 'pending'}

@@ -35,6 +35,10 @@ const DuplicateReviewGroupSchema = z
     editable: z.boolean().describe('Whether this session may decide the group'),
     blockedReason: DuplicateGroupBlockSchema.nullable(),
     hiddenMemberCount: z.int().min(0).describe('Photos of the group this session does not see'),
+    otherOwnerNames: z
+      .array(z.string())
+      .optional()
+      .describe('Display names of the other accounts owning photos of a group blocked by another owner'),
     totalBytes: z.int().min(0).describe('Size of the originals shown, in bytes'),
     qualities: z.array(DuplicateReviewQualitySchema),
   })
