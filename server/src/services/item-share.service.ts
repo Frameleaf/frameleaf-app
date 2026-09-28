@@ -4,6 +4,7 @@ import type { ArgOf } from 'src/repositories/event.repository.js';
 import type { ItemShareRow } from 'src/repositories/item-share.repository.js';
 import { OnEvent } from 'src/decorators.js';
 import { mapAsset } from 'src/dtos/asset-response.dto.js';
+import { AssetVisibility } from 'src/enum.js';
 import {
   ItemShareChangeDto,
   ItemShareChangeResponseDto,
@@ -21,6 +22,8 @@ export const SHARED_WITH_YOU_PATH = '/sharing?section=shared-with-you';
 
 /** Why a share was refused: an item is locked, or hidden by one of the owner's Locked rules. */
 export const ITEM_SHARE_LOCKED = 'Locked items cannot be shared. Unlock them first.';
+/** Hidden items cannot be shared directly, including Live Photo motion assets. */
+export const ITEM_SHARE_HIDDEN = 'Hidden items cannot be shared. Unhide them first.';
 
 /**
  * Sharing individual items with people in this library (FL-83 AL-30b, owner decision 2026-09-27),
@@ -32,6 +35,7 @@ export const ITEM_SHARE_LOCKED = 'Locked items cannot be shared. Unlock them fir
  *   item"): a share naming an item that is locked, or hidden by one of the owner's Locked rules, is
  *   refused as a whole. An item locked after it was shared disappears for the recipient, from their
  *   list and from every read, until it is unlocked (`ItemShareRepository`, `checkItemShareAccess`).
+ * - Hidden items are refused and stay out of recipient reads, including shares made before hiding.
  * - New recipients get the notification album invitations use: an in-app notification and, when
  *   they allow album invitation emails, an email; both carry the link.
  * - The link is `resolveShareBaseUrl`: the Public server URL, else the direct-connection address or
@@ -109,7 +113,7 @@ export class ItemShareService extends BaseService {
     for (const row of rows) {
       const asset = assets.get(row.assetId);
       const owner = owners.get(row.ownerId);
-      if (!asset || !owner || asset.isLocked || asset.deletedAt) {
+      if (!asset || !owner || asset.isLocked || asset.visibility === AssetVisibility.Hidden || asset.deletedAt) {
         continue;
       }
       items.push({
@@ -138,6 +142,10 @@ export class ItemShareService extends BaseService {
 
   private async requireShareableItems(auth: AuthDto, ids: string[]): Promise<string[]> {
     const assetIds = await this.requireOwnItems(auth, ids);
+    const assets = await this.assetRepository.getByIds(assetIds);
+    if (assets.some(({ visibility }) => visibility === AssetVisibility.Hidden)) {
+      throw new BadRequestException(ITEM_SHARE_HIDDEN);
+    }
     const locked = await this.assetRepository.getLockedAssetIds(assetIds);
     const suppressed = auth.suppressedContent
       ? await this.assetRepository.getHiddenContentAssetIds(assetIds, { hiddenContent: auth.suppressedContent })

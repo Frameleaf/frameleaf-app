@@ -295,8 +295,8 @@ class AssetAccess {
 
   /**
    * FL-83 (AL-30b): items the owner shared with this person (`immich_fork.asset_user_share`). A
-   * shared item is never reachable while it is locked, whoever locked it and whenever, and never
-   * once it is trashed or its owner is gone; the motion part of a shared live photo comes with it.
+   * shared item is never reachable while it is Hidden or locked, whoever locked it and whenever, and
+   * never once it is trashed or its owner is gone; the motion part of a shared live photo comes with it.
    */
   @ChunkedSet({ paramIndex: 1 })
   async checkItemShareAccess(userId: string, assetIds: Set<string>, hideNsfwAssets?: AccessPrivacy) {
@@ -329,6 +329,7 @@ class AssetAccess {
         )
         .where(sql.ref('share.sharedWithId'), '=', asUuid(userId))
         .where((eb) => eb.or([eb('asset.id', '=', anyUuid(ids)), eb('asset.livePhotoVideoId', '=', anyUuid(ids))]))
+        .where('asset.visibility', '!=', AssetVisibility.Hidden)
         .where(isNotLocked('asset'))
         .$call((qb) => withHiddenContentFilter(qb, options))
         .execute()

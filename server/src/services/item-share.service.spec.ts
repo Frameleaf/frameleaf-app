@@ -1,6 +1,11 @@
 import { BadRequestException } from '@nestjs/common';
-import { NotificationType } from 'src/enum.js';
-import { ITEM_SHARE_LOCKED, ItemShareService, SHARED_WITH_YOU_PATH } from 'src/services/item-share.service.js';
+import { AssetVisibility, NotificationType } from 'src/enum.js';
+import {
+  ITEM_SHARE_HIDDEN,
+  ITEM_SHARE_LOCKED,
+  ItemShareService,
+  SHARED_WITH_YOU_PATH,
+} from 'src/services/item-share.service.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
 import { UserFactory } from 'test/factories/user.factory.js';
@@ -104,6 +109,23 @@ describe(ItemShareService.name, () => {
       expect(mocks.itemShare.add).not.toHaveBeenCalled();
     });
 
+    it('refuses a Hidden item even in an elevated owner session', async () => {
+      const [visible, hidden] = [newUuid(), newUuid()];
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([visible, hidden]));
+      mocks.asset.getByIds.mockResolvedValue([
+        AssetFactory.create({ id: visible, visibility: AssetVisibility.Timeline }),
+        AssetFactory.create({ id: hidden, visibility: AssetVisibility.Hidden }),
+      ] as never);
+
+      await expect(
+        sut.share(AuthFactory.from(owner).session({ hasElevatedPermission: true }).build(), {
+          assetIds: [visible, hidden],
+          userIds: [jamie.id],
+        }),
+      ).rejects.toThrow(ITEM_SHARE_HIDDEN);
+      expect(mocks.itemShare.add).not.toHaveBeenCalled();
+    });
+
     it('refuses sharing with yourself or with someone who has no account here', async () => {
       const a = newUuid();
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([a]));
@@ -158,22 +180,25 @@ describe(ItemShareService.name, () => {
   });
 
   describe('getReceived', () => {
-    it('lists what was shared with the recipient, with who shared it, and never a locked item', async () => {
-      const [visible, locked, trashed] = [
+    it('lists what was shared with the recipient, with who shared it, and never a locked or Hidden item', async () => {
+      const [visible, locked, trashed, hidden] = [
         AssetFactory.create({ ownerId: owner.id }),
         AssetFactory.create({ ownerId: owner.id }),
         AssetFactory.create({ ownerId: owner.id, deletedAt: new Date() }),
+        AssetFactory.create({ ownerId: owner.id, visibility: AssetVisibility.Hidden }),
       ];
       const recipient = AuthFactory.create(jamie);
       mocks.itemShare.getReceived.mockResolvedValue([
         { ...row(visible.id), createdAt: new Date('2026-09-27T12:00:00Z') },
         row(locked.id),
         row(trashed.id),
+        row(hidden.id),
       ]);
       mocks.asset.getByIds.mockResolvedValue([
         { ...visible, isLocked: false },
         { ...locked, isLocked: true },
         { ...trashed, isLocked: false },
+        { ...hidden, isLocked: false },
       ] as never);
 
       const { items, link } = await sut.getReceived(recipient);
