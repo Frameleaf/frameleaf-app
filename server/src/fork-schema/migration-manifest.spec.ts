@@ -67,6 +67,7 @@ describe(classifyMigration, () => {
     expect(classifyMigration('2100000000660-HashSharedLinkPasswords')).toBe('legacy-fork');
     expect(classifyMigration('2100000000670-AddCloudBackupTables')).toBe('legacy-fork');
     expect(classifyMigration('2100000000690-AddMemoryHighlight')).toBe('legacy-fork');
+    expect(classifyMigration('2100000000700-AddAssetLockInherited')).toBe('legacy-fork');
   });
 
   it('classifies migrations from a certified upstream tag', () => {
