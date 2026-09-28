@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { SmartAlbumBuiltInKind } from 'src/dtos/system-config.dto.js';
 import type { AlbumMapMarkerSearchOptions } from 'src/repositories/map.repository.js';
 import { ALBUM_ICON_GROUPS, MDI_ICON_CATALOGUE_VERSION, MDI_ICON_NAMES } from 'src/constants/album-icons.js';
 import {
@@ -22,7 +23,6 @@ import {
   asAlbumKind,
   mapAlbum,
 } from 'src/dtos/album.dto.js';
-import type { SmartAlbumBuiltInKind } from 'src/dtos/system-config.dto.js';
 import { BulkIdErrorReason, BulkIdResponseDto, BulkIdsDto } from 'src/dtos/asset-ids.response.dto.js';
 import { AlbumMapMarkerDto, MapMarkerResponseDto } from 'src/dtos/map.dto.js';
 import { AlbumKind, AlbumUserRole, Permission, SharedSpaceEventType } from 'src/enum.js';
