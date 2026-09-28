@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { vitest } from 'vitest';
 import { AssetFile } from 'src/database.js';
+import { AssetDevelopRevisionStatus } from 'src/dtos/asset-develop.dto.js';
 import { AssetMediaStatus, AssetRejectReason, AssetUploadAction } from 'src/dtos/asset-media-response.dto.js';
 import { AssetMediaCreateDto, AssetMediaSize, UploadFieldName } from 'src/dtos/asset-media.dto.js';
 import { AssetEditAction } from 'src/dtos/editing.dto.js';
@@ -938,6 +939,33 @@ describe(AssetMediaService.name, () => {
   });
 
   describe('viewThumbnail', () => {
+    it('serves the owner current develop pixels but keeps the face source on ordinary edited pixels', async () => {
+      const asset = AssetFactory.from({ ownerId: authStub.admin.user.id })
+        .file({ type: AssetFileType.Preview, path: '/data/legacy-preview.jpg' })
+        .build();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getForThumbnail.mockResolvedValue({ ...asset, path: '/data/legacy-preview.jpg' });
+      mocks.asset.getCurrentDevelop.mockResolvedValue({
+        id: 'revision-id',
+        ownerId: asset.ownerId,
+        status: AssetDevelopRevisionStatus.Rendered,
+        previewPath: '/data/develop-preview.jpg',
+        masterPath: '/data/develop-master.jpg',
+      });
+
+      await expect(
+        sut.viewThumbnail(authStub.admin, asset.id, { size: AssetMediaSize.PREVIEW, edited: true }),
+      ).resolves.toMatchObject({ path: '/data/develop-preview.jpg', cacheControl: CacheControl.PrivateWithoutCache });
+      mocks.systemMetadata.get.mockResolvedValue(null as never);
+      await expect(
+        sut.viewThumbnail(authStub.admin, asset.id, { size: AssetMediaSize.FULLSIZE, edited: true }, 'relay'),
+      ).resolves.toMatchObject({ path: '/data/develop-preview.jpg' });
+      await expect(
+        sut.viewThumbnail(authStub.admin, asset.id, { size: AssetMediaSize.PREVIEW, edited: true, faceSource: true }),
+      ).resolves.toMatchObject({ path: '/data/legacy-preview.jpg' });
+      expect(mocks.asset.getCurrentDevelop).toHaveBeenCalledTimes(2);
+    });
+
     it('should require asset.view permissions', async () => {
       await expect(sut.viewThumbnail(authStub.admin, 'id', {})).rejects.toBeInstanceOf(BadRequestException);
 

@@ -21,6 +21,7 @@ import type { HiddenContentFilter, HiddenContentQueryOptions } from 'src/utils/h
 import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { AssetFile, LockableProperty, Stack } from 'src/database.js';
 import { Chunked, ChunkedArray, ChunkedSet, DummyValue, GenerateSql } from 'src/decorators.js';
+import { AssetDevelopRevisionStatus } from 'src/dtos/asset-develop.dto.js';
 import {
   AssetFileType,
   AssetLockReason,
@@ -2818,6 +2819,23 @@ export class AssetRepository {
       .select(['asset.ownerId', 'asset.originalPath', 'asset.originalFileName', 'asset_file.path as path'])
       .orderBy('asset_file.isEdited', isEdited ? 'desc' : 'asc')
       .executeTakeFirstOrThrow();
+  }
+
+  /** The owner's current rendered develop version, separate from legacy asset_file edits. */
+  async getCurrentDevelop(id: string) {
+    const { rows } = await sql<{
+      id: string;
+      ownerId: string;
+      status: AssetDevelopRevisionStatus;
+      previewPath: string | null;
+      masterPath: string | null;
+    }>`
+      SELECT id, "ownerId", status, "previewPath", "masterPath"
+      FROM immich_fork.asset_develop_revision
+      WHERE "assetId" = ${id}::uuid AND "isCurrent"
+      LIMIT 1
+    `.execute(this.db);
+    return rows[0];
   }
 
   @GenerateSql({ params: [DummyValue.UUID] })
