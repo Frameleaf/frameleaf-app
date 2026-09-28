@@ -73,6 +73,12 @@
         break;
       }
 
+      // FL-83 (AL-30b): items shared with you one by one open under Sharing › Shared with you.
+      case NotificationType.ItemShare: {
+        await goto(`${Route.sharing()}?section=shared-with-you`);
+        break;
+      }
+
       case NotificationType.ClusterGroupRequest: {
         await goto(Route.userSettings({ isOpen: OpenQueryParam.SHARING }));
         break;

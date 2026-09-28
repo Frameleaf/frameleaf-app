@@ -43,8 +43,12 @@ export const libraryUrlWithoutAsset = (url: URL, assetId: string): string => {
 export const isInaccessibleAssetError = (error: unknown) =>
   isHttpError(error) && [400, 403, 404].includes(error.status);
 
-/** The Command Center (FL-71) opens an item over its page with `?assetId=`, for utilities and Trash alike. */
-const isCommandCenter = () => page.url.pathname === COMMAND_CENTER_PATH;
+/**
+ * Pages that open an item over themselves with `?assetId=`: the Command Center (FL-71), for utilities
+ * and Trash alike, and Sharing, for the items shared with you one by one (FL-83 AL-30b).
+ */
+const QUERY_VIEWER_PATHS = new Set([COMMAND_CENTER_PATH, '/sharing']);
+const isCommandCenter = () => QUERY_VIEWER_PATHS.has(page.url.pathname);
 
 function currentUrlWithoutAsset() {
   if (isCommandCenter()) {

@@ -103,6 +103,7 @@ export const getAssetActions = (
             isVideo: asset.type === AssetTypeEnum.Video,
             originalFileName: asset.originalFileName,
             size: asset.exifInfo?.fileSizeInByte ?? undefined,
+            ownerId: asset.ownerId,
           },
         ],
       }),

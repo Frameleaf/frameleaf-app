@@ -13,7 +13,7 @@
     onClose,
   }: {
     assetIds: string[];
-    assets?: { id: string; isVideo: boolean; originalFileName?: string; size?: number }[];
+    assets?: { id: string; isVideo: boolean; originalFileName?: string; size?: number; ownerId?: string }[];
     onClose: () => void;
   } = $props();
 

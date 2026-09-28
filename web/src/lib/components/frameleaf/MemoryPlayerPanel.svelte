@@ -1503,7 +1503,11 @@
 <ShareSheet
   bind:open={shareOpen}
   assetIds={currentTimelineAssets.map((asset) => asset.id)}
-  assets={currentTimelineAssets.map((asset) => ({ id: asset.id, isVideo: asset.type === AssetTypeEnum.Video }))}
+  assets={currentTimelineAssets.map((asset) => ({
+    id: asset.id,
+    isVideo: asset.type === AssetTypeEnum.Video,
+    ownerId: asset.ownerId,
+  }))}
 />
 
 <Dialog title={$t('frameleaf_memories_rename')} closeLabel={$t('close')} bind:open={renameOpen}>
