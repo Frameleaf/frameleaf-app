@@ -1,4 +1,11 @@
-import { AssetMediaResponseDto, getDuplicateReview, LoginResponseDto, updateAssets } from '@immich/sdk';
+import {
+  AssetMediaResponseDto,
+  DuplicateDecisionKind,
+  getDuplicateDecisions,
+  getDuplicateReview,
+  LoginResponseDto,
+  updateAssets,
+} from '@immich/sdk';
 import { expect, test } from '@playwright/test';
 import crypto from 'node:crypto';
 import { asBearerAuth, utils } from 'src/utils.js';
@@ -91,6 +98,60 @@ test.describe('Duplicate review', () => {
         { timeout: 30_000 },
       )
       .toBe(before);
+  });
+
+  test('keeps two copies from a contact sheet with keyboard shortcuts', async ({ page }) => {
+    const initialGroups = await reviewGroups();
+    const duplicateId = initialGroups.find((group) =>
+      group.assets.some((asset) => asset.id === firstAsset.id),
+    )?.duplicateId;
+    if (!duplicateId) {
+      throw new Error('New duplicate group was not found');
+    }
+    const thirdAsset = await utils.createAsset(admin.accessToken, {});
+    await updateAssets(
+      { assetBulkUpdateDto: { ids: [thirdAsset.id], duplicateId } },
+      { headers: asBearerAuth(admin.accessToken) },
+    );
+
+    const updatedGroups = await reviewGroups();
+    const group = updatedGroups.find((group) => group.duplicateId === duplicateId);
+    if (!group || group.assets.length !== 3) {
+      throw new Error('Expected a three-copy duplicate group');
+    }
+    const keepAssetIds = group.assets.slice(0, 2).map((asset) => asset.id);
+
+    await page.goto('/utilities/duplicates');
+    const review = page.getByTestId('frameleaf-duplicate-review');
+    await review.locator('input[type="search"]').fill(duplicateId);
+    await review.getByRole('heading', { level: 2 }).focus();
+    await page.keyboard.press('1');
+    await page.keyboard.press('2');
+
+    const sheet = review.getByRole('group', { name: 'Group contact sheet' });
+    await expect(sheet.getByRole('checkbox', { name: 'Keep frame 1' })).toBeChecked();
+    await expect(sheet.getByRole('checkbox', { name: 'Keep frame 2' })).toBeChecked();
+    await expect(sheet.getByRole('checkbox', { name: 'Keep frame 3' })).not.toBeChecked();
+    await page.keyboard.press('e');
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+
+    await expect
+      .poll(
+        async () => {
+          const history = await getDuplicateDecisions({ headers: asBearerAuth(admin.accessToken) });
+          const decision = history.recent
+            .flatMap((batch) => batch.groups)
+            .find((group) => group.duplicateId === duplicateId);
+          return decision?.applied
+            ? { kind: decision.decision, keepAssetIds: decision.keepAssetIds.toSorted((a, b) => a.localeCompare(b)) }
+            : null;
+        },
+        { timeout: 30_000 },
+      )
+      .toEqual({
+        kind: DuplicateDecisionKind.Keepers,
+        keepAssetIds: keepAssetIds.toSorted((a, b) => a.localeCompare(b)),
+      });
   });
 
   test('lists only the signed-in account’s groups, each complete', async () => {
