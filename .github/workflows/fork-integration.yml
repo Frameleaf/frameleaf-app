@@ -36,7 +36,10 @@ jobs:
           node .github/check-release.cjs
           node .github/check-jira.cjs
           node --test docker/frameleaf-delivery.test.mjs
-          node --test .github/frameleaf-release.test.cjs .github/frameleaf-deploy-test.test.cjs
+          node --test \
+            .github/frameleaf-release.test.cjs \
+            .github/frameleaf-deploy-test.test.cjs \
+            .github/verify-release-bundle.test.cjs
       - name: Install plugin WASM, API generation and ffmpeg tools
         env:
           GITHUB_TOKEN: ${{ github.token }}
