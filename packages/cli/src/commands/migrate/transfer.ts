@@ -9,15 +9,16 @@ import type { Controller } from 'src/commands/migrate/controller';
 import type { Ledger } from 'src/commands/migrate/ledger';
 import type { AssetRecord, MigrateOptions } from 'src/commands/migrate/types';
 import { Queue } from 'src/queue';
-import { sha256 } from 'src/utils';
+import { hashFile } from 'src/utils';
 
 const BATCH = 1000;
 
 /**
  * Phase 3: for every asset not already on B, stream the original from A to a temp file,
- * compute its SHA-256, and upload it to B with `x-immich-checksum`. Runs a fresh bounded
- * Queue per batch so task objects never accumulate. The SHA-256 we compute is what B
- * stores, so it's persisted for the audit.
+ * compute both digests, upload with the compatible SHA-1 header, and record B's actual
+ * checksum (SHA-1 on official, SHA-256 on the fork). Runs a fresh bounded
+ * Queue per batch so task objects never accumulate. B's confirmed checksum is
+ * persisted for the audit.
  */
 export async function transfer(
   from: ServerClient,
@@ -43,17 +44,23 @@ export async function transfer(
       }
       await pipeline(Readable.fromWeb(res.body as Parameters<typeof Readable.fromWeb>[0]), createWriteStream(tmp));
       const { size } = await stat(tmp);
-      const checksum = await sha256(tmp, 'base64');
+      const hashes = await hashFile(tmp);
+      const sha1 = Buffer.from(hashes.sha1, 'hex').toString('base64');
+      const sha256 = Buffer.from(hashes.sha256, 'hex').toString('base64');
       const uploaded = await to.uploadAsset({
         filepath: tmp,
         size,
         filename: asset.filename,
-        checksum,
+        checksum: sha1,
         fileCreatedAt: asset.fileCreatedAt,
         fileModifiedAt: asset.fileModifiedAt,
         isFavorite: asset.isFavorite,
         visibility: asset.visibility,
       });
+      const { checksum } = await to.getAssetInfo(uploaded.id);
+      if (checksum !== sha1 && checksum !== sha256) {
+        throw new Error(`destination checksum differs from uploaded bytes for ${asset.aId}`);
+      }
       const via = uploaded.status === AssetMediaStatus.Duplicate ? 'duplicate' : 'upload';
       ledger.setAssetUploaded(asset.aId, uploaded.id, via, checksum);
     } finally {

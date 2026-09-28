@@ -1,0 +1,41 @@
+services:
+  official-database:
+    image: frameleaf-postgres:fork-roundtrip
+    command: -c fsync=off -c shared_preload_libraries=vchord.so -c config_file=/var/lib/postgresql/data/postgresql.conf
+    environment:
+      POSTGRES_DB: immich
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_USER: postgres
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d immich']
+      interval: 1s
+      timeout: 5s
+      retries: 60
+    volumes:
+      - official-database-data:/var/lib/postgresql/data
+
+  official-redis:
+    image: docker.io/valkey/valkey:9@sha256:8436e10bc65c94886a91d4415b6a6dfa9cb5a306fb3b996e5bb67cd2b4854193
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 1s
+      timeout: 5s
+      retries: 30
+
+  official-server:
+    environment:
+      DB_HOSTNAME: official-database
+      REDIS_HOSTNAME: official-redis
+    depends_on:
+      official-database:
+        condition: service_healthy
+      official-redis:
+        condition: service_healthy
+    ports: !override
+      - '2288:2283'
+    volumes: !override
+      - official-upload-data:/data
+
+volumes:
+  official-database-data:
+  official-upload-data:

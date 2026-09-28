@@ -21,6 +21,7 @@ import type { MigrateOptions, MigrateRawOptions } from 'src/commands/migrate/typ
 const SOURCE_REQUIRED = [Permission.AssetRead, Permission.AssetDownload, Permission.AlbumRead, Permission.TagRead];
 const SOURCE_OPTIONAL = [Permission.StackRead, Permission.PersonRead];
 const DEST_REQUIRED = [
+  Permission.AssetRead,
   Permission.AssetUpload,
   Permission.AssetUpdate,
   Permission.AlbumCreate,

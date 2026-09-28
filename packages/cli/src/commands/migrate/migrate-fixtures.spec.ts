@@ -34,6 +34,7 @@ interface FixtureAsset {
 }
 
 const sha256 = (bytes: Buffer) => createHash('sha256').update(bytes).digest('base64');
+const sha1 = (bytes: Buffer) => createHash('sha1').update(bytes).digest('base64');
 
 const readBody = async (req: IncomingMessage): Promise<Buffer> => {
   const chunks: Buffer[] = [];
@@ -156,7 +157,7 @@ class SourceFixture {
   }
 }
 
-/** SERVER B: stores uploads by checksum, like a real destination's per-user dedup. */
+/** SERVER B: stores new uploads as SHA-1, like the certified official server. */
 class DestinationFixture {
   uploads = 0;
   assets = new Map<string, { id: string; checksum: string }>();
@@ -206,6 +207,11 @@ class DestinationFixture {
       this.uploads++;
       this.onUpload?.(this.uploads);
       return send(res, 201, { id, status: 'created' });
+    }
+    const getAsset = /^GET \/assets\/([^/]+)$/.exec(route);
+    if (getAsset) {
+      const asset = [...this.assets.values()].find(({ id }) => id === getAsset[1]);
+      return asset ? send(res, 200, asset) : send(res, 404, { message: 'missing asset' });
     }
     if (/^PUT \/assets\/[^/]+(\/metadata)?$/.test(route)) {
       return send(res, 200, route.endsWith('/metadata') ? [] : {});
@@ -429,6 +435,7 @@ describe('migrate against disposable source/destination fixtures', () => {
     expect(destination.uploads).toBe(5); // each original uploaded exactly once overall
     expect(resumed!.ok).toBe(true);
     expect(resumed!.assets).toEqual({ total: 5, transferred: 5, checked: 5, verified: 5, missing: 0, failed: 0 });
+    expect(destination.assets.has(sha1(source.assets[0].bytes))).toBe(true);
 
     // A third, repeated run transfers nothing and still passes.
     const { report: repeated } = await run(options());
