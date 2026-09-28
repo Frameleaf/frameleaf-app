@@ -43,11 +43,27 @@ export const ITEM_SHARE_HIDDEN = 'Hidden items cannot be shared. Unhide them fir
  */
 @Injectable()
 export class ItemShareService extends BaseService {
+  @OnEvent({ name: 'AssetHide' })
+  async onAssetHide({ assetId }: ArgOf<'AssetHide'>): Promise<void> {
+    await this.onAssetLocked({ assetIds: [assetId] });
+  }
+
   @OnEvent({ name: 'AssetLocked' })
   async onAssetLocked({ assetIds }: ArgOf<'AssetLocked'>): Promise<void> {
-    const recipients = await this.itemShareRepository.getRecipients(assetIds);
+    let recipients;
+    try {
+      recipients = await this.itemShareRepository.getRecipients(assetIds);
+    } catch (error) {
+      this.logger.warn(`Could not notify item-share recipients after hiding ${assetIds.join(', ')}: ${error}`);
+      return;
+    }
+
     for (const { assetId, sharedWithId } of recipients) {
-      this.websocketRepository.clientSend('on_asset_hidden', sharedWithId, assetId);
+      try {
+        this.websocketRepository.clientSend('on_asset_hidden', sharedWithId, assetId);
+      } catch (error) {
+        this.logger.warn(`Could not notify item-share recipient ${sharedWithId} after hiding ${assetId}: ${error}`);
+      }
     }
   }
 
