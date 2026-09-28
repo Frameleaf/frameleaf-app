@@ -149,14 +149,7 @@ const readJson = async (root, file) =>
     file,
   );
 
-export async function validateContracts(root) {
-  const [issueMap, backlog, attribution, manifest, provenance] =
-    await Promise.all(CONTRACT_FILES.map((file) => readJson(root, file)));
-  const canonicalBacklog = await readJson(root, CANONICAL_BACKLOG);
-  const narrative = await readFile(path.join(root, NARRATIVE), "utf8");
-  for (const record of [issueMap, attribution, manifest]) {
-    assert.equal(record.engineRevision, FREECUT_COMMIT);
-  }
+export function assertPinnedSource(provenance) {
   assert.equal(provenance.commit, FREECUT_COMMIT);
   assert.equal(provenance.repository, "https://github.com/walterlow/freecut");
   assert.equal(provenance.archiveUrl, FREECUT_ARCHIVE_URL);
@@ -180,6 +173,17 @@ export async function validateContracts(root) {
     assert.deepEqual(Object.keys(row).sort(), ["path", "sha256"]);
   }
   assert.equal(digest(JSON.stringify(provenance.files)), FREECUT_LEDGER_SHA256);
+}
+
+export async function validateContracts(root) {
+  const [issueMap, backlog, attribution, manifest, provenance] =
+    await Promise.all(CONTRACT_FILES.map((file) => readJson(root, file)));
+  const canonicalBacklog = await readJson(root, CANONICAL_BACKLOG);
+  const narrative = await readFile(path.join(root, NARRATIVE), "utf8");
+  for (const record of [issueMap, attribution, manifest]) {
+    assert.equal(record.engineRevision, FREECUT_COMMIT);
+  }
+  assertPinnedSource(provenance);
   const provenanceByPath = new Map(
     provenance.files.map((entry) => [entry.path, entry.sha256]),
   );

@@ -7,7 +7,7 @@ import { cp, lstat, mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } f
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { packageAttribution, auditAttribution } from './attribution.mjs';
-import { parseJsonRejectingDuplicateKeys } from '../../scripts/frameleaf-studio-contracts.mjs';
+import { assertPinnedSource, parseJsonRejectingDuplicateKeys } from '../../scripts/frameleaf-studio-contracts.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
@@ -47,6 +47,7 @@ export function licenses(lock) {
 
 async function inputs() {
   const provenance = await json(path.join(root, 'studio/freecut-provenance.json'));
+  assertPinnedSource(provenance);
   const configuration = await json(path.join(root, 'studio/engine-build.json'));
   assert.equal(configuration.upstreamCommit, provenance.commit);
   assert.equal(configuration.lockfileSha256, sha256(await readFile(path.join(root, 'studio/engine-package-lock.json'))));

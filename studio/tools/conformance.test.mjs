@@ -26,6 +26,7 @@ test('missing, duplicate, unknown, unowned and inferred rows fail', async () => 
     (data) => data.overlay.rows.push(data.overlay.rows[0]),
     (data) => { data.overlay.rows[0].id = 'unknown'; },
     (data) => { delete data.overlay.rows[0].owner; },
+    (data) => { data.overlay.rows[0].owner.jiraKey = 'FL-999'; },
     (data) => { delete data.overlay.rows[0].axes.safari; },
     (data) => { data.overlay.rows[0].axes.command = { status: 'deferred', reason: 'native deferred' }; },
     (data) => { data.overlay.rows[0].axes.preview = { status: 'not-applicable', reason: 'skip requested rendering' }; },
