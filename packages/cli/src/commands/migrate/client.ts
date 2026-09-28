@@ -165,6 +165,7 @@ export class ServerClient {
   // --- dedup / download ---
   checkBulkUpload = (assets: Array<{ id: string; checksum: string }>) =>
     this.json<AssetBulkUploadCheckResponseDto>('POST', '/assets/bulk-upload-check', { assets });
+  getAssetInfo = (id: string) => this.json<AssetResponseDto>('GET', `/assets/${id}`);
 
   /** Streamed original bytes. Caller pipes `response.body` to disk. */
   downloadOriginal = (id: string) => this.request('GET', `/assets/${id}/original`);
@@ -174,7 +175,7 @@ export class ServerClient {
     filepath: string;
     size: number;
     filename: string;
-    checksum: string; // base64 SHA-256 -> x-immich-checksum
+    checksum: string; // base64 SHA-1, accepted by both the fork and certified official server
     fileCreatedAt: string;
     fileModifiedAt: string;
     isFavorite: boolean;

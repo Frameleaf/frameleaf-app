@@ -118,6 +118,31 @@ jobs:
           MACHINE_LEARNING_TEST_FULL: 'false'
         run: .venv/bin/python -m pytest -q
 
+  cli-fork-to-official:
+    if: github.repository == 'Frameleaf/frameleaf-app'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: '.nvmrc'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @immich/sdk build && pnpm --filter @immich/cli build
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Migrate one asset and album from fork to certified official server
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/test-cli-fork-to-official.mjs
+
   machine-learning-containers:
     if: github.repository == 'Frameleaf/frameleaf-app'
     runs-on: ubuntu-24.04
