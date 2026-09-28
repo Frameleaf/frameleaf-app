@@ -10,6 +10,7 @@ import {
   isEndedStage,
   preparingRetryMs,
   runHeadKey,
+  upscaleFact,
 } from '$lib/frameleaf/cloud-jobs';
 
 const cloud = (cost: Partial<ActivityCloudJob['cost']> = {}): ActivityCloudJob => ({
@@ -118,5 +119,24 @@ describe('Frameleaf Cloud job helpers (FL-162)', () => {
     });
     // an ended job holds nothing, so the hold is not shown
     expect(cloudCostFacts(cloud({ settledUsd: 1.31 }), 'done')).toHaveLength(3);
+  });
+});
+
+describe('photo upscale under the 64 MP output cap (FC-46)', () => {
+  const upscale = { requestedScale: 4, appliedScale: 2, lowered: true, outputWidth: 8000, outputHeight: 6000 };
+
+  it('shows a lowered factor with what it changes, before the owner confirms', () => {
+    expect(upscaleFact({ upscale })).toEqual({
+      valueKey: 'frameleaf_cloud_job_upscale_lowered',
+      helpKey: 'frameleaf_cloud_job_upscale_lowered_help',
+      values: { scale: 2, requested: 4, width: (8000).toLocaleString(), height: (6000).toLocaleString() },
+    });
+  });
+
+  it('shows the factor plainly when the cap did not lower it, and nothing for other work', () => {
+    expect(
+      upscaleFact({ upscale: { ...upscale, appliedScale: 4, lowered: false, outputWidth: 8000, outputHeight: 6000 } }),
+    ).toMatchObject({ valueKey: 'frameleaf_cloud_job_upscale_value', helpKey: null });
+    expect(upscaleFact({ upscale: null })).toBeNull();
   });
 });
