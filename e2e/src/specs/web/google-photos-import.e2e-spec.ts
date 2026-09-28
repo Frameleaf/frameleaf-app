@@ -2,11 +2,57 @@ import {
   createTakeoutArchive,
   createTakeoutImport,
   getTakeoutImport,
+  getTakeoutItems,
   uploadTakeoutArchiveChunk,
   type LoginResponseDto,
 } from '@immich/sdk';
 import { expect, test } from '@playwright/test';
+import { readFile } from 'node:fs/promises';
+import { crc32 } from 'node:zlib';
+import { makeRandomImage } from 'src/generators.js';
 import { asBearerAuth, utils } from 'src/utils.js';
+
+const zip = (entries: { name: string; data: Buffer }[]) => {
+  const parts: Buffer[] = [];
+  const directory: Buffer[] = [];
+  let offset = 0;
+  for (const { name, data } of entries) {
+    const filename = Buffer.from(name);
+    const checksum = crc32(data);
+    const local = Buffer.alloc(30 + filename.length);
+    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt16LE(20, 4);
+    local.writeUInt16LE(0x800, 6);
+    local.writeUInt32LE(checksum, 14);
+    local.writeUInt32LE(data.length, 18);
+    local.writeUInt32LE(data.length, 22);
+    local.writeUInt16LE(filename.length, 26);
+    filename.copy(local, 30);
+
+    const central = Buffer.alloc(46 + filename.length);
+    central.writeUInt32LE(0x02014b50, 0);
+    central.writeUInt16LE(20, 4);
+    central.writeUInt16LE(20, 6);
+    central.writeUInt16LE(0x800, 8);
+    central.writeUInt32LE(checksum, 16);
+    central.writeUInt32LE(data.length, 20);
+    central.writeUInt32LE(data.length, 24);
+    central.writeUInt16LE(filename.length, 28);
+    central.writeUInt32LE(offset, 42);
+    filename.copy(central, 46);
+    parts.push(local, data);
+    directory.push(central);
+    offset += local.length + data.length;
+  }
+  const index = Buffer.concat(directory);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(entries.length, 8);
+  end.writeUInt16LE(entries.length, 10);
+  end.writeUInt32LE(index.length, 12);
+  end.writeUInt32LE(offset, 16);
+  return Buffer.concat([...parts, index, end]);
+};
 
 test.describe('Google Photos import (FL-144)', () => {
   let admin: LoginResponseDto;
@@ -54,5 +100,66 @@ test.describe('Google Photos import (FL-144)', () => {
       .poll(async () => (await getTakeoutImport({ id: takeout.id }, auth)).sources[0].received)
       .toBe(bytes.length);
     await expect(dialog.getByRole('button', { name: 'Continue' })).toBeEnabled();
+  });
+
+  test('reviews conflicting sidecars and downloads the reconciled report', async ({ context, page }) => {
+    test.setTimeout(60_000);
+    const auth = { headers: asBearerAuth(admin.accessToken) };
+    const mediaPath = 'Takeout/Google Photos/Trip/IMG_1.png';
+    const sidecar = (description: string) =>
+      Buffer.from(JSON.stringify({ title: 'IMG_1.png', description, photoTakenTime: { timestamp: '1700000000' } }));
+    const bytes = zip([
+      { name: mediaPath, data: makeRandomImage() },
+      { name: `${mediaPath}.json`, data: sidecar('First description') },
+      { name: `${mediaPath}.supplemental-metadata.json`, data: sidecar('Chosen description') },
+    ]);
+    const takeout = await createTakeoutImport({ takeoutCreateDto: { name: 'Sidecar review' } }, auth);
+    const archive = await createTakeoutArchive(
+      { id: takeout.id, takeoutArchiveCreateDto: { name: 'takeout.zip', size: bytes.length } },
+      auth,
+    );
+    await uploadTakeoutArchiveChunk(
+      { id: takeout.id, archiveId: archive.id, offset: 0, body: new Blob([bytes]) },
+      { ...auth, headers: { ...auth.headers, 'Content-Type': 'application/octet-stream' } },
+    );
+
+    await utils.setAuthCookies(context, admin.accessToken);
+    await page.goto(`/user-settings?area=backup&section=takeout&workflow=import&import=${takeout.id}`);
+    const dialog = page.getByRole('dialog', { name: 'Import Google Photos' });
+    await dialog.getByRole('button', { name: 'Continue' }).click();
+    await expect
+      .poll(async () => (await getTakeoutImport({ id: takeout.id }, auth)).state, { timeout: 30_000 })
+      .toBe('review');
+    await expect(dialog.getByRole('group', { name: 'Import details' })).toBeVisible();
+    await expect(
+      dialog.getByText('Several metadata sidecars disagree. Choose one, or import without one.'),
+    ).toBeVisible();
+
+    const item = (await getTakeoutItems({ id: takeout.id }, auth)).items[0];
+    expect(item.candidates).toHaveLength(2);
+    const chosen = item.candidates.find((candidate) => candidate.metadata.description === 'Chosen description');
+    expect(chosen).toBeDefined();
+    await dialog.getByLabel('Metadata sidecar').selectOption(chosen!.id);
+    await dialog.getByRole('button', { name: 'Use this choice' }).click();
+    await expect.poll(async () => (await getTakeoutItems({ id: takeout.id }, auth)).items[0].state).toBe('ready');
+
+    await page.reload();
+    await expect(dialog.getByText('Chosen description', { exact: true })).toBeVisible();
+    await dialog.getByRole('button', { name: 'Report' }).click();
+    const jsonEvent = page.waitForEvent('download');
+    await dialog.getByRole('button', { name: 'Download report (JSON)' }).click();
+    const jsonDownload = await jsonEvent;
+    expect(jsonDownload.suggestedFilename()).toMatch(/^google-photos-import-\d{4}-\d{2}-\d{2}-report\.json$/);
+    const report = JSON.parse(await readFile(await jsonDownload.path(), 'utf8'));
+    expect(report.import.id).toBe(takeout.id);
+    expect(report.items).toHaveLength(1);
+    expect(report.items[0]).toMatchObject({ path: 'Trip/IMG_1.png', state: 'ready', sidecarId: chosen!.id });
+    expect(report.items[0].metadata.description).toBe('Chosen description');
+
+    const csvEvent = page.waitForEvent('download');
+    await dialog.getByRole('button', { name: 'Download report (CSV)' }).click();
+    const csvDownload = await csvEvent;
+    expect(csvDownload.suggestedFilename()).toMatch(/-report\.csv$/);
+    expect(await readFile(await csvDownload.path(), 'utf8')).toContain('Trip/IMG_1.png,takeout.zip,image,ready,');
   });
 });
