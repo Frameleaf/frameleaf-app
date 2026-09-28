@@ -1,4 +1,6 @@
+import { load as takeout } from '../(user)/takeout/+page';
 import { load as trash } from '../(user)/trash/[[photos=photos]]/[[assetId=id]]/+page';
+import { load as jobsStatus } from './jobs-status/+page';
 import { load as maintenance } from './maintenance/+page';
 import { load as integrityReport } from './maintenance/integrity-report/[type]/+page';
 import { load as deduplication } from './physical-deduplication/+page';
@@ -6,6 +8,7 @@ import { load as destinations } from './processing-destinations/+page';
 import { load as queues } from './queues/+page';
 import { load as queue } from './queues/[name]/+page';
 import { load as renderWorkers } from './render-workers/+page';
+import { load as serverStatus } from './server-status/+page';
 import { load as users } from './users/(list)/+page';
 import { load as newUser } from './users/(list)/new/+page';
 import { load as user } from './users/[id]/+page';
@@ -94,6 +97,31 @@ describe('old addresses of Command Center sections', () => {
       `/admin/users/${id}/edit`,
       () => editUser({ url: at(`/admin/users/${id}/edit`), params: { id } } as never),
       `/user-settings?area=users&section=accounts&user=${id}&edit=1`,
+    ],
+    [
+      '/admin/server-status',
+      async () => serverStatus({ url: at('/admin/server-status') } as never),
+      '/user-settings?area=analytics',
+    ],
+    [
+      '/admin/server-status?scope=user&range=30d',
+      async () => serverStatus({ url: at('/admin/server-status?scope=user&range=30d') } as never),
+      '/user-settings?area=analytics&scope=user&range=30d',
+    ],
+    [
+      '/admin/jobs-status',
+      async () => jobsStatus({ url: at('/admin/jobs-status') } as never),
+      '/user-settings?area=processing&section=queues',
+    ],
+    [
+      '/takeout',
+      () => takeout({ url: at('/takeout') } as never),
+      '/user-settings?area=backup&section=takeout&workflow=import',
+    ],
+    [
+      `/takeout?import=${id}`,
+      () => takeout({ url: at(`/takeout?import=${id}`) } as never),
+      `/user-settings?area=backup&section=takeout&workflow=import&import=${id}`,
     ],
     ['/trash', () => trash({ url: at('/trash'), params: {} } as never), '/user-settings?area=trash&section=contents'],
     [
