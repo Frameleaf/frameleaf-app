@@ -221,6 +221,8 @@ test("owned workflows have no upstream service secrets, write-trigger PR executi
 });
 
 test("legacy publishing and upstream mutations are inert and cannot inherit secrets", () => {
+  const mise = readFileSync(path.join(root, "mise.toml"), "utf8");
+  assert.doesNotMatch(mise, /^\[tasks\.release\]$/mu);
   const disabled = [
     "sdk.yml",
     "docs-deploy.yml",
