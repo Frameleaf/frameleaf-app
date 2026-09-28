@@ -14,15 +14,22 @@
   import ToolButton from '$lib/components/frameleaf/Button.svelte';
   import BulkFormDialog from '$lib/components/frameleaf/BulkFormDialog.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
+  import IconButton from '$lib/components/frameleaf/IconButton.svelte';
   import TileJobState from '$lib/components/frameleaf/TileJobState.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { BulkController } from '$lib/frameleaf/bulk-controller.svelte';
   import { durableBulkTracker } from '$lib/frameleaf/durable-bulk-tracker.svelte';
   import { getAssetMediaUrl, getAssetPlaybackUrl } from '$lib/utils';
   import { handleError } from '$lib/utils/handle-error';
-  import { AssetMediaSize, getAssetInfo, LivePhotoMatchConfidence, type LivePhotoCandidateDto } from '@immich/sdk';
+  import {
+    AssetMediaSize,
+    getAssetInfo,
+    LivePhotoMatchConfidence,
+    updateAsset,
+    type LivePhotoCandidateDto,
+  } from '@immich/sdk';
   import { Icon } from '@immich/ui';
-  import { mdiPlayCircleOutline } from '@mdi/js';
+  import { mdiClose, mdiPlayCircleOutline, mdiUndo } from '@mdi/js';
   import { t, type Translations } from 'svelte-i18n';
   import type { UtilityData } from '$lib/frameleaf/utilities-load';
   type PageData = Extract<UtilityData, { tool: 'live-photos' }>;
@@ -47,6 +54,32 @@
   let reviewOpen = $state(false);
 
   const bulk = new BulkController({ dispatch: () => {} });
+
+  /** The notice after a link (UtilitiesManager.jsx:433-455), with Undo while it can be taken back. */
+  let notice = $state('');
+  /** Photo ids the last immediate link changed; Undo unlinks exactly these. */
+  let undoPhotoIds = $state<string[]>([]);
+  let undoing = $state(false);
+
+  const undoLast = async () => {
+    const photoIds = undoPhotoIds;
+    if (photoIds.length === 0 || undoing) {
+      return;
+    }
+    undoing = true;
+    undoPhotoIds = [];
+    const results = await Promise.allSettled(
+      photoIds.map((id) => updateAsset({ ...authManager.params, id, updateAssetDto: { livePhotoVideoId: null } })),
+    );
+    const unlinked = photoIds.filter((_, index) => results[index].status === 'fulfilled');
+    const next = new Set(linkedPhotoIds);
+    for (const id of unlinked) {
+      next.delete(id);
+    }
+    linkedPhotoIds = next;
+    notice = unlinked.length === photoIds.length ? $t('library_care_undone') : $t('library_care_undo_partial');
+    undoing = false;
+  };
 
   let query = $state('');
   let account = $state('all');
@@ -159,6 +192,10 @@
         return;
       }
       linkedPhotoIds = new Set([...linkedPhotoIds, ...result.succeeded]);
+      if (result.succeeded.length > 0) {
+        notice = $t('frameleaf_utilities_items_updated', { values: { count: result.succeeded.length } });
+        undoPhotoIds = [...result.succeeded];
+      }
       if (result.failed.length > 0) {
         const next = new Map(failureReasons);
         for (const outcome of result.failed) {
@@ -173,6 +210,25 @@
 </script>
 
 <div class="live-photos-tool">
+  {#if notice}
+    <div role="status" class="message">
+      <span>{notice}</span>
+      {#if undoPhotoIds.length > 0}
+        <ToolButton disabled={undoing} onclick={undoLast}>
+          <span class="with-icon"><Icon icon={mdiUndo} size="1rem" aria-hidden={true} />{$t('undo')}</span>
+        </ToolButton>
+      {/if}
+      <IconButton
+        label={$t('library_care_dismiss_message')}
+        onclick={() => {
+          notice = '';
+          undoPhotoIds = [];
+        }}
+      >
+        <Icon icon={mdiClose} size="1rem" />
+      </IconButton>
+    </div>
+  {/if}
   <div class="scope-controls">
     <label
       >{$t('account')}<select bind:value={account}>
@@ -228,8 +284,8 @@
           <span class="badge" class:warning={candidate.confidence === LivePhotoMatchConfidence.Low}
             >{$t(
               candidate.confidence === LivePhotoMatchConfidence.High
-                ? 'live_photos_confidence_high'
-                : 'live_photos_confidence_low',
+                ? 'frameleaf_live_photos_confidence_high'
+                : 'frameleaf_live_photos_confidence_low',
             )}</span
           >
           {#if linked}<span class="badge">{$t('frameleaf_live_photos_linked')}</span>{/if}
@@ -253,7 +309,7 @@
   {#if !data.candidates.suggestionsEnabled}
     <!-- Library care → "Suggest Live Photo relinking" is off (FL-69): nothing was looked for. -->
     <p class="empty" role="status">{$t('library_care_live_photos_off')}</p>
-  {:else if rows.length === 0}<p class="empty">{$t('live_photos_no_candidates')}</p>{/if}
+  {:else if rows.length === 0}<p class="empty">{$t('frameleaf_live_photos_no_candidates')}</p>{/if}
 </div>
 
 {#if inspect}
@@ -320,6 +376,26 @@
 {/if}
 
 <style>
+  .message {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--fl-border);
+    border-left: 3px solid var(--fl-teal);
+    border-radius: var(--fl-radius-card);
+    background: var(--fl-raised);
+  }
+  .message > span {
+    flex: 1;
+  }
+  .with-icon {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+  }
   .scope-controls {
     display: flex;
     flex-wrap: wrap;
