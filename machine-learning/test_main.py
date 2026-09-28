@@ -1025,6 +1025,7 @@ class TestOrtSession:
     OV_EP = ["OpenVINOExecutionProvider", "CPUExecutionProvider"]
     CUDA_EP_OUT_OF_ORDER = ["CPUExecutionProvider", "CUDAExecutionProvider"]
     TRT_EP = ["TensorrtExecutionProvider", "CUDAExecutionProvider", "CPUExecutionProvider"]
+    TRT_RTX_EP = ["nv_tensorrt_rtx", "CUDAExecutionProvider", "CPUExecutionProvider"]
     ROCM_EP = ["MIGraphXExecutionProvider", "CPUExecutionProvider"]
     COREML_EP = ["CoreMLExecutionProvider", "CPUExecutionProvider"]
 
@@ -1058,6 +1059,12 @@ class TestOrtSession:
         session = OrtSession("ViT-B-32__openai")
 
         assert session.providers == self.CUDA_EP
+
+    @pytest.mark.providers(TRT_RTX_EP)
+    def test_leaves_cuda_out_beside_tensorrt_rtx(self, providers: list[str]) -> None:
+        session = OrtSession("ViT-B-32__openai")
+
+        assert session.providers == ["nv_tensorrt_rtx", "CPUExecutionProvider"]
 
     @pytest.mark.providers(ROCM_EP)
     def test_uses_rocm(self, providers: list[str]) -> None:
@@ -1191,6 +1198,35 @@ class TestOrtSession:
         session = OrtSession("ViT-B-32__openai", providers=["CUDAExecutionProvider"])
 
         assert session.provider_options == [{"arena_extend_strategy": "kSameAsRequested", "device_id": "1"}]
+
+    def test_sets_provider_options_for_tensorrt_rtx(self, mocker: MockerFixture) -> None:
+        model_path = "/cache/ViT-B-32__openai/textual/model.onnx"
+        os.environ["MACHINE_LEARNING_DEVICE_ID"] = "1"
+        mkdir = mocker.patch("frameleaf_ml.sessions.ort.Path.mkdir")
+
+        session = OrtSession(model_path, providers=["nv_tensorrt_rtx", "CPUExecutionProvider"])
+
+        assert session.provider_options == [
+            {"device_id": "1", "nv_runtime_cache_path": "/cache/ViT-B-32__openai/textual/trt-rtx"},
+            {"arena_extend_strategy": "kSameAsRequested"},
+        ]
+        mkdir.assert_called_once_with(parents=True, exist_ok=True)
+
+    def test_serializes_tensorrt_rtx_sessions_and_runs(self, mocker: MockerFixture) -> None:
+        lock = FakeLock()
+        mocker.patch("frameleaf_ml.sessions.ort._trt_rtx_lock", lock)
+        mocker.patch("frameleaf_ml.sessions.ort.Path.mkdir")
+        input_feed = {"input": np.random.rand(1, 3, 224, 224).astype(np.float32)}
+
+        session = OrtSession("/cache/ViT-B-32__openai/model.onnx", providers=["nv_tensorrt_rtx"])
+        assert lock.enter.call_count == 1  # opening a session records too
+
+        session.run(None, input_feed)
+        session.run(None, input_feed)
+
+        assert lock.enter.call_count == 3
+        assert lock.exit.call_count == 3
+        session.session.run.assert_has_calls([mock.call(None, input_feed, None), mock.call(None, input_feed, None)])
 
     def test_sets_provider_options_for_rocm(self, mocker: MockerFixture) -> None:
         model_path = "/cache/ViT-B-32__openai/textual/model.onnx"

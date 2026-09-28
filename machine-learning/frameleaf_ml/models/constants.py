@@ -149,6 +149,7 @@ def get_inpaint_model_file(model_name: str) -> InpaintModelFile | None:
 
 
 SUPPORTED_PROVIDERS = [
+    "nv_tensorrt_rtx",
     "CUDAExecutionProvider",
     "MIGraphXExecutionProvider",
     "OpenVINOExecutionProvider",

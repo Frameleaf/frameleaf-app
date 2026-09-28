@@ -14,6 +14,7 @@ from uuid import uuid4
 import numpy as np
 import onnxruntime as ort
 from numpy.typing import NDArray
+from onnxruntime.capi.onnxruntime_pybind11_state import Fail
 
 from frameleaf_ml.models.constants import SUPPORTED_PROVIDERS
 from frameleaf_ml.native_ort import current_policy
@@ -21,6 +22,23 @@ from frameleaf_ml.schemas import ModelPrecision, SessionNode
 from frameleaf_ml.sessions import runtime_cache_dir
 
 from ..config import log, settings
+
+# TensorRT-RTX comes as a plugin provider (onnxruntime-ep-nv-tensorrt-rtx-cu12, the cuda extra): registered here,
+# it is listed and taken by the name it gives itself rather than by an ...ExecutionProvider name
+TRT_RTX = "nv_tensorrt_rtx"
+try:
+    import onnxruntime_ep_nv_tensorrt_rtx as nv_tensorrt_rtx
+except ImportError:
+    pass
+else:
+    try:
+        ort.register_execution_provider_library(nv_tensorrt_rtx.get_ep_name(), nv_tensorrt_rtx.get_library_path())
+    except Fail as e:
+        log.info(f"TensorRT-RTX is unavailable: {e}")
+
+# TensorRT-RTX records CUDA graphs in global capture mode, which fails any other thread's synchronizing call, and as its
+# context memory can move between runs, any run may record: so its sessions open and run one at a time
+_trt_rtx_lock = Lock()
 
 MigraphxInputSignature = tuple[tuple[str, str, tuple[int, ...]], ...]
 
@@ -126,6 +144,7 @@ class OrtSession:
             providers = requested
         self.device_id = device_id
         self.providers = providers if providers is not None else self._providers_default
+        self._run_lock = _trt_rtx_lock if TRT_RTX in self.providers else nullcontext()
         self.disabled_optimizers = _disabled_optimizers_default(self.providers)
         log.debug(f"Setting disabled_optimizers to {self.disabled_optimizers}")
         self.provider_options = provider_options if provider_options is not None else self._provider_options_default
@@ -133,13 +152,14 @@ class OrtSession:
         if native is not None and native.profile_dir is not None:
             self.sess_options.enable_profiling = True
             self.sess_options.profile_file_prefix = str(native.profile_dir / f"native-{uuid4().hex}")
-        self.session = ort.InferenceSession(
-            self.model_path.as_posix(),
-            providers=self.providers,
-            provider_options=self.provider_options,
-            sess_options=self.sess_options,
-            disabled_optimizers=self.disabled_optimizers,
-        )
+        with self._run_lock:
+            self.session = ort.InferenceSession(
+                self.model_path.as_posix(),
+                providers=self.providers,
+                provider_options=self.provider_options,
+                sess_options=self.sess_options,
+                disabled_optimizers=self.disabled_optimizers,
+            )
         if native is not None:
             self.session.disable_fallback()
             if native.provider not in self.session.get_providers():
@@ -190,7 +210,8 @@ class OrtSession:
                 outputs = self.session.run(output_names, input_feed, run_options)
                 return outputs
 
-            outputs = self.session.run(output_names, input_feed, run_options)
+            with self._run_lock:
+                outputs = self.session.run(output_names, input_feed, run_options)
             return outputs
 
     def _specialize_coreml(self, input_feed: dict[str, NDArray[Any]]) -> None:
@@ -266,7 +287,12 @@ class OrtSession:
     def _providers_default(self) -> list[str]:
         available_providers = set(ort.get_available_providers())
         log.debug(f"Available ORT providers: {available_providers}")
-        return [provider for provider in SUPPORTED_PROVIDERS if provider in available_providers]
+        providers = [provider for provider in SUPPORTED_PROVIDERS if provider in available_providers]
+        if TRT_RTX in providers:
+            providers.remove(
+                "CUDAExecutionProvider"
+            )  # CUDA EP syncs the legacy stream each run, which a recording fails
+        return providers
 
     @property
     def provider_options(self) -> list[dict[str, Any]]:
@@ -287,6 +313,10 @@ class OrtSession:
                     options = {"arena_extend_strategy": "kSameAsRequested"}
                 case "CUDAExecutionProvider":
                     options = {"arena_extend_strategy": "kSameAsRequested", "device_id": settings.device_id}
+                case "nv_tensorrt_rtx":
+                    trt_rtx_dir = runtime_cache_dir(self.model_path) / "trt-rtx"
+                    trt_rtx_dir.mkdir(parents=True, exist_ok=True)
+                    options = {"device_id": settings.device_id, "nv_runtime_cache_path": trt_rtx_dir.as_posix()}
                 case "MIGraphXExecutionProvider":
                     migraphx_dir = runtime_cache_dir(self.model_path) / "migraphx"
                     # MIGraphX does not create the underlying folder and will crash if it does not exist
