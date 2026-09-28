@@ -1,10 +1,29 @@
 import { Injectable } from '@nestjs/common';
 import ffmpeg from 'fluent-ffmpeg';
-import { StudioReverseSource } from 'src/utils/studio-reverse-conform.js';
+import { StudioReverseGeometry, StudioReverseSource } from 'src/utils/studio-reverse-conform.js';
 
 /** Local ffmpeg only. The service supplies authorized paths and a bounded, probed source. */
 @Injectable()
 export class StudioReverseConformRepository {
+  /** Coded dimensions bound decoder memory; MediaRepository's width describes display geometry. */
+  probeGeometry(input: string, streamIndex: number): Promise<StudioReverseGeometry> {
+    return new Promise((resolve, reject) => {
+      // eslint-disable-next-line import-x/no-named-as-default-member
+      ffmpeg.ffprobe(input, ['-protocol_whitelist', 'file,pipe'], (error, data) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        const stream = data.streams.find((entry) => entry.index === streamIndex && entry.codec_type === 'video');
+        resolve({
+          width: Number(stream?.width),
+          height: Number(stream?.height),
+          sampleAspectRatio: stream?.sample_aspect_ratio,
+        });
+      });
+    });
+  }
+
   reverse(
     input: string,
     output: string,

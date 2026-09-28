@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { ExpressionBuilder, Insertable, Kysely, Selectable, sql } from 'kysely';
+import { ExpressionBuilder, Insertable, Kysely, Selectable, Transaction, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { randomUUID } from 'node:crypto';
 import type { PostgresError } from 'postgres';
@@ -1031,7 +1031,7 @@ export class MediaOperationRepository {
   async publishValidated(
     id: string,
     claimToken: string,
-    publish: (trx: Kysely<DB>) => Promise<boolean>,
+    publish: (trx: Transaction<DB>) => Promise<boolean>,
   ): Promise<'completed' | 'rejected' | 'lost'> {
     return this.db.transaction().execute(async (trx) => {
       await lockPublicForkWrites(trx, MEDIA_OPERATION_HANDOFF_REFUSAL);

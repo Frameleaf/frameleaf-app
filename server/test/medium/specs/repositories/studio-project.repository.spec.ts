@@ -450,6 +450,7 @@ describe(StudioProjectRepository.name, () => {
       };
       await expect(
         operations.publishValidated(operation.id, claim!.claimToken, async (tx) => {
+          expect(tx.isTransaction).toBe(true);
           await sut.registerGeneratedResource(resource, tx);
           throw new Error('publication rolled back');
         }),

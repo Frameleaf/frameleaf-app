@@ -50,8 +50,13 @@ describe('local source reverse executor', () => {
       input,
     ]);
     const media = new MediaRepository(LoggingRepository.create());
-    const source = checkStudioReverseSource(await media.probe(input), await media.probePackets(input, 0));
-    await new StudioReverseConformRepository().reverse(input, output, source, new AbortController().signal, () => {});
+    const renderer = new StudioReverseConformRepository();
+    const source = checkStudioReverseSource(
+      await media.probe(input),
+      await media.probePackets(input, 0),
+      await renderer.probeGeometry(input, 0),
+    );
+    await renderer.reverse(input, output, source, new AbortController().signal, () => {});
     checkStudioReverseOutput(source, await media.probe(output, { countFrames: true }));
     const videoIn = (await ffmpeg(['-i', input, '-map', '0:v:0', '-f', 'rawvideo', '-pix_fmt', 'yuv420p', 'pipe:1']))
       .stdout;
@@ -73,5 +78,37 @@ describe('local source reverse executor', () => {
       audioIn.copy(reversed, offset, audioIn.length - offset - 8, audioIn.length - offset);
     }
     expect(audioOut).toEqual(reversed);
+  });
+
+  it('refuses anamorphic coded pixels hidden behind a display width inside the limit', async () => {
+    const input = join(folder, 'anamorphic.mkv');
+    await ffmpeg([
+      '-f',
+      'lavfi',
+      '-i',
+      'testsrc2=size=1920x32:rate=3:duration=1',
+      '-vf',
+      'setsar=1/2',
+      '-c:v',
+      'ffv1',
+      '-pix_fmt',
+      'yuv420p',
+      '-color_primaries',
+      'bt709',
+      '-color_trc',
+      'bt709',
+      '-colorspace',
+      'bt709',
+      '-color_range',
+      'tv',
+      input,
+    ]);
+    const media = new MediaRepository(LoggingRepository.create());
+    const info = await media.probe(input);
+    const packets = await media.probePackets(input, 0);
+    const geometry = await new StudioReverseConformRepository().probeGeometry(input, 0);
+    expect(info.videoStreams[0].width).toBe(960);
+    expect(geometry).toEqual({ width: 1920, height: 32, sampleAspectRatio: '1:2' });
+    expect(() => checkStudioReverseSource(info, packets, geometry)).toThrow('square-pixel');
   });
 });

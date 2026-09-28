@@ -3,8 +3,21 @@ import { checkStudioReverseOutput, checkStudioReverseSource } from 'src/utils/st
 import { reversePackets, reverseVideoInfo } from 'test/fixtures/studio-reverse-conform.stub.js';
 
 describe('local source reversal contract', () => {
+  it.each([
+    { width: 1920, height: 32, sampleAspectRatio: '1:2' },
+    { width: 32, height: 32, sampleAspectRatio: '2:1' },
+    { width: 32, height: 32, sampleAspectRatio: undefined },
+    { width: 32, height: 1080, sampleAspectRatio: '1:1' },
+  ])('refuses unsafe or unknown coded geometry %j', (geometry) => {
+    expect(() => checkStudioReverseSource(reverseVideoInfo(), reversePackets(), geometry)).toThrow('square-pixel');
+  });
+
   it('retains the exact source cadence and checks the actual output frame count', () => {
-    const source = checkStudioReverseSource(reverseVideoInfo(), reversePackets());
+    const source = checkStudioReverseSource(reverseVideoInfo(), reversePackets(), {
+      width: 32,
+      height: 32,
+      sampleAspectRatio: '1:1',
+    });
     expect(source.frameRate).toEqual({ num: 3, den: 1 });
     expect(() => checkStudioReverseOutput(source, reverseVideoInfo())).not.toThrow();
     const partial = reverseVideoInfo();
@@ -48,7 +61,13 @@ describe('local source reversal contract', () => {
           },
         ];
       }
-      expect(() => checkStudioReverseSource(info, packets)).toThrow('Local source reversal currently requires');
+      expect(() =>
+        checkStudioReverseSource(info, packets, {
+          width: 32,
+          height: 32,
+          sampleAspectRatio: '1:1',
+        }),
+      ).toThrow('Local source reversal currently requires');
     },
   );
 });
