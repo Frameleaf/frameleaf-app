@@ -204,10 +204,7 @@ test.describe('Face tagging (FL-38)', () => {
       email: 'face-album-viewer@example.com',
       password: 'password',
     });
-    await setUserOnboarding(
-      { onboardingDto: { isOnboarded: true } },
-      { headers: asBearerAuth(member.accessToken) },
-    );
+    await setUserOnboarding({ onboardingDto: { isOnboarded: true } }, { headers: asBearerAuth(member.accessToken) });
     const album = await utils.createAlbum(admin.accessToken, {
       albumName: 'Face write boundary',
       assetIds: [asset.id],
@@ -241,9 +238,9 @@ test.describe('Face tagging (FL-38)', () => {
       await dialog.getByRole('button', { name: 'Jamie', exact: true }).click();
       await dialog.getByRole('button', { name: 'Save face tags' }).click();
       await expect(dialog).toBeHidden();
-      await expect.poll(async () => (await getFaces({ id: asset.id }, { headers: headers() }))[0]?.person?.id).toBe(
-        jamie.id,
-      );
+      await expect
+        .poll(async () => (await getFaces({ id: asset.id }, { headers: headers() }))[0]?.person?.id)
+        .toBe(jamie.id);
 
       await memberPage.reload();
       await expect(memberPage.getByTestId('preview').filter({ visible: true })).toHaveAttribute('src', /.+/);

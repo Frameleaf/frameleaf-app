@@ -9,10 +9,10 @@ import {
 } from '@immich/sdk';
 import { toastManager } from '@immich/ui';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
-import { assetFactory } from '@test-data/factories/asset-factory';
 import { readEditorContinuity } from '$lib/frameleaf/editor-continuity';
 import { clearPrivateBrowserState } from '$lib/frameleaf/private-browser-state';
 import type { VideoDraft } from '$lib/frameleaf/video-edit';
+import { assetFactory } from '@test-data/factories/asset-factory';
 import VideoQuickEditor from './VideoQuickEditor.svelte';
 
 /**

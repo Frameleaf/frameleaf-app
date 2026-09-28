@@ -183,13 +183,11 @@ describe('/item-shares', () => {
       .get('/item-shares/received')
       .set('Authorization', auth(jamie))
       .expect(200);
-    expect(receivedBefore.body.items.map(({ asset }: { asset: { id: string } }) => asset.id)).toContain(privateAsset.id);
+    expect(receivedBefore.body.items.map(({ asset }: { asset: { id: string } }) => asset.id)).toContain(
+      privateAsset.id,
+    );
 
-    await request(app)
-      .post('/auth/pin-code')
-      .set('Authorization', auth(owner))
-      .send({ pinCode: '246810' })
-      .expect(204);
+    await request(app).post('/auth/pin-code').set('Authorization', auth(owner)).send({ pinCode: '246810' }).expect(204);
     await request(app)
       .post('/auth/session/unlock')
       .set('Authorization', auth(owner))
