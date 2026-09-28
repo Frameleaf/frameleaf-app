@@ -1,6 +1,7 @@
 import { AssetVisibility, updateAsset, type AssetResponseDto } from '@immich/sdk';
 import {
   canCopyImageToClipboard,
+  copyAssetImageToClipboard,
   getAssetFilename,
   getFilenameExtension,
   ignoreCancelledDownload,
@@ -120,5 +121,44 @@ describe('ignoreCancelledDownload', () => {
   it('passes every other failure on', async () => {
     const failed = Promise.reject(new Error('network'));
     await expect(failed.catch(ignoreCancelledDownload)).rejects.toThrow('network');
+  });
+});
+
+describe('copyAssetImageToClipboard (FL-83 AL-31)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('writes the item as a PNG within the click, loading its preview inside the clipboard item', async () => {
+    const write = vi.fn(() => Promise.resolve());
+    const items: Record<string, unknown>[] = [];
+    vi.stubGlobal(
+      'ClipboardItem',
+      class {
+        constructor(data: Record<string, unknown>) {
+          items.push(data);
+        }
+      },
+    );
+    vi.stubGlobal('navigator', { ...navigator, clipboard: { write } });
+    const created: HTMLImageElement[] = [];
+    const RealImage = Image;
+    vi.stubGlobal(
+      'Image',
+      class extends RealImage {
+        constructor() {
+          super();
+          created.push(this);
+        }
+      },
+    );
+
+    await copyAssetImageToClipboard('asset-1');
+
+    expect(write).toHaveBeenCalledTimes(1);
+    expect(Object.keys(items[0])).toEqual(['image/png']);
+    expect(items[0]['image/png']).toBeInstanceOf(Promise);
+    expect(created[0].src).toContain('/assets/asset-1/thumbnail');
+    expect(created[0].src).toContain('size=preview');
   });
 });

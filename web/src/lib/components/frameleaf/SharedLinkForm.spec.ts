@@ -1,9 +1,9 @@
-import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { SharedLinkType } from '@immich/sdk';
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { addMessages } from 'svelte-i18n';
 import { sharedLinkFactory } from '$lib/../test-data/factories/shared-link-factory';
+import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { handleCreateSharedLink, handleUpdateSharedLink } from '$lib/services/shared-link.service';
 import en from '../../../../../i18n/en.json';
 import SharedLinkForm from './SharedLinkForm.svelte';
@@ -64,7 +64,11 @@ describe('SharedLinkForm', () => {
     const first = render(SharedLinkForm, { open: true, link });
 
     await fireEvent.click(screen.getByRole('button', { name: en.save }));
-    expect(handleUpdateSharedLink).toHaveBeenCalledWith(link, expect.objectContaining({ password: undefined }), saveOptions);
+    expect(handleUpdateSharedLink).toHaveBeenCalledWith(
+      link,
+      expect.objectContaining({ password: undefined }),
+      saveOptions,
+    );
 
     // A successful save closes the form, so the second edit opens it again.
     first.unmount();
