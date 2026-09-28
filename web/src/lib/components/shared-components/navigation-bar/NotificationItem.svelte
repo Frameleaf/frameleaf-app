@@ -6,6 +6,7 @@
     mdiBackupRestore,
     mdiImageAlbum,
     mdiImagePlus,
+    mdiShareVariantOutline,
     mdiInformationOutline,
     mdiMessageBadgeOutline,
     mdiReply,
@@ -67,6 +68,10 @@
 
       case NotificationType.AlbumUpdate: {
         return mdiImagePlus;
+      }
+
+      case NotificationType.ItemShare: {
+        return mdiShareVariantOutline;
       }
 
       case NotificationType.SharedSpaceMention: {

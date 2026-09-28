@@ -44,6 +44,7 @@ import { ForkSchemaRepository } from 'src/repositories/fork-schema.repository.js
 import { FrameleafAccountRepository } from 'src/repositories/frameleaf-account.repository.js';
 import { FrameleafUserLicenseRepository } from 'src/repositories/frameleaf-user-license.repository.js';
 import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
+import { ItemShareRepository } from 'src/repositories/item-share.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LibraryRepository } from 'src/repositories/library.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -552,6 +553,7 @@ const newRealRepository = <T extends MediumRepositoryKey>(key: T, db: Kysely<DB>
     case SessionRepository:
     case SharedLinkRepository:
     case SharedLinkAssetRepository:
+    case ItemShareRepository:
     case SmartAlbumRepository:
     case StackRepository:
     case StudioProjectRepository:
