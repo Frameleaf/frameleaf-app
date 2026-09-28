@@ -1,4 +1,4 @@
-import { DuplicateGroupKind } from '@immich/sdk';
+import { DuplicateGroupBlock, DuplicateGroupKind } from '@immich/sdk';
 import { mdiChevronDoubleLeft, mdiChevronRight } from '@mdi/js';
 import { render, screen } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
@@ -27,9 +27,9 @@ const group = (id: string, members: string[]): ReviewGroup => ({
   qualities: [],
 });
 
-const setup = () => {
-  const lake = group('lake', ['a', 'b']);
-  const forest = group('forest', ['c', 'd']);
+const setup = (blocked: Partial<ReviewGroup> = {}) => {
+  const lake = { ...group('lake', ['a', 'b']), ...blocked };
+  const forest = { ...group('forest', ['c', 'd']), ...blocked };
   const gateway = {
     getReview: vi.fn().mockResolvedValue([lake, forest]),
     getHistory: vi.fn().mockResolvedValue({ recent: [], active: [] }),
@@ -84,5 +84,15 @@ describe('DuplicateReview', () => {
     overlay.remove();
     await userEvent.keyboard('{ArrowRight}');
     expect(screen.getByText(/Group 2 of 2/)).toBeInTheDocument();
+  });
+
+  it('names the owners who can decide a group blocked by another account (UT-20)', () => {
+    setup({ editable: false, blockedReason: DuplicateGroupBlock.OtherOwner, otherOwnerNames: ['Emma', 'Jamie'] });
+    expect(screen.getByText('Only Emma and Jamie can decide what to keep in this group.')).toBeInTheDocument();
+  });
+
+  it('keeps the generic line when no owner names came with the group', () => {
+    setup({ editable: false, blockedReason: DuplicateGroupBlock.OtherOwner });
+    expect(screen.getByText(en.frameleaf_duplicates_blocked_other_owner)).toBeInTheDocument();
   });
 });

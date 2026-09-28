@@ -4386,6 +4386,7 @@
   "frameleaf_documents_use_value": "Use {value}",
   "frameleaf_duplicates_blocked_hidden": "{count, plural, one {# photo in this group is} other {# photos in this group are}} hidden in this session. Unlock to review the whole group.",
   "frameleaf_duplicates_blocked_other_owner": "This group includes a photo from another account. Only the owner of every photo in a group can decide what to keep.",
+  "frameleaf_duplicates_blocked_owners": "Only {owners} can decide what to keep in this group.",
   "frameleaf_duplicates_bulk_hint": "Decide once. Continue immediately. Undo any recent decision.",
   "frameleaf_duplicates_bulk_needs_choice": "{count, plural, one {# group needs} other {# groups need}} you to choose keepers. Stacking preserves every photo.",
   "frameleaf_duplicates_bulk_would_delete": "{count, plural, one {# other copy} other {# other copies}} would be deleted permanently when keeping suggestions.",

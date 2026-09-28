@@ -57320,6 +57320,13 @@
           "kind": {
             "$ref": "#/components/schemas/DuplicateGroupKind"
           },
+          "otherOwnerNames": {
+            "description": "Display names of the other accounts owning photos of a group blocked by another owner",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "qualities": {
             "items": {
               "$ref": "#/components/schemas/DuplicateReviewQualityDto"
