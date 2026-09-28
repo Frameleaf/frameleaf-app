@@ -3,6 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
+import { ColorMatrix, ColorPrimaries, ColorTransfer } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
 import { StudioReverseConformRepository } from 'src/repositories/studio-reverse-conform.repository.js';
@@ -33,8 +34,13 @@ describe('local source reverse executor', () => {
       'lavfi',
       '-i',
       'aevalsrc=0.1*sin(2*PI*100*t)|0.2*sin(2*PI*200*t):s=48000:d=1',
+      // Encoder flags alone do not stamp the lavfi frames' primaries/transfer into FFV1.
+      '-vf',
+      'setparams=range=limited:color_primaries=bt709:color_trc=bt709:colorspace=bt709',
       '-c:v',
       'ffv1',
+      '-level',
+      '3',
       '-c:a',
       'pcm_f32le',
       '-pix_fmt',
@@ -51,8 +57,15 @@ describe('local source reverse executor', () => {
     ]);
     const media = new MediaRepository(LoggingRepository.create());
     const renderer = new StudioReverseConformRepository();
+    const info = await media.probe(input);
+    expect(info.videoStreams[0]).toMatchObject({
+      colorPrimaries: ColorPrimaries.Bt709,
+      colorTransfer: ColorTransfer.Bt709,
+      colorMatrix: ColorMatrix.Bt709,
+      colorRange: 'tv',
+    });
     const source = checkStudioReverseSource(
-      await media.probe(input),
+      info,
       await media.probePackets(input, 0),
       await renderer.probeGeometry(input, 0),
     );
@@ -88,9 +101,11 @@ describe('local source reverse executor', () => {
       '-i',
       'testsrc2=size=1920x32:rate=3:duration=1',
       '-vf',
-      'setsar=1/2',
+      'setsar=1/2,setparams=range=limited:color_primaries=bt709:color_trc=bt709:colorspace=bt709',
       '-c:v',
       'ffv1',
+      '-level',
+      '3',
       '-pix_fmt',
       'yuv420p',
       '-color_primaries',
