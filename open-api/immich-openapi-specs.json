@@ -44988,6 +44988,15 @@
             "description": "Is shared album",
             "type": "boolean"
           },
+          "smartKind": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SmartAlbumBuiltInKind"
+              }
+            ],
+            "description": "Built-in smart album kind behind this album, when it is a built-in smart album",
+            "nullable": true
+          },
           "smartRuleId": {
             "description": "Your classification rule behind this smart album, when it is one of yours",
             "nullable": true,

@@ -1,4 +1,4 @@
-import { AlbumKind, AlbumUserRole, type AlbumTreeResponseDto } from '@immich/sdk';
+import { AlbumKind, AlbumUserRole, SmartAlbumBuiltInKind, type AlbumTreeResponseDto } from '@immich/sdk';
 import { fireEvent, screen, waitFor, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { init, register, waitLocale } from 'svelte-i18n';
@@ -293,7 +293,7 @@ describe('AlbumDirectory', () => {
     const show = vi.spyOn(modalManager, 'show').mockResolvedValue(undefined as never);
     (authManager.user as { isAdmin: boolean }).isAdmin = true;
     try {
-      const food = owned({ id: 'food', albumName: 'Food', isSmart: true, smartKind: 'food' });
+      const food = owned({ id: 'food', albumName: 'Food', isSmart: true, smartKind: SmartAlbumBuiltInKind.Food });
       renderWithTooltips(AlbumDirectory, { tree: { ...tree, albums: [food] }, onRefresh: vi.fn() });
 
       await fireEvent.click(screen.getByRole('button', { name: 'Actions for Food' }));
