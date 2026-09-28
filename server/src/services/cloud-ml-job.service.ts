@@ -86,6 +86,7 @@ import {
   CLOUD_ML_JOB_PREPARING_RETRY_SECONDS,
   CLOUD_ML_JOB_PREVIEW_SECONDS,
   CLOUD_ML_JOB_PRICE_TOLERANCE,
+  CLOUD_ML_JOB_RUNTIME_CAP_MESSAGE,
   CLOUD_ML_JOB_STEPS_PER_TICK,
   CLOUD_ML_JOB_TICK_MS,
   CloudMlJobCost,
@@ -94,6 +95,7 @@ import {
   CloudMlJobPhase,
   CloudMlJobResult,
   CloudMlJobSnapshot,
+  CloudMlJobUpscale,
   CloudMlJobWorkload,
   cloudMlJobActivity,
   cloudMlJobBackoffMs,
@@ -116,6 +118,8 @@ import { getConfig } from 'src/utils/config.js';
 import { CloudConnectionState, CloudMlGatewayDeps, resolveCloudGateway } from 'src/utils/frameleaf-cloud-gateway.js';
 import { CloudJobInputError, FrameleafCloudJobClient } from 'src/utils/frameleaf-cloud-job-client.js';
 import {
+  CLOUD_RESULT_OUTPUT_ID,
+  CLOUD_UPSCALE_RESULT_MAX_BYTES,
   CloudCatalogEntry,
   CloudEstimate,
   CloudJobView,
@@ -123,17 +127,23 @@ import {
   FrameleafCloudError,
   catalogGroupKey,
   cloudErrorCode,
+  cloudUpscaleAppliedScale,
   estimateUsable,
   isFinalCloudJobStatus,
+  isIdempotencyInFlight,
+  isIdempotencyKeyReused,
   isNewWorkPaused,
   offeredCatalogModels,
   pausedException,
+  upscaleResultSchema,
 } from 'src/utils/frameleaf-cloud.js';
+import { AudioChannelPolicy, findAudioLayoutMismatch, findAvAlignmentMismatch } from 'src/utils/media-policy.js';
 import {
-  STRIP_VIDEO_METADATA_OPTIONS,
+  audioReattachOffsetSeconds,
+  fullVideoUploadOutputOptions,
   previewClipOutputOptions,
+  reattachAudioOutputOptions,
   strippedStillFormat,
-  strippedVideoStreams,
   uploadClipOutputOptions,
 } from 'src/utils/media-privacy.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
@@ -486,7 +496,7 @@ export class CloudMlJobService {
       throw error instanceof CloudMlJobFailure ? new BadRequestException(error.message) : error;
     }
 
-    const request = this.requestOf(workload, settings);
+    const request = this.requestOf(workload, settings, prepared.size);
     let sealed: CloudEstimate;
     let wallet: Awaited<ReturnType<FrameleafCloudMlRepository['getWallet']>>;
     let consent: Awaited<ReturnType<FrameleafCloudMlRepository['getConsent']>>;
@@ -509,6 +519,17 @@ export class CloudMlJobService {
       throw this.clientError(error);
     }
 
+    let upscale: CloudMlJobUpscale | undefined;
+    try {
+      upscale = workload === 'upscale' ? this.upscaleQuote(sealed, settings.upscale, prepared.size) : undefined;
+    } catch (error) {
+      await this.removeWorkDir(workDir);
+      throw error instanceof CloudMlJobFailure ? new BadRequestException(error.message) : error;
+    }
+    // the version is the photo times the factor it really gets, never capped again here
+    const output = upscale
+      ? { width: upscale.input.width * upscale.appliedScale, height: upscale.input.height * upscale.appliedScale }
+      : prepared.output;
     const workers = plannedWorkers(sealed, model.rate.startFeeUsd);
     const quantity = video
       ? { unit: 'minute' as const, value: (prepared.durationSeconds ?? 0) / 60 }
@@ -536,8 +557,9 @@ export class CloudMlJobService {
       inputs: [prepared.input],
       workDir,
       beforePath: prepared.beforePath,
-      output: prepared.output,
+      output,
       durationSeconds: prepared.durationSeconds,
+      ...(upscale && { upscale }),
       sealed: sealed.estimate,
       approved: {
         estimateId: id,
@@ -583,6 +605,48 @@ export class CloudMlJobService {
       refusal: this.walletRefusal(wallet, availableUsd, sealed.cost.hold),
       // everyone may see what a job would cost; only those allowed may confirm it
       permission: await this.spendPermission(auth, sealed.cost.hold, now),
+      upscale: upscale
+        ? {
+            requestedScale: upscale.requestedScale,
+            appliedScale: upscale.appliedScale,
+            lowered: upscale.lowered,
+            outputWidth: output.width,
+            outputHeight: output.height,
+          }
+        : null,
+    };
+  }
+
+  /**
+   * FC-46 (owner decision 2026-09-27): the factor a photo upscale really gets. The 64 MP output cap
+   * stays, so the cloud lowers the factor of a photo the requested one would take over it and says so
+   * in `EstimateResponse.upscale`; the owner sees it before confirming, since it changes what is made
+   * and paid for. The cloud's answer is checked against the same rule it decides with.
+   */
+  private upscaleQuote(
+    sealed: CloudEstimate,
+    requested: number,
+    size: { width: number; height: number },
+  ): CloudMlJobUpscale {
+    const requestedScale = requested === 4 ? 4 : 2;
+    const quoted = sealed.upscale?.items.find((item) => item.inputId === 'v1')?.scale;
+    const expected = cloudUpscaleAppliedScale(size.width, size.height, requestedScale);
+    if (expected === null) {
+      throw new CloudMlJobFailure(
+        'cloud_ml_input_too_large',
+        'This photo is too large to upscale on Frameleaf Cloud: even 2× would go over the 64 MP limit',
+        false,
+      );
+    }
+    if (quoted !== undefined && quoted !== expected) {
+      this.logger.warn(`Frameleaf Cloud quoted ${quoted}× for a photo this server expected at ${expected}×`);
+    }
+    const appliedScale = quoted ?? expected;
+    return {
+      requestedScale,
+      appliedScale,
+      lowered: appliedScale < requestedScale || (sealed.upscale?.lowered.includes('v1') ?? false),
+      input: { width: size.width, height: size.height },
     };
   }
 
@@ -762,6 +826,7 @@ export class CloudMlJobService {
       durationSeconds: record.durationSeconds,
       approved: record.approved,
       estimateId: record.id,
+      ...(record.upscale && { upscale: record.upscale }),
       consent: {
         version: record.consent.version,
         textSha256: record.consent.textSha256,
@@ -831,7 +896,9 @@ export class CloudMlJobService {
     const smooth = record.purpose === 'smooth-motion';
     return {
       mode: smooth ? 'Smooth motion' : this.modeLabel(record.settings.mode),
-      ...(smooth ? { factor: record.settings.factor } : { upscale: record.settings.upscale }),
+      ...(smooth
+        ? { factor: record.settings.factor }
+        : { upscale: record.upscale?.appliedScale ?? record.settings.upscale }),
       preview: record.stage === 'preview',
       model: record.model.label,
       destination: destinationName,
@@ -878,7 +945,7 @@ export class CloudMlJobService {
         status: AssetRestorationStatus.PreviewQueued,
         mode: record.settings.mode,
         // a Smooth motion version keeps its frame-rate factor where a restoration keeps its upscale
-        upscale: smooth ? (record.settings.factor ?? 2) : record.settings.upscale,
+        upscale: smooth ? (record.settings.factor ?? 2) : (record.upscale?.appliedScale ?? record.settings.upscale),
         keepGrain: record.settings.keepGrain,
         workload: record.appWorkload,
         destinationId: destination.id,
@@ -1073,6 +1140,11 @@ export class CloudMlJobService {
    * False when the failure is the job's own (then it stops as before).
    */
   private async waitOut(run: JobRun, error: unknown, failure: CloudMlJobFailure | null): Promise<boolean> {
+    if (!run.result.job && error instanceof FrameleafCloudError && isIdempotencyInFlight(error)) {
+      // FC-43: the cloud is still processing this key's first request; the same key and body are sent
+      // again after `Retry-After` (the submission is recorded, so the replay is identical)
+      return this.waitForAdmission(run, error, failure);
+    }
     if (!run.result.job && isNewWorkPaused(error)) {
       // FC-62: the region takes no new jobs for now (503 `capacity`, the cloud's own words in the message):
       // the job waits for it as asked (`Retry-After`) a limited number of times, then fails with that message
@@ -1321,6 +1393,15 @@ export class CloudMlJobService {
     if (!(error instanceof FrameleafCloudError)) {
       return error;
     }
+    if (isIdempotencyKeyReused(error)) {
+      // FC-43: one key per job and one body per key, so this is a bug here: fail, never send again
+      this.logger.error(`Frameleaf Cloud job refused as a reused idempotency key: ${error.message}`);
+      return new CloudMlJobFailure(
+        'cloud_ml_idempotency_key_reused',
+        'Frameleaf Cloud refused this job because this server sent it twice with different details. Nothing was sent again; estimate it again.',
+        false,
+      );
+    }
     switch (error.refusal) {
       case MlAdmissionRefusal.WalletInsufficient: {
         return new CloudMlJobFailure(
@@ -1532,7 +1613,10 @@ export class CloudMlJobService {
     }
     this.recordCost(run, view);
 
-    const outputs = orderedOutputs(view.result?.outputs ?? []);
+    // FC-46/FC-47: a job's result document (output `result`) describes its media outputs; it is never one
+    const all = view.result?.outputs ?? [];
+    const document_ = all.find((output) => output.outputId === CLOUD_RESULT_OUTPUT_ID);
+    const outputs = orderedOutputs(all.filter((output) => output.outputId !== CLOUD_RESULT_OUTPUT_ID));
     const budgetStopped = view.status === 'cancelled_budget';
     const delivered = view.status === 'completed' || budgetStopped;
     if (delivered && outputs.length > 0 && !outputsComplete(outputs, view.progress, budgetStopped)) {
@@ -1548,16 +1632,21 @@ export class CloudMlJobService {
     if (!delivered || outputs.length === 0) {
       await this.acknowledge(run, client);
       await this.settleAccounting(run);
-      const reason = view.error?.message ?? `Frameleaf Cloud ended this job (${view.status.replaceAll('_', ' ')}).`;
+      const reason =
+        view.error?.code === 'runtime-cap'
+          ? CLOUD_ML_JOB_RUNTIME_CAP_MESSAGE
+          : (view.error?.message ?? `Frameleaf Cloud ended this job (${view.status.replaceAll('_', ' ')}).`);
       const code = `cloud_ml_job_${(view.error?.code ?? view.status).replaceAll('-', '_')}`;
       run.result = { ...run.result, phase: CloudMlJobPhase.Finished };
       await this.stop(run, new CloudMlJobFailure(code, reason, false));
       return;
     }
 
+    // an upscale is written at the factor its result document says the photo really got (FC-46)
+    const document = run.snapshot.workload === 'upscale' ? (document_ ?? null) : null;
     let files: string[] | null;
     try {
-      files = await client.download(view, outputs, run.snapshot.workDir, {
+      files = await client.download(view, document ? [...outputs, document] : outputs, run.snapshot.workDir, {
         done: run.result.downloaded,
         exists: (file) => this.storageRepository.checkFileExists(file),
         remove: (file) => this.storageRepository.unlink(file).catch(() => {}),
@@ -1580,6 +1669,17 @@ export class CloudMlJobService {
     }
     if (!files) {
       return;
+    }
+    if (document) {
+      const upscaleScale = await this.readUpscaleResult(run, files.at(-1)!);
+      files = files.slice(0, -1);
+      run.result = { ...run.result, upscaleScale };
+    } else if (run.snapshot.workload === 'upscale' && run.snapshot.upscale) {
+      throw new CloudMlJobFailure(
+        'cloud_ml_output_invalid',
+        'Frameleaf Cloud did not say which factor it upscaled this photo by, so nothing was published',
+        false,
+      );
     }
     run.result = { ...run.result, transientFailures: 0, waiting: null };
     if (!(await this.save(run))) {
@@ -1728,6 +1828,8 @@ export class CloudMlJobService {
             ...(snapshot.stage === 'preview'
               ? { previewReadyAt: now, previewExpiresAt: previewExpiryAfterReady(now) }
               : { restoredAt: now, outputWidth: output.width, outputHeight: output.height }),
+            // FC-46: the version records the factor its photo really got
+            ...(run.result.upscaleScale !== null && { upscale: run.result.upscaleScale }),
           },
           trx,
         );
@@ -1766,26 +1868,42 @@ export class CloudMlJobService {
     const { snapshot, operation } = run;
     const joined = outputs.length === 1 ? outputs[0] : await this.join(snapshot.workDir, outputs);
     const audioFrom = snapshot.stage === 'preview' ? snapshot.beforePath : original;
+    // CLD-202: the audio never went to the cloud; it is put back from this server's own copy, in step
+    // with the picture as it was there (its start offset against the first frame kept)
+    const audioSource = audioFrom ? await this.mediaRepository.probe(audioFrom) : null;
+    const sourceAudio = audioSource?.audioStreams[0];
+    const offset = audioReattachOffsetSeconds(audioSource?.videoStreams[0]?.startTime, sourceAudio?.startTime);
     const file = path.join(snapshot.workDir, `version-${operation.id}.mp4`);
     await this.storageRepository.unlink(file).catch(() => {});
     await this.mediaRepository.transcode(joined, file, {
       inputOptions: [],
-      outputOptions: [
-        ...(audioFrom ? ['-i', audioFrom, '-map', '0:v:0', '-map', '1:a?'] : ['-map', '0:v:0']),
-        '-c:v',
-        'copy',
-        '-c:a',
-        'copy',
-        '-shortest',
-        ...STRIP_VIDEO_METADATA_OPTIONS,
-        '-movflags',
-        '+faststart',
-      ],
+      outputOptions: reattachAudioOutputOptions(sourceAudio ? audioFrom : null, offset),
       twoPass: false,
       progress: { frameCount: 0, percentInterval: 5 },
     });
     const probe = await this.mediaRepository.probe(file);
     const stream = probe.videoStreams[0];
+    // FL-102: verified with ffprobe: the source's audio is there with its layout, and ends with the picture
+    const audioProblem = sourceAudio
+      ? (findAudioLayoutMismatch(
+          {
+            policy: AudioChannelPolicy.Preserve,
+            channels: sourceAudio.channels ?? null,
+            channelLayout: sourceAudio.channelLayout ?? null,
+            sampleRate: sourceAudio.sampleRate ?? null,
+          },
+          probe.audioStreams[0],
+        ) ?? findAvAlignmentMismatch(stream, probe.audioStreams[0]))
+      : probe.audioStreams.length > 0
+        ? 'it carries audio its source never had'
+        : null;
+    if (audioProblem) {
+      throw new CloudMlJobFailure(
+        'cloud_ml_audio_invalid',
+        `The video's own audio could not be put back in step: ${audioProblem}`,
+        false,
+      );
+    }
     const cap = snapshot.output;
     if (!stream || stream.width > cap.width + 1 || stream.height > cap.height + 1) {
       throw new CloudMlJobFailure(
@@ -1804,12 +1922,67 @@ export class CloudMlJobService {
     return { file, preview: null, width: stream.width, height: stream.height };
   }
 
+  /**
+   * FC-46: read the upscale job's result document and answer the factor this photo was really upscaled
+   * by (`UpscaleItem.scale`). The document must be the contract's, name this job's model, describe the
+   * photo that was declared, and give it an output; each output is its input times its own item's
+   * factor, never the document's requested one.
+   */
+  private async readUpscaleResult(run: JobRun, file: string): Promise<2 | 4> {
+    const { snapshot } = run;
+    const invalid = (detail: string) =>
+      new CloudMlJobFailure('cloud_ml_output_invalid', `The upscale result from Frameleaf Cloud ${detail}`, false);
+    const body = await this.storageRepository.readFile(file);
+    if (body.length > CLOUD_UPSCALE_RESULT_MAX_BYTES) {
+      throw invalid('is larger than the contract allows');
+    }
+    let parsed: ReturnType<typeof upscaleResultSchema.safeParse>;
+    try {
+      parsed = upscaleResultSchema.safeParse(JSON.parse(body.toString('utf8')));
+    } catch {
+      throw invalid('is not JSON');
+    }
+    if (!parsed.success) {
+      throw invalid('does not match the contract');
+    }
+    const result = parsed.data;
+    if (result.modelSku !== snapshot.model.sku) {
+      throw invalid('names another model');
+    }
+    const input = snapshot.inputs[0];
+    const item = result.items.find((entry) => entry.inputId === input?.inputId);
+    if (!item || item.scale === null || item.outputs.length === 0) {
+      throw invalid(`says the photo was not upscaled (${item?.warnings.join(', ') || 'no item'})`);
+    }
+    const declared = snapshot.upscale?.input;
+    if (declared && (item.input?.width !== declared.width || item.input?.height !== declared.height)) {
+      throw invalid('describes another photo than the one sent');
+    }
+    if (snapshot.upscale && item.scale !== snapshot.upscale.appliedScale) {
+      this.logger.warn(
+        `Frameleaf Cloud job ${run.operation.id}: upscaled at ${item.scale}×, quoted at ${snapshot.upscale.appliedScale}×`,
+      );
+    }
+    return item.scale;
+  }
+
   /** A photo version, checked against its size cap; a full render also gets a preview-sized copy. */
   private async assembleImage(run: JobRun, file: string) {
     const { snapshot, operation } = run;
     const cap = snapshot.output;
     const meta = await this.mediaRepository.getImageMetadata(file);
-    if (!(meta.width > 0 && meta.height > 0) || meta.width > cap.width + 1 || meta.height > cap.height + 1) {
+    const upscale = snapshot.upscale;
+    const scale = run.result.upscaleScale;
+    if (upscale && scale !== null) {
+      // FC-46: exactly the declared photo times the factor its own item was upscaled by
+      if (meta.width !== upscale.input.width * scale || meta.height !== upscale.input.height * scale) {
+        throw new CloudMlJobFailure(
+          'cloud_ml_output_invalid',
+          `The photo from Frameleaf Cloud is ${meta.width}×${meta.height}, not ${scale}× the photo that was sent`,
+          false,
+        );
+      }
+    } else if (!(meta.width > 0 && meta.height > 0) || meta.width > cap.width + 1 || meta.height > cap.height + 1) {
       throw new CloudMlJobFailure(
         'cloud_ml_output_invalid',
         'The photo from Frameleaf Cloud does not fit this version',
@@ -2238,6 +2411,8 @@ export class CloudMlJobService {
   ): Promise<{
     input: CloudMlJobInput;
     beforePath: string | null;
+    /** The prepared input's own pixel size (what an upscale declares). */
+    size: { width: number; height: number };
     output: { width: number; height: number };
     durationSeconds: number | null;
   }> {
@@ -2273,6 +2448,7 @@ export class CloudMlJobService {
         path: prepared.file,
       },
       beforePath: prepared.beforePath,
+      size: { width: prepared.width, height: prepared.height },
       output: cappedOutputSize(prepared.width, prepared.height, options.upscale),
       durationSeconds,
     };
@@ -2317,6 +2493,7 @@ export class CloudMlJobService {
       twoPass: false,
       progress: { frameCount: 0, percentInterval: 5 },
     });
+    await this.requireSilentUpload(file);
     const probe = await this.mediaRepository.probe(file);
     const stream = probe.videoStreams[0];
     if (!stream) {
@@ -2358,17 +2535,28 @@ export class CloudMlJobService {
     const filter = copy && codec ? sei[codec] : undefined;
     await this.mediaRepository.transcode(source.originalPath, file, {
       inputOptions: [],
-      outputOptions: [
-        ...strippedVideoStreams(false),
-        ...(copy ? ['-c:v', 'copy'] : ['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '12', '-pix_fmt', 'yuv420p']),
-        ...(filter ? ['-bsf:v', filter] : []),
-        ...STRIP_VIDEO_METADATA_OPTIONS,
-        ...(container === 'webm' ? [] : ['-movflags', '+faststart']),
-      ],
+      outputOptions: fullVideoUploadOutputOptions({ copy, bsf: filter, webm: container === 'webm' }),
       twoPass: false,
       progress: { frameCount: 0, percentInterval: 5 },
     });
+    await this.requireSilentUpload(file);
     return { file, contentType: copy ? plan.contentType : 'video/mp4' };
+  }
+
+  /**
+   * FC-47 (owner decision 2026-09-27): audio is never sent to Frameleaf Cloud, and its worker refuses a
+   * clip that still carries an audio stream. What is uploaded is probed first, and refused here when
+   * ffprobe finds any audio stream in it; the audio stays on this server and is put back afterwards.
+   */
+  private async requireSilentUpload(file: string) {
+    const probe = await this.mediaRepository.probe(file);
+    if (probe.audioStreams.length > 0) {
+      throw new CloudMlJobFailure(
+        'cloud_ml_input_has_audio',
+        'The copy prepared for Frameleaf Cloud still carries audio, so nothing was sent. Audio never leaves this server.',
+        false,
+      );
+    }
   }
 
   /**
@@ -2459,6 +2647,10 @@ export class CloudMlJobService {
           false,
         );
       }
+      if (run.snapshot.sourceType === 'video') {
+        // checked again before anything is sent: a copy prepared by an older version is never uploaded with audio
+        await this.requireSilentUpload(input.path);
+      }
     }
   }
 
@@ -2469,6 +2661,7 @@ export class CloudMlJobService {
   private requestOf(
     workload: CloudMlJobWorkload,
     settings: { mode: AssetRestorationMode; upscale: number; factor: number | null },
+    size?: { width: number; height: number },
   ): Record<string, unknown> {
     switch (workload) {
       case 'interpolation': {
@@ -2479,7 +2672,10 @@ export class CloudMlJobService {
         return { mode, scale: settings.upscale };
       }
       case 'upscale': {
-        return { scale: settings.upscale };
+        // FC-46: the declared size prices the photo at the factor it really gets, and binds it
+        return size
+          ? { scale: settings.upscale, items: [{ inputId: 'v1', width: size.width, height: size.height }] }
+          : { scale: settings.upscale };
       }
     }
   }
@@ -2918,6 +3114,7 @@ export class CloudMlJobService {
     return {
       input: { inputId: 'v1', contentType: copy.contentType, bytes: copy.bytes, sha256: copy.sha256, path: copy.file },
       beforePath: null,
+      size: sizes,
       output: cappedOutputSize(sizes.width, sizes.height, upscale),
       durationSeconds,
     };

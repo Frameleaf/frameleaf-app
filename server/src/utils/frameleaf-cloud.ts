@@ -277,6 +277,9 @@ export const MODEL_REV_PATTERN = /^mr_[\dA-HJKMNP-TV-Z]{12}$/;
 const modelSkuSchema = z.string().regex(MODEL_SKU_PATTERN);
 const computeSkuSchema = z.string().regex(COMPUTE_SKU_PATTERN);
 const voiceSkuSchema = z.string().regex(VOICE_SKU_PATTERN);
+
+/** A language tag (ISO 639 with an optional region), never free text. */
+const languageTag = z.string().regex(/^[a-z]{2,3}(-[A-Z]{2})?$/);
 const modelRevSchema = z.string().regex(MODEL_REV_PATTERN);
 
 /** An ISO 8601 timestamp with a zone, as every gateway timestamp is. */
@@ -420,8 +423,24 @@ export const catalogEntrySchema = z
      * does when the recommended model is not available to this region or licence.
      */
     default: z.boolean().optional(),
+    /** FC-48, transcription only: the languages the model is offered for, with the word error rate it is gated at. */
+    languages: z
+      .array(z.strictObject({ language: languageTag, wer: z.number().min(0).max(1) }))
+      .max(100)
+      .optional(),
+    /** FC-48, TTS only: the voices that may be sent, as voice SKUs with a label and a language. */
+    voices: z
+      .array(z.strictObject({ sku: voiceSkuSchema, label: displayText(80), language: languageTag }))
+      .max(100)
+      .optional(),
   })
   .superRefine((entry, context) => {
+    if (entry.languages && entry.workload !== 'transcription') {
+      context.addIssue({ code: 'custom', path: ['languages'], message: 'only transcription models list languages' });
+    }
+    if (entry.voices && entry.workload !== 'tts') {
+      context.addIssue({ code: 'custom', path: ['voices'], message: 'only tts models list voices' });
+    }
     const hasMode = entry.mode !== undefined && entry.mode !== null;
     if (entry.workload === 'restoration' && !hasMode) {
       context.addIssue({ code: 'custom', path: ['mode'], message: 'a restoration model names its mode' });
@@ -436,8 +455,24 @@ export const catalogEntrySchema = z
     mode: entry.mode ?? null,
     licence: entry.licence ?? null,
     default: entry.default === true,
+    // FC-48 (owner decision 2026-09-27): speech is English only at launch; a voice in any other
+    // language is never offered or sent, whatever a catalogue lists
+    ...(entry.voices && { voices: entry.voices.filter((voice) => isEnglishVoice(voice.language)) }),
   }));
 export type CloudCatalogEntry = z.infer<typeof catalogEntrySchema>;
+
+/**
+ * FC-48 (owner decision 2026-09-27): Frameleaf Cloud speech (Kokoro) is English only at launch. Other
+ * languages need a G2P engine under GPL-3.0 and their own review, so no other voice is offered.
+ */
+export const isEnglishVoice = (language: string): boolean => /^en(-|$)/.test(language);
+
+/**
+ * FC-48: speaker labels (transcription `diarize`) stay off until the cloud's rights register allows
+ * pyannote. This server never asks for them: the transcription request below has no `diarize` key,
+ * so a body carrying one is refused here before it is sent.
+ */
+export const CLOUD_SPEAKER_LABELS_OFFERED = false;
 
 /**
  * The catalogue group a model belongs to (FC-34): its cloud workload, and for restoration its mode
@@ -665,8 +700,6 @@ const jobInputsSchema = z
   .max(1000)
   .refine((inputs) => new Set(inputs.map((input) => input.inputId)).size === inputs.length, 'inputId must be unique');
 
-/** A language tag (ISO 639 with an optional region), never free text. */
-const languageTag = z.string().regex(/^[a-z]{2,3}(-[A-Z]{2})?$/);
 const scale = z.union([z.literal(2), z.literal(4)]);
 
 /**
@@ -683,7 +716,41 @@ export const CLOUD_WORKLOAD_REQUESTS = {
     maxTags: z.number().int().min(0).max(30).optional(),
     features: z.strictObject({ identityNames: z.boolean(), medicalSignals: z.boolean() }).partial().optional(),
   }),
-  upscale: z.strictObject({ scale: scale.optional() }),
+  // FC-46 `UpscaleRequest`: `items` declares each input's pixel size, so the estimate prices it at the
+  // scale it will really get and says which inputs the 64 MP output cap lowers (`EstimateUpscale`)
+  upscale: z
+    .strictObject({
+      scale: scale.optional(),
+      faceRestore: z.boolean().optional(),
+      output: z
+        .strictObject({
+          format: z.enum(['png', 'jpeg', 'webp']).optional(),
+          quality: z.number().int().min(50).max(100).optional(),
+        })
+        .refine((output) => output.quality === undefined || output.format === 'jpeg' || output.format === 'webp', {
+          path: ['quality'],
+          message: 'quality applies to jpeg and webp only',
+        })
+        .optional(),
+      items: z
+        .array(
+          z.strictObject({
+            inputId: z.string().regex(/^[\w-]{1,64}$/),
+            width: z.number().int().min(1).max(65_535),
+            height: z.number().int().min(1).max(65_535),
+          }),
+        )
+        .min(1)
+        .max(1000)
+        .optional(),
+    })
+    .refine(
+      (request) => !request.items || new Set(request.items.map((item) => item.inputId)).size === request.items.length,
+      {
+        path: ['items'],
+        message: 'inputId must be unique',
+      },
+    ),
   restoration: z.strictObject({ mode: z.enum(CLOUD_RESTORATION_MODES).optional(), scale: scale.optional() }),
   transcription: z.strictObject({ language: languageTag.optional() }),
   // `text` is what is spoken, not an instruction: plain text, no control characters but line breaks.
@@ -724,6 +791,72 @@ export const estimateRequestSchema = z.discriminatedUnion('workload', [
 ]);
 export type CloudEstimateRequest = z.infer<typeof estimateRequestSchema>;
 
+/** The 64 MP output cap of an upscale (FC-46 `UPSCALE_MAX_OUTPUT_MEGAPIXELS`); it stays, and the scale is lowered to fit. */
+export const CLOUD_UPSCALE_MAX_OUTPUT_MEGAPIXELS = 64;
+
+/**
+ * FC-46 `upscaleAppliedScale` (owner decision 2026-09-27): the largest of `scales` that is at most the
+ * requested scale and keeps the output within the 64 MP cap, or null when not even the smallest fits.
+ * A 12 MP photo asked for 4× gets 2× (48 MP). The cloud's estimate, pricing and worker all decide with
+ * this rule; this server uses it only to check what the cloud says.
+ */
+export const cloudUpscaleAppliedScale = (
+  width: number,
+  height: number,
+  requested: number,
+  scales: readonly number[] = [2, 4],
+): 2 | 4 | null => {
+  const fits = scales.filter(
+    (value) =>
+      (value === 2 || value === 4) &&
+      value <= requested &&
+      width * height * value * value <= CLOUD_UPSCALE_MAX_OUTPUT_MEGAPIXELS * 1_000_000,
+  );
+  return fits.length > 0 ? (Math.max(...fits) as 2 | 4) : null;
+};
+
+const upscaleInputId = z.string().regex(/^[\w-]{1,64}$/);
+
+/**
+ * FC-46 `EstimateUpscale` (upscale estimates only): the requested scale, the scale each declared input
+ * gets, and the inputs the 64 MP output cap lowers. The owner sees `lowered` before confirming, since
+ * it changes what the job makes and costs.
+ */
+export const estimateUpscaleSchema = z
+  .strictObject({
+    scale,
+    items: z.array(z.strictObject({ inputId: upscaleInputId, scale })).max(1000),
+    lowered: z.array(upscaleInputId).max(1000),
+  })
+  .superRefine((upscale, context) => {
+    const items = new Map(upscale.items.map((item) => [item.inputId, item.scale]));
+    if (items.size !== upscale.items.length) {
+      context.addIssue({ code: 'custom', path: ['items'], message: 'inputId must be unique' });
+    }
+    for (const item of upscale.items) {
+      if (item.scale > upscale.scale) {
+        context.addIssue({
+          code: 'custom',
+          path: ['items'],
+          message: 'an input never gets more than the requested scale',
+        });
+      }
+      if (item.scale < upscale.scale !== upscale.lowered.includes(item.inputId)) {
+        context.addIssue({
+          code: 'custom',
+          path: ['lowered'],
+          message: 'lowered names exactly the inputs given a smaller scale',
+        });
+      }
+    }
+    for (const inputId of upscale.lowered) {
+      if (!items.has(inputId)) {
+        context.addIssue({ code: 'custom', path: ['lowered'], message: 'a lowered input is one of the items' });
+      }
+    }
+  });
+export type CloudEstimateUpscale = z.infer<typeof estimateUpscaleSchema>;
+
 /** `POST /v2/estimates` answer (FC-66 `EstimateResponse`): the sealed estimate and what it quotes. */
 export const estimateResponseSchema = z.strictObject({
   estimate: sealedEstimateSchema,
@@ -740,6 +873,8 @@ export const estimateResponseSchema = z.strictObject({
   }),
   seconds: z.strictObject({ coldStart: z.number().min(0), run: z.number().min(0) }),
   basis: z.enum(['measured', 'modelled']),
+  /** FC-46, upscale only: the scale each declared input gets (`EstimateUpscale`). */
+  upscale: estimateUpscaleSchema.optional(),
 });
 export type CloudEstimate = z.infer<typeof estimateResponseSchema>;
 
@@ -783,10 +918,20 @@ export const jobCreateRequestSchema = z.discriminatedUnion('workload', [
 export type CloudJobCreateRequest = z.infer<typeof jobCreateRequestSchema>;
 
 /**
- * `Idempotency-Key` on `POST /v2/jobs`: one per logical submission. A retry with the same key and
- * body answers the same admission, so a retry never spends a second estimate or holds twice.
+ * `Idempotency-Key` on `POST /v2/jobs` (FC-43, the IETF Idempotency-Key header draft): one per logical
+ * submission. A retry with the same key and body answers the same admission, so a retry never spends a
+ * second estimate or holds twice. A missing or malformed key answers 400 (`request-invalid`, detail
+ * `idempotency-key`), so it is checked here first; the same key with another body answers 422
+ * `idempotency-key-reused`; the same key while the first request is still processed answers 409
+ * `idempotency-in-flight` with `Retry-After`.
  */
 export const IDEMPOTENCY_KEY_PATTERN = /^[\w-]{8,100}$/;
+
+/** FC-43: how often `POST /v2/jobs` is sent again while its key is still in flight, before giving up for now. */
+export const CLOUD_IDEMPOTENCY_IN_FLIGHT_RETRIES = 3;
+/** FC-43: the wait between those retries when `Retry-After` names none, and the longest wait honoured. */
+export const CLOUD_IDEMPOTENCY_IN_FLIGHT_DEFAULT_SECONDS = 2;
+export const CLOUD_IDEMPOTENCY_IN_FLIGHT_MAX_SECONDS = 30;
 
 /* ------------------------------------------------------------------ */
 /* Ephemeral job storage (FC-42, `packages/contracts/src/ml/storage.ts`) */
@@ -963,13 +1108,17 @@ export const isFinalCloudJobStatus = (status: CloudJobStatusValue): boolean =>
 
 /**
  * FC-39 `JobErrorCode`: why a job ended without completing, with fixed customer copy. Every code but
- * `cancelled` and `budget-exceeded` released the hold in full; `input-sha256-mismatch` pays at most
- * the minimum (one start fee).
+ * `cancelled`, `budget-exceeded` and `runtime-cap` released the hold in full; `input-sha256-mismatch`
+ * pays at most the minimum (one start fee).
  */
 export const CLOUD_JOB_ERROR_CODES = [
   'worker-unavailable',
   'worker-lost',
   'time-limit',
+  // FC-47 (owner decision 2026-09-27): the job reached its model's runtime cap (video restoration and
+  // Smooth motion: 6 hours) and was stopped. Charged for what ran up to the cap; never retryable: the
+  // clip has to be split
+  'runtime-cap',
   'deadline-exceeded',
   'upload-expired',
   'queue-expired',
@@ -1167,6 +1316,136 @@ export type CloudDescriptionsResult = z.infer<typeof descriptionsResultSchema>;
 /** The largest description output document this server reads (FC-44 `DESCRIPTIONS_RESULT_MAX_BYTES`). */
 export const CLOUD_DESCRIPTION_RESULT_MAX_BYTES = 16_384;
 
+/** The output id of a job's result document (FC-46, FC-47): never a media output. */
+export const CLOUD_RESULT_OUTPUT_ID = 'result';
+
+/** FC-46 `UpscaleWarning`: why an item has no output, or what happened to one that has. */
+export const CLOUD_UPSCALE_WARNINGS = [
+  'input-unsupported',
+  'input-animated',
+  'input-too-large',
+  'input-mismatch',
+  'input-unreadable',
+  'out-of-memory',
+  'output-invalid',
+  'metadata-removed',
+  'icc-dropped',
+  'tiles-reduced',
+] as const;
+const CLOUD_UPSCALE_FAILURE_WARNINGS: readonly string[] = CLOUD_UPSCALE_WARNINGS.slice(0, 7);
+export const CLOUD_UPSCALE_OUTPUT_TYPES = { png: 'image/png', jpeg: 'image/jpeg', webp: 'image/webp' } as const;
+const upscaleSide = z.number().int().min(1).max(65_535);
+
+/**
+ * FC-46 `UpscaleItem`: one input's outcome. `scale` (owner decision 2026-09-27) is the scale this input
+ * was really upscaled by: the requested one, or the largest smaller one under the 64 MP output cap;
+ * null for an item that failed.
+ */
+export const upscaleItemSchema = z
+  .strictObject({
+    inputId: upscaleInputId,
+    input: z.strictObject({ width: upscaleSide, height: upscaleSide }).nullable(),
+    scale: scale.nullable(),
+    outputs: z
+      .array(
+        z.strictObject({
+          outputId: upscaleInputId,
+          contentType: z.enum(['image/png', 'image/jpeg', 'image/webp']),
+          width: upscaleSide,
+          height: upscaleSide,
+          bytes: z.number().int().min(1),
+          sha256: z.string().regex(/^[\da-f]{64}$/),
+        }),
+      )
+      .max(1),
+    metrics: z.strictObject({
+      tiles: z.number().int().min(0).max(1_000_000),
+      seconds: z.number().min(0).max(604_800),
+    }),
+    warnings: z.array(z.enum(CLOUD_UPSCALE_WARNINGS)).max(10),
+  })
+  .superRefine((item, context) => {
+    const issue = (path: string, message: string) => context.addIssue({ code: 'custom', path: [path], message });
+    if (new Set(item.warnings).size !== item.warnings.length) {
+      issue('warnings', 'warnings are unique');
+    }
+    const failed = item.warnings.some((warning) => CLOUD_UPSCALE_FAILURE_WARNINGS.includes(warning));
+    if (failed !== (item.outputs.length === 0)) {
+      issue('outputs', 'a failed item has no output and a failure warning; a succeeded item has one output');
+    }
+    if ((item.scale === null) !== (item.outputs.length === 0)) {
+      issue('scale', 'a succeeded item names its scale; a failed one has none');
+    }
+    const output = item.outputs[0];
+    if (output) {
+      if (output.outputId !== item.inputId) {
+        issue('outputs', 'the output is named by its input');
+      }
+      if (!item.input) {
+        issue('input', 'a succeeded item names its input size');
+      }
+      if (output.width * output.height > CLOUD_UPSCALE_MAX_OUTPUT_MEGAPIXELS * 1_000_000) {
+        issue('outputs', 'outputs are at most 64 MP');
+      }
+    }
+  });
+export type CloudUpscaleItem = z.infer<typeof upscaleItemSchema>;
+
+/**
+ * FC-46 `UpscaleResult`, the job's result document (output `result`). `scale` is the requested scale,
+ * the most any item got; each output is its input times the item's own `scale`, never the document's.
+ */
+export const upscaleResultSchema = z
+  .strictObject({
+    schema: z.literal('frameleaf.upscale/v1'),
+    modelSku: modelSkuSchema,
+    modelRev: modelRevSchema,
+    licence: z
+      .string()
+      .min(1)
+      .max(80)
+      .regex(/^[^\p{Cc}<>]*$/u),
+    scale,
+    format: z.enum(['png', 'jpeg', 'webp']),
+    items: z.array(upscaleItemSchema).min(1).max(1000),
+  })
+  .superRefine((result, context) => {
+    if (new Set(result.items.map((item) => item.inputId)).size !== result.items.length) {
+      context.addIssue({ code: 'custom', path: ['items'], message: 'inputId must be unique' });
+    }
+    for (const [index, item] of result.items.entries()) {
+      const output = item.outputs[0];
+      if (!output || !item.input || item.scale === null) {
+        continue;
+      }
+      if (item.scale > result.scale) {
+        context.addIssue({
+          code: 'custom',
+          path: ['items', index, 'scale'],
+          message: 'never beyond the requested scale',
+        });
+      }
+      if (output.width !== item.input.width * item.scale || output.height !== item.input.height * item.scale) {
+        context.addIssue({
+          code: 'custom',
+          path: ['items', index, 'outputs'],
+          message: 'the output is the input times its scale',
+        });
+      }
+      if (output.contentType !== CLOUD_UPSCALE_OUTPUT_TYPES[result.format]) {
+        context.addIssue({
+          code: 'custom',
+          path: ['items', index, 'outputs'],
+          message: 'the output is in the requested format',
+        });
+      }
+    }
+  });
+export type CloudUpscaleResult = z.infer<typeof upscaleResultSchema>;
+
+/** The largest upscale result document this server reads (FC-46 `UPSCALE_RESULT_MAX_BYTES`). */
+export const CLOUD_UPSCALE_RESULT_MAX_BYTES = 1_048_576;
+
 /**
  * A body this server is about to send to the ML gateway, checked against the contract first. One the
  * cloud would refuse is never sent: it is refused here with `RequestInvalid`, as the cloud would.
@@ -1221,6 +1500,17 @@ export enum CloudErrorCode {
   EstimateMismatch = 'estimate-mismatch',
   /** 409: the sealed estimate is older than 15 minutes. */
   EstimateExpired = 'estimate-expired',
+  /**
+   * 422 on `POST /v2/jobs` (FC-43, IETF Idempotency-Key draft; was 409 `idempotency-conflict`): the key
+   * was already used with another body. This server keeps one key per logical job and one body per
+   * key, so this is a bug here: the job fails and nothing is sent again.
+   */
+  IdempotencyKeyReused = 'idempotency-key-reused',
+  /**
+   * 409 on `POST /v2/jobs` (FC-43): the first request under this key is still being processed. The
+   * same request is sent again after `Retry-After`; it is not a refusal of the job.
+   */
+  IdempotencyInFlight = 'idempotency-in-flight',
   /** 503 (FC-34): the region takes no new jobs now (until FC-39 binds the broker, every job). */
   Capacity = 'capacity',
   /** 403 (FC-34): the account or the server belongs to another region's gateway. */
@@ -1324,7 +1614,11 @@ export const refusalFromCloudError = (
       }
     }
     case 409: {
-      return MlAdmissionRefusal.ModelMismatch;
+      // FC-43: a key still in flight is a wait, never a spent or mismatched estimate (which would be
+      // estimated again under a new key and could admit the job twice)
+      return code === CloudErrorCode.IdempotencyInFlight
+        ? MlAdmissionRefusal.CloudUnavailable
+        : MlAdmissionRefusal.ModelMismatch;
     }
     case 422: {
       return MlAdmissionRefusal.RequestInvalid;
@@ -1412,6 +1706,18 @@ export const pausedException = (error: unknown): HttpException | null => {
 /** The error code of a failed cloud call: the envelope's `code`, else the OAuth `error`. */
 export const cloudErrorCode = (error: unknown): string | null =>
   error instanceof FrameleafCloudError ? (error.envelope?.code ?? error.oauth?.error ?? null) : null;
+
+/** FC-43: `POST /v2/jobs` answered 409 `idempotency-in-flight`: send the same request after `Retry-After`. */
+export const isIdempotencyInFlight = (error: unknown): boolean =>
+  error instanceof FrameleafCloudError &&
+  error.status === 409 &&
+  error.envelope?.code === CloudErrorCode.IdempotencyInFlight;
+
+/** FC-43: `POST /v2/jobs` answered 422 `idempotency-key-reused`: the key was used with another body. */
+export const isIdempotencyKeyReused = (error: unknown): boolean =>
+  error instanceof FrameleafCloudError &&
+  error.status === 422 &&
+  error.envelope?.code === CloudErrorCode.IdempotencyKeyReused;
 
 /**
  * The ML gateway itself (not the token endpoint, FL-185) answered 403 `clone_suspected` (FC-34

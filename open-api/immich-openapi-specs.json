@@ -54764,6 +54764,15 @@
             "format": "double",
             "type": "number"
           },
+          "upscale": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CloudMlJobUpscaleDto"
+              }
+            ],
+            "description": "Photo upscales only (FC-46): the factor each photo really gets under the 64 MP output cap; null otherwise",
+            "nullable": true
+          },
           "workload": {
             "$ref": "#/components/schemas/MlWorkload"
           }
@@ -54791,6 +54800,7 @@
           "spentTodayUsd",
           "startFeeUsd",
           "startupUsd",
+          "upscale",
           "workload"
         ],
         "type": "object"
@@ -54963,6 +54973,46 @@
           "full"
         ],
         "type": "string"
+      },
+      "CloudMlJobUpscaleDto": {
+        "properties": {
+          "appliedScale": {
+            "description": "The factor Frameleaf Cloud will really use and prices: lower when the 64 MP output cap needs it",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "lowered": {
+            "description": "Whether the 64 MP output cap lowered the factor; shown before confirming",
+            "type": "boolean"
+          },
+          "outputHeight": {
+            "description": "The height the result will have, in pixels",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "outputWidth": {
+            "description": "The width the result will have, in pixels",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "requestedScale": {
+            "description": "The upscale factor that was asked for (2 or 4)",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "appliedScale",
+          "lowered",
+          "outputHeight",
+          "outputWidth",
+          "requestedScale"
+        ],
+        "type": "object"
       },
       "CloudMlModelChoiceDto": {
         "properties": {
