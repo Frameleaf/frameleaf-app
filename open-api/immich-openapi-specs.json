@@ -82998,7 +82998,8 @@
       "SyncAssetEditV1": {
         "properties": {
           "action": {
-            "$ref": "#/components/schemas/AssetEditAction"
+            "description": "Edit action; future values pass through unchanged",
+            "type": "string"
           },
           "assetId": {
             "description": "Asset ID",
