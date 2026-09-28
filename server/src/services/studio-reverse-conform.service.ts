@@ -227,7 +227,7 @@ export class StudioReverseConformService {
         throw new Error('Claim lost');
       }
       const stat = await this.storage.stat(path);
-      if (!stat.isFile() || stat.size <= 0) {
+      if (!stat.isFile() || stat.size === 0) {
         throw new Error('Missing reversed file');
       }
       checkStudioReverseOutput(plan, await this.media.probe(path, { countFrames: true }));
@@ -318,9 +318,9 @@ export class StudioReverseConformService {
       if (!published) {
         // A lost commit acknowledgement is not evidence of rollback. Preserve registered bytes, or
         // leave them for recovery when the database cannot answer; never delete a committed output.
-        const finalState = await this.operations.getForWorker(operation.id).catch(() => undefined);
+        const finalState = await this.operations.getForWorker(operation.id).catch(() => {});
         const declarations = operation.projectId
-          ? await this.projects.listGeneratedResources(operation.projectId).catch(() => undefined)
+          ? await this.projects.listGeneratedResources(operation.projectId).catch(() => {})
           : undefined;
         // Trashed projects intentionally hide their declarations. The completed job remains the
         // authority in that case; an empty visible list must never delete its committed output.
@@ -328,7 +328,7 @@ export class StudioReverseConformService {
           finalState &&
           finalState.status !== MediaOperationStatus.Completed &&
           declarations &&
-          !declarations.some((entry) => entry.path === path)
+          declarations.every((entry) => entry.path !== path)
         ) {
           await this.storage.unlinkDir(folder, { recursive: true, force: true }).catch(() => {});
         }
@@ -417,7 +417,7 @@ export class StudioReverseConformService {
 
   private async inspect(entry: StudioAuthorizedEntry) {
     const stat = await this.storage.stat(entry.path!);
-    if (!stat.isFile() || stat.size <= 0 || stat.size > 256 * 1024 * 1024) {
+    if (!stat.isFile() || stat.size === 0 || stat.size > 256 * 1024 * 1024) {
       throw new BadRequestException('Local source reversal accepts files up to 256 MiB');
     }
     await this.checkBytes(entry);

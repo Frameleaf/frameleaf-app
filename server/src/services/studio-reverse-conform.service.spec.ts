@@ -236,10 +236,7 @@ describe(StudioReverseConformService.name, () => {
   it('kills a cancelled render, acknowledges cancellation, and removes only its claim directory', async () => {
     vi.useFakeTimers();
     const { sut, operation, operations, renderer, projects, storage } = setup();
-    let started!: () => void;
-    const rendering = new Promise<void>((resolve) => {
-      started = resolve;
-    });
+    const { promise: rendering, resolve: started } = Promise.withResolvers<void>();
     renderer.reverse.mockImplementation(
       (_input, _output, _source, signal: AbortSignal) =>
         new Promise<void>((_resolve, reject) => {
