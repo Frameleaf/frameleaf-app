@@ -15,6 +15,7 @@
   import Portal from '$lib/elements/Portal.svelte';
   import { canEdit, isOwner, removalOutcome } from '$lib/frameleaf/album-directory';
   import { namedArchiveName } from '$lib/frameleaf/archive-name';
+  import { publishCollectionPage } from '$lib/frameleaf/collection-page-request';
   import { librarySession } from '$lib/frameleaf/library-session.svelte';
   import { activityManager } from '$lib/managers/activity-manager.svelte';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
@@ -117,34 +118,43 @@
   let collectionPage = $state(1);
   let collectionLoading = $state(false);
   let collectionExhausted = $state(false);
+  let collectionRequest = 0;
 
-  const loadCollectionAssets = async (page: number) => {
-    const ids = childAlbums.map(({ id }) => id);
-    if (ids.length === 0) {
-      collectionAssets = [];
-      collectionExhausted = true;
-      return;
-    }
+  const loadCollectionAssets = async (
+    page: number,
+    request: number,
+    collectionId: string,
+    ids: string[],
+    order: typeof album.order,
+  ) => {
     collectionLoading = true;
-    try {
-      const results = await searchAssets({
-        metadataSearchDto: { albumIds: ids, page, size: COLLECTION_PAGE, order: album.order },
-      });
-      collectionAssets = page === 1 ? results.assets.items : [...collectionAssets, ...results.assets.items];
-      collectionExhausted = results.assets.nextPage === null;
-    } finally {
-      collectionLoading = false;
-    }
+    await publishCollectionPage(
+      () => searchAssets({ metadataSearchDto: { albumIds: ids, page, size: COLLECTION_PAGE, order } }),
+      () => request === collectionRequest && collectionId === albumId,
+      (results) => {
+        collectionAssets = page === 1 ? results.assets.items : [...collectionAssets, ...results.assets.items];
+        collectionExhausted = results.assets.nextPage === null;
+      },
+      () => (collectionLoading = false),
+    );
   };
 
   $effect(() => {
+    const ids = childAlbums.map(({ id }) => id);
+    const order = album.order;
+    const collectionId = albumId;
+    const request = ++collectionRequest;
+    collectionAssets = [];
+    collectionLoading = false;
+    collectionExhausted = ids.length === 0;
     if (!isCollection) {
       return;
     }
     // Re-runs when the collection's albums change, which is what its photos are made of.
-    void childAlbums.map(({ id }) => id).join(',');
     collectionPage = 1;
-    void loadCollectionAssets(1);
+    if (ids.length > 0) {
+      handlePromiseError(loadCollectionAssets(1, request, collectionId, ids, order));
+    }
   });
 
   const loadMoreCollectionAssets = () => {
@@ -152,7 +162,15 @@
       return;
     }
     collectionPage += 1;
-    void loadCollectionAssets(collectionPage);
+    handlePromiseError(
+      loadCollectionAssets(
+        collectionPage,
+        collectionRequest,
+        albumId,
+        childAlbums.map(({ id }) => id),
+        album.order,
+      ),
+    );
   };
 
   const assetCount = $derived(isCollection ? (node?.assetCount ?? collectionAssets.length) : album.assetCount);
@@ -304,7 +322,10 @@
     handlePromiseError(activityManager.init(albumId));
   });
 
-  onDestroy(() => activityManager.reset());
+  onDestroy(() => {
+    collectionRequest++;
+    activityManager.reset();
+  });
 
   // A like on the space itself; the space's comment panel offers it beside the conversation.
   const toggleSpaceLike = async () => {
