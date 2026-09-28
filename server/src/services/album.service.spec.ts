@@ -1251,7 +1251,7 @@ describe(AlbumService.name, () => {
         { albumId: inside.id, assetCount: 4, startDate: null, endDate: null, lastModifiedAssetTimestamp: null },
         { albumId: loose.id, assetCount: 2, startDate: null, endDate: null, lastModifiedAssetTimestamp: null },
       ]);
-      mocks.smartAlbum.getSmartBackedAlbumIds.mockResolvedValue(new Set([loose.id]));
+      mocks.smartAlbum.getSmartBackedAlbumKinds.mockResolvedValue(new Map([[loose.id, 'food']]));
       mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([collection.id]));
 
       const tree = await sut.getTree(auth);
@@ -1264,6 +1264,9 @@ describe(AlbumService.name, () => {
       expect(tree.albums.map(({ id }) => id)).toEqual([loose.id, sharedWithMe.id]);
       expect(tree.albums.find(({ id }) => id === loose.id)?.isSmart).toBe(true);
       expect(tree.albums.find(({ id }) => id === sharedWithMe.id)?.isSmart).toBe(false);
+      // FL-83 (AL-6): a built-in smart album names its kind, so Re-evaluate can scope to that album.
+      expect(tree.albums.find(({ id }) => id === loose.id)?.smartKind).toBe('food');
+      expect(tree.albums.find(({ id }) => id === sharedWithMe.id)?.smartKind).toBeNull();
       expect(tree.spaces.map(({ id }) => id)).toEqual([space.id]);
     });
 
@@ -1275,7 +1278,7 @@ describe(AlbumService.name, () => {
         .build();
       mocks.album.getAll.mockResolvedValue([getForAlbum(shared)]);
       mocks.album.getMetadataForIds.mockResolvedValue([]);
-      mocks.smartAlbum.getSmartBackedAlbumIds.mockResolvedValue(new Set());
+      mocks.smartAlbum.getSmartBackedAlbumKinds.mockResolvedValue(new Map());
       mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set());
       mocks.access.album.checkSharedAlbumAccess.mockResolvedValue(new Set());
 
@@ -1292,7 +1295,7 @@ describe(AlbumService.name, () => {
       const auth = { ...AuthFactory.create(owner), hideNsfwAssets: true };
       mocks.album.getAll.mockResolvedValue([getForAlbum(album)]);
       mocks.album.getMetadataForIds.mockResolvedValue([]);
-      mocks.smartAlbum.getSmartBackedAlbumIds.mockResolvedValue(new Set());
+      mocks.smartAlbum.getSmartBackedAlbumKinds.mockResolvedValue(new Map());
       mocks.asset.getHiddenContentAssetIds.mockResolvedValue(new Set([thumbnailAssetId]));
 
       const tree = await sut.getTree(auth);
@@ -1324,7 +1327,7 @@ describe(AlbumService.name, () => {
     it("returns every group of the tree in the person's own order", async () => {
       const { auth, first, second, loose, sharedWithMe } = setup();
       mocks.album.getMetadataForIds.mockResolvedValue([]);
-      mocks.smartAlbum.getSmartBackedAlbumIds.mockResolvedValue(new Set());
+      mocks.smartAlbum.getSmartBackedAlbumKinds.mockResolvedValue(new Map());
       mocks.album.getPositions.mockResolvedValue(
         new Map([
           [second.id, 0],
@@ -1442,6 +1445,19 @@ describe(AlbumService.name, () => {
 
       expect(mocks.album.getById).toHaveBeenCalledWith(album.id, { withAssets: false }, owner.id);
       expect(mocks.access.album.checkOwnerAccess).toHaveBeenCalledWith(owner.id, new Set([album.id]));
+    });
+
+    it('names the built-in smart album kind so Re-evaluate is scoped to it (FL-83, AL-6)', async () => {
+      const album = AlbumFactory.from().build();
+      const { user: owner } = album.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
+      mocks.album.getById.mockResolvedValue(getForAlbum(album));
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([album.id]));
+      mocks.album.getMetadataForIds.mockResolvedValue([]);
+      mocks.smartAlbum.getSmartBackedAlbumKinds.mockResolvedValue(new Map([[album.id, 'food']]));
+
+      const result = await sut.get(AuthFactory.create(owner), album.id);
+
+      expect(result).toMatchObject({ isSmart: true, smartKind: 'food', smartRuleId: null });
     });
 
     it('should get a shared album via a shared link', async () => {

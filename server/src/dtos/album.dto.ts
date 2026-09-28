@@ -15,6 +15,7 @@ import {
   AssetOrder,
   AssetOrderSchema,
 } from 'src/enum.js';
+import { SMART_ALBUM_BUILT_IN_KINDS } from 'src/dtos/system-config.dto.js';
 import { MaybeDehydrated } from 'src/types.js';
 import { asDateTimeString } from 'src/utils/date.js';
 import { stringToBool } from 'src/validation.js';
@@ -253,6 +254,12 @@ export const AlbumResponseSchema = z
       .nullable()
       .optional()
       .describe('Your classification rule behind this smart album, when it is one of yours'),
+    smartKind: z
+      .enum(SMART_ALBUM_BUILT_IN_KINDS)
+      .meta({ id: 'SmartAlbumBuiltInKind' })
+      .nullable()
+      .optional()
+      .describe('Built-in smart album kind behind this album, when it is a built-in smart album'),
     coverFollowsNewest: z
       .boolean()
       .optional()
