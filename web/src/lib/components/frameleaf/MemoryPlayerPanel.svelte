@@ -1506,6 +1506,7 @@
   assets={currentTimelineAssets.map((asset) => ({
     id: asset.id,
     isVideo: asset.type === AssetTypeEnum.Video,
+    originalFileName: asset.originalFileName,
     ownerId: asset.ownerId,
   }))}
 />

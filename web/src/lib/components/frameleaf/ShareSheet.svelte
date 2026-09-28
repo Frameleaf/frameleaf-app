@@ -209,7 +209,11 @@
     }
   });
 
-  const subject = $derived($t('frameleaf_sharing.individual_items', { values: { count: assetIds.length } }));
+  const subject = $derived(
+    assetIds.length === 1 && assets?.[0]?.originalFileName
+      ? assets[0].originalFileName
+      : $t('frameleaf_sharing.individual_items', { values: { count: assetIds.length } }),
+  );
   const linkTarget = $derived({ type: SharedLinkType.Individual, assetIds, name: subject });
 
   const videos = $derived(assets?.filter((asset) => asset.isVideo).length ?? 0);
@@ -366,14 +370,16 @@
   .ss-strip {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
+    gap: 14px;
+    margin-bottom: 16px;
     color: var(--fl-muted);
-    font-size: 0.875rem;
+    font-size: var(--fl-font-small);
   }
   .ss-strip :global(.ss-collage) {
-    width: 96px;
+    width: 112px;
     flex: none;
-    border-radius: var(--fl-radius);
+    aspect-ratio: 4 / 3;
+    border-radius: var(--fl-radius-control);
   }
   .ss-shortcuts {
     display: flex;
@@ -402,26 +408,47 @@
   .ss-options {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 0.5rem;
-    margin: 0.75rem 0;
+    gap: 10px;
+    margin-bottom: 16px;
   }
   .ss-option {
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    align-items: flex-start;
+    gap: 6px;
     text-align: start;
-    background: var(--fl-raised);
+    background: var(--fl-panel);
     color: var(--fl-text);
     border: 1px solid var(--fl-border);
-    border-radius: var(--fl-radius);
-    padding: 0.75rem;
+    border-radius: var(--fl-radius-card);
+    padding: 14px;
+    font: inherit;
+    cursor: pointer;
+    transition:
+      background var(--fl-motion) var(--fl-ease),
+      border-color var(--fl-motion) var(--fl-ease);
   }
-  .ss-option[aria-checked='true'] {
-    border-color: var(--fl-accent);
-    box-shadow: 0 0 0 1px var(--fl-accent);
+  .ss-option :global(svg) {
+    color: var(--fl-muted);
+  }
+  .ss-option strong {
+    font-weight: 560;
+    font-size: var(--fl-font-size);
   }
   .ss-option small {
     color: var(--fl-muted);
+    font-size: var(--fl-font-small);
+    line-height: 1.45;
+  }
+  .ss-option:hover {
+    background: var(--fl-raised);
+  }
+  .ss-option[aria-checked='true'] {
+    background: var(--fl-raised);
+    border-color: var(--fl-accent);
+  }
+  .ss-option[aria-checked='true'] :global(svg) {
+    color: var(--fl-accent);
   }
   .ss-people {
     display: grid;
