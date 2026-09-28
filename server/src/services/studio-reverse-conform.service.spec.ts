@@ -319,6 +319,79 @@ describe(StudioReverseConformService.name, () => {
     expect(storage.openForRandomRead).toHaveBeenCalledTimes(4);
   });
 
+  it('projects only authorized completed reverse metadata and refuses ownership, revocation and lineage changes', async () => {
+    const { sut, operation, projects, resources, manifest, storage } = setup();
+    operation.status = MediaOperationStatus.Completed;
+    const generatedId = `reverse-${operationId}`;
+    const preview = {
+      id: `reverse-preview-${operationId}`,
+      producer: 'proxy',
+      checksum: 'cd'.repeat(32),
+      derivedFrom: [`generated-intermediate:${generatedId}`, sourceKey],
+      path: '/private/preview.mp4',
+    };
+    projects.listGeneratedResources.mockResolvedValue([
+      { id: generatedId, producer: 'reverse-conform', derivedFrom: [sourceKey] },
+      preview,
+    ]);
+    operation.result = {
+      kind: 'studio-source-reverse',
+      generatedId,
+      sourceKey,
+      sourceRevision: 1,
+      sourceRevisionDigest: 'revision-digest',
+      sourceLevel: true,
+      requiresClipRelink: true,
+      frames: 3,
+      frameRate: { num: 3, den: 1 },
+      width: 32,
+      height: 32,
+      privatePath: '/private/master.mkv',
+      browserPreview: {
+        generatedId: preview.id,
+        checksum: preview.checksum,
+        derivedFrom: preview.derivedFrom,
+        contentType: 'video/mp4',
+        profile: 'h264-main-3.2-aac-lc-v1',
+        delivery: 'authenticated',
+        path: preview.path,
+      },
+    };
+    const result = await sut.getResult(owner, operationId);
+    expect(result).toEqual({
+      operationId,
+      projectId,
+      clipId: null,
+      sourceRevision: 1,
+      generatedId,
+      frames: 3,
+      frameRate: { num: 3, den: 1 },
+      width: 32,
+      height: 32,
+      browserPreview: {
+        generatedId: preview.id,
+        checksum: preview.checksum,
+        contentType: 'video/mp4',
+        profile: 'h264-main-3.2-aac-lc-v1',
+        delivery: 'authenticated',
+      },
+    });
+    expect(storage.openForRandomRead).not.toHaveBeenCalled();
+    await expect(sut.getResult(authStub.admin, operationId)).rejects.toThrow('Reverse preview not found');
+    await expect(sut.getResult({ ...owner, sharedLink: {} } as never, operationId)).rejects.toThrow();
+    resources.resolveProjectResources.mockResolvedValue({ manifest: { complete: false, entries: [] } });
+    await expect(sut.getResult(owner, operationId)).rejects.toThrow('complete source manifest');
+    resources.resolveProjectResources.mockResolvedValue({ manifest });
+    preview.derivedFrom = [sourceKey];
+    await expect(sut.getResult(owner, operationId)).rejects.toThrow('Reverse preview not found');
+    preview.derivedFrom = [`generated-intermediate:${generatedId}`, sourceKey];
+    operation.result.sourceRevision = 2;
+    await expect(sut.getResult(owner, operationId)).rejects.toThrow('Reverse result not found');
+    operation.result.sourceRevision = 1;
+    operation.status = MediaOperationStatus.Rendering;
+    await expect(sut.getResult(owner, operationId)).rejects.toThrow('Reverse preview not found');
+  });
+
   it('cleans up both files without registering either when preview packets fail validation', async () => {
     const { sut, operation, projects, operations, renderer, storage } = setup();
     renderer.previewPackets.mockResolvedValue([{ pts: 0, dts: 0, duration: 1 }]);
