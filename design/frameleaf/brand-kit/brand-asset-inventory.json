@@ -1,11 +1,11 @@
 {
   "approvedReferences": [
     {
-      "bytes": 6186,
+      "bytes": 5835,
       "id": "reference:design/frameleaf/README.md",
       "path": "design/frameleaf/README.md",
       "role": "approved-design-handoff",
-      "sha256": "49cd710a99c66846588645b13a38e73be5f4a1ac617209ac8095fa7878326a5a",
+      "sha256": "d14aeca58bff0d3cef4a391819bf208664fd9a67ff58a6d12531676e9d3b78e0",
       "status": "reference-not-production-qualification"
     },
     {
@@ -95,7 +95,7 @@
     "suppliedVectors": 7
   },
   "digests": {
-    "approvedReferenceLedgerSha256": "81c3469f3fb11ebade049d75222326f9f64230c722ed89e32694fac88f9d41ad",
+    "approvedReferenceLedgerSha256": "7fd0342c633ec393fb45379b54764110e7c090770bbcfd24a1f40b6507fe44bc",
     "suppliedSourceLedgerSha256": "a317886619c3d450f81d91fb065ed698d3715e1bc537b95d2751becf59d6f488"
   },
   "expectedDuplicateContent": [
@@ -113,86 +113,6 @@
     "path": "design/frameleaf/brand-kit/manifest.json",
     "sha256": "768b1780125b5548becf87c43b12092eb695c00a1d088883d58b1f18462ca7a7"
   },
-  "ownership": [
-    {
-      "dependencies": ["FN-103"],
-      "jiraId": "23644",
-      "jiraKey": "FL-29",
-      "jiraUrl": "https://heroit.atlassian.net/browse/FL-29",
-      "paths": [
-        "design/frameleaf/tokens.json",
-        "web/src/lib/frameleaf/tokens.css",
-        "web/src/lib/components/frameleaf",
-        "mobile/lib/frameleaf/frameleaf_tokens.dart",
-        "design/frameleaf/brand-kit/manifest.json",
-        "docs/docs/developer/frameleaf-plan/06-brand-assets.md"
-      ],
-      "planId": "FN-201",
-      "status": "planned-not-qualified",
-      "type": "story"
-    },
-    {
-      "dependencies": ["REL-201"],
-      "jiraId": "23745",
-      "jiraKey": "FL-130",
-      "jiraUrl": "https://heroit.atlassian.net/browse/FL-130",
-      "paths": [
-        "mobile/frameleaf-identity.example.json",
-        "scripts/frameleaf-mobile-identity.py",
-        "scripts/frameleaf-mobile-identity-test.py",
-        "mobile/android/app/build.gradle",
-        "mobile/ios/Runner.xcodeproj",
-        "mobile/ios/Runner/Runner.entitlements",
-        "mobile/ios/fastlane",
-        "design/frameleaf/brand-kit/manifest.json",
-        "design/frameleaf/brand-kit/frameleaf-app-icon.svg",
-        "design/frameleaf/brand-kit/frameleaf-symbol-white.svg",
-        "docs/docs/developer/frameleaf-plan/06-brand-assets.md"
-      ],
-      "planId": "REL-101",
-      "status": "planned-not-qualified",
-      "type": "story"
-    },
-    {
-      "dependencies": ["MOB-101", "REL-101"],
-      "jiraId": "23746",
-      "jiraKey": "FL-131",
-      "jiraUrl": "https://heroit.atlassian.net/browse/FL-131",
-      "paths": [
-        "mobile/lib/services/oauth.service.dart",
-        "mobile/lib/widgets/forms/login/login_form.dart",
-        "server/src/services/auth.service.ts",
-        "server/src/controllers/oauth.controller.ts",
-        "server/src/dtos/config.dto.ts",
-        "design/frameleaf/brand-kit/frameleaf-logo-dark.svg",
-        "design/frameleaf/brand-kit/frameleaf-symbol.svg",
-        "docs/docs/developer/frameleaf-plan/06-brand-assets.md"
-      ],
-      "planId": "REL-102",
-      "status": "planned-not-qualified",
-      "type": "story"
-    },
-    {
-      "dependencies": ["MOB-101", "REL-101"],
-      "jiraId": "23750",
-      "jiraKey": "FL-135",
-      "jiraUrl": "https://heroit.atlassian.net/browse/FL-135",
-      "paths": [
-        "design/frameleaf",
-        "mobile/assets/frameleaf-mark.png",
-        "mobile/pubspec.yaml",
-        "mobile/ios/WidgetExtension",
-        "mobile/lib/frameleaf/frameleaf_links.dart",
-        "web/src/lib/components/frameleaf",
-        "design/frameleaf/brand-kit",
-        "design/frameleaf/brand-kit/manifest.json",
-        "docs/docs/developer/frameleaf-plan/06-brand-assets.md"
-      ],
-      "planId": "REL-103",
-      "status": "planned-not-qualified",
-      "type": "story"
-    }
-  ],
   "policies": {
     "derivativesRequireSeparateIdentityAndProvenance": true,
     "globalImmichStringReplacementProhibited": true,

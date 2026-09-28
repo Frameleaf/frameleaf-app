@@ -44,10 +44,10 @@ The template then took an Apple Photos–style pass and a polish pass. They cove
 - grouped System Settings–style settings pages
 - a Library analytics dashboard.
 
-The "Apple-style refinements" sections of the interaction requirements record each decision. [Prototype to production](../../docs/docs/developer/frameleaf-plan/09-prototype-to-production.md) maps each one to its production owner.
+The "Apple-style refinements" sections of the interaction requirements record each decision. Use the assigned Jira issue for production ownership.
 
 ## Production handoff
 
-Read the [implementation plan](https://heroit.atlassian.net/wiki/spaces/FR/pages/61538319), [agent execution guide](https://heroit.atlassian.net/wiki/spaces/FR/pages/61407516), and [development/delivery guide](https://heroit.atlassian.net/wiki/spaces/FR/pages/61407844), plus the assigned issue's action-level acceptance. Existing screen/settings/native/Freecut inventories remain the preservation contract. Missing prototype workflows must be implemented rather than removed from scope.
+Read the [development and delivery guide](../../docs/docs/developer/frameleaf-development.md) and the assigned issue's acceptance criteria. Missing prototype workflows must be implemented rather than removed from scope.
 
 This package is the design-only baseline slice of [FL-25](https://heroit.atlassian.net/browse/FL-25), delivered through [PR #112](https://github.com/Frameleaf/frameleaf-app/pull/112). The other uncommitted application changes are not included or declared complete.

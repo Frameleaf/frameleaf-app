@@ -21,9 +21,6 @@ class BrandAssetContractTests(unittest.TestCase):
         paths = {
             brand_assets.MANIFEST_PATH,
             brand_assets.INVENTORY_PATH,
-            brand_assets.GUIDE_PATH,
-            brand_assets.BACKLOG_PATH,
-            brand_assets.JIRA_MAP_PATH,
             brand_assets.SOURCE_MANIFEST_PATH,
             *(Path(path) for path, _ in brand_assets.REFERENCE_SPECS),
             *(Path(path) for path, _, _ in brand_assets.COMPATIBILITY_SENTINELS),
@@ -166,43 +163,6 @@ class BrandAssetContractTests(unittest.TestCase):
         for mutation in (json_decoy, toml_decoy, svelte_decoy):
             with self.subTest(mutation=mutation):
                 self.assert_invalid(mutation)
-
-    def test_backlog_status_and_jira_identity_are_enforced(self):
-        def qualified_owner(root):
-            path = root / brand_assets.BACKLOG_PATH
-            value = json.loads(path.read_text())
-            next(item for item in value["items"] if item["id"] == "REL-103")["status"] = "done"
-            path.write_text(json.dumps(value))
-
-        def wrong_jira(root):
-            path = root / brand_assets.JIRA_MAP_PATH
-            value = json.loads(path.read_text())
-            value["issues"]["REL-103"]["key"] = "FL-25"
-            path.write_text(json.dumps(value))
-
-        def wrong_owner_path(root):
-            path = root / brand_assets.BACKLOG_PATH
-            value = json.loads(path.read_text())
-            next(item for item in value["items"] if item["id"] == "REL-103")["paths"].pop()
-            path.write_text(json.dumps(value))
-
-        def wrong_jira_id_and_url(root):
-            path = root / brand_assets.JIRA_MAP_PATH
-            value = json.loads(path.read_text())
-            value["issues"]["REL-103"].update({"id": "99999", "url": "https://heroit.atlassian.net/browse/FL-999"})
-            path.write_text(json.dumps(value))
-
-        def wrong_owner_type(root):
-            path = root / brand_assets.BACKLOG_PATH
-            value = json.loads(path.read_text())
-            next(item for item in value["items"] if item["id"] == "REL-103")["type"] = "task"
-            path.write_text(json.dumps(value))
-
-        self.assert_invalid(qualified_owner)
-        self.assert_invalid(wrong_jira)
-        self.assert_invalid(wrong_owner_path)
-        self.assert_invalid(wrong_jira_id_and_url)
-        self.assert_invalid(wrong_owner_type)
 
     def test_authority_manifests_and_false_claim_additions_are_rejected(self):
         def coherent_manifest_mutation(root):

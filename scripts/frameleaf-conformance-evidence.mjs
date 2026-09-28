@@ -941,7 +941,7 @@ const actions = {
   "move-into-out-of-origin-locked-visibility": [
     "intentional-product-change",
     [],
-    "Locked is one lock record; visibility = locked is never written (CODEX-HANDOFF §3)",
+    "Locked is one lock record; visibility = locked is never written",
     {
       production: [
         `${W}/lib/components/asset-viewer/actions/SetVisibilityAction.svelte`,

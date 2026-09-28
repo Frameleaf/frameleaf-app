@@ -1,5 +1,5 @@
 /**
- * Studio graph resource inventory and reference extraction (FL-90 / STU-203).
+ * Studio graph resource inventory and reference extraction (FL-90).
  *
  * A Studio project graph is opaque to the host: it is Freecut's document and the server stores
  * and transports it without interpreting the edit. Executing it is different. Before a graph
@@ -17,7 +17,7 @@
  *   references, unknown explicit resource kinds.
  * - {@link checkNestedSequences} refuses unknown, cyclic or over-deep sequence nesting.
  *
- * The recursive `mediaId` check the plan mentions is a storage boundary: it says a clip points
+ * The recursive `mediaId` check is a storage boundary: it says a clip points
  * at *some* media. It says nothing about fonts, LUTs, models, captions, SVG subresources or
  * generated intermediates, and it cannot tell a worker not to fetch a URL. This module covers
  * those. `server/src/services/studio-resource.service.ts` applies the actual access checks.
@@ -1145,8 +1145,6 @@ export type StudioResourceInventoryRow = {
 
 export type StudioResourceInventory = {
   schemaVersion: typeof STUDIO_RESOURCE_INVENTORY_SCHEMA_VERSION;
-  story: 'FL-90';
-  planId: 'STU-203';
   generatedBy: 'server/src/utils/studio-resources.ts';
   limits: {
     maxGraphBytes: number;
@@ -1185,8 +1183,6 @@ export const buildStudioResourceInventory = (): StudioResourceInventory => {
 
   return {
     schemaVersion: STUDIO_RESOURCE_INVENTORY_SCHEMA_VERSION,
-    story: 'FL-90',
-    planId: 'STU-203',
     generatedBy: 'server/src/utils/studio-resources.ts',
     limits: {
       maxGraphBytes: STUDIO_MAX_GRAPH_BYTES,

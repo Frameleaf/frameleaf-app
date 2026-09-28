@@ -15,9 +15,6 @@ import xml.etree.ElementTree as ET
 
 INVENTORY_PATH = Path("design/frameleaf/brand-kit/brand-asset-inventory.json")
 MANIFEST_PATH = Path("design/frameleaf/brand-kit/manifest.json")
-GUIDE_PATH = Path("docs/docs/developer/frameleaf-plan/06-brand-assets.md")
-BACKLOG_PATH = Path("docs/docs/developer/frameleaf-plan/backlog.json")
-JIRA_MAP_PATH = Path("docs/docs/developer/frameleaf-plan/jira-map.json")
 SOURCE_MANIFEST_PATH = Path("design/frameleaf/source-manifest.json")
 
 SVG_NAMESPACE = "http://www.w3.org/2000/svg"
@@ -54,13 +51,6 @@ COMPATIBILITY_SENTINELS = (
     ("machine-learning/pyproject.toml", "toml-build-includes", "immich_ml"),
     ("web/src/routes/+layout.svelte", "svelte-import", "@immich/sdk"),
 )
-
-OWNERS = {
-    "FN-201": {"jiraId": "23644", "jiraKey": "FL-29", "dependencies": ["FN-103"], "paths": ["design/frameleaf/tokens.json", "web/src/lib/frameleaf/tokens.css", "web/src/lib/components/frameleaf", "mobile/lib/frameleaf/frameleaf_tokens.dart", "design/frameleaf/brand-kit/manifest.json", "docs/docs/developer/frameleaf-plan/06-brand-assets.md"]},
-    "REL-101": {"jiraId": "23745", "jiraKey": "FL-130", "dependencies": ["REL-201"], "paths": ["mobile/frameleaf-identity.example.json", "scripts/frameleaf-mobile-identity.py", "scripts/frameleaf-mobile-identity-test.py", "mobile/android/app/build.gradle", "mobile/ios/Runner.xcodeproj", "mobile/ios/Runner/Runner.entitlements", "mobile/ios/fastlane", "design/frameleaf/brand-kit/manifest.json", "design/frameleaf/brand-kit/frameleaf-app-icon.svg", "design/frameleaf/brand-kit/frameleaf-symbol-white.svg", "docs/docs/developer/frameleaf-plan/06-brand-assets.md"]},
-    "REL-102": {"jiraId": "23746", "jiraKey": "FL-131", "dependencies": ["MOB-101", "REL-101"], "paths": ["mobile/lib/services/oauth.service.dart", "mobile/lib/widgets/forms/login/login_form.dart", "server/src/services/auth.service.ts", "server/src/controllers/oauth.controller.ts", "server/src/dtos/config.dto.ts", "design/frameleaf/brand-kit/frameleaf-logo-dark.svg", "design/frameleaf/brand-kit/frameleaf-symbol.svg", "docs/docs/developer/frameleaf-plan/06-brand-assets.md"]},
-    "REL-103": {"jiraId": "23750", "jiraKey": "FL-135", "dependencies": ["MOB-101", "REL-101"], "paths": ["design/frameleaf", "mobile/assets/frameleaf-mark.png", "mobile/pubspec.yaml", "mobile/ios/WidgetExtension", "mobile/lib/frameleaf/frameleaf_links.dart", "web/src/lib/components/frameleaf", "design/frameleaf/brand-kit", "design/frameleaf/brand-kit/manifest.json", "docs/docs/developer/frameleaf-plan/06-brand-assets.md"]},
-}
 
 
 def reject_duplicate_keys(pairs):
@@ -374,27 +364,6 @@ def build_inventory(root):
         if not valid:
             raise ValueError(f"effective compatibility identity removed from {path_text}: {expected_value}")
         sentinels.append({"path": path_text, "parser": parser, "expectedValue": expected_value})
-    backlog = load_json(root / BACKLOG_PATH)
-    jira = load_json(root / JIRA_MAP_PATH)
-    by_id = {item["id"]: item for item in backlog["items"]}
-    if len(by_id) != len(backlog["items"]):
-        raise ValueError("backlog contains duplicate owner identities")
-    ownership = []
-    for plan_id, expected in OWNERS.items():
-        item = by_id.get(plan_id)
-        mapping = jira["issues"].get(plan_id)
-        if not item or not mapping:
-            raise ValueError(f"missing backlog/Jira owner: {plan_id}")
-        if item.get("status") != "planned-not-qualified" or item.get("dependencies") != expected["dependencies"]:
-            raise ValueError(f"{plan_id}: dependencies/status differ from the reviewed brand contract")
-        if item.get("type") != "story" or item.get("paths") != expected["paths"]:
-            raise ValueError(f"{plan_id}: type/owner paths differ from the reviewed brand contract")
-        expected_url = f"https://heroit.atlassian.net/browse/{expected['jiraKey']}"
-        if mapping != {"id": expected["jiraId"], "key": expected["jiraKey"], "url": expected_url}:
-            raise ValueError(f"{plan_id}: Jira identity differs from the reviewed brand contract")
-        ownership.append({"planId": plan_id, "type": item["type"], "jiraId": mapping["id"],
-            "jiraKey": mapping["key"], "jiraUrl": mapping["url"], "dependencies": item["dependencies"],
-            "paths": item["paths"], "status": item["status"]})
     manifest_size, manifest_hash = digest(root / MANIFEST_PATH)
     supplied_ledger = hashlib.sha256(json.dumps(originals, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()
     reference_ledger = hashlib.sha256(json.dumps(references, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()
@@ -417,26 +386,10 @@ def build_inventory(root):
         "expectedDuplicateContent": [{"sha256": references[-1]["sha256"],
             "paths": [references[-2]["path"], references[-1]["path"]],
             "reason": "The portable template retained the historical generated prototype raster byte-for-byte; neither copy is production artwork authority."}],
-        "ownership": ownership,
         "compatibilitySentinels": sentinels,
         "policies": {"globalImmichStringReplacementProhibited": True, "suppliedSourceMutationProhibited": True,
             "unknownBrandKitMembersProhibited": True, "derivativesRequireSeparateIdentityAndProvenance": True},
     }
-
-
-def validate_document(root):
-    text = (root / GUIDE_PATH).read_text()
-    required = (
-        "seven SVGs",
-        "authoritative Frameleaf artwork",
-        "Do not run SVG formatters or optimizers",
-        "does not claim production integration, native qualification or release readiness",
-        "Do not globally replace `immich`",
-        "brand-asset-inventory.json",
-    )
-    for value in required:
-        if value not in text:
-            raise ValueError(f"brand guide is missing required boundary: {value}")
 
 
 def validate(root):
@@ -444,7 +397,6 @@ def validate(root):
     actual = load_json(root / INVENTORY_PATH)
     if actual != expected:
         raise ValueError("brand asset inventory is stale or contains unsupported qualification claims")
-    validate_document(root)
     return expected
 
 

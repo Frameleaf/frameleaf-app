@@ -4,7 +4,7 @@
  * Source: studio/frameleaf-studio-commands.json
  * Generator: scripts/frameleaf-studio-commands.mjs
  *
- * The server mirror of the canonical Studio command vocabulary (FL-92, `STU-205`). It
+ * The server mirror of the canonical Studio command vocabulary (FL-92). It
  * exists so the server can validate a command envelope without trusting the client's idea
  * of the vocabulary, and so a drifted web or native contract fails CI instead of failing a
  * person's edit. Payload objects are described, never interpreted: `object` fields travel

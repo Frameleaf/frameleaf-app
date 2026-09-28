@@ -15,11 +15,9 @@ node scripts/frameleaf-studio-contracts.mjs --repository .
 node --test scripts/frameleaf-studio-contracts.test.mjs
 ```
 
-See [the Studio, rendering and restoration preservation plan](../docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md) for scope, ownership and remaining proof gates.
-
 ## Reproducible engine workspace (FL-84)
 
-Use Node 24.21.0 and npm 11.8.0. `engine-build.json` pins the upstream revision, patch hashes, independent npm lockfile and adapted source digest. Versioned patches set the private package identity and toolchain declaration, remove automatic `prepare`, and omit embedded source text from worker source maps. Vite embeds transient asset handles in that text, which otherwise makes identical fresh builds differ. Worker maps retain their mappings, names and source paths; use the preserved source files for debugging. Application maps retain embedded sources. The first three patches preserve feature behavior. Patch 0004 adds FL-86 default-deny resource admission in the isolated editor/headless engine; unresolved model/font/Lottie/resource operations are explicit release blockers. See [the runtime acceptance ledger](../docs/docs/developer/frameleaf-plan/fl86-distribution-rights.md). This npm workspace is intentionally outside the application's pnpm workspace.
+Use Node 24.21.0 and npm 11.8.0. `engine-build.json` pins the upstream revision, patch hashes, independent npm lockfile and adapted source digest. Versioned patches set the private package identity and toolchain declaration, remove automatic `prepare`, and omit embedded source text from worker source maps. Vite embeds transient asset handles in that text, which otherwise makes identical fresh builds differ. Worker maps retain their mappings, names and source paths; use the preserved source files for debugging. Application maps retain embedded sources. The first three patches preserve feature behavior. Patch 0004 adds FL-86 default-deny resource admission in the isolated editor/headless engine; unresolved model/font/Lottie/resource operations are explicit release blockers. This npm workspace is intentionally outside the application's pnpm workspace.
 
 ```sh
 # Explicit network step; alternatively provide --archive /path/to/freecut.tar.gz.
@@ -90,14 +88,14 @@ work.
 
 ## Canonical command catalogue (FL-92)
 
-`frameleaf-studio-commands.json` is the published Studio command vocabulary: 88 commands,
+`frameleaf-studio-commands.json` is the published Studio command vocabulary: 90 commands,
 each with its payload fields, scope, whether it changes the stored graph, whether it is
 undoable, the worker capability it needs, the story that owns its semantics, the prototype
 function or pinned Freecut feature that specifies it, and the manifest rows it is the way
 to reach.
 
 Payload fields typed `time`, `duration` and `rate` are exact rationals, never floats
-(FL-93 / `VID-102`): an instant on the timeline, a length, and a cadence or speed
+(FL-93): an instant on the timeline, a length, and a cadence or speed
 multiplier. They travel as a reduced `{ num, den }` pair of integers — `StudioTime`,
 `StudioDuration` and `StudioRate` on the web side and `isRational` on the server.
 `object` and `object[]` fields are opaque and travel unread.

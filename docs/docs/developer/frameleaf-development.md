@@ -4,9 +4,7 @@ title: Frameleaf development and delivery
 
 # Frameleaf development and delivery
 
-Frameleaf development lives in [Frameleaf/frameleaf-app](https://github.com/Frameleaf/frameleaf-app), on the literal default branch `fork/main`. Work is tracked in [Jira project FL](https://heroit.atlassian.net/jira/software/c/projects/FL/boards/233/backlog). The [implementation plan](https://heroit.atlassian.net/wiki/spaces/FR/pages/61538319) and the assigned issue define acceptance; infrastructure readiness is separate from application feature parity.
-
-A [Confluence mirror of this guide](https://heroit.atlassian.net/wiki/spaces/FR/pages/61407844) records the setup checkpoint and review links.
+Frameleaf development lives in [Frameleaf/frameleaf-app](https://github.com/Frameleaf/frameleaf-app), on the literal default branch `fork/main`. Work is tracked in [Jira project FL](https://heroit.atlassian.net/jira/software/c/projects/FL/boards/233/backlog). The assigned issue and private planning sources define acceptance; infrastructure readiness is separate from application feature parity.
 
 ## Jira and GitHub
 
@@ -108,18 +106,6 @@ Monitor the actual candidate head and, where GitHub tests a synthetic merge comm
 Inherited workflows that wrote to unowned npm, Docker Hub, Cloudflare, F-Droid, translation, mobile-store or release destinations are disabled. Re-enabling one requires an owned destination, scoped credentials and qualification. Source SDK generation and application tests remain active; transfer does not convey ownership of `@immich/sdk`.
 
 CodeQL analyzes PRs with read-only permissions and retains reports as workflow artifacts. A separate upload-only job reports trusted mainline results to GitHub's Security tab. It does not check out or execute PR code with write permissions.
-
-## Confluence synchronization
-
-Repository Markdown is authoritative; Confluence space **FR** is the readable mirror. The user has requested mirroring for this project, so synchronize changed Frameleaf specifications and process instructions in the same work pass. This standing request covers those documentation pages, not unrelated spaces, permissions, project workflows or messages to other people.
-
-1. Find the existing source-to-page mapping in `docs/docs/developer/frameleaf-plan/confluence-mirror.json` when present, or the document's mirror link. The delivery guide is page `61407844`, agent execution is `61407516`, and the implementation-plan parent is `61538319`. Search before creating a page; preserve its ID and hierarchy.
-2. Read the current remote page before writing. Compare it with the last mirrored source/hash. Preserve independently authored content and resolve conflicting specification edits rather than overwriting them blindly. Keep dated setup evidence distinct from current instructions.
-3. Update the corresponding page's actual content, not just a local "synced" flag or comment. Include the repository-relative source path, SHA-256 of the source bytes and a GitHub source/PR backlink. Label uncommitted/worktree sources honestly; never link them as if already merged into the default branch. Retain Jira and parent-plan links. Keep credentials and sensitive operational data out of mirrors.
-4. Read back the published page, verify its content and returned version, then update the local mapping with the source hash/bytes, page ID/URL/version and verification result. Update only entries actually synchronized. If the map is absent from an isolated checkout, record the receipt with the owning planning checkout rather than fabricating a new implementation baseline.
-5. Report any synchronization failure or unresolved conflict as outstanding; do not claim documentation is mirrored. Do not treat publication of a plan as implementation acceptance or auto-complete its Jira issues.
-
-Use available Jira/Confluence connectors or authenticated APIs. Discover their current tool names and issue transitions instead of embedding session-specific MCP names or tokens in instructions. Full-page replacement is appropriate only for a reviewed source-owned mirror; use the provider's supported concurrency/snapshot mechanism for partial edits where available.
 
 ## Container names and compatibility
 
