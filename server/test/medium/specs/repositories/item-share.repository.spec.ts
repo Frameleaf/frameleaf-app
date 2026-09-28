@@ -1,5 +1,5 @@
 import { Kysely, sql } from 'kysely';
-import { AssetLockReason } from 'src/enum.js';
+import { AssetLockReason, UserMetadataKey } from 'src/enum.js';
 import { getCatalogEvidence } from 'src/fork-schema/catalog.js';
 import manifest from 'src/fork-schema/manifests/fork-v2-catalog.json' with { type: 'json' };
 import * as migration from 'src/fork-schema/migrations/0000000000206-AssetUserShares.js';
@@ -101,6 +101,9 @@ it('hides a shared item while it is locked, and shows it again once unlocked', a
   await sut.add(owner.id, [asset.id], [jamie.id]);
 
   await lock(asset.id);
+  // The lock push must still find recipients even though recipient reads now hide the item.
+  await expect(sut.getRecipients([asset.id])).resolves.toEqual([{ assetId: asset.id, sharedWithId: jamie.id }]);
+  await expect(sut.getRecipients([])).resolves.toEqual([]);
   await expect(sut.getReceived(jamie.id)).resolves.toEqual([]);
   await expect(access.asset.checkItemShareAccess(jamie.id, new Set([asset.id]))).resolves.toEqual(new Set());
 
@@ -126,4 +129,50 @@ it('leaves out trashed items and items whose owner is deleted', async () => {
   await expect(access.asset.checkItemShareAccess(jamie.id, new Set([trashed.id, orphan.id]))).resolves.toEqual(
     new Set(),
   );
+});
+
+it('rechecks the owner’s Locked rules after sharing for both listing and direct access', async () => {
+  const { ctx, sut, access } = setup();
+  const { user: owner } = await ctx.newUser();
+  const { user: other } = await ctx.newUser();
+  const { user: jamie } = await ctx.newUser();
+  const { asset: hidden } = await ctx.newAsset({ ownerId: owner.id });
+  const { asset: visible } = await ctx.newAsset({ ownerId: other.id });
+  const { tag } = await ctx.newTag({ userId: owner.id, value: 'Private' });
+  await ctx.newTagAsset({ tagIds: [tag.id], assetIds: [hidden.id, visible.id] });
+  await sut.add(owner.id, [hidden.id], [jamie.id]);
+  await sut.add(other.id, [visible.id], [jamie.id]);
+  await expect(sut.getReceived(jamie.id)).resolves.toHaveLength(2);
+
+  await db
+    .insertInto('user_metadata')
+    .values({
+      userId: owner.id,
+      key: UserMetadataKey.Preferences,
+      value: { privacy: { suppression: { tagIds: [tag.id], scope: 'visible' } } },
+    })
+    .onConflict((oc) =>
+      oc.columns(['userId', 'key']).doUpdateSet({
+        value: { privacy: { suppression: { tagIds: [tag.id], scope: 'visible' } } },
+      }),
+    )
+    .execute();
+
+  expect((await sut.getReceived(jamie.id)).map(({ assetId }) => assetId)).toEqual([visible.id]);
+  await expect(access.asset.checkItemShareAccess(jamie.id, new Set([hidden.id, visible.id]))).resolves.toEqual(
+    new Set([visible.id]),
+  );
+  // A live photo share must not bypass an owner's rule on its motion part either.
+  const { asset: still } = await ctx.newAsset({ ownerId: owner.id, livePhotoVideoId: hidden.id });
+  await sut.add(owner.id, [still.id], [jamie.id]);
+  await expect(access.asset.checkItemShareAccess(jamie.id, new Set([still.id, hidden.id]))).resolves.toEqual(
+    new Set([still.id]),
+  );
+
+  await db
+    .deleteFrom('user_metadata')
+    .where('userId', '=', owner.id)
+    .where('key', '=', UserMetadataKey.Preferences)
+    .execute();
+  await expect(sut.getReceived(jamie.id)).resolves.toHaveLength(3);
 });

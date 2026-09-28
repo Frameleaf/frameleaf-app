@@ -1,6 +1,8 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { ArgOf } from 'src/repositories/event.repository.js';
 import type { ItemShareRow } from 'src/repositories/item-share.repository.js';
+import { OnEvent } from 'src/decorators.js';
 import { mapAsset } from 'src/dtos/asset-response.dto.js';
 import {
   ItemShareChangeDto,
@@ -37,6 +39,14 @@ export const ITEM_SHARE_LOCKED = 'Locked items cannot be shared. Unlock them fir
  */
 @Injectable()
 export class ItemShareService extends BaseService {
+  @OnEvent({ name: 'AssetLocked' })
+  async onAssetLocked({ assetIds }: ArgOf<'AssetLocked'>): Promise<void> {
+    const recipients = await this.itemShareRepository.getRecipients(assetIds);
+    for (const { assetId, sharedWithId } of recipients) {
+      this.websocketRepository.clientSend('on_asset_hidden', sharedWithId, assetId);
+    }
+  }
+
   async share(auth: AuthDto, dto: ItemShareChangeDto, requestOrigin?: string): Promise<ItemShareChangeResponseDto> {
     const assetIds = await this.requireShareableItems(auth, dto.assetIds);
     const recipients = await this.requireRecipients(auth, dto.userIds);

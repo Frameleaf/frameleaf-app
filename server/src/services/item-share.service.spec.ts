@@ -114,6 +114,25 @@ describe(ItemShareService.name, () => {
     });
   });
 
+  it('removes newly locked shares from every recipient’s open page', async () => {
+    const a = newUuid();
+    const b = newUuid();
+    mocks.itemShare.getRecipients.mockResolvedValue([
+      { assetId: a, sharedWithId: jamie.id },
+      { assetId: b, sharedWithId: jamie.id },
+      { assetId: a, sharedWithId: owner.id },
+    ]);
+
+    await sut.onAssetLocked({ assetIds: [a, b] });
+
+    expect(mocks.itemShare.getRecipients).toHaveBeenCalledWith([a, b]);
+    expect(mocks.websocket.clientSend.mock.calls).toEqual([
+      ['on_asset_hidden', jamie.id, a],
+      ['on_asset_hidden', jamie.id, b],
+      ['on_asset_hidden', owner.id, a],
+    ]);
+  });
+
   describe('unshare', () => {
     it('revokes the shares and tells the recipient’s open pages to drop the items', async () => {
       const a = newUuid();
