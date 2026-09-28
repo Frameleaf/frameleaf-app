@@ -19,6 +19,7 @@
   import { activitySession } from '$lib/frameleaf/activity-session.svelte';
   import {
     billingValues,
+    upscaleFact,
     cloudCostFacts,
     cloudJobRefusal,
     estimateLive,
@@ -229,6 +230,7 @@
       ? $t('frameleaf_cloud_job_work_smooth_motion')
       : $t('frameleaf_cloud_job_work_restoration'),
   );
+  const upscale = $derived(estimate ? upscaleFact(estimate) : null);
   const expiresAt = $derived(
     estimate ? new Date(estimate.expiresAt).toLocaleTimeString($locale ?? undefined, { timeStyle: 'short' }) : '',
   );
@@ -277,6 +279,16 @@
               {estimate.model.label}
               {#if request.stage === CloudMlJobStage.Full}
                 <small>{$t('frameleaf_cloud_job_fact_model_help')}</small>
+              {/if}
+            </dd>
+          {/if}
+          {#if upscale}
+            <!-- FC-46: the 64 MP output cap may lower a photo's factor; shown before confirming, since it is what is paid for -->
+            <dt>{$t('frameleaf_cloud_job_fact_upscale')}</dt>
+            <dd class:fcj-lowered={!!upscale.helpKey} data-testid="cloud-job-upscale">
+              {$t(upscale.valueKey, { values: upscale.values })}
+              {#if upscale.helpKey}
+                <small role="note">{$t(upscale.helpKey, { values: upscale.values })}</small>
               {/if}
             </dd>
           {/if}

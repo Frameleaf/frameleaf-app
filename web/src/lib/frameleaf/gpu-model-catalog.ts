@@ -512,19 +512,6 @@ export const modelLadders: Readonly<Record<LadderWorkload, readonly ModelPositio
       speed: speeds('SFFFFFFO'),
       cloud: cloud('gpu24pro', 'small-24', 20, 24),
     }),
-    position('interpolation', {
-      id: 'film@1',
-      licenceNote: true,
-      name: 'FILM',
-      short: 'FILM',
-      params: '34M',
-      sizeClass: 'medium',
-      licence: 'Apache-2.0',
-      cpuFeasible: true,
-      vramGb: { fp16: 6 },
-      speed: speeds('NNOOFFSS'),
-      cloud: cloud('gpu24pro', 'small-24', 480, 576),
-    }),
   ]),
   render: Object.freeze([
     position('render', {
