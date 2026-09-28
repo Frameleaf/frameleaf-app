@@ -199,9 +199,13 @@ describe('ShareSheet', () => {
     });
 
     it('names a single item in the title and keeps the count beside the collage', () => {
-      render(ShareSheet, { open: true, assetIds: ['a1'], assets: [photo('a1')] });
+      const view = render(ShareSheet, { open: true, assetIds: ['a1'], assets: [photo('a1')] });
       expect(screen.getByRole('dialog', { name: 'Share a1.jpg' })).toBeInTheDocument();
       expect(document.querySelector('.ss-strip')).toHaveTextContent(/^1 item$/);
+      view.unmount();
+
+      render(ShareSheet, { open: true, assetIds: ['a1'] });
+      expect(screen.getByRole('dialog', { name: 'Share item' })).toBeInTheDocument();
     });
 
     it('copies the image only when exactly one photo is shared', async () => {

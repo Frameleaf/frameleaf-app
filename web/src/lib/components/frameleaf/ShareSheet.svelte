@@ -210,8 +210,8 @@
   });
 
   const subject = $derived(
-    assetIds.length === 1 && assets?.[0]?.originalFileName
-      ? assets[0].originalFileName
+    assetIds.length === 1
+      ? assets?.[0]?.originalFileName || 'item'
       : $t('frameleaf_sharing.individual_items', { values: { count: assetIds.length } }),
   );
   const linkTarget = $derived({ type: SharedLinkType.Individual, assetIds, name: subject });
