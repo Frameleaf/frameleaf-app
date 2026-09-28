@@ -137,7 +137,7 @@
   } from '$lib/frameleaf/editor-continuity';
   import { t, type Translations } from 'svelte-i18n';
 
-  type Tool = 'trim' | 'speed' | 'adjust' | 'crop' | 'audio' | 'text' | 'enhance' | 'presets' | 'restore';
+  type Tool = 'trim' | 'speed' | 'adjust' | 'crop' | 'audio' | 'text' | 'enhance' | 'presets';
 
   let {
     asset,
@@ -158,7 +158,6 @@
     { id: 'text', label: 'frameleaf_video_editor_tool_text', icon: mdiFormatText },
     { id: 'enhance', label: 'frameleaf_video_editor_tool_enhance', icon: mdiAutoFix },
     { id: 'presets', label: 'frameleaf_editor_tool_presets', icon: mdiImageFilterVintage },
-    { id: 'restore', label: 'frameleaf_editor_tool_restore', icon: mdiAutoFix },
   ];
 
   const POSITION_LABELS: Record<TextOverlayPosition, Translations> = {
@@ -271,7 +270,7 @@
   let stage = $state({ w: 0, h: 0 });
 
   $effect(() => {
-    if (tool !== 'restore') {
+    if (tool !== 'enhance') {
       restorationCompare = null;
     }
   });
@@ -1169,7 +1168,7 @@
       aria-label={$t('frameleaf_editor_preview')}
     >
       <div class="ed-canvas" bind:this={canvasEl}>
-        {#if tool === 'restore' && restorationCompare}
+        {#if tool === 'enhance' && restorationCompare}
           <div class="ed-restore-stage">
             <RestorationCompare {...restorationCompare} alt={asset.originalFileName} loupe={restorationLoupe} />
           </div>
@@ -1296,7 +1295,7 @@
           {colorPolicy === 'tone-map' ? $t('frameleaf_video_editor_color_tone_map') : unsupportedMessage}
         </p>
       {/if}
-      {#if tool === 'restore' && !restorationCompare}
+      {#if tool === 'enhance' && !restorationCompare}
         <!-- The clip stays on the stage so "Use current frame" reads its playhead (Studio.jsx:2565). -->
         <p class="ed-restore-hint">{$t('frameleaf_restoration_compare_empty')}</p>
       {/if}
@@ -1984,16 +1983,21 @@
                 {/if}
               </div>
             {/each}
+            <!--
+              FL-83 (E-9): restoration is the prototype's "Restore video" section of Enhance
+              (Editor.jsx:1869-1920), not a tool of its own.
+            -->
+            <RestorationPanel
+              subsection
+              title={$t('frameleaf_video_editor_restore_video')}
+              {asset}
+              onCompare={(compare) => (restorationCompare = compare)}
+              onCurrentChanged={() => (saveChangedCurrent = true)}
+              loupe={restorationLoupe}
+              onLoupeChange={(value) => (restorationLoupe = value)}
+              currentFrameSeconds={() => (restorationCompare || videoError ? null : (videoEl?.currentTime ?? null))}
+            />
           </div>
-        {:else}
-          <RestorationPanel
-            {asset}
-            onCompare={(compare) => (restorationCompare = compare)}
-            onCurrentChanged={() => (saveChangedCurrent = true)}
-            loupe={restorationLoupe}
-            onLoupeChange={(value) => (restorationLoupe = value)}
-            currentFrameSeconds={() => (restorationCompare || videoError ? null : (videoEl?.currentTime ?? null))}
-          />
         {/if}
       </fieldset>
     </div>

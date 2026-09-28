@@ -122,6 +122,8 @@
     mdiCheck,
     mdiClose,
     mdiCloseCircleOutline,
+    mdiChevronLeft,
+    mdiChevronRight,
     mdiCompare,
     mdiCompareHorizontal,
     mdiContentCopy,
@@ -152,7 +154,7 @@
   } from '$lib/frameleaf/editor-continuity';
   import { t, type Translations } from 'svelte-i18n';
 
-  type Tool = 'adjust' | 'crop' | 'masks' | 'presets' | 'restore' | 'versions';
+  type Tool = 'adjust' | 'crop' | 'masks' | 'presets' | 'enhance' | 'versions';
 
   let {
     asset,
@@ -178,16 +180,30 @@
     edited: false,
   });
 
+  /*
+   * FL-83 (E-9, owner decision 2026-09-27): the prototype's photo rail, Adjust, Crop, Enhance and
+   * Presets (`Editor.jsx:56-65`). Enhance holds restoration and upscaling, as the prototype's
+   * "Enhance & upscale" (`Editor.jsx:1826-1930`). Masks (selective adjustments, FL-64) are part of
+   * adjusting, so they open from the Adjust panel and keep Adjust selected in the rail.
+   */
   const tools: { id: Tool; label: Translations; icon: string }[] = [
     { id: 'adjust', label: 'frameleaf_editor_tool_adjust', icon: mdiTune },
     { id: 'crop', label: 'frameleaf_editor_tool_crop', icon: mdiCropRotate },
-    { id: 'masks', label: 'frameleaf_editor_tool_masks', icon: mdiVectorEllipse },
+    { id: 'enhance', label: 'frameleaf_editor_tool_enhance', icon: mdiAutoFix },
     { id: 'presets', label: 'frameleaf_editor_tool_presets', icon: mdiImageFilterVintage },
-    { id: 'restore', label: 'frameleaf_editor_tool_restore', icon: mdiAutoFix },
   ];
+  /** The rail tool a panel belongs to: Masks and Versions open from Adjust and the top bar. */
+  const railTool = (id: Tool): Tool => (id === 'masks' || id === 'versions' ? 'adjust' : id);
   // Versions is the top-bar popover (Editor.jsx:1924-1943); its full list opens in the panel.
-  const panelLabel = (id: Tool): Translations =>
-    id === 'versions' ? 'frameleaf_editor_tool_versions' : tools.find((item) => item.id === id)!.label;
+  const panelLabel = (id: Tool): Translations => {
+    if (id === 'versions') {
+      return 'frameleaf_editor_tool_versions';
+    }
+    if (id === 'masks') {
+      return 'frameleaf_editor_tool_masks';
+    }
+    return tools.find((item) => item.id === id)!.label;
+  };
 
   /* Draft --------------------------------------------------------------- */
   let draft = $state<EditorDraft>(createDraft());
@@ -251,8 +267,10 @@
       const resumed = resumeEditorContinuity<EditorDraft>(asset.id, continuityBase(start));
       if (resumed.status === 'resumed') {
         draft = { ...resumed.draft, recipe: normalizeRecipe(resumed.draft.recipe) };
-        if (tools.some((item) => item.id === resumed.tool) || resumed.tool === 'versions') {
-          tool = resumed.tool as Tool;
+        // A draft left on the earlier Restore tool resumes on Enhance, where restoration now lives.
+        const resumedTool = resumed.tool === 'restore' ? 'enhance' : resumed.tool;
+        if (tools.some((item) => item.id === resumedTool) || resumedTool === 'versions' || resumedTool === 'masks') {
+          tool = resumedTool as Tool;
         }
         toastManager.primary($t('frameleaf_editor_continuity_resumed'));
       } else if (resumed.status === 'stale') {
@@ -344,7 +362,7 @@
   let restorationCompare = $state<RestorationCompareRequest | null>(null);
   // Prototype RestorePanel "Loupe" (Studio.jsx:1634).
   let restorationLoupe = $state(false);
-  const restoring = $derived(tool === 'restore');
+  const restoring = $derived(tool === 'enhance');
   $effect(() => {
     if (!restoring) {
       restorationCompare = null;
@@ -782,7 +800,7 @@
     }
   };
   const railKey = (event: KeyboardEvent) => {
-    const index = tools.findIndex((item) => item.id === tool);
+    const index = tools.findIndex((item) => item.id === railTool(tool));
     let next: number;
     switch (event.key) {
       case 'ArrowDown':
@@ -1180,9 +1198,9 @@
               role="tab"
               data-tool={item.id}
               class="ed-rail-tool"
-              aria-selected={tool === item.id}
+              aria-selected={railTool(tool) === item.id}
               aria-controls="fl-editor-panel"
-              tabindex={tool === item.id || (tool === 'versions' && item.id === 'adjust') ? 0 : -1}
+              tabindex={railTool(tool) === item.id ? 0 : -1}
               title={$t(item.label)}
               onclick={() => (tool = item.id)}
             >
@@ -1230,6 +1248,15 @@
                   onChange={(patch) => change(patch)}
                 />
               {/each}
+              <button type="button" class="ed-button ed-open-masks" onclick={() => (tool = 'masks')}>
+                <Icon icon={mdiVectorEllipse} size="18" />
+                {$t('frameleaf_editor_tool_masks')}
+                {#if recipe.masks.length > 0}
+                  <span class="ed-count">{recipe.masks.length}</span>
+                {/if}
+                <Icon icon={mdiChevronRight} size="18" />
+              </button>
+              <p class="ed-note">{$t('frameleaf_editor_masks_help')}</p>
             </div>
           {:else if tool === 'crop'}
             <div class="ed-panel-body">
@@ -1298,9 +1325,14 @@
               <p class="ed-note">{$t('frameleaf_editor_crop_help')}</p>
             </div>
           {:else if tool === 'masks'}
+            <button type="button" class="ed-back" onclick={() => (tool = 'adjust')}>
+              <Icon icon={mdiChevronLeft} size="18" />
+              {$t('frameleaf_editor_masks_back')}
+            </button>
             <MaskPanel masks={recipe.masks} bind:selectedId={selectedMaskId} onChange={(masks) => change({ masks })} />
-          {:else if tool === 'restore'}
+          {:else if tool === 'enhance'}
             <RestorationPanel
+              title={$t('frameleaf_editor_tool_enhance')}
               {asset}
               crop={recipe.crop}
               onCompare={(compare) => (restorationCompare = compare)}
