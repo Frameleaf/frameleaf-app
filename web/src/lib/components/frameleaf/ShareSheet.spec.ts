@@ -158,6 +158,21 @@ describe('ShareSheet', () => {
       expect(await screen.findByText(en.frameleaf_sharing.no_other_people)).toBeInTheDocument();
     });
 
+    it('keeps sharing unavailable after a load failure and retries the recipients', async () => {
+      sdkMock.getItemShares.mockRejectedValueOnce(new Error('Unavailable')).mockResolvedValue([]);
+      sdkMock.searchUsers.mockResolvedValue([person('jamie', 'Jamie')]);
+      render(ShareSheet, { open: true, assetIds: ['a1'] });
+
+      expect(await screen.findByRole('alert')).toHaveTextContent(en.frameleaf_sharing.people_load_failed);
+      expect(screen.queryByText(en.frameleaf_sharing.no_other_people)).toBeNull();
+      expect(screen.getByRole('button', { name: en.frameleaf_sharing.save_sharing })).toBeDisabled();
+
+      await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_error_retry }));
+      expect(await screen.findByRole('button', { name: 'Jamie' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: en.frameleaf_sharing.save_sharing })).toBeEnabled();
+      expect(sdkMock.getItemShares).toHaveBeenCalledTimes(2);
+    });
+
     it('offers only the public link for items that are not all yours', () => {
       render(ShareSheet, { open: true, assetIds: ['a1'], assets: [theirs('a1')] });
       expect(screen.queryByRole('radio')).toBeNull();

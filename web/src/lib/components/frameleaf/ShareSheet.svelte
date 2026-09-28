@@ -80,8 +80,9 @@
   let initialRecipients = new Set<string>();
   let initialAllRecipients = new Set<string>();
   let loading = $state(false);
+  let loadFailed = $state(false);
   let saving = $state(false);
-  let loadedFor = '';
+  let loadedFor = $state('');
   let loadingFor = '';
   let loadId = 0;
 
@@ -92,6 +93,7 @@
     const request = ++loadId;
     loadingFor = key;
     loading = true;
+    loadFailed = false;
     try {
       const [users, shares] = await Promise.all([searchUsers(), getItemShares({ itemShareQueryDto: { assetIds } })]);
       if (request !== loadId) {
@@ -113,6 +115,7 @@
       loadedFor = key;
     } catch (error) {
       if (request === loadId) {
+        loadFailed = true;
         handleError(error, $t('frameleaf_sharing.people_load_failed'));
       }
     } finally {
@@ -132,6 +135,7 @@
       loadedFor = '';
       loadingFor = '';
       loading = false;
+      loadFailed = false;
       people = [];
       recipients = new Set();
       partialRecipients = new Set();
@@ -316,6 +320,11 @@
   {#if peopleMode}
     {#if loading}
       <p role="status" class="ss-link-copy">{$t('loading')}</p>
+    {:else if loadFailed}
+      <p role="alert" class="ss-link-copy">{$t('frameleaf_sharing.people_load_failed')}</p>
+      <button type="button" class="button" onclick={() => void loadPeople(assetIds.join(','))}>
+        {$t('frameleaf_error_retry')}
+      </button>
     {:else if people.length > 0}
       <div class="ss-people" role="group" aria-label={$t('frameleaf_sharing.people_to_share_with')}>
         {#each people as person (person.id)}
@@ -365,7 +374,12 @@
     {/if}
     <button type="button" class="button" onclick={() => (open = false)}>{$t('cancel')}</button>
     {#if peopleMode}
-      <button type="button" class="button primary" disabled={saving || loading} onclick={() => void saveSharing()}>
+      <button
+        type="button"
+        class="button primary"
+        disabled={saving || loadedFor !== assetIds.join(',')}
+        onclick={() => void saveSharing()}
+      >
         {primaryLabel}
       </button>
     {:else}
