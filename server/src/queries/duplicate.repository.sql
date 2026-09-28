@@ -15,6 +15,14 @@ with
       inner join lateral (
         select
           "asset".*,
+          exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "asset"."id"
+          ) as "isLocked",
           to_json("asset_exif") as "exifInfo",
           (
             select
@@ -41,7 +49,17 @@ with
           "asset_exif"."assetId" = "asset"."id"
       ) as "asset2" on true
     where
-      "asset"."visibility" in ('archive', 'timeline')
+      (
+        "asset"."visibility" in ('archive', 'timeline')
+        and not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "asset"."id"
+        )
+      )
       and "asset"."ownerId" = $1::uuid
       and "asset"."duplicateId" is not null
       and "asset"."deletedAt" is null
@@ -135,6 +153,14 @@ from
   inner join lateral (
     select
       "asset".*,
+      exists (
+        select
+          1
+        from
+          asset_lock
+        where
+          asset_lock."assetId" = "asset"."id"
+      ) as "isLocked",
       to_json("asset_exif") as "exifInfo",
       (
         select
@@ -161,7 +187,17 @@ from
       "asset_exif"."assetId" = "asset"."id"
   ) as "asset2" on true
 where
-  "asset"."visibility" in ('archive', 'timeline')
+  (
+    "asset"."visibility" in ('archive', 'timeline')
+    and not exists (
+      select
+        1
+      from
+        asset_lock
+      where
+        asset_lock."assetId" = "asset"."id"
+    )
+  )
   and "asset"."duplicateId" = $1::uuid
   and "asset"."deletedAt" is null
   and "asset"."stackId" is null
@@ -239,7 +275,17 @@ with
       "asset"
       inner join "smart_search" on "asset"."id" = "smart_search"."assetId"
     where
-      "asset"."visibility" in ('archive', 'timeline')
+      (
+        "asset"."visibility" in ('archive', 'timeline')
+        and not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "asset"."id"
+        )
+      )
       and "asset"."ownerId" = any ($2::uuid[])
       and "asset"."deletedAt" is null
       and "asset"."type" = $3

@@ -1,5 +1,6 @@
-import { Kysely } from 'kysely';
-import { SyncEntityType, SyncRequestType } from 'src/enum.js';
+import { Kysely, sql } from 'kysely';
+import { randomBytes } from 'node:crypto';
+import { ChecksumAlgorithm, SyncEntityType, SyncRequestType } from 'src/enum.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { DB } from 'src/schema/index.js';
 import { SyncTestContext } from 'test/medium.factory.js';
@@ -75,6 +76,30 @@ describe(SyncEntityType.AssetV2, () => {
 
     await ctx.syncAckAll(auth, response);
     await ctx.assertSyncIsComplete(auth, [SyncRequestType.AssetsV2]);
+  });
+
+  it('never sends a recorded digest of an asset with a path checksum (FL-69)', async () => {
+    const { auth, ctx } = await setup();
+    const pathChecksum = randomBytes(20);
+    const { asset } = await ctx.newAsset({
+      ownerId: auth.user.id,
+      checksum: pathChecksum,
+      checksumAlgorithm: ChecksumAlgorithm.sha1Path,
+      originalPath: '/external/photos/lake.png',
+    });
+    // what a Library Care relink of an external original records: bytes on an external mount, not a managed copy
+    await sql`INSERT INTO immich_fork.asset_checksum ("assetId", sha1, sha256, "sizeInBytes", "verifiedPaths", "linkCount", evidence, "verifiedAt", "updatedAt")
+      VALUES (${asset.id}::uuid, ${randomBytes(20)}, ${randomBytes(32)}, 5, ARRAY[${asset.originalPath}]::text[], 1,
+        '{"source":"recovery"}'::jsonb, now(), now())`.execute(defaultDatabase);
+
+    const response = await ctx.syncStream(auth, [SyncRequestType.AssetsV2]);
+    expect(response).toEqual([
+      expect.objectContaining({
+        type: SyncEntityType.AssetV2,
+        data: expect.objectContaining({ id: asset.id, checksum: pathChecksum.toString('base64') }),
+      }),
+      expect.objectContaining({ type: SyncEntityType.SyncCompleteV1 }),
+    ]);
   });
 
   it('should detect and sync a deleted asset', async () => {

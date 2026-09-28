@@ -61,7 +61,7 @@ export function ExploreLibrary({
         <div className="el-empty" role="status">
           <Icon name="mdiImageSearchOutline" size={32} />
           <h2>Nothing to explore in this view</h2>
-          <p>Choose another collection or adjust your filters to see more.</p>
+          <p>Choose another album or adjust your filters to see more.</p>
         </div>
       ) : (
         <>
@@ -224,7 +224,7 @@ export function ExploreLibrary({
               aria-label="Collections"
               id="explore-collections"
             >
-              <Heading>From your collections</Heading>
+              <Heading>From your albums</Heading>
               <div className="el-collections">
                 {sections.collections.slice(0, 6).map((item) => (
                   <button

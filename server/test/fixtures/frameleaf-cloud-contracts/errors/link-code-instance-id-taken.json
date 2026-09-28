@@ -1,0 +1,6 @@
+{
+  "code": "instance-id-taken",
+  "message": "This server is linked to Frameleaf Cloud. Activate the key from the server itself.",
+  "retryable": false,
+  "requestId": "req_01J8ZK3M4N5P6QG6"
+}

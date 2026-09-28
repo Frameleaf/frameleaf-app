@@ -160,6 +160,107 @@ describe(PersonController.name, () => {
       expect(service.delete).toHaveBeenCalled();
     });
   });
+  describe('GET /people/merge-suggestions', () => {
+    it('should not be swallowed by GET /people/:id (route order regression)', async () => {
+      // FL-57: `merge-suggestions` must be declared before `:id` in the controller, or
+      // this path is matched by `getPerson` instead and 400s on UUID validation.
+      service.getMergeSuggestions.mockResolvedValue({ suggestions: [] });
+      const { status, body } = await request(ctx.getHttpServer()).get('/people/merge-suggestions');
+      expect(status).toBe(200);
+      expect(body).toEqual({ suggestions: [] });
+      expect(service.getMergeSuggestions).toHaveBeenCalled();
+    });
+  });
+
+  describe('PUT /people/merge-suggestions/verdicts', () => {
+    it('should reject an unknown verdict', async () => {
+      const { status } = await request(ctx.getHttpServer())
+        .put('/people/merge-suggestions/verdicts')
+        .send({ personId: factory.uuid(), suggestionId: factory.uuid(), verdict: 'maybe' });
+      expect(status).toBe(400);
+      expect(service.setMergeVerdict).not.toHaveBeenCalled();
+    });
+
+    it('should record a verdict', async () => {
+      const dto = { personId: factory.uuid(), suggestionId: factory.uuid(), verdict: 'different' };
+      service.setMergeVerdict.mockResolvedValue({
+        ...dto,
+        verdict: 'different',
+        createdAt: '2026-09-24T00:00:00.000Z',
+      });
+      const { status } = await request(ctx.getHttpServer()).put('/people/merge-suggestions/verdicts').send(dto);
+      expect(status).toBe(200);
+      expect(service.setMergeVerdict).toHaveBeenCalledWith(undefined, dto);
+    });
+  });
+
+  describe('DELETE /people/merge-suggestions/verdicts', () => {
+    it('should require valid uuids', async () => {
+      const { status } = await request(ctx.getHttpServer())
+        .delete('/people/merge-suggestions/verdicts')
+        .send({ personId: 'invalid', suggestionId: factory.uuid() });
+      expect(status).toBe(400);
+    });
+
+    it('should undo a verdict', async () => {
+      const dto = { personId: factory.uuid(), suggestionId: factory.uuid() };
+      const { status } = await request(ctx.getHttpServer()).delete('/people/merge-suggestions/verdicts').send(dto);
+      expect(status).toBe(204);
+      expect(service.deleteMergeVerdict).toHaveBeenCalledWith(undefined, dto);
+    });
+  });
+
+  describe('GET /people/:id/corrections', () => {
+    it('should require a valid uuid', async () => {
+      const { status, body } = await request(ctx.getHttpServer()).get('/people/invalid/corrections');
+      expect(status).toBe(400);
+      expect(body).toEqual(errorDto.validationError([{ path: ['id'], message: 'Invalid UUID' }]));
+    });
+
+    it('should return a page of the correction history', async () => {
+      const id = factory.uuid();
+      service.getCorrectionHistory.mockResolvedValue({ corrections: [], hasNextPage: false });
+      const { status, body } = await request(ctx.getHttpServer()).get(`/people/${id}/corrections?page=2&size=10`);
+      expect(status).toBe(200);
+      expect(body).toEqual({ corrections: [], hasNextPage: false });
+      expect(service.getCorrectionHistory).toHaveBeenCalledWith(undefined, id, { page: 2, size: 10 });
+    });
+
+    it('should default to the first page of 25 and refuse pages over 100', async () => {
+      const id = factory.uuid();
+      service.getCorrectionHistory.mockResolvedValue({ corrections: [], hasNextPage: false });
+      await request(ctx.getHttpServer()).get(`/people/${id}/corrections`);
+      expect(service.getCorrectionHistory).toHaveBeenCalledWith(undefined, id, { page: 1, size: 25 });
+
+      const { status } = await request(ctx.getHttpServer()).get(`/people/${id}/corrections?size=101`);
+      expect(status).toBe(400);
+    });
+  });
+
+  describe('POST /people/corrections/:id/undo', () => {
+    it('should require a valid uuid', async () => {
+      const { status } = await request(ctx.getHttpServer()).post('/people/corrections/invalid/undo');
+      expect(status).toBe(400);
+    });
+
+    it('should undo one correction', async () => {
+      const id = factory.uuid();
+      service.undoCorrection.mockResolvedValue({} as never);
+      const { status } = await request(ctx.getHttpServer()).post(`/people/corrections/${id}/undo`);
+      expect(status).toBe(200);
+      expect(service.undoCorrection).toHaveBeenCalledWith(undefined, id);
+    });
+  });
+
+  it('should accept the ignore and same verdicts', async () => {
+    for (const verdict of ['ignore', 'same']) {
+      const dto = { personId: factory.uuid(), suggestionId: factory.uuid(), verdict };
+      const { status } = await request(ctx.getHttpServer()).put('/people/merge-suggestions/verdicts').send(dto);
+      expect(status).toBe(200);
+      expect(service.setMergeVerdict).toHaveBeenCalledWith(undefined, dto);
+    }
+  });
+
   it('should expose ordered and legacy merge routes', async () => {
     const ids = [factory.uuid(), factory.uuid()];
     service.mergePeople.mockResolvedValue([{ id: ids[1], success: true }]);

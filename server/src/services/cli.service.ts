@@ -7,7 +7,6 @@ import { UserAdminResponseDto, mapUserAdmin } from 'src/dtos/user.dto.js';
 import { MaintenanceAction, SystemMetadataKey } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
 import { createMaintenanceLoginUrl, generateMaintenanceSecret } from 'src/utils/maintenance.js';
-import { getExternalDomain } from 'src/utils/misc.js';
 
 export type SchemaReport = {
   migrations: MigrationStatus[];
@@ -72,6 +71,8 @@ export class CliService extends BaseService {
     await this.userRepository.update(admin.id, { password: hashedPassword });
 
     if (invalidateSessions) {
+      // immich-admin has no event handlers or socket server to tell open tabs: they sign out on their
+      // next request, which the deleted session fails with 401
       await this.sessionRepository.invalidateAll({ userId: admin.id });
     }
 
@@ -79,15 +80,15 @@ export class CliService extends BaseService {
   }
 
   async disablePasswordLogin(): Promise<void> {
-    const config = await this.getConfig({ withCache: false });
-    config.passwordLogin.enabled = false;
-    await this.updateConfig(config);
+    await this.updateConfigExclusively((config) => {
+      config.passwordLogin.enabled = false;
+    });
   }
 
   async enablePasswordLogin(): Promise<void> {
-    const config = await this.getConfig({ withCache: false });
-    config.passwordLogin.enabled = true;
-    await this.updateConfig(config);
+    await this.updateConfigExclusively((config) => {
+      config.passwordLogin.enabled = true;
+    });
   }
 
   async disableMaintenanceMode(): Promise<{ alreadyDisabled: boolean }> {
@@ -112,7 +113,7 @@ export class CliService extends BaseService {
 
   async enableMaintenanceMode(): Promise<{ authUrl: string; alreadyEnabled: boolean }> {
     const { server } = await this.getConfig({ withCache: true });
-    const baseUrl = getExternalDomain(server);
+    const baseUrl = await this.getPublicUrl(server);
 
     const payload: MaintenanceAuthDto = {
       username: 'cli-admin',
@@ -168,15 +169,15 @@ export class CliService extends BaseService {
   }
 
   async disableOAuthLogin(): Promise<void> {
-    const config = await this.getConfig({ withCache: false });
-    config.oauth.enabled = false;
-    await this.updateConfig(config);
+    await this.updateConfigExclusively((config) => {
+      config.oauth.enabled = false;
+    });
   }
 
   async enableOAuthLogin(): Promise<void> {
-    const config = await this.getConfig({ withCache: false });
-    config.oauth.enabled = true;
-    await this.updateConfig(config);
+    await this.updateConfigExclusively((config) => {
+      config.oauth.enabled = true;
+    });
   }
 
   async getSampleFilePaths(): Promise<string[]> {

@@ -1,0 +1,133 @@
+/* Shared memory look: the memory player and Memories cards use the same pan-and-zoom,
+   title card and lower-third as the viewer's Memories slideshow (apple-style.css, #15).
+   Motion values come from memory-engine.mjs as --kb-from / --kb-to / --kb-duration and
+   drive the global fl-ken-burns keyframes. Loaded after discovery.css. */
+
+/* ───────── Player photo: blurred backdrop + fitted photo that pans and zooms ───────── */
+.memory-player .mp-backdrop {
+  position: absolute;
+  inset: -48px;
+  background-size: cover;
+  background-position: center;
+  filter: blur(30px) brightness(0.5) saturate(1.15);
+  transform: scale(1.08);
+  animation: mp-fade 900ms ease both;
+}
+.memory-player .mp-photo {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  transform-origin: center;
+}
+.memory-player .mp-photo.fade {
+  animation: mp-fade 900ms ease both;
+}
+.memory-player .mp-photo.memories {
+  animation:
+    mp-fade 900ms ease both,
+    fl-ken-burns var(--kb-duration, 6s) ease-in-out both;
+}
+.memory-player .mp-photo.paused {
+  animation-play-state: paused;
+}
+@keyframes mp-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* ───────── Title and end cards: the viewer's Memories title card ───────── */
+.memory-player .mv-title-card {
+  z-index: 3;
+  background: #000a;
+  color: #fff;
+}
+.memory-player .mv-title-card .mp-title-copy {
+  gap: 6px;
+  max-width: min(720px, 100%);
+}
+.memory-player .mv-title-card h1 {
+  margin: 0;
+  font-size: clamp(32px, 6vw, 64px);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.05;
+  text-wrap: balance;
+}
+.memory-player .mv-title-card .mp-title-copy p {
+  margin: 0;
+  font-size: 18px;
+  color: #fff;
+  opacity: 0.8;
+}
+.memory-player .mv-title-card .mp-play-large {
+  color: var(--fl-viewer-canvas, #08090b);
+}
+.memory-player .mv-title-card .mp-title-count {
+  font-size: var(--fl-font-small) !important;
+  opacity: 0.65;
+}
+
+/* ───────── Lower third: place over date, like the viewer's Memories captions ───────── */
+.memory-player .mv-lower-third {
+  left: 32px;
+  bottom: 28px;
+  z-index: 3;
+  max-width: min(70%, 560px);
+  gap: 2px;
+  padding: 0;
+  border-radius: 0;
+  background: none;
+  backdrop-filter: none;
+  color: #fff;
+  text-shadow: 0 1px 12px #000a;
+  pointer-events: none;
+  animation: mp-fade 1.2s 600ms ease both;
+}
+.memory-player .mv-lower-third strong {
+  display: block;
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.memory-player .mv-lower-third > span:not(.dv-sr-only) {
+  font-size: 15px;
+  opacity: 0.85;
+}
+.memory-player .mv-lower-third .mp-people {
+  pointer-events: auto;
+}
+
+/* ───────── Memories page: slow pan-and-zoom preview on hover and keyboard focus ───────── */
+.dv-memory-main:is(:hover, :focus-visible) > img[style*="--kb-from"] {
+  animation: fl-ken-burns var(--kb-duration, 9s) ease-in-out infinite alternate;
+}
+
+/* Reduce Motion: movement becomes a crossfade (JS already drops the motion variables). */
+@media (prefers-reduced-motion: reduce) {
+  .memory-player .mp-photo.memories {
+    animation: mp-fade 900ms ease both;
+  }
+  .dv-memory-main:is(:hover, :focus-visible) > img {
+    animation: none;
+    transform: none;
+  }
+  .mp-segment > span {
+    transition: none;
+  }
+}
+
+@media (max-width: 760px) {
+  .memory-player .mv-lower-third {
+    left: 18px;
+    bottom: 20px;
+  }
+  .memory-player .mv-lower-third strong {
+    font-size: 20px;
+  }
+}

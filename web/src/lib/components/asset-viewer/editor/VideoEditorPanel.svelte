@@ -1,7 +1,11 @@
+<script lang="ts" module>
+  /** FL-39: loads a saved version's recipe into the open draft. */
+  export type VideoEditorDraft = { applyRecipe: (edits: Array<{ action: string; parameters: unknown }>) => void };
+</script>
+
 <script lang="ts">
   import { shortcuts } from '$lib/actions/shortcut';
   import { eventManager } from '$lib/managers/event-manager.svelte';
-  import { waitForWebsocketEvent } from '$lib/stores/websocket';
   import { getAssetMediaUrl } from '$lib/utils';
   import {
     AssetMediaSize,
@@ -32,6 +36,12 @@
   interface Props {
     asset: AssetResponseDto;
     onClose: (refreshAsset?: boolean) => void;
+    /** FL-39: lets the hosting editor guard version actions against discarding this draft. */
+    onUnsavedChange?: (hasUnsavedChanges: boolean) => void;
+    /** FL-39: the draft recipe, as the JSON of the edits Save version would send. */
+    onDraftChange?: (editKey: string) => void;
+    /** FL-39: hands the host a way to load a saved version's recipe into the draft. */
+    onReady?: (editor: VideoEditorDraft) => void;
   }
 
   type VideoEdit = AssetEditsCreateDto['edits'][number];
@@ -121,12 +131,13 @@
   const minimumTimelineGap = 0.1;
   const minimumCropSize = 32;
 
-  let { asset = $bindable(), onClose }: Props = $props();
+  let { asset = $bindable(), onClose, onUnsavedChange, onDraftChange, onReady }: Props = $props();
 
-  let selectedTool = $state<Tool>('auto');
+  let selectedTool = $state<Tool>('trim');
   let isSaving = $state(false);
-  let isRendering = $state(false);
   let isLoading = $state(true);
+  let originalVideo = $state<{ width: number; height: number; durationMs: number }>();
+  let metadataError = $state(false);
   let isShowingConfirmDialog = $state(false);
   let hasAppliedEdits = $state(false);
   let initialEditKey = $state('');
@@ -134,8 +145,8 @@
   let cropEnabled = $state(false);
   let cropX = $state(0);
   let cropY = $state(0);
-  let cropWidth = $state(asset.width ?? 0);
-  let cropHeight = $state(asset.height ?? 0);
+  let cropWidth = $state(0);
+  let cropHeight = $state(0);
   let cropAspectRatio = $state('free');
   let rotation = $state(0);
   let straighten = $state(0);
@@ -178,14 +189,24 @@
   } | null>(null);
   let textDrag = $state<{ rect: DOMRect } | null>(null);
 
-  const durationSeconds = $derived(Math.max(0, (asset.duration ?? 0) / 1000));
-  const width = $derived(asset.width ?? 0);
-  const height = $derived(asset.height ?? 0);
+  const durationSeconds = $derived(Math.max(0, (originalVideo?.durationMs ?? 0) / 1000));
+  const width = $derived(originalVideo?.width ?? 0);
+  const height = $derived(originalVideo?.height ?? 0);
   const canUseDimensions = $derived(width > 0 && height > 0);
   const canUseTimeline = $derived(durationSeconds > 0);
   const normalizedRotation = $derived(((Number(rotation) % 360) + 360) % 360);
-  const hasUnsavedChanges = $derived(!isLoading && !hasAppliedEdits && getCurrentEditKey() !== initialEditKey);
-  const saveButtonText = $derived(isRendering ? $t('editor_video_rendering') : $t('save'));
+  const hasUnsavedChanges = $derived(
+    !!originalVideo && !isLoading && !hasAppliedEdits && getCurrentEditKey() !== initialEditKey,
+  );
+  $effect(() => {
+    onUnsavedChange?.(hasUnsavedChanges);
+  });
+  $effect(() => {
+    if (!isLoading && originalVideo) {
+      onDraftChange?.(getCurrentEditKey());
+    }
+  });
+  const saveButtonText = $derived($t('editor_video_save_version'));
   const previewUrl = $derived(
     getAssetMediaUrl({ id: asset.id, cacheKey: asset.thumbhash, edited: false, size: AssetMediaSize.Preview }),
   );
@@ -247,8 +268,40 @@
   }
 
   onMount(async () => {
+    try {
+      const { edits, originalVideo: source } = await getAssetEdits({ id: asset.id });
+      if (
+        !source ||
+        [source.width, source.height, source.durationMs].some((value) => !(Number.isFinite(value) && value > 0))
+      ) {
+        throw new Error('Original video metadata unavailable');
+      }
+      originalVideo = source;
+      loadRecipe(edits);
+      initialEditKey = getCurrentEditKey();
+      // FL-39: a saved version's recipe loads into the draft, as the prototype's Versions menu does.
+      // Nothing is published until Save version.
+      onReady?.({ applyRecipe: loadRecipe });
+    } catch {
+      metadataError = true;
+    } finally {
+      isLoading = false;
+    }
+  });
+
+  onDestroy(() => {
+    stopCropInteraction();
+    stopTimelineDrag();
+    stopTextDrag();
+  });
+
+  /** Replaces the controls with a recipe measured against the original. */
+  function loadRecipe(edits: Array<{ action: string; parameters: unknown }>) {
+    if (!originalVideo) {
+      return;
+    }
+    const source = originalVideo;
     resetControls();
-    const { edits } = await getAssetEdits({ id: asset.id });
     for (const edit of edits) {
       const action = edit.action as string;
       const parameters = edit.parameters as EditParameters;
@@ -279,7 +332,7 @@
         }
         case 'trim': {
           trimStartSeconds = getNumberParameter(parameters, 'startMs', 0) / 1000;
-          trimEndSeconds = getNumberParameter(parameters, 'endMs', asset.duration ?? 0) / 1000;
+          trimEndSeconds = getNumberParameter(parameters, 'endMs', source.durationMs) / 1000;
           break;
         }
         case 'autoEnhance': {
@@ -327,7 +380,7 @@
           textX = getNumberParameter(parameters, 'x', textX);
           textY = getNumberParameter(parameters, 'y', textY);
           textStartSeconds = getNumberParameter(parameters, 'startMs', 0) / 1000;
-          textEndSeconds = getNumberParameter(parameters, 'endMs', asset.duration ?? 0) / 1000;
+          textEndSeconds = getNumberParameter(parameters, 'endMs', source.durationMs) / 1000;
           textSize = getNumberParameter(parameters, 'size', textSize);
           textColor = getStringParameter(parameters, 'color', textColor);
           break;
@@ -336,15 +389,7 @@
     }
 
     clampTimelineState();
-    initialEditKey = getCurrentEditKey();
-    isLoading = false;
-  });
-
-  onDestroy(() => {
-    stopCropInteraction();
-    stopTimelineDrag();
-    stopTextDrag();
-  });
+  }
 
   function resetControls() {
     cropEnabled = false;
@@ -1016,42 +1061,30 @@
   }
 
   async function applyEdits() {
-    if (isSaving) {
+    if (isSaving || isLoading || !originalVideo) {
+      return;
+    }
+
+    const edits = buildEdits();
+    // Saving the original over the original would only add an empty version.
+    if (edits.length === 0 && !asset.isEdited && initialEditKey === '[]') {
+      onClose();
       return;
     }
 
     isSaving = true;
-    isRendering = false;
-
     try {
-      const edits = buildEdits();
-      const editCompleted =
-        edits.length > 0
-          ? waitForWebsocketEvent('AssetEditReadyV2', (event) => event.asset.id === asset.id, 600_000)
-          : undefined;
-
       await (edits.length === 0
         ? removeAssetEdits({ id: asset.id })
         : editAsset({ id: asset.id, assetEditsCreateDto: { edits } }));
-
       eventManager.emit('AssetEditsApplied', asset.id);
-
-      if (editCompleted) {
-        isRendering = true;
-        toastManager.primary($t('editor_video_rendering_toast'));
-
-        await editCompleted;
-        eventManager.emit('AssetEditsApplied', asset.id);
-      }
-
-      toastManager.primary($t('editor_edits_applied_success'));
+      toastManager.primary($t('editor_video_version_queued'));
       hasAppliedEdits = true;
       onClose(true);
     } catch (error) {
       toastManager.danger(error instanceof Error ? error.message : $t('editor_edits_applied_error'));
     } finally {
       isSaving = false;
-      isRendering = false;
     }
   }
 
@@ -1102,7 +1135,7 @@
       />
       <p class="text-lg text-immich-fg capitalize dark:text-immich-dark-fg">{$t('editor_video_edit')}</p>
     </HStack>
-    <Button shape="round" size="small" onclick={applyEdits} loading={isSaving} disabled={isLoading}>
+    <Button shape="round" size="small" onclick={applyEdits} loading={isSaving} disabled={isLoading || !originalVideo}>
       {saveButtonText}
     </Button>
   </HStack>
@@ -1121,15 +1154,11 @@
     {/each}
   </nav>
 
-  {#if isRendering}
-    <div class="mx-4 mt-4 rounded-md border border-immich-primary/40 bg-immich-primary/10 px-3 py-2 text-sm">
-      {$t('editor_video_rendering_toast')}
-    </div>
-  {/if}
-
   <section class="mt-4 flex-1 overflow-y-auto px-4 pb-4">
     {#if isLoading}
       <p class="text-sm text-gray-500 dark:text-gray-400">{$t('loading')}...</p>
+    {:else if metadataError}
+      <p class="text-sm text-red-400" role="alert">{$t('editor_video_original_metadata_error')}</p>
     {:else if selectedTool === 'auto'}
       <div class="space-y-3">
         <button

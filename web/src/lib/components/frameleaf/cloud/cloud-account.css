@@ -1,0 +1,500 @@
+/*
+ * Frameleaf Cloud account, plan, licence and sign-in pages (FL-155..FL-158): the prototype's
+ * frameleaf-cloud.css (design/frameleaf/template/src, effd05ffb7) card rhythm, scoped under
+ * `.frameleaf-cloud` so nothing leaks into other settings pages.
+ */
+.frameleaf-cloud {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+  max-width: 820px;
+}
+.frameleaf-cloud .fc-card {
+  background: var(--fl-panel);
+  border-radius: var(--fl-radius-card);
+  padding: 20px;
+  min-width: 0;
+}
+.frameleaf[data-theme='light'] .frameleaf-cloud .fc-card,
+.frameleaf[data-theme='light'] .frameleaf-cloud .fc-disclosure {
+  border: 1px solid var(--fl-border);
+}
+.frameleaf-cloud .fc-card-title {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.frameleaf-cloud .fc-card-title > div {
+  flex: 1;
+  min-width: 0;
+}
+.frameleaf-cloud .fc-card-title h2 {
+  margin: 0 0 4px;
+  font-size: 16px;
+  font-weight: 600;
+}
+.frameleaf-cloud .fc-card-title p {
+  margin: 0;
+  color: var(--fl-muted);
+  font-size: var(--fl-font-small);
+  line-height: 1.6;
+}
+.frameleaf-cloud .fc-card-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--fl-radius-control);
+  background: var(--fl-raised);
+  color: var(--fl-accent);
+}
+.frameleaf-cloud .fc-card h3 {
+  margin: 0 0 8px;
+  font-size: var(--fl-font-size);
+  font-weight: 600;
+}
+.frameleaf-cloud .fc-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  border-radius: var(--fl-radius-pill);
+  background: var(--fl-raised);
+  font-size: var(--fl-font-small);
+  white-space: nowrap;
+  flex: none;
+}
+.frameleaf-cloud .fc-status::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--fl-muted);
+}
+.frameleaf-cloud .fc-status.is-ok::before {
+  background: var(--fl-teal);
+}
+.frameleaf-cloud .fc-status.is-warning::before {
+  background: var(--fl-warning);
+}
+.frameleaf-cloud .fc-status.is-danger::before {
+  background: var(--fl-danger);
+}
+.frameleaf-cloud .fc-status.is-running::before {
+  background: var(--fl-blue);
+}
+.frameleaf-cloud .fc-facts {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 8px 18px;
+  margin: 0 0 14px;
+  font-size: var(--fl-font-small);
+}
+.frameleaf-cloud .fc-facts dt {
+  color: var(--fl-muted);
+}
+.frameleaf-cloud .fc-facts dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.frameleaf-cloud code {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.frameleaf-cloud .fc-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+}
+.frameleaf-cloud .fc-actions a.fc-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4375rem 0.6875rem;
+  color: var(--fl-text);
+  background: var(--fl-raised);
+  border: 1px solid var(--fl-border);
+  border-radius: var(--fl-radius-control);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.frameleaf-cloud .fc-actions a.fc-button.is-primary {
+  color: var(--fl-accent-text);
+  background: var(--fl-accent);
+  border-color: transparent;
+}
+.frameleaf-cloud .fc-muted {
+  margin: 0;
+  color: var(--fl-muted);
+  font-size: var(--fl-font-small);
+  line-height: 1.6;
+}
+.frameleaf-cloud .fc-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: var(--fl-font-small);
+  color: var(--fl-muted);
+}
+.frameleaf-cloud .fc-note svg {
+  color: var(--fl-teal);
+  flex: none;
+}
+.frameleaf-cloud .fc-link {
+  color: var(--fl-accent);
+  text-decoration: underline;
+  font: inherit;
+  padding: 0;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+.frameleaf-cloud .fc-benefits {
+  display: grid;
+  gap: 10px;
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  font-size: var(--fl-font-small);
+  line-height: 1.5;
+}
+.frameleaf-cloud .fc-benefits li {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+.frameleaf-cloud .fc-benefits svg {
+  color: var(--fl-accent);
+  flex: none;
+}
+.frameleaf-cloud .fc-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: var(--fl-radius-control);
+  background: var(--fl-raised);
+  border-left: 3px solid var(--fl-accent);
+  font-size: var(--fl-font-small);
+  line-height: 1.55;
+  margin-bottom: 14px;
+}
+.frameleaf-cloud > .fc-banner {
+  margin-bottom: 0;
+}
+.frameleaf-cloud .fc-banner > svg {
+  flex: none;
+  margin-top: 1px;
+}
+.frameleaf-cloud .fc-banner > div {
+  flex: 1;
+  min-width: 0;
+}
+.frameleaf-cloud .fc-banner strong {
+  display: block;
+  margin-bottom: 2px;
+}
+.frameleaf-cloud .fc-banner p {
+  margin: 0;
+  color: var(--fl-muted);
+}
+.frameleaf-cloud .fc-banner.is-warning {
+  border-color: var(--fl-warning);
+}
+.frameleaf-cloud .fc-banner.is-warning > svg {
+  color: var(--fl-warning);
+}
+.frameleaf-cloud .fc-banner.is-danger {
+  border-color: var(--fl-danger);
+}
+.frameleaf-cloud .fc-banner.is-danger > svg {
+  color: var(--fl-danger);
+}
+.frameleaf-cloud .fc-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  list-style: none;
+  padding: 0;
+  margin: 0 0 16px;
+}
+.frameleaf-cloud .fc-chips li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px;
+  border-radius: var(--fl-radius-pill);
+  border: 1px solid var(--fl-border);
+  color: var(--fl-muted);
+  font-size: var(--fl-font-small);
+}
+.frameleaf-cloud .fc-chips li.is-on {
+  color: var(--fl-text);
+  background: var(--fl-accent-soft, var(--fl-raised));
+  border-color: transparent;
+}
+.frameleaf-cloud .fc-chips li.is-on svg {
+  color: var(--fl-teal);
+}
+.frameleaf-cloud .fc-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+.frameleaf-cloud .fc-device-code {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 24px;
+  align-items: start;
+}
+.frameleaf-cloud .fc-device-code p {
+  font-size: var(--fl-font-small);
+  line-height: 1.6;
+}
+.frameleaf-cloud .fc-overline {
+  margin: 0;
+  color: var(--fl-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: var(--fl-font-micro);
+}
+.frameleaf-cloud .fc-code {
+  margin: 4px 0 10px;
+  font:
+    600 34px/1.1 ui-monospace,
+    'SF Mono',
+    Menlo,
+    monospace;
+  letter-spacing: 0.12em;
+}
+.frameleaf-cloud .fc-code.is-expired {
+  color: var(--fl-muted);
+  text-decoration: line-through;
+}
+.frameleaf-cloud .fc-waiting {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--fl-blue);
+}
+.frameleaf-cloud .fc-waiting svg {
+  animation: fc-pulse 1.6s var(--fl-ease) infinite;
+}
+@keyframes fc-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .frameleaf-cloud .fc-waiting svg {
+    animation: none;
+  }
+}
+.frameleaf-cloud .fc-disclosure {
+  background: var(--fl-panel);
+  border-radius: var(--fl-radius-card);
+  padding: 14px 20px;
+  font-size: var(--fl-font-small);
+  line-height: 1.6;
+}
+.frameleaf-cloud .fc-disclosure summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-weight: 500;
+}
+.frameleaf-cloud .fc-disclosure[open] summary {
+  margin-bottom: 12px;
+}
+.frameleaf-cloud .fc-consequences,
+.fc-consequences {
+  margin: 0 0 14px;
+  padding-left: 20px;
+  font-size: var(--fl-font-small);
+  line-height: 1.6;
+}
+.fc-confirm {
+  display: flex;
+  flex-direction: row;
+  gap: 10px;
+  align-items: flex-start;
+  margin-top: 12px;
+  font-size: var(--fl-font-small);
+  line-height: 1.5;
+}
+.fc-confirm input {
+  flex: none;
+  width: auto;
+  margin-top: 3px;
+}
+.frameleaf-cloud .fc-field {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 0;
+  border-top: 1px solid var(--fl-border);
+}
+.frameleaf-cloud .fc-card-title + .fc-field {
+  border-top: 0;
+}
+.frameleaf-cloud .fc-field > div:first-child {
+  min-width: 0;
+}
+.frameleaf-cloud .fc-field label,
+.frameleaf-cloud .fc-field .fc-field-label {
+  display: block;
+  font-weight: 500;
+}
+.frameleaf-cloud .fc-field p {
+  margin: 4px 0 0;
+  color: var(--fl-muted);
+  font-size: var(--fl-font-small);
+  line-height: 1.5;
+}
+.frameleaf-cloud .fc-field .fc-reason {
+  display: block;
+  margin-top: 4px;
+  color: var(--fl-warning);
+}
+.frameleaf-cloud .fc-field .fc-policy {
+  display: inline-block;
+  margin-top: 6px;
+  color: var(--fl-muted);
+  font-size: var(--fl-font-micro);
+}
+.frameleaf-cloud .fc-input {
+  width: min(100%, 280px);
+  padding: 0.4375rem 0.6875rem;
+  color: var(--fl-text);
+  background: var(--fl-raised);
+  border: 1px solid var(--fl-border);
+  border-radius: var(--fl-radius-control);
+  font:
+    500 14px/1.4 ui-monospace,
+    'SF Mono',
+    Menlo,
+    monospace;
+  letter-spacing: 0.04em;
+}
+.frameleaf-cloud .fc-input[aria-invalid='true'] {
+  border-color: var(--fl-danger);
+}
+.frameleaf-cloud .fc-error {
+  display: block;
+  margin-top: 6px;
+  color: var(--fl-danger);
+  font-size: var(--fl-font-small);
+}
+.frameleaf-cloud .fc-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: var(--fl-radius-control);
+  background: var(--fl-raised);
+  font-size: var(--fl-font-small);
+}
+.frameleaf-cloud .fc-notice.is-error {
+  color: var(--fl-danger);
+}
+.frameleaf-cloud .fc-plan-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+.frameleaf-cloud .fc-plan-grid article {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+  border: 1px solid var(--fl-border);
+  border-radius: var(--fl-radius-card);
+}
+.frameleaf-cloud .fc-plan-grid article.is-recommended {
+  border-color: var(--fl-accent);
+}
+.frameleaf-cloud .fc-plan-grid h3 {
+  margin: 0;
+}
+.frameleaf-cloud .fc-plan-grid ul {
+  margin: 0 0 8px;
+  padding-left: 18px;
+  color: var(--fl-muted);
+  font-size: var(--fl-font-small);
+  line-height: 1.6;
+  flex: 1;
+}
+.frameleaf-cloud .fc-price {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.frameleaf-cloud .fc-price s {
+  color: var(--fl-muted);
+  font-size: 16px;
+  font-weight: 400;
+}
+.frameleaf-cloud .fc-price small {
+  color: var(--fl-muted);
+  font-size: var(--fl-font-small);
+  font-weight: 400;
+}
+.frameleaf-cloud .fc-copy {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+.frameleaf-cloud .fc-copy code {
+  padding: 6px 9px;
+  border-radius: var(--fl-radius-control);
+  background: var(--fl-raised);
+}
+@media (max-width: 700px) {
+  .frameleaf-cloud .fc-card {
+    padding: 16px;
+  }
+  .frameleaf-cloud .fc-device-code {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .frameleaf-cloud .fc-card-title {
+    flex-wrap: wrap;
+  }
+  .frameleaf-cloud .fc-code {
+    font-size: 28px;
+  }
+  .frameleaf-cloud .fc-facts {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+  }
+  .frameleaf-cloud .fc-facts dd {
+    margin-bottom: 8px;
+  }
+  .frameleaf-cloud .fc-field {
+    flex-direction: column;
+  }
+}
+/* FL-158: an input with its own Save button (Sign in with Frameleaf → button text). */
+.frameleaf-cloud .fc-inline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+}

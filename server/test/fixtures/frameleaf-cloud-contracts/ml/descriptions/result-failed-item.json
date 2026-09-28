@@ -1,0 +1,18 @@
+{
+  "schema": "frameleaf.descriptions/v1",
+  "modelSku": "ms_K6WT70CS",
+  "modelRev": "mr_B2H147RBJBQ0",
+  "language": "en",
+  "items": [
+    {
+      "inputId": "a2",
+      "description": "",
+      "tags": [],
+      "moment": null,
+      "confidence": 0,
+      "warnings": [
+        "input-too-large"
+      ]
+    }
+  ]
+}

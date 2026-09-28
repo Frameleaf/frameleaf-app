@@ -8,6 +8,9 @@ export const newSystemMetadataRepositoryMock = (): Mocked<RepositoryInterface<Sy
   return {
     get: vitest.fn() as any,
     set: vitest.fn(),
+    startIntegrityRun: vitest.fn(),
+    updateIntegrityRun: vitest.fn(),
+    completeIntegrityRun: vitest.fn(),
     delete: vitest.fn(),
     readFile: vitest.fn(),
   };

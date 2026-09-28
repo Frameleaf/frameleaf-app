@@ -20,6 +20,7 @@ from
 where
   "asset_face"."assetId" = "asset"."id"
   and "asset_face"."sourceType" = $2
+  and "asset_face"."correctedAt" is null
   and "user"."clusterGroupId" = $3
 
 -- PersonRepository.delete
@@ -89,13 +90,25 @@ limit
 
 -- PersonRepository.getAllForUser
 select
-  "person".*
+  "person".*,
+  count(distinct "asset_face"."assetId") as "assetCount",
+  max("asset"."fileCreatedAt") as "lastSeenAt"
 from
   "person"
   inner join "asset_face" on "asset_face"."personGroupId" = "person"."personGroupId"
   inner join "asset" on "asset_face"."assetId" = "asset"."id"
   and "asset"."ownerId" = "person"."ownerId"
-  and "asset"."visibility" = 'timeline'
+  and (
+    "asset"."visibility" = 'timeline'
+    and not exists (
+      select
+        1
+      from
+        asset_lock
+      where
+        asset_lock."assetId" = "asset"."id"
+    )
+  )
   and "asset"."deletedAt" is null
 where
   "person"."ownerId" = $1
@@ -203,8 +216,10 @@ where
 -- PersonRepository.getFaceForFacialRecognitionJob
 select
   "asset_face"."id",
+  "asset_face"."assetId",
   "asset_face"."personGroupId",
   "asset_face"."sourceType",
+  "asset_face"."correctedAt",
   (
     select
       to_json(obj)
@@ -212,7 +227,20 @@ select
       (
         select
           "asset"."ownerId",
-          "asset"."visibility",
+          (
+            case
+              when "asset"."visibility" = 'hidden' then "asset"."visibility"
+              when exists (
+                select
+                  1
+                from
+                  asset_lock
+                where
+                  asset_lock."assetId" = "asset"."id"
+              ) then 'locked'::asset_visibility_enum
+              else "asset"."visibility"
+            end
+          ) as "visibility",
           "asset"."fileCreatedAt",
           "user"."clusterGroupId"
         from
@@ -276,7 +304,8 @@ where
 -- PersonRepository.reassignFace
 update "asset_face"
 set
-  "personGroupId" = $1
+  "personGroupId" = $1,
+  "correctedAt" = clock_timestamp()
 where
   "asset_face"."id" = $2
 
@@ -308,7 +337,17 @@ where
     from
       "asset_face"
       inner join "asset" on "asset"."id" = "asset_face"."assetId"
-      and "asset"."visibility" = 'timeline'
+      and (
+        "asset"."visibility" = 'timeline'
+        and not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "asset"."id"
+        )
+      )
       and "asset"."deletedAt" is null
     where
       "asset_face"."personGroupId" = "person"."personGroupId"
@@ -334,11 +373,29 @@ where
 
 -- PersonRepository.getStatistics
 select
-  count(distinct ("asset"."id")) as "count"
+  count(distinct ("asset"."id")) as "count",
+  count(distinct ("asset"."id")) filter (
+    where
+      "asset"."type" = 'IMAGE'
+  ) as "photos",
+  count(distinct ("asset"."id")) filter (
+    where
+      "asset"."type" = 'VIDEO'
+  ) as "videos"
 from
   "asset_face"
   left join "asset" on "asset"."id" = "asset_face"."assetId"
-  and "asset"."visibility" = 'timeline'
+  and (
+    "asset"."visibility" = 'timeline'
+    and not exists (
+      select
+        1
+      from
+        asset_lock
+      where
+        asset_lock."assetId" = "asset"."id"
+    )
+  )
   and "asset"."deletedAt" is null
   and (
     "asset"."ownerId" = $1::uuid
@@ -387,7 +444,17 @@ where
           "asset"
         where
           "asset"."id" = "asset_face"."assetId"
-          and "asset"."visibility" = 'timeline'
+          and (
+            "asset"."visibility" = 'timeline'
+            and not exists (
+              select
+                1
+              from
+                asset_lock
+              where
+                asset_lock."assetId" = "asset"."id"
+            )
+          )
           and "asset"."deletedAt" is null
       )
   )
@@ -558,6 +625,9 @@ with
       "face_search" ("faceId", "embedding")
     values
       ($1, $2)
+    on conflict ("faceId") do update
+    set
+      "embedding" = "excluded"."embedding"
   )
 select
 from
@@ -595,6 +665,15 @@ select
   "asset_face".*
 from
   "asset_face"
+  inner join "asset" on "asset"."id" = "asset_face"."assetId"
+  and not exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
+  )
 where
   "asset_face"."personGroupId" = $1
   and "asset_face"."deletedAt" is null
@@ -640,6 +719,35 @@ order by
     else false
   end asc
 
+-- PersonRepository.getMissingThumbnailsForAssets
+select
+  "person"."ownerId",
+  "person"."personGroupId"
+from
+  "person"
+where
+  "person"."thumbnailPath" = ''
+  and "person"."faceAssetId" is not null
+  and exists (
+    select
+    from
+      "asset_face"
+    where
+      "asset_face"."personGroupId" = "person"."personGroupId"
+      and (
+        "asset_face"."assetId" = any ($1::uuid[])
+        or "asset_face"."assetId" in (
+          select
+            "stacked"."id"
+          from
+            "asset" as "stacked"
+            inner join "asset" as "moved" on "moved"."stackId" = "stacked"."stackId"
+          where
+            "moved"."id" = any ($2::uuid[])
+        )
+      )
+  )
+
 -- PersonRepository.getLatestFaceDate
 select
   max("asset_job_status"."facesRecognizedAt")::text as "latestDate"
@@ -660,7 +768,22 @@ where
 
 -- PersonRepository.getForFeatureFaceUpdate
 select
-  "asset_face"."id"
+  "asset_face"."id",
+  "asset"."ownerId",
+  (
+    case
+      when "asset"."visibility" = 'hidden' then "asset"."visibility"
+      when exists (
+        select
+          1
+        from
+          asset_lock
+        where
+          asset_lock."assetId" = "asset"."id"
+      ) then 'locked'::asset_visibility_enum
+      else "asset"."visibility"
+    end
+  ) as "visibility"
 from
   "asset_face"
   inner join "asset" on "asset"."id" = "asset_face"."assetId"
@@ -669,6 +792,33 @@ where
   "asset_face"."assetId" = $2
   and "asset_face"."personGroupId" = $3
   and "asset_face"."deletedAt" is null
+
+-- PersonRepository.getFeaturedAsset
+select
+  "asset"."id",
+  (
+    case
+      when "asset"."visibility" = 'hidden' then "asset"."visibility"
+      when exists (
+        select
+          1
+        from
+          asset_lock
+        where
+          asset_lock."assetId" = "asset"."id"
+      ) then 'locked'::asset_visibility_enum
+      else "asset"."visibility"
+    end
+  ) as "visibility",
+  "asset"."deletedAt"
+from
+  "asset_face"
+  inner join "asset" on "asset"."id" = "asset_face"."assetId"
+where
+  "asset_face"."id" = $1
+  and "asset_face"."deletedAt" is null
+  and "asset_face"."isVisible" = $2
+  and "asset"."ownerId" = $3
 
 -- PersonRepository.getForMergePerson
 select
@@ -679,3 +829,144 @@ where
   "person"."personGroupId" in ($1)
 order by
   "person"."ownerId"
+
+-- PersonRepository.getMergeSuggestions
+with
+  "candidates" as (
+    select
+      "p1"."personGroupId" as "personId",
+      "p2"."personGroupId" as "suggestionId",
+      fs1.embedding <=> fs2.embedding as "distance"
+    from
+      "person" as "p1"
+      inner join "face_search" as "fs1" on "fs1"."faceId" = "p1"."faceAssetId"
+      inner join "person" as "p2" on "p2"."ownerId" = "p1"."ownerId"
+      and "p2"."personGroupId" > "p1"."personGroupId"
+      inner join "face_search" as "fs2" on "fs2"."faceId" = "p2"."faceAssetId"
+    where
+      "p1"."ownerId" = $1
+      and "p1"."isHidden" = $2
+      and "p2"."isHidden" = $3
+  )
+select
+  *
+from
+  "candidates"
+where
+  "candidates"."distance" < $4
+  and not exists (
+    select
+      1
+    from
+      immich_fork.person_merge_verdict verdict
+    where
+      verdict."ownerId" = $5::uuid
+      and verdict."personId" = "candidates"."personId"
+      and verdict."suggestionId" = "candidates"."suggestionId"
+      and (
+        verdict.verdict = 'different'
+        or verdict."createdAt" > now() - interval '30 days'
+      )
+  )
+  and not exists (
+    select
+      1
+    from
+      immich_fork.person_merge_verdict verdict
+    where
+      verdict."ownerId" = $6::uuid
+      and verdict.verdict = 'ignore'
+      and verdict."personId" in (
+        "candidates"."personId",
+        "candidates"."suggestionId"
+      )
+  )
+order by
+  "candidates"."distance" asc
+limit
+  $7
+
+-- PersonRepository.getReferenceFaces
+select distinct
+  on ("person"."personGroupId") "person"."personGroupId",
+  "asset_face"."id" as "faceId",
+  "asset_face"."assetId",
+  "asset_face"."imageWidth",
+  "asset_face"."imageHeight",
+  "asset_face"."boundingBoxX1",
+  "asset_face"."boundingBoxY1",
+  "asset_face"."boundingBoxX2",
+  "asset_face"."boundingBoxY2"
+from
+  "person"
+  inner join "asset_face" on "asset_face"."personGroupId" = "person"."personGroupId"
+  inner join "asset" on "asset"."id" = "asset_face"."assetId"
+where
+  "person"."ownerId" = $1
+  and "person"."personGroupId" = any ($2::uuid[])
+  and "asset_face"."deletedAt" is null
+  and "asset_face"."isVisible" is true
+  and "asset"."ownerId" = $3
+  and "asset"."deletedAt" is null
+  and "asset"."visibility" in ('timeline', 'archive')
+  and not exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
+  )
+order by
+  "person"."personGroupId",
+  asset_face.id = person."faceAssetId" desc,
+  "asset"."fileCreatedAt" desc
+
+-- PersonRepository.getVisibleEvidenceAssetIds
+select
+  "asset"."id"
+from
+  "asset"
+where
+  "asset"."id" = any ($1::uuid[])
+  and "asset"."ownerId" = $2
+  and "asset"."deletedAt" is null
+  and "asset"."visibility" in ('timeline', 'archive')
+  and not exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
+  )
+
+-- PersonRepository.getAssetIdsForPeople
+select
+  "asset"."id"
+from
+  "asset"
+where
+  "asset"."ownerId" = $1
+  and "asset"."deletedAt" is null
+  and exists (
+    select
+      "asset_face"."id"
+    from
+      "asset_face"
+    where
+      "asset_face"."assetId" = "asset"."id"
+      and "asset_face"."personGroupId" = any ($2::uuid[])
+  )
+order by
+  "asset"."id"
+limit
+  $3
+
+-- PersonRepository.getAllFacesOfAsset
+select
+  "asset_face".*
+from
+  "asset_face"
+where
+  "asset_face"."assetId" = $1

@@ -38,6 +38,17 @@ const resetEnv = () => {
     'REDIS_URL',
 
     'NO_COLOR',
+
+    'FRAMELEAF_CLOUD_URL',
+    'FRAMELEAF_IDENTITY_DIR',
+    'FRAMELEAF_LINK_TOKEN',
+    'FRAMELEAF_EDGE_PORT',
+    'FRAMELEAF_EDGE_BIND',
+    'FRAMELEAF_ACME_DIRECTORY_URL',
+    'FRAMELEAF_TRUSTED_LAN_CIDRS',
+    'FRAMELEAF_EDGE_SECRET',
+    'FRAMELEAF_LOCAL_URL',
+    'FRAMELEAF_LICENSE_EXTRA_JWKS_FILE',
   ]) {
     delete process.env[env];
   }
@@ -212,7 +223,12 @@ describe('getEnv', () => {
   describe('workers', () => {
     it('should return default workers', () => {
       const { workers } = getEnv();
-      expect(workers).toEqual(['api', 'microservices']);
+      expect(workers).toEqual(['api', 'microservices', 'edge']);
+    });
+
+    it('runs the edge worker without the API only when it is included by name (FL-165)', () => {
+      process.env.IMMICH_WORKERS_INCLUDE = 'microservices,edge';
+      expect(getEnv().workers).toEqual(['microservices', 'edge']);
     });
 
     it('should return included workers', () => {
@@ -224,6 +240,7 @@ describe('getEnv', () => {
     it('should excluded workers from defaults', () => {
       process.env.IMMICH_WORKERS_EXCLUDE = 'api';
       const { workers } = getEnv();
+      // the edge worker follows the API unless it is included by name
       expect(workers).toEqual(['microservices']);
     });
 
@@ -313,6 +330,75 @@ describe('getEnv', () => {
         delete process.env.OTEL_TRACES_EXPORTER;
         delete process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
       }
+    });
+  });
+
+  describe('versionCheck (FL-71)', () => {
+    it("asks only Frameleaf's own release services, with no editable address", () => {
+      process.env.IMMICH_VERSION_CHECK_URL = 'https://updates.invalid/latest';
+      process.env.IMMICH_ENV = 'development';
+      try {
+        const { versionCheck } = getEnv();
+        expect(versionCheck).toEqual({
+          url: 'https://api.frameleaf.cloud/v1/releases/latest',
+          fallbackUrl: 'https://api.github.com/repos/Frameleaf/frameleaf-app/releases',
+        });
+        expect(JSON.stringify(versionCheck)).not.toMatch(/immich/i);
+      } finally {
+        delete process.env.IMMICH_VERSION_CHECK_URL;
+      }
+    });
+  });
+
+  describe('frameleafCloud (FL-154)', () => {
+    it('is not configured by default and never falls back to a default host', () => {
+      expect(getEnv().frameleafCloud).toEqual({
+        url: null,
+        identityDir: null,
+        linkToken: null,
+        edge: { port: 2443, bind: '0.0.0.0', secret: null, acmeDirectoryUrl: null },
+        localUrl: null,
+        trustedLanCidrs: [],
+        licenseExtraJwksFile: null,
+      });
+    });
+
+    it('parses the deployment configuration', () => {
+      process.env.FRAMELEAF_CLOUD_URL = 'https://frameleaf.cloud.test/';
+      process.env.FRAMELEAF_IDENTITY_DIR = '/data/identity';
+      process.env.FRAMELEAF_LINK_TOKEN = 'fll_abcdefgh12345678';
+      process.env.FRAMELEAF_EDGE_PORT = '8443';
+      process.env.FRAMELEAF_EDGE_BIND = '192.168.1.10';
+      process.env.FRAMELEAF_TRUSTED_LAN_CIDRS = '100.64.0.0/10, fd00:1234::/32';
+      process.env.FRAMELEAF_EDGE_SECRET = 'edge-secret-0123456789';
+      process.env.FRAMELEAF_LOCAL_URL = 'http://192.168.1.10:2283/photos';
+      process.env.FRAMELEAF_ACME_DIRECTORY_URL = 'https://acme-staging-v02.api.letsencrypt.org/directory';
+      process.env.FRAMELEAF_LICENSE_EXTRA_JWKS_FILE = ' /run/secrets/frameleaf-dev-keys.json ';
+      expect(getEnv().frameleafCloud).toEqual({
+        url: 'https://frameleaf.cloud.test',
+        identityDir: '/data/identity',
+        linkToken: 'fll_abcdefgh12345678',
+        edge: {
+          port: 8443,
+          bind: '192.168.1.10',
+          secret: 'edge-secret-0123456789',
+          acmeDirectoryUrl: 'https://acme-staging-v02.api.letsencrypt.org/directory',
+        },
+        localUrl: 'http://192.168.1.10:2283',
+        trustedLanCidrs: ['100.64.0.0/10', 'fd00:1234::/32'],
+        licenseExtraJwksFile: '/run/secrets/frameleaf-dev-keys.json',
+      });
+    });
+
+    it('refuses a malformed link token, port or network', () => {
+      process.env.FRAMELEAF_LINK_TOKEN = 'not-a-token';
+      expect(() => getEnv()).toThrow('FRAMELEAF_LINK_TOKEN');
+      delete process.env.FRAMELEAF_LINK_TOKEN;
+      process.env.FRAMELEAF_EDGE_PORT = '70000';
+      expect(() => getEnv()).toThrow('FRAMELEAF_EDGE_PORT');
+      delete process.env.FRAMELEAF_EDGE_PORT;
+      process.env.FRAMELEAF_TRUSTED_LAN_CIDRS = '10.0.0.0/40';
+      expect(() => getEnv()).toThrow('FRAMELEAF_TRUSTED_LAN_CIDRS has an invalid network: "10.0.0.0/40"');
     });
   });
 });

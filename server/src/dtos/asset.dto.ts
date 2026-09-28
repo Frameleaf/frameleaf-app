@@ -2,7 +2,7 @@ import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 import { HistoryBuilder } from 'src/decorators.js';
 import { BulkIdsSchema } from 'src/dtos/asset-ids.response.dto.js';
-import { AssetType, AssetVisibilitySchema } from 'src/enum.js';
+import { AssetType, AssetVisibilitySchema, EnrichmentStaleReasonSchema } from 'src/enum.js';
 import { AssetStats } from 'src/repositories/asset.repository.js';
 import { IsNotSiblingOf, isoDatetimeToDate, latitudeSchema, longitudeSchema, stringToBool } from 'src/validation.js';
 
@@ -11,8 +11,14 @@ const UpdateAssetBaseSchema = z
     isFavorite: z.boolean().optional().describe('Mark as favorite'),
     visibility: AssetVisibilitySchema.optional(),
     dateTimeOriginal: z.string().optional().describe('Original date and time'),
-    latitude: latitudeSchema.optional().describe('Latitude coordinate'),
-    longitude: longitudeSchema.optional().describe('Longitude coordinate'),
+    latitude: latitudeSchema
+      .nullable()
+      .optional()
+      .describe('Latitude coordinate; null together with a null longitude removes the location'),
+    longitude: longitudeSchema
+      .nullable()
+      .optional()
+      .describe('Longitude coordinate; null together with a null latitude removes the location'),
     rating: z
       .int()
       .min(-1)
@@ -34,8 +40,9 @@ const UpdateAssetBaseSchema = z
   .refine(
     (data) =>
       (data.latitude === undefined && data.longitude === undefined) ||
-      (data.latitude !== undefined && data.longitude !== undefined),
-    { message: 'Latitude and longitude must be provided together' },
+      (data.latitude === null && data.longitude === null) ||
+      (typeof data.latitude === 'number' && typeof data.longitude === 'number'),
+    { message: 'Latitude and longitude must be provided together, both as numbers or both as null' },
   );
 
 const AssetBulkUpdateBaseSchema = UpdateAssetBaseSchema.extend({
@@ -49,8 +56,14 @@ const AssetBulkUpdateSchema = AssetBulkUpdateBaseSchema.pipe(
   IsNotSiblingOf(AssetBulkUpdateBaseSchema, 'dateTimeRelative', ['dateTimeOriginal']),
 ).meta({ id: 'AssetBulkUpdateDto' });
 
+/** FL-36 (V-24): a place name the owner types; an empty or null value clears it. */
+const placeNameSchema = z.string().max(255).nullish();
+
 const UpdateAssetSchema = UpdateAssetBaseSchema.extend({
   livePhotoVideoId: z.uuidv4().nullish().describe('Live photo video ID'),
+  city: placeNameSchema.describe('City name; kept over reverse geocoding until the item is moved again'),
+  state: placeNameSchema.describe('State or region name; kept over reverse geocoding until the item is moved again'),
+  country: placeNameSchema.describe('Country name; kept over reverse geocoding until the item is moved again'),
 }).meta({ id: 'UpdateAssetDto' });
 
 const AssetBulkDeleteSchema = BulkIdsSchema.extend({
@@ -66,6 +79,8 @@ export const AssetIdsSchema = z
 export enum AssetJobName {
   REFRESH_FACES = 'refresh-faces',
   REFRESH_METADATA = 'refresh-metadata',
+  /** FL-63: read the photo's text again, through the routed text recognition destination */
+  REFRESH_OCR = 'refresh-ocr',
   REGENERATE_THUMBNAIL = 'regenerate-thumbnail',
   TRANSCODE_VIDEO = 'transcode-video',
 }
@@ -114,12 +129,24 @@ const ImageDescriptionEnrichmentResponseSchema = z
     error: z.string().optional(),
     skipReason: z.string().optional().describe('Machine-readable reason when status === "skipped"'),
     description: z.string().optional(),
+    // always sent; optional in the schema so clients built before FL-36 keep compiling
+    confidence: z
+      .number()
+      .meta({ format: 'double' })
+      .min(0)
+      .max(1)
+      .nullable()
+      .optional()
+      .describe(
+        "The model's confidence in the description, 0 to 1, when the processing destination reported one; null otherwise",
+      )
+      .meta(new HistoryBuilder().added('v3.2.0').getExtensions()),
     tags: z.array(z.string()).optional(),
     objects: z.array(z.string()).optional(),
     people: z
       .array(
         z.object({
-          count: z.number(),
+          count: z.number().int(),
           apparent_age_group: z.string(),
           activity: z.string(),
           confidence: z.string(),
@@ -131,6 +158,10 @@ const ImageDescriptionEnrichmentResponseSchema = z
     context: z.string().optional(),
     appliedDescription: z.boolean(),
     appliedTags: z.boolean(),
+    destinationId: z.string().optional().describe('The processing destination that generated the description'),
+    staleReason: EnrichmentStaleReasonSchema.optional().describe(
+      'Set when the generated description is out of date: the original was replaced, confirmed names changed, or the saved prompt changed',
+    ),
   })
   .meta({ id: 'ImageDescriptionEnrichmentResponseDto' });
 
@@ -143,7 +174,7 @@ const NsfwDetectionEnrichmentResponseSchema = z
     isNsfw: z.boolean().optional(),
     effectiveIsNsfw: z.boolean(),
     score: z.number().meta({ format: 'double' }).optional(),
-    labels: z.record(z.string(), z.number()).optional(),
+    labels: z.record(z.string(), z.number().meta({ format: 'double' })).optional(),
     review: ImageEnrichmentReviewSchema.optional(),
     appliedTags: z.boolean(),
   })

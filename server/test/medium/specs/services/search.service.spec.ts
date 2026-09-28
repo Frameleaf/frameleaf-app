@@ -164,6 +164,66 @@ describe(SearchService.name, () => {
     });
   });
 
+  describe("a partner's Locked media", () => {
+    const partnerLibrary = async (ctx: ReturnType<typeof setup>['ctx']) => {
+      const { user } = await ctx.newUser();
+      const { user: partner } = await ctx.newUser();
+      await ctx.newPartner({ sharedById: partner.id, sharedWithId: user.id });
+
+      const { asset: ownLocked } = await ctx.newAsset({ ownerId: user.id, visibility: AssetVisibility.Locked });
+      const { asset: partnerTimeline } = await ctx.newAsset({ ownerId: partner.id });
+      const { asset: partnerLocked } = await ctx.newAsset({ ownerId: partner.id, visibility: AssetVisibility.Locked });
+      for (const { id } of [ownLocked, partnerTimeline, partnerLocked]) {
+        await ctx.newExif({ assetId: id, fileSizeInByte: 1000 });
+      }
+
+      const elevated = factory.auth({ user: { id: user.id }, session: { hasElevatedPermission: true } });
+      return { user, partner, ownLocked, partnerTimeline, partnerLocked, elevated };
+    };
+
+    it('never comes back from an elevated metadata search, while the viewer keeps their own', async () => {
+      const { sut, ctx } = setup();
+      const { elevated, ownLocked, partnerTimeline, partnerLocked } = await partnerLibrary(ctx);
+
+      const response = await sut.searchMetadata(elevated, {});
+      const ids = response.assets.items.map(({ id }) => id);
+
+      expect(ids).toEqual(expect.arrayContaining([ownLocked.id, partnerTimeline.id]));
+      expect(ids).not.toContain(partnerLocked.id);
+    });
+
+    it('is not counted, sampled or listed by size in an elevated session', async () => {
+      const { sut, ctx } = setup();
+      const { elevated, partnerLocked } = await partnerLibrary(ctx);
+
+      await expect(sut.searchStatistics(elevated, {})).resolves.toEqual({ total: 2 });
+
+      const random = await sut.searchRandom(elevated, { size: 50 });
+      expect(random.map(({ id }) => id)).not.toContain(partnerLocked.id);
+
+      const large = await sut.searchLargeAssets(elevated, { size: 50 });
+      expect(large.map(({ id }) => id)).not.toContain(partnerLocked.id);
+    });
+
+    it('does not come back even when the partner shares the album it sits in', async () => {
+      const { sut, ctx } = setup();
+      const { user, partner, elevated, partnerTimeline, partnerLocked } = await partnerLibrary(ctx);
+      const { album } = await ctx.newAlbum({ ownerId: partner.id });
+      await ctx.newAlbumAsset({ albumId: album.id, assetId: partnerTimeline.id });
+      await ctx.newAlbumAsset({ albumId: album.id, assetId: partnerLocked.id });
+      await ctx.newAlbumUser({ albumId: album.id, userId: user.id, role: AlbumUserRole.Editor });
+
+      const everything = await sut.searchMetadata(elevated, { albumIds: [album.id] });
+      expect(everything.assets.items.map(({ id }) => id)).toEqual([partnerTimeline.id]);
+
+      const lockedOnly = await sut.searchMetadata(elevated, {
+        albumIds: [album.id],
+        visibility: AssetVisibility.Locked,
+      });
+      expect(lockedOnly.assets.items).toEqual([]);
+    });
+  });
+
   describe('withStacked option', () => {
     it('should exclude stacked assets when withStacked is false', async () => {
       const { sut, ctx } = setup();
@@ -318,6 +378,7 @@ describe(SearchService.name, () => {
         includeNsfw: true,
         tagIds: [tag.id],
         personIds: [person.personGroupId],
+        petIds: [],
         scope: 'owned',
       };
       const hiddenAuth = {
@@ -471,6 +532,54 @@ describe(SearchService.name, () => {
     });
   });
 
+  describe('FL-49 search palette conditions', () => {
+    it('matches cameras and lenses by "contains", included or excluded', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const { asset: sony } = await ctx.newAsset({ ownerId: user.id });
+      await ctx.newExif({ assetId: sony.id, make: 'SONY', model: 'ILCE-7M4', lensModel: 'FE 24-70mm F2.8 GM II' });
+      const { asset: canon } = await ctx.newAsset({ ownerId: user.id });
+      await ctx.newExif({ assetId: canon.id, make: 'Canon', model: 'EOS R5', lensModel: 'RF 15-35mm' });
+      const auth = factory.auth({ user });
+      const ids = async (filter: object) =>
+        (await sut.searchMetadata(auth, { filter })).assets.items.map(({ id }) => id).sort();
+
+      await expect(ids({ make: { like: 'son' } })).resolves.toEqual([sony.id]);
+      await expect(ids({ model: { like: 'r5' } })).resolves.toEqual([canon.id]);
+      await expect(ids({ lensModel: { like: '24-70' } })).resolves.toEqual([sony.id]);
+      const { asset: noExif } = await ctx.newAsset({ ownerId: user.id });
+      // A photo with no lens does not contain "24-70", so an exclusion keeps it
+      await expect(ids({ lensModel: { notLike: '24-70' } })).resolves.toEqual([canon.id, noExif.id].sort());
+      await expect(ids({ make: { notLike: 'son' } })).resolves.toEqual([canon.id, noExif.id].sort());
+      await expect(sut.searchStatistics(auth, { filter: { make: { like: 'o' } } })).resolves.toEqual({ total: 2 });
+    });
+
+    it('narrows by the local capture date, which is what the histogram buckets by', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      // 23:30 on July 31 where it was taken, already August 1 in UTC
+      const { asset: lateJuly } = await ctx.newAsset({
+        ownerId: user.id,
+        fileCreatedAt: new Date('2026-08-01T05:30:00.000Z'),
+        localDateTime: new Date('2026-07-31T23:30:00.000Z'),
+      });
+      const { asset: august } = await ctx.newAsset({
+        ownerId: user.id,
+        fileCreatedAt: new Date('2026-08-12T10:00:00.000Z'),
+        localDateTime: new Date('2026-08-12T12:00:00.000Z'),
+      });
+      const auth = factory.auth({ user });
+      const localDateTime = { gte: new Date('2026-08-01T00:00:00.000Z'), lt: new Date('2026-09-01T00:00:00.000Z') };
+
+      const result = await sut.searchMetadata(auth, { filter: { localDateTime } });
+      expect(result.assets.items.map(({ id }) => id)).toEqual([august.id]);
+      const histogram = await sut.searchHistogram(auth, { filter: { localDateTime }, granularity: 'month' as never });
+      expect(histogram.total).toBe(1);
+      const byUtc = await sut.searchMetadata(auth, { filter: { takenAt: localDateTime } });
+      expect(byUtc.assets.items.map(({ id }) => id).sort()).toEqual([lateJuly.id, august.id].sort());
+    });
+  });
+
   describe('getSearchSuggestions', () => {
     it('should filter out empty search suggestions', async () => {
       const { sut, ctx } = setup();
@@ -504,6 +613,39 @@ describe(SearchService.name, () => {
       const response = await sut.searchRandom(auth, {});
 
       expect(response.length).toBe(0);
+    });
+  });
+
+  describe('getCityAssetCounts (FL-51)', () => {
+    it("counts timeline photos and videos per city and never Locked, trashed or other users' media", async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const { user: stranger } = await ctx.newUser();
+      const inCity = async (city: string, dto: Parameters<typeof ctx.newAsset>[0]) => {
+        const { asset } = await ctx.newAsset(dto);
+        await ctx.newExif({ assetId: asset.id, city, latitude: 48.85, longitude: 2.35 });
+        return asset;
+      };
+
+      await inCity('Paris', { ownerId: user.id, type: AssetType.Image });
+      await inCity('Paris', { ownerId: user.id, type: AssetType.Video });
+      await inCity('Paris', { ownerId: user.id, visibility: AssetVisibility.Locked });
+      await inCity('Rome', { ownerId: user.id });
+      await inCity('Rome', { ownerId: user.id, deletedAt: new Date() });
+      await inCity('Rome', { ownerId: user.id, visibility: AssetVisibility.Archive });
+      await inCity('Secret', { ownerId: user.id, visibility: AssetVisibility.Locked });
+      await inCity('Lisbon', { ownerId: user.id, type: AssetType.Video });
+      await inCity('Paris', { ownerId: stranger.id });
+
+      const counts = await sut.getCityAssetCounts(factory.auth({ user: { id: user.id } }));
+      expect(counts).toEqual([
+        { city: 'Lisbon', count: 1 },
+        { city: 'Paris', count: 2 },
+        { city: 'Rome', count: 1 },
+      ]);
+      // the places list itself shows photo cities only, so the video-only city is counted but not listed
+      const listed = await sut.getAssetsByCity(factory.auth({ user: { id: user.id } }));
+      expect(listed.map((asset) => asset.exifInfo?.city)).toEqual(['Paris', 'Rome']);
     });
   });
 });

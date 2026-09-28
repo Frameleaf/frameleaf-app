@@ -5,10 +5,16 @@ import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
   MediaHealthBulkActionDto,
   MediaHealthBulkResponseDto,
+  MediaHealthChooseCandidatesDto,
   MediaHealthDeleteCorruptDto,
   MediaHealthListQueryDto,
   MediaHealthListResponseDto,
+  MediaHealthLocateDto,
+  MediaHealthRecoverDto,
+  MediaHealthRootsResponseDto,
   MediaHealthScanResponseDto,
+  MediaHealthSummaryQueryDto,
+  MediaHealthSummaryResponseDto,
 } from 'src/dtos/media-health.dto.js';
 import { ApiTag } from 'src/enum.js';
 import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
@@ -30,6 +36,43 @@ export class MediaHealthController {
     return this.service.list(auth, dto);
   }
 
+  @Get('summary')
+  @Authenticated()
+  @Endpoint({
+    summary: 'Get Library Care summary',
+    description:
+      'Queue sizes for missing, damaged, duplicate, import and enrichment work, the latest scan or search, and recent Library Care jobs.',
+    history: new HistoryBuilder().added('v3.0.0').alpha('v3.0.0'),
+  })
+  getSummary(@Auth() auth: AuthDto, @Query() dto: MediaHealthSummaryQueryDto): Promise<MediaHealthSummaryResponseDto> {
+    return this.service.summary(auth, dto);
+  }
+
+  @Get('roots')
+  @Authenticated()
+  @Endpoint({
+    summary: 'List Library Care search locations',
+    description: 'Locations the caller may search for exact copies of missing or damaged originals.',
+    history: new HistoryBuilder().added('v3.0.0').alpha('v3.0.0'),
+  })
+  getRoots(@Auth() auth: AuthDto): Promise<MediaHealthRootsResponseDto> {
+    return this.service.getRoots(auth);
+  }
+
+  @Post('candidates/choose')
+  @Authenticated()
+  @Endpoint({
+    summary: 'Choose media health candidates',
+    description: 'Record which verified exact copy each missing original should be relinked to.',
+    history: new HistoryBuilder().added('v3.0.0').alpha('v3.0.0'),
+  })
+  chooseCandidates(
+    @Auth() auth: AuthDto,
+    @Body() dto: MediaHealthChooseCandidatesDto,
+  ): Promise<MediaHealthBulkResponseDto> {
+    return this.service.chooseCandidates(auth, dto);
+  }
+
   @Post('missing/scan')
   @Authenticated()
   @Endpoint({
@@ -45,10 +88,11 @@ export class MediaHealthController {
   @Authenticated()
   @Endpoint({
     summary: 'Locate missing media',
-    description: 'Queue exact-checksum candidate discovery across managed user storage.',
+    description:
+      'Queue a durable exact-checksum search of the chosen locations for missing originals or copies of confirmed damage.',
     history: new HistoryBuilder().added('v3.0.0').alpha('v3.0.0'),
   })
-  locateMissing(@Auth() auth: AuthDto, @Body() dto: MediaHealthBulkActionDto): Promise<MediaHealthScanResponseDto> {
+  locateMissing(@Auth() auth: AuthDto, @Body() dto: MediaHealthLocateDto): Promise<MediaHealthScanResponseDto> {
     return this.service.locateMissing(auth, dto);
   }
 
@@ -56,7 +100,7 @@ export class MediaHealthController {
   @Authenticated()
   @Endpoint({
     summary: 'Relink missing media',
-    description: 'Relink owned missing assets to validated candidate files.',
+    description: 'Queue a durable job relinking missing originals to their verified exact copies.',
     history: new HistoryBuilder().added('v3.0.0').alpha('v3.0.0'),
   })
   relinkMissing(@Auth() auth: AuthDto, @Body() dto: MediaHealthBulkActionDto): Promise<MediaHealthBulkResponseDto> {
@@ -74,6 +118,18 @@ export class MediaHealthController {
     return this.service.startCorruptScan(auth);
   }
 
+  @Post('corrupt/recover')
+  @Authenticated()
+  @Endpoint({
+    summary: 'Recover damaged media from a verified copy',
+    description:
+      'Queue a durable job replacing confirmed damage with an exact, decoded copy while keeping the damaged file.',
+    history: new HistoryBuilder().added('v3.0.0').alpha('v3.0.0'),
+  })
+  recoverDamaged(@Auth() auth: AuthDto, @Body() dto: MediaHealthRecoverDto): Promise<MediaHealthBulkResponseDto> {
+    return this.service.recoverDamaged(auth, dto);
+  }
+
   @Post('dismiss')
   @HttpCode(HttpStatus.NO_CONTENT)
   @Authenticated()
@@ -84,6 +140,18 @@ export class MediaHealthController {
   })
   dismiss(@Auth() auth: AuthDto, @Body() dto: MediaHealthBulkActionDto): Promise<void> {
     return this.service.dismiss(auth, dto);
+  }
+
+  @Post('reopen')
+  @Authenticated()
+  @Endpoint({
+    summary: 'Reopen media health findings',
+    description:
+      'Undo a dismissal, or reopen confirmed damage whose item was restored from the trash, putting the findings back in review.',
+    history: new HistoryBuilder().added('v3.0.0').alpha('v3.0.0'),
+  })
+  reopen(@Auth() auth: AuthDto, @Body() dto: MediaHealthBulkActionDto): Promise<MediaHealthBulkResponseDto> {
+    return this.service.reopen(auth, dto);
   }
 
   @Delete('corrupt')

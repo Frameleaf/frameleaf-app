@@ -1,0 +1,7 @@
+{
+  "code": "consent-missing",
+  "message": "Confirm the Frameleaf Cloud AI disclosure on your server before sending jobs.",
+  "retryable": false,
+  "refusal": "consent-missing",
+  "requestId": "req_01J8ZK3M4N5P6Q7S"
+}

@@ -244,4 +244,54 @@ describe(SearchController.name, () => {
       });
     });
   });
+
+  describe('FL-49 facets, histogram and smart statistics', () => {
+    it('POST /search/facets accepts a structured body with facet options', async () => {
+      const { status } = await request(ctx.getHttpServer())
+        .post('/search/facets')
+        .send({ filter: { isFavorite: { eq: true } }, facets: ['people', 'city'], facetLimit: 5 });
+      expect(status).toBe(200);
+      expect(service.searchFacets).toHaveBeenCalledWith(
+        undefined,
+        expect.objectContaining({ facets: ['people', 'city'], facetLimit: 5 }),
+      );
+    });
+
+    it('POST /search/facets rejects an unknown facet and mixing flat fields with a filter', async () => {
+      const unknown = await request(ctx.getHttpServer())
+        .post('/search/facets')
+        .send({ facets: ['iso'] });
+      expect(unknown.status).toBe(400);
+      const mixed = await request(ctx.getHttpServer())
+        .post('/search/facets')
+        .send({ city: 'Lisbon', filter: { isFavorite: { eq: true } } });
+      expect(mixed.status).toBe(400);
+      const limit = await request(ctx.getHttpServer()).post('/search/facets').send({ facetLimit: 101 });
+      expect(limit.status).toBe(400);
+      const tooMany = await request(ctx.getHttpServer())
+        .post('/search/facets')
+        .send({ facets: Array.from({ length: 11 }, () => 'city') });
+      expect(tooMany.status).toBe(400);
+    });
+
+    it('POST /search/histogram defaults to months and rejects other granularities', async () => {
+      const { status } = await request(ctx.getHttpServer()).post('/search/histogram').send({});
+      expect(status).toBe(200);
+      expect(service.searchHistogram).toHaveBeenCalledWith(
+        undefined,
+        expect.objectContaining({ granularity: 'month' }),
+      );
+      const week = await request(ctx.getHttpServer()).post('/search/histogram').send({ granularity: 'week' });
+      expect(week.status).toBe(400);
+    });
+
+    it('POST /search/smart/statistics takes a smart search body', async () => {
+      const { status } = await request(ctx.getHttpServer()).post('/search/smart/statistics').send({ query: 'beach' });
+      expect(status).toBe(200);
+      expect(service.searchSmartStatistics).toHaveBeenCalledWith(
+        undefined,
+        expect.objectContaining({ query: 'beach' }),
+      );
+    });
+  });
 });

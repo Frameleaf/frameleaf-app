@@ -1,0 +1,10 @@
+{
+  "language": "en",
+  "length": "standard",
+  "style": "write like a doctor",
+  "maxTags": 8,
+  "features": {
+    "identityNames": false,
+    "medicalSignals": false
+  }
+}

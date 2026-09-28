@@ -3,6 +3,7 @@
  */
 
 import {
+  AlbumKind,
   AlbumUserRole,
   AssetTypeEnum,
   AssetVisibility,
@@ -12,6 +13,7 @@ import {
   type ExifResponseDto,
   type TimeBucketAssetResponseDto,
   type TimeBucketsResponseDto,
+  type TimelineHighlightResponseDto,
   type UserResponseDto,
 } from '@immich/sdk';
 import { DateTime } from 'luxon';
@@ -412,6 +414,7 @@ export function getAlbum(
   // For a basic mock album, we don't include any albumUsers (shared users)
   // The owner is represented by the owner field, not in albumUsers
   const response: AlbumResponseDto = {
+    kind: AlbumKind.Album,
     id: album.id,
     albumName: album.albumName,
     description: album.description,
@@ -432,4 +435,46 @@ export function getAlbum(
   };
 
   return response;
+}
+
+/**
+ * Curated Years and Months cards (mimics GET /timeline/highlights, FL-33): one entry per year or
+ * month over the same filtered buckets as getTimeBuckets. The mock has no Best Photos scores or
+ * ratings, so the key photo is the most recent capture, which is the server's last tie-breaker.
+ */
+export function getTimelineHighlights(
+  timelineData: MockTimelineData,
+  grouping: 'year' | 'month',
+  highlightCount: number,
+  isTrashed: boolean | undefined,
+  isArchived: boolean | undefined,
+  isFavorite: boolean | undefined,
+  albumId: string | undefined,
+  changes: Changes,
+): TimelineHighlightResponseDto[] {
+  const periods = new Map<string, { ids: string[]; cities: string[] }>();
+  for (const { timeBucket } of getTimeBuckets(timelineData, isTrashed, isArchived, isFavorite, albumId, changes)) {
+    const bucket = getTimeBucket(timelineData, timeBucket, isTrashed, isArchived, isFavorite, albumId, changes);
+    const key = grouping === 'year' ? `${timeBucket.slice(0, 4)}-01-01` : `${timeBucket.slice(0, 7)}-01`;
+    const period = periods.get(key) ?? { ids: [], cities: [] };
+    period.ids.push(...bucket.id);
+    period.cities.push(...(bucket.city ?? []).filter((city): city is string => !!city));
+    periods.set(key, period);
+  }
+  return Array.from(periods, ([timeBucket, { ids, cities }]) => {
+    const counts = new Map<string, number>();
+    for (const city of cities) {
+      counts.set(city, (counts.get(city) ?? 0) + 1);
+    }
+    return {
+      timeBucket,
+      count: ids.length,
+      keyAssetId: ids[0] ?? null,
+      highlightAssetIds: grouping === 'month' ? ids.slice(1, 1 + highlightCount) : [],
+      places: [...counts]
+        .toSorted((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+        .slice(0, 3)
+        .map(([city]) => city),
+    };
+  });
 }

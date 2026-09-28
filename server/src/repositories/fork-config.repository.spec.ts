@@ -46,7 +46,7 @@ describe('fork-config SystemConfigSchema round-trip', () => {
     const result = SystemConfigSchema.safeParse(structuredClone(defaults));
 
     expect(result.success).toBe(true);
-    expect(result.data?.machineLearning.runpod).toEqual(defaults.machineLearning.runpod);
+    expect(result.data?.frameleafCloud).toEqual(defaults.frameleafCloud);
     expect(result.data?.smartAlbums).toEqual(defaults.smartAlbums);
   });
 });

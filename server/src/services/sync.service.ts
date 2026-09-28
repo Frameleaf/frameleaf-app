@@ -13,12 +13,14 @@ import {
   SyncStreamDto,
   syncAlbumV2ToV1,
 } from 'src/dtos/sync.dto.js';
-import { JobName, QueueName, SyncEntityType, SyncRequestType } from 'src/enum.js';
+import { JobName, QueueName, SyncEntityType, SyncRequestType, UserMetadataKey } from 'src/enum.js';
 import { SyncQueryOptions } from 'src/repositories/sync.repository.js';
 import { SessionSyncCheckpointTable } from 'src/schema/tables/sync-checkpoint.table.js';
 import { BaseService } from 'src/services/base.service.js';
 import { hexOrBufferToBase64 } from 'src/utils/bytes.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import { getLocationHiddenPartnerIds, hideLocation } from 'src/utils/partner-location.js';
+import { withoutStoredLockedRuleIds } from 'src/utils/preferences.js';
 import { ClientDisconnectedError, waitForDrain } from 'src/utils/response.js';
 import { SerializeOptions, fromAck, serialize, toAck } from 'src/utils/sync.js';
 
@@ -37,6 +39,24 @@ const mapSyncAssetV2 = ({ checksum, thumbhash, ...data }: AssetLike): SyncAssetV
   checksum: hexOrBufferToBase64(checksum),
   thumbhash: thumbhash ? hexOrBufferToBase64(thumbhash) : null,
 });
+
+/**
+ * A partner's Locked asset (FL-34) is still streamed, with visibility `locked`, so a device that
+ * already holds it hides it; nothing that describes the picture goes with it.
+ */
+const withoutLockedDetails = <T extends AssetLike>(asset: T): T => ({
+  ...asset,
+  originalFileName: '',
+  thumbhash: null,
+  livePhotoVideoId: null,
+});
+
+/** Exif for a partner's Locked asset (FL-34): only the asset id, every other field blanked. */
+const withoutLockedExif = <T extends { assetId: string }>(exif: T): T =>
+  Object.fromEntries(Object.keys(exif).map((key) => [key, key === 'assetId' ? exif.assetId : null])) as T;
+
+const mapPartnerAsset = ({ isLocked, ...asset }: AssetLike & { isLocked: boolean }) =>
+  mapSyncAssetV2(isLocked ? withoutLockedDetails(asset) : asset);
 
 const isEntityBackfillComplete = (createId: string, checkpoint: SyncAck | undefined): boolean =>
   createId === checkpoint?.updateId && checkpoint.extraId === COMPLETE_ID;
@@ -217,7 +237,7 @@ export class SyncService extends BaseService {
       [SyncRequestType.PeopleV1]: () => this.syncPeopleV1(options, response, checkpointMap),
       [SyncRequestType.AssetFacesV2]: () => this.syncAssetFacesV2(options, response, checkpointMap),
       [SyncRequestType.AssetFacesV3]: () => this.syncAssetFacesV3(options, response, checkpointMap),
-      [SyncRequestType.UserMetadataV1]: () => this.syncUserMetadataV1(options, response, checkpointMap),
+      [SyncRequestType.UserMetadataV1]: () => this.syncUserMetadataV1(options, response, checkpointMap, auth),
       [SyncRequestType.AssetOcrV1]: () => this.syncAssetOcrV1(options, response, checkpointMap, auth),
     } as const;
 
@@ -387,7 +407,7 @@ export class SyncService extends BaseService {
           await send(response, {
             type: backfillType,
             ids: [createId, updateId],
-            data: mapSyncAssetV2(data),
+            data: mapPartnerAsset(data),
           });
         }
 
@@ -403,7 +423,7 @@ export class SyncService extends BaseService {
 
     const upserts = this.syncRepository.partnerAsset.getUpserts({ ...options, ack: checkpointMap[upsertType] });
     for await (const { updateId, ...data } of upserts) {
-      await send(response, { type: upsertType, ids: [updateId], data: mapSyncAssetV2(data) });
+      await send(response, { type: upsertType, ids: [updateId], data: mapPartnerAsset(data) });
     }
   }
 
@@ -460,8 +480,14 @@ export class SyncService extends BaseService {
           partner.sharedById,
         );
 
-        for await (const { updateId, ...data } of backfill) {
-          await send(response, { type: backfillType, ids: [partner.createId, updateId], data });
+        // FL-54: a sharer who hides locations from this user never streams coordinates or place names
+        for await (const { updateId, isLocked, ...data } of backfill) {
+          const exif = isLocked ? withoutLockedExif(data) : data;
+          await send(response, {
+            type: backfillType,
+            ids: [partner.createId, updateId],
+            data: partner.shareLocation ? exif : hideLocation(exif),
+          });
         }
 
         await sendEntityBackfillCompleteAck(response, backfillType, partner.createId);
@@ -474,9 +500,18 @@ export class SyncService extends BaseService {
       });
     }
 
+    const locationHiddenOwnerIds = await getLocationHiddenPartnerIds({
+      userId: options.userId,
+      repository: this.partnerRepository,
+    });
     const upserts = this.syncRepository.partnerAssetExif.getUpserts({ ...options, ack: checkpointMap[upsertType] });
-    for await (const { updateId, ...data } of upserts) {
-      await send(response, { type: upsertType, ids: [updateId], data });
+    for await (const { updateId, ownerId, isLocked, ...data } of upserts) {
+      const exif = isLocked ? withoutLockedExif(data) : data;
+      await send(response, {
+        type: upsertType,
+        ids: [updateId],
+        data: locationHiddenOwnerIds.has(ownerId) ? hideLocation(exif) : exif,
+      });
     }
   }
 
@@ -681,10 +716,15 @@ export class SyncService extends BaseService {
         const backfill = this.syncRepository.albumAssetExif.getBackfill(
           { ...options, afterUpdateId: startId, beforeUpdateId: endId },
           album.id,
+          options.userId,
         );
 
-        for await (const { updateId, ...data } of backfill) {
-          await send(response, { type: backfillType, ids: [createId, updateId], data });
+        for await (const { updateId, locationHidden, ...data } of backfill) {
+          await send(response, {
+            type: backfillType,
+            ids: [createId, updateId],
+            data: locationHidden ? hideLocation(data) : data,
+          });
         }
 
         await sendEntityBackfillCompleteAck(response, backfillType, createId);
@@ -702,14 +742,14 @@ export class SyncService extends BaseService {
         { ...options, ack: upsertCheckpoint },
         createCheckpoint,
       );
-      for await (const { updateId, ...data } of updates) {
-        await send(response, { type: updateType, ids: [updateId], data });
+      for await (const { updateId, locationHidden, ...data } of updates) {
+        await send(response, { type: updateType, ids: [updateId], data: locationHidden ? hideLocation(data) : data });
       }
     }
 
     const creates = this.syncRepository.albumAssetExif.getCreates({ ...options, ack: createCheckpoint });
     let isFirst = true;
-    for await (const { updateId, ...data } of creates) {
+    for await (const { updateId, locationHidden, ...data } of creates) {
       if (isFirst) {
         await send(response, {
           type: SyncEntityType.SyncAckV1,
@@ -719,7 +759,9 @@ export class SyncService extends BaseService {
         });
         isFirst = false;
       }
-      await send(response, { type: createType, ids: [updateId], data });
+      // FL-54: an owner who hides locations from this user, directly or from the album's owner, never
+      // streams coordinates or place names; the row itself still arrives, as in the partner stream
+      await send(response, { type: createType, ids: [updateId], data: locationHidden ? hideLocation(data) : data });
     }
   }
 
@@ -756,6 +798,7 @@ export class SyncService extends BaseService {
         const backfill = this.syncRepository.albumToAsset.getBackfill(
           { ...options, afterUpdateId: startId, beforeUpdateId: endId },
           album.id,
+          options.userId,
         );
 
         for await (const { updateId, ...data } of backfill) {
@@ -928,7 +971,16 @@ export class SyncService extends BaseService {
     }
   }
 
-  private async syncUserMetadataV1(options: SyncQueryOptions, response: Writable, checkpointMap: CheckpointMap) {
+  /**
+   * FL-67: the account's Locked people, pets and tags are left out of its preferences unless the
+   * syncing session is unlocked, as `GET /users/me/preferences` does.
+   */
+  private async syncUserMetadataV1(
+    options: SyncQueryOptions,
+    response: Writable,
+    checkpointMap: CheckpointMap,
+    auth: AuthDto,
+  ) {
     const deleteType = SyncEntityType.UserMetadataDeleteV1;
     const deletes = this.syncRepository.userMetadata.getDeletes({ ...options, ack: checkpointMap[deleteType] });
 
@@ -938,9 +990,14 @@ export class SyncService extends BaseService {
 
     const upsertType = SyncEntityType.UserMetadataV1;
     const upserts = this.syncRepository.userMetadata.getUpserts({ ...options, ack: checkpointMap[upsertType] });
+    const revealLockedRules = !!auth.session?.hasElevatedPermission;
 
     for await (const { updateId, ...data } of upserts) {
-      await send(response, { type: upsertType, ids: [updateId], data });
+      const visible =
+        data.key === UserMetadataKey.Preferences && !revealLockedRules
+          ? { ...data, value: withoutStoredLockedRuleIds(data.value) }
+          : data;
+      await send(response, { type: upsertType, ids: [updateId], data: visible });
     }
   }
 

@@ -28,6 +28,7 @@ export class AssetFactory {
   #edits: AssetEditFactory[] = [];
   #faces: AssetFaceFactory[] = [];
   #stack?: Selectable<StackTable> & { assets: Selectable<AssetTable>[]; primaryAsset: Selectable<AssetTable> };
+  #isLocked = false;
 
   private constructor(private readonly value: Selectable<AssetTable>) {
     value.ownerId ??= newUuid();
@@ -137,6 +138,12 @@ export class AssetFactory {
     return this;
   }
 
+  /** Mark the asset as held in Locked (an `asset_lock` row), which repositories report as `isLocked`. */
+  locked(isLocked = true) {
+    this.#isLocked = isLocked;
+    return this;
+  }
+
   build() {
     const exif = this.#assetExif?.build();
 
@@ -149,6 +156,7 @@ export class AssetFactory {
       faces: this.#faces.map((face) => face.build()),
       stack: this.#stack ?? null,
       tags: [],
+      isLocked: this.#isLocked,
     };
   }
 }

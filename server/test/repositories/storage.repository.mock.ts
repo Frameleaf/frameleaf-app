@@ -38,7 +38,6 @@ export const makeMockWatcher =
       return () => close();
     }
 
-    // eslint-disable-next-line unicorn/consistent-function-scoping
     return () => Promise.resolve();
   };
 
@@ -48,6 +47,7 @@ export const newStorageRepositoryMock = (): Mocked<RepositoryInterface<StorageRe
 
   return {
     createZipStream: vitest.fn(),
+    createPacedZipStream: vitest.fn(),
     createPlainReadStream: vitest.fn(),
     createReadStream: vitest.fn(),
     createGzip: vitest.fn(),
@@ -55,6 +55,7 @@ export const newStorageRepositoryMock = (): Mocked<RepositoryInterface<StorageRe
     readFile: vitest.fn(),
     readJsonFile: vitest.fn() as Mocked<StorageRepository>['readJsonFile'],
     readdirWithTypes: vitest.fn(),
+    openForRandomRead: vitest.fn(),
     createFile: vitest.fn(),
     createWriteStream: vitest.fn(),
     createOrOverwriteFile: vitest.fn(),
@@ -66,11 +67,14 @@ export const newStorageRepositoryMock = (): Mocked<RepositoryInterface<StorageRe
     checkFileExists: vitest.fn(),
     mkdirSync: vitest.fn(),
     checkDiskUsage: vitest.fn(),
+    getFolderBytes: vitest.fn().mockResolvedValue(0),
+    getDevice: vitest.fn().mockResolvedValue(null),
     readdir: vitest.fn(),
     realpath: vitest.fn().mockImplementation((filepath: string) => Promise.resolve(filepath)),
     stat: vitest.fn(),
     crawl: vitest.fn(),
     walk: vitest.fn().mockImplementation(async function* () {}),
+    walkFiles: vitest.fn().mockImplementation(async function* () {}),
     walkWithCursor: vitest.fn().mockImplementation((cursor) => {
       cursor.length = 0;
       return (async function* () {})();

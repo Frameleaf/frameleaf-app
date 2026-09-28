@@ -58,7 +58,10 @@ for (const [file, workflow] of Object.entries(workflows)) {
         `${label}: missing local workflow`,
       );
     } else if (job["runs-on"] === "${{ matrix.runner }}") {
-      if (file === "local-multi-runner-build.yml" && id === "build")
+      if (
+        file === "local-multi-runner-build.yml" &&
+        (id === "build" || id === "publish")
+      )
         assert.equal(
           job.strategy.matrix.include,
           "${{ fromJSON(needs.matrix.outputs.matrix) }}",
@@ -86,12 +89,45 @@ assert(
   !docker.on.pull_request && !docker.on.release,
   "Candidate publishing must not run on PR/release events",
 );
-for (const name of ["server", "machine-learning"])
+// FL-142: the built images are archived (not pushed), deployment-tested, and only then pushed.
+for (const name of ["server", "machine-learning"]) {
   assert.deepEqual(
     docker.jobs[name].needs,
-    ["integration", "certification"],
-    "Both quality gates must precede publishing",
+    ["changes", "integration", "certification"],
+    "Both quality gates must precede building",
   );
+  assert.equal(
+    docker.jobs[name].with.mode,
+    "archive",
+    `${name}: builds must not push before the deployment test`,
+  );
+}
+assert(
+  ["integration", "certification", "server", "machine-learning"].every((gate) =>
+    docker.jobs["deploy-test"].needs.includes(gate),
+  ),
+  "The deployment test runs on the quality-gated builds",
+);
+for (const name of [
+  "server-publish",
+  "machine-learning-publish",
+  "machine-learning-hardware",
+  "retag-server",
+  "retag-machine-learning",
+]) {
+  assert(
+    docker.jobs[name].needs.includes("deploy-test"),
+    `${name}: the deployment test must precede publishing`,
+  );
+  assert.match(
+    docker.jobs[name].if,
+    /needs\['deploy-test'\]\.result == 'success'/,
+    `${name}: publishing requires a passed deployment test`,
+  );
+}
+assert.equal(docker.jobs["server-publish"].with.mode, "publish");
+assert.equal(docker.jobs["machine-learning-publish"].with.mode, "publish");
+assert.equal(docker.jobs["machine-learning-hardware"].with.mode, "push");
 assert.equal(
   docker.jobs.integration.uses,
   "./.github/workflows/fork-integration.yml",
@@ -130,7 +166,16 @@ assert(
   !workflows["fork-integration.yml"].on.push,
   "Mainline integration is invoked by Docker only",
 );
-const ml = docker.jobs["machine-learning"].strategy.matrix.include;
+const cpu = docker.jobs["machine-learning"].with;
+const ml = [
+  {
+    device: cpu.device,
+    suffix: cpu.suffix,
+    platforms: cpu.platforms,
+    target: cpu.target,
+  },
+  ...docker.jobs["machine-learning-hardware"].strategy.matrix.include,
+];
 assert.deepEqual(
   ml.map(({ device, suffix, platforms, target }) => ({
     device,

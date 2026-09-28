@@ -1,4 +1,4 @@
-import { MachineLearningHardwareAcceleration, Mode as RunPodMode } from '@immich/sdk';
+import { MachineLearningHardwareAcceleration, type AdminConfigMachineLearningDto } from '@immich/sdk';
 
 /**
  * Hardware acceleration value map keeping the SDK enum hidden behind a
@@ -48,13 +48,9 @@ export const imageEnrichmentHardwarePresets: Record<
  * Curated image-description model presets.
  *
  * The dropdown lets admins pick from a vetted set of Qwen-VL models that are
- * known to load on the published `:fork-main-cuda-runpod` ML image (Qwen2.5
- * and Qwen3 families dispatched via `AutoModelForVision2Seq`). The "Custom"
- * sentinel reveals a free-text HF model name input so power users aren't
- * locked into this list.
- *
- * `gpuPoolIds` is a recommended-default for RunPod's serverless GPU pool
- * textarea. The admin can override; we never silently rewrite their choice.
+ * known to load on the published CUDA ML image (Qwen2.5 and Qwen3 families
+ * dispatched via `AutoModelForVision2Seq`). The "Custom" sentinel reveals a
+ * free-text HF model name input so power users aren't locked into this list.
  */
 export const CUSTOM_MODEL = '__custom__';
 
@@ -62,7 +58,6 @@ export type DescriptionModelProfile = {
   value: string;
   label: string;
   vramHint: string;
-  gpuPoolIds: string[];
 };
 
 export const DESCRIPTION_MODEL_PROFILES: readonly DescriptionModelProfile[] = [
@@ -70,31 +65,26 @@ export const DESCRIPTION_MODEL_PROFILES: readonly DescriptionModelProfile[] = [
     value: 'Qwen/Qwen2.5-VL-3B-Instruct',
     label: 'Qwen2.5-VL 3B (lightweight)',
     vramHint: '~6 GB VRAM',
-    gpuPoolIds: ['AMPERE_24', 'ADA_24'],
   },
   {
     value: 'Qwen/Qwen2.5-VL-7B-Instruct',
     label: 'Qwen2.5-VL 7B (balanced)',
     vramHint: '~16 GB VRAM',
-    gpuPoolIds: ['AMPERE_24', 'AMPERE_48', 'ADA_48_PRO'],
   },
   {
     value: 'Qwen/Qwen2.5-VL-32B-Instruct',
     label: 'Qwen2.5-VL 32B (quality)',
     vramHint: '~64 GB VRAM, needs 80 GB GPU',
-    gpuPoolIds: ['AMPERE_80', 'ADA_80_PRO'],
   },
   {
     value: 'Qwen/Qwen2.5-VL-72B-Instruct',
     label: 'Qwen2.5-VL 72B (top tier)',
     vramHint: '~144 GB VRAM, multi-GPU only',
-    gpuPoolIds: ['AMPERE_80_2X'],
   },
   {
     value: 'Qwen/Qwen3-VL-30B-A3B-Instruct',
     label: 'Qwen3-VL 30B-A3B (MoE)',
     vramHint: '~60 GB VRAM',
-    gpuPoolIds: ['AMPERE_48', 'AMPERE_80'],
   },
 ];
 
@@ -110,18 +100,6 @@ export const FALLBACK_MODEL_PROFILES: readonly FallbackModelProfile[] = [
 
 export const findDescriptionProfile = (modelName: string): DescriptionModelProfile | undefined =>
   DESCRIPTION_MODEL_PROFILES.find((p) => p.value === modelName);
-
-/**
- * Compute the effective UI RunPod mode. Older configs may have `mode`
- * undefined while `enabled === true`; treat that as legacy pod mode so the
- * form doesn't surprise the admin.
- */
-export const computeRunpodMode = (mode: RunPodMode | undefined, enabled: boolean): RunPodMode => {
-  if (mode && mode !== RunPodMode.Disabled) {
-    return mode;
-  }
-  return enabled ? RunPodMode.Pod : RunPodMode.Disabled;
-};
 
 /** Split a newline-joined textarea value into trimmed, non-empty lines. */
 export const parseLines = (text: string): string[] =>
@@ -145,3 +123,15 @@ export const formatDuration = (seconds: number): string => {
 
 /** Local-format ISO timestamps, with a dash for null/undefined. */
 export const formatTimestamp = (iso: string | null | undefined): string => (iso ? new Date(iso).toLocaleString() : '—');
+
+/**
+ * Caps the matching frames of enhanced video duplicate detection at the frame count. Applied once
+ * before saving (FL-66: from the settings page, so it runs whichever area is open), not while
+ * typing, so a two-digit frame count is never clobbered between keystrokes.
+ */
+export const clampEnhancedVideoFrames = (machineLearning: AdminConfigMachineLearningDto) => {
+  const enhancedVideo = machineLearning.duplicateDetection.enhancedVideo;
+  if (enhancedVideo.minMatchingFrames > enhancedVideo.frameCount) {
+    enhancedVideo.minMatchingFrames = enhancedVideo.frameCount;
+  }
+};

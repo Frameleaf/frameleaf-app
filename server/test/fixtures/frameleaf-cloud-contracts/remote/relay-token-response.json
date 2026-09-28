@@ -1,0 +1,20 @@
+{
+  "token": "eyJhbGciOiJFZERTQSIsInR5cCI6InJlbGF5K2p3dCIsImtpZCI6IkhrN3JSejF0SzB5M20yYVFmNlA4c1c5Y1ZiTjR1WGU1TGdKZFRxWWlPb0EifQ.e30.c2ln",
+  "expiresAt": "2026-09-22T17:20:00.000Z",
+  "relay": {
+    "id": "eu1",
+    "host": "eu1.relays.frameleaf.cloud",
+    "port": 443,
+    "sni": "tun.eu1.relays.frameleaf.cloud",
+    "alpn": "fl-tunnel/1"
+  },
+  "refreshAfterSec": 7200,
+  "throttling": {
+    "bps": 8000000,
+    "burst": 4194304
+  },
+  "limits": {
+    "conns": 500
+  },
+  "keepaliveSec": 30
+}

@@ -10,6 +10,7 @@ import z from 'zod';
 import type { DB } from 'src/schema/index.js';
 import {
   EXTENSION_NAMES,
+  EXTERNAL_SCAN_CHECKSUM,
   POSTGRES_VERSION_RANGE,
   VECTORCHORD_LIST_SLACK_FACTOR,
   VECTORCHORD_VERSION_RANGE,
@@ -43,6 +44,14 @@ import {
   createOfficialMigrationProvider,
 } from 'src/fork-schema/migration-provider.js';
 import {
+  OFFICIAL_ADOPTION_AUDIT,
+  OfficialAdoptionResult,
+  applyAdoptionForkFollowUps,
+  assertWorkflowDataPreserved,
+  countAdoptionStep,
+  planOfficialAdoption,
+} from 'src/fork-schema/official-adoption.js';
+import {
   REVERSIBLE_POST_CERTIFIED_MIGRATIONS,
   irreversiblePostCertifiedMigrations,
 } from 'src/fork-schema/post-certified-residue.js';
@@ -70,7 +79,13 @@ import { vectorIndexQuery } from 'src/utils/database.js';
 
 export let cachedVectorExtension: VectorExtension | undefined;
 
-const CLIP_TABLES = ['smart_search', 'smart_search_description', 'asset_video_duplicate_frame'] as const;
+const CLIP_TABLES = [
+  'smart_search',
+  'smart_search_description',
+  'asset_video_duplicate_frame',
+  // FL-59: only the frame embeddings; frames and moments survive a search-model change
+  'video_moment_frame_embedding',
+] as const;
 
 const FORK_CATALOG_MANIFEST = forkCatalogManifest as CatalogManifest;
 const OFFICIAL_CATALOG_MANIFEST = officialCatalogManifest as CatalogManifest;
@@ -234,7 +249,12 @@ export async function getVectorExtension(runner: Kysely<DB>): Promise<VectorExte
 export const probes: Record<VectorIndex, number> = {
   [VectorIndex.Clip]: 1,
   [VectorIndex.Face]: 1,
+  // Built with a single list; never reindexed to more (FL-59).
+  [VectorIndex.VideoMomentFrame]: 1,
 };
+
+/** FL-165: a session advisory lock held on its own reserved connection (`DatabaseRepository.holdLock`). */
+export type HeldLock = { verify: () => Promise<boolean>; release: () => Promise<void> };
 
 @Injectable()
 export class DatabaseRepository extends ForkHandoffRepository {
@@ -409,7 +429,7 @@ export class DatabaseRepository extends ForkHandoffRepository {
     }>`SELECT column_name as "columnName" FROM information_schema.columns WHERE table_name = ${table}`.execute(this.db);
     if (rows.length === 0) {
       this.logger.warn(
-        `Table ${table} does not exist, skipping reindexing. This is only normal if this is a new Immich instance.`,
+        `Table ${table} does not exist, skipping reindexing. This is only normal if this is a new Frameleaf instance.`,
       );
       return;
     }
@@ -568,7 +588,7 @@ export class DatabaseRepository extends ForkHandoffRepository {
   }
 
   async deleteAllSearchEmbeddings(): Promise<void> {
-    await sql`truncate ${sql.table('smart_search')}, ${sql.table('smart_search_description')}, ${sql.table('asset_video_duplicate_frame')}`.execute(
+    await sql`truncate ${sql.table('smart_search')}, ${sql.table('smart_search_description')}, ${sql.table('asset_video_duplicate_frame')}, ${sql.table('video_moment_frame_embedding')}`.execute(
       this.db,
     );
   }
@@ -609,17 +629,7 @@ export class DatabaseRepository extends ForkHandoffRepository {
   async runMigrations(): Promise<void> {
     this.logger.log('Running migrations');
 
-    const ledgerTable = await sql<{ present: boolean }>`
-      SELECT to_regclass('public.kysely_migrations') IS NOT NULL AS present
-    `.execute(this.db);
-    const ledger = ledgerTable.rows[0]?.present
-      ? await sql<{ name: string }>`SELECT name FROM public.kysely_migrations`.execute(this.db)
-      : { rows: [] };
-    const provider = createCertifiedLedgerMigrationProvider(
-      createLegacyMigrationProvider(join(import.meta.dirname, '..', 'schema/migrations')),
-      ledger.rows.map(({ name }) => name),
-    );
-    const migrator = this.createMigrator(provider);
+    const migrator = this.createMigrator(await this.createLedgerAwareLegacyProvider());
 
     const { error, results } = await migrator.migrateToLatest();
 
@@ -638,7 +648,7 @@ export class DatabaseRepository extends ForkHandoffRepository {
         error instanceof Error ? error.message.match(/previously executed migration (.+) is missing/u) : null;
       if (missing) {
         throw new Error(
-          `Migration "${missing[1]}" was already applied to this database but is not in this version of Immich (${serverVersion}). ` +
+          `Migration "${missing[1]}" was already applied to this database but is not in this version of Frameleaf (${serverVersion}). ` +
             `This usually means the database was migrated by a newer version. Downgrades are not supported.`,
           { cause: error },
         );
@@ -777,6 +787,8 @@ export class DatabaseRepository extends ForkHandoffRepository {
         )::int AS "invalidCount"
       FROM public.asset asset
       LEFT JOIN immich_fork.asset_checksum checksum ON checksum."assetId" = asset.id
+        AND asset."checksumAlgorithm" <> 'sha1-path'
+        AND checksum.evidence ->> 'source' IS DISTINCT FROM ${EXTERNAL_SCAN_CHECKSUM}
     `.execute(runner);
     const mappingResult = await sql<{
       mappingCount: number;
@@ -1207,6 +1219,174 @@ export class DatabaseRepository extends ForkHandoffRepository {
     return officialLedgerRows > 0 ? 'official-origin' : 'fresh';
   }
 
+  /**
+   * An official-origin library the first Frameleaf boot set up (`inactive`, schema version 1) and that
+   * has not been adopted yet. Startup reports it; `immich-admin fork-schema adopt` completes it.
+   */
+  async isAwaitingOfficialAdoption(): Promise<boolean> {
+    const relation = await sql<{ present: boolean }>`
+      SELECT to_regclass('immich_fork.state') IS NOT NULL AS present
+    `.execute(this.db);
+    if (!relation.rows[0]?.present) {
+      return false;
+    }
+    const state = await sql<{ active: boolean; phase: string; schemaVersion: string }>`
+      SELECT active, phase, "schemaVersion" FROM immich_fork.state WHERE id = 1
+    `.execute(this.db);
+    const row = state.rows[0];
+    return !!row && !row.active && row.phase === 'inactive' && row.schemaVersion === '1';
+  }
+
+  /**
+   * FL-44: make an official-origin library a full Frameleaf library (see
+   * `src/fork-schema/official-adoption.ts`). One transaction: a failure leaves the library exactly as
+   * the official server can still read it, and a re-run starts over. A re-run after success changes
+   * nothing. Callers hold `DatabaseLock.Migrations`, so no server boot migrates concurrently.
+   */
+  async adoptOfficialOrigin(): Promise<OfficialAdoptionResult> {
+    return this.db.transaction().execute(async (transaction) => {
+      const relation = await sql<{ present: boolean }>`
+        SELECT to_regclass('immich_fork.state') IS NOT NULL AS present
+      `.execute(transaction);
+      if (!relation.rows[0]?.present) {
+        throw new Error('Start the server once on this library before adopting it');
+      }
+      const stateResult = await sql<{ active: boolean; phase: string; schemaVersion: string }>`
+        SELECT active, phase, "schemaVersion" FROM immich_fork.state WHERE id = 1 FOR UPDATE
+      `.execute(transaction);
+      const completed = await sql<{ details: { applied?: string[] } | null }>`
+        SELECT details FROM immich_fork.migration_audit
+        WHERE name = ${OFFICIAL_ADOPTION_AUDIT} AND status = 'applied'
+        ORDER BY id DESC LIMIT 1
+      `.execute(transaction);
+      const previous = completed.rows[0];
+      if (previous) {
+        const applied = previous.details?.applied;
+        return { adopted: false, applied: Array.isArray(applied) ? applied : [] };
+      }
+      const state = stateResult.rows[0];
+      if (!state || state.active || state.phase !== 'inactive' || state.schemaVersion !== '1') {
+        throw new Error('Only a library created by the official server, and not handed over since, can be adopted');
+      }
+      const frameleafTables = await sql<{ present: boolean }>`
+        SELECT to_regclass('public.physical_file') IS NOT NULL AS present
+      `.execute(transaction);
+      if (frameleafTables.rows[0]?.present) {
+        throw new Error('Library already holds Frameleaf tables');
+      }
+      await this.assertAdoptionQuiescent(transaction);
+
+      const ledgerResult = await sql<{ name: string; timestamp: string }>`
+        SELECT name, timestamp FROM public.kysely_migrations ORDER BY timestamp, name
+      `.execute(transaction);
+      const ledger = ledgerResult.rows.map(({ name }) => name);
+      // Adoption rows sort after every existing row even when this process's clock lags the one that
+      // wrote them (the ledger is ordered by timestamp, then name).
+      const latestRecorded = Math.max(0, ...ledgerResult.rows.map(({ timestamp }) => Date.parse(timestamp) || 0));
+      const firstTimestamp = Math.max(latestRecorded + 1, Date.now());
+      const migrations = await createLegacyMigrationProvider(
+        join(import.meta.dirname, '..', 'schema/migrations'),
+        ledger,
+      ).getMigrations();
+      const pending = planOfficialAdoption(ledger, Object.keys(migrations));
+      const workflowBefore = classifyWorkflowCompatibility(await getWorkflowCompatibilityEvidence(transaction));
+
+      // A fresh Frameleaf install runs these migrations with the legacy tables authoritative (no
+      // `immich_fork.state` yet reads as `legacy`); the Locked-cover repairs read that phase.
+      await sql`
+        UPDATE immich_fork.state SET phase = 'legacy', "updatedAt" = now()
+        WHERE id = 1 AND phase = 'inactive' AND "schemaVersion" = '1' AND active = false
+      `.execute(transaction);
+
+      const steps: Record<string, { after: Record<string, number | null>; before: Record<string, number | null> }> = {};
+      for (const [index, name] of pending.entries()) {
+        const before = await countAdoptionStep(transaction, name);
+        if (POST_CERTIFIED_UPSTREAM_MIGRATIONS.has(name)) {
+          const registered = REVERSIBLE_POST_CERTIFIED_MIGRATIONS.get(name);
+          if (!registered) {
+            throw new Error(`No registered application for post-certified migration ${name}`);
+          }
+          await registered.apply(transaction);
+        } else {
+          await migrations[name]!.up(transaction);
+        }
+        await sql`
+          INSERT INTO public.kysely_migrations (name, timestamp)
+          VALUES (${name}, ${new Date(firstTimestamp + index).toISOString()})
+        `.execute(transaction);
+        if (before) {
+          steps[name] = { before, after: (await countAdoptionStep(transaction, name))! };
+        }
+        await this.afterOfficialAdoptionStep(transaction, name);
+        this.logger.log(`Adoption migration "${name}" succeeded`);
+      }
+      const followUps = await applyAdoptionForkFollowUps(transaction);
+
+      const workflowAfter = classifyWorkflowCompatibility(await getWorkflowCompatibilityEvidence(transaction));
+      assertWorkflowDataPreserved(workflowBefore, workflowAfter);
+
+      await sql`
+        INSERT INTO immich_fork.migration_audit (name, phase, status, details, "completedAt")
+        VALUES (
+          ${OFFICIAL_ADOPTION_AUDIT},
+          'adoption',
+          'applied',
+          jsonb_build_object(
+            'applied', (${{ names: pending }}::jsonb -> 'names'),
+            'officialLedger', (${{ names: ledger }}::jsonb -> 'names'),
+            'steps', ${steps}::jsonb,
+            'faceDecisionsCarriedOver', ${followUps.faceDecisions}::int,
+            'workflowSchemaDigestBefore', ${workflowBefore.schemaDigest}::text,
+            'workflowSchemaDigestAfter', ${workflowAfter.schemaDigest}::text
+          ),
+          now()
+        )
+      `.execute(transaction);
+      return { adopted: true, applied: pending };
+    });
+  }
+
+  /**
+   * Adoption changes the schema every server reads, so it runs only with maintenance mode on and no
+   * other server connected, the conditions the certified cutover requires. Connections from this
+   * process's own address that are idle (its connection pool, the migrations lock) are not servers.
+   */
+  private async assertAdoptionQuiescent(transaction: Kysely<DB>): Promise<void> {
+    const result = await sql<{ maintenanceMode: boolean; otherConnections: number }>`
+      SELECT
+        coalesce((
+          SELECT (value->>'isMaintenanceMode')::boolean FROM public.system_metadata WHERE key = 'maintenance-mode'
+        ), false) AS "maintenanceMode",
+        (
+          SELECT count(*)::int FROM pg_stat_activity
+          WHERE datname = current_database()
+            AND pid <> pg_backend_pid()
+            AND backend_type = 'client backend'
+            AND (
+              backend_xid IS NOT NULL
+              OR state IS DISTINCT FROM 'idle'
+              OR client_addr IS DISTINCT FROM inet_client_addr()
+            )
+        ) AS "otherConnections"
+    `.execute(transaction);
+    const readiness = result.rows[0];
+    if (!readiness?.maintenanceMode) {
+      throw new Error(
+        'Adoption requires maintenance mode: run `immich-admin enable-maintenance-mode`, stop every server, then adopt',
+      );
+    }
+    if (readiness.otherConnections > 0) {
+      throw new Error(
+        `Adoption found ${readiness.otherConnections} other database connection(s); stop every server connected to this database first`,
+      );
+    }
+  }
+
+  /** Test seam: runs inside the adoption transaction after each applied migration. */
+  protected afterOfficialAdoptionStep(_transaction: Kysely<DB>, _name: string): Promise<void> {
+    return Promise.resolve();
+  }
+
   async migrateFilePaths(sourceFolder: string, targetFolder: string): Promise<void> {
     // remove trailing slashes
     if (sourceFolder.endsWith('/')) {
@@ -1263,8 +1443,76 @@ export class DatabaseRepository extends ForkHandoffRepository {
     return res as R;
   }
 
+  /**
+   * Whether this server's migrations have been applied: the public schema and the Frameleaf
+   * `immich_fork` schema are both there. A worker that does not migrate (the edge worker) asks this
+   * while holding `DatabaseLock.Migrations`, so a boot that is still migrating is waited for.
+   */
+  async isSchemaReady(): Promise<boolean> {
+    const { rows } = await sql<{ ready: boolean }>`
+      SELECT to_regclass('public.system_metadata') IS NOT NULL
+        AND to_regclass('immich_fork.migrations') IS NOT NULL AS ready
+    `.execute(this.db);
+    return !!rows[0]?.ready;
+  }
+
   tryLock(lock: DatabaseLock): Promise<boolean> {
     return this.db.connection().execute(async (connection) => this.acquireTryLock(lock, connection));
+  }
+
+  /**
+   * FL-165: take a session advisory lock on a connection reserved for as long as it is held, so the
+   * pool can never hand that session to other work or close it unnoticed. Resolves null when another
+   * session holds the lock. `verify` asks, on the same connection, whether this session still holds
+   * it (false when the connection was lost); `release` unlocks and returns the connection.
+   */
+  async holdLock(lock: DatabaseLock): Promise<HeldLock | null> {
+    let settle!: (held: HeldLock | null) => void;
+    const result = new Promise<HeldLock | null>((resolve) => (settle = resolve));
+    let finish!: () => void;
+    const done = new Promise<void>((resolve) => (finish = resolve));
+    const reserved = this.db
+      .connection()
+      .execute(async (connection) => {
+        if (!(await this.acquireTryLock(lock, connection))) {
+          settle(null);
+          return;
+        }
+        let lost = false;
+        settle({
+          verify: async () => {
+            if (lost) {
+              return false;
+            }
+            try {
+              const { rows } = await sql<{ held: boolean }>`
+                SELECT EXISTS (
+                  SELECT 1 FROM pg_locks
+                  WHERE locktype = 'advisory' AND objid = ${lock} AND pid = pg_backend_pid() AND granted
+                ) AS held`.execute(connection);
+              lost = !rows[0]?.held;
+            } catch {
+              lost = true;
+            }
+            if (lost) {
+              finish();
+            }
+            return !lost;
+          },
+          release: async () => {
+            finish();
+            await reserved;
+          },
+        });
+        await done;
+        // always: a failed check on a live session must not leave the lock on a pooled connection
+        await this.releaseLock(lock, connection).catch(() => {});
+      })
+      .catch((error: unknown) => {
+        this.logger.warn(`A held database lock ended: ${error}`);
+        settle(null);
+      });
+    return result;
   }
 
   isBusy(lock: DatabaseLock): boolean {
@@ -1300,6 +1548,35 @@ export class DatabaseRepository extends ForkHandoffRepository {
     });
   }
 
+  /**
+   * FL-34: `withAssetMetadataLock` for several assets, such as every member of a stack or live photo
+   * that one review writes. The per-asset locks are taken one at a time in id order, so two such
+   * callers cannot deadlock, and before any row lock the callback takes, the order every metadata
+   * writer follows.
+   */
+  async withAssetMetadataLocks<R>(assetIds: string[], callback: (kysely: Kysely<DB>) => Promise<R>): Promise<R> {
+    return this.db.transaction().execute(async (trx) => {
+      for (const assetId of [...new Set(assetIds)].toSorted()) {
+        await sql`SELECT pg_advisory_xact_lock(-1, hashtext(${assetId})::int)`.execute(trx);
+      }
+      return callback(trx);
+    });
+  }
+
+  /**
+   * FL-67: per-account lock around a read-check-write of the stored preferences, so a revision
+   * check and the write it guards are atomic. Two saves from different tabs can no longer both pass
+   * the check against the same revision and overwrite each other. Same shape as
+   * `withAssetMetadataLock`, in its own lock class (-2); callers read and write through the
+   * transaction passed to the callback.
+   */
+  async withUserPreferencesLock<R>(userId: string, callback: (kysely: Kysely<DB>) => Promise<R>): Promise<R> {
+    return this.db.transaction().execute(async (trx) => {
+      await sql`SELECT pg_advisory_xact_lock(-2, hashtext(${userId})::int)`.execute(trx);
+      return callback(trx);
+    });
+  }
+
   private async acquireLock(lock: DatabaseLock, connection: Kysely<DB>): Promise<void> {
     await sql`SELECT pg_advisory_lock(${lock})`.execute(connection);
   }
@@ -1318,7 +1595,7 @@ export class DatabaseRepository extends ForkHandoffRepository {
   async revertLastMigration(): Promise<string | undefined> {
     this.logger.debug('Reverting last migration');
 
-    const migrator = this.createMigrator();
+    const migrator = this.createMigrator(await this.createLedgerAwareLegacyProvider());
     const { error, results } = await migrator.migrateDown();
 
     for (const result of results ?? []) {
@@ -1344,6 +1621,24 @@ export class DatabaseRepository extends ForkHandoffRepository {
     return reverted.migrationName;
   }
 
+  /**
+   * The combined provider for the ledger as it stands: sentinels for audited certified names it does
+   * not bundle, and never the Frameleaf workflow rewrite on a ledger holding the official one (FL-44).
+   */
+  private async createLedgerAwareLegacyProvider(): Promise<MigrationProvider> {
+    const ledgerTable = await sql<{ present: boolean }>`
+      SELECT to_regclass('public.kysely_migrations') IS NOT NULL AS present
+    `.execute(this.db);
+    const ledger = ledgerTable.rows[0]?.present
+      ? await sql<{ name: string }>`SELECT name FROM public.kysely_migrations`.execute(this.db)
+      : { rows: [] };
+    const appliedNames = ledger.rows.map(({ name }) => name);
+    return createCertifiedLedgerMigrationProvider(
+      createLegacyMigrationProvider(join(import.meta.dirname, '..', 'schema/migrations'), appliedNames),
+      appliedNames,
+    );
+  }
+
   // NOTE: `revertSchemaToUpstream` was REMOVED — see commands/index.ts comment.
   // The CLI was broken (empty down() stubs silently corrupted state). For
   // downgrade, use `pg_restore` from a backup taken before installing the fork.
@@ -1367,9 +1662,7 @@ export class DatabaseRepository extends ForkHandoffRepository {
    * lands after `2100000000030-AddSha256ChecksumAlgorithm` was applied — and
    * Kysely's ordered mode refuses those as "corrupted migrations".
    */
-  private createMigrator(
-    provider: MigrationProvider = createLegacyMigrationProvider(join(import.meta.dirname, '..', 'schema/migrations')),
-  ): Migrator {
+  private createMigrator(provider: MigrationProvider): Migrator {
     return new Migrator({
       db: this.db,
       migrationLockTableName: 'kysely_migrations_lock',

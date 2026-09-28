@@ -1,0 +1,1058 @@
+/* Apple-style refinements approved 2026-09-24 (see INTERACTION-REQUIREMENTS.md).
+   Numbers refer to the reviewed suggestion list. Loaded after styles.css. */
+
+.frameleaf,
+.media-viewer,
+.dialog,
+.search-palette {
+  /* SF Pro on Apple devices; bundled Inter elsewhere (SF Pro cannot be licensed for web delivery). */
+  font-family:
+    -apple-system, BlinkMacSystemFont, system-ui, Inter, "Segoe UI", sans-serif;
+  /* #2 motion tokens: spring with a slight settle, and a snappy ease for small moves */
+  --fl-spring: linear(
+    0,
+    0.009,
+    0.035 2.1%,
+    0.141,
+    0.281 6.7%,
+    0.723 12.9%,
+    0.938 16.7%,
+    1.017,
+    1.077,
+    1.121,
+    1.149 24.3%,
+    1.159,
+    1.163,
+    1.161,
+    1.154 29.9%,
+    1.129 32.8%,
+    1.051 39.6%,
+    1.017 43.1%,
+    0.991,
+    0.977 51%,
+    0.974 53.8%,
+    0.975 57.1%,
+    0.997 69.8%,
+    1.003 76.9%,
+    1
+  );
+  --fl-snappy: cubic-bezier(0.2, 0.9, 0.1, 1);
+  --fl-duration: 380ms;
+  /* #3 materials */
+  --fl-material: color-mix(in srgb, var(--fl-panel) 72%, transparent);
+  --fl-material-edge: color-mix(in srgb, var(--fl-text) 12%, transparent);
+  --fl-material-blur: blur(24px) saturate(180%);
+  /* larger continuous corners */
+  --fl-radius: 9px;
+  --fl-radius-card: 12px;
+  --fl-radius-sheet: 22px;
+  --fl-squircle: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M100 50C100 88 88 100 50 100S0 88 0 50 12 0 50 0 100 12 100 50Z'/%3E%3C/svg%3E");
+}
+@media (prefers-contrast: more), (prefers-reduced-transparency: reduce) {
+  .frameleaf,
+  .media-viewer,
+  .search-palette {
+    --fl-material: var(--fl-panel);
+  }
+}
+
+/* ───────── #10 type and colour polish ───────── */
+.frameleaf :where(h1, h2, h3) {
+  text-wrap: balance;
+  letter-spacing: -0.015em;
+}
+.frameleaf
+  :where(.result-count, .stars, kbd, small, time, .saved-label, .duration),
+.media-viewer :where(.mv-position) {
+  font-variant-numeric: tabular-nums;
+}
+@media (color-gamut: p3) {
+  .frameleaf:not([data-theme="light"]) {
+    --fl-accent: color(display-p3 0.2 0.82 0.38);
+  }
+  .frameleaf[data-theme="light"] {
+    --fl-accent: color(display-p3 0.1 0.5 0.26);
+  }
+}
+
+/* ───────── corners (squircle where supported) ───────── */
+.frameleaf
+  :where(
+    .button,
+    .global-search,
+    .search-context,
+    .quick-filters .button,
+    label.sort,
+    .rail-link,
+    .locked-toggle,
+    .chip,
+    select,
+    input:not([type="checkbox"], [type="radio"], [type="range"])
+  ) {
+  border-radius: var(--fl-radius);
+}
+.frameleaf
+  :where(
+    .asset-tile:not([data-layout="browse"]) .at-open,
+    .el-best,
+    .el-place,
+    .el-memory-row button,
+    .el-shortcut,
+    .inspector-preview,
+    .person-card
+  ) {
+  border-radius: var(--fl-radius-card);
+}
+.dialog {
+  border-radius: var(--fl-radius-sheet);
+}
+@supports (corner-shape: squircle) {
+  .frameleaf
+    :where(
+      .button,
+      .global-search,
+      .asset-tile:not([data-layout="browse"]) .at-open,
+      .el-best,
+      .el-place,
+      .chip,
+      .inspector-preview
+    ),
+  .dialog,
+  .search-palette {
+    corner-shape: squircle;
+  }
+  .frameleaf
+    :where(
+      .asset-tile:not([data-layout="browse"]) .at-open,
+      .el-best,
+      .el-place
+    ) {
+    border-radius: calc(var(--fl-radius-card) * 1.8);
+  }
+  .dialog {
+    border-radius: calc(var(--fl-radius-sheet) * 1.8);
+  }
+}
+
+/* ───────── people photos: squircle everywhere (mask works in every engine) ───────── */
+.person-avatar,
+.mv-person > img,
+.profile img,
+.cc-protected-option img,
+.ft-person-list .person-avatar,
+.explore-library .el-person .person-avatar {
+  /* An owner decision for every people photo: beat per-component circles. */
+  border-radius: 0 !important;
+  -webkit-mask: var(--fl-squircle, none) center / 100% 100% no-repeat;
+  mask: var(--fl-squircle, none) center / 100% 100% no-repeat;
+}
+
+/* ───────── #3 materials: header scrolls away, toolbar stays frosted ───────── */
+.frameleaf .topbar {
+  background: var(--fl-material);
+  backdrop-filter: var(--fl-material-blur);
+  border-bottom-color: var(--fl-material-edge);
+}
+.frameleaf .media-scroll > .results-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--fl-material);
+  backdrop-filter: var(--fl-material-blur);
+  border-bottom: 1px solid var(--fl-material-edge);
+}
+.frameleaf[data-screen="library"] .media-scroll {
+  padding-bottom: 96px;
+}
+/* floating capsule toolbar over the library photos; other screens keep the docked bar */
+.frameleaf.app {
+  --fl-left: 228px;
+  --fl-right: 0px;
+}
+.frameleaf.app:has(.sidebar.rail-collapsed) {
+  --fl-left: 60px;
+}
+.frameleaf.app:has(.workspace .inspector) {
+  --fl-right: 360px;
+}
+@media (max-width: 1280px) {
+  .frameleaf.app:has(.workspace .inspector) {
+    --fl-right: 290px;
+  }
+}
+@media (max-width: 1000px) {
+  .frameleaf.app:has(.workspace .inspector) {
+    --fl-right: 0px;
+  }
+}
+@media (max-width: 700px) {
+  .frameleaf.app,
+  .frameleaf.app:has(.sidebar.rail-collapsed) {
+    --fl-left: 0px;
+  }
+}
+.frameleaf[data-screen="library"] .bottom-bar {
+  position: fixed;
+  left: calc(var(--fl-left) + 12px);
+  right: calc(var(--fl-right) + 12px);
+  bottom: max(18px, env(safe-area-inset-bottom));
+  width: fit-content;
+  max-width: calc(100vw - var(--fl-left) - var(--fl-right) - 24px);
+  margin-inline: auto;
+  min-height: 52px;
+  padding: 6px 10px 6px 18px;
+  border: 1px solid var(--fl-material-edge);
+  border-radius: 18px;
+  background: var(--fl-material);
+  backdrop-filter: blur(28px) saturate(180%);
+  box-shadow: 0 10px 40px #0006;
+}
+.frameleaf[data-screen="library"] .bottom-bar .grow {
+  flex: 0 0 8px;
+}
+.dialog::backdrop,
+.media-viewer::backdrop {
+  background: #0006;
+  backdrop-filter: blur(12px);
+}
+
+/* ───────── large title that shrinks as you scroll (Chrome, Safari 26+) ───────── */
+.frameleaf .collection-header h1 {
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  transform-origin: left bottom;
+}
+@supports (animation-timeline: scroll()) {
+  .frameleaf .media-scroll {
+    scroll-timeline: --fl-library block;
+  }
+  .frameleaf .collection-header h1 {
+    animation: fl-title-shrink linear both;
+    animation-timeline: --fl-library;
+    animation-range: 0 90px;
+  }
+  @keyframes fl-title-shrink {
+    to {
+      scale: 0.62;
+      opacity: 0.2;
+    }
+  }
+}
+
+/* ───────── grids per tab ───────── */
+/* Browse: Photos-style dense square grid, no names or ratings */
+.frameleaf[data-layout="browse"] .media-grid:not(.media-list) {
+  grid-template-columns: repeat(
+    auto-fill,
+    minmax(calc(var(--thumb-size) * 0.8), 1fr)
+  );
+  gap: 2px;
+  padding: 2px;
+}
+.frameleaf .asset-tile[data-layout="browse"],
+.frameleaf .asset-tile[data-layout="browse"] .at-open {
+  border-radius: 0;
+  corner-shape: round;
+}
+.frameleaf .asset-tile[data-layout="browse"] .at-open {
+  aspect-ratio: 1;
+}
+.frameleaf .asset-tile[data-layout="browse"] .at-rating {
+  display: none;
+}
+@media (max-width: 700px) {
+  .frameleaf[data-layout="browse"] .media-grid:not(.media-list) {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+/* Work: the Lightroom-style editing surface always shows ratings; file names are optional */
+.frameleaf .asset-tile[data-layout="work"] .at-rating {
+  opacity: 1;
+}
+.frameleaf
+  .media-grid:not(.show-filenames)
+  .asset-tile[data-layout="work"]
+  .at-caption
+  > span {
+  display: none;
+}
+@media (max-width: 700px) {
+  .frameleaf .results-toolbar [aria-label$="file names"] {
+    display: none;
+  }
+}
+
+/* ───────── #2 / #4 motion ───────── */
+.frameleaf :where(button, .el-best, .el-place, .el-person) {
+  transition:
+    transform var(--fl-duration) var(--fl-spring),
+    background-color 160ms ease,
+    box-shadow 200ms ease;
+}
+.frameleaf :where(button):active:not(:disabled) {
+  transform: scale(0.96);
+  transition-duration: 90ms;
+}
+.frameleaf .asset-tile .at-open img {
+  transition: transform 500ms var(--fl-snappy);
+}
+.frameleaf .asset-tile:not([data-layout="list"]) .at-open:hover img {
+  transform: scale(1.03);
+}
+.dialog[open] {
+  transition:
+    opacity 220ms ease,
+    translate 480ms var(--fl-spring),
+    scale 480ms var(--fl-spring),
+    display 480ms allow-discrete,
+    overlay 480ms allow-discrete;
+  @starting-style {
+    opacity: 0;
+    translate: 0 40px;
+    scale: 0.96;
+  }
+}
+.dialog::backdrop {
+  transition: opacity 260ms ease;
+  @starting-style {
+    opacity: 0;
+  }
+}
+:is(.mv-menu, .menu, [role="menu"]) {
+  transform-origin: top right;
+  animation: fl-menu-in 320ms var(--fl-spring);
+}
+@keyframes fl-menu-in {
+  from {
+    opacity: 0;
+    scale: 0.9;
+  }
+}
+
+/* ───────── #11 zoom open/close ───────── */
+.media-viewer .mv-image {
+  view-transition-name: fl-hero;
+}
+::view-transition-group(fl-hero) {
+  animation-duration: 520ms;
+  animation-timing-function: var(--fl-spring);
+}
+::view-transition-old(fl-hero),
+::view-transition-new(fl-hero) {
+  animation: none;
+  mix-blend-mode: normal;
+  height: 100%;
+  object-fit: cover;
+  overflow: clip;
+}
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 300ms;
+}
+
+/* ───────── #5 snapping carousels ───────── */
+.explore-library :is(.el-memory-row, .el-people, .el-places, .el-highlights) {
+  scroll-snap-type: x mandatory;
+  scroll-padding-inline: 4px;
+  overscroll-behavior-inline: contain;
+}
+.explore-library
+  :is(.el-memory-row, .el-people, .el-places, .el-highlights)
+  > * {
+  scroll-snap-align: start;
+}
+
+/* ───────── #13 hands-on viewer ───────── */
+.media-viewer,
+.media-viewer .mv-canvas {
+  background: #000;
+}
+.media-viewer .mv-canvas {
+  isolation: isolate; /* keep slideshow layers below the frosted header and footer */
+  transition:
+    transform 460ms var(--fl-spring),
+    opacity 300ms ease;
+}
+.media-viewer .mv-shell:not(.with-filmstrip) > .mv-canvas {
+  grid-row: 1 / -1;
+}
+.media-viewer .mv-shell.with-filmstrip > .mv-canvas {
+  grid-row: 1 / 3;
+}
+.media-viewer :is(.mv-header, .mv-footer) {
+  position: relative;
+  z-index: 2;
+  background: #1c1c1e99;
+  backdrop-filter: var(--fl-material-blur);
+  border-color: #ffffff14;
+  transition:
+    opacity 260ms ease,
+    translate 420ms var(--fl-spring);
+}
+.media-viewer.chrome-hidden
+  :is(.mv-header, .mv-footer, .mv-side, .mv-caption, .mv-filmstrip) {
+  opacity: 0;
+  pointer-events: none;
+}
+.media-viewer.chrome-hidden .mv-header {
+  translate: 0 -12px;
+}
+.media-viewer.chrome-hidden .mv-footer {
+  translate: 0 12px;
+}
+.media-viewer.dragging .mv-canvas {
+  transition: none;
+}
+
+/* ───────── #15 Ken Burns and Memories slideshow transitions ───────── */
+.media-viewer .mv-stage-item:is(.ken-burns, .memories) {
+  animation:
+    mv-fade 900ms ease both,
+    fl-ken-burns var(--kb-duration, 6s) ease-in-out both;
+}
+@keyframes fl-ken-burns {
+  from {
+    transform: var(--kb-from);
+  }
+  to {
+    transform: var(--kb-to);
+  }
+}
+.media-viewer .mv-title-card {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: grid;
+  place-content: center;
+  text-align: center;
+  gap: 6px;
+  background: #000a;
+  color: #fff;
+  pointer-events: none;
+  animation: fl-title-card 3.2s ease both;
+}
+.media-viewer .mv-title-card h2 {
+  margin: 0;
+  font-size: clamp(32px, 6vw, 64px);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+.media-viewer .mv-title-card p {
+  margin: 0;
+  font-size: 18px;
+  opacity: 0.8;
+}
+@keyframes fl-title-card {
+  0%,
+  70% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+.media-viewer .mv-lower-third {
+  position: absolute;
+  left: 32px;
+  bottom: 88px;
+  z-index: 3;
+  color: #fff;
+  text-shadow: 0 1px 12px #000a;
+  pointer-events: none;
+  animation: mv-fade 1.2s 600ms ease both;
+}
+.media-viewer .mv-lower-third strong {
+  display: block;
+  font-size: 24px;
+  letter-spacing: -0.01em;
+}
+
+/* ───────── #1 reduced motion: movement becomes crossfades ───────── */
+@media (prefers-reduced-motion: reduce) {
+  .dialog[open] {
+    transition: opacity 200ms ease;
+    @starting-style {
+      translate: none;
+      scale: none;
+    }
+  }
+  ::view-transition-group(fl-hero) {
+    animation: none;
+  }
+  .frameleaf .asset-tile .at-open:hover img,
+  .frameleaf :where(button):active:not(:disabled) {
+    transform: none;
+  }
+  :is(.mv-menu, .menu, [role="menu"]) {
+    animation: fl-fade-in 150ms ease;
+  }
+}
+
+@media (max-width: 760px) {
+  .frameleaf[data-screen="library"] .bottom-bar {
+    padding: 6px 8px 6px 14px;
+  }
+  .media-viewer .mv-lower-third {
+    left: 18px;
+    bottom: 78px;
+  }
+}
+/* #9 edge-to-edge: keep chrome clear of the notch and home indicator */
+.frameleaf .topbar {
+  padding-top: env(safe-area-inset-top);
+  padding-left: max(18px, env(safe-area-inset-left));
+  padding-right: max(24px, env(safe-area-inset-right));
+}
+.media-viewer .mv-header {
+  padding-top: max(8px, env(safe-area-inset-top));
+}
+.media-viewer .mv-footer {
+  padding-bottom: max(8px, env(safe-area-inset-bottom));
+}
+
+/* ───────── #8 information as a floating glass card (tablet and desktop) ───────── */
+@media (min-width: 761px) {
+  .media-viewer .mv-shell.with-info {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .media-viewer .mv-shell > .mv-info {
+    position: absolute;
+    top: 76px;
+    right: 16px;
+    bottom: 76px;
+    z-index: 5;
+    grid-column: 1 / -1;
+    width: 340px;
+    max-width: calc(100vw - 32px);
+    border: 1px solid #ffffff1f;
+    border-radius: 20px;
+    background: color-mix(in srgb, #1c1c1e 72%, transparent);
+    backdrop-filter: blur(36px) saturate(180%);
+    box-shadow: 0 24px 80px #000a;
+    overflow: hidden;
+    animation: fl-card-in 420ms var(--fl-spring) both;
+  }
+  .media-viewer .mv-shell.with-filmstrip > .mv-info {
+    bottom: 168px;
+  }
+  @supports (corner-shape: squircle) {
+    .media-viewer .mv-shell > .mv-info {
+      corner-shape: squircle;
+      border-radius: 36px;
+    }
+  }
+}
+@keyframes fl-card-in {
+  from {
+    opacity: 0;
+    translate: 16px 0;
+    scale: 0.98;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .media-viewer .mv-shell > .mv-info {
+    animation: fl-fade-in 200ms ease both;
+  }
+}
+@keyframes fl-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* ───────── #9 settings areas get coloured icon tiles, like System Settings ───────── */
+.cc-nav-group > button > svg {
+  box-sizing: content-box;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  padding: 4px;
+  border-radius: 7px;
+  color: #fff;
+  background: var(--tile, #8e8e93);
+  box-shadow: inset 0 0 0 0.5px #ffffff40;
+}
+@supports (corner-shape: squircle) {
+  .cc-nav-group > button > svg {
+    corner-shape: squircle;
+    border-radius: 10px;
+  }
+}
+.cc-nav-group > button[aria-label="Overview"] {
+  --tile: #0a84ff;
+}
+.cc-nav-group > button[aria-label="Library analytics"] {
+  --tile: #bf5af2;
+}
+.cc-nav-group > button[aria-label="Storage & originals"] {
+  --tile: #8e8e93;
+}
+.cc-nav-group > button[aria-label="Import & protection"] {
+  --tile: #30b0c7;
+}
+.cc-nav-group > button[aria-label="Search & intelligence"] {
+  --tile: #5e5ce6;
+}
+.cc-nav-group > button[aria-label="Editing & playback"] {
+  --tile: #ff9f0a;
+}
+.cc-nav-group > button[aria-label="People & sharing"] {
+  --tile: #0a84ff;
+}
+.cc-nav-group > button[aria-label="Library care"] {
+  --tile: #30d158;
+}
+.cc-nav-group > button[aria-label="Libraries"] {
+  --tile: #64d2ff;
+}
+.cc-nav-group > button[aria-label="Utilities"] {
+  --tile: #636366;
+}
+.cc-nav-group > button[aria-label="Trash"] {
+  --tile: #8e8e93;
+}
+.cc-nav-group > button[aria-label="Compute & jobs"] {
+  --tile: #636366;
+}
+.cc-nav-group > button[aria-label="Access & security"] {
+  --tile: #0a84ff;
+}
+.cc-nav-group > button[aria-label="Notifications"] {
+  --tile: #ff453a;
+}
+.cc-nav-group > button[aria-label="Server & updates"] {
+  --tile: #8e8e93;
+}
+.cc-nav-group > button[aria-label="Maintenance"] {
+  --tile: #636366;
+}
+.cc-nav-group > button[aria-label="Users"] {
+  --tile: #0a84ff;
+}
+.cc-nav-group > button[aria-label="Your preferences"] {
+  --tile: #8e8e93;
+}
+.cc-nav-group > button[aria-label="Change history"] {
+  --tile: #636366;
+}
+.cc-nav-group > button {
+  gap: 10px;
+}
+.cc-nav-group > p {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 600;
+}
+
+/* ───────── #2 command palette (">") matches the glass search palette ───────── */
+.command-palette {
+  background: color-mix(in srgb, var(--fl-panel) 74%, transparent);
+  backdrop-filter: blur(40px) saturate(180%);
+  border-color: color-mix(in srgb, var(--fl-text) 14%, transparent);
+  border-radius: 20px;
+  box-shadow:
+    0 30px 120px #000a,
+    inset 0 1px 0 #ffffff14;
+}
+@supports (corner-shape: squircle) {
+  .command-palette {
+    corner-shape: squircle;
+    border-radius: 36px;
+  }
+}
+.command-palette[open] {
+  animation: fl-palette-in 420ms var(--fl-spring) both;
+}
+@keyframes fl-palette-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 0) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+.command-palette::backdrop {
+  background: #0005;
+  backdrop-filter: blur(10px);
+}
+.command-palette .cp-input-row {
+  padding: 14px 18px 12px;
+  border-color: color-mix(in srgb, var(--fl-text) 14%, transparent);
+}
+.command-palette .cp-input-row input {
+  font-size: 21px;
+  letter-spacing: -0.01em;
+}
+.command-palette .cp-group-title {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 12px;
+}
+.command-palette .cp-item {
+  width: calc(100% - 12px);
+  margin: 0 6px;
+  border-radius: 8px;
+}
+.command-palette .cp-item[aria-selected="true"] {
+  background: color-mix(in srgb, var(--fl-accent) 22%, transparent);
+}
+.command-palette .cp-item:hover {
+  background: color-mix(in srgb, var(--fl-text) 8%, transparent);
+}
+@media (prefers-contrast: more), (prefers-reduced-transparency: reduce) {
+  .command-palette {
+    background: var(--fl-panel);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .command-palette[open] {
+    animation: fl-fade-in 150ms ease both;
+  }
+}
+
+/* ───────── #1 one toolbar: the selection bar takes the capsule's place while selecting ───────── */
+.frameleaf[data-screen="library"] .selection-bar {
+  left: calc(var(--fl-left) + (100vw - var(--fl-left) - var(--fl-right)) / 2);
+  bottom: max(18px, env(safe-area-inset-bottom));
+  max-width: calc(100vw - var(--fl-left) - var(--fl-right) - 24px);
+}
+.frameleaf .selection-bar .sb-pill {
+  border-radius: 18px;
+  background: var(--fl-material);
+  backdrop-filter: blur(28px) saturate(180%);
+  box-shadow:
+    0 10px 40px #0006,
+    0 0 0 1px var(--fl-material-edge);
+}
+.frameleaf .selection-bar .sb-divider {
+  align-self: stretch;
+  width: 1px;
+  margin: 4px 4px;
+  background: var(--fl-material-edge);
+}
+.frameleaf .selection-bar .sb-action.is-primary {
+  background: var(--fl-accent);
+  color: var(--fl-accent-text);
+}
+.frameleaf .selection-bar .sb-action:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.frameleaf[data-screen="library"]:has(.selection-bar.is-open) .bottom-bar {
+  opacity: 0;
+  translate: 0 12px;
+  pointer-events: none;
+}
+.frameleaf[data-screen="library"] .bottom-bar {
+  transition:
+    opacity 200ms ease,
+    translate 420ms var(--fl-spring);
+}
+
+/* ───────── #3 phones: viewer actions live in a bottom toolbar, like iPhone Photos ───────── */
+@media (max-width: 700px) {
+  .media-viewer .mv-header .mv-actions {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: calc(60px + env(safe-area-inset-bottom));
+    z-index: 3;
+    display: flex;
+    justify-content: space-around;
+    padding: 4px 8px;
+    background: #1c1c1e99;
+    backdrop-filter: var(--fl-material-blur);
+    border-top: 1px solid #ffffff14;
+    transition:
+      opacity 260ms ease,
+      translate 420ms var(--fl-spring);
+  }
+  .media-viewer.chrome-hidden .mv-header .mv-actions {
+    opacity: 0;
+    translate: 0 12px;
+    pointer-events: none;
+  }
+  /* the library bar is replaced by the tab bar on phones */
+  .frameleaf[data-screen="library"] .bottom-bar {
+    display: none;
+  }
+}
+@media (max-width: 700px) {
+  /* backdrop-filter would make the header the containing block for the fixed toolbar */
+  .media-viewer .mv-header {
+    backdrop-filter: none;
+    background: #1c1c1ecc;
+  }
+  .media-viewer .mv-header .mv-actions {
+    position: fixed;
+  }
+}
+
+/* ───────── #7 phone tab bar ───────── */
+.fl-tabbar {
+  display: none;
+}
+@media (max-width: 700px) {
+  .frameleaf .fl-tabbar {
+    position: fixed;
+    left: 12px;
+    right: 12px;
+    bottom: max(10px, env(safe-area-inset-bottom));
+    z-index: 8;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    padding: 6px;
+    border-radius: 26px;
+    background: var(--fl-material);
+    backdrop-filter: blur(28px) saturate(180%);
+    border: 1px solid var(--fl-material-edge);
+    box-shadow: 0 10px 40px #0007;
+  }
+  .frameleaf .fl-tabbar button {
+    display: grid;
+    justify-items: center;
+    gap: 2px;
+    min-height: 52px;
+    padding: 6px 0 4px;
+    border: 0;
+    border-radius: 20px;
+    background: transparent;
+    color: var(--fl-muted);
+    font-size: 10px;
+    font-weight: 600;
+  }
+  .frameleaf .fl-tabbar button[aria-current="page"] {
+    color: var(--fl-accent);
+    background: color-mix(in srgb, var(--fl-text) 8%, transparent);
+  }
+  .frameleaf .fl-tabbar svg {
+    width: 24px;
+    height: 24px;
+  }
+  /* leave room for the tab bar; the selection bar floats just above it */
+  .frameleaf .media-scroll,
+  .frameleaf .workspace > main {
+    padding-bottom: 96px;
+  }
+  .frameleaf[data-screen="library"] .selection-bar {
+    left: 50%;
+    bottom: calc(max(10px, env(safe-area-inset-bottom)) + 74px);
+  }
+  .frameleaf:not([data-screen="library"]) .bottom-bar {
+    display: none;
+  }
+}
+
+/* Timeline headers and scrubber stick below the frosted toolbar (height published by App). */
+.frameleaf .media-scroll .timeline-library .tl-group-header {
+  top: var(--fl-sticky-offset, 0px);
+}
+.frameleaf .media-scroll .timeline-library .tl-scrubber {
+  top: calc(var(--fl-sticky-offset, 0px) + 8px);
+}
+.frameleaf .media-scroll > .results-toolbar {
+  z-index: 5;
+}
+
+/* Phones show the Frameleaf symbol only; the button keeps "Frameleaf" as its accessible name. */
+@media (max-width: 700px) {
+  .frameleaf .topbar .brand {
+    min-width: 0;
+  }
+  .frameleaf .topbar .brand strong {
+    display: none;
+  }
+}
+
+/* QA fixes */
+/* album actions no longer scroll on phones (extras live in "…"), so its menu isn't clipped */
+@media (max-width: 700px) {
+  .frameleaf .ch-actions {
+    overflow: visible;
+  }
+}
+/* merged selection bar: labelled library actions, icon-only bulk actions (names in tooltips) */
+.frameleaf .selection-bar .sb-action span {
+  white-space: nowrap;
+}
+.frameleaf .selection-bar .sb-divider ~ .sb-action > span,
+.frameleaf .selection-bar .sb-divider ~ .sb-more .sb-action > span {
+  display: none;
+}
+.frameleaf .selection-bar .sb-divider ~ .sb-action,
+.frameleaf .selection-bar .sb-divider ~ .sb-more .sb-action {
+  padding-inline: 8px;
+}
+@media (max-width: 700px) {
+  .frameleaf[data-screen="library"] .selection-bar {
+    width: calc(100vw - 24px);
+    max-width: none;
+  }
+  .frameleaf .selection-bar .sb-pill {
+    flex-wrap: wrap;
+    justify-content: space-between;
+    row-gap: 4px;
+  }
+  .frameleaf .selection-bar .sb-actions {
+    flex: 1 1 100%;
+    justify-content: space-between;
+    overflow-x: auto;
+  }
+  .frameleaf .selection-bar .sb-action > span {
+    display: none;
+  }
+}
+/* command palette field: no global input focus box inside the glass */
+.command-palette .cp-input-row input {
+  border: 0;
+  box-shadow: none;
+  outline: 0;
+  border-radius: 0;
+}
+/* enrichment card keeps its inner padding inside the information panel */
+.media-viewer .mv-info .mv-enrichment {
+  padding: 12px;
+}
+/* narrow info card: row actions drop under the text instead of being clipped */
+.media-viewer .mv-enrich-row {
+  flex-wrap: wrap;
+}
+.media-viewer .mv-enrich-text {
+  flex: 1 1 150px;
+}
+.media-viewer .mv-enrich-actions {
+  margin-left: auto;
+}
+/* phones: the selection bar spans the screen just above the tab bar */
+@media (max-width: 700px) {
+  .frameleaf[data-screen="library"] .selection-bar {
+    left: 12px;
+    right: 12px;
+    width: auto;
+    max-width: none;
+    bottom: calc(max(10px, env(safe-area-inset-bottom)) + 74px);
+  }
+}
+
+/* ───────── Albums page: tighter rhythm, denser grid, like Photos' Albums ───────── */
+.frameleaf .albums {
+  padding: 18px 24px 120px;
+}
+.frameleaf .al-header {
+  margin-bottom: 10px;
+}
+.frameleaf .al-filters {
+  margin: 0 0 20px;
+}
+.frameleaf .al-shelf {
+  padding: 0;
+  margin-bottom: 28px;
+}
+.frameleaf .al-shelf-head {
+  margin-bottom: 10px;
+}
+.frameleaf .al-shelf-open {
+  padding: 2px 8px 2px 2px;
+}
+.frameleaf .al-mosaic {
+  width: 44px;
+  height: 44px;
+}
+.frameleaf .al-shelf-text h2,
+.frameleaf .al-plain-title {
+  font-size: 17px;
+  font-weight: 600;
+}
+.frameleaf .al-plain-title {
+  margin-bottom: 10px;
+}
+.frameleaf .al-grid {
+  grid-template-columns: repeat(auto-fill, minmax(164px, 1fr));
+  gap: 18px 12px;
+}
+.frameleaf .al-grid.compact {
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+}
+@media (max-width: 700px) {
+  .frameleaf .albums {
+    padding: 14px 16px 120px;
+  }
+  .frameleaf .al-grid,
+  .frameleaf .al-grid.compact {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* ───────── top bar: the search field sits in the true centre on wide screens ───────── */
+@media (min-width: 1200px) {
+  .frameleaf .topbar {
+    position: relative;
+  }
+  .frameleaf .topbar > .global-search {
+    position: absolute;
+    left: 50%;
+    translate: -50% 0;
+    width: min(480px, calc(100vw - 940px));
+    margin: 0;
+  }
+  .frameleaf .topbar > .global-search + * {
+    margin-left: auto;
+  }
+}
+
+/* phones: the tab bar owns Search, so the top bar keeps one search entry fewer */
+@media (max-width: 700px) {
+  .frameleaf .topbar > .global-search {
+    display: none;
+  }
+}
+
+/* ───────── settings sections: one calm grouped list, compact controls ───────── */
+.frameleaf .cc-section {
+  max-width: 820px;
+  border-radius: var(--fl-radius-card);
+  padding: 0 18px;
+}
+.frameleaf .cc-section > .cc-field:first-child {
+  border-top: 0;
+}
+/* Custom panels inside a settings card (devices, computers, maintenance,
+   Spaces, checklists, action rows…) get the same inner spacing as field rows,
+   so nothing sits on the card edge. Pages that drop the card are excluded. */
+.frameleaf
+  .cc-section:not(:has(.frameleaf-cloud, .trash-manager, .jobs-manager, .utilities-manager, .accounts-libraries))
+  > :first-child:not(.cc-field, .cc-section-heading) {
+  margin-top: 18px;
+}
+.frameleaf
+  .cc-section:not(:has(.frameleaf-cloud, .trash-manager, .jobs-manager, .utilities-manager, .accounts-libraries))
+  > :last-child:not(.cc-field, .cc-page-tools, .cc-section-action) {
+  margin-bottom: 18px;
+}
+.frameleaf .cc-field {
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 280px);
+  gap: 24px;
+  padding: 14px 0;
+}
+.frameleaf .cc-field label {
+  font-size: 14px;
+  color: var(--fl-text);
+}
+.frameleaf .cc-page-tools {
+  padding: 12px 0;
+  border-top: 1px solid var(--fl-border);
+}
+@media (max-width: 700px) {
+  .frameleaf .cc-field {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+  }
+}
+.frameleaf .cc-field p {
+  font-size: 12.5px;
+  line-height: 1.45;
+}

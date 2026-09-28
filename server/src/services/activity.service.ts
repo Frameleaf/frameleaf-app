@@ -12,9 +12,11 @@ import {
   ReactionType,
   mapActivity,
 } from 'src/dtos/activity.dto.js';
-import { Permission } from 'src/enum.js';
+import { Permission, SharedSpaceEventType } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
+import { isSharedSpace, requireSpaceMember } from 'src/utils/shared-space.js';
 
 @Injectable()
 export class ActivityService extends BaseService {
@@ -26,6 +28,7 @@ export class ActivityService extends BaseService {
       assetId: dto.level === ReactionLevel.ALBUM ? null : dto.assetId,
       isLiked: dto.type && dto.type === ReactionType.LIKE,
       ...this.nsfwOptions(auth),
+      ...getLockedVisibilityOptions(auth),
     });
 
     return activities.map((activity) => mapActivity(activity));
@@ -37,6 +40,7 @@ export class ActivityService extends BaseService {
       albumId: dto.albumId,
       assetId: dto.assetId,
       ...this.nsfwOptions(auth),
+      ...getLockedVisibilityOptions(auth),
     });
   }
 
@@ -51,7 +55,9 @@ export class ActivityService extends BaseService {
       assetId: dto.assetId,
       albumId: dto.albumId,
     };
-    const searchCommon = { ...common, ...this.nsfwOptions(auth) };
+    // the duplicate-like check reads only the caller's own reactions, so it keeps Locked items in view:
+    // a like the caller already left on an item that has since been locked is still a duplicate
+    const searchCommon = { ...common, ...this.nsfwOptions(auth), includeLocked: true };
 
     let activity: Activity | undefined;
     let isDuplicate = false;
@@ -73,6 +79,7 @@ export class ActivityService extends BaseService {
         isLiked: dto.type === ReactionType.LIKE,
         comment: dto.comment,
       });
+      await this.recordSpaceEvent(auth, dto.albumId, activity);
     }
 
     return { duplicate: isDuplicate, value: mapActivity(activity) };
@@ -80,7 +87,39 @@ export class ActivityService extends BaseService {
 
   async delete(auth: AuthDto, id: string): Promise<void> {
     await this.requireAccess({ auth, permission: Permission.ActivityDelete, ids: [id] });
+
+    // FL-55: in a shared space, only a current member may remove anything, and a comment takes its
+    // replies with it — the same rules as the space's own comment endpoint, whichever one is used.
+    const activity = await this.activityRepository.getById(id);
+    const album = activity ? await this.albumRepository.getById(activity.albumId, { withAssets: false }) : undefined;
+    if (album && isSharedSpace(album)) {
+      requireSpaceMember(album, auth.user.id);
+      await this.albumUserRepository.deleteCommentWithReplies(id);
+      return;
+    }
+
     await this.activityRepository.delete(id);
+  }
+
+  /**
+   * A like or comment on a shared space is also an entry in the space's
+   * activity feed (FL-55). The event row points at the activity and cascades
+   * with it, so deleting the reaction takes it out of the feed too. Nothing
+   * here reads the asset: what members see of the event is filtered when the
+   * feed is read, per viewer.
+   */
+  private async recordSpaceEvent(auth: AuthDto, albumId: string, activity: Activity) {
+    const album = await this.albumRepository.getById(albumId, { withAssets: false });
+    if (!album || !isSharedSpace(album)) {
+      return;
+    }
+
+    await this.albumUserRepository.createSpaceEvent({
+      albumId,
+      actorId: auth.user.id,
+      type: activity.isLiked ? SharedSpaceEventType.Like : SharedSpaceEventType.Comment,
+      activityId: activity.id,
+    });
   }
 
   private nsfwOptions(auth: AuthDto) {

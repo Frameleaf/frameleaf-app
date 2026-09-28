@@ -1,30 +1,31 @@
 <script lang="ts">
-  import ActionMenuItem from '$lib/components/ActionMenuItem.svelte';
   import { goto } from '$app/navigation';
   import AlbumSummary from '$lib/components/album-page/AlbumSummary.svelte';
+  import LibraryView from '$lib/components/frameleaf/LibraryView.svelte';
   import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
-  import ButtonContextMenu from '$lib/components/shared-components/context-menu/ButtonContextMenu.svelte';
-  import EmptyPlaceholder from '$lib/components/shared-components/EmptyPlaceholder.svelte';
-  import ChangeDate from '$lib/components/timeline/actions/ChangeDateAction.svelte';
-  import ChangeDescription from '$lib/components/timeline/actions/ChangeDescriptionAction.svelte';
-  import ChangeLocation from '$lib/components/timeline/actions/ChangeLocationAction.svelte';
-  import DownloadAction from '$lib/components/timeline/actions/DownloadAction.svelte';
-  import MarkNsfwAction from '$lib/components/timeline/actions/MarkNsfwAction.svelte';
-  import { getAssetBulkActions } from '$lib/services/asset.service';
-  import SelectAllAssets from '$lib/components/timeline/actions/SelectAllAction.svelte';
-  import TagAction from '$lib/components/timeline/actions/TagAction.svelte';
-  import AssetSelectControlBar from '$lib/components/timeline/AssetSelectControlBar.svelte';
-  import Timeline from '$lib/components/timeline/Timeline.svelte';
-  import { assetMultiSelectManager } from '$lib/managers/asset-multi-select-manager.svelte';
+  import LibraryEmptyState from '$lib/components/frameleaf/LibraryEmptyState.svelte';
+  import TimelineAssetViewer from '$lib/components/timeline/TimelineAssetViewer.svelte';
+  import Portal from '$lib/elements/Portal.svelte';
+  import { namedArchiveName } from '$lib/frameleaf/archive-name';
+  import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
   import { Route } from '$lib/route';
+  import { navigate } from '$lib/utils/navigation';
   import { AlbumUserRole, type AlbumResponseDto } from '@immich/sdk';
   import { IconButton } from '@immich/ui';
-  import { mdiArrowLeft, mdiDotsVertical } from '@mdi/js';
+  import { mdiArrowLeft, mdiEyeOffOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
   import type { PageData } from './$types';
 
+  /**
+   * A suppressed album's photos (FL-33 cleanup): the Frameleaf library scoped to the album, with
+   * FL-32's selection bar in place of the legacy select bar.
+   *
+   * The album is the scope, so "remove from album" is offered to an editor or owner exactly as the
+   * legacy menu offered it; a viewer gets the download and the metadata actions only, which is
+   * what the ownership gates on that menu came to.
+   */
   interface Props {
     data: PageData;
   }
@@ -32,6 +33,7 @@
   let { data = $bindable() }: Props = $props();
   let album: AlbumResponseDto = $derived(data.album);
   let timelineManager = $state<TimelineManager>() as TimelineManager;
+  let viewerInvisible = $state(false);
 
   const options = $derived({
     albumId: album.id,
@@ -44,18 +46,11 @@
     album.albumUsers.find(({ user: { id } }) => id === authManager.user.id)?.role === AlbumUserRole.Editor || isOwned,
   );
 
-  const handleEscape = async () => {
-    if (assetMultiSelectManager.selectionActive) {
-      assetMultiSelectManager.clear();
-      return;
-    }
-    await goto(Route.suppressed({ tab: 'albums' }));
-  };
-
-  const actions = $derived(getAssetBulkActions($t, album));
+  // "Remove from album" is album-scoped, so it is offered only where the album id is in context.
+  const bulkContext = $derived({ albumId: isEditor ? album.id : null });
 </script>
 
-<UserPageLayout title={data.meta.title} hideNavbar={assetMultiSelectManager.selectionActive} scrollbar={false}>
+<UserPageLayout title={data.meta.title} scrollbar={false}>
   {#snippet buttons()}
     <IconButton
       aria-label={$t('go_back')}
@@ -67,14 +62,15 @@
     />
   {/snippet}
 
-  <Timeline
-    enableRouting={true}
-    {album}
+  <LibraryView
+    enableRouting
+    selectAll="loaded"
     bind:timelineManager
     {options}
-    assetInteraction={assetMultiSelectManager}
-    onEscape={handleEscape}
-    withStacked={true}
+    destination={{ kind: 'album', id: album.id }}
+    {bulkContext}
+    downloadFileName={namedArchiveName(album.albumName, $t('frameleaf_archive_name_album'))}
+    onOpen={(asset) => void navigate({ targetRoute: 'current', assetId: asset.id })}
   >
     <section class="pt-8 md:pt-24">
       <h1 class="line-clamp-2 max-w-5xl text-4xl font-semibold text-immich-fg dark:text-immich-dark-fg">
@@ -84,37 +80,21 @@
         <AlbumSummary {album} />
       {/if}
     </section>
+
     {#snippet empty()}
-      <EmptyPlaceholder
-        text={$t('no_suppressed_content_message')}
+      <LibraryEmptyState
+        icon={mdiEyeOffOutline}
         title={$t('nothing_here_yet')}
-        class="mx-auto mt-10"
+        message={$t('no_suppressed_content_message')}
       />
     {/snippet}
-  </Timeline>
-</UserPageLayout>
 
-{#if assetMultiSelectManager.selectionActive}
-  <AssetSelectControlBar>
-    <SelectAllAssets {timelineManager} assetInteraction={assetMultiSelectManager} />
-    <DownloadAction filename="{album.albumName}.zip" />
-    <ButtonContextMenu icon={mdiDotsVertical} title={$t('menu')}>
-      <DownloadAction menuItem filename="{album.albumName}.zip" />
-      {#if assetMultiSelectManager.isAllUserOwned}
-        <ChangeDate menuItem />
-        <ChangeDescription menuItem />
-        <ChangeLocation menuItem />
-      {/if}
-      {#if authManager.preferences.tags.enabled && assetMultiSelectManager.isAllUserOwned}
-        <TagAction menuItem />
-      {/if}
-      {#if assetMultiSelectManager.ownedAssets.length > 0}
-        <MarkNsfwAction menuItem />
-        <MarkNsfwAction menuItem markSafe />
-      {/if}
-      {#if isEditor || assetMultiSelectManager.isAllUserOwned}
-        <ActionMenuItem action={actions.RemoveFromAlbum} />
-      {/if}
-    </ButtonContextMenu>
-  </AssetSelectControlBar>
-{/if}
+    {#snippet viewer()}
+      <Portal target="body">
+        {#if assetViewerManager.isViewing}
+          <TimelineAssetViewer bind:invisible={viewerInvisible} {timelineManager} {album} withStacked />
+        {/if}
+      </Portal>
+    {/snippet}
+  </LibraryView>
+</UserPageLayout>

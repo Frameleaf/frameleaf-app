@@ -2,10 +2,21 @@ import { Injectable } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { createHash } from 'node:crypto';
+import { join } from 'node:path';
+import type { Migration } from 'kysely/migration';
+import { serverVersion } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { assertICloudReferences, reconcileICloudReferences } from 'src/fork-schema/icloud-reconciliation.js';
+import {
+  ISOLATED_FRAMELEAF_AUDIT_PHASE,
+  IsolatedFrameleafContext,
+  IsolatedFrameleafResult,
+  planIsolatedFrameleafMigrations,
+} from 'src/fork-schema/isolated-frameleaf-migrations.js';
 import forkCatalogManifest from 'src/fork-schema/manifests/fork-v2-catalog.json' with { type: 'json' };
 import { CERTIFIED_TAG_MIGRATIONS, POST_CERTIFIED_UPSTREAM_MIGRATIONS } from 'src/fork-schema/migration-manifest.js';
+import { createFrameleafPublicMigrationProvider } from 'src/fork-schema/migration-provider.js';
+import { applyFrameleafSchemaForkFollowUps, carryOverEarlierFaceDecisions } from 'src/fork-schema/official-adoption.js';
 import { REVERSIBLE_POST_CERTIFIED_MIGRATIONS } from 'src/fork-schema/post-certified-residue.js';
 import supportedVersions from 'src/fork-schema/supported-versions.json' with { type: 'json' };
 import { WorkflowRowDigest, getWorkflowCompatibilityEvidence } from 'src/fork-schema/workflow-compatibility.js';
@@ -13,6 +24,7 @@ import {
   StorageVerificationEvidence,
   canonicalStorageVerificationDigest,
 } from 'src/repositories/fork-cutover-verification.repository.js';
+import { assertNoLiveHandoffLeases } from 'src/repositories/fork-handoff-leases.js';
 import {
   BACKFILL_KINDS,
   BackfillKind,
@@ -112,7 +124,29 @@ export const assertCertifiedOfficialHandoffLedger = (
 const officialLedgerDigest = (names: readonly string[]): string =>
   createHash('sha256').update(names.join('\n')).digest('hex');
 
+/**
+ * Sidecar families in `immich_fork` whose parents live in the public schema without a foreign key,
+ * so rows orphaned while the official server ran are archived on return. Frameleaf's public-schema
+ * tables (media operations and checkpoints, Studio projects and exports, preservation, Takeout,
+ * render workers, restorations, physical files) are not listed on purpose (FL-44): their owner,
+ * asset and parent references are real foreign keys the official server's deletes cascade or null
+ * through. The uuid columns without one are lineage and audit records meant to outlive what they
+ * name — a Studio export's sources, a preservation item's source asset, the render-worker audit —
+ * so archiving them as orphans would lose exactly the history they keep.
+ */
 const ORPHAN_FAMILIES = [
+  [
+    'video_edit_selection',
+    'immich_fork.video_edit_selection',
+    'candidate."assetId"::text',
+    'NOT EXISTS (SELECT 1 FROM public.asset asset WHERE asset.id=candidate."assetId" AND asset."ownerId"=candidate."ownerId")',
+  ],
+  [
+    'video_edit_version',
+    'immich_fork.video_edit_version',
+    'candidate.id::text',
+    'NOT EXISTS (SELECT 1 FROM public.asset asset WHERE asset.id=candidate."assetId" AND asset."ownerId"=candidate."ownerId")',
+  ],
   [
     'smart_album_match',
     'immich_fork.smart_album_match',
@@ -262,6 +296,34 @@ const isReturnBackfillBatchEvidence = (value: unknown): value is ReturnBackfillB
   );
 };
 
+/** FL-161: a bcrypt hash as a PostgreSQL regular expression (see `isBcryptHash`). */
+const BCRYPT_HASH_PATTERN = String.raw`^\$2[aby]\$[0-9]{2}\$[./A-Za-z0-9]{53}$`;
+
+export type SharedLinkPasswordCounts = { hashed: number; plaintext: number };
+
+/**
+ * FL-161: why the official handoff may not go ahead yet, or null. Links whose password is a hash stay
+ * locked on the official server, so they need the operator's acknowledgement; links still holding a
+ * plaintext password keep working there and are only reported.
+ */
+export const sharedLinkPasswordProblem = (
+  { hashed, plaintext }: SharedLinkPasswordCounts,
+  acknowledged: boolean,
+): string | null => {
+  if (hashed === 0 || acknowledged) {
+    return null;
+  }
+  const keepWorking =
+    plaintext > 0
+      ? ` ${plaintext} other link(s) still hold a password the official server can check and keep working.`
+      : '';
+  return (
+    `${hashed} password-protected shared link(s) will stay locked on the official server: their passwords are ` +
+    'stored as hashes it cannot check. After the handoff, set a new password on each of those links in the ' +
+    `official app.${keepWorking} Run prepare-official again with --acknowledge-shared-link-passwords to continue.`
+  );
+};
+
 @Injectable()
 export class ForkHandoffRepository {
   constructor(@InjectKysely() protected readonly db: Kysely<DB>) {}
@@ -318,6 +380,116 @@ export class ForkHandoffRepository {
       }
     }
     return applied;
+  }
+
+  /**
+   * FL-180: apply the Frameleaf public migrations a library past the certified cutover has not
+   * recorded (see `src/fork-schema/isolated-frameleaf-migrations.ts`). One transaction holds the
+   * state row, re-reads the Frameleaf ledger under that lock, applies each pending migration, records
+   * it in `immich_fork.migration_audit`, repeats the structural `immich_fork` follow-ups (and, during the
+   * return, the face-decision carry-over of 0000000000175) and checks the official ledger is
+   * byte-identical. A failure changes nothing, and a second caller finds nothing
+   * left to do. Callers hold `DatabaseLock.Migrations`.
+   */
+  async applyIsolatedFrameleafMigrations(context: IsolatedFrameleafContext): Promise<IsolatedFrameleafResult> {
+    const migrations = await this.loadFrameleafPublicMigrations();
+    return this.db.transaction().execute(async (transaction) => {
+      const relations = await sql<{ present: boolean }>`
+        SELECT to_regclass('immich_fork.state') IS NOT NULL
+          AND to_regclass('immich_fork.migration_audit') IS NOT NULL AS present
+      `.execute(transaction);
+      const stateResult = relations.rows[0]?.present
+        ? await sql<{ phase: string; schemaVersion: string }>`
+            SELECT phase, "schemaVersion" FROM immich_fork.state WHERE id = 1 FOR UPDATE
+          `.execute(transaction)
+        : { rows: [] };
+      const ledgerResult = stateResult.rows[0]
+        ? await sql<{ name: string; phase: string }>`
+            SELECT DISTINCT name, phase
+            FROM immich_fork.migration_audit
+            WHERE status = 'applied'
+              AND (
+                (phase = 'ledger-cutover' AND details->>'classification' = 'legacy-fork')
+                OR phase = ${ISOLATED_FRAMELEAF_AUDIT_PHASE}
+              )
+            ORDER BY name, phase
+          `.execute(transaction)
+        : { rows: [] };
+      const plan = planIsolatedFrameleafMigrations({
+        context,
+        state: stateResult.rows[0],
+        cutoverLedger: ledgerResult.rows.filter(({ phase }) => phase === 'ledger-cutover').map(({ name }) => name),
+        appliedLedger: ledgerResult.rows
+          .filter(({ phase }) => phase === ISOLATED_FRAMELEAF_AUDIT_PHASE)
+          .map(({ name }) => name),
+        bundled: Object.keys(migrations),
+      });
+      // Whatever the plan, the return still repeats the face-decision carry-over below: it is guarded
+      // and idempotent, and a library without the Frameleaf ledger can hold faces as well.
+      const applying = plan.skipped ? [] : plan.pending;
+      if (applying.length === 0 && context !== 'return') {
+        return { ...plan, applied: [] };
+      }
+
+      const officialLedger = async () => {
+        const ledger = await sql<{ name: string; timestamp: string }>`
+          SELECT name, timestamp::text AS timestamp FROM public.kysely_migrations ORDER BY timestamp, name
+        `.execute(transaction);
+        return JSON.stringify(ledger.rows);
+      };
+      const officialBefore = await officialLedger();
+      for (const name of applying) {
+        await migrations[name]!.up(transaction);
+        await sql`
+          INSERT INTO immich_fork.migration_audit (name, phase, status, details, "completedAt")
+          VALUES (
+            ${name},
+            ${ISOLATED_FRAMELEAF_AUDIT_PHASE},
+            'applied',
+            jsonb_build_object(
+              'classification', 'legacy-fork',
+              'context', ${context}::text,
+              'serverVersion', ${serverVersion.toString()}::text
+            ),
+            now()
+          )
+        `.execute(transaction);
+        await this.afterIsolatedFrameleafMigration(transaction, name);
+      }
+      if (applying.length > 0) {
+        await applyFrameleafSchemaForkFollowUps(transaction);
+      }
+      if (context === 'return') {
+        // After the residue and the newer Frameleaf migrations: the return boot ran 0000000000175
+        // before either existed on a library cut over before it.
+        const faceDecisions = await carryOverEarlierFaceDecisions(transaction);
+        if (faceDecisions > 0) {
+          await sql`
+            INSERT INTO immich_fork.migration_audit (name, phase, status, details, "completedAt")
+            VALUES (
+              'return-face-decision-carry-over',
+              'return-follow-up',
+              'applied',
+              jsonb_build_object('faceDecisions', ${faceDecisions}::int, 'serverVersion', ${serverVersion.toString()}::text),
+              now()
+            )
+          `.execute(transaction);
+        }
+      }
+      if ((await officialLedger()) !== officialBefore) {
+        throw new Error('A Frameleaf migration changed the official migration ledger');
+      }
+      return { ...plan, applied: applying };
+    });
+  }
+
+  protected loadFrameleafPublicMigrations(): Promise<Record<string, Migration>> {
+    return createFrameleafPublicMigrationProvider(join(import.meta.dirname, '..', 'schema/migrations')).getMigrations();
+  }
+
+  /** Test seam: runs inside the transaction after each applied Frameleaf migration and its audit row. */
+  protected afterIsolatedFrameleafMigration(_transaction: Kysely<DB>, _name: string): Promise<void> {
+    return Promise.resolve();
   }
 
   async assertCertifiedReturnLedger(kysely: Kysely<DB> = this.db): Promise<'v3.1.0'> {
@@ -409,13 +581,42 @@ export class ForkHandoffRepository {
     };
   }
 
-  async prepareOfficialHandoffCheckpoint(): Promise<OfficialHandoffCheckpoint> {
+  /**
+   * FL-161: shared links protected by a password. `hashed` ones hold a bcrypt hash
+   * (2100000000660-HashSharedLinkPasswords) the official server compares as plaintext, so each stays
+   * locked there until its password is set again on the official server. `plaintext` ones (set on the
+   * official server and not yet used here) keep working there.
+   */
+  async countPasswordProtectedSharedLinks(kysely: Kysely<DB> = this.db): Promise<SharedLinkPasswordCounts> {
+    const { rows } = await sql<SharedLinkPasswordCounts>`
+      SELECT
+        count(*) FILTER (WHERE password ~ ${BCRYPT_HASH_PATTERN})::int AS hashed,
+        count(*) FILTER (WHERE password !~ ${BCRYPT_HASH_PATTERN})::int AS plaintext
+      FROM public.shared_link WHERE password IS NOT NULL AND password <> ''
+    `.execute(kysely);
+    return rows[0] ?? { hashed: 0, plaintext: 0 };
+  }
+
+  /**
+   * The checkpoint is prepared in one read-only transaction; the shared-link count that decides
+   * whether it may go ahead is taken inside it, from the same snapshot.
+   */
+  async prepareOfficialHandoffCheckpoint(
+    options: { acknowledgeSharedLinkPasswords?: boolean } = {},
+  ): Promise<OfficialHandoffCheckpoint> {
     return this.db
       .transaction()
       .setIsolationLevel('repeatable read')
       .setAccessMode('read only')
       .execute(async (transaction) => {
         await this.assertOfficialHandoffReady(transaction);
+        const problem = sharedLinkPasswordProblem(
+          await this.countPasswordProtectedSharedLinks(transaction),
+          options.acknowledgeSharedLinkPasswords === true,
+        );
+        if (problem) {
+          throw new Error(problem);
+        }
         return this.getPreparedOfficialHandoffCheckpoint(transaction);
       });
   }
@@ -444,6 +645,8 @@ export class ForkHandoffRepository {
       throw new Error('Official handoff requires maintenance mode');
     }
     await this.getOfficialHandoffCheckpoint(kysely);
+    // FL-44 (FN-304): no live worker claim, render-worker session or Studio editor lease may cross.
+    await assertNoLiveHandoffLeases(kysely);
     const ledger = await sql<{ name: string }>`
       SELECT name FROM public.kysely_migrations ORDER BY timestamp, name
     `.execute(kysely);

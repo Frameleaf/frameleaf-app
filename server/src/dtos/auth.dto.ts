@@ -8,6 +8,7 @@ import { toEmail } from 'src/validation.js';
 
 export type CookieResponse = {
   isSecure: boolean;
+  rememberMe?: boolean;
   values: Array<{ key: ImmichCookie; value: string | null }>;
 };
 
@@ -27,6 +28,10 @@ const LoginCredentialSchema = z
   .object({
     email: toEmail.describe('User email').meta({ example: 'testuser@email.com' }),
     password: z.string().describe('User password').meta({ example: 'password' }),
+    rememberMe: z
+      .boolean()
+      .optional()
+      .describe('Persist authentication cookies across browser sessions (default true)'),
   })
   .meta({ id: 'LoginCredentialDto' });
 
@@ -67,9 +72,11 @@ const LogoutResponseSchema = z
   })
   .meta({ id: 'LogoutResponseDto' });
 
-const SignUpSchema = LoginCredentialSchema.extend({
-  name: z.string().describe('User name').meta({ example: 'Admin' }),
-}).meta({ id: 'SignUpDto' });
+const SignUpSchema = LoginCredentialSchema.omit({ rememberMe: true })
+  .extend({
+    name: z.string().describe('User name').meta({ example: 'Admin' }),
+  })
+  .meta({ id: 'SignUpDto' });
 
 const ChangePasswordSchema = z
   .object({
@@ -109,6 +116,10 @@ const ValidateAccessTokenResponseSchema = z
 const OAuthCallbackSchema = z
   .object({
     url: z.string().min(1).describe('OAuth callback URL'),
+    rememberMe: z
+      .boolean()
+      .optional()
+      .describe('Persist authentication cookies across browser sessions (default true)'),
     state: z.string().optional().describe('OAuth state parameter'),
     codeVerifier: z.string().optional().describe('OAuth code verifier (PKCE)'),
   })

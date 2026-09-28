@@ -1,6 +1,11 @@
+import { cloudBackupCommands } from 'src/commands/cloud-backup.command.js';
 import { forkHandoffCommands } from 'src/commands/fork-handoff.command.js';
 import { forkSchemaCutoverCommands } from 'src/commands/fork-schema-cutover.command.js';
-import { ConfirmForkSchemaStartQuestion, forkSchemaCommands } from 'src/commands/fork-schema.command.js';
+import {
+  ConfirmForkSchemaAdoptQuestion,
+  ConfirmForkSchemaStartQuestion,
+  forkSchemaCommands,
+} from 'src/commands/fork-schema.command.js';
 import { GrantAdminCommand, PromptEmailQuestion, RevokeAdminCommand } from 'src/commands/grant-admin.js';
 import { ListUsersCommand } from 'src/commands/list-users.command.js';
 import { DisableMaintenanceModeCommand, EnableMaintenanceModeCommand } from 'src/commands/maintenance-mode.js';
@@ -18,9 +23,12 @@ import { VersionCommand } from 'src/commands/version.command.js';
 // Compatibility handoff commands replace the unsafe historical schema-revert command.
 export const commandsAndQuestions = [
   ...forkHandoffCommands,
+  // FL-164: bare-metal restore from a cloud backup bucket
+  ...cloudBackupCommands,
   ...forkSchemaCutoverCommands,
   ...forkSchemaCommands,
   ConfirmForkSchemaStartQuestion,
+  ConfirmForkSchemaAdoptQuestion,
   ResetAdminPasswordCommand,
   PromptPasswordResetQuestions,
   PromptEmailQuestion,

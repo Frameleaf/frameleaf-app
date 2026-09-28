@@ -4,7 +4,7 @@ import { createServer } from 'node:http';
 import type { Controller } from 'src/commands/migrate/controller';
 import type { Ledger } from 'src/commands/migrate/ledger';
 
-const DASHBOARD_HTML = `<!doctype html><html><head><meta charset="utf-8"><title>Immich Migration</title>
+const DASHBOARD_HTML = `<!doctype html><html><head><meta charset="utf-8"><title>Frameleaf migration</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
 :root{color-scheme:light dark}
@@ -22,7 +22,7 @@ button{font:inherit;padding:.45rem .9rem;border-radius:8px;border:1px solid #bbb
   color:inherit;cursor:pointer;margin-right:.5rem}
 .ok{color:#1a9e5b;font-weight:600}.bad{color:#d33;font-weight:600}
 </style></head><body>
-<h1>Immich Migration</h1>
+<h1>Frameleaf migration</h1>
 <div class="sub" id="route"></div>
 <div class="card">
   <div class="row"><span class="phase" id="phase">…</span><span id="pausedFlag"></span></div>

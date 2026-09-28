@@ -1,0 +1,6 @@
+{
+  "code": "rate-limited",
+  "message": "Too many activation attempts. Try again later.",
+  "retryable": true,
+  "requestId": "req_01J8ZK3M4N5P6Q7T"
+}

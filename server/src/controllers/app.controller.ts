@@ -11,11 +11,7 @@ export class AppController {
   @Get('.well-known/immich')
   @Authenticated({ public: true })
   getImmichWellKnown() {
-    return {
-      api: {
-        endpoint: '/api',
-      },
-    };
+    return this.service.getWellKnown();
   }
 
   @ApiExcludeEndpoint()

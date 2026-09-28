@@ -38,6 +38,8 @@ describe(ICloudSyncRepository.name, () => {
     await sql`CREATE TABLE immich_fork.state (id integer PRIMARY KEY,phase text)`.execute(db);
     await sql`INSERT INTO immich_fork.state VALUES (1,'active')`.execute(db);
     await sql`CREATE TABLE immich_fork.migration_audit (name text,status text)`.execute(db);
+    // the library side `counts` reads to tell a disappeared source from a deleted asset
+    await sql`CREATE TABLE asset (id uuid PRIMARY KEY,"ownerId" uuid,"deletedAt" timestamptz)`.execute(db);
     await migration.up(db);
     repository = new ICloudSyncRepository(db);
   });
@@ -47,7 +49,7 @@ describe(ICloudSyncRepository.name, () => {
   afterEach(() => vi.unstubAllEnvs());
   beforeEach(async () => {
     await sql`TRUNCATE immich_fork.icloud_connection CASCADE`.execute(db);
-    connection = await repository.create(randomUUID(), 'Photos', ICloudConfigSchema.parse({}));
+    connection = (await repository.create(randomUUID(), 'Photos', ICloudConfigSchema.parse({})))!;
     await repository.update(connection.id, connection.ownerId, { state: 'connected' });
     connection.state = 'connected';
   });

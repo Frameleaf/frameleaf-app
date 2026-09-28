@@ -13,7 +13,7 @@ log_message() {
   fi
 }
 
-log_message "Initializing Immich $IMMICH_SOURCE_REF"
+log_message "Initializing Frameleaf $IMMICH_SOURCE_REF"
 
 lib_path="/usr/lib/$(arch)-linux-gnu/libmimalloc.so.3"
 if [ -f "$lib_path" ]; then

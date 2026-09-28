@@ -1,5 +1,6 @@
 import { Kysely } from 'kysely';
 import { ReactionType } from 'src/dtos/activity.dto.js';
+import { AssetLockReason } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { ActivityRepository } from 'src/repositories/activity.repository.js';
 import { AlbumUserRepository } from 'src/repositories/album-user.repository.js';
@@ -93,6 +94,56 @@ describe(ActivityService.name, () => {
       await sut.create(auth, { albumId: album.id, type: ReactionType.LIKE });
 
       await expect(sut.getAll(auth, { albumId: album.id, assetId: asset.id })).resolves.toEqual([value]);
+    });
+
+    it("keeps reactions on a member's Locked item with that member's elevated session only", async () => {
+      const { sut, ctx } = setup();
+      const { album, asset, owner, sharedWith } = await ctx.newSharedAlbum();
+      const ownerAuth = factory.auth({ user: owner });
+      const { value: onAlbum } = await sut.create(ownerAuth, {
+        albumId: album.id,
+        type: ReactionType.COMMENT,
+        comment: 'Lovely trip',
+      });
+      const { value: onItem } = await sut.create(ownerAuth, {
+        albumId: album.id,
+        assetId: asset.id,
+        type: ReactionType.COMMENT,
+        comment: 'Not for everyone',
+      });
+
+      await ctx.database
+        .insertInto('asset_lock')
+        .values({ assetId: asset.id, reason: AssetLockReason.Marked, lockedBy: null })
+        .execute();
+
+      const member = factory.auth({ user: sharedWith, session: { hasElevatedPermission: true } });
+      await expect(sut.getAll(member, { albumId: album.id })).resolves.toEqual([onAlbum]);
+      await expect(sut.getAll(member, { albumId: album.id, assetId: asset.id })).resolves.toEqual([]);
+
+      await expect(sut.getAll(ownerAuth, { albumId: album.id })).resolves.toEqual([onAlbum]);
+
+      const unlocked = factory.auth({ user: owner, session: { hasElevatedPermission: true } });
+      const everything = await sut.getAll(unlocked, { albumId: album.id });
+      expect(everything).toHaveLength(2);
+      expect(everything).toEqual(expect.arrayContaining([onAlbum, onItem]));
+      await expect(sut.getStatistics(unlocked, { albumId: album.id })).resolves.toEqual({ comments: 2, likes: 0 });
+      await expect(sut.getStatistics(member, { albumId: album.id })).resolves.toEqual({ comments: 1, likes: 0 });
+    });
+
+    it('still reports a like as a duplicate after the item moved into the Locked folder', async () => {
+      const { sut, ctx } = setup();
+      const { album, asset, owner } = await ctx.newSharedAlbum();
+      const auth = factory.auth({ user: owner });
+      await sut.create(auth, { albumId: album.id, assetId: asset.id, type: ReactionType.LIKE });
+
+      await ctx.database
+        .insertInto('asset_lock')
+        .values({ assetId: asset.id, reason: AssetLockReason.Marked, lockedBy: null })
+        .execute();
+
+      const again = await sut.create(auth, { albumId: album.id, assetId: asset.id, type: ReactionType.LIKE });
+      expect(again.duplicate).toBe(true);
     });
   });
 

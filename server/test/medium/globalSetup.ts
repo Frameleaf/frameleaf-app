@@ -1,4 +1,5 @@
 import { Kysely } from 'kysely';
+import { fileURLToPath } from 'node:url';
 import { GenericContainer, Wait } from 'testcontainers';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
@@ -6,9 +7,16 @@ import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
 import { getKyselyConfig } from 'src/utils/database.js';
 
+// Frameleaf's own Postgres image source; medium tests build it rather than pull a prebuilt database image.
+const postgresImageContext = fileURLToPath(new URL('../../../docker/postgres', import.meta.url));
+
 const globalSetup = async () => {
   const templateName = 'mich';
-  const postgresContainer = await new GenericContainer('ghcr.io/immich-app/postgres:14-vectorchord0.4.3')
+  // The Dockerfile falls back to dpkg for its architecture, so the default builder is enough.
+  const postgresImage = await GenericContainer.fromDockerfile(postgresImageContext).build('frameleaf-postgres:medium', {
+    deleteOnExit: false,
+  });
+  const postgresContainer = await postgresImage
     .withExposedPorts(5432)
     .withEnvironment({
       POSTGRES_PASSWORD: 'postgres',

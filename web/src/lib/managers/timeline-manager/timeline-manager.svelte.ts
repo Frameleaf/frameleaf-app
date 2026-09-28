@@ -1,14 +1,28 @@
-import { AssetOrder, getAssetInfo, getTimeBuckets, TimeBucketDateType, type AssetResponseDto } from '@immich/sdk';
+import {
+  AssetLockReason,
+  AssetOrder,
+  AssetVisibility,
+  getAssetInfo,
+  getTimeBuckets,
+  TimeBucketDateType,
+  type AssetResponseDto,
+} from '@immich/sdk';
 import { clamp, isEqual } from 'lodash-es';
 import { SvelteDate, SvelteSet } from 'svelte/reactivity';
+import { revealsLocks, sessionAccess, trackSessionLockRefresh } from '$lib/frameleaf/session-access.svelte';
 import { VirtualScrollManager } from '$lib/managers/VirtualScrollManager/VirtualScrollManager.svelte';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
-import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
 import { GroupInsertionCache } from '$lib/managers/timeline-manager/group-insertion-cache.svelte';
+import { batchFlow, linkFlows, releaseFlowHolds } from '$lib/managers/timeline-manager/internal/flow-support.svelte';
 import { updateTimelineMonthViewportProximity } from '$lib/managers/timeline-manager/internal/intersection-support.svelte';
 import { updateGeometry } from '$lib/managers/timeline-manager/internal/layout-support.svelte';
-import { loadFromTimeBuckets } from '$lib/managers/timeline-manager/internal/load-support.svelte';
+import {
+  loadFromTimeBuckets,
+  loadOrderedPage,
+  ORDERED_PAGE_SIZE,
+  orderedPageYearMonth,
+} from '$lib/managers/timeline-manager/internal/load-support.svelte';
 import {
   findClosestTimelineMonthForDate,
   findTimelineMonthForAsset as findTimelineMonthForAssetUtil,
@@ -37,6 +51,7 @@ import type {
   MoveAsset,
   ScrubberMonth,
   TimelineAsset,
+  TimelineGrouping,
   TimelineManagerOptions,
   Viewport,
 } from './types';
@@ -70,6 +85,41 @@ export class TimelineManager extends VirtualScrollManager {
   isInitialized = $state(false);
   isScrollingOnLoad = false;
   months: TimelineMonth[] = $state([]);
+  #grouping: TimelineGrouping = $state('days');
+
+  /** How the months are grouped for display; changing it lays every month out again. */
+  get grouping(): TimelineGrouping {
+    return this.#grouping;
+  }
+
+  set grouping(value: TimelineGrouping) {
+    if (this.#grouping === value) {
+      return;
+    }
+    this.#grouping = value;
+    this.refreshLayout();
+  }
+
+  /**
+   * FL-143: a group's rows run on from one month bucket into the next, as the prototype lays it out.
+   * All (and Years when not shown as cards) over justified rows is one flow per group
+   * (`TimelineLibrary.jsx` justifiedRows over `group.assets`); the Browse and Work cell grids are one
+   * grid over the whole library (`App.jsx` `.media-grid`). Timeline month and day groups stay per
+   * month and per day.
+   */
+  get continuousGroups(): boolean {
+    if (this.cells) {
+      return true;
+    }
+    return this.fillRowWidth && (this.#grouping === 'years' || this.#grouping === 'all');
+  }
+
+  /** Flow bookkeeping for `internal/flow-support.svelte.ts` (FL-143). */
+  flowDirty = new Set<TimelineMonth>();
+  flowBatchDepth = 0;
+  flowReconciling = false;
+  /** While set, a month's new height leaves the scroll position alone; the flow compensates itself. */
+  flowHoldsScroll = false;
   albumAssets: Set<string> = new SvelteSet();
   // Assets hidden in this view because they were just marked NSFW. The server
   // hides NSFW assets via a query-time filter (not the `visibility` enum), so a
@@ -98,6 +148,9 @@ export class TimelineManager extends VirtualScrollManager {
   static #INIT_OPTIONS = {};
   #websocketSupport: WebsocketSupport | undefined;
   #options: TimelineManagerOptions = TimelineManager.#INIT_OPTIONS;
+  /** The options last asked for: a load a newer request overtakes gives way to it (FL-33). */
+  #requestedOptions: TimelineManagerOptions = TimelineManager.#INIT_OPTIONS;
+  #removedListeners = new Set<(ids: string[]) => void>();
   #updatingViewportProximities = false;
   #scrollableElement: HTMLElement | undefined = $state();
   #unsubscribes: Array<() => void> = [];
@@ -129,9 +182,41 @@ export class TimelineManager extends VirtualScrollManager {
         },
         AssetsUnarchive: (assets) => this.upsertAssets(assets),
         AssetsMarkNsfw: (ids: string[]) => this.#handleMarkNsfw(ids),
-        SessionAccessChanged: () => void this.refresh(),
+        SessionLocked: () => {
+          this.initTask.cancel();
+          this.months = [];
+          this.albumAssets.clear();
+        },
+        SessionAccessChanged: () => void trackSessionLockRefresh(this.refresh()),
+        PartnerRevoke: (revoke) => this.#handlePartnerRevoke(revoke),
       }),
     );
+  }
+
+  /**
+   * FL-54: a partner who stops sharing takes their photos out of every open timeline at once. A
+   * timeline that could hold them (the main one with partners, or that partner's own library) drops
+   * the months it loaded and reads them again, so nothing of theirs stays on screen or cached here.
+   */
+  #handlePartnerRevoke({ sharedById, sharedWithId }: { sharedById: string; sharedWithId: string }) {
+    if (!authManager.authenticated || sharedWithId !== authManager.user.id) {
+      return;
+    }
+    if (this.#options.withPartners || this.#options.userId === sharedById) {
+      void this.refresh();
+    }
+  }
+
+  /**
+   * The query the time buckets were asked with (the view's filters and the viewer's key), for a
+   * request that must cover exactly the same assets — the curated Years and Months cards (FL-33).
+   */
+  get bucketQuery() {
+    const options = { ...this.#options };
+    delete options.timelineAlbumId;
+    delete options.deferInit;
+    delete options.assetFilter;
+    return { ...authManager.params, ...options };
   }
 
   override get scrollTop(): number {
@@ -211,7 +296,8 @@ export class TimelineManager extends VirtualScrollManager {
   }
 
   #calculateVewportTopRatioInMonth(month: TimelineMonth | undefined) {
-    if (!month) {
+    // A month whose tiles all run on into the next one (FL-143) can be 0 tall.
+    if (!month || month.height <= 0) {
       return 0;
     }
     return clamp((this.visibleWindow.top - month.top) / month.height, 0, 1);
@@ -247,6 +333,9 @@ export class TimelineManager extends VirtualScrollManager {
     };
 
     this.#updatingViewportProximities = false;
+    // A row that could not run on across a month boundary while that part of the timeline was on
+    // screen runs on once it has scrolled away (FL-143).
+    linkFlows(this);
   }
 
   clearDeferredLayout(month: TimelineMonth) {
@@ -259,11 +348,45 @@ export class TimelineManager extends VirtualScrollManager {
     }
   }
 
-  async #initializeTimelineMonths() {
+  /** FL-30 (S-15): the flat order the assets are laid out in, or undefined for the dated timeline. */
+  get ordered() {
+    return this.#options.orderedBy;
+  }
+
+  async #initializeTimelineMonths(signal: AbortSignal) {
+    const revision = sessionAccess.revision;
     const timebuckets = await getTimeBuckets({
       ...authManager.params,
       ...this.#options,
     });
+
+    // A load cancelled by newer options, or a session lock, must not replace what replaced it.
+    if (signal.aborted || revision !== sessionAccess.revision) {
+      return;
+    }
+
+    if (this.#options.orderedBy) {
+      // The same assets, counted by the buckets, paged in the flat order: one synthetic "month" per
+      // page, in page order, so loading, layout, selection and the viewer work unchanged.
+      const total = timebuckets.reduce((sum, bucket) => sum + bucket.count, 0);
+      const pages = Math.ceil(total / ORDERED_PAGE_SIZE);
+      this.months = Array.from(
+        { length: pages },
+        (_, page) =>
+          new TimelineMonth(
+            this,
+            orderedPageYearMonth(page),
+            Math.min(ORDERED_PAGE_SIZE, total - page * ORDERED_PAGE_SIZE),
+            false,
+            this.#options.order,
+            this.#options.dateType,
+            '',
+          ),
+      );
+      this.albumAssets.clear();
+      this.updateViewportGeometry(false);
+      return;
+    }
 
     this.months = timebuckets.map((timeBucket) => {
       const date = new SvelteDate(timeBucket.timeBucket);
@@ -284,7 +407,37 @@ export class TimelineManager extends VirtualScrollManager {
     if (options.deferInit) {
       return;
     }
-    if (this.#options !== TimelineManager.#INIT_OPTIONS && isEqual(this.#options, options)) {
+    if (this.#requestedOptions !== TimelineManager.#INIT_OPTIONS && isEqual(this.#requestedOptions, options)) {
+      return;
+    }
+
+    // A page can ask twice before the first load starts (its own options, then the query a link
+    // restored): the latest request wins, and an overtaken one gives way instead of loading.
+    this.#requestedOptions = options;
+    const overtaken = () => this.#requestedOptions !== options;
+    this.suspendTransitions = true;
+    try {
+      await this.initTask.reset();
+      if (overtaken()) {
+        return;
+      }
+      await this.#init(options);
+      if (overtaken()) {
+        return;
+      }
+      this.updateViewportGeometry(false);
+      this.#createScrubberMonths();
+    } finally {
+      if (!overtaken()) {
+        this.suspendTransitions = false;
+      }
+    }
+  }
+
+  async refresh() {
+    // Reload what was last asked for, which may still be loading.
+    const options = this.#requestedOptions;
+    if (options === TimelineManager.#INIT_OPTIONS || options.deferInit) {
       return;
     }
 
@@ -299,22 +452,6 @@ export class TimelineManager extends VirtualScrollManager {
     }
   }
 
-  async refresh() {
-    if (this.#options === TimelineManager.#INIT_OPTIONS || this.#options.deferInit) {
-      return;
-    }
-
-    this.suspendTransitions = true;
-    try {
-      await this.initTask.reset();
-      await this.#init(this.#options);
-      this.updateViewportGeometry(false);
-      this.#createScrubberMonths();
-    } finally {
-      this.suspendTransitions = false;
-    }
-  }
-
   async #init(options: TimelineManagerOptions) {
     this.isInitialized = false;
     this.months = [];
@@ -322,9 +459,9 @@ export class TimelineManager extends VirtualScrollManager {
     // The server re-applies its NSFW filter on reload, so drop the locally
     // tracked ids to avoid hiding assets that may since have been marked safe.
     this.#nsfwHiddenAssetIds.clear();
-    await this.initTask.execute(async () => {
+    await this.initTask.execute(async (signal) => {
       this.#options = options;
-      await this.#initializeTimelineMonths();
+      await this.#initializeTimelineMonths(signal);
     }, true);
   }
 
@@ -349,7 +486,7 @@ export class TimelineManager extends VirtualScrollManager {
     }
 
     if (!this.initTask.executed) {
-      await (this.initTask.loading ? this.initTask.waitUntilCompletion() : this.#init(this.#options));
+      await (this.initTask.loading ? this.initTask.waitUntilCompletion() : this.#init(this.#requestedOptions));
     }
 
     const changedWidth = viewport.width !== this.viewportWidth;
@@ -362,9 +499,14 @@ export class TimelineManager extends VirtualScrollManager {
     if (!this.isInitialized || this.hasEmptyViewport) {
       return;
     }
-    for (const month of this.months) {
-      updateGeometry(this, month, { invalidateHeight: changedWidth });
+    if (changedWidth) {
+      releaseFlowHolds(this);
     }
+    batchFlow(this, () => {
+      for (const month of this.months) {
+        updateGeometry(this, month, { invalidateHeight: changedWidth });
+      }
+    });
     this.updateViewportProximities();
     if (changedWidth) {
       this.#createScrubberMonths();
@@ -372,7 +514,8 @@ export class TimelineManager extends VirtualScrollManager {
   }
 
   #createScrubberMonths() {
-    this.scrubberMonths = this.months.map((month) => ({
+    // A flat order has no dates to scrub through.
+    this.scrubberMonths = (this.ordered ? [] : this.months).map((month) => ({
       assetCount: month.assetsCount,
       year: month.yearMonth.year,
       month: month.yearMonth.month,
@@ -394,7 +537,9 @@ export class TimelineManager extends VirtualScrollManager {
     }
 
     const executionStatus = await timelineMonth.loader?.execute(async (signal: AbortSignal) => {
-      await loadFromTimeBuckets(this, timelineMonth, this.#options, signal);
+      await (this.#options.orderedBy
+        ? loadOrderedPage(timelineMonth, this.months.indexOf(timelineMonth), this.#options, signal)
+        : loadFromTimeBuckets(this, timelineMonth, this.#options, signal));
     }, cancelable);
     if (executionStatus === 'LOADED') {
       updateGeometry(this, timelineMonth, { invalidateHeight: false });
@@ -404,12 +549,19 @@ export class TimelineManager extends VirtualScrollManager {
 
   upsertAssets(assets: TimelineAsset[]) {
     const notUpdated = this.#updateAssets(assets);
+    // A flat order only learns where a new item belongs from the server, on the next load.
+    if (this.ordered) {
+      return;
+    }
     const notExcluded = notUpdated.filter((asset) => !this.isExcluded(asset));
     this.addAssetsUpsertSegments([...notExcluded]);
   }
 
   upsertAssetsFromLiveEvent(assets: TimelineAsset[]) {
     const notUpdated = this.#updateAssets(assets);
+    if (this.ordered) {
+      return;
+    }
     const insertable = notUpdated.filter((asset) => this.canInsertAssetFromLiveEvent(asset));
     this.addAssetsUpsertSegments(insertable);
   }
@@ -434,6 +586,20 @@ export class TimelineManager extends VirtualScrollManager {
 
     const timelineAsset = toTimelineAsset(response);
     if (this.isExcluded(timelineAsset)) {
+      return;
+    }
+
+    if (this.ordered) {
+      // No date says which page holds it: read the pages in order until it turns up.
+      for (const month of this.months) {
+        if (month.isLoaded) {
+          continue;
+        }
+        await this.loadTimelineMonth(month.yearMonth, { cancelable: false });
+        if (month.findAssetById({ id })) {
+          return month;
+        }
+      }
       return;
     }
 
@@ -498,21 +664,53 @@ export class TimelineManager extends VirtualScrollManager {
    * Executes callback on assets, handling moves between groups and removals due to filter criteria.
    */
   update(ids: string[], callback: (asset: TimelineAsset) => void) {
-    // eslint-disable-next-line svelte/prefer-svelte-reactivity
     return this.#runAssetCallback(new Set(ids), callback);
   }
 
   removeAssets(ids: string[]) {
-    // eslint-disable-next-line svelte/prefer-svelte-reactivity
     const result = this.#runAssetCallback(new Set(ids), () => ({ remove: true }));
+    if (ids.length > 0) {
+      for (const listener of this.#removedListeners) {
+        listener(ids);
+      }
+    }
     return [...result.notUpdated];
   }
 
-  // Only remove locally when the server would actually hide the asset from this
-  // view. That means NSFW hiding is enabled globally AND this view isn't the
-  // suppressed/review view (which exists to surface hidden assets).
+  /**
+   * Hear about assets leaving this timeline, whatever removed them: a bulk action, a trash or delete
+   * on another device (the live events), or a lock (FL-33). Every id asked for is passed on, loaded
+   * or not, so a selection can drop an item whose month is not loaded here.
+   */
+  onRemoved(listener: (ids: string[]) => void) {
+    this.#removedListeners.add(listener);
+    return () => {
+      this.#removedListeners.delete(listener);
+    };
+  }
+
+  /**
+   * Whether an item whose lock just changed still belongs in this view (FL-34). A newly locked item
+   * stays in the Locked view and in every ordinary view of an unlocked session, which reveals the
+   * owner's marks (FL-195); a newly unlocked item leaves the Locked view only.
+   */
+  keepsAfterLockChange(locked: boolean): boolean {
+    const isLockedView = this.#options.visibility === AssetVisibility.Locked;
+    return locked ? isLockedView || revealsLocks(this.#options) : !isLockedView;
+  }
+
+  // Marking an item sensitive locks it (FL-34), so every view drops it except the Locked view, which
+  // is where it now lives, and an unlocked session's ordinary views, which reveal the owner's marks
+  // (FL-195): there it stays, badged as sensitive, exactly as the server returns it on the next load.
   #handleMarkNsfw(ids: string[]) {
-    if (!featureFlagsManager.value.nsfwHiding || this.#options.suppressedOnly) {
+    if (this.#options.visibility === AssetVisibility.Locked) {
+      return;
+    }
+    if (revealsLocks(this.#options)) {
+      this.update(ids, (asset) => {
+        asset.visibility = AssetVisibility.Locked;
+        asset.lockReason = AssetLockReason.Marked;
+      });
       return;
     }
     for (const id of ids) {
@@ -539,7 +737,7 @@ export class TimelineManager extends VirtualScrollManager {
    * present in the timeline. For updating existing assets, use updateAssetOperation().
    */
   protected addAssetsUpsertSegments(assets: TimelineAsset[]) {
-    if (assets.length === 0) {
+    if (assets.length === 0 || this.ordered) {
       return;
     }
     const context = new GroupInsertionCache();
@@ -554,9 +752,7 @@ export class TimelineManager extends VirtualScrollManager {
   }
 
   #updateAssets(assets: TimelineAsset[]) {
-    // eslint-disable-next-line svelte/prefer-svelte-reactivity
     const cache = new Map<string, TimelineAsset>(assets.map((asset) => [asset.id, asset]));
-    // eslint-disable-next-line svelte/prefer-svelte-reactivity
     const idsToUpdate = new Set(cache.keys());
     const result = this.#runAssetCallback(idsToUpdate, (asset) => void updateObject(asset, cache.get(asset.id)));
     const notUpdated: TimelineAsset[] = Array.from(result.notUpdated, (assetId) => cache.get(assetId)!);
@@ -565,14 +761,34 @@ export class TimelineManager extends VirtualScrollManager {
 
   #runAssetCallback(ids: Set<string>, callback: (asset: TimelineAsset) => void | { remove?: boolean }) {
     if (ids.size === 0) {
-      // eslint-disable-next-line svelte/prefer-svelte-reactivity
       return { updated: new Set<string>(), notUpdated: ids, changedGeometry: false };
     }
-    // eslint-disable-next-line svelte/prefer-svelte-reactivity
+    if (this.#options.orderedBy === 'rating') {
+      // Ordered by rating, a new rating moves the item: the pages are read again in the new order.
+      let reordered = false;
+      const result = this.#runAssetCallbackInPlace(ids, (asset) => {
+        const before = asset.rating ?? null;
+        const outcome = callback(asset);
+        reordered ||= (asset.rating ?? null) !== before;
+        return outcome;
+      });
+      if (reordered) {
+        // Read the new order, and stay where the person was rather than jumping to the top.
+        const top = this.#scrollableElement?.scrollTop ?? 0;
+        void this.refresh().then(() => {
+          if (top > 0) {
+            this.scrollTo(top);
+          }
+        });
+      }
+      return result;
+    }
+    return this.#runAssetCallbackInPlace(ids, callback);
+  }
+
+  #runAssetCallbackInPlace(ids: Set<string>, callback: (asset: TimelineAsset) => void | { remove?: boolean }) {
     const changedTimelineMonths = new Set<TimelineMonth>();
-    // eslint-disable-next-line svelte/prefer-svelte-reactivity
     let notUpdated = new Set(ids);
-    // eslint-disable-next-line svelte/prefer-svelte-reactivity
     const updated = new Set<string>();
     const assetsToMoveSegments: MoveAsset[][] = [];
     for (const month of this.months) {
@@ -599,9 +815,11 @@ export class TimelineManager extends VirtualScrollManager {
     }
     this.addAssetsUpsertSegments(assetsToAdd);
     const changedGeometry = changedTimelineMonths.size > 0;
-    for (const month of changedTimelineMonths) {
-      updateGeometry(this, month, { invalidateHeight: true });
-    }
+    batchFlow(this, () => {
+      for (const month of changedTimelineMonths) {
+        updateGeometry(this, month, { invalidateHeight: true });
+      }
+    });
     if (changedGeometry) {
       this.updateViewportProximities();
     }
@@ -609,9 +827,12 @@ export class TimelineManager extends VirtualScrollManager {
   }
 
   override refreshLayout() {
-    for (const month of this.months) {
-      updateGeometry(this, month, { invalidateHeight: true });
-    }
+    releaseFlowHolds(this);
+    batchFlow(this, () => {
+      for (const month of this.months) {
+        updateGeometry(this, month, { invalidateHeight: true });
+      }
+    });
     this.updateViewportProximities();
   }
 
@@ -653,13 +874,64 @@ export class TimelineManager extends VirtualScrollManager {
   }
 
   async retrieveRange(start: AssetDescriptor, end: AssetDescriptor) {
-    return retrieveRangeUtil(this, start, end);
+    return retrieveRangeUtil(this, start, end, this.ordered ? this.#orderedPositions() : undefined);
+  }
+
+  /**
+   * Where each item sits in a flat order (page, then place on the page), as one id → index map for a
+   * whole range. Pages the range loads on the way are indexed when first asked about, not rescanned.
+   */
+  #orderedPositions() {
+    const positions = new Map<string, number>();
+    const indexed = new Set<TimelineMonth>();
+    const index = () => {
+      for (const [page, month] of this.months.entries()) {
+        if (indexed.has(month) || !month.isLoaded) {
+          continue;
+        }
+        indexed.add(month);
+        for (const [place, viewerAsset] of (month.timelineDays[0]?.viewerAssets ?? []).entries()) {
+          positions.set(viewerAsset.id, page * ORDERED_PAGE_SIZE + place);
+        }
+      }
+    };
+    index();
+    return (asset: TimelineAsset): number => {
+      if (!positions.has(asset.id)) {
+        index();
+      }
+      return positions.get(asset.id) ?? Infinity;
+    };
+  }
+
+  /**
+   * FL-34/FL-195: an unlocked session reveals the owner's own Locked items — marks, detections and
+   * items moved from the old Locked folder — in every ordinary view: the timeline, the archive, a
+   * person, a tag. The server sends them with visibility `locked` and their reason, and only where
+   * their stored visibility matches the view and the session is unlocked. The Locked view also lists
+   * the owner's Locked-rule matches (the prototype's `classifyLocked`), which keep their stored
+   * visibility.
+   */
+  #isVisibilityMismatch(asset: TimelineAsset) {
+    const revealed =
+      this.#options.visibility !== undefined &&
+      this.#options.visibility !== AssetVisibility.Locked &&
+      asset.visibility === AssetVisibility.Locked &&
+      !!asset.lockReason;
+    return !revealed && !this.#isLockedRuleMatch(asset) && isMismatched(this.#options.visibility, asset.visibility);
+  }
+
+  #isLockedRuleMatch(asset: TimelineAsset) {
+    return (
+      this.#options.visibility === AssetVisibility.Locked &&
+      (asset.visibility === AssetVisibility.Timeline || asset.visibility === AssetVisibility.Archive)
+    );
   }
 
   isExcluded(asset: TimelineAsset) {
     return (
       this.#nsfwHiddenAssetIds.has(asset.id) ||
-      isMismatched(this.#options.visibility, asset.visibility) ||
+      this.#isVisibilityMismatch(asset) ||
       isMismatched(this.#options.isFavorite, asset.isFavorite) ||
       isMismatched(this.#options.isTrashed, asset.isTrashed) ||
       (this.#options.tagId && asset.tags && !asset.tags.includes(this.#options.tagId)) ||
@@ -669,6 +941,10 @@ export class TimelineManager extends VirtualScrollManager {
 
   canInsertAssetFromLiveEvent(asset: TimelineAsset) {
     if (this.isExcluded(asset)) {
+      return false;
+    }
+    // only the server knows what the owner's Locked rules match; the next load brings those in
+    if (this.#isLockedRuleMatch(asset)) {
       return false;
     }
     if (this.#options.albumId || this.#options.personId || this.#options.timelineAlbumId) {
@@ -705,10 +981,12 @@ export class TimelineManager extends VirtualScrollManager {
       timelineMonth.sortTimelineDays();
     }
 
-    for (const month of context.updatedBuckets) {
-      month.sortTimelineDays();
-      updateGeometry(this, month, { invalidateHeight: true });
-    }
+    batchFlow(this, () => {
+      for (const month of context.updatedBuckets) {
+        month.sortTimelineDays();
+        updateGeometry(this, month, { invalidateHeight: true });
+      }
+    });
     this.updateViewportProximities();
   }
 }

@@ -1,0 +1,636 @@
+diff --git a/headless.html b/headless.html
+--- a/headless.html
++++ b/headless.html
+@@ -1,6 +1,7 @@
+ <!doctype html>
+ <html lang="en">
+   <head>
++    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; media-src 'self' blob:; font-src 'none'; worker-src 'self' blob:; frame-src 'self'; object-src 'none'; base-uri 'self'" />
+     <meta charset="UTF-8" />
+     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+     <title>FreeCut Headless Render Harness</title>
+diff --git a/index.html b/index.html
+--- a/index.html
++++ b/index.html
+@@ -1,6 +1,7 @@
+ <!doctype html>
+ <html lang="en">
+   <head>
++    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; media-src 'self' blob:; font-src 'none'; worker-src 'self' blob:; frame-src 'self'; object-src 'none'; base-uri 'self'" />
+     <meta charset="UTF-8" />
+     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+     <link rel="manifest" href="/manifest.webmanifest" />
+@@ -11,9 +12,6 @@
+     <meta name="apple-mobile-web-app-capable" content="yes" />
+     <meta name="apple-mobile-web-app-title" content="FreeCut" />
+     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+-    <link rel="preconnect" href="https://fonts.googleapis.com" />
+-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+-    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" crossorigin="anonymous" />
+     <title>FreeCut</title>
+   </head>
+   <body>
+diff --git a/public/moss-tts/browser_model_store.js b/public/moss-tts/browser_model_store.js
+--- a/public/moss-tts/browser_model_store.js
++++ b/public/moss-tts/browser_model_store.js
+@@ -1,3 +1,4 @@
++import { requireResource } from './resource-admission.mjs'
+ (function initNanoReaderBrowserModelStore(globalScope) {
+   const MANAGED_SCHEME = 'managed://';
+   const DEFAULT_EXTERNAL_MODEL_KEY = 'browser-onnx-external';
+@@ -342,6 +343,7 @@
+     forceDownload = false,
+     accessToken = ''
+   } = {}) {
++    requireResource('model:OpenMOSS-Team/MOSS-TTS-Nano-100M-ONNX');
+     const normalizedKey = normalizeManagedKey(key);
+     const rootHandle = await getManagedModelRootDirectory(normalizedKey, true);
+     const alreadyComplete = !forceDownload && await hasCompleteExternalModelSet(rootHandle);
+diff --git a/public/moss-tts/browser_onnx_host.html b/public/moss-tts/browser_onnx_host.html
+--- a/public/moss-tts/browser_onnx_host.html
++++ b/public/moss-tts/browser_onnx_host.html
+@@ -1,12 +1,13 @@
+ <!DOCTYPE html>
+ <html lang="en">
+ <head>
++    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; media-src 'self' blob:; font-src 'none'; worker-src 'self' blob:; frame-src 'self'; object-src 'none'; base-uri 'self'" />
+   <meta charset="UTF-8">
+   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+   <title>freecut MOSS TTS Host</title>
+ </head>
+ <body>
+-  <script src="./browser_model_store.js"></script>
++  <script type="module" src="./browser_model_store.js"></script>
+   <script type="module" src="./browser_onnx_host.js"></script>
+ </body>
+ </html>
+diff --git a/public/moss-tts/browser_onnx_runtime.js b/public/moss-tts/browser_onnx_runtime.js
+--- a/public/moss-tts/browser_onnx_runtime.js
++++ b/public/moss-tts/browser_onnx_runtime.js
+@@ -1,3 +1,4 @@
++import { requireResource } from './resource-admission.mjs'
+ // src/browser_onnx_runtime.js
+ import * as ort from "./vendor/ort/ort.wasm.min.mjs";
+ 
+@@ -1055,6 +1056,7 @@
+ };
+ var BrowserOnnxTtsRuntime = class {
+   constructor({ logger = null, assetReader = null } = {}) {
++    requireResource('model:OpenMOSS-Team/MOSS-TTS-Nano-100M-ONNX');
+     this.logger = typeof logger === "function" ? logger : null;
+     this.assetReader = assetReader || null;
+     this.profileState = null;
+@@ -2380,6 +2382,7 @@
+   }
+ };
+ function createBrowserOnnxTtsRuntime(options = {}) {
++  requireResource('model:OpenMOSS-Team/MOSS-TTS-Nano-100M-ONNX');
+   return new BrowserOnnxTtsRuntime(options);
+ }
+ export {
+diff --git a/public/moss-tts/tokenizer_sandbox.html b/public/moss-tts/tokenizer_sandbox.html
+--- a/public/moss-tts/tokenizer_sandbox.html
++++ b/public/moss-tts/tokenizer_sandbox.html
+@@ -1,6 +1,7 @@
+ <!DOCTYPE html>
+ <html lang="en">
+ <head>
++    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; media-src 'self' blob:; font-src 'none'; worker-src 'self' blob:; frame-src 'self'; object-src 'none'; base-uri 'self'" />
+   <meta charset="UTF-8">
+   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+   <title>Tokenizer Sandbox</title>
+diff --git a/public/moss-tts/tokenizer_sandbox.js b/public/moss-tts/tokenizer_sandbox.js
+--- a/public/moss-tts/tokenizer_sandbox.js
++++ b/public/moss-tts/tokenizer_sandbox.js
+@@ -1,3 +1,4 @@
++import { requireResource } from './resource-admission.mjs';
+ var __create = Object.create;
+ var __defProp = Object.defineProperty;
+ var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+@@ -5892,6 +5893,7 @@
+ var TOKENIZER_SANDBOX_SOURCE = "nano-reader-tokenizer-sandbox";
+ var processors = /* @__PURE__ */ new Map();
+ async function ensureProcessor(modelKey, tokenizerBase64 = null) {
++  requireResource('model:OpenMOSS-Team/MOSS-Audio-Tokenizer-Nano-ONNX');
+   let processor = processors.get(modelKey);
+   if (processor) {
+     return processor;
+diff --git a/src/features/editor/services/kokoro-tts-service.ts b/src/features/editor/services/kokoro-tts-service.ts
+--- a/src/features/editor/services/kokoro-tts-service.ts
++++ b/src/features/editor/services/kokoro-tts-service.ts
+@@ -1,3 +1,4 @@
++import { requireResource } from '@/shared/utils/resource-admission.mjs'
+ import { createLogger } from '@/shared/logging/logger'
+ import {
+   localInferenceRuntimeRegistry,
+@@ -398,6 +399,7 @@
+     model: KokoroTtsModel,
+     onProgress?: (stage: string) => void,
+   ): Promise<KokoroRuntime> {
++    requireResource('model:' + MODEL_ID)
+     const existingPromise = this.runtimePromises.get(model)
+     if (existingPromise) {
+       return existingPromise
+diff --git a/src/features/editor/services/moss-tts-service.ts b/src/features/editor/services/moss-tts-service.ts
+--- a/src/features/editor/services/moss-tts-service.ts
++++ b/src/features/editor/services/moss-tts-service.ts
+@@ -1,3 +1,4 @@
++import { requireResource } from '@/shared/utils/resource-admission.mjs'
+ import { createLogger } from '@/shared/logging/logger'
+ import { sanitizeAiOutputFileNameSegment } from '@/shared/utils/ai-output-filename'
+ import {
+@@ -368,6 +369,7 @@
+   private workerReadyResolver: (() => void) | null = null
+ 
+   private async ensureWorkerLoaded(onProgress?: (stage: string) => void): Promise<void> {
++    requireResource('model:OpenMOSS-Team/MOSS-TTS-Nano-100M-ONNX')
+     if (this.workerReadyPromise) {
+       return this.workerReadyPromise
+     }
+@@ -433,6 +435,7 @@
+   }
+ 
+   private async ensurePrepared(onProgress?: (stage: string) => void): Promise<void> {
++    requireResource('model:OpenMOSS-Team/MOSS-TTS-Nano-100M-ONNX')
+     if (this.preparedPromise) {
+       return this.preparedPromise
+     }
+diff --git a/src/features/editor/services/musicgen-service.ts b/src/features/editor/services/musicgen-service.ts
+--- a/src/features/editor/services/musicgen-service.ts
++++ b/src/features/editor/services/musicgen-service.ts
+@@ -1,3 +1,4 @@
++import { requireResource } from '@/shared/utils/resource-admission.mjs'
+ import {
+   DEFAULT_MUSICGEN_MODEL,
+   getMusicgenMaxNewTokens,
+@@ -171,6 +172,7 @@
+     model: MusicgenModelId,
+     onProgress?: (stage: string, fraction?: number) => void,
+   ): Promise<MusicgenRuntime> {
++    requireResource('model:' + getMusicgenModelDefinition(model).modelId)
+     const existingPromise = this.runtimePromises.get(model)
+     if (existingPromise) {
+       return existingPromise
+diff --git a/src/features/editor/services/supertonic-tts-service.ts b/src/features/editor/services/supertonic-tts-service.ts
+--- a/src/features/editor/services/supertonic-tts-service.ts
++++ b/src/features/editor/services/supertonic-tts-service.ts
+@@ -1,3 +1,4 @@
++import { requireResource } from '@/shared/utils/resource-admission.mjs'
+ import { createLogger } from '@/shared/logging/logger'
+ import { sanitizeAiOutputFileNameSegment } from '@/shared/utils/ai-output-filename'
+ import {
+@@ -661,6 +662,7 @@
+   }
+ 
+   private async ensureRuntime(onProgress?: (stage: string) => void): Promise<SupertonicRuntime> {
++    requireResource('model:supertonic-3')
+     if (this.runtimePromise) {
+       return this.runtimePromise
+     }
+diff --git a/src/features/lottie-browser/components/lottie-card.tsx b/src/features/lottie-browser/components/lottie-card.tsx
+--- a/src/features/lottie-browser/components/lottie-card.tsx
++++ b/src/features/lottie-browser/components/lottie-card.tsx
+@@ -1,3 +1,4 @@
++import { canUseResource } from '@/shared/utils/resource-admission.mjs'
+ import { memo, useState } from 'react'
+ import { useTranslation } from 'react-i18next'
+ import { Check, Film, Loader2, Plus, RotateCcw } from 'lucide-react'
+@@ -23,7 +24,7 @@
+   const disabled = isImporting || isImported
+   // Some (often freshly uploaded) animations have no rendered GIF yet.
+   const [previewFailed, setPreviewFailed] = useState(false)
+-  const showPreview = Boolean(animation.gifUrl) && !previewFailed
++  const showPreview = canUseResource('asset:lottiefiles') && Boolean(animation.gifUrl) && !previewFailed
+ 
+   const actionLabel = isImported
+     ? t('lottieBrowser.added')
+diff --git a/src/features/lottie-browser/services/lottiefiles-api.ts b/src/features/lottie-browser/services/lottiefiles-api.ts
+--- a/src/features/lottie-browser/services/lottiefiles-api.ts
++++ b/src/features/lottie-browser/services/lottiefiles-api.ts
+@@ -1,3 +1,4 @@
++import { requireResource } from '@/shared/utils/resource-admission.mjs'
+ /**
+  * Minimal client for the public LottieFiles GraphQL API.
+  *
+@@ -123,6 +124,7 @@
+   first?: number
+   signal?: AbortSignal
+ }): Promise<LottiePage> {
++    requireResource('asset:lottiefiles')
+   const trimmed = params.query?.trim() ?? ''
+   const isSearch = trimmed.length > 0
+   const field = rootField(params.category, isSearch)
+diff --git a/src/features/media-library/services/media-library-service.test.ts b/src/features/media-library/services/media-library-service.test.ts
+--- a/src/features/media-library/services/media-library-service.test.ts
++++ b/src/features/media-library/services/media-library-service.test.ts
+@@ -1,6 +1,14 @@
+ // @vitest-environment node
+ 
+ import { beforeEach, describe, expect, it, vi } from 'vite-plus/test'
++import { requireResource } from '@/shared/utils/resource-admission.mjs'
++
++// Preserve import behavior tests after synthetic test-only admission. Production
++// admission, including URL/blob relabeling, is exercised in real browser tests.
++vi.mock('@/shared/utils/resource-admission.mjs', async (importOriginal) => ({
++  ...await importOriginal<typeof import('@/shared/utils/resource-admission.mjs')>(),
++  requireResource: vi.fn(),
++}))
+ 
+ const indexedDbMocks = vi.hoisted(() => ({
+   getAllMedia: vi.fn(),
+@@ -525,6 +533,12 @@
+   })
+ 
+   describe('importMediaFromUrl', () => {
++    it('refuses a denied URL before acquisition or persistence', async () => {
++      vi.mocked(requireResource).mockImplementationOnce(() => { throw new Error('FRAMELEAF_RESOURCE_BLOCKED') })
++      await expect(mediaLibraryService.importMediaFromUrl('https://example.com/model.bin', 'project-1')).rejects.toThrow('FRAMELEAF_RESOURCE_BLOCKED')
++      expect(fetchMock).not.toHaveBeenCalled()
++      expect(indexedDbMocks.createMedia).not.toHaveBeenCalled()
++    })
+     it('downloads a direct media URL and persists it as OPFS-backed media', async () => {
+       const remoteBlob = new Blob(['remote-video'], { type: 'video/mp4' })
+       fetchMock.mockResolvedValue({
+diff --git a/src/features/media-library/services/media-library-service.ts b/src/features/media-library/services/media-library-service.ts
+--- a/src/features/media-library/services/media-library-service.ts
++++ b/src/features/media-library/services/media-library-service.ts
+@@ -1,3 +1,4 @@
++import { requireResource } from '@/shared/utils/resource-admission.mjs'
+ import type { MediaAttribution, MediaMetadata, ThumbnailData } from '@/types/storage'
+ import { createLogger } from '@/shared/logging/logger'
+ import { mapWithConcurrency } from '@/shared/utils/async-utils'
+@@ -347,6 +348,7 @@
+   private async parseLottieFile(
+     file: File,
+   ): Promise<{ width: number; height: number; fps: number; duration: number }> {
++    requireResource('asset:lottiefiles')
+     // Read raw bytes so we can handle both `.json` Lottie and `.lottie`
+     // (dotLottie ZIP archive) — `parseLottieFileBytes` auto-detects the format.
+     const bytes = new Uint8Array(await file.arrayBuffer())
+@@ -822,6 +824,7 @@
+   }
+ 
+   private async fetchMediaFromUrl(url: string): Promise<File> {
++    requireResource('asset:user-import')
+     const parsedUrl = parseMediaImportUrl(url.trim())
+ 
+     let response: Response
+@@ -1241,6 +1244,7 @@
+     projectId: string,
+     options?: { fileName?: string; attribution?: MediaAttribution },
+   ): Promise<MediaMetadata & { isDuplicate?: boolean }> {
++    requireResource('asset:lottiefiles')
+     if (!projectId) {
+       throw new Error('No project selected')
+     }
+diff --git a/src/features/media-library/transcription/workers/parakeet.worker.ts b/src/features/media-library/transcription/workers/parakeet.worker.ts
+--- a/src/features/media-library/transcription/workers/parakeet.worker.ts
++++ b/src/features/media-library/transcription/workers/parakeet.worker.ts
+@@ -1,3 +1,13 @@
++import { requireResource } from '@/shared/utils/resource-admission.mjs'
++// Admission precedes all worker work, including reuse of an already-loaded runtime.
++self.addEventListener('message', (event: MessageEvent) => {
++  if (['dispose', 'cancel', 'abort'].includes(event.data?.type)) return
++  try { requireResource("model:Olicorne/parakeet-tdt-0.6b-v3-smoothquant-onnx") }
++  catch (error) {
++    event.stopImmediatePropagation()
++    self.postMessage({ type: 'error', id: event.data?.id, message: String(error) })
++  }
++})
+ import type { MainThreadMessage, PCMChunk, TranscriptWord, WhisperWorkerMessage } from '../types'
+ import { createLogger } from '@/shared/logging/logger'
+ import { getChunkStartProgress, transcribingProgressEvent } from '../lib/chunk-progress'
+diff --git a/src/features/media-library/transcription/workers/whisper.worker.ts b/src/features/media-library/transcription/workers/whisper.worker.ts
+--- a/src/features/media-library/transcription/workers/whisper.worker.ts
++++ b/src/features/media-library/transcription/workers/whisper.worker.ts
+@@ -1,3 +1,13 @@
++import { requireResource } from '@/shared/utils/resource-admission.mjs'
++// Admission precedes all worker work, including reuse of an already-loaded runtime.
++self.addEventListener('message', (event: MessageEvent) => {
++  if (['dispose', 'cancel', 'abort'].includes(event.data?.type)) return
++  try { requireResource(event.data?.modelId ? 'model:' + event.data.modelId : 'runtime:whisper-transformers') }
++  catch (error) {
++    event.stopImmediatePropagation()
++    self.postMessage({ type: 'error', id: event.data?.id, message: String(error) })
++  }
++})
+ import type {
+   MainThreadMessage,
+   PCMChunk,
+diff --git a/src/features/timeline/utils/filler-audio-confidence.ts b/src/features/timeline/utils/filler-audio-confidence.ts
+--- a/src/features/timeline/utils/filler-audio-confidence.ts
++++ b/src/features/timeline/utils/filler-audio-confidence.ts
+@@ -1,3 +1,4 @@
++import { requireResource } from '@/shared/utils/resource-admission.mjs'
+ import type {
+   FillerAudioConfidence,
+   FillerRange,
+@@ -72,6 +73,7 @@
+ }
+ 
+ async function getClassifier(): Promise<ZeroShotAudioClassifier> {
++    requireResource('model:' + CLAP_MODEL_ID)
+   if (classifierPromise) {
+     return classifierPromise
+   }
+diff --git a/src/headless/main.ts b/src/headless/main.ts
+--- a/src/headless/main.ts
++++ b/src/headless/main.ts
+@@ -1,3 +1,4 @@
++import { requireResource } from '@/shared/utils/resource-admission.mjs'
+ /**
+  * Headless render harness.
+  *
+@@ -1246,6 +1247,7 @@
+ }
+ 
+ async function probeMedia(input: { url: string; fileName: string; mimeType?: string }) {
++  requireResource('asset:user-import')
+   const response = await fetch(input.url)
+   if (!response.ok) throw new Error(`Media fetch failed: HTTP ${response.status}`)
+   if (!response.body || typeof navigator.storage?.getDirectory !== 'function') {
+diff --git a/src/infrastructure/analysis/embeddings/clip-worker.ts b/src/infrastructure/analysis/embeddings/clip-worker.ts
+--- a/src/infrastructure/analysis/embeddings/clip-worker.ts
++++ b/src/infrastructure/analysis/embeddings/clip-worker.ts
+@@ -1,3 +1,13 @@
++import { requireResource } from '@/shared/utils/resource-admission.mjs'
++// Admission precedes all worker work, including reuse of an already-loaded runtime.
++self.addEventListener('message', (event: MessageEvent) => {
++  if (['dispose', 'cancel', 'abort'].includes(event.data?.type)) return
++  try { requireResource("model:Xenova/clip-vit-base-patch32") }
++  catch (error) {
++    event.stopImmediatePropagation()
++    self.postMessage({ type: 'error', id: event.data?.id, message: String(error) })
++  }
++})
+ /**
+  * Web Worker for CLIP image + text embeddings.
+  *
+diff --git a/src/infrastructure/analysis/embeddings/embeddings-worker.ts b/src/infrastructure/analysis/embeddings/embeddings-worker.ts
+--- a/src/infrastructure/analysis/embeddings/embeddings-worker.ts
++++ b/src/infrastructure/analysis/embeddings/embeddings-worker.ts
+@@ -1,3 +1,13 @@
++import { requireResource } from '@/shared/utils/resource-admission.mjs'
++// Admission precedes all worker work, including reuse of an already-loaded runtime.
++self.addEventListener('message', (event: MessageEvent) => {
++  if (['dispose', 'cancel', 'abort'].includes(event.data?.type)) return
++  try { requireResource("model:Xenova/all-MiniLM-L6-v2") }
++  catch (error) {
++    event.stopImmediatePropagation()
++    self.postMessage({ type: 'error', id: event.data?.id, message: String(error) })
++  }
++})
+ /**
+  * Web Worker for sentence-embedding generation using Xenova/all-MiniLM-L6-v2.
+  *
+diff --git a/src/infrastructure/analysis/gemma-scene-worker.ts b/src/infrastructure/analysis/gemma-scene-worker.ts
+--- a/src/infrastructure/analysis/gemma-scene-worker.ts
++++ b/src/infrastructure/analysis/gemma-scene-worker.ts
+@@ -1,3 +1,13 @@
++import { requireResource } from '@/shared/utils/resource-admission.mjs'
++// Admission precedes all worker work, including reuse of an already-loaded runtime.
++self.addEventListener('message', (event: MessageEvent) => {
++  if (['dispose', 'cancel', 'abort'].includes(event.data?.type)) return
++  try { requireResource("model:onnx-community/gemma-4-E4B-it-ONNX") }
++  catch (error) {
++    event.stopImmediatePropagation()
++    self.postMessage({ type: 'error', id: event.data?.id, message: String(error) })
++  }
++})
+ /**
+  * Web Worker for Gemma-4 scene cut verification.
+  *
+diff --git a/src/infrastructure/analysis/lfm-scene-worker.ts b/src/infrastructure/analysis/lfm-scene-worker.ts
+--- a/src/infrastructure/analysis/lfm-scene-worker.ts
++++ b/src/infrastructure/analysis/lfm-scene-worker.ts
+@@ -1,3 +1,13 @@
++import { requireResource } from '@/shared/utils/resource-admission.mjs'
++// Admission precedes all worker work, including reuse of an already-loaded runtime.
++self.addEventListener('message', (event: MessageEvent) => {
++  if (['dispose', 'cancel', 'abort'].includes(event.data?.type)) return
++  try { requireResource("model:LiquidAI/LFM2.5-VL-450M-ONNX") }
++  catch (error) {
++    event.stopImmediatePropagation()
++    self.postMessage({ type: 'error', id: event.data?.id, message: String(error) })
++  }
++})
+ /**
+  * Web Worker for LFM-2.5-VL scene cut verification.
+  *
+diff --git a/src/infrastructure/interpolation/rife-interpolator.ts b/src/infrastructure/interpolation/rife-interpolator.ts
+--- a/src/infrastructure/interpolation/rife-interpolator.ts
++++ b/src/infrastructure/interpolation/rife-interpolator.ts
+@@ -1,3 +1,4 @@
++import { requireResource } from '@/shared/utils/resource-admission.mjs'
+ /**
+  * RIFE v4.x frame interpolation on onnxruntime-web.
+  *
+@@ -96,6 +97,7 @@
+   /** Download weights and probe for WebGPU. Idempotent and concurrency-safe. */
+   // fallow-ignore-next-line unused-class-member
+   ready(): Promise<void> {
++    requireResource('model:walterlow/RIFE_fp32_timestep')
+     if (!this.readyPromise) {
+       this.readyPromise = this.load().catch((error) => {
+         // Let a later call retry rather than caching a rejected promise forever.
+@@ -131,6 +133,7 @@
+   }
+ 
+   private async getSession(width: number, height: number): Promise<OrtSession> {
++    requireResource('model:walterlow/RIFE_fp32_timestep')
+     const key = this.sessionKey(width, height)
+     const existing = this.sessions.get(key)
+     if (existing) return existing.session
+diff --git a/src/infrastructure/llm/gemma-llm-worker.ts b/src/infrastructure/llm/gemma-llm-worker.ts
+--- a/src/infrastructure/llm/gemma-llm-worker.ts
++++ b/src/infrastructure/llm/gemma-llm-worker.ts
+@@ -1,3 +1,13 @@
++import { requireResource } from '@/shared/utils/resource-admission.mjs'
++// Admission precedes all worker work, including reuse of an already-loaded runtime.
++self.addEventListener('message', (event: MessageEvent) => {
++  if (['dispose', 'cancel', 'abort'].includes(event.data?.type)) return
++  try { requireResource("model:onnx-community/gemma-4-E4B-it-ONNX") }
++  catch (error) {
++    event.stopImmediatePropagation()
++    self.postMessage({ type: 'error', id: event.data?.id, message: String(error) })
++  }
++})
+ /**
+  * Web Worker hosting the on-device Gemma text LLM for the editing agent.
+  *
+diff --git a/src/infrastructure/lottie/lottie-frame-provider.ts b/src/infrastructure/lottie/lottie-frame-provider.ts
+--- a/src/infrastructure/lottie/lottie-frame-provider.ts
++++ b/src/infrastructure/lottie/lottie-frame-provider.ts
+@@ -1,3 +1,4 @@
++import { requireResource } from '@/shared/utils/resource-admission.mjs'
+ /**
+  * Lottie frame rendering via @lottiefiles/dotlottie-web.
+  *
+@@ -160,6 +161,7 @@
+      */
+     autoResize?: boolean
+   }) {
++    requireResource('asset:lottiefiles')
+     ensureLottieWasm()
+     this._canvas = config.canvas
+     const autoResize = config.autoResize ?? false
+@@ -256,6 +258,7 @@
+ 
+   /** Render a specific Lottie frame synchronously into the bound canvas. */
+   renderFrame(lottieFrame: number): void {
++    requireResource('asset:lottiefiles')
+     if (this._destroyed || !this._loaded) return
+     this.dotLottie.setFrame(lottieFrame)
+   }
+@@ -323,6 +326,7 @@
+     themeData?: string,
+     slots?: Record<string, LottieSlotValue>,
+   ): Promise<void> {
++    requireResource('asset:lottiefiles')
+     if (this.renderers.has(key)) return
+     const canvas = new OffscreenCanvas(Math.max(1, width), Math.max(1, height))
+     const renderer = new LottieRenderer(
+@@ -355,6 +359,7 @@
+     themeData?: string,
+     slots?: Record<string, LottieSlotValue>,
+   ): Promise<void> {
++    requireResource('asset:lottiefiles')
+     if (this.signatures.get(key) === signature) return
+     const inFlight = this.rebuilds.get(key)
+     if (inFlight && inFlight.signature === signature) return inFlight.promise
+@@ -380,6 +385,7 @@
+ 
+   /** Render `lottieFrame` and return the OffscreenCanvas to composite, or null. */
+   renderFrame(key: string, lottieFrame: number): OffscreenCanvas | null {
++    requireResource('asset:lottiefiles')
+     const renderer = this.renderers.get(key)
+     if (!renderer || !renderer.isLoaded) return null
+     renderer.renderFrame(lottieFrame)
+diff --git a/src/infrastructure/lottie/lottie-metadata.ts b/src/infrastructure/lottie/lottie-metadata.ts
+--- a/src/infrastructure/lottie/lottie-metadata.ts
++++ b/src/infrastructure/lottie/lottie-metadata.ts
+@@ -1,3 +1,4 @@
++import { requireResource } from '@/shared/utils/resource-admission.mjs'
+ /**
+  * WASM-free Lottie metadata extraction. Kept separate from
+  * `lottie-frame-provider` (which statically imports the dotlottie-web WASM
+@@ -257,6 +258,7 @@
+   inlineImages = false,
+   animationId?: string,
+ ): Promise<Record<string, unknown> | null> {
++    requireResource('asset:lottiefiles')
+   try {
+     const buffer = await (await fetch(src)).arrayBuffer()
+     return extractLottieAnimation(new Uint8Array(buffer), inlineImages, animationId)
+@@ -379,6 +381,7 @@
+ 
+ /** Fetch a Lottie `src` and summarize its dotLottie manifest. Null on failure. */
+ export async function fetchLottieManifest(src: string): Promise<LottieManifestInfo | null> {
++    requireResource('asset:lottiefiles')
+   try {
+     const buffer = await (await fetch(src)).arrayBuffer()
+     return extractLottieManifest(new Uint8Array(buffer))
+@@ -389,6 +392,7 @@
+ 
+ /** Fetch a Lottie `src` and read a theme's rule JSON. Null on failure/absence. */
+ export async function fetchLottieThemeData(src: string, themeId: string): Promise<string | null> {
++    requireResource('asset:lottiefiles')
+   try {
+     const buffer = await (await fetch(src)).arrayBuffer()
+     return extractLottieThemeData(new Uint8Array(buffer), themeId)
+diff --git a/src/infrastructure/upscale/anime4k-upscaler.ts b/src/infrastructure/upscale/anime4k-upscaler.ts
+--- a/src/infrastructure/upscale/anime4k-upscaler.ts
++++ b/src/infrastructure/upscale/anime4k-upscaler.ts
+@@ -1,3 +1,4 @@
++import { requireResource } from '@/shared/utils/resource-admission.mjs'
+ /**
+  * Anime4K CNN 2x (M) super-resolution on onnxruntime-web.
+  *
+@@ -60,6 +61,7 @@
+   /** Load the bundled weights and probe for WebGPU. Idempotent and concurrency-safe. */
+   // fallow-ignore-next-line unused-class-member
+   ready(): Promise<void> {
++    requireResource('weights:anime4k-' + ({ animation: 'an', liveAction: 'rl', threeD: '3d' }[this.variant] ?? this.variant))
+     if (!this.readyPromise) {
+       this.readyPromise = this.load().catch((error) => {
+         // Let a later call retry rather than caching a rejected promise forever.
+@@ -91,6 +93,7 @@
+   }
+ 
+   private async getSession(width: number, height: number): Promise<OrtSession> {
++    requireResource('weights:anime4k-' + ({ animation: 'an', liveAction: 'rl', threeD: '3d' }[this.variant] ?? this.variant))
+     const key = `${width}x${height}`
+     const existing = this.sessions.get(key)
+     if (existing) return existing
+diff --git a/src/shared/typography/font-loader.ts b/src/shared/typography/font-loader.ts
+--- a/src/shared/typography/font-loader.ts
++++ b/src/shared/typography/font-loader.ts
+@@ -1,3 +1,4 @@
++import { requireResource } from '@/shared/utils/resource-admission.mjs'
+ /**
+  * Native font loading utilities to replace @legacy-video/google-fonts
+  *
+@@ -91,6 +92,7 @@
+  * Load a font from Google Fonts
+  */
+ async function loadGoogleFont(fontName: string): Promise<string> {
++    requireResource('font:' + fontName)
+   if (typeof document === 'undefined') {
+     return fontName
+   }
+@@ -167,6 +169,7 @@
+  * @returns The CSS font-family value to use in styles
+  */
+ export function loadFont(fontName: string): string {
++    requireResource('font:' + fontName)
+   // Check if font is already loaded and return cached fontFamily
+   const cached = loadedFontFamilies.get(fontName)
+   if (cached) {
+@@ -189,6 +192,7 @@
+   fontNames: readonly string[],
+   weights: readonly number[] = [400],
+ ): Promise<void> {
++  for (const fontName of fontNames) requireResource('font:' + fontName)
+   if (fontNames.length === 0 || typeof document === 'undefined' || !document.fonts) {
+     return
+   }
+diff --git a/src/shared/utils/onnx-model-cache.ts b/src/shared/utils/onnx-model-cache.ts
+--- a/src/shared/utils/onnx-model-cache.ts
++++ b/src/shared/utils/onnx-model-cache.ts
+@@ -1,3 +1,4 @@
++import { requireResource } from '@/shared/utils/resource-admission.mjs'
+ /**
+  * Durable Cache Storage layer for models loaded directly through onnxruntime-web.
+  *
+@@ -167,6 +168,7 @@
+  * all in-flight callers.
+  */
+ export function fetchOnnxModelBytes(url: string, onBytes?: ProgressFn): Promise<ArrayBuffer> {
++    requireResource(url)
+   const existing = inFlightModelBytes.get(url)
+   if (existing) {
+     if (onBytes) existing.listeners.add(onBytes)
+@@ -188,6 +190,7 @@
+ 
+ /** Fetch a small text asset (vocab, etc.), serving from / populating Cache Storage. */
+ export async function fetchOnnxModelText(url: string): Promise<string> {
++    requireResource(url)
+   const cache = await openCache()
+   const cached = cache ? await cache.match(url).catch(() => undefined) : undefined
+   if (cached) {
+diff --git a/src/shared/utils/ort-runtime.ts b/src/shared/utils/ort-runtime.ts
+--- a/src/shared/utils/ort-runtime.ts
++++ b/src/shared/utils/ort-runtime.ts
+@@ -1,3 +1,4 @@
++import { requireResource } from '@/shared/utils/resource-admission.mjs'
+ /**
+  * Lazy, once-per-realm bootstrap of onnxruntime-web.
+  *
+@@ -19,6 +20,7 @@
+ let ortPromise: Promise<OrtModule> | null = null
+ 
+ export function getOrt(): Promise<OrtModule> {
++    requireResource('runtime:onnx-cdn')
+   if (!ortPromise) {
+     ortPromise = import('onnxruntime-web').then((module) => {
+       module.env.wasm.wasmPaths = ORT_WASM_PATH

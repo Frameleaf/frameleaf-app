@@ -1,8 +1,12 @@
 <script lang="ts">
-  import { Button, Heading, HStack, Scrollable } from '@immich/ui';
+  /**
+   * Restore from backup, step 2 (FL-80): the Frameleaf backup list (FL-81) inside the maintenance
+   * page's card, in place of the upstream `@immich/ui` layout and legacy `MaintenanceBackupsList`.
+   */
+  import MaintenanceBackupList from '$lib/components/frameleaf/MaintenanceBackupList.svelte';
+  import { Icon } from '@immich/ui';
   import { mdiArrowLeft } from '@mdi/js';
   import { t } from 'svelte-i18n';
-  import MaintenanceBackupsList from '$lib/components/maintenance/MaintenanceBackupsList.svelte';
 
   type Props = {
     previous: () => void;
@@ -13,11 +17,28 @@
   const { previous, end, expectedVersion }: Props = $props();
 </script>
 
-<Heading size="large" color="primary" tag="h1">{$t('maintenance_restore_from_backup')}</Heading>
-<Scrollable class="max-h-120 w-full rounded-2xl border border-light-300 bg-white p-4 dark:bg-black">
-  <MaintenanceBackupsList {expectedVersion} />
-</Scrollable>
-<HStack>
-  <Button onclick={end} variant="ghost">{$t('cancel')}</Button>
-  <Button onclick={previous} variant="ghost" leadingIcon={mdiArrowLeft}>{$t('back')}</Button>
-</HStack>
+<div class="auth-card">
+  <div class="auth-heading"><h1>{$t('maintenance_restore_from_backup')}</h1></div>
+  <div class="backups">
+    <MaintenanceBackupList {expectedVersion} />
+  </div>
+  <div class="maint-actions">
+    <button type="button" class="button" onclick={end}>{$t('cancel')}</button>
+    <button type="button" class="button" onclick={previous}>
+      <Icon icon={mdiArrowLeft} size="18" aria-hidden={true} />
+      {$t('back')}
+    </button>
+  </div>
+</div>
+
+<style>
+  .backups {
+    max-height: 30rem;
+    overflow: auto;
+  }
+  .button {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+</style>

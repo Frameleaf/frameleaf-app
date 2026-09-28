@@ -8,6 +8,7 @@ import {
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { AlbumUserRole } from 'src/enum.js';
 import { AssetResponseDto } from 'src/dtos/asset-response.dto.js';
 import { NotificationDto } from 'src/dtos/notification.dto.js';
 import { ReleaseEventV1, ServerVersionResponseDto } from 'src/dtos/server.dto.js';
@@ -25,6 +26,9 @@ export const serverEvents = [
   'HlsSessionRequest',
   'HlsSessionResult',
   'HlsSessionEnd',
+  'LibraryWatchUpdate',
+  'CloudBackupKeyShare',
+  'CloudBackupKeyRequest',
 ] as const;
 export type ServerEvents = (typeof serverEvents)[number];
 
@@ -44,16 +48,49 @@ export interface ClientEventMap {
   on_new_release: [ReleaseEventV1];
   on_notification: [NotificationDto];
   on_session_delete: [string];
+  /** FL-34: the elevated (PIN-unlocked) access of the receiving session(s) was revoked. */
+  on_session_lock: [];
+  /**
+   * FL-43: one of the receiving account's jobs changed state. Only the id travels; the client asks the
+   * owner-scoped job list again, so nothing about the job is revealed by the event itself.
+   */
+  on_media_operation_update: [string];
+  /**
+   * FL-155: the Frameleaf Cloud link, licence or a person's Frameleaf account changed. Sent to
+   * administrators (and, for `account`, to that person); only the topic travels, and the client
+   * reads the admin-only status again.
+   */
+  on_frameleaf_cloud: [{ topic: FrameleafCloudTopic }];
 
   AssetUploadReadyV2: [{ asset: SyncAssetV2; exif: SyncAssetExifV1 }];
   AppRestartV1: [AppRestartEvent];
   AssetEditReadyV2: [{ asset: SyncAssetV2; edit: SyncAssetEditV1[] }];
+  /**
+   * Fork-only (FL-39): a video edit render settled without publishing anything. Official clients
+   * never subscribe to it, so a failure never looks like an "edit ready" to them.
+   */
+  VideoEditVersionFailedV1: [{ assetId: string; versionId: string | null }];
+  /**
+   * Fork-only (FL-53): somebody's role in an album changed, or they left or were removed (`role:
+   * null`). Sent to that person and to the album's remaining members, so open pages drop controls
+   * and dialogs the new role no longer allows without waiting for a reload.
+   */
+  AlbumUserUpdateV1: [{ albumId: string; userId: string; role: AlbumUserRole | null }];
+  /**
+   * Fork-only (FL-54): `sharedById` stopped sharing their library with `sharedWithId`. Sent to both,
+   * so the recipient's open timeline, partner page and viewer drop what they held at once.
+   */
+  PartnerRevokeV1: [{ sharedById: string; sharedWithId: string }];
 }
+
+export type FrameleafCloudTopic = 'link' | 'license' | 'account';
 
 export type AuthFn = (client: Socket) => Promise<AuthDto>;
 
+// FL-161: no permissive `cors`. Only the websocket transport is offered, and each handshake's
+// `Origin` is checked against this server's own names in `AuthService.authenticateWebsocket()`
+// before the socket joins any room.
 @WebSocketGateway({
-  cors: true,
   path: '/api/socket.io',
   transports: ['websocket'],
 })
