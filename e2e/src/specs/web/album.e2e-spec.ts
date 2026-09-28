@@ -128,6 +128,29 @@ test.describe('Album', () => {
     );
   });
 
+  test('opens an asset from a collection and returns to its grid (FL-40)', async ({ context, page }) => {
+    await utils.setAuthCookies(context, admin.accessToken);
+    const photo = await utils.createAsset(admin.accessToken);
+    const collection = await utils.createAlbum(admin.accessToken, {
+      albumName: 'Trip collection',
+      kind: AlbumKind.Collection,
+    });
+    await utils.createAlbum(admin.accessToken, {
+      albumName: 'Trip album',
+      parentId: collection.id,
+      assetIds: [photo.id],
+    });
+
+    await page.goto(`/albums/${collection.id}`);
+    const tile = page.locator(`[data-asset-id="${photo.id}"]`);
+    await expect(tile).toBeVisible();
+    await tile.locator('button').first().click();
+    await expect(page.locator('#immich-asset-viewer')).toHaveAttribute('data-asset-id', photo.id);
+    await page.goBack();
+    await expect(page.locator('#immich-asset-viewer')).toHaveCount(0);
+    await expect(tile).toBeVisible();
+  });
+
   test('opens the Map screen scoped to the album and returns to it from the viewer', async ({ context, page }) => {
     await utils.setAuthCookies(context, admin.accessToken);
     // The markers are map layers, so they appear only once a style loads; serve one locally.

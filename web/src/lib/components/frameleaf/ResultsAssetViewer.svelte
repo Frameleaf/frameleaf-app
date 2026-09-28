@@ -131,6 +131,19 @@
       onRemove?.(target.id);
     }
   };
+
+  const handleAssetSuppressed = async (asset: AssetResponseDto) => {
+    const current = assetViewerManager.asset?.id === asset.id;
+    const nextAsset = current ? (cursor.nextAsset ?? cursor.previousAsset) : undefined;
+    onRemove?.(asset.id);
+    if (current) {
+      if (nextAsset) {
+        await navigateToAsset(nextAsset);
+      } else {
+        await goto(emptyRoute);
+      }
+    }
+  };
 </script>
 
 {#if assetViewerManager.isViewing}
@@ -142,6 +155,7 @@
         onAction={handleAction}
         onRandom={handleRandom}
         onAssetChange={(asset) => onAssetChange?.(asset)}
+        onAssetSuppressed={handleAssetSuppressed}
         onAssetUpdate={(asset) => {
           // The cursor is derived from the manager's asset, so the refreshed asset is pushed back
           // into it and the viewer redraws from the same source the page reads.
