@@ -22,6 +22,8 @@ on:
       - 'server/src/fork-schema/**'
       - 'server/src/repositories/**'
       - 'server/src/schema/**'
+      - 'server/src/services/database.service.ts'
+      - 'server/src/services/fork-*.service.ts'
       - 'server/src/services/storage.service.ts'
       - 'server/src/services/storage-template.service.ts'
       - 'server/src/services/physical-deduplication.service.ts'

@@ -113,6 +113,27 @@ test("standalone script tests install their locked JavaScript dependencies first
   }
 });
 
+test("roundtrip certification runs for cutover, handoff and migration service changes", () => {
+  const paths = workflow("fork-roundtrip.yml").on.pull_request.paths;
+  for (const file of [
+    "server/src/services/database.service.ts",
+    "server/src/services/fork-handoff.service.ts",
+    "server/src/services/fork-schema-cutover.service.ts",
+    "server/src/services/fork-schema-migration.service.ts",
+  ]) {
+    assert.ok(
+      paths.some((pattern) => path.matchesGlob(file, pattern)),
+      `${file} must trigger the official-container roundtrip proof`,
+    );
+    const spec = file.replace(/\.ts$/, ".spec.ts");
+    assert.equal(
+      paths.some((pattern) => path.matchesGlob(spec, pattern)),
+      false,
+      `${spec} must not trigger container lanes for a test-only change`,
+    );
+  }
+});
+
 test("server E2E diagnostics preserve the failure state before maintenance", () => {
   const steps = workflow("test.yml").jobs["e2e-tests-server-cli"].steps;
   const api = steps.findIndex(
