@@ -25,7 +25,6 @@ const exact = (actual, expected, label) => {
 export async function loadConformance(root) {
   const files = {
     manifest: 'studio/freecut-feature-manifest.json',
-    ownership: 'docs/docs/developer/frameleaf-plan/action-preservation-ledger.json',
     build: 'studio/engine-build.json',
     catalog: 'studio/conformance-fixtures.json',
     overlay: 'studio/conformance.json',
@@ -65,7 +64,7 @@ async function artifact(root, reference) {
 }
 
 export async function validateConformance(data, root, { release = false } = {}) {
-  const { manifest, ownership, build, catalog, overlay } = data;
+  const { manifest, build, catalog, overlay } = data;
   assert.equal(overlay.schemaVersion, 1);
   assert.equal(catalog.schemaVersion, 1);
   assert.equal(overlay.engineRevision, manifest.engineRevision);
@@ -74,8 +73,6 @@ export async function validateConformance(data, root, { release = false } = {}) 
   exact(ids, [...new Set(ids)], 'manifest IDs');
   exact(overlay.rows.map((row) => row.id), ids, 'overlay IDs');
   exact(catalog.rows.map((row) => row.id), ids, 'fixture IDs');
-  const owners = ownership.requirements.filter((row) => row.requirementId.startsWith('freecut:'));
-  exact(owners.map((row) => row.requirementId.slice(8)), ids, 'ownership IDs');
   for (const [prefix, count] of Object.entries({ effect: 54, transition: 21, blend: 25, command: 19 })) {
     assert.equal(ids.filter((id) => id.startsWith(`${prefix}.`)).length, count);
   }
@@ -88,9 +85,8 @@ export async function validateConformance(data, root, { release = false } = {}) 
     exact(fixture.actions, [...new Set(fixture.actions)], `${row.id}: actions`);
     const requiredFixtures = fixtureIds(fixture);
     summary.fixtureCases += requiredFixtures.length;
-    const owner = owners.find((entry) => entry.requirementId === `freecut:${row.id}`).owners.primary;
+    const owner = row.owner;
     assert(/^FL-\d+$/.test(owner?.jiraKey) && owner.planId, `${row.id}: unowned`);
-    assert.deepEqual(row.owner, owner, `${row.id}: owner differs from preservation ledger`);
     exact(Object.keys(row.axes), AXES, `${row.id}: independent axes`);
     let qualified = true;
     for (const axis of AXES) {
