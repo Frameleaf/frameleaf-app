@@ -6,12 +6,12 @@ import {
   ItemShareService,
   SHARED_WITH_YOU_PATH,
 } from 'src/services/item-share.service.js';
+import { linkLivePhotoAssets } from 'src/utils/asset.util.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
 import { UserFactory } from 'test/factories/user.factory.js';
 import { newUuid } from 'test/small.factory.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
-import { linkLivePhotoAssets } from 'src/utils/asset.util.js';
 
 /**
  * FL-83 (AL-30b, owner decision 2026-09-27): sharing individual items with a person in this library.
