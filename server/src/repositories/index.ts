@@ -90,6 +90,7 @@ import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { StudioExportRepository } from 'src/repositories/studio-export.repository.js';
 import { StudioPreviewRepository } from 'src/repositories/studio-preview.repository.js';
 import { StudioProjectRepository } from 'src/repositories/studio-project.repository.js';
+import { StudioReverseConformRepository } from 'src/repositories/studio-reverse-conform.repository.js';
 import { SyncCheckpointRepository } from 'src/repositories/sync-checkpoint.repository.js';
 import { SyncRepository } from 'src/repositories/sync.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
@@ -189,6 +190,7 @@ export const repositories = [
   ServerInfoRepository,
   SmartAlbumRepository,
   StudioProjectRepository,
+  StudioReverseConformRepository,
   StudioExportRepository,
   DerivativePrivacyRepository,
   SessionRepository,

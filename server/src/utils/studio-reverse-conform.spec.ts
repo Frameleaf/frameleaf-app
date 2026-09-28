@@ -1,0 +1,54 @@
+import { ColorTransfer } from 'src/enum.js';
+import { checkStudioReverseOutput, checkStudioReverseSource } from 'src/utils/studio-reverse-conform.js';
+import { reversePackets, reverseVideoInfo } from 'test/fixtures/studio-reverse-conform.stub.js';
+
+describe('local source reversal contract', () => {
+  it('retains the exact source cadence and checks the actual output frame count', () => {
+    const source = checkStudioReverseSource(reverseVideoInfo(), reversePackets());
+    expect(source.frameRate).toEqual({ num: 3, den: 1 });
+    expect(() => checkStudioReverseOutput(source, reverseVideoInfo())).not.toThrow();
+    const partial = reverseVideoInfo();
+    partial.videoStreams[0].frameCount = 2;
+    expect(() => checkStudioReverseOutput(source, partial)).toThrow('output does not match');
+  });
+  it.each(['vfr', 'packet-gaps', 'hdr', 'too-long', 'rotated', 'unaligned-audio', 'unknown-origin'])(
+    'refuses %s instead of silently changing the source',
+    (caseName) => {
+      const info = reverseVideoInfo();
+      const packets = reversePackets();
+      if (caseName === 'vfr') {
+        packets.variableFrameRate = true;
+      }
+      if (caseName === 'packet-gaps') {
+        packets.outputFrames = 4;
+      }
+      if (caseName === 'hdr') {
+        info.videoStreams[0].colorTransfer = ColorTransfer.Smpte2084;
+      }
+      if (caseName === 'too-long') {
+        info.format.duration = 11;
+      }
+      if (caseName === 'rotated') {
+        info.videoStreams[0].rotation = 90;
+      }
+      if (caseName === 'unknown-origin') {
+        info.videoStreams[0].startTime = null;
+      }
+      if (caseName === 'unaligned-audio') {
+        info.audioStreams = [
+          {
+            index: 1,
+            codecName: 'pcm_f32le',
+            profile: null,
+            bitrate: 1000,
+            channels: 2,
+            sampleRate: 48000,
+            duration: 1,
+            startTime: 0.5,
+          },
+        ];
+      }
+      expect(() => checkStudioReverseSource(info, packets)).toThrow('Local source reversal currently requires');
+    },
+  );
+});

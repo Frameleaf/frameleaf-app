@@ -1,7 +1,14 @@
 import { Kysely, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
-import { AlbumKind, AlbumUserRole } from 'src/enum.js';
+import {
+  AlbumKind,
+  AlbumUserRole,
+  MediaOperationDestination,
+  MediaOperationKind,
+  MediaOperationStatus,
+} from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { StudioProjectRepository, StudioRevisionAppend } from 'src/repositories/studio-project.repository.js';
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
@@ -401,6 +408,72 @@ describe(StudioProjectRepository.name, () => {
   });
 
   describe('generated resources', () => {
+    it('commits generated registration with job completion, and rolls both back on publication failure', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const project = await leasedProject(sut, user.id);
+      await sut.appendRevision(append(project.id, user.id));
+      const operations = ctx.get(MediaOperationRepository);
+      const operation = await operations.create({
+        ownerId: user.id,
+        kind: MediaOperationKind.StudioReverseConform,
+        destination: MediaOperationDestination.Local,
+        destinationDetail: null,
+        label: 'Source reversal',
+        assetId: null,
+        resultAssetId: null,
+        retryOfId: null,
+        projectId: project.id,
+        revisionId: null,
+        snapshot: {},
+        settings: {},
+        estimate: null,
+        totalUnits: 3,
+        maxAttempts: 2,
+      });
+      const claim = await operations.claimNext({
+        kinds: [MediaOperationKind.StudioReverseConform],
+        workerId: 'local-reverse',
+        leaseMs: LEASE_MS,
+      });
+      expect(claim?.operation.id).toBe(operation.id);
+      await operations.beginValidation(operation.id, claim!.claimToken);
+      const resource = {
+        projectId: project.id,
+        ownerId: user.id,
+        sourceRevision: 1,
+        id: `reverse-${operation.id}`,
+        producer: 'reverse-conform',
+        checksum: 'ab'.repeat(32),
+        path: '/private/studio/reversed.mkv',
+        derivedFrom: [`library-asset:${randomUUID()}`],
+      };
+      await expect(
+        operations.publishValidated(operation.id, claim!.claimToken, async (tx) => {
+          await sut.registerGeneratedResource(resource, tx);
+          throw new Error('publication rolled back');
+        }),
+      ).rejects.toThrow('publication rolled back');
+      expect(await sut.listGeneratedResources(project.id)).toEqual([]);
+      expect((await operations.getForOwner(operation.id, user.id))?.status).toBe(MediaOperationStatus.Validating);
+      await expect(
+        operations.publishValidated(operation.id, claim!.claimToken, async (tx) => {
+          await sut.registerGeneratedResource(resource, tx);
+          await tx
+            .updateTable('media_operation')
+            .set({ result: { generatedId: resource.id, requiresClipRelink: true } })
+            .where('id', '=', operation.id)
+            .execute();
+          return true;
+        }),
+      ).resolves.toBe('completed');
+      expect(await sut.listGeneratedResources(project.id)).toHaveLength(1);
+      expect(await operations.getForOwner(operation.id, user.id)).toMatchObject({
+        status: MediaOperationStatus.Completed,
+        result: { generatedId: resource.id, requiresClipRelink: true },
+      });
+    });
+
     it('revokes relinked generated media through distinct restoration and original ids, including after deletion', async () => {
       const { ctx, sut } = setup();
       const { user } = await ctx.newUser();

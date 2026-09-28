@@ -151,6 +151,8 @@ export const destinationKey: Readonly<Record<MediaOperationDestination, Translat
 };
 
 export const operationKindKey: Readonly<Record<MediaOperationKind, Translations>> = {
+  // The source spelling also works before hosted SDK regeneration adds the enum member.
+  ...{ studio_reverse_conform: 'frameleaf_render_workers_kind_studio_reverse_conform' as Translations },
   [MediaOperationKind.StudioExport]: 'frameleaf_render_workers_kind_studio_export',
   [MediaOperationKind.StudioPreview]: 'frameleaf_render_workers_kind_studio_preview',
   [MediaOperationKind.StudioPreviewStream]: 'frameleaf_render_workers_kind_studio_preview_stream',

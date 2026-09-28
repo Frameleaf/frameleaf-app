@@ -1274,6 +1274,8 @@ export enum MediaOperationKind {
   StudioExport = 'studio_export',
   /** A short Studio preview render; same graph, bounded range. */
   StudioPreview = 'studio_preview',
+  /** Internal local source-level reversal; not a timeline clip command. */
+  StudioReverseConform = 'studio_reverse_conform',
   /**
    * A bounded WebRTC playback session of a stored Studio revision (FL-96): the worker holding the
    * claim streams to the browser that opened it, signalled and authorised through the server. It

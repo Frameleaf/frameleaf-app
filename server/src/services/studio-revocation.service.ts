@@ -12,6 +12,7 @@ import { StudioProjectService } from 'src/services/studio-project.service.js';
 /** The Studio jobs a source leaving the library stops. */
 const SOURCE_BOUND_KINDS = [
   MediaOperationKind.StudioExport,
+  MediaOperationKind.StudioReverseConform,
   MediaOperationKind.StudioPreview,
   MediaOperationKind.StudioPreviewStream,
 ] as const;

@@ -638,6 +638,14 @@ describe(MediaOperationService.name, () => {
       await expect(sut.retry(authStub.user1, operationStub().id)).rejects.toBeInstanceOf(BadRequestException);
     });
 
+    it('refuses a copied source-reversal snapshot that would bypass submit authorization', async () => {
+      vi.mocked(repository.getForOwner).mockResolvedValue(
+        operationStub({ kind: MediaOperationKind.StudioReverseConform, status: MediaOperationStatus.Failed }),
+      );
+      await expect(sut.retry(authStub.user1, 'id')).rejects.toThrow('current source authorization');
+      expect(repository.create).not.toHaveBeenCalled();
+    });
+
     it.each([MediaOperationKind.StudioExport, MediaOperationKind.StudioExportPublish])(
       'refuses to copy a %s job: a Studio export is exported again as a new version (FL-106)',
       async (kind) => {
