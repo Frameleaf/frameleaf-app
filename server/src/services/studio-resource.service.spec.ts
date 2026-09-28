@@ -14,6 +14,7 @@ import {
 } from 'src/services/studio-resource.service.js';
 import {
   STUDIO_MAX_GRAPH_BYTES,
+  STUDIO_MAX_REFERENCES,
   StudioDestination,
   StudioRefusalReason,
   StudioResourceKind,
@@ -1193,6 +1194,95 @@ describe(StudioResourceService.name, () => {
   });
 
   describe('generated intermediates', () => {
+    it('resolves a relinked reverse conform and rechecks its transitive source access', async () => {
+      const source = ownedVideo();
+      mocks.asset.getByIds.mockResolvedValue([source]);
+      allowOwned(source.id);
+      const generated = [
+        {
+          id: 'reverse',
+          producer: 'reverse-conform',
+          checksum: 'reverse-checksum',
+          path: '/cache/reverse.mp4',
+          derivedFrom: ['generated-intermediate:proxy'],
+        },
+        {
+          id: 'proxy',
+          producer: 'proxy',
+          checksum: 'proxy-checksum',
+          path: '/cache/proxy.mp4',
+          derivedFrom: [`library-asset:${source.id}`],
+        },
+        {
+          id: 'unreferenced',
+          producer: 'proxy',
+          checksum: 'unused',
+          path: '/cache/unused.mp4',
+          derivedFrom: ['library-asset:unused'],
+        },
+      ];
+      const request = context(sequenceWith({ generatedId: 'reverse' }), { generated });
+      const resolved = await sut.resolveProjectResources(auth, request);
+      expect(resolved.manifest.complete).toBe(true);
+      expect(resolved.manifest.entries.map((entry) => entry.key)).toEqual([
+        `library-asset:${source.id}`,
+        'generated-intermediate:proxy',
+        'generated-intermediate:reverse',
+      ]);
+      expect(mocks.asset.getByIds).toHaveBeenCalledWith([source.id]);
+
+      allowOwned();
+      const revoked = await sut.resolveProjectResources(auth, request);
+      expect(revoked.manifest.complete).toBe(false);
+      expect(revoked.manifest.entries).toEqual([]);
+      expect(revoked.refused).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: source.id, reason: StudioRefusalReason.HiddenContent }),
+          expect.objectContaining({ id: 'proxy', reason: StudioRefusalReason.DerivedInputRefused }),
+          expect.objectContaining({ id: 'reverse', reason: StudioRefusalReason.DerivedInputRefused }),
+        ]),
+      );
+    });
+
+    it('refuses cyclic lineage and ambiguous or malformed source keys without granting files', async () => {
+      const generated = [
+        {
+          id: 'a',
+          producer: 'reverse-conform',
+          checksum: 'a',
+          path: '/cache/a',
+          derivedFrom: ['generated-intermediate:b'],
+        },
+        { id: 'b', producer: 'proxy', checksum: 'b', path: '/cache/b', derivedFrom: ['generated-intermediate:a'] },
+        { id: 'audio', producer: 'waveform', checksum: 'c', path: '/cache/c', derivedFrom: ['audio:unknown'] },
+        { id: 'path', producer: 'proxy', checksum: 'd', path: '/cache/d', derivedFrom: ['library-asset:/private/file'] },
+      ];
+      const { manifest, refused } = await sut.resolveProjectResources(
+        auth,
+        context(sequenceWith({ generatedId: 'a' }, { generatedId: 'audio' }, { generatedId: 'path' }), { generated }),
+      );
+      expect(manifest.complete).toBe(false);
+      expect(manifest.entries).toEqual([]);
+      expect(refused.map((entry) => entry.id).sort()).toEqual(['a', 'audio', 'b', 'path']);
+      expect(refused.every((entry) => entry.reason === StudioRefusalReason.DerivedInputRefused)).toBe(true);
+    });
+
+    it('bounds generated lineage expansion before reading any source', async () => {
+      const generated = [
+        {
+          id: 'reverse',
+          producer: 'reverse-conform',
+          checksum: 'r',
+          path: '/cache/reverse',
+          derivedFrom: Array.from({ length: STUDIO_MAX_REFERENCES }, (_, index) => `project-import:source-${index}`),
+        },
+      ];
+      await expect(
+        sut.resolveProjectResources(auth, context(sequenceWith({ generatedId: 'reverse' }), { generated })),
+      ).rejects.toThrow('Generated lineage exceeds');
+      expect(mocks.asset.getByIds).not.toHaveBeenCalled();
+    });
+
     it('authorizes a chain whose inputs are all authorized and refuses one whose input was refused', async () => {
       const ok = ownedVideo();
       const hidden = ownedVideo();
@@ -1248,9 +1338,10 @@ describe(StudioResourceService.name, () => {
       ).toEqual(['proxy-ok', 'chunk-1']);
       expect(refused.map((item) => [item.id, item.reason])).toEqual([
         [hidden.id, StudioRefusalReason.HiddenContent],
+        ['not-in-graph', StudioRefusalReason.InvalidId],
         ['proxy-hidden', StudioRefusalReason.DerivedInputRefused],
-        ['undeclared', StudioRefusalReason.UndeclaredImport],
         ['orphan', StudioRefusalReason.DerivedInputRefused],
+        ['undeclared', StudioRefusalReason.UndeclaredImport],
       ]);
     });
 
