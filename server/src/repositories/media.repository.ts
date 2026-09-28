@@ -483,6 +483,7 @@ export class MediaRepository {
             timeBaseRational: tryParseRational(stream.time_base),
             frameRateRational: tryParseRational(stream.avg_frame_rate ?? stream.r_frame_rate),
             duration: this.parseStreamDuration(stream),
+            startTime: this.parseStartTime(stream.start_time),
             rotation: this.parseInt(stream.rotation),
             bitrate: this.parseInt(stream.bit_rate),
             pixelFormat: stream.pix_fmt || 'yuv420p',
@@ -512,6 +513,7 @@ export class MediaRepository {
           channelLayout: this.parseChannelLayout(stream.channel_layout),
           sampleRate: this.parseOptionalInt(stream.sample_rate),
           duration: this.parseStreamDuration(stream),
+          startTime: this.parseStartTime(stream.start_time),
         })),
     };
   }
@@ -747,6 +749,12 @@ export class MediaRepository {
    * MP4 and MOV report `duration`; Matroska and WebM carry it only as a `DURATION` tag
    * (`00:00:05.005000000`). Compared per stream, it is what shows audio drifting from video.
    */
+  /** A stream's stated start time in seconds, or null when ffprobe gave none. */
+  private parseStartTime(value: unknown): number | null {
+    const parsed = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
   private parseStreamDuration(stream: FfprobeStream): number | null {
     const stated = stream.duration === undefined || stream.duration === 'N/A' ? NaN : Number(stream.duration);
     if (Number.isFinite(stated) && stated >= 0) {

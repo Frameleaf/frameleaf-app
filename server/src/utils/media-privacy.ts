@@ -66,6 +66,70 @@ export const uploadClipOutputOptions = (): string[] => [
   '+faststart',
 ];
 
+/**
+ * What is uploaded of a whole video for Frameleaf Cloud restoration or Smooth motion (CLD-202): its
+ * first video stream only, stream-copied when its codec allows it (`copy`), otherwise re-encoded at
+ * high quality, never with audio (`-an`; FC-47, owner decision 2026-09-27: audio is never sent, and
+ * the worker refuses a clip that still carries an audio stream) and never with metadata. `bsf` drops
+ * a stream copy's SEI messages, where cameras put their own data.
+ */
+export const fullVideoUploadOutputOptions = (options: { copy: boolean; bsf?: string; webm?: boolean }): string[] => [
+  ...strippedVideoStreams(false),
+  ...(options.copy
+    ? ['-c:v', 'copy']
+    : ['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '12', '-pix_fmt', 'yuv420p']),
+  ...(options.bsf ? ['-bsf:v', options.bsf] : []),
+  ...STRIP_VIDEO_METADATA_OPTIONS,
+  ...(options.webm ? [] : ['-movflags', '+faststart']),
+];
+
+/**
+ * How far the audio's first sample was from the picture's first frame in the file the audio comes
+ * from, in seconds (positive: the audio starts later). ffmpeg moves each input so its earliest stream
+ * starts at 0; the offset below puts the audio back where it was against the picture. Unknown start
+ * times keep ffmpeg's own alignment (0).
+ */
+export const audioReattachOffsetSeconds = (
+  videoStart: number | null | undefined,
+  audioStart: number | null | undefined,
+) => {
+  if (typeof videoStart !== 'number' || typeof audioStart !== 'number') {
+    return 0;
+  }
+  // after ffmpeg's normalisation the audio already sits at (audioStart - min); it belongs at (audioStart - videoStart)
+  return Math.min(videoStart, audioStart) - videoStart;
+};
+
+/**
+ * CLD-202: the options that put a video's own audio back on the picture Frameleaf Cloud returned
+ * (which never carried audio): the returned picture and the first audio stream of `audioFrom`, both
+ * copied, shifted by `offsetSeconds` so they stay in step, cut to the shorter stream with a tight
+ * interleave, and without metadata. Without `audioFrom` the picture is only rewrapped.
+ */
+export const reattachAudioOutputOptions = (audioFrom: string | null, offsetSeconds = 0): string[] => [
+  ...(audioFrom
+    ? [
+        ...(Math.abs(offsetSeconds) > 1e-6 ? ['-itsoffset', offsetSeconds.toFixed(6)] : []),
+        '-i',
+        audioFrom,
+        '-map',
+        '0:v:0',
+        '-map',
+        '1:a:0?',
+      ]
+    : ['-map', '0:v:0']),
+  '-c:v',
+  'copy',
+  '-c:a',
+  'copy',
+  '-shortest',
+  '-max_interleave_delta',
+  '0',
+  ...STRIP_VIDEO_METADATA_OPTIONS,
+  '-movflags',
+  '+faststart',
+];
+
 /** One chunk of a whole video for a restoration worker: near-lossless H.264, no audio, no metadata. */
 export const chunkClipOutputOptions = (): string[] => [
   ...strippedVideoStreams(false),

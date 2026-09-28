@@ -125,6 +125,18 @@ const CloudMlJobPermissionSchema = z
   })
   .meta({ id: 'CloudMlJobPermissionDto' });
 
+const CloudMlJobUpscaleSchema = z
+  .object({
+    requestedScale: z.int().describe('The upscale factor that was asked for (2 or 4)'),
+    appliedScale: z
+      .int()
+      .describe('The factor Frameleaf Cloud will really use and prices: lower when the 64 MP output cap needs it'),
+    lowered: z.boolean().describe('Whether the 64 MP output cap lowered the factor; shown before confirming'),
+    outputWidth: z.int().describe('The width the result will have, in pixels'),
+    outputHeight: z.int().describe('The height the result will have, in pixels'),
+  })
+  .meta({ id: 'CloudMlJobUpscaleDto' });
+
 const CloudMlJobEstimateResponseSchema = z
   .object({
     estimateId: z.string().describe('What confirming the job names; the server keeps everything else'),
@@ -152,6 +164,9 @@ const CloudMlJobEstimateResponseSchema = z
     consent: CloudMlJobConsentSchema,
     refusal: CloudMlJobRefusalSchema.nullable().describe('Why the job cannot be sent now, or null when it can'),
     permission: CloudMlJobPermissionSchema,
+    upscale: CloudMlJobUpscaleSchema.nullable().describe(
+      'Photo upscales only (FC-46): the factor each photo really gets under the 64 MP output cap; null otherwise',
+    ),
   })
   .meta({ id: 'CloudMlJobEstimateResponseDto' });
 

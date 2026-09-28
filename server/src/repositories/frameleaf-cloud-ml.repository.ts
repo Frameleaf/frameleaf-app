@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { open, readFile, rm } from 'node:fs/promises';
+import { setTimeout as sleep } from 'node:timers/promises';
 import z from 'zod';
 import type { FrameleafInstanceToken } from 'src/utils/frameleaf-dpop.js';
 import { MlAdmissionRefusal } from 'src/enum.js';
@@ -12,6 +13,9 @@ import {
 } from 'src/repositories/frameleaf-cloud.repository.js';
 import { ML_CLONE_SUSPENDED_DETAIL, ML_REGION_MISMATCH_DETAIL } from 'src/utils/frameleaf-cloud-gateway.js';
 import {
+  CLOUD_IDEMPOTENCY_IN_FLIGHT_DEFAULT_SECONDS,
+  CLOUD_IDEMPOTENCY_IN_FLIGHT_MAX_SECONDS,
+  CLOUD_IDEMPOTENCY_IN_FLIGHT_RETRIES,
   CloudCapabilities,
   CloudCatalog,
   CloudConsentCurrent,
@@ -42,6 +46,8 @@ import {
   estimateRequestSchema,
   estimateResponseSchema,
   isGatewayCloneSuspected,
+  isIdempotencyInFlight,
+  isIdempotencyKeyReused,
   isRegionMismatch,
   jobAdmittedSchema,
   jobCreateRequestSchema,
@@ -186,6 +192,12 @@ export class FrameleafCloudMlRepository {
    * the (single-use) estimate again. An admission for another model SKU or revision than the one
    * sent is refused as `ModelMismatch`. A 503 `capacity` answer refuses this destination
    * (`DestinationUnhealthy`); the job is never sent anywhere else.
+   *
+   * FC-43 (IETF Idempotency-Key draft): a 409 `idempotency-in-flight` means the first request under
+   * this key is still being processed, so the SAME request (key and body) is sent again after its
+   * `Retry-After`, at most `CLOUD_IDEMPOTENCY_IN_FLIGHT_RETRIES` times; still in flight after that, the
+   * 409 is thrown (`CloudUnavailable`, transient) and the caller waits and replays the same key. A 422
+   * `idempotency-key-reused` is never sent again: the key was used with another body, a bug here.
    */
   async createJob(
     gateway: CloudMlGateway,
@@ -200,13 +212,42 @@ export class FrameleafCloudMlRepository {
         'This server did not send the job: its idempotency key is not one Frameleaf Cloud accepts',
       );
     }
-    const admitted = await this.request(gateway, jobAdmittedSchema, {
-      method: 'POST',
-      url: `${gateway.url}/v2/jobs`,
-      dpop: gateway.token,
-      headers: { 'Idempotency-Key': idempotencyKey },
-      body,
-    });
+    let admitted: CloudJobAdmitted | undefined;
+    for (let attempt = 0; !admitted; attempt++) {
+      try {
+        admitted = await this.request(gateway, jobAdmittedSchema, {
+          method: 'POST',
+          url: `${gateway.url}/v2/jobs`,
+          dpop: gateway.token,
+          headers: { 'Idempotency-Key': idempotencyKey },
+          body,
+        });
+      } catch (error) {
+        if (error instanceof FrameleafCloudError && isIdempotencyKeyReused(error)) {
+          throw new FrameleafCloudError(
+            error.refusal,
+            error.status,
+            `Frameleaf Cloud refused the job: its idempotency key ${idempotencyKey} was already used for a different job. ` +
+              'This is a bug in this server; the job was not sent again.',
+            error.envelope,
+            null,
+            null,
+          );
+        }
+        if (
+          !(error instanceof FrameleafCloudError) ||
+          !isIdempotencyInFlight(error) ||
+          attempt >= CLOUD_IDEMPOTENCY_IN_FLIGHT_RETRIES
+        ) {
+          throw error;
+        }
+        const seconds = Math.min(
+          CLOUD_IDEMPOTENCY_IN_FLIGHT_MAX_SECONDS,
+          Math.max(1, error.retryAfterSeconds ?? CLOUD_IDEMPOTENCY_IN_FLIGHT_DEFAULT_SECONDS),
+        );
+        await this.delay(seconds * 1000);
+      }
+    }
     if (admitted.modelSku !== body.modelSku || admitted.modelRev !== body.modelRev) {
       throw new FrameleafCloudError(
         MlAdmissionRefusal.ModelMismatch,
@@ -215,6 +256,11 @@ export class FrameleafCloudMlRepository {
       );
     }
     return admitted;
+  }
+
+  /** The wait before sending an in-flight job again; a test replaces it. */
+  protected async delay(ms: number): Promise<void> {
+    await sleep(ms);
   }
 
   /** `GET /v2/jobs/{id}`: where a job is now. */

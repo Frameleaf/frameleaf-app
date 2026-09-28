@@ -54,6 +54,14 @@ export const CLOUD_ML_JOB_MAX_TRANSIENT_FAILURES = 8;
 export const CLOUD_ML_JOB_MAX_UNAUTHORIZED_READS = 24 * 60;
 /** How long a person waits before asking for another full-video estimate while one is being prepared. */
 export const CLOUD_ML_JOB_PREPARING_RETRY_SECONDS = 5;
+/**
+ * FC-47 (owner decision 2026-09-27): a video restoration or Smooth motion job stopped at its model's
+ * 6-hour runtime cap (`runtime-cap`). It is charged for the GPU time it used up to the cap, delivers
+ * nothing, and is never retried automatically: the clip has to be split.
+ */
+export const CLOUD_ML_JOB_RUNTIME_CAP_MESSAGE =
+  'This video reached Frameleaf Cloud’s 6-hour processing limit and was stopped. You are charged for the processing it used up to the limit. Split the clip into shorter parts and run each one.';
+
 /** A Smooth motion or restoration preview is a clip of this many seconds. */
 export const CLOUD_ML_JOB_PREVIEW_SECONDS = 5;
 
@@ -131,6 +139,19 @@ export const CloudMlJobApprovalSchema = z.object({
 });
 export type CloudMlJobApproval = z.infer<typeof CloudMlJobApprovalSchema>;
 
+/**
+ * FC-46 (owner decision 2026-09-27): what a photo upscale was quoted at. The 64 MP output cap stays, so
+ * a photo the requested factor would take over it gets a smaller one (a 12 MP photo asked for 4× gets
+ * 2×); `input` is the declared pixel size the sealed estimate binds.
+ */
+export const CloudMlJobUpscaleSchema = z.object({
+  requestedScale: z.union([z.literal(2), z.literal(4)]),
+  appliedScale: z.union([z.literal(2), z.literal(4)]),
+  lowered: z.boolean(),
+  input: z.object({ width: z.int().min(1), height: z.int().min(1) }),
+});
+export type CloudMlJobUpscale = z.infer<typeof CloudMlJobUpscaleSchema>;
+
 /** The immutable binding of a `cloud_ml_job` operation. Written once at confirmation. */
 export const CloudMlJobSnapshotSchema = z.object({
   version: z.literal(1),
@@ -157,6 +178,8 @@ export const CloudMlJobSnapshotSchema = z.object({
   approved: CloudMlJobApprovalSchema,
   /** The estimate this job was confirmed from, so a repeated confirmation finds the job it created. */
   estimateId: z.string().min(1).optional(),
+  /** FC-46: a photo upscale's quoted factor (absent on older jobs and on video work). */
+  upscale: CloudMlJobUpscaleSchema.optional(),
   consent: z.object({
     version: z.string().min(1),
     textSha256: z.string().nullable(),
@@ -258,6 +281,8 @@ export type CloudMlJobEstimateRecord = {
   approved: CloudMlJobApproval;
   consent: { version: string; textSha256: string | null };
   operationId: string | null;
+  /** FC-46: a photo upscale's quoted factor; absent on video work. */
+  upscale?: CloudMlJobUpscale;
 };
 
 /** What happened so far; the one mutable part of the job. */
@@ -289,6 +314,14 @@ export const CloudMlJobResultSchema = z.object({
   ackAttempts: z.int().min(0).default(0),
   /** A job cancelled before anything was sent had its version and files put right by the cleanup pass. */
   reconciled: z.boolean().default(false),
+  /**
+   * FC-46: the factor the cloud's upscale result document says this photo was really upscaled by
+   * (`UpscaleItem.scale`), recorded once read; the version is written and checked at it.
+   */
+  upscaleScale: z
+    .union([z.literal(2), z.literal(4)])
+    .nullable()
+    .default(null),
 });
 export type CloudMlJobResult = z.infer<typeof CloudMlJobResultSchema>;
 
@@ -307,6 +340,7 @@ export const emptyCloudMlJobResult = (): CloudMlJobResult => ({
   transientFailures: 0,
   ackAttempts: 0,
   reconciled: false,
+  upscaleScale: null,
 });
 
 /** The result as stored, or a fresh one when there is none or it cannot be read. */

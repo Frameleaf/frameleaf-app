@@ -131,3 +131,14 @@ above.
   publishes no fixture for the 403 `forbidden` (licence on hold) answer, so the spec writes that envelope inline. The
   contract is `packages/contracts/src/licence/link-code.ts` and "Licence link codes" in `docs/instance-contract.md`;
   `server/src/services/frameleaf-license.service.ts` (`redeemLinkCode`) sends and reads them.
+- FL-159 / FL-162 / FL-163 (CLD-201/202/203), the ML owner decisions of 2026-09-27: `errors/idempotency-in-flight.json`,
+  `errors/idempotency-key-missing.json`, `errors/idempotency-key-reused.json` (FC-43, IETF Idempotency-Key draft),
+  `ml/catalog-studio.json` (FC-48: English Kokoro voices, RIFE only), and `ml/upscale/` (FC-46: `estimate-request.json`,
+  `estimate-response.json` with `upscale {scale, items, lowered}`, `job-request.json`, `job-request-minimal.json`,
+  `result.json` and `result-failed-items.json` with per-item `scale`, and every `rejected/result-*.json`) are
+  byte-identical to `origin/main` at `bcb5098` (merge of frameleaf-cloud PR #96; git blob hashes compared). Every other
+  copied `errors/` and `ml/` file was compared with that commit and is unchanged. The contracts are
+  `packages/contracts/src/errors.ts`, `src/ml/{gateway,jobs,upscale,workloads,refusal-table}.ts`;
+  `server/src/utils/frameleaf-cloud.ts` reads them and `server/src/utils/frameleaf-cloud-ml-decisions.spec.ts` parses
+  every one. The `ml/upscale/rejected/request-*.json` fixtures are not copied: this server declares only the
+  `scale`/`items`/`faceRestore`/`output` keys it sends.

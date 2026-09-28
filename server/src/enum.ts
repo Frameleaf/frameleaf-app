@@ -931,7 +931,7 @@ export enum MlWorkload {
   Upscale = 'upscale',
   /**
    * FL-159/FL-162: frame interpolation (Smooth motion). RIFE on a local or LAN restoration worker, or
-   * FILM on Frameleaf Cloud as its own confirmed job.
+   * RIFE on Frameleaf Cloud as its own confirmed job (RIFE only: FILM is retired, owner decision 2026-09-27).
    */
   Interpolation = 'interpolation',
   /** FL-159: Studio render on Frameleaf Cloud. Local renders go through enrolled render workers. */
