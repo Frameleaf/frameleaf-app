@@ -1,0 +1,40 @@
+images:
+  image:
+    repository: ghcr.io/frameleaf/frameleaf-server
+    tag: "@SERVER_TAG@"
+  container_utils_image:
+    repository: ixsystems/container-utils
+    tag: 1.0.2@sha256:46eba20714c1cc6784f60e245c32c33a2d9f616e47d804694a9854248c89a992
+  ml_image:
+    repository: ghcr.io/frameleaf/frameleaf-machine-learning
+    tag: "@ML_TAG@"
+  ml_cuda_image:
+    repository: ghcr.io/frameleaf/frameleaf-machine-learning
+    tag: "@ML_CUDA_TAG@"
+  ml_rocm_image:
+    repository: ghcr.io/frameleaf/frameleaf-machine-learning
+    tag: "@ML_ROCM_TAG@"
+  ml_openvino_image:
+    repository: ghcr.io/frameleaf/frameleaf-machine-learning
+    tag: "@ML_OPENVINO_TAG@"
+  vectorchord_14_image:
+    repository: ghcr.io/immich-app/postgres
+    tag: @PG_TAG@
+  redis_image:
+    repository: valkey/valkey
+    tag: @VALKEY_TAG@
+  postgres_upgrade_image:
+    repository: ixsystems/postgres-upgrade
+    tag: 1.2.17@sha256:8a905af2f0cde30e19e41f0a2db6f69154818532f50e7de923f0d7977c1c9c38
+
+consts:
+  server_container_name: server
+  ml_container_name: machine-learning
+  pgvecto_container_name: pgvecto
+  redis_container_name: redis
+  perms_container_name: permissions
+  ml_port: 32002
+  ml_cache_path: /mlcache
+  db_user: immich
+  db_name: immich
+  base_path: /data
