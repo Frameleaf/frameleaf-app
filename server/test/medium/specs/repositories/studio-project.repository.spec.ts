@@ -217,20 +217,14 @@ describe(StudioProjectRepository.name, () => {
       const { ctx, sut } = setup();
       const { user } = await ctx.newUser();
       const now = new Date();
-      const deadline = new Date(now.getTime() - 1_000);
+      const deadline = new Date(now.getTime() - 1000);
       const restored = await sut.create({ ownerId: user.id, name: 'Restored' });
       const expired = await sut.create({ ownerId: user.id, name: 'Expired' });
       await sut.trash(restored.id, deadline);
       await sut.trash(expired.id, deadline);
 
-      let release!: () => void;
-      let signalLocked!: (pid: number) => void;
-      const held = new Promise<void>((resolve) => {
-        release = resolve;
-      });
-      const locked = new Promise<number>((resolve) => {
-        signalLocked = resolve;
-      });
+      const { promise: held, resolve: release } = Promise.withResolvers<void>();
+      const { promise: locked, resolve: signalLocked } = Promise.withResolvers<number>();
       const restoring = defaultDatabase.transaction().execute(async (trx) => {
         await trx
           .selectFrom('studio_project')
@@ -251,9 +245,9 @@ describe(StudioProjectRepository.name, () => {
 
       const purging = sut.deletePurgeable(now);
       let waiting = false;
-      let settled: PromiseSettledResult<unknown>[] = [];
+      let settled: PromiseSettledResult<unknown>[];
       try {
-        const timeout = Date.now() + 5_000;
+        const timeout = Date.now() + 5000;
         while (!waiting && Date.now() < timeout) {
           const { rows } = await sql<{ waiting: boolean }>`
             select exists (
