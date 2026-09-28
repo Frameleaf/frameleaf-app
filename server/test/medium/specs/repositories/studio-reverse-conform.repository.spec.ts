@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -7,7 +8,11 @@ import { ColorMatrix, ColorPrimaries, ColorTransfer } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
 import { StudioReverseConformRepository } from 'src/repositories/studio-reverse-conform.repository.js';
-import { checkStudioReverseOutput, checkStudioReverseSource } from 'src/utils/studio-reverse-conform.js';
+import {
+  checkStudioReverseOutput,
+  checkStudioReversePreview,
+  checkStudioReverseSource,
+} from 'src/utils/studio-reverse-conform.js';
 
 const execute = promisify(execFile);
 const ffmpeg = (args: string[]) =>
@@ -91,6 +96,90 @@ describe('local source reverse executor', () => {
       audioIn.copy(reversed, offset, audioIn.length - offset - 8, audioIn.length - offset);
     }
     expect(audioOut).toEqual(reversed);
+
+    const masterChecksum = createHash('sha256')
+      .update(await readFile(output))
+      .digest('hex');
+    const preview = join(folder, 'preview.mp4');
+    await renderer.preview(output, preview, source, new AbortController().signal, () => {});
+    checkStudioReversePreview(
+      source,
+      await media.probe(preview, { countFrames: true }),
+      await renderer.probeGeometry(preview, 0),
+      await renderer.previewPackets(preview, new AbortController().signal),
+    );
+    expect(
+      createHash('sha256')
+        .update(await readFile(output))
+        .digest('hex'),
+    ).toBe(masterChecksum);
+    // Compression may change pixels, but each decoded preview frame must still match its reversed master frame.
+    const videoPreview = (
+      await ffmpeg(['-i', preview, '-map', '0:v:0', '-f', 'rawvideo', '-pix_fmt', 'yuv420p', 'pipe:1'])
+    ).stdout;
+    expect(videoPreview.length).toBe(videoOut.length);
+    for (let frame = 0; frame < source.frames; frame++) {
+      let error = 0;
+      for (let index = frame * frameBytes; index < (frame + 1) * frameBytes; index++) {
+        error += Math.abs(videoPreview[index] - videoOut[index]);
+      }
+      expect(error / frameBytes).toBeLessThan(5);
+    }
+    const audioPreview = (await ffmpeg(['-i', preview, '-map', '0:a:0', '-f', 'f32le', 'pipe:1'])).stdout;
+    // Raw AAC decoding may expose up to one padding packet; MP4 duration/edit-list checks above
+    // bound the presented interval. Priming must be removed and both channels remain aligned.
+    expect(audioPreview.length).toBeGreaterThanOrEqual(audioOut.length);
+    expect(audioPreview.length - audioOut.length).toBeLessThanOrEqual(1024 * 2 * 4);
+    for (let channel = 0; channel < 2; channel++) {
+      let error = 0;
+      for (let offset = channel * 4; offset < audioOut.length; offset += 8) {
+        error += (audioPreview.readFloatLE(offset) - audioOut.readFloatLE(offset)) ** 2;
+      }
+      expect(Math.sqrt(error / (audioOut.length / 8))).toBeLessThan(0.02);
+    }
+  });
+
+  it('keeps exact NTSC packet cadence in a silent preview without duplicating or dropping frames', async () => {
+    const master = join(folder, 'ntsc.mkv');
+    const preview = join(folder, 'ntsc.mp4');
+    await ffmpeg([
+      '-f',
+      'lavfi',
+      '-i',
+      'testsrc2=size=32x32:rate=30000/1001:duration=1.001',
+      '-vf',
+      'setparams=range=limited:color_primaries=bt709:color_trc=bt709:colorspace=bt709',
+      '-c:v',
+      'ffv1',
+      '-level',
+      '3',
+      master,
+    ]);
+    const media = new MediaRepository(LoggingRepository.create());
+    const renderer = new StudioReverseConformRepository();
+    const source = {
+      width: 32,
+      height: 32,
+      frames: 30,
+      frameRate: { num: 30_000, den: 1001 },
+      duration: 1.001,
+      videoIndex: 0,
+      audioIndex: null,
+      channels: null,
+      sampleRate: null,
+    };
+    await renderer.preview(master, preview, source, new AbortController().signal, () => {});
+    const info = await media.probe(preview, { countFrames: true });
+    expect(info.audioStreams).toHaveLength(0);
+    checkStudioReversePreview(
+      source,
+      info,
+      await renderer.probeGeometry(preview, 0),
+      await renderer.previewPackets(preview, new AbortController().signal),
+    );
+    const pictures = (await ffmpeg(['-i', preview, '-map', '0:v:0', '-f', 'rawvideo', '-pix_fmt', 'yuv420p', 'pipe:1']))
+      .stdout;
+    expect(pictures.length).toBe((30 * 32 * 32 * 3) / 2);
   });
 
   it('refuses anamorphic coded pixels hidden behind a display width inside the limit', async () => {

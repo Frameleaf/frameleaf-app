@@ -1,4 +1,4 @@
-import { ColorMatrix, ColorPrimaries, ColorTransfer } from 'src/enum.js';
+import { ColorMatrix, ColorPrimaries, ColorTransfer, H264Profile } from 'src/enum.js';
 import { VideoInfo, VideoPacketInfo } from 'src/types.js';
 
 export const reverseVideoInfo = (): VideoInfo => ({
@@ -66,3 +66,19 @@ export const reverseClipGraph = (assetId = '0195e2a0-0000-7000-8000-000000000011
   },
   extensions: { preserve: ['unknown', null] },
 });
+
+export const reversePreviewInfo = (): VideoInfo => {
+  const info = reverseVideoInfo();
+  info.format.formatName = 'mov,mp4,m4a,3gp,3g2,mj2';
+  Object.assign(info.videoStreams[0], {
+    codecName: 'h264',
+    profile: H264Profile.Main,
+    level: 32,
+    timeBase: 3,
+    timeBaseRational: { num: 1, den: 3 },
+  });
+  return info;
+};
+
+export const reversePreviewPackets = () =>
+  Array.from({ length: 3 }, (_, index) => ({ pts: index, dts: index, duration: 1 }));
