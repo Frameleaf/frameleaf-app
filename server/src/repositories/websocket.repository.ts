@@ -81,6 +81,12 @@ export interface ClientEventMap {
    * so the recipient's open timeline, partner page and viewer drop what they held at once.
    */
   PartnerRevokeV1: [{ sharedById: string; sharedWithId: string }];
+  /**
+   * FL-111: a committed shelf or audience change invalidates generated content for this project.
+   * Sent only to its authenticated owner's room; null invalidates all after emptying their trash.
+   * Discard admitted content immediately and reauthorize before displaying it again.
+   */
+  StudioProjectInvalidatedV1: [{ projectId: string | null }];
 }
 
 export type FrameleafCloudTopic = 'link' | 'license' | 'account';

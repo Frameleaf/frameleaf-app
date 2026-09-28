@@ -48,6 +48,7 @@ const conflictOf = async (promise: Promise<unknown>) => {
 
 describe(StudioProjectService.name, () => {
   let sut: StudioProjectService;
+  let websocket: ReturnType<typeof getMocks>['websocket'];
   let repository: Record<keyof StudioProjectRepository, AnyMock>;
   let access: {
     album: { checkOwnerAccess: AnyMock; checkSharedAlbumAccess: AnyMock };
@@ -181,11 +182,13 @@ describe(StudioProjectService.name, () => {
     };
     resources = { resolveProjectResources: vi.fn().mockResolvedValue(manifest(true)) };
 
+    websocket = getMocks().websocket;
     sut = new StudioProjectService(
       getMocks().logger as never,
       repository as unknown as StudioProjectRepository,
       access as unknown as AccessRepository,
       resources as unknown as StudioResourceService,
+      websocket,
     );
   });
 
@@ -759,6 +762,111 @@ describe(StudioProjectService.name, () => {
     });
   });
   describe('lifecycle (FL-91)', () => {
+    it('invalidates admitted content only in the owner room after committed lifecycle and audience changes', async () => {
+      const send = vi.mocked(websocket.clientSend);
+      const event = ['StudioProjectInvalidatedV1', owner.user.id, { projectId: project.id }];
+      let commit!: (row: StudioProject) => void;
+      repository.update.mockReturnValueOnce(new Promise<StudioProject>((resolve) => (commit = resolve)));
+      const archiving = sut.update(owner, project.id, { archived: true });
+      await vi.waitFor(() => expect(repository.update).toHaveBeenCalledOnce());
+      expect(send).not.toHaveBeenCalled();
+      commit({ ...project, archivedAt: new Date() });
+      await archiving;
+      expect(send.mock.calls).toEqual([event]);
+      expect(repository.update.mock.invocationCallOrder[0]).toBeLessThan(send.mock.invocationCallOrder[0]);
+
+      send.mockClear();
+      project = { ...project, spaceId: newUuid() };
+      repository.update.mockResolvedValue({ ...project, spaceId: null });
+      await sut.update(owner, project.id, { spaceId: null });
+      expect(send.mock.calls).toEqual([event]);
+
+      send.mockClear();
+      await sut.remove(owner, project.id);
+      expect(send.mock.calls).toEqual([event]);
+      expect(repository.trash.mock.invocationCallOrder[0]).toBeLessThan(send.mock.invocationCallOrder[0]);
+
+      send.mockClear();
+      await sut.remove(owner, project.id, { permanent: true });
+      expect(send.mock.calls).toEqual([event]);
+      expect(repository.delete.mock.invocationCallOrder[0]).toBeLessThan(send.mock.invocationCallOrder[0]);
+
+      send.mockClear();
+      await sut.emptyTrash(owner);
+      expect(send.mock.calls).toEqual([['StudioProjectInvalidatedV1', owner.user.id, { projectId: null }]]);
+      expect(repository.emptyTrash.mock.invocationCallOrder[0]).toBeLessThan(send.mock.invocationCallOrder[0]);
+      expect(websocket.clientBroadcast).not.toHaveBeenCalled();
+    });
+
+    it('invalidates the final write when concurrent shelf changes return to the initial state', async () => {
+      const initial = { ...project, archivedAt: null };
+      repository.getById.mockResolvedValue(initial);
+      let commit!: (row: StudioProject) => void;
+      repository.update.mockReturnValueOnce(new Promise<StudioProject>((resolve) => {
+        commit = resolve;
+      }));
+      const returningToInitial = sut.update(owner, project.id, { archived: false });
+      await vi.waitFor(() => expect(repository.update).toHaveBeenCalledOnce());
+
+      repository.update.mockResolvedValueOnce({ ...initial, archivedAt: new Date() });
+      await sut.update(owner, project.id, { archived: true });
+      expect(websocket.clientSend).toHaveBeenCalledOnce();
+      vi.mocked(websocket.clientSend).mockClear();
+
+      commit(initial);
+      await returningToInitial;
+      expect(vi.mocked(websocket.clientSend).mock.calls).toEqual([
+        ['StudioProjectInvalidatedV1', owner.user.id, { projectId: project.id }],
+      ]);
+    });
+
+    it('invalidates both restore and retrash when a trash request read the earlier trashed state', async () => {
+      project = { ...project, deletedAt: new Date(), purgeAfter: future() };
+      let commit!: (row: StudioProject) => void;
+      repository.trash.mockReturnValueOnce(new Promise<StudioProject>((resolve) => {
+        commit = resolve;
+      }));
+      const retrashing = sut.remove(owner, project.id);
+      await vi.waitFor(() => expect(repository.trash).toHaveBeenCalledOnce());
+      expect(websocket.clientSend).not.toHaveBeenCalled();
+
+      await sut.restoreFromTrash(owner, project.id);
+      const event = ['StudioProjectInvalidatedV1', owner.user.id, { projectId: project.id }];
+      expect(vi.mocked(websocket.clientSend).mock.calls).toEqual([event]);
+      vi.mocked(websocket.clientSend).mockClear();
+
+      commit(project);
+      await retrashing;
+      expect(vi.mocked(websocket.clientSend).mock.calls).toEqual([event]);
+    });
+
+    it('does not invalidate for refused, failed, missing-row or unrelated mutations', async () => {
+      await expect(sut.remove(reviewer, project.id)).rejects.toBeInstanceOf(NotFoundException);
+      await expect(sut.update(reviewer, project.id, { archived: true })).rejects.toBeInstanceOf(NotFoundException);
+      const failure = new Error('write failed');
+      repository.update.mockRejectedValueOnce(failure);
+      await expect(sut.update(owner, project.id, { archived: true })).rejects.toBe(failure);
+      repository.update.mockResolvedValueOnce(undefined);
+      await expect(sut.update(owner, project.id, { archived: true })).rejects.toBeInstanceOf(NotFoundException);
+      repository.update.mockResolvedValue(project);
+      await sut.update(owner, project.id, {});
+      await sut.update(owner, project.id, { name: 'Renamed' });
+      await sut.restoreFromTrash(owner, project.id);
+      project = { ...project, deletedAt: new Date() };
+      repository.untrash.mockRejectedValueOnce(failure).mockResolvedValueOnce(undefined);
+      await expect(sut.restoreFromTrash(owner, project.id)).rejects.toBe(failure);
+      await sut.restoreFromTrash(owner, project.id);
+      repository.trash.mockRejectedValueOnce(failure).mockResolvedValueOnce(undefined);
+      await expect(sut.remove(owner, project.id)).rejects.toBe(failure);
+      await sut.remove(owner, project.id);
+      repository.delete.mockRejectedValueOnce(failure);
+      await expect(sut.remove(owner, project.id, { permanent: true })).rejects.toBe(failure);
+      repository.emptyTrash.mockResolvedValueOnce(0);
+      await sut.emptyTrash(owner);
+      expect(websocket.clientSend).not.toHaveBeenCalled();
+      expect(websocket.clientBroadcast).not.toHaveBeenCalled();
+    });
+
     it('moves a project to the trash with the retention deadline, and never touches the library', async () => {
       const before = Date.now();
       await sut.remove(owner, project.id);
