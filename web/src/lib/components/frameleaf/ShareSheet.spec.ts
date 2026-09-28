@@ -198,8 +198,9 @@ describe('ShareSheet', () => {
       expect(screen.getByText('3 items · 2 photos, 1 video')).toBeInTheDocument();
     });
 
-    it('says only the item count for a single item', () => {
+    it('names a single item in the title and keeps the count beside the collage', () => {
       render(ShareSheet, { open: true, assetIds: ['a1'], assets: [photo('a1')] });
+      expect(screen.getByRole('dialog', { name: 'Share a1.jpg' })).toBeInTheDocument();
       expect(document.querySelector('.ss-strip')).toHaveTextContent(/^1 item$/);
     });
 
