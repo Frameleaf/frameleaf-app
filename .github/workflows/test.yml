@@ -428,11 +428,12 @@ jobs:
           password: ${{ github.token }}
       - name: Docker build
         id: docker
-        run: docker compose up -d --build --renew-anon-volumes --force-recreate --remove-orphans --wait --wait-timeout 300
+        run: docker compose -f docker-compose.yml -f docker-compose.ml-fixture.yml up -d --build --renew-anon-volumes --force-recreate --remove-orphans --wait --wait-timeout 300
         if: ${{ !cancelled() }}
       - name: Run e2e tests (web)
         env:
           PLAYWRIGHT_DISABLE_WEBSERVER: true
+          FL144_ML_FIXTURE: 'true'
         run: pnpm test:web
         if: ${{ !cancelled() && steps.docker.outcome == 'success' }}
       - name: Archive e2e test (web) results
