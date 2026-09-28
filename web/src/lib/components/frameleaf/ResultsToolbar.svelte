@@ -138,6 +138,7 @@
   ];
 
   let menuOpen = $state(false);
+  let filterControl = $state<HTMLDivElement>();
   let menuButton = $state<HTMLButtonElement>();
   let menu = $state<HTMLUListElement>();
 
@@ -264,9 +265,18 @@
   const clearAll = () => session.setQuery({ ...withoutDiscoveryFilters(session.query), text: '' });
 
   $effect(() => {
-    if (menuOpen) {
-      menu?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus();
+    if (!menuOpen) {
+      return;
     }
+    menu?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus();
+    // Prototype App.jsx: dismiss without intercepting the next control's pointer/click.
+    const onPointerDown = (event: PointerEvent) => {
+      if (!filterControl?.contains(event.target as Node)) {
+        closeMenu(false);
+      }
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    return () => document.removeEventListener('pointerdown', onPointerDown);
   });
 
   const menuKeydown = (event: KeyboardEvent) => {
@@ -340,7 +350,7 @@
     {/if}
     <span class="fl-grow"></span>
 
-    <div class="fl-filter">
+    <div class="fl-filter" bind:this={filterControl}>
       <button
         type="button"
         class="fl-filter-button"
@@ -389,14 +399,6 @@
             </li>
           {/each}
         </ul>
-        <!-- Clicking anywhere else closes the menu without stealing the click's own target. -->
-        <button
-          type="button"
-          class="fl-filter-scrim"
-          tabindex="-1"
-          aria-label={$t('close')}
-          onclick={() => closeMenu(false)}
-        ></button>
       {/if}
     </div>
 
@@ -584,15 +586,6 @@
     place-items: center;
     width: 14px;
     color: var(--fl-accent);
-  }
-  .fl-filter-scrim {
-    position: fixed;
-    inset: 0;
-    z-index: 4;
-    min-height: 0;
-    border: 0;
-    background: transparent;
-    cursor: default;
   }
   /* Prototype `label.sort`. */
   .fl-sort {
