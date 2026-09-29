@@ -78,6 +78,25 @@ describe(ItemShareService.name, () => {
       expect(mocks.event.emit).not.toHaveBeenCalled();
     });
 
+    it('keeps a completed share successful and notifies later recipients when one notification fails', async () => {
+      const assetId = newUuid();
+      const sam = UserFactory.create({ name: 'Sam' });
+      users(owner, jamie, sam);
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([assetId]));
+      mocks.itemShare.add.mockResolvedValue([row(assetId), row(assetId, sam.id)]);
+      mocks.itemShare.getForAssets.mockResolvedValue([row(assetId), row(assetId, sam.id)]);
+      mocks.event.emit.mockRejectedValueOnce(new Error('notification unavailable'));
+
+      await expect(sut.share(auth, { assetIds: [assetId], userIds: [jamie.id, sam.id] })).resolves.toMatchObject({
+        added: 2,
+      });
+      expect(mocks.event.emit).toHaveBeenCalledTimes(2);
+      expect(mocks.event.emit).toHaveBeenLastCalledWith(
+        'ItemShare',
+        expect.objectContaining({ userId: sam.id, count: 1 }),
+      );
+    });
+
     it('gives no link when the server has no address to hand out', async () => {
       const a = newUuid();
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([a]));
