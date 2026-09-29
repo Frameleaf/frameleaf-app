@@ -15,6 +15,7 @@
   import { handleError } from '$lib/utils/handle-error';
   import {
     getItemShares,
+    getRecipientGroups,
     searchUsers,
     shareItems,
     SharedLinkType,
@@ -95,11 +96,16 @@
     loading = true;
     loadFailed = false;
     try {
-      const [users, shares] = await Promise.all([searchUsers(), getItemShares({ itemShareQueryDto: { assetIds } })]);
+      const [users, shares, groups] = await Promise.all([
+        searchUsers(),
+        getItemShares({ itemShareQueryDto: { assetIds } }),
+        // Saved people are optional; their availability must never prevent revoking an existing share.
+        getRecipientGroups().catch(() => []),
+      ]);
       if (request !== loadId) {
         return;
       }
-      const choices = new Map(users.map((user) => [user.id, user]));
+      const choices = new Map([...users, ...groups.flatMap((group) => group.users)].map((user) => [user.id, user]));
       for (const { sharedWith } of shares) {
         choices.set(sharedWith.id, sharedWith);
       }
