@@ -40,7 +40,11 @@ import { useTimelineSettingsStore } from '@/features/timeline/stores/timeline-se
 import { useKeyframesStore } from '@/features/timeline/stores/keyframes-store'
 import { useMediaLibraryStore } from '@/features/media-library/stores/media-library-store'
 import { createClassicTrack } from '@/features/timeline/utils/classic-tracks'
-import { filterUnlockedItemIds, getUniqueLinkedItemAnchorIds } from '@/features/timeline/utils/linked-items'
+import {
+  filterUnlockedItemIds,
+  getLinkedItemIds,
+  getUniqueLinkedItemAnchorIds,
+} from '@/features/timeline/utils/linked-items'
 import { expandIdsWithLinkedItems } from '@/features/timeline/stores/actions/linked-edit'
 import { useEditorStore } from '@/shared/state/editor'
 import {
@@ -72,6 +76,28 @@ import {
   updateItemTransform,
   updateTransition,
 } from '@/features/timeline/stores/timeline-actions'
+import {
+  rateStretchItem,
+  rollingTrimItems,
+  slideItem,
+  slipItem,
+} from '@/features/timeline/stores/actions/item-edit-actions'
+import { linkItems, unlinkItems } from '@/features/timeline/stores/actions/item-actions'
+import {
+  addMarker,
+  removeMarker,
+  updateMarker,
+} from '@/features/timeline/stores/actions/marker-actions'
+import { applyTransitionRepairs } from '@/features/timeline/stores/actions/shared'
+import {
+  applySplitBookkeeping,
+  type SplitResultEntry,
+} from '@/features/timeline/stores/actions/split-bookkeeping'
+import { propagateInsertedGapToSyncLockedTracks } from '@/features/timeline/stores/actions/sync-lock-ripple'
+import { useMarkersStore } from '@/features/timeline/stores/markers-store'
+import { buildMediaTimelineItems } from '@/features/timeline/utils/media-timeline-item-builder'
+import { MAX_SPEED, MIN_SPEED } from '@/features/timeline/utils/source-calculations'
+import { isTrackSyncLockEnabled } from '@/features/timeline/utils/track-sync-lock'
 import { getGpuEffect } from '@/infrastructure/gpu-effects'
 import { transitionRegistry } from '@/shared/timeline/transitions/registry'
 import '@/shared/timeline/transitions'
@@ -146,6 +172,21 @@ export const ENGINE_COMMANDS: Readonly<Record<string, readonly string[]>> = {
   'music.add': ['command.addItem'],
   'title.add': ['command.addText'],
   'track.add': ['command.addTrack'],
+  // FL-94: the linked edit tools, source edits, tracks and markers of readme.timeline-editing.
+  'clip.insert': ['readme.timeline-editing.7'],
+  'clip.overwrite': ['readme.timeline-editing.7'],
+  'clip.reorder': ['readme.timeline-editing.5'],
+  'clip.roll': ['readme.timeline-editing.3'],
+  'clip.setLink': ['readme.timeline-editing.3'],
+  'clip.setSpeed': ['readme.timeline-editing.3'],
+  'clip.slide': ['readme.timeline-editing.3'],
+  'clip.slip': ['readme.timeline-editing.3'],
+  'marker.add': ['readme.timeline-editing.6'],
+  'marker.remove': ['readme.timeline-editing.6'],
+  'marker.update': ['readme.timeline-editing.6'],
+  'track.remove': ['readme.timeline-editing.5'],
+  'track.reorder': ['readme.timeline-editing.5'],
+  'track.set': ['readme.timeline-editing.5'],
 }
 
 export const isEngineCommand = (id: string): boolean => Object.hasOwn(ENGINE_COMMANDS, id)
@@ -367,6 +408,230 @@ const nextOnTrack = (item: TimelineItem): TimelineItem | undefined => {
         candidate.trackId === item.trackId && candidate.id !== item.id && candidate.from >= end - 1,
     )
     .sort((a, b) => a.from - b.from)[0]
+}
+
+/* ------------------------------------------------------------------ */
+/* Timeline edit helpers (FL-94)                                        */
+/* ------------------------------------------------------------------ */
+
+const gcd = (a: bigint, b: bigint): bigint => {
+  let x = a < 0n ? -a : a
+  let y = b < 0n ? -b : b
+  while (y !== 0n) [x, y] = [y, x % y]
+  return x
+}
+
+/** `a - b`, exactly, reduced. */
+const subtractTimes = (a: Rational, b: Rational): Rational => {
+  const numerator = BigInt(a.num) * BigInt(b.den) - BigInt(b.num) * BigInt(a.den)
+  const denominator = BigInt(a.den) * BigInt(b.den)
+  const divisor = gcd(numerator, denominator) || 1n
+  const num = Number(numerator / divisor)
+  const den = Number(denominator / divisor)
+  if (!Number.isSafeInteger(num) || !Number.isSafeInteger(den)) invalid('The time is out of range')
+  return { num, den }
+}
+
+/** A signed rational length (`duration` fields may be negative deltas) in frames of `rate`. */
+const signedFrames = (
+  payload: Record<string, unknown>,
+  name: string,
+  rate: number | Rational,
+): number => {
+  const value = payload[name]
+  if (!isRational(value)) invalid(`${name} must be an exact rational duration`)
+  return secondsToFrames(value as Rational, rate)
+}
+
+/** Nearest integer to `numerator / denominator` (both positive); halves round up. */
+const roundQuotient = (numerator: bigint, denominator: bigint): number => {
+  const value = Number((2n * numerator + denominator) / (2n * denominator))
+  if (!Number.isSafeInteger(value)) invalid('The duration is out of range')
+  return value
+}
+
+/** Run `work` with Freecut's linked-selection toggle set, restoring the editor's own value after. */
+const withLinkedSelection = <T>(enabled: boolean, work: () => T): T => {
+  const previous = useEditorStore.getState().linkedSelectionEnabled
+  useEditorStore.setState({ linkedSelectionEnabled: enabled })
+  try {
+    return work()
+  } finally {
+    useEditorStore.setState({ linkedSelectionEnabled: previous })
+  }
+}
+
+const trackOf = (item: TimelineItem) => tracks().find((track) => track.id === item.trackId)
+
+/** Freecut's edit actions do not check track locks themselves (the UI does); commands must. */
+const assertUnlocked = (ids: readonly string[], command: string) => {
+  for (const id of ids) {
+    if (trackOf(requireItem(id))?.locked) failed(`${command}: a clip it would change is on a locked track`)
+  }
+}
+
+/** The clips `ids` and everything linked to them, as Freecut's linked edits would reach. */
+const linkedSet = (ids: readonly string[]): string[] =>
+  expandIdsWithLinkedItems(items(), [...ids], true)
+
+/** The clip directly before (`left`) or after (`right`) `item` on its track, touching it. */
+const adjacentOnTrack = (item: TimelineItem, side: 'left' | 'right'): TimelineItem | undefined =>
+  items().find(
+    (candidate) =>
+      candidate.trackId === item.trackId &&
+      candidate.id !== item.id &&
+      (side === 'right'
+        ? candidate.from === item.from + item.durationInFrames
+        : candidate.from + candidate.durationInFrames === item.from),
+  )
+
+/** No two clips on the given tracks may occupy the same frame after an edit. */
+const assertNoOverlap = (trackIds: Iterable<string>, command: string) => {
+  for (const trackId of new Set(trackIds)) {
+    const onTrack = items()
+      .filter((item) => item.trackId === trackId)
+      .sort((a, b) => a.from - b.from)
+    for (let index = 1; index < onTrack.length; index++) {
+      const previous = onTrack[index - 1]!
+      if (previous.from + previous.durationInFrames > onTrack[index]!.from) {
+        failed(`${command}: clips would overlap on track "${trackId}"`)
+      }
+    }
+  }
+}
+
+const HEX_COLOUR = /^#[0-9a-f]{6}$/i
+
+/** Media usable by a source edit: the kinds `clip.add` accepts, with its source cadence. */
+const sourceMediaOf = (media: Map<string, MediaMetadata>, assetId: string) => {
+  const source = media.get(assetId)
+  if (!source) invalid(`assetId: "${assetId}" is not media this session may use`)
+  const mediaType = source!.mimeType.startsWith('image/')
+    ? ('image' as const)
+    : source!.mimeType.startsWith('video/')
+      ? ('video' as const)
+      : invalid(`assetId: unsupported media type ${source!.mimeType}`)
+  return { source: source!, mediaType: mediaType as 'image' | 'video' }
+}
+
+/**
+ * The first unlocked audio track for a video's linked sound, created as `clip.add` does when the
+ * project has none. A locked audio track is never written to.
+ */
+const audioTrackForLinkedSound = (command: string): string => {
+  const audio = tracks().filter((candidate) => !candidate.isGroup && candidate.kind === 'audio')
+  const open = audio.find((candidate) => !candidate.locked)
+  if (open) return open.id
+  if (audio.length > 0) failed(`${command}: every audio track is locked`)
+  const all = tracks()
+  const created = createClassicTrack({
+    tracks: all,
+    kind: 'audio',
+    order: Math.max(0, ...all.map((t) => t.order)) + 1,
+  })
+  setTracks([...all, created])
+  return created.id
+}
+
+/**
+ * Split every clip on `trackIds` that crosses `frame`, keeping linked groups and transitions
+ * consistent. Companions of a split clip that sit on other tracks are split with it, as Freecut's
+ * own split does, so their halves stay paired.
+ */
+const splitTracksAt = (trackIds: ReadonlySet<string>, frame: number, command: string) => {
+  const crossing = items().filter(
+    (item) =>
+      trackIds.has(item.trackId) &&
+      item.from < frame &&
+      item.from + item.durationInFrames > frame,
+  )
+  const anchors = getUniqueLinkedItemAnchorIds(items(), crossing.map((item) => item.id))
+  for (const anchorId of anchors) {
+    const group = getLinkedItemIds(items(), anchorId)
+    const crosses = (id: string) => {
+      const item = requireItem(id)
+      return item.from < frame && item.from + item.durationInFrames > frame
+    }
+    // A linked group is cut together or not at all, as Freecut's split requires.
+    if (!group.every(crosses)) failed(`${command}: linked clips of "${anchorId}" are not all cut at that time`)
+    const results: SplitResultEntry[] = []
+    for (const id of group) {
+      const item = requireItem(id)
+      const result = useItemsStore.getState()._splitItem(id, frame)
+      if (!result) failed(`${command}: "${id}" cannot be cut at that time`)
+      results.push({ originalId: id, originalLinkedGroupId: item.linkedGroupId, result: result! })
+    }
+    applySplitBookkeeping(results)
+  }
+}
+
+/**
+ * Build the items a source edit places: the primary clip on `trackId` and, for a video with
+ * sound, its linked audio. The source range is exact: `sourceIn`/`sourceOut` become source frames
+ * on the media's own cadence, and the timeline length is the range's exact length on the project's.
+ */
+const buildSourceEdit = (
+  payload: Record<string, unknown>,
+  { fps, cadence, media }: { fps: number; cadence: Rational; media: Map<string, MediaMetadata> },
+  command: string,
+) => {
+  const { source, mediaType } = sourceMediaOf(media, stringField(payload, 'assetId'))
+  const track = requireTrack(stringField(payload, 'trackId'))
+  if ((track.kind ?? 'video') !== 'video') invalid('trackId: library media goes on a video track')
+  if (track.locked) failed(`${command}: the destination track is locked`)
+  const at = timeField(payload, 'at', cadence)
+  const sourceIn = payload.sourceIn
+  const sourceOut = payload.sourceOut
+  if (!isRational(sourceIn) || !isRational(sourceOut)) invalid('sourceIn and sourceOut must be exact rational times')
+  if ((sourceIn as Rational).num < 0) invalid('sourceIn must not be negative')
+  const length = subtractTimes(sourceOut as Rational, sourceIn as Rational)
+  if (length.num <= 0) invalid('sourceOut must be after sourceIn')
+  const durationInFrames = secondsToFrames(length, cadence)
+  if (durationInFrames < 1) invalid('The marked range is shorter than one frame')
+
+  let sourceStart: number | undefined
+  let sourceEnd: number | undefined
+  if (mediaType === 'video') {
+    // FL-93: the source cadence must be read exactly; a VFR or unusual rate is refused, not rounded.
+    sourceStart = secondsToFrames(sourceIn as Rational, source.fps)
+    sourceEnd = secondsToFrames(sourceOut as Rational, source.fps)
+    const available = Math.max(1, Math.round(source.duration * source.fps))
+    if (sourceEnd > available) invalid('sourceOut is past the end of the source')
+    if (sourceEnd <= sourceStart) invalid('The marked range is shorter than one source frame')
+  }
+  const linkVideoAudio = mediaType === 'video' && !!source.audioCodec
+  const audioTrackId = linkVideoAudio ? audioTrackForLinkedSound(command) : undefined
+  const { width, height } = canvas()
+  const placed = buildMediaTimelineItems({
+    media: source,
+    mediaId: source.id,
+    mediaType,
+    label: source.fileName,
+    projectFps: fps,
+    blobUrl: '',
+    canvasWidth: width,
+    canvasHeight: height,
+    sourceStart,
+    sourceEnd,
+    placements: {
+      primary: { trackId: track.id, from: at, durationInFrames },
+      ...(audioTrackId ? { linkedAudio: { trackId: audioTrackId, from: at, durationInFrames } } : {}),
+    },
+    linkVideoAudio,
+  })
+  return { placed, at, durationInFrames, trackIds: placed.map((item) => item.trackId) }
+}
+
+/** Add the placed clips and check each landed exactly where the edit put it. */
+const landSourceEdit = (placed: TimelineItem[], command: string) => {
+  addItems(placed)
+  for (const item of placed) {
+    const landed = useItemsStore.getState().itemById[item.id]
+    if (!landed || landed.from !== item.from || landed.durationInFrames !== item.durationInFrames) {
+      failed(`${command}: the clip could not be placed`)
+    }
+  }
+  applyTransitionRepairs(placed.map((item) => item.id))
 }
 
 /* ------------------------------------------------------------------ */
@@ -870,6 +1135,378 @@ const handlers: Record<string, Handler> = {
         invalid(`keyframeIds: "${id}" is not on ${property}`)
     }
     for (const id of ids as string[]) removeKeyframe(item.id, property, id)
+  },
+
+  /* ---------------- Linked edit tools (FL-94) ---------------- */
+
+  'clip.roll'(payload, { cadence }) {
+    const left = requireItem(stringField(payload, 'clipId'))
+    const right = adjacentOnTrack(left, 'right')
+    if (!right) invalid('clip.roll: no clip starts where this one ends')
+    const at = timeField(payload, 'at', cadence)
+    const cut = left.from + left.durationInFrames
+    const rightEnd = right!.from + right!.durationInFrames
+    if (at === cut) return
+    if (at <= left.from || at >= rightEnd) invalid('at must fall inside the two clips')
+    assertUnlocked(linkedSet([left.id, right!.id]), 'clip.roll')
+    withLinkedSelection(true, () => rollingTrimItems(left.id, right!.id, at - cut))
+    const leftAfter = requireItem(left.id)
+    const rightAfter = requireItem(right!.id)
+    if (
+      leftAfter.from !== left.from ||
+      leftAfter.from + leftAfter.durationInFrames !== at ||
+      rightAfter.from !== at ||
+      rightAfter.from + rightAfter.durationInFrames !== rightEnd
+    ) {
+      failed('clip.roll: the source media, a transition or keyframes do not allow the cut there')
+    }
+  },
+
+  'clip.slip'(payload, { fps }) {
+    const item = requireItem(stringField(payload, 'clipId'))
+    if (item.type !== 'video' && item.type !== 'audio' && item.type !== 'composition') {
+      invalid('clip.slip applies to video, audio and composition clips')
+    }
+    if (item.sourceEnd === undefined) invalid('clip.slip: the clip has no source range to slip')
+    // The delta is source time: the window moves through the source, whatever the clip's speed.
+    const frames = signedFrames(payload, 'delta', item.sourceFps ?? fps)
+    if (frames === 0) return
+    assertUnlocked(linkedSet([item.id]), 'clip.slip')
+    const start = item.sourceStart ?? 0
+    withLinkedSelection(true, () => slipItem(item.id, frames))
+    const after = requireItem(item.id)
+    if (
+      (after.sourceStart ?? 0) !== start + frames ||
+      after.sourceEnd !== item.sourceEnd! + frames ||
+      after.from !== item.from ||
+      after.durationInFrames !== item.durationInFrames
+    ) {
+      failed('clip.slip: the source does not have that much media, or a transition needs it')
+    }
+  },
+
+  'clip.slide'(payload, { cadence }) {
+    const item = requireItem(stringField(payload, 'clipId'))
+    const frames = signedFrames(payload, 'delta', cadence)
+    if (frames === 0) return
+    const left = adjacentOnTrack(item, 'left')
+    const right = adjacentOnTrack(item, 'right')
+    if (!left && !right) invalid('clip.slide: the clip has no neighbour to trim; move it instead')
+    assertUnlocked(
+      linkedSet([item.id, ...(left ? [left.id] : []), ...(right ? [right.id] : [])]),
+      'clip.slide',
+    )
+    withLinkedSelection(true, () => slideItem(item.id, frames, left?.id ?? null, right?.id ?? null))
+    // Freecut keeps a split A-B-C chain continuous by moving the slid clip's source window with it,
+    // so only its place, its length and the neighbours meeting it are checked here.
+    const after = requireItem(item.id)
+    const leftAfter = left ? requireItem(left.id) : undefined
+    const rightAfter = right ? requireItem(right.id) : undefined
+    if (
+      after.from !== item.from + frames ||
+      after.durationInFrames !== item.durationInFrames ||
+      (leftAfter && leftAfter.from + leftAfter.durationInFrames !== after.from) ||
+      (rightAfter && rightAfter.from !== after.from + after.durationInFrames)
+    ) {
+      failed('clip.slide: a neighbour does not have enough media, or a transition blocks the slide')
+    }
+  },
+
+  'clip.setSpeed'(payload, { cadence }) {
+    const item = requireItem(stringField(payload, 'clipId'))
+    if (item.type !== 'video' && item.type !== 'audio' && item.type !== 'composition') {
+      invalid('clip.setSpeed applies to video, audio and composition clips')
+    }
+    const rate = payload.speed
+    if (!isRational(rate) || (rate as Rational).num <= 0) invalid('speed must be a positive exact rate')
+    const { num, den } = rate as Rational
+    // Freecut's bounds, compared exactly: MIN_SPEED ≤ num/den ≤ MAX_SPEED.
+    if (num * 10 < den * Math.round(MIN_SPEED * 10) || num > den * MAX_SPEED) {
+      invalid(`speed must be between ${MIN_SPEED} and ${MAX_SPEED}`)
+    }
+    if (item.sourceEnd === undefined) invalid('clip.setSpeed: the clip has no bounded source range')
+    const span = item.sourceEnd! - (item.sourceStart ?? 0)
+    if (span < 1) invalid('clip.setSpeed: the clip has no source media to retime')
+    // Timeline frames = span / sourceRate / speed × projectRate, exactly, to the nearest frame.
+    const source = frameRateOf(item.sourceFps ?? projectCanvas.fps)
+    const project = frameRateOf(cadence)
+    const duration = roundQuotient(
+      BigInt(span) * source.den * BigInt(den) * project.num,
+      source.num * BigInt(num) * project.den,
+    )
+    if (duration < 1) invalid('speed is too fast for this clip')
+    const linked = linkedSet([item.id])
+    assertUnlocked(linked, 'clip.setSpeed')
+    const before = new Map(linked.map((id) => [id, requireItem(id)]))
+    withLinkedSelection(true, () => rateStretchItem(item.id, item.from, duration, num / den))
+    const after = requireItem(item.id)
+    if (after.from !== item.from || after.durationInFrames !== duration) {
+      failed('clip.setSpeed: the clip cannot take that speed here')
+    }
+    // Synchronised companions (same start and length before) must have been retimed with it.
+    for (const [id, previous] of before) {
+      if (id === item.id || previous.from !== item.from || previous.durationInFrames !== item.durationInFrames) continue
+      if (requireItem(id).durationInFrames !== duration) failed('clip.setSpeed: a linked clip was not retimed with it')
+    }
+    assertNoOverlap([...before.values()].map((entry) => entry.trackId), 'clip.setSpeed')
+  },
+
+  'clip.setLink'(payload) {
+    const ids = payload.clipIds
+    if (!Array.isArray(ids) || ids.length === 0 || ids.some((id) => typeof id !== 'string'))
+      invalid('clipIds must be clip ids')
+    if (typeof payload.linked !== 'boolean') invalid('linked must be a boolean')
+    const unique = [...new Set(ids as string[])]
+    for (const id of unique) requireItem(id, 'clipIds')
+    if (payload.linked) {
+      if (unique.length < 2) invalid('clip.setLink: linking needs at least two clips')
+      if (!linkItems(unique)) failed('clip.setLink: these clips cannot be linked (they need audio and video from one source)')
+      const group = requireItem(unique[0]!).linkedGroupId
+      if (!group || unique.some((id) => requireItem(id).linkedGroupId !== group)) {
+        failed('clip.setLink: the clips were not linked')
+      }
+      return
+    }
+    unlinkItems(unique)
+    for (const id of unique) {
+      const group = requireItem(id).linkedGroupId
+      if (group && items().some((other) => other.id !== id && other.linkedGroupId === group)) {
+        failed('clip.setLink: the clips are still linked')
+      }
+    }
+  },
+
+  'clip.reorder'(payload) {
+    const track = requireTrack(stringField(payload, 'trackId'))
+    const item = requireItem(stringField(payload, 'clipId'))
+    if (item.trackId !== track.id) invalid('clipId is not on that track')
+    if (track.locked) failed('clip.reorder: the track is locked')
+    const index = payload.index
+    if (typeof index !== 'number' || !Number.isInteger(index)) invalid('index must be an integer')
+    const ordered = items()
+      .filter((candidate) => candidate.trackId === track.id)
+      .sort((a, b) => a.from - b.from)
+    if ((index as number) < 0 || (index as number) >= ordered.length) invalid('index is outside the track')
+    const origin = ordered[0]!.from
+    const next = ordered.filter((candidate) => candidate.id !== item.id)
+    next.splice(index as number, 0, item)
+    // The track re-flows contiguously from its first clip, as the prototype's reorder does.
+    let cursor = origin
+    const shift = new Map<string, number>()
+    for (const clip of next) {
+      if (clip.from !== cursor) shift.set(clip.id, cursor - clip.from)
+      cursor += clip.durationInFrames
+    }
+    if (shift.size === 0) return
+    // Linked companions follow their clip by the same amount, keeping sync.
+    const updates = new Map<string, number>()
+    for (const [id, delta] of shift) {
+      for (const linkedId of linkedSet([id])) {
+        if (updates.has(linkedId)) continue
+        const linkedItem = requireItem(linkedId)
+        if (linkedItem.trackId !== track.id && trackOf(linkedItem)?.locked) {
+          failed('clip.reorder: a linked clip is on a locked track')
+        }
+        updates.set(linkedId, linkedItem.from + (shift.get(linkedId) ?? delta))
+      }
+    }
+    const moves = [...updates].map(([id, from]) => ({ id, from }))
+    if (moves.some((move) => move.from < 0)) failed('clip.reorder: a linked clip would start before the timeline')
+    moveItems(moves)
+    for (const move of moves) {
+      if (requireItem(move.id).from !== move.from) failed('clip.reorder: the clips cannot re-flow there')
+    }
+    assertNoOverlap(moves.map((move) => requireItem(move.id).trackId), 'clip.reorder')
+  },
+
+  'clip.insert'(payload, context) {
+    const edit = buildSourceEdit(payload, context, 'clip.insert')
+    const targets = new Set(edit.trackIds)
+    splitTracksAt(targets, edit.at, 'clip.insert')
+    // Everything on the destination tracks from the edit point on makes room.
+    const onTargets = items()
+      .filter((item) => targets.has(item.trackId) && item.from >= edit.at)
+      .map((item) => item.id)
+    // Sync-locked tracks open the same gap (Freecut's ripple rule); linked companions on unlocked
+    // tracks without sync lock follow their clip so linked media never drifts out of sync.
+    const syncLocked = new Set(
+      tracks()
+        .filter((track) => !targets.has(track.id) && isTrackSyncLockEnabled(track))
+        .map((track) => track.id),
+    )
+    const companions = linkedSet(onTargets).filter((id) => {
+      const item = requireItem(id)
+      return (
+        !targets.has(item.trackId) &&
+        !syncLocked.has(item.trackId) &&
+        !trackOf(item)?.locked &&
+        item.from >= edit.at
+      )
+    })
+    const moves = [...onTargets, ...companions].map((id) => ({
+      id,
+      from: requireItem(id).from + edit.durationInFrames,
+    }))
+    const propagated = propagateInsertedGapToSyncLockedTracks({
+      editedTrackIds: targets,
+      cutFrame: edit.at,
+      amount: edit.durationInFrames,
+    })
+    if (moves.length > 0) moveItems(moves)
+    applyTransitionRepairs([...moves.map((move) => move.id), ...propagated.affectedIds])
+    for (const move of moves) {
+      if (requireItem(move.id).from !== move.from) failed('clip.insert: later clips could not make room')
+    }
+    assertNoOverlap(tracks().map((track) => track.id), 'clip.insert')
+    landSourceEdit(edit.placed, 'clip.insert')
+  },
+
+  'clip.overwrite'(payload, context) {
+    const edit = buildSourceEdit(payload, context, 'clip.overwrite')
+    const start = edit.at
+    const end = edit.at + edit.durationInFrames
+    const store = () => useItemsStore.getState()
+    for (const trackId of new Set(edit.trackIds)) {
+      const overlapping = items().filter(
+        (item) => item.trackId === trackId && item.from < end && item.from + item.durationInFrames > start,
+      )
+      for (const original of overlapping) {
+        // Freecut's overwrite: cut the covered part out of each clip; what is outside stays.
+        let covered: TimelineItem = original
+        if (covered.from < start) {
+          const cut = store()._splitItem(covered.id, start)
+          if (!cut) failed(`clip.overwrite: "${covered.id}" cannot be cut at the edit point`)
+          covered = cut!.rightItem
+        }
+        if (covered.from + covered.durationInFrames > end) {
+          const cut = store()._splitItem(covered.id, end)
+          if (!cut) failed(`clip.overwrite: "${covered.id}" cannot be cut at the end of the edit`)
+          covered = cut!.leftItem
+        }
+        // Only the covered part on this track goes; linked media on other tracks is left alone.
+        withLinkedSelection(false, () => removeItems([covered.id]))
+      }
+    }
+    applyTransitionRepairs(items().filter((item) => edit.trackIds.includes(item.trackId)).map((item) => item.id))
+    assertNoOverlap(edit.trackIds, 'clip.overwrite')
+    landSourceEdit(edit.placed, 'clip.overwrite')
+  },
+
+  /* ---------------- Tracks (FL-94) ---------------- */
+
+  'track.set'(payload) {
+    const track = requireTrack(stringField(payload, 'trackId'))
+    const patch = payload.patch
+    if (!patch || typeof patch !== 'object' || Array.isArray(patch)) invalid('patch is required')
+    const fields = patch as Record<string, unknown>
+    const allowed = ['name', 'muted', 'locked', 'solo', 'visible', 'syncLock', 'gain']
+    for (const key of Object.keys(fields)) if (!allowed.includes(key)) invalid(`patch: unknown field "${key}"`)
+    if (Object.keys(fields).length === 0) invalid('patch must change something')
+    const updates: Record<string, unknown> = {}
+    if (fields.name !== undefined) {
+      const name = optionalString(fields, 'name')!
+      if (!name.trim() || name.length > 80) invalid('patch.name must be 1 to 80 characters')
+      updates.name = name
+    }
+    for (const key of ['muted', 'locked', 'solo', 'visible', 'syncLock'] as const) {
+      if (fields[key] === undefined) continue
+      if (typeof fields[key] !== 'boolean') invalid(`patch.${key} must be a boolean`)
+      updates[key] = fields[key]
+    }
+    if (fields.gain !== undefined) {
+      // The prototype's track gain is decibels, the unit of Freecut's track volume.
+      const gain = optionalNumber(fields, 'gain')!
+      if (gain < -60 || gain > 12) invalid('patch.gain must be between -60 and 12 dB')
+      updates.volume = gain
+    }
+    setTracks(tracks().map((candidate) => (candidate.id === track.id ? { ...candidate, ...updates } : candidate)))
+    const applied = requireTrack(track.id) as unknown as Record<string, unknown>
+    for (const [key, value] of Object.entries(updates)) {
+      if (applied[key] !== value) failed(`track.set: ${key} was not applied`)
+    }
+  },
+
+  'track.remove'(payload) {
+    const track = requireTrack(stringField(payload, 'trackId'))
+    if (track.locked) failed('track.remove: the track is locked')
+    const remaining = tracks().filter((candidate) => candidate.id !== track.id && !candidate.isGroup)
+    if (remaining.length === 0) invalid('track.remove: a sequence keeps at least one track')
+    const onTrack = items().filter((item) => item.trackId === track.id).map((item) => item.id)
+    // The clips on the track go with it; linked media on other tracks stays.
+    if (onTrack.length > 0) withLinkedSelection(false, () => removeItems(onTrack))
+    setTracks(tracks().filter((candidate) => candidate.id !== track.id))
+    if (items().some((item) => item.trackId === track.id)) failed('track.remove: clips remain on the track')
+  },
+
+  'track.reorder'(payload) {
+    const track = requireTrack(stringField(payload, 'trackId'))
+    const index = payload.index
+    if (typeof index !== 'number' || !Number.isInteger(index)) invalid('index must be an integer')
+    // Tracks reorder among their siblings: top-level tracks, or the children of one layer group.
+    const siblings = tracks()
+      .filter((candidate) => (candidate.parentTrackId ?? null) === (track.parentTrackId ?? null))
+      .sort((a, b) => a.order - b.order)
+    if ((index as number) < 0 || (index as number) >= siblings.length) invalid('index is outside the track list')
+    const current = siblings.findIndex((candidate) => candidate.id === track.id)
+    if (current === index) return
+    const next = siblings.filter((candidate) => candidate.id !== track.id)
+    next.splice(index as number, 0, track)
+    // Siblings keep the set of order values they had, so tracks outside the group are untouched.
+    const orders = siblings.map((candidate) => candidate.order)
+    const reordered = new Map(next.map((candidate, position) => [candidate.id, orders[position]!]))
+    setTracks(
+      tracks().map((candidate) =>
+        reordered.has(candidate.id) ? { ...candidate, order: reordered.get(candidate.id)! } : candidate,
+      ),
+    )
+  },
+
+  /* ---------------- Markers (FL-94) ---------------- */
+
+  'marker.add'(payload, { cadence }) {
+    const frame = timeField(payload, 'at', cadence)
+    const colour = optionalString(payload, 'colour')
+    if (colour !== undefined && !HEX_COLOUR.test(colour)) invalid('colour must be a #rrggbb colour')
+    const name = optionalString(payload, 'name')
+    if (name !== undefined && name.length > 120) invalid('name must be at most 120 characters')
+    const before = useMarkersStore.getState().markers.length
+    addMarker(frame, colour, name ?? '')
+    if (useMarkersStore.getState().markers.length !== before + 1) failed('marker.add: the marker was not added')
+  },
+
+  'marker.update'(payload, { cadence }) {
+    const markerId = stringField(payload, 'markerId')
+    if (!useMarkersStore.getState().markers.some((marker) => marker.id === markerId)) {
+      invalid(`markerId: marker "${markerId}" does not exist`)
+    }
+    const patch = payload.patch
+    if (!patch || typeof patch !== 'object' || Array.isArray(patch)) invalid('patch is required')
+    const fields = patch as Record<string, unknown>
+    for (const key of Object.keys(fields)) {
+      if (!['name', 'colour', 'at'].includes(key)) invalid(`patch: unknown field "${key}"`)
+    }
+    const updates: { label?: string; color?: string; frame?: number } = {}
+    if (fields.name !== undefined) {
+      const name = optionalString(fields, 'name')!
+      if (name.length > 120) invalid('patch.name must be at most 120 characters')
+      updates.label = name
+    }
+    if (fields.colour !== undefined) {
+      const colour = optionalString(fields, 'colour')!
+      if (!HEX_COLOUR.test(colour)) invalid('patch.colour must be a #rrggbb colour')
+      updates.color = colour
+    }
+    if (fields.at !== undefined) updates.frame = timeField(fields, 'at', cadence)
+    if (Object.keys(updates).length === 0) invalid('patch must change something')
+    updateMarker(markerId, updates)
+  },
+
+  'marker.remove'(payload) {
+    const markerId = stringField(payload, 'markerId')
+    if (!useMarkersStore.getState().markers.some((marker) => marker.id === markerId)) {
+      invalid(`markerId: marker "${markerId}" does not exist`)
+    }
+    removeMarker(markerId)
   },
 
   'title.add'(payload, { cadence }) {
