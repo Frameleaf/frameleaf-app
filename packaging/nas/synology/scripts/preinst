@@ -3,6 +3,7 @@ set -eu
 umask 077
 if [ "${SYNOPKG_PKG_STATUS:-INSTALL}" = UPGRADE ]; then
   [ -s "$SYNOPKG_PKGVAR/frameleaf.env" ] || exit 1
+  cp "$SYNOPKG_PKGVAR/frameleaf.env" "$SYNOPKG_PKGDEST/project/.env"
 else
 valid_path() {
   case "$1" in /volume[0-9]/*) ;; *) return 1 ;; esac
@@ -17,4 +18,22 @@ case "${wizard_web_port:-}" in ''|*[!0-9]*) exit 1 ;; esac
 [ "$wizard_web_port" -ge 1024 ] && [ "$wizard_web_port" -le 65535 ] || exit 1
 case "${wizard_database_password:-}" in ''|*[!a-zA-Z0-9]*) exit 1 ;; esac
 [ "${#wizard_database_password}" -ge 16 ] || exit 1
+case "${wizard_enable_ml:-true}" in true|false) ;; *) exit 1 ;; esac
+# Stage only the package's disposable config. Docker Project Acquire runs before postinst.
+# https://help.synology.com/developer-guide/resource_acquisition/timing.html
+  profile=''
+  [ "${wizard_enable_ml:-true}" = true ] && profile=ml
+  enabled=false
+  [ -n "$profile" ] && enabled=true
+  # DSM supplies these values from the install wizard.
+  # shellcheck disable=SC2154
+  {
+    printf 'UPLOAD_LOCATION=%s\n' "$wizard_media_path"
+    printf 'DB_DATA_LOCATION=%s\n' "$wizard_database_path"
+    printf 'DB_PASSWORD=%s\n' "$wizard_database_password"
+    printf 'WEB_PORT=%s\n' "$wizard_web_port"
+    printf 'COMPOSE_PROFILES=%s\n' "$profile"
+    printf 'ENABLE_ML=%s\n' "$enabled"
+  } > "$SYNOPKG_PKGDEST/project/.env.tmp"
+  mv "$SYNOPKG_PKGDEST/project/.env.tmp" "$SYNOPKG_PKGDEST/project/.env"
 fi

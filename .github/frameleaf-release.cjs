@@ -1217,9 +1217,9 @@ async function createBundle(
     path.join(directory, "supported-versions.json"),
   );
   files.push("supported-versions.json");
-  const compose = await fs.readFile(path.join(root, "docker/docker-compose.yml"), "utf8");
+  const compose = await fs.readFile(path.join(directory, "docker-compose.yml"), "utf8");
   const dependency = (service) => {
-    const section = compose.match(new RegExp(`^  ${service}:\\n([\\s\\S]*?)(?=^  [a-z-]+:|^volumes:)`, "m"))?.[1];
+    const section = compose.match(new RegExp(`^  ${service}:\\n([\\s\\S]*?)(?=^  [a-z-]+:|^volumes:|(?![\\s\\S]))`, "m"))?.[1];
     const image = section?.match(/^    image: (\S+)$/m)?.[1];
     assert(image && /@sha256:[a-f0-9]{64}$/.test(image), `Unpinned ${service} image`);
     return image;
@@ -1249,6 +1249,9 @@ async function createBundle(
   };
   await fs.writeFile(path.join(directory, "nas-manifest.json"), JSON.stringify(nas, null, 2) + "\n");
   files.push("nas-manifest.json");
+  // The image attestation authenticates these hashes, including NAS qualification records.
+  manifest.assets = Object.fromEntries(await Promise.all(files.map(async (name) =>
+    [name, hash(await fs.readFile(path.join(directory, name)))])));
   await fs.writeFile(
     path.join(directory, "release-manifest.json"),
     JSON.stringify(manifest, null, 2) + "\n",
@@ -1468,6 +1471,9 @@ module.exports = {
   releaseFlagsBody,
   releaseFlags,
   signImages,
+  cosign,
+  github,
+  COSIGN_PUBLIC_KEY,
   parsePercent,
   ATTESTATION_TYPE,
 };

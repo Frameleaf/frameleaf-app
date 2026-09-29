@@ -18,14 +18,11 @@ images:
     repository: ghcr.io/frameleaf/frameleaf-machine-learning
     tag: "@ML_OPENVINO_TAG@"
   vectorchord_14_image:
-    repository: ghcr.io/immich-app/postgres
-    tag: @PG_TAG@
+    repository: "@PG_REPOSITORY@"
+    tag: "@PG_TAG@"
   redis_image:
-    repository: valkey/valkey
-    tag: @VALKEY_TAG@
-  postgres_upgrade_image:
-    repository: ixsystems/postgres-upgrade
-    tag: 1.2.17@sha256:8a905af2f0cde30e19e41f0a2db6f69154818532f50e7de923f0d7977c1c9c38
+    repository: "@VALKEY_REPOSITORY@"
+    tag: "@VALKEY_TAG@"
 
 consts:
   server_container_name: server
