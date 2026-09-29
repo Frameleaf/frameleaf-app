@@ -429,7 +429,9 @@
 
   $effect(() => {
     const at = pendingSeek;
-    if (at === null || duration <= 0 || !videoEl) {
+    // Needs only the clip's length: `loadedmetadata` hands `time` to the element whenever one mounts,
+    // and a clip that cannot play (still preview) has no element at all.
+    if (at === null || duration <= 0) {
       return;
     }
     untrack(() => {
