@@ -1,5 +1,6 @@
 import type { AssetResponseDto } from '@immich/sdk';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import userEvent from '@testing-library/user-event';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import LibraryWorkInspector from '$lib/components/frameleaf/LibraryWorkInspector.svelte';
 import { timelineAssetFactory } from '@test-data/factories/asset-factory';
@@ -88,6 +89,44 @@ describe('LibraryWorkInspector', () => {
 
     expect(screen.getByText('frameleaf_work_inspector_empty')).toBeInTheDocument();
     expect(sdkMock.getAssetInfo).not.toHaveBeenCalled();
+  });
+
+  it('moves keyboard focus and selection together between the Info and People tabs (FL-139)', async () => {
+    const user = userEvent.setup();
+    const asset = timelineAssetFactory.build();
+    sdkMock.getAssetInfo.mockResolvedValue(detailOf(asset.id, { people: [] }));
+    render(LibraryWorkInspector, { asset, selectedCount: 1, onOpen: vi.fn(), onClose: vi.fn() });
+    await screen.findByRole('heading', { name: 'IMG_0042.HEIC' });
+    const info = screen.getByRole('tab', { name: 'frameleaf_work_inspector_tab_info' });
+    const people = screen.getByRole('tab', { name: 'people' });
+    const panel = screen.getByRole('tabpanel', { name: 'frameleaf_work_inspector_tab_info' });
+    expect(info).toHaveAttribute('tabindex', '0');
+    expect(people).toHaveAttribute('tabindex', '-1');
+    expect(info).toHaveAttribute('aria-controls', panel.id);
+    info.focus();
+
+    await fireEvent.keyDown(info, { key: 'ArrowRight' });
+    expect(people).toHaveFocus();
+    expect(people).toHaveAttribute('aria-selected', 'true');
+    expect(people).toHaveAttribute('tabindex', '0');
+    expect(info).toHaveAttribute('tabindex', '-1');
+    expect(screen.getByRole('tabpanel', { name: 'people' })).toHaveTextContent('frameleaf_work_inspector_no_people');
+
+    await fireEvent.keyDown(people, { key: 'ArrowRight' });
+    expect(info).toHaveFocus();
+    await fireEvent.keyDown(info, { key: 'ArrowLeft' });
+    expect(people).toHaveFocus();
+    await fireEvent.keyDown(people, { key: 'Home' });
+    expect(info).toHaveFocus();
+    await fireEvent.keyDown(info, { key: 'End' });
+    expect(people).toHaveFocus();
+    expect(people).toHaveAttribute('aria-controls', panel.id);
+    expect(panel).toHaveAttribute('aria-labelledby', people.id);
+    expect(panel).toHaveAttribute('tabindex', '0');
+    await user.tab();
+    expect(panel).toHaveFocus();
+    await user.tab({ shift: true });
+    expect(people).toHaveFocus();
   });
 
   it('keeps the newest selection when an older answer arrives late', async () => {

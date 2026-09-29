@@ -33,6 +33,27 @@
   let { asset, selectedCount = 0, onOpen, onClose }: Props = $props();
 
   let tab = $state<'info' | 'people'>('info');
+  const tabId = $props.id();
+  const onTabKey = (event: KeyboardEvent, current: 'info' | 'people') => {
+    if (event.altKey || event.ctrlKey || event.metaKey) {
+      return;
+    }
+    const next =
+      event.key === 'Home'
+        ? 'info'
+        : event.key === 'End'
+          ? 'people'
+          : event.key === 'ArrowLeft' || event.key === 'ArrowRight'
+            ? current === 'info'
+              ? 'people'
+              : 'info'
+            : null;
+    if (next) {
+      event.preventDefault();
+      tab = next;
+      document.getElementById(`${tabId}-${next}`)?.focus();
+    }
+  };
   let detail = $state<AssetResponseDto | null>(null);
   let rating = $state<number | null>(null);
   let ratingBusy = $state(false);
@@ -147,103 +168,113 @@
       <button
         type="button"
         role="tab"
+        id={`${tabId}-info`}
+        aria-controls={`${tabId}-panel`}
         aria-selected={tab === 'info'}
+        tabindex={tab === 'info' ? 0 : -1}
         class:current={tab === 'info'}
+        onkeydown={(event) => onTabKey(event, 'info')}
         onclick={() => (tab = 'info')}>{$t('frameleaf_work_inspector_tab_info')}</button
       >
       <button
         type="button"
         role="tab"
+        id={`${tabId}-people`}
+        aria-controls={`${tabId}-panel`}
         aria-selected={tab === 'people'}
+        tabindex={tab === 'people' ? 0 : -1}
         class:current={tab === 'people'}
+        onkeydown={(event) => onTabKey(event, 'people')}
         onclick={() => (tab = 'people')}>{$t('people')}</button
       >
     </div>
 
-    {#if !detail}
-      <p class="muted" role="status">{$t('loading')}</p>
-    {:else if tab === 'info'}
-      <dl>
-        <dt>{$t('type')}</dt>
-        <dd>{asset.isVideo ? $t('video') : $t('image')}</dd>
-        {#if dimensionsLabel(detail)}
-          <dt>{$t('resolution')}</dt>
-          <dd>{dimensionsLabel(detail)}</dd>
-        {/if}
-        {#if duration}
-          <dt>{$t('duration')}</dt>
-          <dd>{duration}</dd>
-        {/if}
-      </dl>
-      <dl>
-        {#if captured}
-          <dt>{$t('frameleaf_info_captured')}</dt>
-          <dd>{captured}</dd>
-        {/if}
-        {#if cameraLabel(detail.exifInfo)}
-          <dt>{$t('camera')}</dt>
-          <dd>{cameraLabel(detail.exifInfo)}</dd>
-        {/if}
-        {#if location}
-          <dt>{$t('location')}</dt>
-          <dd>{location}</dd>
-        {/if}
-      </dl>
-      {#if detail.exifInfo?.city || detail.exifInfo?.country}
-        <div class="location">
-          <Icon icon={mdiMapMarker} size="28" aria-hidden />
-          <span>
-            {detail.exifInfo.city ?? detail.exifInfo.country}
-            <small>{[detail.exifInfo.state, detail.exifInfo.country].filter(Boolean).join(', ')}</small>
-          </span>
-        </div>
-      {/if}
-
-      <section class="part">
-        <h3>{$t('people')}</h3>
-        {#if people.length > 0}
-          <ul class="chips">
-            {#each people as person (person.id)}<li>{person.name}</li>{/each}
-          </ul>
-        {:else}
-          <p class="muted">{$t('frameleaf_work_inspector_no_people')}</p>
-        {/if}
-      </section>
-
-      {#if tags.length > 0}
-        <section class="part">
-          <h3>{$t('tags')}</h3>
-          <ul class="chips">
-            {#each tags as tag (tag.id)}<li>{tag.value}</li>{/each}
-          </ul>
-        </section>
-      {/if}
-
-      {#if canRate}
-        <section class="part">
-          <h3>{$t('rating')}</h3>
-          <div class="rating" role="group" aria-label={$t('rating')}>
-            {#each [1, 2, 3, 4, 5] as value (value)}
-              <button
-                type="button"
-                aria-label={$t('rating_count', { values: { count: value } })}
-                aria-pressed={rating === value}
-                disabled={ratingBusy}
-                onclick={() => void rate(value)}
-              >
-                <Icon icon={(rating ?? 0) >= value ? mdiStar : mdiStarOutline} size="18" aria-hidden />
-              </button>
-            {/each}
+    <div id={`${tabId}-panel`} role="tabpanel" aria-labelledby={`${tabId}-${tab}`} tabindex="0">
+      {#if !detail}
+        <p class="muted" role="status">{$t('loading')}</p>
+      {:else if tab === 'info'}
+        <dl>
+          <dt>{$t('type')}</dt>
+          <dd>{asset.isVideo ? $t('video') : $t('image')}</dd>
+          {#if dimensionsLabel(detail)}
+            <dt>{$t('resolution')}</dt>
+            <dd>{dimensionsLabel(detail)}</dd>
+          {/if}
+          {#if duration}
+            <dt>{$t('duration')}</dt>
+            <dd>{duration}</dd>
+          {/if}
+        </dl>
+        <dl>
+          {#if captured}
+            <dt>{$t('frameleaf_info_captured')}</dt>
+            <dd>{captured}</dd>
+          {/if}
+          {#if cameraLabel(detail.exifInfo)}
+            <dt>{$t('camera')}</dt>
+            <dd>{cameraLabel(detail.exifInfo)}</dd>
+          {/if}
+          {#if location}
+            <dt>{$t('location')}</dt>
+            <dd>{location}</dd>
+          {/if}
+        </dl>
+        {#if detail.exifInfo?.city || detail.exifInfo?.country}
+          <div class="location">
+            <Icon icon={mdiMapMarker} size="28" aria-hidden />
+            <span>
+              {detail.exifInfo.city ?? detail.exifInfo.country}
+              <small>{[detail.exifInfo.state, detail.exifInfo.country].filter(Boolean).join(', ')}</small>
+            </span>
           </div>
+        {/if}
+
+        <section class="part">
+          <h3>{$t('people')}</h3>
+          {#if people.length > 0}
+            <ul class="chips">
+              {#each people as person (person.id)}<li>{person.name}</li>{/each}
+            </ul>
+          {:else}
+            <p class="muted">{$t('frameleaf_work_inspector_no_people')}</p>
+          {/if}
         </section>
+
+        {#if tags.length > 0}
+          <section class="part">
+            <h3>{$t('tags')}</h3>
+            <ul class="chips">
+              {#each tags as tag (tag.id)}<li>{tag.value}</li>{/each}
+            </ul>
+          </section>
+        {/if}
+
+        {#if canRate}
+          <section class="part">
+            <h3>{$t('rating')}</h3>
+            <div class="rating" role="group" aria-label={$t('rating')}>
+              {#each [1, 2, 3, 4, 5] as value (value)}
+                <button
+                  type="button"
+                  aria-label={$t('rating_count', { values: { count: value } })}
+                  aria-pressed={rating === value}
+                  disabled={ratingBusy}
+                  onclick={() => void rate(value)}
+                >
+                  <Icon icon={(rating ?? 0) >= value ? mdiStar : mdiStarOutline} size="18" aria-hidden />
+                </button>
+              {/each}
+            </div>
+          </section>
+        {/if}
+      {:else if people.length > 0}
+        <ul class="chips people">
+          {#each people as person (person.id)}<li>{person.name}</li>{/each}
+        </ul>
+      {:else}
+        <p class="muted">{$t('frameleaf_work_inspector_no_people')}</p>
       {/if}
-    {:else if people.length > 0}
-      <ul class="chips people">
-        {#each people as person (person.id)}<li>{person.name}</li>{/each}
-      </ul>
-    {:else}
-      <p class="muted">{$t('frameleaf_work_inspector_no_people')}</p>
-    {/if}
+    </div>
   {:else}
     <p class="muted empty">
       {$t(selectedCount > 1 ? 'frameleaf_work_inspector_many' : 'frameleaf_work_inspector_empty', {
