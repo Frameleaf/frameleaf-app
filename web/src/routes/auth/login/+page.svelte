@@ -91,8 +91,7 @@
    */
   const setupContinue = () => {
     const requested = oauth.isCallback(location) ? getOAuthContinue(data.continueUrl) : data.continueUrl;
-    const target = new URL(String(requested), location.href);
-    const path = target.pathname + target.search + target.hash;
+    const path = Route.setupContinue(requested, location.href);
     return path === Route.photos() ? undefined : path;
   };
   const onOnboarding = () => goto(Route.onboarding({ continue: setupContinue() }));

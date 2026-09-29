@@ -63,6 +63,10 @@ describe('/auth/onboarding (FL-176)', () => {
     await expect(at('?continue=%2Falbums%3Ffrom%3Dshare')).resolves.toMatchObject({ continueTo: '/albums?from=share' });
     await expect(at('?continue=https%3A%2F%2Fevil.example%2Fsteal')).resolves.toMatchObject({ continueTo: '/photos' });
     await expect(at('')).resolves.toMatchObject({ continueTo: '/photos' });
+    // never another sign-in page, and never a path the router would read as another host (review P3)
+    for (const target of ['/auth/onboarding', '/auth/logout', 'http%3A%2F%2Flocalhost%2F%2Fevil.example%2Fx']) {
+      await expect(at(`?continue=${target}`)).resolves.toMatchObject({ continueTo: '/photos' });
+    }
   });
 
   it('gives an administrator the tool once setup is complete', async () => {
