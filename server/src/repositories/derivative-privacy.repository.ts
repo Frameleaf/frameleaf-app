@@ -114,8 +114,8 @@ export class DerivativePrivacyRepository {
    * the account and the asset is on their timeline, or an item shared directly with the account.
    * Locked media is reached by none of them. The rows
    * that grant access are locked `FOR SHARE`, so deleting the album, removing the account from it,
-   * taking the asset out of it or ending the partnership waits for this transaction; one that
-   * committed first is seen as lost access.
+   * taking the asset out of it, deleting the partner's account or ending the partnership waits for
+   * this transaction; one that committed first is seen as lost access.
    */
   async lockSharedAccess(tx: Kysely<DB>, userId: string, sources: readonly LockedSourceRow[]): Promise<Set<string>> {
     const candidates = sources.filter((source) => source.ownerId !== userId && source.lockReason === null);
@@ -137,11 +137,12 @@ export class DerivativePrivacyRepository {
     const partners = await sql<{ assetId: string }>`
       SELECT asset.id AS "assetId"
       FROM partner
+      JOIN "user" owner ON owner.id = partner."sharedById" AND owner."deletedAt" IS NULL
       JOIN asset ON asset."ownerId" = partner."sharedById"
       WHERE partner."sharedWithId" = ${userId}::uuid
         AND asset.id = ANY(${ids}::uuid[])
         AND asset.visibility IN (${sql.lit(AssetVisibility.Timeline)}, ${sql.lit(AssetVisibility.Hidden)})
-      FOR SHARE OF partner
+      FOR SHARE OF partner, owner
     `.execute(tx);
 
     const reachable = new Set([...albums.rows, ...partners.rows].map((row) => row.assetId));
