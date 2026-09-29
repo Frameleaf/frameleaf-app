@@ -10,12 +10,14 @@ import {
   StudioExportRemoteReason,
   StudioExportScope,
   StudioExportVersionState,
+  UserMetadataKey,
 } from 'src/enum.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { DerivativePrivacyRepository } from 'src/repositories/derivative-privacy.repository.js';
 import { ForkEnrichmentRepository } from 'src/repositories/fork-enrichment.repository.js';
 import { ForkPrivacyRepository } from 'src/repositories/fork-privacy.repository.js';
+import { ItemShareRepository } from 'src/repositories/item-share.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import {
   StudioExportPublication,
@@ -463,6 +465,184 @@ describe(StudioExportRepository.name, () => {
       await expectRefusal(save(user.id), 'source-unavailable');
       expect(await context.sut.getById(staged.version.id)).toMatchObject({ scope: StudioExportScope.Project });
     });
+  });
+
+  describe('publish: direct item shares', () => {
+    const sharedExport = async (motion = false) => {
+      const context = setup();
+      const { user: owner } = await context.ctx.newUser();
+      const { user: recipient } = await context.ctx.newUser();
+      const source = await ownSource(context.ctx, owner.id, motion ? { visibility: AssetVisibility.Hidden } : {});
+      const shared = { ...source, access: 'shared' as const };
+      const item = motion ? await ownSource(context.ctx, owner.id, { livePhotoVideoId: shared.id }) : shared;
+      const shares = new ItemShareRepository(defaultDatabase);
+      await shares.add(owner.id, [item.id], [recipient.id]);
+      const staged = await stagedExport(context, recipient.id, [shared]);
+      return { context, owner, recipient, shared, item, shares, staged };
+    };
+
+    it.each(['ordinary', 'archive', 'motion'] as const)(
+      'publishes an accessible %s item only with its project',
+      async (kind) => {
+        const { context, shared, staged } = await sharedExport(kind === 'motion');
+        if (kind === 'archive') {
+          await defaultDatabase
+            .updateTable('asset')
+            .set({ visibility: AssetVisibility.Archive })
+            .where('id', '=', shared.id)
+            .execute();
+        }
+
+        const published = await context.sut.publish(publication(staged, [shared]));
+
+        expect(published.createdAssetId).toBeNull();
+        expect(published.version).toMatchObject({
+          scope: StudioExportScope.Project,
+          resultAssetId: null,
+          state: StudioExportVersionState.Published,
+        });
+        expect(published.privacy).toMatchObject({ includesSharedSources: true, sourceCount: 1 });
+      },
+    );
+
+    it.each([
+      'hidden',
+      'locked',
+      'trashed',
+      'deleted-owner',
+      'changed-owner',
+      'changed-motion-owner',
+      'suppressed',
+      'revoked',
+    ] as const)('refuses an item share that became %s after rendering', async (change) => {
+      const { context, owner, recipient, shared, shares, staged } = await sharedExport(
+        change === 'changed-motion-owner',
+      );
+      switch (change) {
+        case 'hidden':
+          await defaultDatabase
+            .updateTable('asset')
+            .set({ visibility: AssetVisibility.Hidden })
+            .where('id', '=', shared.id)
+            .execute();
+          break;
+        case 'locked':
+          await context.assets.lock([shared.id], AssetLockReason.Marked, owner.id);
+          break;
+        case 'trashed':
+          await defaultDatabase
+            .updateTable('asset')
+            .set({ deletedAt: new Date() })
+            .where('id', '=', shared.id)
+            .execute();
+          break;
+        case 'deleted-owner':
+          await defaultDatabase.updateTable('user').set({ deletedAt: new Date() }).where('id', '=', owner.id).execute();
+          break;
+        case 'changed-owner':
+        case 'changed-motion-owner': {
+          const { user } = await context.ctx.newUser();
+          await defaultDatabase.updateTable('asset').set({ ownerId: user.id }).where('id', '=', shared.id).execute();
+          break;
+        }
+        case 'suppressed': {
+          const { tag } = await context.ctx.newTag({ userId: owner.id, value: 'Private' });
+          await context.ctx.newTagAsset({ tagIds: [tag.id], assetIds: [shared.id] });
+          await defaultDatabase
+            .insertInto('user_metadata')
+            .values({
+              userId: owner.id,
+              key: UserMetadataKey.Preferences,
+              value: { privacy: { suppression: { tagIds: [tag.id], scope: 'visible' } } },
+            })
+            .execute();
+          break;
+        }
+        case 'revoked':
+          await shares.remove(owner.id, [shared.id], [recipient.id]);
+          break;
+      }
+
+      await expectRefusal(
+        context.sut.publish(publication(staged, [shared])),
+        change === 'trashed' ? 'source-unavailable' : 'source-access-lost',
+      );
+      expect((await context.sut.getById(staged.version.id))!.state).toBe(StudioExportVersionState.Staged);
+    });
+
+    it.each(['still', 'motion'] as const)('applies an owner suppression rule to the live photo %s', async (part) => {
+      const { context, owner, shared, item, staged } = await sharedExport(true);
+      const { tag } = await context.ctx.newTag({ userId: owner.id, value: 'Private' });
+      await context.ctx.newTagAsset({ tagIds: [tag.id], assetIds: [part === 'still' ? item.id : shared.id] });
+      await defaultDatabase
+        .insertInto('user_metadata')
+        .values({
+          userId: owner.id,
+          key: UserMetadataKey.Preferences,
+          value: { privacy: { suppression: { tagIds: [tag.id], scope: 'visible' } } },
+        })
+        .execute();
+
+      await expectRefusal(context.sut.publish(publication(staged, [shared])), 'source-access-lost');
+    });
+
+    it.each(['share', 'preferences'] as const)(
+      'sees %s revocation committed while publication waits',
+      async (grant) => {
+        const { context, owner, recipient, shared, staged } = await sharedExport();
+        const { tag } = await context.ctx.newTag({ userId: owner.id, value: 'Private' });
+        await context.ctx.newTagAsset({ tagIds: [tag.id], assetIds: [shared.id] });
+        const release = deferred();
+        const { promise: locked, resolve: signalLocked } = Promise.withResolvers<number>();
+        const revocation = defaultDatabase.transaction().execute(async (tx) => {
+          if (grant === 'share') {
+            // The same granting row deleted by ItemShareRepository.remove, held until the test commits.
+            await sql`DELETE FROM immich_fork.asset_user_share
+            WHERE "ownerId" = ${owner.id}::uuid AND "assetId" = ${shared.id}::uuid
+              AND "sharedWithId" = ${recipient.id}::uuid`.execute(tx);
+          } else {
+            // Match DatabaseRepository.withUserPreferencesLock, including the first preferences save.
+            await sql`SELECT pg_advisory_xact_lock(-2, hashtext(${owner.id})::int)`.execute(tx);
+            await tx
+              .insertInto('user_metadata')
+              .values({
+                userId: owner.id,
+                key: UserMetadataKey.Preferences,
+                value: { privacy: { suppression: { tagIds: [tag.id], scope: 'visible' } } },
+              })
+              .execute();
+          }
+          const { rows } = await sql<{ pid: number }>`SELECT pg_backend_pid() AS pid`.execute(tx);
+          signalLocked(rows[0].pid);
+          await release.promise;
+        });
+        const blockerPid = await locked;
+        const publishing = context.sut.publish(publication(staged, [shared]));
+        const settled = Promise.allSettled([revocation, publishing]);
+        try {
+          await vi.waitFor(
+            async () => {
+              const { rows } = await sql<{ waiting: boolean }>`
+            SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE wait_event_type = 'Lock'
+              AND pg_blocking_pids(pid) @> ARRAY[${blockerPid}]::integer[]) AS waiting
+          `.execute(defaultDatabase);
+              expect(rows[0].waiting).toBe(true);
+            },
+            { timeout: 5000 },
+          );
+        } finally {
+          release.resolve();
+          await settled;
+        }
+
+        expect(await settled).toMatchObject([
+          { status: 'fulfilled' },
+          { status: 'rejected', reason: { code: 'source-access-lost' } },
+        ]);
+        expect((await context.sut.getById(staged.version.id))!.state).toBe(StudioExportVersionState.Staged);
+      },
+      10_000,
+    );
   });
 
   describe('publish: current access', () => {

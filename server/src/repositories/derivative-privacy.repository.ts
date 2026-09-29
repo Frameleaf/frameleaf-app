@@ -5,6 +5,8 @@ import { AssetLockReason, AssetVisibility } from 'src/enum.js';
 import { getForkSchemaPhase, readsForkSidecar } from 'src/repositories/fork-derived-results.js';
 import { DB } from 'src/schema/index.js';
 import { DerivativeSourceEvidence } from 'src/utils/derivative-privacy.js';
+import { getOwnerHiddenShareIds } from 'src/utils/item-share.js';
+import { isNotLocked } from 'src/utils/locked.js';
 
 /** One library source as publication found it, locked for the rest of the transaction. */
 export type LockedSourceRow = DerivativeSourceEvidence & {
@@ -50,6 +52,7 @@ export class DerivativePrivacyRepository {
       SELECT asset.id, asset."ownerId", asset."deletedAt", asset."isOffline", asset.checksum, asset.visibility
       FROM asset
       WHERE asset.id = ANY(${[...assetIds]}::uuid[])
+        OR asset."livePhotoVideoId" = ANY(${[...assetIds]}::uuid[])
       ORDER BY asset.id
       FOR SHARE OF asset
     `.execute(tx);
@@ -61,21 +64,26 @@ export class DerivativePrivacyRepository {
       SELECT "assetId", reason FROM asset_lock WHERE "assetId" = ANY(${[...assetIds]}::uuid[])
     `.execute(tx);
     const reasons = new Map(locks.rows.map((row) => [row.assetId, row.reason]));
+    const requested = new Set(assetIds);
 
     return new Map(
-      rows.map((row) => [
-        row.id,
-        {
-          assetId: row.id,
-          ownerId: row.ownerId,
-          deleted: row.deletedAt !== null,
-          offline: row.isOffline,
-          sensitive: sensitive.has(row.id),
-          lockReason: reasons.get(row.id) ?? null,
-          checksum: Buffer.from(row.checksum).toString('base64'),
-          visibility: row.visibility,
-        },
-      ]),
+      // An item share's still grants its motion access. Lock both in the same order as lock writers,
+      // but only the requested sources contribute publication evidence.
+      rows
+        .filter((row) => requested.has(row.id))
+        .map((row) => [
+          row.id,
+          {
+            assetId: row.id,
+            ownerId: row.ownerId,
+            deleted: row.deletedAt !== null,
+            offline: row.isOffline,
+            sensitive: sensitive.has(row.id),
+            lockReason: reasons.get(row.id) ?? null,
+            checksum: Buffer.from(row.checksum).toString('base64'),
+            visibility: row.visibility,
+          },
+        ]),
     );
   }
 
@@ -101,9 +109,10 @@ export class DerivativePrivacyRepository {
    * Which of these sources — all owned by somebody other than `userId` — `userId` can still reach
    * right now, share-locking the rows that grant it.
    *
-   * The same two ways the library grants it (`AccessRepository`): an album the account is a member
+   * The same grants as the library (`AccessRepository`): an album the account is a member
    * of (owners are members too) that holds the asset, or a partner who shares their library with
-   * the account and the asset is on their timeline. Locked media is reached by neither. The rows
+   * the account and the asset is on their timeline, or an item shared directly with the account.
+   * Locked media is reached by none of them. The rows
    * that grant access are locked `FOR SHARE`, so deleting the album, removing the account from it,
    * taking the asset out of it or ending the partnership waits for this transaction; one that
    * committed first is seen as lost access.
@@ -135,7 +144,45 @@ export class DerivativePrivacyRepository {
       FOR SHARE OF partner
     `.execute(tx);
 
-    return new Set([...albums.rows, ...partners.rows].map((row) => row.assetId));
+    const reachable = new Set([...albums.rows, ...partners.rows].map((row) => row.assetId));
+    const remaining = ids.filter((id) => !reachable.has(id));
+    if (remaining.length === 0) {
+      return reachable;
+    }
+
+    const { rows: items } = await sql<{ assetId: string; sharedAssetId: string; ownerId: string }>`
+      SELECT source.id AS "assetId", asset.id AS "sharedAssetId", asset."ownerId"
+      FROM immich_fork.asset_user_share share
+      JOIN asset ON asset.id = share."assetId" AND asset."ownerId" = share."ownerId"
+        AND asset."deletedAt" IS NULL
+      JOIN "user" owner ON owner.id = asset."ownerId" AND owner."deletedAt" IS NULL
+      JOIN asset source ON source."ownerId" = asset."ownerId"
+        AND (source.id = asset.id OR source.id = asset."livePhotoVideoId")
+      WHERE share."sharedWithId" = ${userId}::uuid
+        AND source.id = ANY(${remaining}::uuid[])
+        AND asset.visibility != ${sql.lit(AssetVisibility.Hidden)}
+        AND ${isNotLocked('asset')}
+      ORDER BY asset.id, share.id
+      FOR SHARE OF share, asset, owner
+    `.execute(tx);
+
+    // Match preference writers' per-account lock, including when no preferences row exists yet.
+    for (const ownerId of [...new Set(items.map((item) => item.ownerId))].toSorted()) {
+      await sql`SELECT pg_advisory_xact_lock_shared(-2, hashtext(${ownerId})::int)`.execute(tx);
+    }
+    const hidden = await getOwnerHiddenShareIds(
+      tx,
+      items.flatMap(({ assetId, sharedAssetId, ownerId }) => [
+        { id: assetId, ownerId },
+        { id: sharedAssetId, ownerId },
+      ]),
+    );
+    for (const item of items) {
+      if (!hidden.has(item.assetId) && !hidden.has(item.sharedAssetId)) {
+        reachable.add(item.assetId);
+      }
+    }
+    return reachable;
   }
 
   /**
