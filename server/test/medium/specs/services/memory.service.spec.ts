@@ -3,6 +3,7 @@ import { DateTime } from 'luxon';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { buffer, text } from 'node:stream/consumers';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { BulkIdErrorReason } from 'src/dtos/asset-ids.response.dto.js';
 import {
@@ -949,8 +950,11 @@ describe(MemoryService.name, () => {
       );
       expect(existsSync(archivePath(user.id, requested.id))).toBe(true);
       const download = await sut.downloadExport(auth, requested.id);
-      download.stream.destroy();
+      // Read the stream to the end: an unread stream opens its file lazily, after this test's
+      // cleanup has removed the media folder, and that open error escapes as an uncaught exception.
+      const archive = await buffer(download.stream);
       expect(download.length).toBe(ready.sizeInBytes);
+      expect(archive.length).toBe(ready.sizeInBytes);
 
       const strangerAuth = factory.auth({ user: stranger });
       await expect(sut.getExport(strangerAuth, requested.id)).rejects.toThrow();
@@ -1232,7 +1236,7 @@ describe(MemoryService.name, () => {
       const ready = await sut.getExport(auth, started.id);
       expect(ready).toEqual(expect.objectContaining({ status: MemoryExportStatus.Ready, isDownloadable: true }));
       const download = await sut.downloadExport(auth, started.id);
-      download.stream.destroy();
+      await expect(text(download.stream)).resolves.toBe('a highlight video');
       expect(download.disposition).toContain('.mp4');
 
       await expect(sut.getExport(strangerAuth, started.id)).rejects.toThrow();
