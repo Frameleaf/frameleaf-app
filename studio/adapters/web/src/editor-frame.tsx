@@ -40,6 +40,7 @@ import { projectJsonPath } from '@/infrastructure/storage/workspace-fs/paths'
 import { createProject, getProject } from '@/infrastructure/storage'
 import { blobUrlManager } from '@/infrastructure/browser/blob-url-manager'
 import { useTimelineSettingsStore } from '@/features/timeline/stores/timeline-settings-store'
+import { watchLocalImports, type LocalImportWatch } from './project-imports'
 import { hydrateGeneratedMedia, storeGeneratedMedia } from '@frameleaf/host/generated-media'
 import {
   buildTimelineFromStores,
@@ -179,6 +180,8 @@ interface Session extends DraftSendState {
   retiredProjectIds: Set<string>
   /** The mount generation whose editor instance is on screen; a remount renders a new one last. */
   renderedGeneration: number
+  /** Files imported here, sent to the host to keep with the project (FL-103 / FL-105). */
+  localImports?: LocalImportWatch
 }
 
 let session: Session | null = null
@@ -403,6 +406,28 @@ function notifySuperseded(state: Session) {
   if (state.disposed) return
   const message = state.context.strings?.editSuperseded
   if (message) post({ type: 'notify', message, tone: 'error' })
+}
+
+/**
+ * Keep what the person imports or records here with the project (FL-103 / FL-105). A file the host
+ * cannot keep stays in this editor, and the person is told it will not be there next time.
+ */
+function watchLocalImportsFor(state: Session) {
+  const watch = watchLocalImports({
+      workspace: state.workspace,
+      media: state.media,
+      upload: (upload) => call('uploadProjectImport', upload),
+      refused: (fileName, reason) => {
+        if (state.disposed) return
+        const template = state.context.strings?.importNotKept
+        const message = template
+          ? template.replace('{file}', fileName).replace('{reason}', reason)
+          : `${fileName}: ${reason}`
+        post({ type: 'notify', message, tone: 'error' })
+      },
+  })
+  state.localImports = watch
+  state.unsubscribe.push(() => watch.stop())
 }
 
 /** Carry imports a replaced instance finishes to the current mount (`followRetiredImports`). */
@@ -686,6 +711,9 @@ async function mount(context: StudioHostContext): Promise<void> {
   // The bin first (the handoff needs frame rates), then the project that uses it.
   await state.media.seed([...context.assets, ...(context.generatedMedia ?? [])])
   if (state.disposed) return
+  // FL-103 / FL-105: files kept with the project, under the media ids their clips use.
+  await state.media.seedImports(context.projectImports ?? [])
+  if (state.disposed) return
   await seedProject(state, first)
   if (state.disposed) return
 
@@ -698,6 +726,7 @@ async function mount(context: StudioHostContext): Promise<void> {
   state.render()
   watchDrafts(state)
   watchImports(state)
+  watchLocalImportsFor(state)
   watchDirty(state)
   watchPlayhead(state)
   watchTransport(state)
@@ -737,6 +766,12 @@ async function update(context: StudioHostContext): Promise<void> {
   if (context.auth.locale !== previous.auth.locale)
     await changeAppLanguage(context.auth.locale).catch(() => undefined)
   await state.media.seed([...context.assets, ...(context.generatedMedia ?? [])])
+  await state.media.seedImports(context.projectImports ?? [])
+  // A project saved for the first time (or a host that can keep files again) takes what was
+  // imported before it could.
+  if (context.project.id !== previous.project.id || context.project.hasLease !== previous.project.hasLease) {
+    void state.localImports?.retry()
+  }
   if (
     shouldResendDraft({
       pending: state.pendingSend,

@@ -270,6 +270,10 @@ export const getAssetPlaybackUrl = (options: AssetUrlOptions) => {
   });
 };
 
+/** FL-103 / FL-105: the bytes of a file kept with a Studio project, for its owner's editor. */
+export const getStudioProjectImportUrl = (projectId: string, importId: string) =>
+  createUrl(`/studio/projects/${projectId}/imports/${importId}/file`, authManager.params);
+
 export const getAssetHlsUrl = (id: string) => {
   return createUrl(`/assets/${id}/video/stream/main.m3u8`, authManager.params);
 };

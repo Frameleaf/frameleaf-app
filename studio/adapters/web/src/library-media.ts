@@ -25,7 +25,7 @@ import {
   updateMedia,
 } from '@/infrastructure/storage'
 import { mediaDir, projectMediaLinksPath } from '@/infrastructure/storage/workspace-fs/paths'
-import type { StudioAssetRef } from '@frameleaf/host/host-contract'
+import type { StudioAssetRef, StudioProjectImportRef } from '@frameleaf/host/host-contract'
 import type { VirtualWorkspace } from './virtual-workspace'
 
 /**
@@ -135,6 +135,93 @@ export async function probeVideo(url: string, signal: AbortSignal): Promise<Prob
   }
 }
 
+/**
+ * FL-103 / FL-105: read what a kept file is, for a bin record the editor can place: its length,
+ * picture size, cadence and codecs for sound and video, its size for a still, its canvas and
+ * length for a Lottie animation. Nothing is guessed: a file that cannot be read stays in the bin
+ * with no length and the editor treats it as it treats any unreadable media.
+ */
+export async function probeProjectImport(
+  item: StudioProjectImportRef,
+  signal: AbortSignal,
+): Promise<Partial<MediaMetadata>> {
+  if (item.kind === 'image' || (item.kind === 'vector' && item.mimeType === 'image/svg+xml')) {
+    return (await probeImage(item.url, signal)) ?? {}
+  }
+  if (item.kind === 'vector') {
+    try {
+      const lottie = JSON.parse(await (await fetchBlob(item.url, signal)).text()) as {
+        w?: unknown
+        h?: unknown
+        fr?: unknown
+        ip?: unknown
+        op?: unknown
+      }
+      const fps = typeof lottie.fr === 'number' && lottie.fr > 0 ? lottie.fr : 0
+      const frames =
+        typeof lottie.op === 'number' && typeof lottie.ip === 'number' ? lottie.op - lottie.ip : 0
+      return {
+        width: typeof lottie.w === 'number' ? lottie.w : 0,
+        height: typeof lottie.h === 'number' ? lottie.h : 0,
+        fps,
+        duration: fps > 0 && frames > 0 ? frames / fps : 0,
+      }
+    } catch {
+      return {}
+    }
+  }
+  const { Input, UrlSource, ALL_FORMATS } = await import('mediabunny')
+  if (signal.aborted) return {}
+  const input = new Input({ source: new UrlSource(item.url), formats: ALL_FORMATS })
+  const abort = () => input.dispose()
+  signal.addEventListener('abort', abort, { once: true })
+  try {
+    const duration = await input.computeDuration()
+    const audio = await input.getPrimaryAudioTrack()
+    const audioCodec = audio
+      ? ((await audio.getCodecParameterString()) ?? audio.codec ?? undefined)
+      : undefined
+    const video = item.kind === 'video' ? await input.getPrimaryVideoTrack() : null
+    if (!video) {
+      return { duration, codec: audioCodec ?? 'unknown', audioCodec, audioCodecSupported: !!audio }
+    }
+    const stats = await video.computePacketStats(120)
+    return {
+      duration,
+      width: video.displayWidth,
+      height: video.displayHeight,
+      fps: snapFrameRate(stats.averagePacketRate),
+      codec: (await video.getCodecParameterString()) ?? video.codec ?? 'unknown',
+      audioCodec,
+    }
+  } catch {
+    return {}
+  } finally {
+    signal.removeEventListener('abort', abort)
+    input.dispose()
+  }
+}
+
+/** The bin record of a file kept with the project, before anything is probed. */
+export const projectImportRecord = (item: StudioProjectImportRef, now: number): MediaMetadata => ({
+  id: item.id,
+  storageType: 'workspace',
+  fileName: item.name.replace(/[\\/:*?"<>|]/g, '_').trim() || item.id,
+  fileSize: item.sizeBytes,
+  mimeType: item.mimeType,
+  duration: 0,
+  width: 0,
+  height: 0,
+  fps: 0,
+  codec: 'unknown',
+  bitrate: 0,
+  videoCodecSupported: true,
+  audioCodecSupported: true,
+  tags: [],
+  createdAt: now,
+  updatedAt: now,
+})
+
 async function probeImage(
   url: string,
   signal: AbortSignal,
@@ -162,6 +249,15 @@ async function fetchBlob(url: string, signal?: AbortSignal): Promise<Blob> {
 export interface LibraryMediaSeeder {
   /** Make these assets available to the project; already-seeded ids are left alone. */
   seed(assets: readonly StudioAssetRef[]): Promise<void>
+  /**
+   * FL-103 / FL-105: offer the files kept with the project under the media ids their clips use. A
+   * file this document already holds (imported here, then kept) is left as the editor made it.
+   */
+  seedImports(imports: readonly StudioProjectImportRef[]): Promise<void>
+  /** Whether a media id is one the host gave (library, restored, generated or kept file). */
+  known(mediaId: string): boolean
+  /** A file imported here is now kept with the project; it is not sent again. */
+  kept(mediaId: string): void
   /**
    * Link the bin to another project (a remounted editor has its own project id): every seeded
    * library asset and, with `from`, every media that project held, which includes what the person
@@ -289,6 +385,44 @@ export function createLibraryMediaSeeder(options: {
         if (removed.has(id)) await removeMediaFromProject(target, id)
       }
       onChange()
+    },
+    async seedImports(imports) {
+      if (controller.signal.aborted) return
+      const fresh = imports.filter((item) => !seeded.has(item.id) && !removed.has(item.id))
+      const added: StudioProjectImportRef[] = []
+      const now = Date.now()
+      for (const item of fresh) {
+        seeded.add(item.id)
+        if (controller.signal.aborted) return
+        if (await getMedia(item.id)) continue
+        const record = projectImportRecord(item, now)
+        await createMedia(record)
+        if (controller.signal.aborted) return
+        workspace.putLazyFile(
+          [...mediaDir(item.id), record.fileName],
+          () => fetchBlob(item.url, controller.signal),
+          record.mimeType,
+        )
+        blobUrlManager.registerUrl(item.id, item.url)
+        await link(projectId(), item.id)
+        added.push(item)
+      }
+      if (added.length > 0) onChange()
+      probing = probing.then(async () => {
+        for (const item of added) {
+          const updates = await probeProjectImport(item, controller.signal)
+          if (controller.signal.aborted || Object.keys(updates).length === 0) continue
+          await updateMedia(item.id, { ...updates, updatedAt: Date.now() })
+          onChange()
+        }
+      })
+      await probing
+    },
+    known(mediaId) {
+      return seeded.has(mediaId)
+    },
+    kept(mediaId) {
+      seeded.add(mediaId)
     },
     forget(mediaId) {
       removed.add(mediaId)

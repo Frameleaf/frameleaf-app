@@ -40,9 +40,11 @@
     type StudioRenderEvidence,
     type StudioHostServices,
     type StudioProjectHandle,
+    type StudioProjectImportRef,
     type StudioWorkspaceMode,
     type StudioWorkspaceView,
   } from '$lib/frameleaf/studio/host-contract';
+  import { loadStudioProjectImports, uploadStudioProjectImport } from '$lib/frameleaf/studio/project-imports';
   import type { Rational } from '$lib/frameleaf/studio/rational-time';
   import {
     createStudioPreviewClient,
@@ -124,6 +126,31 @@
     ...libraryAssets,
     ...restoredVersions.map((version) => toStudioRestoredAsset(version, restoredName(version))),
   ]);
+  /**
+   * Files kept with this project rather than the library (FL-103 recordings, FL-105 imports). Only
+   * the owner reads them, and only a stored project has any.
+   */
+  let projectImports = $state<StudioProjectImportRef[]>([]);
+  $effect(() => {
+    const projectId = project.id;
+    const owner = sessionState?.access === 'owner';
+    untrack(() => {
+      if (projectId === STUDIO_DRAFT_PROJECT_ID || !owner) {
+        projectImports = [];
+        return;
+      }
+      void loadStudioProjectImports(projectId)
+        .then((loaded) => {
+          if (project.id === projectId) {
+            projectImports = loaded;
+          }
+        })
+        .catch(() => {
+          // The editor still opens; clips of a file that could not be listed show as missing media.
+        });
+    });
+  });
+
   /** The library selection only: what a Save as copy link carries in `?assets=`. */
   const libraryAssetIds = $derived(libraryAssets.map((asset) => asset.id));
   const handoffAssetIds = $derived([
@@ -621,6 +648,18 @@
       }
     },
     saveWorkspace: (layout) => saveStudioWorkspaceLayout(layout, pinnedFreecutRevision),
+    // FL-103 / FL-105: a recording or a file imported in the editor is kept with the stored project.
+    uploadProjectImport: async (upload) => {
+      const projectId = project.id;
+      if (projectId === STUDIO_DRAFT_PROJECT_ID || sessionState?.access !== 'owner') {
+        throw new Error($t('frameleaf_studio_import_needs_saved_project'));
+      }
+      const kept = await uploadStudioProjectImport(projectId, upload);
+      if (project.id === projectId) {
+        projectImports = [...projectImports.filter((item) => item.id !== kept.id), kept];
+      }
+      return kept;
+    },
     // The editor's own Export control opens the same dialog as the header's (FL-106).
     requestExport: () => {
       if (canExportVideo) {
@@ -893,6 +932,7 @@
 <StudioHost
   {project}
   {assets}
+  {projectImports}
   {handoffAssetIds}
   {auth}
   {capabilities}
