@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { ConflictException, Injectable } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { AssetLockReason, AssetVisibility } from 'src/enum.js';
@@ -169,6 +169,20 @@ export class DerivativePrivacyRepository {
     // Match preference writers' per-account lock, including when no preferences row exists yet.
     for (const ownerId of [...new Set(items.map((item) => item.ownerId))].toSorted()) {
       await sql`SELECT pg_advisory_xact_lock_shared(-2, hashtext(${ownerId})::int)`.execute(tx);
+    }
+    if (items.length > 0) {
+      // ponytail: library-wide membership locks during publication; use a shared per-owner writer protocol if contention grows.
+      // Protect absent matches too: row locks cannot stop new tags/faces/observations or tag reparenting.
+      // NOWAIT avoids deadlocking writers that acquired membership locks before our source/grant locks.
+      try {
+        await sql`LOCK TABLE public.asset_face, public.pet, public.pet_observation, public.tag_asset, public.tag_closure
+          IN SHARE MODE NOWAIT`.execute(tx);
+      } catch (error) {
+        if (error instanceof Error && 'code' in error && error.code === '55P03') {
+          throw new ConflictException('Shared-source privacy is changing; retry publication.');
+        }
+        throw error;
+      }
     }
     const hidden = await getOwnerHiddenShareIds(
       tx,
