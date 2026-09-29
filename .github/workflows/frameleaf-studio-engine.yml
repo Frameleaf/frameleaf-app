@@ -42,6 +42,8 @@ jobs:
         run: node --test studio/tools/engine.test.mjs
       - name: Recover and verify immutable source, then prepare adapted workspace
         run: node studio/tools/engine.mjs prepare
+      - name: Graph allocation audit (FL-97)
+        run: node studio/tools/allocation-audit.mjs
       - name: Install locked dependencies without lifecycle scripts
         run: npm --prefix studio/engine ci --ignore-scripts --no-audit --no-fund
       - name: Install FFmpeg with libx265 for HDR master verification
