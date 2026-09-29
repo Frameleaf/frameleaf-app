@@ -245,6 +245,15 @@ export const isStudioPreviewAnswerCurrent = (
   now: { revision: number; seekGeneration: number },
 ): boolean => answer.revision === now.revision && answer.seekGeneration >= now.seekGeneration;
 
+/** Ignore a seek that finishes saving after a newer seek or preview release. */
+export const createStudioPreviewRequestGate = () => {
+  let latest = 0;
+  return {
+    next: () => ++latest,
+    isCurrent: (request: number) => request === latest,
+  };
+};
+
 /* ------------------------------------------------------------------ */
 /* The revision-keyed frame cache                                       */
 /* ------------------------------------------------------------------ */

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   StudioPreviewCache,
   createStudioPreviewClient,
+  createStudioPreviewRequestGate,
   isStudioPreviewAnswerCurrent,
   parseStudioPreviewTime,
   sameStudioPreviewIntent,
@@ -53,6 +54,30 @@ const frameView = (overrides: Partial<StudioPreviewFrameView> = {}): StudioPrevi
   framePtsTimebase: null,
   toneMapped: false,
   ...overrides,
+});
+
+it('keeps a seek waiting for autosave from overtaking a newer seek or reopening a released preview', async () => {
+  const gate = createStudioPreviewRequestGate();
+  const rendered: string[] = [];
+  let finishSave!: () => void;
+  const save = new Promise<void>((resolve) => (finishSave = resolve));
+  const oldRequest = gate.next();
+  const late = save.then(() => {
+    if (gate.isCurrent(oldRequest)) {
+      rendered.push('old');
+    }
+  });
+
+  const newRequest = gate.next();
+  if (gate.isCurrent(newRequest)) {
+    rendered.push('new');
+  }
+  finishSave();
+  await late;
+  expect(rendered).toEqual(['new']);
+
+  gate.next(); // preview.release
+  expect(gate.isCurrent(newRequest)).toBe(false);
 });
 
 /** A transport that answers immediately, so no timer is involved in the ordinary path. */
