@@ -164,7 +164,12 @@
       "path": "patches/0032-float-route-hdr-signal.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "99c81be66dcf324c49b2d8bb0e2c22d3f4f179faef0c7ac35c30f702dc7e15ee"
+    },
+    {
+      "path": "patches/0033-hdr-from-sources.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "04d0bf2ea4d219e1ad9e12b4ab389c115faa8a85d6c5e713155de553874e8e93"
     }
   ],
-  "sourceSha256": "6c3a307913bf922c163bc6fbddf3a5841324c471aa71cd4fb893dba08c6fa131"
+  "sourceSha256": "1a6e87c7a966db08342620b78e5acff8db4e110baea9851811ed1cbd1a7fdb99"
 }

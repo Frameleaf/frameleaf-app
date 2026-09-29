@@ -237,6 +237,29 @@ Not yet covered:
 - reference monitor review;
 - a render worker that streams frames to the encoder.
 
+Patch 0033 applies the owner's FL-97 decision: a project is HDR if and only if it
+contains HDR media.
+
+- **Detecting HDR media.** Imported video records the transfer from the track's colour
+  description (`MediaMetadata.colorTransfer`: `sdr`, `pq` or `hlg`). The engine's
+  playback stream of a library original is not the original, so the server reports
+  placed library originals that are HDR (PQ, HLG or Dolby Vision) in
+  `resources.hdrSources`. The host marks those assets `hdr`, and the adapter records
+  `colorTransfer: 'hdr'` on them.
+- **Deriving the range.** The renderer derives the working range from the placed
+  media every frame, nested compositions included. Media placed or probed later
+  switches every node pipeline without a remount. There is no project colour control,
+  and the export Colour choice does not decide it. SDR projects keep exact Freecut
+  parity.
+- **SDR preview.** An HDR project previews on SDR displays through the explicit BT.2390
+  conversion, never clipped. One stop of headroom puts reference white near BT.2408's
+  75% level. Highlights that are still out of range are scaled as a whole, keeping
+  their chromaticity.
+
+`tools/allocation-audit.mjs` and `graph-allocation-audit.json` classify every 8-bit
+format, pooled texture and Canvas2D intermediate in the graph source. The audit fails
+on any undeclared site, or on a declared site that no longer exists.
+
 `frameleaf-source.json` records all adapted input hashes. `frameleaf-build.json` records the sorted output hashes/digest, upstream and patch identities, toolchain/platform, and every direct/transitive/optional/development package's lockfile license declaration. Missing declarations remain `UNDECLARED`. The original MIT license and bundled SoundTouch/WebSR notices are retained. These records do not establish redistribution approval, including for external models, fonts and assets.
 
 The dedicated read-only Actions workflow runs the upstream unit and Node headless contracts, builds twice from separately prepared workspaces, compares artifact digests, and rechecks the complete original snapshot. Both build manifests are retained even on comparison failure, and mismatches report the affected artifact paths. Uploaded provenance is build evidence only after the exact candidate passes. Browser/GPU/media headless tests, full feature conformance, HDR/Dolby qualification and application integration remain separate gates.

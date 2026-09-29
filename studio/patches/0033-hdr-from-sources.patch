@@ -1,0 +1,611 @@
+--- a/src/features/export/utils/client-render-engine.ts
++++ b/src/features/export/utils/client-render-engine.ts
+@@ -32,7 +32,11 @@
+ import type { ResolvedTransform } from '@/types/transform'
+ import { createLogger } from '@/shared/logging/logger'
+ import { blobUrlManager } from '@/infrastructure/browser/blob-url-manager'
+-import { resolveMediaUrl, resolveProxyUrl } from '@/features/export/deps/media-library'
++import {
++  getMediaMetadataById,
++  resolveMediaUrl,
++  resolveProxyUrl,
++} from '@/features/export/deps/media-library'
+ import { VideoSourcePool } from '@/features/export/deps/player-contract'
+ import { recordPreviewCompositionRender } from '@/shared/logging/preview-scrub-performance'
+ import { recordPreviewCanvasPool } from '@/shared/logging/preview-scrub-performance'
+@@ -78,6 +82,7 @@
+ import { collectReachableCompositionIdsFromTracks } from '@/features/export/deps/timeline-compositions'
+ import { appendVirtualTranscriptCaptionTrack } from '@/features/export/deps/caption-items'
+ import { resolveColorManagement } from '@/shared/graphics/color/managed-color'
++import { deriveSourceWorkingRange } from './project-color'
+ import { ColorOutputPipeline, type ColorOutputTarget } from '@/infrastructure/gpu-color'
+ 
+ // Item renderer
+@@ -806,23 +811,42 @@
+   // composite output target, and the glyph/bitmap-mask texture caches are
+   // owned by the manager. Lazily initialized on first use; the effects
+   // pipeline owns the device that every other pipeline derives from.
+-  // FL-97: an HDR project keeps extended range through the float effect route.
+-  const gpu = new GpuPipelineManager(
+-    resolveColorManagement(composition.colorManagement).workingRange,
+-  )
+-  // FL-97: an HDR project renders every item on the float route; a delivery
+-  // request captures the float composite for an explicit output conversion.
+-  const colorManagement = resolveColorManagement(composition.colorManagement)
+-  const hdrWorking = colorManagement.workingRange === 'hdr'
++  // FL-97: the project is HDR once it places a PQ or HLG source (owner decision);
++  // re-derived every frame, so media placed or probed later switches the range.
++  const resolveProjectColor = () =>
++    resolveColorManagement(
++      composition.colorManagement,
++      deriveSourceWorkingRange(
++        tracks,
++        getMediaMetadataById,
++        useCompositionsStore.getState().compositionById,
++      ),
++    )
++  let colorManagement = resolveProjectColor()
++  // An HDR project keeps extended range through every float node pipeline.
++  const gpu = new GpuPipelineManager(colorManagement.workingRange)
++  // An HDR project renders every item on the float route; a delivery request
++  // captures the float composite for an explicit output conversion.
+   let floatCapture: {
+     target: ColorOutputTarget
+     result: { width: number; height: number; rgba: Float32Array } | null
+   } | null = null
+   let colorOutput: ColorOutputPipeline | null = null
+-  const captureSignal = async (composite: GPUTexture): Promise<void> => {
++  // HDR preview on an SDR display: the explicit BT.2390 conversion into the
++  // composite canvas, never a clip (owner decision).
++  const displayHdr = async (composite: GPUTexture): Promise<OffscreenCanvas | null> => {
++    const device = gpu.effects?.getDevice()
++    const output = gpu.ensureCompositeOutput(composite.width, composite.height)
++    if (!device || !output) return null
++    colorOutput ??= new ColorOutputPipeline(device)
++    colorOutput.convert(composite, output.ctx.getCurrentTexture(), 'sdr-display', colorManagement)
++    await device.queue.onSubmittedWorkDone()
++    return output.canvas
++  }
++  const captureSignal = async (composite: GPUTexture): Promise<OffscreenCanvas | null> => {
+     const request = floatCapture
+     const device = gpu.effects?.getDevice()
+-    if (!request || !device) return
++    if (!request || !device) return null
+     colorOutput ??= new ColorOutputPipeline(device)
+     const { width, height } = composite
+     const output = device.createTexture({
+@@ -853,6 +877,7 @@
+       output.destroy()
+       buffer.destroy()
+     }
++    return null
+   }
+ 
+   // Build lookup maps
+@@ -2348,6 +2373,9 @@
+       })
+       // FL-97: the float route composites every frame on the GPU; nothing may
+       // take the Canvas2D direct path in an HDR project or a delivery capture.
++      colorManagement = resolveProjectColor()
++      gpu.setWorkingRange(colorManagement.workingRange)
++      const hdrWorking = colorManagement.workingRange === 'hdr'
+       const floatRoute = hdrWorking || floatCapture !== null
+       const shouldDirectRenderSingleTask =
+         frameOptimization.shouldDirectRenderSingleTask && !floatRoute
+@@ -2635,9 +2663,13 @@
+           renderMasksToGpuTexture,
+           renderTransitionFallbackCanvas,
+           renderItemWithEffects,
+-          floatOutput: floatCapture
+-            ? { background: parseBackgroundColor(backgroundColor), capture: captureSignal }
+-            : undefined,
++          floatOutput:
++            floatCapture || hdrWorking
++              ? {
++                  background: parseBackgroundColor(backgroundColor),
++                  capture: floatCapture ? captureSignal : displayHdr,
++                }
++              : undefined,
+         })
+         scrubPerfCompositeEndMs = scrubPerfStartMs >= 0 ? performance.now() : -1
+       }
+--- a/src/features/export/utils/frame-compositing.ts
++++ b/src/features/export/utils/frame-compositing.ts
+@@ -51,12 +51,14 @@
+     allowDirectGpu?: boolean,
+   ) => Promise<RenderedTaskResult | null>
+   /**
+-   * FL-97: capture the float composite for an explicit output conversion instead
+-   * of the canvas blit. The background colour becomes the bottom layer.
++   * FL-97: hand the float composite to an explicit output conversion (HDR preview
++   * tone mapping or a delivery capture) instead of the clamping canvas blit. The
++   * background colour becomes the bottom layer.
+    */
+   floatOutput?: {
+     background: [number, number, number]
+-    capture: (composite: GPUTexture) => Promise<void>
++    /** Returns the canvas to show, or null when the frame was only captured. */
++    capture: (composite: GPUTexture) => Promise<OffscreenCanvas | null>
+   }
+ }
+ 
+@@ -213,8 +215,7 @@
+         )
+         device.queue.submit([encoder.finish()])
+         if (!composite) throw new Error('Float compositor rejected the frame')
+-        await floatOutput.capture(composite.texture)
+-        return contentCanvas
++        return (await floatOutput.capture(composite.texture)) ?? contentCanvas
+       }
+ 
+       let compositedToGpuCanvas = false
+--- a/src/features/export/utils/gpu-pipeline-manager.test.ts
++++ b/src/features/export/utils/gpu-pipeline-manager.test.ts
+@@ -47,4 +47,15 @@
+       for (const setter of Object.values(ranges)) expect(setter).toHaveBeenLastCalledWith(range)
+     },
+   )
++
++  it('switches every created pipeline when the placed media changes the range', async () => {
++    const manager = new GpuPipelineManager()
++    await manager.ensureEffects()
++    manager.ensureTransition()
++    manager.ensureMediaBlend()
++    manager.ensureCompositor()
++    manager.setWorkingRange('hdr')
++    expect(manager.workingRange).toBe('hdr')
++    for (const setter of Object.values(ranges)) expect(setter).toHaveBeenLastCalledWith('hdr')
++  })
+ })
+--- a/src/features/export/utils/gpu-pipeline-manager.ts
++++ b/src/features/export/utils/gpu-pipeline-manager.ts
+@@ -46,7 +46,21 @@
+    * The composition's working range (FL-97), applied to every node pipeline:
+    * effects, transitions, media blends and the compositor.
+    */
+-  constructor(readonly workingRange: WorkingRange = 'sdr') {}
++  constructor(private range: WorkingRange = 'sdr') {}
++
++  get workingRange(): WorkingRange {
++    return this.range
++  }
++
++  /** Switches every created pipeline; the project range follows its placed media. */
++  setWorkingRange(range: WorkingRange): void {
++    if (range === this.range) return
++    this.range = range
++    this.effects?.setWorkingRange(range)
++    this.transition?.setWorkingRange(range)
++    this.mediaBlend?.setWorkingRange(range)
++    this.compositor?.setWorkingRange(range)
++  }
+   private compositeCanvas: OffscreenCanvas | null = null
+   private compositeCtx: GPUCanvasContext | null = null
+   private compositeW = 0
+--- /dev/null
++++ b/src/features/export/utils/project-color.test.ts
+@@ -0,0 +1,70 @@
++// @vitest-environment node
++import { describe, expect, it } from 'vite-plus/test'
++import type { TimelineTrack } from '@/types/timeline'
++import { deriveSourceWorkingRange } from './project-color'
++
++const track = (items: unknown[]): TimelineTrack =>
++  ({
++    id: 't',
++    name: 'T',
++    height: 60,
++    locked: false,
++    visible: true,
++    muted: false,
++    solo: false,
++    order: 0,
++    items,
++  }) as TimelineTrack
++
++// FL-97 owner decision: if the media is HDR, the Studio project is HDR.
++describe('deriveSourceWorkingRange', () => {
++  const media: Record<string, { colorTransfer?: 'sdr' | 'pq' | 'hlg' | 'hdr' }> = {
++    sdr: { colorTransfer: 'sdr' },
++    pq: { colorTransfer: 'pq' },
++    hlg: { colorTransfer: 'hlg' },
++    hostHdr: { colorTransfer: 'hdr' },
++    legacy: {},
++  }
++  const get = (id: string) => media[id]
++
++  it('is SDR for SDR, unprobed or missing media and for items without media', () => {
++    const items = [
++      { type: 'video', mediaId: 'sdr' },
++      { type: 'image', mediaId: 'legacy' },
++      { type: 'video', mediaId: 'gone' },
++      { type: 'text' },
++    ]
++    expect(deriveSourceWorkingRange([track(items)], get)).toBe('sdr')
++  })
++
++  it('is HDR once any placed clip is PQ or HLG', () => {
++    const tracks = [
++      track([{ type: 'video', mediaId: 'sdr' }]),
++      track([{ type: 'video', mediaId: 'hlg' }]),
++    ]
++    expect(deriveSourceWorkingRange(tracks, get)).toBe('hdr')
++    // A library original the host reports as HDR (its playback stream cannot tell).
++    expect(deriveSourceWorkingRange([track([{ type: 'video', mediaId: 'hostHdr' }])], get)).toBe(
++      'hdr',
++    )
++  })
++
++  it('looks inside nested compositions, once each, without looping', () => {
++    const compositionById = {
++      a: { items: [{ type: 'composition', compositionId: 'b' }] },
++      b: {
++        tracks: [
++          track([
++            { type: 'composition', compositionId: 'a' },
++            { type: 'video', mediaId: 'pq' },
++          ]),
++        ],
++      },
++    }
++    const root = [track([{ type: 'composition', compositionId: 'a' }])]
++    expect(deriveSourceWorkingRange(root, get, compositionById as never)).toBe('hdr')
++    expect(
++      deriveSourceWorkingRange([track([{ type: 'composition', compositionId: 'x' }])], get),
++    ).toBe('sdr')
++  })
++})
+--- /dev/null
++++ b/src/features/export/utils/project-color.ts
+@@ -0,0 +1,35 @@
++import type { TimelineItem, TimelineTrack } from '@/types/timeline'
++import type { MediaMetadata } from '@/types/storage'
++import { workingRangeOfSources, type WorkingRange } from '@/shared/graphics/color/managed-color'
++
++interface CompositionSource {
++  tracks?: TimelineTrack[]
++  items?: TimelineItem[]
++}
++
++/**
++ * FL-97 owner decision: a project is HDR when it places a PQ or HLG source,
++ * directly or inside a nested composition.
++ */
++export function deriveSourceWorkingRange(
++  tracks: readonly TimelineTrack[],
++  getMedia: (mediaId: string) => Pick<MediaMetadata, 'colorTransfer'> | undefined,
++  compositionById: Record<string, CompositionSource | undefined> = {},
++): WorkingRange {
++  const seen = new Set<string>()
++  function* transfers(items: readonly TimelineItem[]): Generator<string | undefined> {
++    for (const item of items) {
++      if (item.type === 'composition') {
++        if (seen.has(item.compositionId)) continue
++        seen.add(item.compositionId)
++        const sub = compositionById[item.compositionId]
++        if (!sub) continue
++        yield* transfers(sub.items ?? (sub.tracks ?? []).flatMap((track) => track.items ?? []))
++        continue
++      }
++      const mediaId = 'mediaId' in item ? (item as { mediaId?: string }).mediaId : undefined
++      if (mediaId) yield getMedia(mediaId)?.colorTransfer
++    }
++  }
++  return workingRangeOfSources(transfers(tracks.flatMap((track) => track.items ?? [])))
++}
+--- a/src/features/media-library/services/media-library-service.ts
++++ b/src/features/media-library/services/media-library-service.ts
+@@ -312,6 +312,7 @@
+     audioCodec: metadata.audioCodec,
+     audioCodecSupported: metadata.audioCodecSupported,
+     videoCodecSupported: metadata.videoCodecSupported,
++    colorTransfer: metadata.colorTransfer,
+     keyframeTimestamps: metadata.keyframeTimestamps,
+     gopInterval: metadata.gopInterval,
+     tags: options?.tags ?? [],
+@@ -702,6 +703,7 @@
+       audioCodec: metadata.type === 'video' ? metadata.audioCodec : undefined,
+       audioCodecSupported: metadata.type === 'video' ? metadata.audioCodecSupported : true,
+       videoCodecSupported: metadata.type === 'video' ? metadata.videoCodecSupported : true,
++      colorTransfer: metadata.type === 'video' ? metadata.colorTransfer : undefined,
+       keyframeTimestamps: metadata.type === 'video' ? metadata.keyframeTimestamps : undefined,
+       gopInterval: metadata.type === 'video' ? metadata.gopInterval : undefined,
+       tags: [],
+@@ -1137,6 +1139,7 @@
+       audioCodec: metadata.type === 'video' ? metadata.audioCodec : undefined,
+       audioCodecSupported: metadata.type === 'video' ? metadata.audioCodecSupported : true,
+       videoCodecSupported: metadata.type === 'video' ? metadata.videoCodecSupported : true,
++      colorTransfer: metadata.type === 'video' ? metadata.colorTransfer : undefined,
+       keyframeTimestamps: metadata.type === 'video' ? metadata.keyframeTimestamps : undefined,
+       gopInterval: metadata.type === 'video' ? metadata.gopInterval : undefined,
+       thumbnailId,
+@@ -1950,7 +1953,9 @@
+       }
+       throw error
+     }
+-    await replacement.discard().catch((error) => logger.warn('Failed to remove relink backup:', error))
++    await replacement
++      .discard()
++      .catch((error) => logger.warn('Failed to remove relink backup:', error))
+     return updated
+   }
+ 
+--- a/src/features/media-library/workers/media-processor.worker.ts
++++ b/src/features/media-library/workers/media-processor.worker.ts
+@@ -12,6 +12,7 @@
+ import { ensureProResDecoderRegistered } from '@/infrastructure/browser/register-prores-decoder'
+ import { createLogger, createOperationId } from '@/shared/logging/logger'
+ import { DEFAULT_PROJECT_HEIGHT, DEFAULT_PROJECT_WIDTH } from '@/shared/projects/defaults'
++import { transferOfColorSpace } from '@/shared/graphics/color/managed-color'
+ 
+ const logger = createLogger('MediaProcessorWorker')
+ const KEYFRAME_EXTRACTION_TIMEOUT_MS = 8_000
+@@ -28,6 +29,7 @@
+   codec: string
+   computePacketStats(count: number): Promise<{ averagePacketRate: number } | null>
+   canDecode?: () => Promise<boolean>
++  getColorSpace?: () => Promise<{ transfer?: string | null }>
+ }
+ 
+ interface MediabunnyAudioTrack {
+@@ -129,6 +131,8 @@
+   audioCodecSupported: boolean
+   /** Whether the browser can decode this video track via WebCodecs. False for e.g. ProRes, which requires a proxy. */
+   videoCodecSupported: boolean
++  /** Source transfer from the track's colour description (FL-97). */
++  colorTransfer: 'sdr' | 'pq' | 'hlg'
+   /** Sorted keyframe timestamps in seconds (undefined if all-intra or extraction failed) */
+   keyframeTimestamps?: number[]
+   /** Average keyframe interval in seconds (GOP length) */
+@@ -458,6 +462,12 @@
+           ? await videoTrack.canDecode().catch(() => true)
+           : true
+ 
++    // FL-97: a PQ or HLG source makes its project HDR.
++    const colorSpace = videoTrack.getColorSpace
++      ? await videoTrack.getColorSpace().catch(() => undefined)
++      : undefined
++    const colorTransfer = transferOfColorSpace(colorSpace)
++
+     // Compute average GOP interval from keyframe timestamps
+     let gopInterval: number | undefined
+     if (keyframeTimestamps && keyframeTimestamps.length >= 2) {
+@@ -476,6 +486,7 @@
+       audioCodec,
+       audioCodecSupported,
+       videoCodecSupported,
++      colorTransfer,
+       keyframeTimestamps,
+       gopInterval,
+     }
+--- a/src/infrastructure/gpu-color/color-output-pipeline.ts
++++ b/src/infrastructure/gpu-color/color-output-pipeline.ts
+@@ -52,8 +52,13 @@
+   let y = dot(vec3f(0.2126, 0.7152, 0.0722), linear);
+   if (y <= 0.0) { return vec4f(clamp(c.rgb, vec3f(0.0), vec3f(1.0)), alpha); }
+   let nits = y * params.referenceWhite;
+-  let scale = fl_bt2390_eetf(nits, params.masteringPeak, params.referenceWhite) / nits;
+-  return vec4f(clamp(fl_srgb_encode(linear * scale), vec3f(0.0), vec3f(1.0)), alpha);
++  // One stop of highlight room: SDR_MONITOR_HEADROOM = 2 in managed-color.ts.
++  let mapped = fl_bt2390_eetf(nits, params.masteringPeak, params.referenceWhite * 2.0);
++  var scaled = linear * (mapped / nits / 2.0);
++  // Scale an out-of-range highlight as a whole, keeping its chromaticity.
++  let peak = max(max(scaled.r, scaled.g), scaled.b);
++  if (peak > 1.0) { scaled = scaled / peak; }
++  return vec4f(clamp(fl_srgb_encode(scaled), vec3f(0.0), vec3f(1.0)), alpha);
+ }
+ `
+ 
+--- a/src/shared/graphics/color/managed-color.test.ts
++++ b/src/shared/graphics/color/managed-color.test.ts
+@@ -13,6 +13,8 @@
+   pqEncode,
+   resolveColorManagement,
+   signalToWorking,
++  transferOfColorSpace,
++  workingRangeOfSources,
+   srgbDecodeExtended,
+   srgbEncodeExtended,
+   workingToSdrDisplay,
+@@ -20,13 +22,19 @@
+ } from './managed-color'
+ 
+ describe('managed colour reference transforms (FL-97)', () => {
+-  it('defaults every existing project to the SDR reference behaviour', () => {
++  it('makes a project HDR only when it places a PQ or HLG source (owner decision)', () => {
+     expect(resolveColorManagement(undefined)).toEqual({
+       workingRange: 'sdr',
+       referenceWhiteNits: 203,
+       masteringPeakNits: 1000,
+-      sdrMonitoring: 'none',
++      sdrMonitoring: 'bt2390',
+     })
++    expect(workingRangeOfSources(['sdr', undefined, null])).toBe('sdr')
++    expect(workingRangeOfSources(['sdr', 'hlg'])).toBe('hdr')
++    expect(workingRangeOfSources(['pq'])).toBe('hdr')
++    expect(resolveColorManagement(undefined, 'hdr').workingRange).toBe('hdr')
++    // A stored range cannot turn a project with HDR sources back to SDR.
++    expect(resolveColorManagement({ workingRange: 'sdr' }, 'hdr').workingRange).toBe('hdr')
+     expect(
+       resolveColorManagement({
+         workingRange: 'hdr',
+@@ -37,10 +45,17 @@
+       workingRange: 'hdr',
+       referenceWhiteNits: 203,
+       masteringPeakNits: 203,
+-      sdrMonitoring: 'none',
++      sdrMonitoring: 'bt2390',
+     })
+   })
+ 
++  it('reads the source transfer from a decoder colour description', () => {
++    expect(transferOfColorSpace({ transfer: 'pq' })).toBe('pq')
++    expect(transferOfColorSpace({ transfer: 'hlg' })).toBe('hlg')
++    expect(transferOfColorSpace({ transfer: 'bt709' })).toBe('sdr')
++    expect(transferOfColorSpace(undefined)).toBe('sdr')
++  })
++
+   it('matches published PQ values (SMPTE ST 2084)', () => {
+     expect(pqEncode(0)).toBeCloseTo(0, 5)
+     expect(pqEncode(100)).toBeCloseTo(0.5081, 4)
+@@ -111,11 +126,12 @@
+     expect(pqDecode(midGrey[1])).toBeCloseTo(0.18 * 203, 1)
+   })
+ 
+-  it('tone maps only when the policy says so', () => {
+-    const color = resolveColorManagement({ workingRange: 'hdr' })
++  it('tone maps HDR projects on SDR displays by default, never clipping', () => {
++    const color = resolveColorManagement(undefined, 'hdr')
+     const highlight = [2, 2, 2] as const
+-    expect(workingToSdrDisplay(highlight, color)).toEqual([1, 1, 1])
+-    const mapped = workingToSdrDisplay([2, 1, 0.5], { ...color, sdrMonitoring: 'bt2390' })
++    expect(workingToSdrDisplay(highlight, color)[0]).toBeLessThan(1)
++    expect(workingToSdrDisplay(highlight, { ...color, sdrMonitoring: 'none' })).toEqual([1, 1, 1])
++    const mapped = workingToSdrDisplay([2, 1, 0.5], color)
+     mapped.forEach((v) => expect(v).toBeLessThanOrEqual(1))
+     // Hue is kept: channel order survives, unlike per-channel clipping.
+     expect(mapped[0]).toBeGreaterThan(mapped[1]!)
+--- a/src/shared/graphics/color/managed-color.ts
++++ b/src/shared/graphics/color/managed-color.ts
+@@ -18,9 +18,13 @@
+  * - HDR sources entering the graph ({@link signalToWorking}).
+  *
+  * SDR sources placed in an HDR project map SDR white to reference white. They are
+- * never expanded implicitly. Tone mapping happens only when a monitoring or export
+- * policy names it ({@link ToneMapPolicy}). It is never inherited from browser or
+- * playback defaults.
++ * never expanded implicitly.
++ *
++ * Owner decision (FL-97, 2026-09-29): a project is HDR as soon as it places a PQ or
++ * HLG source; there is no project colour control and the export Colour choice does
++ * not decide it. SDR displays show an HDR project tone mapped with BT.2390 by
++ * default, never clipped. Tone mapping is always this named policy, never inherited
++ * from browser or playback defaults.
+  */
+ 
+ export type WorkingRange = 'sdr' | 'hdr'
+@@ -33,7 +37,10 @@
+   referenceWhiteNits?: number
+   /** Assumed mastering peak for monitoring/tone mapping and HLG's nominal display. */
+   masteringPeakNits?: number
+-  /** How an HDR project is shown on an SDR display. Explicit; defaults to clipping. */
++  /**
++   * How an HDR project is shown on an SDR display: BT.2390 by default. 'none'
++   * (clip) is only for internal measurement, never a preview default.
++   */
+   sdrMonitoring?: ToneMapPolicy
+ }
+ 
+@@ -49,24 +56,46 @@
+   sdrMonitoring: ToneMapPolicy
+ }
+ 
+-/** Absent settings mean an SDR project: every existing project keeps its pixels. */
++/**
++ * The project's colour management. `sourceRange` is derived from the placed media
++ * ({@link workingRangeOfSources}); a project with no HDR source and no stored range
++ * is SDR, so every existing SDR project keeps its pixels.
++ */
+ export function resolveColorManagement(
+   settings: ProjectColorManagement | undefined,
++  sourceRange: WorkingRange = 'sdr',
+ ): ResolvedColorManagement {
+   const positive = (value: number | undefined, fallback: number) =>
+     typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : fallback
+   const referenceWhiteNits = positive(settings?.referenceWhiteNits, DEFAULT_REFERENCE_WHITE_NITS)
+   return {
+-    workingRange: settings?.workingRange === 'hdr' ? 'hdr' : 'sdr',
++    workingRange: settings?.workingRange === 'hdr' || sourceRange === 'hdr' ? 'hdr' : 'sdr',
+     referenceWhiteNits,
+     masteringPeakNits: Math.max(
+       referenceWhiteNits,
+       positive(settings?.masteringPeakNits, DEFAULT_MASTERING_PEAK_NITS),
+     ),
+-    sdrMonitoring: settings?.sdrMonitoring === 'bt2390' ? 'bt2390' : 'none',
++    sdrMonitoring: settings?.sdrMonitoring === 'none' ? 'none' : 'bt2390',
+   }
+ }
+ 
++/** A decoder colour description (WebCodecs VideoColorSpaceInit) → source transfer. */
++export function transferOfColorSpace(
++  colorSpace: { transfer?: string | null } | null | undefined,
++): 'sdr' | 'pq' | 'hlg' {
++  return colorSpace?.transfer === 'pq' ? 'pq' : colorSpace?.transfer === 'hlg' ? 'hlg' : 'sdr'
++}
++
++/** PQ, HLG or host-reported HDR sources make an HDR project; anything else is SDR. */
++export function workingRangeOfSources(
++  transfers: Iterable<string | null | undefined>,
++): WorkingRange {
++  for (const transfer of transfers) {
++    if (transfer === 'pq' || transfer === 'hlg' || transfer === 'hdr') return 'hdr'
++  }
++  return 'sdr'
++}
++
+ export type Rgb = readonly [number, number, number]
+ type Matrix = readonly [Rgb, Rgb, Rgb]
+ 
+@@ -233,9 +262,17 @@
+ }
+ 
+ /**
++ * SDR monitoring of an HDR project gives highlights one stop of room: the display
++ * peak stands for twice reference white, so reference white shows at 50% linear
++ * (about 73% signal, close to BT.2408's 75% HLG reference level).
++ */
++export const SDR_MONITOR_HEADROOM = 2
++
++/**
+  * Explicit SDR monitoring/delivery of an HDR working value: 'none' clips at
+- * reference white; 'bt2390' tone maps from the mastering peak to reference white
+- * by scaling colour with the luminance EETF (hue-preserving).
++ * reference white; 'bt2390' tone maps from the mastering peak to the display peak
++ * (see {@link SDR_MONITOR_HEADROOM}) by scaling colour with the luminance EETF,
++ * keeping chromaticity.
+  */
+ export function workingToSdrDisplay(working: Rgb, color: ResolvedColorManagement): Rgb {
+   if (color.workingRange === 'sdr' || color.sdrMonitoring === 'none') {
+@@ -245,9 +282,13 @@
+   const y = 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
+   if (y <= 0) return working.map((v) => Math.min(Math.max(v, 0), 1)) as unknown as Rgb
+   const nits = y * color.referenceWhiteNits
+-  const mapped = bt2390Eetf(nits, color.masteringPeakNits, color.referenceWhiteNits)
+-  const scale = mapped / nits
+-  return linear.map((v) =>
+-    Math.min(Math.max(srgbEncodeExtended(v * scale), 0), 1),
+-  ) as unknown as Rgb
++  const displayPeak = color.referenceWhiteNits * SDR_MONITOR_HEADROOM
++  const mapped = bt2390Eetf(nits, color.masteringPeakNits, displayPeak)
++  const scale = mapped / nits / SDR_MONITOR_HEADROOM
++  let scaled = linear.map((v) => v * scale)
++  // A saturated highlight whose brightest channel still exceeds the display is
++  // scaled down as a whole, keeping its chromaticity instead of clipping one channel.
++  const peak = Math.max(...scaled)
++  if (peak > 1) scaled = scaled.map((v) => v / peak)
++  return scaled.map((v) => Math.min(Math.max(srgbEncodeExtended(v), 0), 1)) as unknown as Rgb
+ }
+--- a/src/types/storage.ts
++++ b/src/types/storage.ts
+@@ -35,6 +35,9 @@
+   license?: string
+ }
+ 
++/** 'hdr': the host knows the original is HDR but not which transfer. */
++export type MediaColorTransfer = 'sdr' | 'pq' | 'hlg' | 'hdr'
++
+ export interface MediaMetadata {
+   id: string
+   /**
+@@ -88,6 +91,11 @@
+    * False for codecs like ProRes that require a transcoded proxy to be viewable.
+    */
+   videoCodecSupported?: boolean
++  /**
++   * Transfer of the source picture (FL-97). 'pq' or 'hlg' makes every project that
++   * places this media an HDR project. Absent on media imported before it was read.
++   */
++  colorTransfer?: MediaColorTransfer
+   /**
+    * Conformed preview-audio asset path for custom-decoded codecs.
+    * Kept under the legacy name for compatibility, but now points to the

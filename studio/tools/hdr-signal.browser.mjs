@@ -67,6 +67,32 @@ window.__vite_plugin_react_preamble_installed__ = true
     };
     const hdr = await renderAll({ workingRange: 'hdr' });
     const sdr = await renderAll(undefined);
+
+    // Owner decision (FL-97): placing HDR media makes the project HDR, with no
+    // project setting, and the SDR preview is BT.2390 tone mapped, never clipped.
+    const { useMediaLibraryStore } = await import('/src/features/media-library/stores/media-library-store.ts');
+    const hdrMedia = { id: 'hdr-media', colorTransfer: 'pq', mimeType: 'audio/wav', fileName: 'hdr', tags: [] };
+    const previous = useMediaLibraryStore.getState();
+    useMediaLibraryStore.setState({ mediaById: { ...previous.mediaById, [hdrMedia.id]: hdrMedia } });
+    const marker = { id: 'marker', type: 'audio', trackId: 'track-9', from: 0, durationInFrames: 30,
+      label: 'marker', mediaId: hdrMedia.id, src: '' };
+    const derived = composition(undefined);
+    derived.tracks.push({ ...track(9, [marker]), visible: false });
+    const canvas = new OffscreenCanvas(W, H);
+    const ctx = canvas.getContext('2d');
+    const renderer = await createCompositionRenderer(derived, canvas, ctx, { mode: 'export' });
+    let fromSources;
+    let preview;
+    try {
+      const { rgba } = await renderer.renderFrameSignal(0, 'pq');
+      fromSources = [2, 6, 10, 14].map((x) => Array.from(rgba.slice((4 * W + x) * 4, (4 * W + x) * 4 + 4)));
+      await renderer.renderFrame(0);
+      preview = [2, 6, 10, 14].map((x) => Array.from(ctx.getImageData(x, 4, 1, 1).data));
+    } finally {
+      renderer.dispose?.();
+      useMediaLibraryStore.setState({ mediaById: previous.mediaById });
+    }
+
     const toSignal = (working, target) => color.workingToSignal(working, target);
     // Working values each region should hold before output conversion.
     const expected = {
@@ -75,7 +101,9 @@ window.__vite_plugin_react_preamble_installed__ = true
     };
     const want = Object.fromEntries(Object.entries(expected).map(([project, regions]) => [project,
       Object.fromEntries(['pq', 'hlg'].map((target) => [target, regions.map((w) => toSignal(w, target))]))]));
-    return { hdr, sdr, want };
+    const toneMapped = expected.hdr.map((w) =>
+      color.workingToSdrDisplay(w, color.resolveColorManagement(undefined, 'hdr')).map((v) => v * 255));
+    return { hdr, sdr, want, fromSources, preview, toneMapped };
   });
   for (const project of ['hdr', 'sdr']) {
     for (const target of ['pq', 'hlg']) {
@@ -90,6 +118,19 @@ window.__vite_plugin_react_preamble_installed__ = true
       });
     }
   }
+  result.fromSources.forEach((texel, region) => result.want.hdr.pq[region].forEach((value, channel) =>
+    assert.ok(Math.abs(texel[channel] - value) <= 4e-3,
+      `HDR media project region ${region} channel ${channel}: ${texel[channel]} != ${value}`)));
+  result.preview.forEach((pixel, region) => result.toneMapped[region].forEach((value, channel) =>
+    assert.ok(Math.abs(pixel[channel] - value) <= 3,
+      `tone-mapped preview region ${region} channel ${channel}: ${pixel[channel]} != ${value}`)));
+  // The highlight keeps its channel order instead of clipping to yellow, and the
+  // bright grey stays below white.
+  const [r, g, b] = result.preview[0];
+  assert.ok(r > g && g > b && g < 200, `highlight clipped in preview: ${result.preview[0]}`);
+  // Light just above reference white (1.1 encoded) keeps headroom below display white.
+  assert.ok(result.preview[2][0] > 150 && result.preview[2][0] < 230,
+    `just above reference white in preview: ${result.preview[2]}`);
   console.log(JSON.stringify({ check: 'edited frame through the float route and explicit PQ/HLG output', ...result.hdr.pq }));
 } finally {
   await browser.close();
