@@ -213,6 +213,7 @@
     options,
     session = librarySession,
     destination,
+    // eslint-disable-next-line no-useless-assignment -- the child replaces the bound input with its owned manager
     timelineManager = $bindable(),
     syncUrl = true,
     ratingFor,
@@ -247,8 +248,8 @@
     statusBar = true,
   }: Props = $props();
 
-  const manager = new TimelineManager();
-  timelineManager = manager;
+  timelineManager = new TimelineManager();
+  const manager = untrack(() => timelineManager as TimelineManager);
   onDestroy(() => manager.destroy());
 
   let helpOpen = $state(false);
