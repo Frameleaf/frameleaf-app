@@ -187,6 +187,46 @@ describe('CloudMlSection (FL-159, prototype Processing)', () => {
     expect(store.draft.frameleafCloud!.cloudMl.enabled).toBe(true);
   });
 
+  it('asks to review new terms when the cloud requires a newer version, and records the new version (FL-201)', async () => {
+    useDraft(true);
+    const destination = { id: 'cloud-1', consent: { acknowledgedAt: '2026-09-01T00:00:00.000Z' } };
+    sdkMock.getCloudMlStatus.mockResolvedValue(
+      status({
+        enabled: true,
+        destination: destination as never,
+        consent: { ...consent('2026-09-01'), requiredVersion: '2026-10-01', outdated: true },
+      }),
+    );
+    sdkMock.grantMlDestinationConsent.mockResolvedValue({} as never);
+    sdkMock.reconcileCloudMlUsage.mockResolvedValue({} as never);
+    render(CloudMlSection);
+
+    await vi.waitFor(() => expect(sdkMock.getCloudMlStatus).toHaveBeenCalled());
+    await vi.waitFor(() => expect(document.body.textContent).toContain('The processing terms have changed'));
+    expect(screen.getByText('Review version 2026-10-01 to keep sending jobs to Frameleaf Cloud.')).toBeInTheDocument();
+    // nothing more is sent to the cloud on its own while the terms are outdated
+    expect(screen.getByRole('switch', { name: 'Describe new photos automatically' })).toBeDisabled();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Review terms' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Cloud processing terms · version 2026-10-01' });
+    await fireEvent.click(within(dialog).getByRole('checkbox'));
+    const accept = within(dialog)
+      .getAllByRole('button')
+      .find((button) => (button.textContent ?? '').includes('Accept'))!;
+    await vi.waitFor(() => expect(accept).toBeEnabled());
+    await fireEvent.click(accept);
+
+    await vi.waitFor(() =>
+      expect(sdkMock.grantMlDestinationConsent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 'cloud-1',
+          mlDestinationConsentRequestDto: expect.objectContaining({ version: '2026-10-01' }),
+        }),
+      ),
+    );
+    expect(sdkMock.createCloudMlDestination).not.toHaveBeenCalled();
+  });
+
   it('shows the AI Wallet in US dollars and saves a lower daily cap', async () => {
     useDraft(true);
     sdkMock.getCloudMlStatus.mockResolvedValue(status({ enabled: true, consent: consent('2026-10-01') }));
