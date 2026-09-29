@@ -111,6 +111,19 @@
       "owner": "Owner (AJ Taylor)",
       "reason": "Cleared: the owner re-approved runtime:whisper-transformers at row digest 86972408a2e5ece3d966f5564eeb4215ba45d767fe980433ed66fef78191e481 on 2026-09-29 (relayed via the coordinator to studio-editing, recorded in studio/rights-approval.json commit 69f286911a, noted on Jira FL-86, FL-111 and FL-136).",
       "status": "cleared"
+    },
+    {
+      "area": ["web-bundle", "worker-container"],
+      "component": "model:supertonic-3 and all 64 voice:kokoro-*/voice:supertonic-* rows (Kokoro-82M and Supertonic-3 TTS voices)",
+      "description": "studio patch 0030 (commit 453b223aae, on top of 69f286911a) pinned model:supertonic-3 and all 64 Kokoro/Supertonic voice rows to exact Hugging Face commits, with a sha256 per file (they previously carried revision: null - a moving 'resolve/main' target). Supertonic now loads from the pinned Space commit. Pinning changed all 65 rows' locator/revision/files, so their prior owner approval lapsed for all of them at once (verified independently: none of the 65 rows in studio/rights-approval.json carry a matching digest or approvedOn after this commit). Text-to-speech (Kokoro and Supertonic-3 voices) is refused until the owner re-approves. Re-approved by the owner on 2026-09-29 at all 65 commit-pinned row digests (studio commit d5faeb08c5, following patch 0030/453b223aae): verified independently that all 65 rows in studio/rights-approval.json now carry a matching digest and approvedOn, and the regenerated server mirror/engine policy admit them again.",
+      "enforcedBy": [
+        "studio/rights-approval.json resources[] (model:supertonic-3, voice:kokoro-*, voice:supertonic-* - approvedOn 2026-09-29)",
+        "server/src/utils/studio-rights.generated.ts (regenerated; all 65 rows allowed)"
+      ],
+      "id": "tts-voice-models-pending-reapproval",
+      "owner": "Owner (AJ Taylor)",
+      "reason": "Cleared: the owner approved all 65 commit-pinned TTS rows on 2026-09-29 (recorded in studio/rights-approval.json commit d5faeb08c5, noted on Jira FL-136).",
+      "status": "cleared"
     }
   ],
   "schemaVersion": 1
