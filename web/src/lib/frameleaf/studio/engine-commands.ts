@@ -24,15 +24,23 @@ import type { StudioAssetRef, StudioCommandEngine } from './host-contract';
 /**
  * The canonical commands whose semantics the engine provides. Kept here, not in the adapter, so the
  * host and the command runtime read one list; the adapter test checks it covers all 19 Freecut
- * public command rows.
+ * public command rows plus the FL-94 timeline tools.
  */
 export const studioEngineCommandIds = [
   'clip.add',
   'clip.delete',
+  'clip.insert',
   'clip.move',
+  'clip.overwrite',
+  'clip.reorder',
+  'clip.roll',
+  'clip.setLink',
+  'clip.setSpeed',
   'clip.setTransform',
   'clip.setTransformParent',
   'clip.setTransition',
+  'clip.slide',
+  'clip.slip',
   'clip.split',
   'clip.trimEnd',
   'clip.trimStart',
@@ -42,9 +50,15 @@ export const studioEngineCommandIds = [
   'effect.remove',
   'keyframe.add',
   'keyframe.remove',
+  'marker.add',
+  'marker.remove',
+  'marker.update',
   'music.add',
   'title.add',
   'track.add',
+  'track.remove',
+  'track.reorder',
+  'track.set',
 ] as const satisfies readonly StudioCommandId[];
 
 export type StudioEngineCommandId = (typeof studioEngineCommandIds)[number];

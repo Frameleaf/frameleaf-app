@@ -29,5 +29,17 @@ The owner unparked the engine on 2026-09-25, and the web application now mounts 
   a rejected command never stages a new graph. Freecut's interactive trim clamping is unchanged.
 - Canonical moves preserve linked offsets and attached captions, respecting linked selection and
   track locks. A move that would place a member before frame zero rejects the entire batch.
+- The FL-94 timeline tools are canonical engine commands too, each driven through Freecut's own
+  action and refused (never clamped) when Freecut would shorten the request: `clip.roll`,
+  `clip.slip` (a signed source-time delta), `clip.slide` (split chains keep source continuity),
+  `clip.setSpeed` (an exact rational rate; the timeline length is computed exactly and later clips
+  ripple), `clip.setLink`, `clip.reorder` (the track re-flows contiguously, linked sound follows),
+  `clip.insert` and `clip.overwrite` (a marked source range at an exact source cadence; a VFR or
+  unreadable cadence is refused), `track.set` (name, mute, lock, solo, visibility, sync lock and
+  gain in dB), `track.remove`, `track.reorder` (among siblings) and `marker.add/update/remove`.
+  Insert opens the gap on its destination tracks and on sync-locked tracks, as Freecut's ripple
+  does, and linked companions on tracks without sync lock follow so linked media stays in sync.
+  Edits that would change a clip on a locked track are refused. `test/timeline-tools.test.ts`
+  holds the golden graphs and the undo/redo round trip for every tool.
 - `server/Dockerfile` builds the adapter in its `studio-engine` stage, which recovers the archive and
   fails if its SHA-256 or any of the 2,646 file hashes differ from `studio/freecut-provenance.json`.
