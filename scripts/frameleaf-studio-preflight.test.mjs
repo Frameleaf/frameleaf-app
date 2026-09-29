@@ -164,6 +164,27 @@ test('zero decoded frames fail closed even when source metadata is valid', () =>
   assert.equal(result.goNoGo, false);
 });
 
+test('an HDR10 first stream cannot hide a second Dolby enhancement stream', () => {
+  const streams = [source.streams[0], { ...source.streams[0],
+    side_data_list: [{ side_data_type: 'DOVI configuration record', dv_profile: 7 }] }];
+  let converted = false;
+  const result = preflight(plan(), (binary, args) => {
+    if (args.includes('-show_entries')) {
+      // Model FFprobe stream selection so v:0 reproduces the original false admission.
+      const selected = args[args.indexOf('-select_streams') + 1];
+      assert.ok(selected === 'v' || selected === 'v:0');
+      return JSON.stringify({ ...source, streams: selected === 'v' ? streams : [streams[0]] });
+    }
+    if (args.includes('format=gbrpf32le')) converted = true;
+    return execute(binary, args);
+  });
+  assert.equal(result.localChecksPassed, false);
+  assert.equal(result.goNoGo, false);
+  assert.equal(result.checks.find((check) => check.name === 'source profile and decode').detail,
+    'source must contain exactly one video stream; multiple video streams are unqualified');
+  assert.equal(converted, false);
+});
+
 test('wrong tool version and missing accelerator fail closed', () => {
   const oldVersion = preflight({ ...plan(), tools: { ...plan().tools, ffmpeg: { path: '/opt/tools/ffmpeg', version: 'ffmpeg version 6' } } }, execute);
   assert.equal(oldVersion.localChecksPassed, false);
