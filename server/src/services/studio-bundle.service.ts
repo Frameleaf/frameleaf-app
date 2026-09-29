@@ -255,7 +255,7 @@ export class StudioBundleService {
         if (
           !snapshot ||
           snapshot.projectId !== projectId ||
-          snapshot.includeMedia !== (dto.includeMedia === true) ||
+          snapshot.includeMedia !== (dto.includeMedia ?? false) ||
           !sameSelection
         ) {
           throw new ConflictException('This request key was already used for another export');
