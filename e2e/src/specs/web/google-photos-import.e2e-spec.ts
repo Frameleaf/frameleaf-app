@@ -75,7 +75,7 @@ test.describe('Google Photos import (FL-144)', () => {
     );
     await uploadTakeoutArchiveChunk(
       { id: takeout.id, archiveId: archive.id, offset: 0, body: new Blob([bytes.subarray(0, 8).toString()]) },
-      { ...auth, headers: { ...auth.headers, 'Content-Type': 'application/octet-stream' } },
+      auth,
     );
 
     await utils.setAuthCookies(context, admin.accessToken);
