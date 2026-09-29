@@ -199,6 +199,7 @@ export class SearchService extends BaseService {
         userIds,
         locationHiddenOwnerIds,
         viewingUserId: auth.user.id,
+        sharedLink: !!auth.sharedLink,
         orderDirection: dto.order ?? AssetOrder.Desc,
       },
     );
