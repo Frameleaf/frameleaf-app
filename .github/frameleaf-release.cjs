@@ -300,7 +300,7 @@ function validateImageConfig(config, spec, sha) {
     "Wrong image variant",
   );
 }
-function trustedRun(run, sha) {
+function trustedRun(run, sha, workflow = ".github/workflows/docker.yml") {
   return (
     run?.head_sha === sha &&
     run.head_branch === MAIN &&
@@ -308,7 +308,7 @@ function trustedRun(run, sha) {
     ["push", "workflow_dispatch"].includes(run.event) &&
     run.status === "completed" &&
     run.conclusion === "success" &&
-    run.path === ".github/workflows/docker.yml"
+    run.path === workflow
   );
 }
 function chooseTag(version, releases, refs, sha) {

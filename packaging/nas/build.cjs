@@ -9,11 +9,11 @@ const root = __dirname;
 const digest = /^sha256:[a-f0-9]{64}$/;
 const tag = /^frameleaf-v(\d+)\.(\d+)\.(\d+)-(\d+)$/;
 
-async function build(directory, expectedTag, output, verification = {}) {
+async function build(directory, expectedTag, output, receipts, verification = {}) {
   assert(tag.test(expectedTag), 'A stable Frameleaf release is required');
   const release = await verifyBundle(directory, expectedTag, { ...verification, authenticate: true });
   const manifest = JSON.parse(fs.readFileSync(path.join(directory, 'nas-manifest.json'), 'utf8'));
-  await verifyNasCertification(manifest, release, verification);
+  await verifyNasCertification(manifest, release, receipts, verification);
   const image = (name) => {
     const ref = manifest.images[name];
     assert(typeof ref === 'string' && digest.test(ref.split('@')[1]), `Invalid ${name} digest`);
@@ -60,12 +60,13 @@ async function build(directory, expectedTag, output, verification = {}) {
   write('truenas/ix-dev/community/frameleaf/README.md',
     `Frameleaf ${manifest.tag}. Maintained by Frameleaf. Install on TrueNAS 24.10.2.2 or later.\n`);
   write('nas-manifest.json', JSON.stringify(manifest, null, 2) + '\n');
+  write('qualification-receipts.json', JSON.stringify(receipts, null, 2) + '\n');
   buildSpk(manifest, path.join(output, 'synology'));
 }
 
 if (require.main === module) {
-  assert(process.argv.length === 5, 'Usage: node build.cjs release-directory release-tag output-directory');
-  build(process.argv[2], process.argv[3], process.argv[4]).catch((error) => {
+  assert(process.argv.length === 6, 'Usage: node build.cjs release-directory release-tag qualification-receipts.json output-directory');
+  build(process.argv[2], process.argv[3], process.argv[5], JSON.parse(fs.readFileSync(process.argv[4], 'utf8'))).catch((error) => {
     console.error(error.message);
     process.exitCode = 1;
   });
