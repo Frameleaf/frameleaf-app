@@ -267,15 +267,25 @@
   afterNavigate(() => {
     routerReady = true;
   });
+  // FL-40 fix: same shallow-replaceState hazard as LibraryView.svelte — `page.url` does not update
+  // synchronously after we delete `create` via replaceState, so without this guard the effect could
+  // re-fire on the same stale `create` value and loop (openCreate + replaceState repeatedly). Reset
+  // to null once `create` is gone so a later `?create=` on the same mounted page still opens.
+  let consumedCreateRequest: string | null = null;
 
   $effect(() => {
     const request = page.url.searchParams.get('create');
     if (request !== 'album' && request !== 'space') {
+      consumedCreateRequest = null;
+      return;
+    }
+    if (request === consumedCreateRequest) {
       return;
     }
     if (!routerReady) {
       return;
     }
+    consumedCreateRequest = request;
     untrack(() => openCreate(request === 'space' ? AlbumKind.Space : AlbumKind.Album));
     const url = new URL(page.url);
     url.searchParams.delete('create');
