@@ -35,11 +35,13 @@ jobs:
           node .github/check-runners.cjs
           node .github/check-release.cjs
           node .github/check-jira.cjs
+          node scripts/frameleaf-distribution-gates.mjs
           node --test docker/frameleaf-delivery.test.mjs
           node --test \
             .github/frameleaf-release.test.cjs \
             .github/frameleaf-deploy-test.test.cjs \
-            .github/verify-release-bundle.test.cjs
+            .github/verify-release-bundle.test.cjs \
+            scripts/frameleaf-distribution-gates.test.mjs
       - name: Validate NAS package fixtures
         run: node --test --test-concurrency=1 packaging/nas/build.test.cjs
       - name: Install plugin WASM, API generation and ffmpeg tools
