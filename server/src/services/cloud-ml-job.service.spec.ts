@@ -1049,6 +1049,23 @@ describe(CloudMlJobService.name, () => {
       expect(written()).toMatchObject({ waiting: { detail: expect.stringContaining('could not be confirmed') } });
     });
 
+    it('still uploads when /capabilities offers no workloads because its own hold used the free balance (FL-201, FC contract)', async () => {
+      // frameleaf-cloud: /capabilities never answers 402; with no free balance it answers 200 with
+      // `workloads: []`, and a job's own hold counts against that balance. Empty workloads only mean
+      // "no new work": an admitted job keeps going.
+      mocks.machineLearning.probe.mockResolvedValue({
+        ...mlProbeStub.frameleafCloud,
+        workloads: [],
+        cloud: { ...facts, balanceUsd: 5, heldUsd: 5 },
+      });
+
+      await sut.step(resumedUpload(), 'claim', now);
+
+      expect(mocks.frameleafCloudMl.cancelJob).not.toHaveBeenCalled();
+      expect(mocks.frameleafCloudMl.uploadInput).toHaveBeenCalled();
+      expect(mocks.frameleafCloudMl.startJob).toHaveBeenCalledWith(expect.anything(), JOB_ID);
+    });
+
     it('keeps the consent refusal when cancelling the cloud job fails (FL-201 review P3)', async () => {
       const stale = { ...cloud, consentVersion: '2026-09-01.1' };
       mocks.mlDestination.getAll.mockResolvedValue([stale]);
