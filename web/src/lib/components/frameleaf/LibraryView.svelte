@@ -247,8 +247,9 @@
     statusBar = true,
   }: Props = $props();
 
-  timelineManager = new TimelineManager();
-  onDestroy(() => timelineManager?.destroy());
+  const manager = new TimelineManager();
+  timelineManager = manager;
+  onDestroy(() => manager.destroy());
 
   let helpOpen = $state(false);
   let restored = false;
@@ -260,7 +261,6 @@
     routerReady = true;
   });
 
-  const manager = $derived(timelineManager as TimelineManager);
   /** The layout the grid is drawn in; a public page has no layout switch and stays on Browse. */
   /**
    * T-20 (`App.jsx` `layoutSwitch`): the Locked collection offers the Timeline only, so a Locked view

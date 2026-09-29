@@ -243,14 +243,15 @@ describe('LibraryView', () => {
 
     it('preserves the live session through shared order changes but clears it for Locked (FL-40)', async () => {
       const session = new LibrarySessionStore({ storage: null, transientStorage: null });
-      const view = render(LibraryView, {
+      const props = {
         options: { albumId: 'album-1', order: AssetOrder.Desc },
-        destination: { kind: 'album', id: 'album-1' },
+        destination: { kind: 'album' as const, id: 'album-1' },
         session,
         syncUrl: false,
         noSelectionBar: true,
         infoPanel,
-      });
+      };
+      const view = render(LibraryView, props);
       const sort = await screen.findByRole('combobox', { name: 'frameleaf_library_sort' });
       session.select('photo');
       session.open('video', 12);
@@ -258,7 +259,7 @@ describe('LibraryView', () => {
       session.dispatch({ type: 'draft', draft });
       await tick();
 
-      await view.rerender({ options: { albumId: 'album-1', order: AssetOrder.Asc } });
+      await view.rerender({ ...props, options: { albumId: 'album-1', order: AssetOrder.Asc } });
       await waitFor(() => expect(sort).toHaveValue('captured-asc'));
       expect(session.selection).toEqual(['photo']);
       expect(session.openAssetId).toBe('video');
@@ -266,6 +267,7 @@ describe('LibraryView', () => {
       expect(session.session.draft).toEqual(draft);
 
       await view.rerender({
+        ...props,
         options: { albumId: 'album-1', order: AssetOrder.Asc, visibility: AssetVisibility.Locked },
       });
       await waitFor(() => expect(session.selection).toEqual([]));
