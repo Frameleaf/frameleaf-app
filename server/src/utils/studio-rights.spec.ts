@@ -32,6 +32,8 @@ const MUSICGEN = 'model:Xenova/musicgen-small';
  * (studio patch 0029), approved again by the owner at their new digests on 2026-09-29.
  */
 const REAPPROVED = new Set(['runtime:onnx-cdn', 'runtime:whisper-transformers']);
+/** The Supertonic model and the 64 voices, pinned to a commit after the approval; they await the owner. */
+const isPinnedPending = (id: string) => /^voice:(kokoro|supertonic)-|^model:supertonic-3$/.test(id);
 
 describe('studio rights (FL-86)', () => {
   it('keeps MusicGen-small local only: its CC-BY-NC-4.0 licence withholds hosted use (FL-146 comment 34944)', () => {
@@ -56,7 +58,7 @@ describe('studio rights (FL-86)', () => {
     });
     // Every other approved row keeps hosted use.
     const hostedBlocked = Object.entries(studioResourceRights)
-      .filter(([, rights]) => rights.hostedUse !== 'allowed')
+      .filter(([id, rights]) => rights.hostedUse !== 'allowed' && !isPinnedPending(id))
       .map(([id]) => id);
     expect(hostedBlocked).toEqual([MUSICGEN]);
   });
@@ -69,6 +71,9 @@ describe('studio rights (FL-86)', () => {
       source: expect.stringContaining('FL-146'),
     });
     for (const [id, rights] of rows) {
+      if (isPinnedPending(id)) {
+        continue;
+      }
       expect(rights.approvedOn, id).toBe(REAPPROVED.has(id) ? '2026-09-29' : '2026-09-25');
       expect(checkStudioRights(id, StudioRightsUse.LocalRuntime)).toEqual({ allowed: true, id });
       if (id !== MUSICGEN) {
@@ -84,6 +89,14 @@ describe('studio rights (FL-86)', () => {
     for (const id of REAPPROVED) {
       expect(studioResourceRights[id]).toMatchObject({ approvedOn: '2026-09-29', localRuntime: 'allowed' });
       expect(checkStudioRights(id, StudioRightsUse.LocalRuntime)).toEqual({ allowed: true, id });
+    }
+  });
+
+  it('blocks the Supertonic model and voice rows pinned after the approval until the owner approves them', () => {
+    const pending = Object.keys(studioResourceRights).filter((id) => isPinnedPending(id));
+    expect(pending).toHaveLength(65);
+    for (const id of pending) {
+      expect(studioResourceRights[id]).toMatchObject({ approvedOn: null, localRuntime: 'blocked' });
     }
   });
 

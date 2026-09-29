@@ -149,7 +149,12 @@
       "path": "patches/0029-bundled-onnx-runtimes.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "fa7b79dcefc3bb94c70430324d126b648f72cb08001f0f9dee6aeb1507358cd2"
+    },
+    {
+      "path": "patches/0030-pinned-supertonic-space.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "0e91354be3792ecf92efb8e58ac857af3f2b0adda2bb706459ed0ff0babae159"
     }
   ],
-  "sourceSha256": "4f91944768dc8d4b352eab8a7b47e1dbf9b234dae63eb9d5bdfec8149628350b"
+  "sourceSha256": "8d0761e783727fc1b0b63abd0821d8c04be0583d57f55b7cd58f8098a592bd8a"
 }

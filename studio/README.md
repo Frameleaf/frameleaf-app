@@ -145,8 +145,10 @@ as well as its model. Loaders inside third-party bundles that take no revision (
 transformers.js pre-flight metadata) are covered by the admission module itself: in every window
 and worker that imports it, a request for an approved repository at any other ref is sent to the
 approved commit; the Kokoro voice files, whose rows name `main`, are therefore read from the
-Kokoro model's approved commit. The Supertonic Space is approved at a branch
-(`resolve/main/assets`) and loads from it. Browser caches keyed by the original `main` URLs
+Kokoro model's approved commit. Patch 0030 loads the Supertonic
+Space from its pinned commit; the Supertonic model row and all 64 Kokoro and Supertonic voice rows
+now name an exact Hugging Face commit and a byte digest per file, and wait for the owner's approval
+of those changed rows before Supertonic and Kokoro speech run again. Browser caches keyed by the original `main` URLs
 (kokoro-js voices, transformers.js pre-flight) are not cleared if a pinned commit later changes;
 approving a new revision should clear them. Patch 0029 (owner decisions, 2026-09-29) removes every runtime CDN. The Whisper worker imports
 transformers.js 3.8.1, the version Freecut pinned, from the lockfile-pinned install instead of
