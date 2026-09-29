@@ -75,6 +75,19 @@ describe('settings change history (FL-66)', () => {
     expect(change.after!.endsWith('…')).toBe(true);
   });
 
+  it('keeps known sources and leaves out one this server does not know (FL-146)', () => {
+    const stored = {
+      entries: [
+        { ...entry('cli'), source: 'server-cli', changes: [], omittedChanges: 0 },
+        { ...entry('future'), source: 'something-new', changes: [], omittedChanges: 0 },
+      ],
+    };
+    const [cli, future] = readConfigHistory(stored).entries;
+    expect(cli.source).toBe('server-cli');
+    expect(future).not.toHaveProperty('source');
+    expect(future.id).toBe('future');
+  });
+
   it('keeps the newest entries first within the limit, and counts changes left out', () => {
     let history = readConfigHistory(null);
     for (let index = 0; index < CONFIG_HISTORY_LIMITS.entries + 5; index++) {
