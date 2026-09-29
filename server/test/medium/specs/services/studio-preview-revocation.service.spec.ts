@@ -9,7 +9,7 @@ import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { StudioExportRepository } from 'src/repositories/studio-export.repository.js';
-import { StudioPreviewRepository } from 'src/repositories/studio-preview.repository.js';
+import { StudioPreviewFrameCreate, StudioPreviewRepository } from 'src/repositories/studio-preview.repository.js';
 import { StudioProjectRepository } from 'src/repositories/studio-project.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
@@ -35,7 +35,14 @@ it.each([
   'reviewer removal',
   'grant refresh',
   'operation replacement',
-] as const)('protects a pending preview across %s', async (boundary) => {
+  'read access renewal',
+  'retention revival',
+  'cancel renewal',
+  'project revoke renewal',
+  'quota renewal',
+  'stale failure during rendering',
+  'stale failure after publication',
+] as const)('protects a preview across %s', async (boundary) => {
   const { sut: resources, ctx } = newMediumService(StudioResourceService, {
     database,
     real: [AccessRepository, AssetRepository, CryptoRepository],
@@ -117,8 +124,185 @@ it.each([
     file: { path: output(previous.id).path },
   });
 
+  if (boundary === 'read access renewal') {
+    // A failed real access check can finish after the same ready cache entry is reauthorized.
+    await shares.remove(owner.id, [asset.id], [recipient.id]);
+    const observed = (await frames.getForOwner(previous.id, recipient.id))!;
+    const verify = resources.verifyReadGrant.bind(resources);
+    vi.spyOn(resources, 'verifyReadGrant').mockImplementationOnce(async (...args) => {
+      const refused = await verify(...args);
+      expect(refused.valid).toBe(false);
+      await shares.add(owner.id, [asset.id], [recipient.id]);
+      const refreshed = await request(0);
+      expect(refreshed.preview.id).toBe(previous.id);
+      return refused;
+    });
+    await expect(sut.getFrame(auth, previous.id, {})).rejects.toThrow('This preview is no longer authorized');
+    const refreshed = (await frames.getForOwner(previous.id, recipient.id))!;
+    expect(refreshed.updateId).not.toBe(observed.updateId);
+    expect(refreshed.status).toBe(StudioPreviewStatus.Ready);
+    expect(refreshed.framePath).toBe(output(previous.id).path);
+    expect(storage.unlinkDir).not.toHaveBeenCalled();
+    await expect(sut.getFrame(auth, previous.id, {})).resolves.toMatchObject({
+      file: { path: output(previous.id).path },
+    });
+    // A current refusal still evicts and removes the unauthorized result.
+    await shares.remove(owner.id, [asset.id], [recipient.id]);
+    await expect(sut.getFrame(auth, previous.id, {})).rejects.toThrow('This preview is no longer authorized');
+    await expect(frames.getForOwner(previous.id, recipient.id)).resolves.toMatchObject({
+      status: StudioPreviewStatus.Evicted,
+      framePath: null,
+    });
+    expect(storage.unlinkDir).toHaveBeenCalledWith(studioPreviewFrameFolder(recipient.id, previous.id), {
+      recursive: true,
+      force: true,
+    });
+    return;
+  }
+  if (boundary === 'retention revival') {
+    await database
+      .updateTable('studio_preview_frame')
+      .set({ expiresAt: new Date(Date.now() - 1000) })
+      .where('id', '=', previous.id)
+      .execute();
+    const listRetired = frames.listRetired.bind(frames);
+    vi.spyOn(frames, 'listRetired').mockImplementationOnce(async (...args) => {
+      const retired = await listRetired(...args);
+      expect(retired).toEqual(expect.arrayContaining([expect.objectContaining({ id: previous.id })]));
+      // Another eviction and a real re-request revive the same row before this scan acts on it.
+      await frames.evict([previous.id]);
+      const revived = await request(0);
+      expect(revived.preview.id).toBe(previous.id);
+      expect(revived.preview.operationId).not.toBe(previous.operationId);
+      const currentOperation = await operations.getForOwner(revived.preview.operationId!, recipient.id);
+      await expect(sut.onRenderCompleted(currentOperation!, output(previous.id))).resolves.toEqual({ published: true });
+      return retired;
+    });
+    await sut.sweep(new Date());
+    await expect(frames.getForOwner(previous.id, recipient.id)).resolves.toMatchObject({
+      status: StudioPreviewStatus.Ready,
+      framePath: output(previous.id).path,
+    });
+    expect(storage.unlinkDir).not.toHaveBeenCalled();
+    await expect(sut.getFrame(auth, previous.id, {})).resolves.toMatchObject({
+      file: { path: output(previous.id).path },
+    });
+    return;
+  }
+
   const { preview: pending } = await request(1);
   const operation = await operations.getForOwner(pending.operationId!, recipient.id);
+  if (boundary === 'cancel renewal' || boundary === 'project revoke renewal' || boundary === 'quota renewal') {
+    const observed = (await frames.getForOwner(pending.id, recipient.id))!;
+    const refresh = async () => {
+      const renewed = await request(1);
+      expect(renewed.preview.id).toBe(pending.id);
+      expect(renewed.preview.operationId).toBe(operation!.id);
+    };
+    if (boundary === 'cancel renewal') {
+      const getForOwner = frames.getForOwner.bind(frames);
+      vi.spyOn(frames, 'getForOwner').mockImplementationOnce(async (...args) => {
+        const snapshot = await getForOwner(...args);
+        await refresh();
+        return snapshot;
+      });
+      await sut.cancel(auth, pending.id);
+    } else if (boundary === 'project revoke renewal') {
+      const listLive = frames.listLiveForProjects.bind(frames);
+      vi.spyOn(frames, 'listLiveForProjects').mockImplementationOnce(async (...args) => {
+        const snapshot = await listLive(...args);
+        await refresh();
+        return snapshot;
+      });
+      await expect(sut.revokeForProjects([project.id], recipient.id)).resolves.toBe(1);
+    } else {
+      // Seed the retained older binding ahead of the rendering entry: the real planner must
+      // cancel the latter when a different current binding is being budgeted.
+      await database
+        .updateTable('studio_preview_frame')
+        .set({ revisionDigest: 'retained-binding', requestedAt: new Date(Date.now() + 1000) })
+        .where('id', '=', previous.id)
+        .execute();
+      const listForProject = frames.listForProject.bind(frames);
+      vi.spyOn(frames, 'listForProject').mockImplementationOnce(async (...args) => {
+        const snapshot = await listForProject(...args);
+        // Exercise the same repository refresh used by a request without starting a nested
+        // quota pass for the deliberately seeded historical bindings.
+        const {
+          id,
+          createdAt: _createdAt,
+          updatedAt: _updatedAt,
+          updateId,
+          requestedAt: _requestedAt,
+          lastAccessedAt: _lastAccessedAt,
+          status: _status,
+          ...input
+        } = observed;
+        const renewed = await frames.upsert(input as unknown as StudioPreviewFrameCreate);
+        expect(renewed.created).toBe(false);
+        expect(renewed.frame.id).toBe(id);
+        expect(renewed.frame.operationId).toBe(operation!.id);
+        expect(renewed.frame.updateId).not.toBe(updateId);
+        return snapshot;
+      });
+      await sut['evict'](project.id, recipient.id, 'current-binding', new Date());
+    }
+    await expect(frames.getForOwner(pending.id, recipient.id)).resolves.toMatchObject({
+      status: StudioPreviewStatus.Rendering,
+      operationId: operation!.id,
+    });
+    await expect(operations.getForOwner(operation!.id, recipient.id)).resolves.toMatchObject({
+      cancelRequestedAt: null,
+    });
+    expect(storage.unlinkDir).not.toHaveBeenCalledWith(studioPreviewFrameFolder(recipient.id, pending.id), {
+      recursive: true,
+      force: true,
+    });
+    await expect(sut.onRenderCompleted(operation!, output(pending.id))).resolves.toEqual({ published: true });
+    await expect(frames.getForOwner(pending.id, recipient.id)).resolves.toMatchObject({
+      status: StudioPreviewStatus.Ready,
+      framePath: output(pending.id).path,
+    });
+    return;
+  }
+  if (boundary === 'stale failure during rendering' || boundary === 'stale failure after publication') {
+    await frames.evict([pending.id]);
+    const replacement = await request(1);
+    expect(replacement.preview.id).toBe(pending.id);
+    expect(replacement.preview.operationId).not.toBe(operation!.id);
+    const currentOperation = (await operations.getForOwner(replacement.preview.operationId!, recipient.id))!;
+    if (boundary === 'stale failure after publication') {
+      await expect(sut.onRenderCompleted(currentOperation, output(pending.id))).resolves.toEqual({ published: true });
+    }
+    await sut.onRenderFailed(operation!, 'late_failure');
+    await expect(frames.getForOwner(pending.id, recipient.id)).resolves.toMatchObject({
+      operationId: currentOperation.id,
+      status: boundary === 'stale failure during rendering' ? StudioPreviewStatus.Rendering : StudioPreviewStatus.Ready,
+      errorCode: null,
+    });
+    expect(storage.unlinkDir).not.toHaveBeenCalled();
+    if (boundary === 'stale failure during rendering') {
+      await expect(sut.onRenderCompleted(currentOperation, output(pending.id))).resolves.toEqual({ published: true });
+    }
+    // Even a duplicate failure from the current operation cannot delete a published result.
+    await sut.onRenderFailed(currentOperation, 'duplicate_failure');
+    expect(storage.unlinkDir).not.toHaveBeenCalled();
+    await expect(sut.getFrame(auth, pending.id, {})).resolves.toMatchObject({
+      file: { path: output(pending.id).path },
+    });
+    const next = await request(2);
+    const failedOperation = (await operations.getForOwner(next.preview.operationId!, recipient.id))!;
+    await sut.onRenderFailed(failedOperation, 'current_failure');
+    await expect(frames.getForOwner(next.preview.id, recipient.id)).resolves.toMatchObject({
+      status: StudioPreviewStatus.Failed,
+      errorCode: 'current_failure',
+    });
+    expect(storage.unlinkDir).toHaveBeenCalledWith(studioPreviewFrameFolder(recipient.id, next.preview.id), {
+      recursive: true,
+      force: true,
+    });
+    return;
+  }
   if (boundary === 'grant refresh' || boundary === 'operation replacement') {
     // The failed verifier holds an old row while a real re-request renews that same cache entry.
     await database

@@ -396,7 +396,9 @@ export class StudioPreviewService {
   async cancel(auth: AuthDto, id: string): Promise<StudioPreviewDto> {
     const frame = await this.findOwned(auth, id);
     const [cancelled] = await this.dropFrames([frame]);
-    await this.cancelOperation(frame, auth.user.id);
+    if (cancelled) {
+      await this.cancelOperation(cancelled, auth.user.id);
+    }
     return this.map(cancelled ?? frame);
   }
 
@@ -523,13 +525,20 @@ export class StudioPreviewService {
   }
 
   /** The render failed for good (its automatic retry is spent): the frame says so, and its files go. */
-  async onRenderFailed(operation: Pick<MediaOperation, 'ownerId' | 'snapshot'>, errorCode: string): Promise<void> {
+  async onRenderFailed(
+    operation: Pick<MediaOperation, 'id' | 'ownerId' | 'snapshot'>,
+    errorCode: string,
+  ): Promise<void> {
     const frameId = previewFrameIdOf(operation);
     if (!frameId) {
       return;
     }
-    await this.repository.markFailed(frameId, errorCode);
-    await this.removeFiles(studioPreviewFrameFolder(operation.ownerId, frameId));
+    await this.repository.markFailed(
+      frameId,
+      { ownerId: operation.ownerId, operationId: operation.id },
+      errorCode,
+      () => this.removeFiles(studioPreviewFrameFolder(operation.ownerId, frameId)),
+    );
   }
 
   /* ---------------------------------------------------------------- */
@@ -542,13 +551,16 @@ export class StudioPreviewService {
    */
   async revokeForProjects(projectIds: readonly string[], ownerId?: string): Promise<number> {
     const frames = await this.repository.listLiveForProjects(projectIds, ownerId);
-    for (const frame of frames) {
-      if (frame.status !== StudioPreviewStatus.Ready) {
+    const evicted = await this.dropFrames(frames);
+    const inFlight = new Set(
+      frames.filter((frame) => frame.status !== StudioPreviewStatus.Ready).map((frame) => frame.id),
+    );
+    for (const frame of evicted) {
+      if (inFlight.has(frame.id)) {
         await this.cancelOperation(frame, frame.ownerId);
       }
     }
-    await this.dropFrames(frames);
-    return frames.length;
+    return evicted.length;
   }
 
   @OnEvent({ name: 'AppBootstrap', workers: [ImmichWorker.Microservices] })
@@ -593,12 +605,16 @@ export class StudioPreviewService {
 
   /** Evict rows and remove their files. The row stays as a tombstone so the answer is "gone". */
   private async dropFrames(frames: readonly StudioPreviewFrame[]): Promise<StudioPreviewFrame[]> {
-    if (frames.length === 0) {
-      return [];
-    }
-    const evicted = await this.repository.evict(frames.map((frame) => frame.id));
+    const evicted: StudioPreviewFrame[] = [];
     for (const frame of frames) {
-      await this.removeFiles(studioPreviewFrameFolder(frame.ownerId, frame.id));
+      const removed = await this.repository.evictObserved(
+        frame,
+        () => this.removeFiles(studioPreviewFrameFolder(frame.ownerId, frame.id)),
+        'snapshot',
+      );
+      if (removed) {
+        evicted.push(removed);
+      }
     }
     return evicted;
   }
@@ -820,10 +836,9 @@ export class StudioPreviewService {
     const byId = new Map(rows.map((row) => [row.id, row]));
     const rowsOf = (ids: readonly string[]) => ids.flatMap((id) => byId.get(id) ?? []);
     if (plan.cancel.length > 0) {
-      for (const row of rowsOf(plan.cancel)) {
+      for (const row of await this.dropFrames(rowsOf(plan.cancel))) {
         await this.cancelOperation(row, ownerId);
       }
-      await this.dropFrames(rowsOf(plan.cancel));
     }
 
     if (plan.evict.length > 0) {
