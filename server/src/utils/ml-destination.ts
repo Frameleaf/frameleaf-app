@@ -68,6 +68,26 @@ export const cloudRouteAllows = (
 /** Window over which a destination's spend is compared with its budget limit. */
 export const ML_BUDGET_WINDOW_DAYS = 30;
 
+/**
+ * FL-201: the admission refusals that mean an already created cloud job may no longer send the owner's
+ * files: consent withdrawn or outdated, the destination gone or off, the work no longer allowed or routed
+ * there, or the entitlement lost. Wallet, daily cap, model and capacity refusals do not: the cloud
+ * already accepted the job and holds its funds, so they never stop a job that exists.
+ */
+export const STOPS_CREATED_CLOUD_JOB: ReadonlySet<MlAdmissionRefusal> = new Set([
+  MlAdmissionRefusal.ConsentMissing,
+  MlAdmissionRefusal.ConsentVersionOutdated,
+  MlAdmissionRefusal.DestinationMissing,
+  MlAdmissionRefusal.DestinationDisabled,
+  MlAdmissionRefusal.WorkloadNotAllowed,
+  MlAdmissionRefusal.WorkloadNotRouted,
+  MlAdmissionRefusal.EntitlementMissing,
+]);
+
+/** The refusal an admission error carries, if it is one. */
+export const admissionRefusalOf = (error: unknown): MlAdmissionRefusal | null =>
+  error instanceof MlDestinationRefusedError || error instanceof MlDestinationNotFoundError ? error.refusal : null;
+
 export class MlDestinationRefusedError extends BadRequestException {
   constructor(
     readonly refusal: MlAdmissionRefusal,
@@ -75,7 +95,14 @@ export class MlDestinationRefusedError extends BadRequestException {
     readonly destinationId: string | null,
     detail: string,
   ) {
-    super(`Machine learning destination refused (${refusal}) for ${workload}: ${detail}`);
+    // FL-201: the refusal is also a machine-readable `code` (e.g. consent-version-outdated,
+    // consent-missing), so every client can tell a stale or missing consent from other refusals
+    super({
+      message: `Machine learning destination refused (${refusal}) for ${workload}: ${detail}`,
+      error: 'Bad Request',
+      statusCode: 400,
+      code: refusal,
+    });
   }
 }
 

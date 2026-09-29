@@ -150,6 +150,8 @@ import { mimeTypes } from 'src/utils/mime-types.js';
 import {
   MlDestinationNotFoundError,
   MlDestinationRefusedError,
+  STOPS_CREATED_CLOUD_JOB,
+  admissionRefusalOf,
   cloudRouteAllows,
   selectMlDestination,
 } from 'src/utils/ml-destination.js';
@@ -2855,20 +2857,33 @@ export class CloudMlJobService {
   }
 
   /**
-   * FL-201: before a created job's inputs leave this server, admission runs again for consent and
-   * routing (not the wallet, whose hold the cloud already took). A lasting refusal, such as consent that
-   * is missing or older than the version the cloud now requires (`consent-version-outdated`), cancels the
-   * cloud job so its hold is released, and stops this one; nothing more is sent.
+   * FL-201: before a created job's inputs leave this server, admission runs again. Only a refusal that
+   * means the files may no longer be sent (`STOPS_CREATED_CLOUD_JOB`: consent missing or older than the
+   * version the cloud now requires, destination gone or off, work no longer allowed, entitlement lost)
+   * cancels the cloud job, releasing its hold, and fails this one with that refusal; nothing more is sent.
+   * Wallet, daily cap and model refusals do not stop a job the cloud already accepted and holds funds for,
+   * and a cloud that does not answer leaves the job for its retry.
    */
   private async readmit(run: JobRun, client: FrameleafCloudJobClient) {
     try {
       await this.admit(run.snapshot, null, run.operation.id);
     } catch (error) {
-      const failure = failureOf(error);
-      if (failure && !failure.retry) {
-        await this.sendCancel(run, client);
+      const refusal = admissionRefusalOf(error);
+      if (refusal && STOPS_CREATED_CLOUD_JOB.has(refusal)) {
+        try {
+          await this.sendCancel(run, client);
+        } catch (cancelError) {
+          // the refusal is what the job reports; the cancel is tried again when the job is cleaned up
+          this.logger.warn(
+            `Could not cancel Frameleaf Cloud job for ${run.operation.id}: ${errorMessage(cancelError)}`,
+          );
+        }
+        throw error;
       }
-      throw error;
+      if (failureOf(error)?.retry) {
+        throw error;
+      }
+      // any other refusal (wallet, cap, model) is for new work only: this job goes on
     }
   }
 
