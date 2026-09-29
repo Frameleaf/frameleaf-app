@@ -53,7 +53,7 @@ Start with the [Frameleaf privacy suite guide](docs/docs/features/fork-privacy-s
 
 Use a [published Frameleaf release](https://github.com/Frameleaf/frameleaf-app/releases) and its matching Compose files. Application images are `ghcr.io/frameleaf/frameleaf-server` and `ghcr.io/frameleaf/frameleaf-machine-learning`; stable channels use `release`/`latest`, and development builds use `edge`. The release bundle pins its exact version. Follow the [container installation and migration notes](docker/README.md) to retain existing database/media paths, service names and environment settings when displayed container names change to `frameleaf_*`.
 
-For contributing and delivery workflows, read the [Frameleaf development guide](docs/docs/developer/frameleaf-development.md).
+For contributing, read [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ---
 
