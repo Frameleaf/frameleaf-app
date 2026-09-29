@@ -2586,25 +2586,19 @@ export class AssetRepository {
   async getAssetIdByCity(ownerId: string, options: AssetExploreFieldOptions) {
     const { minAssetsPerField, maxFields } = options;
     const items = await this.db
-      .with('cities', (qb) =>
-        qb
-          .selectFrom('asset_exif')
-          .select('city')
-          .where('city', 'is not', null)
-          .groupBy('city')
-          .having((eb) => eb.fn('count', [eb.ref('assetId')]), '>=', minAssetsPerField),
-      )
       .selectFrom('asset')
       .innerJoin('asset_exif', 'asset.id', 'asset_exif.assetId')
-      .innerJoin('cities', 'asset_exif.city', 'cities.city')
-      .distinctOn('asset_exif.city')
-      .select(['assetId as data', 'asset_exif.city as value'])
+      .select([sql<string>`min(asset.id::text)`.as('data'), 'asset_exif.city as value'])
       .$narrowType<{ value: NotNull }>()
+      .where('asset_exif.city', 'is not', null)
       .where('ownerId', '=', asUuid(ownerId))
       .where(isTimelineVisible('asset', options.revealLockedOwnerId))
       .where('type', '=', AssetType.Image)
       .where('deletedAt', 'is', null)
       .$call((qb) => withHiddenContentFilter(qb, options))
+      .groupBy('asset_exif.city')
+      .having((eb) => eb.fn.count('asset.id'), '>=', minAssetsPerField)
+      .orderBy('asset_exif.city')
       .limit(maxFields)
       .execute();
 

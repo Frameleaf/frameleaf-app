@@ -1003,28 +1003,15 @@ from
   "agg"
 
 -- AssetRepository.getAssetIdByCity
-with
-  "cities" as (
-    select
-      "city"
-    from
-      "asset_exif"
-    where
-      "city" is not null
-    group by
-      "city"
-    having
-      count("assetId") >= $1
-  )
-select distinct
-  on ("asset_exif"."city") "assetId" as "data",
+select
+  min(asset.id::text) as "data",
   "asset_exif"."city" as "value"
 from
   "asset"
   inner join "asset_exif" on "asset"."id" = "asset_exif"."assetId"
-  inner join "cities" on "asset_exif"."city" = "cities"."city"
 where
-  "ownerId" = $2::uuid
+  "asset_exif"."city" is not null
+  and "ownerId" = $1::uuid
   and (
     "asset"."visibility" = 'timeline'
     and not exists (
@@ -1036,8 +1023,14 @@ where
         asset_lock."assetId" = "asset"."id"
     )
   )
-  and "type" = $3
+  and "type" = $2
   and "deletedAt" is null
+group by
+  "asset_exif"."city"
+having
+  count("asset"."id") >= $3
+order by
+  "asset_exif"."city"
 limit
   $4
 

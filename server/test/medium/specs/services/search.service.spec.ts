@@ -66,6 +66,60 @@ describe(SearchService.name, () => {
     expect(sut).toBeDefined();
   });
 
+  it.each(['another owner', 'Locked', 'hidden', 'archived', 'trashed', 'video'] as const)(
+    'does not let %s media satisfy the Explore city threshold (FL-137)',
+    async (excluded) => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const { user: stranger } = await ctx.newUser();
+      const visibleIds = [];
+      for (let i = 0; i < 4; i++) {
+        const { asset } = await ctx.newAsset({ ownerId: user.id, type: AssetType.Image });
+        await ctx.newExif({ assetId: asset.id, city: 'Private threshold' });
+        visibleIds.push(asset.id);
+      }
+      const { asset: privateAsset } = await ctx.newAsset({
+        ownerId: excluded === 'another owner' ? stranger.id : user.id,
+        type: excluded === 'video' ? AssetType.Video : AssetType.Image,
+        visibility:
+          excluded === 'Locked'
+            ? AssetVisibility.Locked
+            : excluded === 'archived'
+              ? AssetVisibility.Archive
+              : AssetVisibility.Timeline,
+      });
+      await ctx.newExif({ assetId: privateAsset.id, city: 'Private threshold' });
+      if (excluded === 'trashed') await ctx.softDeleteAsset(privateAsset.id);
+      const [tag] = await upsertTags(ctx.get(TagRepository), { userId: user.id, tags: ['Private'] });
+      if (excluded === 'hidden') await ctx.newTagAsset({ tagIds: [tag.id], assetIds: [privateAsset.id] });
+      const auth = {
+        ...factory.auth({ user }),
+        hiddenContent: {
+          userId: user.id,
+          includeNsfw: true,
+          tagIds: [tag.id],
+          personIds: [],
+          petIds: [],
+          scope: 'owned' as const,
+        },
+      };
+      const cities = async () =>
+        (await sut.getExploreData(auth)).find(({ fieldName }) => fieldName === 'exifInfo.city');
+      await expect(cities()).resolves.toEqual({ fieldName: 'exifInfo.city', items: [] });
+
+      const { asset: fifth } = await ctx.newAsset({ ownerId: user.id, type: AssetType.Image });
+      await ctx.newExif({ assetId: fifth.id, city: 'Private threshold' });
+      visibleIds.push(fifth.id);
+      const qualifying = await cities();
+      expect(qualifying?.items).toHaveLength(1);
+      expect(qualifying?.items[0].value).toBe('Private threshold');
+      expect(visibleIds).toContain(qualifying?.items[0].data.id);
+
+      await ctx.newMetadata({ assetId: fifth.id, key: AssetMetadataKey.MlEnrichment, value: nsfwMetadata(true) });
+      await expect(cities()).resolves.toEqual({ fieldName: 'exifInfo.city', items: [] });
+    },
+  );
+
   it('should return assets', async () => {
     const { sut, ctx } = setup();
     const { user } = await ctx.newUser();
