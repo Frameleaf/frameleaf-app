@@ -84,6 +84,7 @@ services:
       <<: *server-environment
       DB_SKIP_MIGRATIONS: ${FORK_DB_SKIP_MIGRATIONS:-false}
       IMMICH_ENV: ${FORK_IMMICH_ENV:-production}
+      IMMICH_LOG_LEVEL: ${FORK_ROUNDTRIP_LOG_LEVEL:-log}
       IMMICH_WORKERS_INCLUDE: ${FORK_WORKERS_INCLUDE:-api,microservices}
     depends_on:
       database:
