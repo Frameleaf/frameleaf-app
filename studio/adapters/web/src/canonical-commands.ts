@@ -689,19 +689,28 @@ const handlers: Record<string, Handler> = {
   'clip.split'(payload, { cadence }) {
     const frame = timeField(payload, 'at', cadence)
     const ids = payload.clipIds
-    if (ids === undefined) {
-      if (splitAllItemsAtFrame(frame) === 0) invalid('clip.split: nothing spans that time')
-      return
+    if (payload.linkedSelectionEnabled !== undefined && typeof payload.linkedSelectionEnabled !== 'boolean') {
+      invalid('linkedSelectionEnabled must be a boolean')
     }
-    if (!Array.isArray(ids) || ids.length === 0 || ids.some((id) => typeof id !== 'string'))
-      invalid('clipIds must be clip ids')
-    for (const id of ids as string[]) requireItem(id, 'clipIds')
-    // splitItem already splits linked companions; choose anchors before it rewrites their groups.
-    const anchors = useEditorStore.getState().linkedSelectionEnabled
-      ? getUniqueLinkedItemAnchorIds(items(), ids as string[])
-      : [...new Set(ids as string[])]
-    for (const id of anchors) {
-      if (!splitItem(id, frame)) invalid(`clip.split: "${id}" cannot be split there`)
+    const previous = useEditorStore.getState().linkedSelectionEnabled
+    useEditorStore.setState({ linkedSelectionEnabled: payload.linkedSelectionEnabled !== false })
+    try {
+      if (ids === undefined) {
+        if (splitAllItemsAtFrame(frame) === 0) invalid('clip.split: nothing spans that time')
+        return
+      }
+      if (!Array.isArray(ids) || ids.length === 0 || ids.some((id) => typeof id !== 'string'))
+        invalid('clipIds must be clip ids')
+      for (const id of ids as string[]) requireItem(id, 'clipIds')
+      // splitItem already splits linked companions; choose anchors before it rewrites their groups.
+      const anchors = payload.linkedSelectionEnabled !== false
+        ? getUniqueLinkedItemAnchorIds(items(), ids as string[])
+        : [...new Set(ids as string[])]
+      for (const id of anchors) {
+        if (!splitItem(id, frame)) invalid(`clip.split: "${id}" cannot be split there`)
+      }
+    } finally {
+      useEditorStore.setState({ linkedSelectionEnabled: previous })
     }
   },
 
