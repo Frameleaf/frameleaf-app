@@ -44,11 +44,14 @@ export const load = (async ({ parent, url }) => {
     };
   }
 
+  // FL-146 (FL-30): where the person was going when sign-in sent them here; only a page of this app
+  const requested = new URL(String(Route.continue(url.searchParams.get('continue'), Route.photos())), url);
   return {
     mode: 'account' as const,
     flow: null,
     signedIn: true,
     saved: null,
+    continueTo: requested.pathname + requested.search + requested.hash,
     meta: { title: $t('frameleaf_setup_tool_title') },
   };
 }) satisfies PageLoad;

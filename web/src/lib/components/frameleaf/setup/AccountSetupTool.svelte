@@ -46,6 +46,13 @@
   import { onMount } from 'svelte';
   import { locale as i18nLocale, t } from 'svelte-i18n';
 
+  interface Props {
+    /** Where to go when setup is done: the page sign-in was asked for (FL-146), else the Library. */
+    continueTo?: string;
+  }
+
+  const { continueTo }: Props = $props();
+
   const user = authManager.user;
   const preferences = authManager.preferences;
   let tool = $state(loadAccountTool(user.id));
@@ -128,7 +135,7 @@
       saveAccountTool(user.id, { ...tool });
       // The theme choice applies when this page closes; setup itself is always dark.
       themeManager.setPreference(theme === 'light' ? ThemePreference.Light : ThemePreference.Dark);
-      await goto(Route.photos(), { invalidateAll: true });
+      await goto(continueTo ?? Route.photos(), { invalidateAll: true });
     } catch (error_) {
       error = getServerErrorMessage(error_) || $t('frameleaf_setup_error_generic');
     } finally {

@@ -99,6 +99,18 @@ describe('login mandatory-change routing', () => {
     expect(String(getOAuthContinue('/photos'))).toBe(new URL('/albums?from=share', location.origin).href);
   });
 
+  it.each([
+    ['/albums?from=share#top', '/auth/onboarding?continue=%2Falbums%3Ffrom%3Dshare%23top'],
+    ['/photos', '/auth/onboarding'],
+  ])('carries the page asked for (%s) through first-time setup (FL-146, FL-30)', async (continueUrl, expected) => {
+    vi.mocked(login).mockResolvedValue({ isAdmin: false, isOnboarded: false, shouldChangePassword: false } as never);
+    render(Page, { data: { ...data(false), continueUrl: new URL(continueUrl, location.origin) } } as never);
+    await fireEvent.input(screen.getByLabelText('Email'), { target: { value: 'user@example.test' } });
+    await fireEvent.input(screen.getByLabelText('Password'), { target: { value: 'password' } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+    await waitFor(() => expect(goto).toHaveBeenCalledWith(expected));
+  });
+
   it('routes a password login to the forced password screen before continuing', async () => {
     vi.mocked(login).mockResolvedValue(forced as never);
     render(Page, { data: data(false) } as never);

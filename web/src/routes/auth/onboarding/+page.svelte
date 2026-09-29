@@ -19,5 +19,5 @@
     />
   {/key}
 {:else}
-  <AccountSetupTool />
+  <AccountSetupTool continueTo={data.mode === 'account' ? data.continueTo : undefined} />
 {/if}
