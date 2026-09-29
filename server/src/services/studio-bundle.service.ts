@@ -30,6 +30,7 @@ import { ImmichReadStream, StorageRepository } from 'src/repositories/storage.re
 import { StudioBundleUpload, StudioProjectRepository } from 'src/repositories/studio-project.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { mapOperation } from 'src/services/media-operation.service.js';
+import { StudioProjectImportService } from 'src/services/studio-project-import.service.js';
 import { StudioProjectService } from 'src/services/studio-project.service.js';
 import { StudioResourceService } from 'src/services/studio-resource.service.js';
 import { isLockedRow } from 'src/utils/locked.js';
@@ -198,6 +199,7 @@ export class StudioBundleService {
     private users: UserRepository,
     private resources: StudioResourceService,
     private studio: StudioProjectService,
+    private imports: StudioProjectImportService,
   ) {
     this.logger.setContext(StudioBundleService.name);
   }
@@ -665,6 +667,9 @@ export class StudioBundleService {
     for (const upload of await this.projects.deleteExpiredUploads(now)) {
       await this.storage.unlink(upload.path);
     }
+
+    // FL-103 / FL-105: the files of projects deleted for good go with them.
+    await this.imports.sweep(now);
 
     for (const operation of await this.operations.listExpiredBundleExports(now)) {
       const result = parseBundleExportResult(operation.result);

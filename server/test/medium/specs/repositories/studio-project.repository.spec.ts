@@ -782,6 +782,32 @@ describe(StudioProjectRepository.name, () => {
       );
     });
 
+    it('counts bytes per owner, refuses archived projects and releases imports of deleted projects', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const kept = await sut.create({ ownerId: user.id, name: 'Kept' });
+      const gone = await sut.create({ ownerId: user.id, name: 'Gone' });
+      await sut.registerImport(item(kept.id, user.id, { sizeBytes: 100 }));
+      const doomed = item(gone.id, user.id, { sizeBytes: 50, path: '/data/exports/o/studio-imports/g/a.wav' });
+      await sut.registerImport(doomed);
+      expect(await sut.getImportBytes(user.id)).toBe(150);
+
+      await defaultDatabase
+        .updateTable('studio_project')
+        .set({ archivedAt: new Date() })
+        .where('id', '=', kept.id)
+        .execute();
+      await expect(sut.registerImport(item(kept.id, user.id))).rejects.toThrow(
+        'The project is unavailable for imports',
+      );
+
+      expect(await sut.deleteOrphanImports()).toEqual([]);
+      await sut.delete(gone.id);
+      expect(await sut.deleteOrphanImports()).toEqual([{ projectId: gone.id, ownerId: user.id, path: doomed.path }]);
+      expect(await sut.deleteOrphanImports()).toEqual([]);
+      expect(await sut.getImportBytes(user.id)).toBe(100);
+    });
+
     it("refuses imports into someone else's project and invalid declarations", async () => {
       const { ctx, sut } = setup();
       const { user } = await ctx.newUser();

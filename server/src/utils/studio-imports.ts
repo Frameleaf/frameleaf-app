@@ -118,8 +118,16 @@ export function sniffStudioImport(head: Uint8Array, declared: string | undefined
   throw new StudioImportRefusal('Studio can import sound, images, short video, SVG and Lottie files only');
 }
 
-const svgActiveContent =
-  /<script[\s>/]|\son[a-z]+\s*=|javascript:|<foreignObject[\s>/]|<iframe[\s>/]|<embed[\s>/]|<object[\s>/]/i;
+/** Decode XML character references, so an encoded `javascript:` or `url(` is seen as written. */
+const decodeCharacterReferences = (text: string) =>
+  text.replaceAll(/&#(x[\da-f]+|\d+);?/gi, (reference: string, value: string) => {
+    const code = value[0].toLowerCase() === 'x' ? Number.parseInt(value.slice(1), 16) : Number(value);
+    return Number.isSafeInteger(code) && code >= 0 && code <= 0x10_ff_ff ? String.fromCodePoint(code) : reference;
+  });
+
+/** Elements that run code or embed another document, whatever namespace prefix they carry. */
+const activeElement = /<(?:[\w.-]+:)?(?:script|foreignObject|iframe|embed|object|handler|listener)\b/i;
+const eventHandler = /[\s"'/](?:[\w.-]+:)?on[a-z]+\s*=/i;
 
 /** A reference that stays inside the document: a fragment or embedded `data:` bytes. */
 const internalReference = (value: string) => {
@@ -128,32 +136,54 @@ const internalReference = (value: string) => {
 };
 
 /**
- * External subresources an SVG would fetch when rendered: `href`/`xlink:href`/`src` attributes,
- * CSS `url(...)` and `@import`. Active content (scripts, event handlers, `javascript:`, embedded
- * documents) is refused, never counted: a Studio graphic is a picture.
+ * External subresources an SVG would fetch when rendered. Active content — scripts, event handlers,
+ * `javascript:`, embedded documents, entity declarations or a non-UTF-8 encoding — is refused, not
+ * counted: a Studio graphic is a picture. The text is read after decoding character references and
+ * without URL whitespace, with element and attribute names matched whatever their namespace prefix,
+ * and anything CSS could resolve that a pattern cannot follow (escapes, `image-set()`) counts as
+ * external, so an uncertain graphic is refused at render rather than trusted.
  */
 export function scanStudioSvg(text: string): number {
-  if (svgActiveContent.test(text)) {
+  const declared = /<\?xml[^>]*\bencoding\s*=\s*["']([^"']+)["']/i.exec(text)?.[1];
+  if (declared && !/^utf-?8$/i.test(declared.trim())) {
+    throw new StudioImportRefusal('An SVG must be UTF-8');
+  }
+  if (/<!ENTITY/i.test(text)) {
+    throw new StudioImportRefusal('An SVG with entity declarations cannot be imported');
+  }
+  const decoded = decodeCharacterReferences(text);
+  const compact = decoded.replaceAll(/[\t\n\r\f\0]/g, '');
+  if (activeElement.test(decoded) || eventHandler.test(decoded) || /javascript:|vbscript:/i.test(compact)) {
     throw new StudioImportRefusal('An SVG with scripts, event handlers or embedded documents cannot be imported');
   }
   let external = 0;
-  for (const match of text.matchAll(/(?:^|[\s<])(?:xlink:)?(?:href|src)\s*=\s*("[^"]*"|'[^']*')/gi)) {
+  for (const match of decoded.matchAll(/[\s"'/](?:[\w.-]+:)?(?:href|src|srcset)\s*=\s*("[^"]*"|'[^']*')/gi)) {
     if (!internalReference(match[1])) {
       external++;
     }
   }
-  for (const match of text.matchAll(/url\(\s*([^)]*)\)/gi)) {
+  // SMIL can set an href or a paint to a URL while the animation runs.
+  for (const match of decoded.matchAll(/[\s"'/](?:[\w.-]+:)?(?:to|values|from|by)\s*=\s*("[^"]*"|'[^']*')/gi)) {
+    if (/url\(|:\/\/|^['"]\s*\/\//i.test(match[1])) {
+      external++;
+    }
+  }
+  for (const match of decoded.matchAll(/url\(\s*([^)]*)\)/gi)) {
     if (!internalReference(match[1])) {
       external++;
     }
   }
-  external += text.matchAll(/@import\b/gi).toArray().length;
+  external += decoded.matchAll(/@import\b|(?:-webkit-)?image-set\s*\(|\bimage\s*\(|cross-fade\s*\(/gi).toArray().length;
+  // A CSS escape can spell `url(` or `@import` in a way no pattern here follows.
+  if (/\\/.test(decoded)) {
+    external++;
+  }
   return external;
 }
 
 /**
- * External subresources a Lottie document names. Images and fonts in `assets` are embedded when `e`
- * is 1 or `p` is a `data:` URI; anything else is fetched from `u` + `p` at render time. Font lists
+ * External subresources a Lottie document names. Images in `assets` are embedded only when `p` is
+ * a `data:` URI; anything else is fetched from `u` + `p` at render time. Font lists
  * with a `fPath` are fetched too. The document must be a Lottie animation, not any JSON.
  */
 export function scanStudioLottie(text: string): number {
@@ -178,11 +208,12 @@ export function scanStudioLottie(text: string): number {
     if (!asset || typeof asset !== 'object') {
       continue;
     }
-    const { e, p, u } = asset as { e?: unknown; p?: unknown; u?: unknown };
+    const { p, u } = asset as { p?: unknown; u?: unknown };
     if (typeof p !== 'string') {
       continue; // A precomposition: layers, not a file.
     }
-    if (e === 1 || /^data:/i.test(p)) {
+    // Embedded only when the bytes are in the document; a player reads `p` as a URL even with `e` set.
+    if (/^data:/i.test(p.trim())) {
       continue;
     }
     if (typeof u === 'string' || p.length > 0) {
