@@ -63,6 +63,8 @@ beforeEach(() => {
 
 afterEach(() => {
   librarySession.setLayout('browse');
+  localStorage.removeItem('frameleaf.albumViewSort.owner');
+  authManager.reset();
 });
 
 const setup = async (publicView: boolean) => {
@@ -137,6 +139,8 @@ describe('LibraryView', () => {
   });
 
   it('applies supported album filters in place and preserves the resulting session across layouts (FL-40)', async () => {
+    authManager.setUser(userAdminFactory.build({ id: 'owner' }));
+    authManager.setPreferences(preferencesFactory.build());
     await setup(false);
     const sort = screen.getByRole('combobox', { name: 'frameleaf_library_sort' });
     await fireEvent.change(sort, { target: { value: 'captured-asc' } });
@@ -311,7 +315,10 @@ describe('LibraryView', () => {
   });
 
   describe('an album’s shared order and the viewer’s own sort (FL-31)', () => {
-    afterEach(() => localStorage.removeItem('frameleaf.albumViewSort'));
+    beforeEach(() => {
+      authManager.setUser(userAdminFactory.build({ id: 'owner' }));
+      authManager.setPreferences(preferencesFactory.build());
+    });
 
     it('preserves the live session through shared order changes but clears it for Locked (FL-40)', async () => {
       const session = new LibrarySessionStore({ storage: null, transientStorage: null });
@@ -361,7 +368,7 @@ describe('LibraryView', () => {
 
       await fireEvent.change(sort, { target: { value: 'filename' } });
       expect(sort).toHaveValue('filename');
-      expect(JSON.parse(localStorage.getItem('frameleaf.albumViewSort') ?? '{}')).toEqual({ 'album-1': 'filename' });
+      expect(JSON.parse(localStorage.getItem('frameleaf.albumViewSort.owner') ?? '{}')).toEqual({ 'album-1': 'filename' });
       // the library's own sort and the album's shared order are untouched
       expect(librarySession.state.sort).toBe(sessionSort);
       expect(sdkMock.updateAlbumInfo).not.toHaveBeenCalled();
@@ -387,7 +394,7 @@ describe('LibraryView', () => {
 
       librarySession.setLayout('work');
       await waitFor(() => expect(sort).toHaveValue('filename'));
-      expect(JSON.parse(localStorage.getItem('frameleaf.albumViewSort') ?? '{}')).toEqual({ 'album-1': 'filename' });
+      expect(JSON.parse(localStorage.getItem('frameleaf.albumViewSort.owner') ?? '{}')).toEqual({ 'album-1': 'filename' });
     });
   });
 

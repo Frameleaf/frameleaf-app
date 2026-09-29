@@ -372,17 +372,25 @@
    * and is kept per album on this device (`album-view-sort.ts`), never written back to the album.
    */
   const albumSortId = $derived(options?.albumId && !options.dateType && !publicView ? options.albumId : undefined);
+  const albumSortUserId = $derived(authManager.authenticated && !authManager.isSharedLink ? authManager.user.id : undefined);
   let albumPersonalSort = $state<LibrarySort | null>(null);
   $effect(() => {
     const id = albumSortId;
-    albumPersonalSort = id && browser ? untrack(() => readAlbumViewSort(localStorage, id)) : null;
+    const userId = albumSortUserId;
+    albumPersonalSort = id && userId && browser ? untrack(() => readAlbumViewSort(localStorage, userId, id)) : null;
   });
   const activeSort = $derived<LibrarySort>(
     albumSortId ? effectiveAlbumSort(albumPersonalSort, options?.order) : session.state.sort,
   );
   const changeAlbumSort = (sort: LibrarySort) => {
-    if (albumSortId) {
-      albumPersonalSort = writeAlbumViewSort(browser ? localStorage : undefined, albumSortId, sort, options?.order);
+    if (albumSortId && albumSortUserId) {
+      albumPersonalSort = writeAlbumViewSort(
+        browser ? localStorage : undefined,
+        albumSortUserId,
+        albumSortId,
+        sort,
+        options?.order,
+      );
     }
   };
   const sortable = $derived(

@@ -15,9 +15,11 @@ export const ALBUM_VIEW_SORT_KEY = 'frameleaf.albumViewSort';
 
 type SortMap = Record<string, LibrarySort>;
 
-const readMap = (storage: Pick<Storage, 'getItem'> | undefined): SortMap => {
+const sortKey = (userId: string) => `${ALBUM_VIEW_SORT_KEY}.${userId}`;
+
+const readMap = (storage: Pick<Storage, 'getItem'> | undefined, userId: string): SortMap => {
   try {
-    const value: unknown = JSON.parse(storage?.getItem(ALBUM_VIEW_SORT_KEY) ?? '{}');
+    const value: unknown = JSON.parse(storage?.getItem(sortKey(userId)) ?? '{}');
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
       return {};
     }
@@ -37,8 +39,8 @@ export const albumOrderSort = (order?: AssetOrder | null): LibrarySort =>
   order === AssetOrder.Asc ? 'captured-asc' : 'captured-desc';
 
 /** The viewer's own sort for this album on this device, or null when they follow the shared order. */
-export const readAlbumViewSort = (storage: Pick<Storage, 'getItem'> | undefined, albumId: string) =>
-  readMap(storage)[albumId] ?? null;
+export const readAlbumViewSort = (storage: Pick<Storage, 'getItem'> | undefined, userId: string, albumId: string) =>
+  readMap(storage, userId)[albumId] ?? null;
 
 /**
  * Keeps the viewer's choice for this album. Choosing the album's own order clears the choice, so the
@@ -46,11 +48,12 @@ export const readAlbumViewSort = (storage: Pick<Storage, 'getItem'> | undefined,
  */
 export const writeAlbumViewSort = (
   storage: (Pick<Storage, 'getItem'> & Pick<Storage, 'setItem'>) | undefined,
+  userId: string,
   albumId: string,
   sort: LibrarySort,
   order?: AssetOrder | null,
 ): LibrarySort | null => {
-  const map = readMap(storage);
+  const map = readMap(storage, userId);
   const personal = sort === albumOrderSort(order) ? null : sort;
   if (personal) {
     map[albumId] = personal;
@@ -58,7 +61,7 @@ export const writeAlbumViewSort = (
     delete map[albumId];
   }
   try {
-    storage?.setItem(ALBUM_VIEW_SORT_KEY, JSON.stringify(map));
+    storage?.setItem(sortKey(userId), JSON.stringify(map));
   } catch {
     // A per-device convenience; the choice still holds for this visit.
   }
