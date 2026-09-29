@@ -212,7 +212,16 @@ test('authenticated release packaging, negative trust cases, and Synology worker
       }), /without spaces, symlinks or traversal/);
       assert(!fs.existsSync(path.join(localStaging, 'project/.env')));
     }
-    execFileSync('sh', [path.join(unpack, 'scripts/preinst')], { env });
+    const installEnv = { ...localEnv, SYNOPKG_PKGINST_TEMP_DIR: staging };
+    assert.throws(() => execFileSync('sh', [localScript], {
+      env: { ...installEnv, wizard_database_path: path.join(localVolume, 'missing') }, stdio: 'pipe',
+    }), /directories must already exist/);
+    write(path.join(localVolume, 'postgres/PG_VERSION'), '18\n');
+    assert.throws(() => execFileSync('sh', [localScript], { env: installEnv, stdio: 'pipe' }),
+      /not a PostgreSQL 14 cluster/);
+    assert(!fs.existsSync(path.join(staging, 'project/.env')));
+    write(path.join(localVolume, 'postgres/PG_VERSION'), '14\n');
+    execFileSync('sh', [localScript], { env: installEnv });
     const configured = fs.readFileSync(path.join(staging, 'project/.env'), 'utf8');
     assert(configured.includes('WEB_PORT=3456\n') && configured.includes('ENABLE_ML=false\n'));
     assert.equal(fs.statSync(path.join(staging, 'project/.env')).mode & 0o777, 0o600);
@@ -232,6 +241,6 @@ test('authenticated release packaging, negative trust cases, and Synology worker
     execFileSync('sh', [path.join(unpack, 'scripts/preinst')], { env: { ...env, SYNOPKG_PKG_STATUS: 'UPGRADE' } });
     assert.equal(fs.readFileSync(path.join(staging, 'project/.env'), 'utf8'), configured);
     assert.equal(fs.readFileSync(path.join(target, 'project/.env'), 'utf8'), configured);
-    assert.throws(() => execFileSync('sh', [path.join(unpack, 'scripts/preinst')], { env: { ...env, wizard_web_port: '1' }, stdio: 'pipe' }));
+    assert.throws(() => execFileSync('sh', [localScript], { env: { ...installEnv, wizard_web_port: '1' }, stdio: 'pipe' }));
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
