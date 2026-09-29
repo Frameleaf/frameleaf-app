@@ -572,6 +572,8 @@ jobs:
           version: 2026.7.12
       - name: Install server dependencies
         run: pnpm --filter immich install --frozen-lockfile
+      - name: Verify generated API artifacts are tracked
+        run: git ls-files --error-unmatch -- open-api/immich-openapi-specs.json packages/sdk/src/fetch-client.ts
       - name: Run API generation
         run: |
           mise run //:plugins
