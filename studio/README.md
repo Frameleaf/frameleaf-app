@@ -66,6 +66,15 @@ Scopes label their current display-referred sRGB/Rec.709 full-range preview inpu
 worker-authoritative scope samples, graph revision correspondence, seeks during playback, HDR
 scope ramps and browser qualification remain unqualified.
 
+Patch 0019 binds in-flight scope captures to their renderer registrations and immutable visual
+graph inputs. Same-frame source edits, keyframes, transitions and nested composition changes
+invalidate old samples without treating playback ticks as graph changes. Hosted regressions cover
+provider replacement and image-source edits while paused and during GPU playback, plus paused
+CPU redraw after a nested composition edit and live transform edits with stable providers.
+Captures wait for updated renderer registration when the renderer rebuilds its graph snapshot,
+using its existing transform-change predicate to preserve direct transform sampling. This does not
+qualify worker revision/frame provenance, live seeks, HDR scope ramps or browser conformance.
+
 `frameleaf-source.json` records all adapted input hashes. `frameleaf-build.json` records the sorted output hashes/digest, upstream and patch identities, toolchain/platform, and every direct/transitive/optional/development package's lockfile license declaration. Missing declarations remain `UNDECLARED`. The original MIT license and bundled SoundTouch/WebSR notices are retained. These records do not establish redistribution approval, including for external models, fonts and assets.
 
 The dedicated read-only Actions workflow runs the upstream unit and Node headless contracts, builds twice from separately prepared workspaces, compares artifact digests, and rechecks the complete original snapshot. Both build manifests are retained even on comparison failure, and mismatches report the affected artifact paths. Uploaded provenance is build evidence only after the exact candidate passes. Browser/GPU/media headless tests, full feature conformance, HDR/Dolby qualification and application integration remain separate gates.

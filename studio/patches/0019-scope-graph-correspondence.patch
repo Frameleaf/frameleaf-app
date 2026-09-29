@@ -1,0 +1,295 @@
+--- a/src/features/preview/components/color-scopes-view.tsx
++++ b/src/features/preview/components/color-scopes-view.tsx
+@@ -2,6 +2,11 @@
+ import { Activity } from 'lucide-react'
+ import { getResolvedPlaybackFrame, usePlaybackStore } from '@/shared/state/playback'
+ import { usePreviewBridgeStore } from '@/shared/state/preview-bridge'
++import {
++  useTimelineStore,
++  useCompositionsStore,
++  useCompositionNavigationStore,
++} from '@/features/preview/deps/timeline-store'
+ import { cn } from '@/shared/ui/cn'
+ import {
+   Select,
+@@ -12,6 +17,7 @@
+ } from '@/components/ui/select'
+ import { ScopeRenderer } from '@/infrastructure/gpu-scopes'
+ import { ScopeCanvasFrame } from './color-scope-overlays'
++import { canRetainSnapshotForTransformChanges } from '../hooks/use-transform-stable-items-snapshot'
+ 
+ const SAMPLE_WIDTH_PAUSED = 384
+ const SAMPLE_HEIGHT_PAUSED = 216
+@@ -72,6 +78,27 @@
+     /* ignore */
+   }
+   return 'parade'
++}
++
++// Capture immutable graph inputs too: store edits can precede React replacing the bridge
++// callbacks, and nested composition edits keep the parent's callbacks unchanged.
++function getScopeInputs() {
++  const source = usePreviewBridgeStore.getState()
++  const timeline = useTimelineStore.getState()
++  return {
++    source: [source.captureCanvasSource, source.captureFrameImageData, source.captureFrame],
++    items: timeline.items,
++    graph: [timeline.tracks, timeline.keyframes, timeline.transitions, timeline.fps,
++      useCompositionNavigationStore.getState().activeCompositionId],
++    compositions: useCompositionsStore.getState().compositionById,
++  }
++}
++
++function isScopeSourceCurrent(inputs: ReturnType<typeof getScopeInputs>): boolean {
++  const current = getScopeInputs()
++  return current.source.every((input, index) => input === inputs.source[index]) &&
++    current.graph.every((input, index) => input === inputs.graph[index]) &&
++    current.items === inputs.items && current.compositions === inputs.compositions
+ }
+ 
+ // ── CPU fallback drawing functions ──────────────────────────────────────────
+@@ -482,6 +509,29 @@
+   const cpuDrawPendingRef = useRef(false)
+   const sampleCanvasRef = useRef<HTMLCanvasElement | null>(null)
+   const liveTickRef = useRef(0)
++  const pendingGraphSourceRef = useRef<ReturnType<typeof getScopeInputs>['source'] | null>(null)
++
++  useEffect(() => {
++    let previous = getScopeInputs()
++    const reconcile = () => {
++      const current = getScopeInputs()
++      if (!canRetainSnapshotForTransformChanges(previous.items, current.items) ||
++        !current.graph.every((input, index) => input === previous.graph[index])) {
++        // VideoPreview defers item updates to RAF. Wait for its new capture registration;
++        // retrying the old callback against the new store snapshot would mislabel old pixels.
++        pendingGraphSourceRef.current = current.source
++      }
++      const pending = pendingGraphSourceRef.current
++      if (pending && current.source.some((input, index) => input !== pending[index])) {
++        pendingGraphSourceRef.current = null
++      }
++      previous = current
++    }
++    const stopTimeline = useTimelineStore.subscribe(reconcile)
++    const stopNavigation = useCompositionNavigationStore.subscribe(reconcile)
++    const stopBridge = usePreviewBridgeStore.subscribe(reconcile)
++    return () => { stopTimeline(); stopNavigation(); stopBridge() }
++  }, [])
+ 
+   // Refs for values read inside RAF loop (avoid restarting loop on every change)
+   const isPlayingRef = useRef(isPlaying)
+@@ -600,11 +650,12 @@
+     }
+ 
+     const renderGpuFrame = async () => {
+-      if (gpuRenderInFlightRef.current) return
++      if (gpuRenderInFlightRef.current || pendingGraphSourceRef.current) return
+       // Scrub/hover preview frames are latency-sensitive. Let the program
+       // monitor own those transient frames, then scopes catch up on release.
+       if (usePlaybackStore.getState().previewFrame !== null) return
+       const generation = ++renderGeneration
++      const captureInputs = getScopeInputs()
+       const capturePlayback = usePlaybackStore.getState()
+       gpuRenderInFlightRef.current = true
+       // Stamp the in-flight start only once the flag is actually set, so the
+@@ -616,7 +667,7 @@
+       // renders must not touch the GPU — that's the overlapping-upload hazard.
+       // ponytail: frame epochs guard paused seeks; live seeks need a separate seek epoch.
+       const isStale = () =>
+-        cancelled || renderGeneration !== generation ||
++        cancelled || renderGeneration !== generation || !isScopeSourceCurrent(captureInputs) ||
+         usePlaybackStore.getState().isPlaying !== capturePlayback.isPlaying ||
+         (!capturePlayback.isPlaying &&
+           usePlaybackStore.getState().frameUpdateEpoch !== capturePlayback.frameUpdateEpoch)
+@@ -703,7 +754,10 @@
+ 
+   const cpuDraw = useCallback(
+     async (retryCount = 0) => {
+-      if (!open || gpuReady !== false) return
++      if (!open || gpuReady !== false || pendingGraphSourceRef.current) return
++      const captureSource = usePreviewBridgeStore.getState()
++      const { captureFrameImageData, captureFrame } = captureSource
++      const captureInputs = getScopeInputs()
+       if (!captureFrameImageData && !captureFrame) return
+ 
+       const getRequestedFrame = () => {
+@@ -797,6 +851,7 @@
+           setStatus('idle')
+           return
+         }
++        if (!isScopeSourceCurrent(captureInputs)) return
+         if (
+           usePlaybackStore.getState().isPlaying !== capturePlayback.isPlaying ||
+           (!capturePlayback.isPlaying &&
+@@ -838,7 +893,7 @@
+         setStatus('live')
+       } catch {
+         const playback = usePlaybackStore.getState()
+-        if (playback.isPlaying === capturePlayback.isPlaying &&
++        if (isScopeSourceCurrent(captureInputs) && playback.isPlaying === capturePlayback.isPlaying &&
+           (capturePlayback.isPlaying || playback.frameUpdateEpoch === capturePlayback.frameUpdateEpoch)) {
+           setStatus('error')
+         }
+@@ -932,8 +987,19 @@
+       scheduleIfFrameChanged(nextRequestedFrame, previousRequestedFrame)
+     })
+ 
++    let graphInputs = getScopeInputs()
++    const scheduleIfGraphChanged = () => {
++      if (isScopeSourceCurrent(graphInputs)) return
++      graphInputs = getScopeInputs()
++      scheduleDraw()
++    }
++    const unsubscribeGraph = useTimelineStore.subscribe(scheduleIfGraphChanged)
++    const unsubscribeCompositions = useCompositionsStore.subscribe(scheduleIfGraphChanged)
++    const unsubscribeNavigation = useCompositionNavigationStore.subscribe(scheduleIfGraphChanged)
++
+     const unsubscribePreviewBridge = usePreviewBridgeStore.subscribe(
+       (bridgeState, previousBridgeState) => {
++        scheduleIfGraphChanged()
+         const playbackState = usePlaybackStore.getState()
+         if (playbackState.isPlaying || playbackState.previewFrame !== null) {
+           return
+@@ -963,6 +1029,9 @@
+     return () => {
+       unsubscribePlayback()
+       unsubscribePreviewBridge()
++      unsubscribeGraph()
++      unsubscribeCompositions()
++      unsubscribeNavigation()
+       if (rafId !== null) {
+         cancelAnimationFrame(rafId)
+       }
+--- a/src/features/preview/components/color-scopes-view.test.tsx
++++ b/src/features/preview/components/color-scopes-view.test.tsx
+@@ -3,6 +3,7 @@
+ import { usePlaybackStore } from '@/shared/state/playback'
+ import { usePreviewBridgeStore } from '@/shared/state/preview-bridge'
+ import { ColorScopesView } from './color-scopes-view'
++import { useItemsStore, useCompositionsStore } from '@/features/preview/deps/timeline-store'
+ 
+ const { createRenderer } = vi.hoisted(() => ({ createRenderer: vi.fn() }))
+ vi.mock('@/infrastructure/gpu-scopes', () => ({ ScopeRenderer: { create: createRenderer } }))
+@@ -18,6 +19,15 @@
+   let callbackId: number
+ 
+   beforeEach(() => {
++    useItemsStore.getState().setItems([{
++      id: 'scope-image', type: 'image', trackId: 'video', from: 0,
++      durationInFrames: 60, label: 'Scope image', src: 'blob:old-source', transform: { x: 0 },
++    }])
++    useCompositionsStore.getState().setCompositions([{
++      id: 'scope-nested', name: 'Nested scope image', items: useItemsStore.getState().items,
++      tracks: [], transitions: [], keyframes: [], fps: 30,
++      width: 1920, height: 1080, durationInFrames: 60, backgroundColor: '#000000',
++    }])
+     callbacks = new Map()
+     callbackId = 0
+     vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+@@ -50,12 +60,24 @@
+   }
+ 
+   it.each([
+-    ['gpu-canvas', false], ['gpu-image', false], ['cpu', false],
+-    ['gpu-canvas', true], ['gpu-image', true],
++    ['gpu-canvas', false, false], ['gpu-image', false, false], ['cpu', false, false],
++    ['gpu-canvas', true, false], ['gpu-image', true, false],
++    ['gpu-canvas', false, true], ['gpu-image', false, true], ['cpu', false, true],
++    ['gpu-canvas', true, true], ['gpu-image', true, true],
++    ['gpu-canvas', false, 'items'], ['gpu-image', false, 'items'], ['cpu', false, 'items'],
++    ['gpu-canvas', true, 'items'], ['gpu-image', true, 'items'],
++    ['cpu', false, 'nested'],
++    ['gpu-canvas', false, 'transform'], ['gpu-image', true, 'transform'], ['cpu', false, 'transform'],
+   ] as const)(
+-    'keeps %s captures current when playing=%s without starving playback',
+-    async (path, playing) => {
++    'keeps %s captures current when playing=%s and graph changes=%s',
++    async (path, playing, graphChanges) => {
+       usePlaybackStore.setState({ isPlaying: playing })
++      if (graphChanges === 'nested') {
++        useItemsStore.getState().setItems([{
++          id: 'scope-wrapper', type: 'composition', compositionId: 'scope-nested',
++          trackId: 'video', from: 0, durationInFrames: 60, label: 'Nested image',
++        }])
++      }
+       const oldCapture = deferred<HTMLCanvasElement | ImageData>()
+       const newCapture = deferred<HTMLCanvasElement | ImageData>()
+       const oldFrame = path === 'gpu-canvas' ? document.createElement('canvas') : new ImageData(2, 2)
+@@ -84,7 +106,21 @@
+       expect(capture).toHaveBeenCalledTimes(1)
+       expect(capture).toHaveBeenLastCalledWith(expect.objectContaining({ preferRenderedFrame: true }))
+ 
+-      if (playing) {
++      if (graphChanges === 'nested') {
++        await act(async () => { oldCapture.resolve(oldFrame) })
++        expect(context.putImageData).toHaveBeenCalled()
++        context.putImageData.mockClear()
++        await act(async () => {
++          useCompositionsStore.getState().updateComposition('scope-nested', { backgroundColor: '#ffffff' })
++        })
++        await tick(200)
++        expect(capture).toHaveBeenCalledTimes(2)
++        await act(async () => { newCapture.resolve(newFrame) })
++        expect(context.putImageData).toHaveBeenCalled()
++        return
++      }
++
++      if (playing && !graphChanges) {
+         await act(async () => {
+           usePlaybackStore.getState().setCurrentFrame(13)
+           oldCapture.resolve(oldFrame)
+@@ -95,9 +131,27 @@
+         return
+       }
+ 
++      const nextCapture = vi.fn().mockReturnValue(newCapture.promise)
+       await act(async () => {
+-        usePlaybackStore.getState().setCurrentFrame(24)
+-        usePlaybackStore.getState().setCurrentFrame(12)
++        if (graphChanges === 'transform') {
++          // The preview keeps its provider for live transform-only edits.
++          useItemsStore.getState().setItems(useItemsStore.getState().items.map((item) => (
++            { ...item, transform: { ...item.transform, x: 30 } }
++          )))
++        } else if (graphChanges === 'items') {
++          // A real graph edit at the same playhead, before React replaces capture callbacks.
++          useItemsStore.getState().setItems(useItemsStore.getState().items.map((item) => (
++            { ...item, src: 'blob:new-source' }
++          )))
++        } else if (graphChanges) {
++          // The render controller replaces capture registrations when graph inputs change.
++          usePreviewBridgeStore.setState(path === 'gpu-canvas'
++            ? { captureCanvasSource: nextCapture }
++            : { captureFrameImageData: nextCapture })
++        } else {
++          usePlaybackStore.getState().setCurrentFrame(24)
++          usePlaybackStore.getState().setCurrentFrame(12)
++        }
+         oldCapture.resolve(oldFrame)
+       })
+       expect(renderer.uploadFromCanvas).not.toHaveBeenCalled()
+@@ -106,7 +160,23 @@
+       expect(context.putImageData).not.toHaveBeenCalled()
+ 
+       await tick(200)
+-      expect(capture).toHaveBeenCalledTimes(2)
++      if (graphChanges === 'items') {
++        // Even a completed retry of this old callback would still contain the old graph.
++        expect(capture).toHaveBeenCalledTimes(1)
++        expect(nextCapture).not.toHaveBeenCalled()
++        await act(async () => {
++          usePreviewBridgeStore.setState(path === 'gpu-canvas'
++            ? { captureCanvasSource: nextCapture }
++            : { captureFrameImageData: nextCapture })
++        })
++        await tick(300)
++      }
++      if (graphChanges === true || graphChanges === 'items') {
++        expect(capture).toHaveBeenCalledTimes(1)
++        expect(nextCapture).toHaveBeenCalledTimes(1)
++      } else {
++        expect(capture).toHaveBeenCalledTimes(2)
++      }
+       await act(async () => { newCapture.resolve(newFrame) })
+       if (path === 'cpu') {
+         expect(context.putImageData).toHaveBeenCalled()
