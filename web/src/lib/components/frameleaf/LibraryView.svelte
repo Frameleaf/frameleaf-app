@@ -372,7 +372,9 @@
    * and is kept per album on this device (`album-view-sort.ts`), never written back to the album.
    */
   const albumSortId = $derived(options?.albumId && !options.dateType && !publicView ? options.albumId : undefined);
-  const albumSortUserId = $derived(authManager.authenticated && !authManager.isSharedLink ? authManager.user.id : undefined);
+  const albumSortUserId = $derived(
+    authManager.authenticated && !authManager.isSharedLink ? authManager.user.id : undefined,
+  );
   let albumPersonalSort = $state<LibrarySort | null>(null);
   $effect(() => {
     const id = albumSortId;
