@@ -218,6 +218,25 @@ describe(ItemShareService.name, () => {
       expect(mocks.websocket.clientSend).toHaveBeenCalledWith('on_asset_hidden', jamie.id, a);
     });
 
+    it('keeps a completed revocation successful and notifies later recipients when a send fails', async () => {
+      const assetId = newUuid();
+      const otherRecipientId = newUuid();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([assetId]));
+      mocks.itemShare.remove.mockResolvedValue([row(assetId), row(assetId, otherRecipientId)]);
+      mocks.websocket.clientSend.mockImplementationOnce(() => {
+        throw new Error('send unavailable');
+      });
+
+      await expect(
+        sut.unshare(auth, { assetIds: [assetId], userIds: [jamie.id, otherRecipientId] }),
+      ).resolves.toMatchObject({ removed: 2, shares: [] });
+      expect(mocks.websocket.clientSend.mock.calls).toEqual([
+        ['on_asset_hidden', jamie.id, assetId],
+        ['on_asset_hidden', otherRecipientId, assetId],
+      ]);
+      expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringContaining('send unavailable'));
+    });
+
     it('only revokes the caller’s own items', async () => {
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set());
       await expect(sut.unshare(auth, { assetIds: [newUuid()], userIds: [jamie.id] })).rejects.toThrow(
