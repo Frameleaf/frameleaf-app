@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { createClaimImageInputs } from './render-worker-image-inputs.mjs';
 
 const byteLimit = 32 * 1024 * 1024;
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -117,7 +118,10 @@ export async function prepareOneClaim({ serverUrl, sessionToken }) {
       total += bytes.length;
     }
     await heartbeat();
-    assert.ok(prepared.inputs === inputs);
+    const engineInputs = await createClaimImageInputs(prepared, () => ownsLease && performance.now() < deadline);
+    // The real renderer will consume engineInputs.input while this lease is held. For now prove
+    // adaptation is possible, dispose every local source, then fail without generating any output.
+    await engineInputs.dispose();
     errorCode = 'worker_executor_unavailable';
   } catch {
     // URLs contain signed grants. Never echo an HTTP error, graph or credential into logs.
