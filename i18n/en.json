@@ -8976,6 +8976,7 @@
   "frameleaf_studio_render_refusal_insufficient_memory": "No render worker has enough GPU memory for this resolution. Choose a smaller one.",
   "frameleaf_studio_render_refusal_no_qualified_worker": "No qualified render worker is online for this destination.",
   "frameleaf_studio_restore_choose_source": "Choose a photo or video to restore in the Restore panel.",
+  "frameleaf_studio_restore_destination_changed": "The reviewed preview used another destination. Choose that destination or make a new preview.",
   "frameleaf_studio_restore_failed": "That version could not be restored.",
   "frameleaf_studio_restore_no_sources": "Add a photo or video from your library to this project to restore it.",
   "frameleaf_studio_restore_preview_first": "Review a preview first. The full version is made from the preview you accept.",

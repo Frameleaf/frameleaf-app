@@ -18,9 +18,11 @@ import {
   MlDestinationKind,
   acceptAssetRestoration,
   getAssetInfo,
+  getAssetRestorations,
   getAssetRestorationOptions,
   requestAssetRestoration,
   type AssetResponseDto,
+  type AssetRestorationListResponseDto,
   type AssetRestorationOptionsDto,
   type AssetRestorationRequestDto,
   type AssetRestorationResponseDto,
@@ -31,6 +33,7 @@ import type { StudioCommandEnvelope, StudioCommandPayloads } from './commands';
 
 export interface StudioRestorationApi {
   getAsset(id: string): Promise<AssetResponseDto>;
+  getRestorations(id: string): Promise<AssetRestorationListResponseDto>;
   getOptions(id: string, mode: AssetRestorationMode): Promise<AssetRestorationOptionsDto>;
   request(id: string, dto: AssetRestorationRequestDto): Promise<AssetRestorationResponseDto>;
   accept(id: string, restorationId: string): Promise<AssetRestorationResponseDto>;
@@ -38,6 +41,7 @@ export interface StudioRestorationApi {
 
 export const sdkStudioRestorationApi: StudioRestorationApi = {
   getAsset: (id) => getAssetInfo({ id }),
+  getRestorations: (id) => getAssetRestorations({ id }),
   getOptions: (id, mode) => getAssetRestorationOptions({ id, mode }),
   request: (id, assetRestorationRequestDto) => requestAssetRestoration({ id, assetRestorationRequestDto }),
   accept: (id, restorationId) => acceptAssetRestoration({ id, restorationId }),
@@ -144,6 +148,18 @@ export const createStudioRestorationHandlers = ({
       if (mode !== AssetRestorationMode.Faithful && mode !== AssetRestorationMode.Creative) {
         return refuse('frameleaf_studio_restore_choose_source');
       }
+      if (!payload.preview) {
+        if (!payload.restorationId) {
+          return refuse('frameleaf_studio_restore_preview_first');
+        }
+        const reviewed = (await api.getRestorations(assetId)).items.find((item) => item.id === payload.restorationId);
+        if (!reviewed) {
+          return refuse('frameleaf_studio_restore_preview_first');
+        }
+        if (reviewed.destinationId !== payload.destinationId) {
+          return refuse('frameleaf_studio_restore_destination_changed');
+        }
+      }
       const { destination } = await admitted(assetId, mode, payload.destinationId);
       if (destination.kind === MlDestinationKind.FrameleafCloud) {
         onConfirmOnCloud(assetId, 'restore');
@@ -164,10 +180,7 @@ export const createStudioRestorationHandlers = ({
         );
       } else {
         // The full render is always the reviewed preview's: same destination, model, mode and size.
-        if (!payload.restorationId) {
-          return refuse('frameleaf_studio_restore_preview_first');
-        }
-        onQueued(await api.accept(assetId, payload.restorationId));
+        onQueued(await api.accept(assetId, payload.restorationId!));
       }
       return revision();
     },
