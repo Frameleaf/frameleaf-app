@@ -43,6 +43,9 @@ const setup = () => {
       type: AssetTypeEnum.Video,
       exifInfo: { fps: 30 },
     } as AssetResponseDto),
+    getRestorations: vi.fn().mockResolvedValue({
+      items: [{ id: 'restoration-1', destinationId: 'lan' }],
+    }),
     getOptions: vi.fn().mockResolvedValue({ destinations } as unknown as AssetRestorationOptionsDto),
     request: vi.fn().mockResolvedValue({ id: 'restoration-1' } as AssetRestorationResponseDto),
     accept: vi.fn().mockResolvedValue({ id: 'restoration-1' } as AssetRestorationResponseDto),
@@ -102,6 +105,19 @@ describe('Studio restoration jobs (FL-115)', () => {
       handlers['job.enqueueRestoration'](restoration({ assetId: VIDEO_ID, preview: false })),
     ).rejects.toBeInstanceOf(StudioRestorationCommandError);
     expect(onRefused).toHaveBeenCalledWith('frameleaf_studio_restore_preview_first');
+  });
+
+  it('refuses a full render when the explicit destination differs from the reviewed preview', async () => {
+    const { api, handlers, onRefused } = setup();
+
+    await expect(
+      handlers['job.enqueueRestoration'](
+        restoration({ assetId: VIDEO_ID, preview: false, restorationId: 'restoration-1', destinationId: 'busy' }),
+      ),
+    ).rejects.toBeInstanceOf(StudioRestorationCommandError);
+
+    expect(onRefused).toHaveBeenCalledWith('frameleaf_studio_restore_destination_changed');
+    expect(api.accept).not.toHaveBeenCalled();
   });
 
   it('never sends anything to Frameleaf Cloud: it opens the Restore panel to estimate and confirm', async () => {
