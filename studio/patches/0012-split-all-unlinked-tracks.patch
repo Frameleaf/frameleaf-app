@@ -1,0 +1,47 @@
+--- a/src/features/timeline/stores/actions/edit/split-actions.ts
++++ b/src/features/timeline/stores/actions/edit/split-actions.ts
+@@ -73,7 +73,9 @@
+   const overlappingItemIds = items
+     .filter((item) => splitFrame > item.from && splitFrame < item.from + item.durationInFrames)
+     .map((item) => item.id)
+-  const anchorIds = getUniqueLinkedItemAnchorIds(items, overlappingItemIds)
++  const anchorIds = isLinkedSelectionEnabled()
++    ? getUniqueLinkedItemAnchorIds(items, overlappingItemIds)
++    : overlappingItemIds
+ 
+   if (anchorIds.length === 0) return 0
+ 
+--- a/src/features/timeline/stores/actions/item-actions.linked-items.test.ts
++++ b/src/features/timeline/stores/actions/item-actions.linked-items.test.ts
+@@ -22,6 +22,7 @@
+   unlinkItems,
+ } from './item-actions'
+ import { getLinkedSyncOffsetFrames } from '../../utils/linked-items'
++import { splitAllItemsAtFrame } from './edit/split-actions'
+ import { useReverseConformDialogStore } from '../reverse-conform-dialog-store'
+ 
+ function makeVideoItem(overrides: Partial<VideoItem> = {}): VideoItem {
+@@ -129,6 +130,23 @@
+     expect(rightVideo?.linkedGroupId).toBe(rightAudio?.linkedGroupId)
+     expect(leftVideo?.linkedGroupId).not.toBe(rightVideo?.linkedGroupId)
+     expect(useSelectionStore.getState().selectedItemIds).toEqual(['video-1', 'audio-1'])
++  })
++
++  it('splits every crossing track when linked selection is disabled', () => {
++    useEditorStore.setState({ linkedSelectionEnabled: false })
++    useItemsStore.getState().setItems([makeVideoItem(), makeAudioItem()])
++
++    expect(splitAllItemsAtFrame(30)).toBe(2)
++    for (const type of ['video', 'audio']) {
++      expect(useItemsStore.getState().items
++        .filter((item) => item.type === type)
++        .map((item) => ({ from: item.from, durationInFrames: item.durationInFrames }))
++        .sort((left, right) => left.from - right.from),
++      ).toEqual([
++        { from: 0, durationInFrames: 30 },
++        { from: 30, durationInFrames: 30 },
++      ])
++    }
+   })
+ 
+   it('reverses synchronized video/audio items together even when linked selection is disabled', () => {

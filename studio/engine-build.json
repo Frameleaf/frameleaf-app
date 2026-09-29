@@ -59,7 +59,12 @@
       "path": "patches/0011-multichannel-speed-export.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "5dc6b80107808ea3b6ddd07f6dcca6a8559f6086749425c7cab66a5bbcd67eb5"
+    },
+    {
+      "path": "patches/0012-split-all-unlinked-tracks.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "1cdf2f2f018b3f767c1e31b42122750609c6442394b76f6a8225f8a842d51c65"
     }
   ],
-  "sourceSha256": "c4d4790ae8db61d17dd8017ec28463aa4d016e452a781b436bbc6a8a4db1e1ca"
+  "sourceSha256": "5f9da22c3dfed53e86948aa6051bf1eb23ff01a1464833f76daf4e0db2f0761e"
 }
