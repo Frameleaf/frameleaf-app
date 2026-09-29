@@ -81,6 +81,11 @@ const StudioProjectResourcesSchema = z
       .describe(
         "FL-195 follow-up: the owner's own library items this project places that are hidden from this session (Locked, or matched by a Locked rule, while the session is locked). The project keeps them; the editor hides their clips rather than showing missing media. The owner's only; empty for a reviewer",
       ),
+    hdrSources: z
+      .array(z.uuidv4())
+      .describe(
+        'FL-97 owner decision: placed library videos whose original is HDR (PQ or HLG transfer, or Dolby Vision). A project that places one is an HDR project. Only sources that resolved for the acting account are named',
+      ),
     checkedAt: z.string().meta({ format: 'date-time' }).describe('When the resolution ran'),
   })
   .meta({ id: 'StudioProjectResourcesDto' });

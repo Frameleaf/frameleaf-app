@@ -4,7 +4,7 @@ import type { StudioResourceRights } from 'src/utils/studio-rights.generated.js'
 import { AuthSession } from 'src/database.js';
 import { AssetRestorationStatus } from 'src/dtos/asset-restoration.dto.js';
 import { AuthDto } from 'src/dtos/auth.dto.js';
-import { AssetFileType, AssetLockReason, AssetType, AssetVisibility } from 'src/enum.js';
+import { AssetFileType, AssetLockReason, AssetType, AssetVisibility, ColorTransfer } from 'src/enum.js';
 import {
   STUDIO_GRANT_TTL_SECONDS,
   StudioAuthorizedManifest,
@@ -519,6 +519,38 @@ describe(StudioResourceService.name, () => {
 
       expect(mocks.asset.getVideoStreamsForDecode).not.toHaveBeenCalled();
       expect(refused.map((item) => item.reason)).toEqual([StudioRefusalReason.NotFound]);
+    });
+  });
+
+  describe('HDR sources (FL-97)', () => {
+    const stream = (assetId: string, overrides: Record<string, unknown> = {}) => ({
+      assetId,
+      codecName: 'hevc',
+      pixelFormat: 'yuv420p10le',
+      colorTransfer: 1,
+      dvProfile: null,
+      dvBlSignalCompatibilityId: null,
+      ...overrides,
+    });
+
+    it('names library videos whose original is PQ, HLG or Dolby Vision, sorted and once each', async () => {
+      const [sdr, pq, hlg, dolby] = [newUuid(), newUuid(), newUuid(), newUuid()];
+      mocks.asset.getVideoStreamsForDecode.mockResolvedValue([
+        stream(sdr),
+        stream(pq, { colorTransfer: ColorTransfer.Smpte2084 }),
+        stream(hlg, { colorTransfer: ColorTransfer.AribStdB67 }),
+        stream(dolby, { dvProfile: 8 }),
+      ] as never);
+
+      await expect(sut.hdrLibraryAssets([sdr, pq, hlg, dolby, pq, 'not-a-uuid'])).resolves.toEqual(
+        [pq, hlg, dolby].toSorted(),
+      );
+      expect(mocks.asset.getVideoStreamsForDecode).toHaveBeenCalledWith([sdr, pq, hlg, dolby]);
+    });
+
+    it('asks nothing when no library asset is placed', async () => {
+      await expect(sut.hdrLibraryAssets([])).resolves.toEqual([]);
+      expect(mocks.asset.getVideoStreamsForDecode).not.toHaveBeenCalled();
     });
   });
 

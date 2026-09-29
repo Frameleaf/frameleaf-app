@@ -77,6 +77,12 @@ export interface StudioAssetRef {
   mimeType?: string | null;
   /** Exact source cadence for admitted generated media. */
   frameRate?: { num: number; den: number };
+  /**
+   * FL-97 owner decision: the original is HDR (PQ, HLG or Dolby Vision), as the server's
+   * `resources.hdrSources` says for placed videos. A project that places it is an HDR project.
+   * The playback stream the engine reads is not the original, so it cannot tell by itself.
+   */
+  hdr?: boolean;
 }
 
 /**

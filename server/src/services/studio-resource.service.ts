@@ -46,7 +46,7 @@ import { createHmac } from 'node:crypto';
 import { AssetRestorationMode, AssetRestorationSourceType } from 'src/dtos/asset-restoration.dto.js';
 import { AuthDto } from 'src/dtos/auth.dto.js';
 import { StudioRestoredVersionDto, StudioRestoredVersionUnavailable } from 'src/dtos/studio-source.dto.js';
-import { AssetFileType, AssetType, DecodeRefusal, Permission } from 'src/enum.js';
+import { AssetFileType, AssetType, ColorTransfer, DecodeRefusal, Permission } from 'src/enum.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
 import { BaseService } from 'src/services/base.service.js';
 import { getLockedOwnerId, isLockedAssetRow } from 'src/utils/locked-visibility.js';
@@ -1406,6 +1406,31 @@ export class StudioResourceService extends BaseService {
       }
     }
     return refused;
+  }
+
+  /**
+   * FL-97 owner decision: which of these library assets have an HDR picture stream (PQ or HLG
+   * transfer, or Dolby Vision), as persisted by metadata extraction. Callers pass only ids the
+   * acting account resolved. Sorted for a stable response.
+   */
+  async hdrLibraryAssets(ids: readonly string[]): Promise<string[]> {
+    const candidates = [...new Set(ids.filter((id) => isStudioUuid(id)))];
+    if (candidates.length === 0) {
+      return [];
+    }
+    const streams = await this.assetRepository.getVideoStreamsForDecode(candidates);
+    return [
+      ...new Set(
+        streams
+          .filter(
+            (stream) =>
+              stream.colorTransfer === ColorTransfer.Smpte2084 ||
+              stream.colorTransfer === ColorTransfer.AribStdB67 ||
+              stream.dvProfile !== null,
+          )
+          .map((stream) => stream.assetId),
+      ),
+    ].toSorted();
   }
 
   /** FL-195: which of these (the elevated owner's own Locked assets) are locked for a revealed reason. */
