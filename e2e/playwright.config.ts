@@ -51,6 +51,25 @@ const config: PlaywrightTestConfig = {
       testDir: './src/specs/maintenance/web',
       workers: 1,
     },
+    // FL-112 (STU-405): additional Studio-only browser evidence lanes. Opt-in only (run with
+    // --project=studio-firefox / --project=studio-firefox-tablet); the default `ui` project above
+    // never picks these up, so they cannot affect an unscoped local or CI run. Playwright WebKit is
+    // explicitly not accepted as Safari/iPad evidence for this story - real hardware is required for
+    // that axis - so no WebKit project is added here.
+    {
+      name: 'studio-firefox',
+      use: { ...devices['Desktop Firefox'] },
+      testDir: './src/ui/specs/studio',
+      fullyParallel: true,
+      workers: process.env.CI ? 2 : Math.max(1, Math.round(cpus().length * 0.5)),
+    },
+    {
+      name: 'studio-firefox-tablet',
+      use: { ...devices['Desktop Firefox'], viewport: { width: 1024, height: 768 } },
+      testDir: './src/ui/specs/studio',
+      fullyParallel: true,
+      workers: process.env.CI ? 2 : Math.max(1, Math.round(cpus().length * 0.5)),
+    },
   ],
 
   /* Run your local dev server before starting the tests */
