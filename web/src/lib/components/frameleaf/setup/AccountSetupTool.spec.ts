@@ -65,4 +65,10 @@ describe('Set up your account (FL-176)', () => {
     );
     expect(goto).toHaveBeenCalledWith('/photos', { invalidateAll: true });
   });
+
+  it('finishes on the page sign-in was asked for (FL-146, FL-30)', async () => {
+    render(AccountSetupTool, { continueTo: '/albums?from=share' });
+    await fireEvent.click(screen.getByRole('button', { name: 'Done' }));
+    await waitFor(() => expect(goto).toHaveBeenCalledWith('/albums?from=share', { invalidateAll: true }));
+  });
 });
