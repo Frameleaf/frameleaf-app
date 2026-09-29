@@ -6,6 +6,7 @@ import {
   getAlbumInfo,
   getAlbumTree,
   getAssetDevelop,
+  getFaces,
   login,
   moveAlbumToCollection,
   setUserOnboarding,
@@ -161,7 +162,12 @@ test.describe('Album', () => {
     });
     await setUserOnboarding({ onboardingDto: { isOnboarded: true } }, { headers: asBearerAuth(owner.accessToken) });
     await utils.setAuthCookies(context, owner.accessToken);
-    const photo = await utils.createAsset(owner.accessToken, { assetData: { filename: 'alpha.png' } });
+    const photo = await utils.createAsset(owner.accessToken, {
+      assetData: {
+        bytes: readFileSync(new URL('../../../../design/frameleaf/template/public/media/hiking.png', import.meta.url)),
+        filename: 'alpha.png',
+      },
+    });
     const otherPhoto = await utils.createAsset(owner.accessToken, { assetData: { filename: 'zulu.png' } });
     const video = await utils.createAsset(owner.accessToken, {
       assetData: {
@@ -175,6 +181,8 @@ test.describe('Album', () => {
       albumName: 'Album continuity',
       assetIds: [photo.id, otherPhoto.id, video.id],
     });
+    await utils.waitForQueueFinish(admin.accessToken, 'metadataExtraction');
+    await utils.waitForQueueFinish(admin.accessToken, 'thumbnailGeneration');
 
     await page.goto(`/albums/${album.id}`);
     const photoTile = page.locator(`[data-asset-id="${photo.id}"]`);
@@ -250,6 +258,22 @@ test.describe('Album', () => {
     await editor.getByRole('button', { name: 'Cancel', exact: true }).click();
     await expect(editor).toHaveCount(0);
     await expect(page.locator('#immich-asset-viewer')).toHaveAttribute('data-asset-id', photo.id);
+    await page.keyboard.press('i');
+    const info = page.locator('#detail-panel');
+    await expect(info).toBeVisible();
+    await info.getByRole('button', { name: 'Add person' }).click();
+    const faceDialog = page.getByRole('dialog', { name: 'Tag people' });
+    await expect(faceDialog.getByRole('button', { name: 'Add face' })).toBeEnabled();
+    await faceDialog.getByRole('button', { name: 'Add face' }).click();
+    await faceDialog.getByRole('button', { name: 'Create person' }).click();
+    await faceDialog.getByRole('textbox', { name: "New person's name" }).fill('Journey face');
+    await faceDialog.getByRole('button', { name: 'Create and assign' }).click();
+    await faceDialog.getByRole('button', { name: 'Save face tags' }).click();
+    await expect(faceDialog).toBeHidden();
+    await expect
+      .poll(async () => (await getFaces({ id: photo.id }, { headers: asBearerAuth(owner.accessToken) }))[0]?.person?.name)
+      .toBe('Journey face');
+    await expect(info).toContainText('Journey face');
     await page.goBack();
     await expect(page.locator('#immich-asset-viewer')).toHaveCount(0);
     await expect(photoTile.getByRole('checkbox')).toBeChecked();
