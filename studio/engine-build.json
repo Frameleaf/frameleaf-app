@@ -78,8 +78,8 @@
     {
       "path": "patches/0015-transition-float-alpha.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
-      "sha256": "4cc28f1873dbbde4591b4372b4f29b2c8a900a6114ec68bac961c419c6d8fcaa"
+      "sha256": "08216ade8ccf1a918793eac25799f0a982e758d52468ca4546cb015b9f5b8a3a"
     }
   ],
-  "sourceSha256": "bf11a4fab5cb41c55e06c205bd6cbbb7ccc6c0a15ca265360b94d98d1641beb7"
+  "sourceSha256": "3cea5b0854bff665cad821a05924157aad5930da54d24f739dc7f66fd132ba2a"
 }
