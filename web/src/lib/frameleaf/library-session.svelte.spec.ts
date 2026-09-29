@@ -376,6 +376,65 @@ describe('LibrarySessionStore', () => {
     expect(new LibrarySessionStore({ storage: null }).persist('user-1')).toBe(false);
   });
 
+  it('recovers a same-tab session after a failed preference write (FL-40)', () => {
+    const preferences = new MemoryStorage();
+    const tab = new MemoryStorage();
+    const context = JSON.stringify({ route: '/albums/[albumId]', options: { albumId: 'album-1' } });
+    const url = new URL('https://example.test/albums/album-1');
+    preferences.setItem(
+      libraryPreferenceKey('user-1'),
+      JSON.stringify({ version: 1, layout: 'browse', state: viewState({ sort: 'captured-asc' }) }),
+    );
+    const blockedPreferences = {
+      getItem: (key: string) => preferences.getItem(key),
+      setItem: () => {
+        throw new Error('preferences unavailable');
+      },
+    };
+    const current = new LibrarySessionStore({ storage: blockedPreferences, transientStorage: tab });
+    current.restore(url, 'user-1', context);
+    current.patchView({ sort: 'filename' });
+    current.select('asset-1');
+    const draft = { assetId: 'asset-1', recipe: [{ contrast: 20 }], undo: [[]], redo: [] };
+    current.dispatch({ type: 'draft', draft });
+    expect(current.persist()).toBe(false);
+
+    const reloaded = new LibrarySessionStore({ storage: blockedPreferences, transientStorage: tab });
+    reloaded.restore(url, 'user-1', context);
+    expect(reloaded.state.sort).toBe('filename');
+    expect(reloaded.selection).toEqual(['asset-1']);
+    expect(reloaded.session.draft).toEqual(draft);
+
+    const otherTab = new LibrarySessionStore({ storage: blockedPreferences, transientStorage: new MemoryStorage() });
+    otherTab.restore(url, 'user-1', context);
+    expect(otherTab.state.sort).toBe('captured-asc');
+    expect(otherTab.selection).toEqual([]);
+    expect(otherTab.session.draft).toBeNull();
+
+    reloaded.restore(url, 'user-2', context);
+    expect(reloaded.selection).toEqual([]);
+    expect(reloaded.session.draft).toBeNull();
+    reloaded.restore(url, 'user-1', `${context}:other-route`);
+    expect(reloaded.state.sort).toBe('captured-asc');
+    expect(reloaded.selection).toEqual([]);
+    expect(reloaded.session.draft).toBeNull();
+    reloaded.restore(writeLibraryView(url, viewState({ sort: 'rating' })), 'user-1', context);
+    expect(reloaded.state.sort).toBe('rating');
+    expect(reloaded.selection).toEqual([]);
+    expect(reloaded.session.draft).toBeNull();
+
+    // A later successful preference write in another tab takes precedence over this failed write.
+    preferences.setItem(
+      libraryPreferenceKey('user-1'),
+      JSON.stringify({ version: 1, layout: 'browse', state: viewState({ sort: 'rating' }) }),
+    );
+    const afterOtherTab = new LibrarySessionStore({ storage: blockedPreferences, transientStorage: tab });
+    afterOtherTab.restore(url, 'user-1', context);
+    expect(afterOtherTab.state.sort).toBe('rating');
+    expect(afterOtherTab.selection).toEqual([]);
+    expect(afterOtherTab.session.draft).toBeNull();
+  });
+
   it.each(['asc', 'desc'])(
     'restores a legacy %s context after reload without crossing account or public-share boundaries (FL-40)',
     (order) => {
