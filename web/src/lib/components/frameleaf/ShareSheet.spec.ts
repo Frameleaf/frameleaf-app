@@ -135,6 +135,25 @@ describe('ShareSheet', () => {
       expect(sdkMock.shareItems).not.toHaveBeenCalled();
     });
 
+    it('can revoke an existing share when the user directory request fails', async () => {
+      sdkMock.searchUsers.mockRejectedValueOnce(new Error('Directory unavailable'));
+      sdkMock.getItemShares.mockResolvedValue([
+        { id: 's1', assetId: 'a1', sharedWith: person('jamie', 'Jamie'), createdAt: '' },
+      ]);
+      sdkMock.unshareItems.mockResolvedValue({ shares: [], added: 0, removed: 1, link: null });
+      render(ShareSheet, { open: true, assetIds: ['a1'] });
+
+      const jamie = await screen.findByRole('button', { name: 'Jamie' });
+      expect(jamie).toHaveAttribute('aria-pressed', 'true');
+      await fireEvent.click(jamie);
+      await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_sharing.save_sharing }));
+
+      expect(sdkMock.unshareItems).toHaveBeenCalledWith({
+        itemShareChangeDto: { assetIds: ['a1'], userIds: ['jamie'] },
+      });
+      expect(screen.queryByRole('alert')).toBeNull();
+    });
+
     it('creates a new share with a saved recipient when the user directory is private', async () => {
       sdkMock.searchUsers.mockResolvedValue([person('me', 'Taylor')]);
       sdkMock.getRecipientGroups.mockResolvedValue([
