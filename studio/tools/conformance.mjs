@@ -7,7 +7,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parseJsonRejectingDuplicateKeys } from '../../scripts/frameleaf-studio-contracts.mjs';
 
 export const AXES = ['native', 'chromium', 'firefox', 'safari', 'command', 'graph', 'preview', 'export', 'timingColor', 'authorizationFailure', 'test'];
-const CATALOG_SHA256 = '74e65893486ef0f372c66e140915b8bb98ca32bb07be668efe30514b733c748b';
+const CATALOG_SHA256 = '85443e5d38d6b4d793a0560a268a44babf35b6f40c8a2dc33912a095676ef262';
 const OWNERS_SHA256 = 'b47de92810236fe47fcf296614737b79fba949e75bb4de14f46fb4195afda0f7';
 const SHA256 = /^[a-f0-9]{64}$/;
 const NON_RENDERING_ROWS = new Set([
