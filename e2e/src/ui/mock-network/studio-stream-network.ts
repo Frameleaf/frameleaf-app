@@ -15,7 +15,13 @@ import { workerDouble } from 'src/ui/mock-network/studio-stream-worker-double.js
 export const STUDIO_PROJECT_ID = '0195e2a0-0000-7000-8000-0000000000f1';
 /** `pinnedFreecutRevision` in `web/src/lib/frameleaf/studio/engine-loader.ts`. */
 const ENGINE_REVISION = '4d62e8082c5eb387a96275bcbd323d28f6e41a62';
-const FRAME_PROTOCOL = 3;
+/**
+ * `STUDIO_FRAME_PROTOCOL_VERSION` in `web/src/lib/frameleaf/studio/frame-protocol.ts`. A stale
+ * value here makes `resolveStudioFrameManifest()` refuse the mocked manifest before any editor
+ * document is ever requested, failing every studio-stream spec fast with "Studio editor could not
+ * be loaded" (FL-144 CI investigation) rather than a slow test.
+ */
+const FRAME_PROTOCOL = 4;
 
 export type StreamSessionState = 'queued' | 'negotiating' | 'offered' | 'answered' | 'closed';
 
