@@ -25,6 +25,14 @@ try {
       device.pushErrorScope('validation');
       pipeline = TransitionPipeline.create(device);
       if (!pipeline) throw new Error('Transition pipeline initialization failed');
+      // FL-97: an SDR project keeps Freecut's transition results on float output;
+      // an HDR project keeps extended range. Sample both from the same inputs.
+      const sdrWitness = [0.8, 0.6, 0.2, 1];
+      const projectRange = (range) => {
+        pipeline.setWorkingRange(range);
+        return [0, 0.5, 1].map((progress) =>
+          direct(sdrWitness, sdrWitness, progress, undefined, 'rgba16float', 'additiveDissolve'));
+      };
       const texture = (rgba, format = 'rgba16float') => {
         const value = device.createTexture({
           size: [2, 2], format,
@@ -56,6 +64,8 @@ try {
           progress, 2, 2, undefined, properties, inputAlpha, outputAlpha)) throw new Error('Direct transition rejected');
         return read(output);
       };
+      const sdrProject = projectRange('sdr');
+      const hdrProject = projectRange('hdr');
       const crossfade = direct([1, 0, 0, 1], [0, 0, 1, 0], 0.5);
       const identity = direct([2, -0.5, 0.25, 0.5], [0, 0, 1, 0], 0);
       const transparent = direct([1, 0, 0, 0], [0, 0, 1, 0], 0.5);
@@ -107,6 +117,7 @@ try {
         legacyVariant: Array.from(new Uint8Array(legacyVariant.getMappedRange(), 0, 4)),
         additive: floats(additive),
         variants: variants.map(({ id, readbacks }) => ({ id, pixels: readbacks.map(floats) })),
+        sdrProject: sdrProject.map(floats), hdrProject: hdrProject.map(floats),
       };
     } finally {
       pipeline?.destroy();
@@ -128,6 +139,16 @@ try {
       Math.abs(result[name][channel] - value) <= tolerance,
       `${name} channel ${channel}: ${result[name][channel]} != ${value}`,
     ));
+  }
+  // SDR project: the additive midpoint is display-bounded as in Freecut; HDR keeps it.
+  assert.ok(result.sdrProject[1].slice(0, 3).every((v) => v <= 1 + 1e-3) &&
+    result.sdrProject[1][0] > 0.99, `SDR project additive midpoint: ${result.sdrProject[1]}`);
+  assert.ok(result.hdrProject[1][0] > 1.01, `HDR project additive midpoint clipped: ${result.hdrProject[1]}`);
+  for (const pixels of [result.sdrProject, result.hdrProject]) {
+    [0.8, 0.6, 0.2, 1].forEach((value, channel) => {
+      assert.ok(Math.abs(pixels[0][channel] - value) < 0.002, `endpoint 0 channel ${channel}: ${pixels[0]}`);
+      assert.ok(Math.abs(pixels[2][channel] - value) < 0.002, `endpoint 1 channel ${channel}: ${pixels[2]}`);
+    });
   }
   for (const { id, pixels } of result.variants) {
     for (const index of [0, 2]) {

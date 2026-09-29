@@ -66,6 +66,9 @@ jobs:
           node studio/tools/transition-float.browser.mjs
           node studio/tools/nested-float.browser.mjs
           node studio/tools/chroma-key.browser.mjs
+          node studio/tools/effects-matrix.browser.mjs
+          node studio/tools/blend-matrix.browser.mjs
+          node studio/tools/transition-matrix.browser.mjs
       - name: Upstream unit and Node headless contracts
         run: |
           npm --prefix studio/engine run test:run

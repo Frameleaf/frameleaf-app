@@ -33,6 +33,8 @@ try {
     try {
       device.pushErrorScope('validation');
       pipeline = new CompositorPipeline(device);
+      // FL-97: these witnesses model an HDR project; the SDR witness follows.
+      pipeline.setWorkingRange('hdr');
       const pixels = [-0.5, 2, 0.333251953125, 0.5, 2, 4, -1, 1, 0.25, 0.5, 0.75, 1, 0, 0, 0, 0];
       const texture = (values) => {
         const value = device.createTexture({
@@ -115,8 +117,19 @@ try {
         blendEncoder.copyTextureToBuffer({ texture: blended.texture }, { buffer, bytesPerRow: 256 }, [4, 1]);
         device.queue.submit([blendEncoder.finish()]);
       }
+      // An SDR project keeps Freecut's clamped blend of an opaque layer over another.
+      pipeline.setWorkingRange('sdr');
+      const sdrEncoder = device.createCommandEncoder();
+      const sdrComposite = pipeline.compositeToTexture([layer, layer], 4, 1, sdrEncoder);
+      if (!sdrComposite) throw new Error('Compositor rejected SDR-project layers');
+      const sdrReadback = device.createBuffer({ size: 256, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
+      buffers.push(sdrReadback);
+      sdrEncoder.copyTextureToBuffer({ texture: sdrComposite.texture }, { buffer: sdrReadback, bytesPerRow: 256 }, [4, 1]);
+      device.queue.submit([sdrEncoder.finish()]);
+      pipeline.setWorkingRange('hdr');
       effectsPipeline = await EffectsPipeline.create();
       if (!effectsPipeline) throw new Error('Effects pipeline unavailable');
+      effectsPipeline.setWorkingRange('hdr');
       const effect = (type, params) => ({ id: type, type, name: type, enabled: true, params });
       const identityEffects = [
         effect('gpu-vignette', { amount: 0 }),
@@ -196,6 +209,7 @@ try {
         legacyActual,
         format: composite.texture.format,
         pixels: Array.from(new Float16Array(readback.getMappedRange(), 0, 16)),
+        sdrProjectPixels: Array.from(new Float16Array(sdrReadback.getMappedRange(), 0, 16)),
         canvasFormat,
         canvasPixels: Array.from(new Uint8Array(canvasReadback.getMappedRange(), 0, 16)),
         softLightPixels: softLightReadbacks.map((buffer) =>
@@ -244,6 +258,11 @@ try {
       `Float channel ${i}: ${result.pixels[i]} != ${expected[i]}`,
     );
   }
+  // SDR project: the opaque texels of the upper layer are blended as Freecut's
+  // 8-bit route would hold them.
+  [[1, [1, 1, 0, 1]], [2, [0.25, 0.5, 0.75, 1]]].forEach(([pixel, rgba]) => rgba.forEach((value, channel) =>
+    assert.ok(Math.abs(result.sdrProjectPixels[pixel * 4 + channel] - value) < 0.001,
+      `SDR project pixel ${pixel} channel ${channel}: ${result.sdrProjectPixels[pixel * 4 + channel]} != ${value}`)));
   assert.ok(['rgba8unorm', 'bgra8unorm'].includes(result.canvasFormat));
   const order = result.canvasFormat === 'bgra8unorm' ? [2, 1, 0, 3] : [0, 1, 2, 3];
   for (let pixel = 0; pixel < 4; pixel++) {
