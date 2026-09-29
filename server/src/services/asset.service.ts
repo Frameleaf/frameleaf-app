@@ -596,6 +596,12 @@ export class AssetService extends BaseService {
     if (orphanedVersionPaths.length > 0) {
       await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: orphanedVersionPaths } });
     }
+    // FL-97: Studio HDR intermediates whose asset is gone, whose original changed, that an edit now
+    // covers or that no project used for 30 days.
+    const orphanedHdrPaths = await this.assetRepository.releaseStudioHdrIntermediates();
+    if (orphanedHdrPaths.length > 0) {
+      await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: orphanedHdrPaths } });
+    }
 
     return JobStatus.Success;
   }

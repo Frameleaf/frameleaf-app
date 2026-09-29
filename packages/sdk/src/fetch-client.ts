@@ -9753,6 +9753,8 @@ export type StudioProjectResourcesDto = {
     checkedAt: string;
     /** Every referenced source resolved for the acting account */
     complete: boolean;
+    /** FL-97: the hdrSources whose Studio HDR intermediate is ready, so the editor reads their real HDR pixels (GET /assets/{id}/video/studio-hdr). The others are being made */
+    hdrProxySources: string[];
     /** FL-97 owner decision: placed library videos whose original is HDR (PQ or HLG transfer, or Dolby Vision). A project that places one is an HDR project. Only sources that resolved for the acting account are named */
     hdrSources: string[];
     /** FL-195 follow-up: the owner's own library items this project places that are hidden from this session (Locked, or matched by a Locked rule, while the session is locked). The project keeps them; the editor hides their clips rather than showing missing media. The owner's only; empty for a reviewer */
@@ -14451,6 +14453,19 @@ export function getSegment({ filename, id, key, sessionId, slug, variantIndex, x
         headers: oazapfts.mergeHeaders(opts?.headers, {
             "x-immich-hls-msn": xImmichHlsMsn
         })
+    }));
+}
+/**
+ * Play the Studio HDR intermediate
+ */
+export function playStudioHdrVideo({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/assets/${encodeURIComponent(id)}/video/studio-hdr`, {
+        ...opts
     }));
 }
 /**
@@ -23317,6 +23332,7 @@ export enum JobName {
     AssetVideoEditGeneration = "AssetVideoEditGeneration",
     AssetEncodeVideoQueueAll = "AssetEncodeVideoQueueAll",
     AssetEncodeVideo = "AssetEncodeVideo",
+    StudioHdrProxyGenerate = "StudioHdrProxyGenerate",
     AssetEmptyTrash = "AssetEmptyTrash",
     AssetExtractMetadataQueueAll = "AssetExtractMetadataQueueAll",
     AssetExtractMetadata = "AssetExtractMetadata",

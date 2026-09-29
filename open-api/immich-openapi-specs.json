@@ -12753,6 +12753,64 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/assets/{id}/video/studio-hdr": {
+      "get": {
+        "description": "FL-97: streams the 10-bit AV1 intermediate that keeps an HDR video’s BT.2020 PQ or HLG signal, for the Studio editor. Not found until it has been made (placing the video in a Studio project queues it). Supports byte range requests.",
+        "operationId": "playStudioHdrVideo",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Play the Studio HDR intermediate",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.view",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/auth/admin-sign-up": {
       "post": {
         "description": "Create the first admin user in the system.",
@@ -61165,6 +61223,7 @@
           "AssetVideoEditGeneration",
           "AssetEncodeVideoQueueAll",
           "AssetEncodeVideo",
+          "StudioHdrProxyGenerate",
           "AssetEmptyTrash",
           "AssetExtractMetadataQueueAll",
           "AssetExtractMetadata",
@@ -82581,6 +82640,15 @@
             "description": "Every referenced source resolved for the acting account",
             "type": "boolean"
           },
+          "hdrProxySources": {
+            "description": "FL-97: the hdrSources whose Studio HDR intermediate is ready, so the editor reads their real HDR pixels (GET /assets/{id}/video/studio-hdr). The others are being made",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "type": "array"
+          },
           "hdrSources": {
             "description": "FL-97 owner decision: placed library videos whose original is HDR (PQ or HLG transfer, or Dolby Vision). A project that places one is an HDR project. Only sources that resolved for the acting account are named",
             "items": {
@@ -82616,6 +82684,7 @@
         "required": [
           "checkedAt",
           "complete",
+          "hdrProxySources",
           "hdrSources",
           "hiddenSources",
           "refusedCount",

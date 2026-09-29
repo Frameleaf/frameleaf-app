@@ -1669,6 +1669,34 @@
       "identity": "immich_fork.studio_generated_resource.sourceRevision"
     },
     {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.studio_hdr_intermediate.assetId"
+    },
+    {
+      "definition": "timestamp with time zone|not null|clock_timestamp()||",
+      "identity": "immich_fork.studio_hdr_intermediate.createdAt"
+    },
+    {
+      "definition": "timestamp with time zone|not null|clock_timestamp()||",
+      "identity": "immich_fork.studio_hdr_intermediate.lastUsedAt"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.studio_hdr_intermediate.ownerId"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "immich_fork.studio_hdr_intermediate.path"
+    },
+    {
+      "definition": "bytea|not null|||",
+      "identity": "immich_fork.studio_hdr_intermediate.sourceFingerprint"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.studio_hdr_intermediate.status"
+    },
+    {
       "definition": "text|not null|||",
       "identity": "immich_fork.studio_project_import.checksum"
     },
@@ -7743,6 +7771,22 @@
       "identity": "immich_fork.studio_generated_resource.studio_generated_resource_revision_check"
     },
     {
+      "definition": "CHECK ((status = 'ready'::text) = (path IS NOT NULL))",
+      "identity": "immich_fork.studio_hdr_intermediate.studio_hdr_intermediate_path_check"
+    },
+    {
+      "definition": "UNIQUE (path)",
+      "identity": "immich_fork.studio_hdr_intermediate.studio_hdr_intermediate_path_uq"
+    },
+    {
+      "definition": "PRIMARY KEY (\"assetId\")",
+      "identity": "immich_fork.studio_hdr_intermediate.studio_hdr_intermediate_pkey"
+    },
+    {
+      "definition": "CHECK (status = ANY (ARRAY['ready'::text, 'ineligible'::text, 'failed'::text]))",
+      "identity": "immich_fork.studio_hdr_intermediate.studio_hdr_intermediate_status_check"
+    },
+    {
       "definition": "CHECK (checksum ~ '^[a-f0-9]{64}$'::text)",
       "identity": "immich_fork.studio_project_import.studio_project_import_checksum_check"
     },
@@ -9561,7 +9605,8 @@
     "0000000000205-AlbumCoverFollowsNewest",
     "0000000000206-AssetUserShares",
     "0000000000207-StudioGeneratedResources",
-    "0000000000208-StudioProjectImports"
+    "0000000000208-StudioProjectImports",
+    "0000000000209-StudioHdrIntermediates"
   ],
   "functions": [
     {
@@ -11105,6 +11150,14 @@
     {
       "definition": "CREATE UNIQUE INDEX studio_generated_resource_pkey ON immich_fork.studio_generated_resource USING btree (\"projectId\", id)",
       "identity": "immich_fork.studio_generated_resource.studio_generated_resource_pkey"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX studio_hdr_intermediate_path_uq ON immich_fork.studio_hdr_intermediate USING btree (path)",
+      "identity": "immich_fork.studio_hdr_intermediate.studio_hdr_intermediate_path_uq"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX studio_hdr_intermediate_pkey ON immich_fork.studio_hdr_intermediate USING btree (\"assetId\")",
+      "identity": "immich_fork.studio_hdr_intermediate.studio_hdr_intermediate_pkey"
     },
     {
       "definition": "CREATE UNIQUE INDEX studio_project_import_pkey ON immich_fork.studio_project_import USING btree (\"projectId\", id)",
@@ -13632,6 +13685,10 @@
     {
       "definition": "table",
       "identity": "immich_fork.studio_generated_resource"
+    },
+    {
+      "definition": "table",
+      "identity": "immich_fork.studio_hdr_intermediate"
     },
     {
       "definition": "table",

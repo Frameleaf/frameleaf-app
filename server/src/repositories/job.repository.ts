@@ -605,6 +605,10 @@ export class JobRepository {
       case JobName.StorageTemplateMigrationSingle: {
         return { jobId: item.data.id };
       }
+      case JobName.StudioHdrProxyGenerate: {
+        // FL-97: every project read asks for missing intermediates; one per video is enough
+        return { deduplication: { id: `${JobName.StudioHdrProxyGenerate}:${item.data.id}` } };
+      }
       case JobName.WorkflowAssetTrigger: {
         // FL-179: one job per execution, so a replayed run that queues its automatic retry again adds none
         return item.data.executionId ? { jobId: `workflow-${item.data.executionId}` } : null;

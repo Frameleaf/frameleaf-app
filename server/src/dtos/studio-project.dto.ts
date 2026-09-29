@@ -86,6 +86,11 @@ const StudioProjectResourcesSchema = z
       .describe(
         'FL-97 owner decision: placed library videos whose original is HDR (PQ or HLG transfer, or Dolby Vision). A project that places one is an HDR project. Only sources that resolved for the acting account are named',
       ),
+    hdrProxySources: z
+      .array(z.uuidv4())
+      .describe(
+        'FL-97: the hdrSources whose Studio HDR intermediate is ready, so the editor reads their real HDR pixels (GET /assets/{id}/video/studio-hdr). The others are being made',
+      ),
     checkedAt: z.string().meta({ format: 'date-time' }).describe('When the resolution ran'),
   })
   .meta({ id: 'StudioProjectResourcesDto' });
