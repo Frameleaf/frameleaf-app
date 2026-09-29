@@ -201,6 +201,7 @@ export class LibrarySessionStore {
       return false;
     }
     let saved = false;
+    let failedPreferenceSnapshot: string | null = null;
     try {
       this.#storage?.setItem(
         libraryPreferenceKey(currentUserId),
@@ -209,11 +210,19 @@ export class LibrarySessionStore {
       saved = !!this.#storage;
     } catch {
       // A full or blocked store must not break the page.
+      try {
+        failedPreferenceSnapshot = this.#storage?.getItem(libraryPreferenceKey(currentUserId)) ?? null;
+      } catch {
+        // The tab can still keep its own state when device storage is unreadable.
+      }
     }
     try {
       this.#transientStorage?.setItem(
         libraryTransientKey(currentUserId),
-        JSON.stringify(toStoredLibraryTransient(this.#session, this.#context)),
+        JSON.stringify({
+          ...toStoredLibraryTransient(this.#session, this.#context),
+          ...(failedPreferenceSnapshot && { failedPreferenceSnapshot }),
+        }),
       );
       return saved && !!this.#transientStorage;
     } catch {
