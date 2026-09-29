@@ -1,0 +1,6 @@
+{
+  "access_token": "eyJhbGciOiJSUzI1NiIsImtpZCI6ImsxIiwidHlwIjoiYXQrand0In0.eyJzdWIiOiIwMTkyZjFiMC0xYTJiLTdjM2QtOGU0Zi01YTZiN2M4ZDllMGYifQ.c2lnbmF0dXJl",
+  "expires_in": 600,
+  "token_type": "DPoP",
+  "scope": "instance"
+}
