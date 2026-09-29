@@ -817,6 +817,54 @@ describe(StudioExportRepository.name, () => {
   });
 
   describe('publish: current access', () => {
+    it('refuses a partner source when its owner is deleted while publication waits (FL-137)', async () => {
+      const context = setup();
+      const { user: owner } = await context.ctx.newUser();
+      const { user: partner } = await context.ctx.newUser();
+      await context.ctx.newPartner({ sharedById: partner.id, sharedWithId: owner.id });
+      const shared = { ...(await ownSource(context.ctx, partner.id)), access: 'shared' as const };
+      const previous = await stagedExport(context, owner.id, [shared]);
+      await context.sut.publish(publication(previous, [shared]));
+      const staged = await stagedExport(context, owner.id, [shared], { projectId: previous.projectId });
+
+      const release = deferred();
+      const { promise: locked, resolve: signalLocked } = Promise.withResolvers<number>();
+      const deletion = defaultDatabase.transaction().execute(async (trx) => {
+        await trx.updateTable('user').set({ deletedAt: new Date() }).where('id', '=', partner.id).execute();
+        const { rows } = await sql<{ pid: number }>`SELECT pg_backend_pid() AS pid`.execute(trx);
+        signalLocked(rows[0].pid);
+        await release.promise;
+      });
+      const blockerPid = await locked;
+      const publishing = context.sut.publish(publication(staged, [shared]));
+      const settled = Promise.allSettled([deletion, publishing]);
+      try {
+        await vi.waitFor(
+          async () => {
+            const { rows } = await sql<{ waiting: boolean }>`
+              SELECT EXISTS (
+                SELECT 1 FROM pg_stat_activity
+                WHERE wait_event_type = 'Lock'
+                  AND pg_blocking_pids(pid) @> ARRAY[${blockerPid}]::integer[]
+              ) AS waiting
+            `.execute(defaultDatabase);
+            expect(rows[0].waiting).toBe(true);
+          },
+          { timeout: 5000 },
+        );
+      } finally {
+        release.resolve();
+        await settled;
+      }
+
+      expect(await settled).toMatchObject([
+        { status: 'fulfilled' },
+        { status: 'rejected', reason: { code: 'source-access-lost' } },
+      ]);
+      expect((await context.sut.getById(staged.version.id))!.state).toBe(StudioExportVersionState.Staged);
+      expect((await context.sut.getById(previous.version.id))!.state).toBe(StudioExportVersionState.Published);
+    }, 10_000);
+
     it('refuses a multi-owner export once the album that shared a source is left', async () => {
       const context = setup();
       const { user: owner } = await context.ctx.newUser();
