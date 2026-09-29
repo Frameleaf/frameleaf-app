@@ -223,6 +223,11 @@ export type AssetSearchScope = {
   lockedMotion?: LockedVisibilityOptions;
   /** FL-54: owners whose assets a place filter must never match (set only when the filter uses a place) */
   locationHiddenOwnerIds?: string[];
+  /**
+   * FL-137: a shared-link visitor. The session carries the link creator's user id, but the visitor
+   * is not the owner: nothing from the trash is theirs to see.
+   */
+  sharedLink?: boolean;
 };
 
 export type SmartSearchOptions = SearchDateOptions &

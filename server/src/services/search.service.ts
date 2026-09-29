@@ -614,6 +614,7 @@ export class SearchService extends BaseService {
         userIds,
         lockedOwnerId: auth.user.id,
         viewingUserId: auth.user.id,
+        ...(auth.sharedLink && { sharedLink: true }),
         // live-photo motion parts of Locked stills: only the still's owner, when elevated (FL-34)
         lockedMotion: getLockedVisibilityOptions(auth),
         // FL-54: album branches search other people's items; a place filter must not match owners who
