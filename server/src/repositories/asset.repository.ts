@@ -1269,7 +1269,12 @@ export class AssetRepository {
 
   @GenerateSql({ params: [[DummyValue.UUID]] })
   @ChunkedArray({ paramIndex: 0 })
-  getByIdsWithAllRelationsButStacks(ids: string[], viewingUserId?: string) {
+  getByIdsWithAllRelationsButStacks(
+    ids: string[],
+    viewingUserId?: string,
+    exploreOptions?: HiddenContentQueryOptions & { ownerId: string },
+  ) {
+    // Explore selects IDs before hydrating; the current row must still qualify at this read.
     return this.db
       .selectFrom('asset')
       .selectAll('asset')
@@ -1278,6 +1283,16 @@ export class AssetRepository {
       .select(withTags)
       .$call(withExif)
       .where('asset.id', '=', anyUuid(ids))
+      .$call((qb) =>
+        exploreOptions
+          ? qb
+              .where('asset.ownerId', '=', asUuid(exploreOptions.ownerId))
+              .where(isTimelineVisible('asset', exploreOptions.revealLockedOwnerId))
+              .where('asset.type', '=', AssetType.Image)
+              .where('asset.deletedAt', 'is', null)
+              .$call((qb) => withHiddenContentFilter(qb, exploreOptions))
+          : qb,
+      )
       .execute();
   }
 
