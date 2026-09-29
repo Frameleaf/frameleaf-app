@@ -20,8 +20,8 @@ describe('studio command vocabulary', () => {
   });
 
   it('publishes the catalogue in sorted order, with no duplicates', () => {
-    // The published catalogue, the server mirror and the Dart contract are all generated in
-    // this order, so a row added out of order is caught here before CI regenerates them.
+    // The published catalogue and the server mirror are generated in this order, so a row
+    // added out of order is caught here before CI regenerates them.
     expect([...studioCommandIds]).toEqual([...studioCommandIds].sort());
     expect(new Set(studioCommandIds).size).toBe(studioCommandIds.length);
   });
