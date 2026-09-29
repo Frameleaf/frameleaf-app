@@ -745,11 +745,18 @@ export const fromStoredLibrarySession = (
   const transient = storedObject(transientRaw);
   session.layout = oneOf(value.layout, LIBRARY_LAYOUTS) ? (value.layout as LibraryLayout) : DEFAULT_LIBRARY_LAYOUT;
   const transientState = transient.version === 1 ? readLibraryViewValue(transient.state) : null;
-  const state = incoming ?? readLibraryViewValue(value.state) ?? transientState;
+  const sameContext = sameStorageContext(transient.context, context);
+  // Recover a failed write only while the device preference is still the one that write encountered.
+  const recoverTab = sameContext && typeof raw === 'string' && transient.failedPreferenceSnapshot === raw;
+  const state =
+    incoming ??
+    (recoverTab ? transientState : null) ??
+    readLibraryViewValue(value.state) ??
+    (sameContext ? transientState : null);
   if (state) {
     session.state = structuredClone(state);
   }
-  if (sameStorageContext(transient.context, context) && transientState && sameValue(transientState, session.state)) {
+  if (sameContext && transientState && sameValue(transientState, session.state)) {
     if (Array.isArray(transient.selection) && transient.selection.every(storedId)) {
       session.selection = [...new Set(transient.selection)];
     }
