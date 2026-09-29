@@ -74,7 +74,12 @@
       "path": "patches/0014-effects-float-transport.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "18d8d00da4eda7cc1d2760c7300ed9ac87d4a39271d4c2177be0aa2820d5b67c"
+    },
+    {
+      "path": "patches/0015-transition-float-alpha.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "4cc28f1873dbbde4591b4372b4f29b2c8a900a6114ec68bac961c419c6d8fcaa"
     }
   ],
-  "sourceSha256": "2a4b831e24f31bf36f29d33233ff6255bc3895d03c4476441176142d95246790"
+  "sourceSha256": "bf11a4fab5cb41c55e06c205bd6cbbb7ccc6c0a15ca265360b94d98d1641beb7"
 }
