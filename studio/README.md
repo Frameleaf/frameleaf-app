@@ -168,7 +168,7 @@ work.
 
 ## Canonical command catalogue
 
-`frameleaf-studio-commands.json` is the published Studio command vocabulary: 90 commands,
+`frameleaf-studio-commands.json` is the published Studio command vocabulary: 93 commands,
 each with its payload fields, scope, whether it changes the stored graph, whether it is
 undoable, the worker capability it needs, and the pinned Freecut manifest rows it reaches.
 

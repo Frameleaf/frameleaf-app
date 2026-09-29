@@ -37,6 +37,9 @@ The owner unparked the engine on 2026-09-25, and the web application now mounts 
   `clip.insert` and `clip.overwrite` (a marked source range at an exact source cadence; a VFR or
   unreadable cadence is refused), `track.set` (name, mute, lock, solo, visibility, sync lock and
   gain in dB), `track.remove`, `track.reorder` (among siblings) and `marker.add/update/remove`.
+  `clip.join` (contiguous parts of one source, with their linked parts), `clip.push` (push or pull
+  everything from a clip onward on every track) and `track.closeGap` (one gap or all) were added to
+  the catalogue for the same rows.
   Insert opens the gap on its destination tracks and on sync-locked tracks, as Freecut's ripple
   does, and linked companions on tracks without sync lock follow so linked media stays in sync.
   Edits that would change a clip on a locked track are refused. `test/timeline-tools.test.ts`

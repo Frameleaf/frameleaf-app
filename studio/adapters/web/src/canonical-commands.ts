@@ -77,12 +77,20 @@ import {
   updateTransition,
 } from '@/features/timeline/stores/timeline-actions'
 import {
+  joinItems,
   rateStretchItem,
   rollingTrimItems,
   slideItem,
   slipItem,
 } from '@/features/timeline/stores/actions/item-edit-actions'
-import { linkItems, unlinkItems } from '@/features/timeline/stores/actions/item-actions'
+import {
+  closeAllGapsOnTrack,
+  closeGapAtPosition,
+  linkItems,
+  trackPushItems,
+  unlinkItems,
+} from '@/features/timeline/stores/actions/item-actions'
+import { canJoinMultipleItems } from '@/features/timeline/utils/clip-utils'
 import {
   addMarker,
   removeMarker,
@@ -175,6 +183,8 @@ export const ENGINE_COMMANDS: Readonly<Record<string, readonly string[]>> = {
   // FL-94: the linked edit tools, source edits, tracks and markers of readme.timeline-editing.
   'clip.insert': ['readme.timeline-editing.7'],
   'clip.overwrite': ['readme.timeline-editing.7'],
+  'clip.join': ['readme.timeline-editing.3'],
+  'clip.push': ['readme.timeline-editing.5'],
   'clip.reorder': ['readme.timeline-editing.5'],
   'clip.roll': ['readme.timeline-editing.3'],
   'clip.setLink': ['readme.timeline-editing.3'],
@@ -184,6 +194,7 @@ export const ENGINE_COMMANDS: Readonly<Record<string, readonly string[]>> = {
   'marker.add': ['readme.timeline-editing.6'],
   'marker.remove': ['readme.timeline-editing.6'],
   'marker.update': ['readme.timeline-editing.6'],
+  'track.closeGap': ['readme.timeline-editing.5'],
   'track.remove': ['readme.timeline-editing.5'],
   'track.reorder': ['readme.timeline-editing.5'],
   'track.set': ['readme.timeline-editing.5'],
@@ -1392,7 +1403,92 @@ const handlers: Record<string, Handler> = {
     landSourceEdit(edit.placed, 'clip.overwrite')
   },
 
+  'clip.join'(payload) {
+    const ids = payload.clipIds
+    if (!Array.isArray(ids) || ids.some((id) => typeof id !== 'string')) invalid('clipIds must be clip ids')
+    const unique = [...new Set(ids as string[])]
+    if (unique.length < 2) invalid('clip.join needs at least two clips')
+    const chain = unique.map((id) => requireItem(id, 'clipIds')).sort((a, b) => a.from - b.from)
+    if (!canJoinMultipleItems(chain)) {
+      invalid('clip.join: the clips are not contiguous parts of one source at one speed')
+    }
+    assertUnlocked(linkedSet(unique), 'clip.join')
+    const first = chain[0]!
+    const last = chain.at(-1)!
+    // Freecut joins a linked pair's counterparts only for two clips, so a longer chain is joined a
+    // pair at a time; every step keeps the linked audio joined with its pictures.
+    withLinkedSelection(true, () => {
+      for (const next of chain.slice(1)) joinItems([first.id, next.id])
+    })
+    const joined = requireItem(first.id)
+    if (
+      joined.from !== first.from ||
+      joined.durationInFrames !== last.from + last.durationInFrames - first.from ||
+      chain.slice(1).some((part) => useItemsStore.getState().itemById[part.id])
+    ) {
+      failed('clip.join: the parts could not be joined')
+    }
+    for (const id of getLinkedItemIds(items(), first.id)) {
+      if (requireItem(id).durationInFrames !== joined.durationInFrames) {
+        failed('clip.join: a linked part was not joined with its clip')
+      }
+    }
+  },
+
+  'clip.push'(payload, { cadence }) {
+    const anchor = requireItem(stringField(payload, 'clipId'))
+    const frames = signedFrames(payload, 'delta', cadence)
+    if (frames === 0) return
+    // Freecut's track push moves every clip that starts at or after the anchor, on every track.
+    const moving = items().filter((item) => item.from >= anchor.from)
+    assertUnlocked(moving.map((item) => item.id), 'clip.push')
+    if (moving.some((item) => item.from + frames < 0)) failed('clip.push: clips would start before the timeline')
+    trackPushItems(anchor.id, frames)
+    for (const item of moving) {
+      if (requireItem(item.id).from !== item.from + frames) failed('clip.push: the clips could not move that far')
+    }
+    // A pull may not run into what is before the anchor.
+    assertNoOverlap(moving.map((item) => item.trackId), 'clip.push')
+  },
+
   /* ---------------- Tracks (FL-94) ---------------- */
+
+  'track.closeGap'(payload, { cadence }) {
+    const track = requireTrack(stringField(payload, 'trackId'))
+    if (track.locked) failed('track.closeGap: the track is locked')
+    const onTrack = () =>
+      items()
+        .filter((item) => item.trackId === track.id)
+        .sort((a, b) => a.from - b.from)
+    if (payload.at === undefined) {
+      // Every gap, from the start of the timeline, with linked clips following their clip.
+      assertUnlocked(linkedSet(onTrack().map((item) => item.id)), 'track.closeGap')
+      withLinkedSelection(true, () => closeAllGapsOnTrack(track.id))
+      let cursor = 0
+      for (const item of onTrack()) {
+        if (item.from !== cursor) failed('track.closeGap: a gap could not be closed')
+        cursor += item.durationInFrames
+      }
+      return
+    }
+    const frame = timeField(payload, 'at', cadence)
+    // The gap containing `frame`: from the end of the clip before it to the start of the next.
+    let gapStart = 0
+    let gapEnd: number | undefined
+    for (const item of onTrack()) {
+      if (frame >= gapStart && frame < item.from) {
+        gapEnd = item.from
+        break
+      }
+      gapStart = Math.max(gapStart, item.from + item.durationInFrames)
+    }
+    if (gapEnd === undefined || gapEnd <= gapStart) invalid('track.closeGap: there is no gap on the track at that time')
+    const later = onTrack().filter((item) => item.from >= gapEnd!)
+    closeGapAtPosition(track.id, frame)
+    for (const item of later) {
+      if (requireItem(item.id).from !== item.from - (gapEnd! - gapStart)) failed('track.closeGap: the gap could not be closed')
+    }
+  },
 
   'track.set'(payload) {
     const track = requireTrack(stringField(payload, 'trackId'))

@@ -81,6 +81,18 @@
     },
     {
       "capability": null,
+      "description": "Join contiguous parts of one source back into a clip, with their linked parts.",
+      "id": "clip.join",
+      "manifestIds": ["readme.timeline-editing.3"],
+      "mutatesGraph": true,
+      "payload": {
+        "clipIds": "string[]"
+      },
+      "scope": "clip",
+      "undoable": true
+    },
+    {
+      "capability": null,
       "description": "Move a clip to another time and optionally another track, carrying linked clips unless linkedSelectionEnabled is false (defaults to true).",
       "id": "clip.move",
       "manifestIds": ["command.moveItem"],
@@ -106,6 +118,19 @@
         "sourceIn": "time",
         "sourceOut": "time",
         "trackId": "string"
+      },
+      "scope": "clip",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "description": "Push or pull everything from a clip onward, on every track, by a signed delta.",
+      "id": "clip.push",
+      "manifestIds": ["readme.timeline-editing.5"],
+      "mutatesGraph": true,
+      "payload": {
+        "clipId": "string",
+        "delta": "duration"
       },
       "scope": "clip",
       "undoable": true
@@ -378,8 +403,7 @@
       "mutatesGraph": true,
       "payload": {
         "at": "time",
-        "clipIds": "string[]?",
-        "linkedSelectionEnabled": "boolean?"
+        "clipIds": "string[]?"
       },
       "scope": "clip",
       "undoable": true
@@ -1326,6 +1350,19 @@
     },
     {
       "capability": null,
+      "description": "Close the gap at a time on a track, or every gap on it, rippling later clips.",
+      "id": "track.closeGap",
+      "manifestIds": ["readme.timeline-editing.5"],
+      "mutatesGraph": true,
+      "payload": {
+        "at": "time?",
+        "trackId": "string"
+      },
+      "scope": "track",
+      "undoable": true
+    },
+    {
+      "capability": null,
       "description": "Remove a track and the clips on it.",
       "id": "track.remove",
       "manifestIds": [],
@@ -1393,7 +1430,7 @@
     }
   ],
   "counts": {
-    "commands": 90,
+    "commands": 93,
     "commandsWithoutManifestRow": 23,
     "manifestRows": 210,
     "manifestRowsDeclaredNonCommand": 28,
