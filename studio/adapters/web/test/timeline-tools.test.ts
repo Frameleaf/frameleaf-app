@@ -527,6 +527,8 @@ describe('FL-94 linked timeline tools on the Freecut engine', () => {
       [parts, 'clip.join', { clipIds: onTrack(parts, 'v1').map((part) => part.id) }],
       [start, 'clip.push', { clipId: onTrack(start, 'v1')[1]!.id, delta: seconds(1) }],
       [gapped, 'track.closeGap', { trackId: 'v1' }],
+      [start, 'sequence.setSettings', { sequenceId: 'main', fps: { num: 60, den: 1 }, timing: 'keep-time' }],
+      [start, 'project.applyTemplate', { templateId: 'vertical-9-16' }],
     ]
     for (const [initial, id, payload] of cases) {
       graph = initial
@@ -542,3 +544,156 @@ describe('FL-94 linked timeline tools on the Freecut engine', () => {
     }
   })
 })
+
+describe('FL-94 sequence settings: nothing on an existing timeline retimes silently', () => {
+  const rate = (num: number, den = 1) => ({ num, den })
+  const setSettings = (payload: Record<string, unknown>) =>
+    envelope('sequence.setSettings', { sequenceId: 'main', ...payload })
+  const withClipAndMarker = async (fps = 30) => {
+    /** A linked clip from 2 s to 4 s and a marker at 3 s. */
+    const base = { ...project(), metadata: { width: 1920, height: 1080, fps } } as Project
+    const one = await applied(base, [envelope('clip.add', { trackId: 'v1', assetId: ASSET, at: seconds(2) })])
+    return applied(one, [
+      envelope('clip.trimEnd', { clipId: onTrack(one, 'v1')[0]!.id, end: seconds(4) }),
+      envelope('marker.add', { at: seconds(3) }),
+    ])
+  }
+  const markersOf = (graph: Project) => (graph.timeline?.markers ?? []).map((marker) => marker.frame)
+
+  it('changes the rate of an empty timeline without asking', async () => {
+    const graph = await applied(project(), [setSettings({ fps: rate(60), width: 1280, height: 720 })])
+    expect(graph.metadata).toMatchObject({ fps: 60, width: 1280, height: 720, frameRate: { num: 60, den: 1 } })
+  })
+
+  it('refuses a rate change on existing content without a timing policy', async () => {
+    const graph = await withClipAndMarker()
+    await refused(graph, [setSettings({ fps: rate(60) })], 'invalid')
+    // A canvas-only change moves no time, so it needs no policy.
+    const resized = await applied(graph, [setSettings({ width: 1080, height: 1920 })])
+    expect(resized.metadata).toMatchObject({ width: 1080, height: 1920, fps: 30 })
+    expect(spans(resized, 'v1')).toEqual(spans(graph, 'v1'))
+  })
+
+  it('keep-time keeps every clip, sound and marker at the same second', async () => {
+    const graph = await withClipAndMarker()
+    expect(spans(graph, 'v1')).toEqual([[60, 60, 0, 60]])
+    const next = await applied(graph, [
+      setSettings({ fps: rate(60), timing: 'keep-time' }),
+      // Later envelopes in the batch read their times on the new rate.
+      envelope('marker.add', { at: seconds(5) }),
+    ])
+    expect(next.metadata).toMatchObject({ fps: 60, frameRate: { num: 60, den: 1 } })
+    // Source frames stay in the source's own rate; the picture at each second is unchanged.
+    for (const trackId of ['v1', 'a1']) {
+      const [clip] = onTrack(next, trackId)
+      expect([clip!.from, clip!.durationInFrames, clip!.sourceStart, clip!.sourceEnd]).toEqual([120, 120, 0, 60])
+      expect(clip!.sourceFps).toBe(30)
+    }
+    expect(markersOf(next)).toEqual([180, 300])
+  })
+
+  it('keep-frames keeps the frame numbers, as an explicit choice', async () => {
+    const graph = await withClipAndMarker()
+    const next = await applied(graph, [setSettings({ fps: rate(60), timing: 'keep-frames' })])
+    expect(next.metadata.fps).toBe(60)
+    expect(spans(next, 'v1')).toEqual(spans(graph, 'v1'))
+    expect(markersOf(next)).toEqual(markersOf(graph))
+  })
+
+  it('moves to an NTSC rate exactly', async () => {
+    const graph = await withClipAndMarker()
+    const next = await applied(graph, [setSettings({ fps: rate(30_000, 1001), timing: 'keep-time' })])
+    expect(next.metadata).toMatchObject({ fps: 30_000 / 1001, frameRate: { num: 30_000, den: 1001 } })
+    // 2 s is 59.94 frames: frame 60. The clip still ends at 4 s: frame 120 (119.88).
+    expect(spans(next, 'v1')).toEqual([[60, 60, 0, 60]])
+    expect(markersOf(next)).toEqual([90])
+  })
+
+  it('applies a template, asking for timing only when its rate differs', async () => {
+    const graph = await withClipAndMarker()
+    const vertical = await applied(graph, [envelope('project.applyTemplate', { templateId: 'vertical-9-16' })])
+    expect(vertical.metadata).toMatchObject({ width: 1080, height: 1920, fps: 30 })
+    expect(spans(vertical, 'v1')).toEqual(spans(graph, 'v1'))
+
+    const fast = await withClipAndMarker(60)
+    await refused(fast, [envelope('project.applyTemplate', { templateId: 'youtube-1080p' })], 'invalid')
+    const kept = await applied(fast, [
+      envelope('project.applyTemplate', { templateId: 'youtube-1080p', timing: 'keep-time' }),
+    ])
+    expect(kept.metadata.fps).toBe(30)
+    expect(spans(kept, 'v1')[0]!.slice(0, 2)).toEqual([60, 60])
+    await refused(fast, [envelope('project.applyTemplate', { templateId: 'nope' })], 'invalid')
+  })
+
+  it('refuses rates, sizes, policies and sequences it cannot honour', async () => {
+    const graph = await withClipAndMarker()
+    for (const payload of [
+      { fps: rate(59, 2) },
+      { fps: rate(0) },
+      { fps: rate(480) },
+      { fps: 30 },
+      { width: 1281 },
+      { height: 100 },
+      { fps: rate(60), timing: 'stretch' },
+      {},
+    ]) {
+      await refused(graph, [setSettings(payload)], 'invalid')
+    }
+    await refused(graph, [envelope('sequence.setSettings', { sequenceId: 'missing', fps: rate(60) })], 'invalid')
+  })
+
+  it('retimes a sequence at its own rate and the clips that read it', async () => {
+    const inner = {
+      id: 'inner-clip',
+      type: 'text',
+      trackId: 's1',
+      from: 30,
+      durationInFrames: 30,
+      label: 'Title',
+      text: 'Title',
+      color: '#ffffff',
+    }
+    const wrapper = {
+      id: 'wrapper',
+      type: 'composition',
+      compositionId: 'seq-2',
+      trackId: 'v1',
+      from: 0,
+      durationInFrames: 60,
+      label: 'Sequence 2',
+      sourceStart: 30,
+      sourceEnd: 90,
+    }
+    const graph = project({
+      items: [wrapper] as never,
+      compositions: [
+        {
+          id: 'seq-2',
+          name: 'Sequence 2',
+          editorKind: 'sequence',
+          items: [inner],
+          tracks: [track('s1', 'video', 0)],
+          transitions: [],
+          keyframes: [],
+          fps: 30,
+          width: 1920,
+          height: 1080,
+          durationInFrames: 90,
+          markers: [{ id: 'm', frame: 45, color: '#fff' }],
+        },
+      ] as never,
+    })
+    await refused(graph, [envelope('sequence.setSettings', { sequenceId: 'seq-2', fps: rate(60) })], 'invalid')
+    const next = await applied(graph, [
+      envelope('sequence.setSettings', { sequenceId: 'seq-2', fps: rate(60), timing: 'keep-time' }),
+    ])
+    expect(next.metadata.fps).toBe(30)
+    const composition = next.timeline!.compositions!.find((entry) => entry.id === 'seq-2')!
+    expect(composition).toMatchObject({ fps: 60, durationInFrames: 180 })
+    expect(composition.items[0]).toMatchObject({ from: 60, durationInFrames: 60 })
+    expect(composition.markers![0]!.frame).toBe(90)
+    // The main timeline keeps its own rate; the wrapper reads the same seconds of the sequence.
+    expect(itemsOf(next)[0]).toMatchObject({ from: 0, durationInFrames: 60, sourceStart: 60, sourceEnd: 180 })
+  })
+})
+

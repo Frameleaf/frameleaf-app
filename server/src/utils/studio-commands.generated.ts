@@ -775,6 +775,7 @@ export const studioCommandMirror = {
     capability: null,
     payload: {
       templateId: 'string',
+      timing: 'string?',
     },
   },
   'project.exportBundle': {
@@ -947,6 +948,7 @@ export const studioCommandMirror = {
       fps: 'rate?',
       height: 'number?',
       sequenceId: 'string',
+      timing: 'string?',
       width: 'number?',
     },
   },

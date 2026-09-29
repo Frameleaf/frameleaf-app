@@ -123,6 +123,14 @@ import {
   TEXT_MOTION_OUT_PRESET_IDS,
 } from '@/shared/typography/text-motion/text-motion-preset-ids'
 import { createTextMotionEffect } from '@/shared/typography/text-motion/text-motion-presets'
+import { PROJECT_TEMPLATES } from '@/features/projects/utils/validation'
+import {
+  RETIME_POLICIES,
+  hasTimedContent,
+  retimeCompositionReaders,
+  retimeContent,
+  type RetimePolicy,
+} from '@/features/editor/utils/project-retime'
 
 export interface Rational {
   num: number
@@ -198,6 +206,9 @@ export const ENGINE_COMMANDS: Readonly<Record<string, readonly string[]>> = {
   'track.remove': ['readme.timeline-editing.5'],
   'track.reorder': ['readme.timeline-editing.5'],
   'track.set': ['readme.timeline-editing.5'],
+  // FL-94: canvas and rate changes, with an explicit timing policy once a timeline has content.
+  'project.applyTemplate': ['readme.timeline-editing.8'],
+  'sequence.setSettings': ['readme.timeline-editing.8'],
 }
 
 export const isEngineCommand = (id: string): boolean => Object.hasOwn(ENGINE_COMMANDS, id)
@@ -788,10 +799,121 @@ const setTransform = (id: string, transform: Partial<TransformProperties>) => {
 /* Handlers                                                             */
 /* ------------------------------------------------------------------ */
 
-type Handler = (
-  payload: Record<string, unknown>,
-  context: { fps: number; cadence: Rational; media: Map<string, MediaMetadata> },
-) => void
+/**
+ * One context per batch. A settings command replaces `project` and moves `fps`/`cadence`, so later
+ * envelopes in the same batch read their times on the new rate.
+ */
+interface BatchContext {
+  fps: number
+  cadence: Rational
+  media: Map<string, MediaMetadata>
+  project: Project
+}
+
+type Handler = (payload: Record<string, unknown>, context: BatchContext) => void | Promise<void>
+
+/* ------------------------------------------------------------------ */
+/* Canvas and rate (FL-94)                                              */
+/* ------------------------------------------------------------------ */
+
+/** Freecut's own project canvas limits (`projects/utils/validation.ts`); encoders need even sizes. */
+const canvasSide = (payload: Record<string, unknown>, name: string, min: number, max: number) => {
+  const value = payload[name]
+  if (value === undefined) return undefined
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < min || value > max || value % 2 !== 0) {
+    invalid(`${name} must be an even whole number of pixels from ${min} to ${max}`)
+  }
+  return value as number
+}
+
+/** A sequence rate: a whole number or an NTSC x/1001 rate, up to 240. */
+const sequenceRate = (payload: Record<string, unknown>): Rational | undefined => {
+  const value = payload.fps
+  if (value === undefined) return undefined
+  const exact = isRational(value) && value.num > 0 ? cadenceFromDecimal(value.num / value.den) : null
+  if (!exact || exact.num * (value as Rational).den !== (value as Rational).num * exact.den || exact.num / exact.den > 240) {
+    invalid('fps must be a whole-number or x/1001 rate up to 240')
+  }
+  return exact!
+}
+
+const timingPolicy = (payload: Record<string, unknown>): RetimePolicy | undefined => {
+  const value = payload.timing
+  if (value === undefined) return undefined
+  if (!RETIME_POLICIES.includes(value as RetimePolicy)) invalid(`timing must be one of ${RETIME_POLICIES.join(', ')}`)
+  return value as RetimePolicy
+}
+
+const requirePolicy = (timing: RetimePolicy | undefined, what: string): RetimePolicy => {
+  if (!timing) {
+    invalid(`timing is required: ${what} has content, so choose keep-time or keep-frames for the new frame rate`)
+  }
+  return timing!
+}
+
+type StoredComposition = NonNullable<NonNullable<Project['timeline']>['compositions']>[number]
+
+/**
+ * Apply a canvas and rate change to the main timeline (`'main'`) or one sequence/composition, then
+ * reload the stores from the changed graph. Nothing is retimed unless `keep-time` was chosen.
+ */
+async function applySequenceSettings(
+  context: BatchContext,
+  sequenceId: string,
+  settings: { rate?: Rational; width?: number; height?: number },
+  timing: RetimePolicy | undefined,
+): Promise<void> {
+  const timeline = buildTimelineFromStores()
+  const toFps = settings.rate && settings.rate.num / settings.rate.den
+  let metadata = context.project.metadata
+  let next = timeline
+
+  if (sequenceId === 'main') {
+    const fromFps = metadata.fps
+    if (toFps !== undefined && toFps !== fromFps && hasTimedContent(timeline as never)) {
+      if (requirePolicy(timing, 'the main timeline') === 'keep-time') {
+        next = retimeContent(timeline as never, fromFps, toFps)
+      }
+    }
+    metadata = {
+      ...metadata,
+      ...(settings.width !== undefined && { width: settings.width }),
+      ...(settings.height !== undefined && { height: settings.height }),
+      ...(settings.rate && { fps: toFps!, frameRate: { ...settings.rate } }),
+    } as typeof metadata
+  } else {
+    const composition = timeline.compositions?.find((entry) => entry.id === sequenceId)
+    if (!composition) invalid(`sequenceId: sequence "${sequenceId}" does not exist`)
+    const fromFps = composition!.fps
+    let changed: StoredComposition = { ...composition! }
+    if (toFps !== undefined && toFps !== fromFps) {
+      if (hasTimedContent(composition as never) && requirePolicy(timing, `sequence "${sequenceId}"`) === 'keep-time') {
+        changed = retimeContent(changed as never, fromFps, toFps)
+        const readers = (items: unknown[]) =>
+          retimeCompositionReaders(items as TimelineItem[], sequenceId, fromFps, toFps) as never
+        next = {
+          ...timeline,
+          items: readers(timeline.items ?? []),
+          compositions: timeline.compositions!.map((entry) => ({ ...entry, items: readers(entry.items ?? []) })),
+        }
+        changed = { ...changed, items: readers(changed.items ?? []) }
+      }
+      changed.fps = toFps
+    }
+    if (settings.width !== undefined) changed.width = settings.width
+    if (settings.height !== undefined) changed.height = settings.height
+    next = {
+      ...next,
+      compositions: (next.compositions ?? []).map((entry) => (entry.id === sequenceId ? changed : entry)),
+    }
+  }
+
+  context.project = { ...context.project, metadata, timeline: next }
+  await hydrateTimelineStoresFromProject(context.project)
+  projectCanvas = { width: metadata.width || 1920, height: metadata.height || 1080, fps: metadata.fps || 30 }
+  context.fps = projectCanvas.fps
+  context.cadence = projectCadenceOf(metadata) ?? context.cadence
+}
 
 const handlers: Record<string, Handler> = {
   'clip.add'(payload, { fps, cadence, media }) {
@@ -1605,6 +1727,32 @@ const handlers: Record<string, Handler> = {
     removeMarker(markerId)
   },
 
+  async 'sequence.setSettings'(payload, context) {
+    const sequenceId = stringField(payload, 'sequenceId')
+    const settings = {
+      rate: sequenceRate(payload),
+      width: canvasSide(payload, 'width', 320, 7680),
+      height: canvasSide(payload, 'height', 240, 4320),
+    }
+    if (!settings.rate && settings.width === undefined && settings.height === undefined) {
+      invalid('sequence.setSettings needs fps, width or height')
+    }
+    await applySequenceSettings(context, sequenceId, settings, timingPolicy(payload))
+  },
+
+  async 'project.applyTemplate'(payload, context) {
+    const templateId = stringField(payload, 'templateId')
+    const template = PROJECT_TEMPLATES.find((entry) => entry.id === templateId)
+    if (!template) invalid(`templateId: template "${templateId}" does not exist`)
+    const rate = cadenceFromDecimal(template!.fps)!
+    await applySequenceSettings(
+      context,
+      'main',
+      { rate, width: template!.width, height: template!.height },
+      timingPolicy(payload),
+    )
+  },
+
   'title.add'(payload, { cadence }) {
     const text = stringField(payload, 'text')
     const from = timeField(payload, 'at', cadence)
@@ -1713,6 +1861,7 @@ export async function applyCanonicalCommands(
     }
   }
   const mediaById = new Map(media.map((entry) => [entry.id, entry]))
+  const context: BatchContext = { fps, cadence, media: mediaById, project }
 
   await hydrateTimelineStoresFromProject(project)
   useMediaLibraryStore.setState({
@@ -1733,7 +1882,7 @@ export async function applyCanonicalCommands(
     try {
       // The clock is the envelope's own issue time, so a retried envelope stamps the same values.
       await withDeterminism(`${envelope.idempotencyKey}:${index}`, envelope.issuedAt ?? 0, () =>
-        handler(envelope.payload ?? {}, { fps, cadence, media: mediaById }),
+        handler(envelope.payload ?? {}, context),
       )
     } catch (error) {
       if (error instanceof CommandRejection) {
@@ -1750,6 +1899,6 @@ export async function applyCanonicalCommands(
 
   const timeline = buildTimelineFromStores()
   // The stored graph carries its exact cadence from here on (FL-93), beside Freecut's own `fps`.
-  const next: Project = { ...project, metadata: withProjectCadence(project.metadata), timeline }
+  const next: Project = { ...context.project, metadata: withProjectCadence(context.project.metadata), timeline }
   return { status: 'applied', project: next, digest: await graphDigest(next) }
 }

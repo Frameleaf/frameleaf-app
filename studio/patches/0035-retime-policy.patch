@@ -1,0 +1,825 @@
+Subject: Ask for a timing policy before retiming an existing project
+
+Freecut MIT adaptation (FL-94). Matching a project to its first video,
+or any other frame-rate change, used to rewrite the rate while every
+clip, keyframe and marker kept its frame number, so an existing edit
+silently played faster or slower. When the main timeline has content,
+the person now chooses:
+
+- keep-time: timeline frames move to the new rate exactly (integer
+  ratio, nearest frame, clip ends rounded with their starts so butted
+  clips stay butted); media that read their source at the timeline rate
+  are pinned to the old rate so they show the same pictures.
+- keep-frames: the previous behaviour, now an explicit choice.
+
+commitProjectMetadataChange refuses a rate change on content without a
+policy, so every caller is covered. Undo restores the whole timeline in
+one step. Colour needs no prompt: the working range follows the media
+(FL-97 owner decision, patch 0033).
+
+diff --git a/src/features/editor/deps/timeline-store-contract.ts b/src/features/editor/deps/timeline-store-contract.ts
+index 3608cf985e..4290b5650f 100644
+--- a/src/features/editor/deps/timeline-store-contract.ts
++++ b/src/features/editor/deps/timeline-store-contract.ts
+@@ -15,7 +15,8 @@ export {
+ } from '@/features/timeline/stores/composition-navigation-store'
+ export { useTimelineCommandStore } from '@/features/timeline/stores/timeline-command-store'
+ export { execute as executeTimelineCommand } from '@/features/timeline/stores/actions/shared'
+-export { captureSnapshot } from '@/features/timeline/stores/commands/snapshot'
++export { captureSnapshot, restoreSnapshot } from '@/features/timeline/stores/commands/snapshot'
++export { buildTimelineFromStores } from '@/features/timeline/stores/timeline-persistence'
+ export { rateStretchItemWithoutHistory } from '@/features/timeline/stores/actions/item-edit-actions'
+ export {
+   addCompositionControl,
+diff --git a/src/features/editor/utils/project-retime.ts b/src/features/editor/utils/project-retime.ts
+new file mode 100644
+index 0000000000..427dd3c2ef
+--- /dev/null
++++ b/src/features/editor/utils/project-retime.ts
+@@ -0,0 +1,258 @@
++/**
++ * Frameleaf (FL-94): changing the frame rate of a project or sequence that
++ * already has content never retimes it silently. The person picks a policy:
++ *
++ * - `keep-time`: every clip, transition, keyframe, marker and range stays at
++ *   the same moment in seconds. Timeline-frame fields are multiplied by the
++ *   exact rate ratio and rounded to the nearest frame (halves up); a clip's
++ *   end is rounded as well as its start, so clips that touched still touch.
++ *   Source frames are left alone; a media clip that read its source at the
++ *   timeline rate is pinned to the old rate so it still shows the same
++ *   pictures.
++ * - `keep-frames`: frame numbers are kept, so everything plays faster or
++ *   slower at the new rate. This is what the editor always did, now chosen.
++ *
++ * Fields in seconds (fades, caption cues) and Hz (motion modifiers) need no
++ * change. Sub-compositions have their own rate and are not touched when the
++ * main timeline changes.
++ */
++import type { ItemKeyframes } from '@/types/keyframe'
++import type { ProjectMarker, TimelineItem } from '@/types/timeline'
++import type { Transition } from '@/types/transition'
++
++export type RetimePolicy = 'keep-time' | 'keep-frames'
++
++export const RETIME_POLICIES: readonly RetimePolicy[] = ['keep-time', 'keep-frames']
++
++export interface FrameRatio {
++  num: bigint
++  den: bigint
++}
++
++/**
++ * The exact cadence an editor rate stands for: an integer, or one of the
++ * broadcast x/1001 rates. Anything else is refused rather than approximated.
++ */
++// ponytail: mirrors cadenceFromDecimal in web/src/lib/frameleaf/studio/studio-timing.ts, which the
++// engine cannot import; merge them if the engine ever gains the host alias.
++export function exactCadence(fps: number): FrameRatio {
++  if (Number.isSafeInteger(fps) && fps > 0) return { num: BigInt(fps), den: 1n }
++  for (const numerator of [24_000, 30_000, 48_000, 60_000, 120_000]) {
++    const exact = numerator / 1001
++    if (Math.abs(fps - exact) < 1e-9 || Math.round(exact * 1000) / 1000 === fps) {
++      return { num: BigInt(numerator), den: 1001n }
++    }
++  }
++  throw new Error(`The frame rate ${fps} has no exact reading`)
++}
++
++/** Frames at `fromFps` to frames at `toFps`. */
++export function frameRatio(fromFps: number, toFps: number): FrameRatio {
++  const from = exactCadence(fromFps)
++  const to = exactCadence(toFps)
++  return { num: to.num * from.den, den: to.den * from.num }
++}
++
++/** `frame · ratio` to the nearest integer, halves away from zero. */
++export function scaleFrame(frame: number, ratio: FrameRatio): number {
++  const whole = Math.round(frame)
++  const sign = whole < 0 ? -1n : 1n
++  const scaled = (2n * BigInt(Math.abs(whole)) * ratio.num + ratio.den) / (2n * ratio.den)
++  return Number(sign * scaled)
++}
++
++const scaleOptional = (frame: number | undefined, ratio: FrameRatio): number | undefined =>
++  frame === undefined ? undefined : scaleFrame(frame, ratio)
++
++const scaleNullable = (frame: number | null | undefined, ratio: FrameRatio) =>
++  frame === null || frame === undefined ? frame : scaleFrame(frame, ratio)
++
++/** Keep one keyframe per frame after rounding: the first one in time wins. */
++function scaleKeyframeList<T extends { frame: number }>(keyframes: T[], ratio: FrameRatio): T[] {
++  const seen = new Set<number>()
++  const out: T[] = []
++  for (const keyframe of [...keyframes].sort((a, b) => a.frame - b.frame)) {
++    const frame = scaleFrame(keyframe.frame, ratio)
++    if (seen.has(frame)) continue
++    seen.add(frame)
++    out.push({ ...keyframe, frame })
++  }
++  return out
++}
++
++const SOURCE_FIELDS = ['trimStart', 'trimEnd', 'sourceStart', 'sourceEnd', 'sourceDuration'] as const
++
++function retimeItem(item: TimelineItem, ratio: FrameRatio, fromFps: number): TimelineItem {
++  const from = scaleFrame(item.from, ratio)
++  const end = scaleFrame(item.from + item.durationInFrames, ratio)
++  const next: TimelineItem = { ...item, from, durationInFrames: Math.max(1, end - from) }
++
++  if (item.reverseConformLocalStart !== undefined) {
++    next.reverseConformLocalStart = scaleFrame(item.reverseConformLocalStart, ratio)
++  }
++  const readsSource = SOURCE_FIELDS.some((field) => item[field] !== undefined)
++  // A compound clip reads its composition at the composition's own rate, never the timeline's.
++  if (readsSource && item.sourceFps === undefined && item.type !== 'composition' && !item.compositionId) {
++    next.sourceFps = fromFps
++  }
++  if (item.motionModifiers) {
++    next.motionModifiers = item.motionModifiers.map((modifier) => ({
++      ...modifier,
++      phaseFrames: scaleFrame(modifier.phaseFrames, ratio),
++    }))
++  }
++  if (item.motionLayers) {
++    next.motionLayers = item.motionLayers.map((layer) => ({
++      ...layer,
++      tracks: layer.tracks.map((track) => ({
++        ...track,
++        keyframes: scaleKeyframeList(track.keyframes, ratio),
++      })),
++    }))
++  }
++  if (item.effects) {
++    next.effects = item.effects.map((effect) =>
++      effect.audioPulse
++        ? {
++            ...effect,
++            audioPulse: {
++              ...effect.audioPulse,
++              durationFrames: Math.max(1, scaleFrame(effect.audioPulse.durationFrames, ratio)),
++              beats: effect.audioPulse.beats.map((beat) => ({
++                ...beat,
++                frame: scaleFrame(beat.frame, ratio),
++              })),
++            },
++          }
++        : effect,
++    )
++  }
++  if (item.type === 'text' && item.textMotion) {
++    const motion = { ...item.textMotion }
++    for (const slot of ['in', 'out', 'loop'] as const) {
++      const effect = motion[slot]
++      if (!effect) continue
++      motion[slot] = {
++        ...effect,
++        durationFrames: Math.max(1, scaleFrame(effect.durationFrames, ratio)),
++        staggerFrames: scaleFrame(effect.staggerFrames, ratio),
++        ...(effect.offsetFrames !== undefined && {
++          offsetFrames: scaleFrame(effect.offsetFrames, ratio),
++        }),
++      } as never
++    }
++    ;(next as typeof item).textMotion = motion
++  }
++  return next
++}
++
++function retimeKeyframes(entry: ItemKeyframes, ratio: FrameRatio): ItemKeyframes {
++  return {
++    ...entry,
++    properties: entry.properties.map((property) => ({
++      ...property,
++      keyframes: scaleKeyframeList(property.keyframes, ratio),
++    })),
++    ...(entry.vectorProperties && {
++      vectorProperties: entry.vectorProperties.map((property) => ({
++        ...property,
++        keyframes: scaleKeyframeList(property.keyframes, ratio),
++      })),
++    }),
++    ...(entry.propertyLinks && {
++      propertyLinks: entry.propertyLinks.map((link) => ({
++        ...link,
++        timeOffsetFrames: scaleFrame(link.timeOffsetFrames, ratio),
++      })),
++    }),
++    ...(entry.expressions && {
++      expressions: entry.expressions.map((expression) =>
++        expression.type === 'link'
++          ? { ...expression, timeOffsetFrames: scaleFrame(expression.timeOffsetFrames, ratio) }
++          : expression,
++      ),
++    }),
++  }
++}
++
++/** The timed content of one timeline: the main one, a sequence or a composition. */
++export interface RetimableContent {
++  items: TimelineItem[]
++  transitions?: Transition[]
++  keyframes?: ItemKeyframes[]
++  markers?: ProjectMarker[]
++  inPoint?: number | null
++  outPoint?: number | null
++  currentFrame?: number
++  durationInFrames?: number
++}
++
++/** `content` with every timeline-frame field moved from `fromFps` to `toFps`, keeping time. */
++export function retimeContent<T extends RetimableContent>(content: T, fromFps: number, toFps: number): T {
++  const ratio = frameRatio(fromFps, toFps)
++  const next: T = {
++    ...content,
++    items: content.items.map((item) => retimeItem(item, ratio, fromFps)),
++  }
++  if (content.transitions) {
++    next.transitions = content.transitions.map((transition) => ({
++      ...transition,
++      durationInFrames: Math.max(1, scaleFrame(transition.durationInFrames, ratio)),
++    }))
++  }
++  if (content.keyframes) next.keyframes = content.keyframes.map((entry) => retimeKeyframes(entry, ratio))
++  if (content.markers) {
++    next.markers = content.markers.map((marker) => ({ ...marker, frame: scaleFrame(marker.frame, ratio) }))
++  }
++  if ('inPoint' in content) next.inPoint = scaleNullable(content.inPoint, ratio)
++  if ('outPoint' in content) next.outPoint = scaleNullable(content.outPoint, ratio)
++  if (content.currentFrame !== undefined) next.currentFrame = scaleOptional(content.currentFrame, ratio)
++  if (content.durationInFrames !== undefined) {
++    next.durationInFrames = Math.max(1, scaleFrame(content.durationInFrames, ratio))
++  }
++  return next
++}
++
++/**
++ * Items anywhere that read composition `compositionId` see its frames through
++ * their source fields. When the composition keeps its time at a new rate, those
++ * source frames move with it.
++ */
++export function retimeCompositionReaders(
++  items: TimelineItem[],
++  compositionId: string,
++  fromFps: number,
++  toFps: number,
++): TimelineItem[] {
++  const ratio = frameRatio(fromFps, toFps)
++  return items.map((item) => {
++    if (item.compositionId !== compositionId) return item
++    const next = { ...item } as TimelineItem
++    for (const field of SOURCE_FIELDS) {
++      const value = item[field]
++      if (value !== undefined) next[field] = scaleFrame(value, ratio)
++    }
++    if (item.sourceFps !== undefined) next.sourceFps = toFps
++    return next
++  })
++}
++
++/** Whether a timeline has anything a rate change would move. */
++export function hasTimedContent(
++  content:
++    | {
++        items?: readonly unknown[]
++        markers?: readonly unknown[]
++        inPoint?: number | null
++        outPoint?: number | null
++      }
++    | undefined,
++): boolean {
++  return Boolean(
++    content &&
++      ((content.items?.length ?? 0) > 0 ||
++        (content.markers?.length ?? 0) > 0 ||
++        (content.inPoint ?? null) !== null ||
++        (content.outPoint ?? null) !== null),
++  )
++}
+diff --git a/src/features/editor/utils/project-retime.test.ts b/src/features/editor/utils/project-retime.test.ts
+new file mode 100644
+index 0000000000..5b2a8cc79a
+--- /dev/null
++++ b/src/features/editor/utils/project-retime.test.ts
+@@ -0,0 +1,177 @@
++import { describe, expect, it } from 'vite-plus/test'
++import type { ItemKeyframes } from '@/types/keyframe'
++import type { ProjectMarker, TimelineItem } from '@/types/timeline'
++import type { Transition } from '@/types/transition'
++import {
++  exactCadence,
++  frameRatio,
++  hasTimedContent,
++  retimeCompositionReaders,
++  retimeContent,
++  scaleFrame,
++} from './project-retime'
++
++const item = (overrides: Record<string, unknown>): TimelineItem =>
++  ({ id: 'a', type: 'video', trackId: 'v1', label: 'a', from: 0, durationInFrames: 10, ...overrides }) as never
++
++describe('project retime (FL-94)', () => {
++  it('reads editor rates exactly and refuses rates with no exact reading', () => {
++    expect(exactCadence(30)).toEqual({ num: 30n, den: 1n })
++    expect(exactCadence(29.97)).toEqual({ num: 30_000n, den: 1001n })
++    expect(exactCadence(30_000 / 1001)).toEqual({ num: 30_000n, den: 1001n })
++    expect(() => exactCadence(29.5)).toThrow(/no exact reading/)
++    expect(frameRatio(30, 29.97)).toEqual({ num: 30_000n, den: 30_030n })
++  })
++
++  it('rounds to the nearest frame, halves away from zero', () => {
++    const half = frameRatio(60, 30)
++    expect([1, 3, 5, -1, -3].map((frame) => scaleFrame(frame, half))).toEqual([1, 2, 3, -1, -2])
++    // An hour at 30 fps is 107,892 frames at 29.97, with no float drift.
++    expect(scaleFrame(108_000, frameRatio(30, 29.97))).toBe(107_892)
++  })
++
++  it('keeps butted clips butted and never shortens a clip to nothing', () => {
++    const { items } = retimeContent(
++      {
++        items: [
++          item({ id: 'a', from: 0, durationInFrames: 7 }),
++          item({ id: 'b', from: 7, durationInFrames: 7 }),
++          item({ id: 'c', from: 14, durationInFrames: 1, type: 'text' }),
++        ],
++      },
++      60,
++      25,
++    )
++    for (let index = 1; index < items.length; index += 1) {
++      expect(items[index]!.from).toBe(items[index - 1]!.from + items[index - 1]!.durationInFrames)
++    }
++    expect(items.every((entry) => entry.durationInFrames >= 1)).toBe(true)
++  })
++
++  it('pins media that read their source at the timeline rate, and nothing else', () => {
++    const { items } = retimeContent(
++      {
++        items: [
++          item({ id: 'pinned', trimStart: 12 }),
++          item({ id: 'own', trimStart: 12, sourceFps: 23.976 }),
++          item({ id: 'compound', type: 'composition', compositionId: 'c1', sourceStart: 4 }),
++          item({ id: 'title', type: 'text' }),
++        ],
++      },
++      30,
++      60,
++    )
++    expect(items.map((entry) => [entry.sourceFps, entry.trimStart ?? entry.sourceStart])).toEqual([
++      [30, 12],
++      [23.976, 12],
++      [undefined, 4],
++      [undefined, undefined],
++    ])
++  })
++
++  it('moves every timeline-frame field an item carries and leaves seconds alone', () => {
++    const [next] = retimeContent(
++      {
++        items: [
++          item({
++            type: 'text',
++            fadeIn: 0.5,
++            reverseConformLocalStart: 10,
++            motionModifiers: [{ id: 'm', phaseFrames: 6, frequency: 2 }],
++            motionLayers: [{ id: 'l', tracks: [{ keyframes: [{ id: 'k', frame: 8 }] }] }],
++            effects: [{ id: 'e', audioPulse: { durationFrames: 4, beats: [{ frame: 2 }] } }],
++            textMotion: {
++              in: { durationFrames: 12, staggerFrames: 2, offsetFrames: 1 },
++              loop: { durationFrames: 30, staggerFrames: 0 },
++            },
++          }),
++        ],
++      },
++      24,
++      48,
++    ).items as never[] as Array<Record<string, any>>
++    expect(next!.fadeIn).toBe(0.5)
++    expect(next!.reverseConformLocalStart).toBe(20)
++    expect(next!.motionModifiers[0]).toMatchObject({ phaseFrames: 12, frequency: 2 })
++    expect(next!.motionLayers[0].tracks[0].keyframes[0].frame).toBe(16)
++    expect(next!.effects[0].audioPulse).toMatchObject({ durationFrames: 8, beats: [{ frame: 4 }] })
++    expect(next!.textMotion.in).toMatchObject({ durationFrames: 24, staggerFrames: 4, offsetFrames: 2 })
++    expect(next!.textMotion.loop).toMatchObject({ durationFrames: 60, staggerFrames: 0 })
++  })
++
++  it('moves keyframes, links, transitions, markers and ranges; one keyframe per frame survives', () => {
++    const keyframes: ItemKeyframes[] = [
++      {
++        itemId: 'a',
++        properties: [
++          {
++            property: 'opacity',
++            keyframes: [
++              { id: 'k0', frame: 1, value: 0, easing: 'linear' },
++              { id: 'k1', frame: 2, value: 0.5, easing: 'linear' },
++              { id: 'k2', frame: 10, value: 1, easing: 'linear' },
++            ],
++          },
++        ],
++        vectorProperties: [
++          { property: 'position', keyframes: [{ id: 'v', frame: 6, value: { x: 0, y: 0 }, easing: 'linear' }] },
++        ] as never,
++        propertyLinks: [{ timeOffsetFrames: 6 }] as never,
++        expressions: [{ type: 'link', timeOffsetFrames: 3 }, { type: 'expression', source: 'frame' }] as never,
++      },
++    ]
++    const next = retimeContent(
++      {
++        items: [item({})],
++        keyframes,
++        transitions: [{ id: 't', durationInFrames: 1 }] as unknown as Transition[],
++        markers: [{ id: 'm', frame: 9, color: '#fff' }] as unknown as ProjectMarker[],
++        inPoint: 3,
++        outPoint: null,
++        currentFrame: 11,
++        durationInFrames: 1,
++      },
++      60,
++      30,
++    )
++    const [entry] = next.keyframes!
++    expect(entry!.properties[0]!.keyframes.map((key) => [key.id, key.frame])).toEqual([
++      ['k0', 1],
++      ['k2', 5],
++    ])
++    expect(entry!.vectorProperties![0]!.keyframes[0]!.frame).toBe(3)
++    expect(entry!.propertyLinks![0]!.timeOffsetFrames).toBe(3)
++    expect(entry!.expressions).toEqual([
++      { type: 'link', timeOffsetFrames: 2 },
++      { type: 'expression', source: 'frame' },
++    ])
++    expect(next.transitions![0]!.durationInFrames).toBe(1)
++    expect(next.markers![0]!.frame).toBe(5)
++    expect([next.inPoint, next.outPoint, next.currentFrame, next.durationInFrames]).toEqual([2, null, 6, 1])
++  })
++
++  it('moves the source frames of clips that read a retimed composition', () => {
++    const items = retimeCompositionReaders(
++      [
++        item({ id: 'reader', compositionId: 'c1', sourceStart: 30, sourceEnd: 90, sourceFps: 30 }),
++        item({ id: 'bare', type: 'composition', compositionId: 'c1', trimStart: 15 }),
++        item({ id: 'other', compositionId: 'c2', sourceStart: 30 }),
++      ],
++      'c1',
++      30,
++      60,
++    )
++    expect(items.map((entry) => [entry.sourceStart ?? entry.trimStart, entry.sourceEnd, entry.sourceFps])).toEqual([
++      [60, 180, 60],
++      [30, undefined, undefined],
++      [30, undefined, undefined],
++    ])
++  })
++
++  it('knows when a timeline has nothing a rate change would move', () => {
++    expect(hasTimedContent({ items: [], markers: [], inPoint: null, outPoint: null })).toBe(false)
++    expect(hasTimedContent({ items: [], markers: [], inPoint: 0 })).toBe(true)
++    expect(hasTimedContent({ items: [item({})] })).toBe(true)
++    expect(hasTimedContent(undefined)).toBe(false)
++  })
++})
+diff --git a/src/features/editor/utils/project-metadata-history.ts b/src/features/editor/utils/project-metadata-history.ts
+index f06b7c693e..0c6ee2a8e4 100644
+--- a/src/features/editor/utils/project-metadata-history.ts
++++ b/src/features/editor/utils/project-metadata-history.ts
+@@ -1,5 +1,26 @@
+-import { captureSnapshot, useTimelineCommandStore } from '@/features/editor/deps/timeline-store'
++import {
++  buildTimelineFromStores,
++  captureSnapshot,
++  getActiveTabId,
++  restoreSnapshot,
++  useCompositionNavigationStore,
++  useTimelineCommandStore,
++} from '@/features/editor/deps/timeline-store'
+ import type { Project } from '@/types/project'
++import { hasTimedContent, retimeContent, type RetimePolicy } from './project-retime'
++
++/** FL-94: a rate change on a timeline with content needs an explicit timing policy. */
++export class RetimePolicyRequiredError extends Error {
++  constructor() {
++    super('Choose whether clips keep their timing or their frame numbers at the new frame rate.')
++    this.name = 'RetimePolicyRequiredError'
++  }
++}
++
++/** Whether changing the project rate would move anything on the main timeline. */
++export function projectRateChangeNeedsPolicy(): boolean {
++  return hasTimedContent(buildTimelineFromStores())
++}
+ 
+ type ProjectMetadataUpdates = {
+   width?: number
+@@ -17,6 +38,8 @@ interface CommitProjectMetadataChangeParams {
+   }
+   updateProject: (id: string, data: ProjectMetadataUpdates) => Promise<Project>
+   markDirty: () => void
++  /** Required when `updates.fps` changes the rate of a project whose main timeline has content. */
++  timing?: RetimePolicy
+   onApplied?: (project: Project) => void
+ }
+ 
+@@ -43,13 +66,38 @@ export async function commitProjectMetadataChange({
+   updateProject,
+   markDirty,
+   onApplied,
++  timing,
+ }: CommitProjectMetadataChangeParams): Promise<Project | null> {
+   if (!hasProjectMetadataChanges(project, updates)) {
+     return null
+   }
+ 
++  const fromFps = project.metadata.fps
++  const toFps = updates.fps
++  const retime =
++    toFps !== undefined && toFps !== fromFps && projectRateChangeNeedsPolicy()
++      ? (timing ?? null)
++      : 'keep-frames'
++  if (retime === null) throw new RetimePolicyRequiredError()
++
++  if (retime === 'keep-time') {
++    // The project rate governs the main timeline, so bring it live before it is retimed.
++    const navigation = useCompositionNavigationStore.getState()
++    if (getActiveTabId(navigation.breadcrumbs) !== null) navigation.switchToSequence(null)
++    else if (navigation.activeCompositionId !== null) navigation.resetToRoot()
++  }
++
+   const beforeSnapshot = captureSnapshot()
+   const updatedProject = await updateProject(project.id, updates)
++  if (retime === 'keep-time') {
++    restoreSnapshot(
++      retimeContent(
++        { ...beforeSnapshot, fps: toFps!, projectMetadata: { ...updatedProject.metadata } },
++        fromFps,
++        toFps!,
++      ),
++    )
++  }
+   onApplied?.(updatedProject)
+   markDirty()
+   useTimelineCommandStore.getState().addUndoEntry(command, beforeSnapshot)
+diff --git a/src/features/editor/components/project-media-match-dialog.tsx b/src/features/editor/components/project-media-match-dialog.tsx
+index a3cf854afe..9976dd2651 100644
+--- a/src/features/editor/components/project-media-match-dialog.tsx
++++ b/src/features/editor/components/project-media-match-dialog.tsx
+@@ -18,7 +18,11 @@ import {
+   getProjectMediaMatchSuggestion,
+   isProjectMatchableVideo,
+ } from '../utils/project-media-match'
+-import { commitProjectMetadataChange } from '../utils/project-metadata-history'
++import {
++  commitProjectMetadataChange,
++  projectRateChangeNeedsPolicy,
++} from '../utils/project-metadata-history'
++import { RETIME_POLICIES, type RetimePolicy } from '../utils/project-retime'
+ 
+ interface ProjectMediaMatchDialogProps {
+   projectId: string
+@@ -49,6 +53,8 @@ export function ProjectMediaMatchDialog({ projectId }: ProjectMediaMatchDialogPr
+   )
+ 
+   const [isApplying, setIsApplying] = useState(false)
++  // FL-94: nothing is retimed silently; a rate change on existing content waits for a choice.
++  const [timing, setTiming] = useState<RetimePolicy | null>(null)
+   const initializedRef = useRef(false)
+   const seenVideoIdsRef = useRef<Set<string>>(new Set())
+   const awaitingAutoPromptRef = useRef(false)
+@@ -122,6 +128,16 @@ export function ProjectMediaMatchDialog({ projectId }: ProjectMediaMatchDialogPr
+     return getProjectMediaMatchSuggestion(currentProject.metadata, pendingCandidate)
+   }, [currentProject, pendingCandidate, pendingProjectId, projectId])
+ 
++  const needsTiming = useMemo(
++    () => Boolean(open && suggestion?.fpsDiffers && projectRateChangeNeedsPolicy()),
++    [open, suggestion],
++  )
++  const fpsBlocked = needsTiming && timing === null
++
++  useEffect(() => {
++    if (!open) setTiming(null)
++  }, [open])
++
+   useEffect(() => {
+     if (
+       !open ||
+@@ -199,6 +215,7 @@ export function ProjectMediaMatchDialog({ projectId }: ProjectMediaMatchDialogPr
+           },
+           updateProject,
+           markDirty,
++          ...(updates.fps !== undefined && timing !== null && { timing }),
+           onApplied: (updatedProject) => {
+             if (updates.fps !== undefined) {
+               setFps(updatedProject.metadata.fps)
+@@ -222,6 +239,7 @@ export function ProjectMediaMatchDialog({ projectId }: ProjectMediaMatchDialogPr
+       resolveProjectMediaMatch,
+       setFps,
+       suggestion,
++      timing,
+       updateProject,
+       t,
+     ],
+@@ -272,6 +290,35 @@ export function ProjectMediaMatchDialog({ projectId }: ProjectMediaMatchDialogPr
+               </div>
+             </div>
+ 
++            {needsTiming && (
++              <fieldset className="space-y-2">
++                <legend className="text-sm font-medium text-foreground">
++                  {t('editor.projectMediaMatch.timingTitle')}
++                </legend>
++                {RETIME_POLICIES.map((policy) => (
++                  <label key={policy} className="flex items-start gap-2 text-sm">
++                    <input
++                      type="radio"
++                      name="project-media-match-timing"
++                      value={policy}
++                      checked={timing === policy}
++                      onChange={() => setTiming(policy)}
++                      disabled={isApplying}
++                      className="mt-1"
++                    />
++                    <span>
++                      <span className="block text-foreground">
++                        {t(`editor.projectMediaMatch.timing.${policy}.label`)}
++                      </span>
++                      <span className="block text-xs text-muted-foreground">
++                        {t(`editor.projectMediaMatch.timing.${policy}.hint`)}
++                      </span>
++                    </span>
++                  </label>
++                ))}
++              </fieldset>
++            )}
++
+             {suggestion.fpsWasRounded && (
+               <p className="text-xs text-muted-foreground">
+                 {t('editor.projectMediaMatch.fpsRoundedHint', { fps: suggestion.matchedFpsLabel })}
+@@ -290,7 +337,7 @@ export function ProjectMediaMatchDialog({ projectId }: ProjectMediaMatchDialogPr
+                 <Button
+                   variant="outline"
+                   onClick={() => void applyMatch('fps-only', { matchSize: false, matchFps: true })}
+-                  disabled={isApplying}
++                  disabled={isApplying || fpsBlocked}
+                 >
+                   {t('editor.projectMediaMatch.fpsOnly')}
+                 </Button>
+@@ -303,7 +350,7 @@ export function ProjectMediaMatchDialog({ projectId }: ProjectMediaMatchDialogPr
+                 </Button>
+                 <Button
+                   onClick={() => void applyMatch('match-both', { matchSize: true, matchFps: true })}
+-                  disabled={isApplying}
++                  disabled={isApplying || fpsBlocked}
+                 >
+                   {t('editor.projectMediaMatch.matchBoth')}
+                 </Button>
+@@ -312,7 +359,7 @@ export function ProjectMediaMatchDialog({ projectId }: ProjectMediaMatchDialogPr
+             {!suggestion?.sizeDiffers && suggestion?.fpsDiffers && (
+               <Button
+                 onClick={() => void applyMatch('fps-only', { matchSize: false, matchFps: true })}
+-                disabled={isApplying}
++                disabled={isApplying || fpsBlocked}
+               >
+                 {t('editor.projectMediaMatch.matchFps')}
+               </Button>
+diff --git a/src/features/editor/components/project-media-match-dialog.test.tsx b/src/features/editor/components/project-media-match-dialog.test.tsx
+index 969ee10b33..866c8f0c35 100644
+--- a/src/features/editor/components/project-media-match-dialog.test.tsx
++++ b/src/features/editor/components/project-media-match-dialog.test.tsx
+@@ -31,6 +31,8 @@ const mocks = vi.hoisted(() => ({
+     },
+   })),
+   toastError: vi.fn(),
++  restoreSnapshot: vi.fn(),
++  mainTimeline: { items: [] as unknown[], markers: [] as unknown[] },
+ }))
+ 
+ let mediaState: {
+@@ -136,6 +138,12 @@ vi.mock('@/features/editor/deps/timeline-store', () => ({
+     },
+   ),
+   captureSnapshot: mocks.captureSnapshot,
++  restoreSnapshot: mocks.restoreSnapshot,
++  buildTimelineFromStores: () => mocks.mainTimeline,
++  getActiveTabId: () => null,
++  useCompositionNavigationStore: {
++    getState: () => ({ breadcrumbs: [], activeCompositionId: null }),
++  },
+ }))
+ 
+ vi.mock('sonner', () => ({
+@@ -170,6 +178,7 @@ function makeVideo(overrides: Partial<MediaMetadata> = {}): MediaMetadata {
+ describe('ProjectMediaMatchDialog', () => {
+   beforeEach(() => {
+     vi.clearAllMocks()
++    mocks.mainTimeline = { items: [], markers: [] }
+     useProjectMediaMatchDialogStore.getState().resetProjectMediaMatchDialog()
+ 
+     mediaState = {
+@@ -279,4 +288,84 @@ describe('ProjectMediaMatchDialog', () => {
+     expect(mocks.updateProject).toHaveBeenCalledWith('project-1', { fps: 60 })
+     expect(mocks.setFps).toHaveBeenCalledWith(60)
+   })
++
++  describe('FL-94 timing policy on a project that already has clips', () => {
++    const clip = {
++      id: 'clip-1',
++      type: 'video',
++      trackId: 'v1',
++      from: 30,
++      durationInFrames: 45,
++      label: 'clip',
++      mediaId: 'm1',
++      trimStart: 0,
++    }
++
++    const openPrompt = async () => {
++      mocks.mainTimeline = { items: [clip], markers: [] }
++      mocks.captureSnapshot.mockReturnValueOnce({
++        ...mocks.captureSnapshot(),
++        items: [clip] as never[],
++        markers: [{ id: 'mk', frame: 15, color: '#fff' }] as never[],
++        inPoint: 30 as never,
++        outPoint: 75 as never,
++        currentFrame: 45,
++      })
++      render(<ProjectMediaMatchDialog projectId="project-1" />)
++      await act(async () => {
++        void useProjectMediaMatchDialogStore.getState().requestProjectMediaMatch('project-1', {
++          fileName: 'drop.mp4',
++          width: 1280,
++          height: 720,
++          fps: 60,
++        })
++      })
++      await waitFor(() =>
++        expect(screen.getByText('Match Project To First Video?')).toBeInTheDocument(),
++      )
++    }
++
++    it('keeps the frame-rate change blocked until a timing policy is chosen', async () => {
++      await openPrompt()
++      const matchFps = screen.getByRole('button', { name: 'Match FPS' })
++      expect(matchFps).toBeDisabled()
++      fireEvent.click(matchFps)
++      expect(mocks.updateProject).not.toHaveBeenCalled()
++
++      fireEvent.click(screen.getByRole('radio', { name: /Keep clip timing/ }))
++      expect(matchFps).not.toBeDisabled()
++    })
++
++    it('keep-time converts the main timeline to the new rate and undoes as one step', async () => {
++      await openPrompt()
++      fireEvent.click(screen.getByRole('radio', { name: /Keep clip timing/ }))
++      await act(async () => {
++        fireEvent.click(screen.getByRole('button', { name: 'Match FPS' }))
++      })
++
++      await waitFor(() => expect(mocks.restoreSnapshot).toHaveBeenCalledTimes(1))
++      expect(mocks.updateProject).toHaveBeenCalledWith('project-1', { fps: 60 })
++      const restored = mocks.restoreSnapshot.mock.calls[0]![0]
++      expect(restored.fps).toBe(60)
++      expect(restored.projectMetadata.fps).toBe(60)
++      // 1 s in at 30 fps is frame 60 at 60 fps; the source keeps reading at 30.
++      expect(restored.items[0]).toMatchObject({ from: 60, durationInFrames: 90, sourceFps: 30 })
++      expect(restored.markers[0].frame).toBe(30)
++      expect([restored.inPoint, restored.outPoint, restored.currentFrame]).toEqual([60, 150, 90])
++      const [, before] = mocks.addUndoEntry.mock.calls[0]!
++      expect(before.items[0]).toBe(clip)
++    })
++
++    it('keep-frames changes only the rate, as an explicit choice', async () => {
++      await openPrompt()
++      fireEvent.click(screen.getByRole('radio', { name: /Keep frame numbers/ }))
++      await act(async () => {
++        fireEvent.click(screen.getByRole('button', { name: 'Match FPS' }))
++      })
++
++      await waitFor(() => expect(mocks.updateProject).toHaveBeenCalledWith('project-1', { fps: 60 }))
++      expect(mocks.restoreSnapshot).not.toHaveBeenCalled()
++      expect(mocks.addUndoEntry).toHaveBeenCalledTimes(1)
++    })
++  })
+ })
+diff --git a/src/i18n/locales/partials/en/editor.json b/src/i18n/locales/partials/en/editor.json
+index 3a6b64193a..279c3fcdf5 100644
+--- a/src/i18n/locales/partials/en/editor.json
++++ b/src/i18n/locales/partials/en/editor.json
+@@ -637,7 +637,18 @@
+       "sizeOnly": "Size Only",
+       "matchBoth": "Match Both",
+       "matchFps": "Match FPS",
+-      "matchSize": "Match Size"
++      "matchSize": "Match Size",
++      "timingTitle": "This project already has clips. At the new frame rate:",
++      "timing": {
++        "keep-time": {
++          "label": "Keep clip timing",
++          "hint": "Clips, keyframes and markers stay at the same moments. Frame positions are converted to the new rate."
++        },
++        "keep-frames": {
++          "label": "Keep frame numbers",
++          "hint": "Clips keep their frame positions, so the edit plays faster or slower at the new rate."
++        }
++      }
+     },
+     "editor": {
+       "appLabel": "FreeCut Video Editor",
