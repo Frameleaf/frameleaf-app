@@ -101,32 +101,60 @@ keyframed effect params and adjustment-layer keyframes. They now resolve both on
 their own timelines, as top-level items already did. Unit tests cover the clock,
 the resolver and the transition and nested render paths.
 
-Patch 0022 gives each render or inspector expression a budget of 64 uncached evaluations,
-including its root. The inspector forwards that budget and its reference cache through both
-preview callbacks, so independent branches share the limit and cached reuse remains free.
-Each unrelated rendered property starts a fresh budget. Exceeding the limit preserves the
-authored value and reports `Expression dependency limit exceeded`. Scalar/vector fixtures
-cover 64/65-expression boundaries, branching previews, cached reuse and a full transform's
-independent x/y expressions. The existing parser source/token/nesting caps remain in force;
-direct-link traversal, full sandbox escape coverage and complete FL-100 conformance remain
-unqualified. Bundle review parses JSON and enumerates resource references without invoking
-this render evaluator. Hosted execution of the new fixtures remains required.
+Patch 0031 adds managed colour (FL-97), specified in
+`src/shared/graphics/color/managed-color.ts`.
 
-Patch 0023 refuses unsupported embedded-subtitle and output-format combinations before new,
-restored, retried or worker export jobs can render, including smart-copy attempts. The renderer
-also checks output format for direct callers, while the export frame-rate ceiling stays at job
-admission so internal high-frame-rate reverse previews can render. Hosted regressions cover these
-boundaries; real codec output, subtitle playback and the full export matrix remain unqualified.
+- **Working ranges.** A project without `metadata.colorManagement` is an SDR project.
+  SDR projects keep Freecut's reference behaviour: every effect, blend and transition
+  clamps exactly as upstream, whichever GPU route renders it. HDR projects
+  (`workingRange: 'hdr'`) use extended-range sRGB encoding with BT.709 primaries.
+  1.0 is reference white (203 cd/m² by default, ITU-R BT.2408). Values above 1 are
+  highlights, and negative values carry wide gamut. The float route keeps them until
+  the explicit output conversion.
+- **Output and ingest.** The module defines the explicit PQ/HLG BT.2020 output
+  conversion and HDR source ingest, with reference values tested against ST 2084
+  and BT.2100/BT.2408.
+- **Tone mapping** is a named policy (`sdrMonitoring: 'bt2390'`). It is never
+  inherited from playback.
+- **Propagation.** The range travels with project metadata into preview, queued
+  export, client export and headless composition input. Each renderer applies it to
+  its effects, transition, media-blend and compositor pipelines.
+- **HDR effects.** Shaders stop only at the rgba16float finite limit. Gamma is
+  sign-preserving, curves and LUTs pass the out-of-domain offset through, and a
+  collapsed Levels input range no longer divides by zero. `effect-hdr-semantics.json`
+  declares each effect as extended, bounded or palette.
+- **HDR blends.** Arithmetic modes (normal, darken, multiply, lighten, linear
+  burn/dodge/light, difference, subtract) drop their clamps. Soft light keeps its
+  signed extension. Modes defined only on [0, 1] blend the in-range part and carry the
+  base's out-of-range offset.
+- **SDR blends.** Blends see their inputs as Freecut's 8-bit route would, so an
+  out-of-range CSS colour cannot produce NaN.
+- **Transitions.** They keep Codex's extended float variants in HDR projects and use
+  Freecut's display bounds in SDR projects.
 
-Patch 0024 makes the mixer's Master mute a project setting, preserved through saved timelines,
-undo/redo, preview audio/video/skimming, queued/client export and headless rendering. Device
-monitor volume and mute stay outside the project and export mix. Both original-byte smart copy
-and audio-packet passthrough are refused for a muted master. Export preflight reads the same
-selected-sequence master settings. Sequence history restores project mute only for commands
-that changed it, and skim meters retain their pre-monitor signal on a silent device. Hosted regressions cover preview
-silence, full/windowed export silence, monitor independence, history, persistence and legacy defaults.
-These regressions have not yet run for this candidate; worker/browser/audio-output qualification
-and the broader preview/layout/scope requirements remain open.
+Hosted regressions:
+
+- `tools/effects-matrix.browser.mjs` covers all 54 effects: every numeric extreme,
+  select option and boolean, in both ranges.
+- `tools/blend-matrix.browser.mjs` covers all 25 blend modes. SDR projects are checked
+  on the rgba8 and float routes against Freecut's formulas, restated as the pinned
+  reference. This includes its HSL saturation denominators, which differ from CSS.
+  HDR projects are checked against the declared semantics.
+- `tools/transition-matrix.browser.mjs` covers all 21 transitions and every direction
+  at five progress points. It checks exact HDR endpoints and parity between the SDR
+  float and rgba8 routes. It also checks HDR midpoint range and mirror symmetry of
+  opposite directions. `transition-semantics.json` records these per transition,
+  including Freecut's stylised SDR endpoints for chromatic, sparkles, liquid distort
+  and light leak.
+
+The existing compositor, transition and nested regressions now cover both project
+ranges. Everything passes on SwiftShader (CI) and Apple Metal.
+
+Still missing:
+
+- HDR source decode in the browser graph;
+- the GPU output pass and native PQ/HLG frame export;
+- a project-level control or source-derived default.
 
 The engine's runtime resource policy is generated at `prepare` by `tools/resource-policy.mjs`
 from `dependency-attribution.json` and the owner's approval in `rights-approval.json` (FL-146,

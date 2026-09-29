@@ -37,6 +37,12 @@ try {
       const masks = new MaskCombinePipeline(device);
       const pool = new GpuTexturePool(device);
       resources.push(effects, transition, media, blend, shapePipeline, masks, pool);
+      // FL-97: these witnesses model an HDR project, whose node pipelines keep
+      // extended range; the SDR project witnesses follow at the end.
+      const projectRange = (range) => {
+        for (const pipeline of [effects, transition, blend]) pipeline.setWorkingRange(range);
+      };
+      projectRange('hdr');
       const readbacks = {};
       const read = (name, texture) => {
         if (texture.format !== 'rgba16float') throw new Error(`${name} lost float allocation`);
@@ -173,6 +179,12 @@ try {
         destRect: { x: 0.5, y: 0, width: 8, height: 8 },
       })) throw new Error('Legacy edge sampling rejected');
       read('legacyEdgeSampling', legacySample);
+      // An SDR project keeps Freecut's display-bounded linear dodge and subtract.
+      projectRange('sdr');
+      await render('extendedSdr', composition([add], { effects: identity }), transparentBlue);
+      await render('recoveredNestedSdr', composition([
+        add, shape('rgb(30%, 30%, 30%)', { blendMode: 'subtract' }),
+      ]), transparentBlue);
       await device.queue.onSubmittedWorkDone();
       const error = await device.popErrorScope();
       if (error) throw new Error(`Nested GPU validation failed: ${error.message}`);
@@ -195,6 +207,7 @@ try {
     fractionalEdge: [0, 1, 0, 0.5], fractionalEdgeOverWhite: [0.5, 1, 0.5, 1],
     fractionalHdrEdge: [2, -0.5, 0.25, 0.5], fractionalHdrEdgeOverWhite: [1.5, 0.25, 0.625, 1],
     legacyEdgeSampling: [0.5, 0.5, 0, 0.5],
+    extendedSdr: [1, 1, 1, 1], recoveredNestedSdr: [0.7, 0.7, 0.7, 1],
   };
   for (const [name, channels] of Object.entries(expected)) {
     channels.forEach((value, channel) => assert.ok(
