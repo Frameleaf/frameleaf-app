@@ -189,7 +189,8 @@ try {
       return {
         effectPixels: Object.fromEntries(effectReadbacks.map(({ name, buffer, format }) => {
           const View = format === 'rgba16float' ? Float16Array : Uint8Array;
-          return [name, [0, 256].flatMap((offset) => Array.from(new View(buffer.getMappedRange(), offset, 8)))];
+          const mapped = buffer.getMappedRange();
+          return [name, [0, 256].flatMap((offset) => Array.from(new View(mapped, offset, 8)))];
         })),
         legacyExpected,
         legacyActual,
