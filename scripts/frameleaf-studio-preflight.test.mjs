@@ -20,7 +20,8 @@ const plan = () => ({
 const source = {
   streams: [{ codec_name: 'hevc', profile: 'Main 10', pix_fmt: 'yuv420p10le',
     color_primaries: 'bt2020', color_transfer: 'smpte2084', color_space: 'bt2020nc', time_base: '1/30000' }],
-  frames: [{ pts: 0 }, { pts: 1001 }, { pts: 2002 }, { pts: 4004 }],
+  frames: [0, 1001, 2002, 4004].map((pts) => ({ pts, pix_fmt: 'yuv420p10le',
+    color_primaries: 'bt2020', color_transfer: 'smpte2084', color_space: 'bt2020nc' })),
 };
 
 const execute = (_binary, args) => {
@@ -44,7 +45,8 @@ test('missing, duplicate, backward and inexact timestamps fail closed', () => {
   for (const frames of [undefined, [], [{}], [{ pts: 0 }, { pts: 0 }], [{ pts: 2 }, { pts: 1 }],
     [{ pts: 0.5 }], [{ pts: '1001' }], [{ pts: Number.MAX_SAFE_INTEGER + 1 }]]) {
     const result = preflight(plan(), (binary, args) => args.includes('-show_entries')
-      ? JSON.stringify({ ...source, frames }) : execute(binary, args));
+      ? JSON.stringify({ ...source, frames: frames?.map((frame) => ({ ...source.frames[0], pts: undefined, ...frame })) })
+      : execute(binary, args));
     assert.equal(result.localChecksPassed, false, JSON.stringify(frames));
     assert.equal(result.goNoGo, false);
   }
@@ -150,6 +152,37 @@ test('Dolby stream or later-frame signalling cannot pass as plain HDR source evi
       side_data_list: [{ side_data_type: 'Mastering display metadata' }] }] }) : execute(binary, args));
   assert.equal(plainHdr.localChecksPassed, true);
   assert.equal(plainHdr.goNoGo, false);
+});
+
+test('HDR stream headers cannot conceal changed or missing decoded-frame picture metadata', () => {
+  // Probe records check admission only; real HDR picture qualification remains separate.
+  for (const transfer of ['smpte2084', 'arib-std-b67']) {
+    const hdrSource = { streams: [{ ...source.streams[0], color_transfer: transfer }],
+      frames: source.frames.map((frame) => ({ ...frame, color_transfer: transfer })) };
+    assert.equal(probeSource('ffprobe', 'ffmpeg', { path: '/source.mp4', transfer },
+      (binary, args) => args.includes('-show_entries') ? JSON.stringify(hdrSource) : execute(binary, args)).ok, true);
+    for (const [field, changed] of [
+      ['pix_fmt', 'yuv420p'], ['color_transfer', transfer === 'smpte2084' ? 'arib-std-b67' : 'smpte2084'],
+      ['color_primaries', 'bt709'], ['color_space', 'bt709'],
+    ]) {
+      for (const value of [changed, undefined]) {
+        let converted = false;
+        const result = probeSource('ffprobe', 'ffmpeg', { path: '/source.mp4', transfer }, (binary, args) => {
+          if (args.includes('-show_entries')) {
+            const entries = args[args.indexOf('-show_entries') + 1];
+            assert.ok(entries.includes('frame=pts,pix_fmt,color_primaries,color_transfer,color_space'));
+            return JSON.stringify({ ...hdrSource, frames: [...hdrSource.frames.slice(0, -1),
+              { ...hdrSource.frames.at(-1), [field]: value }] });
+          }
+          if (args.includes('format=gbrpf32le')) converted = true;
+          return execute(binary, args);
+        });
+        assert.equal(result.ok, false, `${transfer}: ${field}=${value}`);
+        assert.match(result.detail, /source or decoded frame/);
+        assert.equal(converted, false, 'inconsistent HDR frames must not enter float conversion');
+      }
+    }
+  }
 });
 
 test('zero decoded frames fail closed even when source metadata is valid', () => {
