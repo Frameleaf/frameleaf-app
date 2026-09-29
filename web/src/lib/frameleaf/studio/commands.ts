@@ -26,8 +26,10 @@ export const studioCommandIds = [
   'clip.delete',
   'clip.group',
   'clip.insert',
+  'clip.join',
   'clip.move',
   'clip.overwrite',
+  'clip.push',
   'clip.reorder',
   'clip.roll',
   'clip.setAudio',
@@ -106,6 +108,7 @@ export const studioCommandIds = [
   'text.setMotion',
   'title.add',
   'track.add',
+  'track.closeGap',
   'track.remove',
   'track.reorder',
   'track.set',
@@ -220,8 +223,11 @@ export interface StudioCommandPayloads {
   'clip.group': { clipIds: string[]; name?: string };
   'clip.insert': StudioSourceEdit;
   /** Linked selection is captured at submission; legacy envelopes omit it and default to true. */
+  'clip.join': { clipIds: string[] };
   'clip.move': { clipId: string; start: StudioTime; trackId?: string; linkedSelectionEnabled?: boolean };
   'clip.overwrite': StudioSourceEdit;
+  /** A signed delta: positive pushes later clips right on every track, negative pulls them left. */
+  'clip.push': { clipId: string; delta: StudioDuration };
   'clip.reorder': { trackId: string; clipId: string; index: number };
   'clip.roll': { clipId: string; at: StudioTime };
   'clip.setAudio': {
@@ -417,6 +423,8 @@ export interface StudioCommandPayloads {
     animation?: string;
   };
   'track.add': { kind: string; name?: string; index?: number };
+  /** With `at`, the gap at that time; without it, every gap on the track. */
+  'track.closeGap': { trackId: string; at?: StudioTime };
   'track.remove': { trackId: string };
   'track.reorder': { trackId: string; index: number };
   'track.set': {
@@ -520,6 +528,12 @@ export const studioCommandRegistry: ReadonlyMap<StudioCommandId, StudioCommandDe
     undoable: true,
   }),
   define({
+    id: 'clip.join',
+    scope: 'clip',
+    mutatesGraph: true,
+    undoable: true,
+  }),
+  define({
     id: 'clip.move',
     scope: 'clip',
     mutatesGraph: true,
@@ -527,6 +541,12 @@ export const studioCommandRegistry: ReadonlyMap<StudioCommandId, StudioCommandDe
   }),
   define({
     id: 'clip.overwrite',
+    scope: 'clip',
+    mutatesGraph: true,
+    undoable: true,
+  }),
+  define({
+    id: 'clip.push',
     scope: 'clip',
     mutatesGraph: true,
     undoable: true,
@@ -1024,6 +1044,12 @@ export const studioCommandRegistry: ReadonlyMap<StudioCommandId, StudioCommandDe
   }),
   define({
     id: 'track.add',
+    scope: 'track',
+    mutatesGraph: true,
+    undoable: true,
+  }),
+  define({
+    id: 'track.closeGap',
     scope: 'track',
     mutatesGraph: true,
     undoable: true,

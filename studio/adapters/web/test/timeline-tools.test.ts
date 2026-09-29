@@ -269,6 +269,54 @@ describe('FL-94 linked timeline tools on the Freecut engine', () => {
     await refused(graph, [envelope('clip.reorder', { trackId: 'v1', clipId: parts[0]!.id, index: 4 })], 'invalid')
   })
 
+  it('joins contiguous parts of one source back together with their linked sound', async () => {
+    const graph = await fourParts()
+    const parts = onTrack(graph, 'v1')
+    const joined = await applied(graph, [envelope('clip.join', { clipIds: parts.map((part) => part.id).reverse() })])
+    expect(spans(joined, 'v1')).toEqual([[0, 240, 0, 240]])
+    expect(spans(joined, 'a1')).toEqual([[0, 240, 0, 240]])
+    expect(onTrack(joined, 'v1')[0]!.id).toBe(parts[0]!.id)
+    expect(onTrack(joined, 'v1')[0]!.linkedGroupId).toBe(onTrack(joined, 'a1')[0]!.linkedGroupId)
+    // Parts that do not touch, or whose sources no longer continue, are not one clip.
+    await refused(graph, [envelope('clip.join', { clipIds: [parts[0]!.id, parts[2]!.id] })], 'invalid')
+    const slipped = await applied(graph, [envelope('clip.slip', { clipId: parts[1]!.id, delta: seconds(1, 3) })])
+    await refused(slipped, [envelope('clip.join', { clipIds: [parts[0]!.id, parts[1]!.id] })], 'invalid')
+    await refused(graph, [envelope('clip.join', { clipIds: [parts[0]!.id] })], 'invalid')
+  })
+
+  it('pushes and pulls everything from a clip onward on every track', async () => {
+    const { graph, a, b } = await touchingPair()
+    const pushed = await applied(graph, [envelope('clip.push', { clipId: b, delta: seconds(1) })])
+    expect(onTrack(pushed, 'v1').map((item) => [item.id, item.from])).toEqual([
+      [a, 0],
+      [b, 150],
+    ])
+    expect(onTrack(pushed, 'a1').map((item) => item.from)).toEqual([0, 150])
+    const pulled = await applied(pushed, [envelope('clip.push', { clipId: b, delta: seconds(-1) })])
+    expect(canonicalJson(pulled.timeline?.items)).toBe(canonicalJson(graph.timeline?.items))
+    // Pulling B into A is refused rather than overlapping or clamping.
+    await refused(graph, [envelope('clip.push', { clipId: b, delta: seconds(-1) })], 'failed')
+  })
+
+  it('closes one gap or every gap on a track', async () => {
+    const graph = await applied(project(), [
+      envelope('clip.add', { trackId: 'v1', assetId: STILL, at: seconds(1), duration: seconds(2) }),
+      envelope('clip.add', { trackId: 'v1', assetId: STILL, at: seconds(5), duration: seconds(2) }),
+    ])
+    const one = await applied(graph, [envelope('track.closeGap', { trackId: 'v1', at: seconds(4) })])
+    expect(onTrack(one, 'v1').map((item) => [item.from, item.durationInFrames])).toEqual([
+      [30, 60],
+      [90, 60],
+    ])
+    const all = await applied(graph, [envelope('track.closeGap', { trackId: 'v1' })])
+    expect(onTrack(all, 'v1').map((item) => [item.from, item.durationInFrames])).toEqual([
+      [0, 60],
+      [60, 60],
+    ])
+    await refused(graph, [envelope('track.closeGap', { trackId: 'v1', at: seconds(2) })], 'invalid')
+    await refused(graph, [envelope('track.closeGap', { trackId: 'v1', at: seconds(9) })], 'invalid')
+  })
+
   it('inserts a marked source range, rippling destination and sync-locked tracks', async () => {
     const graph = await applied(project(), [envelope('clip.add', { trackId: 'v1', assetId: ASSET, at: seconds(0) })])
     const inserted = await applied(graph, [
@@ -438,6 +486,9 @@ describe('FL-94 linked timeline tools on the Freecut engine', () => {
   it('undoes and redoes every tool through the host graph history', async () => {
     const { graph: start, a } = await touchingPair()
     const parts = await fourParts()
+    const gapped = await applied(start, [
+      envelope('clip.push', { clipId: onTrack(start, 'v1')[1]!.id, delta: seconds(1) }),
+    ])
     let graph: unknown = start
     const history = createStudioGraphHistory()
     const handlers = createStudioEngineCommandHandlers({
@@ -473,6 +524,9 @@ describe('FL-94 linked timeline tools on the Freecut engine', () => {
       [start, 'track.set', { trackId: 'a1', patch: { muted: true } }],
       [start, 'track.reorder', { trackId: 'a1', index: 0 }],
       [start, 'marker.add', { at: seconds(1) }],
+      [parts, 'clip.join', { clipIds: onTrack(parts, 'v1').map((part) => part.id) }],
+      [start, 'clip.push', { clipId: onTrack(start, 'v1')[1]!.id, delta: seconds(1) }],
+      [gapped, 'track.closeGap', { trackId: 'v1' }],
     ]
     for (const [initial, id, payload] of cases) {
       graph = initial

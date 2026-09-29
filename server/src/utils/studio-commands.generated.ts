@@ -102,6 +102,15 @@ export const studioCommandMirror = {
       trackId: 'string',
     },
   },
+  'clip.join': {
+    scope: 'clip',
+    mutatesGraph: true,
+    undoable: true,
+    capability: null,
+    payload: {
+      clipIds: 'string[]',
+    },
+  },
   'clip.move': {
     scope: 'clip',
     mutatesGraph: true,
@@ -125,6 +134,16 @@ export const studioCommandMirror = {
       sourceIn: 'time',
       sourceOut: 'time',
       trackId: 'string',
+    },
+  },
+  'clip.push': {
+    scope: 'clip',
+    mutatesGraph: true,
+    undoable: true,
+    capability: null,
+    payload: {
+      clipId: 'string',
+      delta: 'duration',
     },
   },
   'clip.reorder': {
@@ -964,6 +983,16 @@ export const studioCommandMirror = {
       index: 'number?',
       kind: 'string',
       name: 'string?',
+    },
+  },
+  'track.closeGap': {
+    scope: 'track',
+    mutatesGraph: true,
+    undoable: true,
+    capability: null,
+    payload: {
+      at: 'time?',
+      trackId: 'string',
     },
   },
   'track.remove': {
