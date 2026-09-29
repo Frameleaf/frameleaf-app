@@ -84,6 +84,15 @@
       "owner": "Owner (AJ Taylor)",
       "reason": "Covered by FL-24 (REL-200): secrets.COSIGN_PRIVATE_KEY/COSIGN_PASSWORD and the deploy-test-gated promote/sign job in .github/workflows/deploy-production.yml. Recorded here only as a cross-reference, not duplicated.",
       "status": "cleared"
+    },
+    {
+      "area": ["web-bundle", "worker-container"],
+      "component": "@huggingface/transformers CDN wasm path (https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1/dist/), set by the Whisper worker's onnx wasmPaths",
+      "description": "The Whisper transcription worker points its ONNX wasmPaths at a jsdelivr build of @huggingface/transformers, a different package/version than the reviewed runtime:onnx-cdn row (onnxruntime-web) or runtime:whisper-transformers (the esm.sh transformers module). Found by studio-editing while building engine-admission (2026-09-29); it is not yet a row in studio/dependency-attribution.json, so it has no redistribution/localRuntime/hostedUse decision and no owner approval.",
+      "id": "unreviewed-runtime-cdn-dependency",
+      "owner": null,
+      "reason": "Needs an attribution row added to studio/dependency-attribution.json (locator, revision, licence, evidence) before it can be reviewed, and then the owner's approval like every other resource in studio/rights-approval.json. Until then this CDN fetch has no reviewed rights decision.",
+      "status": "blocked-on-owner"
     }
   ],
   "schemaVersion": 1
