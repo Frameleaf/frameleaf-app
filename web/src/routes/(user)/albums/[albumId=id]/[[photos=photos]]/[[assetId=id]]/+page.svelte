@@ -243,8 +243,15 @@
   /* ------------------------------------------------------------------ */
   /* Album lifecycle                                                     */
   /* ------------------------------------------------------------------ */
+  let albumRefreshRequest = 0;
   const refreshAlbum = async () => {
-    album = await getAlbumInfo({ id: albumId });
+    const request = ++albumRefreshRequest;
+    const requestedAlbum = album;
+    const refreshedAlbum = await getAlbumInfo({ id: requestedAlbum.id });
+    // Navigation or a newer server event already replaced this album snapshot.
+    if (request === albumRefreshRequest && album === requestedAlbum) {
+      album = refreshedAlbum;
+    }
   };
 
   const refreshEverything = async () => {
