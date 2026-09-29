@@ -99,7 +99,9 @@ export class ItemShareService extends BaseService {
       try {
         this.websocketRepository.clientSend('on_asset_hidden', row.sharedWithId, row.assetId);
       } catch (error) {
-        this.logger.warn(`Could not notify item-share recipient ${row.sharedWithId} after revoking ${row.assetId}: ${error}`);
+        this.logger.warn(
+          `Could not notify item-share recipient ${row.sharedWithId} after revoking ${row.assetId}: ${error}`,
+        );
       }
     }
     return this.changeResponse(auth, assetIds, {
