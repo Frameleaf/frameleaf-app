@@ -61,6 +61,8 @@ export interface SearchUserIdOptions {
   userIds?: string[];
   /** FL-54: server derived; owners whose assets a place filter must never match. Never client-controlled. */
   locationHiddenOwnerIds?: string[];
+  /** FL-137: server derived; the search comes from a shared-link visitor, who never sees anything trashed. */
+  sharedLink?: boolean;
 }
 
 export type SearchIdOptions = SearchAssetIdOptions & SearchUserIdOptions;
