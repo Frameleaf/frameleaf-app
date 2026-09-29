@@ -99,7 +99,11 @@
       if (request !== loadId) {
         return;
       }
-      people = users.filter((user) => user.id !== authManager.user.id);
+      const choices = new Map(users.map((user) => [user.id, user]));
+      for (const { sharedWith } of shares) {
+        choices.set(sharedWith.id, sharedWith);
+      }
+      people = [...choices.values()].filter((user) => user.id !== authManager.user.id);
       const perPerson = new Map<string, Set<string>>();
       for (const share of shares) {
         const items = perPerson.get(share.sharedWith.id) ?? new Set<string>();
