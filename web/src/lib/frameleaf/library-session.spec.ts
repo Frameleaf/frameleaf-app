@@ -64,9 +64,7 @@ describe('library session defaults', () => {
   it('keys stored preferences per authenticated user', () => {
     expect(libraryPreferenceKey('user/1')).toBe('frameleaf:library:v1:user%2F1');
     expect(libraryTransientKey('user/1')).toBe('frameleaf:library:tab:v1:user%2F1');
-    expect(libraryTransientKey('user/1', 'collection:a')).toBe(
-      'frameleaf:library:tab:v1:user%2F1:collection%3Aa',
-    );
+    expect(libraryTransientKey('user/1', 'collection:a')).toBe('frameleaf:library:tab:v1:user%2F1:collection%3Aa');
   });
 });
 

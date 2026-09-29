@@ -43,7 +43,11 @@ vi.mock('$lib/components/timeline/TimelineAssetViewer.svelte', () => ({ default:
 const data = (value: AlbumResponseDto) => ({ album: value, tree: { collections: [], albums: [], spaces: [] } });
 
 it('restores a collection selection after remounting its flat results view (FL-40)', async () => {
-  const collection = albumFactory.build({ id: 'collection-reload', kind: AlbumKind.Collection, albumName: 'Collection' });
+  const collection = albumFactory.build({
+    id: 'collection-reload',
+    kind: AlbumKind.Collection,
+    albumName: 'Collection',
+  });
   const first = render(AlbumPage, { data: data(collection) as never });
   await waitFor(() => expect(librarySession.state.scope.id).toBe(collection.id));
   librarySession.select('photo-1');
@@ -60,15 +64,19 @@ it('restores a collection selection after remounting its flat results view (FL-4
 });
 
 it('restores collection selection after the same page visits an ordinary album (FL-40)', async () => {
-  const collection = albumFactory.build({ id: 'collection-return', kind: AlbumKind.Collection, albumName: 'Collection' });
+  const collection = albumFactory.build({
+    id: 'collection-return',
+    kind: AlbumKind.Collection,
+    albumName: 'Collection',
+  });
   const ordinary = albumFactory.build({ id: 'ordinary-album', kind: AlbumKind.Album, albumName: 'Album' });
   const view = render(AlbumPage, { data: data(collection) as never });
   await waitFor(() => expect(librarySession.state.scope.id).toBe(collection.id));
   librarySession.select('collection-photo');
   await waitFor(() =>
-    expect(JSON.parse(sessionStorage.getItem(libraryTransientKey('owner', `collection:${collection.id}`)) ?? '{}').selection).toEqual(
-      ['collection-photo'],
-    ),
+    expect(
+      JSON.parse(sessionStorage.getItem(libraryTransientKey('owner', `collection:${collection.id}`)) ?? '{}').selection,
+    ).toEqual(['collection-photo']),
   );
 
   await view.rerender({ data: data(ordinary) as never });
