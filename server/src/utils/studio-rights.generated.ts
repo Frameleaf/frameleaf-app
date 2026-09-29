@@ -26,7 +26,7 @@ export type StudioResourceRights = {
   restrictions: Readonly<Partial<Record<StudioRightsUseName, string>>>;
 };
 
-export const STUDIO_RIGHTS_SOURCE_SHA256 = 'c78ca1c5fd3080676889db9d529149e91b677fa4d1d80c02295a8cbeb2f59dd1';
+export const STUDIO_RIGHTS_SOURCE_SHA256 = '769f432075df7f02c250d92234adfbef04533a797fdb5f44a564c63168bae4e3';
 
 /** The owner approval the allowed rows come from, or null when there is none. */
 export const STUDIO_RIGHTS_APPROVAL = {
@@ -34,7 +34,7 @@ export const STUDIO_RIGHTS_APPROVAL = {
   approvedOn: '2026-09-25',
   source:
     'Jira FL-146, comment 34941: Owner decisions (2026-09-25, afternoon), "Studio resource rights: all 210 bundled resources (fonts, LUTs, tracks, models) are approved. Rights enforcement stays in place for anything new or unknown."',
-  sha256: 'd9810f10002cc770c1ec88a45c7e4b67dcbe0877a0ef2782466ec56ed44c8a34',
+  sha256: 'bd6a68902c759e3261cd9fe3d179d5e1f07f9adde0643b25e2314be6cf5fa8c2',
 } as const;
 
 /** Whether the engine as a whole may be redistributed. False blocks every redistribution. */
@@ -1301,16 +1301,16 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     redistribution: 'allowed',
     localRuntime: 'allowed',
     hostedUse: 'allowed',
-    approvedOn: '2026-09-25',
+    approvedOn: '2026-09-29',
     restrictions: {},
   },
   'runtime:whisper-transformers': {
     kind: 'runtime-code',
     license: 'Apache-2.0',
-    redistribution: 'allowed',
-    localRuntime: 'allowed',
-    hostedUse: 'allowed',
-    approvedOn: '2026-09-25',
+    redistribution: 'blocked',
+    localRuntime: 'blocked',
+    hostedUse: 'blocked',
+    approvedOn: null,
     restrictions: {},
   },
   'tool:dolby-artistic-trim': {

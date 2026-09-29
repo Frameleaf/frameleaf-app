@@ -27,6 +27,14 @@ const row = (uses: Partial<Record<StudioRightsUse, 'allowed' | 'blocked'>> = {})
 
 const MUSICGEN = 'model:Xenova/musicgen-small';
 
+/**
+ * Rows whose locator changed when the ONNX Runtime and Whisper runtimes were bundled with the engine
+ * (studio patch 0029), approved again by the owner at their new digests on 2026-09-29.
+ */
+const REAPPROVED = new Set(['runtime:onnx-cdn']);
+/** Changed again for the Whisper worker's move back to transformers.js 3.8.1; awaits the owner. */
+const AWAITING_REAPPROVAL = new Set(['runtime:whisper-transformers']);
+
 describe('studio rights (FL-86)', () => {
   it('keeps MusicGen-small local only: its CC-BY-NC-4.0 licence withholds hosted use (FL-146 comment 34944)', () => {
     expect(studioResourceRights[MUSICGEN]).toMatchObject({
@@ -50,7 +58,7 @@ describe('studio rights (FL-86)', () => {
     });
     // Every other approved row keeps hosted use.
     const hostedBlocked = Object.entries(studioResourceRights)
-      .filter(([, rights]) => rights.hostedUse !== 'allowed')
+      .filter(([id, rights]) => rights.hostedUse !== 'allowed' && !AWAITING_REAPPROVAL.has(id))
       .map(([id]) => id);
     expect(hostedBlocked).toEqual([MUSICGEN]);
   });
@@ -63,7 +71,10 @@ describe('studio rights (FL-86)', () => {
       source: expect.stringContaining('FL-146'),
     });
     for (const [id, rights] of rows) {
-      expect(rights.approvedOn, id).toBe('2026-09-25');
+      if (AWAITING_REAPPROVAL.has(id)) {
+        continue;
+      }
+      expect(rights.approvedOn, id).toBe(REAPPROVED.has(id) ? '2026-09-29' : '2026-09-25');
       expect(checkStudioRights(id, StudioRightsUse.LocalRuntime)).toEqual({ allowed: true, id });
       if (id !== MUSICGEN) {
         expect(checkStudioRights(id, StudioRightsUse.HostedUse)).toEqual({ allowed: true, id });
@@ -71,6 +82,20 @@ describe('studio rights (FL-86)', () => {
       // The rows allow redistribution; the engine distribution itself is still unapproved.
       expect(rights.redistribution).toBe('allowed');
       expect(checkStudioRights(id, StudioRightsUse.Redistribution).allowed).toBe(STUDIO_DISTRIBUTION_APPROVAL);
+    }
+  });
+
+  it('admits the bundled runtimes the owner approved again at their new digests (2026-09-29)', () => {
+    for (const id of REAPPROVED) {
+      expect(studioResourceRights[id]).toMatchObject({ approvedOn: '2026-09-29', localRuntime: 'allowed' });
+      expect(checkStudioRights(id, StudioRightsUse.LocalRuntime)).toEqual({ allowed: true, id });
+    }
+  });
+
+  it('blocks the Whisper runtime row that changed after its approval until the owner approves it again', () => {
+    for (const id of AWAITING_REAPPROVAL) {
+      expect(studioResourceRights[id]).toMatchObject({ approvedOn: null, localRuntime: 'blocked' });
+      expect(checkStudioRights(id, StudioRightsUse.LocalRuntime)).toMatchObject({ allowed: false, id });
     }
   });
 

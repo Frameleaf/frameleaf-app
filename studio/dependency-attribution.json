@@ -782,37 +782,76 @@
       ]
     },
     {
-      "basis": "Pin actual runtime/WASM bytes and required notices before remote loading.",
+      "basis": "Bundled from the lockfile-pinned package and served from the engine build (owner decision 2026-09-29: no runtime CDN); the WebAssembly each loader uses is pinned by byte digest. Awaits owner re-approval of this changed row.",
       "decisions": {
         "hostedUse": "blocked",
         "localRuntime": "blocked",
         "redistribution": "blocked"
       },
       "evidence": [],
-      "files": [],
+      "files": [
+        {
+          "path": "onnxruntime-web/dist/ort-wasm-simd-threaded.jsep.mjs",
+          "sha256": "18e4399d2c6998ed06bce49c4b7476984e77be43205f758607bc779344a804a6"
+        },
+        {
+          "path": "onnxruntime-web/dist/ort-wasm-simd-threaded.jsep.wasm",
+          "sha256": "12017c384fc3f11f9fcbac694c373e31f62a87c37d14a823fe884b40b8392706"
+        },
+        {
+          "path": "onnxruntime-web/dist/ort-wasm-simd-threaded.asyncify.mjs",
+          "sha256": "718f08970456a0843a1281be041fa4520e4df67ba09f0264f72818b2ca987590"
+        },
+        {
+          "path": "onnxruntime-web/dist/ort-wasm-simd-threaded.asyncify.wasm",
+          "sha256": "1d6ee4ff60d7f0e6b6efa34469157d3bdcbe2f3b0dbcea2a645bb41361a85973"
+        },
+        {
+          "path": "onnxruntime-web/dist/ort-wasm-simd-threaded.mjs",
+          "sha256": "f1e8f64a690e67e2c37ff49967b847a9efeb1bb73ab39138d2d722f9be911bf3"
+        },
+        {
+          "path": "onnxruntime-web/dist/ort-wasm-simd-threaded.wasm",
+          "sha256": "d84922f85dda684adc8f2afd7a5e954676b28afc8db48528677a4db7f256b213"
+        },
+        {
+          "path": "kokoro-js/node_modules/@huggingface/transformers/dist/ort-wasm-simd-threaded.jsep.mjs",
+          "sha256": "08fb86ec433c78bfb032c5d84a68b8e8e5a8d81268fa39e24314179a5767a5b9"
+        },
+        {
+          "path": "kokoro-js/node_modules/@huggingface/transformers/dist/ort-wasm-simd-threaded.jsep.wasm",
+          "sha256": "c46655e8a94afc45338d4cb2b840475f88e5012d524509916e505079c00bfa39"
+        }
+      ],
       "id": "runtime:onnx-cdn",
       "kind": "runtime-code",
       "licenseDeclared": "MIT",
-      "locator": "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.26.0-dev.20260410-5e55544225/dist/",
-      "revision": null,
+      "locator": "npm:onnxruntime-web@1.26.0-dev.20260410-5e55544225 (bundled in the engine build)",
+      "revision": "1.26.0-dev.20260410-5e55544225",
       "sourceRefs": [
+        "src/shared/utils/local-ort-assets.ts",
         "src/shared/utils/ort-runtime.ts"
       ]
     },
     {
-      "basis": "Dynamic 3.8.1 differs from installed 4.1.0; JS/WASM/transitive artifact hashes and notices unqualified.",
+      "basis": "The Whisper worker imports transformers.js 3.8.1, bundled from the lockfile-pinned install instead of esm.sh; 4.1.0 places word timestamps about a word late (studio/tools/fixtures/whisper-timing.json, owner decision 2026-09-29). Its ONNX Runtime WebAssembly is runtime:onnx-cdn's transformers 3.8.1 pair. Awaits owner re-approval of this changed row.",
       "decisions": {
         "hostedUse": "blocked",
         "localRuntime": "blocked",
         "redistribution": "blocked"
       },
       "evidence": [],
-      "files": [],
+      "files": [
+        {
+          "path": "kokoro-js/node_modules/@huggingface/transformers/dist/transformers.web.js",
+          "sha256": "1b41438d839ca3ea1346031472edee8cb3eefbf0bad48945f969559e2eb03394"
+        }
+      ],
       "id": "runtime:whisper-transformers",
       "kind": "runtime-code",
       "licenseDeclared": "Apache-2.0",
-      "locator": "https://esm.sh/@huggingface/transformers@3.8.1?bundle",
-      "revision": null,
+      "locator": "npm:@huggingface/transformers@3.8.1 (bundled in the engine build; installed under kokoro-js by the pinned lockfile)",
+      "revision": "3.8.1",
       "sourceRefs": [
         "src/features/media-library/transcription/workers/whisper.worker.ts"
       ]
