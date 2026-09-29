@@ -1,0 +1,85 @@
+Subject: Keep asset handles out of the written sourcemaps
+
+Freecut MIT adaptation. A `?url` import compiles to a module whose text
+is `export default "__VITE_ASSET__<handle>__"`, and the chunk sourcemap
+carries that text in sourcesContent. The handle is assigned in the order
+parallel module loads emit their assets, so two builds of the same
+source can swap the handles of the bundled ONNX Runtime files (patch
+0029) and write different app-shell maps, which fails the engine's
+reproduce check. The code itself is unaffected: Vite replaces handles
+with file names there. This resolves the handles in the written maps to
+the same file names, so identical sources build identical artifacts. The
+plugin is exported so the Frameleaf adapter build uses it as well.
+
+diff --git a/vite.config.ts b/vite.config.ts
+index 54bc3a24f6..420a528145 100644
+--- a/vite.config.ts
++++ b/vite.config.ts
+@@ -6,6 +6,53 @@ import { readFileSync, writeFileSync } from 'node:fs'
+ import { join } from 'node:path'
+ import { fileURLToPath } from 'node:url'
+ 
++// Frameleaf: a `?url` import's module is `export default "__VITE_ASSET__<handle>__"`, and that
++// module text is copied into the chunk's sourcemap. The handle depends on the order in which
++// parallel module loads emit their assets, so two identical builds could swap the handles of the
++// bundled ONNX runtime files and write different maps. Code is unaffected (Vite replaces handles
++// with file names there); this gives the map text the same treatment, so builds reproduce.
++const VITE_ASSET_HANDLE = /__VITE_ASSET__([\w$]+)__(?:\$_(.*?)__)?/g
++
++export function stableAssetSourcemapsPlugin(): Plugin {
++  // Rolldown writes each `.map` from its own buffer, so a map asset changed in generateBundle is
++  // not what reaches disk: handles are resolved there and the written maps are rewritten after.
++  const fileNames = new Map<string, string>()
++  const maps = new Set<string>()
++  let base = '/'
++  return {
++    name: 'frameleaf-stable-asset-sourcemaps',
++    apply: 'build',
++    enforce: 'post',
++    configResolved(config) {
++      base = config.base
++    },
++    generateBundle(_options, bundle) {
++      for (const output of Object.values(bundle)) {
++        if (output.type !== 'asset' || !output.fileName.endsWith('.map')) continue
++        const text = typeof output.source === 'string' ? output.source : new TextDecoder().decode(output.source)
++        for (const [, handle] of text.matchAll(VITE_ASSET_HANDLE)) {
++          fileNames.set(handle!, this.getFileName(handle!))
++          maps.add(output.fileName)
++        }
++      }
++    },
++    writeBundle(options) {
++      for (const fileName of maps) {
++        const file = join(options.dir!, fileName)
++        const map = JSON.parse(readFileSync(file, 'utf8')) as { sourcesContent?: (string | null)[] }
++        map.sourcesContent = map.sourcesContent?.map((text) =>
++          text === null
++            ? text
++            : text.replace(VITE_ASSET_HANDLE, (_match, handle: string, postfix = '') => `${base}${fileNames.get(handle)}${postfix}`),
++        )
++        writeFileSync(file, JSON.stringify(map))
++      }
++      maps.clear()
++      fileNames.clear()
++    },
++  }
++}
++
+ // Stamps public/sw.js with the hashed entry-chunk filename at build time so the service
+ // worker's CACHE_VERSION — and the sw.js bytes — change on every deploy. Without this the
+ // SW file is byte-identical across deploys, so registration.update() never detects a new
+@@ -94,7 +141,12 @@ export default defineConfig({
+       },
+     },
+   },
+-  plugins: lazyPlugins(() => [react(), tailwindcss(), serviceWorkerVersionPlugin()]),
++  plugins: lazyPlugins(() => [
++    react(),
++    tailwindcss(),
++    serviceWorkerVersionPlugin(),
++    stableAssetSourcemapsPlugin(),
++  ]),
+   resolve: {
+     alias: {
+       '@': fileURLToPath(new URL('./src', import.meta.url)),
