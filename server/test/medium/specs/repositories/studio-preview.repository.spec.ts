@@ -1,7 +1,9 @@
 import { Kysely } from 'kysely';
 import { StudioPreviewQuality } from 'src/enum.js';
+import { DerivativePrivacyRepository } from 'src/repositories/derivative-privacy.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { StudioPreviewRepository } from 'src/repositories/studio-preview.repository.js';
+import { StudioProjectRepository } from 'src/repositories/studio-project.repository.js';
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
 import { newMediumService } from 'test/medium.factory.js';
@@ -11,7 +13,7 @@ let defaultDatabase: Kysely<DB>;
 
 const setup = () => {
   const { ctx } = newMediumService(BaseService, { database: defaultDatabase, real: [], mock: [LoggingRepository] });
-  return { ctx, sut: new StudioPreviewRepository(defaultDatabase) };
+  return { ctx, sut: new StudioPreviewRepository(defaultDatabase, new DerivativePrivacyRepository(defaultDatabase)) };
 };
 
 beforeAll(async () => {
@@ -69,23 +71,33 @@ describe(StudioPreviewRepository.name, () => {
   it('lists expired ready frames and old superseded or failed frames for the retention sweep (FL-96)', async () => {
     const { ctx, sut } = setup();
     const { user } = await ctx.newUser();
+    const { project } = await ctx.get(StudioProjectRepository).createWithRevision({
+      ownerId: user.id,
+      name: 'Preview retention',
+      revision: { authorId: user.id, envelope: {}, digest: 'digest-a', graphBytes: 2, summary: {}, requestKey: null },
+    });
     const past = new Date(Date.now() - 60_000);
     const future = new Date(Date.now() + 60_000);
-    const { frame: expired } = await sut.upsert(frame(user.id, 'project-1', 'k1', past));
-    const { frame: fresh } = await sut.upsert(frame(user.id, 'project-1', 'k2', future));
-    const { frame: failed } = await sut.upsert(frame(user.id, 'project-1', 'k3'));
+    const { frame: expired } = await sut.upsert(frame(user.id, project.id, 'k1', past));
+    const { frame: fresh } = await sut.upsert(frame(user.id, project.id, 'k2', future));
+    const { frame: failed } = await sut.upsert(frame(user.id, project.id, 'k3'));
     for (const row of [expired, fresh]) {
-      await sut.publish(row.id, 'digest-a', {
-        framePath: `/frames/${row.id}.png`,
-        contentType: 'image/png',
-        sizeInBytes: 1,
-        frameChecksum: null,
-        framePts: null,
-        framePtsTimebase: null,
-        toneMapped: false,
-        readyAt: new Date(),
-        expiresAt: row.id === expired.id ? past : future,
-      });
+      await sut.publish(
+        row.id,
+        'digest-a',
+        {
+          framePath: `/frames/${row.id}.png`,
+          contentType: 'image/png',
+          sizeInBytes: 1,
+          frameChecksum: null,
+          framePts: null,
+          framePtsTimebase: null,
+          toneMapped: false,
+          readyAt: new Date(),
+          expiresAt: row.id === expired.id ? past : future,
+        },
+        { ownerId: user.id, operationId: null, grantToken: 'grant', grantSessionId: 'session', assetIds: [] },
+      );
     }
     await sut.markFailed(failed.id, 'gpu_lost');
 

@@ -18,6 +18,7 @@ import { MediaOperation, MediaOperationRepository } from 'src/repositories/media
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { StudioExportRepository } from 'src/repositories/studio-export.repository.js';
 import { StudioPreviewFrame, StudioPreviewRepository } from 'src/repositories/studio-preview.repository.js';
+import { UserRepository } from 'src/repositories/user.repository.js';
 import { StudioProjectService, StudioRevisionEvent } from 'src/services/studio-project.service.js';
 import {
   STUDIO_GRANT_TTL_SECONDS,
@@ -129,6 +130,7 @@ export class StudioPreviewService {
     private projects: StudioProjectService,
     private storage: StorageRepository,
     private sourceMedia: StudioExportRepository,
+    private users: UserRepository,
   ) {
     this.logger.setContext(StudioPreviewService.name);
 
@@ -467,11 +469,34 @@ export class StudioPreviewService {
     }
 
     const frame = await this.repository.getForOwner(frameId, operation.ownerId);
+    if (!frame || frame.operationId !== operation.id) {
+      return { published: false };
+    }
+    const discard = async () => {
+      if (!(await this.repository.evictObserved(frame, () => this.removeFiles(folder)))) {
+        throw new ConflictException('Preview binding changed; retry completion');
+      }
+    };
+    const user = await this.users.get(frame.ownerId, { withDeleted: false });
+    const head = await this.projects.getReadableRevision(frame.projectId, frame.ownerId);
+    const grant =
+      user && frame.grantToken && frame.grantSessionId
+        ? await this.resources.verifyReadGrant(frame.grantToken, {
+            workerId: frame.grantSessionId,
+            auth: { user, session: { id: frame.grantSessionId, hasElevatedPermission: true } },
+            // Same owner background authority as the render; browser delivery rechecks its session.
+            backgroundRunner: true,
+          })
+        : null;
+    if (head === null || head !== frame.projectRevision || !grant?.valid) {
+      await discard();
+      return { published: false };
+    }
     const now = new Date();
-    const published =
-      !!frame &&
-      frame.operationId === operation.id &&
-      (await this.repository.publish(frame.id, frame.revisionDigest, {
+    const published = await this.repository.publish(
+      frame.id,
+      frame.revisionDigest,
+      {
         framePath: output.path,
         contentType: output.contentType,
         sizeInBytes: output.sizeInBytes,
@@ -482,9 +507,17 @@ export class StudioPreviewService {
         toneMapped: false,
         readyAt: now,
         expiresAt: previewExpiry(now),
-      }));
+      },
+      {
+        ownerId: frame.ownerId,
+        operationId: frame.operationId,
+        grantToken: frame.grantToken,
+        grantSessionId: frame.grantSessionId,
+        assetIds: grant.grant.assetIds ?? [],
+      },
+    );
     if (!published) {
-      await this.removeFiles(folder);
+      await discard();
     }
     return { published };
   }
