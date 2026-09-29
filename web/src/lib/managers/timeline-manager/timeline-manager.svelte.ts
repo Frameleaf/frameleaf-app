@@ -447,14 +447,23 @@ export class TimelineManager extends VirtualScrollManager {
       return;
     }
 
+    const overtaken = () => this.#requestedOptions !== options;
     this.suspendTransitions = true;
     try {
       await this.initTask.reset();
+      if (overtaken()) {
+        return;
+      }
       await this.#init(options);
+      if (overtaken()) {
+        return;
+      }
       this.updateViewportGeometry(false);
       this.#createScrubberMonths();
     } finally {
-      this.suspendTransitions = false;
+      if (!overtaken()) {
+        this.suspendTransitions = false;
+      }
     }
   }
 
