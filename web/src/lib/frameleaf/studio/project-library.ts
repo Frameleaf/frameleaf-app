@@ -175,6 +175,7 @@ const BUNDLE_ERROR_KEYS: Record<string, Translations> = {
   bundle_too_large: 'frameleaf_studio_bundle_error_too_large',
   bundle_too_many_entries: 'frameleaf_studio_bundle_error_too_large',
   bundle_upload_expired: 'frameleaf_studio_bundle_error_expired',
+  bundle_relink_unavailable: 'frameleaf_studio_bundle_error_relink_unavailable',
   bundle_project_unavailable: 'frameleaf_studio_bundle_error_project_gone',
   bundle_revision_unavailable: 'frameleaf_studio_bundle_error_project_gone',
 };
