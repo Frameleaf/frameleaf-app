@@ -1,6 +1,5 @@
 import { NotificationType } from '@immich/sdk';
-import { screen, waitFor, within } from '@testing-library/svelte';
-import { render } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { goto } from '$app/navigation';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
@@ -97,6 +96,28 @@ describe('SharedWithYouSection', () => {
     expect(await screen.findByText(en.frameleaf_sharing.shared_with_you_empty)).toBeInTheDocument();
   });
 
+  it('shows a retry instead of an empty list when received shares fail to load', async () => {
+    let finishRetry!: (response: Awaited<ReturnType<typeof sdkMock.getReceivedItemShares>>) => void;
+    sdkMock.getReceivedItemShares
+      .mockRejectedValueOnce(new Error('Unavailable'))
+      .mockImplementationOnce(() => new Promise((resolve) => (finishRetry = resolve)));
+    render(SharedWithYouSection);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(en.frameleaf_sharing.shared_with_you_load_failed);
+    expect(screen.queryByText(en.frameleaf_sharing.shared_with_you_empty)).toBeNull();
+    const retry = screen.getByRole('button', { name: en.frameleaf_error_retry });
+    await fireEvent.click(retry);
+    expect(retry).toBeDisabled();
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+    expect(screen.queryByText(en.frameleaf_sharing.shared_with_you_empty)).toBeNull();
+
+    finishRetry({ link: null, items: [{ id: '1', sharedAt: '', owner: taylor, asset: beach }] });
+
+    expect(await screen.findByRole('button', { name: 'beach.jpg' })).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(sdkMock.getReceivedItemShares).toHaveBeenCalledTimes(2);
+  });
+
   it('loads a new item share while the Sharing page remains open', async () => {
     sdkMock.getReceivedItemShares.mockResolvedValueOnce({ link: null, items: [] }).mockResolvedValue({
       link: null,
@@ -111,6 +132,22 @@ describe('SharedWithYouSection', () => {
 
     expect(await screen.findByRole('button', { name: 'beach.jpg' })).toBeInTheDocument();
     expect(sdkMock.getReceivedItemShares).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps received items visible when a notification refresh fails', async () => {
+    sdkMock.getReceivedItemShares
+      .mockResolvedValueOnce({ link: null, items: [{ id: '1', sharedAt: '', owner: taylor, asset: beach }] })
+      .mockRejectedValueOnce(new Error('Unavailable'));
+    render(SharedWithYouSection);
+    expect(await screen.findByRole('button', { name: 'beach.jpg' })).toBeInTheDocument();
+
+    for (const handler of notificationHandlers) {
+      handler({ type: NotificationType.ItemShare });
+    }
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(en.frameleaf_sharing.shared_with_you_load_failed);
+    expect(screen.getByRole('button', { name: 'beach.jpg' })).toBeInTheDocument();
+    expect(screen.queryByText(en.frameleaf_sharing.shared_with_you_empty)).toBeNull();
   });
 
   it('does not restore a hidden item from an in-flight notification refresh', async () => {
