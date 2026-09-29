@@ -1,3 +1,4 @@
+import { toastManager } from '@immich/ui';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { addMessages } from 'svelte-i18n';
@@ -94,6 +95,82 @@ describe('ShareSheet', () => {
       expect(sdkMock.unshareItems).toHaveBeenCalledWith({
         itemShareChangeDto: { assetIds: ['a1', 'a2'], userIds: ['sam'] },
       });
+    });
+
+    it('retries only the outstanding revoke after a new share was saved', async () => {
+      sdkMock.searchUsers.mockResolvedValue([person('jamie', 'Jamie'), person('sam', 'Sam')]);
+      sdkMock.getItemShares.mockResolvedValue([
+        { id: 's1', assetId: 'a1', sharedWith: person('sam', 'Sam'), createdAt: '' },
+      ]);
+      sdkMock.shareItems.mockResolvedValue({ shares: [], added: 1, removed: 0, link: null });
+      sdkMock.unshareItems
+        .mockRejectedValueOnce(new Error('Revoke unavailable'))
+        .mockResolvedValue({ shares: [], added: 0, removed: 1, link: null });
+      const danger = vi.spyOn(toastManager, 'danger').mockImplementation(() => undefined as never);
+      render(ShareSheet, { open: true, assetIds: ['a1'] });
+
+      const jamie = await screen.findByRole('button', { name: 'Jamie' });
+      const sam = screen.getByRole('button', { name: 'Sam' });
+      await fireEvent.click(jamie);
+      await fireEvent.click(sam);
+      const save = screen.getByRole('button', { name: 'Share with Jamie' });
+      await fireEvent.click(save);
+
+      await waitFor(() => expect(sdkMock.unshareItems).toHaveBeenCalledTimes(1));
+      expect(danger).toHaveBeenCalledWith(en.frameleaf_sharing.sharing_save_failed);
+      expect(screen.getByRole('dialog', { name: 'Share item' })).toBeInTheDocument();
+      expect(jamie).toHaveAttribute('aria-pressed', 'true');
+      expect(sam).toHaveAttribute('aria-pressed', 'false');
+      await waitFor(() => expect(save).toBeEnabled());
+
+      await fireEvent.click(save);
+      await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Share item' })).toBeNull());
+      expect(sdkMock.shareItems).toHaveBeenCalledTimes(1);
+      expect(sdkMock.unshareItems).toHaveBeenCalledTimes(2);
+      expect(sdkMock.unshareItems).toHaveBeenLastCalledWith({
+        itemShareChangeDto: { assetIds: ['a1'], userIds: ['sam'] },
+      });
+      danger.mockRestore();
+    });
+
+    it('finishes a pending save against its original items without changing a new selection', async () => {
+      sdkMock.searchUsers.mockResolvedValue([person('jamie', 'Jamie'), person('sam', 'Sam'), person('alex', 'Alex')]);
+      sdkMock.getItemShares
+        .mockResolvedValueOnce([{ id: 's1', assetId: 'a1', sharedWith: person('sam', 'Sam'), createdAt: '' }])
+        .mockResolvedValueOnce([{ id: 's2', assetId: 'b1', sharedWith: person('alex', 'Alex'), createdAt: '' }]);
+      let finishAdd!: (response: Awaited<ReturnType<typeof sdkMock.shareItems>>) => void;
+      sdkMock.shareItems.mockImplementationOnce(() => new Promise((resolve) => (finishAdd = resolve)));
+      sdkMock.unshareItems.mockResolvedValue({ shares: [], added: 0, removed: 1, link: null });
+      const view = render(ShareSheet, { open: true, assetIds: ['a1'] });
+
+      const jamie = await screen.findByRole('button', { name: 'Jamie' });
+      const sam = screen.getByRole('button', { name: 'Sam' });
+      await fireEvent.click(jamie);
+      await fireEvent.click(sam);
+      await fireEvent.click(screen.getByRole('button', { name: 'Share with Jamie' }));
+      await waitFor(() => expect(sdkMock.shareItems).toHaveBeenCalledTimes(1));
+      expect(jamie).toBeDisabled();
+
+      await view.rerender({ open: true, assetIds: ['b1'] });
+      const alex = await screen.findByRole('button', { name: 'Alex' });
+      await waitFor(() => expect(alex).toHaveAttribute('aria-pressed', 'true'));
+      finishAdd({ shares: [], added: 1, removed: 0, link: null });
+
+      await waitFor(() => expect(sdkMock.unshareItems).toHaveBeenCalledTimes(1));
+      expect(sdkMock.unshareItems).toHaveBeenCalledWith({
+        itemShareChangeDto: { assetIds: ['a1'], userIds: ['sam'] },
+      });
+      expect(screen.getByRole('dialog', { name: 'Share item' })).toBeInTheDocument();
+      expect(alex).toHaveAttribute('aria-pressed', 'true');
+      await waitFor(() => expect(alex).toBeEnabled());
+
+      await fireEvent.click(alex);
+      await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_sharing.save_sharing }));
+      await waitFor(() => expect(sdkMock.unshareItems).toHaveBeenCalledTimes(2));
+      expect(sdkMock.unshareItems).toHaveBeenLastCalledWith({
+        itemShareChangeDto: { assetIds: ['b1'], userIds: ['alex'] },
+      });
+      expect(sdkMock.shareItems).toHaveBeenCalledTimes(1);
     });
 
     it('clears a partial recipient across the selection', async () => {
