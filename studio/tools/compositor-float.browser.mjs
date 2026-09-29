@@ -47,13 +47,14 @@ try {
         maskView: mask.createView(),
       };
       const videoCanvas = new OffscreenCanvas(4, 1);
-      videoCanvas.getContext('2d').fillRect(0, 0, 4, 1);
+      // Opaque black on three pixels; retain a transparent pixel for alpha-zero coverage.
+      videoCanvas.getContext('2d').fillRect(0, 0, 3, 1);
       frame = new VideoFrame(videoCanvas, { timestamp: 0 });
       const layers = [
         layer,
         { ...layer, params: { ...layer.params, hasMask: true } },
         {
-          params: { ...layer.params, opacity: 0 },
+          params: { ...layer.params, opacity: 0.25 },
           externalTexture: device.importExternalTexture({ source: frame }),
           maskView: mask.createView(),
         },
@@ -112,7 +113,26 @@ try {
     }
   });
   assert.equal(result.format, 'rgba16float');
-  const expected = [-0.5, 2, 0.333251953125, 0.625, 2, 4, -1, 1, 0.25, 0.5, 0.75, 1, 0, 0, 0, 0];
+  // Black video at 25% opacity must contribute: masked alpha 5/8 becomes 23/32,
+  // and its straight RGB is attenuated by (5/8 * 3/4) / (23/32) = 15/23.
+  const expected = [
+    (-0.5 * 15) / 23,
+    (2 * 15) / 23,
+    (0.333251953125 * 15) / 23,
+    23 / 32,
+    1.5,
+    3,
+    -0.75,
+    1,
+    0.1875,
+    0.375,
+    0.5625,
+    1,
+    0,
+    0,
+    0,
+    0,
+  ];
   for (let i = 0; i < expected.length; i++) {
     assert.ok(
       Math.abs(result.pixels[i] - expected[i]) < 0.001,
