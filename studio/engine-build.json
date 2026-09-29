@@ -79,7 +79,12 @@
       "path": "patches/0015-transition-float-alpha.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "08216ade8ccf1a918793eac25799f0a982e758d52468ca4546cb015b9f5b8a3a"
+    },
+    {
+      "path": "patches/0016-nested-float-transport.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "0eec1a7150ce83e7b1ea116f8572504abf933926da0c29913bf4a54a2819eb09"
     }
   ],
-  "sourceSha256": "2cf4eea7a863587e10643078be8b9666a27012075d8d0aecf52641399e46ef2a"
+  "sourceSha256": "d144c0e26502bbf091352a0277ebd8d833105df77c39c60254895b5fde23e4a2"
 }
