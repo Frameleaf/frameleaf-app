@@ -9885,6 +9885,29 @@ export type StudioExportCreateResponseDto = {
     operation: MediaOperationDto;
     version: StudioExportVersionDto;
 };
+export type StudioProjectImportDto = {
+    /** SHA-256 of the bytes, hex */
+    checksum: string;
+    /** Content type read from the bytes, not the name */
+    contentType: string;
+    /** When it was uploaded */
+    createdAt: string;
+    /** External subresources an SVG or Lottie graphic names; a graphic with any cannot be rendered */
+    externalReferences: number | null;
+    /** The name the file was uploaded with */
+    fileName: string;
+    /** Import id; clips reference it as `importId` */
+    id: string;
+    kind: StudioProjectImportKind;
+    /** Size in bytes */
+    sizeBytes: number;
+};
+export type StudioProjectImportCreateDto = {
+    /** The file to import */
+    file: Blob;
+    /** The media id the editor gave this file; retrying the same file with it is idempotent */
+    id: string;
+};
 export type StudioProjectLeaseRequestDto = {
     /** Client-chosen identifier; letters, digits, `_ . : -`, up to 128 characters */
     clientId: string;
@@ -19814,6 +19837,49 @@ export function createStudioExport({ id, studioExportCreateDto }: {
     })));
 }
 /**
+ * List the files imported into a Studio project
+ */
+export function getStudioProjectImports({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioProjectImportDto[];
+    }>(`/studio/projects/${encodeURIComponent(id)}/imports`, {
+        ...opts
+    }));
+}
+/**
+ * Import a file into a Studio project
+ */
+export function importStudioProjectFile({ id, studioProjectImportCreateDto }: {
+    id: string;
+    studioProjectImportCreateDto: StudioProjectImportCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: StudioProjectImportDto;
+    }>(`/studio/projects/${encodeURIComponent(id)}/imports`, oazapfts.multipart({
+        ...opts,
+        method: "POST",
+        body: studioProjectImportCreateDto
+    })));
+}
+/**
+ * Read a file imported into a Studio project
+ */
+export function getStudioProjectImportFile({ id, importId }: {
+    id: string;
+    importId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/studio/projects/${encodeURIComponent(id)}/imports/${encodeURIComponent(importId)}/file`, {
+        ...opts
+    }));
+}
+/**
  * Acquire or renew the write lease
  */
 export function acquireStudioProjectLease({ id, studioProjectLeaseRequestDto }: {
@@ -23494,6 +23560,12 @@ export enum StudioProjectSort {
 export enum StudioProjectAccess {
     Owner = "owner",
     Reviewer = "reviewer"
+}
+export enum StudioProjectImportKind {
+    Audio = "audio",
+    Image = "image",
+    Video = "video",
+    Vector = "vector"
 }
 export enum Id {
     JobEnqueueReverseConform = "job.enqueueReverseConform"

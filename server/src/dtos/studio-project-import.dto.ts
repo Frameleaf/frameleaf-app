@@ -27,7 +27,10 @@ export class StudioProjectImportCreateDto extends createZodDto(StudioProjectImpo
 const StudioProjectImportSchema = z
   .object({
     id: z.uuid().describe('Import id; clips reference it as `importId`'),
-    kind: z.enum(['audio', 'image', 'video', 'vector']).describe('What the file is, read from its bytes'),
+    kind: z
+      .enum(['audio', 'image', 'video', 'vector'])
+      .describe('What the file is, read from its bytes')
+      .meta({ id: 'StudioProjectImportKind' }),
     contentType: z.string().describe('Content type read from the bytes, not the name'),
     fileName: z.string().describe('The name the file was uploaded with'),
     sizeBytes: z.int().min(1).describe('Size in bytes'),

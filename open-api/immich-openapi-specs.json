@@ -35360,6 +35360,199 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/studio/projects/{id}/imports": {
+      "get": {
+        "description": "Every file kept with one of your projects, with its type, size and checksum.",
+        "operationId": "getStudioProjectImports",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/StudioProjectImportDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List the files imported into a Studio project",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      },
+      "post": {
+        "description": "Keeps a recording, sound, image, short video, SVG or Lottie file with the project rather than the library. The type is read from the bytes; an SVG with scripts is refused and external subresources of a graphic are counted. The same id and file again answers the stored import.",
+        "operationId": "importStudioProjectFile",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/StudioProjectImportCreateDto"
+              }
+            }
+          },
+          "description": "A file to import into the project",
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioProjectImportDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Import a file into a Studio project",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/studio/projects/{id}/imports/{importId}/file": {
+      "get": {
+        "description": "The bytes of a file kept with one of your projects, for the editor to play or show.",
+        "operationId": "getStudioProjectImportFile",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Project id",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "importId",
+            "required": true,
+            "in": "path",
+            "description": "Import id",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Read a file imported into a Studio project",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
     "/studio/projects/{id}/lease": {
       "post": {
         "description": "One editor instance writes at a time. The holder renews with the same call; a free or lapsed lease is taken; a live lease held elsewhere is refused with `409` unless `takeover` is set explicitly.",
@@ -82211,6 +82404,90 @@
           "total"
         ],
         "type": "object"
+      },
+      "StudioProjectImportCreateDto": {
+        "properties": {
+          "file": {
+            "description": "The file to import",
+            "format": "binary",
+            "type": "string"
+          },
+          "id": {
+            "description": "The media id the editor gave this file; retrying the same file with it is idempotent",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file",
+          "id"
+        ],
+        "type": "object"
+      },
+      "StudioProjectImportDto": {
+        "properties": {
+          "checksum": {
+            "description": "SHA-256 of the bytes, hex",
+            "type": "string"
+          },
+          "contentType": {
+            "description": "Content type read from the bytes, not the name",
+            "type": "string"
+          },
+          "createdAt": {
+            "description": "When it was uploaded",
+            "format": "date-time",
+            "type": "string"
+          },
+          "externalReferences": {
+            "description": "External subresources an SVG or Lottie graphic names; a graphic with any cannot be rendered",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "fileName": {
+            "description": "The name the file was uploaded with",
+            "type": "string"
+          },
+          "id": {
+            "description": "Import id; clips reference it as `importId`",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/StudioProjectImportKind"
+          },
+          "sizeBytes": {
+            "description": "Size in bytes",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "checksum",
+          "contentType",
+          "createdAt",
+          "externalReferences",
+          "fileName",
+          "id",
+          "kind",
+          "sizeBytes"
+        ],
+        "type": "object"
+      },
+      "StudioProjectImportKind": {
+        "description": "What the file is, read from its bytes",
+        "enum": [
+          "audio",
+          "image",
+          "video",
+          "vector"
+        ],
+        "type": "string"
       },
       "StudioProjectLeaseDto": {
         "properties": {
