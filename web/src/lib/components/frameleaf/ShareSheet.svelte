@@ -97,7 +97,7 @@
     loadFailed = false;
     try {
       const [users, shares, groups] = await Promise.all([
-        searchUsers(),
+        searchUsers().catch(() => []),
         getItemShares({ itemShareQueryDto: { assetIds } }),
         // Saved people are optional; their availability must never prevent revoking an existing share.
         getRecipientGroups().catch(() => []),
