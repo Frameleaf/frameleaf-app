@@ -194,6 +194,9 @@ test.describe('Video quick editor', () => {
       }
       await route.fulfill({ json: { assetId: clip.id, edits: route.request().postDataJSON().edits } });
     });
+    // `clip.mp4` is a PNG. Some Chromium builds parse it as a ~0.04 s clip and clamp every seek to
+    // that, others reject it; refuse playback so the editor always uses its still-preview transport.
+    await page.route(`**/api/assets/${clip.id}/video/playback**`, (route) => route.fulfill({ status: 404 }));
     await page.goto(`/photos/${clip.id}`);
     // E is the viewer's shortcut, so it only works once the viewer has loaded the item and its actions.
     await expect(
