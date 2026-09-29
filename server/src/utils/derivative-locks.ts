@@ -130,10 +130,11 @@ export const releaseDerivedResults = async (db: Kysely<DB>, assetIds: string[]):
       .where('motion.visibility', '=', AssetVisibility.Hidden)
       .execute();
     for (const { id } of motions) {
-      if (!visited.has(id)) {
-        visited.add(id);
-        frontier.push(id);
+      if (visited.has(id)) {
+        continue;
       }
+      visited.add(id);
+      frontier.push(id);
     }
 
     // Sources that are no longer locked stop counting as locked on every version that read them.
