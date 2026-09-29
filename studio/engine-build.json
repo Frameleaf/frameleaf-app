@@ -134,7 +134,12 @@
       "path": "patches/0026-chroma-hard-edge-precision.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "9348dfca4d6a22cdaed93ceb6bbed1423d804e3f4ab58a8ff976f4f99c1c71b5"
+    },
+    {
+      "path": "patches/0027-effect-frame-clock-and-animation.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "36f9b02ccb9cefcb51367ff1102146b9daef37c6f4daef6f9d360cc363f77951"
     }
   ],
-  "sourceSha256": "13dd86a8fe2b081aeb9a70bf323add48a8092915ae1e5966bc1115b25b455097"
+  "sourceSha256": "338a8207c1afe2184d8598a99b8d17e6c5e344475522b0b4349053715870a6d6"
 }
