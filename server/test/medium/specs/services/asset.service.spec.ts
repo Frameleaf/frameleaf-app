@@ -2,6 +2,7 @@ import { Kysely, sql } from 'kysely';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { AssetEditAction } from 'src/dtos/editing.dto.js';
 import {
+  AlbumUserRole,
   AssetFileType,
   AssetMetadataKey,
   AssetPathType,
@@ -11,6 +12,7 @@ import {
   JobStatus,
   PhysicalFileType,
   SharedLinkType,
+  UserMetadataKey,
 } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
@@ -71,6 +73,35 @@ beforeAll(async () => {
 
 describe(AssetService.name, () => {
   describe('get', () => {
+    it("shows the owner's tag names to viewers of a shared item, Locked-rule tags included (owner decision 2026-09-29, FL-137)", async () => {
+      // Owner decision (Q2 option A): album members, partners and item-share recipients see the owner's
+      // tags on an item shared with them, including a tag the owner uses in a Locked rule. Changing that
+      // is an owner decision, not a refactor.
+      const { sut, ctx } = setup();
+      const { user: owner } = await ctx.newUser();
+      const { user: member } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ ownerId: owner.id });
+      const { tag: privateTag } = await ctx.newTag({ userId: owner.id, value: 'Medical' });
+      const { tag: plainTag } = await ctx.newTag({ userId: owner.id, value: 'Holiday' });
+      await ctx.newTagAsset({ tagIds: [privateTag.id, plainTag.id], assetIds: [asset.id] });
+      await ctx.database
+        .insertInto('user_metadata')
+        .values({
+          userId: owner.id,
+          key: UserMetadataKey.Preferences,
+          value: { privacy: { suppression: { tagIds: [privateTag.id], scope: 'visible' } } },
+        } as never)
+        .execute();
+      const { album } = await ctx.newAlbum({ ownerId: owner.id }, [asset.id]);
+      await ctx.newAlbumUser({ albumId: album.id, userId: member.id, role: AlbumUserRole.Viewer });
+
+      const response = await sut.get(factory.auth({ user: member }), asset.id);
+      expect(('tags' in response ? response.tags : [])?.map(({ value }) => value).toSorted()).toEqual([
+        'Holiday',
+        'Medical',
+      ]);
+    });
+
     it('should not return an asset of another user', async () => {
       const { sut, ctx } = setup();
       const { user } = await ctx.newUser();

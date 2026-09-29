@@ -100,6 +100,10 @@ const LOCKED = new Set<Item>(['lockedMarked', 'lockedDetected', 'lockedFolder', 
  * shares"): a Locked rule withdraws the item from per-item shares (FL-198) and Studio publication
  * (FL-106) only. What the owner explicitly shared (a shared album or space, a partner share, a
  * public link) keeps showing it. `docs/docs/features/locked.md` states the same rule.
+ *
+ * Also decided that day and asserted elsewhere: partner sync keeps Locked items, marked locked with
+ * their details blanked (sync-partner-asset / sync-partner-stack specs), and viewers of a shared item
+ * see the owner's tag names, Locked-rule tags included (asset.service spec).
  */
 const OWNER_RULE_REACHES: Record<Actor, boolean> = {
   owner: false,

@@ -114,6 +114,44 @@ describe(SyncRequestType.PartnerAssetsV2, () => {
     await ctx.assertSyncIsComplete(auth, [SyncRequestType.PartnerAssetsV2]);
   });
 
+  it('keeps a Locked item in the partner stream with exactly these details (owner decision 2026-09-29, FL-137)', async () => {
+    // Owner decision (Q1 option A): a partner's device still receives a Locked item, marked locked, so a
+    // device that already holds it hides it. What describes the picture is blanked; the rest is kept on
+    // purpose. Changing either list is an owner decision, not a refactor.
+    const { auth, ctx } = await setup();
+    const { user: owner } = await ctx.newUser();
+    const checksum = Buffer.from('3335vHcVkZzNp3Q9G+FEA0nu6zUbGb4Tj4UOXkN0wRA=', 'base64');
+    const { asset: motion } = await ctx.newAsset({ ownerId: owner.id, visibility: AssetVisibility.Hidden });
+    const { asset } = await ctx.newAsset({
+      ownerId: owner.id,
+      originalFileName: 'medical.jpg',
+      checksum,
+      thumbhash: Buffer.from('4445vHcVkZzNp3Q9G+FEA0nu6zUbGb4Tj4UOXkN0wRA=', 'base64'),
+      livePhotoVideoId: motion.id,
+      visibility: AssetVisibility.Locked,
+    });
+    await ctx.newPartner({ sharedById: owner.id, sharedWithId: auth.user.id });
+
+    const response = await ctx.syncStream(auth, [SyncRequestType.PartnerAssetsV2]);
+    const locked = response.find(({ data }) => (data as { id?: string }).id === asset.id)!.data as Record<
+      string,
+      unknown
+    >;
+    // blanked
+    expect(locked).toMatchObject({ originalFileName: '', thumbhash: null, livePhotoVideoId: null });
+    // kept
+    expect(locked).toMatchObject({
+      id: asset.id,
+      ownerId: owner.id,
+      visibility: AssetVisibility.Locked,
+      checksum: checksum.toString('base64'),
+      type: asset.type,
+    });
+    expect(locked.fileCreatedAt).toBeTruthy();
+    expect(locked.localDateTime).toBeTruthy();
+    expect(locked).not.toHaveProperty('isLocked');
+  });
+
   it('should detect and sync a deleted partner asset', async () => {
     const { auth, ctx } = await setup();
     const assetRepo = ctx.get(AssetRepository);

@@ -18,7 +18,7 @@ Stacks and live photos lock and unlock as a whole: locking one photo of a stack 
 
 - **You, while your session is locked**: nothing. The item is left out of the timeline, albums, search, the map, memories, people, pets and downloads. Your own devices still sync it, marked locked.
 - **You, after unlocking with your PIN**: **Locked** lists every locked item. Everywhere else, every locked item (marked, detected or moved from the old Locked folder) and every item your Locked rules hide behaves exactly like any other item ("Revealed for this session", see below). Albums show their locked members.
-- **Partners, album and space members**: never, whatever their own session. A partner's device that already had the item is told it is now locked and hides it; it keeps only the item's id and dates, never its file name, thumbnail, location or other details.
+- **Partners, album and space members**: never, whatever their own session. A partner's device is still sent the item, marked locked, so a device that already had it hides it (see [Partner devices](#partner-devices-and-tag-names)).
 - **Shared links**: never.
 - **Server jobs** (thumbnails, machine learning, backups, restorations): always. Background work is never skipped because an item is locked. A bulk change you queue without unlocking skips any item that was locked after you queued it.
 
@@ -27,6 +27,15 @@ Stacks and live photos lock and unlock as a whole: locking one photo of a stack 
 A Locked rule (the people, pets and tags you chose in the Locked rules of your security settings) hides matching items from your own sessions until you unlock. It also stops you from sharing them item by item: a matching item cannot be shared with a person, and a person you already shared it with stops seeing it, and cannot preview or export it in their Studio projects, for as long as the rule applies.
 
 A Locked rule does not take back what you shared on purpose (owner decision, September 29, 2026). An item you put in a shared album or space, share with a partner, or include in a shared link stays visible there, even while it matches one of your Locked rules. To stop sharing such an item, remove it from the album or link, stop partner sharing, or lock the item itself: a locked item never reaches anybody else.
+
+### Partner devices and tag names
+
+Two more owner decisions (September 29, 2026) settle what others still learn about your items:
+
+- **Partner devices.** The sync your partners' apps use keeps a locked item in the stream, marked locked, so a device that already holds it hides it instead of keeping a stale copy. Its file name, thumbnail preview, location and other photo details, and its live-photo link are blanked. The item's id, checksum, capture date and time, media type, duration, size in pixels and stack are still sent, also to a device that never had it, and a locked stack still appears as a stack. The web app shows none of it.
+- **Tag names.** Anyone you share an item with (album or space members, partners, people you shared the item with, and shared links that show metadata) sees the tags you put on it, including a tag you use in a Locked rule. People's names work differently: everyone sees only the names they gave.
+
+Clearing cached photos on sign-in and sign-out relies on the browser's `Clear-Site-Data` header, which browsers honour only over HTTPS (or `localhost`). On a plain-HTTP connection a shared browser can keep showing the previous person's cached thumbnails until they expire.
 
 ## Revealed for this session
 

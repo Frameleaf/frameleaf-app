@@ -1,5 +1,5 @@
 import { Kysely } from 'kysely';
-import { SyncEntityType, SyncRequestType } from 'src/enum.js';
+import { AssetVisibility, SyncEntityType, SyncRequestType } from 'src/enum.js';
 import { PartnerRepository } from 'src/repositories/partner.repository.js';
 import { StackRepository } from 'src/repositories/stack.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
@@ -46,6 +46,34 @@ describe(SyncRequestType.PartnerStacksV1, () => {
 
     await ctx.syncAckAll(auth, response);
     await ctx.assertSyncIsComplete(auth, [SyncRequestType.PartnerStacksV1]);
+  });
+
+  it('keeps a Locked stack in the partner stream (owner decision 2026-09-29, FL-137)', async () => {
+    // Owner decision (Q1 option A): Locked items stay in partner sync, marked locked, and a stack is
+    // locked as a whole; its row (ids and dates only) is kept so the partner's device keeps the stack
+    // its locked assets name in `stackId`.
+    const { auth, user, ctx } = await setup();
+    const { user: user2 } = await ctx.newUser();
+    await ctx.newPartner({ sharedById: user2.id, sharedWithId: user.id });
+    const { asset: first } = await ctx.newAsset({ ownerId: user2.id, visibility: AssetVisibility.Locked });
+    const { asset: second } = await ctx.newAsset({ ownerId: user2.id, visibility: AssetVisibility.Locked });
+    const { stack } = await ctx.newStack({ ownerId: user2.id }, [first.id, second.id]);
+
+    const response = await ctx.syncStream(auth, [SyncRequestType.PartnerStacksV1]);
+    expect(response).toEqual([
+      {
+        ack: expect.any(String),
+        data: {
+          id: stack.id,
+          ownerId: stack.ownerId,
+          createdAt: (stack.createdAt as Date).toISOString(),
+          updatedAt: (stack.updatedAt as Date).toISOString(),
+          primaryAssetId: stack.primaryAssetId,
+        },
+        type: SyncEntityType.PartnerStackV1,
+      },
+      expect.objectContaining({ type: SyncEntityType.SyncCompleteV1 }),
+    ]);
   });
 
   it('should detect and sync a deleted partner stack', async () => {
