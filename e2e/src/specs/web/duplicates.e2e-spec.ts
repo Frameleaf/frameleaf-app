@@ -1,4 +1,5 @@
 import {
+  AdminConfigDto,
   AssetMediaResponseDto,
   AssetTypeEnum,
   DuplicateDecisionKind,
@@ -6,13 +7,54 @@ import {
   getDuplicateReview,
   LoginResponseDto,
   updateAssets,
+  updateConfig,
+  VideoCodec,
 } from '@immich/sdk';
-import { expect, test } from '@playwright/test';
+import { expect, Page, test } from '@playwright/test';
 import crypto from 'node:crypto';
 import { readFile } from 'node:fs/promises';
-import { asBearerAuth, utils } from 'src/utils.js';
+import { app, asBearerAuth, baseUrl, utils } from 'src/utils.js';
 
 const byId = (a: string[], b: string[]) => a[0].localeCompare(b[0]);
+
+/**
+ * FL-144: Playwright's Linux arm64 Chromium has no H.264 decoder (the server's default transcode
+ * target), so a plain H.264 upload never plays there even though it plays fine on amd64/macOS.
+ * The server negotiates no per-client codec (`playbackVideo()` just serves whatever file already
+ * exists), so scope a VP9 target/accepted-codec override to this one test only, restore the
+ * previous config afterwards (the web project runs workers:1, so this is safe), and assert the
+ * served file is genuinely the VP9 transcode rather than trusting playback success alone.
+ */
+const withVp9TranscodeTarget = async (accessToken: string, run: () => Promise<void>) => {
+  const previous = await utils.getSystemConfig(accessToken);
+  const next: AdminConfigDto = {
+    ...previous,
+    ffmpeg: { ...previous.ffmpeg, targetVideoCodec: VideoCodec.Vp9, acceptedVideoCodecs: [VideoCodec.Vp9] },
+  };
+  await updateConfig({ adminConfigDto: next }, { headers: asBearerAuth(accessToken) });
+  const applied = await utils.getSystemConfig(accessToken);
+  expect(applied.ffmpeg.targetVideoCodec).toBe(VideoCodec.Vp9);
+  try {
+    await run();
+  } finally {
+    await updateConfig({ adminConfigDto: previous }, { headers: asBearerAuth(accessToken) });
+  }
+};
+
+/** Fetches the bytes the browser would actually be served and confirms they carry the VP9 sample
+ *  entry (`vp09`), not an H.264 one (`avc1`/`avc3`) — proof the transcode config took effect,
+ *  independent of whether this host's own browser can decode it. */
+const expectVp9Playback = async (page: Page, assetId: string) => {
+  const cookies = await page.context().cookies(baseUrl);
+  const response = await page.request.get(`${app}/assets/${assetId}/video/playback`, {
+    headers: { Cookie: cookies.map((c) => `${c.name}=${c.value}`).join('; ') },
+  });
+  expect(response.ok()).toBe(true);
+  const body = await response.body();
+  expect(body.includes(Buffer.from('vp09'))).toBe(true);
+  expect(body.includes(Buffer.from('avc1'))).toBe(false);
+  expect(body.includes(Buffer.from('avc3'))).toBe(false);
+};
 
 test.describe('Duplicate review', () => {
   let admin: LoginResponseDto;
@@ -176,71 +218,87 @@ test.describe('Duplicate review', () => {
   });
 
   test('plays two real duplicate videos side by side while keeping keyboard focus', async ({ page }) => {
-    test.setTimeout(120_000);
-    const [kayak, forest] = await Promise.all([
-      utils.createAsset(admin.accessToken, {
-        assetData: {
-          filename: 'duplicate-kayak.mp4',
-          bytes: await readFile(
-            new URL('../../../../design/frameleaf/template/public/media/kayak-demo.mp4', import.meta.url),
-          ),
-        },
-      }),
-      utils.createAsset(admin.accessToken, {
-        assetData: {
-          filename: 'duplicate-forest.mp4',
-          bytes: await readFile(
-            new URL('../../../../design/frameleaf/template/public/media/forest-demo.mp4', import.meta.url),
-          ),
-        },
-      }),
-    ]);
-    await utils.waitForQueueFinish(admin.accessToken, 'metadataExtraction', 60_000);
-    const duplicateId = crypto.randomUUID();
-    await updateAssets(
-      { assetBulkUpdateDto: { ids: [kayak.id, forest.id], duplicateId } },
-      { headers: asBearerAuth(admin.accessToken) },
-    );
-    const groups = await reviewGroups();
-    const group = groups.find((candidate) => candidate.duplicateId === duplicateId);
-    expect(group?.assets.map((asset) => [asset.id, asset.type]).toSorted(byId)).toEqual(
-      [
-        [kayak.id, AssetTypeEnum.Video],
-        [forest.id, AssetTypeEnum.Video],
-      ].toSorted(byId),
-    );
+    test.setTimeout(300_000);
+    await withVp9TranscodeTarget(admin.accessToken, async () => {
+      const [kayak, forest] = await Promise.all([
+        utils.createAsset(admin.accessToken, {
+          assetData: {
+            filename: 'duplicate-kayak.mp4',
+            bytes: await readFile(
+              new URL('../../../../design/frameleaf/template/public/media/kayak-demo.mp4', import.meta.url),
+            ),
+          },
+        }),
+        utils.createAsset(admin.accessToken, {
+          assetData: {
+            filename: 'duplicate-forest.mp4',
+            bytes: await readFile(
+              new URL('../../../../design/frameleaf/template/public/media/forest-demo.mp4', import.meta.url),
+            ),
+          },
+        }),
+      ]);
+      await utils.waitForQueueFinish(admin.accessToken, 'metadataExtraction', 60_000);
+      // AssetEncodeVideo is only queued once AssetGenerateThumbnails completes (job.service.ts
+      // JobName.AssetGenerateThumbnails handler), not directly off metadataExtraction, so wait for
+      // that first or the videoConversion queue can read as empty before the job even exists.
+      await utils.waitForQueueFinish(admin.accessToken, 'thumbnailGeneration', 60_000);
+      // The H.264 originals are not an accepted codec under the VP9 override above, so a
+      // transcode is required; wait for it to finish before the browser ever requests playback.
+      // VP9 software encoding (libvpx) is considerably slower than the default H.264 target,
+      // and here there are TWO clips to transcode, so give this more room than usual.
+      await utils.waitForQueueFinish(admin.accessToken, 'videoConversion', 200_000);
+      await expectVp9Playback(page, kayak.id);
+      await expectVp9Playback(page, forest.id);
 
-    await page.goto('/utilities/duplicates');
-    const review = page.getByTestId('frameleaf-duplicate-review');
-    await review.locator('input[type="search"]').fill(duplicateId);
-    const videos = review.getByTestId('frameleaf-duplicate-compare').locator('video');
-    await expect(videos).toHaveCount(2);
-    await expect
-      .poll(
-        () =>
-          videos.evaluateAll((elements) => elements.every((element) => (element as HTMLVideoElement).readyState >= 1)),
-        { timeout: 15_000 },
-      )
-      .toBe(true);
+      const duplicateId = crypto.randomUUID();
+      await updateAssets(
+        { assetBulkUpdateDto: { ids: [kayak.id, forest.id], duplicateId } },
+        { headers: asBearerAuth(admin.accessToken) },
+      );
+      const groups = await reviewGroups();
+      const group = groups.find((candidate) => candidate.duplicateId === duplicateId);
+      expect(group?.assets.map((asset) => [asset.id, asset.type]).toSorted(byId)).toEqual(
+        [
+          [kayak.id, AssetTypeEnum.Video],
+          [forest.id, AssetTypeEnum.Video],
+        ].toSorted(byId),
+      );
 
-    // Accessible name is the button's actual copy (frameleaf_duplicates_play_together in i18n),
-    // not the paraphrase this spec previously used — the mismatch made the locator never resolve.
-    const playTogether = review.getByRole('button', { name: 'Play both from the start' });
-    await playTogether.focus();
-    await page.keyboard.press('Enter');
-    await expect
-      .poll(
-        () =>
-          videos.evaluateAll((elements) =>
-            elements.every((element) => {
-              const video = element as HTMLVideoElement;
-              return !video.paused && video.currentTime > 0.25;
-            }),
-          ),
-        { timeout: 15_000 },
-      )
-      .toBe(true);
-    await expect(playTogether).toBeFocused();
+      await page.goto('/utilities/duplicates');
+      const review = page.getByTestId('frameleaf-duplicate-review');
+      await review.locator('input[type="search"]').fill(duplicateId);
+      const videos = review.getByTestId('frameleaf-duplicate-compare').locator('video');
+      await expect(videos).toHaveCount(2);
+      await expect
+        .poll(
+          () =>
+            videos.evaluateAll((elements) =>
+              elements.every((element) => (element as HTMLVideoElement).readyState >= 1),
+            ),
+          { timeout: 15_000 },
+        )
+        .toBe(true);
+
+      // Accessible name is the button's actual copy (frameleaf_duplicates_play_together in i18n),
+      // not the paraphrase this spec previously used — the mismatch made the locator never resolve.
+      const playTogether = review.getByRole('button', { name: 'Play both from the start' });
+      await playTogether.focus();
+      await page.keyboard.press('Enter');
+      await expect
+        .poll(
+          () =>
+            videos.evaluateAll((elements) =>
+              elements.every((element) => {
+                const video = element as HTMLVideoElement;
+                return !video.paused && video.currentTime > 0.25;
+              }),
+            ),
+          { timeout: 15_000 },
+        )
+        .toBe(true);
+      await expect(playTogether).toBeFocused();
+    });
   });
 
   test('keeps keyboard focus through a virtualized queue and decides the offscreen group', async ({ page }) => {
