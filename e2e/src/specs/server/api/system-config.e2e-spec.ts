@@ -105,6 +105,51 @@ describe('/system-config', () => {
       expect(status).toBe(400);
       expect(body).toEqual(errorDto.badRequest(expect.stringContaining('Invalid storage template')));
     });
+
+    it('should reject a stale settings revision without overwriting another administrator', async () => {
+      const secondAdmin = await utils.userSetup(admin.accessToken, {
+        email: 'settings-second-admin@example.com',
+        name: 'Second administrator',
+        password: 'password',
+        isAdmin: true,
+      });
+      const baseline = await request(app)
+        .get('/admin/config/revision')
+        .set('Authorization', `Bearer ${admin.accessToken}`);
+      expect(baseline.status).toBe(200);
+
+      const saved = await request(app)
+        .put('/admin/config/revision')
+        .set('Authorization', `Bearer ${secondAdmin.accessToken}`)
+        .send({
+          config: {
+            ...baseline.body.config,
+            trash: { ...baseline.body.config.trash, days: baseline.body.config.trash.days + 1 },
+          },
+          expectedRevision: baseline.body.revision,
+        });
+      expect(saved.status).toBe(200);
+      expect(saved.body.revision).not.toBe(baseline.body.revision);
+
+      const stale = await request(app)
+        .put('/admin/config/revision')
+        .set('Authorization', `Bearer ${admin.accessToken}`)
+        .send({
+          config: {
+            ...baseline.body.config,
+            trash: { ...baseline.body.config.trash, days: baseline.body.config.trash.days + 2 },
+          },
+          expectedRevision: baseline.body.revision,
+        });
+      expect(stale.status).toBe(409);
+
+      const current = await request(app)
+        .get('/admin/config/revision')
+        .set('Authorization', `Bearer ${admin.accessToken}`);
+      expect(current.status).toBe(200);
+      expect(current.body.revision).toBe(saved.body.revision);
+      expect(current.body.config.trash.days).toBe(saved.body.config.trash.days);
+    });
   });
 
   describe('/admin/config/credentials', () => {
