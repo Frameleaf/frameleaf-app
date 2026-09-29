@@ -2,6 +2,10 @@ import { get, isEqual, isPlainObject } from 'lodash-es';
 import { SystemConfig, mapAdminConfig } from 'src/dtos/config.dto.js';
 import { SERVER_MANAGED_CONFIG_PATHS } from 'src/utils/config.js';
 import { canonicalJson } from 'src/utils/object.js';
+import { SystemMetadataKey } from 'src/enum.js';
+import type { CryptoRepository } from 'src/repositories/crypto.repository.js';
+import type { LoggingRepository } from 'src/repositories/logging.repository.js';
+import type { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 
 /**
  * FL-66: the settings change history, the design template's "Change history" area of
@@ -37,6 +41,12 @@ export type ConfigHistoryChange = {
  */
 export type ConfigHistoryKind = 'settings' | 'credential' | 'review';
 
+/**
+ * FL-146 (FL-66, owner decision 2026-09-29): a change saved outside an administrator's settings save —
+ * by the server command line, or by a Frameleaf Cloud action — is listed too, labelled with its source.
+ */
+export type ConfigHistorySource = 'server-cli' | 'frameleaf-cloud';
+
 export type ConfigHistoryEntry = {
   id: string;
   createdAt: string;
@@ -46,6 +56,8 @@ export type ConfigHistoryEntry = {
   actorId: string | null;
   /** The administrator's name when the change was saved. */
   actorName: string | null;
+  /** Where a change that was not an administrator's settings save came from; absent for those saves. */
+  source?: ConfigHistorySource;
   changes: ConfigHistoryChange[];
   /** Changed settings left out because the entry reached its limit. */
   omittedChanges: number;
@@ -253,3 +265,46 @@ export const credentialHistoryTitle = (name: string, change: ConfigHistoryCreden
 
 /** "Reviewed: Recovery readiness" (`CommandCenter.jsx:2495`). */
 export const reviewHistoryTitle = (title: string) => `Reviewed: ${title}`;
+
+export type ConfigHistoryRecorder = {
+  systemMetadataRepository: Pick<SystemMetadataRepository, 'get' | 'set'>;
+  cryptoRepository: Pick<CryptoRepository, 'randomUUID'>;
+  logger: Pick<LoggingRepository, 'error'>;
+};
+
+/**
+ * FL-66: adds a saved change to the settings change history. Call it under the settings lock right
+ * after the write, so entries are appended one at a time in the order the saves landed. Recording never
+ * fails or undoes the save it records: if it fails, the save stands and the failure is logged.
+ */
+export const recordConfigHistory = async (
+  { systemMetadataRepository, cryptoRepository, logger }: ConfigHistoryRecorder,
+  oldConfig: SystemConfig,
+  newConfig: SystemConfig,
+  actor: { id: string; name: string } | undefined,
+  { kind, title, source }: { kind: ConfigHistoryKind; title?: string; source?: ConfigHistorySource },
+) => {
+  const changes = describeConfigChanges(oldConfig, newConfig);
+  if (changes.length === 0) {
+    return;
+  }
+
+  try {
+    const history = readConfigHistory(await systemMetadataRepository.get(SystemMetadataKey.SystemConfigHistory));
+    const entry = {
+      id: cryptoRepository.randomUUID(),
+      createdAt: new Date().toISOString(),
+      actorId: actor?.id ?? null,
+      actorName: actor?.name ?? null,
+      kind,
+      ...(title && { title }),
+      ...(source && { source }),
+    };
+    await systemMetadataRepository.set(
+      SystemMetadataKey.SystemConfigHistory,
+      appendConfigHistory(history, entry, changes),
+    );
+  } catch (error) {
+    logger.error(`Unable to record the settings change in the change history: ${error}`);
+  }
+};

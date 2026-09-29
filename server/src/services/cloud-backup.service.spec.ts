@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, NotFoundException } from '@nest
 import { createHash } from 'node:crypto';
 import { gunzipSync, gzipSync } from 'node:zlib';
 import type { CloudBackupEntry } from 'src/repositories/cloud-backup-index.repository.js';
+import type { ConfigHistory } from 'src/utils/config-history.js';
 import {
   DatabaseLock,
   JobStatus,
@@ -1127,12 +1128,23 @@ describe(CloudBackupService.name, () => {
     });
 
     it('turns cloud backup off and keeps the claim and the key', async () => {
+      // the write is stored, so the history sees what changed
+      mocks.forkSchema.persistConfig.mockImplementation((partial) => {
+        metadata[SystemMetadataKey.SystemConfig] = partial;
+        return Promise.resolve();
+      });
       await sut.turnOff(authStub.admin);
 
       expect(mocks.forkSchema.persistConfig.mock.calls.at(-1)![1]).toMatchObject({
         frameleafCloud: { cloudBackup: { enabled: false } },
       });
       expect(metadata[SystemMetadataKey.FrameleafCloudBackup]).toMatchObject({ bucketRef: ref });
+      // FL-146 (FL-66): listed in the settings history as a Frameleaf Cloud change by this administrator
+      expect((metadata[SystemMetadataKey.SystemConfigHistory] as ConfigHistory).entries[0]).toMatchObject({
+        source: 'frameleaf-cloud',
+        actorId: authStub.admin.user.id,
+        changes: expect.arrayContaining([expect.objectContaining({ path: 'frameleafCloud.cloudBackup.enabled' })]),
+      });
     });
   });
 

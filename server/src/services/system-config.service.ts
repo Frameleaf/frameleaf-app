@@ -615,34 +615,13 @@ export class SystemConfigService extends BaseService {
    * Recording never fails or undoes the save it records: if it fails, the save stands and the
    * failure is logged.
    */
-  private async recordConfigHistory(
+  private recordConfigHistory(
     oldConfig: SystemConfig,
     newConfig: SystemConfig,
     auth: AuthDto | undefined,
-    { kind, title }: { kind: ConfigHistoryKind; title?: string },
+    options: { kind: ConfigHistoryKind; title?: string },
   ) {
-    const changes = describeConfigChanges(oldConfig, newConfig);
-    if (changes.length === 0) {
-      return;
-    }
-
-    try {
-      const history = readConfigHistory(await this.systemMetadataRepository.get(SystemMetadataKey.SystemConfigHistory));
-      const entry = {
-        id: this.cryptoRepository.randomUUID(),
-        createdAt: new Date().toISOString(),
-        actorId: auth?.user.id ?? null,
-        actorName: auth?.user.name ?? null,
-        kind,
-        ...(title && { title }),
-      };
-      await this.systemMetadataRepository.set(
-        SystemMetadataKey.SystemConfigHistory,
-        appendConfigHistory(history, entry, changes),
-      );
-    } catch (error) {
-      this.logger.error(`Unable to record the settings change in the change history: ${error}`);
-    }
+    return this.recordConfigChange(oldConfig, newConfig, auth, options);
   }
 
   /**

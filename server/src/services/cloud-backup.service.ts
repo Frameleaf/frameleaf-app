@@ -142,6 +142,7 @@ import {
 } from 'src/utils/cloud-backup.js';
 import { compareCodeUnits } from 'src/utils/compare.js';
 import { getConfig, readConfig, updateConfig } from 'src/utils/config.js';
+import { recordConfigHistory } from 'src/utils/config-history.js';
 import { CLOUD_BACKUP_DUMP_PREFIX, isCloudBackupDumpName } from 'src/utils/database-backups.js';
 import { BackupGrantResponse, backupGrantProblem, managedBackupRefusal } from 'src/utils/frameleaf-cloud-backup.js';
 import {
@@ -587,7 +588,13 @@ export class CloudBackupService {
           // escrow belongs to one server-generated key; a new setup starts without it
           escrow: false,
         };
-        return { oldConfig: current, newConfig: await updateConfig(this.configRepos(), next) };
+        const saved = await updateConfig(this.configRepos(), next);
+        // FL-146 (FL-66): listed in the settings history as a Frameleaf Cloud change, under the same lock
+        await recordConfigHistory(this.historyRecorder(), current, saved, auth.user, {
+          kind: 'settings',
+          source: 'frameleaf-cloud',
+        });
+        return { oldConfig: current, newConfig: saved };
       },
     );
     await this.eventRepository.emit('ConfigUpdate', { oldConfig, newConfig });
@@ -726,7 +733,13 @@ export class CloudBackupService {
         const current = await readConfig(this.configRepos());
         const next = structuredClone(current);
         next.frameleafCloud.cloudBackup.enabled = false;
-        return { oldConfig: current, newConfig: await updateConfig(this.configRepos(), next) };
+        const saved = await updateConfig(this.configRepos(), next);
+        // FL-146 (FL-66): listed in the settings history as a Frameleaf Cloud change, under the same lock
+        await recordConfigHistory(this.historyRecorder(), current, saved, auth.user, {
+          kind: 'settings',
+          source: 'frameleaf-cloud',
+        });
+        return { oldConfig: current, newConfig: saved };
       },
     );
     await this.eventRepository.emit('ConfigUpdate', { oldConfig, newConfig });
@@ -2889,7 +2902,13 @@ export class CloudBackupService {
         const current = await readConfig(this.configRepos());
         const next = structuredClone(current);
         next.frameleafCloud.cloudBackup.escrow = escrow;
-        return { oldConfig: current, newConfig: await updateConfig(this.configRepos(), next) };
+        const saved = await updateConfig(this.configRepos(), next);
+        // FL-146 (FL-66): listed in the settings history as a Frameleaf Cloud change, under the same lock
+        await recordConfigHistory(this.historyRecorder(), current, saved, undefined, {
+          kind: 'settings',
+          source: 'frameleaf-cloud',
+        });
+        return { oldConfig: current, newConfig: saved };
       },
     );
     await this.eventRepository.emit('ConfigUpdate', { oldConfig, newConfig });
@@ -3139,6 +3158,14 @@ export class CloudBackupService {
       systemMetadataRepository: this.systemMetadataRepository,
       instanceIdentityRepository: this.instanceIdentityRepository,
       frameleafCloudRepository: this.frameleafCloudRepository,
+    };
+  }
+
+  private historyRecorder() {
+    return {
+      systemMetadataRepository: this.systemMetadataRepository,
+      cryptoRepository: this.cryptoRepository,
+      logger: this.logger,
     };
   }
 

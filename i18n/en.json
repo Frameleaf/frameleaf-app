@@ -8208,6 +8208,8 @@
   "frameleaf_settings_history_omitted": "{count, plural, one {# more change is not shown} other {# more changes are not shown}}",
   "frameleaf_settings_history_preferences_title": "{count, plural, one {# preference changed} other {# preferences changed}}",
   "frameleaf_settings_history_protected": "Changed · Locked content is not shown",
+  "frameleaf_settings_history_source_frameleaf_cloud": "Frameleaf Cloud",
+  "frameleaf_settings_history_source_server_cli": "Server command line",
   "frameleaf_settings_history_title": "{count, plural, one {# setting changed} other {# settings changed}}",
   "frameleaf_settings_history_unknown_actor": "An administrator",
   "frameleaf_settings_history_unknown_device": "a device without a session",

@@ -80,15 +80,21 @@ export class CliService extends BaseService {
   }
 
   async disablePasswordLogin(): Promise<void> {
-    await this.updateConfigExclusively((config) => {
-      config.passwordLogin.enabled = false;
-    });
+    await this.updateConfigExclusively(
+      (config) => {
+        config.passwordLogin.enabled = false;
+      },
+      { source: 'server-cli' },
+    );
   }
 
   async enablePasswordLogin(): Promise<void> {
-    await this.updateConfigExclusively((config) => {
-      config.passwordLogin.enabled = true;
-    });
+    await this.updateConfigExclusively(
+      (config) => {
+        config.passwordLogin.enabled = true;
+      },
+      { source: 'server-cli' },
+    );
   }
 
   async disableMaintenanceMode(): Promise<{ alreadyDisabled: boolean }> {
@@ -169,15 +175,21 @@ export class CliService extends BaseService {
   }
 
   async disableOAuthLogin(): Promise<void> {
-    await this.updateConfigExclusively((config) => {
-      config.oauth.enabled = false;
-    });
+    await this.updateConfigExclusively(
+      (config) => {
+        config.oauth.enabled = false;
+      },
+      { source: 'server-cli' },
+    );
   }
 
   async enableOAuthLogin(): Promise<void> {
-    await this.updateConfigExclusively((config) => {
-      config.oauth.enabled = true;
-    });
+    await this.updateConfigExclusively(
+      (config) => {
+        config.oauth.enabled = true;
+      },
+      { source: 'server-cli' },
+    );
   }
 
   async getSampleFilePaths(): Promise<string[]> {

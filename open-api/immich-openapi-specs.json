@@ -85455,6 +85455,9 @@
             "minimum": 0,
             "type": "integer"
           },
+          "source": {
+            "$ref": "#/components/schemas/SystemConfigHistorySource"
+          },
           "title": {
             "description": "The entry title, such as \"Updated email server password\"; absent for a settings save",
             "nullable": true,
@@ -85494,6 +85497,20 @@
           "entries"
         ],
         "type": "object"
+      },
+      "SystemConfigHistorySource": {
+        "description": "Where a change that was not an administrator settings save came from: the server command line or a Frameleaf Cloud action",
+        "enum": [
+          "server-cli",
+          "frameleaf-cloud"
+        ],
+        "type": "string",
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          }
+        ]
       },
       "SystemConfigTemplateStorageOptionDto": {
         "properties": {
