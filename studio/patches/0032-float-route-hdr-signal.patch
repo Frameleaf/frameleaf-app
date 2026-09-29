@@ -1,0 +1,692 @@
+--- a/src/features/export/utils/canvas-item-renderer/index.ts
++++ b/src/features/export/utils/canvas-item-renderer/index.ts
+@@ -22,8 +22,10 @@
+ export { renderItem } from './render-item'
+ 
+ export {
++  renderItemToFloatTexture,
+   renderTransitionToCanvas,
+   renderTransitionToGpuTexture,
++  resolveItemParticipantRenderState,
+   resolveTransitionParticipantRenderState,
+ } from './transition'
+ 
+--- a/src/features/export/utils/canvas-item-renderer/transition.ts
++++ b/src/features/export/utils/canvas-item-renderer/transition.ts
+@@ -22,6 +22,7 @@
+ import { renderTransition, type ActiveTransition } from '../canvas-transitions'
+ import {
+   applyRenderTimelineSpan,
++  getItemRenderTimelineSpan,
+   resolveAATransitionRamps,
+   resolveTransitionRenderTimelineSpan,
+ } from '../render-span'
+@@ -379,6 +380,34 @@
+   )
+ }
+ 
++/**
++ * Renders one item (transform, keyframes, effects; masks stay with the
++ * compositor) into a caller-owned rgba16float texture through the participant
++ * path, keeping extended range (FL-97). Content that only rasterises through
++ * Canvas2D enters as SDR at reference white. Pooled canvases are appended to
++ * `poolCanvases` for the caller to release.
++ */
++export async function renderItemToFloatTexture(
++  item: TimelineItem,
++  frame: number,
++  trackOrder: number,
++  rctx: ItemRenderContext,
++  gpuTexturePool: Pick<GpuTexturePool, 'acquire' | 'release'>,
++  outputTexture: GPUTexture,
++  poolCanvases: OffscreenCanvas[],
++): Promise<boolean> {
++  if (!rctx.gpuPipeline) return false
++  const participant = resolveItemParticipantRenderState(item, frame, trackOrder, rctx)
++  return renderTransitionParticipantToTexture(
++    participant,
++    frame,
++    rctx,
++    gpuTexturePool,
++    outputTexture,
++    poolCanvases,
++  )
++}
++
+ function logTransitionGpuParticipantPath(
+   participant: TransitionParticipantRenderState,
+   mediaKind: ResolvedGpuMediaParticipantSource['kind'] | null,
+@@ -520,6 +549,36 @@
+     rctx.fps,
+     ramp,
+   )
++  return resolveParticipantRenderStateForSpan(currentClip, renderSpan, frame, trackOrder, rctx)
++}
++
++/**
++ * Participant state for an item outside a transition, on its own timeline span
++ * (FL-97): the HDR float route renders every item through the participant path.
++ */
++export function resolveItemParticipantRenderState<TItem extends TimelineItem>(
++  clip: TItem,
++  frame: number,
++  trackOrder: number,
++  rctx: ItemRenderContext,
++): TransitionParticipantRenderState<TItem> {
++  const currentClip = rctx.getCurrentItemSnapshot?.(clip) ?? clip
++  return resolveParticipantRenderStateForSpan(
++    currentClip,
++    getItemRenderTimelineSpan(currentClip),
++    frame,
++    trackOrder,
++    rctx,
++  )
++}
++
++function resolveParticipantRenderStateForSpan<TItem extends TimelineItem>(
++  currentClip: TItem,
++  renderSpan: TransitionParticipantRenderState['renderSpan'],
++  frame: number,
++  trackOrder: number,
++  rctx: ItemRenderContext,
++): TransitionParticipantRenderState<TItem> {
+   const itemKeyframes =
+     rctx.getCurrentKeyframes?.(currentClip.id) ?? rctx.keyframesMap.get(currentClip.id)
+   let transform = getAnimatedTransform(
+--- a/src/features/export/utils/canvas-item-renderer.transition-state.test.ts
++++ b/src/features/export/utils/canvas-item-renderer.transition-state.test.ts
+@@ -40,6 +40,7 @@
+ 
+ import {
+   renderTransitionToGpuTexture,
++  resolveItemParticipantRenderState,
+   resolveTransitionParticipantRenderState,
+ } from './canvas-item-renderer'
+ 
+@@ -704,6 +705,52 @@
+   })
+ })
+ 
++describe('resolveItemParticipantRenderState (FL-97 float route)', () => {
++  it('resolves a plain item on its own span with animated transform and effects', () => {
++    const clip: VideoItem = {
++      id: 'plain',
++      type: 'video',
++      trackId: 'track-1',
++      from: 30,
++      durationInFrames: 60,
++      sourceStart: 12,
++      label: 'Plain',
++      src: 'plain.mp4',
++      transform: { x: 0, y: 0, width: 200, height: 100, rotation: 0, opacity: 1 },
++      effects: [
++        {
++          id: 'grain',
++          enabled: true,
++          effect: { type: 'gpu-effect', gpuEffectType: 'gpu-grain', params: { amount: 0.2 } },
++        },
++      ],
++    }
++    const keyframes: ItemKeyframes = {
++      itemId: clip.id,
++      properties: [
++        {
++          property: 'x',
++          keyframes: [
++            { id: 'a', frame: 0, value: 0, easing: 'linear' },
++            { id: 'b', frame: 10, value: 100, easing: 'linear' },
++          ],
++        },
++      ],
++    }
++    const rctx = createItemRenderContext({
++      canvasSettings: { width: 1920, height: 1080, fps: 30 },
++      keyframesMap: new Map([[clip.id, keyframes]]),
++    })
++
++    const result = resolveItemParticipantRenderState(clip, 35, 1, rctx)
++
++    expect(result.renderSpan).toEqual({ from: 30, durationInFrames: 60, sourceStart: 12 })
++    expect(result.transform.x).toBeCloseTo(50, 5)
++    const grain = result.effects[0]?.effect
++    expect(grain?.type === 'gpu-effect' && grain.params[EFFECT_CLOCK_PARAM]).toBeCloseTo(5 / 30, 9)
++  })
++})
++
+ describe('renderTransitionToGpuTexture', () => {
+   beforeEach(() => {
+     testSpies.loggerDebugSpy.mockClear()
+--- a/src/features/export/utils/client-render-engine.ts
++++ b/src/features/export/utils/client-render-engine.ts
+@@ -78,6 +78,7 @@
+ import { collectReachableCompositionIdsFromTracks } from '@/features/export/deps/timeline-compositions'
+ import { appendVirtualTranscriptCaptionTrack } from '@/features/export/deps/caption-items'
+ import { resolveColorManagement } from '@/shared/graphics/color/managed-color'
++import { ColorOutputPipeline, type ColorOutputTarget } from '@/infrastructure/gpu-color'
+ 
+ // Item renderer
+ import {
+@@ -93,6 +94,7 @@
+ } from '@/features/export/deps/composition-runtime'
+ import {
+   renderItem,
++  renderItemToFloatTexture,
+   renderTransitionToGpuTexture,
+   type CanvasSettings,
+   type WorkerLoadedImage,
+@@ -658,6 +660,14 @@
+  * Creates a composition renderer that can render frames to a canvas
+  * with full support for effects, masks, transitions, and keyframe animations.
+  */
++/** '#rgb' / '#rrggbb' background → straight working RGB (SDR, reference white = 1). */
++function parseBackgroundColor(hex: string): [number, number, number] {
++  const value = hex.trim().replace(/^#/, '')
++  const full = value.length === 3 ? [...value].map((c) => c + c).join('') : value
++  if (!/^[0-9a-f]{6}$/i.test(full)) return [0, 0, 0]
++  return [0, 2, 4].map((i) => parseInt(full.slice(i, i + 2), 16) / 255) as [number, number, number]
++}
++
+ export async function createCompositionRenderer(
+   composition: CompositionInputProps,
+   canvas: OffscreenCanvas,
+@@ -800,6 +810,50 @@
+   const gpu = new GpuPipelineManager(
+     resolveColorManagement(composition.colorManagement).workingRange,
+   )
++  // FL-97: an HDR project renders every item on the float route; a delivery
++  // request captures the float composite for an explicit output conversion.
++  const colorManagement = resolveColorManagement(composition.colorManagement)
++  const hdrWorking = colorManagement.workingRange === 'hdr'
++  let floatCapture: {
++    target: ColorOutputTarget
++    result: { width: number; height: number; rgba: Float32Array } | null
++  } | null = null
++  let colorOutput: ColorOutputPipeline | null = null
++  const captureSignal = async (composite: GPUTexture): Promise<void> => {
++    const request = floatCapture
++    const device = gpu.effects?.getDevice()
++    if (!request || !device) return
++    colorOutput ??= new ColorOutputPipeline(device)
++    const { width, height } = composite
++    const output = device.createTexture({
++      size: [width, height],
++      format: 'rgba32float',
++      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
++    })
++    const bytesPerRow = Math.ceil((width * 16) / 256) * 256
++    const buffer = device.createBuffer({
++      size: bytesPerRow * height,
++      usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
++    })
++    try {
++      colorOutput.convert(composite, output, request.target, colorManagement)
++      const encoder = device.createCommandEncoder()
++      encoder.copyTextureToBuffer({ texture: output }, { buffer, bytesPerRow }, [width, height])
++      device.queue.submit([encoder.finish()])
++      await buffer.mapAsync(GPUMapMode.READ)
++      const mapped = new Float32Array(buffer.getMappedRange())
++      const rgba = new Float32Array(width * height * 4)
++      const rowFloats = bytesPerRow / 4
++      for (let y = 0; y < height; y++) {
++        rgba.set(mapped.subarray(y * rowFloats, y * rowFloats + width * 4), y * width * 4)
++      }
++      buffer.unmap()
++      request.result = { width, height, rgba }
++    } finally {
++      output.destroy()
++      buffer.destroy()
++    }
++  }
+ 
+   // Build lookup maps
+   const keyframesMap = buildKeyframesMap(keyframes)
+@@ -2286,13 +2340,18 @@
+         }
+       }
+ 
+-      const { shouldDirectRenderSingleTask, shouldUseDeferredGpuBatch } =
+-        resolveFrameRenderOptimization({
+-          activeMaskCount: activeMasks.length,
+-          activeTransitionCount: activeTransitions.length,
+-          hasGpuEffects: hasAnyGpuEffects,
+-          renderTaskCount: renderTasks.length,
+-        })
++      const frameOptimization = resolveFrameRenderOptimization({
++        activeMaskCount: activeMasks.length,
++        activeTransitionCount: activeTransitions.length,
++        hasGpuEffects: hasAnyGpuEffects,
++        renderTaskCount: renderTasks.length,
++      })
++      // FL-97: the float route composites every frame on the GPU; nothing may
++      // take the Canvas2D direct path in an HDR project or a delivery capture.
++      const floatRoute = hdrWorking || floatCapture !== null
++      const shouldDirectRenderSingleTask =
++        frameOptimization.shouldDirectRenderSingleTask && !floatRoute
++      const { shouldUseDeferredGpuBatch } = frameOptimization
+       const hasNonNormalBlend = renderTasks.some(
+         (t) =>
+           t.type === 'item' &&
+@@ -2302,15 +2361,32 @@
+             return Boolean(blendMode && blendMode !== 'normal')
+           })(),
+       )
+-      if (hasNonNormalBlend && !itemRenderContext.gpuPipeline) {
++      if ((hasNonNormalBlend || floatRoute) && !itemRenderContext.gpuPipeline) {
+         itemRenderContext.gpuPipeline = await gpu.ensureEffects()
+         if (!itemRenderContext.gpuPipeline) {
+           getLog().warn('GPU pipeline init failed - blend modes will use Canvas2D fallback')
+         }
+       }
+       const useGpuCompositor = Boolean(
+-        hasNonNormalBlend && itemRenderContext.gpuPipeline && gpu.effects && gpu.ensureCompositor(),
++        (hasNonNormalBlend || floatRoute) &&
++        itemRenderContext.gpuPipeline &&
++        gpu.effects &&
++        gpu.ensureCompositor(),
+       )
++      if (floatRoute && useGpuCompositor) {
++        gpu.ensureTransition()
++        gpu.ensureMedia()
++        gpu.ensureMediaBlend()
++        gpu.ensureShape()
++        gpu.ensureText()
++        gpu.ensureMaskCombine()
++        itemRenderContext.gpuTransitionPipeline = gpu.transition
++        itemRenderContext.gpuMediaPipeline = gpu.media
++        itemRenderContext.gpuMediaBlendPipeline = gpu.mediaBlend
++        itemRenderContext.gpuShapePipeline = gpu.shape
++        itemRenderContext.gpuTextPipeline = gpu.text
++        itemRenderContext.gpuMaskCombinePipeline = gpu.maskCombine
++      }
+       const gpuCompositeOutput = useGpuCompositor
+         ? gpu.ensureCompositeOutput(canvasSettings.width, canvasSettings.height)
+         : null
+@@ -2406,6 +2482,30 @@
+               const item = getCurrentItem(task.item)
+               const canSeparateMasks =
+                 useGpuCompositor && gpu.texturePool && !hasCornerPin(item.cornerPin)
++              if (floatRoute && canSeparateMasks && gpu.texturePool) {
++                // FL-97: keep the item's extended range; masks stay with the compositor.
++                const floatTexture = gpu.texturePool.acquire(
++                  canvasSettings.width,
++                  canvasSettings.height,
++                  'rgba16float',
++                )
++                const poolCanvases: OffscreenCanvas[] = []
++                if (
++                  await renderItemToFloatTexture(
++                    task.item,
++                    frame,
++                    task.trackOrder,
++                    itemRenderContext,
++                    gpu.texturePool,
++                    floatTexture,
++                    poolCanvases,
++                  )
++                ) {
++                  return { gpuTexture: floatTexture, poolCanvases }
++                }
++                gpu.texturePool.release(floatTexture)
++                for (const pooled of poolCanvases) canvasPool.release(pooled)
++              }
+               return renderItemWithEffects(
+                 task.item,
+                 task.trackOrder,
+@@ -2535,6 +2635,9 @@
+           renderMasksToGpuTexture,
+           renderTransitionFallbackCanvas,
+           renderItemWithEffects,
++          floatOutput: floatCapture
++            ? { background: parseBackgroundColor(backgroundColor), capture: captureSignal }
++            : undefined,
+         })
+         scrubPerfCompositeEndMs = scrubPerfStartMs >= 0 ? performance.now() : -1
+       }
+@@ -2564,6 +2667,31 @@
+       }
+     },
+ 
++    /**
++     * Renders `frame` through the float route and returns its explicit output
++     * conversion (FL-97): straight-alpha RGBA in [0, 1] as BT.2020 PQ/HLG signal
++     * or SDR display values. Throws when the frame cannot be composited in float
++     * (no WebGPU), rather than delivering an 8-bit canvas.
++     */
++    async renderFrameSignal(
++      frame: number,
++      target: ColorOutputTarget,
++    ): Promise<{ width: number; height: number; rgba: Float32Array }> {
++      const request: NonNullable<typeof floatCapture> = { target, result: null }
++      floatCapture = request
++      try {
++        await this.renderFrame(frame)
++      } finally {
++        floatCapture = null
++      }
++      if (!request.result) {
++        throw new Error(
++          `Frame ${frame} could not be composited on the float route; ${target} delivery requires WebGPU`,
++        )
++      }
++      return request.result
++    },
++
+     wasLastRenderAborted() {
+       return lastRenderAborted
+     },
+--- a/src/features/export/utils/frame-compositing.ts
++++ b/src/features/export/utils/frame-compositing.ts
+@@ -50,6 +50,14 @@
+     preferGpuTextureOutput?: boolean,
+     allowDirectGpu?: boolean,
+   ) => Promise<RenderedTaskResult | null>
++  /**
++   * FL-97: capture the float composite for an explicit output conversion instead
++   * of the canvas blit. The background colour becomes the bottom layer.
++   */
++  floatOutput?: {
++    background: [number, number, number]
++    capture: (composite: GPUTexture) => Promise<void>
++  }
+ }
+ 
+ /**
+@@ -82,6 +90,7 @@
+     renderMasksToGpuTexture,
+     renderTransitionFallbackCanvas,
+     renderItemWithEffects,
++    floatOutput,
+   } = deps
+ 
+   let finalCompositeSource: OffscreenCanvas = contentCanvas
+@@ -170,6 +179,44 @@
+         })
+       }
+ 
++      if (floatOutput) {
++        // Explicit output conversion path: composite in float, including the
++        // background, and hand the texture over. No canvas conversion happens.
++        const background = gpu.texturePool!.acquire(w, h, 'rgba16float')
++        layerTextures.push(background)
++        const encoder = device.createCommandEncoder()
++        const [r, g, b] = floatOutput.background
++        encoder
++          .beginRenderPass({
++            colorAttachments: [
++              {
++                view: background.createView(),
++                loadOp: 'clear',
++                clearValue: [r, g, b, 1],
++                storeOp: 'store',
++              },
++            ],
++          })
++          .end()
++        const composite = gpu.compositor.compositeToTexture(
++          [
++            {
++              params: { ...DEFAULT_LAYER_PARAMS, sourceAspect: w / h, outputAspect: w / h },
++              textureView: background.createView(),
++              maskView: gpu.maskManager.getFallbackView(),
++            },
++            ...layers,
++          ],
++          w,
++          h,
++          encoder,
++        )
++        device.queue.submit([encoder.finish()])
++        if (!composite) throw new Error('Float compositor rejected the frame')
++        await floatOutput.capture(composite.texture)
++        return contentCanvas
++      }
++
+       let compositedToGpuCanvas = false
+       if (layers.length > 0) {
+         try {
+--- /dev/null
++++ b/src/infrastructure/gpu-color/color-output-pipeline.ts
+@@ -0,0 +1,148 @@
++import { FULLSCREEN_QUAD_WGSL } from '@/infrastructure/gpu-shared/fullscreen-quad'
++import type { HdrTransfer, ResolvedColorManagement } from '@/shared/graphics/color/managed-color'
++import { MANAGED_COLOR_WGSL } from './managed-color-wgsl'
++
++/**
++ * The explicit output conversion of the managed colour graph (FL-97).
++ *
++ * - `sdr-display`: SDR monitoring or SDR delivery. Clips at reference white
++ *   unless the project names a tone-mapping policy ('bt2390').
++ * - `pq` / `hlg`: HDR delivery. Encodes BT.2020 signal values in [0, 1] for a
++ *   native encoder. Colours outside BT.2020 and light above the transfer's peak
++ *   are clipped here and nowhere earlier. No tone mapping is implied.
++ *
++ * Input is a straight-alpha working texture; output keeps straight alpha.
++ */
++export type ColorOutputTarget = 'sdr-display' | HdrTransfer
++
++const TARGET_INDEX: Record<ColorOutputTarget, number> = { 'sdr-display': 0, pq: 1, hlg: 2 }
++
++const SHADER = /* wgsl */ `
++${FULLSCREEN_QUAD_WGSL}
++${MANAGED_COLOR_WGSL}
++
++struct OutputParams {
++  outputTarget: u32,
++  toneMap: u32,
++  hdrWorking: u32,
++  _pad: u32,
++  referenceWhite: f32,
++  masteringPeak: f32,
++  _pad2: vec2f,
++};
++@group(0) @binding(0) var inputTex: texture_2d<f32>;
++@group(0) @binding(1) var<uniform> params: OutputParams;
++
++@fragment
++fn outputFragment(input: VertexOutput) -> @location(0) vec4f {
++  let c = textureLoad(inputTex, vec2i(input.position.xy), 0);
++  let alpha = clamp(c.a, 0.0, 1.0);
++  if (params.outputTarget == 1u) {
++    return vec4f(fl_pq_encode(fl_working_to_nits2020(c.rgb, params.referenceWhite)), alpha);
++  }
++  if (params.outputTarget == 2u) {
++    let display = min(fl_working_to_nits2020(c.rgb, params.referenceWhite), vec3f(FL_HLG_PEAK));
++    return vec4f(fl_hlg_oetf(fl_hlg_inverse_ootf(display)), alpha);
++  }
++  // SDR display: clip, or tone map an HDR project by its named policy.
++  if (params.hdrWorking == 0u || params.toneMap == 0u) {
++    return vec4f(clamp(c.rgb, vec3f(0.0), vec3f(1.0)), alpha);
++  }
++  let linear = fl_srgb_decode(c.rgb);
++  let y = dot(vec3f(0.2126, 0.7152, 0.0722), linear);
++  if (y <= 0.0) { return vec4f(clamp(c.rgb, vec3f(0.0), vec3f(1.0)), alpha); }
++  let nits = y * params.referenceWhite;
++  let scale = fl_bt2390_eetf(nits, params.masteringPeak, params.referenceWhite) / nits;
++  return vec4f(clamp(fl_srgb_encode(linear * scale), vec3f(0.0), vec3f(1.0)), alpha);
++}
++`
++
++export class ColorOutputPipeline {
++  private readonly pipelines = new Map<GPUTextureFormat, GPURenderPipeline>()
++  private readonly layout: GPUBindGroupLayout
++  private readonly module: GPUShaderModule
++  private readonly uniforms: GPUBuffer
++
++  constructor(private readonly device: GPUDevice) {
++    this.module = device.createShaderModule({ label: 'color-output', code: SHADER })
++    this.layout = device.createBindGroupLayout({
++      label: 'color-output-layout',
++      entries: [
++        {
++          binding: 0,
++          visibility: GPUShaderStage.FRAGMENT,
++          texture: { sampleType: 'unfilterable-float' },
++        },
++        { binding: 1, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
++      ],
++    })
++    this.uniforms = device.createBuffer({
++      label: 'color-output-uniforms',
++      size: 32,
++      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
++    })
++  }
++
++  private pipeline(format: GPUTextureFormat): GPURenderPipeline {
++    let pipeline = this.pipelines.get(format)
++    if (!pipeline) {
++      pipeline = this.device.createRenderPipeline({
++        label: `color-output-${format}`,
++        layout: this.device.createPipelineLayout({ bindGroupLayouts: [this.layout] }),
++        vertex: { module: this.module, entryPoint: 'vertexMain' },
++        fragment: { module: this.module, entryPoint: 'outputFragment', targets: [{ format }] },
++        primitive: { topology: 'triangle-list' },
++      })
++      this.pipelines.set(format, pipeline)
++    }
++    return pipeline
++  }
++
++  /**
++   * Converts a working texture into `output` (same size; rgba16float, rgba32float
++   * or an 8-bit format for SDR display). Returns false for mismatched sizes.
++   * The uniforms are shared: when passing an encoder, submit it before the next
++   * conversion.
++   */
++  convert(
++    input: GPUTexture,
++    output: GPUTexture,
++    target: ColorOutputTarget,
++    color: ResolvedColorManagement,
++    commandEncoder?: GPUCommandEncoder,
++  ): boolean {
++    if (input.width !== output.width || input.height !== output.height) return false
++    const data = new ArrayBuffer(32)
++    const u32 = new Uint32Array(data, 0, 4)
++    const f32 = new Float32Array(data, 16, 2)
++    u32[0] = TARGET_INDEX[target]
++    u32[1] = color.sdrMonitoring === 'bt2390' ? 1 : 0
++    u32[2] = color.workingRange === 'hdr' ? 1 : 0
++    f32[0] = color.referenceWhiteNits
++    f32[1] = color.masteringPeakNits
++    this.device.queue.writeBuffer(this.uniforms, 0, data)
++    const bindGroup = this.device.createBindGroup({
++      layout: this.layout,
++      entries: [
++        { binding: 0, resource: input.createView() },
++        { binding: 1, resource: { buffer: this.uniforms } },
++      ],
++    })
++    const encoder = commandEncoder ?? this.device.createCommandEncoder()
++    const pass = encoder.beginRenderPass({
++      colorAttachments: [
++        { view: output.createView(), loadOp: 'clear', clearValue: [0, 0, 0, 0], storeOp: 'store' },
++      ],
++    })
++    pass.setPipeline(this.pipeline(output.format))
++    pass.setBindGroup(0, bindGroup)
++    pass.draw(6)
++    pass.end()
++    if (!commandEncoder) this.device.queue.submit([encoder.finish()])
++    return true
++  }
++
++  destroy(): void {
++    this.uniforms.destroy()
++  }
++}
+--- /dev/null
++++ b/src/infrastructure/gpu-color/managed-color-wgsl.ts
+@@ -0,0 +1,87 @@
++/**
++ * WGSL mirror of `@/shared/graphics/color/managed-color` (FL-97). The CPU module is
++ * the specification; tools/color-output.browser.mjs checks this file against it.
++ */
++export const MANAGED_COLOR_WGSL = /* wgsl */ `
++const FL_PQ_M1: f32 = 0.1593017578125;
++const FL_PQ_M2: f32 = 78.84375;
++const FL_PQ_C1: f32 = 0.8359375;
++const FL_PQ_C2: f32 = 18.8515625;
++const FL_PQ_C3: f32 = 18.6875;
++const FL_PQ_PEAK: f32 = 10000.0;
++const FL_HLG_A: f32 = 0.17883277;
++const FL_HLG_B: f32 = 0.28466892;
++const FL_HLG_C: f32 = 0.55991073;
++const FL_HLG_PEAK: f32 = 1000.0;
++
++fn fl_srgb_decode(v: vec3f) -> vec3f {
++  let a = abs(v);
++  let curve = pow((a + vec3f(0.055)) / 1.055, vec3f(2.4));
++  return sign(v) * select(curve, a / 12.92, a <= vec3f(0.04045));
++}
++
++fn fl_srgb_encode(l: vec3f) -> vec3f {
++  let a = abs(l);
++  let curve = 1.055 * pow(a, vec3f(1.0 / 2.4)) - vec3f(0.055);
++  return sign(l) * select(curve, a * 12.92, a <= vec3f(0.0031308));
++}
++
++fn fl_bt709_to_bt2020(c: vec3f) -> vec3f {
++  return vec3f(
++    dot(vec3f(0.627404, 0.329282, 0.043314), c),
++    dot(vec3f(0.069097, 0.91954, 0.011361), c),
++    dot(vec3f(0.016392, 0.088013, 0.895595), c),
++  );
++}
++
++fn fl_pq_encode(nits: vec3f) -> vec3f {
++  let y = pow(clamp(nits / FL_PQ_PEAK, vec3f(0.0), vec3f(1.0)), vec3f(FL_PQ_M1));
++  return pow((vec3f(FL_PQ_C1) + FL_PQ_C2 * y) / (vec3f(1.0) + FL_PQ_C3 * y), vec3f(FL_PQ_M2));
++}
++
++fn fl_pq_encode1(nits: f32) -> f32 {
++  return fl_pq_encode(vec3f(nits)).x;
++}
++
++fn fl_pq_decode1(signal: f32) -> f32 {
++  let e = pow(clamp(signal, 0.0, 1.0), 1.0 / FL_PQ_M2);
++  return FL_PQ_PEAK * pow(max(e - FL_PQ_C1, 0.0) / (FL_PQ_C2 - FL_PQ_C3 * e), 1.0 / FL_PQ_M1);
++}
++
++fn fl_hlg_oetf(scene: vec3f) -> vec3f {
++  let e = clamp(scene, vec3f(0.0), vec3f(1.0));
++  let upper = FL_HLG_A * log(max(12.0 * e - vec3f(FL_HLG_B), vec3f(1.0e-12))) + vec3f(FL_HLG_C);
++  return select(upper, sqrt(3.0 * e), e <= vec3f(1.0 / 12.0));
++}
++
++fn fl_hlg_inverse_ootf(display: vec3f) -> vec3f {
++  // BT.2100 at the 1000 cd/m² nominal peak: system gamma 1.2.
++  let gamma = 1.2;
++  let yd = max(dot(vec3f(0.2627, 0.678, 0.0593), display), 0.0);
++  if (yd <= 0.0) { return vec3f(0.0); }
++  let ys = pow(yd / FL_HLG_PEAK, 1.0 / gamma);
++  return display / (FL_HLG_PEAK * pow(ys, gamma - 1.0));
++}
++
++// Working (extended sRGB, BT.709, 1.0 = reference white) -> BT.2020 display cd/m².
++fn fl_working_to_nits2020(working: vec3f, referenceWhite: f32) -> vec3f {
++  return max(fl_bt709_to_bt2020(fl_srgb_decode(working)), vec3f(0.0)) * referenceWhite;
++}
++
++fn fl_bt2390_eetf(nits: f32, sourcePeak: f32, targetPeak: f32) -> f32 {
++  if (nits <= 0.0) { return 0.0; }
++  if (targetPeak >= sourcePeak) { return min(nits, targetPeak); }
++  let maxSource = fl_pq_encode1(sourcePeak);
++  let e1 = fl_pq_encode1(nits) / maxSource;
++  let maxLum = fl_pq_encode1(targetPeak) / maxSource;
++  let ks = 1.5 * maxLum - 0.5;
++  var e2 = e1;
++  if (e1 > ks && ks < 1.0) {
++    let t = (e1 - ks) / (1.0 - ks);
++    let t2 = t * t;
++    let t3 = t2 * t;
++    e2 = (2.0 * t3 - 3.0 * t2 + 1.0) * ks + (t3 - 2.0 * t2 + t) * (1.0 - ks) + (-2.0 * t3 + 3.0 * t2) * maxLum;
++  }
++  return min(fl_pq_decode1(min(e2, 1.0) * maxSource), targetPeak);
++}
++`
+--- /dev/null
++++ b/src/infrastructure/gpu-color/index.ts
+@@ -0,0 +1,2 @@
++export { ColorOutputPipeline, type ColorOutputTarget } from './color-output-pipeline'
++export { MANAGED_COLOR_WGSL } from './managed-color-wgsl'

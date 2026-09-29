@@ -44,6 +44,13 @@ jobs:
         run: node studio/tools/engine.mjs prepare
       - name: Install locked dependencies without lifecycle scripts
         run: npm --prefix studio/engine ci --ignore-scripts --no-audit --no-fund
+      - name: Install FFmpeg with libx265 for HDR master verification
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
+          ffmpeg -hide_banner -encoders | grep -q libx265
+      - name: HDR master metadata, refusals and HEVC Main10 round trip (FL-107)
+        run: node --test studio/tools/hdr-master.test.mjs
       - name: Install Chromium for compositor readback
         working-directory: studio/engine
         run: npx --no-install playwright install --with-deps chromium
@@ -69,6 +76,9 @@ jobs:
           node studio/tools/effects-matrix.browser.mjs
           node studio/tools/blend-matrix.browser.mjs
           node studio/tools/transition-matrix.browser.mjs
+          node studio/tools/color-output.browser.mjs
+          node studio/tools/hdr-signal.browser.mjs
+          node studio/tools/hdr-master.browser.mjs
       - name: Upstream unit and Node headless contracts
         run: |
           npm --prefix studio/engine run test:run
