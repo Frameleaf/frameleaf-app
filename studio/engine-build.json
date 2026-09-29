@@ -84,7 +84,12 @@
       "path": "patches/0016-nested-float-transport.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "0c3ad979866dc220cb63ec66f1a7e09f9a72c58b9be43d2bed37fa57b9893182"
+    },
+    {
+      "path": "patches/0017-nested-audio-mute.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "8a5cfb4bf9a5da0added73a949a9685116f308a68c73eb80e9c477dcf939928a"
     }
   ],
-  "sourceSha256": "53f00c8646d1abe4f7bc5af456b9fbaca633d4ef199916860d266ed055498c8b"
+  "sourceSha256": "a752b7fad7ce526ebcfa6024bfbc80f3a42f34cf77beea0e8626fa63091f2cd8"
 }
