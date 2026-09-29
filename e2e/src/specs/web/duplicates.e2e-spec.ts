@@ -1,5 +1,6 @@
 import {
   AssetMediaResponseDto,
+  AssetTypeEnum,
   DuplicateDecisionKind,
   getDuplicateDecisions,
   getDuplicateReview,
@@ -8,6 +9,7 @@ import {
 } from '@immich/sdk';
 import { expect, test } from '@playwright/test';
 import crypto from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import { asBearerAuth, utils } from 'src/utils.js';
 
 test.describe('Duplicate review', () => {
@@ -169,6 +171,69 @@ test.describe('Duplicate review', () => {
         { timeout: 30_000 },
       )
       .toEqual(group.assets.map((asset) => asset.id).toSorted((a, b) => a.localeCompare(b)));
+  });
+
+  test('plays two real duplicate videos side by side while keeping keyboard focus', async ({ page }) => {
+    test.setTimeout(120_000);
+    const [kayak, forest] = await Promise.all([
+      utils.createAsset(admin.accessToken, {
+        assetData: {
+          filename: 'duplicate-kayak.mp4',
+          bytes: await readFile(
+            new URL('../../../../design/frameleaf/template/public/media/kayak-demo.mp4', import.meta.url),
+          ),
+        },
+      }),
+      utils.createAsset(admin.accessToken, {
+        assetData: {
+          filename: 'duplicate-forest.mp4',
+          bytes: await readFile(
+            new URL('../../../../design/frameleaf/template/public/media/forest-demo.mp4', import.meta.url),
+          ),
+        },
+      }),
+    ]);
+    await utils.waitForQueueFinish(admin.accessToken, 'metadataExtraction', 60_000);
+    const duplicateId = crypto.randomUUID();
+    await updateAssets(
+      { assetBulkUpdateDto: { ids: [kayak.id, forest.id], duplicateId } },
+      { headers: asBearerAuth(admin.accessToken) },
+    );
+    const group = (await reviewGroups()).find((candidate) => candidate.duplicateId === duplicateId);
+    expect(group?.assets.map((asset) => [asset.id, asset.type]).toSorted()).toEqual(
+      [
+        [kayak.id, AssetTypeEnum.Video],
+        [forest.id, AssetTypeEnum.Video],
+      ].toSorted(),
+    );
+
+    await page.goto('/utilities/duplicates');
+    const review = page.getByTestId('frameleaf-duplicate-review');
+    await review.locator('input[type="search"]').fill(duplicateId);
+    const videos = review.getByTestId('frameleaf-duplicate-compare').locator('video');
+    await expect(videos).toHaveCount(2);
+    await expect
+      .poll(
+        () => videos.evaluateAll((elements) => elements.every((element) => (element as HTMLVideoElement).readyState >= 1)),
+        { timeout: 15_000 },
+      )
+      .toBe(true);
+
+    const playTogether = review.getByRole('button', { name: 'Play together' });
+    await playTogether.focus();
+    await page.keyboard.press('Enter');
+    await expect
+      .poll(() =>
+        videos.evaluateAll((elements) =>
+          elements.every((element) => {
+            const video = element as HTMLVideoElement;
+            return !video.paused && video.currentTime > 0.25;
+          }),
+        ),
+        { timeout: 15_000 },
+      )
+      .toBe(true);
+    await expect(playTogether).toBeFocused();
   });
 
   test('lists only the signed-in account’s groups, each complete', async () => {
