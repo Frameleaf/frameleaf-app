@@ -604,9 +604,9 @@ describe('FL-94 sequence settings: nothing on an existing timeline retimes silen
     const graph = await withClipAndMarker()
     const next = await applied(graph, [setSettings({ fps: rate(30_000, 1001), timing: 'keep-time' })])
     expect(next.metadata).toMatchObject({ fps: 30_000 / 1001, frameRate: { num: 30_000, den: 1001 } })
-    // 2 s is 59.94 frames: frame 60. Its 2 s of source last 59.94 frames, so the clip is 59 frames
-    // long rather than rounded up to read past the end of its source window.
-    expect(spans(next, 'v1')).toEqual([[60, 59, 0, 60]])
+    // 2 s is 59.94 frames: frame 60. The clip still ends at 4 s: frame 120 (119.88), and reads the
+    // same 60 source frames.
+    expect(spans(next, 'v1')).toEqual([[60, 60, 0, 60]])
     expect(markersOf(next)).toEqual([90])
   })
 
@@ -698,6 +698,19 @@ describe('FL-94 sequence settings: nothing on an existing timeline retimes silen
       [envelope('sequence.setSettings', { sequenceId: 'seq-2', fps: rate(60), timing: 'keep-frames' })],
       'invalid',
     )
+    // An empty sequence still needs a policy while compound clips read it.
+    const emptyRead = structuredClone(graph)
+    emptyRead.timeline!.compositions![0]!.items = []
+    emptyRead.timeline!.compositions![0]!.markers = []
+    await refused(emptyRead, [envelope('sequence.setSettings', { sequenceId: 'seq-2', fps: rate(60) })], 'invalid')
+    expect(
+      itemsOf(
+        await applied(emptyRead, [
+          envelope('sequence.setSettings', { sequenceId: 'seq-2', fps: rate(60), timing: 'keep-time' }),
+        ]),
+      )[0],
+    ).toMatchObject({ sourceStart: 60, sourceEnd: 180 })
+
     const unread = { ...graph, timeline: { ...graph.timeline!, items: [] } } as Project
     const kept = await applied(unread, [
       envelope('sequence.setSettings', { sequenceId: 'seq-2', fps: rate(60), timing: 'keep-frames' }),
