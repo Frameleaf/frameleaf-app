@@ -89,7 +89,12 @@
       "path": "patches/0017-nested-audio-mute.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "8a5cfb4bf9a5da0added73a949a9685116f308a68c73eb80e9c477dcf939928a"
+    },
+    {
+      "path": "patches/0018-scope-seek-correspondence.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "e6d9ef79ad3097b13ba84d502df72553b67ed03d4ec61ebba62596622b99ec40"
     }
   ],
-  "sourceSha256": "5d6755f4ebb343752443c4dd4d340f9a86ef7460f7926cb82ca625169f73b8e2"
+  "sourceSha256": "937ebd1d503e5199e461c5ee8fca471a96ddb8c4ced7f1ad3b0eecfd356f0dfe"
 }
