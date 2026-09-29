@@ -1070,12 +1070,13 @@
     },
     {
       "capability": null,
-      "description": "Apply a project template, including canvas and frame rate defaults.",
+      "description": "Apply a project template, including canvas and frame rate defaults; a rate change on existing content needs timing keep-time or keep-frames.",
       "id": "project.applyTemplate",
       "manifestIds": ["readme.timeline-editing.8"],
       "mutatesGraph": true,
       "payload": {
-        "templateId": "string"
+        "templateId": "string",
+        "timing": "string?"
       },
       "scope": "project",
       "undoable": true
@@ -1291,7 +1292,7 @@
     },
     {
       "capability": null,
-      "description": "Set the sequence canvas and frame rate, including auto-match from first media.",
+      "description": "Set the sequence canvas and frame rate, including auto-match from first media; a rate change on existing content needs timing keep-time or keep-frames.",
       "id": "sequence.setSettings",
       "manifestIds": ["readme.timeline-editing.8"],
       "mutatesGraph": true,
@@ -1299,6 +1300,7 @@
         "fps": "rate?",
         "height": "number?",
         "sequenceId": "string",
+        "timing": "string?",
         "width": "number?"
       },
       "scope": "sequence",

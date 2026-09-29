@@ -1020,8 +1020,9 @@ export const catalogue = [
     undoable: true,
     capability: null,
     manifestIds: ['readme.timeline-editing.8'],
-    payload: { templateId: 'string' },
-    description: 'Apply a project template, including canvas and frame rate defaults.',
+    payload: { templateId: 'string', timing: 'string?' },
+    description:
+      'Apply a project template, including canvas and frame rate defaults; a rate change on existing content needs timing keep-time or keep-frames.',
   },
   {
     id: 'project.exportBundle',
@@ -1204,8 +1205,10 @@ export const catalogue = [
       fps: 'rate?',
       width: 'number?',
       height: 'number?',
+      timing: 'string?',
     },
-    description: 'Set the sequence canvas and frame rate, including auto-match from first media.',
+    description:
+      'Set the sequence canvas and frame rate, including auto-match from first media; a rate change on existing content needs timing keep-time or keep-frames.',
   },
   {
     id: 'text.setMotion',
