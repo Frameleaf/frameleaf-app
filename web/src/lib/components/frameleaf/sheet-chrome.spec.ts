@@ -99,6 +99,52 @@ describe('September 24 sheet chrome', () => {
     expect(document.activeElement).toBe(trigger);
   });
 
+  it('skips disabled menu items when opening and moving with the keyboard', async () => {
+    const children = createRawSnippet(() => ({
+      render: () => `<div><button role="menuitem" aria-disabled="true">Unavailable first</button>
+        <button role="menuitem">Rename</button>
+        <button role="menuitem" disabled>Unavailable middle</button>
+        <button role="menuitem">Delete</button>
+        <button role="menuitem" aria-disabled="true">Unavailable last</button></div>`,
+    }));
+    render(Menu, { label: 'Album options', children });
+
+    const trigger = screen.getByRole('button', { name: 'Album options' });
+    await fireEvent.click(trigger);
+    const rename = screen.getByRole('menuitem', { name: 'Rename' });
+    const deleteItem = screen.getByRole('menuitem', { name: 'Delete' });
+    expect(rename).toHaveFocus();
+
+    await fireEvent.keyDown(rename, { key: 'ArrowDown' });
+    expect(deleteItem).toHaveFocus();
+    await fireEvent.keyDown(deleteItem, { key: 'ArrowDown' });
+    expect(rename).toHaveFocus();
+    await fireEvent.keyDown(rename, { key: 'ArrowUp' });
+    expect(deleteItem).toHaveFocus();
+    await fireEvent.keyDown(deleteItem, { key: 'Home' });
+    expect(rename).toHaveFocus();
+    await fireEvent.keyDown(rename, { key: 'End' });
+    expect(deleteItem).toHaveFocus();
+  });
+
+  it('keeps an all-disabled menu dismissible with Escape', async () => {
+    const children = createRawSnippet(() => ({
+      render: () => `<div><button role="menuitem" aria-disabled="true">Unavailable</button>
+        <button role="menuitem" disabled>Also unavailable</button></div>`,
+    }));
+    render(Menu, { label: 'Album options', children });
+
+    const trigger = screen.getByRole('button', { name: 'Album options' });
+    trigger.focus();
+    await fireEvent.keyDown(trigger, { key: 'ArrowDown' });
+    const menu = await screen.findByRole('menu');
+    expect(menu).toHaveFocus();
+
+    await fireEvent.keyDown(menu, { key: 'Escape' });
+    expect(screen.queryByRole('menu')).toBeNull();
+    expect(trigger).toHaveFocus();
+  });
+
   it('keeps drag handles out of the button press scale', () => {
     const tagger = readFileSync('src/lib/components/frameleaf/FaceTagger.svelte', 'utf8');
     expect(tagger).toContain('class="ft-face-move fl-no-press"');
