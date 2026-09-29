@@ -77,6 +77,7 @@ try {
       ctx.fillStyle = 'rgba(255, 0, 0, 0.5)';
       ctx.fillRect(0, 0, 2, 2);
       const rightCanvas = new OffscreenCanvas(2, 2);
+      rightCanvas.getContext('2d'); // WebGPU uploads require a context, even for transparent input.
       const canvasFloat = texture(null);
       if (!pipeline.renderToTexture('dissolve', leftCanvas, rightCanvas, canvasFloat, 0, 2, 2)) {
         throw new Error('Canvas to float transition rejected');
