@@ -815,6 +815,8 @@ async function dependencyRoot(databaseImage) {
     path.join(root, "server/src/fork-schema/supported-versions.json"),
     "{}",
   );
+  await fs.mkdir(path.join(root, "packaging/nas"), { recursive: true });
+  await fs.writeFile(path.join(root, "packaging/nas/certified-sources.json"), '{"officialImmich":[],"priorFrameleaf":[]}');
   return root;
 }
 const database =
@@ -859,7 +861,15 @@ test("promotion refuses a bundle whose database or CLI image is not published", 
     assert.equal(resolved.get(database), digest(1));
     // The bundle pins the verified digest; the source Compose file is left as written.
     const dir = path.join(root, "bundle");
-    await createBundle(dir, root, "frameleaf-v3.1.0-1", {}, resolved);
+    await createBundle(dir, root, "frameleaf-v3.1.0-1", {
+      sourceCommit: sha,
+      images: [
+        { image: "ghcr.io/frameleaf/frameleaf-server", suffix: "", digest: digest(3), platforms: ["linux/amd64"] },
+        { image: "ghcr.io/frameleaf/frameleaf-machine-learning", suffix: "", digest: digest(4), platforms: ["linux/amd64"] },
+      ],
+    }, resolved);
+    const nas = JSON.parse(await fs.readFile(path.join(dir, "nas-manifest.json"), "utf8"));
+    assert.equal(nas.images.postgres, `${database}@${digest(1)}`);
     for (const name of ["docker-compose.yml", "docker-compose.rootless.yml"]) {
       const bundled = await fs.readFile(path.join(dir, name), "utf8");
       assert(bundled.includes(`image: ${database}@${digest(1)}\n`), name);

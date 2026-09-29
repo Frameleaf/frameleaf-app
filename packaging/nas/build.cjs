@@ -3,18 +3,17 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { buildSpk } = require('./build-spk.cjs');
+const { verifyBundle, verifyNasCertification } = require('../../.github/verify-release-bundle.cjs');
 
 const root = __dirname;
 const digest = /^sha256:[a-f0-9]{64}$/;
 const tag = /^frameleaf-v(\d+)\.(\d+)\.(\d+)-(\d+)$/;
 
-function build(manifest, output) {
-  assert(tag.test(manifest.tag), 'A stable Frameleaf release is required');
-  assert(/^[a-f0-9]{40}$/.test(manifest.sourceCommit), 'Invalid source commit');
-  assert(Array.isArray(manifest.migration.officialImmich) && manifest.migration.officialImmich.length,
-    'NAS publication requires external Immich migration qualification');
-  assert(Array.isArray(manifest.migration.priorFrameleaf) && manifest.migration.priorFrameleaf.length,
-    'NAS publication requires prior Frameleaf migration qualification');
+async function build(directory, expectedTag, output, verification = {}) {
+  assert(tag.test(expectedTag), 'A stable Frameleaf release is required');
+  const release = await verifyBundle(directory, expectedTag, { ...verification, authenticate: true });
+  const manifest = JSON.parse(fs.readFileSync(path.join(directory, 'nas-manifest.json'), 'utf8'));
+  await verifyNasCertification(manifest, release, verification);
   const image = (name) => {
     const ref = manifest.images[name];
     assert(typeof ref === 'string' && digest.test(ref.split('@')[1]), `Invalid ${name} digest`);
@@ -36,8 +35,10 @@ function build(manifest, output) {
     '@ML_REF@': ml,
     '@SERVER_TAG@': `${manifest.tag}@${server.split('@')[1]}`,
     '@ML_TAG@': `${manifest.tag}@${ml.split('@')[1]}`,
-    '@PG_TAG@': postgres.split(':').slice(1).join(':'),
-    '@VALKEY_TAG@': valkey.split(':').slice(1).join(':'),
+    '@PG_REPOSITORY@': postgres.split('@')[0].split(':')[0],
+    '@PG_TAG@': `${postgres.split('@')[0].split(':')[1] || '14'}@${postgres.split('@')[1]}`,
+    '@VALKEY_REPOSITORY@': valkey.split('@')[0].split(':')[0].replace(/^docker\.io\//, ''),
+    '@VALKEY_TAG@': `${valkey.split('@')[0].split(':')[1] || '9'}@${valkey.split('@')[1]}`,
   };
   for (const [suffix, placeholder] of [['cuda', '@ML_CUDA_TAG@'], ['rocm', '@ML_ROCM_TAG@'], ['openvino', '@ML_OPENVINO_TAG@']]) {
     const ref = manifest.images.machineLearningVariants?.[suffix];
@@ -63,7 +64,10 @@ function build(manifest, output) {
 }
 
 if (require.main === module) {
-  assert(process.argv.length === 4, 'Usage: node build.cjs nas-manifest.json output-directory');
-  build(JSON.parse(fs.readFileSync(process.argv[2], 'utf8')), process.argv[3]);
+  assert(process.argv.length === 5, 'Usage: node build.cjs release-directory release-tag output-directory');
+  build(process.argv[2], process.argv[3], process.argv[4]).catch((error) => {
+    console.error(error.message);
+    process.exitCode = 1;
+  });
 }
 module.exports = { build };
