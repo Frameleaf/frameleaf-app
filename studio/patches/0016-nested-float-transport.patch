@@ -343,6 +343,17 @@
      pass.end()
 --- a/src/infrastructure/gpu-shapes/shape-render-pipeline.ts
 +++ b/src/infrastructure/gpu-shapes/shape-render-pipeline.ts
+@@ -206,8 +206,8 @@
+     let trimStart = u.trimParams.x;
+     let trimEnd = u.trimParams.y;
+     strokeVisible = select(
+-      outlineProgress >= trimStart || outlineProgress < trimEnd,
+-      outlineProgress >= trimStart && outlineProgress < trimEnd,
++      (outlineProgress >= trimStart || outlineProgress < trimEnd),
++      (outlineProgress >= trimStart && outlineProgress < trimEnd),
+       trimEnd >= trimStart,
+     );
+     let visibleLength = select(1.0 - trimStart + trimEnd, trimEnd - trimStart, trimEnd >= trimStart);
 @@ -246,6 +246,7 @@
  `
 
