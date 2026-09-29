@@ -219,7 +219,8 @@ export interface StudioCommandPayloads {
   'clip.delete': { clipId?: string; clipIds?: string[] } & StudioRippleOption;
   'clip.group': { clipIds: string[]; name?: string };
   'clip.insert': StudioSourceEdit;
-  'clip.move': { clipId: string; start: StudioTime; trackId?: string };
+  /** Linked selection is captured at submission; legacy envelopes omit it and default to true. */
+  'clip.move': { clipId: string; start: StudioTime; trackId?: string; linkedSelectionEnabled?: boolean };
   'clip.overwrite': StudioSourceEdit;
   'clip.reorder': { trackId: string; clipId: string; index: number };
   'clip.roll': { clipId: string; at: StudioTime };

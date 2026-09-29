@@ -606,9 +606,12 @@ const handlers: Record<string, Handler> = {
     const item = requireItem(stringField(payload, 'clipId'))
     const from = timeField(payload, 'start', cadence)
     const trackId = optionalString(payload, 'trackId')
+    if (payload.linkedSelectionEnabled !== undefined && typeof payload.linkedSelectionEnabled !== 'boolean') {
+      invalid('linkedSelectionEnabled must be a boolean')
+    }
     if (trackId && requireTrack(trackId).locked) failed('clip.move: the destination track is locked')
     const ids = filterUnlockedItemIds(items(), tracks(), expandIdsWithLinkedItems(
-      items(), [item.id], useEditorStore.getState().linkedSelectionEnabled,
+      items(), [item.id], payload.linkedSelectionEnabled !== false,
     ))
     if (!ids.includes(item.id)) failed('clip.move: the clip is on a locked track')
     const delta = from - item.from

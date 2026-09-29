@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vite-plus/test'
+import { describe, expect, it, vi } from 'vite-plus/test'
 import type { Project, ProjectTimeline } from '@/types/project'
 import type { MediaMetadata } from '@/types/storage'
 import type { TextItem } from '@/types/timeline'
@@ -12,7 +12,12 @@ import {
   secondsToFrames,
   type CanonicalEnvelope,
 } from '../src/canonical-commands'
-import { studioEngineCommandIds } from '@frameleaf/host/engine-commands'
+import { createStudioEngineCommandHandlers, createStudioGraphHistory, studioEngineCommandIds } from '@frameleaf/host/engine-commands'
+import { createStudioBridge } from '@frameleaf/host/bridge'
+import { createStudioCommandEnvelope, type StudioCommandEnvelope } from '@frameleaf/host/commands'
+import { emptyStudioCapabilities } from '@frameleaf/host/host-contract'
+import type { StudioFrameToHostMessage } from '@frameleaf/host/frame-protocol'
+import { call, connectToHost } from '../src/host-port'
 import manifest from '../../../freecut-feature-manifest.json'
 import catalogue from '../../../frameleaf-studio-commands.json'
 
@@ -281,11 +286,12 @@ describe('canonical commands on the Freecut engine (FL-92)', () => {
     })))
     const before = canonicalJson(added.project)
     const previous = useEditorStore.getState().linkedSelectionEnabled
-    useEditorStore.setState({ linkedSelectionEnabled: linked })
+    // The command document's local preference must not override the envelope's captured intent.
+    useEditorStore.setState({ linkedSelectionEnabled: !linked })
     try {
       const boundary = await applyCanonicalCommands(added.project, [
-        envelope('clip.move', { clipId: video.id, start: seconds(3) }),
-        envelope('clip.move', { clipId: video.id, start: seconds(0) }),
+        envelope('clip.move', { clipId: video.id, start: seconds(3), linkedSelectionEnabled: linked }),
+        envelope('clip.move', { clipId: video.id, start: seconds(0), linkedSelectionEnabled: linked }),
       ], media)
       if (linked) {
         expect(boundary).toMatchObject({ status: 'rejected', index: 1, reason: 'failed' })
@@ -299,7 +305,7 @@ describe('canonical commands on the Freecut engine (FL-92)', () => {
       expect(canonicalJson(added.project)).toBe(before)
 
       const moved = await applied(added.project, [
-        envelope('clip.move', { clipId: video.id, start: seconds(4), trackId: 'v2' }),
+        envelope('clip.move', { clipId: video.id, start: seconds(4), trackId: 'v2', linkedSelectionEnabled: linked }),
       ])
       expect(itemsOf(moved.project)).toEqual(expect.arrayContaining([
         expect.objectContaining({ id: video.id, from: 120, trackId: 'v2' }),
@@ -310,7 +316,7 @@ describe('canonical commands on the Freecut engine (FL-92)', () => {
 
       timeline.tracks.find((track) => track.id === 'a1')!.locked = true
       const lockedCompanion = await applied(added.project, [
-        envelope('clip.move', { clipId: video.id, start: seconds(4) }),
+        envelope('clip.move', { clipId: video.id, start: seconds(4), linkedSelectionEnabled: linked }),
       ])
       expect(itemsOf(lockedCompanion.project).find((item) => item.id === audio.id)?.from).toBe(30)
       // Captions follow their selected owner but obey their own track's lock, as in Freecut drag.
@@ -319,11 +325,100 @@ describe('canonical commands on the Freecut engine (FL-92)', () => {
       for (const lockedTrack of ['v1', 'v2']) {
         timeline.tracks.find((track) => track.id === lockedTrack)!.locked = true
         await expect(applyCanonicalCommands(added.project, [
-          envelope('clip.move', { clipId: video.id, start: seconds(4), trackId: 'v2' }),
+          envelope('clip.move', { clipId: video.id, start: seconds(4), trackId: 'v2', linkedSelectionEnabled: linked }),
         ], media)).resolves.toMatchObject({ status: 'rejected', reason: 'failed' })
         timeline.tracks.find((track) => track.id === lockedTrack)!.locked = false
       }
     } finally {
+      useEditorStore.setState({ linkedSelectionEnabled: previous })
+    }
+  })
+
+  it('carries visible linked selection through the host port and retries with the original intent (FL-94)', async () => {
+    const added = await applied(project(), [
+      envelope('clip.add', { trackId: 'v1', assetId: ASSET, at: seconds(2) }),
+    ])
+    const video = itemsOf(added.project).find((item) => item.type === 'video')!
+    const audio = itemsOf(added.project).find((item) => item.type === 'audio')!
+    let graph: unknown = added.project
+    let failTransport = true
+    const received: StudioCommandEnvelope[] = []
+    const bridge = createStudioBridge({
+      context: () => ({ revision: 3, hasLease: true, hasAccess: true, online: true, capabilities: emptyStudioCapabilities() }),
+      handlers: createStudioEngineCommandHandlers({
+        graph: () => graph, revision: () => 3, assets: () => [], restore: async () => false,
+        history: createStudioGraphHistory(), stage: (next) => { graph = next },
+        engine: async () => ({
+          dispose() {},
+          async apply(current, envelopes) {
+            received.push(...structuredClone(envelopes))
+            if (failTransport) {
+              failTransport = false
+              throw new Error('command document disconnected')
+            }
+            // This models the hidden document's independent default, after the editor sent false.
+            useEditorStore.setState({ linkedSelectionEnabled: true })
+            const outcome = await applyCanonicalCommands(current, envelopes, media)
+            return outcome.status === 'applied'
+              ? { status: 'applied', graph: outcome.project, digest: outcome.digest }
+              : outcome
+          },
+        }),
+      }),
+    })
+    const channel = new MessageChannel()
+    const nextMessage = () => new Promise<StudioFrameToHostMessage>((resolve) => {
+      channel.port2.onmessage = (event) => resolve(event.data)
+    })
+    const parentPost = vi.spyOn(window.parent, 'postMessage').mockImplementation(() => {})
+    const listeners = vi.spyOn(window, 'addEventListener')
+    const previous = useEditorStore.getState().linkedSelectionEnabled
+    const move = createStudioCommandEnvelope('clip.move', { clipId: video.id, start: seconds(4) }, 3)
+    try {
+      connectToHost('editor', () => {})
+      window.dispatchEvent(new MessageEvent('message', {
+        source: window.parent, origin: window.location.origin,
+        data: { source: 'frameleaf-studio-host' }, ports: [channel.port1],
+      }))
+      for (const linked of [false, true]) {
+        useEditorStore.setState({ linkedSelectionEnabled: linked })
+        const arrival = nextMessage()
+        const pending = call('submitCommands', [structuredClone(move)])
+        const request = await arrival
+        expect(request).toMatchObject({ type: 'service', name: 'submitCommands', args: [[{
+          payload: { linkedSelectionEnabled: false }, idempotencyKey: move.idempotencyKey,
+        }]] })
+        if (request.type !== 'service') throw new Error('missing command request')
+        const result = await bridge.submit(request.args[0] as StudioCommandEnvelope[])
+        channel.port2.postMessage({ type: 'service-result', callId: request.callId, ok: true, value: result })
+        expect((await pending)[0]?.status).toBe(linked ? 'accepted' : 'rejected')
+      }
+      expect(received).toHaveLength(2)
+      expect(received[1]).toEqual(received[0])
+      expect(itemsOf(graph as Project).find((item) => item.id === video.id)?.from).toBe(120)
+      expect(itemsOf(graph as Project).find((item) => item.id === audio.id)?.from).toBe(60)
+
+      // Older callers have no preference field; omission still carries linked clips, even with
+      // a false runtime default. Non-command services keep their arguments unchanged.
+      useEditorStore.setState({ linkedSelectionEnabled: false })
+      const legacy = await applied(added.project, [envelope('clip.move', move.payload)])
+      expect(itemsOf(legacy.project).find((item) => item.id === audio.id)?.from).toBe(120)
+      const layout = { panels: ['timeline'] }
+      const arrival = nextMessage()
+      const saved = call('saveWorkspace', layout)
+      const request = await arrival
+      expect(request).toMatchObject({ name: 'saveWorkspace', args: [layout] })
+      if (request.type !== 'service') throw new Error('missing workspace request')
+      channel.port2.postMessage({ type: 'service-result', callId: request.callId, ok: true, value: { status: 'saved' } })
+      await saved
+    } finally {
+      channel.port1.close()
+      channel.port2.close()
+      for (const [type, listener] of listeners.mock.calls) {
+        if (type === 'message') window.removeEventListener(type, listener)
+      }
+      listeners.mockRestore()
+      parentPost.mockRestore()
       useEditorStore.setState({ linkedSelectionEnabled: previous })
     }
   })
