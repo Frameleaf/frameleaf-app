@@ -42,7 +42,7 @@
 
     working = true;
     try {
-      const success = await handleDeleteUserAdmin(user, { force });
+      const success = await handleDeleteUserAdmin(user, { force, confirmEmail: confirmation.trim() });
       if (success) {
         open = false;
       }
