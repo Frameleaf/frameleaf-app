@@ -7,7 +7,6 @@ import test from 'node:test';
 import { inventory, licenses, verifySnapshot } from './engine.mjs';
 import { assertPinnedSource } from '../../scripts/frameleaf-studio-contracts.mjs';
 import { writeResourcePolicy } from './resource-policy.mjs';
-import { approvalRowDigest } from '../../scripts/frameleaf-studio-rights.mjs';
 
 test('engine source pin rejects a changed archive without local planning files', async () => {
   const provenance = JSON.parse(await readFile(new URL('../freecut-provenance.json', import.meta.url), 'utf8'));
@@ -140,15 +139,15 @@ test('runtime policy admits exactly the owner-approved rows and keeps everything
     await writeFile(path.join(root, 'rights-approval.json'), JSON.stringify(approval));
     await writeResourcePolicy(root, engine);
     actual = await policyOf();
-    // Every row, including the bundled runtimes the owner approved again on 2026-09-29, except the
-    // Supertonic model and the 64 voices, whose rows changed when they were pinned to a commit and
-    // wait for the owner.
-    const pinnedPending = new Set(manifest.resources.map(({ id }) => id).filter((id) => /^voice:(kokoro|supertonic)-|^model:supertonic-3$/.test(id)));
-    assert.equal(pinnedPending.size, 65);
+    // Every row, including the bundled runtimes and the commit-pinned TTS rows the owner approved
+    // on 2026-09-29.
     for (const [id, entry] of Object.entries(actual)) {
-      if (pinnedPending.has(id)) assert.equal(entry.localRuntime, 'blocked', id);
-      else assert.ok(entry.localRuntime === 'allowed' && /^[a-f0-9]{64}$/.test(entry.approvalSha256), id);
+      assert.ok(entry.localRuntime === 'allowed' && /^[a-f0-9]{64}$/.test(entry.approvalSha256), id);
     }
+    // Supertonic and every voice are admitted only at their pinned commits.
+    const pinned = manifest.resources.filter(({ id }) => /^voice:(kokoro|supertonic)-|^model:supertonic-3$/.test(id));
+    assert.equal(pinned.length, 65);
+    assert.ok(pinned.every(({ revision, files }) => /^[a-f0-9]{40}$/.test(revision) && files.every(({ sha256 }) => /^[a-f0-9]{64}$/.test(sha256))));
     assert.ok(Object.values(actual).every((entry) => entry.sha256 === null));
     assert.deepEqual(actual['model:walterlow/RIFE_fp32_timestep'], {
       localRuntime: 'allowed',
@@ -165,7 +164,14 @@ test('runtime policy admits exactly the owner-approved rows and keeps everything
       'font:Inter',
       'model:walterlow/RIFE_fp32_timestep',
       'https://huggingface.co/walterlow/RIFE_fp32_timestep/resolve/ee09066f9822f8b28b8477a1b4cc30f19d607590/RIFE_fp32_timestep.onnx',
+      'model:supertonic-3',
+      'voice:supertonic-F1',
+      'voice:kokoro-af_heart',
+      'https://huggingface.co/spaces/Supertone/supertonic-3/resolve/4402acca094e2ff2b3dff446e0bf915f3fccc462/assets/onnx/vocoder.onnx',
+      'https://huggingface.co/spaces/Supertone/supertonic-3/resolve/4402acca094e2ff2b3dff446e0bf915f3fccc462/assets/voice_styles/F1.json',
+      'https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/1939ad2a8e416c0acfeecc08a694d14ef25f2231/voices/af_heart.bin',
     ]) assert.equal(runtime.canUseResource(id), true, id);
+    assert.equal(runtime.approvedRevision('model:supertonic-3'), '4402acca094e2ff2b3dff446e0bf915f3fccc462');
     // Whisper, Parakeet, RIFE and Supertonic run on the re-approved bundled runtimes; the old CDN
     // locators are nobody's approval any more.
     for (const id of ['runtime:onnx-cdn', 'runtime:whisper-transformers']) assert.equal(runtime.canUseResource(id), true, id);
@@ -182,9 +188,10 @@ test('runtime policy admits exactly the owner-approved rows and keeps everything
       'https://huggingface.co/unapproved/resolve/main/model.onnx',
       'https://huggingface.co/walterlow/RIFE_fp32_timestep-evil/resolve/ee09066f9822f8b28b8477a1b4cc30f19d607590/a.onnx',
       'https://huggingface.co/spaces/Supertone/supertonic-3/resolve/main/assets-evil/x.onnx',
-      // Supertonic is never admitted from the moving branch, and waits for the owner at its commit.
+      // Supertonic and the voices are never admitted from the moving branch.
       'https://huggingface.co/spaces/Supertone/supertonic-3/resolve/main/assets/onnx/vocoder.onnx',
-      'https://huggingface.co/spaces/Supertone/supertonic-3/resolve/4402acca094e2ff2b3dff446e0bf915f3fccc462/assets/onnx/vocoder.onnx',
+      'https://huggingface.co/spaces/Supertone/supertonic-3/resolve/main/assets/voice_styles/F1.json',
+      'https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/af_heart.bin',
       'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.26.0-dev.20260410-5e55544225/dist/..%2F..%2Fevil@1%2Fx.js',
     ]) assert.equal(runtime.canUseResource(id), false, id);
     // Third-party loaders that ask for a branch are sent to the approved commit; nothing else moves.
@@ -212,12 +219,8 @@ test('runtime policy admits exactly the owner-approved rows and keeps everything
     await writeFile(path.join(root, 'rights-approval.json'), JSON.stringify(unsourced));
     await assert.rejects(writeResourcePolicy(root, path.join(root, 'engine-unsourced')), /must say where its own approval is recorded/);
 
-    // A use the owner withheld, or a row changed after approval, stays blocked. The pinned rows are
-    // taken as approved here, as the owner's approval of them would record them.
+    // A use the owner withheld, or a row changed after approval, stays blocked.
     const withheld = structuredClone(approval);
-    for (const entry of withheld.resources) {
-      if (pinnedPending.has(entry.id)) entry.sha256 = approvalRowDigest(manifest.resources.find(({ id }) => id === entry.id));
-    }
     withheld.resources.find(({ id }) => id === 'font:Inter').excludedUses = { localRuntime: 'Withheld for this test.' };
     withheld.resources.find(({ id }) => id === 'voice:kokoro-af_heart').excludedUses = { localRuntime: 'Withheld for this test.' };
     const changed = structuredClone(manifest);

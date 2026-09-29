@@ -555,7 +555,9 @@
     },
     {
       "id": "model:supertonic-3",
-      "sha256": "821e6d98089d088619d0031c65eeaa280556e770a9d38f2a4235752f401bde2f"
+      "sha256": "8c3967fbf94e2f454a03074f838c4334ac7103a0f68fee65a5038c51813be91f",
+      "approvedOn": "2026-09-29",
+      "source": "Owner (AJ Taylor) approved this row pinned to an exact Hugging Face commit with per-file sha256 (studio commit 453b223aae, patch 0030) on 2026-09-29, in chat with the Frameleaf coordinator session, which relayed it to studio-editing; noted on Jira FL-86 and FL-136."
     },
     {
       "id": "model:walterlow/RIFE_fp32_timestep",
@@ -583,259 +585,387 @@
     },
     {
       "id": "voice:kokoro-af_alloy",
-      "sha256": "7ac2544b31e6530a5fef35e1f5f52219db4baf6ff70d3a3521edfc8b0d37372c"
+      "sha256": "07afcc7744451d95ab75b26e0ffbffe8d30e9cb1ec8eb479329978d549daf3fb",
+      "approvedOn": "2026-09-29",
+      "source": "Owner (AJ Taylor) approved this row pinned to an exact Hugging Face commit with per-file sha256 (studio commit 453b223aae, patch 0030) on 2026-09-29, in chat with the Frameleaf coordinator session, which relayed it to studio-editing; noted on Jira FL-86 and FL-136."
     },
     {
       "id": "voice:kokoro-af_aoede",
-      "sha256": "68dd139ef50e390d302299447325c1c940d9dd45edfadaba66998a63b784da75"
+      "sha256": "21bbc75d73cadbefbe91df54e5c27d39aa03338a28ea4aac3cf3d07eb320e3a8",
+      "approvedOn": "2026-09-29",
+      "source": "Owner (AJ Taylor) approved this row pinned to an exact Hugging Face commit with per-file sha256 (studio commit 453b223aae, patch 0030) on 2026-09-29, in chat with the Frameleaf coordinator session, which relayed it to studio-editing; noted on Jira FL-86 and FL-136."
     },
     {
       "id": "voice:kokoro-af_bella",
-      "sha256": "9c21c46cc603e39dc34ba911fac7f297d946f87cc9af1c43c1140c5897568100"
+      "sha256": "2ecea98c641156572ab5598744802506fd9dd145b55bc2be7e64656deed693f7",
+      "approvedOn": "2026-09-29",
+      "source": "Owner (AJ Taylor) approved this row pinned to an exact Hugging Face commit with per-file sha256 (studio commit 453b223aae, patch 0030) on 2026-09-29, in chat with the Frameleaf coordinator session, which relayed it to studio-editing; noted on Jira FL-86 and FL-136."
     },
     {
       "id": "voice:kokoro-af_heart",
-      "sha256": "38a13bd459ab7358a9eff468833574b6c3c437afae8e8efad907fc08cc8389a6"
+      "sha256": "055793e02d0763dae9eaf37895dce514dba69bb1014593b934930611184ac155",
+      "approvedOn": "2026-09-29",
+      "source": "Owner (AJ Taylor) approved this row pinned to an exact Hugging Face commit with per-file sha256 (studio commit 453b223aae, patch 0030) on 2026-09-29, in chat with the Frameleaf coordinator session, which relayed it to studio-editing; noted on Jira FL-86 and FL-136."
     },
     {
       "id": "voice:kokoro-af_jessica",
-      "sha256": "5cbd2a2a310945e93823994047f373d3f301cb63f1c3ba4905523cdf2316c6cf"
+      "sha256": "409ab85b479ef7f0acdff50ac3dc59b7bbdacae0fea42a92b36567e006e3167a",
+      "approvedOn": "2026-09-29",
+      "source": "Owner (AJ Taylor) approved this row pinned to an exact Hugging Face commit with per-file sha256 (studio commit 453b223aae, patch 0030) on 2026-09-29, in chat with the Frameleaf coordinator session, which relayed it to studio-editing; noted on Jira FL-86 and FL-136."
     },
     {
       "id": "voice:kokoro-af_kore",
-      "sha256": "ad284ad602d2a16027a420f3965842eb029000728c4a05b1c86f672467399971"
+      "sha256": "69dd8fa000085453ffe2d2989b5ac63f7b78aeece8ea644a458ddb842e05d5a3",
+      "approvedOn": "2026-09-29",
+      "source": "Owner (AJ Taylor) approved this row pinned to an exact Hugging Face commit with per-file sha256 (studio commit 453b223aae, patch 0030) on 2026-09-29, in chat with the Frameleaf coordinator session, which relayed it to studio-editing; noted on Jira FL-86 and FL-136."
     },
     {
       "id": "voice:kokoro-af_nicole",
-      "sha256": "dae4b9dc2198a7648505449b3c68385660e9e135c81b82151044e0df9d693759"
+      "sha256": "5e6b2b4d0a308a75afc266c54e554b5466d41e20cb3ec861e56f1f6fb4cbce08",
+      "approvedOn": "2026-09-29",
+      "source": "Owner (AJ Taylor) approved this row pinned to an exact Hugging Face commit with per-file sha256 (studio commit 453b223aae, patch 0030) on 2026-09-29, in chat with the Frameleaf coordinator session, which relayed it to studio-editing; noted on Jira FL-86 and FL-136."
     },
     {
       "id": "voice:kokoro-af_nova",
-      "sha256": "99c6c940eb855ae16d3332875b95c931d3cae90a5a703dd86ceb40ffd37a7700"
+      "sha256": "dc828e17ceb2c54d0eb142cb322b29b355ec9f099e43256791ad2b28ac7fbdb4",
+      "approvedOn": "2026-09-29",
+      "source": "Owner (AJ Taylor) approved this row pinned to an exact Hugging Face commit with per-file sha256 (studio commit 453b223aae, patch 0030) on 2026-09-29, in chat with the Frameleaf coordinator session, which relayed it to studio-editing; noted on Jira FL-86 and FL-136."
     },
     {
       "id": "voice:kokoro-af_river",
-      "sha256": "d3dc866fa9d16b1fc566a7512cd614a82f5ab5c2d7678ee0f2c7ee9ba676f956"
+      "sha256": "caecfec07222e7922d6f2b5fe3141bc6751b84ef60970c47d1f522383524221e",
+      "approvedOn": "2026-09-29",
+      "source": "Owner (AJ Taylor) approved this row pinned to an exact Hugging Face commit with per-file sha256 (studio commit 453b223aae, patch 0030) on 2026-09-29, in chat with the Frameleaf coordinator session, which relayed it to studio-editing; noted on Jira FL-86 and FL-136."
     },
     {
       "id": "voice:kokoro-af_sarah",
-      "sha256": "fa991d05fd6cdab85cdf3069d878f71547455f1374a5b5a76d15b366b7853d26"
+      "sha256": "c59215fbd418ff8e66b716f678e0a85730dd87c49296623df00344351e9e7b98",
+      "approvedOn": "2026-09-29",
+      "source": "Owner (AJ Taylor) approved this row pinned to an exact Hugging Face commit with per-file sha256 (studio commit 453b223aae, patch 0030) on 2026-09-29, in chat with the Frameleaf coordinator session, which relayed it to studio-editing; noted on Jira FL-86 and FL-136."
     },
     {
       "id": "voice:kokoro-af_sky",
-      "sha256": "b7f3ad6e4c80d043185990385e5e497c80e057aa9e4da5f75365ed25b67c5210"
+      "sha256": "e527558a51cfa72fffe80fb9b87f1ccece3300531a0ef1c5ad7fa216f9691c5b",
+      "approvedOn": "2026-09-29",
+      "source": "Owner (AJ Taylor) approved this row pinned to an exact Hugging Face commit with per-file sha256 (studio commit 453b223aae, patch 0030) on 2026-09-29, in chat with the Frameleaf coordinator session, which relayed it to studio-editing; noted on Jira FL-86 and FL-136."
     },
     {
       "id": "voice:kokoro-am_adam",
-      "sha256": "44ad77fd3f623351f23b4a13e7be8f6cdd1c4ce660ef688eb09e4595169e72f6"
+      "sha256": "a8a688514a8e2d25bfcbc97736e85e91d749b07d6973e304f6b4a8f8e842540c",
+      "approvedOn": "2026-09-29",
+      "source": "Owner (AJ Taylor) approved this row pinned to an exact Hugging Face commit with per-file sha256 (studio commit 453b223aae, patch 0030) on 2026-09-29, in chat with the Frameleaf coordinator session, which relayed it to studio-editing; noted on Jira FL-86 and FL-136."
     },
     {
       "id": "voice:kokoro-am_echo",
-      "sha256": "b630a9885f479dd0a861add6f9804dbc340531df6e5e3ab638d3ceb0a571752b"
+      "sha256": "40ed117b401e7ace48d8ba16bc4c63fec7d6016a4daa145da89b94af4fe4bf8a",
+      "approvedOn": "2026-09-29",
+      "source": "Owner (AJ Taylor) approved this row pinned to an exact Hugging Face commit with per-file sha256 (studio commit 453b223aae, patch 0030) on 2026-09-29, in chat with the Frameleaf coordinator session, which relayed it to studio-editing; noted on Jira FL-86 and FL-136."
     },
     {
       "id": "voice:kokoro-am_eric",
-      "sha256": "4b035df83a90e65529c2a33bfce32d3722bf1f44e95e55ddc11b89435d7716bb"
+      "sha256": "d3e5ad364f9099699a8f741d88de8781ee3b805a39d0123f3da64f16408a12df",
+      "approvedOn": "2026-09-29",
+      "source": "Owner (AJ Taylor) approved this row pinned to an exact Hugging Face commit with per-file sha256 (studio commit 453b223aae, patch 0030) on 2026-09-29, in chat with the Frameleaf coordinator session, which relayed it to studio-editing; noted on Jira FL-86 and FL-136."
     },
     {
       "id": "voice:kokoro-am_fenrir",
-      "sha256": "49ac67ab3e960a60e3dc63a7c847bfcf9f789b33aaa79504272d5ea7dc548b93"
+      "sha256": "0fb27cb6fba175290340400c7fefebc6480b4586d04ddbd107609357b94a78d9",
+      "approvedOn": "2026-09-29",
+      "source": "Owner (AJ Taylor) approved this row pinned to an exact Hugging Face commit with per-file sha256 (studio commit 453b223aae, patch 0030) on 2026-09-29, in chat with the Frameleaf coordinator session, which relayed it to studio-editing; noted on Jira FL-86 and FL-136."
     },
     {
       "id": "voice:kokoro-am_liam",
-      "sha256": "a443770f65908aadc5315b5f60a0b1e1d8746574b6416e7adbcdf8091ddb69d3"
+      "sha256": "6ae8f3992f38c7dedc41fd70123300e695302782d31f93ea0d6c4c1c48110e22",
+      "approvedOn": "2026-09-29",
+      "source": "Owner (AJ Taylor) approved this row pinned to an exact Hugging Face commit with per-file sha256 (studio commit 453b223aae, patch 0030) on 2026-09-29, in chat with the Frameleaf coordinator session, which relayed it to studio-editing; noted on Jira FL-86 and FL-136."
     },
     {
       "id": "voice:kokoro-am_michael",
-      "sha256": "5e520f1779afa44b7f92e35e1632b2b448f88b23568ac877be0c894ad02c6efd"
+      "sha256": "3b75fd8a82fb8bf7e75d10ff8a341c9cb5a580b098481327501b1b0c843ebfed",
+      "approvedOn": "2026-09-29",
+      "source": "Owner (AJ Taylor) approved this row pinned to an exact Hugging Face commit with per-file sha256 (studio commit 453b223aae, patch 0030) on 2026-09-29, in chat with the Frameleaf coordinator session, which relayed it to studio-editing; noted on Jira FL-86 and FL-136."
     },
     {
       "id": "voice:kokoro-am_onyx",
-      "sha256": "9a0eeae574bde232773d0afcd82b1c4a3e092782d51bcfc1db4a5f568b86aa29"
+      "sha256": "d92f68316fdb9affd0f0e8961e5beb8e2dcdb0db31c746ca31698d271603b6b2",
+      "approvedOn": "2026-09-29",
+      "source": "Owner (AJ Taylor) approved this row pinned to an exact Hugging Face commit with per-file sha256 (studio commit 453b223aae, patch 0030) on 2026-09-29, in chat with the Frameleaf coordinator session, which relayed it to studio-editing; noted on Jira FL-86 and FL-136."
     },
     {
       "id": "voice:kokoro-am_puck",
-      "sha256": "99b2fb8e35ad00d5cc5a8d408a4aa4f204cead69d0446edffa755877e0088365"
+      "sha256": "a9a6de50561127fc0a32808d09ce5e0b438c47e6650a671e64f8dc4566b62bd8",
+      "approvedOn": "2026-09-29",
+      "source": "Owner (AJ Taylor) approved this row pinned to an exact Hugging Face commit with per-file sha256 (studio commit 453b223aae, patch 0030) on 2026-09-29, in chat with the Frameleaf coordinator session, which relayed it to studio-editing; noted on Jira FL-86 and FL-136."
     },
     {
       "id": "voice:kokoro-am_santa",
-      "sha256": "58139b3117cdf9d123b231071ac0d07a3e24826439161050c4bddeb936e363d0"
+      "sha256": "0f30404b753bc35d572a8e86069e775af9366875d65ea4819424e0ae7161fdb6",
+      "approvedOn": "2026-09-29",
+      "source": "Owner (AJ Taylor) approved this row pinned to an exact Hugging Face commit with per-file sha256 (studio commit 453b223aae, patch 0030) on 2026-09-29, in chat with the Frameleaf coordinator session, which relayed it to studio-editing; noted on Jira FL-86 and FL-136."
     },
     {
       "id": "voice:kokoro-bf_alice",
-      "sha256": "62b30c3f889ca51c5ed508324524a94fbe4a26db12f15a1cc6a47e1e8c4a76ed"
+      "sha256": "e4636ea512c538fbfe84f1aeb874bba33b86538d327c2242aa3a76183f929d4d",
+      "approvedOn": "2026-09-29",
+      "source": "Owner (AJ Taylor) approved this row pinned to an exact Hugging Face commit with per-file sha256 (studio commit 453b223aae, patch 0030) on 2026-09-29, in chat with the Frameleaf coordinator session, which relayed it to studio-editing; noted on Jira FL-86 and FL-136."
     },
     {
       "id": "voice:kokoro-bf_emma",
-      "sha256": "ddb325d5a4d5e87cec297488c94289638581f704683965552758719f8ac6d2de"
+      "sha256": "c698cd11a85eebfd136bf6310a894ac13de5f530ae76fc6d1472393f4ce0826f",
+      "approvedOn": "2026-09-29",
+      "source": "Owner (AJ Taylor) approved this row pinned to an exact Hugging Face commit with per-file sha256 (studio commit 453b223aae, patch 0030) on 2026-09-29, in chat with the Frameleaf coordinator session, which relayed it to studio-editing; noted on Jira FL-86 and FL-136."
     },
     {
       "id": "voice:kokoro-bf_isabella",
-      "sha256": "075c77a5c1c87529ee85875e2b8851be2f82d8833a018e37a79f10b35d3a8372"
+      "sha256": "5171a52b7c83a66b5613a397894b444915d08243b0d40ea1be17c98d7af325d0",
+      "approvedOn": "2026-09-29",
+      "source": "Owner (AJ Taylor) approved this row pinned to an exact Hugging Face commit with per-file sha256 (studio commit 453b223aae, patch 0030) on 2026-09-29, in chat with the Frameleaf coordinator session, which relayed it to studio-editing; noted on Jira FL-86 and FL-136."
     },
     {
       "id": "voice:kokoro-bf_lily",
-      "sha256": "958c8f520206b71d796817efe69ef06336fd37f4db4bc1f991bfd012c4617cde"
+      "sha256": "4a9c34d7d3515f595cc201867c96697a7801df7b4a5e7b86fbacfaa044443cc3",
+      "approvedOn": "2026-09-29",
+      "source": "Owner (AJ Taylor) approved this row pinned to an exact Hugging Face commit with per-file sha256 (studio commit 453b223aae, patch 0030) on 2026-09-29, in chat with the Frameleaf coordinator session, which relayed it to studio-editing; noted on Jira FL-86 and FL-136."
     },
     {
       "id": "voice:kokoro-bm_daniel",
-      "sha256": "c8a002ceb848389d72cdc21359100c55847a01ecfcf68e5d3bea52c3fb1d4ce8"
+      "sha256": "275d17df460aed8ba03bddeaf12d1cea0cc1f5a6c8204652ff92e6b6a703a3af",
+      "approvedOn": "2026-09-29",
+      "source": "Owner (AJ Taylor) approved this row pinned to an exact Hugging Face commit with per-file sha256 (studio commit 453b223aae, patch 0030) on 2026-09-29, in chat with the Frameleaf coordinator session, which relayed it to studio-editing; noted on Jira FL-86 and FL-136."
     },
     {
       "id": "voice:kokoro-bm_fable",
-      "sha256": "dd1f7486990011dc8e2053790965ab757462bf6aab2065c77344c205d5ed1e31"
+      "sha256": "9a6eb4ac989ad8f4bf53ebd017401dc1db1a7f1c3be2804e83f4864cad8f1029",
+      "approvedOn": "2026-09-29",
+      "source": "Owner (AJ Taylor) approved this row pinned to an exact Hugging Face commit with per-file sha256 (studio commit 453b223aae, patch 0030) on 2026-09-29, in chat with the Frameleaf coordinator session, which relayed it to studio-editing; noted on Jira FL-86 and FL-136."
     },
     {
       "id": "voice:kokoro-bm_george",
-      "sha256": "744861001f0e17b141c369d27bdfeaad0270a4b4aded20c3fe8e6b961bf346bd"
+      "sha256": "fb183a2406523c42f73aa1ae9ba7d657452bd563f14d97feb23ea5ec396cffdd",
+      "approvedOn": "2026-09-29",
+      "source": "Owner (AJ Taylor) approved this row pinned to an exact Hugging Face commit with per-file sha256 (studio commit 453b223aae, patch 0030) on 2026-09-29, in chat with the Frameleaf coordinator session, which relayed it to studio-editing; noted on Jira FL-86 and FL-136."
     },
     {
       "id": "voice:kokoro-bm_lewis",
-      "sha256": "0625ee5c6fa8b9d3375962fe7f42ce1f66de580649bbf36daabb4a7f902c4d9e"
+      "sha256": "c7c86cbebaa8d7173d4d548119cd3262b0987d7cb07a5c9ce917d1f591a4c956",
+      "approvedOn": "2026-09-29",
+      "source": "Owner (AJ Taylor) approved this row pinned to an exact Hugging Face commit with per-file sha256 (studio commit 453b223aae, patch 0030) on 2026-09-29, in chat with the Frameleaf coordinator session, which relayed it to studio-editing; noted on Jira FL-86 and FL-136."
     },
     {
       "id": "voice:kokoro-ef_dora",
-      "sha256": "e3ce68881f68f68c05232ad9cf56862d05ec5f0c987700ec330b0054f66f0bc8"
+      "sha256": "a1591ecd38059d11c7d613cf8a4aaf6f19fbc856ca13c9173dacd351ae73a046",
+      "approvedOn": "2026-09-29",
+      "source": "Owner (AJ Taylor) approved this row pinned to an exact Hugging Face commit with per-file sha256 (studio commit 453b223aae, patch 0030) on 2026-09-29, in chat with the Frameleaf coordinator session, which relayed it to studio-editing; noted on Jira FL-86 and FL-136."
     },
     {
       "id": "voice:kokoro-em_alex",
-      "sha256": "98023e11adb6931af65e513eaf055223b32f05f7ecc99a40cc2a9833f123455c"
+      "sha256": "627b600dac5ad6fa0e36bc6f5b00ae6e67e46f84691c90538ea100bdc3f4c0d4",
+      "approvedOn": "2026-09-29",
+      "source": "Owner (AJ Taylor) approved this row pinned to an exact Hugging Face commit with per-file sha256 (studio commit 453b223aae, patch 0030) on 2026-09-29, in chat with the Frameleaf coordinator session, which relayed it to studio-editing; noted on Jira FL-86 and FL-136."
     },
     {
       "id": "voice:kokoro-em_santa",
-      "sha256": "a9465be74a2ad8363f9f51df3aa28674e449b1dace2f2b01968875c1dbe5b8fb"
+      "sha256": "99d8cc528a1c8f7e4489b22620abb3a0b1c7ecce62d349c7c738b27534df5d99",
+      "approvedOn": "2026-09-29",
+      "source": "Owner (AJ Taylor) approved this row pinned to an exact Hugging Face commit with per-file sha256 (studio commit 453b223aae, patch 0030) on 2026-09-29, in chat with the Frameleaf coordinator session, which relayed it to studio-editing; noted on Jira FL-86 and FL-136."
     },
     {
       "id": "voice:kokoro-ff_siwis",
-      "sha256": "2c4672f1b05cb9bcf3a04ea5bd7c88993c7c122d09c127a249a5edbebc502403"
+      "sha256": "68021ee548efd9c4323db41cd7f3a79b92cea457b28b97bc40e9c6354754c3bf",
+      "approvedOn": "2026-09-29",
+      "source": "Owner (AJ Taylor) approved this row pinned to an exact Hugging Face commit with per-file sha256 (studio commit 453b223aae, patch 0030) on 2026-09-29, in chat with the Frameleaf coordinator session, which relayed it to studio-editing; noted on Jira FL-86 and FL-136."
     },
     {
       "id": "voice:kokoro-hf_alpha",
-      "sha256": "93367d4cb8d9826f3a652a139a1ac7e10078ed4fd7fce05bdacd3aa339a5bbe8"
+      "sha256": "f0282a3f24c57ca2b0ef6210d6da1752274353a9697a0b7809751c3e8874c3e9",
+      "approvedOn": "2026-09-29",
+      "source": "Owner (AJ Taylor) approved this row pinned to an exact Hugging Face commit with per-file sha256 (studio commit 453b223aae, patch 0030) on 2026-09-29, in chat with the Frameleaf coordinator session, which relayed it to studio-editing; noted on Jira FL-86 and FL-136."
     },
     {
       "id": "voice:kokoro-hf_beta",
-      "sha256": "741cf64edaf6d4458e89baa85a613aeb908f68b751fa876f74acf39dd082c579"
+      "sha256": "257dbf5e37173bc2c02334acc53fb03c2b0ab835170d2e1a3eeeed3f326a1326",
+      "approvedOn": "2026-09-29",
+      "source": "Owner (AJ Taylor) approved this row pinned to an exact Hugging Face commit with per-file sha256 (studio commit 453b223aae, patch 0030) on 2026-09-29, in chat with the Frameleaf coordinator session, which relayed it to studio-editing; noted on Jira FL-86 and FL-136."
     },
     {
       "id": "voice:kokoro-hm_omega",
-      "sha256": "f63a5fe0fd30df3e75c51521061633ea9361c838f90147e044ee41786e2043af"
+      "sha256": "13b8c5721c366fc158ba69a0ea33b7c0724ac4b7f4b2858a8e99f7030ed4c2a7",
+      "approvedOn": "2026-09-29",
+      "source": "Owner (AJ Taylor) approved this row pinned to an exact Hugging Face commit with per-file sha256 (studio commit 453b223aae, patch 0030) on 2026-09-29, in chat with the Frameleaf coordinator session, which relayed it to studio-editing; noted on Jira FL-86 and FL-136."
     },
     {
       "id": "voice:kokoro-hm_psi",
-      "sha256": "a496dbe0cd1f02d745140659dc0d14fcd8381279db967b518cc22e476a52c3c2"
+      "sha256": "122a08bd6a5d632d6c2e8ed661c2c2df6ebcfcb1df33d965312e3112f1f81415",
+      "approvedOn": "2026-09-29",
+      "source": "Owner (AJ Taylor) approved this row pinned to an exact Hugging Face commit with per-file sha256 (studio commit 453b223aae, patch 0030) on 2026-09-29, in chat with the Frameleaf coordinator session, which relayed it to studio-editing; noted on Jira FL-86 and FL-136."
     },
     {
       "id": "voice:kokoro-if_sara",
-      "sha256": "27f91999946b7aaa0f5f4978085b5a6136f98a494d4d97613f40e4db598f09db"
+      "sha256": "b235122cc343bed431c3fb651505658b47fcb881e5a892be3b74ce2180209c46",
+      "approvedOn": "2026-09-29",
+      "source": "Owner (AJ Taylor) approved this row pinned to an exact Hugging Face commit with per-file sha256 (studio commit 453b223aae, patch 0030) on 2026-09-29, in chat with the Frameleaf coordinator session, which relayed it to studio-editing; noted on Jira FL-86 and FL-136."
     },
     {
       "id": "voice:kokoro-im_nicola",
-      "sha256": "0a426269f08b917245e51dcfdd8a5096782673fed7917eaffc753c49654a96ab"
+      "sha256": "f3f2c287e9dbcef7cf148fce65e788ed640f2c37f50c228f58f0e7c4caacdea4",
+      "approvedOn": "2026-09-29",
+      "source": "Owner (AJ Taylor) approved this row pinned to an exact Hugging Face commit with per-file sha256 (studio commit 453b223aae, patch 0030) on 2026-09-29, in chat with the Frameleaf coordinator session, which relayed it to studio-editing; noted on Jira FL-86 and FL-136."
     },
     {
       "id": "voice:kokoro-jf_alpha",
-      "sha256": "ad4cf14ed8b26f1da4f1ecd1295b9d8a41364b769fa6a895032ded3700e55fb1"
+      "sha256": "af8a2318c0e566c280dae82a7013bfe15c199aadd0f2f511639d61b9f142dda3",
+      "approvedOn": "2026-09-29",
+      "source": "Owner (AJ Taylor) approved this row pinned to an exact Hugging Face commit with per-file sha256 (studio commit 453b223aae, patch 0030) on 2026-09-29, in chat with the Frameleaf coordinator session, which relayed it to studio-editing; noted on Jira FL-86 and FL-136."
     },
     {
       "id": "voice:kokoro-jf_gongitsune",
-      "sha256": "25b938de37d2f2287f7bc31ce47b7fec8c7eecff7d3a2c70ebdcda7695270c4c"
+      "sha256": "1359e211afe4e8c32ecd97f0aae8269e46dc059c220f11663847639fc0baf30f",
+      "approvedOn": "2026-09-29",
+      "source": "Owner (AJ Taylor) approved this row pinned to an exact Hugging Face commit with per-file sha256 (studio commit 453b223aae, patch 0030) on 2026-09-29, in chat with the Frameleaf coordinator session, which relayed it to studio-editing; noted on Jira FL-86 and FL-136."
     },
     {
       "id": "voice:kokoro-jf_nezumi",
-      "sha256": "47da645b4ff4538669aea6e8009d1eac8ce9e4ced6938885c3f2d2d0b3fca52b"
+      "sha256": "2126b7c976374878702b5fa964f1b1a292dbf60d08bbacf710a8cd1432e2da3c",
+      "approvedOn": "2026-09-29",
+      "source": "Owner (AJ Taylor) approved this row pinned to an exact Hugging Face commit with per-file sha256 (studio commit 453b223aae, patch 0030) on 2026-09-29, in chat with the Frameleaf coordinator session, which relayed it to studio-editing; noted on Jira FL-86 and FL-136."
     },
     {
       "id": "voice:kokoro-jf_tebukuro",
-      "sha256": "1f8dd6c1d769160b51b872c3fdaba2fe462cfb4882839d0cf34b66061b628e19"
+      "sha256": "2d200fa88e3c7414f634f717287efa8e9ac9ed8786702940871bc7808ef2ed17",
+      "approvedOn": "2026-09-29",
+      "source": "Owner (AJ Taylor) approved this row pinned to an exact Hugging Face commit with per-file sha256 (studio commit 453b223aae, patch 0030) on 2026-09-29, in chat with the Frameleaf coordinator session, which relayed it to studio-editing; noted on Jira FL-86 and FL-136."
     },
     {
       "id": "voice:kokoro-jm_kumo",
-      "sha256": "aca30925a07c03bba12e98dec7b04a24c2e87464bbe2d948b4a4ba78356587ef"
+      "sha256": "66233af891b54499c9f4ff0d6e7b9f0cf7a0cfc8d3cad188dbf4892a451b78e1",
+      "approvedOn": "2026-09-29",
+      "source": "Owner (AJ Taylor) approved this row pinned to an exact Hugging Face commit with per-file sha256 (studio commit 453b223aae, patch 0030) on 2026-09-29, in chat with the Frameleaf coordinator session, which relayed it to studio-editing; noted on Jira FL-86 and FL-136."
     },
     {
       "id": "voice:kokoro-pf_dora",
-      "sha256": "97c7167219669d5eb44582f975811c9634b16207198284f48e50d388e8eeaff1"
+      "sha256": "9bb56dd73d920365e599b497673b7aad24f7bc7be2dfbc0c140478be6839686a",
+      "approvedOn": "2026-09-29",
+      "source": "Owner (AJ Taylor) approved this row pinned to an exact Hugging Face commit with per-file sha256 (studio commit 453b223aae, patch 0030) on 2026-09-29, in chat with the Frameleaf coordinator session, which relayed it to studio-editing; noted on Jira FL-86 and FL-136."
     },
     {
       "id": "voice:kokoro-pm_alex",
-      "sha256": "e4ce4301d74014900c8c012bda093519d14c8cb16de7a1ce5e349720128fdfd6"
+      "sha256": "0321db358c81d8437e0e6c583f23faeec6ae6a649228f2bc4a352837f04071a9",
+      "approvedOn": "2026-09-29",
+      "source": "Owner (AJ Taylor) approved this row pinned to an exact Hugging Face commit with per-file sha256 (studio commit 453b223aae, patch 0030) on 2026-09-29, in chat with the Frameleaf coordinator session, which relayed it to studio-editing; noted on Jira FL-86 and FL-136."
     },
     {
       "id": "voice:kokoro-pm_santa",
-      "sha256": "b70c4e7487c16216b8dd485e98406cbb1f80a84d33c142a8a9e239b1208d775f"
+      "sha256": "3d20a5af950d44b30f8e4bdc51f627e8c37eae757d096603247623cc10403b17",
+      "approvedOn": "2026-09-29",
+      "source": "Owner (AJ Taylor) approved this row pinned to an exact Hugging Face commit with per-file sha256 (studio commit 453b223aae, patch 0030) on 2026-09-29, in chat with the Frameleaf coordinator session, which relayed it to studio-editing; noted on Jira FL-86 and FL-136."
     },
     {
       "id": "voice:kokoro-zf_xiaobei",
-      "sha256": "33ff61db0997632c0b9e68f2442d897be681bab22fb49539327ba849e19f7dbc"
+      "sha256": "72b499081483187a81e7829da5f2b6428218922149ab9c203fe579f60f566776",
+      "approvedOn": "2026-09-29",
+      "source": "Owner (AJ Taylor) approved this row pinned to an exact Hugging Face commit with per-file sha256 (studio commit 453b223aae, patch 0030) on 2026-09-29, in chat with the Frameleaf coordinator session, which relayed it to studio-editing; noted on Jira FL-86 and FL-136."
     },
     {
       "id": "voice:kokoro-zf_xiaoni",
-      "sha256": "62bf8c5532547947712960f953591c423722b68fd7dfda693e4128269a90423c"
+      "sha256": "0ab6bfa15905ff7866f3bd84efd96ba056ca48904d262038dfc2c32af46b3eee",
+      "approvedOn": "2026-09-29",
+      "source": "Owner (AJ Taylor) approved this row pinned to an exact Hugging Face commit with per-file sha256 (studio commit 453b223aae, patch 0030) on 2026-09-29, in chat with the Frameleaf coordinator session, which relayed it to studio-editing; noted on Jira FL-86 and FL-136."
     },
     {
       "id": "voice:kokoro-zf_xiaoxiao",
-      "sha256": "d75385e86d65f3697f7acb02b7d8756fac14916bc931eefca9d0cca2034e0e83"
+      "sha256": "31eaa5381f8f06920a660f72c14f213d4fe9d88918ee99c88174b183b2c575e6",
+      "approvedOn": "2026-09-29",
+      "source": "Owner (AJ Taylor) approved this row pinned to an exact Hugging Face commit with per-file sha256 (studio commit 453b223aae, patch 0030) on 2026-09-29, in chat with the Frameleaf coordinator session, which relayed it to studio-editing; noted on Jira FL-86 and FL-136."
     },
     {
       "id": "voice:kokoro-zf_xiaoyi",
-      "sha256": "8c8afdecab5866b68585f3365a41bbd4e65c86a428567bb7cf986c52d4c226ca"
+      "sha256": "c73a04c910c25785b1331f11053f4ab363616a4d5296f56f7309ec08bb03d2ec",
+      "approvedOn": "2026-09-29",
+      "source": "Owner (AJ Taylor) approved this row pinned to an exact Hugging Face commit with per-file sha256 (studio commit 453b223aae, patch 0030) on 2026-09-29, in chat with the Frameleaf coordinator session, which relayed it to studio-editing; noted on Jira FL-86 and FL-136."
     },
     {
       "id": "voice:kokoro-zm_yunjian",
-      "sha256": "75525b454f6cfbac01d095082c5a6a0c0e86bb2dde38aca46f1c75270549b17d"
+      "sha256": "9f14d358cacdc9a0feeb62a29a7201476c7e50e22a088a47da68f950841ed128",
+      "approvedOn": "2026-09-29",
+      "source": "Owner (AJ Taylor) approved this row pinned to an exact Hugging Face commit with per-file sha256 (studio commit 453b223aae, patch 0030) on 2026-09-29, in chat with the Frameleaf coordinator session, which relayed it to studio-editing; noted on Jira FL-86 and FL-136."
     },
     {
       "id": "voice:kokoro-zm_yunxi",
-      "sha256": "40d1abc5c6bb4fddf2c96e8c08aa33222665ebfb718c15cccbb75591d2c68f74"
+      "sha256": "72861be7422aa138710ef3967f4592a7156ace19bff611c5f90c072f476bdb86",
+      "approvedOn": "2026-09-29",
+      "source": "Owner (AJ Taylor) approved this row pinned to an exact Hugging Face commit with per-file sha256 (studio commit 453b223aae, patch 0030) on 2026-09-29, in chat with the Frameleaf coordinator session, which relayed it to studio-editing; noted on Jira FL-86 and FL-136."
     },
     {
       "id": "voice:kokoro-zm_yunxia",
-      "sha256": "5c107666158a98f50194192157ca8a6ef086a08d8558808ffd6e1aa284426106"
+      "sha256": "0119b0ede745cc1b55292018d5412399ee0708496f100d824d41593b527953ba",
+      "approvedOn": "2026-09-29",
+      "source": "Owner (AJ Taylor) approved this row pinned to an exact Hugging Face commit with per-file sha256 (studio commit 453b223aae, patch 0030) on 2026-09-29, in chat with the Frameleaf coordinator session, which relayed it to studio-editing; noted on Jira FL-86 and FL-136."
     },
     {
       "id": "voice:kokoro-zm_yunyang",
-      "sha256": "297327562ed4e8fa997cf82cce5279b79f5f977e072a0bf596f6c73cce4014bc"
+      "sha256": "d3513b57d4c5033c8fef1bfd7d75f7d4dcdd42b8a18d6e456e2e40aff70513ef",
+      "approvedOn": "2026-09-29",
+      "source": "Owner (AJ Taylor) approved this row pinned to an exact Hugging Face commit with per-file sha256 (studio commit 453b223aae, patch 0030) on 2026-09-29, in chat with the Frameleaf coordinator session, which relayed it to studio-editing; noted on Jira FL-86 and FL-136."
     },
     {
       "id": "voice:supertonic-F1",
-      "sha256": "84a2b10207adb08906c577689cf177c65ad278ac96147f93ecd09cc7b22624bf"
+      "sha256": "25927f14847ad0259602c03a68d45146122d7f2a462b9d80431e5343f0e8b397",
+      "approvedOn": "2026-09-29",
+      "source": "Owner (AJ Taylor) approved this row pinned to an exact Hugging Face commit with per-file sha256 (studio commit 453b223aae, patch 0030) on 2026-09-29, in chat with the Frameleaf coordinator session, which relayed it to studio-editing; noted on Jira FL-86 and FL-136."
     },
     {
       "id": "voice:supertonic-F2",
-      "sha256": "0ef9a6c487b26a7e7499b0848988d6f09ea8b9ead017331eeb870019ef9ea902"
+      "sha256": "b1dcbe38ff8313600834ba1414f458748a1f86cb18967818db3b7a5f47ce4b90",
+      "approvedOn": "2026-09-29",
+      "source": "Owner (AJ Taylor) approved this row pinned to an exact Hugging Face commit with per-file sha256 (studio commit 453b223aae, patch 0030) on 2026-09-29, in chat with the Frameleaf coordinator session, which relayed it to studio-editing; noted on Jira FL-86 and FL-136."
     },
     {
       "id": "voice:supertonic-F3",
-      "sha256": "b67efdb1f733c69fe2b587f51f0cd41abff55437ed2fb86428b77664a69d9de3"
+      "sha256": "5b96d38c522ea4c30c54f498abb053f98fbe940456536f43bee3a05073c6220a",
+      "approvedOn": "2026-09-29",
+      "source": "Owner (AJ Taylor) approved this row pinned to an exact Hugging Face commit with per-file sha256 (studio commit 453b223aae, patch 0030) on 2026-09-29, in chat with the Frameleaf coordinator session, which relayed it to studio-editing; noted on Jira FL-86 and FL-136."
     },
     {
       "id": "voice:supertonic-F4",
-      "sha256": "b7e88e8c1d3953e9474aa16aa91daa858e0cfff8c609454dcacc7fc22871fbc0"
+      "sha256": "831dc4fb187f78f6297de7e757eb5011d2690a17a151432ecf3d6b6fa80bc926",
+      "approvedOn": "2026-09-29",
+      "source": "Owner (AJ Taylor) approved this row pinned to an exact Hugging Face commit with per-file sha256 (studio commit 453b223aae, patch 0030) on 2026-09-29, in chat with the Frameleaf coordinator session, which relayed it to studio-editing; noted on Jira FL-86 and FL-136."
     },
     {
       "id": "voice:supertonic-F5",
-      "sha256": "e52cf2fc69a051226f9b263d0ec1307d6e171bb10e5177536f9ce00f1fc63055"
+      "sha256": "3ede9da86d59c729ef51ab40f9ed38e2d481f75530bcd71b6d2e72ba76766548",
+      "approvedOn": "2026-09-29",
+      "source": "Owner (AJ Taylor) approved this row pinned to an exact Hugging Face commit with per-file sha256 (studio commit 453b223aae, patch 0030) on 2026-09-29, in chat with the Frameleaf coordinator session, which relayed it to studio-editing; noted on Jira FL-86 and FL-136."
     },
     {
       "id": "voice:supertonic-M1",
-      "sha256": "7f1fd5a38dc0497e6f65618595055717e4bb8a7d60e1d6dd141ea809eb1b3d82"
+      "sha256": "d3506ed02122e7956e2e60835107b0c91f8ec8ad9dee26733937879a93c71255",
+      "approvedOn": "2026-09-29",
+      "source": "Owner (AJ Taylor) approved this row pinned to an exact Hugging Face commit with per-file sha256 (studio commit 453b223aae, patch 0030) on 2026-09-29, in chat with the Frameleaf coordinator session, which relayed it to studio-editing; noted on Jira FL-86 and FL-136."
     },
     {
       "id": "voice:supertonic-M2",
-      "sha256": "0a32644f6f59870c7dde616571576a980c76dfb9b3b8fa58105eccab2baae04d"
+      "sha256": "322fc4df965eb370b00d30e855bfa58a82c105c5ca4dcf9392104aa3f2aeeed3",
+      "approvedOn": "2026-09-29",
+      "source": "Owner (AJ Taylor) approved this row pinned to an exact Hugging Face commit with per-file sha256 (studio commit 453b223aae, patch 0030) on 2026-09-29, in chat with the Frameleaf coordinator session, which relayed it to studio-editing; noted on Jira FL-86 and FL-136."
     },
     {
       "id": "voice:supertonic-M3",
-      "sha256": "7ec7c30f73b71b4ca4aec2d9a81ccbe2a6d5aa06a4143fc57cca7765c8989a10"
+      "sha256": "c6689f53e28fe79e52245ccc914367c6cac15d19de51b5952de9515d74126ecc",
+      "approvedOn": "2026-09-29",
+      "source": "Owner (AJ Taylor) approved this row pinned to an exact Hugging Face commit with per-file sha256 (studio commit 453b223aae, patch 0030) on 2026-09-29, in chat with the Frameleaf coordinator session, which relayed it to studio-editing; noted on Jira FL-86 and FL-136."
     },
     {
       "id": "voice:supertonic-M4",
-      "sha256": "a4f72e6845cc01db26bc1c3b72674c80dc3536f1f0c53f3e0cc8cea619d0b9fd"
+      "sha256": "909c3bd8de0ca9ba925de39b3c8a3346abb07eefe9c684de6fbb8666c02ce48b",
+      "approvedOn": "2026-09-29",
+      "source": "Owner (AJ Taylor) approved this row pinned to an exact Hugging Face commit with per-file sha256 (studio commit 453b223aae, patch 0030) on 2026-09-29, in chat with the Frameleaf coordinator session, which relayed it to studio-editing; noted on Jira FL-86 and FL-136."
     },
     {
       "id": "voice:supertonic-M5",
-      "sha256": "6188bc5bb5189685275347f980680caddf56e7e2cdb274a74e60815ae2e78d42"
+      "sha256": "7367cfcccfbac817bd49c6e189abd070f7dbc2fc6da9ccf28d49a7f21fd66967",
+      "approvedOn": "2026-09-29",
+      "source": "Owner (AJ Taylor) approved this row pinned to an exact Hugging Face commit with per-file sha256 (studio commit 453b223aae, patch 0030) on 2026-09-29, in chat with the Frameleaf coordinator session, which relayed it to studio-editing; noted on Jira FL-86 and FL-136."
     },
     {
       "id": "weights:anime4k-3d",
