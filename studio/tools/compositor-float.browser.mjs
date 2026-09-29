@@ -6,6 +6,8 @@ import { chromeLaunchArgs } from '../engine/headless/lib/cli.mjs';
 const require = createRequire(new URL('../engine/package.json', import.meta.url));
 const { chromium } = require('playwright');
 const origin = process.env.STUDIO_TEST_ORIGIN || 'http://127.0.0.1:5186';
+const softLightBase = [-0.25, 4, 0, 1, 0.0625, 0.25, 0.75, 1, -0.25, 4, 0, 0.5, 0.0625, 0.25, 0.75, 0.5];
+const softLightLevels = [0, 0.25, 0.5, 0.75, 1];
 const browser = await chromium.launch({ headless: true, args: chromeLaunchArgs() });
 try {
   const page = await browser.newPage();
@@ -14,7 +16,7 @@ try {
     route.fulfill({ contentType: 'text/html', body: '<title>Float compositor regression</title>' }),
   );
   await page.goto(origin + '/float-probe');
-  const result = await page.evaluate(async () => {
+  const probe = async ({ softLightBase, softLightLevels }) => {
     if (!navigator.gpu) throw new Error('WebGPU unavailable; compositor float regression cannot run');
     const adapter = await navigator.gpu.requestAdapter();
     if (!adapter) throw new Error('No WebGPU adapter; compositor float regression cannot run');
@@ -89,6 +91,27 @@ try {
         [4, 1],
       );
       device.queue.submit([canvasEncoder.finish()]);
+      const softLightSource = texture(softLightBase);
+      const softLightReadbacks = [];
+      for (const level of softLightLevels) {
+        const top = texture(Array.from({ length: 4 }, () => [level, level, level, 0.5]).flat());
+        const blendEncoder = device.createCommandEncoder();
+        const blended = pipeline.compositeToTexture(
+          [
+            { ...layer, textureView: softLightSource.createView() },
+            { ...layer, textureView: top.createView(), params: { ...layer.params, blendMode: 'soft-light' } },
+          ],
+          4,
+          1,
+          blendEncoder,
+        );
+        if (!blended) throw new Error('Compositor rejected Soft Light layers');
+        const buffer = device.createBuffer({ size: 256, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
+        buffers.push(buffer);
+        softLightReadbacks.push(buffer);
+        blendEncoder.copyTextureToBuffer({ texture: blended.texture }, { buffer, bytesPerRow: 256 }, [4, 1]);
+        device.queue.submit([blendEncoder.finish()]);
+      }
       await device.queue.onSubmittedWorkDone();
       const error = await device.popErrorScope();
       if (error) throw new Error(`Float compositor GPU validation failed: ${error.message}`);
@@ -98,6 +121,9 @@ try {
         pixels: Array.from(new Float16Array(readback.getMappedRange(), 0, 16)),
         canvasFormat,
         canvasPixels: Array.from(new Uint8Array(canvasReadback.getMappedRange(), 0, 16)),
+        softLightPixels: softLightReadbacks.map((buffer) =>
+          Array.from(new Float16Array(buffer.getMappedRange(), 0, 16)),
+        ),
         adapter: {
           vendor: adapter.info.vendor,
           architecture: adapter.info.architecture,
@@ -111,7 +137,8 @@ try {
       for (const buffer of buffers) buffer.destroy();
       device.destroy();
     }
-  });
+  };
+  const result = await page.evaluate(probe, { softLightBase, softLightLevels });
   assert.equal(result.format, 'rgba16float');
   // Black video at 25% opacity must contribute: masked alpha 5/8 becomes 23/32,
   // and its straight RGB is attenuated by (5/8 * 3/4) / (23/32) = 15/23.
@@ -153,7 +180,30 @@ try {
       );
     }
   }
-  console.log(JSON.stringify({ check: 'compositor float range, mask alpha and SDR output', ...result }));
+  for (const [index, level] of softLightLevels.entries()) {
+    for (let pixel = 0; pixel < 4; pixel++) {
+      const baseAlpha = softLightBase[pixel * 4 + 3];
+      const alpha = 0.5 + baseAlpha * 0.5;
+      for (let channel = 0; channel < 4; channel++) {
+        const base = softLightBase[pixel * 4 + channel];
+        // Retain the existing SDR formula; use its signed-root extension for negative RGB.
+        const blend =
+          level <= 0.5
+            ? base - (1 - 2 * level) * base * (1 - base)
+            : base + (2 * level - 1) * (Math.sign(base) * Math.sqrt(Math.abs(base)) - base);
+        const expected =
+          channel === 3
+            ? alpha
+            : (blend * baseAlpha * 0.5 + level * 0.5 * (1 - baseAlpha) + base * baseAlpha * 0.5) / alpha;
+        const actual = result.softLightPixels[index][pixel * 4 + channel];
+        assert.ok(
+          Number.isFinite(actual) && Math.abs(actual - expected) < 0.005,
+          `Soft Light ${level}, pixel ${pixel}, channel ${channel}: ${actual} != ${expected}`,
+        );
+      }
+    }
+  }
+  console.log(JSON.stringify({ check: 'compositor float range, Soft Light, mask alpha and SDR output', ...result }));
 } finally {
   await browser.close();
 }
