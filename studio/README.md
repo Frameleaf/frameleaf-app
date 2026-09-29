@@ -24,6 +24,8 @@ Dolby configuration or RPU/metadata side data reported on the stream or any deco
 the generic HDR probe has no qualified Dolby decode/reshape path or explicit base-layer-only policy.
 All video streams are inspected and the input must contain exactly one video stream; a separate
 Dolby enhancement stream cannot be ignored by selecting only its HDR-compatible base.
+Every decoded frame must also report 10-bit 4:2:0, the requested HDR transfer and BT.2020
+primaries/matrix; missing or changed frame metadata is refused even when stream headers match.
 Plain single-stream HDR10/HLG sources remain eligible; these refusals do not strip metadata or create an output.
 
 `node --test scripts/frameleaf-studio-preflight.test.mjs` requires administrator-installed FFmpeg
