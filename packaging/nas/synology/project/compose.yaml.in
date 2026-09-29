@@ -3,21 +3,21 @@ services:
   server:
     image: @SERVER_REF@
     environment:
-      DB_PASSWORD: ${DB_PASSWORD:-UNCONFIGURED_DO_NOT_START}
+      DB_PASSWORD: ${DB_PASSWORD:?Missing installer configuration}
       DB_HOSTNAME: database
       DB_USERNAME: immich
       DB_DATABASE_NAME: immich
       REDIS_HOSTNAME: redis
-      IMMICH_MACHINE_LEARNING_ENABLED: ${ENABLE_ML:-false}
+      IMMICH_MACHINE_LEARNING_ENABLED: ${ENABLE_ML:?Missing installer configuration}
       IMMICH_MACHINE_LEARNING_URL: http://machine-learning:3003
     volumes:
       - type: bind
-        source: ${UPLOAD_LOCATION:-/var/packages/Frameleaf/var/media}
+        source: ${UPLOAD_LOCATION:?Missing installer configuration}
         target: /data
         bind:
           create_host_path: false
     ports:
-      - ${WEB_PORT:-2283}:2283
+      - ${WEB_PORT:?Missing installer configuration}:2283
     depends_on:
       - database
       - redis
@@ -37,11 +37,11 @@ services:
     environment:
       POSTGRES_USER: immich
       POSTGRES_DB: immich
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-UNCONFIGURED_DO_NOT_START}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Missing installer configuration}
       POSTGRES_INITDB_ARGS: --data-checksums
     volumes:
       - type: bind
-        source: ${DB_DATA_LOCATION:-/var/packages/Frameleaf/var/postgres}
+        source: ${DB_DATA_LOCATION:?Missing installer configuration}
         target: /var/lib/postgresql/data
         bind:
           create_host_path: false

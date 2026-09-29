@@ -32,7 +32,6 @@ function buildSpk(manifest, output) {
     })) compose = compose.replaceAll(key, value);
     assert(!/@[A-Z_]+@/.test(compose), 'Unresolved Synology image');
     fs.writeFileSync(path.join(payload, 'project/compose.yaml'), compose);
-    fs.symlinkSync('/var/packages/Frameleaf/var/frameleaf.env', path.join(payload, 'project/.env'));
     fs.writeFileSync(path.join(payload, 'project/nas-manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
     execFileSync('tar', ['-czf', path.join(stage, 'package.tgz'), '-C', payload, '.']);
     fs.mkdirSync(output, { recursive: true });

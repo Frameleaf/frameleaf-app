@@ -1,9 +1,10 @@
 #!/usr/bin/env node
-// Offline integrity and version check for release assets before NAS packaging.
+// Shared release integrity check; NAS packaging also requires signed provenance and qualification.
 const assert = require("node:assert/strict");
 const fs = require("node:fs/promises");
 const path = require("node:path");
 const { createRequire } = require("node:module");
+const { isDeepStrictEqual } = require("node:util");
 const { load } = createRequire(
   path.resolve(__dirname, "../server/package.json"),
 )("js-yaml");
@@ -12,9 +13,15 @@ const {
   INSTALL_FILES,
   VARIANTS,
   REPOSITORY,
+  SOURCE,
+  cosign,
+  github,
+  trustedRun,
+  ATTESTATION_TYPE,
+  COSIGN_PUBLIC_KEY,
 } = require("./frameleaf-release.cjs");
 
-async function verifyBundle(directory, expectedTag) {
+async function verifyBundle(directory, expectedTag, { authenticate = false, run, request = github } = {}) {
   assert.match(
     expectedTag,
     /^frameleaf-v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?-\d+$/,
@@ -22,6 +29,7 @@ async function verifyBundle(directory, expectedTag) {
   const names = [
     ...INSTALL_FILES,
     "supported-versions.json",
+    "nas-manifest.json",
     "release-manifest.json",
   ];
   const lines = (await fs.readFile(path.join(directory, "SHA256SUMS"), "utf8"))
@@ -73,6 +81,7 @@ async function verifyBundle(directory, expectedTag) {
       "Image source differs",
     );
   }
+  const nas = JSON.parse(await fs.readFile(path.join(directory, "nas-manifest.json"), "utf8"));
   const env = await fs.readFile(path.join(directory, "example.env"), "utf8");
   assert.deepEqual(
     env.match(/^[ \t]*(?:export[ \t]+)?IMMICH_VERSION[ \t]*(?:=|:).*$/gm),
@@ -82,6 +91,8 @@ async function verifyBundle(directory, expectedTag) {
   for (const name of ["docker-compose.yml", "docker-compose.rootless.yml"]) {
     const compose = await fs.readFile(path.join(directory, name), "utf8");
     const services = load(compose)?.services;
+    for (const [service, image] of [["database", "postgres"], ["redis", "valkey"]])
+      assert.equal(services?.[service]?.image, nas.images[image], `${name}: NAS ${image} differs`);
     for (const [service, image] of [
       ["immich-server", "frameleaf-server"],
       ["immich-machine-learning", "frameleaf-machine-learning"],
@@ -92,10 +103,76 @@ async function verifyBundle(directory, expectedTag) {
         `${name}: ${service} image version differs`,
       );
   }
+  for (const name of names.filter((name) => name !== "release-manifest.json"))
+    assert.equal(manifest.assets?.[name], `sha256:${checksums.get(name)}`, `${name} authenticated checksum differs`);
+  if (authenticate) {
+    const key = path.resolve(__dirname, "..", COSIGN_PUBLIC_KEY);
+    for (const image of manifest.images) {
+      const reference = `${image.image}@${image.digest}`;
+      cosign(["verify", "--key", key, reference], run);
+      const envelopes = cosign([
+        "verify-attestation", "--key", key, "--type", ATTESTATION_TYPE, reference,
+      ], run).trim().split("\n").filter(Boolean).map((line) => JSON.parse(line));
+      assert(Array.isArray(envelopes) && envelopes.some((envelope) => {
+        const statement = JSON.parse(Buffer.from(envelope.payload, "base64").toString("utf8"));
+        return statement.predicateType === ATTESTATION_TYPE &&
+          statement.subject?.some((subject) => subject.name === image.image && subject.digest?.sha256 === image.digest.slice(7)) &&
+          isDeepStrictEqual(statement.predicate, manifest);
+      }), "Signed release attestation differs from release manifest");
+    }
+    const id = new RegExp(`^${SOURCE}/actions/runs/([0-9]+)$`).exec(manifest.certifiedBuildRun)?.[1];
+    assert(id && trustedRun(await request(`actions/runs/${id}`), manifest.sourceCommit), "Build certification is not trusted");
+  }
   return manifest;
 }
 
-module.exports = { verifyBundle };
+async function verifyNasCertification(nas, release, { request = github } = {}) {
+  assert.equal(nas.schemaVersion, 1);
+  for (const field of ["tag", "sourceCommit", "certifiedBuildRun"])
+    assert.equal(nas[field], release[field], `NAS ${field} differs`);
+  for (const image of release.images) {
+    const reference = `${image.image}@${image.digest}`;
+    const expected = image.image.endsWith("/frameleaf-server") ? nas.images.server :
+      image.suffix ? nas.images.machineLearningVariants?.[image.suffix.slice(1)] : nas.images.machineLearning;
+    assert.equal(expected, reference, "NAS release image differs");
+  }
+  assert.match(nas.images.postgres, /^ghcr\.io\/frameleaf\/frameleaf-postgres(?::[^@\s]+)?@sha256:[a-f0-9]{64}$/);
+  assert(release.dependencies?.some(({ reference, digest }) =>
+    `${reference.split("@")[0]}@${digest}` === nas.images.postgres), "NAS database was not verified for this release");
+  for (const family of ["officialImmich", "priorFrameleaf"]) {
+    const sources = nas.migration?.[family];
+    assert(Array.isArray(sources) && sources.length, `${family} migration qualification is required`);
+    for (const source of sources) {
+      assert(source && typeof source === "object", "Migration qualification needs an evidence receipt");
+      assert.match(source.version, family === "officialImmich" ? /^v\d+\.\d+\.\d+$/ : /^frameleaf-v\d+\.\d+\.\d+-\d+$/);
+      const evidence = source.evidence;
+      assert.match(evidence?.commit ?? "", /^[a-f0-9]{40}$/);
+      assert.match(evidence?.path ?? "", /^packaging\/nas\/qualification\/[a-z0-9-]+\.json$/);
+      assert.match(evidence?.digest ?? "", /^sha256:[a-f0-9]{64}$/);
+      const file = await request(`contents/${evidence.path}?ref=${evidence.commit}`);
+      assert.equal(file.encoding, "base64", "Missing migration qualification report");
+      const bytes = Buffer.from(file.content, "base64");
+      assert.equal(hash(bytes), evidence.digest, "Migration evidence checksum differs");
+      const report = JSON.parse(bytes);
+      assert.equal(report.schemaVersion, 1);
+      assert.equal(report.environment, "sanitized-production-shaped");
+      assert.equal(report.sourceVersion, source.version);
+      assert.equal(report.targetServer, nas.images.server, "Migration target server differs");
+      assert.equal(report.targetPostgres, nas.images.postgres, "Migration target database differs");
+      assert.deepEqual(report.checks, { preflight: "passed", backupRestore: "passed", migration: "passed", rollback: "passed" });
+      const id = new RegExp(`^${SOURCE}/actions/runs/([0-9]+)$`).exec(report.run)?.[1];
+      assert(id && trustedRun(await request(`actions/runs/${id}`), release.sourceCommit), "Migration evidence run is not trusted");
+      const jobs = await request(`actions/runs/${id}/jobs?filter=latest&per_page=100`);
+      assert(jobs.total_count <= 100, "Migration evidence jobs are incomplete");
+      const job = jobs.jobs?.find((job) => job.name === `NAS qualification (${family}, ${source.version})`);
+      assert(job?.conclusion === "success" && ["Preflight", "Backup and restore", "Migration", "Rollback"].every((name) =>
+        job.steps?.some((step) => step.name === name && step.conclusion === "success")), "Missing successful migration qualification steps");
+    }
+  }
+}
+
+
+module.exports = { verifyBundle, verifyNasCertification };
 if (require.main === module)
   verifyBundle(process.argv[2], process.argv[3])
     .then((manifest) => console.log(`Verified ${manifest.tag} release assets`))
