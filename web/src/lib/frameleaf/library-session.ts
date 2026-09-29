@@ -654,7 +654,8 @@ export const writeLibraryView = (url: URL, state: LibraryViewState): URL => {
 
 /** Callers must use the authenticated user ID; never reuse another user's session. */
 export const libraryPreferenceKey = (userId: string) => `frameleaf:library:v1:${encodeURIComponent(userId)}`;
-export const libraryTransientKey = (userId: string) => `frameleaf:library:tab:v1:${encodeURIComponent(userId)}`;
+export const libraryTransientKey = (userId: string, context = '') =>
+  `frameleaf:library:tab:v1:${encodeURIComponent(userId)}${context ? `:${encodeURIComponent(context)}` : ''}`;
 
 /**
  * What survives a reload. Layout is device-local so it is stored rather than put in the URL.
@@ -739,6 +740,7 @@ export const fromStoredLibrarySession = (
   incoming: LibraryViewState | null = null,
   transientRaw: unknown = null,
   context = '',
+  contextualTransient = false,
 ): LibrarySession => {
   const session = createLibrarySession();
   const value = storedObject(raw);
@@ -748,9 +750,12 @@ export const fromStoredLibrarySession = (
   const sameContext = sameStorageContext(transient.context, context);
   // Recover a failed write only while the device preference is still the one that write encountered.
   const recoverTab = sameContext && typeof raw === 'string' && transient.failedPreferenceSnapshot === raw;
+  // An exact tab view beats another route's last device view; a later successful preference write
+  // still beats a tab snapshot whose own preference write failed.
+  const preferContextual = contextualTransient && sameContext && typeof transient.failedPreferenceSnapshot !== 'string';
   const state =
     incoming ??
-    (recoverTab ? transientState : null) ??
+    (recoverTab || preferContextual ? transientState : null) ??
     readLibraryViewValue(value.state) ??
     (sameContext ? transientState : null);
   if (state) {

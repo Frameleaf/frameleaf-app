@@ -515,11 +515,20 @@ describe('LibrarySessionStore', () => {
     expect(back.selection).toEqual([]);
     expect(back.session.draft).toBeNull();
     expect(back.openAssetId).toBeUndefined();
+    back.select('photo-asset');
+    expect(back.persist()).toBe(true);
+    expect(JSON.parse(storage.getItem(libraryTransientKey('user-1')) as string).selection).toEqual(['photo-asset']);
 
     back.restore(url, 'user-1', locked);
     expect(back.selection).toEqual(['locked-asset']);
     expect(back.session.draft).toEqual(store.session.draft);
     expect(back.playbackPosition).toBe(12);
+    back.restore(writeLibraryView(url, viewState({ sort: 'rating' })), 'user-1', locked);
+    expect(back.state.sort).toBe('rating');
+    expect(back.selection).toEqual([]);
+    back.restore(url, 'user-2', locked);
+    expect(back.selection).toEqual([]);
+    expect(back.session.draft).toBeNull();
   });
 
   it('refuses a newer link out loud and keeps it in the address bar until the view changes (FL-48)', () => {

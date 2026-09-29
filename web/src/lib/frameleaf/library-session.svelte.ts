@@ -166,6 +166,7 @@ export class LibrarySessionStore {
     const incoming = parsed?.ok ? parsed.state : null;
     let stored: string | null = null;
     let transient: string | null = null;
+    let contextualTransient = false;
     if (currentUserId) {
       try {
         stored = this.#storage?.getItem(libraryPreferenceKey(currentUserId)) ?? null;
@@ -173,12 +174,17 @@ export class LibrarySessionStore {
         stored = null;
       }
       try {
-        transient = this.#transientStorage?.getItem(libraryTransientKey(currentUserId)) ?? null;
+        // An exact tab snapshot survives another route replacing the legacy per-user slot.
+        transient = context
+          ? (this.#transientStorage?.getItem(libraryTransientKey(currentUserId, context)) ?? null)
+          : null;
+        contextualTransient = transient !== null;
+        transient ??= this.#transientStorage?.getItem(libraryTransientKey(currentUserId)) ?? null;
       } catch {
         transient = null;
       }
     }
-    this.#session = fromStoredLibrarySession(stored, incoming, transient, context);
+    this.#session = fromStoredLibrarySession(stored, incoming, transient, context, contextualTransient);
     this.#total = null;
     this.#totalRevision = -1;
     this.#refusedView = parsed && !parsed.ok ? parsed.problem : null;
@@ -217,13 +223,15 @@ export class LibrarySessionStore {
       }
     }
     try {
-      this.#transientStorage?.setItem(
-        libraryTransientKey(currentUserId),
-        JSON.stringify({
-          ...toStoredLibraryTransient(this.#session, this.#context),
-          ...(failedPreferenceSnapshot && { failedPreferenceSnapshot }),
-        }),
-      );
+      const transient = JSON.stringify({
+        ...toStoredLibraryTransient(this.#session, this.#context),
+        ...(failedPreferenceSnapshot && { failedPreferenceSnapshot }),
+      });
+      // Keep the legacy slot for older contexts, and the exact slot for returning to this view.
+      this.#transientStorage?.setItem(libraryTransientKey(currentUserId), transient);
+      if (this.#context) {
+        this.#transientStorage?.setItem(libraryTransientKey(currentUserId, this.#context), transient);
+      }
       return saved && !!this.#transientStorage;
     } catch {
       return false;
