@@ -181,6 +181,39 @@ describe('VideoQuickEditor', () => {
     expect(readEditorContinuity(asset.id)?.playhead).toEqual({ num: 6, den: 1 });
   });
 
+  it('restores a draft playhead when the clip cannot play and only its still preview shows', async () => {
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 800, 600));
+    const asset = video();
+    vi.mocked(getAssetEdits).mockResolvedValue({ assetId: asset.id, edits: [], originalVideo } as never);
+    const first = render(VideoQuickEditor, { asset, onClose: vi.fn() });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'frameleaf_editor_save_version' })).toBeEnabled());
+    await fireEvent.click(screen.getByRole('tab', { name: 'frameleaf_video_editor_tool_audio' }));
+    await fireEvent.click(screen.getByRole('switch', { name: 'frameleaf_video_editor_mute' }));
+    await fireEvent.input(screen.getByRole('slider', { name: 'frameleaf_video_editor_playhead' }), {
+      target: { value: '6' },
+    });
+    await waitFor(() => expect(readEditorContinuity(asset.id)?.playhead).toEqual({ num: 6, den: 1 }));
+    first.unmount();
+
+    // Playback fails while the clip's metadata is still loading, so the element is gone by the time
+    // the draft's playhead is ready to restore.
+    let loadEdits!: () => void;
+    vi.mocked(getAssetEdits).mockReturnValue(
+      new Promise((resolve) => {
+        loadEdits = () => resolve({ assetId: asset.id, edits: [], originalVideo } as never);
+      }),
+    );
+    const second = render(VideoQuickEditor, { asset, onClose: vi.fn() });
+    const media = await waitFor(() => second.container.querySelector('video')!);
+    await fireEvent.error(media);
+    await waitFor(() => expect(second.container.querySelector('video')).toBeNull());
+    loadEdits();
+    await waitFor(() =>
+      expect(screen.getByRole('slider', { name: 'frameleaf_video_editor_playhead' })).toHaveValue('6'),
+    );
+    expect(readEditorContinuity(asset.id)?.playhead).toEqual({ num: 6, den: 1 });
+  });
+
   it('does not recreate a cleared private draft on pagehide or editor teardown', async () => {
     const asset = video();
     vi.mocked(getAssetEdits).mockResolvedValue({ assetId: asset.id, edits: [], originalVideo } as never);
