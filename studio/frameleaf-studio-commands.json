@@ -378,7 +378,8 @@
       "mutatesGraph": true,
       "payload": {
         "at": "time",
-        "clipIds": "string[]?"
+        "clipIds": "string[]?",
+        "linkedSelectionEnabled": "boolean?"
       },
       "scope": "clip",
       "undoable": true

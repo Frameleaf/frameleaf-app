@@ -235,10 +235,10 @@ describe('canonical commands on the Freecut engine (FL-92)', () => {
     const video = itemsOf(added.project).find((item) => item.type === 'video')!
     const audio = itemsOf(added.project).find((item) => item.type === 'audio')!
     const previous = useEditorStore.getState().linkedSelectionEnabled
-    useEditorStore.setState({ linkedSelectionEnabled: linked })
+    useEditorStore.setState({ linkedSelectionEnabled: !linked })
     try {
       const split = await applied(added.project, [
-        envelope('clip.split', { at: seconds(2), clipIds: [video.id, audio.id, video.id] }),
+        envelope('clip.split', { at: seconds(2), clipIds: [video.id, audio.id, video.id], linkedSelectionEnabled: linked }),
       ])
       const parts = itemsOf(split.project)
       expect(parts).toHaveLength(4)
@@ -262,6 +262,33 @@ describe('canonical commands on the Freecut engine (FL-92)', () => {
         [envelope('clip.split', { at: seconds(2), clipIds: [video.id, 'missing'] })],
         media,
       )).resolves.toMatchObject({ status: 'rejected', reason: 'invalid' })
+    } finally {
+      useEditorStore.setState({ linkedSelectionEnabled: previous })
+    }
+  })
+
+  it('splits only the selected video when linked selection was off in the editor (FL-94)', async () => {
+    const added = await applied(project(), [
+      envelope('clip.add', { trackId: 'v1', assetId: ASSET, at: seconds(0) }),
+    ])
+    const video = itemsOf(added.project).find((item) => item.type === 'video')!
+    const previous = useEditorStore.getState().linkedSelectionEnabled
+    useEditorStore.setState({ linkedSelectionEnabled: true }) // Hidden command document's default.
+    try {
+      const split = await applied(added.project, [
+        envelope('clip.split', { at: seconds(2), clipIds: [video.id], linkedSelectionEnabled: false }),
+      ])
+      expect(itemsOf(split.project).filter((item) => item.type === 'video')).toHaveLength(2)
+      expect(itemsOf(split.project).filter((item) => item.type === 'audio')).toHaveLength(1)
+      expect(useEditorStore.getState().linkedSelectionEnabled).toBe(true)
+      const splitAll = await applied(added.project, [
+        envelope('clip.split', { at: seconds(2), linkedSelectionEnabled: false }),
+      ])
+      expect(itemsOf(splitAll.project).filter((item) => item.type === 'video')).toHaveLength(2)
+      expect(itemsOf(splitAll.project).filter((item) => item.type === 'audio')).toHaveLength(2)
+      await expect(applyCanonicalCommands(added.project, [
+        envelope('clip.split', { at: seconds(2), linkedSelectionEnabled: 'off' }),
+      ], media)).resolves.toMatchObject({ status: 'rejected', reason: 'invalid' })
     } finally {
       useEditorStore.setState({ linkedSelectionEnabled: previous })
     }
@@ -397,6 +424,21 @@ describe('canonical commands on the Freecut engine (FL-92)', () => {
       expect(received[1]).toEqual(received[0])
       expect(itemsOf(graph as Project).find((item) => item.id === video.id)?.from).toBe(120)
       expect(itemsOf(graph as Project).find((item) => item.id === audio.id)?.from).toBe(60)
+
+      useEditorStore.setState({ linkedSelectionEnabled: false })
+      const split = createStudioCommandEnvelope('clip.split', { at: seconds(5), clipIds: [video.id] }, 3)
+      const splitArrival = nextMessage()
+      const splitPending = call('submitCommands', [split])
+      const splitRequest = await splitArrival
+      expect(splitRequest).toMatchObject({ type: 'service', name: 'submitCommands', args: [[{
+        payload: { linkedSelectionEnabled: false }, idempotencyKey: split.idempotencyKey,
+      }]] })
+      if (splitRequest.type !== 'service') throw new Error('missing split request')
+      const splitResult = await bridge.submit(splitRequest.args[0] as StudioCommandEnvelope[])
+      channel.port2.postMessage({ type: 'service-result', callId: splitRequest.callId, ok: true, value: splitResult })
+      expect((await splitPending)[0]?.status).toBe('accepted')
+      expect(itemsOf(graph as Project).filter((item) => item.type === 'video')).toHaveLength(2)
+      expect(itemsOf(graph as Project).filter((item) => item.type === 'audio')).toHaveLength(1)
 
       // Older callers have no preference field; omission still carries linked clips, even with
       // a false runtime default. Non-command services keep their arguments unchanged.
