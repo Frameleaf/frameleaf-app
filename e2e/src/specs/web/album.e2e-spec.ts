@@ -271,7 +271,10 @@ test.describe('Album', () => {
     await faceDialog.getByRole('button', { name: 'Save face tags' }).click();
     await expect(faceDialog).toBeHidden();
     await expect
-      .poll(async () => (await getFaces({ id: photo.id }, { headers: asBearerAuth(owner.accessToken) }))[0]?.person?.name)
+      .poll(async () => {
+        const faces = await getFaces({ id: photo.id }, { headers: asBearerAuth(owner.accessToken) });
+        return faces[0]?.person?.name;
+      })
       .toBe('Journey face');
     await expect(info).toContainText('Journey face');
     await page.goBack();

@@ -16,6 +16,13 @@ import { asBearerAuth, utils } from 'src/utils.js';
  * name the missing workers, keep the header working (rename, Library, Activity) and leave cleanly.
  * Design: design/frameleaf/template/src/Studio.jsx:2584-2647 (September 24, 2026).
  */
+const envelope = (version: number) => ({
+  schemaVersion: 1,
+  engine: 'freecut',
+  engineRevision: '4d62e8082c5eb387a96275bcbd323d28f6e41a62',
+  graph: { tracks: [], items: [], fixtureVersion: version },
+});
+
 test.describe('Studio', () => {
   let admin: LoginResponseDto;
   let asset: AssetMediaResponseDto;
@@ -69,12 +76,6 @@ test.describe('Studio', () => {
     test.setTimeout(90_000);
     const options = { headers: asBearerAuth(admin.accessToken) };
     const clientId = randomUUID();
-    const envelope = (version: number) => ({
-      schemaVersion: 1,
-      engine: 'freecut',
-      engineRevision: '4d62e8082c5eb387a96275bcbd323d28f6e41a62',
-      graph: { tracks: [], items: [], fixtureVersion: version },
-    });
     const project = await createStudioProject(
       {
         studioProjectCreateDto: {
@@ -131,7 +132,8 @@ test.describe('Studio', () => {
           response.request().method() === 'POST',
       );
       await otherBanner.getByRole('button', { name: 'Try editing here again', exact: true }).click();
-      expect((await reacquire).status()).toBe(409);
+      const reacquireResponse = await reacquire;
+      expect(reacquireResponse.status()).toBe(409);
       await expect(otherBanner).toHaveAttribute('data-status', 'lease-lost');
 
       await otherBanner.getByRole('button', { name: 'Edit here instead', exact: true }).click();
@@ -150,7 +152,8 @@ test.describe('Studio', () => {
           response.request().method() === 'POST',
       );
       await version20.getByRole('button', { name: 'Restore', exact: true }).click();
-      expect((await restored).status()).toBe(201);
+      const restoredResponse = await restored;
+      expect(restoredResponse.status()).toBe(201);
       await expect(otherHistory.getByText('Version 22', { exact: true })).toBeVisible();
       await expect(otherHistory.getByText('Restored from version 20', { exact: true })).toBeVisible();
 

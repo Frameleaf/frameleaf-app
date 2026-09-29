@@ -12,6 +12,8 @@ import crypto from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { asBearerAuth, utils } from 'src/utils.js';
 
+const byId = (a: string[], b: string[]) => a[0].localeCompare(b[0]);
+
 test.describe('Duplicate review', () => {
   let admin: LoginResponseDto;
   let firstAsset: AssetMediaResponseDto;
@@ -199,12 +201,13 @@ test.describe('Duplicate review', () => {
       { assetBulkUpdateDto: { ids: [kayak.id, forest.id], duplicateId } },
       { headers: asBearerAuth(admin.accessToken) },
     );
-    const group = (await reviewGroups()).find((candidate) => candidate.duplicateId === duplicateId);
-    expect(group?.assets.map((asset) => [asset.id, asset.type]).toSorted()).toEqual(
+    const groups = await reviewGroups();
+    const group = groups.find((candidate) => candidate.duplicateId === duplicateId);
+    expect(group?.assets.map((asset) => [asset.id, asset.type]).toSorted(byId)).toEqual(
       [
         [kayak.id, AssetTypeEnum.Video],
         [forest.id, AssetTypeEnum.Video],
-      ].toSorted(),
+      ].toSorted(byId),
     );
 
     await page.goto('/utilities/duplicates');
@@ -214,7 +217,8 @@ test.describe('Duplicate review', () => {
     await expect(videos).toHaveCount(2);
     await expect
       .poll(
-        () => videos.evaluateAll((elements) => elements.every((element) => (element as HTMLVideoElement).readyState >= 1)),
+        () =>
+          videos.evaluateAll((elements) => elements.every((element) => (element as HTMLVideoElement).readyState >= 1)),
         { timeout: 15_000 },
       )
       .toBe(true);
@@ -223,13 +227,14 @@ test.describe('Duplicate review', () => {
     await playTogether.focus();
     await page.keyboard.press('Enter');
     await expect
-      .poll(() =>
-        videos.evaluateAll((elements) =>
-          elements.every((element) => {
-            const video = element as HTMLVideoElement;
-            return !video.paused && video.currentTime > 0.25;
-          }),
-        ),
+      .poll(
+        () =>
+          videos.evaluateAll((elements) =>
+            elements.every((element) => {
+              const video = element as HTMLVideoElement;
+              return !video.paused && video.currentTime > 0.25;
+            }),
+          ),
         { timeout: 15_000 },
       )
       .toBe(true);
@@ -255,7 +260,9 @@ test.describe('Duplicate review', () => {
           return duplicateId;
         }),
       );
-      ids.forEach((id) => seededIds.add(id));
+      for (const id of ids) {
+        seededIds.add(id);
+      }
     }
 
     const groups = await reviewGroups();
@@ -273,9 +280,8 @@ test.describe('Duplicate review', () => {
     const queue = review.locator('.fl-dr-queue-scroll');
     await expect(heading).toBeVisible();
     const renderedRowCount = await queue.locator('.fl-dr-queue-row').count();
-    const initiallyRendered = new Set(
-      (await queue.locator('.fl-dr-queue-row strong').allTextContents()).map((title) => title.trim()),
-    );
+    const renderedTitles = await queue.locator('.fl-dr-queue-row strong').allTextContents();
+    const initiallyRendered = new Set(renderedTitles.map((title) => title.trim()));
     expect(renderedRowCount).toBeGreaterThan(0);
     expect(renderedRowCount).toBeLessThan(groups.length);
 
@@ -285,7 +291,8 @@ test.describe('Duplicate review', () => {
     for (let step = 0; step < groups.length; step++) {
       await page.keyboard.press('ArrowRight');
       await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
-      targetTitle = (await heading.textContent())?.trim() ?? '';
+      const headingText = await heading.textContent();
+      targetTitle = headingText?.trim() ?? '';
       const candidate = groupByTitle.get(targetTitle);
       if (candidate && !initiallyRendered.has(targetTitle)) {
         target = candidate;
