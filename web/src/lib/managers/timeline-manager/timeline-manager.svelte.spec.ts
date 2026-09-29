@@ -139,6 +139,36 @@ describe('TimelineManager', () => {
     }
   });
 
+  it('does not restore an old album query when an addition refresh is overtaken (FL-40)', async () => {
+    sdkMock.getTimeBuckets.mockImplementation(({ isFavorite }) =>
+      Promise.resolve([{ count: 1, timeBucket: isFavorite ? '2024-02-01' : '2024-01-01' }]),
+    );
+    const timelineManager = new TimelineManager();
+    const pendingReset = deferred<void>();
+    try {
+      await timelineManager.updateOptions({ albumId: 'album-1' });
+      const reset = timelineManager.initTask.reset.bind(timelineManager.initTask);
+      vi.spyOn(timelineManager.initTask, 'reset').mockImplementationOnce(async () => {
+        await reset();
+        await pendingReset.promise;
+      });
+      const refresh = vi.spyOn(timelineManager, 'refresh');
+
+      eventManager.emit('AlbumAddAssets', { albumIds: ['album-1'], assetIds: ['new-asset'] });
+      expect(refresh).toHaveBeenCalledOnce();
+      await timelineManager.updateOptions({ albumId: 'album-1', isFavorite: true });
+      expect(timelineManager.months.map(({ yearMonth }) => yearMonth.month)).toEqual([2]);
+
+      pendingReset.resolve();
+      await refresh.mock.results[0].value;
+      expect(sdkMock.getTimeBuckets).toHaveBeenLastCalledWith(expect.objectContaining({ isFavorite: true }));
+      expect(timelineManager.months.map(({ yearMonth }) => yearMonth.month)).toEqual([2]);
+    } finally {
+      pendingReset.resolve();
+      timelineManager.destroy();
+    }
+  });
+
   it('discards an elevated bucket response that arrives after the session locks', async () => {
     const oldBuckets = deferred<Array<{ count: number; timeBucket: string }>>();
     sdkMock.getTimeBuckets
