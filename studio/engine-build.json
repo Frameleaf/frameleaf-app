@@ -129,7 +129,12 @@
       "path": "patches/0025-relink-workspace-source.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "769b414bfba9c5aa0bcf808a11d48442856a16fbd5578f1815e9f1b91660b47f"
+    },
+    {
+      "path": "patches/0026-chroma-hard-edge-precision.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "9348dfca4d6a22cdaed93ceb6bbed1423d804e3f4ab58a8ff976f4f99c1c71b5"
     }
   ],
-  "sourceSha256": "b0175c77bfd300092ee57d631b573bacc1ab56ad976961858546ebab864d7ca1"
+  "sourceSha256": "13dd86a8fe2b081aeb9a70bf323add48a8092915ae1e5966bc1115b25b455097"
 }
