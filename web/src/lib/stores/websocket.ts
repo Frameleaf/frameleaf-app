@@ -35,6 +35,8 @@ export interface Events {
   on_asset_restore: (assetIds: string[]) => void;
   on_asset_stack_update: (assetIds: string[]) => void;
   on_person_thumbnail: (personId: string) => void;
+  /** An album this account can see changed (assets, order, name, cover); only the id arrives. */
+  on_album_update: (albumId: string) => void;
   on_server_version: (serverVersion: ServerVersionResponseDto) => void;
   on_config_update: () => void;
   on_new_release: (event: ReleaseEventV1) => void;
@@ -101,6 +103,7 @@ websocket
   .on('on_asset_trash', (assets) => eventManager.emit('AssetsDelete', assets))
   .on('on_asset_update', (asset) => eventManager.emit('AssetUpdate', asset))
   .on('on_person_thumbnail', (id) => eventManager.emit('PersonThumbnailReady', { id }))
+  .on('on_album_update', (id) => eventManager.emit('AlbumRemoteUpdate', { id }))
   .on('on_notification', () => notificationManager.refresh())
   .on('on_media_operation_update', (id) => eventManager.emit('MediaOperationUpdate', { id }))
   .on('on_frameleaf_cloud', (event) => eventManager.emit('FrameleafCloudUpdate', event))

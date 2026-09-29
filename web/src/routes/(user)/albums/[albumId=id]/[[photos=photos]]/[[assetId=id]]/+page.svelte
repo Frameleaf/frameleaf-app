@@ -439,6 +439,13 @@
     await invalidate('album:data');
   };
 
+  // Another member or device changed this album (its shared order, name, cover): show the server's copy.
+  const onAlbumRemoteUpdate = ({ id }: { id: string }) => {
+    if (id === albumId) {
+      handlePromiseError(refreshAlbum());
+    }
+  };
+
   const { Cast } = $derived(getGlobalActions($t));
   const { Upload } = $derived(getAlbumAssetsActions($t, album));
 
@@ -463,6 +470,7 @@
   {onAlbumUserUpdate}
   {onAlbumUserDelete}
   {onAlbumUpdate}
+  {onAlbumRemoteUpdate}
 />
 <CommandPaletteDefaultProvider name={$t('album')} actions={[Upload, Cast, Close]} />
 

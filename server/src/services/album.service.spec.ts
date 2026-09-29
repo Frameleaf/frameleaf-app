@@ -535,6 +535,22 @@ describe(AlbumService.name, () => {
         owner.id,
       );
     });
+
+    it("pushes a shared order change to every member's open page without emailing them", async () => {
+      const album = AlbumFactory.from().albumUser().build();
+      const { user: owner } = album.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([album.id]));
+      mocks.album.getById.mockResolvedValue(getForAlbum(album));
+      mocks.album.update.mockResolvedValue(getForAlbum(album));
+
+      await sut.update(AuthFactory.create(owner), album.id, { order: AssetOrder.Asc });
+
+      expect(mocks.event.emit).toHaveBeenCalledWith('AlbumUpdate', {
+        id: album.id,
+        userIds: expect.arrayContaining(album.albumUsers.map(({ user }) => user.id)),
+        recipientIds: [],
+      });
+    });
   });
 
   describe('cover follows the newest item (FL-83 AL-13)', () => {

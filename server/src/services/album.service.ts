@@ -405,6 +405,13 @@ export class AlbumService extends BaseService {
       auth.user.id,
     );
 
+    // Members' open pages re-read the album (its shared order, name, cover); no email for an edit.
+    await this.eventRepository.emit('AlbumUpdate', {
+      id: album.id,
+      userIds: album.albumUsers.map(({ user }) => user.id),
+      recipientIds: [],
+    });
+
     const [mappedAlbum] = await this.hideNsfwAlbumThumbnails(
       auth,
       [{ ...updatedAlbum, assets: album.assets }],
