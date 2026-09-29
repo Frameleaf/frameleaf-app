@@ -1071,6 +1071,8 @@ export class CloudMlJobService {
           break;
         }
         case CloudMlJobPhase.Uploading: {
+          // FL-201: a job resumed later sends the owner's files only under the consent in force now
+          await this.readmit(run, client);
           await this.upload(run, client, null, signal);
           break;
         }
@@ -2850,6 +2852,24 @@ export class CloudMlJobService {
       throw this.clientError(error);
     }
     return destination;
+  }
+
+  /**
+   * FL-201: before a created job's inputs leave this server, admission runs again for consent and
+   * routing (not the wallet, whose hold the cloud already took). A lasting refusal, such as consent that
+   * is missing or older than the version the cloud now requires (`consent-version-outdated`), cancels the
+   * cloud job so its hold is released, and stops this one; nothing more is sent.
+   */
+  private async readmit(run: JobRun, client: FrameleafCloudJobClient) {
+    try {
+      await this.admit(run.snapshot, null, run.operation.id);
+    } catch (error) {
+      const failure = failureOf(error);
+      if (failure && !failure.retry) {
+        await this.sendCancel(run, client);
+      }
+      throw error;
+    }
   }
 
   private async admit(
