@@ -370,6 +370,28 @@ describe(CloudMlBatchService.name, () => {
       );
     });
 
+    it.each([
+      ['a queued batch', () => operation(), 'createEstimate'],
+      ['an estimated batch', () => estimated(), 'createJob'],
+    ] as const)(
+      'sends nothing for %s once its consent is older than the version the cloud requires (FL-201)',
+      async (_label, batch, call) => {
+        addAssets(photos(ownerA, 2, 'a'));
+        mocks.mlDestination.getById.mockResolvedValue({ ...cloud, consentVersion: '2026-09-01.1' });
+
+        await sut.step(batch(), 'claim-1', now);
+
+        expect(mocks.frameleafCloudMl[call]).not.toHaveBeenCalled();
+        expect(mocks.frameleafCloudMl.uploadInput).not.toHaveBeenCalled();
+        expect(mocks.mediaOperation.fail).toHaveBeenCalledWith(
+          BATCH_ID,
+          'claim-1',
+          expect.objectContaining({ errorCode: 'cloud_description_consent_version_outdated' }),
+          { retry: false },
+        );
+      },
+    );
+
     it('stops and releases a running cloud job when processing is turned off', async () => {
       configure({ enabled: false });
       const batch = operation({
@@ -1277,6 +1299,32 @@ describe(CloudMlBatchService.name, () => {
         force: true,
       });
     });
+
+    it.each([
+      [
+        'older than the version the cloud now requires',
+        { consentVersion: '2026-09-01.1' },
+        'cloud_description_consent_version_outdated',
+      ],
+      ['withdrawn', { consentAcknowledgedAt: null, consentVersion: null }, 'cloud_description_consent_missing'],
+    ])(
+      'sends no photo and cancels the cloud job when consent is %s before its uploads (FL-201)',
+      async (_case, change, code) => {
+        mocks.mlDestination.getById.mockResolvedValue({ ...cloud, ...change });
+
+        await sut.step(submitted({ status: 'admitted', started: false, etag: null }), 'claim-1', now);
+
+        expect(mocks.frameleafCloudMl.uploadInput).not.toHaveBeenCalled();
+        expect(mocks.frameleafCloudMl.startJob).not.toHaveBeenCalled();
+        expect(mocks.frameleafCloudMl.cancelJob).toHaveBeenCalledWith(expect.anything(), admitted.jobId);
+        expect(mocks.mediaOperation.fail).toHaveBeenCalledWith(
+          BATCH_ID,
+          'claim-1',
+          expect.objectContaining({ errorCode: code }),
+          { retry: false },
+        );
+      },
+    );
 
     it('never uploads a photo that was Locked after the batch was sent', async () => {
       mocks.mediaOperation.getLockedAssetIds.mockResolvedValue(new Set(['a-2']));

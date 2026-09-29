@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { defaults } from 'src/dtos/config.dto.js';
 import { MlAdmissionRefusal } from 'src/enum.js';
 import {
   DATA_REGIONS,
@@ -7,6 +8,7 @@ import {
   accountLabelOf,
   buildHeartbeat,
   commandPermission,
+  defaultPermissions,
   heartbeatResponseSchema,
   instanceRegistrationSchema,
   isUserCode,
@@ -297,5 +299,21 @@ describe('frameleaf-cloud-link (FL-155)', () => {
       allowBackupTrigger: true,
       allowEntitlementRefresh: true,
     });
+  });
+});
+
+/**
+ * FL-201 (confirmed against the frameleaf-cloud instance contract, 2026-09-29): cloud backup and the
+ * remote-access relay take no versioned consent; they are off until an administrator turns them on,
+ * and Frameleaf Cloud cannot turn remote access on unless an administrator allowed it.
+ */
+describe('Frameleaf Cloud opt-in defaults (FL-201)', () => {
+  it('keeps cloud backup and remote access off until an administrator turns them on', () => {
+    expect(defaults.frameleafCloud.cloudBackup).toMatchObject({ enabled: false, target: 'off' });
+    expect(defaults.frameleafCloud.remoteAccess.enabled).toBe(false);
+  });
+
+  it('does not let Frameleaf Cloud turn remote access on by default', () => {
+    expect(defaultPermissions().allowRemoteEnable).toBe(false);
   });
 });
