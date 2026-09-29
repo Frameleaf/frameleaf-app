@@ -304,16 +304,19 @@ test("install bundle pins both Compose fallbacks and env while preserving data c
       recursive: true,
     });
     await fs.mkdir(path.join(root, "packaging/nas"), { recursive: true });
-    await fs.writeFile(path.join(root, "packaging/nas/certified-sources.json"),
-      '{"officialImmich":[],"priorFrameleaf":[]}');
+    await fs.writeFile(
+      path.join(root, "packaging/nas/certified-sources.json"),
+      '{"officialImmich":[],"priorFrameleaf":[]}',
+    );
     for (const name of INSTALL_FILES) {
-      const text = name === "docker-compose.yml"
-        ? `services:\n  server:\n    image: ghcr.io/frameleaf/frameleaf-server:\${IMMICH_VERSION:-release}\n  redis:\n    image: valkey/valkey:9@${digest(1)}\n  database:\n    image: postgres:14@${digest(2)}\nvolumes: [model-cache]\n`
-        : name.startsWith("docker-compose")
-          ? "image: ghcr.io/frameleaf/frameleaf-server:${IMMICH_VERSION:-release}\nvolumes: [model-cache]\n"
-        : name === "example.env"
-          ? "IMMICH_VERSION=v3\nUPLOAD_LOCATION=./library\nDB_DATA_LOCATION=./postgres\n"
-          : "services: {}\n";
+      const text =
+        name === "docker-compose.yml"
+          ? `services:\n  server:\n    image: ghcr.io/frameleaf/frameleaf-server:\${IMMICH_VERSION:-release}\n  redis:\n    image: valkey/valkey:9@${digest(1)}\n  database:\n    image: postgres:14@${digest(2)}\nvolumes: [model-cache]\n`
+          : name.startsWith("docker-compose")
+            ? "image: ghcr.io/frameleaf/frameleaf-server:${IMMICH_VERSION:-release}\nvolumes: [model-cache]\n"
+            : name === "example.env"
+              ? "IMMICH_VERSION=v3\nUPLOAD_LOCATION=./library\nDB_DATA_LOCATION=./postgres\n"
+              : "services: {}\n";
       await fs.writeFile(path.join(root, "docker", name), text);
     }
     await fs.writeFile(
@@ -322,13 +325,31 @@ test("install bundle pins both Compose fallbacks and env while preserving data c
     );
     const dir = path.join(root, "bundle");
     const tag = "frameleaf-v3.1.0-12";
-    const files = await createBundle(dir, root, tag, { sourceCommit: sha, images: [
-      { image: "ghcr.io/frameleaf/frameleaf-server", suffix: "", digest: digest(3), platforms: ["linux/amd64", "linux/arm64"] },
-      { image: "ghcr.io/frameleaf/frameleaf-machine-learning", suffix: "", digest: digest(4), platforms: ["linux/amd64", "linux/arm64"] },
-    ] });
+    const files = await createBundle(dir, root, tag, {
+      sourceCommit: sha,
+      images: [
+        {
+          image: "ghcr.io/frameleaf/frameleaf-server",
+          suffix: "",
+          digest: digest(3),
+          platforms: ["linux/amd64", "linux/arm64"],
+        },
+        {
+          image: "ghcr.io/frameleaf/frameleaf-machine-learning",
+          suffix: "",
+          digest: digest(4),
+          platforms: ["linux/amd64", "linux/arm64"],
+        },
+      ],
+    });
     assert.equal(files.length, 9);
-    const nas = JSON.parse(await fs.readFile(path.join(dir, "nas-manifest.json"), "utf8"));
-    assert.equal(nas.images.server, `ghcr.io/frameleaf/frameleaf-server@${digest(3)}`);
+    const nas = JSON.parse(
+      await fs.readFile(path.join(dir, "nas-manifest.json"), "utf8"),
+    );
+    assert.equal(
+      nas.images.server,
+      `ghcr.io/frameleaf/frameleaf-server@${digest(3)}`,
+    );
     assert.deepEqual(nas.migration.officialImmich, []);
     const env = await fs.readFile(path.join(dir, "example.env"), "utf8");
     assert(
@@ -816,7 +837,10 @@ async function dependencyRoot(databaseImage) {
     "{}",
   );
   await fs.mkdir(path.join(root, "packaging/nas"), { recursive: true });
-  await fs.writeFile(path.join(root, "packaging/nas/certified-sources.json"), '{"officialImmich":[],"priorFrameleaf":[]}');
+  await fs.writeFile(
+    path.join(root, "packaging/nas/certified-sources.json"),
+    '{"officialImmich":[],"priorFrameleaf":[]}',
+  );
   return root;
 }
 const database =
@@ -861,14 +885,32 @@ test("promotion refuses a bundle whose database or CLI image is not published", 
     assert.equal(resolved.get(database), digest(1));
     // The bundle pins the verified digest; the source Compose file is left as written.
     const dir = path.join(root, "bundle");
-    await createBundle(dir, root, "frameleaf-v3.1.0-1", {
-      sourceCommit: sha,
-      images: [
-        { image: "ghcr.io/frameleaf/frameleaf-server", suffix: "", digest: digest(3), platforms: ["linux/amd64"] },
-        { image: "ghcr.io/frameleaf/frameleaf-machine-learning", suffix: "", digest: digest(4), platforms: ["linux/amd64"] },
-      ],
-    }, resolved);
-    const nas = JSON.parse(await fs.readFile(path.join(dir, "nas-manifest.json"), "utf8"));
+    await createBundle(
+      dir,
+      root,
+      "frameleaf-v3.1.0-1",
+      {
+        sourceCommit: sha,
+        images: [
+          {
+            image: "ghcr.io/frameleaf/frameleaf-server",
+            suffix: "",
+            digest: digest(3),
+            platforms: ["linux/amd64"],
+          },
+          {
+            image: "ghcr.io/frameleaf/frameleaf-machine-learning",
+            suffix: "",
+            digest: digest(4),
+            platforms: ["linux/amd64"],
+          },
+        ],
+      },
+      resolved,
+    );
+    const nas = JSON.parse(
+      await fs.readFile(path.join(dir, "nas-manifest.json"), "utf8"),
+    );
     assert.equal(nas.images.postgres, `${database}@${digest(1)}`);
     for (const name of ["docker-compose.yml", "docker-compose.rootless.yml"]) {
       const bundled = await fs.readFile(path.join(dir, name), "utf8");
