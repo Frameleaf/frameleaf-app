@@ -26,7 +26,8 @@ import { StudioAuthorizedEntry } from 'src/services/studio-resource.service.js';
 import { studioExportStagingFolder } from 'src/utils/studio-export.js';
 import { StudioResourceKind } from 'src/utils/studio-resources.js';
 
-vi.mock('src/utils/config.js', () => ({
+vi.mock('src/utils/config.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('src/utils/config.js')>()),
   getConfig: vi.fn().mockResolvedValue({ machineLearning: { nsfwDetection: { hideFromLibrary: true } } }),
 }));
 

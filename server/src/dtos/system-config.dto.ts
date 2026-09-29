@@ -200,7 +200,7 @@ const SystemConfigHistoryEntrySchema = z
       .enum(['server-cli', 'frameleaf-cloud'])
       .optional()
       .describe(
-        'Where a change that was not an administrator settings save came from: the server command line or a Frameleaf Cloud action',
+        'Where a change came from when it was not an ordinary settings save: the server command line, or the Frameleaf Cloud settings and actions (with the administrator, when one made it)',
       )
       .meta({ id: 'SystemConfigHistorySource', ...new HistoryBuilder().added('v3.2.0').getExtensions() }),
     changes: z.array(SystemConfigHistoryChangeSchema).describe('Every changed setting'),

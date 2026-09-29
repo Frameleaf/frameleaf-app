@@ -141,8 +141,8 @@ import {
   signingRegion,
 } from 'src/utils/cloud-backup.js';
 import { compareCodeUnits } from 'src/utils/compare.js';
-import { getConfig, readConfig, updateConfig } from 'src/utils/config.js';
 import { recordConfigHistory } from 'src/utils/config-history.js';
+import { getConfig, readConfig, updateConfig } from 'src/utils/config.js';
 import { CLOUD_BACKUP_DUMP_PREFIX, isCloudBackupDumpName } from 'src/utils/database-backups.js';
 import { BackupGrantResponse, backupGrantProblem, managedBackupRefusal } from 'src/utils/frameleaf-cloud-backup.js';
 import {
