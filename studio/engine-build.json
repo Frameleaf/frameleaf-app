@@ -114,7 +114,12 @@
       "path": "patches/0022-expression-dependency-budget.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "35d020c532ccac245a8853ea5a304e694df21236c05dcb7367707e641a8302a9"
+    },
+    {
+      "path": "patches/0023-export-subtitle-admission.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "1659ceda6602c10e6948efa70eaec917ea4a1e993ef8d0f6a6793d991450d13c"
     }
   ],
-  "sourceSha256": "e05aabc1fe104bdf070ae6954785733affc075bf7e1551d72a43fb9622ea5b23"
+  "sourceSha256": "a3d5524db54939e7dffb35ed56b61046e5cbc6ed13c0e9ce205ba5b45c25bdf2"
 }
