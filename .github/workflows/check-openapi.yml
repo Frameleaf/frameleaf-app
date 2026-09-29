@@ -21,6 +21,8 @@ name: Check OpenAPI
     paths:
       - open-api/**
       - server/src/dtos/**
+      - .oasdiff.yaml
+      - scripts/frameleaf-openapi-policy.test.mjs
       - .github/workflows/check-openapi.yml
 permissions:
   contents: read
@@ -56,6 +58,8 @@ jobs:
           ref: ${{ github.event.pull_request.base.sha || inputs.base_sha }}
           path: .frameleaf-api-base
           persist-credentials: false
+      - name: Verify SDK operation compatibility policy
+        run: node --test scripts/frameleaf-openapi-policy.test.mjs
       - name: Check for breaking API changes
         uses: oasdiff/oasdiff-action/breaking@9c0494cfee8b8fcc9fb383ed2d5d3fbdae169b93
         with:
