@@ -36,6 +36,7 @@ const getRequestKey = (request: URL | Request): string => (request instanceof UR
 
 const CANCELATION_MESSAGE = 'Request canceled by application';
 const CLEANUP_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+const MAX_STALE_CANCELS = 8;
 
 const clone = (promise: Promise<Response>) =>
   // Clone the response since response bodies can only be read once; each caller gets its own
@@ -54,7 +55,8 @@ export const handleFetch = async (request: URL | Request): Promise<Response> => 
   const pendingRequest: PendingRequest = {
     controller: new AbortController(),
     callers: 1,
-    staleCancels: existing ? existing.callers + existing.staleCancels : 0,
+    // bounded: callers that never cancel must not disable cancelling for this URL indefinitely
+    staleCancels: existing ? Math.min(existing.callers + existing.staleCancels, MAX_STALE_CANCELS) : 0,
   };
   if (existing?.cleanupTimeout) {
     clearTimeout(existing.cleanupTimeout);
