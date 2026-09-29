@@ -85,6 +85,12 @@ green/blue keys, hard/soft edges, source alpha, and animated spill suppression a
 Full project preview/export, masks, effect-stack ordering, other browsers and
 native application conformance remain unqualified in `conformance.json`.
 
+Patch 0026 gives that hard edge a 2^-16 CbCr width. Metal contracted the pixel and
+key conversions differently and measured an exact blue key about 1e-8 away, so the
+key stayed opaque. One 10-bit code value moves CbCr by more than 3e-4, so real colors
+next to the key stay opaque. `tools/chroma-key.browser.mjs` checks both cases for
+green and blue keys; it passes on SwiftShader and Apple Metal.
+
 Patch 0022 gives each render or inspector expression a budget of 64 uncached evaluations,
 including its root. The inspector forwards that budget and its reference cache through both
 preview callbacks, so independent branches share the limit and cached reuse remains free.

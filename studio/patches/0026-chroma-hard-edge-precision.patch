@@ -1,0 +1,14 @@
+--- a/src/infrastructure/gpu-effects/effects/keying.ts
++++ b/src/infrastructure/gpu-effects/effects/keying.ts
+@@ -32,7 +32,10 @@
+   let innerTolerance = params.tolerance;
+   let outerTolerance = params.tolerance + params.softness;
+   // A zero-width edge is a hard key; smoothstep is undefined for equal bounds.
+-  var alpha = select(0.0, 1.0, cbcrDist > innerTolerance);
++  // Backends may contract the pixel and key conversions differently (FMA), so an
++  // exact key can measure ~1e-8 away. Treat distances within 2^-16 as the key;
++  // one 10-bit code value moves CbCr by more than 3e-4, so real colors stay opaque.
++  var alpha = select(0.0, 1.0, cbcrDist > innerTolerance + 1.0 / 65536.0);
+   if (outerTolerance > innerTolerance) {
+     alpha = smoothstep(innerTolerance, outerTolerance, cbcrDist);
+   }
