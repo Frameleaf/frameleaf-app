@@ -477,19 +477,45 @@ export class AlbumRepository {
   }
 
   async delete(id: string): Promise<void> {
+    await this.db.transaction().execute((tx) => this.deleteIn(tx, id));
+  }
+
+  /**
+   * FL-146: delete a collection and keep its albums, which move to the collection's own parent (the
+   * top level when it has none), as the prototype does. One transaction: a collection whose delete fails
+   * keeps every album, and no album is left pointing at a collection that is gone.
+   */
+  async deleteCollection(id: string): Promise<void> {
     await this.db.transaction().execute(async (tx) => {
-      const subtree = await tx
-        .selectFrom('album_closure')
-        .select('id_descendant')
-        .where('id_ancestor', '=', id)
-        .execute();
-      const subtreeIds = subtree.length > 0 ? subtree.map(({ id_descendant }) => id_descendant) : [id];
-      await this.smartAlbums.deleteAlbums(subtreeIds, tx);
-      await this.deletePositions({ albumIds: subtreeIds }, tx);
-      await this.deleteCoverFollowsNewest(subtreeIds, tx);
-      await tx.deleteFrom('album').where('id', '=', id).execute();
-      await this.forkMetadata.delete(subtreeIds, tx);
+      const collection = await tx
+        .selectFrom('album')
+        .select('parentId')
+        .where('id', '=', id)
+        .forUpdate()
+        .executeTakeFirst();
+      if (!collection) {
+        return;
+      }
+      const children = await tx.selectFrom('album').select('id').where('parentId', '=', id).forUpdate().execute();
+      for (const child of children) {
+        await this.reparentIn(tx, child.id, collection.parentId);
+      }
+      await this.deleteIn(tx, id);
     });
+  }
+
+  private async deleteIn(tx: Transaction<DB>, id: string): Promise<void> {
+    const subtree = await tx
+      .selectFrom('album_closure')
+      .select('id_descendant')
+      .where('id_ancestor', '=', id)
+      .execute();
+    const subtreeIds = subtree.length > 0 ? subtree.map(({ id_descendant }) => id_descendant) : [id];
+    await this.smartAlbums.deleteAlbums(subtreeIds, tx);
+    await this.deletePositions({ albumIds: subtreeIds }, tx);
+    await this.deleteCoverFollowsNewest(subtreeIds, tx);
+    await tx.deleteFrom('album').where('id', '=', id).execute();
+    await this.forkMetadata.delete(subtreeIds, tx);
   }
 
   /**
@@ -588,70 +614,77 @@ export class AlbumRepository {
    * still manages to introduce a cycle.
    */
   async reparent(id: string, newParentId: string | null, expectedParentId?: string | null): Promise<void> {
-    await this.db.transaction().execute(async (tx) => {
-      if (expectedParentId !== undefined) {
-        // FL-52: a move made from an outdated directory (the album was moved elsewhere since the
-        // client loaded it) is refused rather than silently undoing the other change.
-        const current = await tx
-          .selectFrom('album')
-          .select('parentId')
-          .where('id', '=', id)
-          .forUpdate()
-          .executeTakeFirst();
-        if (!current || current.parentId !== expectedParentId) {
-          throw new ConflictException('The album was moved since the directory was loaded');
-        }
+    await this.db.transaction().execute((tx) => this.reparentIn(tx, id, newParentId, expectedParentId));
+  }
+
+  private async reparentIn(
+    tx: Transaction<DB>,
+    id: string,
+    newParentId: string | null,
+    expectedParentId?: string | null,
+  ): Promise<void> {
+    if (expectedParentId !== undefined) {
+      // FL-52: a move made from an outdated directory (the album was moved elsewhere since the
+      // client loaded it) is refused rather than silently undoing the other change.
+      const current = await tx
+        .selectFrom('album')
+        .select('parentId')
+        .where('id', '=', id)
+        .forUpdate()
+        .executeTakeFirst();
+      if (!current || current.parentId !== expectedParentId) {
+        throw new ConflictException('The album was moved since the directory was loaded');
       }
-      const subtree = await tx
+    }
+    const subtree = await tx
+      .selectFrom('album_closure')
+      .select('id_descendant')
+      .where('id_ancestor', '=', id)
+      .execute();
+    if (newParentId !== null) {
+      const cycle = await tx
         .selectFrom('album_closure')
         .select('id_descendant')
         .where('id_ancestor', '=', id)
-        .execute();
-      if (newParentId !== null) {
-        const cycle = await tx
-          .selectFrom('album_closure')
-          .select('id_descendant')
-          .where('id_ancestor', '=', id)
-          .where('id_descendant', '=', newParentId)
-          .where('id_descendant', '!=', id)
-          .executeTakeFirst();
-        if (cycle) {
-          throw new BadRequestException('Cannot move an album under one of its own descendants');
-        }
+        .where('id_descendant', '=', newParentId)
+        .where('id_descendant', '!=', id)
+        .executeTakeFirst();
+      if (cycle) {
+        throw new BadRequestException('Cannot move an album under one of its own descendants');
       }
+    }
 
-      await tx.updateTable('album').set({ parentId: newParentId }).where('id', '=', id).execute();
+    await tx.updateTable('album').set({ parentId: newParentId }).where('id', '=', id).execute();
 
+    await tx
+      .deleteFrom('album_closure')
+      .where('id_descendant', 'in', (eb) =>
+        eb.selectFrom('album_closure as sub').select('sub.id_descendant').where('sub.id_ancestor', '=', id),
+      )
+      .where('id_ancestor', 'not in', (eb) =>
+        eb.selectFrom('album_closure as sub2').select('sub2.id_descendant').where('sub2.id_ancestor', '=', id),
+      )
+      .execute();
+
+    if (newParentId !== null) {
       await tx
-        .deleteFrom('album_closure')
-        .where('id_descendant', 'in', (eb) =>
-          eb.selectFrom('album_closure as sub').select('sub.id_descendant').where('sub.id_ancestor', '=', id),
-        )
-        .where('id_ancestor', 'not in', (eb) =>
-          eb.selectFrom('album_closure as sub2').select('sub2.id_descendant').where('sub2.id_ancestor', '=', id),
+        .insertInto('album_closure')
+        .columns(['id_ancestor', 'id_descendant'])
+        .expression(
+          tx
+            .selectFrom('album_closure as supertree')
+            .innerJoin('album_closure as subtree', (j) => j.onTrue())
+            .where('supertree.id_descendant', '=', newParentId)
+            .where('subtree.id_ancestor', '=', id)
+            .select(['supertree.id_ancestor as id_ancestor', 'subtree.id_descendant as id_descendant']),
         )
         .execute();
+    }
 
-      if (newParentId !== null) {
-        await tx
-          .insertInto('album_closure')
-          .columns(['id_ancestor', 'id_descendant'])
-          .expression(
-            tx
-              .selectFrom('album_closure as supertree')
-              .innerJoin('album_closure as subtree', (j) => j.onTrue())
-              .where('supertree.id_descendant', '=', newParentId)
-              .where('subtree.id_ancestor', '=', id)
-              .select(['supertree.id_ancestor as id_ancestor', 'subtree.id_descendant as id_descendant']),
-          )
-          .execute();
-      }
-
-      await this.forkMetadata.mirrorFromLegacy(
-        subtree.map(({ id_descendant }) => id_descendant),
-        tx,
-      );
-    });
+    await this.forkMetadata.mirrorFromLegacy(
+      subtree.map(({ id_descendant }) => id_descendant),
+      tx,
+    );
   }
 
   /**
