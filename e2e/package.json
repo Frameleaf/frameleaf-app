@@ -21,8 +21,8 @@
     "lint": "eslint \"src/**/*.ts\" --max-warnings 0",
     "lint:fix": "pnpm run lint --fix",
     "check": "tsc --noEmit",
-    "test:web:ui:studio-firefox": "pnpm exec playwright test --project=studio-firefox",
-    "test:web:ui:studio-firefox-tablet": "pnpm exec playwright test --project=studio-firefox-tablet"
+    "test:web:ui:studio-firefox": "PLAYWRIGHT_STUDIO_FIREFOX=1 pnpm exec playwright test --project=studio-firefox",
+    "test:web:ui:studio-firefox-tablet": "PLAYWRIGHT_STUDIO_FIREFOX=1 pnpm exec playwright test --project=studio-firefox-tablet"
   },
   "keywords": [],
   "author": "",
