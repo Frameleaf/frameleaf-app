@@ -20,6 +20,7 @@ import LibraryView from './LibraryView.svelte';
 vi.mock('$lib/managers/feature-flags-manager.svelte', () => ({
   featureFlagsManager: { init: vi.fn(), value: { smartSearch: true, trash: true, map: true } },
 }));
+vi.mock('$lib/utils/router-started', () => ({ hasRouterStarted: () => true }));
 
 const app = vi.hoisted(() => ({
   page: {

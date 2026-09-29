@@ -213,7 +213,6 @@
     options,
     session = librarySession,
     destination,
-    // eslint-disable-next-line no-useless-assignment -- the child replaces the bound input with its owned manager
     timelineManager = $bindable(),
     syncUrl = true,
     ratingFor,
