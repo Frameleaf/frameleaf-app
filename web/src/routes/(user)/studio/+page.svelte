@@ -132,6 +132,7 @@
       [...libraryAssets, ...restoredVersions.map((version) => toStudioRestoredAsset(version, restoredName(version)))],
       // FL-97: a project that places an HDR original is an HDR project
       sessionState?.resources?.hdrSources,
+      sessionState?.resources?.hdrProxySources,
     ),
   );
   /**

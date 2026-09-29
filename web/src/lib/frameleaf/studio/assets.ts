@@ -29,7 +29,7 @@ import {
 } from '@immich/sdk';
 import { restorationFileUrl } from '$lib/frameleaf/restoration';
 import { actsAsRegular } from '$lib/frameleaf/session-access.svelte';
-import { getAssetMediaUrl, getAssetPlaybackUrl } from '$lib/utils';
+import { getAssetMediaUrl, getAssetPlaybackUrl, getStudioHdrVideoUrl } from '$lib/utils';
 import type { StudioAssetRef } from './host-contract';
 import { fromMilliseconds } from './rational-time';
 
@@ -62,13 +62,26 @@ export const toStudioAsset = (asset: AssetResponseDto): StudioAssetRef => {
   };
 };
 
-/** FL-97: mark the assets the server reported as HDR originals (`resources.hdrSources`). */
+/**
+ * FL-97: mark the assets the server reported as HDR originals (`resources.hdrSources`), and hand
+ * the engine the HDR intermediate of those that have one (`resources.hdrProxySources`).
+ */
 export const withHdrSources = (
   assets: readonly StudioAssetRef[],
   hdrSources: readonly string[] | null | undefined,
+  hdrProxySources?: readonly string[] | null,
 ): StudioAssetRef[] => {
   const hdr = new Set(hdrSources);
-  return assets.map((asset) => (hdr.has(asset.id) ? { ...asset, hdr: true } : asset));
+  const proxies = new Set(hdrProxySources);
+  return assets.map((asset) =>
+    hdr.has(asset.id)
+      ? {
+          ...asset,
+          hdr: true,
+          ...(proxies.has(asset.id) && { hdrSourceUrl: getStudioHdrVideoUrl(asset.id) }),
+        }
+      : asset,
+  );
 };
 
 /**

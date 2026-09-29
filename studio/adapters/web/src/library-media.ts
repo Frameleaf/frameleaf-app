@@ -25,6 +25,7 @@ import {
   updateMedia,
 } from '@/infrastructure/storage'
 import { mediaDir, projectMediaLinksPath } from '@/infrastructure/storage/workspace-fs/paths'
+import { registerHdrSourceUrl } from '@/features/export/utils/hdr-video-sources'
 import type { StudioAssetRef, StudioProjectImportRef } from '@frameleaf/host/host-contract'
 import type { VirtualWorkspace } from './virtual-workspace'
 
@@ -348,6 +349,8 @@ export function createLibraryMediaSeeder(options: {
       if (controller.signal.aborted) return
       const fresh = assets.filter((asset) => !seeded.has(asset.id) && !asset.isOffline)
       const now = Date.now()
+      // FL-97: an HDR project reads the original's HDR intermediate once the server has one.
+      for (const asset of assets) registerHdrSourceUrl(asset.id, asset.hdrSourceUrl)
       // FL-97: the server names HDR originals once they are placed; record it on media the bin
       // already holds, so the project becomes HDR without a remount.
       let marked = false

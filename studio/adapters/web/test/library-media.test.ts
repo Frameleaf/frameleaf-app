@@ -27,6 +27,7 @@ import {
   type LibraryMediaSeeder,
 } from '../src/library-media'
 import { VirtualWorkspace } from '../src/virtual-workspace'
+import { getHdrSourceUrl } from '@/features/export/utils/hdr-video-sources'
 
 // Folder handles for imported files live in IndexedDB, which jsdom does not have; none are used here.
 vi.mock('@/infrastructure/storage/handles-db', () => ({
@@ -191,6 +192,13 @@ describe('library media across editor remounts', () => {
       // The server names a placed original as HDR after its first save.
       await media.seed([{ ...libraryAsset, hdr: true }, hdrVideo])
       expect((await getMedia(LIBRARY))?.colorTransfer).toBe('hdr')
+
+      // Its HDR intermediate is registered for the engine once the server made it.
+      expect(getHdrSourceUrl(LIBRARY)).toBeUndefined()
+      const hdrUrl = `/api/assets/${LIBRARY}/video/studio-hdr`
+      await media.seed([{ ...libraryAsset, hdr: true, hdrSourceUrl: hdrUrl }, hdrVideo])
+      expect(getHdrSourceUrl(LIBRARY)).toBe(hdrUrl)
+      expect(getHdrSourceUrl(IMPORTED)).toBeUndefined()
     } finally {
       media.dispose()
     }
