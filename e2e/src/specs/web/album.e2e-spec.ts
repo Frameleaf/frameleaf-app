@@ -1,6 +1,7 @@
 import {
   AlbumKind,
   AlbumUserRole,
+  AssetOrder,
   LoginResponseDto,
   getAlbumInfo,
   getAlbumTree,
@@ -8,6 +9,7 @@ import {
   login,
   moveAlbumToCollection,
   setUserOnboarding,
+  updateAlbumInfo,
 } from '@immich/sdk';
 import { expect, test } from '@playwright/test';
 import { readFileSync } from 'node:fs';
@@ -85,6 +87,14 @@ test.describe('Album', () => {
 
     await photoTile.hover();
     await photoTile.getByRole('checkbox').click();
+    await expect(page.getByRole('region', { name: 'Selected items' })).toContainText('1 selected');
+    // A shared display-order update from another device preserves this tab's selection.
+    await updateAlbumInfo(
+      { id: album.id, updateAlbumDto: { order: AssetOrder.Asc } },
+      { headers: asBearerAuth(admin.accessToken) },
+    );
+    await expect(page.getByRole('combobox', { name: 'Sort assets' })).toHaveValue('captured-asc');
+    await expect(photoTile.getByRole('checkbox')).toBeChecked();
     await expect(page.getByRole('region', { name: 'Selected items' })).toContainText('1 selected');
     await page.getByRole('group', { name: 'Layout' }).getByRole('button', { name: 'Work' }).click();
     await expect(page.getByTestId('frameleaf-library')).toHaveAttribute('data-layout', 'work');

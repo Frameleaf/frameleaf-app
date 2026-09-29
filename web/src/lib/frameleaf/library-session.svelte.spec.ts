@@ -376,28 +376,69 @@ describe('LibrarySessionStore', () => {
     expect(new LibrarySessionStore({ storage: null }).persist('user-1')).toBe(false);
   });
 
-  it('restores selection and draft after reload, but never reuses them for another account or a public share', () => {
-    store.patchView({ scope: { kind: 'album', id: 'album-1' } });
+  it.each(['asc', 'desc'])(
+    'restores a legacy %s context after reload without crossing account or public-share boundaries (FL-40)',
+    (order) => {
+      const url = new URL('https://example.test/albums/album-1');
+      const legacy = JSON.stringify({ route: '/albums/[albumId]', options: { albumId: 'album-1', order } });
+      const current = JSON.stringify({ route: '/albums/[albumId]', options: { albumId: 'album-1' } });
+      store.restore(url, 'user-1', legacy);
+      store.patchView({ scope: { kind: 'album', id: 'album-1' } });
+      store.select('asset-1');
+      store.open('asset-1', 12);
+      store.dispatch({
+        type: 'draft',
+        draft: { assetId: 'asset-1', recipe: [{ contrast: 20 }], undo: [[]], redo: [] },
+      });
+      store.showMore();
+      expect(store.persist()).toBe(true);
+
+      const back = new LibrarySessionStore({ storage, transientStorage: storage });
+      back.restore(url, 'user-1', current);
+      expect(back.selection).toEqual(['asset-1']);
+      expect(back.session.draft).toEqual(store.session.draft);
+      expect(back.session.page).toBe(2);
+      expect(back.openAssetId).toBe('asset-1');
+      expect(back.playbackPosition).toBe(12);
+      expect(back.persist('user-2')).toBe(false);
+      expect(storage.getItem(libraryTransientKey('user-2'))).toBeNull();
+
+      back.restore(url, 'user-2', current);
+      expect(back.selection).toEqual([]);
+      expect(back.session.draft).toBeNull();
+
+      back.restore(new URL('https://example.test/share/abc'), undefined, current);
+      expect(back.selection).toEqual([]);
+      expect(back.session.draft).toBeNull();
+      expect(back.persist(undefined)).toBe(false);
+    },
+  );
+
+  it.each([
+    { route: '/share/[key]', options: { albumId: 'album-1' } },
+    { route: '/albums/[albumId]', options: { albumId: 'album-2' } },
+    { route: '/albums/[albumId]', options: { albumId: 'album-1', visibility: 'locked' } },
+    { route: '/albums/[albumId]', options: { albumId: 'album-1', sharedLinkId: 'another-share' } },
+    { route: '/albums/[albumId]', options: { albumId: 'album-1', order: 'invalid' } },
+    'malformed-context',
+  ])('refuses legacy session migration into a different or malformed context: %j', (context) => {
+    const url = new URL('https://example.test/albums/album-1');
+    store.restore(
+      url,
+      'user-1',
+      JSON.stringify({ route: '/albums/[albumId]', options: { albumId: 'album-1', order: 'desc' } }),
+    );
     store.select('asset-1');
+    store.open('asset-1', 12);
     store.dispatch({ type: 'draft', draft: { assetId: 'asset-1', recipe: [{ contrast: 20 }], undo: [[]], redo: [] } });
-    store.showMore();
     expect(store.persist()).toBe(true);
 
     const back = new LibrarySessionStore({ storage, transientStorage: storage });
-    back.restore(new URL('https://example.test/photos'), 'user-1');
-    expect(back.selection).toEqual(['asset-1']);
-    expect(back.session.draft).toEqual(store.session.draft);
-    expect(back.session.page).toBe(2);
-    expect(back.persist('user-2')).toBe(false);
-    expect(storage.getItem(libraryTransientKey('user-2'))).toBeNull();
-
-    back.restore(new URL('https://example.test/photos'), 'user-2');
+    back.restore(url, 'user-1', typeof context === 'string' ? context : JSON.stringify(context));
     expect(back.selection).toEqual([]);
+    expect(back.openAssetId).toBeUndefined();
+    expect(back.playbackPosition).toBe(0);
     expect(back.session.draft).toBeNull();
-
-    back.restore(new URL('https://example.test/share/abc'), undefined);
-    expect(back.selection).toEqual([]);
-    expect(back.persist(undefined)).toBe(false);
   });
 
   it('keeps tab selection and draft within the route and timeline options that saved them', () => {
