@@ -58,6 +58,7 @@ jobs:
           done
           node studio/tools/compositor-float.browser.mjs
           node studio/tools/transition-float.browser.mjs
+          node studio/tools/nested-float.browser.mjs
       - name: Upstream unit and Node headless contracts
         run: |
           npm --prefix studio/engine run test:run
