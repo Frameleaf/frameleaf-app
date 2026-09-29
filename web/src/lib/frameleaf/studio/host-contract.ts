@@ -169,7 +169,10 @@ export interface StudioProjectImportRef {
   /** Content type the server read from the bytes. */
   mimeType: string;
   sizeBytes: number;
-  /** URL of the bytes, already authorized with the session's credentials. */
+  /**
+   * Same-origin path of the bytes. It carries no credential: the owner's session cookie authorizes
+   * it, exactly as for the page itself.
+   */
   url: string;
 }
 

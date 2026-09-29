@@ -270,9 +270,13 @@ export const getAssetPlaybackUrl = (options: AssetUrlOptions) => {
   });
 };
 
-/** FL-103 / FL-105: the bytes of a file kept with a Studio project, for its owner's editor. */
+/**
+ * FL-103 / FL-105: the bytes of a file kept with a Studio project, for its owner's editor. A plain
+ * same-origin path: the owner's session cookie authorizes it, and no key, slug or token is added
+ * (the route refuses shared links anyway), so the engine that receives it gains no credential.
+ */
 export const getStudioProjectImportUrl = (projectId: string, importId: string) =>
-  createUrl(`/studio/projects/${projectId}/imports/${importId}/file`, authManager.params);
+  createUrl(`/studio/projects/${projectId}/imports/${importId}/file`);
 
 export const getAssetHlsUrl = (id: string) => {
   return createUrl(`/assets/${id}/video/stream/main.m3u8`, authManager.params);
