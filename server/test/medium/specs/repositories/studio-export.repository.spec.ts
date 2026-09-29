@@ -524,26 +524,30 @@ describe(StudioExportRepository.name, () => {
         change === 'changed-motion-owner',
       );
       switch (change) {
-        case 'hidden':
+        case 'hidden': {
           await defaultDatabase
             .updateTable('asset')
             .set({ visibility: AssetVisibility.Hidden })
             .where('id', '=', shared.id)
             .execute();
           break;
-        case 'locked':
+        }
+        case 'locked': {
           await context.assets.lock([shared.id], AssetLockReason.Marked, owner.id);
           break;
-        case 'trashed':
+        }
+        case 'trashed': {
           await defaultDatabase
             .updateTable('asset')
             .set({ deletedAt: new Date() })
             .where('id', '=', shared.id)
             .execute();
           break;
-        case 'deleted-owner':
+        }
+        case 'deleted-owner': {
           await defaultDatabase.updateTable('user').set({ deletedAt: new Date() }).where('id', '=', owner.id).execute();
           break;
+        }
         case 'changed-owner':
         case 'changed-motion-owner': {
           const { user } = await context.ctx.newUser();
@@ -563,9 +567,10 @@ describe(StudioExportRepository.name, () => {
             .execute();
           break;
         }
-        case 'revoked':
+        case 'revoked': {
           await shares.remove(owner.id, [shared.id], [recipient.id]);
           break;
+        }
       }
 
       await expectRefusal(
@@ -599,7 +604,7 @@ describe(StudioExportRepository.name, () => {
           tagIds: [] as string[],
           personIds: [] as string[],
           petIds: [] as string[],
-          scope: 'visible',
+          scope: 'visible' as const,
         };
         let write: () => Promise<unknown>;
         if (kind === 'tag' || kind === 'inherited tag') {
