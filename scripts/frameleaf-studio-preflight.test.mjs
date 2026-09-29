@@ -51,6 +51,18 @@ test('unavailable decode and unsupported input profile fail closed', () => {
   assert.equal(wrongProfile.goNoGo, false);
 });
 
+test('zero decoded frames fail closed even when source metadata is valid', () => {
+  const result = preflight(plan(), (binary, args) => {
+    if (args.includes('format=gbrpf32le')) {
+      if (args[args.indexOf('-abort_on') + 1] === 'empty_output') throw new Error('zero output frames');
+      return '';
+    }
+    return execute(binary, args);
+  });
+  assert.equal(result.localChecksPassed, false);
+  assert.equal(result.goNoGo, false);
+});
+
 test('wrong tool version and missing accelerator fail closed', () => {
   const oldVersion = preflight({ ...plan(), tools: { ...plan().tools, ffmpeg: { path: '/opt/tools/ffmpeg', version: 'ffmpeg version 6' } } }, execute);
   assert.equal(oldVersion.localChecksPassed, false);
