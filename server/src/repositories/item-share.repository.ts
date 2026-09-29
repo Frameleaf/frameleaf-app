@@ -1,7 +1,9 @@
-import { Injectable } from '@nestjs/common';
+import { ConflictException, Injectable } from '@nestjs/common';
 import { Kysely, Transaction, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { AssetVisibility } from 'src/enum.js';
+import { AccessRepository } from 'src/repositories/access.repository.js';
+import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { lockForkWrites } from 'src/repositories/fork-write-guard.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -28,9 +30,38 @@ const WRITE_REFUSAL = 'Sharing is unavailable while the server is being handed o
 export class ItemShareRepository {
   constructor(@InjectKysely() private db: Kysely<DB>) {}
 
-  /** Keep the mutation and its complete response on one connection until both succeed. */
-  withTransaction<T>(callback: (shares: ItemShareRepository, users: UserRepository) => Promise<T>): Promise<T> {
-    return this.inTransaction((tx) => callback(new ItemShareRepository(tx), new UserRepository(tx)));
+  /** Keep privacy checks, mutation and response together; serialize sharing with asset lock/hide writers. */
+  withTransaction<T>(
+    callback: (
+      shares: ItemShareRepository,
+      users: UserRepository,
+      assets: AssetRepository,
+      access: AccessRepository,
+    ) => Promise<T>,
+    assetIds: string[] = [],
+  ): Promise<T> {
+    return this.inTransaction(async (tx) => {
+      await lockForkWrites(tx, WRITE_REFUSAL);
+      if (assetIds.length > 0) {
+        // Lock propagation takes sources before derived results, which can oppose UUID order.
+        // Refuse contention so rollback releases partial locks without blocking the privacy writer.
+        try {
+          await sql`SELECT id FROM asset WHERE id = ANY(${assetIds}::uuid[])
+            ORDER BY id FOR NO KEY UPDATE NOWAIT`.execute(tx);
+        } catch (error) {
+          if (error instanceof Error && 'code' in error && error.code === '55P03') {
+            throw new ConflictException('Item privacy is changing; retry sharing.');
+          }
+          throw error;
+        }
+      }
+      return callback(
+        new ItemShareRepository(tx),
+        new UserRepository(tx),
+        new AssetRepository(tx),
+        new AccessRepository(tx),
+      );
+    });
   }
 
   private inTransaction<T>(callback: (tx: Transaction<DB>) => Promise<T>): Promise<T> {
