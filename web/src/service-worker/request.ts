@@ -7,6 +7,13 @@ type PendingRequest = {
   controller: AbortController;
   promise: Promise<Response>;
   cleanupTimeout?: ReturnType<typeof setTimeout>;
+  /**
+   * FL-137: the response has arrived. Its entry stays only so a late cancel can still stop the body
+   * download; it is never handed to a new request, which always goes to the server. Otherwise a
+   * thumbnail or original would be served for minutes after its share was revoked, it was Locked,
+   * or another person signed in on this browser.
+   */
+  settled?: boolean;
 };
 
 const pendingRequests = new Map<string, PendingRequest>();
@@ -20,7 +27,7 @@ export const handleFetch = async (request: URL | Request): Promise<Response> => 
   const requestKey = getRequestKey(request);
   const existing = pendingRequests.get(requestKey);
 
-  if (existing) {
+  if (existing && !existing.settled) {
     // Clone the response since response bodies can only be read once
     // Each caller gets an independent clone they can consume
     // eslint-disable-next-line unicorn/prefer-await
@@ -47,9 +54,13 @@ export const handleFetch = async (request: URL | Request): Promise<Response> => 
     })
     // eslint-disable-next-line unicorn/prefer-await
     .finally(() => {
-      // Schedule cleanup after timeout to allow response body streaming to complete
+      pendingRequest.settled = true;
+      // Keep the entry while the body may still be streaming, so a cancel can abort it
       const cleanupTimeout = setTimeout(() => {
-        pendingRequests.delete(requestKey);
+        // a newer request for the same URL may have replaced this entry
+        if (pendingRequests.get(requestKey) === pendingRequest) {
+          pendingRequests.delete(requestKey);
+        }
       }, CLEANUP_TIMEOUT_MS);
       pendingRequest.cleanupTimeout = cleanupTimeout;
     });
