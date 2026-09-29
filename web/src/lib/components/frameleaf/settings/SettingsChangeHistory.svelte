@@ -15,6 +15,7 @@
   import { configPathLabel } from '$lib/frameleaf/system-config-draft';
   import {
     SystemConfigHistoryCredentialChange,
+    SystemConfigHistorySource,
     type SystemConfigHistoryChangeDto,
     type SystemConfigHistoryEntryDto,
     type UserPreferenceHistoryEntryDto,
@@ -51,6 +52,23 @@
     preference: boolean;
   };
 
+  /**
+   * Who saved an entry. A change from the server command line or a Frameleaf Cloud action is labelled
+   * with its source, after the administrator who started it when there was one (FL-146).
+   */
+  const settingsBy = (entry: SystemConfigHistoryEntryDto) => {
+    const source =
+      entry.source === SystemConfigHistorySource.ServerCli
+        ? $t('frameleaf_settings_history_source_server_cli')
+        : entry.source === SystemConfigHistorySource.FrameleafCloud
+          ? $t('frameleaf_settings_history_source_frameleaf_cloud')
+          : undefined;
+    if (source) {
+      return entry.actorName ? `${entry.actorName} · ${source}` : source;
+    }
+    return entry.actorName ?? $t('frameleaf_settings_history_unknown_actor');
+  };
+
   const settingsTitle = (entry: SystemConfigHistoryEntryDto) =>
     entry.title ||
     $t('frameleaf_settings_history_title', { values: { count: entry.changes.length + entry.omittedChanges } });
@@ -65,7 +83,7 @@
       title: settingsTitle(entry),
       changes: entry.changes,
       omittedChanges: entry.omittedChanges,
-      by: entry.actorName ?? $t('frameleaf_settings_history_unknown_actor'),
+      by: settingsBy(entry),
       preference: false,
     }));
     const own = preferences.map((entry) => ({

@@ -169,20 +169,23 @@ export class FrameleafRemoteAccessService extends BaseService {
         throw new BadRequestException(reason);
       }
     }
-    const { oldConfig, newConfig } = await this.updateConfigExclusively((config) => {
-      const remote = config.frameleafCloud.remoteAccess;
-      if (dto.publicUrl === 'custom' && !verifiedCustomHost(remote)) {
-        throw new BadRequestException('Use my domain needs a custom hostname that Frameleaf Cloud verified.');
-      }
-      config.frameleafCloud.remoteAccess = {
-        ...remote,
-        ...(dto.enabled !== undefined && { enabled: dto.enabled }),
-        ...(dto.mode !== undefined && { mode: dto.mode }),
-        ...(dto.directPort !== undefined && { directPort: dto.directPort }),
-        ...(dto.portMapping !== undefined && { portMapping: dto.portMapping }),
-        ...(dto.publicUrl !== undefined && { publicUrl: dto.publicUrl }),
-      };
-    });
+    const { oldConfig, newConfig } = await this.updateConfigExclusively(
+      (config) => {
+        const remote = config.frameleafCloud.remoteAccess;
+        if (dto.publicUrl === 'custom' && !verifiedCustomHost(remote)) {
+          throw new BadRequestException('Use my domain needs a custom hostname that Frameleaf Cloud verified.');
+        }
+        config.frameleafCloud.remoteAccess = {
+          ...remote,
+          ...(dto.enabled !== undefined && { enabled: dto.enabled }),
+          ...(dto.mode !== undefined && { mode: dto.mode }),
+          ...(dto.directPort !== undefined && { directPort: dto.directPort }),
+          ...(dto.portMapping !== undefined && { portMapping: dto.portMapping }),
+          ...(dto.publicUrl !== undefined && { publicUrl: dto.publicUrl }),
+        };
+      },
+      { source: 'frameleaf-cloud', auth },
+    );
     await this.eventRepository.emit('ConfigUpdate', { oldConfig, newConfig });
     if (dto.enabled !== undefined) {
       await this.syncDesired(dto.enabled);
@@ -288,13 +291,16 @@ export class FrameleafRemoteAccessService extends BaseService {
     }
     // this server stops using it first; telling Frameleaf Cloud is best effort (it releases the
     // hostname on unlink too, and an unverified claim expires on its own)
-    const { oldConfig, newConfig } = await this.updateConfigExclusively((next) => {
-      next.frameleafCloud.remoteAccess = {
-        ...next.frameleafCloud.remoteAccess,
-        publicUrl: 'frameleaf',
-        customHostname: { host: '', status: 'pending', checkedAt: null },
-      };
-    });
+    const { oldConfig, newConfig } = await this.updateConfigExclusively(
+      (next) => {
+        next.frameleafCloud.remoteAccess = {
+          ...next.frameleafCloud.remoteAccess,
+          publicUrl: 'frameleaf',
+          customHostname: { host: '', status: 'pending', checkedAt: null },
+        };
+      },
+      { source: 'frameleaf-cloud', auth },
+    );
     await this.eventRepository.emit('ConfigUpdate', { oldConfig, newConfig });
     const { cloudUrl, link, linked } = await readCloudLink(this.linkDeps);
     if (cloudUrl && linked && link?.instanceId) {
@@ -330,22 +336,25 @@ export class FrameleafRemoteAccessService extends BaseService {
       throw new ServiceUnavailableException('Frameleaf Cloud answered for another hostname. Try again.');
     }
     const status = hostnameStatus(answer.state);
-    const { oldConfig, newConfig } = await this.updateConfigExclusively((config) => {
-      const remote = config.frameleafCloud.remoteAccess;
-      // a check never writes back a hostname that was removed while it ran
-      if (onlyIfStored && remote.customHostname.host !== host) {
-        return;
-      }
-      config.frameleafCloud.remoteAccess = {
-        ...remote,
-        publicUrl: status === 'verified' && !changed ? remote.publicUrl : 'frameleaf',
-        customHostname: {
-          host: answer.hostname,
-          status,
-          checkedAt: answer.checkedAt ?? new Date().toISOString(),
-        },
-      };
-    });
+    const { oldConfig, newConfig } = await this.updateConfigExclusively(
+      (config) => {
+        const remote = config.frameleafCloud.remoteAccess;
+        // a check never writes back a hostname that was removed while it ran
+        if (onlyIfStored && remote.customHostname.host !== host) {
+          return;
+        }
+        config.frameleafCloud.remoteAccess = {
+          ...remote,
+          publicUrl: status === 'verified' && !changed ? remote.publicUrl : 'frameleaf',
+          customHostname: {
+            host: answer.hostname,
+            status,
+            checkedAt: answer.checkedAt ?? new Date().toISOString(),
+          },
+        };
+      },
+      { source: 'frameleaf-cloud' },
+    );
     await this.eventRepository.emit('ConfigUpdate', { oldConfig, newConfig });
   }
 

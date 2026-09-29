@@ -1580,6 +1580,7 @@ export type SystemConfigHistoryEntryDto = {
     kind?: SystemConfigHistoryKind;
     /** Changed settings left out because the entry reached its limit */
     omittedChanges: number;
+    source?: SystemConfigHistorySource;
     /** The entry title, such as "Updated email server password"; absent for a settings save */
     title?: string | null;
 };
@@ -21841,6 +21842,10 @@ export enum SystemConfigHistoryKind {
     Settings = "settings",
     Credential = "credential",
     Review = "review"
+}
+export enum SystemConfigHistorySource {
+    ServerCli = "server-cli",
+    FrameleafCloud = "frameleaf-cloud"
 }
 export enum HardwareRunsOn {
     Gpu = "gpu",

@@ -1,5 +1,6 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
+import { HistoryBuilder } from 'src/decorators.js';
 import { AdminConfigSchema, type SystemConfig, mapAdminConfig } from 'src/dtos/config.dto.js';
 import { MachineLearningHardwareAccelerationSchema } from 'src/enum.js';
 
@@ -195,6 +196,13 @@ const SystemConfigHistoryEntrySchema = z
       .optional()
       .describe('What the entry records; absent for entries saved before it was recorded')
       .meta({ id: 'SystemConfigHistoryKind' }),
+    source: z
+      .enum(['server-cli', 'frameleaf-cloud'])
+      .optional()
+      .describe(
+        'Where a change that was not an administrator settings save came from: the server command line or a Frameleaf Cloud action',
+      )
+      .meta({ id: 'SystemConfigHistorySource', ...new HistoryBuilder().added('v3.2.0').getExtensions() }),
     changes: z.array(SystemConfigHistoryChangeSchema).describe('Every changed setting'),
     omittedChanges: z.int().min(0).describe('Changed settings left out because the entry reached its limit'),
   })

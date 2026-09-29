@@ -697,13 +697,16 @@ export class FrameleafCloudService extends BaseService {
     if (dto.showOnLocalLogin !== undefined && link?.status !== 'linked') {
       throw new BadRequestException('Link this server first.');
     }
-    const { oldConfig, newConfig } = await this.updateConfigExclusively((config) => {
-      config.frameleafCloud.signIn = {
-        ...config.frameleafCloud.signIn,
-        ...(dto.showOnLocalLogin !== undefined && { showOnLocalLogin: dto.showOnLocalLogin }),
-        ...(dto.buttonText !== undefined && { buttonText: dto.buttonText }),
-      };
-    });
+    const { oldConfig, newConfig } = await this.updateConfigExclusively(
+      (config) => {
+        config.frameleafCloud.signIn = {
+          ...config.frameleafCloud.signIn,
+          ...(dto.showOnLocalLogin !== undefined && { showOnLocalLogin: dto.showOnLocalLogin }),
+          ...(dto.buttonText !== undefined && { buttonText: dto.buttonText }),
+        };
+      },
+      { source: 'frameleaf-cloud', auth },
+    );
     await this.eventRepository.emit('ConfigUpdate', { oldConfig, newConfig });
     this.logger.log(`Sign in with Frameleaf settings changed by ${auth.user.id}`);
     return this.getStatus();
@@ -721,13 +724,16 @@ export class FrameleafCloudService extends BaseService {
     if (turningOn && link?.status !== 'linked') {
       throw new BadRequestException('Link this server first.');
     }
-    const { oldConfig, newConfig } = await this.updateConfigExclusively((config) => {
-      config.frameleafCloud.remoteAccess = {
-        ...config.frameleafCloud.remoteAccess,
-        ...(dto.allowOriginalsOverRelay !== undefined && { allowOriginalsOverRelay: dto.allowOriginalsOverRelay }),
-        ...(dto.allowPasswordOverRelay !== undefined && { allowPasswordOverRelay: dto.allowPasswordOverRelay }),
-      };
-    });
+    const { oldConfig, newConfig } = await this.updateConfigExclusively(
+      (config) => {
+        config.frameleafCloud.remoteAccess = {
+          ...config.frameleafCloud.remoteAccess,
+          ...(dto.allowOriginalsOverRelay !== undefined && { allowOriginalsOverRelay: dto.allowOriginalsOverRelay }),
+          ...(dto.allowPasswordOverRelay !== undefined && { allowPasswordOverRelay: dto.allowPasswordOverRelay }),
+        };
+      },
+      { source: 'frameleaf-cloud', auth },
+    );
     await this.eventRepository.emit('ConfigUpdate', { oldConfig, newConfig });
     const { allowOriginalsOverRelay, allowPasswordOverRelay } = newConfig.frameleafCloud.remoteAccess;
     this.logger.log(
@@ -763,21 +769,24 @@ export class FrameleafCloudService extends BaseService {
     // FL-185: an ML suspension belongs to the link that ended
     await this.forgetMlSuspension();
     await this.removePlanCertificate();
-    const { oldConfig, newConfig } = await this.updateConfigExclusively((config) => {
-      config.frameleafCloud.cloudMl.enabled = false;
-      // FL-161: what remote access may carry goes back to the safe defaults with the link. FL-165: remote
-      // access switches off (the edge worker then closes its listener and removes the certificates),
-      // and the custom hostname goes too (Frameleaf Cloud releases it with the link); the connection
-      // mode and ports stay for a later link
-      config.frameleafCloud.remoteAccess = {
-        ...config.frameleafCloud.remoteAccess,
-        enabled: false,
-        allowOriginalsOverRelay: false,
-        allowPasswordOverRelay: false,
-        publicUrl: 'frameleaf',
-        customHostname: { host: '', status: 'pending', checkedAt: null },
-      };
-    });
+    const { oldConfig, newConfig } = await this.updateConfigExclusively(
+      (config) => {
+        config.frameleafCloud.cloudMl.enabled = false;
+        // FL-161: what remote access may carry goes back to the safe defaults with the link. FL-165: remote
+        // access switches off (the edge worker then closes its listener and removes the certificates),
+        // and the custom hostname goes too (Frameleaf Cloud releases it with the link); the connection
+        // mode and ports stay for a later link
+        config.frameleafCloud.remoteAccess = {
+          ...config.frameleafCloud.remoteAccess,
+          enabled: false,
+          allowOriginalsOverRelay: false,
+          allowPasswordOverRelay: false,
+          publicUrl: 'frameleaf',
+          customHostname: { host: '', status: 'pending', checkedAt: null },
+        };
+      },
+      { source: 'frameleaf-cloud' },
+    );
     if (!isEqual(oldConfig.frameleafCloud, newConfig.frameleafCloud)) {
       await this.eventRepository.emit('ConfigUpdate', { oldConfig, newConfig });
     }
@@ -1010,9 +1019,12 @@ export class FrameleafCloudService extends BaseService {
    * the same switch an administrator does; the edge worker follows it.
    */
   private async setRemoteAccessSwitch(enabled: boolean) {
-    const { oldConfig, newConfig } = await this.updateConfigExclusively((config) => {
-      config.frameleafCloud.remoteAccess = { ...config.frameleafCloud.remoteAccess, enabled };
-    });
+    const { oldConfig, newConfig } = await this.updateConfigExclusively(
+      (config) => {
+        config.frameleafCloud.remoteAccess = { ...config.frameleafCloud.remoteAccess, enabled };
+      },
+      { source: 'frameleaf-cloud' },
+    );
     if (!isEqual(oldConfig.frameleafCloud, newConfig.frameleafCloud)) {
       await this.eventRepository.emit('ConfigUpdate', { oldConfig, newConfig });
     }

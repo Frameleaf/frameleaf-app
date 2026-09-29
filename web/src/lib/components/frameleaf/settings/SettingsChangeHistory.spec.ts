@@ -1,4 +1,4 @@
-import { SystemConfigHistoryCredentialChange, SystemConfigHistoryKind } from '@immich/sdk';
+import { SystemConfigHistoryCredentialChange, SystemConfigHistoryKind, SystemConfigHistorySource } from '@immich/sdk';
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import SettingsChangeHistory from '$lib/components/frameleaf/settings/SettingsChangeHistory.svelte';
@@ -62,6 +62,33 @@ describe('SettingsChangeHistory', () => {
     await fireEvent.click(within(preference).getByText('View changes'));
     expect(within(preference).getByText('Changed · Locked content is not shown')).toBeInTheDocument();
     expect(within(preference).getByText(/Memories › Enabled/)).toBeInTheDocument();
+  });
+
+  it('labels changes from the server command line and Frameleaf Cloud (FL-146)', () => {
+    const entry = (id: string, source: SystemConfigHistorySource, actorName: string | null) => ({
+      id,
+      createdAt: `2026-09-2${id.length % 9}T12:00:00.000Z`,
+      actorId: actorName ? 'admin' : null,
+      actorName,
+      kind: SystemConfigHistoryKind.Settings,
+      source,
+      changes: [{ path: 'passwordLogin.enabled', before: 'true', after: 'false' }],
+      omittedChanges: 0,
+    });
+    render(SettingsChangeHistory, {
+      ...base,
+      entries: [
+        entry('cli', SystemConfigHistorySource.ServerCli, null),
+        entry('cloud-admin', SystemConfigHistorySource.FrameleafCloud, 'Grace'),
+        entry('cloud', SystemConfigHistorySource.FrameleafCloud, null),
+      ],
+      preferences: [],
+    });
+
+    expect(screen.getByText('Server command line')).toBeInTheDocument();
+    expect(screen.getByText('Grace · Frameleaf Cloud')).toBeInTheDocument();
+    expect(screen.getByText('Frameleaf Cloud')).toBeInTheDocument();
+    expect(screen.queryByText('An administrator')).not.toBeInTheDocument();
   });
 
   it('offers the account its preferences when it has no history yet', async () => {
