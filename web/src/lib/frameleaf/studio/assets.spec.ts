@@ -17,6 +17,7 @@ vi.mock('$lib/frameleaf/restoration', () => ({
 vi.mock('$lib/utils', () => ({
   getAssetMediaUrl: ({ id, size }: { id: string; size?: string }) => `/api/assets/${id}/thumbnail?size=${size}`,
   getAssetPlaybackUrl: ({ id }: { id: string }) => `/api/assets/${id}/video/playback`,
+  getStudioHdrVideoUrl: (id: string) => `/api/assets/${id}/video/studio-hdr`,
 }));
 
 const {
@@ -138,6 +139,18 @@ describe('studio asset projection', () => {
       ['hdr', true],
     ]);
     expect(withHdrSources(projected, undefined)).toEqual(projected);
+  });
+
+  it('hands the engine the HDR intermediate of an HDR original once the server has one (FL-97)', () => {
+    const projected = toStudioAssets([
+      asset({ id: 'hdr', type: AssetTypeEnum.Video }),
+      asset({ id: 'pending', type: AssetTypeEnum.Video }),
+    ]);
+    const marked = withHdrSources(projected, ['hdr', 'pending'], ['hdr', 'sdr-never']);
+
+    expect(marked[0].hdrSourceUrl).toMatch(/\/assets\/hdr\/video\/studio-hdr/);
+    expect(marked[1]).toMatchObject({ hdr: true });
+    expect(marked[1].hdrSourceUrl).toBeUndefined();
   });
 });
 

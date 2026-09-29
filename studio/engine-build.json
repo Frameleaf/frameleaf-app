@@ -179,7 +179,12 @@
       "path": "patches/0035-retime-policy.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "3fcb6bf87959f469b58b0e7513ff27d3b17bb5815dd1b956700b197841010439"
+    },
+    {
+      "path": "patches/0036-hdr-intermediate-source.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "4dcc8d63e2790d4aa422ee92e0c2bf6a672a1b0d0e192d7bc52548f35fa68db5"
     }
   ],
-  "sourceSha256": "69ab586cc85ab191ef11c58f4ab11045a921b44c0482b60fc8e677a91d118fe0"
+  "sourceSha256": "f02633ffe9cebe4579c7d789d09254623cd512af9233315873882efc09620c2c"
 }
