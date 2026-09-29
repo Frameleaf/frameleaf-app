@@ -604,8 +604,9 @@ describe('FL-94 sequence settings: nothing on an existing timeline retimes silen
     const graph = await withClipAndMarker()
     const next = await applied(graph, [setSettings({ fps: rate(30_000, 1001), timing: 'keep-time' })])
     expect(next.metadata).toMatchObject({ fps: 30_000 / 1001, frameRate: { num: 30_000, den: 1001 } })
-    // 2 s is 59.94 frames: frame 60. The clip still ends at 4 s: frame 120 (119.88).
-    expect(spans(next, 'v1')).toEqual([[60, 60, 0, 60]])
+    // 2 s is 59.94 frames: frame 60. Its 2 s of source last 59.94 frames, so the clip is 59 frames
+    // long rather than rounded up to read past the end of its source window.
+    expect(spans(next, 'v1')).toEqual([[60, 59, 0, 60]])
     expect(markersOf(next)).toEqual([90])
   })
 
@@ -632,7 +633,9 @@ describe('FL-94 sequence settings: nothing on an existing timeline retimes silen
       { fps: rate(0) },
       { fps: rate(480) },
       { fps: 30 },
-      { width: 1281 },
+      { fps: rate(48) },
+      { fps: rate(48_000, 1001) },
+      { width: 100 },
       { height: 100 },
       { fps: rate(60), timing: 'stretch' },
       {},
@@ -640,6 +643,11 @@ describe('FL-94 sequence settings: nothing on an existing timeline retimes silen
       await refused(graph, [setSettings(payload)], 'invalid')
     }
     await refused(graph, [envelope('sequence.setSettings', { sequenceId: 'missing', fps: rate(60) })], 'invalid')
+    // Freecut's own templates have odd sizes (Twitter/X is 1200x675); the renderer rounds for encoding.
+    expect((await applied(graph, [setSettings({ width: 1200, height: 675 })])).metadata).toMatchObject({
+      width: 1200,
+      height: 675,
+    })
   })
 
   it('retimes a sequence at its own rate and the clips that read it', async () => {
@@ -684,6 +692,32 @@ describe('FL-94 sequence settings: nothing on an existing timeline retimes silen
       ] as never,
     })
     await refused(graph, [envelope('sequence.setSettings', { sequenceId: 'seq-2', fps: rate(60) })], 'invalid')
+    // The wrapper reads the sequence in seconds: keeping its frame numbers would change what it shows.
+    await refused(
+      graph,
+      [envelope('sequence.setSettings', { sequenceId: 'seq-2', fps: rate(60), timing: 'keep-frames' })],
+      'invalid',
+    )
+    const unread = { ...graph, timeline: { ...graph.timeline!, items: [] } } as Project
+    const kept = await applied(unread, [
+      envelope('sequence.setSettings', { sequenceId: 'seq-2', fps: rate(60), timing: 'keep-frames' }),
+    ])
+    expect(kept.timeline!.compositions![0]).toMatchObject({ fps: 60, durationInFrames: 90 })
+
+    // "main" names the main timeline; a sequence with that id is refused as ambiguous, not guessed.
+    const clash = structuredClone(graph)
+    clash.timeline!.compositions![0]!.id = 'main'
+    ;(clash.timeline!.items![0] as { compositionId: string }).compositionId = 'main'
+    await refused(clash, [setSettings({ fps: rate(60), timing: 'keep-time' })], 'invalid')
+
+    // A stored rate with no exact reading is refused as invalid, not failed.
+    const odd = structuredClone(graph)
+    odd.timeline!.compositions![0]!.fps = 29.5
+    await refused(
+      odd,
+      [envelope('sequence.setSettings', { sequenceId: 'seq-2', fps: rate(60), timing: 'keep-time' })],
+      'invalid',
+    )
     const next = await applied(graph, [
       envelope('sequence.setSettings', { sequenceId: 'seq-2', fps: rate(60), timing: 'keep-time' }),
     ])

@@ -7,36 +7,66 @@ silently played faster or slower. When the main timeline has content,
 the person now chooses:
 
 - keep-time: timeline frames move to the new rate exactly (integer
-  ratio, nearest frame, clip ends rounded with their starts so butted
-  clips stay butted); media that read their source at the timeline rate
-  are pinned to the old rate so they show the same pictures.
+  ratio, nearest frame, clip ends rounded with their starts). A clip
+  that rounding would overlap is pushed later by the overflow, with the
+  butted clips after it; a rounded-up clip never reads past its source
+  window; the last keyframe of a lane keeps the settled value. Media
+  that read their source at the timeline rate are pinned to the old
+  rate so they show the same pictures.
 - keep-frames: the previous behaviour, now an explicit choice.
 
 commitProjectMetadataChange refuses a rate change on content without a
-policy, so every caller is covered. Undo restores the whole timeline in
-one step. Colour needs no prompt: the working range follows the media
-(FL-97 owner decision, patch 0033).
+policy, so every caller is covered. The new rate and the retimed
+timeline are stored in one project write, and undo or redo of a rate
+change stores the restored timeline with its rate, so a reload never
+pairs a rate with frames written for another. The dialog re-checks for
+content when it is submitted. A timeline drop reads its frame before
+the prompt: the frame now keeps its second under keep-time, and a drop
+whose timeline the prompt switched away from is abandoned rather than
+placed on another timeline's track.
+
+Colour needs no prompt: the working range follows the media (FL-97
+owner decision, patch 0033).
 
 diff --git a/src/features/editor/deps/timeline-store-contract.ts b/src/features/editor/deps/timeline-store-contract.ts
-index 3608cf985e..4290b5650f 100644
+index 3608cf985e..d3690feb48 100644
 --- a/src/features/editor/deps/timeline-store-contract.ts
 +++ b/src/features/editor/deps/timeline-store-contract.ts
-@@ -15,7 +15,8 @@ export {
+@@ -15,7 +15,15 @@ export {
  } from '@/features/timeline/stores/composition-navigation-store'
  export { useTimelineCommandStore } from '@/features/timeline/stores/timeline-command-store'
  export { execute as executeTimelineCommand } from '@/features/timeline/stores/actions/shared'
 -export { captureSnapshot } from '@/features/timeline/stores/commands/snapshot'
 +export { captureSnapshot, restoreSnapshot } from '@/features/timeline/stores/commands/snapshot'
 +export { buildTimelineFromStores } from '@/features/timeline/stores/timeline-persistence'
++export {
++  RETIME_POLICIES,
++  hasTimedContent,
++  retimeContent,
++  sameRate,
++  type RetimePolicy,
++} from '@/features/timeline/utils/project-retime'
  export { rateStretchItemWithoutHistory } from '@/features/timeline/stores/actions/item-edit-actions'
  export {
    addCompositionControl,
-diff --git a/src/features/editor/utils/project-retime.ts b/src/features/editor/utils/project-retime.ts
+diff --git a/src/features/editor/deps/timeline-test-helpers-contract.ts b/src/features/editor/deps/timeline-test-helpers-contract.ts
+index e3238e4b85..748dfc0938 100644
+--- a/src/features/editor/deps/timeline-test-helpers-contract.ts
++++ b/src/features/editor/deps/timeline-test-helpers-contract.ts
+@@ -1,6 +1,7 @@
+ /** Test-only seam for editor specs that exercise the real timeline stores. */
+ export {
+   makeTimelineTrack,
++  makeTimelineVideoItem,
+   resetTimelineCompositionTestState,
+   setDefaultRootTimelineTracks,
+ } from '@/features/timeline/test-helpers'
+diff --git a/src/features/timeline/utils/project-retime.ts b/src/features/timeline/utils/project-retime.ts
 new file mode 100644
-index 0000000000..427dd3c2ef
+index 0000000000..9a86b0a922
 --- /dev/null
-+++ b/src/features/editor/utils/project-retime.ts
-@@ -0,0 +1,258 @@
++++ b/src/features/timeline/utils/project-retime.ts
+@@ -0,0 +1,320 @@
 +/**
 + * Frameleaf (FL-94): changing the frame rate of a project or sequence that
 + * already has content never retimes it silently. The person picks a policy:
@@ -58,6 +88,7 @@ index 0000000000..427dd3c2ef
 +import type { ItemKeyframes } from '@/types/keyframe'
 +import type { ProjectMarker, TimelineItem } from '@/types/timeline'
 +import type { Transition } from '@/types/transition'
++import { sourceToTimelineFrames } from './source-calculations'
 +
 +export type RetimePolicy = 'keep-time' | 'keep-frames'
 +
@@ -85,6 +116,17 @@ index 0000000000..427dd3c2ef
 +  throw new Error(`The frame rate ${fps} has no exact reading`)
 +}
 +
++/** Whether two editor rates are the same exact cadence (29.97 and 30000/1001 are). */
++export function sameRate(left: number, right: number): boolean {
++  try {
++    const a = exactCadence(left)
++    const b = exactCadence(right)
++    return a.num * b.den === b.num * a.den
++  } catch {
++    return left === right
++  }
++}
++
 +/** Frames at `fromFps` to frames at `toFps`. */
 +export function frameRatio(fromFps: number, toFps: number): FrameRatio {
 +  const from = exactCadence(fromFps)
@@ -106,22 +148,32 @@ index 0000000000..427dd3c2ef
 +const scaleNullable = (frame: number | null | undefined, ratio: FrameRatio) =>
 +  frame === null || frame === undefined ? frame : scaleFrame(frame, ratio)
 +
-+/** Keep one keyframe per frame after rounding: the first one in time wins. */
++/**
++ * Keep one keyframe per frame after rounding. The first one in time wins, except at the end of the
++ * lane: there the last keyframe wins, so the value a clip settles on is kept.
++ */
 +function scaleKeyframeList<T extends { frame: number }>(keyframes: T[], ratio: FrameRatio): T[] {
-+  const seen = new Set<number>()
 +  const out: T[] = []
-+  for (const keyframe of [...keyframes].sort((a, b) => a.frame - b.frame)) {
++  const sorted = [...keyframes].sort((a, b) => a.frame - b.frame)
++  for (const [index, keyframe] of sorted.entries()) {
 +    const frame = scaleFrame(keyframe.frame, ratio)
-+    if (seen.has(frame)) continue
-+    seen.add(frame)
++    const previous = out.at(-1)
++    if (previous?.frame === frame) {
++      if (index === sorted.length - 1) out[out.length - 1] = { ...keyframe, frame }
++      continue
++    }
 +    out.push({ ...keyframe, frame })
 +  }
 +  return out
 +}
 +
-+const SOURCE_FIELDS = ['trimStart', 'trimEnd', 'sourceStart', 'sourceEnd', 'sourceDuration'] as const
++const SOURCE_FIELDS = ['trimStart', 'trimEnd', 'sourceStart', 'sourceEnd', 'sourceDuration', 'offset'] as const
 +
-+function retimeItem(item: TimelineItem, ratio: FrameRatio, fromFps: number): TimelineItem {
++/** A source-frame field; `offset` exists only on video and audio items. */
++const sourceField = (item: TimelineItem, field: (typeof SOURCE_FIELDS)[number]): number | undefined =>
++  (item as unknown as Record<string, number | undefined>)[field]
++
++function retimeItem(item: TimelineItem, ratio: FrameRatio, fromFps: number, toFps: number): TimelineItem {
 +  const from = scaleFrame(item.from, ratio)
 +  const end = scaleFrame(item.from + item.durationInFrames, ratio)
 +  const next: TimelineItem = { ...item, from, durationInFrames: Math.max(1, end - from) }
@@ -129,10 +181,21 @@ index 0000000000..427dd3c2ef
 +  if (item.reverseConformLocalStart !== undefined) {
 +    next.reverseConformLocalStart = scaleFrame(item.reverseConformLocalStart, ratio)
 +  }
-+  const readsSource = SOURCE_FIELDS.some((field) => item[field] !== undefined)
++  const readsSource = SOURCE_FIELDS.some((field) => sourceField(item, field) !== undefined)
 +  // A compound clip reads its composition at the composition's own rate, never the timeline's.
 +  if (readsSource && item.sourceFps === undefined && item.type !== 'composition' && !item.compositionId) {
 +    next.sourceFps = fromFps
++  }
++  // Rounding the end up must not read past the clip's source window.
++  if (item.sourceEnd !== undefined && item.type !== 'composition' && !item.compositionId) {
++    const sourceStart = item.sourceStart ?? item.trimStart ?? 0
++    const most = sourceToTimelineFrames(
++      item.sourceEnd - sourceStart,
++      item.speed ?? 1,
++      next.sourceFps ?? fromFps,
++      toFps,
++    )
++    if (next.durationInFrames > most) next.durationInFrames = Math.max(1, most)
 +  }
 +  if (item.motionModifiers) {
 +    next.motionModifiers = item.motionModifiers.map((modifier) => ({
@@ -226,12 +289,41 @@ index 0000000000..427dd3c2ef
 +  durationInFrames?: number
 +}
 +
++/**
++ * Rounding can make two clips that did not overlap land on the same frames: at 60 to 25 fps a
++ * one-frame clip at 14 and the next clip at 15 both start at frame 6. A clip that started at or after
++ * the previous clip's end on its track still does, pushed later by the overflow; clips after it that
++ * it now reaches are pushed in turn. Linked clips on other tracks round alike, so they move alike.
++ */
++function withoutOverlaps(before: TimelineItem[], after: TimelineItem[]): TimelineItem[] {
++  const order = before.map((_, index) => index)
++  order.sort((a, b) => before[a]!.from - before[b]!.from || a - b)
++  const lastOnTrack = new Map<string, { beforeEnd: number; afterEnd: number }>()
++  const out = [...after]
++  for (const index of order) {
++    const original = before[index]!
++    let item = out[index]!
++    const previous = lastOnTrack.get(original.trackId)
++    if (previous && original.from >= previous.beforeEnd && item.from < previous.afterEnd) {
++      item = { ...item, from: previous.afterEnd }
++      out[index] = item
++    }
++    const beforeEnd = original.from + original.durationInFrames
++    const afterEnd = item.from + item.durationInFrames
++    if (!previous || beforeEnd >= previous.beforeEnd) lastOnTrack.set(original.trackId, { beforeEnd, afterEnd })
++  }
++  return out
++}
++
 +/** `content` with every timeline-frame field moved from `fromFps` to `toFps`, keeping time. */
 +export function retimeContent<T extends RetimableContent>(content: T, fromFps: number, toFps: number): T {
 +  const ratio = frameRatio(fromFps, toFps)
 +  const next: T = {
 +    ...content,
-+    items: content.items.map((item) => retimeItem(item, ratio, fromFps)),
++    items: withoutOverlaps(
++      content.items,
++      content.items.map((item) => retimeItem(item, ratio, fromFps, toFps)),
++    ),
 +  }
 +  if (content.transitions) {
 +    next.transitions = content.transitions.map((transition) => ({
@@ -268,8 +360,8 @@ index 0000000000..427dd3c2ef
 +    if (item.compositionId !== compositionId) return item
 +    const next = { ...item } as TimelineItem
 +    for (const field of SOURCE_FIELDS) {
-+      const value = item[field]
-+      if (value !== undefined) next[field] = scaleFrame(value, ratio)
++      const value = sourceField(item, field)
++      if (value !== undefined) (next as unknown as Record<string, number>)[field] = scaleFrame(value, ratio)
 +    }
 +    if (item.sourceFps !== undefined) next.sourceFps = toFps
 +    return next
@@ -295,12 +387,12 @@ index 0000000000..427dd3c2ef
 +        (content.outPoint ?? null) !== null),
 +  )
 +}
-diff --git a/src/features/editor/utils/project-retime.test.ts b/src/features/editor/utils/project-retime.test.ts
+diff --git a/src/features/timeline/utils/project-retime.test.ts b/src/features/timeline/utils/project-retime.test.ts
 new file mode 100644
-index 0000000000..5b2a8cc79a
+index 0000000000..0d8179e3e4
 --- /dev/null
-+++ b/src/features/editor/utils/project-retime.test.ts
-@@ -0,0 +1,177 @@
++++ b/src/features/timeline/utils/project-retime.test.ts
+@@ -0,0 +1,231 @@
 +import { describe, expect, it } from 'vite-plus/test'
 +import type { ItemKeyframes } from '@/types/keyframe'
 +import type { ProjectMarker, TimelineItem } from '@/types/timeline'
@@ -311,6 +403,7 @@ index 0000000000..5b2a8cc79a
 +  hasTimedContent,
 +  retimeCompositionReaders,
 +  retimeContent,
++  sameRate,
 +  scaleFrame,
 +} from './project-retime'
 +
@@ -324,6 +417,12 @@ index 0000000000..5b2a8cc79a
 +    expect(exactCadence(30_000 / 1001)).toEqual({ num: 30_000n, den: 1001n })
 +    expect(() => exactCadence(29.5)).toThrow(/no exact reading/)
 +    expect(frameRatio(30, 29.97)).toEqual({ num: 30_000n, den: 30_030n })
++  })
++
++  it('compares rates as exact cadences', () => {
++    expect(sameRate(29.97, 30_000 / 1001)).toBe(true)
++    expect(sameRate(30, 29.97)).toBe(false)
++    expect(sameRate(29.5, 29.5)).toBe(true)
 +  })
 +
 +  it('rounds to the nearest frame, halves away from zero', () => {
@@ -351,6 +450,49 @@ index 0000000000..5b2a8cc79a
 +    expect(items.every((entry) => entry.durationInFrames >= 1)).toBe(true)
 +  })
 +
++  it('pushes a clip that rounding would overlap, and the butted clips after it, never a gap', () => {
++    const { items } = retimeContent(
++      {
++        items: [
++          item({ id: 'b', from: 7, durationInFrames: 7 }),
++          item({ id: 'c', from: 14, durationInFrames: 1 }),
++          item({ id: 'd', from: 15, durationInFrames: 5 }),
++          item({ id: 'e', from: 20, durationInFrames: 12 }),
++          item({ id: 'gap', from: 60, durationInFrames: 12 }),
++          item({ id: 'a1', trackId: 'a1', from: 14, durationInFrames: 1 }),
++          item({ id: 'a2', trackId: 'a1', from: 15, durationInFrames: 5 }),
++        ],
++      },
++      60,
++      25,
++    )
++    const span = (id: string) => {
++      const entry = items.find((candidate) => candidate.id === id)!
++      return [entry.from, entry.durationInFrames]
++    }
++    // Unpushed, c (14 -> 6, one frame) and d (15 -> 6) would share frame 6.
++    expect([span('b'), span('c'), span('d'), span('e')]).toEqual([
++      [3, 3],
++      [6, 1],
++      [7, 2],
++      [9, 5],
++    ])
++    // A clip with room before it is not moved.
++    expect(span('gap')).toEqual([25, 5])
++    // Linked sound on another track moves exactly as its pictures.
++    expect([span('a1'), span('a2')]).toEqual([span('c'), span('d')])
++  })
++
++  it('never lets a rounded-up clip read past the end of its source window', () => {
++    const [clip] = retimeContent(
++      { items: [item({ from: 60, durationInFrames: 60, sourceStart: 0, sourceEnd: 60, trimStart: 0 })] },
++      30,
++      30_000 / 1001,
++    ).items
++    // 60 source frames at 30 fps last 59.94 frames at 29.97.
++    expect([clip!.from, clip!.durationInFrames, clip!.sourceFps]).toEqual([60, 59, 30])
++  })
++
 +  it('pins media that read their source at the timeline rate, and nothing else', () => {
 +    const { items } = retimeContent(
 +      {
@@ -359,6 +501,7 @@ index 0000000000..5b2a8cc79a
 +          item({ id: 'own', trimStart: 12, sourceFps: 23.976 }),
 +          item({ id: 'compound', type: 'composition', compositionId: 'c1', sourceStart: 4 }),
 +          item({ id: 'title', type: 'text' }),
++          item({ id: 'sound', type: 'audio', offset: 6 }),
 +        ],
 +      },
 +      30,
@@ -369,6 +512,7 @@ index 0000000000..5b2a8cc79a
 +      [23.976, 12],
 +      [undefined, 4],
 +      [undefined, undefined],
++      [30, undefined],
 +    ])
 +  })
 +
@@ -413,6 +557,7 @@ index 0000000000..5b2a8cc79a
 +              { id: 'k0', frame: 1, value: 0, easing: 'linear' },
 +              { id: 'k1', frame: 2, value: 0.5, easing: 'linear' },
 +              { id: 'k2', frame: 10, value: 1, easing: 'linear' },
++              { id: 'k3', frame: 9, value: 0.25, easing: 'linear' },
 +            ],
 +          },
 +        ],
@@ -440,6 +585,7 @@ index 0000000000..5b2a8cc79a
 +    const [entry] = next.keyframes!
 +    expect(entry!.properties[0]!.keyframes.map((key) => [key.id, key.frame])).toEqual([
 +      ['k0', 1],
++      // k3 (9) and k2 (10) both land on frame 5: the lane's last keyframe, k2, keeps the settled value.
 +      ['k2', 5],
 +    ])
 +    expect(entry!.vectorProperties![0]!.keyframes[0]!.frame).toBe(3)
@@ -478,23 +624,419 @@ index 0000000000..5b2a8cc79a
 +    expect(hasTimedContent(undefined)).toBe(false)
 +  })
 +})
+diff --git a/src/features/timeline/utils/external-file-project-match.ts b/src/features/timeline/utils/external-file-project-match.ts
+index bd240ebf15..faf27fa4d6 100644
+--- a/src/features/timeline/utils/external-file-project-match.ts
++++ b/src/features/timeline/utils/external-file-project-match.ts
+@@ -1,4 +1,10 @@
+ import { useProjectMediaMatchDialogStore } from '@/shared/state/project-media-match-dialog'
++import { useTimelineSettingsStore } from '../stores/timeline-settings-store'
++import {
++  getActiveTabId,
++  useCompositionNavigationStore,
++} from '../stores/composition-navigation-store'
++import { frameRatio, sameRate, scaleFrame } from './project-retime'
+ import { useMediaLibraryStore } from '@/features/timeline/deps/media-library-store'
+ import {
+   getMimeType,
+@@ -6,24 +12,40 @@ import {
+   type ExtractedMediaFileEntry,
+ } from '@/features/timeline/deps/media-library-resolver'
+ 
++/** Moves a drop frame read before the match prompt onto the timeline as it is after it. */
++export type DropFrameReanchor = (frame: number) => number
++
++const keepFrame: DropFrameReanchor = (frame) => frame
++
++const shownTimeline = () => {
++  const navigation = useCompositionNavigationStore.getState()
++  return `${getActiveTabId(navigation.breadcrumbs)}|${navigation.activeCompositionId}`
++}
++
++/**
++ * Offers to match the project to the first dropped video. The drop's frame and track were read
++ * before the prompt (FL-94): the result says how to move that frame when the project's clips kept
++ * their timing at a new rate, or is null when the prompt changed which timeline is shown, so the
++ * drop's track no longer applies and the drop is abandoned rather than placed somewhere else.
++ */
+ export async function preflightFirstTimelineVideoProjectMatch(
+   entries: ExtractedMediaFileEntry[],
+-): Promise<void> {
++): Promise<DropFrameReanchor | null> {
+   const currentProjectId = useMediaLibraryStore.getState().currentProjectId
+   if (!currentProjectId) {
+-    return
++    return keepFrame
+   }
+ 
+   const hasExistingProjectVideo = useMediaLibraryStore
+     .getState()
+     .mediaItems.some((item) => item.mimeType.startsWith('video/'))
+   if (hasExistingProjectVideo) {
+-    return
++    return keepFrame
+   }
+ 
+   const firstVideoEntry = entries.find((entry) => entry.mediaType === 'video')
+   if (!firstVideoEntry) {
+-    return
++    return keepFrame
+   }
+ 
+   const mimeType = getMimeType(firstVideoEntry.file)
+@@ -36,10 +58,22 @@ export async function preflightFirstTimelineVideoProjectMatch(
+     throw new Error('Unable to inspect dropped video.')
+   }
+ 
++  const fpsBefore = useTimelineSettingsStore.getState().fps
++  const timelineBefore = shownTimeline()
+   await useProjectMediaMatchDialogStore.getState().requestProjectMediaMatch(currentProjectId, {
+     fileName: firstVideoEntry.file.name,
+     width: metadata.width,
+     height: metadata.height,
+     fps: metadata.fps,
+   })
++  if (shownTimeline() !== timelineBefore) return null
++  const fpsAfter = useTimelineSettingsStore.getState().fps
++  if (
++    useProjectMediaMatchDialogStore.getState().lastTiming !== 'keep-time' ||
++    sameRate(fpsBefore, fpsAfter)
++  ) {
++    return keepFrame
++  }
++  const ratio = frameRatio(fpsBefore, fpsAfter)
++  return (frame) => scaleFrame(frame, ratio)
+ }
+diff --git a/src/features/timeline/utils/external-file-project-match.test.ts b/src/features/timeline/utils/external-file-project-match.test.ts
+index b45ea5b32b..8b0b212134 100644
+--- a/src/features/timeline/utils/external-file-project-match.test.ts
++++ b/src/features/timeline/utils/external-file-project-match.test.ts
+@@ -7,6 +7,7 @@ import type { ExtractedMediaFileEntry } from '@/features/timeline/deps/media-lib
+ const mocks = vi.hoisted(() => ({
+   processMedia: vi.fn(),
+   requestProjectMediaMatch: vi.fn(),
++  lastTiming: null as 'keep-time' | 'keep-frames' | null,
+ }))
+ 
+ let mediaLibraryState: {
+@@ -31,11 +32,14 @@ vi.mock('@/shared/state/project-media-match-dialog', () => ({
+   useProjectMediaMatchDialogStore: {
+     getState: () => ({
+       requestProjectMediaMatch: mocks.requestProjectMediaMatch,
++      lastTiming: mocks.lastTiming,
+     }),
+   },
+ }))
+ 
+ import { preflightFirstTimelineVideoProjectMatch } from './external-file-project-match'
++import { useTimelineSettingsStore } from '../stores/timeline-settings-store'
++import { useCompositionNavigationStore } from '../stores/composition-navigation-store'
+ 
+ function makeVideoMedia(overrides: Partial<MediaMetadata> = {}): MediaMetadata {
+   return {
+@@ -84,6 +88,9 @@ describe('preflightFirstTimelineVideoProjectMatch', () => {
+       },
+     })
+     mocks.requestProjectMediaMatch.mockResolvedValue('match-both')
++    mocks.lastTiming = null
++    useTimelineSettingsStore.getState().setFps(30)
++    useCompositionNavigationStore.setState({ activeCompositionId: null })
+   })
+ 
+   it('prompts from the first dropped video before timeline import continues', async () => {
+@@ -121,4 +128,36 @@ describe('preflightFirstTimelineVideoProjectMatch', () => {
+     expect(mocks.processMedia).not.toHaveBeenCalled()
+     expect(mocks.requestProjectMediaMatch).not.toHaveBeenCalled()
+   })
++
++  describe('FL-94: a drop frame read before the prompt', () => {
++    const answer = (fps: number, timing: 'keep-time' | 'keep-frames' | null) =>
++      mocks.requestProjectMediaMatch.mockImplementation(async () => {
++        useTimelineSettingsStore.getState().setFps(fps)
++        mocks.lastTiming = timing
++        return 'fps-only'
++      })
++
++    it('keeps its second when the project kept clip timing at a new rate', async () => {
++      answer(60, 'keep-time')
++      const reanchor = await preflightFirstTimelineVideoProjectMatch([makeEntry()])
++      expect(reanchor?.(45)).toBe(90)
++    })
++
++    it('keeps its frame when frame numbers were kept or nothing changed', async () => {
++      answer(60, 'keep-frames')
++      expect((await preflightFirstTimelineVideoProjectMatch([makeEntry()]))?.(45)).toBe(45)
++      answer(30, null)
++      expect((await preflightFirstTimelineVideoProjectMatch([makeEntry()]))?.(45)).toBe(45)
++      mediaLibraryState.mediaItems = [makeVideoMedia()]
++      expect((await preflightFirstTimelineVideoProjectMatch([makeEntry()]))?.(45)).toBe(45)
++    })
++
++    it('abandons the drop when the prompt changed which timeline is shown', async () => {
++      mocks.requestProjectMediaMatch.mockImplementation(async () => {
++        useCompositionNavigationStore.setState({ activeCompositionId: 'sequence-2' })
++        return 'fps-only'
++      })
++      expect(await preflightFirstTimelineVideoProjectMatch([makeEntry()])).toBeNull()
++    })
++  })
+ })
+diff --git a/src/features/timeline/utils/drop-execution.ts b/src/features/timeline/utils/drop-execution.ts
+index 34f97807c6..5d6d3c558f 100644
+--- a/src/features/timeline/utils/drop-execution.ts
++++ b/src/features/timeline/utils/drop-execution.ts
+@@ -28,6 +28,8 @@ interface DropNotifications {
+ 
+ interface ResolveDroppedMediaEntriesFromExternalFilesOptions {
+   dataTransfer: DataTransfer
++  /** The timeline frame the files were dropped on, read before any prompt. */
++  dropFrame: number
+   importHandlesForPlacement: (handles: FileSystemFileHandle[]) => Promise<MediaMetadata[]>
+   notify: DropNotifications
+ }
+@@ -141,11 +143,19 @@ export function buildDroppedMediaEntriesFromImportedMedia(
+   })
+ }
+ 
++/**
++ * The dropped files as timeline entries, with `dropFrame` moved onto the timeline as it is after the
++ * first-video match prompt (FL-94). Null when there is nothing to place.
++ */
+ export async function resolveDroppedMediaEntriesFromExternalFiles({
+   dataTransfer,
++  dropFrame,
+   importHandlesForPlacement,
+   notify,
+-}: ResolveDroppedMediaEntriesFromExternalFilesOptions): Promise<DroppedMediaEntry[] | null> {
++}: ResolveDroppedMediaEntriesFromExternalFilesOptions): Promise<{
++  entries: DroppedMediaEntry[]
++  dropFrame: number
++} | null> {
+   const { supported, entries, errors } =
+     await extractValidMediaFileEntriesFromDataTransfer(dataTransfer)
+   if (!supported) {
+@@ -161,14 +171,19 @@ export async function resolveDroppedMediaEntriesFromExternalFiles({
+     return null
+   }
+ 
++  let reanchor: Awaited<ReturnType<typeof preflightFirstTimelineVideoProjectMatch>>
+   try {
+-    await preflightFirstTimelineVideoProjectMatch(entries)
++    reanchor = await preflightFirstTimelineVideoProjectMatch(entries)
+   } catch (error) {
+     notify.error('Unable to inspect dropped file.', {
+       description: error instanceof Error ? error.message : 'Please try again.',
+     })
+     return null
+   }
++  if (!reanchor) {
++    notify.warning('The project changed timelines while matching the video. Drop the files again.')
++    return null
++  }
+ 
+   let importedMedia: Awaited<ReturnType<typeof importHandlesForPlacement>>
+   try {
+@@ -190,7 +205,7 @@ export async function resolveDroppedMediaEntriesFromExternalFiles({
+     return null
+   }
+ 
+-  return droppedEntries
++  return { entries: droppedEntries, dropFrame: reanchor(dropFrame) }
+ }
+ 
+ function buildTimelinePlacementFailureMessage(params: {
+diff --git a/src/features/timeline/components/timeline-track.tsx b/src/features/timeline/components/timeline-track.tsx
+index c326e841df..ab94549ea1 100644
+--- a/src/features/timeline/components/timeline-track.tsx
++++ b/src/features/timeline/components/timeline-track.tsx
+@@ -1194,16 +1194,18 @@ export const TimelineTrack = memo(function TimelineTrack({ track }: TimelineTrac
+       return
+     }
+ 
+-    const droppedEntries = await resolveDroppedMediaEntriesFromExternalFiles({
++    const droppedFiles = await resolveDroppedMediaEntriesFromExternalFiles({
+       dataTransfer: e.dataTransfer,
++      dropFrame,
+       importHandlesForPlacement,
+       notify: toast,
+     })
+-    if (!droppedEntries) {
++    if (!droppedFiles) {
+       return
+     }
++    const droppedEntries = droppedFiles.entries
+ 
+-    const dropResult = await resolveTimelineItemsForEntries(droppedEntries, dropFrame)
++    const dropResult = await resolveTimelineItemsForEntries(droppedEntries, droppedFiles.dropFrame)
+     prewarmDroppedTimelineAudio(droppedEntries, dropResult.items)
+     applyResolvedTimelineDrop({
+       addItem,
+diff --git a/src/features/timeline/components/timeline-media-drop-zone.tsx b/src/features/timeline/components/timeline-media-drop-zone.tsx
+index 382031eac3..9738630119 100644
+--- a/src/features/timeline/components/timeline-media-drop-zone.tsx
++++ b/src/features/timeline/components/timeline-media-drop-zone.tsx
+@@ -1047,16 +1047,18 @@ export const TimelineMediaDropZone = memo(function TimelineMediaDropZone({
+         return
+       }
+ 
+-      const droppedEntries = await resolveDroppedMediaEntriesFromExternalFiles({
++      const droppedFiles = await resolveDroppedMediaEntriesFromExternalFiles({
+         dataTransfer: e.dataTransfer,
++        dropFrame,
+         importHandlesForPlacement,
+         notify: toast,
+       })
+-      if (!droppedEntries) {
++      if (!droppedFiles) {
+         return
+       }
++      const droppedEntries = droppedFiles.entries
+ 
+-      const dropResult = await resolveTimelineItemsForEntries(droppedEntries, dropFrame)
++      const dropResult = await resolveTimelineItemsForEntries(droppedEntries, droppedFiles.dropFrame)
+       prewarmDroppedTimelineAudio(droppedEntries, dropResult.items)
+       applyResolvedTimelineDrop({
+         addItem,
+diff --git a/src/features/timeline/stores/commands/snapshot.ts b/src/features/timeline/stores/commands/snapshot.ts
+index fb00c50835..c0fda5043c 100644
+--- a/src/features/timeline/stores/commands/snapshot.ts
++++ b/src/features/timeline/stores/commands/snapshot.ts
+@@ -12,6 +12,7 @@ import { updateProject } from '@/infrastructure/storage'
+ import { createLogger } from '@/shared/logging/logger'
+ import { sanitizeInOutPoints } from '../../utils/in-out-points'
+ import { getActiveInOutMaxFrame } from '../in-out-bound'
++import { buildTimelineFromStores } from '../timeline-persistence'
+ 
+ const logger = createLogger('TimelineSnapshot')
+ 
+@@ -72,9 +73,13 @@ function restoreProjectMetadata(snapshot: TimelineSnapshot): void {
+     ),
+   }))
+ 
++  // Frameleaf (FL-94): undoing a rate change that kept clip timing restores frames written for the
++  // old rate. They are stored with that rate in one write, never the rate alone.
++  const rateChanged = storedProject.metadata.fps !== snapshot.projectMetadata.fps
+   void Promise.resolve(
+     updateProject(snapshot.projectId, {
+       metadata: { ...snapshot.projectMetadata },
++      ...(rateChanged && { timeline: buildTimelineFromStores() }),
+     }),
+   ).catch((error) => {
+     logger.error(`Failed to persist restored project metadata for ${snapshot.projectId}:`, error)
+diff --git a/src/features/projects/stores/project-store.ts b/src/features/projects/stores/project-store.ts
+index 5a46130adb..d58e8e88a2 100644
+--- a/src/features/projects/stores/project-store.ts
++++ b/src/features/projects/stores/project-store.ts
+@@ -45,7 +45,11 @@ interface ProjectActions {
+   loadProjects: () => Promise<void>
+   loadProject: (id: string) => Promise<Project | null>
+   createProject: (data: ProjectFormData) => Promise<Project>
+-  updateProject: (id: string, data: Partial<ProjectFormData>) => Promise<Project>
++  /** Frameleaf (FL-94): `timeline` is written with the metadata, in one project write. */
++  updateProject: (
++    id: string,
++    data: Partial<ProjectFormData> & { timeline?: Project['timeline'] },
++  ) => Promise<Project>
+   /**
+    * Soft-delete: moves the project to the workspace trash (marker file;
+    * content preserved). Returns the trash state so the caller can surface
+@@ -164,7 +168,10 @@ export const useProjectStore = create<ProjectState & ProjectActions>()(
+         },
+ 
+         // Update an existing project with optimistic update
+-        updateProject: async (id: string, data: Partial<ProjectFormData>) => {
++        updateProject: async (
++          id: string,
++          data: Partial<ProjectFormData> & { timeline?: Project['timeline'] },
++        ) => {
+           set({ error: null })
+ 
+           const previousProjects = get().projects
+@@ -196,6 +203,7 @@ export const useProjectStore = create<ProjectState & ProjectActions>()(
+               fps: data.fps ?? existingProject.metadata.fps,
+               backgroundColor: data.backgroundColor ?? existingProject.metadata.backgroundColor,
+             },
++            ...(data.timeline !== undefined && { timeline: data.timeline }),
+             updatedAt: Date.now(),
+           }
+ 
+diff --git a/src/shared/state/project-media-match-dialog/store.ts b/src/shared/state/project-media-match-dialog/store.ts
+index 53c2f8901d..8823e07b6a 100644
+--- a/src/shared/state/project-media-match-dialog/store.ts
++++ b/src/shared/state/project-media-match-dialog/store.ts
+@@ -9,17 +9,21 @@ interface ProjectMediaMatchCandidate {
+ 
+ export type ProjectMediaMatchChoice = 'match-both' | 'fps-only' | 'size-only' | 'keep-current'
+ 
++/** Frameleaf (FL-94): how the last accepted match treated existing content, when it changed the rate. */
++export type ProjectMediaMatchTiming = 'keep-time' | 'keep-frames' | null
++
+ interface ProjectMediaMatchDialogState {
+   isOpen: boolean
+   projectId: string | null
+   candidate: ProjectMediaMatchCandidate | null
+   handledProjectIds: string[]
+   resolver: ((choice: ProjectMediaMatchChoice) => void) | null
++  lastTiming: ProjectMediaMatchTiming
+   requestProjectMediaMatch: (
+     projectId: string,
+     candidate: ProjectMediaMatchCandidate,
+   ) => Promise<ProjectMediaMatchChoice>
+-  resolveProjectMediaMatch: (choice: ProjectMediaMatchChoice) => void
++  resolveProjectMediaMatch: (choice: ProjectMediaMatchChoice, timing?: ProjectMediaMatchTiming) => void
+   markProjectMediaMatchHandled: (projectId: string) => void
+   hasHandledProjectMediaMatch: (projectId: string) => boolean
+   resetProjectMediaMatchDialog: () => void
+@@ -35,8 +39,10 @@ export const useProjectMediaMatchDialogStore = create<ProjectMediaMatchDialogSta
+   candidate: null,
+   handledProjectIds: [],
+   resolver: null,
++  lastTiming: null,
+ 
+   requestProjectMediaMatch: (projectId, candidate) => {
++    set({ lastTiming: null })
+     if (!projectId || get().handledProjectIds.includes(projectId)) {
+       return Promise.resolve('keep-current')
+     }
+@@ -56,8 +62,9 @@ export const useProjectMediaMatchDialogStore = create<ProjectMediaMatchDialogSta
+     })
+   },
+ 
+-  resolveProjectMediaMatch: (choice) => {
++  resolveProjectMediaMatch: (choice, timing = null) => {
+     const { resolver, projectId, handledProjectIds } = get()
++    set({ lastTiming: timing })
+     resolver?.(choice)
+ 
+     set({
+@@ -94,6 +101,7 @@ export const useProjectMediaMatchDialogStore = create<ProjectMediaMatchDialogSta
+       candidate: null,
+       resolver: null,
+       handledProjectIds: [],
++      lastTiming: null,
+     })
+   },
+ }))
 diff --git a/src/features/editor/utils/project-metadata-history.ts b/src/features/editor/utils/project-metadata-history.ts
-index f06b7c693e..0c6ee2a8e4 100644
+index f06b7c693e..eec87b12dc 100644
 --- a/src/features/editor/utils/project-metadata-history.ts
 +++ b/src/features/editor/utils/project-metadata-history.ts
-@@ -1,5 +1,26 @@
+@@ -1,6 +1,30 @@
 -import { captureSnapshot, useTimelineCommandStore } from '@/features/editor/deps/timeline-store'
 +import {
 +  buildTimelineFromStores,
 +  captureSnapshot,
 +  getActiveTabId,
++  hasTimedContent,
 +  restoreSnapshot,
++  retimeContent,
++  sameRate,
 +  useCompositionNavigationStore,
 +  useTimelineCommandStore,
++  type RetimePolicy,
 +} from '@/features/editor/deps/timeline-store'
  import type { Project } from '@/types/project'
-+import { hasTimedContent, retimeContent, type RetimePolicy } from './project-retime'
-+
+ 
 +/** FL-94: a rate change on a timeline with content needs an explicit timing policy. */
 +export class RetimePolicyRequiredError extends Error {
 +  constructor() {
@@ -507,19 +1049,26 @@ index f06b7c693e..0c6ee2a8e4 100644
 +export function projectRateChangeNeedsPolicy(): boolean {
 +  return hasTimedContent(buildTimelineFromStores())
 +}
- 
++
  type ProjectMetadataUpdates = {
    width?: number
-@@ -17,6 +38,8 @@ interface CommitProjectMetadataChangeParams {
+   height?: number
+@@ -15,8 +39,13 @@ interface CommitProjectMetadataChangeParams {
+     type: string
+     payload?: Record<string, unknown>
    }
-   updateProject: (id: string, data: ProjectMetadataUpdates) => Promise<Project>
+-  updateProject: (id: string, data: ProjectMetadataUpdates) => Promise<Project>
++  updateProject: (
++    id: string,
++    data: ProjectMetadataUpdates & { timeline?: Project['timeline'] },
++  ) => Promise<Project>
    markDirty: () => void
 +  /** Required when `updates.fps` changes the rate of a project whose main timeline has content. */
 +  timing?: RetimePolicy
    onApplied?: (project: Project) => void
  }
  
-@@ -43,13 +66,38 @@ export async function commitProjectMetadataChange({
+@@ -43,13 +72,46 @@ export async function commitProjectMetadataChange({
    updateProject,
    markDirty,
    onApplied,
@@ -532,7 +1081,7 @@ index f06b7c693e..0c6ee2a8e4 100644
 +  const fromFps = project.metadata.fps
 +  const toFps = updates.fps
 +  const retime =
-+    toFps !== undefined && toFps !== fromFps && projectRateChangeNeedsPolicy()
++    toFps !== undefined && !sameRate(toFps, fromFps) && projectRateChangeNeedsPolicy()
 +      ? (timing ?? null)
 +      : 'keep-frames'
 +  if (retime === null) throw new RetimePolicyRequiredError()
@@ -545,24 +1094,206 @@ index f06b7c693e..0c6ee2a8e4 100644
 +  }
 +
    const beforeSnapshot = captureSnapshot()
-   const updatedProject = await updateProject(project.id, updates)
+-  const updatedProject = await updateProject(project.id, updates)
++  let updatedProject: Project
 +  if (retime === 'keep-time') {
-+    restoreSnapshot(
-+      retimeContent(
-+        { ...beforeSnapshot, fps: toFps!, projectMetadata: { ...updatedProject.metadata } },
-+        fromFps,
-+        toFps!,
-+      ),
-+    )
++    // Retime the stores (the stored metadata is still the old one, so nothing is written yet), then
++    // store the new rate and the retimed timeline in one write: a reload never finds one without
++    // the other.
++    restoreSnapshot({
++      ...retimeContent({ ...beforeSnapshot, fps: toFps! }, fromFps, toFps!),
++      projectMetadata: beforeSnapshot.projectMetadata,
++    })
++    try {
++      updatedProject = await updateProject(project.id, { ...updates, timeline: buildTimelineFromStores() })
++    } catch (error) {
++      restoreSnapshot(beforeSnapshot)
++      throw error
++    }
++  } else {
++    updatedProject = await updateProject(project.id, updates)
 +  }
    onApplied?.(updatedProject)
    markDirty()
    useTimelineCommandStore.getState().addUndoEntry(command, beforeSnapshot)
+diff --git a/src/features/editor/utils/project-metadata-history.test.ts b/src/features/editor/utils/project-metadata-history.test.ts
+new file mode 100644
+index 0000000000..785cf04340
+--- /dev/null
++++ b/src/features/editor/utils/project-metadata-history.test.ts
+@@ -0,0 +1,154 @@
++// @vitest-environment node
++
++import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
++import type { Project, ProjectTimeline } from '@/types/project'
++
++const storage = vi.hoisted(() => ({ updateProject: vi.fn() }))
++
++vi.mock('@/infrastructure/storage', async (importOriginal) => ({
++  ...(await importOriginal<typeof import('@/infrastructure/storage')>()),
++  updateProject: storage.updateProject,
++}))
++
++import {
++  makeTimelineTrack,
++  makeTimelineVideoItem,
++  resetTimelineCompositionTestState,
++  setDefaultRootTimelineTracks,
++} from '@/features/editor/deps/timeline-test-helpers-contract'
++import {
++  buildTimelineFromStores,
++  getActiveTabId,
++  useCompositionNavigationStore,
++  useCompositionsStore,
++  useItemsStore,
++  useTimelineCommandStore,
++  useTimelineSettingsStore,
++} from '@/features/editor/deps/timeline-store'
++import { useProjectStore } from '@/features/editor/deps/projects'
++import { commitProjectMetadataChange, RetimePolicyRequiredError } from './project-metadata-history'
++
++/**
++ * FL-94 against the real timeline stores and history: a rate change that keeps clip timing is one
++ * undoable step, and every stored state pairs a rate with the timeline written for it.
++ */
++
++const project = (): Project =>
++  ({
++    id: 'project-1',
++    name: 'Retime',
++    description: '',
++    createdAt: 0,
++    updatedAt: 0,
++    duration: 0,
++    metadata: { width: 1920, height: 1080, fps: 30 },
++  }) as Project
++
++type Write = { fps?: number; timeline?: ProjectTimeline }
++
++/** The project store's update as the editor uses it: one write of metadata and, when given, timeline. */
++const writes: Write[] = []
++const updateProject = async (_id: string, data: Write) => {
++  writes.push(data)
++  const current = useProjectStore.getState().currentProject!
++  const next = {
++    ...current,
++    metadata: { ...current.metadata, ...(data.fps !== undefined && { fps: data.fps }) },
++    ...(data.timeline && { timeline: data.timeline }),
++  } as Project
++  useProjectStore.setState({ currentProject: next })
++  return next
++}
++
++const mainSpans = () => useItemsStore.getState().items.map((item) => [item.from, item.durationInFrames])
++const storedSpans = (timeline: ProjectTimeline | undefined) =>
++  (timeline?.items ?? []).map((item) => [item.from, item.durationInFrames])
++
++const change = (timing?: 'keep-time' | 'keep-frames') =>
++  commitProjectMetadataChange({
++    project: useProjectStore.getState().currentProject!,
++    updates: { fps: 60 },
++    command: { type: 'UPDATE_PROJECT_METADATA' },
++    updateProject,
++    markDirty: () => undefined,
++    ...(timing && { timing }),
++  })
++
++describe('commitProjectMetadataChange (FL-94)', () => {
++  beforeEach(() => {
++    writes.length = 0
++    storage.updateProject.mockReset().mockResolvedValue(undefined)
++    resetTimelineCompositionTestState()
++    setDefaultRootTimelineTracks()
++    useItemsStore.getState().setItems([makeTimelineVideoItem({ id: 'main-clip', from: 30, durationInFrames: 45 })])
++    useTimelineSettingsStore.getState().setFps(30)
++    useTimelineCommandStore.getState().clearHistory()
++    useProjectStore.setState({ currentProject: project(), projects: [] })
++  })
++
++  afterEach(() => resetTimelineCompositionTestState())
++
++  it('refuses a rate change on content without a policy, changing nothing', async () => {
++    await expect(change()).rejects.toBeInstanceOf(RetimePolicyRequiredError)
++    expect(writes).toEqual([])
++    expect(mainSpans()).toEqual([[30, 45]])
++  })
++
++  it('keep-time stores the new rate with the retimed timeline, and undoes and redoes as one step', async () => {
++    await change('keep-time')
++
++    expect(mainSpans()).toEqual([[60, 90]])
++    expect(useTimelineSettingsStore.getState().fps).toBe(60)
++    expect(writes).toHaveLength(1)
++    expect(writes[0]!.fps).toBe(60)
++    expect(storedSpans(writes[0]!.timeline)).toEqual([[60, 90]])
++
++    useTimelineCommandStore.getState().undo()
++    expect(mainSpans()).toEqual([[30, 45]])
++    expect(useTimelineSettingsStore.getState().fps).toBe(30)
++    expect(useProjectStore.getState().currentProject!.metadata.fps).toBe(30)
++    // The old rate goes back to storage with the timeline written for it, in one write.
++    const undone = storage.updateProject.mock.calls.at(-1)![1] as { metadata: { fps: number }; timeline: ProjectTimeline }
++    expect(undone.metadata.fps).toBe(30)
++    expect(storedSpans(undone.timeline)).toEqual([[30, 45]])
++
++    useTimelineCommandStore.getState().redo()
++    expect(mainSpans()).toEqual([[60, 90]])
++    const redone = storage.updateProject.mock.calls.at(-1)![1] as { metadata: { fps: number }; timeline: ProjectTimeline }
++    expect(redone.metadata.fps).toBe(60)
++    expect(storedSpans(redone.timeline)).toEqual([[60, 90]])
++  })
++
++  it('keep-time from a sequence tab switches to Main and retimes Main, not the sequence', async () => {
++    useCompositionsStore.getState().addComposition({
++      id: 'seq-a',
++      name: 'seq-a',
++      tracks: [makeTimelineTrack({ id: 'seq-a-v1', name: 'V1', kind: 'video', order: 0 })],
++      items: [makeTimelineVideoItem({ id: 'a-clip', trackId: 'seq-a-v1', from: 30, durationInFrames: 30 })],
++      transitions: [],
++      keyframes: [],
++      fps: 30,
++      width: 1920,
++      height: 1080,
++      durationInFrames: 60,
++    })
++    useCompositionNavigationStore.getState().switchToSequence('seq-a')
++    expect(useItemsStore.getState().items.map((item) => item.id)).toEqual(['a-clip'])
++
++    await change('keep-time')
++
++    expect(getActiveTabId(useCompositionNavigationStore.getState().breadcrumbs)).toBeNull()
++    expect(useItemsStore.getState().items.map((item) => [item.id, item.from, item.durationInFrames])).toEqual([
++      ['main-clip', 60, 90],
++    ])
++    const sequence = useCompositionsStore.getState().compositions.find((entry) => entry.id === 'seq-a')!
++    expect([sequence.fps, sequence.items[0]!.from, sequence.items[0]!.durationInFrames]).toEqual([30, 30, 30])
++  })
++
++  it('keep-frames changes only the rate', async () => {
++    await change('keep-frames')
++    expect(mainSpans()).toEqual([[30, 45]])
++    expect(writes).toEqual([{ fps: 60 }])
++    expect(storedSpans(buildTimelineFromStores())).toEqual([[30, 45]])
++  })
++})
 diff --git a/src/features/editor/components/project-media-match-dialog.tsx b/src/features/editor/components/project-media-match-dialog.tsx
-index a3cf854afe..9976dd2651 100644
+index a3cf854afe..99ee6ddf68 100644
 --- a/src/features/editor/components/project-media-match-dialog.tsx
 +++ b/src/features/editor/components/project-media-match-dialog.tsx
-@@ -18,7 +18,11 @@ import {
+@@ -11,14 +11,22 @@ import {
+ } from '@/components/ui/dialog'
+ import { useMediaLibraryStore } from '@/features/editor/deps/media-library'
+ import { useProjectStore } from '@/features/editor/deps/projects'
+-import { useTimelineSettingsStore, useTimelineStore } from '@/features/editor/deps/timeline-store'
++import {
++  RETIME_POLICIES,
++  useTimelineSettingsStore,
++  useTimelineStore,
++  type RetimePolicy,
++} from '@/features/editor/deps/timeline-store'
+ import { toast } from 'sonner'
+ import { useProjectMediaMatchDialogStore } from '@/shared/state/project-media-match-dialog'
+ import {
    getProjectMediaMatchSuggestion,
    isProjectMatchableVideo,
  } from '../utils/project-media-match'
@@ -571,11 +1302,10 @@ index a3cf854afe..9976dd2651 100644
 +  commitProjectMetadataChange,
 +  projectRateChangeNeedsPolicy,
 +} from '../utils/project-metadata-history'
-+import { RETIME_POLICIES, type RetimePolicy } from '../utils/project-retime'
  
  interface ProjectMediaMatchDialogProps {
    projectId: string
-@@ -49,6 +53,8 @@ export function ProjectMediaMatchDialog({ projectId }: ProjectMediaMatchDialogPr
+@@ -49,6 +57,8 @@ export function ProjectMediaMatchDialog({ projectId }: ProjectMediaMatchDialogPr
    )
  
    const [isApplying, setIsApplying] = useState(false)
@@ -584,14 +1314,14 @@ index a3cf854afe..9976dd2651 100644
    const initializedRef = useRef(false)
    const seenVideoIdsRef = useRef<Set<string>>(new Set())
    const awaitingAutoPromptRef = useRef(false)
-@@ -122,6 +128,16 @@ export function ProjectMediaMatchDialog({ projectId }: ProjectMediaMatchDialogPr
+@@ -122,6 +132,16 @@ export function ProjectMediaMatchDialog({ projectId }: ProjectMediaMatchDialogPr
      return getProjectMediaMatchSuggestion(currentProject.metadata, pendingCandidate)
    }, [currentProject, pendingCandidate, pendingProjectId, projectId])
  
-+  const needsTiming = useMemo(
-+    () => Boolean(open && suggestion?.fpsDiffers && projectRateChangeNeedsPolicy()),
-+    [open, suggestion],
-+  )
++  const [needsTiming, setNeedsTiming] = useState(false)
++  useEffect(() => {
++    setNeedsTiming(Boolean(open && suggestion?.fpsDiffers && projectRateChangeNeedsPolicy()))
++  }, [open, suggestion])
 +  const fpsBlocked = needsTiming && timing === null
 +
 +  useEffect(() => {
@@ -601,7 +1331,20 @@ index a3cf854afe..9976dd2651 100644
    useEffect(() => {
      if (
        !open ||
-@@ -199,6 +215,7 @@ export function ProjectMediaMatchDialog({ projectId }: ProjectMediaMatchDialogPr
+@@ -184,6 +204,12 @@ export function ProjectMediaMatchDialog({ projectId }: ProjectMediaMatchDialogPr
+         return
+       }
+ 
++      // Clips may have arrived since the dialog opened: ask for the policy rather than fail.
++      if (updates.fps !== undefined && timing === null && projectRateChangeNeedsPolicy()) {
++        setNeedsTiming(true)
++        return
++      }
++
+       setIsApplying(true)
+ 
+       try {
+@@ -199,13 +225,14 @@ export function ProjectMediaMatchDialog({ projectId }: ProjectMediaMatchDialogPr
            },
            updateProject,
            markDirty,
@@ -609,7 +1352,15 @@ index a3cf854afe..9976dd2651 100644
            onApplied: (updatedProject) => {
              if (updates.fps !== undefined) {
                setFps(updatedProject.metadata.fps)
-@@ -222,6 +239,7 @@ export function ProjectMediaMatchDialog({ projectId }: ProjectMediaMatchDialogPr
+             }
+           },
+         })
+-        resolveProjectMediaMatch(choice)
++        resolveProjectMediaMatch(choice, updates.fps !== undefined ? timing : null)
+       } catch (error) {
+         toast.error(t('editor.projectMediaMatch.updateFailed'), {
+           description:
+@@ -222,6 +249,7 @@ export function ProjectMediaMatchDialog({ projectId }: ProjectMediaMatchDialogPr
        resolveProjectMediaMatch,
        setFps,
        suggestion,
@@ -617,7 +1368,7 @@ index a3cf854afe..9976dd2651 100644
        updateProject,
        t,
      ],
-@@ -272,6 +290,35 @@ export function ProjectMediaMatchDialog({ projectId }: ProjectMediaMatchDialogPr
+@@ -272,6 +300,35 @@ export function ProjectMediaMatchDialog({ projectId }: ProjectMediaMatchDialogPr
                </div>
              </div>
  
@@ -653,7 +1404,7 @@ index a3cf854afe..9976dd2651 100644
              {suggestion.fpsWasRounded && (
                <p className="text-xs text-muted-foreground">
                  {t('editor.projectMediaMatch.fpsRoundedHint', { fps: suggestion.matchedFpsLabel })}
-@@ -290,7 +337,7 @@ export function ProjectMediaMatchDialog({ projectId }: ProjectMediaMatchDialogPr
+@@ -290,7 +347,7 @@ export function ProjectMediaMatchDialog({ projectId }: ProjectMediaMatchDialogPr
                  <Button
                    variant="outline"
                    onClick={() => void applyMatch('fps-only', { matchSize: false, matchFps: true })}
@@ -662,7 +1413,7 @@ index a3cf854afe..9976dd2651 100644
                  >
                    {t('editor.projectMediaMatch.fpsOnly')}
                  </Button>
-@@ -303,7 +350,7 @@ export function ProjectMediaMatchDialog({ projectId }: ProjectMediaMatchDialogPr
+@@ -303,7 +360,7 @@ export function ProjectMediaMatchDialog({ projectId }: ProjectMediaMatchDialogPr
                  </Button>
                  <Button
                    onClick={() => void applyMatch('match-both', { matchSize: true, matchFps: true })}
@@ -671,7 +1422,7 @@ index a3cf854afe..9976dd2651 100644
                  >
                    {t('editor.projectMediaMatch.matchBoth')}
                  </Button>
-@@ -312,7 +359,7 @@ export function ProjectMediaMatchDialog({ projectId }: ProjectMediaMatchDialogPr
+@@ -312,7 +369,7 @@ export function ProjectMediaMatchDialog({ projectId }: ProjectMediaMatchDialogPr
              {!suggestion?.sizeDiffers && suggestion?.fpsDiffers && (
                <Button
                  onClick={() => void applyMatch('fps-only', { matchSize: false, matchFps: true })}
@@ -681,7 +1432,7 @@ index a3cf854afe..9976dd2651 100644
                  {t('editor.projectMediaMatch.matchFps')}
                </Button>
 diff --git a/src/features/editor/components/project-media-match-dialog.test.tsx b/src/features/editor/components/project-media-match-dialog.test.tsx
-index 969ee10b33..866c8f0c35 100644
+index 969ee10b33..1401aca0e1 100644
 --- a/src/features/editor/components/project-media-match-dialog.test.tsx
 +++ b/src/features/editor/components/project-media-match-dialog.test.tsx
 @@ -31,6 +31,8 @@ const mocks = vi.hoisted(() => ({
@@ -693,7 +1444,19 @@ index 969ee10b33..866c8f0c35 100644
  }))
  
  let mediaState: {
-@@ -136,6 +138,12 @@ vi.mock('@/features/editor/deps/timeline-store', () => ({
+@@ -109,7 +111,10 @@ vi.mock('@/features/editor/deps/projects', () => ({
+   },
+ }))
+ 
+-vi.mock('@/features/editor/deps/timeline-store', () => ({
++vi.mock('@/features/editor/deps/timeline-store', async () => ({
++  ...(await vi.importActual<typeof import('@/features/editor/deps/timeline-store')>(
++    '@/features/editor/deps/timeline-store',
++  )),
+   useTimelineStore: (
+     selector: (state: {
+       markDirty: typeof mocks.markDirty
+@@ -136,6 +141,12 @@ vi.mock('@/features/editor/deps/timeline-store', () => ({
      },
    ),
    captureSnapshot: mocks.captureSnapshot,
@@ -706,7 +1469,7 @@ index 969ee10b33..866c8f0c35 100644
  }))
  
  vi.mock('sonner', () => ({
-@@ -170,6 +178,7 @@ function makeVideo(overrides: Partial<MediaMetadata> = {}): MediaMetadata {
+@@ -170,6 +181,7 @@ function makeVideo(overrides: Partial<MediaMetadata> = {}): MediaMetadata {
  describe('ProjectMediaMatchDialog', () => {
    beforeEach(() => {
      vi.clearAllMocks()
@@ -714,7 +1477,7 @@ index 969ee10b33..866c8f0c35 100644
      useProjectMediaMatchDialogStore.getState().resetProjectMediaMatchDialog()
  
      mediaState = {
-@@ -279,4 +288,84 @@ describe('ProjectMediaMatchDialog', () => {
+@@ -279,4 +291,112 @@ describe('ProjectMediaMatchDialog', () => {
      expect(mocks.updateProject).toHaveBeenCalledWith('project-1', { fps: 60 })
      expect(mocks.setFps).toHaveBeenCalledWith(60)
    })
@@ -773,11 +1536,17 @@ index 969ee10b33..866c8f0c35 100644
 +        fireEvent.click(screen.getByRole('button', { name: 'Match FPS' }))
 +      })
 +
-+      await waitFor(() => expect(mocks.restoreSnapshot).toHaveBeenCalledTimes(1))
-+      expect(mocks.updateProject).toHaveBeenCalledWith('project-1', { fps: 60 })
++      await waitFor(() => expect(mocks.updateProject).toHaveBeenCalledTimes(1))
++      // The new rate and the retimed timeline are stored in one write.
++      expect(mocks.updateProject).toHaveBeenCalledWith('project-1', {
++        fps: 60,
++        timeline: mocks.mainTimeline,
++      })
++      expect(mocks.restoreSnapshot).toHaveBeenCalledTimes(1)
 +      const restored = mocks.restoreSnapshot.mock.calls[0]![0]
 +      expect(restored.fps).toBe(60)
-+      expect(restored.projectMetadata.fps).toBe(60)
++      // The stores are retimed before that write, with the stored metadata left for it to change.
++      expect(restored.projectMetadata.fps).toBe(30)
 +      // 1 s in at 30 fps is frame 60 at 60 fps; the source keeps reading at 30.
 +      expect(restored.items[0]).toMatchObject({ from: 60, durationInFrames: 90, sourceFps: 30 })
 +      expect(restored.markers[0].frame).toBe(30)
@@ -796,6 +1565,28 @@ index 969ee10b33..866c8f0c35 100644
 +      await waitFor(() => expect(mocks.updateProject).toHaveBeenCalledWith('project-1', { fps: 60 }))
 +      expect(mocks.restoreSnapshot).not.toHaveBeenCalled()
 +      expect(mocks.addUndoEntry).toHaveBeenCalledTimes(1)
++    })
++
++    it('asks for the policy on submit when clips arrived after the dialog opened', async () => {
++      render(<ProjectMediaMatchDialog projectId="project-1" />)
++      await act(async () => {
++        void useProjectMediaMatchDialogStore.getState().requestProjectMediaMatch('project-1', {
++          fileName: 'drop.mp4',
++          width: 1280,
++          height: 720,
++          fps: 60,
++        })
++      })
++      await waitFor(() => expect(screen.getByRole('button', { name: 'Match FPS' })).not.toBeDisabled())
++      expect(screen.queryByRole('radio')).not.toBeInTheDocument()
++
++      mocks.mainTimeline = { items: [clip], markers: [] }
++      await act(async () => {
++        fireEvent.click(screen.getByRole('button', { name: 'Match FPS' }))
++      })
++      expect(mocks.updateProject).not.toHaveBeenCalled()
++      expect(screen.getByRole('radio', { name: /Keep clip timing/ })).toBeInTheDocument()
++      expect(screen.getByRole('button', { name: 'Match FPS' })).toBeDisabled()
 +    })
 +  })
  })

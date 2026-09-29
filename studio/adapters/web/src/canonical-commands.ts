@@ -124,13 +124,15 @@ import {
 } from '@/shared/typography/text-motion/text-motion-preset-ids'
 import { createTextMotionEffect } from '@/shared/typography/text-motion/text-motion-presets'
 import { PROJECT_TEMPLATES } from '@/features/projects/utils/validation'
+import { isAllowedProjectFps } from '@/features/projects/utils/project-fps'
 import {
   RETIME_POLICIES,
   hasTimedContent,
   retimeCompositionReaders,
   retimeContent,
+  sameRate,
   type RetimePolicy,
-} from '@/features/editor/utils/project-retime'
+} from '@/features/timeline/utils/project-retime'
 
 export interface Rational {
   num: number
@@ -816,25 +818,39 @@ type Handler = (payload: Record<string, unknown>, context: BatchContext) => void
 /* Canvas and rate (FL-94)                                              */
 /* ------------------------------------------------------------------ */
 
-/** Freecut's own project canvas limits (`projects/utils/validation.ts`); encoders need even sizes. */
+/**
+ * Freecut's own project canvas limits (`projects/utils/validation.ts`). Odd sizes are allowed, as
+ * Freecut's templates use them (Twitter/X 1200x675); the renderer rounds them to even for encoding.
+ */
 const canvasSide = (payload: Record<string, unknown>, name: string, min: number, max: number) => {
   const value = payload[name]
   if (value === undefined) return undefined
-  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < min || value > max || value % 2 !== 0) {
-    invalid(`${name} must be an even whole number of pixels from ${min} to ${max}`)
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < min || value > max) {
+    invalid(`${name} must be a whole number of pixels from ${min} to ${max}`)
   }
   return value as number
 }
 
-/** A sequence rate: a whole number or an NTSC x/1001 rate, up to 240. */
+/**
+ * A rate the editor offers for a project (`isAllowedProjectFps`), or the exact NTSC x/1001 rate of
+ * one of them (FL-93), such as 30000/1001.
+ */
 const sequenceRate = (payload: Record<string, unknown>): Rational | undefined => {
   const value = payload.fps
   if (value === undefined) return undefined
   const exact = isRational(value) && value.num > 0 ? cadenceFromDecimal(value.num / value.den) : null
-  if (!exact || exact.num * (value as Rational).den !== (value as Rational).num * exact.den || exact.num / exact.den > 240) {
-    invalid('fps must be a whole-number or x/1001 rate up to 240')
+  const matches = exact && exact.num * (value as Rational).den === (value as Rational).num * exact.den
+  const offered = exact && isAllowedProjectFps(exact.den === 1 ? exact.num : exact.num / 1000)
+  if (!matches || !offered) {
+    invalid('fps must be a project frame rate (24, 25, 30, 50, 60, 120 or 240) or its x/1001 rate')
   }
   return exact!
+}
+
+/** A stored rate as an exact cadence, or a refusal naming what has none. */
+const storedRate = (fps: number, what: string): number => {
+  if (!cadenceFromDecimal(fps)) invalid(`${what} has the frame rate ${fps}, which has no exact reading`)
+  return fps
 }
 
 const timingPolicy = (payload: Record<string, unknown>): RetimePolicy | undefined => {
@@ -853,6 +869,14 @@ const requirePolicy = (timing: RetimePolicy | undefined, what: string): RetimePo
 
 type StoredComposition = NonNullable<NonNullable<Project['timeline']>['compositions']>[number]
 
+/** The id `sequence.setSettings` and bundle exports use for the project's main timeline. */
+const MAIN_SEQUENCE_ID = 'main'
+
+const readsComposition = (timeline: NonNullable<Project['timeline']>, compositionId: string) =>
+  [timeline.items ?? [], ...(timeline.compositions ?? []).map((entry) => entry.items ?? [])].some((items) =>
+    items.some((item) => (item as { compositionId?: string }).compositionId === compositionId),
+  )
+
 /**
  * Apply a canvas and rate change to the main timeline (`'main'`) or one sequence/composition, then
  * reload the stores from the changed graph. Nothing is retimed unless `keep-time` was chosen.
@@ -868,9 +892,14 @@ async function applySequenceSettings(
   let metadata = context.project.metadata
   let next = timeline
 
-  if (sequenceId === 'main') {
-    const fromFps = metadata.fps
-    if (toFps !== undefined && toFps !== fromFps && hasTimedContent(timeline as never)) {
+  const composition = timeline.compositions?.find((entry) => entry.id === sequenceId)
+  if (sequenceId === MAIN_SEQUENCE_ID && composition) {
+    invalid(`sequenceId: "${MAIN_SEQUENCE_ID}" names both the main timeline and a sequence`)
+  }
+
+  if (sequenceId === MAIN_SEQUENCE_ID) {
+    const fromFps = storedRate(metadata.fps, 'the project')
+    if (toFps !== undefined && !sameRate(toFps, fromFps) && hasTimedContent(timeline as never)) {
       if (requirePolicy(timing, 'the main timeline') === 'keep-time') {
         next = retimeContent(timeline as never, fromFps, toFps)
       }
@@ -882,12 +911,19 @@ async function applySequenceSettings(
       ...(settings.rate && { fps: toFps!, frameRate: { ...settings.rate } }),
     } as typeof metadata
   } else {
-    const composition = timeline.compositions?.find((entry) => entry.id === sequenceId)
     if (!composition) invalid(`sequenceId: sequence "${sequenceId}" does not exist`)
-    const fromFps = composition!.fps
+    const fromFps = storedRate(composition!.fps, `sequence "${sequenceId}"`)
     let changed: StoredComposition = { ...composition! }
-    if (toFps !== undefined && toFps !== fromFps) {
-      if (hasTimedContent(composition as never) && requirePolicy(timing, `sequence "${sequenceId}"`) === 'keep-time') {
+    if (toFps !== undefined && !sameRate(toFps, fromFps)) {
+      const policy = hasTimedContent(composition as never)
+        ? requirePolicy(timing, `sequence "${sequenceId}"`)
+        : undefined
+      // Compound clips read the sequence's frames in seconds at its rate: with its frame numbers
+      // kept, what they show would change under them.
+      if (policy === 'keep-frames' && readsComposition(timeline, sequenceId)) {
+        invalid(`sequence "${sequenceId}" is used by compound clips; change its rate with keep-time`)
+      }
+      if (policy === 'keep-time') {
         changed = retimeContent(changed as never, fromFps, toFps)
         const readers = (items: unknown[]) =>
           retimeCompositionReaders(items as TimelineItem[], sequenceId, fromFps, toFps) as never
@@ -1747,7 +1783,7 @@ const handlers: Record<string, Handler> = {
     const rate = cadenceFromDecimal(template!.fps)!
     await applySequenceSettings(
       context,
-      'main',
+      MAIN_SEQUENCE_ID,
       { rate, width: template!.width, height: template!.height },
       timingPolicy(payload),
     )
