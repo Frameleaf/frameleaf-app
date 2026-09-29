@@ -21,5 +21,9 @@ The owner unparked the engine on 2026-09-25, and the web application now mounts 
   whose revision is not the pinned commit and reports `not-built` when the build is absent.
 - `engine-commands.ts` gives canonical commands (FL-92) their meaning through the command runtime;
   `bridge.ts` still decides shape, access, connectivity, lease, revision and capability first.
+- Canonical `clip.split` validates every requested clip and splits each selected linked group once
+  (FL-94), including requests containing both video and audio or repeated IDs. When linked selection
+  is disabled, each selected clip is split independently. The adapter regression checks source ranges
+  and resulting audio/video pairs. Hosted Actions runs it; full timeline conformance remains unqualified.
 - `server/Dockerfile` builds the adapter in its `studio-engine` stage, which recovers the archive and
   fails if its SHA-256 or any of the 2,646 file hashes differ from `studio/freecut-provenance.json`.

@@ -40,6 +40,8 @@ import { useTimelineSettingsStore } from '@/features/timeline/stores/timeline-se
 import { useKeyframesStore } from '@/features/timeline/stores/keyframes-store'
 import { useMediaLibraryStore } from '@/features/media-library/stores/media-library-store'
 import { createClassicTrack } from '@/features/timeline/utils/classic-tracks'
+import { getUniqueLinkedItemAnchorIds } from '@/features/timeline/utils/linked-items'
+import { useEditorStore } from '@/shared/state/editor'
 import {
   buildDroppedMediaTimelineItems,
   getDroppedMediaDurationInFrames,
@@ -674,8 +676,12 @@ const handlers: Record<string, Handler> = {
     }
     if (!Array.isArray(ids) || ids.length === 0 || ids.some((id) => typeof id !== 'string'))
       invalid('clipIds must be clip ids')
-    for (const id of ids as string[]) {
-      requireItem(id, 'clipIds')
+    for (const id of ids as string[]) requireItem(id, 'clipIds')
+    // splitItem already splits linked companions; choose anchors before it rewrites their groups.
+    const anchors = useEditorStore.getState().linkedSelectionEnabled
+      ? getUniqueLinkedItemAnchorIds(items(), ids as string[])
+      : [...new Set(ids as string[])]
+    for (const id of anchors) {
       if (!splitItem(id, frame)) invalid(`clip.split: "${id}" cannot be split there`)
     }
   },

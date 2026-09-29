@@ -28,6 +28,7 @@
       "actions": [
         "linked-av",
         "split",
+        "linked-multiselection-split",
         "join",
         "ripple",
         "rolling",

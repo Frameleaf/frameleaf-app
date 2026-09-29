@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vite-plus/test'
 import type { Project, ProjectTimeline } from '@/types/project'
 import type { MediaMetadata } from '@/types/storage'
+import { useEditorStore } from '@/shared/state/editor'
 import {
   applyCanonicalCommands,
   canonicalJson,
@@ -219,6 +220,45 @@ describe('canonical commands on the Freecut engine (FL-92)', () => {
       [0, 60],
       [60, 180],
     ])
+  })
+
+  it.each([true, false])('splits selected audio/video once with linked selection %s (FL-94)', async (linked) => {
+    const added = await applied(project(), [
+      envelope('clip.add', { trackId: 'v1', assetId: ASSET, at: seconds(0) }),
+    ])
+    const video = itemsOf(added.project).find((item) => item.type === 'video')!
+    const audio = itemsOf(added.project).find((item) => item.type === 'audio')!
+    const previous = useEditorStore.getState().linkedSelectionEnabled
+    useEditorStore.setState({ linkedSelectionEnabled: linked })
+    try {
+      const split = await applied(added.project, [
+        envelope('clip.split', { at: seconds(2), clipIds: [video.id, audio.id, video.id] }),
+      ])
+      const parts = itemsOf(split.project)
+      expect(parts).toHaveLength(4)
+      for (const type of ['video', 'audio']) {
+        expect(parts.filter((item) => item.type === type).sort((a, b) => a.from - b.from)
+          .map((item) => [item.from, item.durationInFrames, item.sourceStart, item.sourceEnd])).toEqual([
+          [0, 60, 0, 60],
+          [60, 180, 60, 240],
+        ])
+      }
+      if (linked) {
+        const groups = [0, 60].map((from) => parts.filter((item) => item.from === from))
+        for (const group of groups) {
+          expect(group[0]!.linkedGroupId).toBeTruthy()
+          expect(group[0]!.linkedGroupId).toBe(group[1]!.linkedGroupId)
+        }
+        expect(groups[0]![0]!.linkedGroupId).not.toBe(groups[1]![0]!.linkedGroupId)
+      }
+      await expect(applyCanonicalCommands(
+        added.project,
+        [envelope('clip.split', { at: seconds(2), clipIds: [video.id, 'missing'] })],
+        media,
+      )).resolves.toMatchObject({ status: 'rejected', reason: 'invalid' })
+    } finally {
+      useEditorStore.setState({ linkedSelectionEnabled: previous })
+    }
   })
 
   it('is deterministic: the same graph and batch give the same graph and digest', async () => {
