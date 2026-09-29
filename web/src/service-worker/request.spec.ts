@@ -21,9 +21,11 @@ describe('service worker asset requests', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(
-        () =>
-          new Promise<Response>((resolve) => {
+        (_input: unknown, init?: RequestInit) =>
+          new Promise<Response>((resolve, reject) => {
             resolvers.push(resolve);
+            // like a real fetch: aborting rejects with the abort reason
+            init?.signal?.addEventListener('abort', () => reject(init.signal!.reason));
           }),
       ),
     );
@@ -71,6 +73,37 @@ describe('service worker asset requests', () => {
     resolvers[1](new Response('new'));
     await expect(text(second)).resolves.toBe('new');
     await expect(text(third)).resolves.toBe('new');
+  });
+
+  it("never lets an earlier caller's cancel blank a newer load of the same image", async () => {
+    // component A loads the image; later component B loads it again while A is still mounted
+    const first = handleFetch(url('e'));
+    resolvers[0](new Response('old'));
+    await expect(text(first)).resolves.toBe('old');
+    const second = handleFetch(url('e'));
+    const signal = vi.mocked(fetch).mock.calls[1][1]!.signal!;
+
+    // A is destroyed and cancels by URL: B's load must go on
+    handleCancel(url('e'));
+    expect(signal.aborted).toBe(false);
+    resolvers[1](new Response('new'));
+    await expect(text(second)).resolves.toBe('new');
+
+    // B's own cancel still works
+    const third = handleFetch(url('e'));
+    const thirdSignal = vi.mocked(fetch).mock.calls[2][1]!.signal!;
+    handleCancel(url('e')); // absorbed: owed by B, which loaded the settled second response
+    handleCancel(url('e'));
+    expect(thirdSignal.aborted).toBe(true);
+    await expect(third).resolves.toMatchObject({ status: 204 });
+  });
+
+  it('still aborts a load every caller of which has cancelled', async () => {
+    const first = handleFetch(url('f'));
+    const signal = vi.mocked(fetch).mock.calls[0][1]!.signal!;
+    handleCancel(url('f'));
+    expect(signal.aborted).toBe(true);
+    await expect(first).resolves.toMatchObject({ status: 204 });
   });
 
   it('can still cancel a request whose response is streaming', async () => {
