@@ -168,6 +168,58 @@ test("server E2E diagnostics preserve the failure state before maintenance", () 
   ]);
 });
 
+test("API generation refuses artifacts recreated outside Git tracking", () => {
+  const artifacts = [
+    "open-api/immich-openapi-specs.json",
+    "packages/sdk/src/fetch-client.ts",
+  ];
+  for (const [file, job, generation] of [
+    ["test.yml", "generated-api-up-to-date", "Run API generation"],
+    [
+      "fork-integration.yml",
+      "integration",
+      "Verify OpenAPI and TypeScript client freshness",
+    ],
+  ]) {
+    const steps = workflow(file).jobs[job].steps;
+    const guard = steps.findIndex(
+      (step) => step.name === "Verify generated API artifacts are tracked",
+    );
+    assert.ok(
+      guard >= 0 && guard < steps.findIndex((step) => step.name === generation),
+    );
+    const dir = mkdtempSync(path.join(tmpdir(), "frameleaf-api-tracking-"));
+    try {
+      execFileSync("git", ["init", "--quiet", dir]);
+      for (const artifact of artifacts) {
+        mkdirSync(path.dirname(path.join(dir, artifact)), { recursive: true });
+        writeFileSync(path.join(dir, artifact), "generated content\n");
+      }
+      execFileSync("git", ["add", "--", ...artifacts], { cwd: dir });
+      assert.equal(
+        spawnSync("bash", ["-e", "-c", steps[guard].run], { cwd: dir }).status,
+        0,
+      );
+      for (const artifact of artifacts) {
+        execFileSync("git", ["rm", "--cached", "--", artifact], { cwd: dir });
+        // A regenerated untracked file is invisible to the existing freshness diff.
+        assert.equal(
+          spawnSync("git", ["diff", "--exit-code", "--", artifact], { cwd: dir })
+            .status,
+          0,
+        );
+        assert.notEqual(
+          spawnSync("bash", ["-e", "-c", steps[guard].run], { cwd: dir }).status,
+          0,
+        );
+        execFileSync("git", ["add", "--", artifact], { cwd: dir });
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+});
+
 test("retired mobile workflows and jobs remain absent", () => {
   for (const file of [
     "build-mobile.yml",
