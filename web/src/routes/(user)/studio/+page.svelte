@@ -46,6 +46,7 @@
   import type { Rational } from '$lib/frameleaf/studio/rational-time';
   import {
     createStudioPreviewClient,
+    createStudioPreviewRequestGate,
     idleStudioPreviewView,
     unsavedStudioPreviewView,
     type StudioPreviewClient,
@@ -240,6 +241,7 @@
   };
 
   let previewClient = createPreviewClient();
+  const previewRequestGate = createStudioPreviewRequestGate();
 
   /**
    * Streamed playback (FL-96). The host owns the WebRTC session as it owns the frame client: the
@@ -286,6 +288,7 @@
 
   /** Retire the client and everything it cached, and start a fresh one. */
   const resetPreview = (): Promise<void> => {
+    previewRequestGate.next();
     const outgoing = previewClient;
     previewClient = createPreviewClient();
     preview = idleStudioPreviewView();
@@ -468,12 +471,17 @@
       ...engineHandlers,
       'preview.request': async (envelope) => {
         const payload = envelope.payload as StudioCommandPayloads['preview.request'];
+        const request = previewRequestGate.next();
 
         // The server renders stored revisions only. Edits still waiting for the autosave
         // debounce are stored first, so the frame shows what the person is looking at rather
         // than the revision before their last change. A failed save leaves its own status.
         if (sessionState?.hasDraft && writable) {
           await session.flush().catch(() => {});
+        }
+
+        if (!previewRequestGate.isCurrent(request)) {
+          return project.revision;
         }
 
         const revision = storedRevision;
