@@ -3,6 +3,7 @@ import { Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { AssetVisibility } from 'src/enum.js';
 import { lockForkWrites } from 'src/repositories/fork-write-guard.js';
+import { UserRepository } from 'src/repositories/user.repository.js';
 import { DB } from 'src/schema/index.js';
 import { getOwnerHiddenShareIds } from 'src/utils/item-share.js';
 import { isNotLocked } from 'src/utils/locked.js';
@@ -26,6 +27,12 @@ const WRITE_REFUSAL = 'Sharing is unavailable while the server is being handed o
 @Injectable()
 export class ItemShareRepository {
   constructor(@InjectKysely() private db: Kysely<DB>) {}
+
+  /** Keep the mutation and its complete response on one connection until both succeed. */
+  withTransaction<T>(callback: (shares: ItemShareRepository, users: UserRepository) => Promise<T>): Promise<T> {
+    const execute = (db: Kysely<DB>) => callback(new ItemShareRepository(db), new UserRepository(db));
+    return this.db.isTransaction ? execute(this.db) : this.db.transaction().execute(execute);
+  }
 
   /** Recipients to notify after a lock, including items now excluded from recipient reads. */
   async getRecipients(assetIds: string[]): Promise<Pick<ItemShareRow, 'assetId' | 'sharedWithId'>[]> {
@@ -59,8 +66,8 @@ export class ItemShareRepository {
     if (assetIds.length === 0 || userIds.length === 0) {
       return [];
     }
-    return this.db.transaction().execute(async (tx) => {
-      await lockForkWrites(tx, WRITE_REFUSAL);
+    return this.withTransaction(async (shares) => {
+      await lockForkWrites(shares.db, WRITE_REFUSAL);
       const { rows } = await sql<ItemShareRow>`
         INSERT INTO immich_fork.asset_user_share ("assetId", "ownerId", "sharedWithId")
         SELECT asset_id, ${ownerId}::uuid, user_id
@@ -68,7 +75,7 @@ export class ItemShareRepository {
         CROSS JOIN unnest(${userIds}::uuid[]) AS user_id
         ON CONFLICT ("assetId", "sharedWithId") DO NOTHING
         RETURNING id, "assetId", "ownerId", "sharedWithId", "createdAt"
-      `.execute(tx);
+      `.execute(shares.db);
       return rows;
     });
   }
@@ -78,15 +85,15 @@ export class ItemShareRepository {
     if (assetIds.length === 0 || userIds.length === 0) {
       return [];
     }
-    return this.db.transaction().execute(async (tx) => {
-      await lockForkWrites(tx, WRITE_REFUSAL);
+    return this.withTransaction(async (shares) => {
+      await lockForkWrites(shares.db, WRITE_REFUSAL);
       const { rows } = await sql<ItemShareRow>`
         DELETE FROM immich_fork.asset_user_share
         WHERE "ownerId" = ${ownerId}::uuid
           AND "assetId" = ANY(${assetIds}::uuid[])
           AND "sharedWithId" = ANY(${userIds}::uuid[])
         RETURNING id, "assetId", "ownerId", "sharedWithId", "createdAt"
-      `.execute(tx);
+      `.execute(shares.db);
       return rows;
     });
   }

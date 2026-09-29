@@ -4,11 +4,17 @@ import { getCatalogEvidence } from 'src/fork-schema/catalog.js';
 import manifest from 'src/fork-schema/manifests/fork-v2-catalog.json' with { type: 'json' };
 import * as migration from 'src/fork-schema/migrations/0000000000206-AssetUserShares.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
+import { AssetRepository } from 'src/repositories/asset.repository.js';
+import { EventRepository } from 'src/repositories/event.repository.js';
 import { ItemShareRepository } from 'src/repositories/item-share.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { UserRepository } from 'src/repositories/user.repository.js';
+import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
+import { ItemShareService } from 'src/services/item-share.service.js';
 import { newMediumService } from 'test/medium.factory.js';
+import { factory } from 'test/small.factory.js';
 import { getKyselyDB } from 'test/utils.js';
 
 /** FL-83 (AL-30b): items shared with a person in this library. */
@@ -73,6 +79,58 @@ it('creates each share once, lists it for the owner and the recipient, and revok
   expect(removed.map(({ assetId }) => assetId)).toEqual([a.id]);
   const received = await sut.getReceived(jamie.id);
   expect(received.map(({ assetId }) => assetId)).toEqual([b.id]);
+});
+
+it.each([
+  ['share', 'shares'],
+  ['share', 'recipient'],
+  ['unshare', 'shares'],
+  ['unshare', 'recipient'],
+] as const)('rolls back %s when the response %s read fails, then retries with every share', async (operation, read) => {
+  const { ctx, sut } = newMediumService(ItemShareService, {
+    database: db,
+    real: [AccessRepository, AssetRepository, ItemShareRepository, UserRepository],
+    mock: [EventRepository, LoggingRepository, WebsocketRepository],
+  });
+  const shares = ctx.get(ItemShareRepository);
+  const { user: owner } = await ctx.newUser();
+  const { user: jamie } = await ctx.newUser();
+  const { user: existing } = await ctx.newUser();
+  const { asset } = await ctx.newAsset({ ownerId: owner.id });
+  await shares.add(owner.id, [asset.id], [existing.id]);
+  if (operation === 'unshare') {
+    await shares.add(owner.id, [asset.id], [jamie.id]);
+  }
+  const before = await shares.getForAssets(owner.id, [asset.id]);
+  const auth = factory.auth({ user: owner });
+  const dto = { assetIds: [asset.id], userIds: [jamie.id] };
+  vi.spyOn(sut, 'shareLink').mockResolvedValue(null);
+  ctx.getMock(EventRepository).emit.mockResolvedValue();
+
+  const failure = new Error('response read unavailable');
+  const getUser = UserRepository.prototype.get;
+  const failingRead =
+    read === 'shares'
+      ? vi.spyOn(ItemShareRepository.prototype, 'getForAssets').mockRejectedValueOnce(failure)
+      : vi.spyOn(UserRepository.prototype, 'get').mockImplementation(function (this: UserRepository, id, options) {
+          return id === existing.id ? Promise.reject(failure) : getUser.call(this, id, options);
+        });
+  try {
+    await expect(sut[operation](auth, dto)).rejects.toThrow('response read unavailable');
+  } finally {
+    failingRead.mockRestore();
+  }
+  expect(await shares.getForAssets(owner.id, [asset.id])).toEqual(before);
+  expect(ctx.getMock(EventRepository).emit).not.toHaveBeenCalled();
+  expect(ctx.getMock(WebsocketRepository).clientSend).not.toHaveBeenCalled();
+
+  const response = await sut[operation](auth, dto);
+  expect(response.added).toBe(operation === 'share' ? 1 : 0);
+  expect(response.removed).toBe(operation === 'unshare' ? 1 : 0);
+  expect(response.shares.map(({ sharedWith }) => sharedWith.id).toSorted()).toEqual(
+    (operation === 'share' ? [existing.id, jamie.id] : [existing.id]).toSorted(),
+  );
+  expect(await shares.getForAssets(owner.id, [asset.id])).toHaveLength(response.shares.length);
 });
 
 it('gives the recipient access to exactly the shared items, and nobody else', async () => {
