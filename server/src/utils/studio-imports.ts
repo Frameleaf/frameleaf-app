@@ -162,10 +162,19 @@ export function scanStudioSvg(text: string): number {
       external++;
     }
   }
-  // SMIL can set an href or a paint to a URL while the animation runs.
+  // SMIL can set an href or a paint to a URL while the animation runs: any value that is not a
+  // fragment, embedded data or plain number, length, colour or keyword text counts.
   for (const match of decoded.matchAll(/[\s"'/](?:[\w.-]+:)?(?:to|values|from|by)\s*=\s*("[^"]*"|'[^']*')/gi)) {
-    if (/url\(|:\/\/|^['"]\s*\/\//i.test(match[1])) {
-      external++;
+    for (const value of match[1].slice(1, -1).split(';')) {
+      const item = value.trim();
+      if (
+        item &&
+        !item.startsWith('#') &&
+        !/^data:/i.test(item) &&
+        (/[/\\(]/.test(item) || /\.[a-z]{2,5}$/i.test(item))
+      ) {
+        external++;
+      }
     }
   }
   for (const match of decoded.matchAll(/url\(\s*([^)]*)\)/gi)) {
