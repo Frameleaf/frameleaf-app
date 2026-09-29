@@ -108,6 +108,7 @@ import {
   STOPS_CREATED_CLOUD_JOB,
   admissionRefusalOf,
   cloudRouteAllows,
+  consentUnconfirmedOf,
   hasRequiredConsent,
   selectMlDestination,
 } from 'src/utils/ml-destination.js';
@@ -969,7 +970,15 @@ export class CloudMlBatchService extends BaseService {
       if (batchRefusalOf(error)?.transient) {
         throw error;
       }
-      // any other refusal (wallet, cap, model) is for new work only: this batch goes on
+      if (consentUnconfirmedOf(error)) {
+        // the cloud refused its status check before the consent version could be compared: send nothing now
+        throw new BatchRefusal(
+          'cloud_description_consent_unconfirmed',
+          `The consent in force could not be confirmed (${errorMessage(error)}); no photo was sent, it is tried again`,
+          true,
+        );
+      }
+      // any other refusal (wallet, cap, model), checked after consent, is for new work only: this batch goes on
     }
   }
 

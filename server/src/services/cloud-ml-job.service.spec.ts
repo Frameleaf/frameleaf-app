@@ -1023,6 +1023,32 @@ describe(CloudMlJobService.name, () => {
       expect(mocks.frameleafCloudMl.startJob).toHaveBeenCalledWith(expect.anything(), JOB_ID);
     });
 
+    it('sends nothing when the cloud refused its own status check before consent could be compared (FL-201 review P2)', async () => {
+      // the destination's consent is outdated too, but the probe's own 402 comes first
+      const stale = { ...cloud, consentVersion: '2026-09-01.1' };
+      mocks.mlDestination.getAll.mockResolvedValue([stale]);
+      mocks.mlDestination.getById.mockResolvedValue(stale);
+      mocks.machineLearning.probe.mockResolvedValue({
+        ...mlProbeStub.frameleafCloud,
+        workloads,
+        cloud: {
+          ...facts,
+          consentRequiredVersion: null,
+          refusal: { refusal: MlAdmissionRefusal.WalletInsufficient, detail: 'The AI Wallet is empty' },
+        },
+      });
+
+      await sut.step(resumedUpload(), 'claim', now);
+
+      expect(mocks.frameleafCloudMl.uploadInput).not.toHaveBeenCalled();
+      expect(mocks.frameleafCloudMl.startJob).not.toHaveBeenCalled();
+      expect(mocks.frameleafCloudMl.cancelJob).not.toHaveBeenCalled();
+      // it waits and asks again later, never failing the job for good on this alone
+      expect(mocks.mediaOperation.fail).not.toHaveBeenCalled();
+      expect(mocks.mediaOperation.requeue).toHaveBeenCalled();
+      expect(written()).toMatchObject({ waiting: { detail: expect.stringContaining('could not be confirmed') } });
+    });
+
     it('keeps the consent refusal when cancelling the cloud job fails (FL-201 review P3)', async () => {
       const stale = { ...cloud, consentVersion: '2026-09-01.1' };
       mocks.mlDestination.getAll.mockResolvedValue([stale]);
