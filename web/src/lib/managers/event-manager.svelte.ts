@@ -45,6 +45,8 @@ export type Events = {
   AlbumRemoveAssets: [{ assetIds: string[]; albumIds: string[] }];
   AlbumCreate: [AlbumResponseDto];
   AlbumUpdate: [AlbumResponseDto];
+  /** The server says an album changed, possibly from another member or device; re-read it. */
+  AlbumRemoteUpdate: [{ id: string }];
   AlbumDelete: [AlbumResponseDto];
   AlbumShare: [];
   AlbumUserUpdate: [{ albumId: string; userId: string; role: AlbumUserRole }];
