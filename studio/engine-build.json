@@ -178,13 +178,8 @@
     {
       "path": "patches/0035-retime-policy.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
-      "sha256": "bd49698d3c5a411f818d762aee38479e93f68d9379e156761dfd782329dcbf71"
-    },
-    {
-      "path": "patches/0037-keep-configured-audio-tracks.patch",
-      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
-      "sha256": "370286c002d8cafc5d4c8137586182624e64de599977bab2c1d7be6ccc02c6db"
+      "sha256": "3c8528ee7e3b4509c27e340c49522b1cceab6b9c27664e85b68cc000ccd4787d"
     }
   ],
-  "sourceSha256": "115c1825c6fa80813e5234a7374f6052b2c43679431524ad1b765c34bd80da67"
+  "sourceSha256": "486c2188e2f34c58d2fa64d9965a51d902fb5d7f0a7004a902c0fb208ef215c9"
 }
