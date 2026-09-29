@@ -158,10 +158,22 @@ describe(StudioPreviewService.name, () => {
       markAccessed: vi.fn(),
       markRendering: vi.fn().mockResolvedValue(true),
       publish: vi.fn(),
-      markFailed: vi.fn(),
+      markFailed: vi.fn().mockImplementation(async (_id, _binding, _errorCode, removeFiles: () => Promise<void>) => {
+        await removeFiles();
+        return true;
+      }),
       supersede: vi.fn().mockResolvedValue([]),
       supersedeBeforeRevision: vi.fn().mockResolvedValue([]),
-      evict: vi.fn().mockResolvedValue([]),
+      evictObserved: vi.fn().mockImplementation(async (frame: StudioPreviewFrame, removeFiles: () => Promise<void>) => {
+        await removeFiles();
+        return {
+          ...frame,
+          status: StudioPreviewStatus.Evicted,
+          framePath: null,
+          frameChecksum: null,
+          sizeInBytes: null,
+        };
+      }),
       listExpired: vi.fn().mockResolvedValue([]),
       listRetired: vi.fn().mockResolvedValue([]),
       listLiveForProjects: vi.fn().mockResolvedValue([]),
@@ -334,7 +346,12 @@ describe(StudioPreviewService.name, () => {
 
     it('marks a frame failed and removes its files', async () => {
       await sut.onRenderFailed(operation, 'gpu_lost');
-      expect(previews.markFailed).toHaveBeenCalledWith('frame-1', 'gpu_lost');
+      expect(previews.markFailed).toHaveBeenCalledWith(
+        'frame-1',
+        { ownerId: authStub.user1.user.id, operationId: '0195e2a0-0000-7000-8000-0000000000ff' },
+        'gpu_lost',
+        expect.any(Function),
+      );
       expect(storage.unlinkDir).toHaveBeenCalledWith(folder, { recursive: true, force: true });
     });
   });
@@ -349,7 +366,8 @@ describe(StudioPreviewService.name, () => {
       expect(previews.listLiveForProjects).toHaveBeenCalledWith(['project-1'], 'user-2');
       expect(operations.requestCancel).toHaveBeenCalledTimes(1);
       expect(operations.requestCancel).toHaveBeenCalledWith('op-2', rendering.ownerId);
-      expect(previews.evict).toHaveBeenCalledWith(['ready-1', 'rendering-1']);
+      expect(previews.evictObserved).toHaveBeenCalledWith(ready, expect.any(Function), 'snapshot');
+      expect(previews.evictObserved).toHaveBeenCalledWith(rendering, expect.any(Function), 'snapshot');
       expect(storage.unlinkDir).toHaveBeenCalledTimes(2);
     });
 
@@ -361,7 +379,7 @@ describe(StudioPreviewService.name, () => {
       await sut.sweep(now);
 
       expect(previews.listRetired).toHaveBeenCalledWith(now, new Date('2026-09-25T11:50:00.000Z'), 500);
-      expect(previews.evict).toHaveBeenCalledWith(['old-1']);
+      expect(previews.evictObserved).toHaveBeenCalledWith(expired, expect.any(Function), 'snapshot');
       expect(storage.unlinkDir).toHaveBeenCalledWith(studioPreviewFrameFolder(expired.ownerId, 'old-1'), {
         recursive: true,
         force: true,
@@ -787,7 +805,11 @@ describe(StudioPreviewService.name, () => {
       projects.getReadableRevision.mockResolvedValue(null);
 
       await expect(sut.getFrame(authStub.user1, frameStub().id, {})).rejects.toBeInstanceOf(NotFoundException);
-      expect(previews.evict).toHaveBeenCalledWith([frameStub().id]);
+      expect(previews.evictObserved).toHaveBeenCalledWith(
+        expect.objectContaining({ id: frameStub().id }),
+        expect.any(Function),
+        'snapshot',
+      );
       expect(previews.markAccessed).not.toHaveBeenCalled();
     });
 
@@ -845,18 +867,25 @@ describe(StudioPreviewService.name, () => {
       } as never);
 
       await expect(sut.getFrame(authStub.user1, frameStub().id, {})).rejects.toBeInstanceOf(ConflictException);
-      expect(previews.evict).toHaveBeenCalledWith([frameStub().id]);
+      expect(previews.evictObserved).toHaveBeenCalledWith(
+        expect.objectContaining({ id: frameStub().id }),
+        expect.any(Function),
+        'snapshot',
+      );
     });
   });
 
   describe('cancel', () => {
     it('releases the frame and stops the render', async () => {
       vi.mocked(previews.getForOwner).mockResolvedValue(frameStub({ status: StudioPreviewStatus.Rendering }));
-      vi.mocked(previews.evict).mockResolvedValue([frameStub({ status: StudioPreviewStatus.Evicted })]);
 
       const preview = await sut.cancel(authStub.user1, frameStub().id);
 
-      expect(previews.evict).toHaveBeenCalledWith([frameStub().id]);
+      expect(previews.evictObserved).toHaveBeenCalledWith(
+        expect.objectContaining({ id: frameStub().id }),
+        expect.any(Function),
+        'snapshot',
+      );
       expect(operations.requestCancel).toHaveBeenCalledWith(frameStub().operationId, authStub.user1.user.id);
       expect(preview.status).toBe(StudioPreviewStatus.Evicted);
     });

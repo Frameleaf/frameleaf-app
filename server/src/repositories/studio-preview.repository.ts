@@ -301,7 +301,11 @@ export class StudioPreviewRepository {
   }
 
   /** A late refusal may discard only its observed binding, never a renewed request or result. */
-  async evictObserved(frame: StudioPreviewFrame, removeFiles: () => Promise<void>): Promise<boolean> {
+  async evictObserved(
+    frame: StudioPreviewFrame,
+    removeFiles: () => Promise<void>,
+    mode: 'completion' | 'snapshot' = 'completion',
+  ): Promise<StudioPreviewFrame | undefined> {
     return this.db.transaction().execute(async (tx) => {
       const evicted = await tx
         .updateTable('studio_preview_frame')
@@ -312,27 +316,42 @@ export class StudioPreviewRepository {
         .where(sql<boolean>`"operationId" IS NOT DISTINCT FROM ${frame.operationId}::uuid`)
         .where(sql<boolean>`"grantToken" IS NOT DISTINCT FROM ${frame.grantToken}`)
         .where(sql<boolean>`"grantSessionId" IS NOT DISTINCT FROM ${frame.grantSessionId}`)
-        .where('status', '!=', StudioPreviewStatus.Ready)
-        .returning('id')
+        .$if(mode === 'completion', (query) => query.where('status', '!=', StudioPreviewStatus.Ready))
+        // Reads and retention scans must not evict a row refreshed after their snapshot.
+        .$if(mode === 'snapshot', (query) => query.where('updateId', '=', frame.updateId))
+        .returningAll()
         .executeTakeFirst();
       if (!evicted) {
-        return false;
+        return;
       }
       // Keep refresh/revival blocked until this binding's files are removed.
       await removeFiles();
-      return true;
+      return evicted as unknown as StudioPreviewFrame;
     });
   }
 
-  async markFailed(id: string, errorCode: string): Promise<boolean> {
-    const result = await this.db
-      .updateTable('studio_preview_frame')
-      .set({ status: StudioPreviewStatus.Failed, errorCode })
-      .where('id', '=', id)
-      .where('status', 'in', [StudioPreviewStatus.Pending, StudioPreviewStatus.Rendering])
-      .executeTakeFirst();
-
-    return Number(result.numUpdatedRows) > 0;
+  async markFailed(
+    id: string,
+    binding: { ownerId: string; operationId: string },
+    errorCode: string,
+    removeFiles: () => Promise<void>,
+  ): Promise<boolean> {
+    return this.db.transaction().execute(async (tx) => {
+      const result = await tx
+        .updateTable('studio_preview_frame')
+        .set({ status: StudioPreviewStatus.Failed, errorCode })
+        .where('id', '=', id)
+        .where('ownerId', '=', binding.ownerId)
+        .where('operationId', '=', binding.operationId)
+        .where('status', 'in', [StudioPreviewStatus.Pending, StudioPreviewStatus.Rendering])
+        .executeTakeFirst();
+      if (Number(result.numUpdatedRows) === 0) {
+        return false;
+      }
+      // A replacement cannot revive the row until the failed operation's files are removed.
+      await removeFiles();
+      return true;
+    });
   }
 
   /**

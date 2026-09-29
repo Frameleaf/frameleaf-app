@@ -1,5 +1,5 @@
 import { Kysely } from 'kysely';
-import { StudioPreviewQuality } from 'src/enum.js';
+import { StudioPreviewQuality, StudioPreviewStatus } from 'src/enum.js';
 import { DerivativePrivacyRepository } from 'src/repositories/derivative-privacy.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { StudioPreviewRepository } from 'src/repositories/studio-preview.repository.js';
@@ -99,7 +99,11 @@ describe(StudioPreviewRepository.name, () => {
         { ownerId: user.id, operationId: null, grantToken: 'grant', grantSessionId: 'session', assetIds: [] },
       );
     }
-    await sut.markFailed(failed.id, 'gpu_lost');
+    await defaultDatabase
+      .updateTable('studio_preview_frame')
+      .set({ status: StudioPreviewStatus.Failed, errorCode: 'gpu_lost' })
+      .where('id', '=', failed.id)
+      .execute();
 
     const now = new Date();
     const retiredNow = await sut.listRetired(now, new Date(now.getTime() - 3_600_000), 100);
