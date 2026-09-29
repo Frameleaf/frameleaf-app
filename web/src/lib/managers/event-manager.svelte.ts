@@ -98,6 +98,8 @@ export type Events = {
    * nothing to give up, so only the session privacy guard acts on it, and only while elevated.
    */
   SessionLockedRemote: [];
+  /** FL-146 (FL-77): an administrator changed this account's preferences; they were read again. */
+  UserPreferencesRemoteUpdate: [];
   SessionAccessChanged: [{ isElevated: boolean }];
   SessionDelete: [];
 

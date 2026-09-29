@@ -48,6 +48,8 @@ export interface Events {
   on_media_operation_update: (id: string) => void;
   /** FL-155: the Frameleaf Cloud link, licence or a Frameleaf account changed; only the topic arrives. */
   on_frameleaf_cloud: (event: { topic: 'link' | 'license' | 'account' }) => void;
+  /** FL-146 (FL-77): an administrator changed this account's preferences; read them again. */
+  on_user_preferences_update: () => void;
 
   AppRestartV1: (event: AppRestartEvent) => void;
 
@@ -107,6 +109,7 @@ websocket
   .on('on_notification', () => notificationManager.refresh())
   .on('on_media_operation_update', (id) => eventManager.emit('MediaOperationUpdate', { id }))
   .on('on_frameleaf_cloud', (event) => eventManager.emit('FrameleafCloudUpdate', event))
+  .on('on_user_preferences_update', () => void authManager.refreshPreferences())
   // FL-53: a role change made elsewhere reaches this page as the same event a local change raises.
   .on('PartnerRevokeV1', (data) => eventManager.emit('PartnerRevoke', data))
   .on('AlbumUserUpdateV1', ({ albumId, userId, role }) =>

@@ -85,6 +85,22 @@ class AuthManager {
     }
   }
 
+  /**
+   * FL-146 (FL-77): read this account's preferences again, after an administrator changed them in
+   * another session. A failure keeps what this session has; its next save is still checked by the server.
+   */
+  async refreshPreferences() {
+    if (!this.authenticated) {
+      return;
+    }
+    try {
+      this.setPreferences(await getMyPreferences());
+      eventManager.emit('UserPreferencesRemoteUpdate');
+    } catch {
+      // keep the preferences this session has
+    }
+  }
+
   setUser(user: UserAdminResponseDto) {
     this.#user = user;
   }

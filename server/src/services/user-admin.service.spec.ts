@@ -474,6 +474,26 @@ describe(UserAdminService.name, () => {
       );
     });
 
+    it("tells the account's open sessions to read their preferences again (FL-146, FL-77)", async () => {
+      mocks.user.getMetadata.mockResolvedValue(storedPreferences({}));
+
+      await sut.updatePreferences(authStub.admin, userStub.user1.id, { cast: { adminDisabled: true } });
+
+      expect(mocks.websocket.clientSend).toHaveBeenCalledWith('on_user_preferences_update', userStub.user1.id);
+    });
+
+    it('keeps a saved change when the sessions cannot be told (FL-146, FL-77)', async () => {
+      mocks.user.getMetadata.mockResolvedValue(storedPreferences({}));
+      mocks.websocket.clientSend.mockImplementation(() => {
+        throw new Error('socket down');
+      });
+
+      await expect(
+        sut.updatePreferences(authStub.admin, userStub.user1.id, { cast: { adminDisabled: true } }),
+      ).resolves.toMatchObject({ cast: { adminDisabled: true } });
+      expect(mocks.user.upsertMetadata).toHaveBeenCalled();
+    });
+
     it("should let the user's own choice apply again when casting is allowed", async () => {
       mocks.user.getMetadata.mockResolvedValue(
         storedPreferences({ cast: { gCastEnabled: true, adminDisabled: true } }),

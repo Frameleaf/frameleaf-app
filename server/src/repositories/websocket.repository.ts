@@ -61,6 +61,11 @@ export interface ClientEventMap {
    * reads the admin-only status again.
    */
   on_frameleaf_cloud: [{ topic: FrameleafCloudTopic }];
+  /**
+   * FL-146 (FL-77, owner decision 2026-09-29): an administrator changed the receiving account's
+   * preferences. Nothing else travels; the account's open sessions read their preferences again.
+   */
+  on_user_preferences_update: [];
 
   AssetUploadReadyV2: [{ asset: SyncAssetV2; exif: SyncAssetExifV1 }];
   AppRestartV1: [AppRestartEvent];
