@@ -1507,6 +1507,55 @@ describe(StudioExportRepository.name, () => {
       expect(rows.every((row) => !row.locked)).toBe(true);
     });
 
+    it.each([false, true])(
+      'releases motion-derived privacy only after its still unlocks (separate locked source: %s)',
+      async (withSeparateSource) => {
+        const context = setup();
+        const { user } = await context.ctx.newUser();
+        const motion = await ownSource(context.ctx, user.id, {
+          type: AssetType.Video,
+          visibility: AssetVisibility.Hidden,
+        });
+        const still = await ownSource(context.ctx, user.id, { visibility: AssetVisibility.Locked });
+        await context.assets.update({ id: still.id, livePhotoVideoId: motion.id });
+        expect(await lockOf(motion.id)).toBeNull();
+        const other = withSeparateSource
+          ? await ownSource(context.ctx, user.id, { visibility: AssetVisibility.Locked })
+          : null;
+        const sources = other ? [motion, other] : [motion];
+        const staged = await stagedExport(context, user.id, sources);
+        const resultId = (await context.sut.publish(publication(staged, sources))).createdAssetId!;
+        const lockedSession = { revealed: false };
+        const access = new AccessRepository(defaultDatabase);
+
+        if (other) {
+          await context.assets.unlock([other.id]);
+        }
+        // Unlocking X must not release a result that still contains M, whose paired still S is Locked.
+        expect(await lockOf(resultId)).toBe(AssetLockReason.Marked);
+        expect((await context.sut.getById(staged.version.id))!.privacy).toMatchObject({
+          lockReason: AssetLockReason.Marked,
+        });
+        expect(await context.sut.getSources(staged.version.id)).toEqual(
+          expect.arrayContaining([expect.objectContaining({ assetId: motion.id, locked: true })]),
+        );
+        await expect(context.sut.getForOwner(staged.version.id, user.id, lockedSession)).resolves.toBeUndefined();
+        await expect(access.asset.checkOwnerAccess(user.id, new Set([resultId]), false)).resolves.toEqual(new Set());
+
+        await context.assets.unlock([still.id]);
+
+        expect(await lockOf(resultId)).toBeNull();
+        expect((await context.sut.getById(staged.version.id))!.privacy).toMatchObject({ lockReason: null });
+        expect((await context.sut.getSources(staged.version.id)).every((source) => !source.locked)).toBe(true);
+        await expect(context.sut.getForOwner(staged.version.id, user.id, lockedSession)).resolves.toMatchObject({
+          id: staged.version.id,
+        });
+        await expect(access.asset.checkOwnerAccess(user.id, new Set([resultId]), false)).resolves.toEqual(
+          new Set([resultId]),
+        );
+      },
+    );
+
     it('never releases a lock the owner put on the result directly (FL-195 follow-up)', async () => {
       const context = setup();
       const { user } = await context.ctx.newUser();
