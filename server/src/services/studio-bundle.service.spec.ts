@@ -729,7 +729,7 @@ describe(StudioBundleService.name, () => {
       const interruptedJob = operationOf({ ...importJob, id: newUuidV7() });
       await sut.run({ operation: interruptedJob, claimToken: 'token-interrupted' });
       const prepared = operations.setBulkResult.mock.calls.find(
-        ([, , patch]) => patch.result?.projectId === null && patch.result?.relinked === 1,
+        (call) => call[2].result?.projectId === null && call[2].result?.relinked === 1,
       )?.[2].result;
       expect(prepared).toBeDefined();
 
