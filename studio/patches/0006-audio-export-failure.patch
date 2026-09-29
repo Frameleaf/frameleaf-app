@@ -1,0 +1,73 @@
+Subject: Fail audio export when a required clip cannot be processed
+
+Upstream Freecut source remains MIT licensed; this adaptation retains that license.
+The immutable vendor snapshot is unchanged.
+
+diff --git a/src/features/export/utils/canvas-audio.ts b/src/features/export/utils/canvas-audio.ts
+--- a/src/features/export/utils/canvas-audio.ts
++++ b/src/features/export/utils/canvas-audio.ts
+@@ -2730,7 +2730,6 @@
+   // immediately. Keeping every decoded segment alive until the end multiplies
+   // memory use on long, multi-clip timelines.
+   const mixedSamples = createAudioMixBuffer(config)
+-  let processedSegmentCount = 0
+
+   for (const segment of activeSegments) {
+     if (signal?.aborted) {
+@@ -2877,7 +2876,6 @@
+       const startSample = Math.floor((segment.startFrame / fps) * config.sampleRate)
+
+       mixAudioSegmentInto(mixedSamples, { samples: processedChannels, startSample }, config)
+-      processedSegmentCount++
+
+       log.debug('Processed audio segment', {
+         itemId: segment.itemId,
+@@ -2887,13 +2885,9 @@
+       })
+     } catch (error) {
+       log.error(`Failed to process audio segment ${segment.itemId}: ${getErrorMessage(error)}`)
+-      // Continue with other segments
+-    }
+-  }
+-
+-  if (processedSegmentCount === 0) {
+-    log.warn('No audio segments were successfully processed')
+-    return null
++      // A partial mix must never be published as a successful export.
++      throw error
++    }
+   }
+
+   softClipAudioMix(mixedSamples)
+diff --git a/src/features/export/utils/canvas-audio.test.ts b/src/features/export/utils/canvas-audio.test.ts
+--- a/src/features/export/utils/canvas-audio.test.ts
++++ b/src/features/export/utils/canvas-audio.test.ts
+@@ -871,6 +871,28 @@
+       keyframes: [],
+     }
+   }
++
++  it.each([false, true])(
++    'rejects an unrecoverable audio failure instead of returning a partial mix (prior clip: %s)',
++    async (hasPriorClip) => {
++      const error = new Error('Audio source unavailable')
++      const fetchMock = vi.fn().mockRejectedValue(error)
++      vi.stubGlobal('fetch', fetchMock)
++      const composition = dspComposition({ src: 'blob:mediabunny-fails', isReversed: true })
++      if (hasPriorClip) {
++        composition.tracks[0]!.items.unshift(
++          makeAudioItem({ id: 'audio-0', src: 'blob:audio-good', mediaId: 'media-good' }),
++        )
++      }
++
++      try {
++        await expect(processAudio(composition)).rejects.toBe(error)
++        expect(fetchMock).toHaveBeenCalledWith('blob:mediabunny-fails')
++      } finally {
++        vi.unstubAllGlobals()
++      }
++    },
++  )
+
+   it('isReversed plays the source backwards (ramp arrives descending)', async () => {
+     const result = await processAudio(dspComposition({ src: 'blob:audio-ramp', isReversed: true }))

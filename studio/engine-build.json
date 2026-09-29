@@ -29,7 +29,12 @@
       "path": "patches/0005-compositor-float-targets.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "42d37323cfee40acfc12101079935118a31686af931caf6c23425acfe81f7ea7"
+    },
+    {
+      "path": "patches/0006-audio-export-failure.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "4289d910eff2d61116c2e5c975e852bab22d9b1478b4e918e486697f9fa8c357"
     }
   ],
-  "sourceSha256": "954732a8f77e372d7b72b6988696d3e2d64a87acdb9fc35732622b01ca29edf3"
+  "sourceSha256": "39f0c987879387af878fcc673b593cd07882d544c53bc6d8317feb9d39913b6d"
 }
