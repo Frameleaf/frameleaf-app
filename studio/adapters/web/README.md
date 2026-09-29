@@ -27,5 +27,7 @@ The owner unparked the engine on 2026-09-25, and the web application now mounts 
   and resulting audio/video pairs. Hosted Actions runs it; full timeline conformance remains unqualified.
 - Canonical trim commands reject partially clamped ranges after converting rational times to frames;
   a rejected command never stages a new graph. Freecut's interactive trim clamping is unchanged.
+- Canonical moves preserve linked offsets and attached captions, respecting linked selection and
+  track locks. A move that would place a member before frame zero rejects the entire batch.
 - `server/Dockerfile` builds the adapter in its `studio-engine` stage, which recovers the archive and
   fails if its SHA-256 or any of the 2,646 file hashes differ from `studio/freecut-provenance.json`.
