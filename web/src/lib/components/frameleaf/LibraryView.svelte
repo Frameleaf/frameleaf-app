@@ -256,6 +256,12 @@
   let restoredFor: string | undefined;
   let restoredContext: string | undefined;
   let restoredView: string | null = null;
+  // FL-40 fix: `fl` this page last wrote via a shallow `replaceState`. `replaceState` updates
+  // the address bar (and `location.href`) but never updates the reactive `page.url` store
+  // (see @sveltejs/kit client.js), so comparing against `page.url` after our own write is wrong.
+  // Track what we wrote separately from `restoredView` so the restore effect below recognizes
+  // its own write instead of fighting over `restoredView` and looping forever.
+  let writtenView: string | null | undefined;
   // FL-34: mounted by the session privacy gate after the first navigation, the router is ready already
   let routerReady = $state(hasRouterStarted());
   afterNavigate(() => {
@@ -456,16 +462,28 @@
   // Restore for each account, context or explicit URL view, including Back within a mounted page.
   $effect(() => {
     const urlView = page.url.searchParams.get('fl');
+    if (!browser) {
+      return;
+    }
     if (
-      !browser ||
-      (restored && restoredFor === storageUserId && restoredContext === storageContext && restoredView === urlView)
+      restored &&
+      restoredFor === storageUserId &&
+      restoredContext === storageContext &&
+      (restoredView === urlView || writtenView === urlView)
     ) {
+      if (writtenView === urlView) {
+        // `page.url` has caught up with a write we made via replaceState; adopt it as restored so a
+        // later link to a different view (e.g. Back to an older history entry) is recognized as new.
+        restoredView = urlView;
+        writtenView = undefined;
+      }
       return;
     }
     restored = true;
     restoredFor = storageUserId;
     restoredContext = storageContext;
     restoredView = urlView;
+    writtenView = undefined;
     session.restore(page.url, storageUserId, storageContext);
     // FL-48: a link this version cannot read is refused out loud and left in the address bar, rather
     // than being quietly replaced by the stored view.
@@ -494,10 +512,13 @@
     }
     savedOnDevice = session.persist(storageUserId);
     if (syncUrl && routerReady) {
-      const next = session.viewUrl(page.url);
-      if (next.href !== page.url.href) {
+      // Compare against the actual address bar, not `page.url`: a shallow `replaceState` never
+      // updates `page.url` synchronously, so comparing `next` to `page.url` here looped forever.
+      const current = new URL(location.href);
+      const next = session.viewUrl(current);
+      if (next.href !== current.href) {
         // A URL we just wrote is the current session, not a new link to restore from.
-        restoredView = next.searchParams.get('fl');
+        writtenView = next.searchParams.get('fl');
         replaceState(next, page.state);
       }
     }
