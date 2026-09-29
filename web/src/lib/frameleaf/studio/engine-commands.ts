@@ -56,6 +56,8 @@ export const studioEngineCommandIds = [
   'marker.remove',
   'marker.update',
   'music.add',
+  'project.applyTemplate',
+  'sequence.setSettings',
   'title.add',
   'track.add',
   'track.closeGap',

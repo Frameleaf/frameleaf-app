@@ -152,6 +152,8 @@ export type StudioDuration = Rational;
  * these fields `rate`.
  */
 export type StudioRate = Rational;
+/** FL-94: how a rate change treats existing content — same moments in seconds, or same frame numbers. */
+export type StudioRetimePolicy = 'keep-time' | 'keep-frames';
 
 /**
  * Graph-shaped data the host and the server carry without reading it: effect parameters,
@@ -389,7 +391,7 @@ export interface StudioCommandPayloads {
     viewportWidth: number;
     viewportHeight: number;
   };
-  'project.applyTemplate': { templateId: string };
+  'project.applyTemplate': { templateId: string; timing?: StudioRetimePolicy };
   /**
    * `includeMedia`: copy the media the person owns into the bundle. Shared media always travels as a
    * reference and nothing Locked is ever copied. Left out, the host asks in its export dialog.
@@ -412,7 +414,13 @@ export interface StudioCommandPayloads {
   'sequence.remove': { sequenceId: string };
   'sequence.setActive': { sequenceId: string };
   'sequence.setFields': { name?: string; captionLanguage?: string; captionsBurnIn?: boolean };
-  'sequence.setSettings': { sequenceId: string; fps?: StudioRate; width?: number; height?: number };
+  'sequence.setSettings': {
+    sequenceId: string;
+    fps?: StudioRate;
+    width?: number;
+    height?: number;
+    timing?: StudioRetimePolicy;
+  };
   'text.setMotion': { clipId: string; motion: StudioOpaqueValue | null };
   'title.add': {
     at: StudioTime;
