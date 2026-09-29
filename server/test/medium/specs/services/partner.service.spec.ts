@@ -37,6 +37,18 @@ describe(PartnerService.name, () => {
       );
     });
 
+    it('shares a new partnership without locations until the sharer turns them on (FL-146 AL-40)', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const { user: partner } = await ctx.newUser();
+      const auth = factory.auth({ user });
+
+      await expect(sut.create(auth, { sharedWithId: partner.id })).resolves.toMatchObject({ shareLocation: false });
+      await expect(sut.update(auth, partner.id, { shareLocation: true })).resolves.toMatchObject({
+        shareLocation: true,
+      });
+    });
+
     it('should not share with a partner that is already shared with', async () => {
       const { sut, ctx } = setup();
       const { user } = await ctx.newUser();

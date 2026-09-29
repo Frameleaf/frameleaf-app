@@ -96,6 +96,7 @@ export const LEGACY_FORK_MIGRATIONS: ReadonlySet<string> = new Set([
   '2100000000670-AddCloudBackupTables',
   '2100000000690-AddMemoryHighlight',
   '2100000000700-AddAssetLockInherited',
+  '2100000000710-PartnerShareLocationDefaultOff',
 ]);
 
 export const GENERIC_LEGACY_FORK_MIGRATIONS: ReadonlySet<string> = new Set(
