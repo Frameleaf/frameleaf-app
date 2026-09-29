@@ -38,7 +38,8 @@
    */
   let sharedBack: PartnerResponseDto | undefined = $state();
   let sharedBackLoaded = $state(false);
-  let shareLocation = $state(true);
+  // off until the sharer turns it on, as the prototype shows (FL-146 AL-40)
+  let shareLocation = $state(false);
   let locationUpdating = $state(false);
 
   const possessive = $derived(/s$/i.test(partner.name.trim()) ? `${partner.name}’` : `${partner.name}’s`);
@@ -48,7 +49,7 @@
     try {
       const mine = await getPartners({ direction: PartnerDirection.SharedBy });
       sharedBack = mine.find((candidate) => candidate.id === partnerId);
-      shareLocation = sharedBack?.shareLocation ?? true;
+      shareLocation = sharedBack?.shareLocation ?? false;
     } catch (error) {
       handleError(error, $t('errors.something_went_wrong'));
     } finally {

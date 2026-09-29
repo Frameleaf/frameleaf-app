@@ -219,8 +219,9 @@ export class MediumTestContext<S extends ClassConstructor<typeof BaseService> = 
     return { user, result };
   }
 
-  async newPartner(dto: { sharedById: string; sharedWithId: string; inTimeline?: boolean }) {
-    const partner = { inTimeline: true, ...dto };
+  async newPartner(dto: { sharedById: string; sharedWithId: string; inTimeline?: boolean; shareLocation?: boolean }) {
+    // explicit, so a spec states the location sharing it relies on (a new partnership defaults to off)
+    const partner = { inTimeline: true, shareLocation: true, ...dto };
     const result = await this.get(PartnerRepository).create(partner);
     return { partner, result };
   }

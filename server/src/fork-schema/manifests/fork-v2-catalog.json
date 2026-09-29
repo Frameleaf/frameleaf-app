@@ -4585,7 +4585,7 @@
       "identity": "public.partner.sharedWithId"
     },
     {
-      "definition": "boolean|not null|true||",
+      "definition": "boolean|not null|false||",
       "identity": "public.partner.shareLocation"
     },
     {
