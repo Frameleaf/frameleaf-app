@@ -47,19 +47,20 @@
     {
       "area": "cloud",
       "component": "Frameleaf Cloud (hosted backup/remote-access/GPU offering)",
-      "description": "Frameleaf Cloud needs a billing account and payment processor of record before any customer can be charged for it.",
+      "description": "Frameleaf Cloud uses Stripe as its payment processor (decided: FC-21, frameleaf-cloud docs/entitlements-stripe-licensing.md:15 and :22). The app shows prices in USD and never embeds Stripe keys; licensing arrives as signed certificates from the cloud entitlement service. Only provisioning the actual Stripe account and keys remains.",
       "id": "frameleaf-cloud-billing-account",
       "owner": null,
-      "reason": "No agent may create or fund a billing account. Needs the owner to name the account and processor.",
+      "reason": "Processor decided: Stripe; blocked on FC-76 [OPS-011] key provisioning. No agent may create or fund the account or hold its keys - needs the owner to provision FC-76.",
       "status": "blocked-on-owner"
     },
     {
       "area": "cloud",
       "component": "Frameleaf Cloud data processing (backup, remote access, cloud GPU rendering)",
-      "description": "Customers sending data to Frameleaf Cloud need a published privacy disclosure naming what is processed, where, and for how long, before cloud processing can be offered.",
+      "description": "The privacy notice basis is approved: frameleaf-cloud docs/legal/PRIVACY-NOTICE.md has owner and counsel approval, recorded 2026-09-27 (FC-16). Cloud processing additionally needs a separate, versioned, per-feature in-app disclosure accepted on the server (consentVersion YYYY-MM-DD.N, frameleaf-cloud docs/instance-contract.md:105) before a given cloud feature can be offered; that disclosure text does not exist yet.",
+      "enforcedBy": ["frameleaf-cloud docs/legal/PRIVACY-NOTICE.md (FC-16)"],
       "id": "frameleaf-cloud-privacy-disclosure",
       "owner": null,
-      "reason": "No agent may publish a legal privacy disclosure on the owner's behalf. Needs owner/legal sign-off on the text; see docs/docs/developer/frameleaf-studio-foundation.md for the current in-app consent behaviour this disclosure must describe.",
+      "reason": "Basis approved (FC-16); the per-feature in-app disclosure text is not yet written and stays owner-gated, as does the DPA/subprocessor list pending re-review after the move to DigitalOcean and OVH. No agent may write or approve the disclosure text on the owner's behalf.",
       "status": "blocked-on-owner"
     },
     {
