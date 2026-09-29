@@ -10,6 +10,7 @@ import {
   phase,
   saveState,
   uploadAsset,
+  waitFor,
   withDatabase,
 } from './fork-schema-certification';
 
@@ -109,6 +110,26 @@ const sharedMappings = (state: ChainState) =>
       [[state.retainedAssetId, state.copyAssetId]],
     );
     return rows;
+  });
+
+const copyReference = (state: ChainState) =>
+  withDatabase(async (client) => {
+    const { rows } = await client.query<{
+      originalPath: string;
+      mappingPhysicalFileId: string | null;
+      upstreamPath: string;
+      canonicalPath: string;
+    }>(
+      `SELECT asset."originalPath" AS "originalPath",
+              mapping."physicalFileId"::text AS "mappingPhysicalFileId",
+              mapping."upstreamPath" AS "upstreamPath", physical."canonicalPath" AS "canonicalPath"
+       FROM public.asset asset
+       JOIN immich_fork.asset_physical_file mapping ON mapping."assetId" = asset.id
+       JOIN immich_fork.physical_file physical ON physical.id = mapping."physicalFileId"
+       WHERE asset.id = $1 AND asset."ownerId" = $2`,
+      [state.copyAssetId, state.copyOwner.userId],
+    );
+    return rows[0];
   });
 
 const leases = (state: ChainState) =>
@@ -342,5 +363,63 @@ describe.runIf(phase === 'chain-fork-return')(`${lane}: fork leg after the retur
       const fork = await client.query('SELECT active, phase FROM immich_fork.state WHERE id = 1');
       expect(fork.rows[0]).toEqual({ active: true, phase: 'active' });
     });
+  }, 120_000);
+});
+
+describe.runIf(phase === 'chain-canonical-delete')(`${lane}: shared original after canonical asset deletion`, () => {
+  it('removes the canonical asset and records the exact file cleanup path', async () => {
+    const state = await loadState<ChainState>(lane);
+    const before = await copyReference(state);
+    expect(before).toEqual(
+      expect.objectContaining({
+        originalPath: expect.any(String),
+        mappingPhysicalFileId: state.physicalFileId,
+        upstreamPath: expect.any(String),
+        canonicalPath: expect.any(String),
+      }),
+    );
+    const deletedPath = await withDatabase(async (client) => {
+      const { rows } = await client.query<{ path: string }>(
+        `SELECT coalesce(mapping."upstreamPath", asset."originalPath") AS path
+         FROM public.asset asset
+         LEFT JOIN immich_fork.asset_physical_file mapping ON mapping."assetId" = asset.id
+         WHERE asset.id = $1`,
+        [state.retainedAssetId],
+      );
+      return rows[0]?.path;
+    });
+    expect(deletedPath).toEqual(expect.any(String));
+
+    await api<void>('/assets', {
+      body: JSON.stringify({ force: true, ids: [state.retainedAssetId] }),
+      headers: { ...authHeaders(state.adminToken), 'content-type': 'application/json' },
+      method: 'DELETE',
+    });
+    await waitFor(
+      () =>
+        withDatabase(async (client) => {
+          const { rows } = await client.query<{ count: number }>(
+            'SELECT count(*)::int AS count FROM public.asset WHERE id = $1',
+            [state.retainedAssetId],
+          );
+          return rows[0]!.count;
+        }),
+      (count) => count === 0,
+      120_000,
+    );
+    await waitForQuiescence(state.adminToken);
+    await saveState('chain-canonical-delete', { before, deletedPath });
+  }, 180_000);
+});
+
+describe.runIf(phase === 'chain-survivor-check')(`${lane}: other owner after file cleanup`, () => {
+  it('keeps the surviving physical reference, path and original bytes', async () => {
+    const state = await loadState<ChainState>(lane);
+    const deletion = await loadState<{
+      before: Awaited<ReturnType<typeof copyReference>>;
+      deletedPath: string;
+    }>('chain-canonical-delete');
+    await expect(copyReference(state)).resolves.toEqual(deletion.before);
+    expect(digest(await downloadAsset(state.copyOwner.accessToken, state.copyAssetId))).toBe(state.originalDigest);
   }, 120_000);
 });
