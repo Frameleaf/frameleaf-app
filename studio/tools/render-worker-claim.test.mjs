@@ -1,15 +1,18 @@
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
+import { createRequire } from 'node:module';
 import test from 'node:test';
 import { prepareOneClaim } from './render-worker-claim.mjs';
 
+const sharp = createRequire(new URL('../engine/package.json', import.meta.url))('sharp');
+
 // HTTP contract fixtures, NOT renderer admission or production-server qualification.
-async function fixture(t, { inputStatus = 200, redirect, loseLease = false, checksum } = {}) {
+async function fixture(t, { inputStatus = 200, redirect, loseLease = false, checksum, sourceBytes } = {}) {
   const operationId = randomUUID();
   const claimToken = randomUUID();
   const sessionToken = randomUUID();
-  const bytes = Buffer.from('authorized specimen');
+  const bytes = sourceBytes ?? await sharp({ create: { width: 1, height: 1, channels: 4, background: '#ffffff' } }).png().toBuffer();
   const requests = [];
   let heartbeats = 0;
   const server = createServer(async (request, response) => {
@@ -20,7 +23,10 @@ async function fixture(t, { inputStatus = 200, redirect, loseLease = false, chec
     response.setHeader('Content-Type', 'application/json');
     if (request.url === '/api/render-workers/claims') {
       response.end(JSON.stringify({ operationId, claimToken, kind: 'studio-export', projectId: randomUUID(),
-        revisionId: 'immutable-revision-7', snapshot: { studio: { stored: true, revision: 7, graph: { tracks: [] } } },
+        revisionId: 'immutable-revision-7', snapshot: { studio: { stored: true, revision: 7, graph: {
+          metadata: { width: 32, height: 32, fps: 24 },
+          timeline: { tracks: [], items: [{ type: 'image', mediaId: 'fixture' }] },
+        } } },
         settings: { format: 'mp4' }, inputs: [{ inputId: 'library-asset:fixture', resourceId: 'fixture',
           kind: 'library-asset', checksum: checksum ?? createHash('sha1').update(bytes).digest('base64'),
           url: `/api/render-workers/operations/${operationId}/inputs/signed-grant`,
@@ -67,6 +73,12 @@ test('a revoked grant refuses preparation and produces no render output', async 
 test('changed source bytes are refused before executor handoff', async (t) => {
   const f = await fixture(t, { checksum: '0'.repeat(64) });
   assert.equal((await f.run()).errorCode, 'worker_input_preparation_failed');
+});
+
+test('a valid grant and matching checksum cannot prepare text as an image', async (t) => {
+  const f = await fixture(t, { sourceBytes: Buffer.from('authorized specimen') });
+  assert.equal((await f.run()).errorCode, 'worker_input_preparation_failed');
+  assert.equal(f.requests.at(-1).body.errorCode, 'worker_input_preparation_failed');
 });
 
 test('redirected grants never forward the session or source request to another origin', async (t) => {
