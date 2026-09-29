@@ -81,12 +81,13 @@
     },
     {
       "capability": null,
-      "description": "Move a clip and its linked clips to another time, and optionally another track.",
+      "description": "Move a clip to another time and optionally another track, carrying linked clips unless linkedSelectionEnabled is false (defaults to true).",
       "id": "clip.move",
       "manifestIds": ["command.moveItem"],
       "mutatesGraph": true,
       "payload": {
         "clipId": "string",
+        "linkedSelectionEnabled": "boolean?",
         "start": "time",
         "trackId": "string?"
       },

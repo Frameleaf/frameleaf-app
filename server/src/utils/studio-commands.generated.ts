@@ -109,6 +109,7 @@ export const studioCommandMirror = {
     capability: null,
     payload: {
       clipId: 'string',
+      linkedSelectionEnabled: 'boolean?',
       start: 'time',
       trackId: 'string?',
     },
