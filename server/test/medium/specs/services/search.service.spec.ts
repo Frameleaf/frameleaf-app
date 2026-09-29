@@ -3,6 +3,7 @@ import type { HiddenContentFilter } from 'src/utils/hidden-content.js';
 import { SearchSuggestionType } from 'src/dtos/search.dto.js';
 import {
   AlbumUserRole,
+  AssetLockReason,
   AssetMetadataKey,
   AssetOrder,
   AssetType,
@@ -119,6 +120,66 @@ describe(SearchService.name, () => {
       await expect(cities()).resolves.toEqual({ fieldName: 'exifInfo.city', items: [] });
     },
   );
+
+  it.each([
+    ['exifInfo.city', 'Locked'],
+    ['exifInfo.city', 'suppressed'],
+    ['createdAt', 'Locked'],
+    ['createdAt', 'suppressed'],
+  ] as const)('omits a %s cover made %s between selection and hydration (FL-137)', async (fieldName, privacy) => {
+    const { sut, ctx } = setup();
+    const { user } = await ctx.newUser();
+    for (let i = 0; i < 5; i++) {
+      const { asset } = await ctx.newAsset({ ownerId: user.id, type: AssetType.Image });
+      await ctx.newExif({ assetId: asset.id, city: 'Hydration privacy' });
+    }
+    const [tag] = await upsertTags(ctx.get(TagRepository), { userId: user.id, tags: ['Private'] });
+    const auth = {
+      ...factory.auth({ user }),
+      hiddenContent: {
+        userId: user.id,
+        includeNsfw: true,
+        tagIds: [tag.id],
+        personIds: [],
+        petIds: [],
+        scope: 'owned' as const,
+      },
+    };
+    const before = await sut.getExploreData(auth);
+    expect(before.find((field) => field.fieldName === 'exifInfo.city')?.items).toHaveLength(1);
+    expect(before.find((field) => field.fieldName === 'createdAt')?.items).toHaveLength(5);
+
+    const repository = ctx.get(AssetRepository);
+    const hydrate = repository.getByIdsWithAllRelationsButStacks.bind(repository);
+    let hydration = 0;
+    let protectedId = '';
+    const intercept = vi.spyOn(repository, 'getByIdsWithAllRelationsButStacks').mockImplementation(async (...args) => {
+      if (++hydration === (fieldName === 'exifInfo.city' ? 1 : 2)) {
+        protectedId = args[0][0];
+        expect(protectedId).toBeDefined();
+        if (privacy === 'Locked') {
+          await repository.lock([protectedId], AssetLockReason.Marked, user.id);
+        } else {
+          await ctx.newTagAsset({ tagIds: [tag.id], assetIds: [protectedId] });
+        }
+      }
+      return hydrate(...args);
+    });
+    const response = await sut.getExploreData(auth);
+    intercept.mockRestore();
+    expect(protectedId).not.toBe('');
+    expect(response.find((field) => field.fieldName === fieldName)?.items).toHaveLength(
+      fieldName === 'exifInfo.city' ? 0 : 4,
+    );
+    expect(response.find((field) => field.fieldName === fieldName)?.items.map(({ data }) => data.id)).not.toContain(
+      protectedId,
+    );
+    // The owner's unlocked read still reveals the same item under the ordinary Explore policy.
+    const unlocked = await sut.getExploreData(factory.auth({ user, session: { hasElevatedPermission: true } }));
+    expect(unlocked.find((field) => field.fieldName === 'createdAt')?.items.map(({ data }) => data.id)).toContain(
+      protectedId,
+    );
+  });
 
   it('should return assets', async () => {
     const { sut, ctx } = setup();

@@ -127,6 +127,7 @@ export class SearchService extends BaseService {
     const cityAssets = await this.assetRepository.getByIdsWithAllRelationsButStacks(
       cities.items.map(({ data }) => data),
       auth.user.id,
+      { ...options, ownerId: auth.user.id },
     );
     const cityItems = cityAssets.map((asset) => ({ value: asset.exifInfo!.city!, data: mapAsset(asset, { auth }) }));
 
@@ -134,6 +135,7 @@ export class SearchService extends BaseService {
     const recentAssets = await this.assetRepository.getByIdsWithAllRelationsButStacks(
       recents.items.map((item) => item.data),
       auth.user.id,
+      { ...options, ownerId: auth.user.id },
     );
     const recentItems = recentAssets.map((asset) => ({
       value: asset.createdAt.toISOString(),
