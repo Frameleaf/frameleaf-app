@@ -197,6 +197,46 @@ changed rows, URL lookalikes, voice precedence and revision pinning;
 `tools/resource-admission.browser.mjs` checks every entrypoint's refusal path under an
 all-blocked substitute policy.
 
+Patch 0032 adds the float route and the explicit output conversion (FL-97, FL-107).
+
+- **Float route.** HDR projects, and any delivery request, render each item through
+  the participant path into rgba16float. That covers transform, keyframes and effects,
+  with masks left to the compositor. Every frame is then composited on the GPU
+  compositor with the background as the bottom layer. The Canvas2D direct path is not
+  used.
+- **Output conversion.** `ColorOutputPipeline` (`src/infrastructure/gpu-color`) is a
+  WGSL mirror of the managed-colour reference. It converts the float composite to
+  BT.2020 PQ or HLG signal, or to SDR display values. SDR display values clip, or
+  tone map with BT.2390 when the project names that policy.
+- **Renderer API.** `renderFrameSignal(frame, target)` returns straight RGBA signal.
+  If a frame cannot be composited in float, it throws rather than delivering an 8-bit
+  canvas.
+- **Native master.** `tools/hdr-master.mjs` measures CTA-861.3 MaxCLL/MaxFALL from the
+  edited frames themselves and never copies them from a source. It refuses content
+  above the declared mastering display. It encodes HEVC Main10 BT.2020 with the FL-102
+  explicit matrix/range/dither convention and HDR10 SEI (PQ) or HLG signalling, then
+  probes and decodes the result back.
+
+Tests:
+
+- `tools/color-output.browser.mjs` checks the GPU conversion against the reference.
+- `tools/hdr-signal.browser.mjs` renders an edited frame through the production
+  renderer in HDR and SDR projects.
+- `tools/hdr-master.browser.mjs` covers the edit-to-master path. It renders a cut, a
+  keyframed exposure, an HDR highlight and a linear-dodge blend. It encodes PQ and HLG
+  masters and decodes them within two 10-bit codes.
+- `tools/hdr-master.test.mjs` covers the metadata maths, refusals and a lossless round
+  trip.
+
+The engine workflow installs FFmpeg with libx265 for these tests.
+
+Not yet covered:
+
+- HDR source decode in the browser graph;
+- 4K throughput and device loss;
+- reference monitor review;
+- a render worker that streams frames to the encoder.
+
 `frameleaf-source.json` records all adapted input hashes. `frameleaf-build.json` records the sorted output hashes/digest, upstream and patch identities, toolchain/platform, and every direct/transitive/optional/development package's lockfile license declaration. Missing declarations remain `UNDECLARED`. The original MIT license and bundled SoundTouch/WebSR notices are retained. These records do not establish redistribution approval, including for external models, fonts and assets.
 
 The dedicated read-only Actions workflow runs the upstream unit and Node headless contracts, builds twice from separately prepared workspaces, compares artifact digests, and rechecks the complete original snapshot. Both build manifests are retained even on comparison failure, and mismatches report the affected artifact paths. Uploaded provenance is build evidence only after the exact candidate passes. Browser/GPU/media headless tests, full feature conformance, HDR/Dolby qualification and application integration remain separate gates.
