@@ -85,7 +85,17 @@
   };
 
   const onFirstLogin = () => goto(Route.changePassword());
-  const onOnboarding = () => goto(Route.onboarding());
+  /**
+   * FL-146 (FL-30): the page the person asked for, carried through the one-time setup so they land on
+   * it afterwards; nothing when that is the Library anyway.
+   */
+  const setupContinue = () => {
+    const requested = oauth.isCallback(location) ? getOAuthContinue(data.continueUrl) : data.continueUrl;
+    const target = new URL(String(requested), location.href);
+    const path = target.pathname + target.search + target.hash;
+    return path === Route.photos() ? undefined : path;
+  };
+  const onOnboarding = () => goto(Route.onboarding({ continue: setupContinue() }));
 
   const finishUser = async (user: LoginResponseDto) => {
     if (!user.isOnboarded) {

@@ -53,6 +53,18 @@ describe('/auth/onboarding (FL-176)', () => {
     expect(sdkMock.getFrameleafSetup).not.toHaveBeenCalled();
   });
 
+  it('passes on where sign-in was going, only within this app (FL-146, FL-30)', async () => {
+    auth.user.isAdmin = false;
+    const at = (query: string) =>
+      load({
+        parent: () => Promise.resolve({}),
+        url: new URL(`http://localhost/auth/onboarding${query}`),
+      } as never) as Promise<Record<string, unknown>>;
+    await expect(at('?continue=%2Falbums%3Ffrom%3Dshare')).resolves.toMatchObject({ continueTo: '/albums?from=share' });
+    await expect(at('?continue=https%3A%2F%2Fevil.example%2Fsteal')).resolves.toMatchObject({ continueTo: '/photos' });
+    await expect(at('')).resolves.toMatchObject({ continueTo: '/photos' });
+  });
+
   it('gives an administrator the tool once setup is complete', async () => {
     server.value = { isInitialized: true, isOnboarded: true };
     await expect(run()).resolves.toMatchObject({ mode: 'account' });
