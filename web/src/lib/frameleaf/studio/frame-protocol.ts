@@ -22,11 +22,13 @@ import type {
   StudioNavigationTarget,
   StudioNotificationTone,
   StudioProjectHandle,
+  StudioProjectImportRef,
+  StudioProjectImportUpload,
   StudioWorkspaceSaveResult,
 } from './host-contract';
 
 /** Bumped when a message changes shape; a frame built for another version is refused. */
-export const STUDIO_FRAME_PROTOCOL_VERSION = 4;
+export const STUDIO_FRAME_PROTOCOL_VERSION = 5;
 
 /** The engine build publishes this next to its documents (`/studio-engine/manifest.json`). */
 export interface StudioFrameManifest {
@@ -52,6 +54,8 @@ export interface StudioFrameServiceCalls {
   reloadProject: { args: []; result: StudioProjectHandle };
   authorizeGeneratedMedia: { args: []; result: boolean };
   saveWorkspace: { args: [layout: unknown]; result: StudioWorkspaceSaveResult };
+  /** Protocol 5 (FL-103 / FL-105): keep a file imported in the editor with the project. */
+  uploadProjectImport: { args: [upload: StudioProjectImportUpload]; result: StudioProjectImportRef };
 }
 
 export type StudioFrameServiceName = keyof StudioFrameServiceCalls;
@@ -126,6 +130,34 @@ export interface StudioFrameHello {
   protocolVersion: number;
   engineRevision: string;
 }
+
+const UUID = /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i;
+
+/** Bytes, recognised by shape: a Blob cloned across a port can come from another realm. */
+const isBlobLike = (value: unknown): value is Blob =>
+  !!value &&
+  typeof value === 'object' &&
+  typeof (value as Blob).size === 'number' &&
+  typeof (value as Blob).type === 'string' &&
+  typeof (value as Blob).arrayBuffer === 'function' &&
+  typeof (value as Blob).slice === 'function';
+
+/** Check what the editor sent before it reaches the server: an id, a name and bytes. */
+export const isStudioProjectImportUpload = (value: unknown): value is StudioProjectImportUpload => {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  const upload = value as Record<string, unknown>;
+  return (
+    typeof upload.id === 'string' &&
+    UUID.test(upload.id) &&
+    typeof upload.fileName === 'string' &&
+    upload.fileName.length > 0 &&
+    upload.fileName.length <= 255 &&
+    isBlobLike(upload.file) &&
+    upload.file.size > 0
+  );
+};
 
 export const isStudioFrameHello = (value: unknown): value is StudioFrameHello => {
   if (!value || typeof value !== 'object') {

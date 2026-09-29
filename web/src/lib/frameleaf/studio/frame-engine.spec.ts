@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { Blob as NodeBlob } from 'node:buffer';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { websocketEvents, websocketStore } from '$lib/stores/websocket';
 import { clearStudioEngine, loadStudioEngine, pinnedFreecutRevision, registerStudioEngine } from './engine-loader';
@@ -247,6 +248,55 @@ describe('studio editor frame (FL-88)', () => {
     expect(host.reportTransport).toHaveBeenNthCalledWith(2, { playing: false, time: { num: 4, den: 1 }, seek: false });
     // What the editor measured at mount reaches the host, so it can open the server preview itself.
     expect(host.reportLocalPreviewSupport).toHaveBeenCalledWith({ webCodecs: true, webGpu: false });
+    await instance.dispose();
+  });
+
+  it('passes a well-formed project import to the host and refuses anything else (FL-103 / FL-105)', async () => {
+    const frame = fakeFrame();
+    const kept = {
+      id: '4b0f4b2e-5d3a-4c55-9e0e-6b9f4c7d8e01',
+      kind: 'audio',
+      name: 'take.webm',
+      mimeType: 'audio/webm',
+      sizeBytes: 3,
+      url: '/api/studio/projects/p/imports/4b0f4b2e-5d3a-4c55-9e0e-6b9f4c7d8e01/file',
+    } as const;
+    const host = { ...services(), uploadProjectImport: vi.fn().mockResolvedValue(kept) };
+    const instance = await createFrameStudioEngine({ manifest, createFrame: frame.createFrame }).mount(
+      newStage(),
+      context(),
+      host,
+    );
+    const port = frame.port()!;
+    const results: Array<{ callId?: number; ok?: boolean; value?: unknown; error?: string }> = [];
+    port.addEventListener('message', (event: MessageEvent) => {
+      results.push(event.data);
+    });
+    // Node's own Blob, which its MessagePort can clone; jsdom's cannot cross a port in tests.
+    const file = new NodeBlob([new Uint8Array([1, 2, 3])], { type: 'audio/webm' }) as unknown as Blob;
+    const good = { id: kept.id, fileName: 'take.webm', file };
+    const calls: Array<[number, unknown]> = [
+      [21, good],
+      [22, { ...good, id: '../../etc' }],
+      [23, { ...good, file: 'not bytes' }],
+      [24, { ...good, fileName: '' }],
+      [25, { ...good, file: new NodeBlob([]) }],
+      [26, null],
+    ];
+    for (const [callId, upload] of calls) {
+      port.postMessage({ type: 'service', callId, name: 'uploadProjectImport', args: [upload] });
+    }
+    await tick();
+    await tick();
+
+    expect(host.uploadProjectImport).toHaveBeenCalledTimes(1);
+    expect(host.uploadProjectImport.mock.calls[0][0]).toMatchObject({ id: kept.id, fileName: 'take.webm' });
+    expect(results).toContainEqual({ type: 'service-result', callId: 21, ok: true, value: kept });
+    for (const callId of [22, 23, 24, 25, 26]) {
+      expect(results).toContainEqual(
+        expect.objectContaining({ type: 'service-result', callId, ok: false, error: 'Invalid project import' }),
+      );
+    }
     await instance.dispose();
   });
 
