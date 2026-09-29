@@ -37,11 +37,14 @@
   // Deliberately not $state: it steers the next open only and must not re-run the effect.
   let pendingFocus: 'first' | 'last' = 'first';
 
-  const itemsOf = (menu: HTMLElement) => [...menu.querySelectorAll<HTMLElement>('[role^="menuitem"]')];
+  const itemsOf = (menu: HTMLElement) => [
+    ...menu.querySelectorAll<HTMLElement>('[role^="menuitem"]:not([aria-disabled="true"]):not(:disabled)'),
+  ];
 
   const focusItem = (menu: HTMLElement, index: number) => {
     const items = itemsOf(menu);
     if (items.length === 0) {
+      menu.focus();
       return;
     }
     items[(index + items.length) % items.length].focus();
@@ -164,7 +167,7 @@
     {#if trigger}{@render trigger()}{:else}{label}{/if}
   </button>
   {#if open}
-    <div bind:this={menuElement} id={menuId} role="menu" aria-label={label} class:end={align === 'end'}>
+    <div bind:this={menuElement} id={menuId} role="menu" aria-label={label} tabindex="-1" class:end={align === 'end'}>
       {@render children()}
     </div>
   {/if}
