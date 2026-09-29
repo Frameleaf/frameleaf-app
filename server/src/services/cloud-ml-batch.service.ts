@@ -945,6 +945,24 @@ export class CloudMlBatchService extends BaseService {
   }
 
   /** Admission for this batch's destination, with the kill switch; never another destination. */
+  /**
+   * FL-201: before a created batch job's photos leave this server, admission runs again. A lasting
+   * refusal, such as consent that is missing or older than the version the cloud now requires
+   * (`consent-version-outdated`), cancels and releases the cloud job, then fails the batch; nothing more
+   * is sent. A passing refusal (the cloud unreachable) leaves the job for the next attempt.
+   */
+  private async readmitBatch(run: BatchRun, gateway: CloudMlGateway, jobId: string) {
+    try {
+      await this.admitBatch(run);
+    } catch (error) {
+      const refusal = batchRefusalOf(error);
+      if (refusal && !refusal.transient) {
+        await this.release(gateway, run.operation.id, jobId, true);
+      }
+      throw error;
+    }
+  }
+
   private async admitBatch(run: BatchRun): Promise<MlSelection> {
     const selection = await this.admit(run.snapshot.destinationId, run.operation.id);
     if (selection.kind !== MlDestinationKind.FrameleafCloud) {
@@ -1291,6 +1309,8 @@ export class CloudMlBatchService extends BaseService {
       throw new BatchRefusal('cloud_description_no_job', 'This batch has no cloud job to read', false);
     }
     if (!job.started) {
+      // FL-201: a batch resumed later sends photos only under the consent in force now
+      await this.readmitBatch(run, gateway, job.jobId);
       await this.transfer(run, gateway, null);
       return false;
     }

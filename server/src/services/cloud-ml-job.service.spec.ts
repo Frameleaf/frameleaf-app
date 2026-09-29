@@ -489,6 +489,15 @@ describe(CloudMlJobService.name, () => {
   });
 
   describe('estimate', () => {
+    it('prepares and sends nothing when the consent is older than the version the cloud requires (FL-201)', async () => {
+      const stale = { ...cloud, consentVersion: '2026-09-01.1' };
+      mocks.mlDestination.getAll.mockResolvedValue([stale]);
+      mocks.mlDestination.getById.mockResolvedValue(stale);
+
+      await expect(sut.estimate(owner, preview(), now)).rejects.toThrow(/consent-version-outdated/);
+      expect(mocks.frameleafCloudMl.createEstimate).not.toHaveBeenCalled();
+    });
+
     it('shows GPU time × rate + start fees as p50–p90, a per-minute estimate, the workers and the wallet', async () => {
       const estimate = await sut.estimate(owner, preview({ upscale: 2 }), now);
 
@@ -966,6 +975,60 @@ describe(CloudMlJobService.name, () => {
       expect(written().uploads.v1.parts).toHaveLength(2);
       expect(mocks.frameleafCloudMl.startJob).toHaveBeenCalledWith(expect.anything(), JOB_ID);
     });
+
+    it('never submits a queued job once its consent is older than the version the cloud requires (FL-201)', async () => {
+      const stale = { ...cloud, consentVersion: '2026-09-01.1' };
+      mocks.mlDestination.getAll.mockResolvedValue([stale]);
+      mocks.mlDestination.getById.mockResolvedValue(stale);
+
+      await sut.step(claimed(), 'claim', now);
+
+      expect(mocks.frameleafCloudMl.createJob).not.toHaveBeenCalled();
+      expect(mocks.frameleafCloudMl.uploadInput).not.toHaveBeenCalled();
+      expect(mocks.mediaOperation.fail).toHaveBeenCalledWith(
+        OPERATION_ID,
+        'claim',
+        expect.objectContaining({ errorCode: 'cloud_ml_consent_version_outdated' }),
+        { retry: false },
+      );
+    });
+
+    it.each([
+      [
+        'older than the version the cloud now requires',
+        { consentVersion: '2026-09-01.1' },
+        'cloud_ml_consent_version_outdated',
+      ],
+      ['withdrawn', { consentAcknowledgedAt: null, consentVersion: null }, 'cloud_ml_consent_missing'],
+    ])(
+      'sends nothing more and cancels the cloud job when a resumed upload finds consent %s (FL-201)',
+      async (_case, change, code) => {
+        const stale = { ...cloud, ...change };
+        mocks.mlDestination.getAll.mockResolvedValue([stale]);
+        mocks.mlDestination.getById.mockResolvedValue(stale);
+
+        await sut.step(
+          claimed({
+            phase: CloudMlJobPhase.Uploading,
+            submission: { ...confirmed().submission!, idempotencyKey: OPERATION_ID, attemptedAt: now.toISOString() },
+            job: { ...runningRecord(), status: 'awaiting_upload' },
+            uploads: { v1: { done: false, parts: [{ partNumber: 1, etag: '"e1"' }] } },
+          }),
+          'claim',
+          now,
+        );
+
+        expect(mocks.frameleafCloudMl.uploadInput).not.toHaveBeenCalled();
+        expect(mocks.frameleafCloudMl.startJob).not.toHaveBeenCalled();
+        expect(mocks.frameleafCloudMl.cancelJob).toHaveBeenCalledWith(expect.anything(), JOB_ID);
+        expect(mocks.mediaOperation.fail).toHaveBeenCalledWith(
+          OPERATION_ID,
+          'claim',
+          expect.objectContaining({ errorCode: code }),
+          { retry: false },
+        );
+      },
+    );
 
     it('waits to be admitted while the region takes no new jobs, then fails with the cloud’s own words (FC-62)', async () => {
       const paused = () =>
