@@ -1,7 +1,7 @@
 import { getConfig, getConfigDefaults, LoginResponseDto, updateConfig, VersionCheckFrequency } from '@immich/sdk';
 import { expect, Page, test } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
-import { asBearerAuth, utils } from 'src/utils.js';
+import { asBearerAuth, baseUrl, utils } from 'src/utils.js';
 
 /**
  * FL-71: the Command Center settings (`/user-settings?area=<area>&section=<section>`). Every page
@@ -304,7 +304,10 @@ test.describe('Command Center settings', () => {
     await other.close();
   });
 
-  test('recovers a two-page draft, reviews a conflict, and resets only one page', async ({ page }) => {
+  test('recovers a two-page draft, reviews a second-admin conflict, and resets only one page', async ({
+    browser,
+    page,
+  }) => {
     const defaults = await getConfigDefaults({ headers: asBearerAuth(admin.accessToken) });
     const savedDays = defaults.trash.days + 15;
     await setTrashDays(admin, savedDays);
@@ -325,8 +328,25 @@ test.describe('Command Center settings', () => {
     const bar = page.getByRole('region', { name: labels.bar });
     await expect(bar).toBeVisible();
 
-    // A second administrator changes one drafted value while both pages are still unsaved.
-    await setTrashDays(admin, otherDays);
+    // A different account saves in an isolated browser while both draft pages remain unsaved.
+    const secondAdmin = await utils.userSetup(admin.accessToken, {
+      email: 'second-admin@example.com',
+      name: 'Second administrator',
+      password: 'password',
+      isAdmin: true,
+    });
+    const otherContext = await browser.newContext({ baseURL: baseUrl });
+    try {
+      await utils.setAuthCookies(otherContext, secondAdmin.accessToken);
+      const otherPage = await otherContext.newPage();
+      await otherPage.goto(trashUrl);
+      await expect(otherPage.getByLabel(labels.trashDays)).toHaveValue(String(savedDays));
+      await otherPage.getByLabel(labels.trashDays).fill(String(otherDays));
+      await reviewAndSave(otherPage);
+      await expect.poll(() => savedTrashDays(admin)).toBe(otherDays);
+    } finally {
+      await otherContext.close();
+    }
     page.once('dialog', (dialog) => dialog.accept());
     await page.reload();
     await expect(page.getByText('Recovered 2 unsaved changes from before the page reloaded.')).toBeVisible();
