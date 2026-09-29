@@ -49,7 +49,12 @@
       "path": "patches/0009-lut-cache-size.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "5cb44300e559c29be2e22782b7e42b5a380f057d2f706fa5ced858a25d9fabe0"
+    },
+    {
+      "path": "patches/0010-expression-dependency-errors.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "beb0a25e842f901fc1d438cc363a3a2dd67903e725ac58637f9170a4af038422"
     }
   ],
-  "sourceSha256": "e422aed72e061bbd6236b260f913ec9ae0fd975d001b544c73d5bf5520f16b4c"
+  "sourceSha256": "407b129d0c8dfffab28d89992fcfae7d2f97088289aabecc0479f12731fab57c"
 }

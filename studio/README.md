@@ -48,6 +48,14 @@ node studio/tools/feature-manifest.mjs --check
 
 Preparation rejects an existing `studio/engine`; preserve any work before explicitly removing that generated directory. It never installs into `studio/vendor/freecut`, applies patches there, or rewrites an existing snapshot. The recovered archive must match its pinned digest and all 2,646 paths and hashes, with no extra files or symlinks. Vendored assistant instructions remain upstream data and are not Frameleaf authority.
 
+Patch 0010 propagates expression dependency failures through scalar and vector references, so
+cycles, invalid arithmetic and incompatible result types retain the referring property's authored
+value and expose the original error in the inspector. The MIT notice in `notices/freecut.txt`
+continues to cover the adapted source. Its regression fixtures exercise render and inspector
+evaluation plus valid references; hosted execution remains required. This does not qualify the
+full expression sandbox, graph-review admission, nested Compose or the other expression
+conformance axes, which remain unqualified in `conformance.json`.
+
 `frameleaf-source.json` records all adapted input hashes. `frameleaf-build.json` records the sorted output hashes/digest, upstream and patch identities, toolchain/platform, and every direct/transitive/optional/development package's lockfile license declaration. Missing declarations remain `UNDECLARED`. The original MIT license and bundled SoundTouch/WebSR notices are retained. These records do not establish redistribution approval, including for external models, fonts and assets.
 
 The dedicated read-only Actions workflow runs the upstream unit and Node headless contracts, builds twice from separately prepared workspaces, compares artifact digests, and rechecks the complete original snapshot. Both build manifests are retained even on comparison failure, and mismatches report the affected artifact paths. Uploaded provenance is build evidence only after the exact candidate passes. Browser/GPU/media headless tests, full feature conformance, HDR/Dolby qualification and application integration remain separate gates.
