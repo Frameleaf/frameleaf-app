@@ -119,7 +119,12 @@
       "path": "patches/0023-export-subtitle-admission.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "1659ceda6602c10e6948efa70eaec917ea4a1e993ef8d0f6a6793d991450d13c"
+    },
+    {
+      "path": "patches/0024-project-master-mute.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "cfb4b7914ab47d57a97332aa0e11f275a59af04eabf5a0968c6f20cb36f2a4b1"
     }
   ],
-  "sourceSha256": "a3d5524db54939e7dffb35ed56b61046e5cbc6ed13c0e9ce205ba5b45c25bdf2"
+  "sourceSha256": "e63990bf8ced2db5679f4fc5f29233c8087fe547855a5b14a760d8cf746006cd"
 }

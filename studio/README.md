@@ -102,6 +102,16 @@ also checks output format for direct callers, while the export frame-rate ceilin
 admission so internal high-frame-rate reverse previews can render. Hosted regressions cover these
 boundaries; real codec output, subtitle playback and the full export matrix remain unqualified.
 
+Patch 0024 makes the mixer's Master mute a project setting, preserved through saved timelines,
+undo/redo, preview audio/video/skimming, queued/client export and headless rendering. Device
+monitor volume and mute stay outside the project and export mix. Both original-byte smart copy
+and audio-packet passthrough are refused for a muted master. Export preflight reads the same
+selected-sequence master settings. Sequence history restores project mute only for commands
+that changed it, and skim meters retain their pre-monitor signal on a silent device. Hosted regressions cover preview
+silence, full/windowed export silence, monitor independence, history, persistence and legacy defaults.
+These regressions have not yet run for this candidate; worker/browser/audio-output qualification
+and the broader preview/layout/scope requirements remain open.
+
 `frameleaf-source.json` records all adapted input hashes. `frameleaf-build.json` records the sorted output hashes/digest, upstream and patch identities, toolchain/platform, and every direct/transitive/optional/development package's lockfile license declaration. Missing declarations remain `UNDECLARED`. The original MIT license and bundled SoundTouch/WebSR notices are retained. These records do not establish redistribution approval, including for external models, fonts and assets.
 
 The dedicated read-only Actions workflow runs the upstream unit and Node headless contracts, builds twice from separately prepared workspaces, compares artifact digests, and rechecks the complete original snapshot. Both build manifests are retained even on comparison failure, and mismatches report the affected artifact paths. Uploaded provenance is build evidence only after the exact candidate passes. Browser/GPU/media headless tests, full feature conformance, HDR/Dolby qualification and application integration remain separate gates.
