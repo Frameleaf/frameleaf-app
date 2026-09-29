@@ -270,6 +270,10 @@ export const getAssetPlaybackUrl = (options: AssetUrlOptions) => {
   });
 };
 
+/** FL-97: the Studio HDR intermediate of an HDR original, read under asset.view; never the original. */
+export const getStudioHdrVideoUrl = (id: string) =>
+  createUrl(`/assets/${id}/video/studio-hdr`, { ...authManager.params });
+
 /**
  * FL-103 / FL-105: the bytes of a file kept with a Studio project, for its owner's editor. A plain
  * same-origin path: the owner's session cookie authorizes it, and no key, slug or token is added

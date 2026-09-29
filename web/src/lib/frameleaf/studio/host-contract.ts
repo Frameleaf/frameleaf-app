@@ -83,6 +83,12 @@ export interface StudioAssetRef {
    * The playback stream the engine reads is not the original, so it cannot tell by itself.
    */
   hdr?: boolean;
+  /**
+   * FL-97: the Studio HDR intermediate of an HDR original (10-bit BT.2020 PQ/HLG, no metadata),
+   * once the server has made it (`resources.hdrProxySources`). An HDR project decodes it for real
+   * HDR pixels; until then the engine reads the SDR playback stream.
+   */
+  hdrSourceUrl?: string;
 }
 
 /**
