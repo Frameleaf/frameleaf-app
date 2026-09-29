@@ -378,6 +378,38 @@ describe('canonical commands on the Freecut engine (FL-92)', () => {
     expect(itemsOf(removed.project).map((item) => item.id)).toEqual([right!.id])
   })
 
+  it.each([
+    ['start', false], ['start', true], ['end', false], ['end', true],
+  ] as const)('refuses partial %s trims and recovers with exact ranges (ripple %s, FL-94)', async (edge, ripple) => {
+    const added = await applied(project(), [
+      envelope('clip.add', { trackId: 'v1', assetId: ASSET, at: seconds(2) }),
+    ])
+    const video = itemsOf(added.project).find((item) => item.type === 'video')!
+    const command = edge === 'start' ? 'clip.trimStart' : 'clip.trimEnd'
+    const trimmed = await applied(added.project, [
+      envelope(command, { clipId: video.id, [edge]: seconds(edge === 'start' ? 4 : 6) }),
+    ])
+    const before = structuredClone(trimmed.project)
+    await expect(applyCanonicalCommands(trimmed.project, [
+      envelope(command, { clipId: video.id, [edge]: seconds(edge === 'start' ? 0 : 12), ripple }),
+    ], media)).resolves.toMatchObject({ status: 'rejected', index: 0, reason: 'failed' })
+    expect(trimmed.project).toEqual(before)
+
+    // Half-frame requests round up on the project cadence before the exact-range check.
+    const accepted = await applied(trimmed.project, [
+      envelope(command, { clipId: video.id, [edge]: seconds(edge === 'start' ? 181 : 481, 60), ripple }),
+    ])
+    const parts = itemsOf(accepted.project)
+    expect(parts).toHaveLength(2)
+    for (const part of parts) {
+      expect(part).toMatchObject(edge === 'start'
+        ? { from: ripple ? 120 : 91, durationInFrames: 209, sourceStart: 31, sourceEnd: 240 }
+        : { from: 60, durationInFrames: 181, sourceStart: 0, sourceEnd: 181 })
+    }
+    expect(parts[0]!.linkedGroupId).toBeTruthy()
+    expect(parts[0]!.linkedGroupId).toBe(parts[1]!.linkedGroupId)
+  })
+
   it('adds and removes effects and keyframes, sets transforms and tracks', async () => {
     const start = await applied(project(), [
       envelope(

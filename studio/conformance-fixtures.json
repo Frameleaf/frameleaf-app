@@ -29,6 +29,7 @@
         "linked-av",
         "split",
         "linked-multiselection-split",
+        "exact-trim-range",
         "join",
         "ripple",
         "rolling",
