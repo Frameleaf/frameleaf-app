@@ -14,8 +14,8 @@
    * way the prototype previews it: turns, flips, straighten and crop as geometry, the develop
    * sliders and looks as the CSS approximation, and the text overlays on their 3 × 3 grid. Under
    * the stage sit the transport and a filmstrip of real frames with trim handles, speed-range bands
-   * and the playhead. The rail offers Trim, Speed, Adjust, Crop, Audio, Text, Enhance and Presets,
-   * plus Restore (E-9, owner decision pending). Save version stores the recipe against the original
+   * and the playhead. The rail offers the prototype's eight tools: Trim, Speed, Adjust, Crop, Audio,
+   * Text, Enhance and Presets (E-9). Save version stores the recipe against the original
    * and the server renders a new version; the original file is never changed.
    */
   import { goto } from '$app/navigation';
@@ -150,7 +150,7 @@
   } = $props();
   const privateStateGeneration = getPrivateBrowserStateGeneration();
 
-  // Editor.jsx TOOLS (lines 46-55), in the prototype's order; Restore follows as on photos (E-9).
+  // Editor.jsx TOOLS (lines 46-55), exactly the prototype's eight, in its order (E-9).
   const tools: { id: Tool; label: Translations; icon: string }[] = [
     { id: 'trim', label: 'frameleaf_video_editor_tool_trim', icon: mdiContentCut },
     { id: 'speed', label: 'frameleaf_video_editor_tool_speed', icon: mdiSpeedometer },
