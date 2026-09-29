@@ -65,6 +65,7 @@ import { StudioBundleController } from 'src/controllers/studio-bundle.controller
 import { StudioExportController } from 'src/controllers/studio-export.controller.js';
 import { StudioPreviewStreamController } from 'src/controllers/studio-preview-stream.controller.js';
 import { StudioPreviewController } from 'src/controllers/studio-preview.controller.js';
+import { StudioProjectImportController } from 'src/controllers/studio-project-import.controller.js';
 import { StudioProjectController } from 'src/controllers/studio-project.controller.js';
 import { StudioSourceController } from 'src/controllers/studio-source.controller.js';
 import { StudioWorkspaceController } from 'src/controllers/studio-workspace.controller.js';
@@ -153,6 +154,7 @@ export const controllers = [
   StudioExportController,
   StudioPreviewController,
   StudioPreviewStreamController,
+  StudioProjectImportController,
   StudioProjectController,
   StudioSourceController,
   StudioWorkspaceController,

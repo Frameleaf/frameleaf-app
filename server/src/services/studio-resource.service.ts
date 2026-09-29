@@ -677,8 +677,11 @@ export class StudioResourceService extends BaseService {
             refuse(reference, declared.reason, declared.detail);
             break;
           }
-          if (reference.kind === StudioResourceKind.VectorGraphic) {
-            if (!vectorContentTypes.has(declared.item.contentType)) {
+          // FL-105: an SVG or Lottie import is a vector graphic however the graph names it, so its
+          // external subresources are refused on every path, not only through `$resource`.
+          const isVector = vectorContentTypes.has(declared.item.contentType);
+          if (reference.kind === StudioResourceKind.VectorGraphic || isVector) {
+            if (!isVector) {
               refuse(
                 reference,
                 StudioRefusalReason.UnsupportedMediaType,

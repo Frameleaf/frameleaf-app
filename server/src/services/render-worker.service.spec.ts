@@ -211,6 +211,7 @@ describe(RenderWorkerService.name, () => {
   let studioStreams: Record<'workerSignal' | 'workerOffer', ReturnType<typeof vi.fn>>;
   let studioProjects: {
     listGeneratedResources: ReturnType<typeof vi.fn>;
+    listImportDeclarations: ReturnType<typeof vi.fn>;
     getById: ReturnType<typeof vi.fn>;
     getRevision: ReturnType<typeof vi.fn>;
   };
@@ -286,6 +287,7 @@ describe(RenderWorkerService.name, () => {
     };
     studioProjects = {
       listGeneratedResources: vi.fn().mockResolvedValue([]),
+      listImportDeclarations: vi.fn().mockResolvedValue([]),
       getById: vi.fn().mockResolvedValue(undefined),
       getRevision: vi.fn().mockResolvedValue(undefined),
     };

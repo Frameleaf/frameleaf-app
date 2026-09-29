@@ -234,6 +234,7 @@ describe(StudioPreviewService.name, () => {
       getById: vi.fn().mockResolvedValue(stored.project),
       getRevision: vi.fn().mockResolvedValue({ ...stored.revision, envelope: stored.envelope }),
       listGeneratedResources: vi.fn().mockResolvedValue([]),
+      listImportDeclarations: vi.fn().mockResolvedValue([]),
     };
     // A fresh resolution changes the signed manifest digest, just as a new issue timestamp does.
     let issued = 0;
