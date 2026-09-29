@@ -1,5 +1,5 @@
 import { Kysely, sql } from 'kysely';
-import { AssetLockReason, AssetVisibility, UserMetadataKey } from 'src/enum.js';
+import { AssetLockReason, AssetVisibility, Permission, UserMetadataKey } from 'src/enum.js';
 import { getCatalogEvidence } from 'src/fork-schema/catalog.js';
 import manifest from 'src/fork-schema/manifests/fork-v2-catalog.json' with { type: 'json' };
 import * as migration from 'src/fork-schema/migrations/0000000000206-AssetUserShares.js';
@@ -13,6 +13,7 @@ import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
 import { ItemShareService } from 'src/services/item-share.service.js';
+import { checkAccess } from 'src/utils/access.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { factory } from 'test/small.factory.js';
 import { getKyselyDB } from 'test/utils.js';
@@ -193,6 +194,50 @@ it('excludes Hidden shares from recipient reads while keeping a visible Live Pho
     access.asset.checkItemShareAccess(jamie.id, new Set([hidden.id, changing.id, still.id, motion.id])),
   ).resolves.toEqual(new Set([still.id, motion.id]));
 });
+
+it.each(['locked', 'trashed', 'foreign'] as const)(
+  'refuses a shared Live Photo’s %s motion file for metadata, thumbnails and downloads',
+  async (state) => {
+    const { ctx, sut, access } = setup();
+    const { user: owner } = await ctx.newUser();
+    const { user: jamie } = await ctx.newUser();
+    const { user: other } = await ctx.newUser();
+    const { asset: motion } = await ctx.newAsset({ ownerId: owner.id, visibility: AssetVisibility.Hidden });
+    const { asset: still } = await ctx.newAsset({ ownerId: owner.id, livePhotoVideoId: motion.id });
+    await sut.add(owner.id, [still.id], [jamie.id]);
+    const auth = factory.auth({ user: jamie });
+    const permissions = [Permission.AssetRead, Permission.AssetView, Permission.AssetDownload];
+    for (const permission of permissions) {
+      await expect(checkAccess(access, { auth, permission, ids: [still.id, motion.id] })).resolves.toEqual(
+        new Set([still.id, motion.id]),
+      );
+    }
+
+    if (state === 'locked') {
+      await lock(motion.id);
+    } else {
+      await db
+        .updateTable('asset')
+        .set(state === 'trashed' ? { deletedAt: new Date() } : { ownerId: other.id })
+        .where('id', '=', motion.id)
+        .execute();
+    }
+
+    for (const permission of permissions) {
+      await expect(checkAccess(access, { auth, permission, ids: [still.id, motion.id] })).resolves.toEqual(
+        new Set([still.id]),
+      );
+      await expect(checkAccess(access, { auth, permission, ids: [motion.id] })).resolves.toEqual(new Set());
+    }
+    expect((await sut.getReceived(jamie.id)).map(({ assetId }) => assetId)).toEqual([still.id]);
+
+    await unlock(motion.id);
+    await db.updateTable('asset').set({ deletedAt: null, ownerId: owner.id }).where('id', '=', motion.id).execute();
+    for (const permission of permissions) {
+      await expect(checkAccess(access, { auth, permission, ids: [motion.id] })).resolves.toEqual(new Set([motion.id]));
+    }
+  },
+);
 
 it('leaves out trashed items and items whose owner is deleted', async () => {
   const { ctx, sut, access } = setup();

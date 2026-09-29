@@ -321,7 +321,15 @@ class AssetAccess {
             .on(sql<boolean>`"owner"."id" = "share"."ownerId"`)
             .on('owner.deletedAt', 'is', null),
         )
-        .select(['asset.id', 'asset.ownerId', 'asset.livePhotoVideoId'])
+        // The still grants only its owner's live, unlocked motion file.
+        .leftJoin('asset as motion', (join) =>
+          join
+            .onRef('motion.id', '=', 'asset.livePhotoVideoId')
+            .onRef('motion.ownerId', '=', 'asset.ownerId')
+            .on('motion.deletedAt', 'is', null)
+            .on(isNotLocked('motion')),
+        )
+        .select(['asset.id', 'asset.ownerId', 'motion.id as livePhotoVideoId'])
         .$if(!!hiddenContent, (qb) =>
           qb.select(
             hiddenContentAssetIdExists(sql.ref('asset.livePhotoVideoId'), hiddenContent!).as('isLivePhotoVideoNsfw'),
