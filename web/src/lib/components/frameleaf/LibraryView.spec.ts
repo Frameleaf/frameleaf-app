@@ -1,10 +1,12 @@
 import { AssetOrder, AssetTypeEnum, AssetVisibility } from '@immich/sdk';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { createRawSnippet, tick } from 'svelte';
+import { SvelteURL } from 'svelte/reactivity';
 import { getResizeObserverMock } from '$lib/__mocks__/resize-observer.mock';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { emptyDiscoveryQuery } from '$lib/components/discovery/query';
 import { libraryGridPreferences } from '$lib/frameleaf/library-grid-preferences.svelte';
+import { writeLibraryView } from '$lib/frameleaf/library-session';
 import { LibrarySessionStore, librarySession } from '$lib/frameleaf/library-session.svelte';
 import { applyFilterQuery } from '$lib/frameleaf/search-shortcuts';
 import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
@@ -19,10 +21,22 @@ vi.mock('$lib/managers/feature-flags-manager.svelte', () => ({
   featureFlagsManager: { init: vi.fn(), value: { smartSearch: true, trash: true, map: true } },
 }));
 
-const navigation = vi.hoisted(() => ({ goto: vi.fn() }));
+const app = vi.hoisted(() => ({
+  page: {
+    url: new URL('http://localhost/photos'),
+    route: { id: '/(user)/photos/[[assetId=id]]' },
+    params: {},
+    data: {},
+    state: {},
+  },
+}));
+vi.mock('$app/state', () => ({ page: app.page }));
+
+const navigation = vi.hoisted(() => ({ goto: vi.fn(), replaceState: vi.fn() }));
 vi.mock('$app/navigation', async (importOriginal) => ({
   ...(await importOriginal<typeof import('$app/navigation')>()),
   goto: navigation.goto,
+  replaceState: navigation.replaceState,
 }));
 
 const mediaQueries = vi.hoisted(() => ({
@@ -41,6 +55,8 @@ beforeAll(() => {
 });
 
 beforeEach(() => {
+  app.page.url = new SvelteURL('http://localhost/photos');
+  navigation.replaceState.mockReset();
   sdkMock.getTimeBuckets.mockResolvedValue([]);
 });
 
@@ -64,6 +80,61 @@ const setup = async (publicView: boolean) => {
 };
 
 describe('LibraryView', () => {
+  it('follows same-route Back and Forward views without restoring its own URL writes (FL-40)', async () => {
+    authManager.setUser(userAdminFactory.build({ id: 'owner' }));
+    authManager.setPreferences(preferencesFactory.build());
+    const session = new LibrarySessionStore({ storage: null, transientStorage: null });
+    const first = writeLibraryView(new URL('http://localhost/photos'), session.state);
+    const second = writeLibraryView(first, { ...session.state, sort: 'filename' });
+    app.page.url = new SvelteURL(first.href);
+    navigation.replaceState.mockImplementation((url: URL) => {
+      app.page.url.searchParams.set('fl', url.searchParams.get('fl') ?? '');
+    });
+    const restore = vi.spyOn(session, 'restore');
+
+    try {
+      const props = { options: {}, destination: { kind: 'library' as const }, session, noSelectionBar: true };
+      const view = render(LibraryView, props);
+      await screen.findByTestId('frameleaf-library');
+      session.select('private-asset');
+
+      app.page.url.searchParams.set('fl', second.searchParams.get('fl')!);
+      await waitFor(() => expect(session.state.sort).toBe('filename'));
+      expect(session.selection).toEqual([]);
+
+      app.page.url.searchParams.set('fl', first.searchParams.get('fl')!);
+      await waitFor(() => expect(session.state.sort).toBe('captured-desc'));
+      app.page.url.searchParams.set('fl', second.searchParams.get('fl')!);
+      await waitFor(() => expect(session.state.sort).toBe('filename'));
+
+      const restoresBeforeEdit = restore.mock.calls.length;
+      navigation.replaceState.mockClear();
+      session.patchView({ sort: 'rating' });
+      await waitFor(() => expect(navigation.replaceState).toHaveBeenCalled());
+      await tick();
+      expect(session.state.sort).toBe('rating');
+      expect(navigation.replaceState).toHaveBeenCalledTimes(1);
+      expect(restore).toHaveBeenCalledTimes(restoresBeforeEdit);
+
+      session.select('private-asset');
+      authManager.setUser(userAdminFactory.build({ id: 'second-owner' }));
+      await waitFor(() => expect(session.selection).toEqual([]));
+      expect(restore.mock.lastCall?.[1]).toBe('second-owner');
+
+      session.select('private-asset');
+      await view.rerender({ ...props, options: { withPartners: true } });
+      await waitFor(() => expect(session.selection).toEqual([]));
+
+      session.select('private-asset');
+      await view.rerender({ ...props, options: { withPartners: true }, publicView: true });
+      await waitFor(() => expect(session.selection).toEqual([]));
+      expect(restore.mock.lastCall?.[1]).toBeUndefined();
+    } finally {
+      restore.mockRestore();
+      authManager.reset();
+    }
+  });
+
   it('applies supported album filters in place and preserves the resulting session across layouts (FL-40)', async () => {
     await setup(false);
     const sort = screen.getByRole('combobox', { name: 'frameleaf_library_sort' });

@@ -256,6 +256,7 @@
   let restored = false;
   let restoredFor: string | undefined;
   let restoredContext: string | undefined;
+  let restoredView: string | null = null;
   // FL-34: mounted by the session privacy gate after the first navigation, the router is ready already
   let routerReady = $state(hasRouterStarted());
   afterNavigate(() => {
@@ -443,14 +444,19 @@
     JSON.stringify({ route: page.route?.id, options: options && { ...options, order: undefined } }),
   );
 
-  // Restore for each authenticated account context, including a transition to a public share.
+  // Restore for each account, context or explicit URL view, including Back within a mounted page.
   $effect(() => {
-    if (!browser || (restored && restoredFor === storageUserId && restoredContext === storageContext)) {
+    const urlView = page.url.searchParams.get('fl');
+    if (
+      !browser ||
+      (restored && restoredFor === storageUserId && restoredContext === storageContext && restoredView === urlView)
+    ) {
       return;
     }
     restored = true;
     restoredFor = storageUserId;
     restoredContext = storageContext;
+    restoredView = urlView;
     session.restore(page.url, storageUserId, storageContext);
     // FL-48: a link this version cannot read is refused out loud and left in the address bar, rather
     // than being quietly replaced by the stored view.
@@ -481,6 +487,8 @@
     if (syncUrl && routerReady) {
       const next = session.viewUrl(page.url);
       if (next.href !== page.url.href) {
+        // A URL we just wrote is the current session, not a new link to restore from.
+        restoredView = next.searchParams.get('fl');
         replaceState(next, page.state);
       }
     }
