@@ -744,23 +744,29 @@ export class StudioProjectRepository {
   }
 
   /**
-   * Forget the imports of projects that no longer exist (deleted for good, emptied from the trash
-   * or purged by the lifecycle sweep) and answer where their files were, for the caller to remove.
+   * Projects that no longer exist (deleted for good, emptied from the trash or purged by the
+   * lifecycle sweep) whose imports are still recorded, with their owner, for the caller to remove
+   * the files before {@link deleteImports} forgets them.
    */
-  async deleteOrphanImports(limit = 500): Promise<Array<{ projectId: string; ownerId: string; path: string }>> {
-    if (!(await canWriteFork(this.db))) {
-      return [];
-    }
-    const { rows } = await sql<{ projectId: string; ownerId: string; path: string }>`
-      DELETE FROM immich_fork.studio_project_import item
-      WHERE ("projectId", id) IN (
-        SELECT orphan."projectId", orphan.id FROM immich_fork.studio_project_import orphan
-        WHERE NOT EXISTS (SELECT 1 FROM studio_project project WHERE project.id = orphan."projectId")
-        LIMIT ${limit}
-      )
-      RETURNING item."projectId", item."ownerId", item.path
+  async listOrphanImportProjects(limit = 100): Promise<Array<{ projectId: string; ownerId: string }>> {
+    const { rows } = await sql<{ projectId: string; ownerId: string }>`
+      SELECT DISTINCT orphan."projectId", orphan."ownerId" FROM immich_fork.studio_project_import orphan
+      WHERE NOT EXISTS (SELECT 1 FROM studio_project project WHERE project.id = orphan."projectId")
+      ORDER BY orphan."projectId" LIMIT ${limit}
     `.execute(this.db);
     return rows;
+  }
+
+  /** Forget every import of a project that no longer exists; a live project's are never touched. */
+  async deleteImports(projectId: string): Promise<void> {
+    if (!(await canWriteFork(this.db))) {
+      return;
+    }
+    await sql`
+      DELETE FROM immich_fork.studio_project_import item
+      WHERE item."projectId" = ${projectId}::uuid
+        AND NOT EXISTS (SELECT 1 FROM studio_project project WHERE project.id = item."projectId")
+    `.execute(this.db);
   }
 
   /** One import of a live project, or undefined. */

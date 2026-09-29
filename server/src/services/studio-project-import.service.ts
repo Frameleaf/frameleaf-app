@@ -190,13 +190,18 @@ export class StudioProjectImportService {
    * Studio lifecycle sweep.
    */
   async sweep(now: Date = new Date()): Promise<void> {
-    const folders = new Set<string>();
-    for (const orphan of await this.projects.deleteOrphanImports()) {
-      await this.storage.unlink(orphan.path).catch(() => {});
-      folders.add(studioImportProjectFolder(orphan.ownerId, orphan.projectId));
-    }
-    for (const folder of folders) {
-      await this.storage.unlinkDir(folder, { recursive: true, force: true }).catch(() => {});
+    // Files first, rows after: a folder that cannot be removed now keeps its rows for the next sweep.
+    for (const orphan of await this.projects.listOrphanImportProjects()) {
+      try {
+        await this.storage.unlinkDir(studioImportProjectFolder(orphan.ownerId, orphan.projectId), {
+          recursive: true,
+          force: true,
+        });
+      } catch (error) {
+        this.logger.warn(`Could not remove the imports of deleted Studio project ${orphan.projectId}: ${error}`);
+        continue;
+      }
+      await this.projects.deleteImports(orphan.projectId);
     }
     const exports = StorageCore.getBaseFolder(StorageFolder.Exports);
     for (const ownerId of await this.storage.readdir(exports).catch(() => [] as string[])) {

@@ -90,6 +90,8 @@ describe('scanStudioSvg', () => {
     ['a CSS escape', String.raw`<svg><style>.a{background:\75 rl(http://evil/x.png)}</style></svg>`],
     ['a character reference', '<svg><rect fill="u&#114;l(http://evil/x.png)"/></svg>'],
     ['srcset', '<svg><image srcset="http://evil/x.png 1x"/></svg>'],
+    ['a later SMIL value', '<svg><animate attributeName="href" values="#a;//evil/x.png"/></svg>'],
+    ['a relative SMIL target', '<svg><set attributeName="href" to="x.png"/></svg>'],
   ])('counts external subresources hidden in %s', (_name, svg) => {
     expect(scanStudioSvg(svg)).toBeGreaterThan(0);
   });

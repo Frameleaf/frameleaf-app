@@ -406,7 +406,8 @@ export class StudioResourceService extends BaseService {
     }
     const distinct = new Set<string>();
     for (let index = references.length - 1; index >= 0; index--) {
-      const key = studioReferenceKey(references[index]);
+      // The extractor's own identity: an audio reference is distinct per source.
+      const key = `${studioReferenceKey(references[index])}@${references[index].source ?? ''}`;
       if (distinct.has(key)) {
         references.splice(index, 1);
       } else {
