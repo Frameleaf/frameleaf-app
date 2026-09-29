@@ -29,6 +29,7 @@ beforeEach(() => {
   sdkMock.getAssetThumbnailPath.mockImplementation((id: string) => `/assets/${id}/thumbnail`);
   sdkMock.getAllSharedLinks.mockResolvedValue([]);
   sdkMock.searchUsers.mockResolvedValue([]);
+  sdkMock.getRecipientGroups.mockResolvedValue([]);
   sdkMock.getItemShares.mockResolvedValue([]);
   addMessages('dev', en);
 });
@@ -116,6 +117,7 @@ describe('ShareSheet', () => {
 
     it('can revoke an existing share when the user directory is private', async () => {
       sdkMock.searchUsers.mockResolvedValue([person('me', 'Taylor')]);
+      sdkMock.getRecipientGroups.mockRejectedValueOnce(new Error('Unavailable'));
       sdkMock.getItemShares.mockResolvedValue([
         { id: 's1', assetId: 'a1', sharedWith: person('jamie', 'Jamie'), createdAt: '' },
       ]);
@@ -131,6 +133,34 @@ describe('ShareSheet', () => {
         itemShareChangeDto: { assetIds: ['a1'], userIds: ['jamie'] },
       });
       expect(sdkMock.shareItems).not.toHaveBeenCalled();
+    });
+
+    it('creates a new share with a saved recipient when the user directory is private', async () => {
+      sdkMock.searchUsers.mockResolvedValue([person('me', 'Taylor')]);
+      sdkMock.getRecipientGroups.mockResolvedValue([
+        {
+          id: 'g1',
+          name: 'Family',
+          users: [person('me', 'Taylor'), person('jamie', 'Jamie')],
+          createdAt: '',
+          updatedAt: '',
+        },
+        { id: 'g2', name: 'Friends', users: [person('jamie', 'Jamie')], createdAt: '', updatedAt: '' },
+      ]);
+      sdkMock.shareItems.mockResolvedValue({ shares: [], added: 1, removed: 0, link: null });
+      render(ShareSheet, { open: true, assetIds: ['a1'] });
+
+      const group = await screen.findByRole('group', { name: en.frameleaf_sharing.people_to_share_with });
+      expect(within(group).getAllByRole('button')).toHaveLength(1);
+      const jamie = within(group).getByRole('button', { name: 'Jamie' });
+      expect(jamie).toHaveAttribute('aria-pressed', 'false');
+      await fireEvent.click(jamie);
+      await fireEvent.click(screen.getByRole('button', { name: 'Share with Jamie' }));
+
+      expect(sdkMock.shareItems).toHaveBeenCalledWith({
+        itemShareChangeDto: { assetIds: ['a1'], userIds: ['jamie'] },
+      });
+      expect(sdkMock.unshareItems).not.toHaveBeenCalled();
     });
 
     it('reloads sharing after a cancelled draft is reopened', async () => {
