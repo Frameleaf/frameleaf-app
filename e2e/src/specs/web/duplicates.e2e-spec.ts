@@ -236,6 +236,95 @@ test.describe('Duplicate review', () => {
     await expect(playTogether).toBeFocused();
   });
 
+  test('keeps keyboard focus through a virtualized queue and decides the offscreen group', async ({ page }) => {
+    test.setTimeout(180_000);
+    const seededIds = new Set<string>();
+    for (let start = 0; start < 24; start += 4) {
+      const ids = await Promise.all(
+        Array.from({ length: 4 }, async (_, offset) => {
+          const index = start + offset;
+          const [first, second] = await Promise.all([
+            utils.createAsset(admin.accessToken, { assetData: { filename: `queue-${index}-first.png` } }),
+            utils.createAsset(admin.accessToken, { assetData: { filename: `queue-${index}-second.png` } }),
+          ]);
+          const duplicateId = crypto.randomUUID();
+          await updateAssets(
+            { assetBulkUpdateDto: { ids: [first.id, second.id], duplicateId } },
+            { headers: asBearerAuth(admin.accessToken) },
+          );
+          return duplicateId;
+        }),
+      );
+      ids.forEach((id) => seededIds.add(id));
+    }
+
+    const groups = await reviewGroups();
+    const seededGroups = groups.filter((group) => seededIds.has(group.duplicateId));
+    expect(seededGroups).toHaveLength(24);
+    const groupByTitle = new Map(
+      seededGroups.flatMap((group) =>
+        group.assets.map((asset) => [asset.originalFileName.replace(/\.[^.]+$/, ''), group] as const),
+      ),
+    );
+
+    await page.goto('/utilities/duplicates');
+    const review = page.getByTestId('frameleaf-duplicate-review');
+    const heading = review.getByRole('heading', { level: 2 });
+    const queue = review.locator('.fl-dr-queue-scroll');
+    await expect(heading).toBeVisible();
+    const renderedRowCount = await queue.locator('.fl-dr-queue-row').count();
+    const initiallyRendered = new Set(
+      (await queue.locator('.fl-dr-queue-row strong').allTextContents()).map((title) => title.trim()),
+    );
+    expect(renderedRowCount).toBeGreaterThan(0);
+    expect(renderedRowCount).toBeLessThan(groups.length);
+
+    await heading.focus();
+    let target: (typeof seededGroups)[number] | undefined;
+    let targetTitle = '';
+    for (let step = 0; step < groups.length; step++) {
+      await page.keyboard.press('ArrowRight');
+      await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+      targetTitle = (await heading.textContent())?.trim() ?? '';
+      const candidate = groupByTitle.get(targetTitle);
+      if (candidate && !initiallyRendered.has(targetTitle)) {
+        target = candidate;
+        break;
+      }
+    }
+    if (!target) {
+      throw new Error('Keyboard navigation did not reach a seeded group outside the initial virtual window');
+    }
+    const decidedGroup = target;
+    expect(decidedGroup.editable).toBe(true);
+    await expect(heading).toBeFocused();
+    await expect(queue.locator('.fl-dr-queue-row button[aria-current="true"]')).toContainText(targetTitle);
+
+    await page.keyboard.press('a');
+    await expect(heading).not.toHaveText(targetTitle);
+    await expect(heading).toBeFocused();
+    await expect
+      .poll(
+        async () => {
+          const history = await getDuplicateDecisions({ headers: asBearerAuth(admin.accessToken) });
+          const decision = history.recent
+            .flatMap((batch) => batch.groups)
+            .find((group) => group.duplicateId === decidedGroup.duplicateId);
+          return decision?.applied
+            ? {
+                kind: decision.decision,
+                memberIds: decision.memberIds.toSorted((a, b) => a.localeCompare(b)),
+              }
+            : null;
+        },
+        { timeout: 30_000 },
+      )
+      .toEqual({
+        kind: DuplicateDecisionKind.KeepAll,
+        memberIds: decidedGroup.assets.map((asset) => asset.id).toSorted((a, b) => a.localeCompare(b)),
+      });
+  });
+
   test('lists only the signed-in account’s groups, each complete', async () => {
     const groups = await reviewGroups();
     const ids = groups.flatMap((group) => group.assets.map((asset) => asset.id));
