@@ -221,6 +221,26 @@ describe(AuthController.name, () => {
         expect.stringContaining('Expires='),
         'SameSite=Lax',
       ]);
+      // FL-137: the next person signed in on this browser is never answered from an earlier cache
+      expect(headers['clear-site-data']).toBe('"cache"');
+    });
+  });
+
+  describe('POST /auth/logout', () => {
+    it('clears the auth cookies and the browser cache (FL-137)', async () => {
+      service.logout.mockResolvedValue({ successful: true, redirectUri: '/auth/login?autoLaunch=0' });
+      const { status, headers } = await request(ctx.getHttpServer()).post('/auth/logout');
+
+      expect(status).toEqual(200);
+      expect(headers['set-cookie']).toEqual(expect.arrayContaining([expect.stringContaining('immich_access_token=;')]));
+      expect(headers['clear-site-data']).toBe('"cache"');
+    });
+  });
+
+  describe('clearing the browser cache (FL-137)', () => {
+    it('is not sent by requests that do not sign anyone in or out', async () => {
+      const { headers } = await request(ctx.getHttpServer()).post('/auth/validateToken');
+      expect(headers['clear-site-data']).toBeUndefined();
     });
   });
 

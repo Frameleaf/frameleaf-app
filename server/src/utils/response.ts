@@ -65,6 +65,9 @@ export const respondWithCookie = <T>(res: Response, body: T, { isSecure, values,
     const options = cookieOptions[key];
     res.cookie(key, value, options);
   }
+  if (values.some(({ key }) => key === ImmichCookie.AccessToken)) {
+    clearBrowserCache(res);
+  }
 
   return body;
 };
@@ -73,6 +76,18 @@ export const respondWithoutCookie = <T>(res: Response, body: T, cookies: ImmichC
   for (const cookie of cookies) {
     res.clearCookie(cookie);
   }
+  if (cookies.includes(ImmichCookie.AccessToken)) {
+    clearBrowserCache(res);
+  }
 
   return body;
+};
+
+/**
+ * FL-137: whenever someone signs in or out, the browser drops every response it cached for this server.
+ * Thumbnails and originals are cached privately for a day (`CacheControl.PrivateWithCache`), and on a
+ * shared browser the next person signed in must never be answered from the previous person's cache.
+ */
+const clearBrowserCache = (res: Response) => {
+  res.setHeader('Clear-Site-Data', '"cache"');
 };
