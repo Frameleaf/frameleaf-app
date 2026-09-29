@@ -285,6 +285,16 @@ export const Route = {
   integrityReportCsv: (reportType: IntegrityReport) => `${getBaseUrl()}/admin/integrity/report/${reportType}/csv`,
 
   // continue helper for ensuring same-origin URLs
+  /**
+   * FL-146: the in-app page to land on after first-time setup, as a path. The Library when the target
+   * is another sign-in page (setup again, logout) or a path the router would read as another host.
+   */
+  setupContinue: (target: string | URL, base: string | URL): string => {
+    const resolved = new URL(String(target), base);
+    const path = resolved.pathname + resolved.search + resolved.hash;
+    return /^\/(?:[/\\]|auth(?:\/|$))/.test(path) ? '/photos' : path;
+  },
+
   continue: (url: string | null, fallback: string): string | URL => {
     const resolved = new URL(url ?? fallback, document.baseURI);
 
