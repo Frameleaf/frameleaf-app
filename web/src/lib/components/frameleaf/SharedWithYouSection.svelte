@@ -34,6 +34,8 @@
    */
   let items = $state<ItemShareReceivedDto[]>([]);
   let loaded = $state(false);
+  let loading = $state(false);
+  let loadFailed = $state(false);
   let section = $state<HTMLElement>();
   let loadId = 0;
   let hiddenDuringLoad = new Set<string>();
@@ -52,18 +54,22 @@
   const load = async () => {
     const request = ++loadId;
     hiddenDuringLoad = new Set();
+    loading = true;
     try {
       const response = await getReceivedItemShares();
       if (request === loadId) {
         items = response.items.filter((item) => !hiddenDuringLoad.has(item.asset.id));
+        loadFailed = false;
       }
     } catch (error) {
       if (request === loadId) {
+        loadFailed = true;
         handleError(error, $t('frameleaf_sharing.shared_with_you_load_failed'));
       }
     } finally {
       if (request === loadId) {
         loaded = true;
+        loading = false;
       }
     }
   };
@@ -139,7 +145,12 @@
     <p>{$t('frameleaf_sharing.shared_with_you_intro')}</p>
   </header>
 
-  {#if loaded && items.length === 0}
+  {#if loadFailed}
+    <p class="swy-empty" role="alert">{$t('frameleaf_sharing.shared_with_you_load_failed')}</p>
+    <button type="button" class="button" disabled={loading} onclick={() => void load()}>
+      {$t('frameleaf_error_retry')}
+    </button>
+  {:else if loaded && items.length === 0}
     <p class="swy-empty" role="status">{$t('frameleaf_sharing.shared_with_you_empty')}</p>
   {/if}
 
