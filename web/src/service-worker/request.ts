@@ -5,15 +5,29 @@
 
 type PendingRequest = {
   controller: AbortController;
-  promise: Promise<Response>;
+  /**
+  Until the response arrives; dropped once it has, since a settled response is never reused.
+  */
+  promise?: Promise<Response>;
   cleanupTimeout?: ReturnType<typeof setTimeout>;
   /**
    * FL-137: the response has arrived. Its entry stays only so a late cancel can still stop the body
-   * download; it is never handed to a new request, which always goes to the server. Otherwise a
-   * thumbnail or original would be served for minutes after its share was revoked, it was Locked,
-   * or another person signed in on this browser.
+   * download; it is never handed to a new request, which goes back to the server, so the service
+   * worker never answers a revoked share, a newly Locked item or another person signed in on this
+   * browser. (The browser's own HTTP cache still holds what was already received, for as long as the
+   * server's Cache-Control allows; signing in or out clears it with Clear-Site-Data.)
    */
   settled?: boolean;
+  /**
+  Callers handed this request's response, each of which may later cancel it by URL.
+  */
+  callers: number;
+  /**
+   * Cancels still owed by the earlier, settled requests this one replaced. The app cancels by URL, so
+   * a component that loaded the earlier response and is destroyed later must not abort this newer load
+   * of the same URL for another component.
+   */
+  staleCancels: number;
 };
 
 const pendingRequests = new Map<string, PendingRequest>();
@@ -23,26 +37,32 @@ const getRequestKey = (request: URL | Request): string => (request instanceof UR
 const CANCELATION_MESSAGE = 'Request canceled by application';
 const CLEANUP_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 
+const clone = (promise: Promise<Response>) =>
+  // Clone the response since response bodies can only be read once; each caller gets its own
+  // eslint-disable-next-line unicorn/prefer-await
+  promise.then((response) => response.clone());
+
 export const handleFetch = async (request: URL | Request): Promise<Response> => {
   const requestKey = getRequestKey(request);
   const existing = pendingRequests.get(requestKey);
 
-  if (existing && !existing.settled) {
-    // Clone the response since response bodies can only be read once
-    // Each caller gets an independent clone they can consume
-    // eslint-disable-next-line unicorn/prefer-await
-    return existing.promise.then((response) => response.clone());
+  if (existing && !existing.settled && existing.promise) {
+    existing.callers++;
+    return clone(existing.promise);
   }
 
   const pendingRequest: PendingRequest = {
     controller: new AbortController(),
-    promise: undefined as unknown as Promise<Response>,
-    cleanupTimeout: undefined,
+    callers: 1,
+    staleCancels: existing ? existing.callers + existing.staleCancels : 0,
   };
+  if (existing?.cleanupTimeout) {
+    clearTimeout(existing.cleanupTimeout);
+  }
   pendingRequests.set(requestKey, pendingRequest);
 
   // NOTE: fetch returns after headers received, not the body
-  pendingRequest.promise = fetch(request, { signal: pendingRequest.controller.signal })
+  const promise = fetch(request, { signal: pendingRequest.controller.signal })
     // eslint-disable-next-line unicorn/prefer-await
     .catch((error: unknown) => {
       const standardError = error instanceof Error ? error : new Error(String(error));
@@ -51,34 +71,43 @@ export const handleFetch = async (request: URL | Request): Promise<Response> => 
         return new Response(undefined, { status: 204 });
       }
       throw standardError;
-    })
-    // eslint-disable-next-line unicorn/prefer-await
+    });
+  pendingRequest.promise = promise;
+
+  const response = clone(promise);
+  void promise
+    .catch(() => {})
     .finally(() => {
       pendingRequest.settled = true;
+      // never reused once settled: release the original response rather than hold it for the cancel window
+      pendingRequest.promise = undefined;
       // Keep the entry while the body may still be streaming, so a cancel can abort it
-      const cleanupTimeout = setTimeout(() => {
+      pendingRequest.cleanupTimeout = setTimeout(() => {
         // a newer request for the same URL may have replaced this entry
         if (pendingRequests.get(requestKey) === pendingRequest) {
           pendingRequests.delete(requestKey);
         }
       }, CLEANUP_TIMEOUT_MS);
-      pendingRequest.cleanupTimeout = cleanupTimeout;
     });
 
-  // Clone for the first caller to keep the original response unconsumed for future callers
-  // eslint-disable-next-line unicorn/prefer-await
-  return pendingRequest.promise.then((response) => response.clone());
+  return response;
 };
 
 export const handleCancel = (url: URL) => {
   const requestKey = getRequestKey(url);
 
   const pendingRequest = pendingRequests.get(requestKey);
-  if (pendingRequest) {
-    pendingRequest.controller.abort(CANCELATION_MESSAGE);
-    if (pendingRequest.cleanupTimeout) {
-      clearTimeout(pendingRequest.cleanupTimeout);
-    }
-    pendingRequests.delete(requestKey);
+  if (!pendingRequest) {
+    return;
   }
+  // a cancel from a caller of an earlier, replaced request
+  if (pendingRequest.staleCancels > 0) {
+    pendingRequest.staleCancels--;
+    return;
+  }
+  pendingRequest.controller.abort(CANCELATION_MESSAGE);
+  if (pendingRequest.cleanupTimeout) {
+    clearTimeout(pendingRequest.cleanupTimeout);
+  }
+  pendingRequests.delete(requestKey);
 };
