@@ -242,7 +242,7 @@ export class StudioBundleService {
         ) {
           // Older jobs kept no record of an explicit choice that covered every sequence.
           const revision = await this.projects.getRevision(projectId, snapshot.revision);
-          if (revision?.digest === snapshot.digest) {
+          if (revision && revision.digest === snapshot.digest) {
             const checked = checkStudioEnvelope(revision.envelope);
             const selected = checked.ok ? selectStudioSequences(checked.envelope.graph, requestedSequenceIds) : null;
             sameSelection =

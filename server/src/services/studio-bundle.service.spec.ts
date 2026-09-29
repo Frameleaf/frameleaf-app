@@ -452,6 +452,15 @@ describe(StudioBundleService.name, () => {
         sut.createExport(owner, projectId, { sequenceIds: ['seq-1'], requestKey: 'whole' }),
       ).rejects.toBeInstanceOf(ConflictException);
 
+      projects.getRevision.mockResolvedValue(undefined);
+      await expect(
+        sut.createExport(owner, projectId, { sequenceIds: ['seq-1', 'seq-2', 'seq-3'], requestKey: 'whole' }),
+      ).rejects.toBeInstanceOf(ConflictException);
+      operations.getByRequestKey.mockResolvedValue({ ...wholeRow, snapshot: { ...legacySnapshot, digest: undefined } });
+      await expect(
+        sut.createExport(owner, projectId, { sequenceIds: ['seq-1', 'seq-2', 'seq-3'], requestKey: 'whole' }),
+      ).rejects.toBeInstanceOf(ConflictException);
+
       operations.getByRequestKey.mockResolvedValue(undefined);
       const subset = await sut.createExport(owner, projectId, {
         sequenceIds: ['seq-2', 'seq-1'],
