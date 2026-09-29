@@ -534,6 +534,44 @@ describe(AlbumService.name, () => {
       );
     });
 
+    it('tells members nothing when only Locked media is added, and notifies them for visible additions (FL-137)', async () => {
+      const { sut, ctx } = setup(await getKyselyDB());
+      const events = ctx.getMock(EventRepository);
+      const { user: owner } = await ctx.newUser();
+      const { user: member } = await ctx.newUser();
+      const { asset: plain } = await ctx.newAsset({ ownerId: owner.id });
+      const { asset: locked } = await ctx.newAsset({ ownerId: owner.id, visibility: AssetVisibility.Locked });
+      const { asset: lockedToo } = await ctx.newAsset({ ownerId: owner.id, visibility: AssetVisibility.Locked });
+      const { asset: visible } = await ctx.newAsset({ ownerId: owner.id });
+      const { album } = await ctx.newAlbum({ ownerId: owner.id }, [plain.id]);
+      const { album: other } = await ctx.newAlbum({ ownerId: owner.id }, [plain.id]);
+      for (const albumId of [album.id, other.id]) {
+        await ctx.newAlbumUser({ albumId, userId: member.id, role: AlbumUserRole.Viewer });
+      }
+      const updatedAt = async (id: string) =>
+        (await ctx.database.selectFrom('album').select('updatedAt').where('id', '=', id).executeTakeFirstOrThrow())
+          .updatedAt;
+      const before = await updatedAt(album.id);
+      events.emit.mockClear();
+
+      await sut.addAssets(elevated(owner.id), album.id, { ids: [locked.id] });
+      expect(events.emit).toHaveBeenCalledWith('AlbumUpdate', { id: album.id, userIds: [owner.id], recipientIds: [] });
+      expect(await updatedAt(album.id)).toEqual(before);
+
+      events.emit.mockClear();
+      await sut.addAssetsToAlbums(elevated(owner.id), { albumIds: [other.id], assetIds: [lockedToo.id] });
+      expect(events.emit).toHaveBeenCalledWith('AlbumUpdate', { id: other.id, userIds: [owner.id], recipientIds: [] });
+
+      events.emit.mockClear();
+      await sut.addAssets(elevated(owner.id), album.id, { ids: [visible.id] });
+      expect(events.emit).toHaveBeenCalledWith('AlbumUpdate', {
+        id: album.id,
+        userIds: expect.arrayContaining([owner.id, member.id]),
+        recipientIds: [member.id],
+      });
+      expect(await updatedAt(album.id)).not.toEqual(before);
+    });
+
     it('never uses Locked media as the album cover and repairs a Locked cover on read', async () => {
       const { sut, ctx } = setup(await getKyselyDB());
       const { user: owner } = await ctx.newUser();
