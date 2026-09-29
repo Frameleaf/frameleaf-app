@@ -1,5 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { AccessRepository } from 'src/repositories/access.repository.js';
+import type { AssetRepository } from 'src/repositories/asset.repository.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import type { ItemShareRepository, ItemShareRow } from 'src/repositories/item-share.repository.js';
 import type { UserRepository } from 'src/repositories/user.repository.js';
@@ -69,21 +71,25 @@ export class ItemShareService extends BaseService {
   }
 
   async share(auth: AuthDto, dto: ItemShareChangeDto, requestOrigin?: string): Promise<ItemShareChangeResponseDto> {
-    const assetIds = await this.requireShareableItems(auth, dto.assetIds);
+    const assetIds = [...new Set(dto.assetIds)];
     const recipients = await this.requireRecipients(auth, dto.userIds);
 
     const link = await this.shareLink(requestOrigin);
-    const { added, response } = await this.itemShareRepository.withTransaction(async (shares, users) => {
-      const added = await shares.add(auth.user.id, assetIds, recipients.keys().toArray());
-      const response = await this.changeResponse(
-        auth,
-        assetIds,
-        { added: added.length, removed: 0, link },
-        shares,
-        users,
-      );
-      return { added, response };
-    });
+    const { added, response } = await this.itemShareRepository.withTransaction(
+      async (shares, users, assets, access) => {
+        await this.requireShareableItems(auth, assetIds, assets, access);
+        const added = await shares.add(auth.user.id, assetIds, recipients.keys().toArray());
+        const response = await this.changeResponse(
+          auth,
+          assetIds,
+          { added: added.length, removed: 0, link },
+          shares,
+          users,
+        );
+        return { added, response };
+      },
+      assetIds,
+    );
 
     const counts = new Map<string, number>();
     for (const row of added) {
@@ -171,9 +177,9 @@ export class ItemShareService extends BaseService {
   }
 
   /** The owner's own items, all of them, or the request is refused. */
-  private async requireOwnItems(auth: AuthDto, ids: string[]): Promise<string[]> {
+  private async requireOwnItems(auth: AuthDto, ids: string[], access = this.accessRepository): Promise<string[]> {
     const assetIds = [...new Set(ids)];
-    const owned = await this.accessRepository.asset.checkOwnerAccess(
+    const owned = await access.asset.checkOwnerAccess(
       auth.user.id,
       new Set(assetIds),
       auth.session?.hasElevatedPermission,
@@ -184,15 +190,20 @@ export class ItemShareService extends BaseService {
     return assetIds;
   }
 
-  private async requireShareableItems(auth: AuthDto, ids: string[]): Promise<string[]> {
-    const assetIds = await this.requireOwnItems(auth, ids);
-    const assets = await this.assetRepository.getByIds(assetIds);
+  private async requireShareableItems(
+    auth: AuthDto,
+    ids: string[],
+    repository: AssetRepository,
+    access: AccessRepository,
+  ): Promise<string[]> {
+    const assetIds = await this.requireOwnItems(auth, ids, access);
+    const assets = await repository.getByIds(assetIds);
     if (assets.some(({ visibility }) => visibility === AssetVisibility.Hidden)) {
       throw new BadRequestException(ITEM_SHARE_HIDDEN);
     }
-    const locked = await this.assetRepository.getLockedAssetIds(assetIds);
+    const locked = await repository.getLockedAssetIds(assetIds);
     const suppressed = auth.suppressedContent
-      ? await this.assetRepository.getHiddenContentAssetIds(assetIds, { hiddenContent: auth.suppressedContent })
+      ? await repository.getHiddenContentAssetIds(assetIds, { hiddenContent: auth.suppressedContent })
       : new Set<string>();
     if (locked.size > 0 || suppressed.size > 0) {
       throw new BadRequestException(ITEM_SHARE_LOCKED);
