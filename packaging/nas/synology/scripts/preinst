@@ -1,9 +1,17 @@
 #!/bin/sh
 set -eu
 umask 077
+# DSM extracts package.tgz here before preinst; the target is populated afterward.
+# https://help.synology.com/developer-guide/synology_package/script_env_var.html
+: "${SYNOPKG_PKGINST_TEMP_DIR:?Missing DSM installer staging directory}"
+project="$SYNOPKG_PKGINST_TEMP_DIR/project"
+[ -f "$project/compose.yaml" ] || {
+  echo 'Unsupported DSM installer staging layout; refusing unconfigured project creation.' >&2
+  exit 1
+}
 if [ "${SYNOPKG_PKG_STATUS:-INSTALL}" = UPGRADE ]; then
   [ -s "$SYNOPKG_PKGVAR/frameleaf.env" ] || exit 1
-  cp "$SYNOPKG_PKGVAR/frameleaf.env" "$SYNOPKG_PKGDEST/project/.env"
+  cp "$SYNOPKG_PKGVAR/frameleaf.env" "$project/.env"
 else
 valid_path() {
   case "$1" in /volume[0-9]/*) ;; *) return 1 ;; esac
@@ -34,6 +42,6 @@ case "${wizard_enable_ml:-true}" in true|false) ;; *) exit 1 ;; esac
     printf 'WEB_PORT=%s\n' "$wizard_web_port"
     printf 'COMPOSE_PROFILES=%s\n' "$profile"
     printf 'ENABLE_ML=%s\n' "$enabled"
-  } > "$SYNOPKG_PKGDEST/project/.env.tmp"
-  mv "$SYNOPKG_PKGDEST/project/.env.tmp" "$SYNOPKG_PKGDEST/project/.env"
+  } > "$project/.env.tmp"
+  mv "$project/.env.tmp" "$project/.env"
 fi
