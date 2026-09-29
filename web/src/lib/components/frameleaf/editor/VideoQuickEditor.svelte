@@ -452,9 +452,12 @@
       element.currentTime = value;
     }
   };
+  // Until `loadedmetadata` has handed `time` to the element, its currentTime is not a playback
+  // position: a load can report 0 and would overwrite a restored draft's playhead (FL-113).
+  let mediaSynced = false;
   const onTimeUpdate = () => {
     const element = videoEl;
-    if (!element) {
+    if (!element || !mediaSynced) {
       return;
     }
     if (playing && element.currentTime >= edit.end - 0.02) {
@@ -1272,11 +1275,13 @@
                   playsinline
                   preload="auto"
                   style={mediaStyle(before)}
+                  onloadstart={() => (mediaSynced = false)}
                   onloadedmetadata={(event) => {
                     natural = { w: event.currentTarget.videoWidth, h: event.currentTarget.videoHeight };
                     if (Math.abs(event.currentTarget.currentTime - time) > 0.05) {
                       event.currentTarget.currentTime = time;
                     }
+                    mediaSynced = true;
                     tick += 1;
                   }}
                   onloadeddata={() => (tick += 1)}
