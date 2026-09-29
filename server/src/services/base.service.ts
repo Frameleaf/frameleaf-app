@@ -85,6 +85,7 @@ import { AdminAuditEventTable } from 'src/schema/tables/admin-audit-event.table.
 import { UserTable } from 'src/schema/tables/user.table.js';
 import { AccessRequest, checkAccess, requireAccess } from 'src/utils/access.js';
 import { getConfig, readConfig, updateConfig } from 'src/utils/config.js';
+import { ConfigHistoryKind, ConfigHistorySource, recordConfigHistory } from 'src/utils/config-history.js';
 import { queueReleasedPersonThumbnails } from 'src/utils/cover-references.js';
 import { MlSelectionRequest, routedMlDestinationId, selectMlDestination } from 'src/utils/ml-destination.js';
 import { replaceLockedProfileImages } from 'src/utils/profile-image.js';
@@ -376,14 +377,45 @@ export class BaseService {
    * every administrator save holds, and starts from the configuration read straight from storage
    * under it, so neither this change nor an administrator's save can overwrite the other.
    */
-  updateConfigExclusively(change: (config: SystemConfig) => void) {
+  updateConfigExclusively(
+    change: (config: SystemConfig) => void,
+    history?: { source: ConfigHistorySource; auth?: AuthDto; title?: string },
+  ) {
     return this.databaseRepository.withLock(DatabaseLock.SystemConfigUpdate, async () => {
       const oldConfig = await this.readConfigForUpdate();
       const next = cloneDeep(oldConfig);
       change(next);
       const newConfig = await this.updateConfig(next);
+      // FL-146 (FL-66): listed in the settings history with its source, under the same lock
+      if (history) {
+        await this.recordConfigChange(oldConfig, newConfig, history.auth, {
+          kind: 'settings',
+          source: history.source,
+          title: history.title,
+        });
+      }
       return { oldConfig, newConfig };
     });
+  }
+
+  /** FL-66: add a saved change to the settings change history (see `recordConfigHistory`). */
+  protected recordConfigChange(
+    oldConfig: SystemConfig,
+    newConfig: SystemConfig,
+    auth: AuthDto | undefined,
+    options: { kind: ConfigHistoryKind; title?: string; source?: ConfigHistorySource },
+  ) {
+    return recordConfigHistory(
+      {
+        systemMetadataRepository: this.systemMetadataRepository,
+        cryptoRepository: this.cryptoRepository,
+        logger: this.logger,
+      },
+      oldConfig,
+      newConfig,
+      auth?.user,
+      options,
+    );
   }
 
   /**

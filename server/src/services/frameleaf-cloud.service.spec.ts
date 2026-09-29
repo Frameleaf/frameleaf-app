@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FrameleafCloudLink, FrameleafInstanceIdentity } from 'src/types.js';
+import type { ConfigHistory } from 'src/utils/config-history.js';
 import { AdminAuditAction, DatabaseLock, JobName, JobStatus, NotificationLevel, SystemMetadataKey } from 'src/enum.js';
 import { FrameleafCloudRepository } from 'src/repositories/frameleaf-cloud.repository.js';
 import {
@@ -2514,6 +2515,14 @@ describe(FrameleafCloudService.name, () => {
       await expect(sut.updateSignIn(authStub.admin, { buttonText: 'Use Frameleaf' })).resolves.toMatchObject({
         signInShowOnLocalLogin: true,
         signInButtonText: 'Use Frameleaf',
+      });
+
+      // FL-146 (FL-66): listed in the settings history as a Frameleaf Cloud change by this administrator
+      const history = metadata.get(SystemMetadataKey.SystemConfigHistory) as ConfigHistory;
+      expect(history.entries[0]).toMatchObject({
+        source: 'frameleaf-cloud',
+        actorId: authStub.admin.user.id,
+        changes: [expect.objectContaining({ path: 'frameleafCloud.signIn.buttonText', after: '"Use Frameleaf"' })],
       });
     });
   });
