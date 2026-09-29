@@ -33,10 +33,15 @@ export function validateSource(stream, transfer, frames = []) {
     errors.push('Dolby Vision source decode/reshape is unqualified; no base-layer-only policy is enabled');
   }
   if (stream?.codec_name !== 'hevc' || stream?.profile !== 'Main 10') errors.push('source is not HEVC Main 10');
-  if (!/^yuv420p10/.test(stream?.pix_fmt ?? '')) errors.push('source is not 10-bit 4:2:0');
-  if (stream?.color_transfer !== transfer) errors.push(`source transfer is not ${transfer}`);
-  if (stream?.color_primaries !== 'bt2020' || stream?.color_space !== 'bt2020nc') {
-    errors.push('source is not BT.2020 signalled');
+  const pictures = [stream, ...frames];
+  if (pictures.some((entry) => !/^yuv420p10(?:le|be)$/.test(entry?.pix_fmt ?? ''))) {
+    errors.push('source or decoded frame is not 10-bit 4:2:0');
+  }
+  if (pictures.some((entry) => entry?.color_transfer !== transfer)) {
+    errors.push(`source or decoded frame transfer is not ${transfer}`);
+  }
+  if (pictures.some((entry) => entry?.color_primaries !== 'bt2020' || entry?.color_space !== 'bt2020nc')) {
+    errors.push('source or decoded frame is not BT.2020 signalled');
   }
   return errors;
 }
