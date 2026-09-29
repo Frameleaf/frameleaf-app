@@ -3,6 +3,8 @@
   import IconButton from '$lib/components/frameleaf/IconButton.svelte';
   import PersonAvatar from '$lib/components/frameleaf/PersonAvatar.svelte';
   import BirthdayDialog from '$lib/components/frameleaf/people/BirthdayDialog.svelte';
+  import Menu from '$lib/components/frameleaf/Menu.svelte';
+  import MenuItem from '$lib/components/frameleaf/MenuItem.svelte';
   import CorrectionHistoryPanel from '$lib/components/frameleaf/people/CorrectionHistoryPanel.svelte';
   import FeaturedPhotoDialog from '$lib/components/frameleaf/people/FeaturedPhotoDialog.svelte';
   import FixMatchPanel from '$lib/components/frameleaf/people/FixMatchPanel.svelte';
@@ -27,6 +29,7 @@
     mdiFaceRecognition,
     mdiHeart,
     mdiHeartOutline,
+    mdiDotsHorizontal,
     mdiHistory,
     mdiImageMultipleOutline,
     mdiImageOutline,
@@ -47,8 +50,8 @@
    * moved (Fix incorrect match) or a merge folded this person into someone else, so the People
    * grid, open viewer face chips and search chips re-read what they show.
    *
-   * "Correction history" is not in the prototype (PD-9, product decision); it stays as the
-   * last toolbar action until the owner decides.
+   * "Correction history" is not in the prototype (PD-9). Owner decision 2026-09-29: it lives in a
+   * "…" menu after the toolbar, so the toolbar itself is exactly the prototype's.
    */
   interface Props {
     person: PersonResponseDto;
@@ -279,10 +282,15 @@
         <Icon icon={mdiAccountGroupOutline} size="18" aria-hidden="true" />
         {$t('frameleaf_people_recognition_groups')}
       </Button>
-      <Button onclick={() => (historyOpen = true)}>
-        <Icon icon={mdiHistory} size="18" aria-hidden="true" />
-        {$t('frameleaf_people_correction_history')}
-      </Button>
+      <Menu label={$t('frameleaf_people_more_actions_for', { values: { name } })} align="end">
+        {#snippet trigger()}
+          <Icon icon={mdiDotsHorizontal} size="18" aria-hidden="true" />
+        {/snippet}
+        <MenuItem onSelect={() => (historyOpen = true)}>
+          <Icon icon={mdiHistory} size="18" aria-hidden="true" />
+          {$t('frameleaf_people_correction_history')}
+        </MenuItem>
+      </Menu>
     </div>
   </div>
   <p class="pd-status" role="status" aria-live="polite">{status}</p>
