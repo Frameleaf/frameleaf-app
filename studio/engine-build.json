@@ -169,7 +169,12 @@
       "path": "patches/0033-hdr-from-sources.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "04d0bf2ea4d219e1ad9e12b4ab389c115faa8a85d6c5e713155de553874e8e93"
+    },
+    {
+      "path": "patches/0034-stable-asset-sourcemaps.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "e95d9c941c67250a8864dc793ecfe1ee05707c6b2021bd07fd129f0348f04278"
     }
   ],
-  "sourceSha256": "1a6e87c7a966db08342620b78e5acff8db4e110baea9851811ed1cbd1a7fdb99"
+  "sourceSha256": "57963346dad4fd7afa170377a74912330ac03ba8eed460a1fe86fbf3b4bcec38"
 }
