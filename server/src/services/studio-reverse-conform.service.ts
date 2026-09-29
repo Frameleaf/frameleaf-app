@@ -283,6 +283,10 @@ export class StudioReverseConformService {
     const previewId = `reverse-preview-${operation.id}`;
     const controller = new AbortController();
     this.abort = controller;
+    // Shutdown can begin while claimNext is pending, before there is a controller to abort.
+    if (this.stopping) {
+      controller.abort(new Error('Worker stopping'));
+    }
     let published = false;
     let frames = 0;
     let total = 0;

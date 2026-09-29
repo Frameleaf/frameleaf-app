@@ -35,6 +35,7 @@ const setup = () => {
     snapshot: { kind: 'studio-source-reverse', projectId, revision: 1, digest: 'revision-digest', sourceKey, checksum },
   } as unknown as MediaOperation;
   const operations = {
+    claimNext: vi.fn().mockResolvedValue(null),
     create: vi.fn().mockResolvedValue(operation),
     createStudioReverseCommand: vi.fn().mockResolvedValue(operation),
     getForWorker: vi.fn().mockResolvedValue(operation),
@@ -132,6 +133,30 @@ const setup = () => {
 describe(StudioReverseConformService.name, () => {
   beforeAll(() => StorageCore.setMediaLocation('/data'));
   afterEach(() => vi.useRealTimers());
+
+  it('stops a claim that completes after shutdown without rendering or publishing it', async () => {
+    const { sut, operation, operations, renderer, projects, storage } = setup();
+    const claim = Promise.withResolvers<{ operation: MediaOperation; claimToken: string }>();
+    operations.claimNext.mockReturnValueOnce(claim.promise);
+
+    sut.tick();
+    expect(operations.claimNext).toHaveBeenCalledTimes(1);
+    const shutdown = sut.onShutdown();
+    claim.resolve({ operation, claimToken });
+    await shutdown;
+
+    expect(renderer.reverse).not.toHaveBeenCalled();
+    expect(renderer.preview).not.toHaveBeenCalled();
+    expect(storage.mkdirSync).not.toHaveBeenCalled();
+    expect(operations.publishValidated).not.toHaveBeenCalled();
+    expect(projects.registerGeneratedResource).not.toHaveBeenCalled();
+    expect(operations.fail).toHaveBeenCalledWith(operationId, claimToken, {
+      errorCode: 'studio_reverse_conform_failed',
+      error: 'Local source reversal failed; no result was published',
+    });
+    sut.tick();
+    expect(operations.claimNext).toHaveBeenCalledTimes(1);
+  });
 
   it.each([StudioDestination.Lan, StudioDestination.FrameleafCloud])(
     'refuses %s before creating work',
