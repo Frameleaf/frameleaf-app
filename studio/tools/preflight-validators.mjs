@@ -26,8 +26,12 @@ export function validatePlan(plan) {
   return plan;
 }
 
-export function validateSource(stream, transfer) {
+export function validateSource(stream, transfer, frames = []) {
   const errors = [];
+  if ([stream, ...frames].some((entry) => entry?.side_data_list?.some((side) =>
+    /DOVI|Dolby Vision/i.test(side?.side_data_type ?? '')))) {
+    errors.push('Dolby Vision source decode/reshape is unqualified; no base-layer-only policy is enabled');
+  }
   if (stream?.codec_name !== 'hevc' || stream?.profile !== 'Main 10') errors.push('source is not HEVC Main 10');
   if (!/^yuv420p10/.test(stream?.pix_fmt ?? '')) errors.push('source is not 10-bit 4:2:0');
   if (stream?.color_transfer !== transfer) errors.push(`source transfer is not ${transfer}`);
