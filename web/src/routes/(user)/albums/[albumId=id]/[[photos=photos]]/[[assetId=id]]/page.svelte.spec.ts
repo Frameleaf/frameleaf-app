@@ -49,8 +49,11 @@ it('keeps a newer role change when an earlier album refresh finishes late (FL-40
     id: 'first',
     albumName: 'first',
     assetCount: 1,
-    ownerId: 'another-owner',
-    albumUsers: [{ user: userAdminFactory.build({ id: 'owner' }), role: AlbumUserRole.Editor }],
+    shared: true,
+    albumUsers: [
+      { user: userAdminFactory.build({ id: 'another-owner' }), role: AlbumUserRole.Owner },
+      { user: userAdminFactory.build({ id: 'owner' }), role: AlbumUserRole.Editor },
+    ],
   });
   render(AlbumPage, { data: data(first) as never });
   await waitFor(() => expect(librarySession.state.scope.id).toBe('first'));
@@ -60,12 +63,12 @@ it('keeps a newer role change when an earlier album refresh finishes late (FL-40
   eventManager.emit('AlbumUserUpdate', { albumId: 'first', userId: 'owner', role: AlbumUserRole.Viewer });
   await tick();
   const currentAlbum = () => vi.mocked(getAlbumAssetsActions).mock.calls.at(-1)![1];
-  expect(currentAlbum().albumUsers[0].role).toBe(AlbumUserRole.Viewer);
+  expect(currentAlbum().albumUsers.find(({ user }) => user.id === 'owner')?.role).toBe(AlbumUserRole.Viewer);
   librarySession.select('first-photo');
   resolve({ ...first, assetCount: 2 });
   await pending;
   await tick();
-  expect(currentAlbum().albumUsers[0].role).toBe(AlbumUserRole.Viewer);
+  expect(currentAlbum().albumUsers.find(({ user }) => user.id === 'owner')?.role).toBe(AlbumUserRole.Viewer);
   expect(librarySession.selection).toEqual(['first-photo']);
 
   let resolveEarlier!: (value: AlbumResponseDto) => void;
