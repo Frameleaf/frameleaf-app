@@ -564,6 +564,8 @@ echo 'Lane: official-v3.1.0-to-fork-to-official-v3.1.0-to-fork'
 # FL-44 (FN-304): the whole chain runs on one isolated volume set, reset once here and never
 # between legs, so the fork return certifies the data the official → fork leg produced.
 reset_lane
+# The terminal deletion phase requires the FileDelete handler's guarded-retention receipt.
+export FORK_ROUNDTRIP_LOG_LEVEL=debug
 start_official
 phase origin-seed src/specs/server/fork-schema-origin-upgrade.e2e-spec.ts
 stop_official
@@ -634,6 +636,16 @@ handoff_to_official "$chain_assets" chain-fork-handed-over src/specs/server/fork
 phase chain-official src/specs/server/fork-schema-chained-roundtrip.e2e-spec.ts
 return_to_fork "$STATE_DIR/origin-v3.1.0-to-fork.json"
 phase chain-fork-return src/specs/server/fork-schema-chained-roundtrip.e2e-spec.ts
+delete_started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+phase chain-canonical-delete src/specs/server/fork-schema-chained-roundtrip.e2e-spec.ts
+deleted_path="$(jq -er '.deletedPath | select(length > 0)' "$STATE_DIR/chain-canonical-delete.json")"
+if ! docker logs --since "$delete_started_at" "$(compose ps -q fork-server)" 2>&1 \
+  | grep -F "Skipping delete for $deleted_path; " \
+  | grep -E '[1-9][0-9]* reference\(s\) remain' >/dev/null; then
+  echo "The FileDelete handler did not confirm retaining the shared original: $deleted_path" >&2
+  exit 1
+fi
+phase chain-survivor-check src/specs/server/fork-schema-chained-roundtrip.e2e-spec.ts
 fi
 
 write_evidence passed
