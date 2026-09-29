@@ -61,7 +61,7 @@
   import ActivityPanel from '$lib/components/frameleaf/ActivityPanel.svelte';
   import Theme from '$lib/components/frameleaf/Theme.svelte';
   import { CommandPaletteDefaultProvider } from '@immich/ui';
-  import { onDestroy, onMount, untrack, type Snippet } from 'svelte';
+  import { onDestroy, onMount, tick, untrack, type Snippet } from 'svelte';
   import type { SwipeCustomEvent } from 'svelte-gestures';
   import { t } from 'svelte-i18n';
   import { motionFly } from '$lib/frameleaf/motion';
@@ -434,6 +434,12 @@
       assetViewerManager.setAsset(refreshedAsset);
     }
     assetViewerManager.closeEditor();
+    await tick();
+    if (viewerAlive && !assetViewerManager.isShowEditor) {
+      assetViewerHtmlElement
+        ?.querySelector<HTMLButtonElement>(`button[aria-label=${CSS.escape($t('frameleaf_viewer_edit'))}]`)
+        ?.focus();
+    }
   };
 
   const refreshRenderedPhoto = async (assetId: string) => {
