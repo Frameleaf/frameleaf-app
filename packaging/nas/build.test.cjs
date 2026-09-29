@@ -167,6 +167,51 @@ test('authenticated release packaging, negative trust cases, and Synology worker
     assert.throws(() => execFileSync('sh', [path.join(unpack, 'scripts/preinst')], {
       env: { ...env, SYNOPKG_PKGINST_TEMP_DIR: unpack }, stdio: 'pipe',
     }), /Unsupported DSM installer staging layout/);
+    for (const [wizard_media_path, wizard_database_path] of [
+      ['/volume1/frameleaf/library', '/volume1/frameleaf/library'],
+      ['/volume1/frameleaf', '/volume1/frameleaf/postgres'],
+      ['/volume1/frameleaf/library', '/volume1/frameleaf'],
+    ]) {
+      assert.throws(() => execFileSync('sh', [path.join(unpack, 'scripts/preinst')], {
+        env: { ...env, wizard_media_path, wizard_database_path }, stdio: 'pipe',
+      }), /Media and database directories must not overlap/);
+      assert(!fs.existsSync(path.join(staging, 'project/.env')));
+    }
+    for (const [wizard_media_path, wizard_database_path] of [
+      ['/volume1/frameleaf/', '/volume1/frameleaf/postgres'],
+      ['/volume1/frameleaf/library', '/volume1/frameleaf/'],
+    ]) {
+      assert.throws(() => execFileSync('sh', [path.join(unpack, 'scripts/preinst')], {
+        env: { ...env, wizard_media_path, wizard_database_path }, stdio: 'pipe',
+      }), /without spaces, symlinks or traversal/);
+      assert(!fs.existsSync(path.join(staging, 'project/.env')));
+    }
+    const localVolume = path.join(fs.realpathSync(root), 'volume1');
+    const localScript = path.join(root, 'local-preinst');
+    const preinst = fs.readFileSync(path.join(unpack, 'scripts/preinst'), 'utf8');
+    const localPreinst = preinst.replace('/volume[0-9]/*', `${fs.realpathSync(root)}/volume[0-9]/*`);
+    assert.notEqual(localPreinst, preinst);
+    write(localScript, localPreinst);
+    fs.mkdirSync(path.join(localVolume, 'library/postgres'), { recursive: true });
+    fs.mkdirSync(path.join(localVolume, 'postgres'));
+    fs.symlinkSync(path.join(localVolume, 'library'), path.join(localVolume, 'media-link'));
+    const localStaging = path.join(root, 'local-staging');
+    fs.cpSync(path.join(staging, 'project'), path.join(localStaging, 'project'), { recursive: true });
+    const localEnv = {
+      ...env, SYNOPKG_PKGINST_TEMP_DIR: localStaging,
+      wizard_media_path: path.join(localVolume, 'library'), wizard_database_path: path.join(localVolume, 'postgres'),
+    };
+    execFileSync('sh', [localScript], { env: localEnv });
+    fs.unlinkSync(path.join(localStaging, 'project/.env'));
+    for (const [wizard_media_path, wizard_database_path] of [
+      [path.join(localVolume, 'media-link'), path.join(localVolume, 'library/postgres')],
+      [path.join(localVolume, 'library/postgres'), path.join(localVolume, 'media-link')],
+    ]) {
+      assert.throws(() => execFileSync('sh', [localScript], {
+        env: { ...localEnv, wizard_media_path, wizard_database_path }, stdio: 'pipe',
+      }), /without spaces, symlinks or traversal/);
+      assert(!fs.existsSync(path.join(localStaging, 'project/.env')));
+    }
     execFileSync('sh', [path.join(unpack, 'scripts/preinst')], { env });
     const configured = fs.readFileSync(path.join(staging, 'project/.env'), 'utf8');
     assert(configured.includes('WEB_PORT=3456\n') && configured.includes('ENABLE_ML=false\n'));
