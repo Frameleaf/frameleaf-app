@@ -1,11 +1,11 @@
 import { get, isEqual, isPlainObject } from 'lodash-es';
-import { SystemConfig, mapAdminConfig } from 'src/dtos/config.dto.js';
-import { SERVER_MANAGED_CONFIG_PATHS } from 'src/utils/config.js';
-import { canonicalJson } from 'src/utils/object.js';
-import { SystemMetadataKey } from 'src/enum.js';
 import type { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import type { LoggingRepository } from 'src/repositories/logging.repository.js';
 import type { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
+import { SystemConfig, mapAdminConfig } from 'src/dtos/config.dto.js';
+import { SystemMetadataKey } from 'src/enum.js';
+import { SERVER_MANAGED_CONFIG_PATHS } from 'src/utils/config.js';
+import { canonicalJson } from 'src/utils/object.js';
 
 /**
  * FL-66: the settings change history, the design template's "Change history" area of
@@ -230,9 +230,20 @@ const isHistoryEntry = (value: unknown): value is ConfigHistoryEntry => {
 };
 
 /** The stored history, or an empty one when nothing (or something unreadable) is stored. */
+const CONFIG_HISTORY_SOURCES: ReadonlySet<string> = new Set<ConfigHistorySource>(['server-cli', 'frameleaf-cloud']);
+
 export const readConfigHistory = (stored: unknown): ConfigHistory => {
   const entries = (stored as Partial<ConfigHistory> | null | undefined)?.entries;
-  return { entries: Array.isArray(entries) ? entries.filter((entry) => isHistoryEntry(entry)) : [] };
+  return {
+    entries: Array.isArray(entries)
+      ? entries
+          .filter((entry) => isHistoryEntry(entry))
+          // a source this server does not know (hand-edited, or from a newer version) is left out, not refused
+          .map(({ source, ...entry }) =>
+            source !== undefined && CONFIG_HISTORY_SOURCES.has(source) ? { ...entry, source } : entry,
+          )
+      : [],
+  };
 };
 
 /** The history with a new entry first, keeping the newest entries within the limit. */
