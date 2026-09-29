@@ -1,6 +1,7 @@
-import { AlbumUserRole, getAlbumInfo, type AlbumResponseDto } from '@immich/sdk';
+import { AlbumKind, AlbumUserRole, getAlbumInfo, type AlbumResponseDto } from '@immich/sdk';
 import { render, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
+import { libraryTransientKey } from '$lib/frameleaf/library-session';
 import { librarySession } from '$lib/frameleaf/library-session.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { getAlbumAssetsActions } from '$lib/services/album.service';
@@ -40,6 +41,28 @@ vi.mock('$lib/components/frameleaf/SpaceMediaComments.svelte', () => ({ default:
 vi.mock('$lib/components/timeline/TimelineAssetViewer.svelte', () => ({ default: () => {} }));
 
 const data = (value: AlbumResponseDto) => ({ album: value, tree: { collections: [], albums: [], spaces: [] } });
+
+it('restores a collection selection and editor draft after remounting its flat results view (FL-40)', async () => {
+  const collection = albumFactory.build({ id: 'collection-reload', kind: AlbumKind.Collection, albumName: 'Collection' });
+  const first = render(AlbumPage, { data: data(collection) as never });
+  await waitFor(() => expect(librarySession.state.scope.id).toBe(collection.id));
+  librarySession.select('photo-1');
+  const draft = { assetId: 'photo-1', recipe: [], undo: [], redo: [] };
+  librarySession.dispatch({ type: 'draft', draft });
+  await waitFor(() =>
+    expect(JSON.parse(sessionStorage.getItem(libraryTransientKey('owner')) ?? '{}')).toMatchObject({
+      context: `collection:${collection.id}`,
+      selection: ['photo-1'],
+      draft,
+    }),
+  );
+
+  first.unmount();
+  librarySession.restore(undefined, 'owner', 'another-collection');
+  render(AlbumPage, { data: data(collection) as never });
+  await waitFor(() => expect(librarySession.selection).toEqual(['photo-1']));
+  expect(librarySession.session.draft).toEqual(draft);
+});
 
 it('keeps a newer role change when an earlier album refresh finishes late (FL-40)', async () => {
   let resolve!: (value: AlbumResponseDto) => void;
