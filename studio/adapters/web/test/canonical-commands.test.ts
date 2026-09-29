@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vite-plus/test'
 import type { Project, ProjectTimeline } from '@/types/project'
 import type { MediaMetadata } from '@/types/storage'
+import type { TextItem } from '@/types/timeline'
 import { useEditorStore } from '@/shared/state/editor'
 import {
   applyCanonicalCommands,
@@ -256,6 +257,72 @@ describe('canonical commands on the Freecut engine (FL-92)', () => {
         [envelope('clip.split', { at: seconds(2), clipIds: [video.id, 'missing'] })],
         media,
       )).resolves.toMatchObject({ status: 'rejected', reason: 'invalid' })
+    } finally {
+      useEditorStore.setState({ linkedSelectionEnabled: previous })
+    }
+  })
+
+  it.each([true, false])('moves linked clips and their own captions with linked selection %s (FL-94)', async (linked) => {
+    const added = await applied(project(), [
+      envelope('clip.add', { trackId: 'v1', assetId: ASSET, at: seconds(2) }),
+    ])
+    const video = itemsOf(added.project).find((item) => item.type === 'video')!
+    const audio = itemsOf(added.project).find((item) => item.type === 'audio')!
+    audio.from = 30 // Linked members may have intentionally different timeline offsets.
+    const timeline = added.project.timeline!
+    timeline.tracks.push(
+      { ...timeline.tracks[0]!, id: 'v2', order: 2 },
+      { ...timeline.tracks[0]!, id: 'captions', order: 3 },
+    )
+    timeline.items.push(...[video, audio].map((clip): TextItem => ({
+      id: `${clip.type}-caption`, trackId: 'captions', from: clip.from + 10,
+      durationInFrames: 10, label: 'Caption', type: 'text', text: 'Caption', color: '#ffffff',
+      textRole: 'caption', captionSource: { type: 'transcript', clipId: clip.id, mediaId: ASSET },
+    })))
+    const before = canonicalJson(added.project)
+    const previous = useEditorStore.getState().linkedSelectionEnabled
+    useEditorStore.setState({ linkedSelectionEnabled: linked })
+    try {
+      const boundary = await applyCanonicalCommands(added.project, [
+        envelope('clip.move', { clipId: video.id, start: seconds(3) }),
+        envelope('clip.move', { clipId: video.id, start: seconds(0) }),
+      ], media)
+      if (linked) {
+        expect(boundary).toMatchObject({ status: 'rejected', index: 1, reason: 'failed' })
+        expect(boundary).not.toHaveProperty('project')
+      } else {
+        expect(boundary.status).toBe('applied')
+        if (boundary.status === 'applied') {
+          expect(itemsOf(boundary.project).find((item) => item.id === video.id)?.from).toBe(0)
+        }
+      }
+      expect(canonicalJson(added.project)).toBe(before)
+
+      const moved = await applied(added.project, [
+        envelope('clip.move', { clipId: video.id, start: seconds(4), trackId: 'v2' }),
+      ])
+      expect(itemsOf(moved.project)).toEqual(expect.arrayContaining([
+        expect.objectContaining({ id: video.id, from: 120, trackId: 'v2' }),
+        expect.objectContaining({ id: audio.id, from: linked ? 90 : 30, trackId: 'a1' }),
+        expect.objectContaining({ id: 'video-caption', from: 130, trackId: 'captions' }),
+        expect.objectContaining({ id: 'audio-caption', from: linked ? 100 : 40, trackId: 'captions' }),
+      ]))
+
+      timeline.tracks.find((track) => track.id === 'a1')!.locked = true
+      const lockedCompanion = await applied(added.project, [
+        envelope('clip.move', { clipId: video.id, start: seconds(4) }),
+      ])
+      expect(itemsOf(lockedCompanion.project).find((item) => item.id === audio.id)?.from).toBe(30)
+      // Captions follow their selected owner but obey their own track's lock, as in Freecut drag.
+      expect(itemsOf(lockedCompanion.project).find((item) => item.id === 'audio-caption')?.from)
+        .toBe(linked ? 100 : 40)
+      for (const lockedTrack of ['v1', 'v2']) {
+        timeline.tracks.find((track) => track.id === lockedTrack)!.locked = true
+        await expect(applyCanonicalCommands(added.project, [
+          envelope('clip.move', { clipId: video.id, start: seconds(4), trackId: 'v2' }),
+        ], media)).resolves.toMatchObject({ status: 'rejected', reason: 'failed' })
+        timeline.tracks.find((track) => track.id === lockedTrack)!.locked = false
+      }
     } finally {
       useEditorStore.setState({ linkedSelectionEnabled: previous })
     }

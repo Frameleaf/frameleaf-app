@@ -27,6 +27,7 @@
       "id": "readme.timeline-editing.3",
       "actions": [
         "linked-av",
+        "linked-move",
         "split",
         "linked-multiselection-split",
         "exact-trim-range",
