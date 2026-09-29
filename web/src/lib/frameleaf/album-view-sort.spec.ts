@@ -25,27 +25,28 @@ describe('album view sort (FL-31)', () => {
 
   it('keeps the viewer’s own sort per album on this device, without touching the shared order', () => {
     const storage = memory();
-    expect(writeAlbumViewSort(storage, 'album-1', 'filename', AssetOrder.Asc)).toBe('filename');
-    expect(readAlbumViewSort(storage, 'album-1')).toBe('filename');
-    expect(readAlbumViewSort(storage, 'album-2')).toBeNull();
+    expect(writeAlbumViewSort(storage, 'user-1', 'album-1', 'filename', AssetOrder.Asc)).toBe('filename');
+    expect(readAlbumViewSort(storage, 'user-1', 'album-1')).toBe('filename');
+    expect(readAlbumViewSort(storage, 'user-1', 'album-2')).toBeNull();
+    expect(readAlbumViewSort(storage, 'user-2', 'album-1')).toBeNull();
     // the shared order changes: the viewer's own choice still wins for them
-    expect(effectiveAlbumSort(readAlbumViewSort(storage, 'album-1'), AssetOrder.Desc)).toBe('filename');
+    expect(effectiveAlbumSort(readAlbumViewSort(storage, 'user-1', 'album-1'), AssetOrder.Desc)).toBe('filename');
   });
 
   it('follows the shared order again once the viewer picks it', () => {
     const storage = memory();
-    writeAlbumViewSort(storage, 'album-1', 'captured-desc', AssetOrder.Asc);
-    expect(writeAlbumViewSort(storage, 'album-1', 'captured-asc', AssetOrder.Asc)).toBeNull();
-    expect(readAlbumViewSort(storage, 'album-1')).toBeNull();
+    writeAlbumViewSort(storage, 'user-1', 'album-1', 'captured-desc', AssetOrder.Asc);
+    expect(writeAlbumViewSort(storage, 'user-1', 'album-1', 'captured-asc', AssetOrder.Asc)).toBeNull();
+    expect(readAlbumViewSort(storage, 'user-1', 'album-1')).toBeNull();
   });
 
   it('reads anything unreadable as no choice', () => {
     const storage = memory();
-    storage.setItem(ALBUM_VIEW_SORT_KEY, '{"album-1":"sideways","album-2":"rating"}');
-    expect(readAlbumViewSort(storage, 'album-1')).toBeNull();
-    expect(readAlbumViewSort(storage, 'album-2')).toBe('rating');
-    storage.setItem(ALBUM_VIEW_SORT_KEY, 'not json');
-    expect(readAlbumViewSort(storage, 'album-2')).toBeNull();
-    expect(readAlbumViewSort(undefined, 'album-2')).toBeNull();
+    storage.setItem(`${ALBUM_VIEW_SORT_KEY}.user-1`, '{"album-1":"sideways","album-2":"rating"}');
+    expect(readAlbumViewSort(storage, 'user-1', 'album-1')).toBeNull();
+    expect(readAlbumViewSort(storage, 'user-1', 'album-2')).toBe('rating');
+    storage.setItem(`${ALBUM_VIEW_SORT_KEY}.user-1`, 'not json');
+    expect(readAlbumViewSort(storage, 'user-1', 'album-2')).toBeNull();
+    expect(readAlbumViewSort(undefined, 'user-1', 'album-2')).toBeNull();
   });
 });
