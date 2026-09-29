@@ -915,9 +915,11 @@ async function applySequenceSettings(
     const fromFps = storedRate(composition!.fps, `sequence "${sequenceId}"`)
     let changed: StoredComposition = { ...composition! }
     if (toFps !== undefined && !sameRate(toFps, fromFps)) {
-      const policy = hasTimedContent(composition as never)
-        ? requirePolicy(timing, `sequence "${sequenceId}"`)
-        : undefined
+      // Compound clips that read the sequence move with its rate even when it is empty.
+      const policy =
+        hasTimedContent(composition as never) || readsComposition(timeline, sequenceId)
+          ? requirePolicy(timing, `sequence "${sequenceId}"`)
+          : undefined
       // Compound clips read the sequence's frames in seconds at its rate: with its frame numbers
       // kept, what they show would change under them.
       if (policy === 'keep-frames' && readsComposition(timeline, sequenceId)) {
