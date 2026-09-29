@@ -1,3 +1,4 @@
+import { ConflictException } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
 import { AssetLockReason, AssetVisibility, Permission, UserMetadataKey } from 'src/enum.js';
 import { getCatalogEvidence } from 'src/fork-schema/catalog.js';
@@ -12,8 +13,9 @@ import { UserRepository } from 'src/repositories/user.repository.js';
 import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
-import { ItemShareService } from 'src/services/item-share.service.js';
+import { ITEM_SHARE_HIDDEN, ITEM_SHARE_LOCKED, ItemShareService } from 'src/services/item-share.service.js';
 import { checkAccess } from 'src/utils/access.js';
+import { lockAssetRowsInOrder } from 'src/utils/locked-stacks.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { factory } from 'test/small.factory.js';
 import { getKyselyDB } from 'test/utils.js';
@@ -151,6 +153,67 @@ it('gives the recipient access to exactly the shared items, and nobody else', as
   await sut.remove(owner.id, [shared.id], [jamie.id]);
   await expect(access.asset.checkItemShareAccess(jamie.id, new Set([shared.id]))).resolves.toEqual(new Set());
 });
+
+it.each(['locked', 'hidden'] as const)(
+  'refuses the entire share while an item becomes %s, releasing partial locks for the privacy writer',
+  async (state) => {
+    const { ctx, sut } = newMediumService(ItemShareService, {
+      database: db,
+      real: [AccessRepository, AssetRepository, ItemShareRepository, UserRepository],
+      mock: [EventRepository, LoggingRepository, WebsocketRepository],
+    });
+    const shares = ctx.get(ItemShareRepository);
+    const assets = ctx.get(AssetRepository);
+    const { user: owner } = await ctx.newUser();
+    const { user: recipient } = await ctx.newUser();
+    const { asset: a } = await ctx.newAsset({ ownerId: owner.id });
+    const { asset: b } = await ctx.newAsset({ ownerId: owner.id });
+    const [visible, changing] = [a, b].toSorted((a, b) => a.id.localeCompare(b.id));
+    const auth = factory.auth({ user: owner, session: { hasElevatedPermission: true } });
+    vi.spyOn(sut, 'shareLink').mockResolvedValue(null);
+    ctx.getMock(EventRepository).emit.mockResolvedValue();
+
+    const release = Promise.withResolvers<void>();
+    const held = Promise.withResolvers<void>();
+    const writer = db.transaction().execute(async (tx) => {
+      await lockAssetRowsInOrder(tx, [changing.id]);
+      held.resolve();
+      await release.promise;
+      if (state === 'locked') {
+        await assets.lock([changing.id], AssetLockReason.Marked, owner.id, tx);
+      } else {
+        await tx
+          .updateTable('asset')
+          .set({ visibility: AssetVisibility.Hidden })
+          .where('id', '=', changing.id)
+          .execute();
+      }
+      // Source -> result propagation can touch a smaller UUID after holding its source row.
+      await tx.updateTable('asset').set({ updatedAt: new Date() }).where('id', '=', visible.id).execute();
+    });
+    void writer.catch(held.reject);
+    await held.promise;
+    const dto = { assetIds: [visible.id, changing.id], userIds: [recipient.id] };
+    const refusal = vi.fn();
+    const sharing = sut.share(auth, dto).catch(refusal);
+    const settled = Promise.allSettled([writer, sharing]);
+    try {
+      await vi.waitFor(() => expect(refusal).toHaveBeenCalledWith(expect.any(ConflictException)), { timeout: 5000 });
+    } finally {
+      release.resolve();
+      await settled;
+    }
+    expect(await settled).toMatchObject([{ status: 'fulfilled' }, { status: 'fulfilled' }]);
+    await expect(sut.share(auth, dto)).rejects.toThrow(state === 'locked' ? ITEM_SHARE_LOCKED : ITEM_SHARE_HIDDEN);
+    expect(ctx.getMock(EventRepository).emit).not.toHaveBeenCalled();
+    expect(await shares.getForAssets(owner.id, [visible.id, changing.id])).toEqual([]);
+
+    await assets.unlock([changing.id]);
+    await db.updateTable('asset').set({ visibility: AssetVisibility.Timeline }).where('id', '=', changing.id).execute();
+    expect(await shares.getReceived(recipient.id)).toEqual([]);
+  },
+  10_000,
+);
 
 it('hides a shared item while it is locked, and shows it again once unlocked', async () => {
   const { ctx, sut, access } = setup();

@@ -1,5 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { AssetVisibility, NotificationType } from 'src/enum.js';
+import { AccessRepository } from 'src/repositories/access.repository.js';
+import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { ItemShareRepository } from 'src/repositories/item-share.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import {
@@ -42,7 +44,12 @@ describe(ItemShareService.name, () => {
     mocks.asset.getHiddenContentAssetIds.mockResolvedValue(new Set());
     mocks.itemShare.getForAssets.mockResolvedValue([]);
     mocks.itemShare.withTransaction.mockImplementation((callback) =>
-      callback(mocks.itemShare as unknown as ItemShareRepository, mocks.user as unknown as UserRepository),
+      callback(
+        mocks.itemShare as unknown as ItemShareRepository,
+        mocks.user as unknown as UserRepository,
+        mocks.asset as unknown as AssetRepository,
+        mocks.access as unknown as AccessRepository,
+      ),
     );
     users(owner, jamie);
   });
