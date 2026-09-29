@@ -31,9 +31,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   check-openapi:
-    if:
-      ${{ github.repository == 'Frameleaf/frameleaf-app' && !contains(github.event.pull_request.labels.*.name, 'api-breaking-approved')
-      }}
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -61,6 +59,7 @@ jobs:
       - name: Verify SDK operation compatibility policy
         run: node --test scripts/frameleaf-openapi-policy.test.mjs
       - name: Check for breaking API changes
+        if: ${{ !contains(github.event.pull_request.labels.*.name, 'api-breaking-approved') }}
         uses: oasdiff/oasdiff-action/breaking@9c0494cfee8b8fcc9fb383ed2d5d3fbdae169b93
         with:
           base: .frameleaf-api-base/open-api/immich-openapi-specs.json
