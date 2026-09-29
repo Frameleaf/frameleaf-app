@@ -118,6 +118,27 @@ describe('TimelineManager', () => {
     vi.resetAllMocks();
   });
 
+  it('re-reads album membership after assets are added only to its album (FL-40)', async () => {
+    sdkMock.getTimeBuckets
+      .mockResolvedValueOnce([{ count: 1, timeBucket: '2024-01-01' }])
+      .mockResolvedValueOnce([{ count: 2, timeBucket: '2024-01-01' }]);
+    const timelineManager = new TimelineManager();
+    try {
+      await timelineManager.updateOptions({ albumId: 'album-1' });
+      expect(timelineManager.assetCount).toBe(1);
+
+      eventManager.emit('AlbumAddAssets', { albumIds: ['album-2'], assetIds: ['new-asset'] });
+      await tick();
+      expect(sdkMock.getTimeBuckets).toHaveBeenCalledTimes(1);
+
+      eventManager.emit('AlbumAddAssets', { albumIds: ['album-1'], assetIds: ['new-asset'] });
+      await vi.waitFor(() => expect(timelineManager.assetCount).toBe(2));
+      expect(sdkMock.getTimeBuckets).toHaveBeenCalledTimes(2);
+    } finally {
+      timelineManager.destroy();
+    }
+  });
+
   it('discards an elevated bucket response that arrives after the session locks', async () => {
     const oldBuckets = deferred<Array<{ count: number; timeBucket: string }>>();
     sdkMock.getTimeBuckets
