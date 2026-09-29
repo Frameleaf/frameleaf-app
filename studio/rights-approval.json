@@ -569,9 +569,9 @@
     },
     {
       "id": "runtime:whisper-transformers",
-      "sha256": "8d6547410454ed0600a13fdf7107a0e27ca5ffdf1818f740c0c0baa73efc840f",
+      "sha256": "86972408a2e5ece3d966f5564eeb4215ba45d767fe980433ed66fef78191e481",
       "approvedOn": "2026-09-29",
-      "source": "Owner (AJ Taylor) re-approved this row at its bundled, no-CDN locator and file digests (studio patch 0029) on 2026-09-29, in chat with the Frameleaf coordinator session, which relayed it to studio-editing; noted on Jira FL-86 and FL-136."
+      "source": "Owner (AJ Taylor) re-approved this row at transformers.js 3.8.1 bundled with the engine (studio patch 0029, file sha256 1b41438d839ca3ea1346031472edee8cb3eefbf0bad48945f969559e2eb03394) on 2026-09-29, in chat with the Frameleaf coordinator session, which relayed it to studio-editing; noted on Jira FL-86, FL-111 and FL-136."
     },
     {
       "id": "tool:dolby-artistic-trim",

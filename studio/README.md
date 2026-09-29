@@ -160,8 +160,8 @@ pinned packages and served from the engine's origin (`src/shared/utils/local-ort
 `runtime:onnx-cdn` and `runtime:whisper-transformers` rows name those bundled packages, with byte
 digests of the files served. The owner approved the `runtime:onnx-cdn` row again on 2026-09-29
 (recorded per row in `rights-approval.json`, which may carry its own `approvedOn` and `source` for
-a re-approval), so Parakeet, RIFE and Supertonic run; the Whisper row changed again with the move
-to 3.8.1 and Whisper stays blocked until the owner approves it. The engine policy records no per-file byte digests yet, so
+a re-approval), and the Whisper row again on 2026-09-29 at transformers.js 3.8.1, so Whisper,
+Parakeet, RIFE and Supertonic run. The engine policy records no per-file byte digests yet, so
 `verifyResourceBytes` still fails closed. `tools/engine.test.mjs` covers approval, withheld uses,
 changed rows, URL lookalikes, voice precedence and revision pinning;
 `tools/resource-admission.browser.mjs` checks every entrypoint's refusal path under an

@@ -139,11 +139,9 @@ test('runtime policy admits exactly the owner-approved rows and keeps everything
     await writeFile(path.join(root, 'rights-approval.json'), JSON.stringify(approval));
     await writeResourcePolicy(root, engine);
     actual = await policyOf();
-    // Every row, including runtime:onnx-cdn approved again on 2026-09-29, except the Whisper runtime,
-    // which changed again (back to transformers.js 3.8.1) and waits for the owner.
+    // Every row, including the bundled runtimes the owner approved again on 2026-09-29.
     for (const [id, entry] of Object.entries(actual)) {
-      if (id === 'runtime:whisper-transformers') assert.equal(entry.localRuntime, 'blocked', id);
-      else assert.ok(entry.localRuntime === 'allowed' && /^[a-f0-9]{64}$/.test(entry.approvalSha256), id);
+      assert.ok(entry.localRuntime === 'allowed' && /^[a-f0-9]{64}$/.test(entry.approvalSha256), id);
     }
     assert.ok(Object.values(actual).every((entry) => entry.sha256 === null));
     assert.deepEqual(actual['model:walterlow/RIFE_fp32_timestep'], {
@@ -163,10 +161,9 @@ test('runtime policy admits exactly the owner-approved rows and keeps everything
       'https://huggingface.co/walterlow/RIFE_fp32_timestep/resolve/ee09066f9822f8b28b8477a1b4cc30f19d607590/RIFE_fp32_timestep.onnx',
       'https://huggingface.co/spaces/Supertone/supertonic-3/resolve/main/assets/onnx/vocoder.onnx',
     ]) assert.equal(runtime.canUseResource(id), true, id);
-    // Parakeet, RIFE and Supertonic run on the re-approved ONNX Runtime; Whisper waits for its row; the old CDN
+    // Whisper, Parakeet, RIFE and Supertonic run on the re-approved bundled runtimes; the old CDN
     // locators are nobody's approval any more.
-    assert.equal(runtime.canUseResource('runtime:onnx-cdn'), true);
-    assert.equal(runtime.canUseResource('runtime:whisper-transformers'), false);
+    for (const id of ['runtime:onnx-cdn', 'runtime:whisper-transformers']) assert.equal(runtime.canUseResource(id), true, id);
     assert.equal(runtime.canUseResource('https://esm.sh/@huggingface/transformers@3.8.1?bundle'), false);
     assert.equal(runtime.canUseResource('https://cdn.jsdelivr.net/npm/onnxruntime-web@1.26.0-dev.20260410-5e55544225/dist/ort-wasm-simd-threaded.jsep.wasm'), false);
     for (const id of [

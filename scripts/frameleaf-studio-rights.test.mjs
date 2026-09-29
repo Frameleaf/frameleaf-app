@@ -80,14 +80,12 @@ test('the owner approved every one of the 210 reviewed resources on 2026-09-25, 
   assert.equal(approval.resources.length, 210);
   const byId = new Map(manifest.resources.map((resource) => [resource.id, resource]));
   for (const entry of approval.resources) {
-    if (entry.id === 'runtime:whisper-transformers') continue;
     assert.equal(entry.sha256, approvalRowDigest(byId.get(entry.id)), entry.id);
   }
   const mirror = await read(SERVER_MIRROR_PATH);
-  // runtime:whisper-transformers changed again (Whisper back on transformers.js 3.8.1) and waits for the owner.
-  assert.equal((mirror.match(/localRuntime: 'allowed'/g) ?? []).length, 209);
+  assert.equal((mirror.match(/localRuntime: 'allowed'/g) ?? []).length, 210);
   // FL-146 comment 34944: MusicGen-small (CC-BY-NC-4.0) is withheld from hosted use only.
-  assert.equal((mirror.match(/hostedUse: 'allowed'/g) ?? []).length, 208);
+  assert.equal((mirror.match(/hostedUse: 'allowed'/g) ?? []).length, 209);
   assert.match(
     mirror,
     /'model:Xenova\/musicgen-small': \{[^}]*localRuntime: 'allowed',\n {4}hostedUse: 'blocked',[^}]*hostedUse:\n {8}'CC-BY-NC-4\.0/s,
@@ -96,7 +94,7 @@ test('the owner approved every one of the 210 reviewed resources on 2026-09-25, 
   const reapproved = approval.resources.filter((entry) => entry.approvedOn === '2026-09-29').map((entry) => entry.id);
   assert.deepEqual(reapproved.sort(), ['runtime:onnx-cdn', 'runtime:whisper-transformers']);
   assert.equal((mirror.match(/approvedOn: '2026-09-25'/g) ?? []).length, 209);
-  assert.equal((mirror.match(/approvedOn: '2026-09-29'/g) ?? []).length, 1);
+  assert.equal((mirror.match(/approvedOn: '2026-09-29'/g) ?? []).length, 2);
   assert.match(mirror, /STUDIO_DISTRIBUTION_APPROVAL = false;/);
 });
 

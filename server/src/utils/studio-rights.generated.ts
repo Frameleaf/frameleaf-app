@@ -34,7 +34,7 @@ export const STUDIO_RIGHTS_APPROVAL = {
   approvedOn: '2026-09-25',
   source:
     'Jira FL-146, comment 34941: Owner decisions (2026-09-25, afternoon), "Studio resource rights: all 210 bundled resources (fonts, LUTs, tracks, models) are approved. Rights enforcement stays in place for anything new or unknown."',
-  sha256: 'bd6a68902c759e3261cd9fe3d179d5e1f07f9adde0643b25e2314be6cf5fa8c2',
+  sha256: '9b7eb61c309726b028463d77220dc0e01386c9627214be6080c3a536de6ece1f',
 } as const;
 
 /** Whether the engine as a whole may be redistributed. False blocks every redistribution. */
@@ -1307,10 +1307,10 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
   'runtime:whisper-transformers': {
     kind: 'runtime-code',
     license: 'Apache-2.0',
-    redistribution: 'blocked',
-    localRuntime: 'blocked',
-    hostedUse: 'blocked',
-    approvedOn: null,
+    redistribution: 'allowed',
+    localRuntime: 'allowed',
+    hostedUse: 'allowed',
+    approvedOn: '2026-09-29',
     restrictions: {},
   },
   'tool:dolby-artistic-trim': {
