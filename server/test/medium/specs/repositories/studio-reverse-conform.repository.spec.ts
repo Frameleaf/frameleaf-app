@@ -31,10 +31,7 @@ describe('local source reverse executor', () => {
     const input = join(folder, 'input.mkv');
     const output = join(folder, 'output.mkv');
     const metadata = join(folder, 'chapters.ffmeta');
-    await writeFile(
-      metadata,
-      ';FFMETADATA1\n[CHAPTER]\nTIMEBASE=1/1000\nSTART=0\nEND=333\ntitle=Forward opening\n',
-    );
+    await writeFile(metadata, ';FFMETADATA1\n[CHAPTER]\nTIMEBASE=1/1000\nSTART=0\nEND=333\ntitle=Forward opening\n');
     await ffmpeg([
       '-f',
       'lavfi',
