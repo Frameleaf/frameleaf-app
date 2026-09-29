@@ -138,7 +138,9 @@ test('authenticated release packaging, negative trust cases, and Synology worker
     await build(bundle, tag, output, receipts, { run, request });
     assert(calls.some((args) => args[0] === 'verify-attestation' && args.at(-1) === nas.images.server));
     const read = (name) => fs.readFileSync(path.join(output, name), 'utf8');
-    assert(read('unraid/templates/frameleaf-server.xml').includes(nas.images.server));
+    const unraidServer = read('unraid/templates/frameleaf-server.xml');
+    assert(unraidServer.includes(nas.images.server));
+    assert.match(unraidServer, /<Config Name="Machine learning" Target="IMMICH_MACHINE_LEARNING_ENABLED" Default="false"[^>]*>false<\/Config>/);
     assert(read('unraid/templates/frameleaf-ml.xml').includes(nas.images.machineLearning));
     const values = read('truenas/ix-dev/community/frameleaf/ix_values.yaml');
     assert(values.includes('repository: "ghcr.io/frameleaf/frameleaf-postgres"'));
