@@ -60,6 +60,8 @@ export class StudioReverseConformRepository {
         'passthrough',
         '-map_metadata',
         '-1',
+        '-map_chapters',
+        '-1',
         ...(source.audioIndex === null
           ? ['-an']
           : ['-map', `0:${source.audioIndex}`, '-af', 'areverse,asetpts=PTS-STARTPTS', '-c:a', 'pcm_f32le']),
