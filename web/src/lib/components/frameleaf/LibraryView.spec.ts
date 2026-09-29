@@ -57,6 +57,10 @@ beforeAll(() => {
 
 beforeEach(() => {
   app.page.url = new SvelteURL('http://localhost/photos');
+  // Keep `location.href` (read by the FL-40 fix) in step with the reset `page.url` mock so a test
+  // earlier in the file that advanced `location` via a real `history.replaceState` call can't leak
+  // a stale address into a later, unrelated test.
+  history.replaceState(null, '', '/photos');
   navigation.replaceState.mockReset();
   sdkMock.getTimeBuckets.mockResolvedValue([]);
 });
@@ -92,6 +96,10 @@ describe('LibraryView', () => {
     app.page.url = new SvelteURL(first.href);
     navigation.replaceState.mockImplementation((url: URL) => {
       app.page.url.searchParams.set('fl', url.searchParams.get('fl') ?? '');
+      // A real `replaceState` updates `location.href` synchronously (only the reactive `page.url`
+      // store lags behind); keep this mock's `location` in step so the FL-40 fix's comparison
+      // against `location.href` behaves as it would in the browser.
+      history.replaceState(null, '', `${url.pathname}${url.search}`);
     });
     const restore = vi.spyOn(session, 'restore');
 
@@ -136,6 +144,39 @@ describe('LibraryView', () => {
       restore.mockRestore();
       authManager.reset();
     }
+  });
+
+  it('does not loop or drop a session write when replaceState leaves page.url stale (FL-40 regression)', async () => {
+    // Real SvelteKit `replaceState` updates the address bar without synchronously updating the
+    // reactive `page.url` store. The default `navigation.replaceState` mock (a plain vi.fn() no-op,
+    // reset in beforeEach) reproduces that gap: unlike the mock above, it never mutates `app.page.url`.
+    authManager.setUser(userAdminFactory.build({ id: 'owner' }));
+    authManager.setPreferences(preferencesFactory.build());
+    const session = new LibrarySessionStore({ storage: null, transientStorage: null });
+    const initial = writeLibraryView(new URL('http://localhost/photos'), session.state);
+    app.page.url = new SvelteURL(initial.href);
+    history.replaceState(null, '', `${initial.pathname}${initial.search}`);
+    const props = { options: {}, destination: { kind: 'library' as const }, session, noSelectionBar: true };
+    render(LibraryView, props);
+    await screen.findByTestId('frameleaf-library');
+    await tick();
+    await tick();
+
+    navigation.replaceState.mockClear();
+    session.patchView({ sort: 'rating' });
+    await tick();
+    await tick();
+    await tick();
+    await waitFor(() => expect(navigation.replaceState).toHaveBeenCalled());
+    await tick();
+    await tick();
+
+    // Before the FL-40 fix, the restore and persist effects fought over `restoredView`/`page.url`
+    // (which never advances here) and kept calling replaceState / session.restore without bound,
+    // eventually tripping Svelte's effect_update_depth_exceeded and reverting the write. A single
+    // write and a stable, unreverted view is the correct behavior.
+    expect(navigation.replaceState.mock.calls.length).toBeLessThanOrEqual(1);
+    expect(session.state.sort).toBe('rating');
   });
 
   it('applies supported album filters in place and preserves the resulting session across layouts (FL-40)', async () => {
