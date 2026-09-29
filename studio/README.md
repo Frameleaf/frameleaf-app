@@ -91,6 +91,16 @@ key stayed opaque. One 10-bit code value moves CbCr by more than 3e-4, so real c
 next to the key stay opaque. `tools/chroma-key.browser.mjs` checks both cases for
 green and blue keys; it passes on SwiftShader and Apple Metal.
 
+Patch 0027 gives temporal effects a frame clock. Grain, scanlines, color and block
+glitch, VHS, trigger wave and hue flow used to read `performance.now()`, so each
+render of the same frame differed, and export never matched preview. Render paths
+now stamp the item-relative time of the frame (frame / fps) into those effects'
+params. Only callers with no timeline frame, such as panel thumbnails, fall back
+to wall time. Transition participants and nested Compose items used to ignore
+keyframed effect params and adjustment-layer keyframes. They now resolve both on
+their own timelines, as top-level items already did. Unit tests cover the clock,
+the resolver and the transition and nested render paths.
+
 Patch 0022 gives each render or inspector expression a budget of 64 uncached evaluations,
 including its root. The inspector forwards that budget and its reference cache through both
 preview callbacks, so independent branches share the limit and cached reuse remains free.
