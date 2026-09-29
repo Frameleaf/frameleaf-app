@@ -570,6 +570,24 @@ export function withEdits(eb: ExpressionBuilder<DB, 'asset'>): AliasedEditAction
 const joinDeduplicationPlugin = new DeduplicateJoinsPlugin();
 /** TODO: This should only be used for search-related queries, not as a general purpose query builder */
 
+/**
+ * FL-137: someone else's item reaches a search only as their partner share allows it
+ * (`AccessRepository.asset.checkPartnerAccess`): never from their trash or their archive. The viewer's
+ * own items are not restricted here.
+ */
+const partnerSearchable = (eb: ExpressionBuilder<DB, 'asset'>, viewerId: string) =>
+  eb.or([
+    eb('asset.ownerId', '=', asUuid(viewerId)),
+    eb.and([
+      eb('asset.deletedAt', 'is', null),
+      eb('asset.visibility', 'in', [sql.lit(AssetVisibility.Timeline), sql.lit(AssetVisibility.Hidden)]),
+    ]),
+  ]);
+
+/** FL-137: an album shows someone else's item only while it is out of their trash (`checkAlbumAccess`). */
+const othersNotTrashed = (eb: ExpressionBuilder<DB, 'asset'>, viewerId: string) =>
+  eb.or([eb('asset.ownerId', '=', asUuid(viewerId)), eb('asset.deletedAt', 'is', null)]);
+
 export function searchAssetBuilderLegacy(kysely: Kysely<DB>, options: AssetSearchBuilderOptions) {
   options.withDeleted ||= !!(options.trashedAfter || options.trashedBefore || options.isOffline);
 
@@ -646,6 +664,9 @@ export function searchAssetBuilderLegacy(kysely: Kysely<DB>, options: AssetSearc
       .$if(!!options.id, (qb) => qb.where('asset.id', '=', asUuid(options.id!)))
       .$if(!!options.libraryId, (qb) => qb.where('asset.libraryId', '=', asUuid(options.libraryId!)))
       .$if(!!options.userIds, (qb) => qb.where('asset.ownerId', '=', anyUuid(options.userIds!)))
+      .$if(!!options.userIds && !!options.viewingUserId, (qb) =>
+        qb.where((eb) => partnerSearchable(eb, options.viewingUserId!)),
+      )
       .$if(!!options.locationHiddenOwnerIds?.length, (qb) =>
         qb.where('asset.ownerId', 'not in', options.locationHiddenOwnerIds!),
       )
@@ -1038,7 +1059,10 @@ export function searchAssetBuilder(kysely: Kysely<DB>, options: AssetSearchBuild
   const branches = filter.or ?? [];
   // FL-58: whose pets a `petIds` condition may name. The service scope always carries the caller.
   const viewerId = scope.viewingUserId ?? (scope.lockedOwnerId || undefined);
-  const ownershipPredicate = (eb: AssetExpressionBuilder) => eb('asset.ownerId', '=', anyUuid(scope.userIds));
+  const ownershipPredicate = (eb: AssetExpressionBuilder) =>
+    viewerId
+      ? eb.and([eb('asset.ownerId', '=', anyUuid(scope.userIds)), partnerSearchable(eb, viewerId)])
+      : eb('asset.ownerId', '=', anyUuid(scope.userIds));
   // search universe: own+partner assets unless album-confined, which searches the albums instead;
   // ownership lands nowhere (top level confined), per unconfined branch, or hoisted globally
   const topConfined = isAlbumConfined(filter);
@@ -1060,6 +1084,8 @@ export function searchAssetBuilder(kysely: Kysely<DB>, options: AssetSearchBuild
         qb.where('asset.ownerId', 'not in', scope.locationHiddenOwnerIds!),
       )
       .where(notLockedOrOwnedBy(scope.lockedOwnerId || undefined, 'asset'))
+      .$if(!!scope.sharedLink, (qb) => qb.where('asset.deletedAt', 'is', null))
+      .$if(!scope.sharedLink && !!viewerId, (qb) => qb.where((eb) => othersNotTrashed(eb, viewerId!)))
       .$if(!!scope.lockedMotion, (qb) =>
         qb.where((eb) => eb.not(isMotionOfLockedStill(eb, scope.lockedMotion!.lockedOwnerId))),
       )
