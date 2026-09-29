@@ -14,6 +14,7 @@ import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { StudioProjectImport, StudioProjectRepository } from 'src/repositories/studio-project.repository.js';
+import { UserRepository } from 'src/repositories/user.repository.js';
 import { StudioProjectService } from 'src/services/studio-project.service.js';
 import { ImmichFileResponse } from 'src/utils/file.js';
 import {
@@ -27,6 +28,8 @@ import {
 import { isStudioUuid } from 'src/utils/studio-resources.js';
 
 const IMPORT_FOLDER = 'studio-imports';
+/** An upload older than this in the incoming folder belongs to a request that never finished. */
+const STUDIO_IMPORT_INCOMING_TTL_MS = 6 * 60 * 60 * 1000;
 const INCOMING_FOLDER = 'incoming';
 
 /** Where an upload lands before it is checked: the uploader's own private exports folder. */
@@ -69,6 +72,7 @@ export class StudioProjectImportService {
     private projects: StudioProjectRepository,
     private storage: StorageRepository,
     private crypto: CryptoRepository,
+    private users: UserRepository,
     private studio: StudioProjectService,
   ) {
     this.logger.setContext(StudioProjectImportService.name);
@@ -77,16 +81,18 @@ export class StudioProjectImportService {
   async upload(
     auth: AuthDto,
     projectId: string,
-    id: string | undefined,
+    rawId: string | undefined,
     file: Express.Multer.File | undefined,
   ): Promise<StudioProjectImportDto> {
     try {
       if (!file?.path) {
         throw new BadRequestException('Choose a file to import');
       }
-      if (!isStudioUuid(id)) {
+      if (!isStudioUuid(rawId)) {
         throw new BadRequestException('The import needs the id the editor gave it');
       }
+      // Postgres answers ids in lower case; the stored path and every retry use the same spelling.
+      const id = rawId.toLowerCase();
       const project = await this.requireOwnedProject(auth, projectId);
       if (project.deletedAt || project.archivedAt) {
         throw new ConflictException('Restore this project before adding files to it');
@@ -113,12 +119,17 @@ export class StudioProjectImportService {
         externalReferences = scanStudioVector(type, text) ?? null;
       }
 
+      // A retry of an import already kept is answered by it; anything new counts against the quota.
+      if (!(await this.projects.getImport(project.id, id))) {
+        await this.assertQuota(project.ownerId, file.size);
+      }
+
       const checksum = (await this.crypto.hashFile(file.path, 'sha256')).toString('hex');
       const folder = studioImportProjectFolder(project.ownerId, project.id);
       const path = join(folder, `${id}${type.extension}`);
       const stored = await this.projects.registerImport({
         projectId: project.id,
-        id: id!,
+        id,
         ownerId: project.ownerId,
         contentType: type.contentType,
         checksum,
@@ -145,7 +156,7 @@ export class StudioProjectImportService {
       if (error instanceof StudioImportRefusal) {
         throw new BadRequestException(error.message);
       }
-      if (error instanceof TypeError && /decode/i.test(error.message)) {
+      if ((error as { code?: unknown }).code === 'ERR_ENCODING_INVALID_ENCODED_DATA') {
         throw new BadRequestException('A vector graphic must be UTF-8 text');
       }
       throw error;
@@ -165,16 +176,59 @@ export class StudioProjectImportService {
     }
     return new ImmichFileResponse({
       path: item.path,
-      contentType: item.contentType,
+      // An SVG is declared UTF-8, the only encoding its scan accepted.
+      contentType: item.contentType === 'image/svg+xml' ? 'image/svg+xml; charset=utf-8' : item.contentType,
       // The bytes behind an id never change, so the browser may keep them for the session.
       cacheControl: CacheControl.PrivateWithCache,
       fileName: item.fileName,
     });
   }
 
+  /**
+   * Remove what outlives its project: the files of imports whose project was deleted for good, and
+   * uploads left in the incoming folder by a request that failed before it was answered. Run by the
+   * Studio lifecycle sweep.
+   */
+  async sweep(now: Date = new Date()): Promise<void> {
+    const folders = new Set<string>();
+    for (const orphan of await this.projects.deleteOrphanImports()) {
+      await this.storage.unlink(orphan.path).catch(() => {});
+      folders.add(studioImportProjectFolder(orphan.ownerId, orphan.projectId));
+    }
+    for (const folder of folders) {
+      await this.storage.unlinkDir(folder, { recursive: true, force: true }).catch(() => {});
+    }
+    const exports = StorageCore.getBaseFolder(StorageFolder.Exports);
+    for (const ownerId of await this.storage.readdir(exports).catch(() => [] as string[])) {
+      if (!isStudioUuid(ownerId)) {
+        continue;
+      }
+      const incoming = studioImportIncomingFolder(ownerId);
+      for (const name of await this.storage.readdir(incoming).catch(() => [] as string[])) {
+        const path = join(incoming, name);
+        const stat = await this.storage.stat(path).catch(() => null);
+        if (stat && now.getTime() - stat.mtime.getTime() > STUDIO_IMPORT_INCOMING_TTL_MS) {
+          await this.storage.unlink(path).catch(() => {});
+        }
+      }
+    }
+  }
+
+  /** New imports count against the owner's storage quota with their library, when one is set. */
+  private async assertQuota(ownerId: string, bytes: number) {
+    const user = await this.users.get(ownerId, {});
+    if (!user || user.quotaSizeInBytes === null || user.quotaSizeInBytes === undefined) {
+      return;
+    }
+    const used = Number(user.quotaUsageInBytes) + (await this.projects.getImportBytes(ownerId));
+    if (used + bytes > Number(user.quotaSizeInBytes)) {
+      throw new PayloadTooLargeException('This file would take you over your storage quota');
+    }
+  }
+
   /** The owner's own project. A shared link, a reviewer or a stranger all get `404`. */
   private async requireOwnedProject(auth: AuthDto, projectId: string) {
-    if (auth.sharedLink) {
+    if (auth.sharedLink || !isStudioUuid(projectId)) {
       throw new NotFoundException('Studio project not found');
     }
     const project = await this.projects.getById(projectId);

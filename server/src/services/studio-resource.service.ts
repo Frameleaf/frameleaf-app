@@ -392,6 +392,27 @@ export class StudioResourceService extends BaseService {
     const generated = new Map((context.generated ?? []).map((item) => [item.id, item]));
 
     const { references, violations, sequences } = extractStudioResourceReferences(context.graph);
+    // FL-103 / FL-105: the editor places a project import by its own media id, the way it places a
+    // library asset, so a media id the project declares as an import is that import, never an asset.
+    for (const reference of references) {
+      if (!imports.has(reference.id)) {
+        continue;
+      }
+      if (reference.kind === StudioResourceKind.LibraryAsset) {
+        reference.kind = StudioResourceKind.ProjectImport;
+      } else if (reference.kind === StudioResourceKind.Audio && reference.source === 'asset') {
+        reference.source = 'import';
+      }
+    }
+    const distinct = new Set<string>();
+    for (let index = references.length - 1; index >= 0; index--) {
+      const key = studioReferenceKey(references[index]);
+      if (distinct.has(key)) {
+        references.splice(index, 1);
+      } else {
+        distinct.add(key);
+      }
+    }
     // A relinked clip may reference only its generated file. Resolve its declared media lineage
     // through the same current-access checks as graph sources, including intermediate chains.
     // Keys for audio, LUTs and presets omit required source/family metadata: do not guess it.
@@ -555,6 +576,32 @@ export class StudioResourceService extends BaseService {
           detail: 'The import has no recorded checksum.',
         };
       }
+      // FL-105: an SVG or Lottie import is a vector graphic however the graph names it (an audio
+      // source, captions, a LUT), so its external subresources are refused on every path.
+      if (vectorContentTypes.has(item.contentType) && item.externalReferences !== 0) {
+        return {
+          ok: false,
+          reason: StudioRefusalReason.RemoteSubresource,
+          detail:
+            item.externalReferences === undefined
+              ? 'The graphic has not been scanned for external subresources.'
+              : `The graphic references ${item.externalReferences} external subresource(s).`,
+        };
+      }
+      // An import is used only as what it is: sound from sound or video, captions and LUTs from text.
+      const expected =
+        reference.kind === StudioResourceKind.Audio
+          ? /^(audio|video)\//
+          : reference.kind === StudioResourceKind.Captions || reference.kind === StudioResourceKind.Lut
+            ? /^(text\/|application\/(x-subrip|octet-stream))/
+            : null;
+      if (expected && !expected.test(item.contentType)) {
+        return {
+          ok: false,
+          reason: StudioRefusalReason.UnsupportedMediaType,
+          detail: `${item.contentType} cannot be used as ${reference.kind}.`,
+        };
+      }
       return { ok: true, item };
     };
 
@@ -677,28 +724,16 @@ export class StudioResourceService extends BaseService {
             refuse(reference, declared.reason, declared.detail);
             break;
           }
-          // FL-105: an SVG or Lottie import is a vector graphic however the graph names it, so its
-          // external subresources are refused on every path, not only through `$resource`.
-          const isVector = vectorContentTypes.has(declared.item.contentType);
-          if (reference.kind === StudioResourceKind.VectorGraphic || isVector) {
-            if (!isVector) {
-              refuse(
-                reference,
-                StudioRefusalReason.UnsupportedMediaType,
-                `${declared.item.contentType} is not an SVG or Lottie graphic.`,
-              );
-              break;
-            }
-            if (declared.item.externalReferences !== 0) {
-              refuse(
-                reference,
-                StudioRefusalReason.RemoteSubresource,
-                declared.item.externalReferences === undefined
-                  ? 'The graphic has not been scanned for external subresources.'
-                  : `The graphic references ${declared.item.externalReferences} external subresource(s).`,
-              );
-              break;
-            }
+          if (
+            reference.kind === StudioResourceKind.VectorGraphic &&
+            !vectorContentTypes.has(declared.item.contentType)
+          ) {
+            refuse(
+              reference,
+              StudioRefusalReason.UnsupportedMediaType,
+              `${declared.item.contentType} is not an SVG or Lottie graphic.`,
+            );
+            break;
           }
           authorize(reference, {
             ownerId: context.ownerId,

@@ -734,6 +734,35 @@ export class StudioProjectRepository {
     }));
   }
 
+  /** Bytes an account keeps as project imports, for its storage quota. */
+  async getImportBytes(ownerId: string): Promise<number> {
+    const { rows } = await sql<{ bytes: number }>`
+      SELECT coalesce(sum("sizeBytes"), 0)::float8 AS bytes FROM immich_fork.studio_project_import
+      WHERE "ownerId" = ${ownerId}::uuid
+    `.execute(this.db);
+    return rows[0]?.bytes ?? 0;
+  }
+
+  /**
+   * Forget the imports of projects that no longer exist (deleted for good, emptied from the trash
+   * or purged by the lifecycle sweep) and answer where their files were, for the caller to remove.
+   */
+  async deleteOrphanImports(limit = 500): Promise<Array<{ projectId: string; ownerId: string; path: string }>> {
+    if (!(await canWriteFork(this.db))) {
+      return [];
+    }
+    const { rows } = await sql<{ projectId: string; ownerId: string; path: string }>`
+      DELETE FROM immich_fork.studio_project_import item
+      WHERE ("projectId", id) IN (
+        SELECT orphan."projectId", orphan.id FROM immich_fork.studio_project_import orphan
+        WHERE NOT EXISTS (SELECT 1 FROM studio_project project WHERE project.id = orphan."projectId")
+        LIMIT ${limit}
+      )
+      RETURNING item."projectId", item."ownerId", item.path
+    `.execute(this.db);
+    return rows;
+  }
+
   /** One import of a live project, or undefined. */
   async getImport(projectId: string, id: string): Promise<StudioProjectImport | undefined> {
     if (!isStudioUuid(projectId) || !isStudioUuid(id)) {

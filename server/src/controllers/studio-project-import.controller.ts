@@ -82,7 +82,8 @@ export class StudioProjectImportController {
   })
   importStudioProjectFile(
     @Auth() auth: AuthDto,
-    @Param() { id }: UUIDv7ParamDto,
+    // Checked by the service, not a pipe, for the same reason as the body below.
+    @Param('id') id: string,
     // Checked by the service, not a pipe: a refused request must still remove the file multer wrote.
     @Body() body: { id?: unknown },
     @UploadedFile() file: Express.Multer.File | undefined,
@@ -115,6 +116,10 @@ export class StudioProjectImportController {
     @Res() res: Response,
     @Next() next: NextFunction,
   ) {
+    // A kept file is a picture or a sound, never a document: opened on its own it runs nothing and
+    // is never read as another type (an SVG is scanned, and this is the belt to that brace).
+    res.header('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox");
+    res.header('X-Content-Type-Options', 'nosniff');
     await sendFile(res, next, () => this.service.getFile(auth, id, importId), this.logger);
   }
 }

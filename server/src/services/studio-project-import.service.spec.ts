@@ -34,8 +34,11 @@ describe(StudioProjectImportService.name, () => {
     registerImport: ReturnType<typeof vi.fn>;
     listImports: ReturnType<typeof vi.fn>;
     getImport: ReturnType<typeof vi.fn>;
+    getImportBytes: ReturnType<typeof vi.fn>;
+    deleteOrphanImports: ReturnType<typeof vi.fn>;
   };
   let studio: { forgetResolutions: ReturnType<typeof vi.fn> };
+  let users: { get: ReturnType<typeof vi.fn> };
   let sut: StudioProjectImportService;
 
   const upload = async (bytes: Buffer, mimetype = 'audio/wav', originalname = 'take.wav') => {
@@ -52,8 +55,11 @@ describe(StudioProjectImportService.name, () => {
       registerImport: vi.fn().mockImplementation((item) => Promise.resolve({ ...item, createdAt: new Date(0) })),
       listImports: vi.fn().mockResolvedValue([]),
       getImport: vi.fn(),
+      getImportBytes: vi.fn().mockResolvedValue(0),
+      deleteOrphanImports: vi.fn().mockResolvedValue([]),
     };
     studio = { forgetResolutions: vi.fn() };
+    users = { get: vi.fn().mockResolvedValue({ quotaSizeInBytes: null, quotaUsageInBytes: 0 }) };
     const storage = new StorageRepository({ setContext: vi.fn() } as never);
     // The kept copy goes into the temp directory instead of the media location.
     vi.spyOn(storage, 'mkdirSync').mockImplementation(() => {});
@@ -67,6 +73,7 @@ describe(StudioProjectImportService.name, () => {
       projects as never,
       storage,
       new CryptoRepository(),
+      users as never,
       studio as never,
     );
     return () => rm(directory, { recursive: true, force: true });
@@ -160,6 +167,55 @@ describe(StudioProjectImportService.name, () => {
     await expect(sut.upload(auth(), PROJECT, IMPORT, file)).resolves.toMatchObject({ id: IMPORT });
     await expect(readFile(file.path)).rejects.toThrow();
     await expect(readFile(join(directory, 'kept'))).rejects.toThrow();
+  });
+
+  it('lowercases the id, keeps a new import within the quota and answers a retry without counting it', async () => {
+    const upper = IMPORT.toUpperCase();
+    await sut.upload(auth(), PROJECT, upper, await upload(wav()));
+    expect(projects.registerImport).toHaveBeenLastCalledWith(
+      expect.objectContaining({ id: IMPORT, path: expect.stringContaining(`${IMPORT}.wav`) }),
+    );
+
+    users.get.mockResolvedValue({ quotaSizeInBytes: 2000, quotaUsageInBytes: 500 });
+    projects.getImportBytes.mockResolvedValue(600);
+    const over = await upload(wav());
+    await expect(sut.upload(auth(), PROJECT, IMPORT, over)).rejects.toBeInstanceOf(PayloadTooLargeException);
+    await expect(readFile(over.path)).rejects.toThrow();
+
+    // The same import again is the stored one, not new usage.
+    projects.getImport.mockResolvedValue({ id: IMPORT });
+    await expect(sut.upload(auth(), PROJECT, IMPORT, await upload(wav()))).resolves.toMatchObject({ id: IMPORT });
+  });
+
+  it('answers 400 for a vector graphic that is not UTF-8', async () => {
+    const latin = Buffer.concat([
+      Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><text>'),
+      Buffer.from([0xe9, 0xff]),
+      Buffer.from('</text></svg>'),
+    ]);
+    const file = await upload(latin, 'image/svg+xml', 'x.svg');
+    await expect(sut.upload(auth(), PROJECT, IMPORT, file)).rejects.toBeInstanceOf(BadRequestException);
+    await expect(readFile(file.path)).rejects.toThrow();
+  });
+
+  it('removes the files of projects deleted for good and stale incoming uploads', async () => {
+    const storage = (sut as unknown as { storage: StorageRepository }).storage;
+    const unlink = vi.spyOn(storage, 'unlink').mockResolvedValue();
+    const unlinkDir = vi.spyOn(storage, 'unlinkDir').mockResolvedValue();
+    vi.spyOn(storage, 'readdir').mockImplementation((folder: string) =>
+      Promise.resolve(folder.endsWith('exports') ? [OWNER, 'not-an-owner'] : ['old.upload', 'new.upload']),
+    );
+    vi.spyOn(storage, 'stat').mockImplementation((path: string) =>
+      Promise.resolve({ mtime: new Date(path.endsWith('old.upload') ? 0 : Date.now()) } as never),
+    );
+    projects.deleteOrphanImports.mockResolvedValue([
+      { projectId: PROJECT, ownerId: OWNER, path: '/data/exports/o/studio-imports/p/a.wav' },
+    ]);
+    await sut.sweep(new Date());
+    expect(unlink).toHaveBeenCalledWith('/data/exports/o/studio-imports/p/a.wav');
+    expect(unlinkDir).toHaveBeenCalledWith(studioImportProjectFolder(OWNER, PROJECT), { recursive: true, force: true });
+    expect(unlink).toHaveBeenCalledWith(expect.stringMatching(/incoming\/old\.upload$/));
+    expect(unlink).not.toHaveBeenCalledWith(expect.stringMatching(/new\.upload$/));
   });
 
   it('serves the owner the stored bytes with their recorded type', async () => {

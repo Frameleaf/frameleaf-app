@@ -300,6 +300,7 @@ describe(StudioBundleService.name, () => {
       users as never,
       resources as unknown as StudioResourceService,
       studio as unknown as StudioProjectService,
+      { sweep: vi.fn().mockResolvedValue(undefined) } as never,
     );
   });
 

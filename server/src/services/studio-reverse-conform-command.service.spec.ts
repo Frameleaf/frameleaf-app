@@ -62,7 +62,10 @@ const setup = () => {
     acquireLease: vi.fn().mockResolvedValue({ heldByYou: true }),
     save: vi.fn().mockResolvedValue({ revision: 2, replayed: false }),
   };
-  const projects = { listGeneratedResources: vi.fn().mockResolvedValue([generated]) };
+  const projects = {
+    listGeneratedResources: vi.fn().mockResolvedValue([generated]),
+    listImportDeclarations: vi.fn().mockResolvedValue([]),
+  };
   const producer = { enqueueSource: vi.fn().mockResolvedValue(operation) };
   const operations = { getForOwner: vi.fn().mockResolvedValue(operation) };
   const resources = {

@@ -1032,6 +1032,57 @@ describe(StudioResourceService.name, () => {
       ]);
     });
 
+    it('resolves an editor media id the project declares as an import to that import (FL-103 / FL-105)', async () => {
+      const owner = newUuid();
+      const { manifest, refused } = await sut.resolveProjectResources(
+        auth,
+        context(
+          sequenceWith(
+            { kind: 'voice', mediaId: 'voice-1' },
+            { kind: 'voice', mediaId: 'voice-1' },
+            { kind: 'overlay', mediaId: 'hot-svg' },
+            { kind: 'overlay', importId: 'hot-svg' },
+            { kind: 'overlay', mediaId: 'clean-svg' },
+          ),
+          { ownerId: owner, imports },
+        ),
+      );
+
+      // Never looked up as a library asset, and one entry per import however often it is placed.
+      expect(mocks.asset.getByIds).not.toHaveBeenCalled();
+      expect(manifest.entries.map((entry) => [entry.kind, entry.id, entry.path])).toEqual([
+        [StudioResourceKind.ProjectImport, 'voice-1', '/projects/p/voice-1.wav'],
+        [StudioResourceKind.Audio, 'voice-1', '/projects/p/voice-1.wav'],
+        [StudioResourceKind.ProjectImport, 'clean-svg', '/projects/p/a.svg'],
+      ]);
+      // A graphic with external subresources is refused however the graph names it.
+      expect(refused.map((item) => [item.kind, item.id, item.reason])).toEqual([
+        [StudioResourceKind.ProjectImport, 'hot-svg', StudioRefusalReason.RemoteSubresource],
+      ]);
+    });
+
+    it('refuses a graphic with external subresources and a mismatched type on every import path', async () => {
+      const { manifest, refused } = await sut.resolveProjectResources(
+        auth,
+        context(
+          sequenceWith(
+            { kind: 'voice', uploadId: 'hot-svg' },
+            { kind: 'title', captionsImportId: 'not-a-graphic' },
+            { kind: 'voice', uploadId: 'not-a-graphic' },
+          ),
+          { imports },
+        ),
+      );
+      expect(manifest.entries.filter((entry) => entry.kind !== StudioResourceKind.ProjectImport)).toEqual([]);
+      expect(refused.map((item) => [item.kind, item.id, item.reason])).toEqual(
+        expect.arrayContaining([
+          [StudioResourceKind.Audio, 'hot-svg', StudioRefusalReason.RemoteSubresource],
+          [StudioResourceKind.Captions, 'not-a-graphic', StudioRefusalReason.UnsupportedMediaType],
+          [StudioResourceKind.Audio, 'not-a-graphic', StudioRefusalReason.UnsupportedMediaType],
+        ]),
+      );
+    });
+
     it('treats inline captions as revision data and imported captions as declared files', async () => {
       const { manifest, refused } = await sut.resolveProjectResources(
         auth,

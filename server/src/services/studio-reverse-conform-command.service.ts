@@ -135,6 +135,7 @@ export class StudioReverseConformCommandService {
       ownerId: auth.user.id,
       revision: snapshot.revision as number,
       graph,
+      imports: await this.projects.listImportDeclarations(projectId),
       generated: declarations,
       destination: StudioDestination.Local,
     });

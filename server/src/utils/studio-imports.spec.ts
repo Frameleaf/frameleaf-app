@@ -84,6 +84,25 @@ describe('scanStudioSvg', () => {
   });
 
   it.each([
+    ['a prefixed href', '<svg><image xl:href="http://evil/x.png"/></svg>'],
+    ['a SMIL set', '<svg><set attributeName="href" to="http://evil/x.png"/></svg>'],
+    ['an image-set', '<svg><rect style="mask-image:image-set(\'http://evil/x.png\' 1x)"/></svg>'],
+    ['a CSS escape', String.raw`<svg><style>.a{background:\75 rl(http://evil/x.png)}</style></svg>`],
+    ['a character reference', '<svg><rect fill="u&#114;l(http://evil/x.png)"/></svg>'],
+    ['srcset', '<svg><image srcset="http://evil/x.png 1x"/></svg>'],
+  ])('counts external subresources hidden in %s', (_name, svg) => {
+    expect(scanStudioSvg(svg)).toBeGreaterThan(0);
+  });
+
+  it.each([
+    '<svg><h:script xmlns:h="http://www.w3.org/1999/xhtml">alert(1)</h:script></svg>',
+    '<svg><svg:script>alert(1)</svg:script></svg>',
+    '<svg><x:foreignObject><div/></x:foreignObject></svg>',
+    '<svg><a href="&#106;avascript:alert(1)"><rect/></a></svg>',
+    '<svg><a href="java\tscript:alert(1)"><rect/></a></svg>',
+    '<?xml version="1.0" encoding="ISO-2022-JP"?><svg/>',
+    '<!DOCTYPE svg [<!ENTITY x "y">]><svg>&x;</svg>',
+    '<svg><rect/onload="alert(1)"/></svg>',
     '<svg><script>fetch("/api")</script></svg>',
     '<svg onload="alert(1)"></svg>',
     '<svg><a href="javascript:alert(1)"><rect/></a></svg>',
@@ -101,13 +120,14 @@ describe('scanStudioLottie', () => {
       assets: [
         { id: 'comp', layers: [] },
         { id: 'embedded', e: 1, p: 'data:image/png;base64,AAAA', u: '' },
+        { id: 'flagged-but-remote', e: 1, p: 'https://cdn.example/x.png', u: '' },
         { id: 'inline', p: 'data:image/png;base64,AAAA' },
         { id: 'remote', p: 'img_0.png', u: 'https://cdn.example/images/' },
         { id: 'relative', p: 'img_1.png', u: 'images/' },
       ],
       fonts: { list: [{ fName: 'A' }, { fName: 'B', fPath: 'https://fonts.example/b.css' }] },
     });
-    expect(scanStudioLottie(lottie)).toBe(3);
+    expect(scanStudioLottie(lottie)).toBe(4);
     expect(scanStudioLottie('{"v":"5.0","layers":[]}')).toBe(0);
   });
 
