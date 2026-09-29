@@ -140,6 +140,19 @@ export class StorageCore {
     return StorageCore.getNestedPath(StorageFolder.EncodedVideo, asset.ownerId, `${asset.id}.mp4`);
   }
 
+  /** FL-97: the Studio HDR intermediate, beside the playback transcode. */
+  /**
+   * FL-97: one Studio HDR intermediate generation. Every generation gets its own name, so no
+   * encode ever overwrites a file a row still names or a queued FileDelete will remove.
+   */
+  static getStudioHdrProxyPath(asset: ThumbnailPathEntity, generation: string) {
+    return StorageCore.getNestedPath(
+      StorageFolder.EncodedVideo,
+      asset.ownerId,
+      `${asset.id}-studio-hdr-${generation}.mp4`,
+    );
+  }
+
   static getHlsSessionFolder({ ownerId, sessionId }: HlsSessionFolder) {
     return StorageCore.getNestedPath(StorageFolder.EncodedVideo, ownerId, sessionId);
   }

@@ -43,8 +43,24 @@ type ChainState = {
   renderWorkerId: string;
   liveSessionId: string;
   expiredSessionId: string;
+  /** FL-97: an asset the official leg "deletes", leaving its Studio HDR intermediate row orphaned. */
+  hdrOrphanAssetId: string;
   portable: unknown;
 };
+
+const HDR_INTERMEDIATE_PATH = '/data/encoded-video/chained-studio-hdr.mp4';
+const HDR_ORPHAN_PATH = '/data/encoded-video/chained-orphan-studio-hdr.mp4';
+
+/** FL-97: the Studio HDR intermediate rows (a fork sidecar with no foreign key into public). */
+const hdrIntermediates = (assetIds: string[]) =>
+  withDatabase(async (client) => {
+    const { rows } = await client.query(
+      `SELECT "assetId"::text AS "assetId", "ownerId"::text AS "ownerId", encode("sourceFingerprint", 'hex') AS fingerprint, status, path
+       FROM immich_fork.studio_hdr_intermediate WHERE "assetId" = ANY($1::uuid[]) ORDER BY "assetId"::text`,
+      [assetIds],
+    );
+    return canonical(rows);
+  });
 
 /** The rows that must cross every handoff unchanged. Lease and audit columns are checked apart. */
 const portableRows = (state: Omit<ChainState, 'portable' | 'originalDigest'>) =>
@@ -88,6 +104,11 @@ const portableRows = (state: Omit<ChainState, 'portable' | 'originalDigest'>) =>
         `SELECT id::text, "workerId"::text, scopes, "expiresAt"::text AS "expiresAt" FROM public.render_worker_session
          WHERE id = ANY($1::uuid[]) ORDER BY id::text`,
         [[state.liveSessionId, state.expiredSessionId]],
+      ),
+      studioHdrIntermediate: await select(
+        `SELECT "assetId"::text AS "assetId", "ownerId"::text AS "ownerId", encode("sourceFingerprint", 'hex') AS fingerprint, status, path
+         FROM immich_fork.studio_hdr_intermediate WHERE "assetId" = $1`,
+        [state.retainedAssetId],
       ),
       physicalFile: await select(
         `SELECT id::text, type, path, "canonicalAssetId"::text AS "canonicalAssetId"
@@ -274,6 +295,12 @@ describe.runIf(phase === 'chain-fork-seed')(`${lane}: fork leg seeds Frameleaf r
                 ($2, $3, $5, ARRAY['studio_export'], now(), now() - interval '1 hour')`,
         [liveSessionId, expiredSessionId, renderWorkerId, randomBytes(32), randomBytes(32)],
       );
+      // FL-97: the retained original's Studio HDR intermediate.
+      await client.query(
+        `INSERT INTO immich_fork.studio_hdr_intermediate ("assetId", "ownerId", "sourceFingerprint", status, path)
+         SELECT id, "ownerId", sha256(checksum), 'ready', $2 FROM public.asset WHERE id = $1`,
+        [origin.assetId, HDR_INTERMEDIATE_PATH],
+      );
       return {
         physicalFileId,
         operationId,
@@ -292,6 +319,7 @@ describe.runIf(phase === 'chain-fork-seed')(`${lane}: fork leg seeds Frameleaf r
       copyOwner,
       retainedAssetId: origin.assetId,
       copyAssetId: copy.id,
+      hdrOrphanAssetId: randomUUID(),
       ...seeded,
     };
     const state: ChainState = { ...ids, originalDigest, portable: await portableRows(ids) };
@@ -338,6 +366,15 @@ describe.runIf(phase === 'chain-official')(`${lane}: official leg`, () => {
     );
     await expectSharedOriginal(state);
     await expect(portableRows(state)).resolves.toEqual(state.portable);
+    // FL-97: an asset deleted on the official server leaves its fork sidecar row behind (the
+    // official server never reads immich_fork); the return must archive it, not keep serving it.
+    await withDatabase((client) =>
+      client.query(
+        `INSERT INTO immich_fork.studio_hdr_intermediate ("assetId", "ownerId", "sourceFingerprint", status, path)
+         VALUES ($1, $2, '\\x00'::bytea, 'ready', $3)`,
+        [state.hdrOrphanAssetId, state.copyOwner.userId, HDR_ORPHAN_PATH],
+      ),
+    );
   }, 120_000);
 });
 
@@ -362,7 +399,14 @@ describe.runIf(phase === 'chain-fork-return')(`${lane}: fork leg after the retur
     await withDatabase(async (client) => {
       const fork = await client.query('SELECT active, phase FROM immich_fork.state WHERE id = 1');
       expect(fork.rows[0]).toEqual({ active: true, phase: 'active' });
+      // FL-97: the orphaned intermediate row is archived, the retained one kept (portableRows)
+      const archived = await client.query(
+        `SELECT "sourceKey", payload->>'path' AS path FROM immich_fork.orphaned_records
+         WHERE "sourceTable" = 'studio_hdr_intermediate'`,
+      );
+      expect(archived.rows).toEqual([{ sourceKey: state.hdrOrphanAssetId, path: HDR_ORPHAN_PATH }]);
     });
+    await expect(hdrIntermediates([state.hdrOrphanAssetId])).resolves.toEqual([]);
   }, 120_000);
 });
 
@@ -408,6 +452,8 @@ describe.runIf(phase === 'chain-canonical-delete')(`${lane}: shared original aft
       120_000,
     );
     await waitForQuiescence(state.adminToken);
+    // FL-97: the asset's removal took its Studio HDR intermediate row
+    await expect(hdrIntermediates([state.retainedAssetId])).resolves.toEqual([]);
     await saveState('chain-canonical-delete', { before, deletedPath });
   }, 180_000);
 });

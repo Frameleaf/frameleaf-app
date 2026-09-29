@@ -342,8 +342,8 @@ describe('exact v3.1.0 public schema cutover evidence', () => {
     // (FL-91) and utility activity (FL-47) tables included, and every later fork table, among them
     // the supporter keys (FL-156), Frameleaf account links and Sign in with Frameleaf sessions (FL-158)
     // the album covers that follow the newest item (FL-83) and items shared with a person (FL-83 AL-30b)
-    // and server-owned generated media declarations (FL-111).
-    expect(observedLocks).toHaveLength(122);
+    // and server-owned generated media declarations (FL-111), and Studio HDR intermediates (FL-97).
+    expect(observedLocks).toHaveLength(123);
     expect(observedLocks).toEqual(
       expect.arrayContaining([
         'immich_fork.video_edit_version',
@@ -365,6 +365,7 @@ describe('exact v3.1.0 public schema cutover evidence', () => {
         'immich_fork.studio_workspace_layout',
         'immich_fork.studio_generated_resource',
         'immich_fork.studio_project_import',
+        'immich_fork.studio_hdr_intermediate',
         'immich_fork.utility_activity',
         'immich_fork.album_cover_follows_newest',
         'immich_fork.asset_user_share',

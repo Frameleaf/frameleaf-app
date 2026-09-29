@@ -61,7 +61,7 @@ describe(StudioProjectService.name, () => {
   };
   /** The owner's items the session may not see (Locked while locked, or hidden by a rule). */
   let hiddenFromSession: Set<string>;
-  let resources: { resolveProjectResources: AnyMock; hdrLibraryAssets: AnyMock };
+  let resources: { resolveProjectResources: AnyMock; hdrLibraryAssets: AnyMock; studioHdrProxies: AnyMock };
   let owner: AuthDto;
   let reviewer: AuthDto;
   let project: StudioProject;
@@ -184,6 +184,7 @@ describe(StudioProjectService.name, () => {
     resources = {
       resolveProjectResources: vi.fn().mockResolvedValue(manifest(true)),
       hdrLibraryAssets: vi.fn().mockResolvedValue([]),
+      studioHdrProxies: vi.fn().mockResolvedValue([]),
     };
 
     websocket = getMocks().websocket;
@@ -1009,11 +1010,14 @@ describe(StudioProjectService.name, () => {
         },
       });
       resources.hdrLibraryAssets.mockResolvedValue([hdr]);
+      resources.studioHdrProxies.mockResolvedValue([hdr]);
 
       const seen = await sut.get(owner, project.id);
 
       expect(seen.resources?.hdrSources).toEqual([hdr]);
+      expect(seen.resources?.hdrProxySources).toEqual([hdr]);
       expect(resources.hdrLibraryAssets).toHaveBeenCalledWith([hdr, sdr]);
+      expect(resources.studioHdrProxies).toHaveBeenCalledWith([hdr]);
     });
 
     it('duplicates the head byte for byte into a new project of the owner, unshared', async () => {
