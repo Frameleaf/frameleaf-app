@@ -216,6 +216,20 @@ test('authenticated release packaging, negative trust cases, and Synology worker
     assert.throws(() => execFileSync('sh', [localScript], {
       env: { ...installEnv, wizard_database_path: path.join(localVolume, 'missing') }, stdio: 'pipe',
     }), /directories must already exist/);
+    const databasePath = path.join(localVolume, 'postgres');
+    const rootUser = process.getuid?.() === 0;
+    if (rootUser) {
+      for (const dir of [root, localVolume, path.join(localVolume, 'library'), staging, path.join(staging, 'project')])
+        fs.chmodSync(dir, 0o755);
+      fs.chmodSync(localScript, 0o644);
+    }
+    fs.chmodSync(databasePath, 0o000);
+    try {
+      assert.throws(() => execFileSync('sh', [localScript], {
+        env: installEnv, stdio: 'pipe', ...(rootUser ? { uid: 65534, gid: 65534 } : {}),
+      }), /Cannot inspect database directory/);
+      assert(!fs.existsSync(path.join(staging, 'project/.env')));
+    } finally { fs.chmodSync(databasePath, 0o755); }
     write(path.join(localVolume, 'postgres/PG_VERSION'), '18\n');
     assert.throws(() => execFileSync('sh', [localScript], { env: installEnv, stdio: 'pipe' }),
       /not a PostgreSQL 14 cluster/);
