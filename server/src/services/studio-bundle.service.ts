@@ -962,10 +962,7 @@ export class StudioBundleService {
     ) {
       throw new BundleJobError('bundle_relink_unavailable', 'A chosen relink target is no longer available');
     }
-    const mapping: Record<string, string> = {};
-    for (const [key, assetId] of chosen) {
-      mapping[key] = assetId;
-    }
+    const mapping = Object.fromEntries(chosen);
     const resolvable = await this.authorizedKeys(owner, upload.id, manifest.sources);
     const plan = planStudioBundleRelink(manifest.sources, { mapping, resolvable });
 
