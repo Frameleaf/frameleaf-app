@@ -23,7 +23,7 @@ describe('fork schema BullMQ lifecycle', () => {
 
   afterAll(async () => {
     await redis.stop();
-  });
+  }, 60_000);
 
   it('accepts a successor queued by each active batch until all batches finish', async () => {
     const queueName = `fork-schema-lifecycle-${crypto.randomUUID()}`;

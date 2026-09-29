@@ -257,7 +257,10 @@ export class StudioPreviewRepository {
       // stay share-locked until publication commits, so revocation cannot land between checks.
       const ids = [...new Set(authorization.assetIds)];
       const sources = await this.privacy.lockSources(tx, ids);
-      const foreign = [...sources.values()].filter((source) => source.ownerId !== authorization.ownerId);
+      const foreign = sources
+        .values()
+        .filter((source) => source.ownerId !== authorization.ownerId)
+        .toArray();
       const shared = await this.privacy.lockSharedAccess(tx, authorization.ownerId, foreign);
       if (
         !readable ||
