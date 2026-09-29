@@ -119,7 +119,7 @@ test("Takeout chunks preserve raw bytes and resumable offsets through Fetch", as
     const result = await sdk.uploadTakeoutArchiveChunk(
       { id: "import-id", archiveId: "archive-id", offset, body },
       {
-        headers: { "Content-Type": "application/octet-stream" },
+        headers: { "X-Upload-Test": "retained" },
         signal,
         fetch: async (url, options) => {
           assert.equal(
@@ -130,12 +130,51 @@ test("Takeout chunks preserve raw bytes and resumable offsets through Fetch", as
           const request = new Request(`https://photos.example.com${url}`, options);
           assert.equal(request.method, "PUT");
           assert.equal(request.headers.get("content-type"), "application/octet-stream");
+          assert.equal(request.headers.get("x-upload-test"), "retained");
           assert.deepEqual(new Uint8Array(await request.arrayBuffer()), bytes);
           return response(source);
         },
       },
     );
     assert.deepEqual(result, source);
+  }
+});
+
+test("Takeout content-type defaults retain global and per-request header precedence", async () => {
+  const previousHeaders = sdk.defaults.headers;
+  sdk.defaults.headers = {
+    "Content-Type": "application/octet-stream; global=1",
+    "X-Global": "retained",
+  };
+  try {
+    for (const headers of [
+      undefined,
+      { "content-type": "application/octet-stream; request=1" },
+      [["Content-Type", "application/octet-stream; request=1"]],
+      new Headers({ "content-type": "application/octet-stream; request=1" }),
+    ]) {
+      await sdk.uploadTakeoutArchiveChunk(
+        { id: "import-id", archiveId: "archive-id", offset: 0, body: new Blob(["part"]) },
+        {
+          headers,
+          fetch: async (url, options) => {
+            const request = new Request(`https://photos.example.com${url}`, options);
+            assert.equal(
+              request.headers.get("content-type"),
+              headers ? "application/octet-stream; request=1" : "application/octet-stream; global=1",
+            );
+            assert.equal(request.headers.get("x-global"), "retained");
+            return response({ id: "archive-id", uploadedBytes: 4 });
+          },
+        },
+      );
+    }
+    assert.deepEqual(sdk.defaults.headers, {
+      "Content-Type": "application/octet-stream; global=1",
+      "X-Global": "retained",
+    });
+  } finally {
+    sdk.defaults.headers = previousHeaders;
   }
 });
 
