@@ -1333,6 +1333,19 @@ describe(CloudMlBatchService.name, () => {
       );
     });
 
+    it('still uploads when /capabilities offers no workloads because its own hold used the free balance (FL-201, FC contract)', async () => {
+      mocks.machineLearning.probe.mockResolvedValue({
+        ...mlProbeStub.frameleafCloud,
+        workloads: [],
+        cloud: { ...facts, balanceUsd: 5, heldUsd: 5 },
+      });
+
+      await sut.step(submitted({ status: 'admitted', started: false, etag: null }), 'claim-1', now);
+
+      expect(mocks.frameleafCloudMl.cancelJob).not.toHaveBeenCalled();
+      expect(mocks.frameleafCloudMl.uploadInput).toHaveBeenCalled();
+    });
+
     it('still uploads a created batch whose own hold took the rest of the AI Wallet (FL-201 review P1)', async () => {
       mocks.machineLearning.probe.mockResolvedValue({
         ...mlProbeStub.frameleafCloud,
