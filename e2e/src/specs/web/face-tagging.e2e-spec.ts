@@ -4,6 +4,7 @@ import {
   AssetMediaResponseDto,
   correctFace,
   editAsset,
+  getFaceSource,
   getFaces,
   LoginResponseDto,
   PersonResponseDto,
@@ -197,6 +198,7 @@ test.describe('Face tagging (FL-38)', () => {
   test('only the signed-in owner can tag a photo shared with an album viewer and a link visitor (FL-40)', async ({
     browser,
     page,
+    request,
   }) => {
     const asset = await createPhoto('face-write-boundary.png');
     const member = await utils.userSetup(admin.accessToken, {
@@ -214,6 +216,18 @@ test.describe('Face tagging (FL-38)', () => {
       type: SharedLinkType.Individual,
       assetIds: [asset.id],
     });
+    const memberPerson = await utils.createPerson(member.accessToken, { name: 'Member face' });
+    const source = await getFaceSource({ id: asset.id }, { headers: headers() });
+    const drawnFace = {
+      assetId: asset.id,
+      expectedSourceRevision: source.revision,
+      imageWidth: 400,
+      imageHeight: 300,
+      x: 140,
+      y: 80,
+      width: 80,
+      height: 80,
+    };
 
     const memberContext = await browser.newContext();
     const guestContext = await browser.newContext();
@@ -231,9 +245,33 @@ test.describe('Face tagging (FL-38)', () => {
       await guestPage.getByRole('button', { name: 'Information', exact: true }).click();
       await expect(guestPage.locator('#detail-panel')).toBeVisible();
       await expect(guestPage.getByRole('button', { name: 'Add person' })).toHaveCount(0);
+
+      // A hidden control is not the permission boundary: use the real face endpoint with a valid
+      // source revision and each denied identity before the owner saves through the viewer.
+      const sharedWrite = await memberPage.request.post('/api/faces', {
+        headers: asBearerAuth(member.accessToken),
+        data: { ...drawnFace, personId: memberPerson.id },
+      });
+      expect(sharedWrite.status()).toBe(400);
+      const linkWrite = await guestPage.request.post(`/api/faces?key=${encodeURIComponent(link.key)}`, {
+        data: { ...drawnFace, personId: jamie.id },
+      });
+      expect(linkWrite.status()).toBe(403);
+      const unsignedWrite = await request.post('/api/faces', { data: { ...drawnFace, personId: jamie.id } });
+      expect(unsignedWrite.status()).toBe(401);
       expect(await getFaces({ id: asset.id }, { headers: headers() })).toHaveLength(0);
 
-      const dialog = await openFaceTagger(page, asset);
+      await page.goto(`/albums/${album.id}`);
+      const ownerTile = page.locator(`[data-asset-id="${asset.id}"]`);
+      await expect(ownerTile).toBeVisible();
+      await ownerTile.locator('button').first().click();
+      await expect(page.locator('#immich-asset-viewer')).toHaveAttribute('data-asset-id', asset.id);
+      await page.keyboard.press('i');
+      const ownerPanel = page.locator('#detail-panel');
+      await expect(ownerPanel).toBeVisible();
+      await ownerPanel.getByRole('button', { name: 'Add person' }).click();
+      const dialog = page.getByRole('dialog', { name: 'Tag people' });
+      await expect(dialog.getByRole('button', { name: 'Add face' })).toBeEnabled();
       await dialog.getByRole('button', { name: 'Add face' }).click();
       await dialog.getByRole('button', { name: 'Jamie', exact: true }).click();
       await dialog.getByRole('button', { name: 'Save face tags' }).click();
@@ -244,6 +282,9 @@ test.describe('Face tagging (FL-38)', () => {
           return faces[0]?.person?.id;
         })
         .toBe(jamie.id);
+      await page.goBack();
+      await expect(page.locator('#immich-asset-viewer')).toHaveCount(0);
+      await expect(ownerTile).toBeVisible();
 
       await memberPage.reload();
       await expect(memberPage.getByTestId('preview').filter({ visible: true })).toHaveAttribute('src', /.+/);
