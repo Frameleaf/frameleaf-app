@@ -50,6 +50,7 @@ import {
   updateConfig,
   updateLibrary,
   updateMyPreferences,
+  updatePartner,
   upsertTags,
   validate,
 } from '@immich/sdk';
@@ -665,8 +666,24 @@ export const utils = {
   updateLibrary: (accessToken: string, id: string, dto: UpdateLibraryDto) =>
     updateLibrary({ id, updateLibraryDto: dto }, { headers: asBearerAuth(accessToken) }),
 
-  createPartner: (accessToken: string, id: string) =>
-    createPartner({ partnerCreateDto: { sharedWithId: id } }, { headers: asBearerAuth(accessToken) }),
+  /**
+   * Share the caller's library with `id`. A new partnership shares no locations by default (FL-146);
+   * specs state what they rely on, so this turns location sharing on unless told otherwise.
+   */
+  createPartner: async (
+    accessToken: string,
+    id: string,
+    { shareLocation = true }: { shareLocation?: boolean } = {},
+  ) => {
+    const partner = await createPartner(
+      { partnerCreateDto: { sharedWithId: id } },
+      { headers: asBearerAuth(accessToken) },
+    );
+    if (!shareLocation) {
+      return partner;
+    }
+    return updatePartner({ id, partnerUpdateDto: { shareLocation: true } }, { headers: asBearerAuth(accessToken) });
+  },
 
   updateMyPreferences: (accessToken: string, userPreferencesUpdateDto: UserPreferencesUpdateDto) =>
     updateMyPreferences({ userPreferencesUpdateDto }, { headers: asBearerAuth(accessToken) }),
