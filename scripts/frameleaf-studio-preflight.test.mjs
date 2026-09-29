@@ -119,6 +119,39 @@ test('unavailable decode and unsupported input profile fail closed', () => {
   assert.equal(wrongProfile.goNoGo, false);
 });
 
+test('Dolby stream or later-frame signalling cannot pass as plain HDR source evidence', () => {
+  const reason = 'Dolby Vision source decode/reshape is unqualified; no base-layer-only policy is enabled';
+  // Synthetic probe records exercise admission only; they are not Dolby media qualification.
+  for (const record of [
+    ...[5, 7, 8].map((dv_profile) => ({ ...source, streams: [{ ...source.streams[0],
+      side_data_list: [{ side_data_type: 'DOVI configuration record', dv_profile,
+        dv_bl_signal_compatibility_id: dv_profile === 5 ? 0 : 1 }] }] })),
+    ...['Dolby Vision RPU Data', 'Dolby Vision Metadata'].map((side_data_type) => ({ ...source,
+      frames: [...source.frames.slice(0, -1), { ...source.frames.at(-1), side_data_list: [{ side_data_type }] }] })),
+  ]) {
+    let converted = false;
+    const result = preflight(plan(), (binary, args) => {
+      if (args.includes('-show_entries')) {
+        const entries = args[args.indexOf('-show_entries') + 1];
+        assert.ok(entries.includes('stream_side_data=side_data_type'));
+        assert.ok(entries.includes('frame_side_data=side_data_type'));
+        return JSON.stringify(record);
+      }
+      if (args.includes('format=gbrpf32le')) converted = true;
+      return execute(binary, args);
+    });
+    assert.equal(result.localChecksPassed, false);
+    assert.equal(result.goNoGo, false);
+    assert.equal(result.checks.find((check) => check.name === 'source profile and decode').detail, reason);
+    assert.equal(converted, false, 'unqualified Dolby input must not enter generic float conversion');
+  }
+  const plainHdr = preflight(plan(), (binary, args) => args.includes('-show_entries')
+    ? JSON.stringify({ ...source, streams: [{ ...source.streams[0],
+      side_data_list: [{ side_data_type: 'Mastering display metadata' }] }] }) : execute(binary, args));
+  assert.equal(plainHdr.localChecksPassed, true);
+  assert.equal(plainHdr.goNoGo, false);
+});
+
 test('zero decoded frames fail closed even when source metadata is valid', () => {
   const result = preflight(plan(), (binary, args) => {
     if (args.includes('format=gbrpf32le')) {

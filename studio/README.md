@@ -20,6 +20,9 @@ backward or unsafe integer timestamps, invalid time bases and source decode/demu
 cadence without rounding to seconds or guessing from frame rate. The existing 30-second and 1 MiB
 probe limits bound this check to small specimens; exceeding either fails closed. These source
 timestamps do not prove edited-output/XML/RPU correspondence. The overall Dolby `goNoGo` remains false.
+Dolby configuration or RPU/metadata side data reported on the stream or any decoded frame is refused:
+the generic HDR probe has no qualified Dolby decode/reshape path or explicit base-layer-only policy.
+Plain HDR10/HLG sources remain eligible; this refusal does not strip metadata or create an output.
 
 `node --test scripts/frameleaf-studio-preflight.test.mjs` requires administrator-installed FFmpeg
 and FFprobe with `libx265`. It checks two probes of tiny generated HEVC Main10 fractional/VFR
