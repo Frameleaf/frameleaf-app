@@ -1228,21 +1228,17 @@ describe(AlbumService.name, () => {
       expect(CreateAlbumDto.schema.safeParse({ albumName: 'x', icon: 'folder-heart' }).success).toBe(true);
     });
 
-    it('deleting a collection leaves its albums standing on their own', async () => {
+    it('deleting a collection keeps its albums, in one repository transaction', async () => {
       const collection = AlbumFactory.from({ kind: AlbumKind.Collection }).build();
       const { user: owner } = collection.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
-      const childIds = [newUuid(), newUuid()];
       mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([collection.id]));
       mocks.album.getById.mockResolvedValue(getForAlbum(collection));
-      mocks.album.getChildIds.mockResolvedValue(childIds);
 
       await sut.delete(AuthFactory.create(owner), collection.id);
 
-      expect(mocks.album.reparent).toHaveBeenCalledTimes(2);
-      for (const childId of childIds) {
-        expect(mocks.album.reparent).toHaveBeenCalledWith(childId, null);
-      }
-      expect(mocks.album.delete).toHaveBeenCalledWith(collection.id);
+      expect(mocks.album.deleteCollection).toHaveBeenCalledWith(collection.id);
+      expect(mocks.album.delete).not.toHaveBeenCalled();
+      expect(mocks.album.reparent).not.toHaveBeenCalled();
     });
 
     it('deleting a plain album does not touch other albums', async () => {
@@ -1253,7 +1249,8 @@ describe(AlbumService.name, () => {
 
       await sut.delete(AuthFactory.create(owner), album.id);
 
-      expect(mocks.album.getChildIds).not.toHaveBeenCalled();
+      expect(mocks.album.delete).toHaveBeenCalledWith(album.id);
+      expect(mocks.album.deleteCollection).not.toHaveBeenCalled();
       expect(mocks.album.reparent).not.toHaveBeenCalled();
     });
   });
