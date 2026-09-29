@@ -88,12 +88,29 @@
     },
     {
       "area": ["web-bundle", "worker-container"],
-      "component": "@huggingface/transformers CDN wasm path (https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1/dist/), set by the Whisper worker's onnx wasmPaths",
-      "description": "The Whisper transcription worker points its ONNX wasmPaths at a jsdelivr build of @huggingface/transformers, a different package/version than the reviewed runtime:onnx-cdn row (onnxruntime-web) or runtime:whisper-transformers (the esm.sh transformers module). Found by studio-editing while building engine-admission (2026-09-29); it is not yet a row in studio/dependency-attribution.json, so it has no redistribution/localRuntime/hostedUse decision and no owner approval.",
-      "id": "unreviewed-runtime-cdn-dependency",
-      "owner": null,
-      "reason": "Needs an attribution row added to studio/dependency-attribution.json (locator, revision, licence, evidence) before it can be reviewed, and then the owner's approval like every other resource in studio/rights-approval.json. Until then this CDN fetch has no reviewed rights decision.",
-      "status": "blocked-on-owner"
+      "component": "runtime:onnx-cdn (onnxruntime-web 1.26.0-dev.20260410-5e55544225, plus the transformers 3.8.1 jsep wasm pair installed under kokoro-js)",
+      "description": "Resolved by engineering, per owner decision (2026-09-29, no runtime CDN): studio patch 0029 (commit 80b176d8c3, superseding the withdrawn 9cc280000a) serves every ONNX Runtime WebAssembly the engine loads from the engine build's own origin, byte-digest pinned, instead of jsdelivr. A Chromium regression test checks every build is served same-origin with no CDN request. The owner re-approved this row on 2026-09-29 at its bundled locator and file digests; studio/rights-approval.json's stored digest matches the current row (verified independently).",
+      "enforcedBy": [
+        "studio/rights-approval.json resources[] (runtime:onnx-cdn - approvedOn 2026-09-29)",
+        "server/src/utils/studio-rights.generated.ts (regenerated; row allowed)"
+      ],
+      "id": "runtime-onnx-cdn-bundled",
+      "owner": "Owner (AJ Taylor)",
+      "reason": "Cleared: the owner re-approved runtime:onnx-cdn at its bundled, no-CDN locator on 2026-09-29 (recorded in studio/rights-approval.json, noted on Jira FL-86 and FL-136). This row is stable across the 0029 revision (only runtime:whisper-transformers changed again).",
+      "status": "cleared"
+    },
+    {
+      "area": ["web-bundle", "worker-container"],
+      "component": "runtime:whisper-transformers (@huggingface/transformers 3.8.1, bundled in the engine build under kokoro-js's pinned install)",
+      "description": "The Whisper worker stays on transformers.js 3.8.1 (bundled, no CDN) rather than moving to the installed 4.1.0: the owner chose 3.8.1 because 4.1.0 shifts word timestamps about a word late (owner decision 2026-09-29). Patch 0029 (commit 80b176d8c3, superseding the withdrawn 9cc280000a/fccb0a8977) changed this row's locator to the bundled 3.8.1 install and its file digest to kokoro-js/node_modules/@huggingface/transformers/dist/transformers.web.js (sha256 1b41438d839ca3ea1346031472edee8cb3eefbf0bad48945f969559e2eb03394, row digest 86972408a2e5ece3d966f5564eeb4215ba45d767fe980433ed66fef78191e481). That digest does not match studio/rights-approval.json's stored 2026-09-29 approval (which was for the withdrawn 4.1.0 row, verified independently), so approval has lapsed again and Whisper (and anything that shares this runtime) is blocked until the owner re-approves the new row. Re-approved by the owner on 2026-09-29 at this exact row digest (studio commit 69f286911a, following patch 0029/80b176d8c3): studio/rights-approval.json now carries approvedOn 2026-09-29 with a matching digest, and the regenerated server mirror/engine policy admit it again.",
+      "enforcedBy": [
+        "studio/rights-approval.json resources[] (runtime:whisper-transformers - approvedOn 2026-09-29)",
+        "server/src/utils/studio-rights.generated.ts (regenerated; row allowed)"
+      ],
+      "id": "runtime-whisper-transformers-pending-reapproval",
+      "owner": "Owner (AJ Taylor)",
+      "reason": "Cleared: the owner re-approved runtime:whisper-transformers at row digest 86972408a2e5ece3d966f5564eeb4215ba45d767fe980433ed66fef78191e481 on 2026-09-29 (relayed via the coordinator to studio-editing, recorded in studio/rights-approval.json commit 69f286911a, noted on Jira FL-86, FL-111 and FL-136).",
+      "status": "cleared"
     }
   ],
   "schemaVersion": 1
