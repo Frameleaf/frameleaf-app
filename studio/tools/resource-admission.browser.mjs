@@ -5,6 +5,18 @@ import { createHash } from 'node:crypto';
 const require = createRequire(new URL('../engine/package.json', import.meta.url));
 const { chromium } = require('playwright');
 const origin = process.env.STUDIO_TEST_ORIGIN || 'http://127.0.0.1:5186';
+import { readFile } from 'node:fs/promises';
+// The generated policy admits what the owner approved (studio/rights-approval.json). These
+// entrypoint regressions check the refusal path, so they substitute a policy in which every
+// reviewed identity is blocked, as a checkout without an approval would generate.
+const generated = JSON.parse(await readFile(new URL('../engine/src/shared/utils/resource-policy.json', import.meta.url), 'utf8'));
+const blockedPolicy = Object.fromEntries(Object.entries(generated).map(([id, entry]) => [id, { ...entry, localRuntime: 'blocked', approvalSha256: null }]));
+const substitutePolicy = (context, policy) => context.route('**/resource-policy.json*', (route) => {
+  const raw = new URL(route.request().url()).pathname.includes('/moss-tts/') && !new URL(route.request().url()).searchParams.has('import');
+  return route.fulfill(raw
+    ? { contentType: 'application/json', body: JSON.stringify(policy) }
+    : { contentType: 'text/javascript', body: `export default ${JSON.stringify(policy)}` });
+});
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
 try {
   for (const entry of ['/', '/headless.html']) {
@@ -24,6 +36,8 @@ try {
       }
       return route.continue();
     });
+    // Registered after the catch-all: Playwright runs the newest matching route first.
+    if (!process.env.STUDIO_TEST_BUILT) await substitutePolicy(context, blockedPolicy);
     const page = await context.newPage();
     await page.goto(origin + entry);
     await page.waitForTimeout(1000);
@@ -171,14 +185,12 @@ try {
     console.log(`${entry}: ${results.attempts.length} resource refusals; seven workers twice; MOSS pages/iframe/tokenizer blocked; real local PNG import passed`);
     await context.close();
   }
-  // A test-only network substitution supplies the one approved fixture policy.
-  // Production generation rejects any approval; no fixture approval ships.
+  // A test-only network substitution supplies one approved fixture with a recorded byte digest.
+  // The generated policy records no byte digests, so byte verification fails closed in production.
   if (!process.env.STUDIO_TEST_BUILT) {
   const fixtureContext = await browser.newContext({ serviceWorkers: 'block' });
   const hash = createHash('sha256').update(new Uint8Array([1, 2, 3])).digest('hex');
-  await fixtureContext.route('**/src/shared/utils/resource-policy.json*', route => route.fulfill({
-    contentType: 'text/javascript', body: `export default ${JSON.stringify({ 'fixture:approved': { localRuntime: 'allowed', sha256: hash } })}`,
-  }));
+  await substitutePolicy(fixtureContext, { 'fixture:approved': { localRuntime: 'allowed', approvalSha256: hash, sha256: hash, locator: null, revision: null } });
   const fixturePage = await fixtureContext.newPage();
   await fixturePage.goto(origin + '/headless.html');
   const fixture = await fixturePage.evaluate(async () => {

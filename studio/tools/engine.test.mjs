@@ -117,19 +117,106 @@ test('artifact audit includes installed runtime package notices and rejects pack
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
-test('production policy retains every blocked identity and rejects a manifest-only approval', async () => {
+test('runtime policy admits exactly the owner-approved rows and keeps everything else blocked', async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'frameleaf-runtime-policy-'));
   try {
     const studio = path.resolve(import.meta.dirname, '..');
     await cp(path.join(studio, 'runtime'), path.join(root, 'runtime'), { recursive: true });
     const manifest = JSON.parse(await readFile(path.join(studio, 'dependency-attribution.json'), 'utf8'));
+    const approval = JSON.parse(await readFile(path.join(studio, 'rights-approval.json'), 'utf8'));
     await writeFile(path.join(root, 'dependency-attribution.json'), JSON.stringify(manifest));
     const engine = path.join(root, 'engine');
+    const policyOf = async () => JSON.parse(await readFile(path.join(engine, 'src/shared/utils/resource-policy.json'), 'utf8'));
+
+    // Without the owner's approval nothing is admitted.
     await writeResourcePolicy(root, engine);
-    const actual = JSON.parse(await readFile(path.join(engine, 'src/shared/utils/resource-policy.json'), 'utf8'));
+    let actual = await policyOf();
     assert.deepEqual(Object.keys(actual), manifest.resources.map(({ id }) => id));
     assert.equal(Object.keys(actual).length, 210);
+    assert.ok(Object.values(actual).every((entry) => entry.localRuntime === 'blocked' && entry.approvalSha256 === null));
+
+    // With it, every approved row is admitted, bound to its row digest and pinned revision.
+    await writeFile(path.join(root, 'rights-approval.json'), JSON.stringify(approval));
+    await writeResourcePolicy(root, engine);
+    actual = await policyOf();
+    assert.ok(Object.values(actual).every((entry) => entry.localRuntime === 'allowed' && /^[a-f0-9]{64}$/.test(entry.approvalSha256)));
+    assert.ok(Object.values(actual).every((entry) => entry.sha256 === null));
+    assert.deepEqual(actual['model:walterlow/RIFE_fp32_timestep'], {
+      localRuntime: 'allowed',
+      approvalSha256: approval.resources.find(({ id }) => id === 'model:walterlow/RIFE_fp32_timestep').sha256,
+      sha256: null,
+      locator: 'walterlow/RIFE_fp32_timestep',
+      revision: 'ee09066f9822f8b28b8477a1b4cc30f19d607590',
+    });
     assert.deepEqual(await readFile(path.join(engine, 'src/shared/utils/resource-policy.json')), await readFile(path.join(engine, 'public/moss-tts/resource-policy.json')));
+
+    // The runtime module admits ids and URLs only inside approved rows and pinned revisions.
+    const runtime = await import(`${path.join(engine, 'src/shared/utils/resource-admission.mjs')}?approved`);
+    for (const id of [
+      'font:Inter',
+      'model:walterlow/RIFE_fp32_timestep',
+      'https://huggingface.co/walterlow/RIFE_fp32_timestep/resolve/ee09066f9822f8b28b8477a1b4cc30f19d607590/RIFE_fp32_timestep.onnx',
+      'https://huggingface.co/spaces/Supertone/supertonic-3/resolve/main/assets/onnx/vocoder.onnx',
+      'https://esm.sh/@huggingface/transformers@3.8.1?bundle',
+    ]) assert.equal(runtime.canUseResource(id), true, id);
+    for (const id of [
+      'font:Not A Reviewed Font',
+      'model:unknown/weights',
+      'https://huggingface.co/walterlow/RIFE_fp32_timestep/resolve/main/RIFE_fp32_timestep.onnx',
+      'https://huggingface.co/walterlow/RIFE_fp32_timestep/resolve/ee09066f9822f8b28b8477a1b4cc30f19d607590/../../other/resolve/x/a.onnx',
+      'https://user:pass@huggingface.co/walterlow/RIFE_fp32_timestep/resolve/ee09066f9822f8b28b8477a1b4cc30f19d607590/a.onnx',
+      'http://huggingface.co/walterlow/RIFE_fp32_timestep/resolve/ee09066f9822f8b28b8477a1b4cc30f19d607590/a.onnx',
+      'https://huggingface.co.evil.test/walterlow/RIFE_fp32_timestep/resolve/ee09066f9822f8b28b8477a1b4cc30f19d607590/a.onnx',
+      'https://esm.sh/@huggingface/transformers@3.8.1?bundle&x=1',
+      'https://huggingface.co/unapproved/resolve/main/model.onnx',
+      'https://huggingface.co/walterlow/RIFE_fp32_timestep-evil/resolve/ee09066f9822f8b28b8477a1b4cc30f19d607590/a.onnx',
+      'https://huggingface.co/spaces/Supertone/supertonic-3/resolve/main/assets-evil/x.onnx',
+      'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.26.0-dev.20260410-5e55544225/dist/..%2F..%2Fevil@1%2Fx.js',
+    ]) assert.equal(runtime.canUseResource(id), false, id);
+    // Third-party loaders that ask for a branch are sent to the approved commit; nothing else moves.
+    assert.equal(
+      runtime.pinnedHuggingFaceUrl('https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/af_heart.bin'),
+      'https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/1939ad2a8e416c0acfeecc08a694d14ef25f2231/voices/af_heart.bin',
+    );
+    assert.equal(
+      runtime.pinnedHuggingFaceUrl('https://huggingface.co/api/models/OpenMOSS-Team/MOSS-TTS-Nano-100M-ONNX/tree/main?recursive=1'),
+      'https://huggingface.co/api/models/OpenMOSS-Team/MOSS-TTS-Nano-100M-ONNX/tree/f52645cb467506d8e18e746ddd59482685b74e58?recursive=1',
+    );
+    for (const unchanged of [
+      'https://huggingface.co/unapproved/repo/resolve/main/model.onnx',
+      'https://huggingface.co/spaces/Supertone/supertonic-3/resolve/main/assets/onnx/vocoder.onnx',
+      'https://fonts.googleapis.com/css2?family=Inter',
+    ]) assert.equal(runtime.pinnedHuggingFaceUrl(unchanged), unchanged);
+    assert.equal(runtime.approvedRevision('model:Xenova/musicgen-small'), '6a8096dabfff72909ef5eae41461408e29ae20fd');
+    assert.throws(() => runtime.approvedRevision('font:Inter'), /FRAMELEAF_RESOURCE_BLOCKED/);
+    // No per-file byte digest is recorded, so byte verification still fails closed.
+    await assert.rejects(runtime.verifyResourceBytes('font:Inter', new Uint8Array([1])), /FRAMELEAF_RESOURCE_BLOCKED/);
+
+    // A use the owner withheld, or a row changed after approval, stays blocked.
+    const withheld = structuredClone(approval);
+    withheld.resources.find(({ id }) => id === 'font:Inter').excludedUses = { localRuntime: 'Withheld for this test.' };
+    withheld.resources.find(({ id }) => id === 'voice:kokoro-af_heart').excludedUses = { localRuntime: 'Withheld for this test.' };
+    const changed = structuredClone(manifest);
+    changed.resources.find(({ id }) => id === 'model:walterlow/RIFE_fp32_timestep').revision = '0'.repeat(40);
+    await writeFile(path.join(root, 'rights-approval.json'), JSON.stringify(withheld));
+    await writeFile(path.join(root, 'dependency-attribution.json'), JSON.stringify(changed));
+    // A separate engine directory, so the runtime module reads this policy rather than a cached one.
+    const narrowedEngine = path.join(root, 'engine-withheld');
+    await writeResourcePolicy(root, narrowedEngine);
+    actual = JSON.parse(await readFile(path.join(narrowedEngine, 'src/shared/utils/resource-policy.json'), 'utf8'));
+    assert.equal(actual['font:Inter'].localRuntime, 'blocked');
+    assert.equal(actual['model:walterlow/RIFE_fp32_timestep'].localRuntime, 'blocked');
+    assert.equal(actual['font:Roboto'].localRuntime, 'allowed');
+    assert.equal(actual['voice:kokoro-af_heart'].localRuntime, 'blocked');
+    // A withheld voice blocks its own file even though its model repository is approved.
+    const narrowed = await import(path.join(narrowedEngine, 'src/shared/utils/resource-admission.mjs'));
+    assert.equal(narrowed.canUseResource('voice:kokoro-af_heart'), false);
+    assert.equal(narrowed.canUseResource('voice:kokoro-af_bella'), true);
+    assert.equal(narrowed.canUseResource('https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/af_heart.bin'), false);
+    assert.equal(narrowed.canUseResource('https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/af_bella.bin'), true);
+    assert.equal(narrowed.canUseResource('model:walterlow/RIFE_fp32_timestep'), false);
+
+    // A reviewed row cannot admit itself: approval is the owner's record, not a JSON edit.
     manifest.resources[0].decisions.localRuntime = 'allowed';
     await writeFile(path.join(root, 'dependency-attribution.json'), JSON.stringify(manifest));
     await assert.rejects(writeResourcePolicy(root, engine), /Unreviewed runtime approval/);
