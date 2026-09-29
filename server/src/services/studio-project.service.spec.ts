@@ -61,7 +61,7 @@ describe(StudioProjectService.name, () => {
   };
   /** The owner's items the session may not see (Locked while locked, or hidden by a rule). */
   let hiddenFromSession: Set<string>;
-  let resources: { resolveProjectResources: AnyMock };
+  let resources: { resolveProjectResources: AnyMock; hdrLibraryAssets: AnyMock };
   let owner: AuthDto;
   let reviewer: AuthDto;
   let project: StudioProject;
@@ -181,7 +181,10 @@ describe(StudioProjectService.name, () => {
         checkItemShareAccess: vi.fn().mockResolvedValue(new Set()),
       },
     };
-    resources = { resolveProjectResources: vi.fn().mockResolvedValue(manifest(true)) };
+    resources = {
+      resolveProjectResources: vi.fn().mockResolvedValue(manifest(true)),
+      hdrLibraryAssets: vi.fn().mockResolvedValue([]),
+    };
 
     websocket = getMocks().websocket;
     sut = new StudioProjectService(
@@ -992,6 +995,25 @@ describe(StudioProjectService.name, () => {
       memberOf(project.spaceId as string);
       const reviewed = await sut.get(reviewer, project.id);
       expect(reviewed.resources?.hiddenSources).toEqual([]);
+    });
+
+    it('names the placed HDR sources it resolved, so the editor makes the project HDR (FL-97)', async () => {
+      const hdr = newUuid();
+      const sdr = newUuid();
+      const resolved = manifest(true);
+      resources.resolveProjectResources.mockResolvedValue({
+        ...resolved,
+        manifest: {
+          ...resolved.manifest,
+          entries: [hdr, sdr].map((id) => ({ key: `library-asset:${id}`, kind: StudioResourceKind.LibraryAsset, id })),
+        },
+      });
+      resources.hdrLibraryAssets.mockResolvedValue([hdr]);
+
+      const seen = await sut.get(owner, project.id);
+
+      expect(seen.resources?.hdrSources).toEqual([hdr]);
+      expect(resources.hdrLibraryAssets).toHaveBeenCalledWith([hdr, sdr]);
     });
 
     it('duplicates the head byte for byte into a new project of the owner, unshared', async () => {

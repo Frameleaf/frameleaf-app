@@ -180,6 +180,22 @@ describe('library media across editor remounts', () => {
     workspace.dispose()
   })
 
+  it('records a library original the server reports as HDR, also after it was seeded (FL-97)', async () => {
+    const media = createLibraryMediaSeeder({ workspace, projectId: () => 'fl-hdr', onChange: () => {} })
+    try {
+      const hdrVideo: StudioAssetRef = { ...libraryAsset, id: IMPORTED, hdr: true }
+      await media.seed([libraryAsset, hdrVideo])
+      expect((await getMedia(IMPORTED))?.colorTransfer).toBe('hdr')
+      expect((await getMedia(LIBRARY))?.colorTransfer).toBeUndefined()
+
+      // The server names a placed original as HDR after its first save.
+      await media.seed([{ ...libraryAsset, hdr: true }, hdrVideo])
+      expect((await getMedia(LIBRARY))?.colorTransfer).toBe('hdr')
+    } finally {
+      media.dispose()
+    }
+  })
+
   it('keeps a locally imported clip on the new mount without an orphaned-clip prompt', async () => {
     let current = 'fl-p'
     const media = createLibraryMediaSeeder({
