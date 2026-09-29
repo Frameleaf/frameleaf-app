@@ -10,9 +10,12 @@ the person now chooses:
   ratio, nearest frame, clip ends rounded with their starts, so butted
   clips stay butted). A clip that rounding would overlap is pushed later
   by the overflow, with the clips butted after it, its linked clips and
-  the clips at the same frame on the other sync-locked tracks. A clip
+  the clips at the same frame on the other sync-locked tracks (unless
+  that chain leads back to the clip it overlaps; then only clips from
+  its frame on move). A clip
   whose rounded length reads a fraction of a frame more of its source
-  keeps its length and grows its window, within the media. The last
+  keeps its length and grows its window, within the media (before its
+  start for a reversed clip). The last
   keyframe of a lane keeps the settled value. Media that read their
   source at the timeline rate are pinned to the old rate so they show
   the same pictures.
@@ -32,7 +35,12 @@ Every project write now runs one at a time, and a timeline save that
 captured the stores before a newer timeline write skips its write and
 leaves the editor dirty, so an in-flight autosave cannot put back the
 older timeline. The project store no longer keeps or writes back a copy
-of the timeline: its updates write only the fields they change.
+of the timeline: its updates write only the fields they change, and a
+late write result never replaces an undo or newer update made
+meanwhile. An undo whose write fails says so and leaves the editor
+unsaved. Freecut's loadTimeline migration write and root-folder writes
+still bypass the write queue; neither stores a timeline captured before
+a retime.
 
 Loading a project also kept removing empty trailing audio tracks that
 the person had soloed, muted, locked, hidden or taken out of sync lock,
@@ -77,10 +85,10 @@ index e3238e4b85..748dfc0938 100644
  } from '@/features/timeline/test-helpers'
 diff --git a/src/features/timeline/utils/project-retime.ts b/src/features/timeline/utils/project-retime.ts
 new file mode 100644
-index 0000000000..9c2bc6aa60
+index 0000000000..803ab6500c
 --- /dev/null
 +++ b/src/features/timeline/utils/project-retime.ts
-@@ -0,0 +1,399 @@
+@@ -0,0 +1,416 @@
 +/**
 + * Frameleaf (FL-94): changing the frame rate of a project or sequence that
 + * already has content never retimes it silently. The person picks a policy:
@@ -200,16 +208,25 @@ index 0000000000..9c2bc6aa60
 +  if (readsSource && item.sourceFps === undefined && item.type !== 'composition' && !item.compositionId) {
 +    next.sourceFps = fromFps
 +  }
-+  // Rounding a clip's end to the new grid can make it read a fraction of a source frame past its
-+  // window. The clip keeps its length, so butted clips stay butted: its window grows to cover what
-+  // it reads, within the media's own length.
++  // Rounding a clip's end to the new grid can make it read a fraction of a source frame more than
++  // its window. The clip keeps its length, so butted clips stay butted: its window grows to cover
++  // what it reads, within the media — past its end, or before its start for a reversed clip, which
++  // plays its window from the end.
 +  if (item.sourceEnd !== undefined && item.type !== 'composition' && !item.compositionId) {
 +    const sourceStart = item.sourceStart ?? item.trimStart ?? 0
-+    const reads =
-+      sourceStart +
-+      timelineToSourceFrames(next.durationInFrames, item.speed ?? 1, toFps, next.sourceFps ?? fromFps)
-+    const available = item.sourceDuration ?? reads
-+    if (reads > item.sourceEnd) next.sourceEnd = Math.max(item.sourceEnd, Math.min(reads, available))
++    const reads = timelineToSourceFrames(
++      next.durationInFrames,
++      item.speed ?? 1,
++      toFps,
++      next.sourceFps ?? fromFps,
++    )
++    if (reads > item.sourceEnd - sourceStart) {
++      if (item.isReversed) {
++        if (item.sourceStart !== undefined) next.sourceStart = Math.max(0, item.sourceEnd - reads)
++      } else {
++        next.sourceEnd = Math.min(sourceStart + reads, item.sourceDuration ?? sourceStart + reads)
++      }
++    }
 +  }
 +  if (item.motionModifiers) {
 +    next.motionModifiers = item.motionModifiers.map((modifier) => ({
@@ -330,6 +347,7 @@ index 0000000000..9c2bc6aa60
 +  after: TimelineItem[],
 +  tracks: readonly RetimeTrack[] | undefined,
 +): TimelineItem[] {
++  // Sync lock is on unless a track turns it off (`syncLock !== false`), as Freecut reads it.
 +  const syncLocked = new Set(
 +    (tracks ?? []).filter((track) => !track.isGroup && track.syncLock !== false).map((track) => track.id),
 +  )
@@ -384,17 +402,17 @@ index 0000000000..9c2bc6aa60
 +
 +  // ponytail: rescans every track after each push, O(n² · pushes); rounding collisions are few.
 +  for (let guard = 0; guard <= before.length * 4 + 8; guard += 1) {
-+    let collision: { index: number; frames: number } | null = null
++    let collision: { index: number; frames: number; with: number } | null = null
 +    for (const indexes of byTrack.values()) {
-+      let previous: { beforeEnd: number; afterEnd: number } | null = null
++      let previous: { index: number; beforeEnd: number; afterEnd: number } | null = null
 +      for (const index of indexes) {
 +        const from = after[index]!.from + shift[index]!
 +        if (previous && before[index]!.from >= previous.beforeEnd && from < previous.afterEnd) {
-+          collision = { index, frames: previous.afterEnd - from }
++          collision = { index, frames: previous.afterEnd - from, with: previous.index }
 +          break
 +        }
 +        if (!previous || endOf(index) >= previous.beforeEnd) {
-+          previous = { beforeEnd: endOf(index), afterEnd: from + after[index]!.durationInFrames }
++          previous = { index, beforeEnd: endOf(index), afterEnd: from + after[index]!.durationInFrames }
 +        }
 +      }
 +      if (collision) break
@@ -402,7 +420,14 @@ index 0000000000..9c2bc6aa60
 +    if (!collision) {
 +      return after.map((item, index) => (shift[index] === 0 ? item : { ...item, from: item.from + shift[index]! }))
 +    }
-+    for (const member of movedWith(collision.index)) shift[member]! += collision.frames
++    let moved = movedWith(collision.index)
++    // A link or sync-lock chain can lead back to the clip being overlapped: moving it along would
++    // never resolve the overlap. Then only the clips from the pushed clip's frame on move.
++    if (moved.has(collision.with)) {
++      const at = before[collision.index]!.from
++      moved = new Set([...moved].filter((member) => before[member]!.from >= at))
++    }
++    for (const member of moved) shift[member]! += collision.frames
 +  }
 +  throw new Error('Retiming could not resolve overlapping clips')
 +}
@@ -482,10 +507,10 @@ index 0000000000..9c2bc6aa60
 +}
 diff --git a/src/features/timeline/utils/project-retime.test.ts b/src/features/timeline/utils/project-retime.test.ts
 new file mode 100644
-index 0000000000..3e7d405355
+index 0000000000..4c15a9280d
 --- /dev/null
 +++ b/src/features/timeline/utils/project-retime.test.ts
-@@ -0,0 +1,305 @@
+@@ -0,0 +1,393 @@
 +import { describe, expect, it } from 'vite-plus/test'
 +import type { ItemKeyframes } from '@/types/keyframe'
 +import type { ProjectMarker, TimelineItem } from '@/types/timeline'
@@ -610,6 +635,18 @@ index 0000000000..3e7d405355
 +    expect([grown!.durationInFrames, grown!.sourceEnd]).toEqual([3, 4])
 +    // The media itself ends at frame 3: the clip keeps its length and the window stops there.
 +    expect([capped!.durationInFrames, capped!.sourceEnd]).toEqual([3, 3])
++
++    // A reversed clip plays its window from the end, so the extra source frame is taken before it.
++    const [reversed] = retimeContent(
++      {
++        items: [
++          item({ from: 0, durationInFrames: 7, sourceStart: 10, sourceEnd: 13, sourceDuration: 240, sourceFps: 30, isReversed: true }),
++        ],
++      },
++      60,
++      24,
++    ).items
++    expect([reversed!.durationInFrames, reversed!.sourceStart, reversed!.sourceEnd]).toEqual([3, 9, 13])
 +  })
 +
 +  it('pushes linked clips together and ripples sync-locked tracks, so pictures and sound stay aligned', () => {
@@ -789,6 +826,82 @@ index 0000000000..3e7d405355
 +    expect(hasTimedContent({ items: [], markers: [], inPoint: 0 })).toBe(true)
 +    expect(hasTimedContent({ items: [item({})] })).toBe(true)
 +    expect(hasTimedContent(undefined)).toBe(false)
++  })
++
++  it('on random linked and sync-locked timelines: never throws, never overlaps, keeps links in sync', () => {
++    let seed = 7
++    const random = () => (seed = (seed * 1_103_515_245 + 12_345) % 2_147_483_648) / 2_147_483_648
++    const pick = (n: number) => Math.floor(random() * n)
++    const rates: Array<[number, number]> = [[60, 25], [120, 24], [50, 24], [60, 24], [240, 25], [24, 60], [30, 25], [60, 23.976]]
++    const failures: string[] = []
++    for (let trial = 0; trial < 600; trial += 1) {
++      const trackCount = 2 + pick(3)
++      const tracks = Array.from({ length: trackCount }, (_, index) => ({
++        id: `t${index}`,
++        ...(random() < 0.3 && { syncLock: false }),
++      }))
++      const items: TimelineItem[] = []
++      let frame = 0
++      for (let cut = 0; cut < 6 + pick(20); cut += 1) {
++        const duration = 1 + pick(4)
++        frame += random() < 0.7 ? 0 : 1 + pick(3)
++        // Linked pictures and sound, the sound sometimes starting a frame early (an L-cut).
++        const early = random() < 0.2 ? pick(2) : 0
++        items.push(item({ id: `v${cut}`, trackId: 't0', from: frame, durationInFrames: duration, linkedGroupId: `g${cut}` }))
++        items.push(
++          item({
++            id: `a${cut}`,
++            trackId: 't1',
++            type: 'audio',
++            from: Math.max(0, frame - early),
++            durationInFrames: duration + early,
++            linkedGroupId: `g${cut}`,
++          }),
++        )
++        frame += duration
++      }
++      let reach = -1
++      for (const sound of items.filter((entry) => entry.trackId === 't1')) {
++        if (sound.from < reach) sound.from = reach
++        reach = sound.from + sound.durationInFrames
++      }
++      for (let track = 2; track < trackCount; track += 1) {
++        let at = 0
++        for (let clip = 0; clip < 4 + pick(15); clip += 1) {
++          at += random() < 0.6 ? 0 : 1 + pick(4)
++          const duration = 1 + pick(5)
++          items.push(item({ id: `x${track}-${clip}`, trackId: `t${track}`, type: 'image', from: at, durationInFrames: duration }))
++          at += duration
++        }
++      }
++      const [fromFps, toFps] = rates[pick(rates.length)]!
++      const label = `trial ${trial} ${fromFps}->${toFps}`
++      let result: TimelineItem[]
++      try {
++        result = retimeContent({ items, tracks }, fromFps, toFps).items
++      } catch (error) {
++        failures.push(`${label}: ${(error as Error).message}`)
++        continue
++      }
++      const byTrack = new Map<string, number[]>()
++      for (const [index, entry] of items.entries()) byTrack.set(entry.trackId, [...(byTrack.get(entry.trackId) ?? []), index])
++      for (const indexes of byTrack.values()) {
++        indexes.sort((a, b) => items[a]!.from - items[b]!.from)
++        for (let k = 1; k < indexes.length; k += 1) {
++          const [p, n] = [indexes[k - 1]!, indexes[k]!]
++          const apartBefore = items[n]!.from >= items[p]!.from + items[p]!.durationInFrames
++          if (apartBefore && result[n]!.from < result[p]!.from + result[p]!.durationInFrames) {
++            failures.push(`${label}: ${items[n]!.id} overlaps ${items[p]!.id}`)
++          }
++        }
++      }
++      for (let cut = 0; items.some((entry) => entry.id === `v${cut}`); cut += 1) {
++        const [v, a] = [`v${cut}`, `a${cut}`].map((id) => items.findIndex((entry) => entry.id === id))
++        const offset = Math.round(((items[a!]!.from - items[v!]!.from) * toFps) / fromFps)
++        if (Math.abs(result[a!]!.from - result[v!]!.from - offset) > 1) failures.push(`${label}: link g${cut} out of sync`)
++      }
++    }
++    expect(failures).toEqual([])
 +  })
 +})
 diff --git a/src/features/timeline/utils/external-file-project-match.ts b/src/features/timeline/utils/external-file-project-match.ts
@@ -1140,11 +1253,15 @@ index 382031eac3..57acc3475f 100644
        applyResolvedTimelineDrop({
          addItem,
 diff --git a/src/features/timeline/stores/commands/snapshot.ts b/src/features/timeline/stores/commands/snapshot.ts
-index fb00c50835..6b2fb4e183 100644
+index fb00c50835..cbbfbeb167 100644
 --- a/src/features/timeline/stores/commands/snapshot.ts
 +++ b/src/features/timeline/stores/commands/snapshot.ts
-@@ -12,6 +12,18 @@ import { updateProject } from '@/infrastructure/storage'
+@@ -10,8 +10,22 @@ import { usePlaybackStore } from '@/shared/state/playback'
+ import { useProjectStore } from '@/features/timeline/deps/projects'
+ import { updateProject } from '@/infrastructure/storage'
  import { createLogger } from '@/shared/logging/logger'
++import { toast } from 'sonner'
++import { i18n } from '@/i18n'
  import { sanitizeInOutPoints } from '../../utils/in-out-points'
  import { getActiveInOutMaxFrame } from '../in-out-bound'
 +import type { ProjectTimeline } from '@/types/project'
@@ -1162,7 +1279,7 @@ index fb00c50835..6b2fb4e183 100644
  
  const logger = createLogger('TimelineSnapshot')
  
-@@ -72,10 +84,17 @@ function restoreProjectMetadata(snapshot: TimelineSnapshot): void {
+@@ -72,12 +86,25 @@ function restoreProjectMetadata(snapshot: TimelineSnapshot): void {
      ),
    }))
  
@@ -1183,9 +1300,17 @@ index fb00c50835..6b2fb4e183 100644
 +    Promise.resolve(updateProject(projectId, { metadata, ...(timeline && { timeline }) })),
    ).catch((error) => {
      logger.error(`Failed to persist restored project metadata for ${snapshot.projectId}:`, error)
++    // Frameleaf (FL-94): say so, and keep the timeline unsaved so the next save stores it again;
++    // the settings are stored again only by the next settings change.
++    useTimelineSettingsStore.getState().markDirty()
++    toast.error(i18n.t('timeline.history.restoreNotSaved'), {
++      description: error instanceof Error ? error.message : undefined,
++    })
    })
+ }
+ 
 diff --git a/src/features/projects/stores/project-store.ts b/src/features/projects/stores/project-store.ts
-index 5a46130adb..1f29618722 100644
+index 5a46130adb..fd5549bb49 100644
 --- a/src/features/projects/stores/project-store.ts
 +++ b/src/features/projects/stores/project-store.ts
 @@ -20,6 +20,7 @@ import { createProjectObject, duplicateProject } from '../utils/project-helpers'
@@ -1235,11 +1360,14 @@ index 5a46130adb..1f29618722 100644
              name: data.name ?? existingProject.name,
              description: data.description ?? existingProject.description,
              metadata: {
-@@ -212,7 +224,17 @@ export const useProjectStore = create<ProjectState & ProjectActions>()(
+@@ -212,10 +224,21 @@ export const useProjectStore = create<ProjectState & ProjectActions>()(
            }
  
            try {
 -            const updated = await updateProjectDB(id, updatedProject)
+-
+-            // Update current project with DB result
+-            if (get().currentProject?.id === id) {
 +            // Only the fields this update owns (and the timeline, when given) are written; the rest of
 +            // the stored project, its saved timeline included, is left as it is on disk.
 +            const { timeline: _savedTimeline, ...updated } = await queueProjectWrite(() =>
@@ -1251,9 +1379,22 @@ index 5a46130adb..1f29618722 100644
 +                ...(data.timeline !== undefined && { timeline: data.timeline }),
 +              }),
 +            )
++
++            // Update current project with DB result, unless something replaced this update's
++            // optimistic copy meanwhile (an undo, a newer update): that is newer than this result.
++            if (get().currentProject === updatedProject) {
+               set({ currentProject: updated })
+             }
  
-             // Update current project with DB result
-             if (get().currentProject?.id === id) {
+@@ -225,7 +248,7 @@ export const useProjectStore = create<ProjectState & ProjectActions>()(
+             if (projectIndex !== -1) {
+               set({ projects: previousProjects })
+             }
+-            if (currentProject?.id === id) {
++            if (get().currentProject === updatedProject) {
+               set({ currentProject: currentProject })
+             }
+ 
 diff --git a/src/shared/state/project-media-match-dialog/store.ts b/src/shared/state/project-media-match-dialog/store.ts
 index 53c2f8901d..8823e07b6a 100644
 --- a/src/shared/state/project-media-match-dialog/store.ts
@@ -1312,7 +1453,7 @@ index 53c2f8901d..8823e07b6a 100644
    },
  }))
 diff --git a/src/features/editor/utils/project-metadata-history.ts b/src/features/editor/utils/project-metadata-history.ts
-index f06b7c693e..a3e1e6655a 100644
+index f06b7c693e..995beda5f5 100644
 --- a/src/features/editor/utils/project-metadata-history.ts
 +++ b/src/features/editor/utils/project-metadata-history.ts
 @@ -1,5 +1,30 @@
@@ -1362,7 +1503,7 @@ index f06b7c693e..a3e1e6655a 100644
    onApplied?: (project: Project) => void
  }
  
-@@ -43,13 +73,51 @@ export async function commitProjectMetadataChange({
+@@ -43,13 +73,53 @@ export async function commitProjectMetadataChange({
    updateProject,
    markDirty,
    onApplied,
@@ -1407,6 +1548,8 @@ index f06b7c693e..a3e1e6655a 100644
 +      updatedProject = await updateProject(project.id, { ...updates, timeline })
 +    } catch (error) {
 +      restoreSnapshot(beforeSnapshot)
++      // A save that captured the retimed timeline meanwhile must not store it now.
++      beginTimelineWrite()
 +      throw error
 +    }
 +  } else {
@@ -1417,10 +1560,10 @@ index f06b7c693e..a3e1e6655a 100644
    useTimelineCommandStore.getState().addUndoEntry(command, beforeSnapshot)
 diff --git a/src/features/editor/utils/project-metadata-history.test.ts b/src/features/editor/utils/project-metadata-history.test.ts
 new file mode 100644
-index 0000000000..9543232d92
+index 0000000000..0a9ef908ec
 --- /dev/null
 +++ b/src/features/editor/utils/project-metadata-history.test.ts
-@@ -0,0 +1,205 @@
+@@ -0,0 +1,216 @@
 +// @vitest-environment node
 +
 +import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
@@ -1552,6 +1695,17 @@ index 0000000000..9543232d92
 +    useTimelineCommandStore.getState().redo()
 +    await settle()
 +    expect(mainSpans()).toEqual([[60, 90]])
++    expect(stored()).toEqual({ fps: 60, spans: [[60, 90]] })
++  })
++
++  it('an undo whose write fails leaves the timeline unsaved rather than silently saved', async () => {
++    const { updateProject } = await import('@/infrastructure/storage')
++    await change({ fps: 60 }, 'keep-time')
++    useTimelineStore.getState().markClean()
++    vi.mocked(updateProject).mockRejectedValueOnce(new Error('disk full'))
++    useTimelineCommandStore.getState().undo()
++    await settle()
++    expect(useTimelineSettingsStore.getState().isDirty).toBe(true)
 +    expect(stored()).toEqual({ fps: 60, spans: [[60, 90]] })
 +  })
 +
@@ -1965,11 +2119,15 @@ index 3a6b64193a..279c3fcdf5 100644
      "editor": {
        "appLabel": "FreeCut Video Editor",
 diff --git a/src/i18n/locales/partials/en/timeline.json b/src/i18n/locales/partials/en/timeline.json
-index 9c7cd3037e..799283ec39 100644
+index 9c7cd3037e..d266301c09 100644
 --- a/src/i18n/locales/partials/en/timeline.json
 +++ b/src/i18n/locales/partials/en/timeline.json
-@@ -2,6 +2,7 @@
+@@ -1,7 +1,11 @@
+ {
    "timeline": {
++    "history": {
++      "restoreNotSaved": "The project settings restored by undo or redo could not be saved."
++    },
      "track": {
        "unableToAddDroppedItem": "Unable to add dropped item",
 +      "dropTimelineChanged": "The timeline shown changed while matching the video. Drop the files again.",
@@ -2122,3 +2280,79 @@ index 0000000000..a645450b71
 +  tail = run.catch(() => undefined)
 +  return run
 +}
+diff --git a/src/features/projects/stores/project-store.test.ts b/src/features/projects/stores/project-store.test.ts
+index 5b180ffa61..4319d6de57 100644
+--- a/src/features/projects/stores/project-store.test.ts
++++ b/src/features/projects/stores/project-store.test.ts
+@@ -108,17 +108,68 @@ describe('project-store updateProject managed colour (FL-97)', () => {
+       },
+     }
+     useProjectStore.setState({ projects: [project], currentProject: project, error: null })
+-    storageMocks.updateProject.mockImplementation(async (_id: string, value: Project) => value)
++    storageMocks.updateProject.mockImplementation(async (_id: string, value: Partial<Project>) => ({
++      ...project,
++      ...value,
++    }))
+ 
+     await useProjectStore.getState().updateProject('hdr', { width: 3840, height: 2160 })
+ 
+-    const saved = useProjectStore.getState().projects[0]!
+-    expect(saved.metadata).toEqual({
++    const metadata = {
+       width: 3840,
+       height: 2160,
+       fps: 30,
+       backgroundColor: '#000000',
+       colorManagement: { workingRange: 'hdr', referenceWhiteNits: 203 },
++    }
++    expect(useProjectStore.getState().projects[0]!.metadata).toEqual(metadata)
++    // What storage is asked to write keeps the working range too (FL-97), and only the fields this
++    // update owns: never a timeline copy (FL-94).
++    const [id, written] = storageMocks.updateProject.mock.calls.at(-1)!
++    expect(id).toBe('hdr')
++    expect(written).toEqual({
++      name: project.name,
++      description: project.description,
++      metadata,
++      updatedAt: expect.any(Number),
+     })
+   })
+ })
++
++describe('project-store updateProject write results (FL-94)', () => {
++  it('does not apply a late write result over an undo that replaced its update meanwhile', async () => {
++    const project = makeProject('p')
++    useProjectStore.setState({ projects: [], currentProject: project, error: null })
++    let finish!: () => void
++    storageMocks.updateProject.mockImplementation(
++      (_id: string, value: Partial<Project>) =>
++        new Promise((resolve) => {
++          finish = () => resolve({ ...project, ...value })
++        }),
++    )
++
++    const write = useProjectStore.getState().updateProject('p', { width: 1280 })
++    expect(useProjectStore.getState().currentProject!.metadata.width).toBe(1280)
++    // Undo restores the earlier metadata while the width write is still in flight.
++    const undone = { ...project, metadata: { ...project.metadata }, updatedAt: Date.now() }
++    useProjectStore.setState({ currentProject: undone })
++    await Promise.resolve()
++    finish()
++    await write
++
++    expect(useProjectStore.getState().currentProject).toBe(undone)
++  })
++
++  it('does not keep a timeline on its copy of the project', async () => {
++    const project = { ...makeProject('t'), timeline: { tracks: [], items: [] } } as unknown as Project
++    useProjectStore.setState({ projects: [project], currentProject: project, error: null })
++    storageMocks.updateProject.mockImplementation(async (_id: string, value: Partial<Project>) => ({
++      ...project,
++      ...value,
++    }))
++    await useProjectStore.getState().updateProject('t', { width: 1280 })
++    expect(useProjectStore.getState().currentProject).not.toHaveProperty('timeline')
++    expect(useProjectStore.getState().projects[0]).not.toHaveProperty('timeline')
++    expect(storageMocks.updateProject.mock.calls.at(-1)![1]).not.toHaveProperty('timeline')
++  })
++})
