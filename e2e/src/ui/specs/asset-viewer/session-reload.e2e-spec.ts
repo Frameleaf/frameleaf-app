@@ -21,6 +21,33 @@ test.describe('FL-40 tab session after reload', () => {
     await otherTab.close();
   });
 
+  test('returns keyboard focus from quick edit to the viewer, then to its library tile', async ({ context, page }) => {
+    const asset = fixture.assets.find((item) => item.isImage)!;
+    await context.route('**/api/assets/*/develop', (route) =>
+      route.fulfill({ json: { assetId: asset.id, currentRevisionId: null, revisions: [] } }),
+    );
+
+    await page.goto('/photos');
+    await timelineUtils.waitForTimelineLoad(page);
+    const tile = thumbnailUtils.openButton(page, asset.id);
+    await tile.focus();
+    await page.keyboard.press('Enter');
+    await assetViewerUtils.waitForViewerLoad(page, asset);
+
+    const edit = page.getByRole('button', { name: 'Edit', exact: true });
+    await edit.focus();
+    await page.keyboard.press('Enter');
+    const editor = page.getByRole('dialog', { name: /^Edit / });
+    await expect(editor).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(editor).not.toBeVisible();
+    await expect(edit).toBeFocused();
+
+    await page.keyboard.press('Escape');
+    await expect.poll(() => new URL(page.url()).pathname).toBe('/photos');
+    await expect(tile).toBeFocused();
+  });
+
   test('reopens a real photo draft after reload and clears it on sign out', async ({ context, page }) => {
     const asset = fixture.primaryAsset;
     await context.route('**/api/assets/*/develop', (route) =>
