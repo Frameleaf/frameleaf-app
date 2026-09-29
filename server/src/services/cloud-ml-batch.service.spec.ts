@@ -500,7 +500,11 @@ describe(CloudMlBatchService.name, () => {
     it('checks consent and admission before anything is asked of the cloud (review P2)', async () => {
       mocks.mlDestination.getAll.mockResolvedValue([{ ...cloud, consentAcknowledgedAt: null }]);
 
-      await expect(sut.estimateBackfill(admin, now)).rejects.toThrow(/processing terms/);
+      const error = await sut.estimateBackfill(admin, now).catch((error_: unknown) => error_);
+      expect((error as BadRequestException).getResponse()).toMatchObject({
+        code: 'consent-missing',
+        message: expect.stringContaining('processing terms'),
+      });
 
       expect(mocks.frameleafCloud.discovery).not.toHaveBeenCalled();
       expect(mocks.frameleafCloudMl.getCatalog).not.toHaveBeenCalled();
@@ -513,7 +517,13 @@ describe(CloudMlBatchService.name, () => {
         cloud: { ...facts, consentRequiredVersion: '2026-10-01.1' },
       });
 
-      await expect(sut.estimateBackfill(admin, now)).rejects.toThrow(/consent/);
+      const error = await sut.estimateBackfill(admin, now).catch((error_: unknown) => error_);
+      expect(error).toBeInstanceOf(BadRequestException);
+      // FL-201: the refusal is machine-readable, not only in the message
+      expect((error as BadRequestException).getResponse()).toMatchObject({
+        code: 'consent-version-outdated',
+        message: expect.stringContaining('consent'),
+      });
       expect(mocks.frameleafCloudMl.getCatalog).not.toHaveBeenCalled();
     });
 
@@ -1298,6 +1308,18 @@ describe(CloudMlBatchService.name, () => {
         recursive: true,
         force: true,
       });
+    });
+
+    it('still uploads a created batch whose own hold took the rest of the AI Wallet (FL-201 review P1)', async () => {
+      mocks.machineLearning.probe.mockResolvedValue({
+        ...mlProbeStub.frameleafCloud,
+        cloud: { ...facts, balanceUsd: 5, heldUsd: 5 },
+      });
+
+      await sut.step(submitted({ status: 'admitted', started: false, etag: null }), 'claim-1', now);
+
+      expect(mocks.frameleafCloudMl.cancelJob).not.toHaveBeenCalled();
+      expect(mocks.frameleafCloudMl.uploadInput).toHaveBeenCalled();
     });
 
     it.each([

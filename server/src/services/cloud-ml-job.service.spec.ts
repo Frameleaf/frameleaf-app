@@ -1,4 +1,4 @@
-import { ConflictException, ForbiddenException, HttpException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, HttpException } from '@nestjs/common';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { MediaOperation } from 'src/repositories/media-operation.repository.js';
@@ -494,7 +494,12 @@ describe(CloudMlJobService.name, () => {
       mocks.mlDestination.getAll.mockResolvedValue([stale]);
       mocks.mlDestination.getById.mockResolvedValue(stale);
 
-      await expect(sut.estimate(owner, preview(), now)).rejects.toThrow(/consent-version-outdated/);
+      const error = await sut.estimate(owner, preview(), now).catch((error_: unknown) => error_);
+      expect((error as BadRequestException).getResponse()).toMatchObject({
+        statusCode: 400,
+        code: 'consent-version-outdated',
+        message: expect.stringContaining('consent-version-outdated'),
+      });
       expect(mocks.frameleafCloudMl.createEstimate).not.toHaveBeenCalled();
     });
 
@@ -984,6 +989,48 @@ describe(CloudMlJobService.name, () => {
       await sut.step(claimed(), 'claim', now);
 
       expect(mocks.frameleafCloudMl.createJob).not.toHaveBeenCalled();
+      expect(mocks.frameleafCloudMl.uploadInput).not.toHaveBeenCalled();
+      expect(mocks.mediaOperation.fail).toHaveBeenCalledWith(
+        OPERATION_ID,
+        'claim',
+        expect.objectContaining({ errorCode: 'cloud_ml_consent_version_outdated' }),
+        { retry: false },
+      );
+    });
+
+    const resumedUpload = () =>
+      claimed({
+        phase: CloudMlJobPhase.Uploading,
+        submission: { ...confirmed().submission!, idempotencyKey: OPERATION_ID, attemptedAt: now.toISOString() },
+        job: { ...runningRecord(), status: 'awaiting_upload' },
+        uploads: { v1: { done: false, parts: [{ partNumber: 1, etag: '"e1"' }] } },
+      });
+
+    it.each([
+      ['its own hold took the rest of the AI Wallet', { balanceUsd: 5, heldUsd: 5 }],
+      ["today's AI Wallet limit was reached after it was created", { dailyCapUsd: 20, spentTodayUsd: 20 }],
+    ])('still uploads a created job when %s: consent is in force (FL-201 review P1)', async (_case, wallet) => {
+      mocks.machineLearning.probe.mockResolvedValue({
+        ...mlProbeStub.frameleafCloud,
+        workloads,
+        cloud: { ...facts, ...wallet },
+      });
+
+      await sut.step(resumedUpload(), 'claim', now);
+
+      expect(mocks.frameleafCloudMl.cancelJob).not.toHaveBeenCalled();
+      expect(mocks.frameleafCloudMl.uploadInput).toHaveBeenCalled();
+      expect(mocks.frameleafCloudMl.startJob).toHaveBeenCalledWith(expect.anything(), JOB_ID);
+    });
+
+    it('keeps the consent refusal when cancelling the cloud job fails (FL-201 review P3)', async () => {
+      const stale = { ...cloud, consentVersion: '2026-09-01.1' };
+      mocks.mlDestination.getAll.mockResolvedValue([stale]);
+      mocks.mlDestination.getById.mockResolvedValue(stale);
+      mocks.frameleafCloudMl.cancelJob.mockRejectedValue(new Error('network down'));
+
+      await sut.step(resumedUpload(), 'claim', now);
+
       expect(mocks.frameleafCloudMl.uploadInput).not.toHaveBeenCalled();
       expect(mocks.mediaOperation.fail).toHaveBeenCalledWith(
         OPERATION_ID,
