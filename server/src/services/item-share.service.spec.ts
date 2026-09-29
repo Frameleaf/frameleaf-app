@@ -42,7 +42,7 @@ describe(ItemShareService.name, () => {
     mocks.asset.getHiddenContentAssetIds.mockResolvedValue(new Set());
     mocks.itemShare.getForAssets.mockResolvedValue([]);
     mocks.itemShare.withTransaction.mockImplementation((callback) =>
-      callback(mocks.itemShare as ItemShareRepository, mocks.user as UserRepository),
+      callback(mocks.itemShare as unknown as ItemShareRepository, mocks.user as unknown as UserRepository),
     );
     users(owner, jamie);
   });
