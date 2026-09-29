@@ -14,7 +14,7 @@ try {
     route.fulfill({ contentType: 'text/html', body: '<title>Chroma key regression</title>' }),
   );
   await page.goto(origin + '/chroma-probe');
-  const results = await page.evaluate(async () => {
+  const { cases: results, precision } = await page.evaluate(async () => {
     const { EffectsPipeline } = await import('/src/infrastructure/gpu-effects/effects-pipeline.ts');
     const { resolveAnimatedGpuEffects } =
       await import('/src/features/keyframes/utils/effect-animatable-properties.ts');
@@ -26,6 +26,7 @@ try {
     const textures = [];
     const buffers = [];
     const results = [];
+    const precision = [];
     try {
       device.pushErrorScope('validation');
       const texture = () => {
@@ -86,16 +87,50 @@ try {
           }
         }
       }
+      // Backend precision witness (FL-97): an exact key must stay transparent on every
+      // backend, while one 10-bit code value off the key must stay opaque.
+      const code = 1 / 1023;
+      for (const keyColor of ['green', 'blue']) {
+        const dominant = keyColor === 'green' ? 1 : 2;
+        const key = [0, 0, 0, 1];
+        key[dominant] = 1;
+        const nearDominant = key.slice();
+        nearDominant[dominant] = 1 - code;
+        const nearRed = key.slice();
+        nearRed[0] = code;
+        const pixels = [key, nearDominant, key, nearRed].flat();
+        const input = texture();
+        const output = texture();
+        device.queue.writeTexture({ texture: input }, new Float16Array(pixels), { bytesPerRow: 16 }, [2, 2]);
+        const effects = getGpuEffectInstances(resolveAnimatedGpuEffects([{
+          id: 'key', enabled: true,
+          effect: { type: 'gpu-effect', gpuEffectType: 'gpu-chroma-key',
+            params: { keyColor, tolerance: 0, softness: 0, spillSuppression: 0 } },
+        }], undefined, 0));
+        if (!pipeline.applyTextureEffectsToTexture(input, effects, output, 2, 2)) {
+          throw new Error('Native texture effect output rejected');
+        }
+        const buffer = device.createBuffer({ size: 512,
+          usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
+        buffers.push(buffer);
+        const encoder = device.createCommandEncoder();
+        encoder.copyTextureToBuffer({ texture: output }, { buffer, bytesPerRow: 256 }, [2, 2]);
+        device.queue.submit([encoder.finish()]);
+        precision.push({ keyColor, buffer });
+      }
       await device.queue.onSubmittedWorkDone();
       const error = await device.popErrorScope();
       if (error) throw new Error(`Chroma GPU validation failed: ${error.message}`);
       await Promise.all(buffers.map((buffer) => buffer.mapAsync(GPUMapMode.READ)));
-      return results.map(({ buffer, ...result }) => {
+      const texels = (buffer) => {
         const mapped = buffer.getMappedRange();
-        return { ...result,
-          textureOutput: [0, 256].flatMap((offset) => Array.from(new Float16Array(mapped, offset, 8))),
-        };
-      });
+        return [0, 256].flatMap((offset) => Array.from(new Float16Array(mapped, offset, 8)));
+      };
+      return {
+        cases: results.map(({ buffer, ...result }) => ({ ...result, textureOutput: texels(buffer) })),
+        precision: precision.map(({ buffer, ...result }) => ({ ...result, alpha: texels(buffer)
+          .filter((_, index) => index % 4 === 3) })),
+      };
     } finally {
       pipeline.destroy();
       for (const buffer of buffers) buffer.destroy();
@@ -120,7 +155,8 @@ try {
         const rgba = input.slice(pixel * 4, pixel * 4 + 4);
         const cbcr = chroma(rgba);
         const distance = Math.hypot(cbcr[0] - keyChroma[0], cbcr[1] - keyChroma[1]);
-        const t = softness === 0 ? Number(distance > 0) : Math.min(1, distance / softness);
+        // Mirrors the shader's hard-edge key width (2^-16 in CbCr).
+        const t = softness === 0 ? Number(distance > 1 / 65536) : Math.min(1, distance / softness);
         const alpha = rgba[3] * t * t * (3 - 2 * t);
         const dominant = keyColor === 'green' ? 1 : 2;
         const other = dominant === 1 ? 2 : 1;
@@ -141,7 +177,12 @@ try {
       }
     }
   }
+  for (const { keyColor, alpha } of precision) {
+    assert.deepEqual(alpha, [0, 1, 0, 1],
+      `${keyColor} hard key must remove the exact key and keep colors one 10-bit code value away`);
+  }
   console.log(JSON.stringify({ check: 'chroma hard/soft alpha and animated green/blue spill', cases: results.length,
+    precision: precision.length,
     manifestIds: ['effect.gpu-chroma-key', 'readme.effects-masks-compositing.5'] }));
 } finally {
   await browser.close();
