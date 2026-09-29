@@ -8800,6 +8800,7 @@
   "frameleaf_studio_bundle_error_generic": "The bundle could not be processed. Try again.",
   "frameleaf_studio_bundle_error_not_bundle": "This file is not a Frameleaf project bundle.",
   "frameleaf_studio_bundle_error_project_gone": "The project is no longer available to export.",
+  "frameleaf_studio_bundle_error_relink_unavailable": "A selected library item is no longer available. Upload the bundle again and review its matches.",
   "frameleaf_studio_bundle_error_too_large": "This bundle is larger than Frameleaf can accept.",
   "frameleaf_studio_bundle_error_unsafe": "This file contains something a project bundle never should, so it was refused.",
   "frameleaf_studio_bundle_expired": "This bundle has expired. Export the project again to get a new one.",
