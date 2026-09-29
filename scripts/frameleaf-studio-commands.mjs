@@ -270,8 +270,8 @@ export const catalogue = [
     undoable: true,
     capability: null,
     manifestIds: ['command.moveItem'],
-    payload: { clipId: 'string', start: 'time', trackId: 'string?' },
-    description: 'Move a clip and its linked clips to another time, and optionally another track.',
+    payload: { clipId: 'string', start: 'time', trackId: 'string?', linkedSelectionEnabled: 'boolean?' },
+    description: 'Move a clip to another time and optionally another track, carrying linked clips unless linkedSelectionEnabled is false (defaults to true).',
   },
   {
     id: 'clip.overwrite',
