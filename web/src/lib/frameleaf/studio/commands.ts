@@ -421,7 +421,16 @@ export interface StudioCommandPayloads {
   'track.reorder': { trackId: string; index: number };
   'track.set': {
     trackId: string;
-    patch: { name?: string; muted?: boolean; locked?: boolean; solo?: boolean; gain?: number };
+    /** `gain` is decibels (-60 to +12), as the prototype's track fader; `visible` hides a video track. */
+    patch: {
+      name?: string;
+      muted?: boolean;
+      locked?: boolean;
+      solo?: boolean;
+      visible?: boolean;
+      syncLock?: boolean;
+      gain?: number;
+    };
   };
   'track.setAudio': { trackId: string; gainDb?: number; pan?: number; eq?: StudioOpaqueValue | null };
   'voiceover.add': { at: StudioTime; duration: StudioDuration; uploadId: string };
