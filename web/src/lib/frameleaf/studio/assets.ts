@@ -67,7 +67,7 @@ export const withHdrSources = (
   assets: readonly StudioAssetRef[],
   hdrSources: readonly string[] | null | undefined,
 ): StudioAssetRef[] => {
-  const hdr = new Set(hdrSources ?? []);
+  const hdr = new Set(hdrSources);
   return assets.map((asset) => (hdr.has(asset.id) ? { ...asset, hdr: true } : asset));
 };
 
