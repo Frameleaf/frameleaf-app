@@ -96,6 +96,7 @@ import { mimeTypes } from 'src/utils/mime-types.js';
 import { batched, clamp } from 'src/utils/misc.js';
 import { rational, toDisplaySeconds } from 'src/utils/rational-time.js';
 import { renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
+import { getStudioHdrProxyCommand, planStudioHdrProxy } from 'src/utils/studio-hdr-proxy.js';
 import { getOutputDimensions } from 'src/utils/transform.js';
 import { videoDevelopFilters } from 'src/utils/video-develop.js';
 
@@ -968,6 +969,101 @@ export class MediaService extends BaseService {
       );
     }
 
+    return JobStatus.Success;
+  }
+
+  /**
+   * FL-97: the Studio HDR intermediate of one placed HDR video (see utils/studio-hdr-proxy.ts). Made
+   * from the original once, and skipped for anything that is not a decodable BT.2020 PQ/HLG video.
+   */
+  @OnJob({ name: JobName.StudioHdrProxyGenerate, queue: QueueName.VideoConversion })
+  async handleStudioHdrProxy({ id }: JobOf<JobName.StudioHdrProxyGenerate>): Promise<JobStatus> {
+    const asset = await this.assetJobRepository.getForVideoConversion(id);
+    if (!asset) {
+      return JobStatus.Failed;
+    }
+    // Everyone but the owner's quick editor plays the edited master, so the unedited original's
+    // intermediate would show them what the owner cut away.
+    if (getAssetFile(asset.files, AssetFileType.EncodedVideo, { isEdited: true })) {
+      return JobStatus.Skipped;
+    }
+    if (!(await this.assetRepository.canRecordStudioHdrIntermediates())) {
+      return JobStatus.Skipped;
+    }
+    // Taken before the transcode: an original replaced or rewritten meanwhile is not recorded.
+    const sourceFingerprint = await this.assetRepository.getStudioHdrSourceFingerprint(asset.id);
+    if (!sourceFingerprint) {
+      return JobStatus.Failed;
+    }
+    const current = (await this.assetRepository.getCurrentStudioHdrIntermediates([asset.id])).get(asset.id);
+    if (current && (await this.storageRepository.checkFileExists(current))) {
+      return JobStatus.Skipped;
+    }
+    // Deleted by FileDelete, under the path lock and only while no row references the file.
+    const releaseFiles = async (...files: Array<string | undefined>) => {
+      const paths = files.filter((file): file is string => !!file);
+      if (paths.length > 0) {
+        await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: paths } });
+      }
+    };
+    const refuse = async (status: 'ineligible' | 'failed', reason: string) => {
+      this.logger.warn(`No Studio HDR intermediate for asset ${asset.id}: ${reason}`);
+      const { replacedPath } = await this.assetRepository.recordStudioHdrIntermediate({
+        assetId: asset.id,
+        ownerId: asset.ownerId,
+        sourceFingerprint,
+        status,
+      });
+      await releaseFiles(replacedPath);
+    };
+
+    const { videoStream } = asset;
+    if (!videoStream) {
+      await refuse('ineligible', 'no video stream was probed');
+      return JobStatus.Skipped;
+    }
+    const plan = planStudioHdrProxy(videoStream);
+    if (!plan.eligible) {
+      await refuse('ineligible', plan.reason);
+      return JobStatus.Skipped;
+    }
+    const { ffmpeg } = await this.getConfig({ withCache: true });
+    const qualification = qualifySourceDecode(videoStream, ffmpeg);
+    if (qualification.support === DecodeSupport.Refused) {
+      await refuse('ineligible', qualification.reason);
+      return JobStatus.Skipped;
+    }
+
+    // A new name per generation, recorded only once the file is complete: the row never names a
+    // half-written or older file, and nothing queued earlier can name this one.
+    const output = StorageCore.getStudioHdrProxyPath(asset, randomUUID());
+    const discard = () => this.storageRepository.unlink(output).catch(() => {});
+    this.storageCore.ensureFolders(output);
+    try {
+      await this.mediaRepository.transcode(
+        asset.originalPath,
+        output,
+        getStudioHdrProxyCommand(videoStream, plan.transfer, ffmpeg.threads),
+      );
+    } catch (error: any) {
+      await discard();
+      // Recorded, so the next project read does not start the same failing transcode again.
+      await refuse('failed', `the transcode failed: ${error.message}`);
+      return JobStatus.Failed;
+    }
+    const { recorded, replacedPath } = await this.assetRepository.recordStudioHdrIntermediate({
+      assetId: asset.id,
+      ownerId: asset.ownerId,
+      sourceFingerprint,
+      status: 'ready',
+      path: output,
+    });
+    if (!recorded) {
+      await discard();
+      return JobStatus.Skipped;
+    }
+    await releaseFiles(replacedPath);
+    this.logger.log(`Made the Studio HDR intermediate of asset ${asset.id}`);
     return JobStatus.Success;
   }
 

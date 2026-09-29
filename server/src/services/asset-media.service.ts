@@ -491,6 +491,29 @@ export class AssetMediaService extends BaseService {
     });
   }
 
+  /**
+   * FL-97: the Studio HDR intermediate, under exactly the access and location rules of playback
+   * (`playbackVideo`), and never through a shared link. It carries no metadata, but the location
+   * policy is applied as for any file served for playback. It exists only while no edit is
+   * published over the original and the original is the one it was made from.
+   */
+  async playbackStudioHdrVideo(auth: AuthDto, id: string): Promise<ImmichFileResponse> {
+    await this.requireAccess({ auth, permission: Permission.AssetView, ids: [id] });
+    if (auth.sharedLink) {
+      throw new NotFoundException('Asset not found');
+    }
+    const asset = await this.assetRepository.getForVideo(id);
+    const path = asset ? (await this.assetRepository.getCurrentStudioHdrIntermediates([id])).get(id) : undefined;
+    if (!asset || !path) {
+      throw new NotFoundException('No Studio HDR intermediate for this asset yet');
+    }
+    return this.withOriginalLocationPolicy(auth, { id, ownerId: asset.ownerId }, 'playback', {
+      path,
+      contentType: 'video/mp4',
+      cacheControl: CacheControl.PrivateWithCache,
+    });
+  }
+
   async bulkUploadCheck(auth: AuthDto, dto: AssetBulkUploadCheckDto): Promise<AssetBulkUploadCheckResponseDto> {
     const checksums: Buffer[] = dto.assets.map((asset) => fromChecksum(asset.checksum));
     // Clients hash with SHA-1 while this fork persists SHA-256, so resolve the

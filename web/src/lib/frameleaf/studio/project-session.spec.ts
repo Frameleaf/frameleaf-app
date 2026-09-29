@@ -56,6 +56,7 @@ const detail = (overrides: Partial<StudioProjectDetailDto> = {}): StudioProjectD
     unsupportedSources: [],
     hiddenSources: [],
     hdrSources: [],
+    hdrProxySources: [],
     checkedAt: '2026-09-22T10:05:00.000Z',
   },
   shelf: StudioProjectShelf.Active,
@@ -288,6 +289,7 @@ describe('studio project session', () => {
             unsupportedSources: [],
             hiddenSources: ['a-locked'],
             hdrSources: [],
+            hdrProxySources: [],
             checkedAt: '2026-09-22T10:05:00.000Z',
           },
         }),
@@ -333,6 +335,7 @@ describe('studio project session', () => {
           unsupportedSources,
           hiddenSources: [],
           hdrSources: [],
+          hdrProxySources: [],
           checkedAt: '2026-09-22T10:06:00.000Z',
         },
       });

@@ -255,6 +255,24 @@ export class AssetMediaController {
     );
   }
 
+  @Get(':id/video/studio-hdr')
+  @FileResponse()
+  @Authenticated({ permission: Permission.AssetView })
+  @Endpoint({
+    summary: 'Play the Studio HDR intermediate',
+    description:
+      'FL-97: streams the 10-bit AV1 intermediate that keeps an HDR video’s BT.2020 PQ or HLG signal, for the Studio editor. Not found until it has been made (placing the video in a Studio project queues it). Supports byte range requests.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  async playStudioHdrVideo(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @Res() res: Response,
+    @Next() next: NextFunction,
+  ) {
+    await sendFile(res, next, () => this.service.playbackStudioHdrVideo(auth, id), this.logger);
+  }
+
   @Post('bulk-upload-check')
   @Authenticated({ permission: Permission.AssetUpload })
   @Endpoint({

@@ -4,7 +4,7 @@ import type { StudioResourceRights } from 'src/utils/studio-rights.generated.js'
 import { AuthSession } from 'src/database.js';
 import { AssetRestorationStatus } from 'src/dtos/asset-restoration.dto.js';
 import { AuthDto } from 'src/dtos/auth.dto.js';
-import { AssetFileType, AssetLockReason, AssetType, AssetVisibility, ColorTransfer } from 'src/enum.js';
+import { AssetFileType, AssetLockReason, AssetType, AssetVisibility, ColorTransfer, JobName } from 'src/enum.js';
 import {
   STUDIO_GRANT_TTL_SECONDS,
   StudioAuthorizedManifest,
@@ -551,6 +551,47 @@ describe(StudioResourceService.name, () => {
     it('asks nothing when no library asset is placed', async () => {
       await expect(sut.hdrLibraryAssets([])).resolves.toEqual([]);
       expect(mocks.asset.getVideoStreamsForDecode).not.toHaveBeenCalled();
+    });
+
+    it('names the HDR sources whose current intermediate is on disk and queues only what needs making', async () => {
+      const [ready, none, lost, stale, edited, ineligible, failedToday, failedLongAgo] = Array.from({ length: 8 }, () =>
+        newUuid(),
+      );
+      const state = (assetId: string, overrides: Record<string, unknown> = {}) => ({
+        assetId,
+        edited: false,
+        current: true,
+        status: 'ready',
+        path: `/${assetId}.mp4`,
+        createdAt: new Date(),
+        ...overrides,
+      });
+      mocks.asset.getStudioHdrIntermediateStates.mockResolvedValue([
+        state(ready),
+        state(none, { current: false, status: null, path: null, createdAt: null }),
+        state(lost),
+        state(stale, { current: false }),
+        state(edited, { edited: true, current: false, status: null, path: null }),
+        state(ineligible, { status: 'ineligible', path: null }),
+        state(failedToday, { status: 'failed', path: null }),
+        state(failedLongAgo, { status: 'failed', path: null, createdAt: new Date(Date.now() - 2 * 86_400_000) }),
+      ] as never);
+      mocks.storage.checkFileExists.mockImplementation((path: string) => Promise.resolve(path !== `/${lost}.mp4`));
+
+      await expect(sut.studioHdrProxies([ready, none, lost, ready, 'not-a-uuid'])).resolves.toEqual([ready]);
+      expect(mocks.asset.getStudioHdrIntermediateStates).toHaveBeenCalledWith([ready, none, lost]);
+      expect(mocks.job.queueAll).toHaveBeenCalledWith(
+        [none, lost, stale, failedLongAgo].map((id) => ({ name: JobName.StudioHdrProxyGenerate, data: { id } })),
+      );
+      expect(mocks.asset.touchStudioHdrIntermediates).toHaveBeenCalledWith([ready]);
+    });
+
+    it('queues nothing when nothing is HDR or the fork schema cannot record intermediates', async () => {
+      await expect(sut.studioHdrProxies([])).resolves.toEqual([]);
+      mocks.asset.canRecordStudioHdrIntermediates.mockResolvedValue(false);
+      await expect(sut.studioHdrProxies([newUuid()])).resolves.toEqual([]);
+      expect(mocks.asset.getStudioHdrIntermediateStates).not.toHaveBeenCalled();
+      expect(mocks.job.queueAll).not.toHaveBeenCalled();
     });
   });
 

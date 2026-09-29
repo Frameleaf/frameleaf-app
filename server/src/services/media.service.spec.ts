@@ -3753,6 +3753,159 @@ describe(MediaService.name, () => {
     );
   });
 
+  describe('handleStudioHdrProxy (FL-97)', () => {
+    const fingerprint = Buffer.from('fingerprint');
+    const hdrAsset = (videoStream: any = probeStub.videoStreamHDR10.videoStream, files: any[] = []) => ({
+      ...AssetFactory.create({ id: 'video-id', type: AssetType.Video, originalPath: '/original/path.mov' }),
+      checksum: Buffer.from('original-checksum'),
+      files,
+      videoStream,
+      audioStream: null,
+      format: probeStub.videoStreamHDR10.format,
+    });
+    const editedMaster = {
+      id: 'e',
+      type: AssetFileType.EncodedVideo,
+      path: '/edited.mp4',
+      isEdited: true,
+      isProgressive: false,
+      isTransparent: false,
+    };
+    const fileDelete = (...files: string[]) => ({ name: JobName.FileDelete, data: { files } });
+
+    beforeEach(() => {
+      mocks.asset.getStudioHdrSourceFingerprint.mockResolvedValue(fingerprint);
+    });
+
+    it('fails when the asset is missing', async () => {
+      mocks.assetJob.getForVideoConversion.mockResolvedValue(void 0);
+      await expect(sut.handleStudioHdrProxy({ id: 'video-id' })).resolves.toBe(JobStatus.Failed);
+      expect(mocks.media.transcode).not.toHaveBeenCalled();
+    });
+
+    it('records SDR video as ineligible, so project reads stop queueing it', async () => {
+      mocks.assetJob.getForVideoConversion.mockResolvedValue(hdrAsset(probeStub.videoStreamH264.videoStream) as any);
+      await expect(sut.handleStudioHdrProxy({ id: 'video-id' })).resolves.toBe(JobStatus.Skipped);
+      expect(mocks.media.transcode).not.toHaveBeenCalled();
+      expect(mocks.asset.recordStudioHdrIntermediate).toHaveBeenCalledWith({
+        assetId: 'video-id',
+        ownerId: expect.any(String),
+        sourceFingerprint: fingerprint,
+        status: 'ineligible',
+      });
+    });
+
+    it('records a video without a probed stream as ineligible instead of throwing', async () => {
+      mocks.assetJob.getForVideoConversion.mockResolvedValue(hdrAsset(null) as any);
+      await expect(sut.handleStudioHdrProxy({ id: 'video-id' })).resolves.toBe(JobStatus.Skipped);
+      expect(mocks.asset.recordStudioHdrIntermediate).toHaveBeenCalledWith(
+        expect.objectContaining({ status: 'ineligible' }),
+      );
+    });
+
+    it('never derives from the original once an edit is published over it', async () => {
+      mocks.assetJob.getForVideoConversion.mockResolvedValue(hdrAsset(undefined, [editedMaster]) as any);
+      await expect(sut.handleStudioHdrProxy({ id: 'video-id' })).resolves.toBe(JobStatus.Skipped);
+      expect(mocks.media.transcode).not.toHaveBeenCalled();
+      expect(mocks.asset.recordStudioHdrIntermediate).not.toHaveBeenCalled();
+    });
+
+    it('makes nothing while the fork schema cannot record it (handoff or inactive)', async () => {
+      mocks.assetJob.getForVideoConversion.mockResolvedValue(hdrAsset() as any);
+      mocks.asset.canRecordStudioHdrIntermediates.mockResolvedValue(false);
+      await expect(sut.handleStudioHdrProxy({ id: 'video-id' })).resolves.toBe(JobStatus.Skipped);
+      expect(mocks.media.transcode).not.toHaveBeenCalled();
+    });
+
+    it('skips when the current intermediate is on disk, and makes a lost one again', async () => {
+      mocks.assetJob.getForVideoConversion.mockResolvedValue(hdrAsset() as any);
+      mocks.asset.getCurrentStudioHdrIntermediates.mockResolvedValue(new Map([['video-id', '/x-studio-hdr.mp4']]));
+      mocks.storage.checkFileExists.mockResolvedValue(true);
+      await expect(sut.handleStudioHdrProxy({ id: 'video-id' })).resolves.toBe(JobStatus.Skipped);
+      expect(mocks.media.transcode).not.toHaveBeenCalled();
+
+      mocks.storage.checkFileExists.mockResolvedValue(false);
+      await expect(sut.handleStudioHdrProxy({ id: 'video-id' })).resolves.toBe(JobStatus.Success);
+      expect(mocks.media.transcode).toHaveBeenCalledTimes(1);
+    });
+
+    const generation = expect.stringMatching(/video-id-studio-hdr-[0-9a-f-]{36}\.mp4$/);
+
+    it('makes a 10-bit PQ AV1 intermediate under a new name and records it against the original it read', async () => {
+      mocks.assetJob.getForVideoConversion.mockResolvedValue(hdrAsset() as any);
+      await expect(sut.handleStudioHdrProxy({ id: 'video-id' })).resolves.toBe(JobStatus.Success);
+      expect(mocks.media.transcode).toHaveBeenCalledWith(
+        '/original/path.mov',
+        generation,
+        expect.objectContaining({
+          outputOptions: expect.arrayContaining([
+            '-c:v',
+            'libsvtav1',
+            '-pix_fmt',
+            'yuv420p10le',
+            '-color_trc',
+            'smpte2084',
+          ]),
+          twoPass: false,
+        }),
+      );
+      expect(mocks.asset.recordStudioHdrIntermediate).toHaveBeenCalledWith({
+        assetId: 'video-id',
+        ownerId: expect.any(String),
+        sourceFingerprint: fingerprint,
+        status: 'ready',
+        path: generation,
+      });
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+      expect(mocks.storage.unlink).not.toHaveBeenCalled();
+    });
+
+    it("keeps to the admin's ffmpeg thread limit", async () => {
+      mocks.assetJob.getForVideoConversion.mockResolvedValue(hdrAsset() as any);
+      mocks.systemMetadata.get.mockResolvedValue({ ffmpeg: { threads: 2 } });
+      await sut.handleStudioHdrProxy({ id: 'video-id' });
+      const { outputOptions } = mocks.media.transcode.mock.calls[0][2];
+      expect(outputOptions).toEqual(expect.arrayContaining(['-threads', '2']));
+      expect(outputOptions.find((option: string) => option.startsWith('color-primaries='))).toMatch(/:lp=2$/);
+    });
+
+    it('discards what it made when the original was replaced or removed meanwhile', async () => {
+      mocks.assetJob.getForVideoConversion.mockResolvedValue(hdrAsset() as any);
+      mocks.asset.recordStudioHdrIntermediate.mockResolvedValue({ recorded: false });
+      await expect(sut.handleStudioHdrProxy({ id: 'video-id' })).resolves.toBe(JobStatus.Skipped);
+      expect(mocks.storage.unlink).toHaveBeenCalledWith(generation);
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+    });
+
+    it('never names the same file twice, so a queued FileDelete cannot reach a new generation', async () => {
+      mocks.assetJob.getForVideoConversion.mockResolvedValue(hdrAsset() as any);
+      await sut.handleStudioHdrProxy({ id: 'video-id' });
+      await sut.handleStudioHdrProxy({ id: 'video-id' });
+      const [first, second] = mocks.media.transcode.mock.calls.map(([, output]) => output);
+      expect(first).not.toEqual(second);
+    });
+
+    it('releases an intermediate it replaced at another path (the owner changed)', async () => {
+      mocks.assetJob.getForVideoConversion.mockResolvedValue(hdrAsset() as any);
+      mocks.asset.recordStudioHdrIntermediate.mockResolvedValue({ recorded: true, replacedPath: '/old-owner/v.mp4' });
+      await expect(sut.handleStudioHdrProxy({ id: 'video-id' })).resolves.toBe(JobStatus.Success);
+      expect(mocks.job.queue).toHaveBeenCalledWith(fileDelete('/old-owner/v.mp4'));
+    });
+
+    it('records a failed transcode, so it is not retried on every read, and discards the partial file', async () => {
+      mocks.assetJob.getForVideoConversion.mockResolvedValue(hdrAsset() as any);
+      mocks.media.transcode.mockRejectedValue(new Error('boom'));
+      mocks.asset.recordStudioHdrIntermediate.mockResolvedValue({ recorded: true, replacedPath: '/stale/v.mp4' });
+      await expect(sut.handleStudioHdrProxy({ id: 'video-id' })).resolves.toBe(JobStatus.Failed);
+      expect(mocks.asset.recordStudioHdrIntermediate).toHaveBeenCalledWith(
+        expect.objectContaining({ status: 'failed', sourceFingerprint: fingerprint }),
+      );
+      expect(mocks.storage.unlink).toHaveBeenCalledWith(generation);
+      // a ready intermediate the refusal replaced goes through FileDelete
+      expect(mocks.job.queue).toHaveBeenCalledWith(fileDelete('/stale/v.mp4'));
+    });
+  });
+
   describe('handleVideoConversion', () => {
     let asset: ReturnType<typeof AssetFactory.create> & {
       videoStream: VideoStreamInfo & { timeBase: number };

@@ -1034,6 +1034,19 @@ describe(AssetService.name, () => {
       ]);
     });
 
+    it('queues the files of orphaned Studio HDR intermediates for deletion (FL-97)', async () => {
+      mocks.assetJob.streamForDeletedJob.mockReturnValue(makeStream([]));
+      mocks.systemMetadata.get.mockResolvedValue({ trash: { enabled: true, days: 7 } });
+      mocks.asset.releaseStudioHdrIntermediates.mockResolvedValue(['/gone-studio-hdr.mp4']);
+
+      await expect(sut.handleAssetDeletionCheck()).resolves.toBe(JobStatus.Success);
+
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.FileDelete,
+        data: { files: ['/gone-studio-hdr.mp4'] },
+      });
+    });
+
     it('queues the files of orphaned video versions for deletion (FL-39)', async () => {
       mocks.assetJob.streamForDeletedJob.mockReturnValue(makeStream([]));
       mocks.systemMetadata.get.mockResolvedValue({ trash: { enabled: true, days: 7 } });

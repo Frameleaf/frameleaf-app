@@ -46,7 +46,7 @@ import { createHmac } from 'node:crypto';
 import { AssetRestorationMode, AssetRestorationSourceType } from 'src/dtos/asset-restoration.dto.js';
 import { AuthDto } from 'src/dtos/auth.dto.js';
 import { StudioRestoredVersionDto, StudioRestoredVersionUnavailable } from 'src/dtos/studio-source.dto.js';
-import { AssetFileType, AssetType, ColorTransfer, DecodeRefusal, Permission } from 'src/enum.js';
+import { AssetFileType, AssetType, ColorTransfer, DecodeRefusal, JobName, Permission } from 'src/enum.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
 import { BaseService } from 'src/services/base.service.js';
 import { getLockedOwnerId, isLockedAssetRow } from 'src/utils/locked-visibility.js';
@@ -331,6 +331,8 @@ const restorationRefusals = {
 } as const;
 
 const timelineTypes = new Set<AssetType>([AssetType.Image, AssetType.Video]);
+/** FL-97: a failed Studio HDR transcode is tried again for the same original after a day. */
+const STUDIO_HDR_RETRY_FAILED_MS = 24 * 60 * 60 * 1000;
 const editedMasterTypes = new Set<AssetFileType>([AssetFileType.EncodedVideo, AssetFileType.FullSize]);
 const vectorContentTypes = new Set([
   'image/svg+xml',
@@ -1431,6 +1433,47 @@ export class StudioResourceService extends BaseService {
           .map((stream) => stream.assetId),
       ),
     ].toSorted();
+  }
+
+  /**
+   * FL-97: which of these HDR videos already have their Studio HDR intermediate (sorted). The rest
+   * are queued once, so a project that places them reads real HDR pixels once they are made:
+   * - never one an edit is published over (the editor reads the published master's stream);
+   * - never one refused as ineligible for this very original (a new original is tried again);
+   * - one whose transcode failed only after a day, so a failing clip is not re-encoded on every read;
+   * - a ready one whose file went missing, again.
+   */
+  async studioHdrProxies(hdrIds: readonly string[]): Promise<string[]> {
+    const candidates = [...new Set(hdrIds.filter((id) => isStudioUuid(id)))];
+    if (candidates.length === 0 || !(await this.assetRepository.canRecordStudioHdrIntermediates())) {
+      return [];
+    }
+    const states = await this.assetRepository.getStudioHdrIntermediateStates(candidates);
+    const retryFailedBefore = Date.now() - STUDIO_HDR_RETRY_FAILED_MS;
+    const ready: string[] = [];
+    const queue: string[] = [];
+    for (const { assetId, edited, current, status, path, createdAt } of states) {
+      if (edited) {
+        continue;
+      }
+      if (current && status === 'ready' && path) {
+        // ponytail: one stat per placed HDR clip on project read; a lost file is made again
+        const list = (await this.storageRepository.checkFileExists(path)) ? ready : queue;
+        list.push(assetId);
+        continue;
+      }
+      const refused =
+        current &&
+        (status === 'ineligible' || (status === 'failed' && !!createdAt && createdAt.getTime() > retryFailedBefore));
+      if (!refused) {
+        queue.push(assetId);
+      }
+    }
+    if (queue.length > 0) {
+      await this.jobRepository.queueAll(queue.map((id) => ({ name: JobName.StudioHdrProxyGenerate, data: { id } })));
+    }
+    await this.assetRepository.touchStudioHdrIntermediates(ready);
+    return ready.toSorted();
   }
 
   /** FL-195: which of these (the elevated owner's own Locked assets) are locked for a revealed reason. */

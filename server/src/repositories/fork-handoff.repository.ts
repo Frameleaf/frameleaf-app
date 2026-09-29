@@ -148,6 +148,13 @@ const ORPHAN_FAMILIES = [
     'NOT EXISTS (SELECT 1 FROM public.asset asset WHERE asset.id=candidate."assetId" AND asset."ownerId"=candidate."ownerId")',
   ],
   [
+    // FL-97: a pure derivative; its archived file is reported as untracked for removal
+    'studio_hdr_intermediate',
+    'immich_fork.studio_hdr_intermediate',
+    'candidate."assetId"::text',
+    'NOT EXISTS (SELECT 1 FROM public.asset asset WHERE asset.id=candidate."assetId" AND asset."ownerId"=candidate."ownerId")',
+  ],
+  [
     'smart_album_match',
     'immich_fork.smart_album_match',
     `candidate."smartAlbumId"::text || ':' || candidate."assetId"::text`,

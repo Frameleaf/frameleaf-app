@@ -1148,6 +1148,54 @@ describe(AssetMediaService.name, () => {
     });
   });
 
+  describe('playbackStudioHdrVideo (FL-97)', () => {
+    const video = { originalPath: '/original/v.mov', encodedVideoPath: null, editedVideoPath: null };
+
+    it('serves the current Studio HDR intermediate under playback access and location rules', async () => {
+      const asset = AssetFactory.create({ type: AssetType.Video });
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getForVideo.mockResolvedValue({ ...video, ownerId: authStub.admin.user.id });
+      mocks.asset.getCurrentStudioHdrIntermediates.mockResolvedValue(
+        new Map([[asset.id, '/encoded/v-studio-hdr.mp4']]),
+      );
+
+      await expect(sut.playbackStudioHdrVideo(authStub.admin, asset.id)).resolves.toEqual(
+        new ImmichFileResponse({
+          path: '/encoded/v-studio-hdr.mp4',
+          contentType: 'video/mp4',
+          cacheControl: CacheControl.PrivateWithCache,
+        }),
+      );
+      expect(mocks.asset.getCurrentStudioHdrIntermediates).toHaveBeenCalledWith([asset.id]);
+    });
+
+    it('is not found without a current intermediate (none yet, a replaced original or a published edit)', async () => {
+      const asset = AssetFactory.create({ type: AssetType.Video });
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getForVideo.mockResolvedValue({ ...video, ownerId: authStub.admin.user.id });
+
+      await expect(sut.playbackStudioHdrVideo(authStub.admin, asset.id)).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('requires asset.view access, as playback does', async () => {
+      await expect(sut.playbackStudioHdrVideo(authStub.admin, 'id')).rejects.toBeInstanceOf(BadRequestException);
+      expect(mocks.asset.getCurrentStudioHdrIntermediates).not.toHaveBeenCalled();
+    });
+
+    it('never serves a shared link, even one that may view the asset', async () => {
+      const asset = AssetFactory.create({ type: AssetType.Video });
+      mocks.access.asset.checkSharedLinkAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getCurrentStudioHdrIntermediates.mockResolvedValue(
+        new Map([[asset.id, '/encoded/v-studio-hdr.mp4']]),
+      );
+
+      await expect(sut.playbackStudioHdrVideo(authStub.adminSharedLink, asset.id)).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      expect(mocks.asset.getCurrentStudioHdrIntermediates).not.toHaveBeenCalled();
+    });
+  });
+
   describe('playbackVideo', () => {
     it('plays a location-free copy of the original for a partner the owner hides locations from', async () => {
       const me = UserFactory.create();

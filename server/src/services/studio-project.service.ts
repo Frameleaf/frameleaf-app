@@ -45,6 +45,7 @@ import {
 } from 'src/repositories/studio-project.repository.js';
 import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
 import {
+  StudioAuthorizedEntry,
   StudioAuthorizedManifest,
   StudioRefusedReference,
   StudioResourceService,
@@ -1100,14 +1101,22 @@ export class StudioProjectService {
           : [],
       hiddenSources: access === 'owner' ? await this.hiddenSources(auth, resolution.refused) : [],
       // FL-97: only authorized entries, so nothing is said about a source the account cannot read.
-      hdrSources: await this.resources.hdrLibraryAssets(
-        resolution.manifest.entries
-          .filter((entry) => entry.kind === StudioResourceKind.LibraryAsset)
-          .map((entry) => entry.id),
-      ),
+      ...(await this.hdrResources(resolution.manifest.entries)),
       checkedAt: resolution.manifest.issuedAt,
     };
     return { withheld: access === 'reviewer' && !resolution.manifest.complete, resources };
+  }
+
+  /**
+   * FL-97: the placed library videos whose original is HDR, and which of them the editor can read as
+   * HDR now (their Studio HDR intermediate exists; the rest are queued). Only authorized entries are
+   * considered, so nothing is said about a source the account cannot read.
+   */
+  private async hdrResources(entries: readonly StudioAuthorizedEntry[]) {
+    const hdrSources = await this.resources.hdrLibraryAssets(
+      entries.filter((entry) => entry.kind === StudioResourceKind.LibraryAsset).map((entry) => entry.id),
+    );
+    return { hdrSources, hdrProxySources: await this.resources.studioHdrProxies(hdrSources) };
   }
 
   /**

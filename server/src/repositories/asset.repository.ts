@@ -100,6 +100,32 @@ import { deriveIsNsfwFromMetadata } from 'src/utils/nsfw.js';
 
 export type AssetStats = Record<AssetType, number>;
 
+/** FL-97: what became of a Studio HDR intermediate's original. */
+export type StudioHdrIntermediateStatus = 'ready' | 'ineligible' | 'failed';
+export type StudioHdrIntermediateState = {
+  assetId: string;
+  edited: boolean;
+  current: boolean;
+  status: StudioHdrIntermediateStatus | null;
+  path: string | null;
+  createdAt: Date | null;
+};
+
+/**
+ * FL-97: identifies the original an intermediate was made from. The checksum alone is not enough:
+ * an external-library item's checksum is of its path, so an edit in place changes only its
+ * modification time (which a rescan re-reads).
+ */
+const studioHdrSourceFingerprint = sql<Buffer>`sha256(a.checksum || convert_to(extract(epoch FROM a."fileModifiedAt")::text, 'UTF8'))`;
+
+/** FL-97: the sidecar exists once the fork schema has been migrated (never on an unmigrated library). */
+const hasStudioHdrTable = async (db: Kysely<DB>): Promise<boolean> => {
+  const { rows } = await sql<{ table: string | null }>`
+    SELECT to_regclass('immich_fork.studio_hdr_intermediate')::text AS table
+  `.execute(db);
+  return !!rows[0]?.table;
+};
+
 /** The files a removed asset held, read under its row lock in the removal's transaction (FL-169). */
 export type RemovedAsset = {
   originalPath: string;
@@ -1343,6 +1369,8 @@ export class AssetRepository {
       await this.forkEnrichment.delete(ids, tx);
       await this.smartAlbums.deleteAssets(ids, tx);
       await this.deleteForkDerivedResults(ids, tx);
+      // FL-97: the files live in the owner's encoded-video folder, which the user deletion removes
+      await this.deleteStudioHdrIntermediates(ids, tx);
       // `stack.primaryAssetId` has no ON DELETE action, so stacks have to go before
       // the assets they point at. Upstream never hits this because it deletes the
       // user row and lets a single cascading statement remove `stack` and `asset`
@@ -1634,6 +1662,7 @@ export class AssetRepository {
     const videoEditPaths = await this.deleteVideoEditVersions([id], tx);
     // only a removal that releases their files takes the develop revisions (they have no foreign key)
     const developPaths = release ? await this.deleteDevelopRevisions(id, tx) : [];
+    const studioHdrPaths = await this.deleteStudioHdrIntermediates([id], tx);
     await this.forkPrivacy.delete([id], tx);
     await this.forkEnrichment.delete([id], tx);
     await this.smartAlbums.deleteAssets([id], tx);
@@ -1651,7 +1680,7 @@ export class AssetRepository {
       reservationTemporaryPath: lockedAsset.reservationTemporaryPath,
       files: lockedAsset.files,
       videoDuplicateFramePaths: lockedAsset.videoDuplicateFramePaths,
-      derivedPaths: [...new Set([...lockedAsset.restorationPaths, ...developPaths])],
+      derivedPaths: [...new Set([...lockedAsset.restorationPaths, ...developPaths, ...studioHdrPaths])],
       ...(videoEditPaths.length > 0 && { videoEditPaths }),
       pendingMoves: lockedAsset.pendingMoves,
     };
@@ -1868,6 +1897,7 @@ export class AssetRepository {
       .execute();
     const developPaths = await this.getReleasableDevelopPaths(id, tx);
     const videoEditPaths = await this.getReleasableVideoEditPaths([id], tx);
+    const studioHdrPaths = await this.getStudioHdrIntermediatePaths([id], tx);
     const pendingMoves = await tx
       .selectFrom('move_history')
       .select(['id', 'pathType', 'oldPath', 'newPath'])
@@ -1889,7 +1919,7 @@ export class AssetRepository {
       files,
       videoDuplicateFramePaths: frames.rows.map(({ path }) => path),
       restorationPaths,
-      derivedPaths: [...new Set([...restorationPaths, ...(developPaths ?? [])])],
+      derivedPaths: [...new Set([...restorationPaths, ...(developPaths ?? []), ...studioHdrPaths])],
       ...(videoEditPaths && videoEditPaths.length > 0 && { videoEditPaths }),
       pendingMoves: pendingMoves.map(({ id: moveId, pathType, oldPath, newPath }) => ({
         pathType: pathType as AssetMovePathType,
@@ -2845,6 +2875,171 @@ export class AssetRepository {
       LIMIT 1
     `.execute(this.db);
     return rows[0];
+  }
+
+  /**
+   * FL-97: what is known about the Studio HDR intermediates (fork sidecar) of these videos.
+   * `current` means the row was made from the original as it is now (`sourceFingerprint`) for its
+   * current owner. `edited` means an edit is published over the original: playback gives everyone
+   * but the owner's quick editor the edited master, so the original's intermediate is never used.
+   */
+  async getStudioHdrIntermediateStates(ids: string[]): Promise<StudioHdrIntermediateState[]> {
+    if (ids.length === 0 || !(await hasStudioHdrTable(this.db))) {
+      return [];
+    }
+    const { rows } = await sql<StudioHdrIntermediateState>`
+      SELECT a.id AS "assetId",
+        EXISTS (
+          SELECT 1 FROM public.asset_file f
+          WHERE f."assetId" = a.id AND f.type = ${AssetFileType.EncodedVideo} AND f."isEdited"
+        ) AS edited,
+        coalesce(i."ownerId" = a."ownerId" AND i."sourceFingerprint" = ${studioHdrSourceFingerprint}, false) AS current,
+        i.status, i.path, i."createdAt"
+      FROM public.asset a
+      LEFT JOIN immich_fork.studio_hdr_intermediate i ON i."assetId" = a.id
+      WHERE a.id = ANY(${ids}::uuid[]) AND a."deletedAt" IS NULL
+    `.execute(this.db);
+    return rows;
+  }
+
+  /** FL-97: the ready, current intermediates of these videos that no published edit covers. */
+  async getCurrentStudioHdrIntermediates(ids: string[]): Promise<Map<string, string>> {
+    const states = await this.getStudioHdrIntermediateStates(ids);
+    return new Map(
+      states
+        .filter(({ edited, current, status, path }) => !edited && current && status === 'ready' && path)
+        .map(({ assetId, path }) => [assetId, path!]),
+    );
+  }
+
+  /** FL-97: the fingerprint of the original as it is now, taken before an intermediate is made from it. */
+  async getStudioHdrSourceFingerprint(id: string): Promise<Buffer | undefined> {
+    const { rows } = await sql<{ fingerprint: Buffer }>`
+      SELECT ${studioHdrSourceFingerprint} AS fingerprint FROM public.asset a WHERE a.id = ${id}::uuid
+    `.execute(this.db);
+    return rows[0]?.fingerprint;
+  }
+
+  /** FL-97: whether Studio HDR intermediates can be recorded now (the fork schema is writable). */
+  canRecordStudioHdrIntermediates(): Promise<boolean> {
+    return canWriteFork(this.db);
+  }
+
+  /**
+   * FL-97: record what became of the original with `sourceFingerprint`: a ready intermediate at
+   * `path`, or a refusal (`ineligible`, `failed`) so it is not made again on every project read.
+   * Refused (false) when the fork schema is not writable, or the asset is gone, trashed or changed
+   * meanwhile. Returns the path of an intermediate it replaced, for the caller to delete.
+   */
+  async recordStudioHdrIntermediate(entry: {
+    assetId: string;
+    ownerId: string;
+    sourceFingerprint: Buffer;
+    status: StudioHdrIntermediateStatus;
+    path?: string;
+  }): Promise<{ recorded: boolean; replacedPath?: string }> {
+    const path = entry.status === 'ready' ? (entry.path ?? null) : null;
+    if (entry.status === 'ready' && !path) {
+      throw new Error('A ready Studio HDR intermediate needs its path');
+    }
+    return this.db.transaction().execute(async (tx) => {
+      if (!(await canWriteFork(tx))) {
+        return { recorded: false };
+      }
+      const { rows: assets } = await sql<{ fingerprint: Buffer; ownerId: string }>`
+        SELECT ${studioHdrSourceFingerprint} AS fingerprint, a."ownerId" FROM public.asset a
+        WHERE a.id = ${entry.assetId}::uuid AND a."deletedAt" IS NULL FOR SHARE
+      `.execute(tx);
+      const asset = assets[0];
+      if (!asset || asset.ownerId !== entry.ownerId || !asset.fingerprint.equals(entry.sourceFingerprint)) {
+        return { recorded: false };
+      }
+      const previous = await sql<{ path: string | null }>`
+        SELECT path FROM immich_fork.studio_hdr_intermediate WHERE "assetId" = ${entry.assetId}::uuid FOR UPDATE
+      `.execute(tx);
+      await sql`
+        INSERT INTO immich_fork.studio_hdr_intermediate ("assetId", "ownerId", "sourceFingerprint", status, path)
+        VALUES (${entry.assetId}::uuid, ${entry.ownerId}::uuid, ${entry.sourceFingerprint}, ${entry.status}, ${path})
+        ON CONFLICT ("assetId") DO UPDATE SET "ownerId" = excluded."ownerId",
+          "sourceFingerprint" = excluded."sourceFingerprint", status = excluded.status, path = excluded.path,
+          "createdAt" = clock_timestamp(), "lastUsedAt" = clock_timestamp()
+      `.execute(tx);
+      const replacedPath = previous.rows[0]?.path;
+      return { recorded: true, ...(replacedPath && replacedPath !== path && { replacedPath }) };
+    });
+  }
+
+  /** FL-97: note that projects still use these intermediates (at most one write a day each). */
+  async touchStudioHdrIntermediates(ids: string[]): Promise<void> {
+    if (ids.length === 0 || !(await canWriteFork(this.db))) {
+      return;
+    }
+    await sql`
+      UPDATE immich_fork.studio_hdr_intermediate SET "lastUsedAt" = clock_timestamp()
+      WHERE "assetId" = ANY(${ids}::uuid[]) AND "lastUsedAt" < clock_timestamp() - interval '1 day'
+    `.execute(this.db);
+  }
+
+  /**
+   * FL-97: the nightly sweep. Rows whose asset is gone (left while fork writes were disabled, or
+   * archived by a handoff return), whose original changed or was replaced, that a published edit
+   * now covers, or that no project used for 30 days are released; their files are returned for
+   * deletion.
+   */
+  async releaseStudioHdrIntermediates(): Promise<string[]> {
+    return this.db.transaction().execute(async (tx) => {
+      if (!(await canWriteFork(tx))) {
+        return [];
+      }
+      const released = await sql<{ path: string | null }>`
+        DELETE FROM immich_fork.studio_hdr_intermediate i
+        WHERE NOT EXISTS (
+          SELECT 1 FROM public.asset a
+          WHERE a.id = i."assetId" AND a."ownerId" = i."ownerId" AND a."deletedAt" IS NULL
+            AND i."sourceFingerprint" = ${studioHdrSourceFingerprint}
+            AND NOT EXISTS (
+              SELECT 1 FROM public.asset_file f
+              WHERE f."assetId" = a.id AND f.type = ${AssetFileType.EncodedVideo} AND f."isEdited"
+            )
+        )
+        OR i."lastUsedAt" < clock_timestamp() - interval '30 days'
+        RETURNING i.path`.execute(tx);
+      const archived = await sql<{ path: string | null }>`
+        DELETE FROM immich_fork.orphaned_records o
+        WHERE o."sourceTable" = 'studio_hdr_intermediate'
+          AND NOT EXISTS (SELECT 1 FROM public.asset a WHERE a.id::text = o.payload->>'assetId')
+        RETURNING o.payload->>'path' AS path`.execute(tx);
+      return [
+        ...new Set(
+          [...released.rows, ...archived.rows].map(({ path }) => path).filter((path): path is string => !!path),
+        ),
+      ];
+    });
+  }
+
+  /** FL-97: the intermediates of these assets, including rows a return archived as orphans. */
+  private async getStudioHdrIntermediatePaths(ids: string[], db: Kysely<DB>): Promise<string[]> {
+    if (!(await hasStudioHdrTable(db))) {
+      return [];
+    }
+    const { rows } = await sql<{ path: string | null }>`
+      SELECT path FROM immich_fork.studio_hdr_intermediate WHERE "assetId" = ANY(${ids}::uuid[])
+      UNION SELECT payload->>'path' FROM immich_fork.orphaned_records
+      WHERE "sourceTable" = 'studio_hdr_intermediate' AND payload->>'assetId' = ANY(${ids}::text[])
+    `.execute(db);
+    return rows.map(({ path }) => path).filter((path): path is string => !!path);
+  }
+
+  /** FL-97: the asset's removal takes its intermediates; files go only if the rows could be deleted. */
+  private async deleteStudioHdrIntermediates(ids: string[], db: Kysely<DB>): Promise<string[]> {
+    if (ids.length === 0 || !(await canWriteFork(db))) {
+      return [];
+    }
+    const paths = await this.getStudioHdrIntermediatePaths(ids, db);
+    await sql`DELETE FROM immich_fork.studio_hdr_intermediate WHERE "assetId" = ANY(${ids}::uuid[])`.execute(db);
+    await sql`DELETE FROM immich_fork.orphaned_records WHERE "sourceTable" = 'studio_hdr_intermediate'
+      AND payload->>'assetId' = ANY(${ids}::text[])`.execute(db);
+    return paths;
   }
 
   @GenerateSql({ params: [DummyValue.UUID] })
