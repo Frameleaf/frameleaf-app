@@ -1,0 +1,336 @@
+Subject: Fetch approved models only from their approved revisions
+
+Freecut MIT adaptation. Model weights, tokenizers and processors are
+requested from the exact Hugging Face revision the owner approved for local
+runtime (studio/rights-approval.json), never from a moving branch, so the
+runtime resource admission can bind each download to the reviewed row.
+Each TTS voice is admitted as its own reviewed resource before it is used,
+and the Whisper worker admits its transformers runtime as well as its model.
+
+--- a/src/features/editor/services/kokoro-tts-service.ts
++++ b/src/features/editor/services/kokoro-tts-service.ts
+@@ -420,6 +420,8 @@
+           : `Downloading Kokoro ${config.label.toLowerCase()} (${config.downloadLabel})...`,
+       )
+ 
++      // kokoro-js takes no revision; the admission module's fetch pin sends its model, tokenizer
++      // and voice requests to the approved commit (studio/runtime/resource-admission.mjs).
+       const tts = await module.KokoroTTS.from_pretrained(MODEL_ID, {
+         device: 'webgpu',
+         dtype: config.dtype,
+@@ -523,6 +525,8 @@
+       try {
+         onProgress?.('Preparing text...')
+         onProgress?.('Generating speech...')
++        // Each voice is its own reviewed resource (FL-86); an unapproved one is refused by name.
++        requireResource('voice:kokoro-' + voice)
+         const segments = chunkTextForKokoro(trimmedText)
+         const collectedChunks: Float32Array[] = []
+         let sampleRate = 0
+--- a/src/features/editor/services/musicgen-service.ts
++++ b/src/features/editor/services/musicgen-service.ts
+@@ -1,4 +1,4 @@
+-import { requireResource } from '@/shared/utils/resource-admission.mjs'
++import { approvedRevision, requireResource } from '@/shared/utils/resource-admission.mjs'
+ import {
+   DEFAULT_MUSICGEN_MODEL,
+   getMusicgenMaxNewTokens,
+@@ -188,7 +188,9 @@
+       const downloadCache: DownloadProgressCache = new Map()
+ 
+       onProgress?.('Loading MusicGen tokenizer...')
+-      const tokenizer = await module.AutoTokenizer.from_pretrained(config.modelId)
++      const tokenizer = await module.AutoTokenizer.from_pretrained(config.modelId, {
++        revision: approvedRevision('model:' + config.modelId),
++      })
+ 
+       onProgress?.(
+         cached
+@@ -198,6 +200,7 @@
+       const runtimeModel = await module.MusicgenForConditionalGeneration.from_pretrained(
+         config.modelId,
+         {
++          revision: approvedRevision('model:' + config.modelId),
+           device: 'webgpu',
+           dtype: MUSICGEN_DTYPE_CONFIG,
+           progress_callback: (progress: ProgressInfo) => {
+--- a/src/features/editor/services/supertonic-tts-service.ts
++++ b/src/features/editor/services/supertonic-tts-service.ts
+@@ -721,6 +721,8 @@
+     ort: OrtModule,
+     voice: SupertonicTtsVoice,
+   ): Promise<VoiceStyleTensors> {
++    // Each voice style is its own reviewed resource (FL-86), admitted even when already loaded.
++    requireResource('voice:supertonic-' + voice)
+     const existing = this.voiceStylePromises.get(voice)
+     if (existing) {
+       return existing
+--- a/src/features/media-library/transcription/workers/parakeet.worker.ts
++++ b/src/features/media-library/transcription/workers/parakeet.worker.ts
+@@ -1,4 +1,4 @@
+-import { requireResource } from '@/shared/utils/resource-admission.mjs'
++import { approvedRevision, requireResource } from '@/shared/utils/resource-admission.mjs'
+ // Admission precedes all worker work, including reuse of an already-loaded runtime.
+ self.addEventListener('message', (event: MessageEvent) => {
+   if (['dispose', 'cancel', 'abort'].includes(event.data?.type)) return
+@@ -25,7 +25,9 @@
+ 
+ const ORT_WASM_PATH =
+   'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.26.0-dev.20260410-5e55544225/dist/'
+-const HF_BASE = 'https://huggingface.co/Olicorne/parakeet-tdt-0.6b-v3-smoothquant-onnx/resolve/main'
++const HF_REPO = 'Olicorne/parakeet-tdt-0.6b-v3-smoothquant-onnx'
++// Frameleaf: fetched only from the revision the owner approved, never a moving branch.
++const hfBase = () => `https://huggingface.co/${HF_REPO}/resolve/${approvedRevision('model:' + HF_REPO)}`
+ 
+ const ENCODER_FP16 = 'encoder-model.fp16.onnx'
+ const ENCODER_INT8 = 'encoder-model.int8.onnx'
+@@ -144,7 +146,7 @@
+ }
+ 
+ async function loadVocab(): Promise<NonNullable<typeof vocab>> {
+-  const text = await fetchOnnxModelText(`${HF_BASE}/${VOCAB_FILE}`)
++  const text = await fetchOnnxModelText(`${hfBase()}/${VOCAB_FILE}`)
+   const idToToken = new Map<number, string>()
+   let blankIdx = -1
+   for (const rawLine of text.split('\n')) {
+@@ -249,15 +251,15 @@
+     // monotonic merge would then drop every `downloading` event that followed.
+     const download = new DownloadProgress([PREPROCESSOR, encoderFile, DECODER_INT8])
+     const preprocBytes = await fetchOnnxModelBytes(
+-      `${HF_BASE}/${PREPROCESSOR}`,
++      `${hfBase()}/${PREPROCESSOR}`,
+       download.track(PREPROCESSOR),
+     )
+     const encoderBytes = await fetchOnnxModelBytes(
+-      `${HF_BASE}/${encoderFile}`,
++      `${hfBase()}/${encoderFile}`,
+       download.track(encoderFile),
+     )
+     const decoderBytes = await fetchOnnxModelBytes(
+-      `${HF_BASE}/${DECODER_INT8}`,
++      `${hfBase()}/${DECODER_INT8}`,
+       download.track(DECODER_INT8),
+     )
+ 
+@@ -287,7 +289,7 @@
+       // counter — parking on the indeterminate `preparing` would hide a multi-minute download.
+       const fallbackDownload = new DownloadProgress([ENCODER_INT8], true)
+       fallbackBytes = await fetchOnnxModelBytes(
+-        `${HF_BASE}/${ENCODER_INT8}`,
++        `${hfBase()}/${ENCODER_INT8}`,
+         fallbackDownload.track(ENCODER_INT8),
+       )
+       postMain({ type: 'progress', event: { stage: 'preparing', progress: 0 } })
+--- a/src/features/media-library/transcription/workers/whisper.worker.ts
++++ b/src/features/media-library/transcription/workers/whisper.worker.ts
+@@ -1,8 +1,9 @@
+-import { requireResource } from '@/shared/utils/resource-admission.mjs'
++import { approvedRevision, requireResource } from '@/shared/utils/resource-admission.mjs'
+ // Admission precedes all worker work, including reuse of an already-loaded runtime.
+ self.addEventListener('message', (event: MessageEvent) => {
+   if (['dispose', 'cancel', 'abort'].includes(event.data?.type)) return
+-  try { requireResource(event.data?.modelId ? 'model:' + event.data.modelId : 'runtime:whisper-transformers') }
++  // Frameleaf: the transformers runtime this worker imports is a reviewed resource of its own.
++  try { requireResource('runtime:whisper-transformers'); if (event.data?.modelId) requireResource('model:' + event.data.modelId) }
+   catch (error) {
+     event.stopImmediatePropagation()
+     self.postMessage({ type: 'error', id: event.data?.id, message: String(error) })
+@@ -201,6 +202,7 @@
+ 
+       const loadPipeline = async (device: 'webgpu' | 'wasm') =>
+         pipeline('automatic-speech-recognition', modelId, {
++          revision: approvedRevision('model:' + modelId),
+           device,
+           dtype,
+           progress_callback: progressCallback,
+--- a/src/features/timeline/utils/filler-audio-confidence.ts
++++ b/src/features/timeline/utils/filler-audio-confidence.ts
+@@ -1,4 +1,4 @@
+-import { requireResource } from '@/shared/utils/resource-admission.mjs'
++import { approvedRevision, requireResource } from '@/shared/utils/resource-admission.mjs'
+ import type {
+   FillerAudioConfidence,
+   FillerRange,
+@@ -85,6 +85,7 @@
+ 
+     try {
+       return await pipeline('zero-shot-audio-classification', CLAP_MODEL_ID, {
++        revision: approvedRevision('model:' + CLAP_MODEL_ID),
+         device: 'webgpu',
+         dtype: 'q8',
+       })
+@@ -93,6 +94,7 @@
+         error,
+       })
+       return pipeline('zero-shot-audio-classification', CLAP_MODEL_ID, {
++        revision: approvedRevision('model:' + CLAP_MODEL_ID),
+         device: 'wasm',
+         dtype: 'q8',
+       })
+--- a/src/infrastructure/analysis/embeddings/clip-worker.ts
++++ b/src/infrastructure/analysis/embeddings/clip-worker.ts
+@@ -1,4 +1,4 @@
+-import { requireResource } from '@/shared/utils/resource-admission.mjs'
++import { approvedRevision, requireResource } from '@/shared/utils/resource-admission.mjs'
+ // Admission precedes all worker work, including reuse of an already-loaded runtime.
+ self.addEventListener('message', (event: MessageEvent) => {
+   if (['dispose', 'cancel', 'abort'].includes(event.data?.type)) return
+@@ -90,13 +90,15 @@
+ 
+     const [loadedTokenizer, loadedProcessor, loadedTextModel, loadedVisionModel] =
+       await Promise.all([
+-        AutoTokenizer.from_pretrained(MODEL_ID),
+-        AutoProcessor.from_pretrained(MODEL_ID),
++        AutoTokenizer.from_pretrained(MODEL_ID, { revision: approvedRevision('model:' + MODEL_ID) }),
++        AutoProcessor.from_pretrained(MODEL_ID, { revision: approvedRevision('model:' + MODEL_ID) }),
+         CLIPTextModelWithProjection.from_pretrained(MODEL_ID, {
++          revision: approvedRevision('model:' + MODEL_ID),
+           dtype: 'q8',
+           progress_callback: onProgress,
+         } as any),
+         CLIPVisionModelWithProjection.from_pretrained(MODEL_ID, {
++          revision: approvedRevision('model:' + MODEL_ID),
+           dtype: 'q8',
+           progress_callback: onProgress,
+         } as any),
+--- a/src/infrastructure/analysis/embeddings/embeddings-worker.ts
++++ b/src/infrastructure/analysis/embeddings/embeddings-worker.ts
+@@ -1,4 +1,4 @@
+-import { requireResource } from '@/shared/utils/resource-admission.mjs'
++import { approvedRevision, requireResource } from '@/shared/utils/resource-admission.mjs'
+ // Admission precedes all worker work, including reuse of an already-loaded runtime.
+ self.addEventListener('message', (event: MessageEvent) => {
+   if (['dispose', 'cancel', 'abort'].includes(event.data?.type)) return
+@@ -55,6 +55,7 @@
+   try {
+     let lastPct = 0
+     const loaded = await pipeline('feature-extraction', MODEL_ID, {
++      revision: approvedRevision('model:' + MODEL_ID),
+       dtype: 'q8',
+       progress_callback: (info: { status?: string; total?: number; loaded?: number }) => {
+         if (info.status === 'progress' && info.total && info.loaded) {
+--- a/src/infrastructure/analysis/gemma-scene-worker.ts
++++ b/src/infrastructure/analysis/gemma-scene-worker.ts
+@@ -1,4 +1,4 @@
+-import { requireResource } from '@/shared/utils/resource-admission.mjs'
++import { approvedRevision, requireResource } from '@/shared/utils/resource-admission.mjs'
+ // Admission precedes all worker work, including reuse of an already-loaded runtime.
+ self.addEventListener('message', (event: MessageEvent) => {
+   if (['dispose', 'cancel', 'abort'].includes(event.data?.type)) return
+@@ -64,7 +64,7 @@
+     post({ type: 'progress', stage: 'loading-model', percent: 5 })
+ 
+     let lastPct = 5
+-    const loadedProcessor = await AutoProcessor.from_pretrained(MODEL_ID)
++    const loadedProcessor = await AutoProcessor.from_pretrained(MODEL_ID, { revision: approvedRevision('model:' + MODEL_ID) })
+ 
+     if (disposed || thisGen !== loadGeneration) return
+ 
+@@ -76,6 +76,7 @@
+     }
+ 
+     const loadedModel = await Gemma4ForConditionalGeneration.from_pretrained(MODEL_ID, {
++      revision: approvedRevision('model:' + MODEL_ID),
+       dtype: 'q4f16',
+       device: 'webgpu',
+       progress_callback: disposed
+--- a/src/infrastructure/analysis/lfm-scene-worker.ts
++++ b/src/infrastructure/analysis/lfm-scene-worker.ts
+@@ -1,4 +1,4 @@
+-import { requireResource } from '@/shared/utils/resource-admission.mjs'
++import { approvedRevision, requireResource } from '@/shared/utils/resource-admission.mjs'
+ // Admission precedes all worker work, including reuse of an already-loaded runtime.
+ self.addEventListener('message', (event: MessageEvent) => {
+   if (['dispose', 'cancel', 'abort'].includes(event.data?.type)) return
+@@ -71,11 +71,12 @@
+     post({ type: 'progress', stage: 'loading-model', percent: 5 })
+ 
+     let lastPct = 5
+-    const loadedProcessor = await AutoProcessor.from_pretrained(MODEL_ID)
++    const loadedProcessor = await AutoProcessor.from_pretrained(MODEL_ID, { revision: approvedRevision('model:' + MODEL_ID) })
+ 
+     if (disposed || thisGen !== loadGeneration) return
+ 
+     const loadedModel = await AutoModelForImageTextToText.from_pretrained(MODEL_ID, {
++      revision: approvedRevision('model:' + MODEL_ID),
+       dtype: {
+         vision_encoder: 'fp16',
+         embed_tokens: 'fp16',
+--- a/src/infrastructure/interpolation/rife-interpolator.ts
++++ b/src/infrastructure/interpolation/rife-interpolator.ts
+@@ -1,4 +1,4 @@
+-import { requireResource } from '@/shared/utils/resource-admission.mjs'
++import { approvedRevision, requireResource } from '@/shared/utils/resource-admission.mjs'
+ /**
+  * RIFE v4.x frame interpolation on onnxruntime-web.
+  *
+@@ -40,8 +40,10 @@
+  * Settings' model-cache inspector matches this by the `/RIFE_fp32_timestep/` path fragment; keep
+  * the two in sync (`shared/utils/local-model-cache.ts`).
+  */
+-const RIFE_MODEL_URL =
+-  'https://huggingface.co/walterlow/RIFE_fp32_timestep/resolve/main/RIFE_fp32_timestep.onnx'
++const RIFE_REPO = 'walterlow/RIFE_fp32_timestep'
++// Frameleaf: fetched only from the revision the owner approved, never a moving branch.
++const rifeModelUrl = () =>
++  `https://huggingface.co/${RIFE_REPO}/resolve/${approvedRevision('model:' + RIFE_REPO)}/RIFE_fp32_timestep.onnx`
+ 
+ /**
+  * Ceiling on the resolution an interpolated video is rendered at, and therefore on the
+@@ -113,7 +115,7 @@
+     this.ort = ort
+ 
+     const bytes = await fetchOnnxModelBytes(
+-      RIFE_MODEL_URL,
++      rifeModelUrl(),
+       (receivedBytes, totalBytes, fromCache) =>
+         this.options.onDownloadProgress?.({ receivedBytes, totalBytes, fromCache }),
+     )
+--- a/src/infrastructure/llm/gemma-llm-worker.ts
++++ b/src/infrastructure/llm/gemma-llm-worker.ts
+@@ -1,4 +1,4 @@
+-import { requireResource } from '@/shared/utils/resource-admission.mjs'
++import { approvedRevision, requireResource } from '@/shared/utils/resource-admission.mjs'
+ // Admission precedes all worker work, including reuse of an already-loaded runtime.
+ self.addEventListener('message', (event: MessageEvent) => {
+   if (['dispose', 'cancel', 'abort'].includes(event.data?.type)) return
+@@ -64,10 +64,11 @@
+     post({ type: 'progress', stage: 'loading-model', percent: 5 })
+     let lastPct = 5
+ 
+-    const loadedTokenizer = await AutoTokenizer.from_pretrained(MODEL_ID)
++    const loadedTokenizer = await AutoTokenizer.from_pretrained(MODEL_ID, { revision: approvedRevision('model:' + MODEL_ID) })
+     if (disposed) return
+ 
+     const loadedModel = await Gemma4ForConditionalGeneration.from_pretrained(MODEL_ID, {
++      revision: approvedRevision('model:' + MODEL_ID),
+       dtype: 'q4f16',
+       device: 'webgpu',
+       progress_callback: (info: { status?: string; total?: number; loaded?: number }) => {
+--- a/public/moss-tts/browser_model_store.js
++++ b/public/moss-tts/browser_model_store.js
+@@ -1,4 +1,4 @@
+-import { requireResource } from './resource-admission.mjs'
++import { approvedRevision, requireResource } from './resource-admission.mjs'
+ (function initNanoReaderBrowserModelStore(globalScope) {
+   const MANAGED_SCHEME = 'managed://';
+   const DEFAULT_EXTERNAL_MODEL_KEY = 'browser-onnx-external';
+@@ -248,7 +248,8 @@
+   }
+ 
+   async function fetchRepoTree(repoId, accessToken = '') {
+-    const url = `${HF_API_BASE}${repoId}/tree/main?recursive=1`;
++    // Frameleaf: the tree and every file come from the revision the owner approved.
++    const url = `${HF_API_BASE}${repoId}/tree/${approvedRevision('model:' + repoId)}?recursive=1`;
+     const response = await fetchWithOptionalToken(url, accessToken);
+     if (!response.ok) {
+       throw new Error(`Failed to fetch Hugging Face repo tree for ${repoId} (status=${response.status}).`);
+@@ -286,7 +287,7 @@
+ 
+   function buildResolveUrl(repoId, remotePath) {
+     const encodedPath = normalizeRelativePath(remotePath).split('/').map(encodeURIComponent).join('/');
+-    return `${HF_RESOLVE_BASE}${repoId}/resolve/main/${encodedPath}?download=1`;
++    return `${HF_RESOLVE_BASE}${repoId}/resolve/${approvedRevision('model:' + repoId)}/${encodedPath}?download=1`;
+   }
+ 
+   async function downloadRepoFiles(destinationHandle, repoSpec, onProgress = null, accessToken = '') {

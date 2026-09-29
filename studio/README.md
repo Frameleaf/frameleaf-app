@@ -128,6 +128,34 @@ silence, full/windowed export silence, monitor independence, history, persistenc
 These regressions have not yet run for this candidate; worker/browser/audio-output qualification
 and the broader preview/layout/scope requirements remain open.
 
+The engine's runtime resource policy is generated at `prepare` by `tools/resource-policy.mjs`
+from `dependency-attribution.json` and the owner's approval in `rights-approval.json` (FL-146,
+September 25, 2026; the server mirror is `scripts/frameleaf-studio-rights.mjs`). A resource is
+admitted for local runtime only when the owner approved its exact reviewed row for that use and
+did not withhold it; the admission carries the row digest, so a row changed after approval is
+blocked again, and any id or URL outside the approved rows stays blocked. A reviewed row cannot
+admit itself: `decisions` stay as the packager recorded them. A URL is admitted only inside an
+approved locator, and a Hugging Face model only from the approved commit
+(`/resolve/<revision>/`); when several rows cover a URL the most specific decides and any
+blocked one blocks it, and encoded path separators are refused. Patch 0028 makes the engine
+request every approved model, tokenizer and processor from that revision instead of `main`
+(transformers.js loaders, Parakeet, RIFE and the MOSS model store), admits each Kokoro and
+Supertonic voice as its own row before use, and admits the Whisper worker's transformers runtime
+as well as its model. Loaders inside third-party bundles that take no revision (kokoro-js and
+transformers.js pre-flight metadata) are covered by the admission module itself: in every window
+and worker that imports it, a request for an approved repository at any other ref is sent to the
+approved commit; the Kokoro voice files, whose rows name `main`, are therefore read from the
+Kokoro model's approved commit. The Supertonic Space is approved at a branch
+(`resolve/main/assets`) and loads from it. Browser caches keyed by the original `main` URLs
+(kokoro-js voices, transformers.js pre-flight) are not cleared if a pinned commit later changes;
+approving a new revision should clear them. The Whisper
+worker's ONNX WebAssembly files come from `cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1`,
+which is not yet a reviewed row. No per-file byte digests are recorded yet, so
+`verifyResourceBytes` still fails closed. `tools/engine.test.mjs` covers approval, withheld uses,
+changed rows, URL lookalikes, voice precedence and revision pinning;
+`tools/resource-admission.browser.mjs` checks every entrypoint's refusal path under an
+all-blocked substitute policy.
+
 `frameleaf-source.json` records all adapted input hashes. `frameleaf-build.json` records the sorted output hashes/digest, upstream and patch identities, toolchain/platform, and every direct/transitive/optional/development package's lockfile license declaration. Missing declarations remain `UNDECLARED`. The original MIT license and bundled SoundTouch/WebSR notices are retained. These records do not establish redistribution approval, including for external models, fonts and assets.
 
 The dedicated read-only Actions workflow runs the upstream unit and Node headless contracts, builds twice from separately prepared workspaces, compares artifact digests, and rechecks the complete original snapshot. Both build manifests are retained even on comparison failure, and mismatches report the affected artifact paths. Uploaded provenance is build evidence only after the exact candidate passes. Browser/GPU/media headless tests, full feature conformance, HDR/Dolby qualification and application integration remain separate gates.

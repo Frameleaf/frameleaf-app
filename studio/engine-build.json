@@ -139,7 +139,12 @@
       "path": "patches/0027-effect-frame-clock-and-animation.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "36f9b02ccb9cefcb51367ff1102146b9daef37c6f4daef6f9d360cc363f77951"
+    },
+    {
+      "path": "patches/0028-approved-model-revisions.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "6135f53db8d70a12e206e52bae319e1e7ed89366293315a7bbb1ac065f032d34"
     }
   ],
-  "sourceSha256": "338a8207c1afe2184d8598a99b8d17e6c5e344475522b0b4349053715870a6d6"
+  "sourceSha256": "9fe1900dfd795ed8f6e64471e7c4ffd6907d3be0643bb6e9502df2cd0799aeaa"
 }
