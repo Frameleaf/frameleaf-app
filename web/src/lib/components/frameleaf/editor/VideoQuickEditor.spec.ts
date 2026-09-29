@@ -128,8 +128,9 @@ describe('VideoQuickEditor', () => {
     await fireEvent.click(screen.getByRole('switch', { name: 'frameleaf_video_editor_mute' }));
     await waitFor(() => expect(readEditorContinuity(asset.id)?.kind).toBe('video'));
 
-    await fireEvent.click(screen.getByRole('button', { name: 'play' }));
     const media = first.container.querySelector('video')!;
+    await fireEvent.loadedMetadata(media);
+    await fireEvent.click(screen.getByRole('button', { name: 'play' }));
     media.currentTime = 7;
     await fireEvent.timeUpdate(media);
     await fireEvent.click(screen.getByRole('button', { name: 'pause' }));
@@ -146,6 +147,38 @@ describe('VideoQuickEditor', () => {
     await waitFor(() =>
       expect(screen.getByRole('slider', { name: 'frameleaf_video_editor_playhead' })).toHaveValue('9'),
     );
+  });
+
+  it('keeps a restored playhead when the reloaded video reports 0 before its metadata loads', async () => {
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 800, 600));
+    const asset = video();
+    vi.mocked(getAssetEdits).mockResolvedValue({ assetId: asset.id, edits: [], originalVideo } as never);
+    const first = render(VideoQuickEditor, { asset, onClose: vi.fn() });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'frameleaf_editor_save_version' })).toBeEnabled());
+    await fireEvent.click(screen.getByRole('tab', { name: 'frameleaf_video_editor_tool_audio' }));
+    await fireEvent.click(screen.getByRole('switch', { name: 'frameleaf_video_editor_mute' }));
+    await fireEvent.input(screen.getByRole('slider', { name: 'frameleaf_video_editor_playhead' }), {
+      target: { value: '6' },
+    });
+    await waitFor(() => expect(readEditorContinuity(asset.id)?.playhead).toEqual({ num: 6, den: 1 }));
+    first.unmount();
+
+    const second = render(VideoQuickEditor, { asset, onClose: vi.fn() });
+    const slider = () => screen.getByRole('slider', { name: 'frameleaf_video_editor_playhead' });
+    await waitFor(() => expect(slider()).toHaveValue('6'));
+    const media = second.container.querySelector('video')!;
+    // The fresh load reports position 0 before metadata arrives; that must not replace the draft.
+    await fireEvent.loadStart(media);
+    media.currentTime = 0;
+    await fireEvent.timeUpdate(media);
+    expect(slider()).toHaveValue('6');
+    expect(readEditorContinuity(asset.id)?.playhead).toEqual({ num: 6, den: 1 });
+
+    await fireEvent.loadedMetadata(media);
+    expect(media.currentTime).toBe(6);
+    await fireEvent.timeUpdate(media);
+    expect(slider()).toHaveValue('6');
+    expect(readEditorContinuity(asset.id)?.playhead).toEqual({ num: 6, den: 1 });
   });
 
   it('does not recreate a cleared private draft on pagehide or editor teardown', async () => {
