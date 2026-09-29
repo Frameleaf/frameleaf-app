@@ -94,7 +94,12 @@
       "path": "patches/0018-scope-seek-correspondence.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "e6d9ef79ad3097b13ba84d502df72553b67ed03d4ec61ebba62596622b99ec40"
+    },
+    {
+      "path": "patches/0020-nested-preview-audio-mute.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "1b9d62f5cbcec97c69a118f094716c74c8c0b3d8a4e02bb9817c54ce45d2d5f4"
     }
   ],
-  "sourceSha256": "937ebd1d503e5199e461c5ee8fca471a96ddb8c4ced7f1ad3b0eecfd356f0dfe"
+  "sourceSha256": "42f333fdcc52eb0a1bf0ae2be8efb0e0014e7b245fae20f858a93ec1fc1fc8ba"
 }
