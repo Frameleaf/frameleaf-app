@@ -4,7 +4,7 @@ import { InjectKysely } from 'nestjs-kysely';
 import { AssetLockReason, AssetVisibility } from 'src/enum.js';
 import { getForkSchemaPhase, readsForkSidecar } from 'src/repositories/fork-derived-results.js';
 import { DB } from 'src/schema/index.js';
-import { DerivativeSourceEvidence } from 'src/utils/derivative-privacy.js';
+import { DerivativeSourceEvidence, strongestLockReason } from 'src/utils/derivative-privacy.js';
 import { getOwnerHiddenShareIds } from 'src/utils/item-share.js';
 import { isNotLocked } from 'src/utils/locked.js';
 
@@ -59,11 +59,20 @@ export class DerivativePrivacyRepository {
 
     const sensitive = await this.sensitiveIds(tx, assetIds);
 
-    // Read after the row locks are held, so a lock committed by anybody who got there first is seen.
+    // Read after the row locks are held, including a still linked after it was locked: its hidden
+    // motion may have no lock record of its own, but library access already treats it as Locked.
     const locks = await sql<{ assetId: string; reason: AssetLockReason }>`
-      SELECT "assetId", reason FROM asset_lock WHERE "assetId" = ANY(${[...assetIds]}::uuid[])
+      SELECT source.id AS "assetId", asset_lock.reason
+      FROM asset source
+      JOIN asset locked ON locked.id = source.id
+        OR (source.visibility = ${sql.lit(AssetVisibility.Hidden)} AND locked."livePhotoVideoId" = source.id)
+      JOIN asset_lock ON asset_lock."assetId" = locked.id
+      WHERE source.id = ANY(${[...assetIds]}::uuid[])
     `.execute(tx);
-    const reasons = new Map(locks.rows.map((row) => [row.assetId, row.reason]));
+    const reasons = new Map<string, AssetLockReason | null>();
+    for (const row of locks.rows) {
+      reasons.set(row.assetId, strongestLockReason([reasons.get(row.assetId) ?? null, row.reason]));
+    }
     const requested = new Set(assetIds);
 
     return new Map(

@@ -13,6 +13,7 @@ import {
   StudioExportVersionState,
   UserMetadataKey,
 } from 'src/enum.js';
+import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { DerivativePrivacyRepository } from 'src/repositories/derivative-privacy.repository.js';
@@ -282,6 +283,52 @@ describe(StudioExportRepository.name, () => {
   });
 
   describe('publish: inherited privacy', () => {
+    it.each(['owner', 'partner'] as const)(
+      'rechecks a motion linked to an already Locked still before publication for its %s',
+      async (viewer) => {
+        const context = setup();
+        const { user: owner } = await context.ctx.newUser();
+        const recipient = viewer === 'owner' ? owner : (await context.ctx.newUser()).user;
+        if (viewer === 'partner') {
+          await context.ctx.newPartner({ sharedById: owner.id, sharedWithId: recipient.id });
+        }
+        const source = {
+          ...(await ownSource(context.ctx, owner.id, { type: AssetType.Video, visibility: AssetVisibility.Hidden })),
+          access: viewer === 'owner' ? ('owner' as const) : ('shared' as const),
+        };
+        const access = new AccessRepository(defaultDatabase);
+        const reachable = () =>
+          viewer === 'owner'
+            ? access.asset.checkOwnerAccess(recipient.id, new Set([source.id]), false)
+            : access.asset.checkPartnerAccess(recipient.id, new Set([source.id]));
+        await expect(reachable()).resolves.toEqual(new Set([source.id]));
+        const staged = await stagedExport(context, recipient.id, [source]);
+
+        // Between source authorization and final publication, a previously Locked still is paired
+        // with this motion. No lock is written on the motion by that association update.
+        const still = await ownSource(context.ctx, owner.id, { visibility: AssetVisibility.Locked });
+        await context.assets.update({ id: still.id, livePhotoVideoId: source.id });
+        expect(await lockOf(source.id)).toBeNull();
+        await expect(reachable()).resolves.toEqual(new Set());
+
+        if (viewer === 'partner') {
+          await expectRefusal(context.sut.publish(publication(staged, [source])), 'source-access-lost');
+          expect(await context.sut.getById(staged.version.id)).toMatchObject({
+            state: StudioExportVersionState.Staged,
+            resultAssetId: null,
+            version: null,
+          });
+        } else {
+          const published = await context.sut.publish(publication(staged, [source]));
+          expect(published.privacy).toMatchObject({ lockReason: AssetLockReason.Marked, lockedSourceCount: 1 });
+          expect(await lockOf(published.createdAssetId!)).toBe(AssetLockReason.Marked);
+          await expect(
+            context.sut.getForOwner(staged.version.id, owner.id, { revealed: false }),
+          ).resolves.toBeUndefined();
+        }
+      },
+    );
+
     it('locks the result when a later clip is Locked, as a lock record and never a stored visibility', async () => {
       const context = setup();
       const { user } = await context.ctx.newUser();
