@@ -955,7 +955,11 @@ export class StudioBundleService {
       upload.id,
       chosen.map(([key, assetId]) => ({ kind: byKey.get(key)!.kind, id: assetId })),
     );
-    if (chosen.some(([key, assetId]) => !stillAllowed.has(studioReferenceKey({ kind: byKey.get(key)!.kind, id: assetId })))) {
+    if (
+      chosen.some(
+        ([key, assetId]) => !stillAllowed.has(studioReferenceKey({ kind: byKey.get(key)!.kind, id: assetId })),
+      )
+    ) {
       throw new BundleJobError('bundle_relink_unavailable', 'A chosen relink target is no longer available');
     }
     const mapping: Record<string, string> = {};
