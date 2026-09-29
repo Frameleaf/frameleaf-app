@@ -900,6 +900,27 @@ export class StudioBundleService {
   private async runImport({ operation, claimToken }: RunningJob): Promise<void> {
     const snapshot = parseBundleImportSnapshot(operation.snapshot);
 
+    // A previous attempt may have committed the project before its job could finish. Its verified
+    // result was saved before creation; use that result rather than re-admitting changed choices.
+    const existing = await this.projects.getByImportOperation(operation.id);
+    if (existing) {
+      const result = operation.result as Partial<StudioBundleImportResult> | null;
+      if (
+        existing.ownerId !== operation.ownerId ||
+        existing.importedFromDigest !== snapshot.digest ||
+        !result ||
+        typeof result.relinked !== 'number' ||
+        typeof result.kept !== 'number' ||
+        !Array.isArray(result.missing) ||
+        typeof result.embeddedVerified !== 'number'
+      ) {
+        throw new BundleJobError('bundle_recovery_unavailable', 'The existing import cannot be recovered');
+      }
+      await this.projects.markUploadConsumed(snapshot.uploadId);
+      await this.finish(operation.id, claimToken, { ...parseBundleImportResult(result), projectId: existing.id }, 1);
+      return;
+    }
+
     const upload = await this.projects.getUpload(snapshot.uploadId, operation.ownerId);
     if (!upload || new Date(upload.expiresAt).getTime() <= Date.now()) {
       throw new BundleJobError('bundle_upload_expired', 'The uploaded bundle has expired; upload it again');
@@ -956,6 +977,30 @@ export class StudioBundleService {
       throw new BundleJobError('bundle_project_invalid', next.detail);
     }
 
+    const missing: StudioBundleMissingSource[] = plan
+      .filter((step) => step.outcome === 'missing')
+      .map((step) => {
+        const source = byKey.get(step.key)!;
+        return {
+          key: source.key,
+          kind: source.kind,
+          id: source.id,
+          fileName: source.fileName,
+          embedded: source.mode === 'embedded',
+        };
+      });
+
+    const prepared: StudioBundleImportResult = {
+      projectId: null,
+      relinked: relinkMap.size,
+      kept: plan.filter((step) => step.outcome === 'kept').length,
+      missing,
+      embeddedVerified,
+    };
+    if (!(await this.progress(operation.id, claimToken, prepared as unknown as Record<string, unknown>, 1, 1))) {
+      return;
+    }
+
     const { project } = await this.projects.createWithRevision({
       ownerId: operation.ownerId,
       name: snapshot.name ?? manifest.project.name,
@@ -972,25 +1017,9 @@ export class StudioBundleService {
     });
     await this.projects.markUploadConsumed(upload.id);
 
-    const missing: StudioBundleMissingSource[] = plan
-      .filter((step) => step.outcome === 'missing')
-      .map((step) => {
-        const source = byKey.get(step.key)!;
-        return {
-          key: source.key,
-          kind: source.kind,
-          id: source.id,
-          fileName: source.fileName,
-          embedded: source.mode === 'embedded',
-        };
-      });
-
     const result: StudioBundleImportResult = {
+      ...prepared,
       projectId: project.id,
-      relinked: relinkMap.size,
-      kept: plan.filter((step) => step.outcome === 'kept').length,
-      missing,
-      embeddedVerified,
     };
 
     await this.finish(operation.id, claimToken, result as unknown as Record<string, unknown>, 1);

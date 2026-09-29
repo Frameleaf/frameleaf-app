@@ -276,6 +276,7 @@ describe(StudioBundleService.name, () => {
       createWithRevision: vi
         .fn()
         .mockImplementation(() => Promise.resolve({ project: { id: newUuidV7() } as StudioProject, created: true })),
+      getByImportOperation: vi.fn().mockResolvedValue(undefined),
       createUpload: vi.fn(),
       getUpload: vi.fn(),
       deleteUpload: vi.fn(),
@@ -713,6 +714,37 @@ describe(StudioBundleService.name, () => {
         expect.objectContaining({ errorCode: 'bundle_relink_unavailable' }),
       );
       expect(projects.createWithRevision).not.toHaveBeenCalled();
+
+      // The first attempt can commit the project and then fail before completing the operation.
+      // A retry must recover that project even if its selected relink target was since revoked.
+      allowed.set(standIn, { path: '/library/stand-in.jpg', ownerId: owner.user.id });
+      const recoveredProject = {
+        id: newUuidV7(),
+        ownerId: owner.user.id,
+        importedFromDigest: upload.digest,
+      } as StudioProject;
+      projects.createWithRevision.mockResolvedValueOnce({ project: recoveredProject, created: true });
+      projects.markUploadConsumed.mockRejectedValueOnce(new Error('write interrupted'));
+      operations.setBulkResult.mockClear();
+      const interruptedJob = operationOf({ ...importJob, id: newUuidV7() });
+      await sut.run({ operation: interruptedJob, claimToken: 'token-interrupted' });
+      const prepared = operations.setBulkResult.mock.calls.find(
+        ([, , patch]) => patch.result?.projectId === null && patch.result?.relinked === 1,
+      )?.[2].result;
+      expect(prepared).toBeDefined();
+
+      allowed.delete(standIn);
+      projects.getByImportOperation.mockResolvedValueOnce(recoveredProject);
+      projects.createWithRevision.mockClear();
+      resources.resolveProjectResources.mockClear();
+      operations.fail.mockClear();
+      operations.setBulkResult.mockClear();
+      await sut.run({ operation: { ...interruptedJob, result: prepared }, claimToken: 'token-retry' });
+      expect(operations.fail).not.toHaveBeenCalled();
+      expect(projects.createWithRevision).not.toHaveBeenCalled();
+      expect(resources.resolveProjectResources).not.toHaveBeenCalled();
+      expect(operations.complete).toHaveBeenCalledWith(interruptedJob.id, 'token-retry', { resultAssetId: null });
+      expect(lastResult()).toMatchObject({ projectId: recoveredProject.id, relinked: 1, kept: 1 });
     });
   });
 
