@@ -1,6 +1,7 @@
 import {
   AssetMediaResponseDto,
   getAssetDevelop,
+  getDevelopPresets,
   lockAuthSession,
   LoginResponseDto,
   setupPinCode,
@@ -72,6 +73,56 @@ test.describe('Quick editor', () => {
     const reopened = page.getByRole('dialog', { name: /Edit/ });
     await reopened.getByRole('button', { name: 'Versions' }).click();
     await expect(reopened.getByRole('menuitemradio', { name: /Version 1/ })).toBeVisible();
+  });
+  test('saves a named preset and reapplies it to another photo after reload (FL-64)', async ({ page }) => {
+    const headers = asBearerAuth(admin.accessToken);
+    const editor = page.getByRole('dialog', { name: /Edit/ });
+    await editor.getByRole('slider', { name: 'Exposure' }).fill('0.75');
+    await editor.getByRole('slider', { name: 'Contrast' }).fill('25');
+    await editor.getByRole('tab', { name: 'Presets', exact: true }).click();
+    await editor.getByRole('textbox', { name: 'Preset name' }).fill('Soft daylight');
+    await editor.getByRole('button', { name: 'Save as preset', exact: true }).click();
+    await expect(
+      editor.getByRole('list', { name: 'Your presets' }).getByRole('button', { name: 'Soft daylight', exact: true }),
+    ).toBeVisible();
+    expect(await getDevelopPresets({ headers })).toEqual([
+      expect.objectContaining({
+        name: 'Soft daylight',
+        settings: expect.objectContaining({ exposure: 0.75, contrast: 25 }),
+      }),
+    ]);
+    await editor.getByRole('button', { name: 'Save version', exact: true }).click();
+    await expect(editor).toBeHidden();
+
+    const other = await utils.createAsset(admin.accessToken);
+    await page.goto(`/photos/${other.id}`);
+    await page.reload();
+    await expect(page.getByTestId('preview').filter({ visible: true })).toHaveAttribute('src', /.+/);
+    await page.keyboard.press('e');
+    await expect(editor.getByRole('slider', { name: 'Exposure' })).toHaveValue('0');
+    await expect(editor.getByRole('slider', { name: 'Contrast' })).toHaveValue('0');
+    await editor.getByRole('tab', { name: 'Presets', exact: true }).click();
+    const preset = editor
+      .getByRole('list', { name: 'Your presets' })
+      .getByRole('button', { name: 'Soft daylight', exact: true });
+    await expect(preset).toHaveAttribute('aria-pressed', 'false');
+    await preset.click();
+    await expect(preset).toHaveAttribute('aria-pressed', 'true');
+    await editor.getByRole('tab', { name: 'Adjust', exact: true }).click();
+    await expect(editor.getByRole('slider', { name: 'Exposure' })).toHaveValue('0.75');
+    await expect(editor.getByRole('slider', { name: 'Contrast' })).toHaveValue('25');
+    expect((await getAssetDevelop({ id: other.id }, { headers })).revisions).toHaveLength(0);
+
+    await editor.getByRole('button', { name: 'Save version', exact: true }).click();
+    await expect(editor).toBeHidden();
+    const saved = await getAssetDevelop({ id: other.id }, { headers });
+    expect(saved.revisions).toHaveLength(1);
+    expect(saved.revisions[0].recipe).toMatchObject({ exposure: 0.75, contrast: 25 });
+    await page.reload();
+    await expect(page.getByTestId('preview').filter({ visible: true })).toHaveAttribute('src', /.+/);
+    await page.keyboard.press('e');
+    await expect(editor.getByRole('slider', { name: 'Exposure' })).toHaveValue('0.75');
+    await expect(editor.getByRole('slider', { name: 'Contrast' })).toHaveValue('25');
   });
 });
 
