@@ -75,6 +75,16 @@ Captures wait for updated renderer registration when the renderer rebuilds its g
 using its existing transform-change predicate to preserve direct transform sampling. This does not
 qualify worker revision/frame provenance, live seeks, HDR scope ramps or browser conformance.
 
+Patch 0021 makes zero-softness chroma keying a defined hard edge: pixels at or below
+the tolerance are transparent. The shared effect shader serves preview and export.
+The MIT notice in `notices/freecut.txt` covers this adaptation. The hosted
+`tools/chroma-key.browser.mjs` regression reads canvas and float-texture output for
+green/blue keys, hard/soft edges, source alpha, and animated spill suppression at
+0, 0.5 and 1. It targets `effect.gpu-chroma-key` and
+`readme.effects-masks-compositing.5`; exact-candidate hosted execution is required.
+Full project preview/export, masks, effect-stack ordering, other browsers and
+native application conformance remain unqualified in `conformance.json`.
+
 `frameleaf-source.json` records all adapted input hashes. `frameleaf-build.json` records the sorted output hashes/digest, upstream and patch identities, toolchain/platform, and every direct/transitive/optional/development package's lockfile license declaration. Missing declarations remain `UNDECLARED`. The original MIT license and bundled SoundTouch/WebSR notices are retained. These records do not establish redistribution approval, including for external models, fonts and assets.
 
 The dedicated read-only Actions workflow runs the upstream unit and Node headless contracts, builds twice from separately prepared workspaces, compares artifact digests, and rechecks the complete original snapshot. Both build manifests are retained even on comparison failure, and mismatches report the affected artifact paths. Uploaded provenance is build evidence only after the exact candidate passes. Browser/GPU/media headless tests, full feature conformance, HDR/Dolby qualification and application integration remain separate gates.
