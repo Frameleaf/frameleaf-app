@@ -38,6 +38,29 @@ describe('AccountMenu', () => {
     expect(screen.getByRole('menuitem', { name: 'sign_out' })).toHaveClass('danger');
   });
 
+  it('skips the loading Locked control when wrapping focus and restores the trigger on Escape', async () => {
+    render(AccountMenu, { isElevated: false, isSessionLoading: true, onUnlock: vi.fn(), onLock: vi.fn() });
+    const trigger = screen.getAllByRole('button')[0];
+    trigger.focus();
+    await fireEvent.click(trigger);
+    expect(screen.getByRole('menuitemcheckbox')).toBeDisabled();
+
+    const first = screen.getAllByRole('menuitem')[0];
+    const last = screen.getByRole('menuitem', { name: 'sign_out' });
+    first.focus();
+    await fireEvent.keyDown(first, { key: 'ArrowUp' });
+    expect(last).toHaveFocus();
+    await fireEvent.keyDown(last, { key: 'ArrowDown' });
+    expect(first).toHaveFocus();
+    await fireEvent.keyDown(first, { key: 'End' });
+    expect(last).toHaveFocus();
+    await fireEvent.keyDown(last, { key: 'Home' });
+    expect(first).toHaveFocus();
+    await fireEvent.keyDown(first, { key: 'Escape' });
+    expect(screen.queryByRole('menu')).toBeNull();
+    expect(trigger).toHaveFocus();
+  });
+
   it('offers Support Frameleaf and, for an administrator, the Frameleaf Cloud link state and AI credit (FL-157)', async () => {
     sdkMock.getCloudStatus.mockResolvedValue({
       state: CloudLinkState.Linked,
