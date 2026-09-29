@@ -2,18 +2,22 @@ name: frameleaf
 services:
   server:
     image: @SERVER_REF@
-    env_file: .env
     environment:
+      DB_PASSWORD: ${DB_PASSWORD:-UNCONFIGURED_DO_NOT_START}
       DB_HOSTNAME: database
       DB_USERNAME: immich
       DB_DATABASE_NAME: immich
       REDIS_HOSTNAME: redis
-      IMMICH_MACHINE_LEARNING_ENABLED: ${ENABLE_ML}
+      IMMICH_MACHINE_LEARNING_ENABLED: ${ENABLE_ML:-false}
       IMMICH_MACHINE_LEARNING_URL: http://machine-learning:3003
     volumes:
-      - ${UPLOAD_LOCATION}:/data
+      - type: bind
+        source: ${UPLOAD_LOCATION:-/var/packages/Frameleaf/var/media}
+        target: /data
+        bind:
+          create_host_path: false
     ports:
-      - ${WEB_PORT}:2283
+      - ${WEB_PORT:-2283}:2283
     depends_on:
       - database
       - redis
@@ -33,10 +37,14 @@ services:
     environment:
       POSTGRES_USER: immich
       POSTGRES_DB: immich
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-UNCONFIGURED_DO_NOT_START}
       POSTGRES_INITDB_ARGS: --data-checksums
     volumes:
-      - ${DB_DATA_LOCATION}:/var/lib/postgresql/data
+      - type: bind
+        source: ${DB_DATA_LOCATION:-/var/packages/Frameleaf/var/postgres}
+        target: /var/lib/postgresql/data
+        bind:
+          create_host_path: false
     shm_size: 128mb
     restart: unless-stopped
     healthcheck:

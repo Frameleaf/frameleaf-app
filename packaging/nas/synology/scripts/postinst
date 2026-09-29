@@ -1,4 +1,22 @@
 #!/bin/sh
 set -eu
+umask 077
+if [ "${SYNOPKG_PKG_STATUS:-INSTALL}" != UPGRADE ]; then
+  profile=''
+  [ "${wizard_enable_ml:-true}" = true ] && profile=ml
+  enabled=false
+  [ -n "$profile" ] && enabled=true
+  # DSM supplies these values from the install wizard.
+  # shellcheck disable=SC2154
+  {
+    printf 'UPLOAD_LOCATION=%s\n' "$wizard_media_path"
+    printf 'DB_DATA_LOCATION=%s\n' "$wizard_database_path"
+    printf 'DB_PASSWORD=%s\n' "$wizard_database_password"
+    printf 'WEB_PORT=%s\n' "$wizard_web_port"
+    printf 'COMPOSE_PROFILES=%s\n' "$profile"
+    printf 'ENABLE_ML=%s\n' "$enabled"
+  } > "$SYNOPKG_PKGVAR/frameleaf.env.tmp"
+  mv "$SYNOPKG_PKGVAR/frameleaf.env.tmp" "$SYNOPKG_PKGVAR/frameleaf.env"
+fi
 [ -s "$SYNOPKG_PKGVAR/frameleaf.env" ]
 [ -s "$SYNOPKG_PKGDEST/project/.env" ]
