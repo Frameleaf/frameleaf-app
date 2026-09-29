@@ -1,9 +1,11 @@
-import { AlbumKind, AlbumUserRole, getAlbumInfo, type AlbumResponseDto } from '@immich/sdk';
+import { AlbumUserRole, getAlbumInfo, type AlbumResponseDto } from '@immich/sdk';
 import { render, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { librarySession } from '$lib/frameleaf/library-session.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { getAlbumAssetsActions } from '$lib/services/album.service';
+import { albumFactory } from '@test-data/factories/album-factory';
+import { userAdminFactory } from '@test-data/factories/user-factory';
 import AlbumPage from './+page.svelte';
 
 vi.mock('$app/navigation', () => ({ goto: vi.fn(), invalidate: vi.fn(), onNavigate: vi.fn() }));
@@ -37,19 +39,19 @@ vi.mock('$lib/components/frameleaf/ResultsView.svelte', () => ({ default: () => 
 vi.mock('$lib/components/frameleaf/SpaceMediaComments.svelte', () => ({ default: () => {} }));
 vi.mock('$lib/components/timeline/TimelineAssetViewer.svelte', () => ({ default: () => {} }));
 
-const album = (id: string) =>
-  ({ id, albumName: id, kind: AlbumKind.Album, ownerId: 'owner', albumUsers: [], assetCount: 1 }) as AlbumResponseDto;
 const data = (value: AlbumResponseDto) => ({ album: value, tree: { collections: [], albums: [], spaces: [] } });
 
 it('keeps a newer role change when an earlier album refresh finishes late (FL-40)', async () => {
   let resolve!: (value: AlbumResponseDto) => void;
   const pending = new Promise<AlbumResponseDto>((done) => (resolve = done));
   vi.mocked(getAlbumInfo).mockReturnValueOnce(pending);
-  const first = {
-    ...album('first'),
+  const first = albumFactory.build({
+    id: 'first',
+    albumName: 'first',
+    assetCount: 1,
     ownerId: 'another-owner',
-    albumUsers: [{ user: { id: 'owner' }, role: AlbumUserRole.Editor }],
-  } as AlbumResponseDto;
+    albumUsers: [{ user: userAdminFactory.build({ id: 'owner' }), role: AlbumUserRole.Editor }],
+  });
   render(AlbumPage, { data: data(first) as never });
   await waitFor(() => expect(librarySession.state.scope.id).toBe('first'));
   eventManager.emit('AlbumAddAssets', { albumIds: ['first'], assetIds: ['added'] });
