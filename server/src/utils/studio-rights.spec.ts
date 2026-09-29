@@ -31,9 +31,7 @@ const MUSICGEN = 'model:Xenova/musicgen-small';
  * Rows whose locator changed when the ONNX Runtime and Whisper runtimes were bundled with the engine
  * (studio patch 0029), approved again by the owner at their new digests on 2026-09-29.
  */
-const REAPPROVED = new Set(['runtime:onnx-cdn']);
-/** Changed again for the Whisper worker's move back to transformers.js 3.8.1; awaits the owner. */
-const AWAITING_REAPPROVAL = new Set(['runtime:whisper-transformers']);
+const REAPPROVED = new Set(['runtime:onnx-cdn', 'runtime:whisper-transformers']);
 
 describe('studio rights (FL-86)', () => {
   it('keeps MusicGen-small local only: its CC-BY-NC-4.0 licence withholds hosted use (FL-146 comment 34944)', () => {
@@ -58,7 +56,7 @@ describe('studio rights (FL-86)', () => {
     });
     // Every other approved row keeps hosted use.
     const hostedBlocked = Object.entries(studioResourceRights)
-      .filter(([id, rights]) => rights.hostedUse !== 'allowed' && !AWAITING_REAPPROVAL.has(id))
+      .filter(([, rights]) => rights.hostedUse !== 'allowed')
       .map(([id]) => id);
     expect(hostedBlocked).toEqual([MUSICGEN]);
   });
@@ -71,9 +69,6 @@ describe('studio rights (FL-86)', () => {
       source: expect.stringContaining('FL-146'),
     });
     for (const [id, rights] of rows) {
-      if (AWAITING_REAPPROVAL.has(id)) {
-        continue;
-      }
       expect(rights.approvedOn, id).toBe(REAPPROVED.has(id) ? '2026-09-29' : '2026-09-25');
       expect(checkStudioRights(id, StudioRightsUse.LocalRuntime)).toEqual({ allowed: true, id });
       if (id !== MUSICGEN) {
@@ -89,13 +84,6 @@ describe('studio rights (FL-86)', () => {
     for (const id of REAPPROVED) {
       expect(studioResourceRights[id]).toMatchObject({ approvedOn: '2026-09-29', localRuntime: 'allowed' });
       expect(checkStudioRights(id, StudioRightsUse.LocalRuntime)).toEqual({ allowed: true, id });
-    }
-  });
-
-  it('blocks the Whisper runtime row that changed after its approval until the owner approves it again', () => {
-    for (const id of AWAITING_REAPPROVAL) {
-      expect(studioResourceRights[id]).toMatchObject({ approvedOn: null, localRuntime: 'blocked' });
-      expect(checkStudioRights(id, StudioRightsUse.LocalRuntime)).toMatchObject({ allowed: false, id });
     }
   });
 
