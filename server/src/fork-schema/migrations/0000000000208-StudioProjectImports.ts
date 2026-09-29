@@ -6,7 +6,7 @@ import { Kysely, sql } from 'kysely';
  * the server records the owner, the checked content type, the SHA-256, the size and the
  * owner-private path. Like the generated media table it has no foreign key into public: project
  * existence and ownership are rechecked on every read and under a project row lock on registration,
- * and rows of a deleted project stay inaccessible until their files are cleaned up.
+ * and the Studio lifecycle sweep removes the rows and files of a project deleted for good.
  */
 export async function up(db: Kysely<any>): Promise<void> {
   await sql`
