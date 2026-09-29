@@ -757,7 +757,11 @@ describe(RenderWorkerService.name, () => {
         });
 
         it('records what a Studio export claim may read before handing it out (FL-106)', async () => {
-          await sut.claim(SESSION_A, {} as never);
+          const claim = await sut.claim(SESSION_A, {} as never);
+
+          expect(studioProjects.getRevision).toHaveBeenCalledWith('project-1', 7);
+          expect(claim?.snapshot.studio).toEqual(expect.objectContaining({ revision: 7, graph: storedGraph }));
+          expect(storedOp.snapshot.studio).not.toHaveProperty('graph');
 
           expect(studioExports.onRenderClaimed).toHaveBeenCalledWith(
             expect.objectContaining({ id: storedOp.id, claimToken: 'claim-1' }),
