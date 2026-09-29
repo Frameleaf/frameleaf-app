@@ -96,7 +96,11 @@ export class ItemShareService extends BaseService {
     const removed = await this.itemShareRepository.remove(auth.user.id, assetIds, dto.userIds);
     // Access is checked live, so this only tells the recipients' open pages to drop what they loaded.
     for (const row of removed) {
-      this.websocketRepository.clientSend('on_asset_hidden', row.sharedWithId, row.assetId);
+      try {
+        this.websocketRepository.clientSend('on_asset_hidden', row.sharedWithId, row.assetId);
+      } catch (error) {
+        this.logger.warn(`Could not notify item-share recipient ${row.sharedWithId} after revoking ${row.assetId}: ${error}`);
+      }
     }
     return this.changeResponse(auth, assetIds, {
       added: 0,
