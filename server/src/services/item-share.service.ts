@@ -79,13 +79,17 @@ export class ItemShareService extends BaseService {
       counts.set(row.sharedWithId, (counts.get(row.sharedWithId) ?? 0) + 1);
     }
     for (const [userId, count] of counts) {
-      await this.eventRepository.emit('ItemShare', {
-        ownerId: auth.user.id,
-        userId,
-        senderName: auth.user.name,
-        count,
-        link: link ?? null,
-      });
+      try {
+        await this.eventRepository.emit('ItemShare', {
+          ownerId: auth.user.id,
+          userId,
+          senderName: auth.user.name,
+          count,
+          link: link ?? null,
+        });
+      } catch (error) {
+        this.logger.warn(`Could not notify item-share recipient ${userId} after sharing: ${error}`);
+      }
     }
 
     return this.changeResponse(auth, assetIds, { added: added.length, removed: 0, link });
