@@ -22,7 +22,9 @@ probe limits bound this check to small specimens; exceeding either fails closed.
 timestamps do not prove edited-output/XML/RPU correspondence. The overall Dolby `goNoGo` remains false.
 Dolby configuration or RPU/metadata side data reported on the stream or any decoded frame is refused:
 the generic HDR probe has no qualified Dolby decode/reshape path or explicit base-layer-only policy.
-Plain HDR10/HLG sources remain eligible; this refusal does not strip metadata or create an output.
+All video streams are inspected and the input must contain exactly one video stream; a separate
+Dolby enhancement stream cannot be ignored by selecting only its HDR-compatible base.
+Plain single-stream HDR10/HLG sources remain eligible; these refusals do not strip metadata or create an output.
 
 `node --test scripts/frameleaf-studio-preflight.test.mjs` requires administrator-installed FFmpeg
 and FFprobe with `libx265`. It checks two probes of tiny generated HEVC Main10 fractional/VFR
