@@ -92,8 +92,7 @@
     action();
   };
 
-  const items = () =>
-    menu ? [...menu.querySelectorAll<HTMLElement>('[role="menuitem"], [role="menuitemcheckbox"]')] : [];
+  const items = () => (menu ? [...menu.querySelectorAll<HTMLElement>('[role^="menuitem"]:not(:disabled)')] : []);
 
   const onMenuKeydown = (event: KeyboardEvent) => {
     const focusable = items();
