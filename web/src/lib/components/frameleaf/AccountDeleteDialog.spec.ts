@@ -45,7 +45,8 @@ describe('AccountDeleteDialog (FL-76 CC-32)', () => {
     expect(submit).toBeEnabled();
     await fireEvent.click(submit);
 
-    expect(handleDeleteUserAdmin).toHaveBeenCalledWith(user, { force: false });
+    // the server checks the typed email too (FL-146 CC-32)
+    expect(handleDeleteUserAdmin).toHaveBeenCalledWith(user, { force: false, confirmEmail: 'Grace@Example.test' });
   });
 
   it('warns before skipping recovery and still needs the email', async () => {
@@ -64,6 +65,6 @@ describe('AccountDeleteDialog (FL-76 CC-32)', () => {
     });
     await fireEvent.click(submit);
 
-    expect(handleDeleteUserAdmin).toHaveBeenCalledWith(user, { force: true });
+    expect(handleDeleteUserAdmin).toHaveBeenCalledWith(user, { force: true, confirmEmail: 'grace@example.test' });
   });
 });

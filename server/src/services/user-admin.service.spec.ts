@@ -371,6 +371,36 @@ describe(UserAdminService.name, () => {
       });
     });
 
+    it.each([false, true])(
+      'deletes when the typed email matches the account, ignoring case and spaces (force %s, FL-146 CC-32)',
+      async (force) => {
+        mocks.user.get.mockResolvedValue(userStub.user1);
+        mocks.user.update.mockResolvedValue(userStub.user1);
+
+        await expect(
+          sut.delete(authStub.admin, userStub.user1.id, {
+            force,
+            confirmEmail: userStub.user1.email.toUpperCase(),
+          }),
+        ).resolves.toEqual(mapUserAdmin(userStub.user1));
+      },
+    );
+
+    it.each([false, true])(
+      'refuses and changes nothing when the typed email is another account’s (force %s, FL-146 CC-32)',
+      async (force) => {
+        mocks.user.get.mockResolvedValue(userStub.user1);
+
+        await expect(
+          sut.delete(authStub.admin, userStub.user1.id, { force, confirmEmail: 'someone-else@example.com' }),
+        ).rejects.toThrow('The email typed does not match this account');
+        expect(mocks.album.softDeleteAll).not.toHaveBeenCalled();
+        expect(mocks.user.update).not.toHaveBeenCalled();
+        expect(mocks.session.invalidateAll).not.toHaveBeenCalled();
+        expect(mocks.job.queue).not.toHaveBeenCalled();
+      },
+    );
+
     it("should sign out the account's devices, so a restored account signs in again (FL-76)", async () => {
       mocks.user.get.mockResolvedValue(userStub.user1);
       mocks.user.update.mockResolvedValue(userStub.user1);

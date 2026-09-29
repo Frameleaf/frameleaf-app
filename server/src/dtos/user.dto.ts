@@ -121,6 +121,15 @@ export class UserAdminUpdateDto extends createZodDto(UserAdminUpdateSchema) {}
 const UserAdminDeleteSchema = z
   .object({
     force: z.boolean().optional().describe('Force delete even if user has assets'),
+    confirmEmail: z
+      .string()
+      .trim()
+      .max(320)
+      .optional()
+      .describe(
+        "The account's email as the administrator typed it to confirm; when sent, the delete is refused unless it matches (case-insensitive)",
+      )
+      .meta(new HistoryBuilder().added('v3.2.0').getExtensions()),
   })
   .meta({ id: 'UserAdminDeleteDto' });
 

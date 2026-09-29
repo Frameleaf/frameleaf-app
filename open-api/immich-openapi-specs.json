@@ -87721,6 +87721,17 @@
       },
       "UserAdminDeleteDto": {
         "properties": {
+          "confirmEmail": {
+            "description": "The account's email as the administrator typed it to confirm; when sent, the delete is refused unless it matches (case-insensitive)",
+            "maxLength": 320,
+            "type": "string",
+            "x-immich-history": [
+              {
+                "version": "v3.2.0",
+                "state": "Added"
+              }
+            ]
+          },
           "force": {
             "description": "Force delete even if user has assets",
             "type": "boolean"

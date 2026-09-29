@@ -2404,6 +2404,8 @@ export type UserAdminCreateDto = {
     storageLabel?: string | null;
 };
 export type UserAdminDeleteDto = {
+    /** The account's email as the administrator typed it to confirm; when sent, the delete is refused unless it matches (case-insensitive) */
+    confirmEmail?: string;
     /** Force delete even if user has assets */
     force?: boolean;
 };

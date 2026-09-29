@@ -182,10 +182,15 @@ export class UserAdminService extends BaseService {
   }
 
   async delete(auth: AuthDto, id: string, dto: UserAdminDeleteDto): Promise<UserAdminResponseDto> {
-    const { force } = dto;
-    await this.findOrFail(id, {});
+    const { force, confirmEmail } = dto;
+    const target = await this.findOrFail(id, {});
     if (auth.user.id === id) {
       throw new ForbiddenException('Cannot delete your own account');
+    }
+    // FL-146 (CC-32): the dialog asks for the account's email; the server checks it too, so a request
+    // aimed at the wrong account is refused. Optional for older clients, which never sent it.
+    if (confirmEmail !== undefined && confirmEmail.toLowerCase() !== target.email.toLowerCase()) {
+      throw new BadRequestException('The email typed does not match this account');
     }
     await this.assertNotDeduplicationRetainedAccount(id);
 
