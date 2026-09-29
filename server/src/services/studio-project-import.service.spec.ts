@@ -35,7 +35,8 @@ describe(StudioProjectImportService.name, () => {
     listImports: ReturnType<typeof vi.fn>;
     getImport: ReturnType<typeof vi.fn>;
     getImportBytes: ReturnType<typeof vi.fn>;
-    deleteOrphanImports: ReturnType<typeof vi.fn>;
+    listOrphanImportProjects: ReturnType<typeof vi.fn>;
+    deleteImports: ReturnType<typeof vi.fn>;
   };
   let studio: { forgetResolutions: ReturnType<typeof vi.fn> };
   let users: { get: ReturnType<typeof vi.fn> };
@@ -56,7 +57,8 @@ describe(StudioProjectImportService.name, () => {
       listImports: vi.fn().mockResolvedValue([]),
       getImport: vi.fn(),
       getImportBytes: vi.fn().mockResolvedValue(0),
-      deleteOrphanImports: vi.fn().mockResolvedValue([]),
+      listOrphanImportProjects: vi.fn().mockResolvedValue([]),
+      deleteImports: vi.fn().mockResolvedValue(undefined),
     };
     studio = { forgetResolutions: vi.fn() };
     users = { get: vi.fn().mockResolvedValue({ quotaSizeInBytes: null, quotaUsageInBytes: 0 }) };
@@ -69,7 +71,7 @@ describe(StudioProjectImportService.name, () => {
     });
     vi.spyOn(storage, 'checkFileExists').mockResolvedValue(false);
     sut = new StudioProjectImportService(
-      { setContext: vi.fn(), log: vi.fn() } as never,
+      { setContext: vi.fn(), log: vi.fn(), warn: vi.fn() } as never,
       projects as never,
       storage,
       new CryptoRepository(),
@@ -208,12 +210,19 @@ describe(StudioProjectImportService.name, () => {
     vi.spyOn(storage, 'stat').mockImplementation((path: string) =>
       Promise.resolve({ mtime: new Date(path.endsWith('old.upload') ? 0 : Date.now()) } as never),
     );
-    projects.deleteOrphanImports.mockResolvedValue([
-      { projectId: PROJECT, ownerId: OWNER, path: '/data/exports/o/studio-imports/p/a.wav' },
+    const GONE = '0198a1c2-0000-7000-8000-0000000000bb';
+    projects.listOrphanImportProjects.mockResolvedValue([
+      { projectId: PROJECT, ownerId: OWNER },
+      { projectId: GONE, ownerId: OWNER },
     ]);
+    // Storage refusing one folder keeps its rows for the next sweep.
+    unlinkDir.mockImplementation((folder) =>
+      folder.endsWith(GONE) ? Promise.reject(new Error('EIO')) : Promise.resolve(),
+    );
     await sut.sweep(new Date());
-    expect(unlink).toHaveBeenCalledWith('/data/exports/o/studio-imports/p/a.wav');
     expect(unlinkDir).toHaveBeenCalledWith(studioImportProjectFolder(OWNER, PROJECT), { recursive: true, force: true });
+    expect(projects.deleteImports).toHaveBeenCalledWith(PROJECT);
+    expect(projects.deleteImports).not.toHaveBeenCalledWith(GONE);
     expect(unlink).toHaveBeenCalledWith(expect.stringMatching(/incoming\/old\.upload$/));
     expect(unlink).not.toHaveBeenCalledWith(expect.stringMatching(/new\.upload$/));
   });

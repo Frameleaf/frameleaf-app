@@ -801,10 +801,13 @@ describe(StudioProjectRepository.name, () => {
         'The project is unavailable for imports',
       );
 
-      expect(await sut.deleteOrphanImports()).toEqual([]);
+      expect(await sut.listOrphanImportProjects()).toEqual([]);
+      await sut.deleteImports(kept.id);
+      expect(await sut.getImportBytes(user.id)).toBe(150);
       await sut.delete(gone.id);
-      expect(await sut.deleteOrphanImports()).toEqual([{ projectId: gone.id, ownerId: user.id, path: doomed.path }]);
-      expect(await sut.deleteOrphanImports()).toEqual([]);
+      expect(await sut.listOrphanImportProjects()).toEqual([{ projectId: gone.id, ownerId: user.id }]);
+      await sut.deleteImports(gone.id);
+      expect(await sut.listOrphanImportProjects()).toEqual([]);
       expect(await sut.getImportBytes(user.id)).toBe(100);
     });
 
