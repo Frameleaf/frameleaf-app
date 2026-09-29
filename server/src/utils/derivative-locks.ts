@@ -1,6 +1,8 @@
 import { Kysely, sql } from 'kysely';
-import { AssetLockReason, StudioExportVersionState } from 'src/enum.js';
+import { AssetLockReason, AssetVisibility, StudioExportVersionState } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
+import { isMotionOfLockedStill } from 'src/utils/database.js';
+import { isLocked } from 'src/utils/locked.js';
 
 /**
  * A source that becomes Locked locks everything already published from it (FL-106).
@@ -105,6 +107,10 @@ export const releaseDerivedResults = async (db: Kysely<DB>, assetIds: string[]):
   const released: string[] = [];
   const visited = new Set(assetIds);
   let frontier = [...visited];
+  const effectiveLocks = db
+    .selectFrom('asset')
+    .select('asset.id')
+    .where((eb) => eb.or([isLocked(), isMotionOfLockedStill(eb)]));
 
   while (frontier.length > 0) {
     const exists = await sql<{ present: boolean }>`
@@ -114,12 +120,28 @@ export const releaseDerivedResults = async (db: Kysely<DB>, assetIds: string[]):
       return released;
     }
 
+    // A still can lend its lock to motion without a motion lock row. Follow that motion even
+    // though the caller's deleted lock rows contain only the still.
+    const motions = await db
+      .selectFrom('asset as still')
+      .innerJoin('asset as motion', 'motion.id', 'still.livePhotoVideoId')
+      .select('motion.id')
+      .where('still.id', 'in', frontier)
+      .where('motion.visibility', '=', AssetVisibility.Hidden)
+      .execute();
+    for (const { id } of motions) {
+      if (!visited.has(id)) {
+        visited.add(id);
+        frontier.push(id);
+      }
+    }
+
     // Sources that are no longer locked stop counting as locked on every version that read them.
     await sql`
       UPDATE studio_export_version_source
       SET locked = false, "lockReason" = NULL
       WHERE "assetId" = ANY(${frontier}::uuid[])
-        AND NOT EXISTS (SELECT 1 FROM asset_lock WHERE asset_lock."assetId" = studio_export_version_source."assetId")
+        AND NOT EXISTS (${effectiveLocks.where('asset.id', '=', sql<string>`studio_export_version_source."assetId"`)})
     `.execute(db);
 
     // Published versions made from these sources with no locked source left.
@@ -132,8 +154,8 @@ export const releaseDerivedResults = async (db: Kysely<DB>, assetIds: string[]):
         AND NOT EXISTS (
           SELECT 1
           FROM studio_export_version_source other
-          JOIN asset_lock ON asset_lock."assetId" = other."assetId"
           WHERE other."versionId" = version.id
+            AND EXISTS (${effectiveLocks.where('asset.id', '=', sql<string>`other."assetId"`)})
         )
     `.execute(db);
     if (rows.length === 0) {

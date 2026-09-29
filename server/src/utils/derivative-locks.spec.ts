@@ -49,7 +49,8 @@ describe('derivative locks (FL-106, FL-195 follow-up)', () => {
     const candidates = queries.find(({ sql }) => sql.includes('SELECT DISTINCT version.id'))!;
     // a version with any source still locked keeps its lock
     expect(candidates.sql).toContain('NOT EXISTS');
-    expect(candidates.sql).toContain('JOIN asset_lock');
+    expect(candidates.sql).toContain('asset_lock');
+    expect(candidates.sql).toContain('livePhotoVideoId');
     const remove = queries.find(({ sql }) => sql.includes('DELETE FROM asset_lock'))!;
     // a lock the owner put on the result directly is never released here
     expect(remove.sql).toContain('inherited = true');
