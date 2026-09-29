@@ -21,7 +21,7 @@ const ENGINE_REVISION = '4d62e8082c5eb387a96275bcbd323d28f6e41a62';
  * document is ever requested, failing every studio-stream spec fast with "Studio editor could not
  * be loaded" (FL-144 CI investigation) rather than a slow test.
  */
-const FRAME_PROTOCOL = 4;
+const FRAME_PROTOCOL = 5;
 
 export type StreamSessionState = 'queued' | 'negotiating' | 'offered' | 'answered' | 'closed';
 
