@@ -159,7 +159,12 @@
       "path": "patches/0031-managed-color-working-range.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "8a4da43e50c4f59391dc7b443818e2cd7e03488150877e4d18c4bac824f02068"
+    },
+    {
+      "path": "patches/0032-float-route-hdr-signal.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "99c81be66dcf324c49b2d8bb0e2c22d3f4f179faef0c7ac35c30f702dc7e15ee"
     }
   ],
-  "sourceSha256": "1d4e1e167907e95bc37020f140a8c75c7335b7f1546c3b54468a775c29423298"
+  "sourceSha256": "6c3a307913bf922c163bc6fbddf3a5841324c471aa71cd4fb893dba08c6fa131"
 }
