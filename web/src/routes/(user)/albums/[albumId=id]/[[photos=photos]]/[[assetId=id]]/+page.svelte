@@ -204,10 +204,14 @@
   });
 
   // LibraryView restores ordinary albums. Collections use ResultsView, so restore their tab state
-  // here; the album id and account keep another collection's selection and draft out of this one.
+  // here; the album id and account keep another collection's tab state out of this one.
   let restoredCollection = $state('');
   $effect(() => {
-    if (!browser || !isCollection) {
+    if (!isCollection) {
+      restoredCollection = '';
+      return;
+    }
+    if (!browser) {
       return;
     }
     const userId = authManager.authenticated && !authManager.isSharedLink ? currentUserId : undefined;
