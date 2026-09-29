@@ -282,6 +282,7 @@ describe(StudioExportService.name, () => {
     };
     projects = {
       listGeneratedResources: vi.fn().mockResolvedValue([]),
+      listImportDeclarations: vi.fn().mockResolvedValue([]),
       getById: vi.fn().mockResolvedValue({ id: PROJECT, ownerId: OWNER, name: 'Lake trip', deletedAt: null }),
       getRevision: vi.fn().mockResolvedValue({ revision: 3, digest: 'digest-3', envelope: { graph: { clips: [] } } }),
     };

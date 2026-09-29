@@ -35,6 +35,7 @@
     "0000000000204-FrameleafUserLicenses",
     "0000000000205-AlbumCoverFollowsNewest",
     "0000000000206-AssetUserShares",
-    "0000000000207-StudioGeneratedResources"
+    "0000000000207-StudioGeneratedResources",
+    "0000000000208-StudioProjectImports"
   ]
 }

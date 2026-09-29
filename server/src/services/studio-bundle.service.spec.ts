@@ -271,6 +271,7 @@ describe(StudioBundleService.name, () => {
     };
     projects = {
       listGeneratedResources: vi.fn().mockResolvedValue([]),
+      listImportDeclarations: vi.fn().mockResolvedValue([]),
       getById: vi.fn(),
       getRevision: vi.fn(),
       createWithRevision: vi

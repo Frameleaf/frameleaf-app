@@ -1165,9 +1165,10 @@ export class StudioProjectService {
     cloudConsent?: boolean,
   ): Promise<CachedResolution & { cached: boolean }> {
     const generated = await this.repository.listGeneratedResources(project.id);
-    // The repository returns immutable declarations ordered by id. Publication can add one without
-    // a graph save, so bind the cache to this set; unchanged sets keep the same preview digest.
-    const declarations = createHash('sha256').update(JSON.stringify(generated)).digest('hex');
+    const imports = await this.repository.listImportDeclarations(project.id);
+    // The repository returns immutable declarations ordered by id. Publication or an upload can add
+    // one without a graph save, so bind the cache to this set; unchanged sets keep the same digest.
+    const declarations = createHash('sha256').update(JSON.stringify({ generated, imports })).digest('hex');
     const cacheable = destination !== StudioDestination.FrameleafCloud;
     // FL-195: an unlocked session resolves the owner's revealed locks, a locked one refuses them, so a
     // resolution is never shared between the two
@@ -1187,6 +1188,7 @@ export class StudioProjectService {
       ownerId: project.ownerId,
       revision: revision.revision,
       graph: envelopeOf(revision).graph,
+      imports,
       generated,
       destination,
       cloudConsent,

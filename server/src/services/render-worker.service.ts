@@ -1352,7 +1352,13 @@ export class RenderWorkerService {
           ownerId: source.projectOwnerId,
           revision: studio.revision,
           graph: source.graph,
-          imports: Array.isArray(studio.imports) ? (studio.imports as never) : undefined,
+          // A stored project's imports come from the server's own declarations, never the claim.
+          imports:
+            studio.stored === true
+              ? await this.studioProjects.listImportDeclarations(operation.projectId!)
+              : Array.isArray(studio.imports)
+                ? (studio.imports as never)
+                : undefined,
           generated:
             studio.stored === true
               ? await this.studioProjects.listGeneratedResources(operation.projectId!)

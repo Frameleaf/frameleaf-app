@@ -1670,6 +1670,46 @@
     },
     {
       "definition": "text|not null|||",
+      "identity": "immich_fork.studio_project_import.checksum"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.studio_project_import.contentType"
+    },
+    {
+      "definition": "timestamp with time zone|not null|clock_timestamp()||",
+      "identity": "immich_fork.studio_project_import.createdAt"
+    },
+    {
+      "definition": "integer|nullable|||",
+      "identity": "immich_fork.studio_project_import.externalReferences"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.studio_project_import.fileName"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.studio_project_import.id"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.studio_project_import.ownerId"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.studio_project_import.path"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.studio_project_import.projectId"
+    },
+    {
+      "definition": "bigint|not null|||",
+      "identity": "immich_fork.studio_project_import.sizeBytes"
+    },
+    {
+      "definition": "text|not null|||",
       "identity": "immich_fork.studio_workspace_layout.engineRevision"
     },
     {
@@ -7703,6 +7743,22 @@
       "identity": "immich_fork.studio_generated_resource.studio_generated_resource_revision_check"
     },
     {
+      "definition": "CHECK (checksum ~ '^[a-f0-9]{64}$'::text)",
+      "identity": "immich_fork.studio_project_import.studio_project_import_checksum_check"
+    },
+    {
+      "definition": "PRIMARY KEY (\"projectId\", id)",
+      "identity": "immich_fork.studio_project_import.studio_project_import_pkey"
+    },
+    {
+      "definition": "CHECK (\"externalReferences\" IS NULL OR \"externalReferences\" >= 0)",
+      "identity": "immich_fork.studio_project_import.studio_project_import_references_check"
+    },
+    {
+      "definition": "CHECK (\"sizeBytes\" > 0)",
+      "identity": "immich_fork.studio_project_import.studio_project_import_size_check"
+    },
+    {
       "definition": "CHECK (jsonb_typeof(layout) = 'object'::text)",
       "identity": "immich_fork.studio_workspace_layout.studio_workspace_layout_object_check"
     },
@@ -9504,7 +9560,8 @@
     "0000000000204-FrameleafUserLicenses",
     "0000000000205-AlbumCoverFollowsNewest",
     "0000000000206-AssetUserShares",
-    "0000000000207-StudioGeneratedResources"
+    "0000000000207-StudioGeneratedResources",
+    "0000000000208-StudioProjectImports"
   ],
   "functions": [
     {
@@ -11048,6 +11105,10 @@
     {
       "definition": "CREATE UNIQUE INDEX studio_generated_resource_pkey ON immich_fork.studio_generated_resource USING btree (\"projectId\", id)",
       "identity": "immich_fork.studio_generated_resource.studio_generated_resource_pkey"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX studio_project_import_pkey ON immich_fork.studio_project_import USING btree (\"projectId\", id)",
+      "identity": "immich_fork.studio_project_import.studio_project_import_pkey"
     },
     {
       "definition": "CREATE UNIQUE INDEX studio_workspace_layout_pkey ON immich_fork.studio_workspace_layout USING btree (\"userId\")",
@@ -13571,6 +13632,10 @@
     {
       "definition": "table",
       "identity": "immich_fork.studio_generated_resource"
+    },
+    {
+      "definition": "table",
+      "identity": "immich_fork.studio_project_import"
     },
     {
       "definition": "table",

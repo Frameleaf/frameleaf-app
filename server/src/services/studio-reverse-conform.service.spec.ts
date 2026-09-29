@@ -65,6 +65,7 @@ const setup = () => {
   );
   const projects = {
     listGeneratedResources: vi.fn().mockResolvedValue([]),
+    listImportDeclarations: vi.fn().mockResolvedValue([]),
     registerGeneratedResource: vi.fn().mockResolvedValue(undefined),
   };
   const studio = {

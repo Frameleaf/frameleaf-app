@@ -130,6 +130,7 @@ describe(StudioProjectService.name, () => {
     repository = {
       create: vi.fn(),
       listGeneratedResources: vi.fn().mockResolvedValue([]),
+      listImportDeclarations: vi.fn().mockResolvedValue([]),
       getById: vi.fn().mockImplementation((id: string) => Promise.resolve(id === project.id ? project : undefined)),
       listVisible: vi.fn().mockResolvedValue({ items: [], total: 0 }),
       update: vi.fn(),
