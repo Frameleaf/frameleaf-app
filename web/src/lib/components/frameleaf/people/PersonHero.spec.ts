@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import type { ComponentProps } from 'svelte';
 import { init, register, waitLocale } from 'svelte-i18n';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -38,6 +38,18 @@ describe('PersonHero (PD-1, PD-2, PD-7, PD-8)', () => {
 
   beforeEach(() => {
     vi.resetAllMocks();
+  });
+
+  it('keeps the toolbar to the prototype and offers Correction history in the … menu (FL-146 PD-9)', async () => {
+    render(PersonHero, props());
+
+    const toolbar = screen.getByRole('toolbar', { name: /Ada/ });
+    expect(within(toolbar).queryByRole('button', { name: 'Correction history' })).toBeNull();
+
+    await fireEvent.click(within(toolbar).getByRole('button', { name: 'More actions for Ada' }));
+    const item = await screen.findByRole('menuitem', { name: 'Correction history' });
+    await fireEvent.click(item);
+    await waitFor(() => expect(screen.queryByRole('menuitem', { name: 'Correction history' })).toBeNull());
   });
 
   it('counts photos and videos as PersonDetail.jsx does', () => {
