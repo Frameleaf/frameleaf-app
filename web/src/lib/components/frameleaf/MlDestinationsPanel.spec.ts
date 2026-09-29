@@ -184,6 +184,41 @@ describe('MlDestinationsPanel (FL-110)', () => {
     await waitFor(() => expect(sdkMock.listMlDestinations).toHaveBeenCalled());
   });
 
+  it('revokes consent for Frameleaf Cloud, after which it is blocked and needs review again (FL-201)', async () => {
+    const consented = {
+      ...cloud,
+      consent: {
+        ...cloud.consent,
+        acknowledgedAt: '2026-09-26T00:00:00.000Z',
+        acknowledgedBy: 'admin-1',
+        version: '2026-10-01',
+      },
+    };
+    sdkMock.revokeMlDestinationConsent.mockResolvedValue(cloud);
+    sdkMock.listMlDestinations.mockResolvedValue([destination(), cloud]);
+    const { rerender } = render(MlDestinationsPanel, { destinations: [destination(), consented], routes });
+
+    const row = screen.getByRole('listitem', { name: 'Frameleaf Cloud' });
+    expect(within(row).queryByText('Consent needed')).not.toBeInTheDocument();
+    await fireEvent.click(within(row).getByRole('button', { name: 'Revoke consent' }));
+
+    await waitFor(() => expect(sdkMock.revokeMlDestinationConsent).toHaveBeenCalledWith({ id: cloud.id }));
+    await waitFor(() =>
+      expect(
+        screen.getByText('Consent revoked for Frameleaf Cloud. It refuses every request from now on.'),
+      ).toBeInTheDocument(),
+    );
+
+    // once revoked, the destination is blocked and offered to no route until consent is reviewed again
+    await rerender({ destinations: [destination(), cloud], routes });
+    const after = screen.getByRole('listitem', { name: 'Frameleaf Cloud' });
+    expect(within(after).getByText('Consent needed')).toBeInTheDocument();
+    expect(within(after).queryByRole('button', { name: 'Revoke consent' })).not.toBeInTheDocument();
+    expect(within(after).getByRole('button', { name: 'Review consent' })).toBeInTheDocument();
+    const faceRoute = screen.getByLabelText('Face recognition') as HTMLSelectElement;
+    expect([...faceRoute.options].map((option) => option.value)).not.toContain(cloud.id);
+  });
+
   it('routes a workload through the server and removes a route with an empty choice', async () => {
     sdkMock.setMlWorkloadRoute.mockResolvedValue({ routes });
     render(MlDestinationsPanel, { destinations: [destination(), cloud], routes });
