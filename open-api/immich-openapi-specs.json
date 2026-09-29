@@ -85499,7 +85499,7 @@
         "type": "object"
       },
       "SystemConfigHistorySource": {
-        "description": "Where a change that was not an administrator settings save came from: the server command line or a Frameleaf Cloud action",
+        "description": "Where a change came from when it was not an ordinary settings save: the server command line, or the Frameleaf Cloud settings and actions (with the administrator, when one made it)",
         "enum": [
           "server-cli",
           "frameleaf-cloud"
