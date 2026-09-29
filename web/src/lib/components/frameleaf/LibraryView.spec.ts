@@ -5,7 +5,7 @@ import { getResizeObserverMock } from '$lib/__mocks__/resize-observer.mock';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { emptyDiscoveryQuery } from '$lib/components/discovery/query';
 import { libraryGridPreferences } from '$lib/frameleaf/library-grid-preferences.svelte';
-import { librarySession } from '$lib/frameleaf/library-session.svelte';
+import { LibrarySessionStore, librarySession } from '$lib/frameleaf/library-session.svelte';
 import { applyFilterQuery } from '$lib/frameleaf/search-shortcuts';
 import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
 import { authManager } from '$lib/managers/auth-manager.svelte';
@@ -240,6 +240,39 @@ describe('LibraryView', () => {
 
   describe('an album’s shared order and the viewer’s own sort (FL-31)', () => {
     afterEach(() => localStorage.removeItem('frameleaf.albumViewSort'));
+
+    it('preserves the live session through shared order changes but clears it for Locked (FL-40)', async () => {
+      const session = new LibrarySessionStore({ storage: null, transientStorage: null });
+      const view = render(LibraryView, {
+        options: { albumId: 'album-1', order: AssetOrder.Desc },
+        destination: { kind: 'album', id: 'album-1' },
+        session,
+        syncUrl: false,
+        noSelectionBar: true,
+        infoPanel,
+      });
+      const sort = await screen.findByRole('combobox', { name: 'frameleaf_library_sort' });
+      session.select('photo');
+      session.open('video', 12);
+      const draft = { assetId: 'photo', recipe: [{ exposure: 0.5 }], undo: [[]], redo: [] };
+      session.dispatch({ type: 'draft', draft });
+      await tick();
+
+      await view.rerender({ options: { albumId: 'album-1', order: AssetOrder.Asc } });
+      await waitFor(() => expect(sort).toHaveValue('captured-asc'));
+      expect(session.selection).toEqual(['photo']);
+      expect(session.openAssetId).toBe('video');
+      expect(session.playbackPosition).toBe(12);
+      expect(session.session.draft).toEqual(draft);
+
+      await view.rerender({
+        options: { albumId: 'album-1', order: AssetOrder.Asc, visibility: AssetVisibility.Locked },
+      });
+      await waitFor(() => expect(session.selection).toEqual([]));
+      expect(session.openAssetId).toBeUndefined();
+      expect(session.playbackPosition).toBe(0);
+      expect(session.session.draft).toBeNull();
+    });
 
     it('starts from the shared order and keeps a new choice for this viewer only', async () => {
       render(LibraryView, {
