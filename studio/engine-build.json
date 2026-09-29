@@ -54,7 +54,12 @@
       "path": "patches/0010-expression-dependency-errors.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "beb0a25e842f901fc1d438cc363a3a2dd67903e725ac58637f9170a4af038422"
+    },
+    {
+      "path": "patches/0011-multichannel-speed-export.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "5dc6b80107808ea3b6ddd07f6dcca6a8559f6086749425c7cab66a5bbcd67eb5"
     }
   ],
-  "sourceSha256": "407b129d0c8dfffab28d89992fcfae7d2f97088289aabecc0479f12731fab57c"
+  "sourceSha256": "c4d4790ae8db61d17dd8017ec28463aa4d016e452a781b436bbc6a8a4db1e1ca"
 }
