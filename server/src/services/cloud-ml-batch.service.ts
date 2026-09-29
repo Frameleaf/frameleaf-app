@@ -105,6 +105,8 @@ import {
   ML_BUDGET_WINDOW_DAYS,
   MlDestinationNotFoundError,
   MlDestinationRefusedError,
+  STOPS_CREATED_CLOUD_JOB,
+  admissionRefusalOf,
   cloudRouteAllows,
   hasRequiredConsent,
   selectMlDestination,
@@ -946,20 +948,28 @@ export class CloudMlBatchService extends BaseService {
 
   /** Admission for this batch's destination, with the kill switch; never another destination. */
   /**
-   * FL-201: before a created batch job's photos leave this server, admission runs again. A lasting
-   * refusal, such as consent that is missing or older than the version the cloud now requires
-   * (`consent-version-outdated`), cancels and releases the cloud job, then fails the batch; nothing more
-   * is sent. A passing refusal (the cloud unreachable) leaves the job for the next attempt.
+   * FL-201: before a created batch job's photos leave this server, admission runs again. Only a refusal
+   * that means the photos may no longer be sent (`STOPS_CREATED_CLOUD_JOB`, or the destination is no longer
+   * Frameleaf Cloud) cancels and releases the cloud job, then fails the batch; nothing more is sent. Wallet,
+   * daily cap and model refusals do not stop a job the cloud already accepted, and a cloud that does not
+   * answer leaves the batch for its retry.
    */
   private async readmitBatch(run: BatchRun, gateway: CloudMlGateway, jobId: string) {
     try {
       await this.admitBatch(run);
     } catch (error) {
-      const refusal = batchRefusalOf(error);
-      if (refusal && !refusal.transient) {
+      const refusal = admissionRefusalOf(error);
+      const stops =
+        (refusal !== null && STOPS_CREATED_CLOUD_JOB.has(refusal)) ||
+        (error instanceof BatchRefusal && error.code === 'cloud_description_not_cloud');
+      if (stops) {
         await this.release(gateway, run.operation.id, jobId, true);
+        throw error;
       }
-      throw error;
+      if (batchRefusalOf(error)?.transient) {
+        throw error;
+      }
+      // any other refusal (wallet, cap, model) is for new work only: this batch goes on
     }
   }
 
@@ -1838,14 +1848,26 @@ export class CloudMlBatchService extends BaseService {
       throw new BadRequestException('Add Frameleaf Cloud as a processing destination first');
     }
     if (!hasRequiredConsent(destination)) {
-      throw new BadRequestException('Review and accept the Frameleaf Cloud processing terms first');
+      throw new BadRequestException({
+        message: 'Review and accept the Frameleaf Cloud processing terms first',
+        error: 'Bad Request',
+        statusCode: 400,
+        code: MlAdmissionRefusal.ConsentMissing,
+      });
     }
     try {
       await this.admit(destination.id, null);
     } catch (error) {
       const refusal = batchRefusalOf(error);
       if (refusal) {
-        throw new BadRequestException(refusal.message);
+        // FL-201: keep the admission refusal's code (e.g. consent-version-outdated) with the batch message
+        const code = error instanceof MlDestinationRefusedError ? error.refusal : undefined;
+        throw new BadRequestException({
+          message: refusal.message,
+          error: 'Bad Request',
+          statusCode: 400,
+          ...(code && { code }),
+        });
       }
       throw error;
     }
