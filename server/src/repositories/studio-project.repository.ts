@@ -3,7 +3,7 @@ import { sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { isAbsolute } from 'node:path';
 import type { Kysely, RawBuilder, Selectable, Transaction } from 'kysely';
-import type { StudioDeclaredGenerated } from 'src/services/studio-resource.service.js';
+import type { StudioDeclaredGenerated, StudioDeclaredImport } from 'src/services/studio-resource.service.js';
 import {
   canWriteFork,
   lockForkWrites,
@@ -17,6 +17,7 @@ import {
   StudioProjectRevisionTable,
   StudioProjectTable,
 } from 'src/schema/tables/studio-project.table.js';
+import { STUDIO_IMPORT_MAX_PER_PROJECT } from 'src/utils/studio-imports.js';
 import { STUDIO_MAX_REFERENCES, isStudioIdentifier, isStudioUuid } from 'src/utils/studio-resources.js';
 
 export type StudioGeneratedResource = StudioDeclaredGenerated & {
@@ -25,6 +26,27 @@ export type StudioGeneratedResource = StudioDeclaredGenerated & {
   sourceRevision: number;
   checksum: string;
 };
+
+/** FL-103 / FL-105: a file uploaded into a project, as stored. */
+export type StudioProjectImport = {
+  projectId: string;
+  id: string;
+  ownerId: string;
+  contentType: string;
+  checksum: string;
+  sizeBytes: number;
+  path: string;
+  fileName: string;
+  externalReferences: number | null;
+  createdAt: Date;
+};
+
+export type StudioProjectImportCreate = Omit<StudioProjectImport, 'createdAt'>;
+
+const studioImportColumns = sql.raw(
+  `item."projectId", item.id, item."ownerId", item."contentType", item.checksum, item."sizeBytes"::float8 AS "sizeBytes",
+   item.path, item."fileName", item."externalReferences", item."createdAt"`,
+);
 
 /** FL-44 (FN-304): what every write here answers while a database handoff holds the schema. */
 export const STUDIO_PROJECT_HANDOFF_REFUSAL = 'Studio projects are unavailable during database handoff';
@@ -615,6 +637,125 @@ export class StudioProjectRepository {
       throw new BadRequestException('The project has too many generated media declarations');
     }
     return rows;
+  }
+
+  /**
+   * FL-103 / FL-105: record a file uploaded into a project. The caller has already written the
+   * bytes to an owner-private path, checked their type and hashed them. The project row is locked
+   * and must still belong to the owner and be editable. One id permanently binds one file: an
+   * identical retry answers the existing row, a different file under the same id is refused.
+   */
+  async registerImport(item: StudioProjectImportCreate): Promise<StudioProjectImport> {
+    if (
+      !isStudioUuid(item.projectId) ||
+      !isStudioUuid(item.ownerId) ||
+      !isStudioUuid(item.id) ||
+      !/^[a-f0-9]{64}$/.test(item.checksum) ||
+      !Number.isSafeInteger(item.sizeBytes) ||
+      item.sizeBytes < 1 ||
+      typeof item.path !== 'string' ||
+      !isAbsolute(item.path) ||
+      item.path.includes('\0') ||
+      typeof item.contentType !== 'string' ||
+      !/^[a-z]+\/[\w.+-]+$/.test(item.contentType) ||
+      typeof item.fileName !== 'string' ||
+      item.fileName.length === 0 ||
+      item.fileName.length > 255 ||
+      (item.externalReferences !== null &&
+        (!Number.isSafeInteger(item.externalReferences) || item.externalReferences < 0))
+    ) {
+      throw new BadRequestException('Invalid project import declaration');
+    }
+    return this.db.transaction().execute(async (tx) => {
+      await lockForkWrites(tx, STUDIO_PROJECT_HANDOFF_REFUSAL);
+      const project = await tx
+        .selectFrom('studio_project')
+        .select('id')
+        .where('id', '=', item.projectId)
+        .where('ownerId', '=', item.ownerId)
+        .where('deletedAt', 'is', null)
+        .where('archivedAt', 'is', null)
+        .forUpdate()
+        .executeTakeFirst();
+      if (!project) {
+        throw new ConflictException('The project is unavailable for imports');
+      }
+      const { rows: counted } = await sql<{ count: number }>`
+        SELECT count(*)::int AS count FROM immich_fork.studio_project_import WHERE "projectId" = ${item.projectId}::uuid
+      `.execute(tx);
+      await sql`
+        INSERT INTO immich_fork.studio_project_import
+          ("projectId", id, "ownerId", "contentType", checksum, "sizeBytes", path, "fileName", "externalReferences")
+        SELECT ${item.projectId}::uuid, ${item.id}::uuid, ${item.ownerId}::uuid, ${item.contentType}, ${item.checksum},
+          ${item.sizeBytes}::bigint, ${item.path}, ${item.fileName}, ${item.externalReferences}::int
+        WHERE ${counted[0].count} < ${STUDIO_IMPORT_MAX_PER_PROJECT}
+        ON CONFLICT ("projectId", id) DO NOTHING
+      `.execute(tx);
+      const stored = await this.readImport(tx, item.projectId, item.id);
+      if (!stored) {
+        throw new BadRequestException('The project has too many imports');
+      }
+      if (
+        stored.ownerId !== item.ownerId ||
+        stored.checksum !== item.checksum ||
+        stored.sizeBytes !== item.sizeBytes ||
+        stored.contentType !== item.contentType
+      ) {
+        throw new ConflictException('Project import ids cannot be rebound to another file');
+      }
+      return stored;
+    });
+  }
+
+  /** The imports of a live project, as the FL-90 resolver declares them. */
+  async listImports(projectId: string): Promise<StudioProjectImport[]> {
+    const { rows } = await sql<StudioProjectImport>`
+      SELECT ${studioImportColumns}
+      FROM immich_fork.studio_project_import item
+      JOIN studio_project project ON project.id = item."projectId" AND project."ownerId" = item."ownerId"
+      WHERE project.id = ${projectId}::uuid AND project."deletedAt" IS NULL
+      ORDER BY item.id LIMIT ${STUDIO_IMPORT_MAX_PER_PROJECT + 1}
+    `.execute(this.db);
+    if (rows.length > STUDIO_IMPORT_MAX_PER_PROJECT) {
+      throw new BadRequestException('The project has too many imports');
+    }
+    return rows;
+  }
+
+  /** The imports of a live project in the shape the FL-90 resolver declares them. */
+  async listImportDeclarations(projectId: string): Promise<StudioDeclaredImport[]> {
+    return (await this.listImports(projectId)).map((item) => ({
+      id: item.id,
+      contentType: item.contentType,
+      checksum: item.checksum,
+      sizeBytes: item.sizeBytes,
+      path: item.path,
+      ...(item.externalReferences !== null && { externalReferences: item.externalReferences }),
+    }));
+  }
+
+  /** One import of a live project, or undefined. */
+  async getImport(projectId: string, id: string): Promise<StudioProjectImport | undefined> {
+    if (!isStudioUuid(projectId) || !isStudioUuid(id)) {
+      return undefined;
+    }
+    return this.readImport(this.db, projectId, id, true);
+  }
+
+  private async readImport(
+    executor: Kysely<DB> | Transaction<DB>,
+    projectId: string,
+    id: string,
+    liveProject = false,
+  ): Promise<StudioProjectImport | undefined> {
+    const { rows } = await sql<StudioProjectImport>`
+      SELECT ${studioImportColumns}
+      FROM immich_fork.studio_project_import item
+      JOIN studio_project project ON project.id = item."projectId" AND project."ownerId" = item."ownerId"
+      WHERE item."projectId" = ${projectId}::uuid AND item.id = ${id}::uuid
+        ${liveProject ? sql`AND project."deletedAt" IS NULL` : sql``}
+    `.execute(executor);
+    return rows[0];
   }
 
   /** FL-91: an account's stored workspace layout, from `immich_fork`. */

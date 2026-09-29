@@ -542,6 +542,7 @@ export class StudioReverseConformService {
       ownerId: auth.user.id,
       revision,
       graph: authorized.envelope.graph,
+      imports: await this.projects.listImportDeclarations(projectId),
       generated: await this.projects.listGeneratedResources(projectId),
       destination: StudioDestination.Local,
       backgroundRunner,

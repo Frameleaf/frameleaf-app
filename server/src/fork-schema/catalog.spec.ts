@@ -93,8 +93,9 @@ describe('catalog manifests', () => {
     // FL-186, and the cloud backup index, manifests and manifest entries, FL-160) and the fork tables,
     // among them the supporter keys (FL-156), Frameleaf account links and Sign in with Frameleaf
     // sessions (FL-158), the album covers that follow the newest item (FL-83) and items shared with a
-    // person (FL-83 AL-30b), and generated Studio resources (FL-111), in the integrated catalog.
-    expect(getCatalogTableLocks(fork)).toHaveLength(197);
+    // person (FL-83 AL-30b), generated Studio resources (FL-111) and Studio project imports (FL-103,
+    // FL-105), in the integrated catalog.
+    expect(getCatalogTableLocks(fork)).toHaveLength(198);
     expect(getCatalogTableLocks(fork)).toEqual(
       expect.arrayContaining([
         'immich_fork.video_edit_version',
@@ -111,6 +112,7 @@ describe('catalog manifests', () => {
         'immich_fork.memory_show_less',
         'immich_fork.render_worker_session_capability',
         'immich_fork.studio_generated_resource',
+        'immich_fork.studio_project_import',
         'immich_fork.studio_workspace_layout',
         'immich_fork.utility_activity',
         'immich_fork.frameleaf_consent',
@@ -122,7 +124,7 @@ describe('catalog manifests', () => {
       ]),
     );
     // 66 v3.1.0 public + every fork table
-    expect(getCatalogTableLocks(originalOfficial)).toHaveLength(121);
+    expect(getCatalogTableLocks(originalOfficial)).toHaveLength(122);
   });
 
   it('records the steady-state geodata primary index rebuilt by the runtime importer', () => {

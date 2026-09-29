@@ -904,6 +904,7 @@ export class StudioExportService {
       ownerId: project.ownerId,
       revision: revision.revision,
       graph: (revision.envelope as { graph?: unknown }).graph,
+      imports: await this.projects.listImportDeclarations(project.id),
       generated: await this.projects.listGeneratedResources(project.id),
       destination: StudioDestination.Local,
       backgroundRunner: true,

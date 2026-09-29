@@ -54,6 +54,7 @@ beforeAll(async () => {
 
 afterEach(async () => {
   await sql`DELETE FROM immich_fork.studio_generated_resource`.execute(defaultDatabase);
+  await sql`DELETE FROM immich_fork.studio_project_import`.execute(defaultDatabase);
   await defaultDatabase.deleteFrom('studio_project').execute();
 });
 
@@ -720,6 +721,85 @@ describe(StudioProjectRepository.name, () => {
       const reopened = await sut.updateComment(project.id, created!.id, { resolvedById: null });
       expect(reopened?.resolvedAt).toBeNull();
       expect(await sut.deleteComment(project.id, created!.id)).toBe(true);
+    });
+  });
+
+  describe('project imports (FL-103 / FL-105)', () => {
+    const item = (projectId: string, ownerId: string, overrides: Record<string, unknown> = {}) => ({
+      projectId,
+      id: randomUUID(),
+      ownerId,
+      contentType: 'audio/wav',
+      checksum: 'cd'.repeat(32),
+      sizeBytes: 5 * 1024 * 1024 * 1024,
+      path: '/data/exports/owner/studio-imports/project/take.wav',
+      fileName: 'Voiceover 1.webm',
+      externalReferences: null,
+      ...overrides,
+    });
+
+    it('binds one id to one file, answers identical retries and lists only live projects', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const project = await sut.create({ ownerId: user.id, name: 'Voiceovers' });
+      const take = item(project.id, user.id);
+
+      const stored = await sut.registerImport(take);
+      // bigint sizes above 4 GiB come back as exact numbers.
+      expect(stored).toMatchObject({ ...take, sizeBytes: 5 * 1024 * 1024 * 1024 });
+      await expect(sut.registerImport(take)).resolves.toMatchObject({ id: take.id, checksum: take.checksum });
+      await expect(sut.registerImport({ ...take, checksum: 'ef'.repeat(32) })).rejects.toThrow(
+        'Project import ids cannot be rebound to another file',
+      );
+      const svg = item(project.id, user.id, { contentType: 'image/svg+xml', externalReferences: 2 });
+      await sut.registerImport(svg);
+
+      expect((await sut.listImports(project.id)).map(({ id }) => id).sort()).toEqual([take.id, svg.id].sort());
+      expect(await sut.listImportDeclarations(project.id)).toEqual(
+        expect.arrayContaining([
+          {
+            id: take.id,
+            contentType: 'audio/wav',
+            checksum: take.checksum,
+            sizeBytes: take.sizeBytes,
+            path: take.path,
+          },
+          expect.objectContaining({ id: svg.id, externalReferences: 2 }),
+        ]),
+      );
+      await expect(sut.getImport(project.id, take.id)).resolves.toMatchObject({ id: take.id });
+      await expect(sut.getImport(project.id, randomUUID())).resolves.toBeUndefined();
+
+      await defaultDatabase
+        .updateTable('studio_project')
+        .set({ deletedAt: new Date() })
+        .where('id', '=', project.id)
+        .execute();
+      expect(await sut.listImports(project.id)).toEqual([]);
+      await expect(sut.getImport(project.id, take.id)).resolves.toBeUndefined();
+      await expect(sut.registerImport(item(project.id, user.id))).rejects.toThrow(
+        'The project is unavailable for imports',
+      );
+    });
+
+    it("refuses imports into someone else's project and invalid declarations", async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { user: other } = await ctx.newUser();
+      const project = await sut.create({ ownerId: user.id, name: 'Mine' });
+      await expect(sut.registerImport(item(project.id, other.id))).rejects.toThrow(
+        'The project is unavailable for imports',
+      );
+      await expect(sut.registerImport(item(project.id, user.id, { path: 'relative/take.wav' }))).rejects.toThrow(
+        'Invalid project import declaration',
+      );
+      await expect(sut.registerImport(item(project.id, user.id, { checksum: 'nothex' }))).rejects.toThrow(
+        'Invalid project import declaration',
+      );
+      await expect(sut.registerImport(item(project.id, user.id, { externalReferences: -1 }))).rejects.toThrow(
+        'Invalid project import declaration',
+      );
+      expect(await sut.listImports(project.id)).toEqual([]);
     });
   });
 });

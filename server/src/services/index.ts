@@ -96,6 +96,7 @@ import { StudioBundleService } from 'src/services/studio-bundle.service.js';
 import { StudioExportService } from 'src/services/studio-export.service.js';
 import { StudioPreviewStreamService } from 'src/services/studio-preview-stream.service.js';
 import { StudioPreviewService } from 'src/services/studio-preview.service.js';
+import { StudioProjectImportService } from 'src/services/studio-project-import.service.js';
 import { StudioProjectService } from 'src/services/studio-project.service.js';
 import { StudioResourceService } from 'src/services/studio-resource.service.js';
 import { StudioReverseConformCommandService } from 'src/services/studio-reverse-conform-command.service.js';
@@ -222,6 +223,7 @@ export const services = [
   StorageService,
   StorageTemplateService,
   StudioBundleService,
+  StudioProjectImportService,
   StudioProjectService,
   StudioReverseConformService,
   StudioReverseConformCommandService,
