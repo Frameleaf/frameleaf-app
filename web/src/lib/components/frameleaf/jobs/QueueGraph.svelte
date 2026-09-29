@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { mediaQueryManager } from '$lib/stores/media-query-manager.svelte';
   import { cleanClass } from '$lib';
   import { queueManager } from '$lib/managers/queue-manager.svelte';
   import type { QueueSnapshot } from '$lib/types';
@@ -56,7 +57,7 @@
 
   let chartElement: HTMLDivElement | undefined = $state();
   let isDark = $derived(themeManager.value === Theme.Dark);
-  let plot: uPlot;
+  let plot: uPlot | undefined;
 
   const axisOptions: Axis = {
     stroke: () => (isDark ? '#ccc' : 'black'),
@@ -140,24 +141,42 @@
 
   $effect(() => themeManager.value && onThemeChange());
 
-  onMount(() => {
-    plot = new uPlot(options, data as AlignedData, chartElement);
-  });
-
   const update = () => {
-    if (plot && chartElement && data[0].length > 0) {
-      const now = Date.now();
-      const scale = { min: now - chartElement!.clientWidth * 100, max: now };
-
-      plot.setData(data as AlignedData, false);
-      plot.setScale('x', scale);
-      plot.setSize({ width: chartElement.clientWidth, height: chartElement.clientHeight });
+    if (!plot || !chartElement || data[0].length === 0) {
+      return;
     }
+    const now = Date.now();
+    const scale = { min: now - chartElement.clientWidth * 100, max: now };
 
-    requestAnimationFrame(update);
+    plot.setData(data as AlignedData, false);
+    plot.setScale('x', scale);
+    plot.setSize({ width: chartElement.clientWidth, height: chartElement.clientHeight });
   };
 
-  requestAnimationFrame(update);
+  onMount(() => {
+    plot = new uPlot(options, data as AlignedData, chartElement);
+    return () => {
+      plot?.destroy();
+      plot = undefined;
+    };
+  });
+
+  /**
+   * FL-139: the graph scrolls with time on every frame; under Reduce Motion it steps once a second
+   * instead. Either loop stops when the graph goes away (it used to run forever after unmounting).
+   */
+  $effect(() => {
+    if (mediaQueryManager.reducedMotion) {
+      update();
+      const interval = setInterval(update, 1000);
+      return () => clearInterval(interval);
+    }
+    let frame = requestAnimationFrame(function tick() {
+      update();
+      frame = requestAnimationFrame(tick);
+    });
+    return () => cancelAnimationFrame(frame);
+  });
 </script>
 
 <div class={cleanClass('w-full', className)} bind:this={chartElement}>
