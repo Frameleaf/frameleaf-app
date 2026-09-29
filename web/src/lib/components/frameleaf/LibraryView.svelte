@@ -437,8 +437,10 @@
     publicView || authManager.isSharedLink || !authManager.authenticated ? undefined : authManager.user.id,
   );
   // The same portable view can be shown through different routes or timeline options (including
-  // Locked). Selection and drafts must never cross that resource context.
-  const storageContext = $derived(JSON.stringify({ route: page.route?.id, options }));
+  // Locked). Sort direction changes presentation, not the resource context of selection and drafts.
+  const storageContext = $derived(
+    JSON.stringify({ route: page.route?.id, options: options && { ...options, order: undefined } }),
+  );
 
   // Restore for each authenticated account context, including a transition to a public share.
   $effect(() => {

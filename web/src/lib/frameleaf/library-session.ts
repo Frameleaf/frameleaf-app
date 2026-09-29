@@ -699,6 +699,36 @@ const storedObject = (raw: unknown): Record<string, unknown> => {
 const storedId = (value: unknown): value is string =>
   typeof value === 'string' && value.length > 0 && value.length <= 128;
 
+const sameStorageContext = (stored: unknown, current: string): boolean => {
+  if (stored === current) {
+    return true;
+  }
+  if (typeof stored !== 'string') {
+    return false;
+  }
+  try {
+    const previous = JSON.parse(stored);
+    const next = JSON.parse(current);
+    if (!object(previous) || !object(next) || !object(previous.options) || !object(next.options)) {
+      return false;
+    }
+    // Older builds included presentation-only order. Preserve every other context boundary.
+    if (
+      [previous.options.order, next.options.order].some(
+        (order) => order !== undefined && order !== 'asc' && order !== 'desc',
+      )
+    ) {
+      return false;
+    }
+    return sameValue(
+      { ...previous, options: { ...previous.options, order: undefined } },
+      { ...next, options: { ...next.options, order: undefined } },
+    );
+  } catch {
+    return false;
+  }
+};
+
 /**
  * Restore a session. `incoming` is the portable state from the URL and wins over the stored view,
  * so a shared link opens what it describes. Tab state is restored only for the same view;
@@ -719,7 +749,7 @@ export const fromStoredLibrarySession = (
   if (state) {
     session.state = structuredClone(state);
   }
-  if (transient.context === context && transientState && sameValue(transientState, session.state)) {
+  if (sameStorageContext(transient.context, context) && transientState && sameValue(transientState, session.state)) {
     if (Array.isArray(transient.selection) && transient.selection.every(storedId)) {
       session.selection = [...new Set(transient.selection)];
     }
