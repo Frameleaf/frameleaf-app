@@ -40,7 +40,8 @@ import { useTimelineSettingsStore } from '@/features/timeline/stores/timeline-se
 import { useKeyframesStore } from '@/features/timeline/stores/keyframes-store'
 import { useMediaLibraryStore } from '@/features/media-library/stores/media-library-store'
 import { createClassicTrack } from '@/features/timeline/utils/classic-tracks'
-import { getUniqueLinkedItemAnchorIds } from '@/features/timeline/utils/linked-items'
+import { filterUnlockedItemIds, getUniqueLinkedItemAnchorIds } from '@/features/timeline/utils/linked-items'
+import { expandIdsWithLinkedItems } from '@/features/timeline/stores/actions/linked-edit'
 import { useEditorStore } from '@/shared/state/editor'
 import {
   buildDroppedMediaTimelineItems,
@@ -53,7 +54,7 @@ import {
   addKeyframe,
   addTransition,
   createPreComp,
-  moveItem,
+  moveItems,
   removeEffect,
   removeItems,
   removeKeyframe,
@@ -605,11 +606,26 @@ const handlers: Record<string, Handler> = {
     const item = requireItem(stringField(payload, 'clipId'))
     const from = timeField(payload, 'start', cadence)
     const trackId = optionalString(payload, 'trackId')
-    if (trackId) requireTrack(trackId)
-    moveItem(item.id, from, trackId)
-    const moved = requireItem(item.id)
-    if (moved.from !== from || (trackId && moved.trackId !== trackId)) {
-      failed('clip.move: the clip cannot go there (it would overlap another clip)')
+    if (trackId && requireTrack(trackId).locked) failed('clip.move: the destination track is locked')
+    const ids = filterUnlockedItemIds(items(), tracks(), expandIdsWithLinkedItems(
+      items(), [item.id], useEditorStore.getState().linkedSelectionEnabled,
+    ))
+    if (!ids.includes(item.id)) failed('clip.move: the clip is on a locked track')
+    const delta = from - item.from
+    const updates = ids.map((id) => ({
+      id,
+      from: requireItem(id).from + delta,
+      ...(id === item.id && trackId ? { trackId } : {}),
+    }))
+    if (updates.some((update) => update.from < 0)) {
+      failed('clip.move: a linked clip or caption would start before the timeline')
+    }
+    moveItems(updates)
+    for (const update of updates) {
+      const moved = requireItem(update.id)
+      if (moved.from !== update.from || (update.trackId && moved.trackId !== update.trackId)) {
+        failed('clip.move: the clips cannot move to the requested positions')
+      }
     }
   },
 
