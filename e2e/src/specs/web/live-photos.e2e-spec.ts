@@ -48,24 +48,33 @@ test('reviews a separated Live Photo, confirms its link and plays motion after r
   await expect(inspector.getByText('Matched on the embedded live photo identifier')).toBeVisible();
   await expect(inspector.locator('video')).toHaveAttribute('src', new RegExp(video.id));
   await inspector.getByRole('button', { name: 'Done', exact: true }).first().click();
-  expect((await getAssetInfo({ id: photo.id }, { headers })).livePhotoVideoId).toBeNull();
+  const inspected = await getAssetInfo({ id: photo.id }, { headers });
+  expect(inspected.livePhotoVideoId).toBeNull();
 
   await pair.getByRole('button', { name: 'Review pair' }).click();
   const review = page.getByRole('dialog', { name: 'Review Live Photo pairs' });
   await expect(review).toContainText('separated-still.png');
   await expect(review).toContainText('separated-motion.mp4');
   await review.getByRole('button', { name: 'Cancel', exact: true }).first().click();
-  expect((await getAssetInfo({ id: photo.id }, { headers })).livePhotoVideoId).toBeNull();
+  const cancelled = await getAssetInfo({ id: photo.id }, { headers });
+  expect(cancelled.livePhotoVideoId).toBeNull();
 
   await pair.getByRole('button', { name: 'Review pair' }).click();
   await review.getByRole('button', { name: 'Confirm 1 pair', exact: true }).click();
-  await expect.poll(async () => (await getAssetInfo({ id: photo.id }, { headers })).livePhotoVideoId).toBe(video.id);
+  await expect
+    .poll(async () => {
+      const linked = await getAssetInfo({ id: photo.id }, { headers });
+      return linked.livePhotoVideoId;
+    })
+    .toBe(video.id);
   await expect(pair).toHaveCount(0);
-  expect((await getAssetInfo({ id: video.id }, { headers })).visibility).toBe(AssetVisibility.Hidden);
+  const motionAsset = await getAssetInfo({ id: video.id }, { headers });
+  expect(motionAsset.visibility).toBe(AssetVisibility.Hidden);
 
   await page.reload();
   await expect(page.getByText('No candidate pairs need review.')).toBeVisible();
-  expect((await getLivePhotoCandidates({ headers })).candidates).toEqual([]);
+  const remaining = await getLivePhotoCandidates({ headers });
+  expect(remaining.candidates).toEqual([]);
 
   await page.goto(`/photos/${photo.id}`);
   const badge = page.getByTestId('viewer-live-badge');

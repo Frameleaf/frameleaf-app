@@ -111,7 +111,8 @@ test.describe('Quick editor', () => {
     await editor.getByRole('tab', { name: 'Adjust', exact: true }).click();
     await expect(editor.getByRole('slider', { name: 'Exposure' })).toHaveValue('0.75');
     await expect(editor.getByRole('slider', { name: 'Contrast' })).toHaveValue('25');
-    expect((await getAssetDevelop({ id: other.id }, { headers })).revisions).toHaveLength(0);
+    const unsaved = await getAssetDevelop({ id: other.id }, { headers });
+    expect(unsaved.revisions).toHaveLength(0);
 
     await editor.getByRole('button', { name: 'Save version', exact: true }).click();
     await expect(editor).toBeHidden();
