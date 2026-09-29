@@ -202,7 +202,53 @@
        size: 176,
 --- a/src/infrastructure/gpu-media/media-render-pipeline.ts
 +++ b/src/infrastructure/gpu-media/media-render-pipeline.ts
-@@ -170,6 +170,7 @@
+@@ -64,13 +64,35 @@
+   cornerPinOriginSize: vec4f,
+   cornerPinMatrix0: vec4f,
+   cornerPinMatrix1: vec4f,
+-  cornerPinMatrix2: vec4f,
++  cornerPinMatrix2: vec3f,
++  filterStraightAlpha: f32,
+ };
+
+ @group(0) @binding(0) var texSampler: sampler;
+ @group(0) @binding(1) var sourceTex: texture_2d<f32>;
+ @group(0) @binding(2) var<uniform> u: MediaUniforms;
+ @group(0) @binding(3) var maskTex: texture_2d<f32>;
++
++// Interpolate premultiplied texels, then return the straight color contract.
++fn loadPremultiplied(pixel: vec2i) -> vec4f {
++  let lastPixel = vec2i(textureDimensions(sourceTex, 0)) - vec2i(1);
++  let color = textureLoad(sourceTex, clamp(pixel, vec2i(0), lastPixel), 0);
++  return vec4f(color.rgb * color.a, color.a);
++}
++
++fn sampleColor(uv: vec2f) -> vec4f {
++  if (u.filterStraightAlpha < 0.5) {
++    return textureSampleLevel(sourceTex, texSampler, uv, 0.0);
++  }
++  let pixel = uv * vec2f(textureDimensions(sourceTex, 0)) - vec2f(0.5);
++  let origin = vec2i(floor(pixel));
++  let weight = fract(pixel);
++  let top = mix(loadPremultiplied(origin), loadPremultiplied(origin + vec2i(1, 0)), weight.x);
++  let bottom = mix(loadPremultiplied(origin + vec2i(0, 1)), loadPremultiplied(origin + vec2i(1, 1)), weight.x);
++  let color = mix(top, bottom, weight.y);
++  if (color.a <= 0.0) { return vec4f(0.0); }
++  return vec4f(color.rgb / color.a, color.a);
++}
+
+ @fragment
+ fn fragmentMain(input: VertexOutput) -> @location(0) vec4f {
+@@ -121,7 +143,7 @@
+   let sourceMax = u.sourceRect.xy + max(u.sourceRect.zw - vec2f(0.5), vec2f(0.5));
+   let sourcePixel = clamp(unclampedSourcePixel, sourceMin, sourceMax);
+   let sourceUv = sourcePixel / max(u.sourceSize, vec2f(0.001));
+-  let color = textureSampleLevel(sourceTex, texSampler, sourceUv, 0.0);
++  let color = sampleColor(sourceUv);
+   let viewportLocal = samplePixel - u.destRect.xy;
+   let leftAlpha = select(1.0, clamp(viewportLocal.x / max(u.feather.x, 0.001), 0.0, 1.0), u.feather.x > 0.0);
+   let rightAlpha = select(1.0, clamp((u.destRect.z - viewportLocal.x) / max(u.feather.y, 0.001), 0.0, 1.0), u.feather.y > 0.0);
+@@ -170,6 +192,7 @@
    private inputW = 0
    private inputH = 0
    private activeMaskView: GPUTextureView | null = null
@@ -210,7 +256,7 @@
    private readonly replacePipeline: GPURenderPipeline
    private readonly blendPipeline: GPURenderPipeline
    private readonly sampler: GPUSampler
-@@ -191,6 +192,7 @@
+@@ -191,6 +214,7 @@
          { binding: 3, visibility: GPUShaderStage.FRAGMENT, texture: {} },
        ],
      })
@@ -218,7 +264,7 @@
      this.replacePipeline = this.createRenderPipeline(shaderModule, false)
      this.blendPipeline = this.createRenderPipeline(shaderModule, true)
      this.uniformBuffer = device.createBuffer({
-@@ -199,7 +201,11 @@
+@@ -199,7 +223,11 @@
      })
    }
 
@@ -231,7 +277,7 @@
      return this.device.createRenderPipeline({
        label: 'media-render-pipeline',
        layout: this.device.createPipelineLayout({ bindGroupLayouts: [this.bindGroupLayout] }),
-@@ -209,7 +215,7 @@
+@@ -209,7 +237,7 @@
          entryPoint: 'fragmentMain',
          targets: [
            {
@@ -240,7 +286,18 @@
              blend: blend
                ? {
                    color: {
-@@ -309,7 +315,7 @@
+@@ -290,7 +318,9 @@
+     this.activeMaskView = params.maskTexture?.createView() ?? null
+     this.bindGroup = null
+     try {
+-      return this.renderInputViewToTexture(outputTexture, params, sourceWidth, sourceHeight)
++      return this.renderInputViewToTexture(
++        outputTexture, params, sourceWidth, sourceHeight, sourceTexture.format === 'rgba16float',
++      )
+     } finally {
+       this.inputView = previousView
+       this.activeMaskView = previousMaskView
+@@ -309,7 +339,7 @@
      this.inputTexture = this.device.createTexture({
        size: { width, height },
        format: 'rgba8unorm',
@@ -249,16 +306,27 @@
      })
      this.inputView = this.inputTexture.createView()
      this.bindGroup = null
-@@ -339,6 +345,8 @@
+@@ -338,7 +368,10 @@
+     params: GpuMediaRenderParams,
      sourceWidth: number,
      sourceHeight: number,
++    filterStraightAlpha = false,
    ): boolean {
 +    // Float color stays straight; MediaBlendPipeline owns source-over compositing.
 +    if (outputTexture.format === 'rgba16float' && params.blend) return false
      const sourceRect = params.sourceRect ?? {
        x: 0,
        y: 0,
-@@ -409,7 +417,13 @@
+@@ -392,7 +425,7 @@
+       cornerPin?.inverseMatrix[6] ?? 0,
+       cornerPin?.inverseMatrix[7] ?? 0,
+       cornerPin?.inverseMatrix[8] ?? 1,
+-      0,
++      filterStraightAlpha ? 1 : 0,
+     ])
+     this.device.queue.writeBuffer(this.uniformBuffer, 0, uniformData)
+
+@@ -409,7 +442,13 @@
          },
        ],
      })

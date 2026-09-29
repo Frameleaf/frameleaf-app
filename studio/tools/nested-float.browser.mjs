@@ -123,6 +123,22 @@ try {
       ]), transparentBlue);
       await render('crossfade', composition([shape('#ff0000')]), transparentBlue, 0.5);
 
+      // The inner composition's hard viewport edge creates exact adjacent texels:
+      // transparent red on the left and opaque foreground on the right. Moving
+      // its parent by half a pixel must not filter hidden red into the foreground.
+      for (const [name, color] of [['fractionalEdge', '#00ff00'], ['fractionalHdrEdge', 'rgb(200%, -50%, 25%)']]) {
+        const rightHalf = composition([shape(color)], {
+          transform: { x: 2, y: 0, width: 4, height: 8, rotation: 0, opacity: 1 },
+        });
+        const edge = composition([shape('rgba(255, 0, 0, 0)'), rightHalf], {
+          transform: { x: 0.5, y: 0, width: 8, height: 8, rotation: 0, opacity: 1 },
+        });
+        const shifted = await render(name, edge, transparentBlue);
+        const composed = pool.acquire(8, 8, 'rgba16float');
+        if (!blend.blend(white, shifted, composed, 'normal')) throw new Error('Edge source-over rejected');
+        read(name + 'OverWhite', composed);
+      }
+
       const hdrMasked = composition([
         shape('rgba(200%, -50%, 25%, 0.5)', { effects: identity }),
         shape('#ffffff', { isMask: true, maskType: 'alpha' }),
@@ -146,6 +162,17 @@ try {
         outputWidth: 8, outputHeight: 8, transformRect: rect, shapeType: 'rectangle', fillColor: [1, 1, 1, 1],
       })) throw new Error('Legacy shape attachment rejected');
       if (!blend.blend(white, half, legacy, 'normal')) throw new Error('Legacy blend attachment rejected');
+      // rgba8 inputs retain their existing sampling, including hidden RGB.
+      const legacyEdge = pool.acquire(8, 8, 'rgba8unorm');
+      device.queue.writeTexture({ texture: legacyEdge }, new Uint8Array(
+        Array.from({ length: 64 }, (_, pixel) => pixel % 8 < 4 ? [255, 0, 0, 0] : [0, 255, 0, 255]).flat(),
+      ), { bytesPerRow: 32 }, [8, 8]);
+      const legacySample = pool.acquire(8, 8, 'rgba16float');
+      if (!media.renderTextureToTexture(legacyEdge, legacySample, {
+        sourceWidth: 8, sourceHeight: 8, outputWidth: 8, outputHeight: 8,
+        destRect: { x: 0.5, y: 0, width: 8, height: 8 },
+      })) throw new Error('Legacy edge sampling rejected');
+      read('legacyEdgeSampling', legacySample);
       await device.queue.onSubmittedWorkDone();
       const error = await device.popErrorScope();
       if (error) throw new Error(`Nested GPU validation failed: ${error.message}`);
@@ -165,6 +192,9 @@ try {
     half: [1, 0, 0, 0.5], white: [1, 1, 1, 1], halfOverWhite: [1, 0.5, 0.5, 1],
     laterSourceOver: [1 / 3, 2 / 3, 0, 0.75], crossfade: [1, 0, 0, 0.5],
     identityEffectsMasks: [2, -0.5, 0.25, 0.5], mediaUpload: [1, 0, 0, 128 / 255],
+    fractionalEdge: [0, 1, 0, 0.5], fractionalEdgeOverWhite: [0.5, 1, 0.5, 1],
+    fractionalHdrEdge: [2, -0.5, 0.25, 0.5], fractionalHdrEdgeOverWhite: [1.5, 0.25, 0.625, 1],
+    legacyEdgeSampling: [0.5, 0.5, 0, 0.5],
   };
   for (const [name, channels] of Object.entries(expected)) {
     channels.forEach((value, channel) => assert.ok(
