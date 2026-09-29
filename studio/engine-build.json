@@ -24,7 +24,12 @@
       "path": "patches/0004-resource-admission.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "841e56682551ad05ab52d092d69c65b3b57be3e45c31791d46ce11a27512a3df"
+    },
+    {
+      "path": "patches/0005-compositor-float-targets.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "42d37323cfee40acfc12101079935118a31686af931caf6c23425acfe81f7ea7"
     }
   ],
-  "sourceSha256": "3d889096898ce322599190e34193d9a4fd4ec62cf1227f1fb773d4cd57bd73c3"
+  "sourceSha256": "954732a8f77e372d7b72b6988696d3e2d64a87acdb9fc35732622b01ca29edf3"
 }
