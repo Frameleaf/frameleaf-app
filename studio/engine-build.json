@@ -34,7 +34,12 @@
       "path": "patches/0006-audio-export-failure.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "4289d910eff2d61116c2e5c975e852bab22d9b1478b4e918e486697f9fa8c357"
+    },
+    {
+      "path": "patches/0007-audio-track-gain.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "c43bab3ac0ceb390b9a3cc56f10b302a4bac854b7e0b014e9cead8f837f96f44"
     }
   ],
-  "sourceSha256": "39f0c987879387af878fcc673b593cd07882d544c53bc6d8317feb9d39913b6d"
+  "sourceSha256": "8983173fddee9a606113c38d6bfccdc507ec83beb2aedd368cd30158e6926d78"
 }
