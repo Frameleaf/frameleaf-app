@@ -202,7 +202,9 @@ describe(StudioPreviewService.name, () => {
       projects as unknown as StudioProjectService,
       storage as unknown as StorageRepository,
       sourceMedia as unknown as StudioExportRepository,
+      mocks.user as never,
     );
+    mocks.user.get.mockResolvedValue(authStub.user1.user as never);
   });
 
   it('keeps identical preview requests on one binding after a generated declaration is published', async () => {
@@ -300,6 +302,13 @@ describe(StudioPreviewService.name, () => {
           framePts: '1001',
           framePtsTimebase: '1/30000',
         }),
+        {
+          ownerId: authStub.user1.user.id,
+          operationId: '0195e2a0-0000-7000-8000-0000000000ff',
+          grantToken: 'grant-token',
+          grantSessionId: 'session-1',
+          assetIds: [],
+        },
       );
       expect(storage.unlinkDir).not.toHaveBeenCalled();
     });
@@ -316,11 +325,11 @@ describe(StudioPreviewService.name, () => {
       expect(previews.publish).not.toHaveBeenCalled();
     });
 
-    it('discards a frame superseded or handed to another render meanwhile', async () => {
+    it('preserves a frame handed to another render meanwhile', async () => {
       vi.mocked(previews.getForOwner).mockResolvedValue(frameStub({ id: 'frame-1', operationId: 'another' }));
       await expect(sut.onRenderCompleted(operation, output)).resolves.toEqual({ published: false });
       expect(previews.publish).not.toHaveBeenCalled();
-      expect(storage.unlinkDir).toHaveBeenCalledWith(folder, { recursive: true, force: true });
+      expect(storage.unlinkDir).not.toHaveBeenCalled();
     });
 
     it('marks a frame failed and removes its files', async () => {
