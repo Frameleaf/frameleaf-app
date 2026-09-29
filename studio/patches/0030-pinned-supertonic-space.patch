@@ -1,0 +1,60 @@
+Subject: Load Supertonic from its approved Space commit
+
+Freecut MIT adaptation. The Supertonic model files and voice styles are
+requested from the Hugging Face Space commit the owner approved
+(`model:supertonic-3` in studio/rights-approval.json), never from the
+moving `main` branch, so each download matches its reviewed row and
+recorded byte digests.
+
+--- a/src/features/editor/services/supertonic-tts-service.ts
++++ b/src/features/editor/services/supertonic-tts-service.ts
+@@ -1,4 +1,4 @@
+-import { requireResource } from '@/shared/utils/resource-admission.mjs'
++import { approvedRevision, requireResource } from '@/shared/utils/resource-admission.mjs'
+ import { ORT_WASM_JSEP } from '@/shared/utils/local-ort-assets'
+ import { createLogger } from '@/shared/logging/logger'
+ import { sanitizeAiOutputFileNameSegment } from '@/shared/utils/ai-output-filename'
+@@ -71,9 +71,11 @@
+ const MODEL_LABEL = 'Supertonic 3'
+ const MODEL_KEY = 'supertonic-3'
+ const ESTIMATED_BYTES = 398_000_000
+-const MODEL_BASE_URL = 'https://huggingface.co/spaces/Supertone/supertonic-3/resolve/main/assets'
+-const ONNX_BASE_URL = `${MODEL_BASE_URL}/onnx`
+-const VOICE_STYLE_BASE_URL = `${MODEL_BASE_URL}/voice_styles`
++// Frameleaf: the Space's files at the commit the owner approved (`model:supertonic-3`), never `main`.
++const modelBaseUrl = () =>
++  `https://huggingface.co/spaces/Supertone/supertonic-3/resolve/${approvedRevision('model:supertonic-3')}/assets`
++const onnxBaseUrl = () => `${modelBaseUrl()}/onnx`
++const voiceStyleBaseUrl = () => `${modelBaseUrl()}/voice_styles`
+ const DEFAULT_TOTAL_STEPS = 8
+ const MAX_CHARS_PER_SEGMENT = 300
+ const MAX_CJK_CHARS_PER_SEGMENT = 120
+@@ -628,7 +630,7 @@
+     // successful ones before propagating the error so the retry starts clean.
+     const results = await Promise.allSettled(
+       modelFiles.map(async ([key, label, fileName]) => {
+-        const bytes = await fetchOnnxModelBytes(`${ONNX_BASE_URL}/${fileName}`)
++        const bytes = await fetchOnnxModelBytes(`${onnxBaseUrl()}/${fileName}`)
+         const session = await ort.InferenceSession.create(bytes, sessionOptions)
+         completed += 1
+         onProgress?.(`Loading Supertonic ${backend.toUpperCase()} (${completed}/4): ${label}...`)
+@@ -671,8 +673,8 @@
+       const ort = await this.getOrt()
+       onProgress?.('Loading Supertonic configuration...')
+       const [config, indexer] = await Promise.all([
+-        fetchJson<SupertonicTtsConfig>(`${ONNX_BASE_URL}/tts.json`),
+-        fetchJson<Record<string, number>>(`${ONNX_BASE_URL}/unicode_indexer.json`),
++        fetchJson<SupertonicTtsConfig>(`${onnxBaseUrl()}/tts.json`),
++        fetchJson<Record<string, number>>(`${onnxBaseUrl()}/unicode_indexer.json`),
+       ])
+ 
+       const canUseWebGpu =
+@@ -727,7 +729,7 @@
+       return existing
+     }
+ 
+-    const promise = fetchJson<VoiceStyleData>(`${VOICE_STYLE_BASE_URL}/${voice}.json`).then(
++    const promise = fetchJson<VoiceStyleData>(`${voiceStyleBaseUrl()}/${voice}.json`).then(
+       (styleData) => ({
+         styleTtl: new ort.Tensor(
+           'float32',
