@@ -1,5 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { AssetVisibility, NotificationType } from 'src/enum.js';
+import { ItemShareRepository } from 'src/repositories/item-share.repository.js';
+import { UserRepository } from 'src/repositories/user.repository.js';
 import {
   ITEM_SHARE_HIDDEN,
   ITEM_SHARE_LOCKED,
@@ -39,6 +41,9 @@ describe(ItemShareService.name, () => {
     mocks.asset.getLockedAssetIds.mockResolvedValue(new Set());
     mocks.asset.getHiddenContentAssetIds.mockResolvedValue(new Set());
     mocks.itemShare.getForAssets.mockResolvedValue([]);
+    mocks.itemShare.withTransaction.mockImplementation((callback) =>
+      callback(mocks.itemShare as ItemShareRepository, mocks.user as UserRepository),
+    );
     users(owner, jamie);
   });
 
@@ -235,6 +240,18 @@ describe(ItemShareService.name, () => {
   });
 
   describe('unshare', () => {
+    it('does not revoke a share when its link cannot be resolved', async () => {
+      const assetId = newUuid();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([assetId]));
+      vi.spyOn(sut, 'shareLink').mockRejectedValueOnce(new Error('address lookup unavailable'));
+
+      await expect(sut.unshare(auth, { assetIds: [assetId], userIds: [jamie.id] })).rejects.toThrow(
+        'address lookup unavailable',
+      );
+      expect(mocks.itemShare.remove).not.toHaveBeenCalled();
+      expect(mocks.websocket.clientSend).not.toHaveBeenCalled();
+    });
+
     it('revokes the shares and tells the recipient’s open pages to drop the items', async () => {
       const a = newUuid();
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([a]));
