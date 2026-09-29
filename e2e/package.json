@@ -9,6 +9,7 @@
     "test:fork-roundtrip": "../scripts/test-fork-roundtrip.sh",
     "test:watch": "vitest",
     "test:maintenance": "vitest --run --config vitest.maintenance.config.ts",
+    "test:cloud": "vitest --run --config vitest.cloud.config.ts",
     "test:web": "pnpm exec playwright test --project=web",
     "test:web:maintenance": "pnpm exec playwright test --project=maintenance",
     "test:web:ui": "pnpm exec playwright test --project=ui",
