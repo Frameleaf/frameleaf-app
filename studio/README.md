@@ -96,6 +96,12 @@ direct-link traversal, full sandbox escape coverage and complete FL-100 conforma
 unqualified. Bundle review parses JSON and enumerates resource references without invoking
 this render evaluator. Hosted execution of the new fixtures remains required.
 
+Patch 0023 refuses unsupported embedded-subtitle and output-format combinations before new,
+restored, retried or worker export jobs can render, including smart-copy attempts. The renderer
+also checks output format for direct callers, while the export frame-rate ceiling stays at job
+admission so internal high-frame-rate reverse previews can render. Hosted regressions cover these
+boundaries; real codec output, subtitle playback and the full export matrix remain unqualified.
+
 `frameleaf-source.json` records all adapted input hashes. `frameleaf-build.json` records the sorted output hashes/digest, upstream and patch identities, toolchain/platform, and every direct/transitive/optional/development package's lockfile license declaration. Missing declarations remain `UNDECLARED`. The original MIT license and bundled SoundTouch/WebSR notices are retained. These records do not establish redistribution approval, including for external models, fonts and assets.
 
 The dedicated read-only Actions workflow runs the upstream unit and Node headless contracts, builds twice from separately prepared workspaces, compares artifact digests, and rechecks the complete original snapshot. Both build manifests are retained even on comparison failure, and mismatches report the affected artifact paths. Uploaded provenance is build evidence only after the exact candidate passes. Browser/GPU/media headless tests, full feature conformance, HDR/Dolby qualification and application integration remain separate gates.

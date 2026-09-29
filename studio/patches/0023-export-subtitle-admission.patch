@@ -1,0 +1,539 @@
+Subject: Refuse unsupported subtitle exports before job creation and rendering
+
+Freecut MIT adaptation. Validate export admission and shared render format compatibility.
+
+--- a/src/features/export/utils/client-renderer.ts
++++ b/src/features/export/utils/client-renderer.ts
+@@ -338,21 +338,11 @@
+   return 'video/mp4'
+ }
+
+-/**
+- * Validate client export settings
+- */
+-export function validateSettings(settings: ClientExportSettings): {
++/** Codec, container and subtitle compatibility, shared by exports and internal renders. */
++export function validateOutputFormat(settings: ClientExportSettings): {
+   valid: boolean
+   error?: string
+ } {
+-  if (settings.resolution.width <= 0 || settings.resolution.height <= 0) {
+-    return { valid: false, error: 'Invalid resolution' }
+-  }
+-
+-  if (settings.fps <= 0 || settings.fps > 120) {
+-    return { valid: false, error: 'Invalid frame rate (must be 1-120)' }
+-  }
+-
+   if (settings.mode === 'audio') {
+     if (!isAudioOnlyContainer(settings.container)) {
+       return { valid: false, error: 'Audio export must use an audio-only container' }
+@@ -362,6 +352,17 @@
+       return { valid: false, error: 'Video export must use a video container' }
+     }
+
++    if (
++      settings.subtitleMode === 'embedded' &&
++      settings.container !== 'webm' &&
++      settings.container !== 'mkv'
++    ) {
++      return {
++        valid: false,
++        error: `Embedded subtitles are not supported in ${settings.container.toUpperCase()}. Choose WebM/MKV, burned-in captions, or a subtitle sidecar.`,
++      }
++    }
++
+     if (!isVideoCodecCompatibleWithContainer(settings.codec, settings.container)) {
+       return {
+         valid: false,
+@@ -369,6 +370,27 @@
+       }
+     }
+   }
++
++  return { valid: true }
++}
++
++/**
++ * Validate client export settings
++ */
++export function validateSettings(settings: ClientExportSettings): {
++  valid: boolean
++  error?: string
++} {
++  if (settings.resolution.width <= 0 || settings.resolution.height <= 0) {
++    return { valid: false, error: 'Invalid resolution' }
++  }
++
++  if (settings.fps <= 0 || settings.fps > 120) {
++    return { valid: false, error: 'Invalid frame rate (must be 1-120)' }
++  }
++
++  const format = validateOutputFormat(settings)
++  if (!format.valid) return format
+
+   // Auto-round odd dimensions to even (required by video codecs).
+   // Mutates in place so the rest of the export pipeline sees clean values.
+--- a/src/features/export/utils/render-pipeline.ts
++++ b/src/features/export/utils/render-pipeline.ts
+@@ -55,7 +55,7 @@
+   codecFallback?: ClientCodec
+ }
+
+-/** Map the requested UI settings without probing encoder support. */
++/** Map and validate requested settings before smart copy or encoder probing. */
+ export function mapRequestedClientSettings(
+   settings: ExportSettings | ExtendedExportSettings,
+   fps: number,
+@@ -79,6 +79,9 @@
+
+   clientSettings.mode = exportMode
+   clientSettings.subtitleMode = exportMode === 'video' ? subtitleMode : 'off'
++
++  const validation = validateSettings(clientSettings)
++  if (!validation.valid) throw new Error(validation.error)
+
+   return { clientSettings, exportMode, renderWholeProject }
+ }
+@@ -105,9 +108,6 @@
+
+   // Validate + check codec support (skip video codec validation for audio-only).
+   if (exportMode === 'video') {
+-    const validation = validateSettings(clientSettings)
+-    if (!validation.valid) throw new Error(validation.error)
+-
+     const supportedCodecs = await getSupportedCodecs({
+       width: clientSettings.resolution.width,
+       height: clientSettings.resolution.height,
+--- a/src/features/export/utils/export-preflight.ts
++++ b/src/features/export/utils/export-preflight.ts
+@@ -252,7 +252,11 @@
+   smartCopyActive: boolean,
+ ): Promise<ResolvedPreflightSettings> {
+   if (smartCopyActive) {
+-    return { clientSettings: mapRequestedClientSettings(settings, fps).clientSettings }
++    try {
++      return { clientSettings: mapRequestedClientSettings(settings, fps).clientSettings }
++    } catch (error) {
++      return { error: error instanceof Error ? error.message : String(error) }
++    }
+   }
+   return resolveSettingsForPreflight(settings, fps, supportedVideoCodecs)
+ }
+--- /dev/null
++++ b/src/features/export/utils/build-render-job.test.ts
+@@ -0,0 +1,99 @@
++// @vitest-environment node
++
++import { afterEach, expect, it, vi } from 'vite-plus/test'
++import type { ExtendedExportSettings } from '@/types/export'
++import type { ExportableSequence } from '../deps/timeline-compositions'
++
++const { canEncodeVideo, assessSmartCopyEligibility } = vi.hoisted(() => ({
++  canEncodeVideo: vi.fn(async () => true),
++  assessSmartCopyEligibility: vi.fn(() => ({ eligible: false, reason: 'disabled' })),
++}))
++vi.mock('mediabunny', () => ({ canEncodeVideo }))
++vi.mock('./smart-copy', () => ({ assessSmartCopyEligibility }))
++vi.mock('./canvas-render-orchestrator', () => ({}))
++vi.mock('../deps/timeline-compositions', () => ({}))
++vi.mock('../deps/projects', () => ({
++  useProjectStore: { getState: () => ({ currentProject: null }) },
++}))
++
++import { buildRenderJob, buildSegmentJobs } from './build-render-job'
++import { assessExportPreflight } from './export-preflight'
++
++const sequence: ExportableSequence = {
++  id: null,
++  name: 'Export admission',
++  tracks: [],
++  items: [],
++  transitions: [],
++  keyframes: [],
++  fps: 30,
++  width: 1920,
++  height: 1080,
++  masterBusDb: 0,
++  durationFrames: 60,
++  inPoint: null,
++  outPoint: null,
++  markers: [],
++}
++const base: ExtendedExportSettings = {
++  mode: 'video',
++  codec: 'h264',
++  videoContainer: 'mp4',
++  subtitleMode: 'embedded',
++  quality: 'high',
++  resolution: { width: 1920, height: 1080 },
++}
++
++afterEach(() => vi.restoreAllMocks())
++
++it('refuses unsupported export combinations before creating jobs, including smart copy and batches', async () => {
++  const newJobId = vi.spyOn(crypto, 'randomUUID')
++  for (const eligible of [false, true]) {
++    assessSmartCopyEligibility.mockReturnValue({ eligible, reason: 'eligible' })
++    for (const [overrides, reason] of [
++      [{ videoContainer: 'mp4' }, 'Embedded subtitles are not supported in MP4'],
++      [{ videoContainer: 'mov' }, 'Embedded subtitles are not supported in MOV'],
++      [{ videoContainer: 'webm' }, 'Codec avc is not supported in WEBM'],
++    ] as const) {
++      const settings = { ...base, ...overrides }
++      await expect(buildRenderJob({ settings, sequence })).rejects.toThrow(reason)
++      await expect(
++        buildSegmentJobs(settings, [{ start: 0, end: 30 }], () => 'Part 1', sequence),
++      ).rejects.toThrow(reason)
++      const preflight = await assessExportPreflight({
++        settings,
++        fps: sequence.fps,
++        composition: { tracks: [], fps: sequence.fps },
++        durationFrames: 60,
++        supportedVideoCodecs: ['avc', 'vp9'],
++        smartCopyAssessment: { eligible, reason: 'eligible' },
++      })
++      expect(preflight.canExport).toBe(false)
++      expect(preflight.checks).toContainEqual(
++        expect.objectContaining({
++          severity: 'error',
++          detailParams: { error: expect.stringContaining(reason) },
++        }),
++      )
++    }
++  }
++  expect(newJobId).not.toHaveBeenCalled()
++  expect(canEncodeVideo).not.toHaveBeenCalled()
++
++  assessSmartCopyEligibility.mockReturnValue({ eligible: false, reason: 'disabled' })
++  const supported: Partial<ExtendedExportSettings>[] = [
++    { videoContainer: 'webm', codec: 'vp9' },
++    { videoContainer: 'mkv' },
++    { subtitleMode: 'burn' },
++    { subtitleMode: 'sidecar' },
++    { subtitleMode: 'off' },
++  ]
++  for (const overrides of supported) {
++    const job = await buildRenderJob({ settings: { ...base, ...overrides }, sequence })
++    expect(job.status).toBe('queued')
++    expect(job.clientSettings.container).toBe(overrides.videoContainer ?? 'mp4')
++    expect(job.clientSettings.subtitleMode).toBe(overrides.subtitleMode ?? 'embedded')
++  }
++  expect(canEncodeVideo).toHaveBeenCalled()
++  expect(newJobId).toHaveBeenCalledTimes(5)
++})
+--- a/src/features/export/hooks/use-render-queue-runner.ts
++++ b/src/features/export/hooks/use-render-queue-runner.ts
+@@ -16,6 +16,7 @@
+ import { getNextQueuedJob, useRenderQueueStore } from '../stores/render-queue-store'
+ import type { RenderJob } from '../stores/render-queue-store'
+ import { registerJobController, unregisterJobController } from '../utils/render-queue-control'
++import { validateSettings } from '../utils/client-renderer'
+
+ const log = createLogger('RenderQueue')
+
+@@ -44,6 +45,9 @@
+   store.markRendering(job.id)
+
+   try {
++    const validation = validateSettings(job.clientSettings)
++    if (!validation.valid) throw new Error(validation.error)
++
+     // Lazy-load the render engine + deps only when a job actually runs.
+     const [
+       { runRender },
+--- a/src/features/export/utils/canvas-render-orchestrator.ts
++++ b/src/features/export/utils/canvas-render-orchestrator.ts
+@@ -13,7 +13,12 @@
+
+ import type { CompositionInputProps, SubtitleExportMode } from '@/types/export'
+ import type { ClientExportSettings, RenderProgress, ClientRenderResult } from './client-renderer'
+-import { createOutputFormat, getDefaultAudioCodec, getMimeType } from './client-renderer'
++import {
++  createOutputFormat,
++  getDefaultAudioCodec,
++  getMimeType,
++  validateOutputFormat,
++} from './client-renderer'
+ import { createMediabunnyInputSource } from '@/infrastructure/browser/mediabunny-input-source'
+ import { createLogger } from '@/shared/logging/logger'
+ import { ensureAudioEncoderSupport } from '@/shared/media/audio-encoder-support'
+@@ -445,6 +450,9 @@
+  * Main render function – orchestrates the entire client-side render.
+  */
+ export async function renderComposition(options: RenderEngineOptions): Promise<ClientRenderResult> {
++  const validation = validateOutputFormat(options.settings)
++  if (!validation.valid) throw new Error(validation.error)
++
+   const { settings, composition, onProgress, signal } = options
+   const { fps, durationInFrames = 0 } = composition
+   const canvasAudio = await loadCanvasAudio()
+@@ -973,6 +981,9 @@
+  * Extracts and mixes all audio from the composition and encodes to the specified format.
+  */
+ export async function renderAudioOnly(options: AudioRenderOptions): Promise<ClientRenderResult> {
++  const validation = validateOutputFormat(options.settings)
++  if (!validation.valid) throw new Error(validation.error)
++
+   const { settings, composition, onProgress, signal } = options
+   const { fps, durationInFrames = 0 } = composition
+   const canvasAudio = await loadCanvasAudio()
+--- /dev/null
++++ b/src/features/export/hooks/use-render-queue-runner.test.ts
+@@ -0,0 +1,108 @@
++import { act, renderHook, waitFor } from '@testing-library/react'
++import { afterEach, expect, it, vi } from 'vite-plus/test'
++import { useRenderQueueStore, type RenderJob } from '../stores/render-queue-store'
++import { useRenderQueuePersistence } from './use-render-queue-persistence'
++import { useRenderQueueRunner } from './use-render-queue-runner'
++
++const { loadRenderQueue, saveRenderQueue, saveExportFile, trySmartCopyExport, runRender } =
++  vi.hoisted(() => ({
++    loadRenderQueue: vi.fn(),
++    saveRenderQueue: vi.fn(async () => undefined),
++    saveExportFile: vi.fn(),
++    trySmartCopyExport: vi.fn(),
++    runRender: vi.fn(),
++  }))
++vi.mock('@/infrastructure/storage', () => ({ loadRenderQueue, saveRenderQueue, saveExportFile }))
++vi.mock('../utils/smart-copy', () => ({ trySmartCopyExport }))
++vi.mock('../utils/render-pipeline', () => ({ runRender }))
++vi.mock('../utils/timeline-to-composition', () => ({ convertTimelineToComposition: vi.fn() }))
++vi.mock('@/features/export/deps/media-library', () => ({ resolveMediaUrls: vi.fn() }))
++vi.mock('@/shared/logging/logger', () => ({
++  createOperationId: () => 'operation',
++  createLogger: () => ({
++    warn: vi.fn(),
++    event: vi.fn(),
++    startEvent: () => ({ merge: vi.fn(), set: vi.fn(), success: vi.fn(), failure: vi.fn() }),
++  }),
++}))
++
++afterEach(() => {
++  useRenderQueueStore.getState().hydrate([], false)
++  vi.restoreAllMocks()
++})
++
++it('fails restored and retried unsupported jobs before smart copy, rendering, or saving output', async () => {
++  const job: RenderJob = {
++    id: 'restored-export',
++    name: 'Saved export',
++    status: 'rendering',
++    progress: 50,
++    inPoint: null,
++    outPoint: null,
++    durationFrames: 60,
++    exportMode: 'video',
++    clientSettings: {
++      mode: 'video',
++      codec: 'avc',
++      container: 'mp4',
++      subtitleMode: 'embedded',
++      quality: 'high',
++      resolution: { width: 1920, height: 1080 },
++      fps: 30,
++    },
++    snapshot: {
++      tracks: [],
++      items: [],
++      transitions: [],
++      keyframes: [],
++      fps: 30,
++      width: 1920,
++      height: 1080,
++    },
++    fileName: 'saved.mp4',
++    createdAt: 1,
++  }
++  const { snapshot, ...persistedJob } = job
++  loadRenderQueue.mockResolvedValue({
++    version: 1,
++    isPaused: false,
++    snapshots: { saved: snapshot },
++    jobs: [{ ...persistedJob, snapshotId: 'saved' }],
++  })
++  const markFailed = vi.spyOn(useRenderQueueStore.getState(), 'markFailed')
++  const { unmount } = renderHook(() => {
++    useRenderQueuePersistence('project')
++    useRenderQueueRunner()
++  })
++  try {
++    await waitFor(() => expect(useRenderQueueStore.getState().jobs[0]?.status).toBe('queued'))
++    expect(useRenderQueueStore.getState().isPaused).toBe(true)
++    act(() => useRenderQueueStore.getState().setPaused(false))
++    await waitFor(() => expect(markFailed).toHaveBeenCalledTimes(1))
++    expect(useRenderQueueStore.getState().jobs[0]).toMatchObject({
++      status: 'failed',
++      error: expect.stringContaining('Embedded subtitles are not supported in MP4'),
++    })
++    act(() => useRenderQueueStore.getState().retryJob(job.id))
++    await waitFor(() => expect(markFailed).toHaveBeenCalledTimes(2))
++    expect(useRenderQueueStore.getState().jobs[0]?.status).toBe('failed')
++    expect(trySmartCopyExport).not.toHaveBeenCalled()
++    expect(runRender).not.toHaveBeenCalled()
++    expect(saveExportFile).not.toHaveBeenCalled()
++    await waitFor(() =>
++      expect(saveRenderQueue).toHaveBeenCalledWith(
++        'project',
++        expect.objectContaining({
++          jobs: [
++            expect.objectContaining({
++              status: 'failed',
++              error: expect.stringContaining('Embedded subtitles'),
++            }),
++          ],
++        }),
++      ),
++    )
++  } finally {
++    unmount()
++  }
++})
+--- a/src/features/export/workers/export-render.worker.ts
++++ b/src/features/export/workers/export-render.worker.ts
+@@ -1,7 +1,7 @@
+ import { isGifUrl, isWebpUrl } from '@/shared/utils/media-utils'
+ import { createLogger } from '@/shared/logging/logger'
+ import type { ImageItem } from '@/types/timeline'
+-import type { RenderProgress } from '../utils/client-renderer'
++import { validateSettings, type RenderProgress } from '../utils/client-renderer'
+ import type {
+   ExportRenderWorkerRequest,
+   ExportRenderWorkerResponse,
+@@ -103,6 +103,9 @@
+   activeRequests.set(requestId, controller)
+
+   try {
++    const validation = validateSettings(settings)
++    if (!validation.valid) throw new Error(validation.error)
++
+     const tracks = composition.tracks ?? []
+
+     if (settings.mode === 'video' && compositionHasAnimatedImage(composition.tracks ?? [])) {
+--- a/src/features/timeline/services/reverse-conform-service.test.ts
++++ b/src/features/timeline/services/reverse-conform-service.test.ts
+@@ -22,6 +22,9 @@
+   }
+ > = {}
+
++vi.mock('@/features/export/utils/canvas-audio', () => ({}))
++vi.mock('@/features/export/utils/client-render-engine', () => ({ createCompositionRenderer: vi.fn() }))
++
+ vi.mock('../deps/export-contract', () => ({
+   importCanvasRenderOrchestrator: vi.fn(async () => ({
+     renderComposition: renderCompositionMock,
+@@ -91,6 +94,37 @@
+     vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:reverse')
+   })
+
++  it('admits a 240fps reverse preview on a 30fps timeline through the real render boundary', async () => {
++    const reachedEncoderSetup = new Error('Reached encoder setup')
++    renderCompositionMock.mockImplementationOnce(async (options) => {
++      const { renderComposition } = await import('@/features/export/utils/canvas-render-orchestrator')
++      return renderComposition({
++        ...options,
++        onProgress: () => {
++          throw reachedEncoderSetup
++        },
++      })
++    })
++    const { reverseConformService } = await import('./reverse-conform-service')
++    await expect(
++      reverseConformService.prepareVideo(
++        makeVideoItem({
++          id: 'high-fps-preview',
++          mediaId: 'high-fps-source',
++          sourceFps: 240,
++          sourceDuration: 480,
++          sourceEnd: 480,
++        }),
++        30,
++      ),
++    ).rejects.toBe(reachedEncoderSetup)
++    const request = renderCompositionMock.mock.calls[0]?.[0]
++    expect(request.settings.fps).toBe(240)
++    expect(request.composition.fps).toBe(240)
++    expect(request.composition.durationInFrames).toBe(480)
++    expect(saveFileMock).not.toHaveBeenCalled()
++  })
++
+   it('renders the whole known source instead of only the selected clip range', async () => {
+     const { reverseConformService } = await import('./reverse-conform-service')
+
+--- /dev/null
++++ b/src/features/export/workers/export-render.worker.test.ts
+@@ -0,0 +1,74 @@
++// @vitest-environment node
++
++import { afterEach, expect, it, vi } from 'vite-plus/test'
++import type {
++  ExportRenderWorkerRequest,
++  ExportRenderWorkerResponse,
++} from './export-render-worker.types'
++import type { ClientExportSettings } from '../utils/client-renderer'
++
++const { createCompositionRenderer, createExportOutputTarget } = vi.hoisted(() => ({
++  createCompositionRenderer: vi.fn(),
++  createExportOutputTarget: vi.fn(),
++}))
++vi.mock('../utils/client-render-engine', () => ({ createCompositionRenderer }))
++vi.mock('../utils/export-output-target', () => ({ createExportOutputTarget }))
++vi.mock('@/shared/logging/logger', () => ({ createLogger: () => ({ error: vi.fn() }) }))
++
++afterEach(() => vi.unstubAllGlobals())
++
++it('returns a structured refusal for direct worker requests before creating a renderer or output', async () => {
++  const worker = {
++    addEventListener: vi.fn(),
++    postMessage: vi.fn<(message: ExportRenderWorkerResponse) => void>(),
++    onmessage: null as ((event: MessageEvent<ExportRenderWorkerRequest>) => Promise<void>) | null,
++  }
++  vi.stubGlobal('self', worker)
++  vi.stubGlobal('window', {})
++  await import('./export-render.worker')
++  const base: ClientExportSettings = {
++    mode: 'video',
++    codec: 'avc',
++    container: 'mp4',
++    subtitleMode: 'embedded',
++    quality: 'high',
++    resolution: { width: 1920, height: 1080 },
++    fps: 30,
++  }
++  const cases: Array<[Partial<ClientExportSettings>, string]> = [
++    [{}, 'Embedded subtitles are not supported in MP4'],
++    [{ container: 'mov' }, 'Embedded subtitles are not supported in MOV'],
++    [{ container: 'webm' }, 'Codec avc is not supported in WEBM'],
++    [{ mode: 'audio' }, 'Audio export must use an audio-only container'],
++    [{ subtitleMode: 'burn', fps: 240 }, 'Invalid frame rate (must be 1-120)'],
++  ]
++  for (const [settings, reason] of cases) {
++    worker.postMessage.mockClear()
++    const data: ExportRenderWorkerRequest = {
++      type: 'start',
++      requestId: 'saved-job',
++      settings: { ...base, ...settings },
++      composition: { tracks: [], fps: 30, durationInFrames: 60 },
++    }
++    await worker.onmessage!({ data } as MessageEvent<ExportRenderWorkerRequest>)
++    expect(worker.postMessage).toHaveBeenCalledExactlyOnceWith({
++      type: 'error',
++      requestId: 'saved-job',
++      error: expect.stringContaining(reason),
++    })
++  }
++  const { renderComposition, renderAudioOnly } = await import('../utils/canvas-render-orchestrator')
++  for (const [overrides, reason] of cases.filter(([settings]) => settings.fps === undefined)) {
++    const settings = { ...base, ...overrides }
++    const render = settings.mode === 'audio' ? renderAudioOnly : renderComposition
++    await expect(
++      render({
++        settings,
++        composition: { tracks: [], fps: 30, durationInFrames: 60 },
++        onProgress: vi.fn(),
++      }),
++    ).rejects.toThrow(reason)
++  }
++  expect(createCompositionRenderer).not.toHaveBeenCalled()
++  expect(createExportOutputTarget).not.toHaveBeenCalled()
++})
