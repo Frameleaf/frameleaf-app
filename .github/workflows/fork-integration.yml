@@ -40,6 +40,8 @@ jobs:
             .github/frameleaf-release.test.cjs \
             .github/frameleaf-deploy-test.test.cjs \
             .github/verify-release-bundle.test.cjs
+      - name: Validate NAS package fixtures
+        run: node --test --test-concurrency=1 packaging/nas/build.test.cjs
       - name: Install plugin WASM, API generation and ffmpeg tools
         env:
           GITHUB_TOKEN: ${{ github.token }}
