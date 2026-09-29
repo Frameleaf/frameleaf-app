@@ -54,6 +54,7 @@
     type StudioCapabilities,
     type StudioEngineInstance,
     type StudioHostContext,
+    type StudioProjectImportRef,
     type StudioRenderEvidence,
     type StudioHostServices,
     type StudioProjectHandle,
@@ -100,6 +101,7 @@
   let {
     project,
     assets,
+    projectImports = [],
     handoffAssetIds = [],
     auth,
     capabilities,
@@ -147,6 +149,8 @@
   }: {
     project: StudioProjectHandle;
     assets: readonly StudioAssetRef[];
+    /** Files kept with the project (FL-103 / FL-105), offered to the editor under their media ids. */
+    projectImports?: readonly StudioProjectImportRef[];
     handoffAssetIds?: readonly string[];
     auth: StudioAuthContext;
     /** Null until the route's capability probe has answered; nothing is judged missing before. */
@@ -303,6 +307,7 @@
   const context = (): StudioHostContext => ({
     project,
     assets,
+    projectImports,
     handoffAssetIds,
     auth,
     theme: readStudioThemeTokens(appTheme, root ?? null),
@@ -327,6 +332,8 @@
       previewToneMapped: $t('frameleaf_studio_preview_tone_mapped'),
       previewNoWorker: $t('frameleaf_studio_server_preview_no_worker'),
       editSuperseded: $t('frameleaf_studio_edit_superseded'),
+      // The adapter fills these in; the host keeps them as markers.
+      importNotKept: $t('frameleaf_studio_import_not_kept', { values: { file: '{file}', reason: '{reason}' } }),
     },
   });
 

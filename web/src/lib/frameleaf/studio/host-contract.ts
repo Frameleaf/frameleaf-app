@@ -159,6 +159,27 @@ export interface StudioProjectHandle {
   graphVersion?: number;
 }
 
+/** A file kept with the project (FL-103 / FL-105), as the editor reads it. */
+export interface StudioProjectImportRef {
+  /** The media id the editor gave the file; clips place it by this id. */
+  id: string;
+  /** What the server read from the bytes. */
+  kind: 'audio' | 'image' | 'video' | 'vector';
+  name: string;
+  /** Content type the server read from the bytes. */
+  mimeType: string;
+  sizeBytes: number;
+  /** URL of the bytes, already authorized with the session's credentials. */
+  url: string;
+}
+
+/** A file the editor imported, for the host to keep with the project. */
+export interface StudioProjectImportUpload {
+  id: string;
+  fileName: string;
+  file: Blob;
+}
+
 export interface StudioHostContext {
   project: StudioProjectHandle;
   /**
@@ -169,6 +190,11 @@ export interface StudioHostContext {
   assets: readonly StudioAssetRef[];
   /** Authenticated generated resources, kept separate from library identities. */
   generatedMedia?: readonly StudioGeneratedMedia[];
+  /**
+   * Files kept with this project rather than the library (FL-103 recordings, FL-105 imports): the
+   * owner's own, each under the media id the editor gave it, so the clips that place it resolve.
+   */
+  projectImports?: readonly StudioProjectImportRef[];
   /** Asset ids the handoff asked the editor to start from, in order. */
   handoffAssetIds: readonly string[];
   auth: StudioAuthContext;
@@ -239,7 +265,12 @@ export type StudioAdapterString =
   | 'previewToneMapped'
   | 'previewNoWorker'
   /** An edit made on a graph the host has since replaced was not kept (FL-174). */
-  | 'editSuperseded';
+  | 'editSuperseded'
+  /**
+   * A file imported or recorded in the editor could not be kept with the project (FL-103 / FL-105).
+   * `{file}` is its name and `{reason}` the server's answer.
+   */
+  | 'importNotKept';
 
 export type StudioWorkspaceMode = 'basic' | 'advanced';
 
@@ -354,6 +385,12 @@ export interface StudioHostServices {
    * answers `unavailable`, and the engine then keeps its layout for the session only.
    */
   saveWorkspace?(layout: unknown): Promise<StudioWorkspaceSaveResult>;
+  /**
+   * Keep a file the person imported or recorded in the editor with the project (FL-103 / FL-105).
+   * The server checks the bytes and refuses what it cannot place. Optional: without it an import
+   * lasts only as long as the editor document.
+   */
+  uploadProjectImport?(upload: StudioProjectImportUpload): Promise<StudioProjectImportRef>;
   /**
    * Report where the playhead is, as an exact rational instant (FL-93), so review comments the
    * person adds from the host's Review panel are pinned there (`Studio.jsx:1759`) rather than at

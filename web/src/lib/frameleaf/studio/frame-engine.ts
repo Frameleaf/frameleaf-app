@@ -21,6 +21,7 @@ import type { StudioCommandEnvelope } from './commands';
 import { registerStudioEngine, StudioEngineNotBuiltError } from './engine-loader';
 import {
   isStudioFrameHello,
+  isStudioProjectImportUpload,
   STUDIO_FRAME_PROTOCOL_VERSION,
   type StudioCommandApplyOutcome,
   type StudioCommandApplyRequest,
@@ -216,6 +217,15 @@ const serviceCalls: Record<StudioFrameServiceName, ServiceCall> = {
   reloadProject: (services) => services.reloadProject(),
   saveWorkspace: (services, [layout]) =>
     services.saveWorkspace ? services.saveWorkspace(layout) : Promise.resolve({ status: 'unavailable' } as const),
+  // The frame is not trusted to send an upload of the right shape; the server checks the bytes.
+  uploadProjectImport: (services, [upload]) => {
+    if (!services.uploadProjectImport) {
+      return Promise.reject(new Error('This project cannot keep imported files'));
+    }
+    return isStudioProjectImportUpload(upload)
+      ? services.uploadProjectImport(upload)
+      : Promise.reject(new Error('Invalid project import'));
+  },
 };
 
 export interface FrameEngineOptions {

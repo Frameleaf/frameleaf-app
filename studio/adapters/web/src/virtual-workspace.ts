@@ -133,6 +133,36 @@ export class VirtualWorkspace {
     }
   }
 
+  /** Names of the entries directly under a directory, or an empty list when there is none. */
+  list(path: readonly string[]): Array<{ name: string; kind: 'file' | 'directory' }> {
+    try {
+      let node: Node = this.root
+      for (const segment of path) {
+        const next: Node | undefined = node.kind === 'directory' ? node.children.get(segment) : undefined
+        if (!next) return []
+        node = next
+      }
+      return node.kind === 'directory'
+        ? [...node.children.values()].map((child) => ({ name: child.name, kind: child.kind }))
+        : []
+    } catch {
+      return []
+    }
+  }
+
+  /** A file's bytes as a `File`, fetching a lazy one; null when there is no such file. */
+  async readFile(path: readonly string[]): Promise<File | null> {
+    try {
+      const { parent, name } = this.parentOf(path, false)
+      const node = parent.children.get(name)
+      if (!node || node.kind !== 'file') return null
+      const blob = await this.materialize(node)
+      return new File([blob], name, { type: node.type || blob.type, lastModified: node.lastModified })
+    } catch {
+      return null
+    }
+  }
+
   /** Drop every node and listener; later handle calls fail as a revoked permission would. */
   dispose(): void {
     this.disposed = true
