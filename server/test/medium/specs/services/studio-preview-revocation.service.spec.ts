@@ -192,7 +192,7 @@ it.each([
 
   const { preview: pending } = await request(1);
   const operation = await operations.getForOwner(pending.operationId!, recipient.id);
-  if (boundary === 'cancel renewal' || boundary === 'project revoke renewal' || boundary === 'quota renewal') {
+  if (['cancel renewal', 'project revoke renewal', 'quota renewal'].includes(boundary)) {
     const observed = (await frames.getForOwner(pending.id, recipient.id))!;
     const refresh = async () => {
       const renewed = await request(1);
