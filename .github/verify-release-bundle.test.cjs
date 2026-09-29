@@ -22,7 +22,10 @@ test("NAS packaging accepts one complete version-matched release bundle", async 
       recursive: true,
     });
     await fs.mkdir(path.join(root, "packaging/nas"), { recursive: true });
-    await fs.writeFile(path.join(root, "packaging/nas/certified-sources.json"), '{"officialImmich":[],"priorFrameleaf":[]}');
+    await fs.writeFile(
+      path.join(root, "packaging/nas/certified-sources.json"),
+      '{"officialImmich":[],"priorFrameleaf":[]}',
+    );
     for (const name of INSTALL_FILES)
       await fs.writeFile(
         path.join(root, "docker", name),
