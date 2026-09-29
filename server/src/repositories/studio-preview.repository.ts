@@ -1,7 +1,8 @@
 import { Injectable } from '@nestjs/common';
-import { Insertable, Kysely, Selectable } from 'kysely';
+import { Insertable, Kysely, Selectable, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
-import { StudioPreviewStatus } from 'src/enum.js';
+import { AlbumUserRole, StudioPreviewStatus } from 'src/enum.js';
+import { DerivativePrivacyRepository } from 'src/repositories/derivative-privacy.repository.js';
 import { DB } from 'src/schema/index.js';
 import { StudioPreviewFrameTable } from 'src/schema/tables/studio-preview.table.js';
 
@@ -27,7 +28,10 @@ export type StudioPreviewFrameCreate = Omit<
  */
 @Injectable()
 export class StudioPreviewRepository {
-  constructor(@InjectKysely() private db: Kysely<DB>) {}
+  constructor(
+    @InjectKysely() private db: Kysely<DB>,
+    private privacy: DerivativePrivacyRepository,
+  ) {}
 
   /**
    * Record a request, or return the existing row for the same key.
@@ -198,28 +202,126 @@ export class StudioPreviewRepository {
       readyAt: Date;
       expiresAt: Date;
     },
+    authorization: Pick<StudioPreviewFrame, 'ownerId' | 'operationId' | 'grantToken' | 'grantSessionId'> & {
+      assetIds: readonly string[];
+    },
   ): Promise<boolean> {
-    const result = await this.db
-      .updateTable('studio_preview_frame')
-      .set({
-        status: StudioPreviewStatus.Ready,
-        framePath: frame.framePath,
-        contentType: frame.contentType,
-        sizeInBytes: frame.sizeInBytes as never,
-        frameChecksum: frame.frameChecksum,
-        framePts: frame.framePts as never,
-        framePtsTimebase: frame.framePtsTimebase,
-        toneMapped: frame.toneMapped,
-        readyAt: frame.readyAt,
-        expiresAt: frame.expiresAt,
-        errorCode: null,
-      })
-      .where('id', '=', id)
-      .where('revisionDigest', '=', revisionDigest)
-      .where('status', 'in', [StudioPreviewStatus.Pending, StudioPreviewStatus.Rendering])
-      .executeTakeFirst();
+    return this.db.transaction().execute(async (tx) => {
+      const current = await tx
+        .selectFrom('studio_preview_frame')
+        .select(['id', 'projectId', 'projectRevision'])
+        .where('id', '=', id)
+        .where('ownerId', '=', authorization.ownerId)
+        .where('operationId', authorization.operationId === null ? 'is' : '=', authorization.operationId)
+        .where(sql<boolean>`"grantToken" IS NOT DISTINCT FROM ${authorization.grantToken}`)
+        .where(sql<boolean>`"grantSessionId" IS NOT DISTINCT FROM ${authorization.grantSessionId}`)
+        .where('revisionDigest', '=', revisionDigest)
+        .where('status', 'in', [StudioPreviewStatus.Pending, StudioPreviewStatus.Rendering])
+        .forUpdate()
+        .executeTakeFirst();
+      if (!current) {
+        return false;
+      }
 
-    return Number(result.numUpdatedRows) > 0;
+      // Match getReadableRevision, holding the account, project and review membership through commit.
+      const owner = await tx
+        .selectFrom('user')
+        .select('id')
+        .where('id', '=', authorization.ownerId)
+        .where('deletedAt', 'is', null)
+        .forShare()
+        .executeTakeFirst();
+      const project = await tx
+        .selectFrom('studio_project')
+        .select(['ownerId', 'spaceId', 'archivedAt'])
+        .where('id', '=', current.projectId)
+        .where('currentRevision', '=', current.projectRevision ?? -1)
+        .where('deletedAt', 'is', null)
+        .forShare()
+        .executeTakeFirst();
+      let readable = !!owner && project?.ownerId === authorization.ownerId;
+      if (owner && project && !readable && !project.archivedAt && project.spaceId) {
+        readable = !!(await tx
+          .selectFrom('album_user')
+          .innerJoin('album', 'album.id', 'album_user.albumId')
+          .select('album.id')
+          .where('album.id', '=', project.spaceId)
+          .where('album.deletedAt', 'is', null)
+          .where('album_user.userId', '=', authorization.ownerId)
+          .where('album_user.role', 'in', [AlbumUserRole.Owner, AlbumUserRole.Editor, AlbumUserRole.Viewer])
+          .forShare()
+          .executeTakeFirst());
+      }
+
+      // The signed preview grant names these sources. As for exports, source and granting rows
+      // stay share-locked until publication commits, so revocation cannot land between checks.
+      const ids = [...new Set(authorization.assetIds)];
+      const sources = await this.privacy.lockSources(tx, ids);
+      const foreign = [...sources.values()].filter((source) => source.ownerId !== authorization.ownerId);
+      const shared = await this.privacy.lockSharedAccess(tx, authorization.ownerId, foreign);
+      if (
+        !readable ||
+        ids.some((id) => {
+          const source = sources.get(id);
+          return (
+            !source || source.deleted || source.offline || (source.ownerId !== authorization.ownerId && !shared.has(id))
+          );
+        })
+      ) {
+        await tx
+          .updateTable('studio_preview_frame')
+          .set({ status: StudioPreviewStatus.Evicted, framePath: null, frameChecksum: null, sizeInBytes: null })
+          .where('id', '=', id)
+          .execute();
+        return false;
+      }
+
+      const result = await tx
+        .updateTable('studio_preview_frame')
+        .set({
+          status: StudioPreviewStatus.Ready,
+          framePath: frame.framePath,
+          contentType: frame.contentType,
+          sizeInBytes: frame.sizeInBytes as never,
+          frameChecksum: frame.frameChecksum,
+          framePts: frame.framePts as never,
+          framePtsTimebase: frame.framePtsTimebase,
+          toneMapped: frame.toneMapped,
+          readyAt: frame.readyAt,
+          expiresAt: frame.expiresAt,
+          errorCode: null,
+        })
+        .where('id', '=', id)
+        .where('revisionDigest', '=', revisionDigest)
+        .where('status', 'in', [StudioPreviewStatus.Pending, StudioPreviewStatus.Rendering])
+        .executeTakeFirst();
+
+      return Number(result.numUpdatedRows) > 0;
+    });
+  }
+
+  /** A late refusal may discard only its observed binding, never a renewed request or result. */
+  async evictObserved(frame: StudioPreviewFrame, removeFiles: () => Promise<void>): Promise<boolean> {
+    return this.db.transaction().execute(async (tx) => {
+      const evicted = await tx
+        .updateTable('studio_preview_frame')
+        .set({ status: StudioPreviewStatus.Evicted, framePath: null, frameChecksum: null, sizeInBytes: null })
+        .where('id', '=', frame.id)
+        .where('ownerId', '=', frame.ownerId)
+        .where('revisionDigest', '=', frame.revisionDigest)
+        .where(sql<boolean>`"operationId" IS NOT DISTINCT FROM ${frame.operationId}::uuid`)
+        .where(sql<boolean>`"grantToken" IS NOT DISTINCT FROM ${frame.grantToken}`)
+        .where(sql<boolean>`"grantSessionId" IS NOT DISTINCT FROM ${frame.grantSessionId}`)
+        .where('status', '!=', StudioPreviewStatus.Ready)
+        .returning('id')
+        .executeTakeFirst();
+      if (!evicted) {
+        return false;
+      }
+      // Keep refresh/revival blocked until this binding's files are removed.
+      await removeFiles();
+      return true;
+    });
   }
 
   async markFailed(id: string, errorCode: string): Promise<boolean> {
