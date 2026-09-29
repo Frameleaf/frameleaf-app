@@ -109,6 +109,15 @@ test.describe('Album', () => {
     await expect(photoTile).toBeVisible();
     await expect(videoTile).toBeVisible();
 
+    // Personal sort belongs to this signed-in viewer, even when another member uses the same device.
+    await page.getByRole('combobox', { name: 'Sort assets' }).selectOption('filename');
+    await utils.setAuthCookies(context, member.accessToken);
+    await page.reload();
+    await expect(page.getByRole('combobox', { name: 'Sort assets' })).toHaveValue('captured-asc');
+    await utils.setAuthCookies(context, admin.accessToken);
+    await page.reload();
+    await expect(page.getByRole('combobox', { name: 'Sort assets' })).toHaveValue('filename');
+
     const memberContext = await browser.newContext();
     try {
       await utils.setAuthCookies(memberContext, member.accessToken);
