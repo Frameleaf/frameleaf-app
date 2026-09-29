@@ -56,6 +56,8 @@ jobs:
             # the server unit tests' byte-level clip checks (FL-162) run real ffmpeg and ffprobe
             "$RUNNER_TEMP/mise" bin-paths github:jellyfin/jellyfin-ffmpeg
           } >> "$GITHUB_PATH"
+      - name: Check local Studio source preflight and exact frame timestamps
+        run: node --test scripts/frameleaf-studio-preflight.test.mjs
       - name: Build SDK and core plugin WASM
         run: |
           pnpm --filter @immich/sdk build
