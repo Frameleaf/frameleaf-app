@@ -1,4 +1,4 @@
-import { DecodeRefusal, StudioRestoredVersionUnavailable } from '@immich/sdk';
+import { DecodeRefusal, StudioProjectImportKind, StudioRestoredVersionUnavailable } from '@immich/sdk';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import StudioHost from '$lib/components/frameleaf/StudioHost.svelte';
@@ -18,6 +18,7 @@ import {
 } from '$lib/frameleaf/studio/host-contract';
 import { idleStudioPreviewView, type StudioPreviewView } from '$lib/frameleaf/studio/preview';
 import { offStudioStreamView, type StudioStreamView } from '$lib/frameleaf/studio/preview-stream';
+import { toStudioProjectImport } from '$lib/frameleaf/studio/project-imports';
 import { rational } from '$lib/frameleaf/studio/rational-time';
 
 /**
@@ -56,9 +57,22 @@ const capable = {
 
 const auth = { userId: 'user-1', name: 'Taylor', avatarUrl: null, locale: 'en' };
 
+/** A file kept with the project, mapped exactly as the route maps the server's answer. */
+const keptImport = toStudioProjectImport(project.id, {
+  id: '4b0f4b2e-5d3a-4c55-9e0e-6b9f4c7d8e01',
+  kind: StudioProjectImportKind.Audio,
+  contentType: 'audio/webm',
+  fileName: 'Voiceover 1.webm',
+  sizeBytes: 1024,
+  checksum: 'a'.repeat(64),
+  externalReferences: null,
+  createdAt: '2026-09-29T00:00:00.000Z',
+});
+
 const baseProps = () => ({
   project,
   assets: [],
+  projectImports: [keptImport],
   handoffAssetIds: [],
   auth,
   capabilities: capable,
@@ -357,6 +371,9 @@ describe('Studio route, engine present', () => {
       // FL-96: the preview reaches the engine as data. There is still no transport here.
       'preview',
       'project',
+      // FL-103 / FL-105: files kept with the project, as data; each url is a plain same-origin path
+      // the owner's session cookie authorizes, with no key, slug or token (checked below).
+      'projectImports',
       // FL-42: what qualified render workers verified, for the export sheet (no credentials).
       'renderEvidence',
       // FL-96: whether the host shows the server preview itself; a boolean, never the stream.
@@ -368,6 +385,14 @@ describe('Studio route, engine present', () => {
       'workspace',
     ]);
     expect(Object.values(context.strings ?? {}).every((value) => typeof value === 'string')).toBe(true);
+    expect(context.projectImports).toHaveLength(1);
+    for (const item of context.projectImports ?? []) {
+      expect(item.url).not.toMatch(/token|apiKey|key=|slug=|Authorization|baseUrl/i);
+      const url = new URL(item.url, location.origin);
+      expect(url.origin).toBe(location.origin);
+      expect(url.search).toBe('');
+      expect(url.pathname).toMatch(/\/studio\/projects\/[\w-]+\/imports\/[\da-f-]+\/file$/);
+    }
     expect(Object.keys(passedServices).sort()).toEqual([
       'navigate',
       'notify',
