@@ -8,7 +8,11 @@ test.describe('Account preferences (FL-144)', () => {
     await utils.resetDatabase();
   });
 
-  test('keeps a self draft through an admin conflict without bleeding into the next account', async ({ browser, context, page }) => {
+  test('keeps a self draft through an admin conflict without bleeding into the next account', async ({
+    browser,
+    context,
+    page,
+  }) => {
     const admin = await utils.adminSetup();
     const alice = await utils.userSetup(admin.accessToken, {
       name: 'Preference Owner',
@@ -41,17 +45,27 @@ test.describe('Account preferences (FL-144)', () => {
       await utils.setAuthCookies(adminContext, admin.accessToken);
       const adminPage = await adminContext.newPage();
       await adminPage.goto(`/user-settings?area=users&section=accounts&user=${alice.userId}`);
-      await adminPage.getByRole('navigation', { name: 'Detail sections' }).getByRole('button', { name: 'Features' }).click();
+      await adminPage
+        .getByRole('navigation', { name: 'Detail sections' })
+        .getByRole('button', { name: 'Features' })
+        .click();
       const adminForm = adminPage.locator('form.account-preferences');
       await expect(adminForm).toBeVisible();
       await adminForm.getByLabel('Minimum faces').fill(String(minimumFaces));
       await adminForm.getByRole('button', { name: 'Save preferences' }).click();
-      await expect.poll(async () => (await getMyPreferences(aliceHeaders)).people.minimumFaces).toBe(minimumFaces);
+      await expect
+        .poll(async () => {
+          const preferences = await getMyPreferences(aliceHeaders);
+          return preferences.people.minimumFaces;
+        })
+        .toBe(minimumFaces);
     } finally {
       await adminContext.close();
     }
     await page.getByRole('button', { name: 'Save', exact: true }).click();
-    await expect(page.getByText('Your preferences changed elsewhere. Review the latest values before saving.')).toBeVisible();
+    await expect(
+      page.getByText('Your preferences changed elsewhere. Review the latest values before saving.'),
+    ).toBeVisible();
     await expect(folders).toHaveAttribute('aria-checked', 'false');
     const afterConflict = await getMyPreferences(aliceHeaders);
     expect(afterConflict.folders.enabled).toBe(true);
@@ -62,8 +76,11 @@ test.describe('Account preferences (FL-144)', () => {
     page.once('dialog', (dialog) => void dialog.accept());
     await page.reload();
     await expect(folders).toHaveAttribute('aria-checked', 'true');
-    await expect(page.getByText('Your preferences changed elsewhere. Review the latest values before saving.')).toHaveCount(0);
-    expect((await getMyPreferences({ headers: asBearerAuth(bob.accessToken) })).folders.enabled).toBe(true);
+    await expect(
+      page.getByText('Your preferences changed elsewhere. Review the latest values before saving.'),
+    ).toHaveCount(0);
+    const bobPreferences = await getMyPreferences({ headers: asBearerAuth(bob.accessToken) });
+    expect(bobPreferences.folders.enabled).toBe(true);
 
     await utils.setAuthCookies(context, alice.accessToken);
     await page.reload();
@@ -71,7 +88,12 @@ test.describe('Account preferences (FL-144)', () => {
     await expect(folders).toHaveAttribute('aria-checked', 'true');
     await folders.click();
     await page.getByRole('button', { name: 'Save', exact: true }).click();
-    await expect.poll(async () => (await getMyPreferences(aliceHeaders)).folders.enabled).toBe(false);
+    await expect
+      .poll(async () => {
+        const preferences = await getMyPreferences(aliceHeaders);
+        return preferences.folders.enabled;
+      })
+      .toBe(false);
     await expect(folders).toHaveAttribute('aria-checked', 'false');
   });
 });
