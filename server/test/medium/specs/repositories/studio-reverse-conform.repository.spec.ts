@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -30,6 +30,11 @@ describe('local source reverse executor', () => {
   it('reverses actual decoded pictures and stereo samples without changing their count or cadence', async () => {
     const input = join(folder, 'input.mkv');
     const output = join(folder, 'output.mkv');
+    const metadata = join(folder, 'chapters.ffmeta');
+    await writeFile(
+      metadata,
+      ';FFMETADATA1\n[CHAPTER]\nTIMEBASE=1/1000\nSTART=0\nEND=333\ntitle=Forward opening\n',
+    );
     await ffmpeg([
       '-f',
       'lavfi',
@@ -39,6 +44,16 @@ describe('local source reverse executor', () => {
       'lavfi',
       '-i',
       'aevalsrc=0.1*sin(2*PI*100*t)|0.2*sin(2*PI*200*t):s=48000:d=1',
+      '-f',
+      'ffmetadata',
+      '-i',
+      metadata,
+      '-map',
+      '0:v:0',
+      '-map',
+      '1:a:0',
+      '-map_chapters',
+      '2',
       // Encoder flags alone do not stamp the lavfi frames' primaries/transfer into FFV1.
       '-vf',
       'setparams=range=limited:color_primaries=bt709:color_trc=bt709:colorspace=bt709',
@@ -113,6 +128,19 @@ describe('local source reverse executor', () => {
         .update(await readFile(output))
         .digest('hex'),
     ).toBe(masterChecksum);
+    // Forward chapter timestamps must not label a different picture in either reversed output.
+    // Probe the original too, so an absent fixture chapter cannot make this regression pass.
+    for (const path of [input, output, preview]) {
+      const { stdout } = await execute('ffprobe', ['-v', 'error', '-show_chapters', '-of', 'json', path]);
+      const { chapters } = JSON.parse(stdout);
+      if (path === input) {
+        expect(chapters).toEqual([
+          expect.objectContaining({ start_time: '0.000000', end_time: '0.333000', tags: { title: 'Forward opening' } }),
+        ]);
+      } else {
+        expect(chapters).toEqual([]);
+      }
+    }
     // Compression may change pixels, but each decoded preview frame must still match its reversed master frame.
     const videoPreview = (
       await ffmpeg(['-i', preview, '-map', '0:v:0', '-f', 'rawvideo', '-pix_fmt', 'yuv420p', 'pipe:1'])
