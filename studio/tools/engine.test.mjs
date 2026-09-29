@@ -139,7 +139,12 @@ test('runtime policy admits exactly the owner-approved rows and keeps everything
     await writeFile(path.join(root, 'rights-approval.json'), JSON.stringify(approval));
     await writeResourcePolicy(root, engine);
     actual = await policyOf();
-    assert.ok(Object.values(actual).every((entry) => entry.localRuntime === 'allowed' && /^[a-f0-9]{64}$/.test(entry.approvalSha256)));
+    // Every row, including runtime:onnx-cdn approved again on 2026-09-29, except the Whisper runtime,
+    // which changed again (back to transformers.js 3.8.1) and waits for the owner.
+    for (const [id, entry] of Object.entries(actual)) {
+      if (id === 'runtime:whisper-transformers') assert.equal(entry.localRuntime, 'blocked', id);
+      else assert.ok(entry.localRuntime === 'allowed' && /^[a-f0-9]{64}$/.test(entry.approvalSha256), id);
+    }
     assert.ok(Object.values(actual).every((entry) => entry.sha256 === null));
     assert.deepEqual(actual['model:walterlow/RIFE_fp32_timestep'], {
       localRuntime: 'allowed',
@@ -157,8 +162,13 @@ test('runtime policy admits exactly the owner-approved rows and keeps everything
       'model:walterlow/RIFE_fp32_timestep',
       'https://huggingface.co/walterlow/RIFE_fp32_timestep/resolve/ee09066f9822f8b28b8477a1b4cc30f19d607590/RIFE_fp32_timestep.onnx',
       'https://huggingface.co/spaces/Supertone/supertonic-3/resolve/main/assets/onnx/vocoder.onnx',
-      'https://esm.sh/@huggingface/transformers@3.8.1?bundle',
     ]) assert.equal(runtime.canUseResource(id), true, id);
+    // Parakeet, RIFE and Supertonic run on the re-approved ONNX Runtime; Whisper waits for its row; the old CDN
+    // locators are nobody's approval any more.
+    assert.equal(runtime.canUseResource('runtime:onnx-cdn'), true);
+    assert.equal(runtime.canUseResource('runtime:whisper-transformers'), false);
+    assert.equal(runtime.canUseResource('https://esm.sh/@huggingface/transformers@3.8.1?bundle'), false);
+    assert.equal(runtime.canUseResource('https://cdn.jsdelivr.net/npm/onnxruntime-web@1.26.0-dev.20260410-5e55544225/dist/ort-wasm-simd-threaded.jsep.wasm'), false);
     for (const id of [
       'font:Not A Reviewed Font',
       'model:unknown/weights',
@@ -167,7 +177,6 @@ test('runtime policy admits exactly the owner-approved rows and keeps everything
       'https://user:pass@huggingface.co/walterlow/RIFE_fp32_timestep/resolve/ee09066f9822f8b28b8477a1b4cc30f19d607590/a.onnx',
       'http://huggingface.co/walterlow/RIFE_fp32_timestep/resolve/ee09066f9822f8b28b8477a1b4cc30f19d607590/a.onnx',
       'https://huggingface.co.evil.test/walterlow/RIFE_fp32_timestep/resolve/ee09066f9822f8b28b8477a1b4cc30f19d607590/a.onnx',
-      'https://esm.sh/@huggingface/transformers@3.8.1?bundle&x=1',
       'https://huggingface.co/unapproved/resolve/main/model.onnx',
       'https://huggingface.co/walterlow/RIFE_fp32_timestep-evil/resolve/ee09066f9822f8b28b8477a1b4cc30f19d607590/a.onnx',
       'https://huggingface.co/spaces/Supertone/supertonic-3/resolve/main/assets-evil/x.onnx',
@@ -191,6 +200,12 @@ test('runtime policy admits exactly the owner-approved rows and keeps everything
     assert.throws(() => runtime.approvedRevision('font:Inter'), /FRAMELEAF_RESOURCE_BLOCKED/);
     // No per-file byte digest is recorded, so byte verification still fails closed.
     await assert.rejects(runtime.verifyResourceBytes('font:Inter', new Uint8Array([1])), /FRAMELEAF_RESOURCE_BLOCKED/);
+
+    // A re-approval must say where it is recorded.
+    const unsourced = structuredClone(approval);
+    delete unsourced.resources.find(({ id }) => id === 'runtime:onnx-cdn').source;
+    await writeFile(path.join(root, 'rights-approval.json'), JSON.stringify(unsourced));
+    await assert.rejects(writeResourcePolicy(root, path.join(root, 'engine-unsourced')), /must say where its own approval is recorded/);
 
     // A use the owner withheld, or a row changed after approval, stays blocked.
     const withheld = structuredClone(approval);

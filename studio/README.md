@@ -148,9 +148,20 @@ approved commit; the Kokoro voice files, whose rows name `main`, are therefore r
 Kokoro model's approved commit. The Supertonic Space is approved at a branch
 (`resolve/main/assets`) and loads from it. Browser caches keyed by the original `main` URLs
 (kokoro-js voices, transformers.js pre-flight) are not cleared if a pinned commit later changes;
-approving a new revision should clear them. The Whisper
-worker's ONNX WebAssembly files come from `cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1`,
-which is not yet a reviewed row. No per-file byte digests are recorded yet, so
+approving a new revision should clear them. Patch 0029 (owner decisions, 2026-09-29) removes every runtime CDN. The Whisper worker imports
+transformers.js 3.8.1, the version Freecut pinned, from the lockfile-pinned install instead of
+esm.sh: on 4.1.0 real whisper-tiny output places every word about a word late
+(`tools/fixtures/whisper-timing.json`). `tools/whisper-timing.test.mjs` fails when the worker's
+transformers.js version differs from the recorded evidence, and with `STUDIO_WHISPER_TIMING=1` it
+downloads the approved model revision and checks every word time and the clip's measured pauses.
+Each ONNX Runtime WebAssembly the engine loads (onnxruntime-web, transformers.js 4.x, and the
+transformers.js 3.8.1 runtime kokoro-js and Whisper share) is emitted into the build from the
+pinned packages and served from the engine's origin (`src/shared/utils/local-ort-assets.ts`). The
+`runtime:onnx-cdn` and `runtime:whisper-transformers` rows name those bundled packages, with byte
+digests of the files served. The owner approved the `runtime:onnx-cdn` row again on 2026-09-29
+(recorded per row in `rights-approval.json`, which may carry its own `approvedOn` and `source` for
+a re-approval), so Parakeet, RIFE and Supertonic run; the Whisper row changed again with the move
+to 3.8.1 and Whisper stays blocked until the owner approves it. The engine policy records no per-file byte digests yet, so
 `verifyResourceBytes` still fails closed. `tools/engine.test.mjs` covers approval, withheld uses,
 changed rows, URL lookalikes, voice precedence and revision pinning;
 `tools/resource-admission.browser.mjs` checks every entrypoint's refusal path under an
