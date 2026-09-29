@@ -8,6 +8,7 @@ import {
 import { randomUUID } from 'node:crypto';
 import { basename, join } from 'node:path';
 import { pipeline } from 'node:stream/promises';
+import { isDeepStrictEqual } from 'node:util';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { serverVersion } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
@@ -222,8 +223,41 @@ export class StudioBundleService {
         dto.requestKey,
       );
       if (existing) {
-        // A key names one request. The same key for another project is a client bug, not a replay.
-        if ((existing.snapshot as { projectId?: unknown } | null)?.projectId !== projectId) {
+        // A key names one request, including which sequences and media travel in the bundle.
+        const snapshot = existing.snapshot as Partial<StudioBundleExportSnapshot> | null;
+        const requestedSequenceIds = dto.sequenceIds ? [...new Set(dto.sequenceIds)].sort() : null;
+        const previousSequenceIds = snapshot?.requestedSequenceIds ?? snapshot?.sequenceIds;
+        let sameSelection = isDeepStrictEqual(
+          previousSequenceIds ? [...new Set(previousSequenceIds)].sort() : null,
+          requestedSequenceIds,
+        );
+        if (
+          !sameSelection &&
+          snapshot &&
+          snapshot.requestedSequenceIds === undefined &&
+          snapshot.sequenceIds === null &&
+          snapshot.projectId === projectId &&
+          requestedSequenceIds &&
+          typeof snapshot.revision === 'number'
+        ) {
+          // Older jobs kept no record of an explicit choice that covered every sequence.
+          const revision = await this.projects.getRevision(projectId, snapshot.revision);
+          if (revision?.digest === snapshot.digest) {
+            const checked = checkStudioEnvelope(revision.envelope);
+            const selected = checked.ok ? selectStudioSequences(checked.envelope.graph, requestedSequenceIds) : null;
+            sameSelection =
+              checked.ok &&
+              studioEnvelopeDigest(checked.envelope) === snapshot.digest &&
+              selected?.ok === true &&
+              selected.sequenceIds === null;
+          }
+        }
+        if (
+          !snapshot ||
+          snapshot.projectId !== projectId ||
+          snapshot.includeMedia !== (dto.includeMedia === true) ||
+          !sameSelection
+        ) {
           throw new ConflictException('This request key was already used for another export');
         }
         return mapOperation(existing);
@@ -277,6 +311,7 @@ export class StudioBundleService {
       includeMedia: dto.includeMedia === true,
       embed: embed.values().toArray(),
       sequenceIds,
+      requestedSequenceIds: dto.sequenceIds ? [...new Set(dto.sequenceIds)].sort() : null,
       requestKey: dto.requestKey ?? null,
     };
 
@@ -454,7 +489,13 @@ export class StudioBundleService {
         dto.requestKey,
       );
       if (existing) {
-        if ((existing.snapshot as { uploadId?: unknown } | null)?.uploadId !== dto.uploadId) {
+        const snapshot = existing.snapshot as Partial<StudioBundleImportSnapshot> | null;
+        if (
+          !snapshot ||
+          snapshot.uploadId !== dto.uploadId ||
+          (snapshot.name ?? null) !== (dto.name ?? null) ||
+          !isDeepStrictEqual(snapshot.mapping ?? {}, dto.mapping ?? {})
+        ) {
           throw new ConflictException('This request key was already used for another import');
         }
         return mapOperation(existing);
