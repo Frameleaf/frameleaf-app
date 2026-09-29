@@ -51,7 +51,7 @@
     if (next) {
       event.preventDefault();
       tab = next;
-      document.getElementById(`${tabId}-${next}`)?.focus();
+      document.querySelector<HTMLElement>(`#${tabId}-${next}`)?.focus();
     }
   };
   let detail = $state<AssetResponseDto | null>(null);
