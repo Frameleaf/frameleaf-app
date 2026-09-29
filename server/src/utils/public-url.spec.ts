@@ -36,7 +36,7 @@ const candidate = (
   };
 };
 
-const deps = ({ linked = true, candidates = [] as FrameleafRemoteConnection[] } = {}) => {
+const deps = ({ linked = true, candidates = [] as FrameleafRemoteConnection[], relayConnected = true } = {}) => {
   const metadata: Record<string, unknown> = {
     [SystemMetadataKey.FrameleafCloudLink]: linked
       ? { status: 'linked', instanceId: 'instance-1', cloudUrl: CLOUD, services: { publicUrl: RELAY } }
@@ -45,7 +45,7 @@ const deps = ({ linked = true, candidates = [] as FrameleafRemoteConnection[] } 
       status: 'ready',
       updatedAt: new Date().toISOString(),
       names: { instanceId: 'instance-1', names: { relay: 'r.lbl.frameleaf.test' } },
-      relay: { connected: true },
+      relay: { connected: relayConnected },
       candidates,
     },
   };
@@ -86,6 +86,18 @@ describe('resolveShareBaseUrl (FL-83 AL-30b)', () => {
     await expect(
       resolveShareBaseUrl({ externalDomain: '' }, deps({ candidates: published }), remote(verifiedCustom)),
     ).resolves.toBe(DIRECT);
+  });
+
+  it('uses a published IPv6 direct address when no WAN mapping or relay is available', async () => {
+    const ipv6 = 'https://2001-db8--1.lbl.frameleaf.test:2443';
+    await expect(
+      resolveShareBaseUrl(
+        { externalDomain: '' },
+        deps({ candidates: [candidate('ipv6', ipv6, { ipv6: true })], relayConnected: false }),
+        remote(),
+        'https://attacker.example',
+      ),
+    ).resolves.toBe(ipv6);
   });
 
   it('uses the verified custom hostname when "Use my domain" is chosen', async () => {

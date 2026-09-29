@@ -110,8 +110,8 @@ export const publishedLocalOrigins = async (remote: RemoteSettings, deps: Public
  *    the verified custom hostname (FL-165, the CNAME a person pointed at this server) or one of the
  *    remote-access addresses it currently publishes. The Host header is never trusted on its own.
  * 3. Otherwise the verified custom hostname when "Use my domain" is chosen, then the
- *    direct-connection address (the WAN name Frameleaf Cloud's probe reached, else the published
- *    one), then the address Frameleaf Cloud published for the link if it is still in the current
+ *    direct-connection address (the WAN name Frameleaf Cloud's probe reached, else a published WAN
+ *    or IPv6 name), then the address Frameleaf Cloud published for the link if it is still in the current
  *    connection list.
  *
  * `undefined` when the server knows none of these; the share then carries no link, never one
@@ -144,7 +144,9 @@ export const resolveShareBaseUrl = async (
   if (remote.publicUrl === 'custom' && customOrigin && remoteOrigins.includes(customOrigin)) {
     return customOrigin;
   }
-  const direct = connections.filter((connection) => connection.kind === 'wan' && !connection.custom);
+  const direct = connections.filter(
+    (connection) => (connection.kind === 'wan' || connection.kind === 'ipv6') && !connection.custom,
+  );
   const directUri = (direct.find((connection) => connection.verified) ?? direct[0])?.uri;
   const published = httpsOrigin(publicUrl);
   return httpsOrigin(directUri) ?? (published && known.has(published) ? published : undefined);

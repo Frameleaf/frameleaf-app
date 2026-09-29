@@ -378,6 +378,27 @@ describe('/item-shares', () => {
         .expect(200);
       expect(disconnected.body.link).toBe(`${direct}${path}`);
 
+      const ipv6 = 'https://2001-db8--1.lbl.frameleaf.test:2443';
+      state.candidates = [{ ...candidate(ipv6), kind: 'ipv6', ipv6: true, verified: false }];
+      state.updatedAt = new Date().toISOString();
+      await putMetadata('frameleaf-remote-access', state);
+      const ipv6Asset = await utils.createAsset(owner.accessToken);
+      const ipv6Share = await request(app)
+        .post('/item-shares')
+        .set('Authorization', auth(owner))
+        .set('Host', 'attacker.example')
+        .send({ assetIds: [ipv6Asset.id], userIds: [sam.userId] })
+        .expect(201);
+      expect(ipv6Share.body.link).toBe(`${ipv6}${path}`);
+      const ipv6Notifications = await request(app).get('/notifications').set('Authorization', auth(sam)).expect(200);
+      expect(ipv6Notifications.body).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            data: JSON.stringify({ ownerId: owner.userId, count: 1, link: `${ipv6}${path}` }),
+          }),
+        ]),
+      );
+
       state.candidates = published.filter((entry) => entry.relay);
       state.updatedAt = new Date().toISOString();
       await putMetadata('frameleaf-remote-access', state);
