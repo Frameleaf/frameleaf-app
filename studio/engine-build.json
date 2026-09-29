@@ -69,7 +69,12 @@
       "path": "patches/0013-linear-dodge-float.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "9ad71bba349f591c8da5479c3be172be1fb13a13aac4e958ecb752fa66ad8025"
+    },
+    {
+      "path": "patches/0014-effects-float-transport.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "18d8d00da4eda7cc1d2760c7300ed9ac87d4a39271d4c2177be0aa2820d5b67c"
     }
   ],
-  "sourceSha256": "7bfa7718774b9bde8ebff0d927f4304b1db09235d6ca6b8510a021980c9bfb52"
+  "sourceSha256": "2a4b831e24f31bf36f29d33233ff6255bc3895d03c4476441176142d95246790"
 }

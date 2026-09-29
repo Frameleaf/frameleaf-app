@@ -20,12 +20,15 @@ try {
     if (!navigator.gpu) throw new Error('WebGPU unavailable; compositor float regression cannot run');
     const adapter = await navigator.gpu.requestAdapter();
     if (!adapter) throw new Error('No WebGPU adapter; compositor float regression cannot run');
-    const device = await adapter.requestDevice();
+    const { EffectsPipeline } = await import('/src/infrastructure/gpu-effects/effects-pipeline.ts');
+    const device = await EffectsPipeline.requestCachedDevice();
+    if (!device) throw new Error('No effects GPU device');
     const { CompositorPipeline, DEFAULT_LAYER_PARAMS } =
       await import('/src/infrastructure/gpu-compositor/compositor-pipeline.ts');
     const textures = [];
     const buffers = [];
     let pipeline;
+    let effectsPipeline;
     let frame;
     try {
       device.pushErrorScope('validation');
@@ -112,11 +115,84 @@ try {
         blendEncoder.copyTextureToBuffer({ texture: blended.texture }, { buffer, bytesPerRow: 256 }, [4, 1]);
         device.queue.submit([blendEncoder.finish()]);
       }
+      effectsPipeline = await EffectsPipeline.create();
+      if (!effectsPipeline) throw new Error('Effects pipeline unavailable');
+      const effect = (type, params) => ({ id: type, type, name: type, enabled: true, params });
+      const identityEffects = [
+        effect('gpu-vignette', { amount: 0 }),
+        effect('gpu-pixel-sort-hq', { low: 1, high: 0 }),
+        effect('gpu-vignette', { amount: 0 }),
+      ];
+      const effectTexture = (format, values) => {
+        const value = device.createTexture({
+          size: [2, 2], format,
+          usage: GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST |
+            GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.RENDER_ATTACHMENT,
+        });
+        textures.push(value);
+        if (values) device.queue.writeTexture(
+          { texture: value },
+          format === 'rgba16float' ? new Float16Array(values) : new Uint8Array(values),
+          { bytesPerRow: format === 'rgba16float' ? 16 : 8 }, [2, 2],
+        );
+        return value;
+      };
+      const effectReadbacks = [];
+      const readEffect = (name, texture) => {
+        const buffer = device.createBuffer({ size: 512, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
+        buffers.push(buffer);
+        effectReadbacks.push({ name, buffer, format: texture.format });
+        const encoder = device.createCommandEncoder();
+        encoder.copyTextureToBuffer({ texture }, { buffer, bytesPerRow: 256 }, [2, 2]);
+        device.queue.submit([encoder.finish()]);
+      };
+      const runEffects = (name, input, chain, output) => {
+        if (!effectsPipeline.applyTextureEffectsToTexture(input, chain, output, 2, 2)) {
+          throw new Error(`Effects rejected ${name}`);
+        }
+        readEffect(name, output);
+      };
+      const effectInput = effectTexture('rgba16float', [...pixels.slice(0, 12), 1.25, -0.25, 0.0009765625, 0]);
+      const floatOutput = effectTexture('rgba16float');
+      const sdrOutput = effectTexture('rgba8unorm');
+      runEffects('identity', effectInput, identityEffects, floatOutput);
+      // A visible fragment operation followed by compute scatter proves neither pass was skipped.
+      runEffects('active', effectInput, [
+        effect('gpu-vignette', { amount: 0.5, size: 0, softness: 0.5 }),
+        effect('gpu-pixel-sort-hq', { low: -100, high: 100, order: 'descending' }),
+      ], floatOutput);
+      runEffects('sdrExit', effectInput, identityEffects, sdrOutput);
+      runEffects('sdrEntry', sdrOutput, identityEffects, floatOutput);
+      // Same-size format switches must invalidate texture views and effect bind groups.
+      runEffects('legacy', sdrOutput, identityEffects, effectTexture('rgba8unorm'));
+      runEffects('floatAgain', effectInput, identityEffects, floatOutput);
+      runEffects('emptyExit', effectInput, [], sdrOutput);
+      runEffects('emptyEntry', sdrOutput, [], floatOutput);
+      const legacyCanvas = new OffscreenCanvas(2, 2);
+      const legacy2d = legacyCanvas.getContext('2d');
+      legacy2d.fillStyle = 'rgba(128, 64, 32, 0.5)';
+      legacy2d.fillRect(0, 0, 2, 2);
+      const legacyExpected = Array.from(legacy2d.getImageData(0, 0, 2, 2).data);
+      if (!effectsPipeline.applyEffectsToTexture(legacyCanvas, identityEffects, floatOutput)) {
+        throw new Error('External canvas to float effects failed');
+      }
+      readEffect('externalFloat', floatOutput);
+      const effectCanvas = effectsPipeline.applyEffectsToCanvas(legacyCanvas, identityEffects);
+      if (!effectCanvas) throw new Error('Legacy canvas effects failed after float use');
+      const canvasCheck = new OffscreenCanvas(2, 2).getContext('2d');
+      canvasCheck.drawImage(effectCanvas, 0, 0);
+      const legacyActual = Array.from(canvasCheck.getImageData(0, 0, 2, 2).data);
       await device.queue.onSubmittedWorkDone();
       const error = await device.popErrorScope();
       if (error) throw new Error(`Float compositor GPU validation failed: ${error.message}`);
       await Promise.all(buffers.map((buffer) => buffer.mapAsync(GPUMapMode.READ)));
       return {
+        effectPixels: Object.fromEntries(effectReadbacks.map(({ name, buffer, format }) => {
+          const View = format === 'rgba16float' ? Float16Array : Uint8Array;
+          return [name, [0, 256].flatMap((offset) => Array.from(new View(buffer.getMappedRange(), offset, 8)))];
+        })),
+        legacyExpected,
+        legacyActual,
         format: composite.texture.format,
         pixels: Array.from(new Float16Array(readback.getMappedRange(), 0, 16)),
         canvasFormat,
@@ -133,6 +209,7 @@ try {
     } finally {
       frame?.close();
       pipeline?.destroy();
+      effectsPipeline?.destroy();
       for (const texture of textures) texture.destroy();
       for (const buffer of buffers) buffer.destroy();
       device.destroy();
@@ -203,7 +280,32 @@ try {
       }
     }
   }
-  console.log(JSON.stringify({ check: 'compositor float range, Soft Light, mask alpha and SDR output', ...result }));
+  const effectInput = [-0.5, 2, 0.333251953125, 0.5, 2, 4, -1, 1, 0.25, 0.5, 0.75, 1, 1.25, -0.25, 0.0009765625, 0];
+  const quantized = effectInput.map((value) => Math.round(Math.min(1, Math.max(0, value)) * 255));
+  const active = [1, 0, 2, 3].flatMap((pixel) =>
+    effectInput.slice(pixel * 4, pixel * 4 + 4).map((value, channel) => channel === 3 ? value : value * 0.5),
+  );
+  const effectExpected = {
+    identity: effectInput, active, floatAgain: effectInput,
+    sdrExit: quantized, emptyExit: quantized, legacy: quantized,
+    sdrEntry: quantized.map((value) => value / 255),
+    emptyEntry: quantized.map((value) => value / 255),
+    externalFloat: result.legacyExpected.map((value) => value / 255),
+  };
+  for (const [name, expected] of Object.entries(effectExpected)) {
+    for (let i = 0; i < expected.length; i++) {
+      const tolerance = ['sdrExit', 'emptyExit', 'legacy'].includes(name) ? 1
+        : ['identity', 'active', 'floatAgain'].includes(name) ? 0.0001 : 0.003;
+      const actual = result.effectPixels[name][i];
+      assert.ok(Number.isFinite(actual) && Math.abs(actual - expected[i]) <= tolerance,
+        `Effect ${name}, channel ${i}: ${actual} != ${expected[i]}`);
+    }
+  }
+  for (let i = 0; i < result.legacyExpected.length; i++) {
+    assert.ok(Math.abs(result.legacyActual[i] - result.legacyExpected[i]) <= 2,
+      `Legacy effects canvas channel ${i}: alpha representation changed`);
+  }
+  console.log(JSON.stringify({ check: 'compositor and effect float transport, compute scatter, alpha and SDR boundaries', ...result }));
 } finally {
   await browser.close();
 }
