@@ -10,6 +10,22 @@ The provenance ledger was cross-checked against a temporary clean checkout of `w
 
 The engine tooling rejects duplicate keys in its contract JSON and verifies the pinned source identity.
 
+## Local source preflight
+
+The local source preflight (`node scripts/frameleaf-studio-preflight.mjs /absolute/path/to/local-plan.json`)
+records decoded source presentation timestamps as ordered integer `timeline.pts` with their exact
+`timeline.timeBase`; array position is the zero-based frame index. It refuses missing, duplicate,
+backward or unsafe integer timestamps, invalid time bases and source decode/demux error diagnostics
+(even with a successful process exit), preserving fractional and variable
+cadence without rounding to seconds or guessing from frame rate. The existing 30-second and 1 MiB
+probe limits bound this check to small specimens; exceeding either fails closed. These source
+timestamps do not prove edited-output/XML/RPU correspondence. The overall Dolby `goNoGo` remains false.
+
+`node --test scripts/frameleaf-studio-preflight.test.mjs` requires administrator-installed FFmpeg
+and FFprobe with `libx265`. It checks two probes of tiny generated HEVC Main10 fractional/VFR
+fixtures in CI; their HDR signalling only exercises preflight metadata checks and does not qualify
+HDR pictures, Dolby decoding, float edits, licensed tools or device playback.
+
 ## Reproducible engine workspace
 
 Use Node 24.21.0 and npm 11.8.0. `engine-build.json` pins the upstream revision, patch hashes, independent npm lockfile and adapted source digest. Versioned patches set the private package identity and toolchain declaration, remove automatic `prepare`, and omit embedded source text from worker source maps. Vite embeds transient asset handles in that text, which otherwise makes identical fresh builds differ. Worker maps retain their mappings, names and source paths; use the preserved source files for debugging. Application maps retain embedded sources. The first three patches preserve feature behavior. Patch 0004 adds default-deny resource admission in the isolated editor/headless engine; unresolved model/font/Lottie/resource operations are explicit release blockers. This npm workspace is intentionally outside the application's pnpm workspace.

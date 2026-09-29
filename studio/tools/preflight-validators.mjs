@@ -37,6 +37,19 @@ export function validateSource(stream, transfer) {
   return errors;
 }
 
+export function sourceTimeline(timeBase, frames) {
+  if (typeof timeBase !== 'string' || !/^[1-9]\d*\/[1-9]\d*$/.test(timeBase) ||
+    !timeBase.split('/').every((part) => Number.isSafeInteger(Number(part)))) {
+    throw new Error('source time base must be an exact positive rational');
+  }
+  if (!Array.isArray(frames) || frames.length === 0) throw new Error('source has no frame timestamps');
+  const pts = frames.map((frame) => frame?.pts);
+  if (pts.some((value, index) => !Number.isSafeInteger(value) || (index > 0 && value <= pts[index - 1]))) {
+    throw new Error('source PTS must be exact integers in strictly increasing presentation order');
+  }
+  return { timeBase, pts };
+}
+
 export function verdict(checks, attribution) {
   const portal = attribution?.resources?.find((row) => row.id === 'tool:dolby-portal');
   const portalRightsBlocked = attribution?.dolbyTools?.included !== false ||

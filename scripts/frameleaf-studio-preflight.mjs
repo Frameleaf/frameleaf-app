@@ -10,9 +10,10 @@ import { validatePlan, verdict } from '../studio/tools/preflight-validators.mjs'
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const attribution = JSON.parse(readFileSync(path.join(root, 'studio/dependency-attribution.json'), 'utf8'));
 
-export function run(binary, args) {
+export function run(binary, args, { rejectStderr = false } = {}) {
   const result = spawnSync(binary, args, { encoding: 'utf8', timeout: 30000, maxBuffer: 1024 * 1024 });
   if (result.error || result.status !== 0) throw new Error(`${path.basename(binary)} failed (exit ${result.status ?? 'unavailable'})`);
+  if (rejectStderr && result.stderr.trim()) throw new Error(`${path.basename(binary)} reported error diagnostics`);
   return result.stdout;
 }
 
