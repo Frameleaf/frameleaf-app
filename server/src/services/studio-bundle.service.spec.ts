@@ -700,6 +700,19 @@ describe(StudioBundleService.name, () => {
       });
       // Nothing in the library was written to at any point.
       expect(fs.files.get('/library/a.mov')!.toString()).toBe('lake video bytes');
+
+      // Access can change after submission. A retry may recover, but it must not quietly create
+      // a project with the explicitly chosen source missing.
+      allowed.delete(standIn);
+      projects.createWithRevision.mockClear();
+      const revokedJob = operationOf({ ...importJob, id: newUuidV7() });
+      await sut.run({ operation: revokedJob, claimToken: 'token-revoked' });
+      expect(operations.fail).toHaveBeenCalledWith(
+        revokedJob.id,
+        'token-revoked',
+        expect.objectContaining({ errorCode: 'bundle_relink_unavailable' }),
+      );
+      expect(projects.createWithRevision).not.toHaveBeenCalled();
     });
   });
 

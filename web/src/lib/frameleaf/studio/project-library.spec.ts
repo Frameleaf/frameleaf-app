@@ -129,6 +129,7 @@ describe('bundle errors and polling', () => {
   it('turns known codes into messages a person can act on', () => {
     expect(studioBundleErrorKey('bundle_entry_name')).toBe('frameleaf_studio_bundle_error_unsafe');
     expect(studioBundleErrorKey('bundle_upload_expired')).toBe('frameleaf_studio_bundle_error_expired');
+    expect(studioBundleErrorKey('bundle_relink_unavailable')).toBe('frameleaf_studio_bundle_error_relink_unavailable');
     expect(studioBundleErrorKey('something_new')).toBe('frameleaf_studio_bundle_error_generic');
     expect(studioBundleErrorKey(null)).toBe('frameleaf_studio_bundle_error_generic');
   });
