@@ -4,6 +4,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { ZodError } from 'zod';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import {
+  LargeAssetSearchDto,
   MetadataSearchDto,
   RandomSearchDto,
   SearchFacetField,
@@ -147,10 +148,11 @@ const library = async (ctx: Context) => {
   const lockedStill = await add(owner.id, 'lockedstill', { livePhotoVideoId: lockedMotion }, AssetLockReason.Marked);
   await add(partner.id, 'partnerown');
   await add(member.id, 'memberown');
+  const memberTrashed = await add(member.id, 'membertrashed', { deletedAt: new Date() });
   await add(stranger.id, 'strangerown');
 
   const { album } = await ctx.newAlbum({ ownerId: owner.id });
-  for (const assetId of [ordinary, archived, trashed, marked, detected, folder, still, lockedStill]) {
+  for (const assetId of [ordinary, archived, trashed, memberTrashed, marked, detected, folder, still, lockedStill]) {
     await ctx.newAlbumAsset({ albumId: album.id, assetId });
   }
   await ctx.newAlbumUser({ albumId: album.id, userId: member.id, role: AlbumUserRole.Viewer });
@@ -248,7 +250,32 @@ const generator = (random: () => number, lib: Library) => {
   const filter = () =>
     random() < 0.3 ? { ...branch(), or: Array.from({ length: 1 + Math.floor(random() * 2) }, branch) } : branch();
   const orderBy = () => ({ field: pick(ORDER_FIELDS), direction: pick([AssetOrder.Asc, AssetOrder.Desc]) });
-  return { filter, orderBy, pick };
+  /** A deprecated flat-field body, as older clients still send it. */
+  const flat = (actor: Actor) => {
+    const body: Record<string, unknown> = {};
+    const fields: Array<() => void> = [
+      () => (body.withDeleted = true),
+      () => (body.trashedAfter = dates[0]),
+      () => (body.isOffline = false),
+      () => (body.visibility = pick([AssetVisibility.Timeline, AssetVisibility.Archive, AssetVisibility.Hidden])),
+      () => (body.albumIds = [pick(lib.albumIds)]),
+      () => (body.isFavorite = random() < 0.5),
+      () => (body.city = pick(labels)[1]),
+      () => (body.originalFileName = 'fz-'),
+      () => (body.takenAfter = dates[0]),
+    ];
+    const count = 1 + Math.floor(random() * 4);
+    for (let index = 0; index < count; index++) {
+      pick(fields)();
+    }
+    // a shared link may only search inside an album
+    if (actor === 'link') {
+      body.albumIds = [lib.albumIds[0]];
+    }
+    return body;
+  };
+
+  return { filter, flat, orderBy, pick };
 };
 
 const CLIENT_ERRORS = [ZodError, BadRequestException, UnauthorizedException, ForbiddenException];
@@ -353,19 +380,67 @@ describe('search privacy fuzz (FL-137 QA-101)', () => {
         }
       }
       expect(seen.size, `paged count ${context}`).toBe(statistics.value.total);
+
+      // The deprecated flat fields reach the legacy builder: no invariant but "no unreadable evidence".
+      const flat = gen.flat(actor);
+      const flatContext = `seed ${SEED} round ${round} ${actor} flat ${JSON.stringify(flat)}`;
+      const flatResults = [
+        await attempt(() => sut.searchMetadata(auth, MetadataSearchDto.schema.parse({ ...flat, size: 50 }))),
+        await attempt(() => sut.searchStatistics(auth, StatisticsSearchDto.schema.parse(flat))),
+        await attempt(() => sut.searchRandom(auth, RandomSearchDto.schema.parse({ ...flat, size: 50 }))),
+        await attempt(() => sut.searchLargeAssets(auth, LargeAssetSearchDto.schema.parse({ ...flat, size: 50 }))),
+        await attempt(() => sut.searchFacets(auth, SearchFacetsDto.schema.parse({ ...flat, facetCovers: true }))),
+      ];
+      for (const result of flatResults) {
+        if (result.ok) {
+          expectNoEvidence(result.value, strings, flatContext);
+        }
+      }
     }
     // The generator must reach the database often enough for the invariants to mean something.
     expect(answered).toBeGreaterThan(ROUNDS / 4);
 
-    const logged = JSON.stringify(ctx.getMock(LoggingRepository).log.mock?.calls ?? []);
+    const logger = ctx.getMock(LoggingRepository);
+    const logged = JSON.stringify(
+      (['log', 'warn', 'error', 'debug', 'verbose', 'fatal'] as const).map((level) => logger[level]?.mock?.calls ?? []),
+    );
     for (const actor of ['partner', 'member', 'link', 'stranger'] as const) {
-      expectNoEvidence(
-        logged,
-        forbidden.get(actor)!.strings.filter((value) => !value.startsWith('fz-')),
-        'logs',
-      );
+      expectNoEvidence(logged, forbidden.get(actor)!.strings, 'logs');
     }
   }, 300_000);
+
+  it('still shows each viewer what they may see: the owner their archive and trash, a member the album archive', async () => {
+    const { sut, ctx } = setup();
+    const lib = await library(ctx);
+    const id = (label: string) => lib.assets.find((asset) => asset.label === label)!.id;
+    const ids = async (auth: AuthDto, body: object) =>
+      (await sut.searchMetadata(auth, MetadataSearchDto.schema.parse({ ...body, size: 100 }))).assets.items.map(
+        (asset) => asset.id,
+      );
+
+    await expect(ids(lib.auths.owner, { filter: { visibility: { eq: AssetVisibility.Archive } } })).resolves.toContain(
+      id('archived'),
+    );
+    await expect(ids(lib.auths.owner, { filter: { trashedAt: { ne: null } } })).resolves.toContain(id('trashed'));
+    await expect(ids(lib.auths.owner, { withDeleted: true, originalFileName: 'fz-' })).resolves.toContain(
+      id('trashed'),
+    );
+    await expect(ids(lib.auths.member, { filter: { albumIds: { any: [lib.albumIds[0]] } } })).resolves.toContain(
+      id('archived'),
+    );
+    await expect(ids(lib.auths.member, { albumIds: [lib.albumIds[0]] })).resolves.toContain(id('archived'));
+    // A member keeps their own trashed album item; the album owner does not see it.
+    await expect(
+      ids(lib.auths.member, { filter: { albumIds: { any: [lib.albumIds[0]] }, trashedAt: { ne: null } } }),
+    ).resolves.toEqual([id('membertrashed')]);
+    await expect(
+      ids(lib.auths.owner, { albumIds: [lib.albumIds[0]], withDeleted: true, originalFileName: 'fz-membertrashed' }),
+    ).resolves.toEqual([]);
+    // A partner still finds the owner's ordinary timeline item.
+    await expect(
+      ids(lib.auths.partner, { filter: { originalFileName: { startsWith: 'fz-ordinary' } } }),
+    ).resolves.toEqual([id('ordinary')]);
+  });
 
   it('refuses forged cursors as a client error and never pages past what the filter allows', async () => {
     const { sut, ctx } = setup();

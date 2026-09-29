@@ -667,6 +667,13 @@ export function searchAssetBuilderLegacy(kysely: Kysely<DB>, options: AssetSearc
       .$if(!!options.userIds && !!options.viewingUserId, (qb) =>
         qb.where((eb) => partnerSearchable(eb, options.viewingUserId!)),
       )
+      // FL-137: an album search reaches other people's items, which are never theirs to see in the trash,
+      // whatever withDeleted, trashedAfter/Before or isOffline ask for; a shared link sees no trash at all
+      .$if(!options.userIds && !!options.albumIds?.length, (qb) =>
+        options.sharedLink || !options.viewingUserId
+          ? qb.where('asset.deletedAt', 'is', null)
+          : qb.where((eb) => othersNotTrashed(eb, options.viewingUserId!)),
+      )
       .$if(!!options.locationHiddenOwnerIds?.length, (qb) =>
         qb.where('asset.ownerId', 'not in', options.locationHiddenOwnerIds!),
       )
