@@ -10,7 +10,8 @@ the person now chooses:
   ratio, nearest frame, clip ends rounded with their starts, so butted
   clips stay butted). A clip that rounding would overlap is pushed later
   by the overflow, with the clips butted after it, its linked clips and
-  the clips at the same frame on the other sync-locked tracks (unless
+  the clips at the same frame on the other sync-locked (and unlocked)
+  tracks (unless
   that chain leads back to the clip it overlaps; then only clips from
   its frame on move). A clip
   whose rounded length reads a fraction of a frame more of its source
@@ -37,8 +38,8 @@ leaves the editor dirty, so an in-flight autosave cannot put back the
 older timeline. The project store no longer keeps or writes back a copy
 of the timeline: its updates write only the fields they change, and a
 late write result never replaces an undo or newer update made
-meanwhile. An undo whose write fails says so and leaves the editor
-unsaved. Freecut's loadTimeline migration write and root-folder writes
+meanwhile. An undo whose write fails says so, leaves the editor unsaved,
+and the next timeline save stores those settings with the timeline. Freecut's loadTimeline migration write and root-folder writes
 still bypass the write queue; neither stores a timeline captured before
 a retime.
 
@@ -85,10 +86,10 @@ index e3238e4b85..748dfc0938 100644
  } from '@/features/timeline/test-helpers'
 diff --git a/src/features/timeline/utils/project-retime.ts b/src/features/timeline/utils/project-retime.ts
 new file mode 100644
-index 0000000000..803ab6500c
+index 0000000000..5e502065ec
 --- /dev/null
 +++ b/src/features/timeline/utils/project-retime.ts
-@@ -0,0 +1,416 @@
+@@ -0,0 +1,423 @@
 +/**
 + * Frameleaf (FL-94): changing the frame rate of a project or sequence that
 + * already has content never retimes it silently. The person picks a policy:
@@ -222,9 +223,12 @@ index 0000000000..803ab6500c
 +    )
 +    if (reads > item.sourceEnd - sourceStart) {
 +      if (item.isReversed) {
-+        if (item.sourceStart !== undefined) next.sourceStart = Math.max(0, item.sourceEnd - reads)
++        const start = Math.min(sourceStart, Math.max(0, item.sourceEnd - reads))
++        if (item.sourceStart !== undefined) next.sourceStart = start
++        else if (item.trimStart !== undefined) next.trimStart = start
 +      } else {
-+        next.sourceEnd = Math.min(sourceStart + reads, item.sourceDuration ?? sourceStart + reads)
++        const end = sourceStart + reads
++        next.sourceEnd = Math.max(item.sourceEnd, Math.min(end, item.sourceDuration ?? end))
 +      }
 +    }
 +  }
@@ -322,10 +326,11 @@ index 0000000000..803ab6500c
 +  durationInFrames?: number
 +}
 +
-+/** A track's sync lock: on unless turned off, as Freecut's `isTrackSyncLockEnabled` reads it. */
++/** A track's sync lock: on unless turned off or the track is locked (`isTrackSyncLockEnabled`). */
 +export interface RetimeTrack {
 +  id: string
 +  syncLock?: boolean
++  locked?: boolean
 +  isGroup?: boolean
 +}
 +
@@ -347,9 +352,12 @@ index 0000000000..803ab6500c
 +  after: TimelineItem[],
 +  tracks: readonly RetimeTrack[] | undefined,
 +): TimelineItem[] {
-+  // Sync lock is on unless a track turns it off (`syncLock !== false`), as Freecut reads it.
++  // Sync lock is on unless a track turns it off or is locked, as Freecut's isTrackSyncLockEnabled
++  // reads it: a locked track never moves with a ripple.
 +  const syncLocked = new Set(
-+    (tracks ?? []).filter((track) => !track.isGroup && track.syncLock !== false).map((track) => track.id),
++    (tracks ?? [])
++      .filter((track) => !track.isGroup && !track.locked && track.syncLock !== false)
++      .map((track) => track.id),
 +  )
 +  const shift = before.map(() => 0)
 +  const byTrack = new Map<string, number[]>()
@@ -507,10 +515,10 @@ index 0000000000..803ab6500c
 +}
 diff --git a/src/features/timeline/utils/project-retime.test.ts b/src/features/timeline/utils/project-retime.test.ts
 new file mode 100644
-index 0000000000..4c15a9280d
+index 0000000000..d95303e451
 --- /dev/null
 +++ b/src/features/timeline/utils/project-retime.test.ts
-@@ -0,0 +1,393 @@
+@@ -0,0 +1,428 @@
 +import { describe, expect, it } from 'vite-plus/test'
 +import type { ItemKeyframes } from '@/types/keyframe'
 +import type { ProjectMarker, TimelineItem } from '@/types/timeline'
@@ -647,6 +655,22 @@ index 0000000000..4c15a9280d
 +      24,
 +    ).items
 +    expect([reversed!.durationInFrames, reversed!.sourceStart, reversed!.sourceEnd]).toEqual([3, 9, 13])
++
++    // A reversed clip that keeps its start as `trimStart` grows the same way.
++    const [trimmed] = retimeContent(
++      { items: [item({ from: 0, durationInFrames: 7, trimStart: 10, sourceEnd: 13, sourceFps: 30, isReversed: true })] },
++      60,
++      24,
++    ).items
++    expect([trimmed!.trimStart, trimmed!.sourceEnd]).toEqual([9, 13])
++
++    // A window never shrinks, even when the recorded media length is shorter than it.
++    const [recorded] = retimeContent(
++      { items: [item({ from: 0, durationInFrames: 7, sourceStart: 0, sourceEnd: 3, sourceDuration: 2, sourceFps: 30 })] },
++      60,
++      24,
++    ).items
++    expect(recorded!.sourceEnd).toBe(3)
 +  })
 +
 +  it('pushes linked clips together and ripples sync-locked tracks, so pictures and sound stay aligned', () => {
@@ -676,6 +700,25 @@ index 0000000000..4c15a9280d
 +    expect(span('music')).toEqual([7, 13])
 +    // A track out of sync lock does not.
 +    expect(span('free')).toEqual([6, 13])
++
++    // Nor does a locked track, as Freecut's ripple never moves one.
++    const locked = retimeContent(
++      {
++        tracks: [{ id: 'v1' }, { id: 'a2', locked: true }],
++        items: [
++          item({ id: 'A', from: 14, durationInFrames: 1 }),
++          item({ id: 'B', from: 15, durationInFrames: 30 }),
++          item({ id: 'music', trackId: 'a2', type: 'audio', from: 15, durationInFrames: 30 }),
++        ],
++      },
++      60,
++      25,
++    ).items
++    expect(locked.map((entry) => [entry.id, entry.from])).toEqual([
++      ['A', 6],
++      ['B', 7],
++      ['music', 6],
++    ])
 +  })
 +
 +  it('pushes linked clips together even without track information', () => {
@@ -1253,10 +1296,10 @@ index 382031eac3..57acc3475f 100644
        applyResolvedTimelineDrop({
          addItem,
 diff --git a/src/features/timeline/stores/commands/snapshot.ts b/src/features/timeline/stores/commands/snapshot.ts
-index fb00c50835..cbbfbeb167 100644
+index fb00c50835..11e950d72b 100644
 --- a/src/features/timeline/stores/commands/snapshot.ts
 +++ b/src/features/timeline/stores/commands/snapshot.ts
-@@ -10,8 +10,22 @@ import { usePlaybackStore } from '@/shared/state/playback'
+@@ -10,8 +10,27 @@ import { usePlaybackStore } from '@/shared/state/playback'
  import { useProjectStore } from '@/features/timeline/deps/projects'
  import { updateProject } from '@/infrastructure/storage'
  import { createLogger } from '@/shared/logging/logger'
@@ -1265,7 +1308,12 @@ index fb00c50835..cbbfbeb167 100644
  import { sanitizeInOutPoints } from '../../utils/in-out-points'
  import { getActiveInOutMaxFrame } from '../in-out-bound'
 +import type { ProjectTimeline } from '@/types/project'
-+import { beginTimelineWrite, queueProjectWrite } from '@/shared/projects/project-write-queue'
++import {
++  beginTimelineWrite,
++  clearUnsavedMetadata,
++  holdUnsavedMetadata,
++  queueProjectWrite,
++} from '@/shared/projects/project-write-queue'
 +
 +/**
 + * Frameleaf (FL-94): the live timeline as it would be saved. Timeline persistence registers it, so
@@ -1279,7 +1327,7 @@ index fb00c50835..cbbfbeb167 100644
  
  const logger = createLogger('TimelineSnapshot')
  
-@@ -72,12 +86,25 @@ function restoreProjectMetadata(snapshot: TimelineSnapshot): void {
+@@ -72,13 +91,30 @@ function restoreProjectMetadata(snapshot: TimelineSnapshot): void {
      ),
    }))
  
@@ -1287,6 +1335,7 @@ index fb00c50835..cbbfbeb167 100644
 -    updateProject(snapshot.projectId, {
 -      metadata: { ...snapshot.projectMetadata },
 -    }),
+-  ).catch((error) => {
 +  // Frameleaf (FL-94): undoing a rate change that kept clip timing restores frames written for the
 +  // old rate. They are stored with that rate in one write, never the rate alone.
 +  const timeline =
@@ -1298,26 +1347,32 @@ index fb00c50835..cbbfbeb167 100644
 +  const metadata = { ...snapshot.projectMetadata }
 +  void queueProjectWrite(() =>
 +    Promise.resolve(updateProject(projectId, { metadata, ...(timeline && { timeline }) })),
-   ).catch((error) => {
++  ).then(
++    () => clearUnsavedMetadata(projectId),
++    (error) => {
      logger.error(`Failed to persist restored project metadata for ${snapshot.projectId}:`, error)
-+    // Frameleaf (FL-94): say so, and keep the timeline unsaved so the next save stores it again;
-+    // the settings are stored again only by the next settings change.
+-  })
++    // Frameleaf (FL-94): say so, and keep the timeline unsaved: the next save stores these settings
++    // with it, so the stored rate and frames agree.
++    holdUnsavedMetadata(projectId, metadata)
 +    useTimelineSettingsStore.getState().markDirty()
 +    toast.error(i18n.t('timeline.history.restoreNotSaved'), {
 +      description: error instanceof Error ? error.message : undefined,
 +    })
-   })
++    },
++  )
  }
  
+ /**
 diff --git a/src/features/projects/stores/project-store.ts b/src/features/projects/stores/project-store.ts
-index 5a46130adb..fd5549bb49 100644
+index 5a46130adb..9e3b892731 100644
 --- a/src/features/projects/stores/project-store.ts
 +++ b/src/features/projects/stores/project-store.ts
 @@ -20,6 +20,7 @@ import { createProjectObject, duplicateProject } from '../utils/project-helpers'
  // v3: Lazy-load media service for cascade operations
  import { importMediaLibraryService } from '@/features/projects/deps/media-library-contract'
  import { createLogger } from '@/shared/logging/logger'
-+import { queueProjectWrite } from '@/shared/projects/project-write-queue'
++import { clearUnsavedMetadata, queueProjectWrite } from '@/shared/projects/project-write-queue'
  
  const logger = createLogger('ProjectStore')
  
@@ -1360,7 +1415,7 @@ index 5a46130adb..fd5549bb49 100644
              name: data.name ?? existingProject.name,
              description: data.description ?? existingProject.description,
              metadata: {
-@@ -212,10 +224,21 @@ export const useProjectStore = create<ProjectState & ProjectActions>()(
+@@ -212,10 +224,24 @@ export const useProjectStore = create<ProjectState & ProjectActions>()(
            }
  
            try {
@@ -1380,13 +1435,16 @@ index 5a46130adb..fd5549bb49 100644
 +              }),
 +            )
 +
++            // These settings are stored now; any an earlier undo could not store are replaced.
++            clearUnsavedMetadata(id)
++
 +            // Update current project with DB result, unless something replaced this update's
 +            // optimistic copy meanwhile (an undo, a newer update): that is newer than this result.
 +            if (get().currentProject === updatedProject) {
                set({ currentProject: updated })
              }
  
-@@ -225,7 +248,7 @@ export const useProjectStore = create<ProjectState & ProjectActions>()(
+@@ -225,7 +251,7 @@ export const useProjectStore = create<ProjectState & ProjectActions>()(
              if (projectIndex !== -1) {
                set({ projects: previousProjects })
              }
@@ -1560,10 +1618,10 @@ index f06b7c693e..995beda5f5 100644
    useTimelineCommandStore.getState().addUndoEntry(command, beforeSnapshot)
 diff --git a/src/features/editor/utils/project-metadata-history.test.ts b/src/features/editor/utils/project-metadata-history.test.ts
 new file mode 100644
-index 0000000000..0a9ef908ec
+index 0000000000..c906b168b5
 --- /dev/null
 +++ b/src/features/editor/utils/project-metadata-history.test.ts
-@@ -0,0 +1,216 @@
+@@ -0,0 +1,224 @@
 +// @vitest-environment node
 +
 +import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
@@ -1707,6 +1765,14 @@ index 0000000000..0a9ef908ec
 +    await settle()
 +    expect(useTimelineSettingsStore.getState().isDirty).toBe(true)
 +    expect(stored()).toEqual({ fps: 60, spans: [[60, 90]] })
++
++    // The next save stores the undone settings with the timeline built for them.
++    await useTimelineStore.getState().saveTimeline('project-1')
++    expect(stored()).toEqual({ fps: 30, spans: [[30, 45]] })
++    expect(disk.writes.at(-1)).toMatchObject({ metadata: { fps: 30 } })
++    // Once stored, they are not written again.
++    await useTimelineStore.getState().saveTimeline('project-1')
++    expect(disk.writes.at(-1)).not.toHaveProperty('metadata')
 +  })
 +
 +  it('a later canvas change never writes back a timeline the store once held', async () => {
@@ -2135,23 +2201,25 @@ index 9c7cd3037e..d266301c09 100644
        "unableToAddDroppedFiles": "Unable to add dropped files to the timeline",
        "droppedMediaItems": "dropped media items",
 diff --git a/src/features/timeline/stores/timeline-persistence.ts b/src/features/timeline/stores/timeline-persistence.ts
-index bc6870f9bf..c22f50c7c5 100644
+index bc6870f9bf..853cbca1e5 100644
 --- a/src/features/timeline/stores/timeline-persistence.ts
 +++ b/src/features/timeline/stores/timeline-persistence.ts
-@@ -43,6 +43,12 @@ import {
+@@ -43,6 +43,14 @@ import {
    useCompositionNavigationStore,
  } from './composition-navigation-store'
  import { useSequencesStore } from './sequences-store'
 +import {
 +  beginTimelineWrite,
++  clearUnsavedMetadata,
 +  isCurrentTimelineWrite,
 +  queueProjectWrite,
++  unsavedMetadataFor,
 +} from '@/shared/projects/project-write-queue'
 +import { setRestoredTimelineSource } from './commands/snapshot'
  import { getProject, updateProject, saveProjectThumbnail } from '@/infrastructure/storage'
  import {
    importCanvasRenderOrchestrator,
-@@ -274,6 +280,16 @@ function hasCompositionVisualItems(items: TimelineItem[]): boolean {
+@@ -274,6 +282,16 @@ function hasCompositionVisualItems(items: TimelineItem[]): boolean {
    return items.some((item) => item.type !== 'audio')
  }
  
@@ -2168,7 +2236,7 @@ index bc6870f9bf..c22f50c7c5 100644
  function cleanupRedundantEmptyClassicAudioTracks(project: Project): {
    project: Project
    cleaned: boolean
-@@ -310,7 +326,11 @@ function cleanupRedundantEmptyClassicAudioTracks(project: Project): {
+@@ -310,7 +328,11 @@ function cleanupRedundantEmptyClassicAudioTracks(project: Project): {
      classicAudioTracks
        .filter(
          ({ track, number }) =>
@@ -2181,7 +2249,7 @@ index bc6870f9bf..c22f50c7c5 100644
        )
        .map(({ track }) => track.id),
    )
-@@ -916,10 +936,15 @@ export function buildTimelineFromStores(): ProjectTimeline {
+@@ -916,10 +938,15 @@ export function buildTimelineFromStores(): ProjectTimeline {
    return buildTimelineFromPersistenceSnapshot(captureTimelinePersistenceSnapshot())
  }
  
@@ -2197,7 +2265,7 @@ index bc6870f9bf..c22f50c7c5 100644
  
    // Saving must not navigate the live editor. A temporary Main swap is still
    // observable by Motion's store subscribers and asynchronous preview renderer.
-@@ -1049,14 +1074,23 @@ export async function saveTimeline(projectId: string): Promise<void> {
+@@ -1049,14 +1076,27 @@ export async function saveTimeline(projectId: string): Promise<void> {
      // pre-await `project` snapshot would clobber those newer fields.
      // Clear the deprecated inline thumbnail field when using thumbnailId.
      const updatedAt = Date.now()
@@ -2209,11 +2277,15 @@ index bc6870f9bf..c22f50c7c5 100644
 +    // would put an older timeline back. The editor stays dirty for the newer change.
 +    const written = await queueProjectWrite(async () => {
 +      if (!isCurrentTimelineWrite(writeGeneration)) return false
++      // Settings an undo or redo could not store go with this timeline, which was built for them.
++      const metadata = unsavedMetadataFor(projectId) as Project['metadata'] | undefined
 +      await updateProject(projectId, {
 +        timeline: sanitizedTimeline,
++        ...(metadata && { metadata }),
 +        ...(thumbnailId && { thumbnailId, thumbnail: undefined }),
 +        updatedAt,
 +      })
++      if (metadata) clearUnsavedMetadata(projectId, metadata)
 +      return true
      })
 +    event.merge({ superseded: !written })
@@ -2243,10 +2315,10 @@ index 2e995f0395..f03b7b9332 100644
          expect.objectContaining({
 diff --git a/src/shared/projects/project-write-queue.ts b/src/shared/projects/project-write-queue.ts
 new file mode 100644
-index 0000000000..a645450b71
+index 0000000000..02792ee75c
 --- /dev/null
 +++ b/src/shared/projects/project-write-queue.ts
-@@ -0,0 +1,33 @@
+@@ -0,0 +1,53 @@
 +/**
 + * Frameleaf (FL-94): project writes, one at a time, and the timeline write that is current.
 + *
@@ -2272,6 +2344,26 @@ index 0000000000..a645450b71
 +/** Whether no timeline was captured for writing after this one. */
 +export function isCurrentTimelineWrite(writeGeneration: number): boolean {
 +  return writeGeneration === generation
++}
++
++/**
++ * Metadata restored by undo or redo whose write failed, per project. The next timeline save stores
++ * it with the timeline, so the stored rate and frames never disagree; a later metadata write that
++ * succeeds replaces it.
++ */
++const unsavedMetadata = new Map<string, object>()
++
++export function holdUnsavedMetadata(projectId: string, metadata: object): void {
++  unsavedMetadata.set(projectId, metadata)
++}
++
++export function unsavedMetadataFor(projectId: string): object | undefined {
++  return unsavedMetadata.get(projectId)
++}
++
++/** Forgets held metadata once it is stored: only `metadata` itself, when given. */
++export function clearUnsavedMetadata(projectId: string, metadata?: object): void {
++  if (metadata === undefined || unsavedMetadata.get(projectId) === metadata) unsavedMetadata.delete(projectId)
 +}
 +
 +/** Runs `write` after every project write queued before it. */
