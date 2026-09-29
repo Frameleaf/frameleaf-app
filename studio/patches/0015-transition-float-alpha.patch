@@ -1,12 +1,13 @@
 --- a/src/infrastructure/gpu-transitions/transition-pipeline.ts
 +++ b/src/infrastructure/gpu-transitions/transition-pipeline.ts
-@@ -8,4 +8,5 @@
+@@ -8,4 +8,6 @@
  interface TransitionPipelineRecord {
    pipeline: GPURenderPipeline
 +  floatPipeline: GPURenderPipeline
++  straightPipeline: GPURenderPipeline
    bindGroupLayout: GPUBindGroupLayout
  }
-@@ -37,5 +38,7 @@
+@@ -37,5 +39,7 @@
    private texW = 0
    private texH = 0
 +  private premultiplyPipeline: GPURenderPipeline | null = null
@@ -15,7 +16,7 @@
 -
 +
    private constructor(device: GPUDevice) {
-@@ -120,7 +123,32 @@
+@@ -120,7 +124,52 @@
          },
          primitive: { topology: 'triangle-list' },
        })
@@ -29,7 +30,15 @@
 +        code: `${TRANSITION_COMMON_WGSL}\n${def.shader.replace(signature, `fn ${def.entryPoint}(input: VertexOutput) -> vec4f`)}
 +@fragment
 +fn straightFragment(input: VertexOutput) -> @location(0) vec4f {
-+  let color = ${def.entryPoint}(input);
++  // Float endpoints are identity boundaries even for stylized transitions.
++  var color: vec4f;
++  if (preserveTransitionRange && params.progress <= 0.0) {
++    color = textureSampleLevel(leftTex, texSampler, input.uv, 0.0);
++  } else if (preserveTransitionRange && params.progress >= 1.0) {
++    color = textureSampleLevel(rightTex, texSampler, input.uv, 0.0);
++  } else {
++    color = ${def.entryPoint}(input);
++  }
 +  if (color.a <= 0.0) { return vec4f(0.0); }
 +  return vec4f(color.rgb / color.a, color.a);
 +}`,
@@ -42,50 +51,69 @@
 +          module: floatShader,
 +          entryPoint: 'straightFragment',
 +          targets: [{ format: 'rgba16float' }],
++          constants: { preserveTransitionRange: 1 },
 +        },
 +        primitive: { topology: 'triangle-list' },
 +      })
-+      this.pipelines.set(id, { pipeline, floatPipeline, bindGroupLayout })
++      const straightPipeline = this.device.createRenderPipeline({
++        label: `transition-${id}-straight-sdr-pipeline`,
++        layout: this.device.createPipelineLayout({ bindGroupLayouts: [bindGroupLayout] }),
++        vertex: { module: floatShader, entryPoint: 'vertexMain' },
++        fragment: {
++          module: floatShader,
++          entryPoint: 'straightFragment',
++          targets: [{ format: this.format }],
++        },
++        primitive: { topology: 'triangle-list' },
++      })
++      this.pipelines.set(id, { pipeline, floatPipeline, straightPipeline, bindGroupLayout })
      } catch (e) {
        log.warn(`Failed to create pipeline for "${id}"`, e)
      }
-@@ -268,6 +296,7 @@
+@@ -268,6 +317,8 @@
      outputView: GPUTextureView,
      direction?: string,
      properties?: Record<string, unknown>,
 +    outputFormat: GPUTextureFormat = 'rgba8unorm',
++    outputAlpha: 'straight' | 'premultiplied' = 'premultiplied',
    ): boolean {
      const record = this.pipelines.get(transitionId)
      const def = getGpuTransition(transitionId)
-@@ -300,7 +329,7 @@
+@@ -300,7 +351,9 @@
          },
        ],
      })
 -    pass.setPipeline(record.pipeline)
-+    pass.setPipeline(outputFormat === 'rgba16float' ? record.floatPipeline : record.pipeline)
++    pass.setPipeline(outputFormat === 'rgba16float'
++      ? record.floatPipeline
++      : outputAlpha === 'straight' ? record.straightPipeline : record.pipeline)
      pass.setBindGroup(0, bindGroup)
      pass.draw(6)
      pass.end()
-@@ -365,6 +394,7 @@
+@@ -365,6 +418,7 @@
     * This still uploads the participant canvases today, but it keeps the
     * transition output GPU-native so a downstream GPU compositor can consume it
     * without drawing through an intermediate canvas and uploading again.
-+   * rgba16float output is straight alpha; rgba8unorm output is premultiplied SDR.
++   * rgba16float output is always straight alpha; outputAlpha selects the SDR convention.
     */
    renderToTexture(
      transitionId: string,
-@@ -378,5 +408,6 @@
+@@ -376,7 +430,9 @@
+     height: number,
+     direction?: string,
      properties?: Record<string, unknown>,
++    outputAlpha: 'straight' | 'premultiplied' = 'premultiplied',
    ): boolean {
      if (!this.pipelines.has(transitionId) || !getGpuTransition(transitionId)) return false
 +    if (outputTexture.format !== 'rgba8unorm' && outputTexture.format !== 'rgba16float') return false
      if (width < 2 || height < 2) return false
      if (outputTexture.width !== width || outputTexture.height !== height) return false
-@@ -390,13 +421,16 @@
+@@ -390,13 +446,19 @@
        outputTexture.createView(),
        direction,
        properties,
 +      outputTexture.format,
++      outputAlpha,
      )
    }
 -
@@ -95,16 +123,19 @@
     * texture. This is the zero-upload transition path for render graph nodes that
 -   * already keep clip/effect output on the GPU.
 +   * already keep clip/effect output on the GPU. Declare straight input for float
-+   * compositor/effect participants. Existing callers default to premultiplied.
-+   * rgba16float output is straight alpha; rgba8unorm output is premultiplied SDR.
++   * compositor/effect participants. Float targets default to straight input;
++   * legacy SDR targets default to premultiplied input/output. The production GPU
++   * compositor caller explicitly requests straight on both boundaries.
++   * rgba16float output is always straight; outputAlpha selects the SDR convention.
     */
    renderTexturesToTexture(
      transitionId: string,
-@@ -408,10 +442,12 @@
+@@ -408,10 +470,13 @@
      height: number,
      direction?: string,
      properties?: Record<string, unknown>,
-+    inputAlpha: 'straight' | 'premultiplied' = 'premultiplied',
++    inputAlpha: 'straight' | 'premultiplied' = outputTexture.format === 'rgba16float' ? 'straight' : 'premultiplied',
++    outputAlpha: 'straight' | 'premultiplied' = 'premultiplied',
    ): boolean {
      const record = this.pipelines.get(transitionId)
      const def = getGpuTransition(transitionId)
@@ -113,7 +144,7 @@
      if (width < 2 || height < 2) return false
      if (
        leftTexture.width !== width ||
-@@ -435,14 +471,17 @@
+@@ -435,14 +500,17 @@
      )
      if (def.uniformSize > 0 && !uniformBuffer) return false
 -
@@ -136,16 +167,18 @@
      const pass = commandEncoder.beginRenderPass({
        colorAttachments: [
          {
-@@ -452,7 +491,7 @@
+@@ -452,7 +520,9 @@
          },
        ],
      })
 -    pass.setPipeline(record.pipeline)
-+    pass.setPipeline(outputTexture.format === 'rgba16float' ? record.floatPipeline : record.pipeline)
++    pass.setPipeline(outputTexture.format === 'rgba16float'
++      ? record.floatPipeline
++      : outputAlpha === 'straight' ? record.straightPipeline : record.pipeline)
      pass.setBindGroup(0, bindGroup)
      pass.draw(6)
      pass.end()
-@@ -461,11 +500,62 @@
+@@ -461,11 +531,62 @@
      return true
    }
 -
@@ -210,3 +243,186 @@
      this.leftTexture?.destroy()
      this.rightTexture?.destroy()
      this.leftTexture = null
+--- a/src/infrastructure/gpu-transitions/common.ts
++++ b/src/infrastructure/gpu-transitions/common.ts
+@@ -3,6 +3,18 @@
+ /** Shared WGSL code prepended to every GPU transition shader */
+ export const TRANSITION_COMMON_WGSL = /* wgsl */ `
+ ${FULLSCREEN_QUAD_WGSL}
++
++// SDR output keeps the original display bounds. Intermediate float RGB stays
++// signed and extended-range until the final display conversion.
++override preserveTransitionRange: bool = false;
++fn transitionClampRgb(color: vec3f) -> vec3f {
++  if (preserveTransitionRange) { return color; }
++  return clamp(color, vec3f(0.0), vec3f(1.0));
++}
++fn transitionLimitRgb(color: vec3f) -> vec3f {
++  if (preserveTransitionRange) { return color; }
++  return min(color, vec3f(1.0));
++}
+-
++
+ const PI: f32 = 3.14159265359;
+ const TAU: f32 = 6.28318530718;
+--- a/src/infrastructure/gpu-transitions/transitions/dissolve-variants.ts
++++ b/src/infrastructure/gpu-transitions/transitions/dissolve-variants.ts
+@@ -42,7 +42,7 @@
+   let right = textureSample(rightTex, texSampler, input.uv);
+   let base = left.rgb * (1.0 - p) + right.rgb * p;
+   let flash = (left.rgb + right.rgb) * sin(p * PI) * 0.22;
+-  return vec4f(clamp(base + flash, vec3f(0.0), vec3f(1.0)), mix(left.a, right.a, p));
++  return vec4f(transitionClampRgb(base + flash), mix(left.a, right.a, p));
+ }`,
+   packUniforms: (progress, width, height) => new Float32Array([progress, width, height, 0]),
+ }
+@@ -156,7 +156,7 @@
+   let neutral = mix(left.rgb, right.rgb, p);
+   let luma = dot(neutral, vec3f(0.2126, 0.7152, 0.0722));
+   let guarded = mix(neutral, min(neutral, vec3f(luma + 0.18)), sin(p * PI) * 0.18);
+-  return vec4f(clamp(guarded, vec3f(0.0), vec3f(1.0)), mix(left.a, right.a, p));
++  return vec4f(transitionClampRgb(guarded), mix(left.a, right.a, p));
+ }`,
+   packUniforms: (progress, width, height) => new Float32Array([progress, width, height, 0]),
+ }
+--- a/src/infrastructure/gpu-transitions/transitions/light-leak-burn.ts
++++ b/src/infrastructure/gpu-transitions/transitions/light-leak-burn.ts
+@@ -68,6 +68,6 @@
+   let overexposed = 1.0 - exp(-(base.rgb + burnLight + grain) * (1.0 + hotCore * params.burn));
+   let color = mix(base.rgb, overexposed, clamp((warmHalo + hotCore) * envelope, 0.0, 1.0));
+-  return vec4f(clamp(color, vec3f(0.0), vec3f(1.0)), base.a);
++  return vec4f(transitionClampRgb(color), base.a);
+ }`,
+   packUniforms: (progress, width, height, direction, properties) => {
+     const intensity = (properties?.intensity as number) ?? 1.25
+--- a/src/infrastructure/gpu-transitions/transitions/film-gate-slip.ts
++++ b/src/infrastructure/gpu-transitions/transitions/film-gate-slip.ts
+@@ -68,7 +68,7 @@
+   let vignette = 1.0 - dot(uv - vec2f(0.5), uv - vec2f(0.5)) * envelope * 0.35;
+-
++
+   color = vec4f(color.rgb * flicker * vignette + grain + vec3f(gateFlash), color.a);
+-  return vec4f(clamp(color.rgb, vec3f(0.0), vec3f(1.0)), color.a);
++  return vec4f(transitionClampRgb(color.rgb), color.a);
+ }`,
+   packUniforms: (progress, width, height, _direction, properties) => {
+     const slip = (properties?.slip as number) ?? 1.0
+--- a/src/infrastructure/gpu-transitions/transitions/sparkles.ts
++++ b/src/infrastructure/gpu-transitions/transitions/sparkles.ts
+@@ -222,7 +222,7 @@
+   let compressed = 1.0 - exp(-lifted * (1.0 + (edgeGlow * 0.45)));
+-
++
+   return vec4f(
+-    clamp(mix(lifted, compressed, 0.46), vec3f(0.0), vec3f(1.0)),
++    transitionClampRgb(mix(lifted, compressed, 0.46)),
+     color.a
+   );
+ }`,
+--- a/src/infrastructure/gpu-transitions/transitions/chromatic.ts
++++ b/src/infrastructure/gpu-transitions/transitions/chromatic.ts
+@@ -81,7 +81,7 @@
+   // Slight brightness boost at transition edge
+   let edgeDist = abs(sweepPos - p);
+   let edgeGlow = exp(-edgeDist * edgeDist * 40.0) * 0.08 * envelope;
+-  color = vec4f(min(color.rgb + edgeGlow, vec3f(1.0)), color.a);
++  color = vec4f(transitionLimitRgb(color.rgb + edgeGlow), color.a);
+-
++
+   return color;
+ }`,
+--- a/src/infrastructure/gpu-transitions/transitions/lens-warp-zoom.ts
++++ b/src/infrastructure/gpu-transitions/transitions/lens-warp-zoom.ts
+@@ -87,7 +87,7 @@
+   let edgeLight = vec3f(0.78, 0.9, 1.0) * ring * 0.18;
+-
++
+   let color = mix(leftColor, rightColor, reveal);
+-  return vec4f(min(color.rgb * vignette + edgeLight, vec3f(1.0)), color.a);
++  return vec4f(transitionLimitRgb(color.rgb * vignette + edgeLight), color.a);
+ }`,
+   packUniforms: (progress, width, height, _direction, properties) => {
+     const zoomStrength = (properties?.zoomStrength as number) ?? 1.0
+--- a/src/infrastructure/gpu-transitions/transitions/liquid-distort.ts
++++ b/src/infrastructure/gpu-transitions/transitions/liquid-distort.ts
+@@ -88,7 +88,7 @@
+   let color = mix(refractedRight, leftColor, reveal);
+   let glassMix = smoothstep(0.0, 1.0, caustic * 0.65 + envelope * 0.2);
+   let glassed = mix(color.rgb, color.rgb + shine, glassMix);
+-  return vec4f(min(glassed, vec3f(1.0)), color.a);
++  return vec4f(transitionLimitRgb(glassed), color.a);
+ }`,
+   packUniforms: (progress, width, height, direction, properties) => {
+     const intensity = (properties?.intensity as number) ?? 1.0
+--- a/src/features/export/utils/canvas-item-renderer/transition.ts
++++ b/src/features/export/utils/canvas-item-renderer/transition.ts
+@@ -455,6 +455,8 @@
+           rctx.canvasSettings.height,
+           activeTransition.transition.direction as string | undefined,
+           activeTransition.transition.properties,
++          'straight',
++          'straight',
+         )
+         if (rendered) return true
+       } finally {
+@@ -476,6 +478,7 @@
+       rctx.canvasSettings.height,
+       activeTransition.transition.direction as string | undefined,
+       activeTransition.transition.properties,
++      'straight',
+     )
+   } finally {
+     for (const canvas of participants.poolCanvases) rctx.canvasPool.release(canvas)
+--- a/src/features/export/utils/canvas-item-renderer.transition-state.test.ts
++++ b/src/features/export/utils/canvas-item-renderer.transition-state.test.ts
+@@ -714,6 +714,8 @@
+       1080,
+       undefined,
+       undefined,
++      'straight',
++      'straight',
+     )
+     expect(gpuTexturePool.release).toHaveBeenCalledWith(leftTexture)
+     expect(gpuTexturePool.release).toHaveBeenCalledWith(rightTexture)
+@@ -945,5 +947,7 @@
+       1080,
+       undefined,
+       undefined,
++      'straight',
++      'straight',
+     )
+   })
+@@ -1012,5 +1016,7 @@
+       1080,
+       undefined,
+       undefined,
++      'straight',
++      'straight',
+     )
+   })
+@@ -1395,5 +1401,7 @@
+       1080,
+       undefined,
+       undefined,
++      'straight',
++      'straight',
+     )
+   })
+@@ -2425,6 +2433,8 @@
+       1080,
+       undefined,
+       undefined,
++      'straight',
++      'straight',
+     )
+     expect(testSpies.loggerDebugSpy).toHaveBeenCalledWith(
+       'GPU transition participant path',
+@@ -2714,6 +2724,8 @@
+       1080,
+       undefined,
+       undefined,
++      'straight',
++      'straight',
+     )
+     expect(gpuTexturePool.release).toHaveBeenCalledWith(leftShapeTexture)
+     expect(gpuTexturePool.release).toHaveBeenCalledWith(rightShapeTexture)
