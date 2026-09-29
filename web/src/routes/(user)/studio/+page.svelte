@@ -20,7 +20,12 @@
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { eventManager } from '$lib/managers/event-manager.svelte';
   import { Route } from '$lib/route';
-  import { restoredVersionIdsIn, toStudioAssets, toStudioRestoredAsset } from '$lib/frameleaf/studio/assets';
+  import {
+    restoredVersionIdsIn,
+    toStudioAssets,
+    toStudioRestoredAsset,
+    withHdrSources,
+  } from '$lib/frameleaf/studio/assets';
   import { createStudioBridge } from '$lib/frameleaf/studio/bridge';
   import { decideStudioDraft, studioDraftHeld, studioDraftResult } from '$lib/frameleaf/studio/draft-staging';
   import { createStudioEngineCommandHandlers, createStudioGraphHistory } from '$lib/frameleaf/studio/engine-commands';
@@ -122,10 +127,13 @@
       { values: { name: version.originalFileName } },
     );
   const libraryAssets = $derived(toStudioAssets(data.assets));
-  const assets = $derived([
-    ...libraryAssets,
-    ...restoredVersions.map((version) => toStudioRestoredAsset(version, restoredName(version))),
-  ]);
+  const assets = $derived(
+    withHdrSources(
+      [...libraryAssets, ...restoredVersions.map((version) => toStudioRestoredAsset(version, restoredName(version)))],
+      // FL-97: a project that places an HDR original is an HDR project
+      sessionState?.resources?.hdrSources,
+    ),
+  );
   /**
    * Files kept with this project rather than the library (FL-103 recordings, FL-105 imports). Only
    * the owner reads them, and only a stored project has any.

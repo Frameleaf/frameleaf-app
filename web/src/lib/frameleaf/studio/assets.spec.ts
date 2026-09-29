@@ -26,6 +26,7 @@ const {
   toStudioAsset,
   toStudioAssets,
   toStudioRestoredAsset,
+  withHdrSources,
 } = await import('./assets');
 
 const asset = (overrides: Partial<AssetResponseDto> = {}): AssetResponseDto =>
@@ -126,6 +127,17 @@ describe('studio asset projection', () => {
     ]);
 
     expect(projected.map((item) => item.id)).toEqual(['c', 'a']);
+  });
+
+  it('marks the HDR originals the server reported, so the project becomes HDR (FL-97)', () => {
+    const projected = toStudioAssets([asset({ id: 'sdr' }), asset({ id: 'hdr', type: AssetTypeEnum.Video })]);
+    const marked = withHdrSources(projected, ['hdr', 'not-in-bin']);
+
+    expect(marked.map((item) => [item.id, item.hdr])).toEqual([
+      ['sdr', undefined],
+      ['hdr', true],
+    ]);
+    expect(withHdrSources(projected, undefined)).toEqual(projected);
   });
 });
 

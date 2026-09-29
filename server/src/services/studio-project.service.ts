@@ -1099,6 +1099,12 @@ export class StudioProjectService {
             )
           : [],
       hiddenSources: access === 'owner' ? await this.hiddenSources(auth, resolution.refused) : [],
+      // FL-97: only authorized entries, so nothing is said about a source the account cannot read.
+      hdrSources: await this.resources.hdrLibraryAssets(
+        resolution.manifest.entries
+          .filter((entry) => entry.kind === StudioResourceKind.LibraryAsset)
+          .map((entry) => entry.id),
+      ),
       checkedAt: resolution.manifest.issuedAt,
     };
     return { withheld: access === 'reviewer' && !resolution.manifest.complete, resources };

@@ -82581,6 +82581,15 @@
             "description": "Every referenced source resolved for the acting account",
             "type": "boolean"
           },
+          "hdrSources": {
+            "description": "FL-97 owner decision: placed library videos whose original is HDR (PQ or HLG transfer, or Dolby Vision). A project that places one is an HDR project. Only sources that resolved for the acting account are named",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "type": "array"
+          },
           "hiddenSources": {
             "description": "FL-195 follow-up: the owner's own library items this project places that are hidden from this session (Locked, or matched by a Locked rule, while the session is locked). The project keeps them; the editor hides their clips rather than showing missing media. The owner's only; empty for a reviewer",
             "items": {
@@ -82607,6 +82616,7 @@
         "required": [
           "checkedAt",
           "complete",
+          "hdrSources",
           "hiddenSources",
           "refusedCount",
           "unsupportedSources"

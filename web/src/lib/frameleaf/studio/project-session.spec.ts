@@ -55,6 +55,7 @@ const detail = (overrides: Partial<StudioProjectDetailDto> = {}): StudioProjectD
     refusedCount: 0,
     unsupportedSources: [],
     hiddenSources: [],
+    hdrSources: [],
     checkedAt: '2026-09-22T10:05:00.000Z',
   },
   shelf: StudioProjectShelf.Active,
@@ -286,6 +287,7 @@ describe('studio project session', () => {
             refusedCount: 1,
             unsupportedSources: [],
             hiddenSources: ['a-locked'],
+            hdrSources: [],
             checkedAt: '2026-09-22T10:05:00.000Z',
           },
         }),
@@ -330,6 +332,7 @@ describe('studio project session', () => {
           refusedCount: 1,
           unsupportedSources,
           hiddenSources: [],
+          hdrSources: [],
           checkedAt: '2026-09-22T10:06:00.000Z',
         },
       });

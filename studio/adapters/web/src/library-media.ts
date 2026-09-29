@@ -85,6 +85,8 @@ export const initialMediaRecord = (asset: StudioAssetRef, now: number): MediaMet
       : 0,
   codec: 'unknown',
   bitrate: 0,
+  // FL-97: the server knows the original's transfer; the playback stream cannot tell.
+  ...(asset.hdr ? { colorTransfer: 'hdr' as const } : {}),
   videoCodecSupported: true,
   audioCodecSupported: true,
   tags: [],
@@ -283,6 +285,8 @@ export function createLibraryMediaSeeder(options: {
 }): LibraryMediaSeeder {
   const { workspace, projectId, onChange } = options
   const seeded = new Set<string>()
+  /** Assets already recorded as HDR originals (FL-97). */
+  const hdrMarked = new Set<string>()
   /** Removed from the bin by the person; never carried to another mount. */
   const removed = new Set<string>()
   /** What was linked to each recent mount's project here (the last few mounts only). */
@@ -344,8 +348,21 @@ export function createLibraryMediaSeeder(options: {
       if (controller.signal.aborted) return
       const fresh = assets.filter((asset) => !seeded.has(asset.id) && !asset.isOffline)
       const now = Date.now()
+      // FL-97: the server names HDR originals once they are placed; record it on media the bin
+      // already holds, so the project becomes HDR without a remount.
+      let marked = false
+      for (const asset of assets) {
+        if (!asset.hdr || !seeded.has(asset.id) || hdrMarked.has(asset.id)) continue
+        hdrMarked.add(asset.id)
+        if (await getMedia(asset.id)) {
+          await updateMedia(asset.id, { colorTransfer: 'hdr', updatedAt: now })
+          marked = true
+        }
+      }
+      if (marked) onChange()
       for (const asset of fresh) {
         seeded.add(asset.id)
+        if (asset.hdr) hdrMarked.add(asset.id)
         if (controller.signal.aborted) return
         const record = initialMediaRecord(asset, now)
         if (!(await getMedia(asset.id))) {

@@ -62,6 +62,15 @@ export const toStudioAsset = (asset: AssetResponseDto): StudioAssetRef => {
   };
 };
 
+/** FL-97: mark the assets the server reported as HDR originals (`resources.hdrSources`). */
+export const withHdrSources = (
+  assets: readonly StudioAssetRef[],
+  hdrSources: readonly string[] | null | undefined,
+): StudioAssetRef[] => {
+  const hdr = new Set(hdrSources ?? []);
+  return assets.map((asset) => (hdr.has(asset.id) ? { ...asset, hdr: true } : asset));
+};
+
 /**
  * Project a list, keeping the caller's order. A "make a movie" handoff arrives in the order
  * the person selected, and that order is the editor's starting cut, so it must not be
