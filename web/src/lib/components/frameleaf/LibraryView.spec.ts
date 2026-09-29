@@ -368,7 +368,9 @@ describe('LibraryView', () => {
 
       await fireEvent.change(sort, { target: { value: 'filename' } });
       expect(sort).toHaveValue('filename');
-      expect(JSON.parse(localStorage.getItem('frameleaf.albumViewSort.owner') ?? '{}')).toEqual({ 'album-1': 'filename' });
+      expect(JSON.parse(localStorage.getItem('frameleaf.albumViewSort.owner') ?? '{}')).toEqual({
+        'album-1': 'filename',
+      });
       // the library's own sort and the album's shared order are untouched
       expect(librarySession.state.sort).toBe(sessionSort);
       expect(sdkMock.updateAlbumInfo).not.toHaveBeenCalled();
@@ -394,7 +396,9 @@ describe('LibraryView', () => {
 
       librarySession.setLayout('work');
       await waitFor(() => expect(sort).toHaveValue('filename'));
-      expect(JSON.parse(localStorage.getItem('frameleaf.albumViewSort.owner') ?? '{}')).toEqual({ 'album-1': 'filename' });
+      expect(JSON.parse(localStorage.getItem('frameleaf.albumViewSort.owner') ?? '{}')).toEqual({
+        'album-1': 'filename',
+      });
     });
   });
 
