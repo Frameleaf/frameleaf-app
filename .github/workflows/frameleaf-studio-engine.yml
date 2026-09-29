@@ -49,9 +49,9 @@ jobs:
         env:
           FREECUT_CHROME_ARGS_REPLACE: --enable-unsafe-webgpu --use-angle=swiftshader --use-vulkan=swiftshader --enable-features=Vulkan
         run: |
-          npm --prefix studio/engine run dev -- --host 127.0.0.1 --port 5186 --strictPort > "$RUNNER_TEMP/studio-float-vite.log" 2>&1 &
+          setsid npm --prefix studio/engine run dev -- --host 127.0.0.1 --port 5186 --strictPort > "$RUNNER_TEMP/studio-float-vite.log" 2>&1 &
           server_pid=$!
-          trap 'kill "$server_pid"' EXIT
+          trap 'kill -- -"$server_pid" 2>/dev/null || true; wait "$server_pid" 2>/dev/null || true' EXIT
           for attempt in $(seq 1 60); do
             if curl --fail --silent http://127.0.0.1:5186/ > /dev/null; then break; fi
             sleep 1
