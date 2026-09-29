@@ -40,6 +40,10 @@ esac
   echo 'Media and database directories must already exist.' >&2
   exit 1
 }
+[ -x "$wizard_database_path" ] && ls "$wizard_database_path" >/dev/null 2>&1 || {
+  echo 'Cannot inspect database directory before install.' >&2
+  exit 1
+}
 if [ -e "$wizard_database_path/PG_VERSION" ] || [ -L "$wizard_database_path/PG_VERSION" ]; then
   [ -f "$wizard_database_path/PG_VERSION" ] && [ ! -L "$wizard_database_path/PG_VERSION" ] &&
     [ "$(cat "$wizard_database_path/PG_VERSION")" = 14 ] || {
