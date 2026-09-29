@@ -393,16 +393,77 @@ describe(StudioBundleService.name, () => {
       const projectId = newUuidV7();
       const first = operationOf({
         kind: MediaOperationKind.StudioBundleExport,
-        snapshot: { kind: 'studio-bundle-export', projectId },
+        snapshot: { kind: 'studio-bundle-export', projectId, includeMedia: true, sequenceIds: ['seq-1'] },
         createdAt: new Date(),
         updatedAt: new Date(),
       } as never);
       operations.getByRequestKey.mockResolvedValue(first);
-      await expect(sut.createExport(owner, projectId, { requestKey: 'k' })).resolves.toMatchObject({ id: first.id });
+      await expect(
+        sut.createExport(owner, projectId, { includeMedia: true, sequenceIds: ['seq-1'], requestKey: 'k' }),
+      ).resolves.toMatchObject({ id: first.id });
+      await expect(
+        sut.createExport(owner, projectId, { includeMedia: true, sequenceIds: ['seq-1', 'seq-1'], requestKey: 'k' }),
+      ).resolves.toMatchObject({ id: first.id });
 
       // The same key for another project is a client bug, never a replay of somebody else's job.
       await expect(sut.createExport(owner, newUuidV7(), { requestKey: 'k' })).rejects.toBeInstanceOf(ConflictException);
+      await expect(sut.createExport(owner, projectId, { requestKey: 'k' })).rejects.toBeInstanceOf(ConflictException);
+      await expect(
+        sut.createExport(owner, projectId, { includeMedia: true, sequenceIds: ['seq-2'], requestKey: 'k' }),
+      ).rejects.toBeInstanceOf(ConflictException);
       expect(operations.create).not.toHaveBeenCalled();
+    });
+
+    it('replays all-sequence and reordered subset requests by their original selection', async () => {
+      const projectId = newUuidV7();
+      const fullEnvelope = {
+        ...envelope,
+        graph: { sequences: ['seq-1', 'seq-2', 'seq-3'].map((id) => ({ id, tracks: [] })) },
+      };
+      const access = authorized('owner', []);
+      studio.authorizeRevision.mockResolvedValue({
+        ...access,
+        project: { id: projectId, name: 'Lake trip' },
+        revision: { ...access.revision, digest: studioEnvelopeDigest(fullEnvelope) },
+        envelope: fullEnvelope,
+      });
+
+      const whole = await sut.createExport(owner, projectId, {
+        sequenceIds: ['seq-3', 'seq-1', 'seq-2'],
+        requestKey: 'whole',
+      });
+      const wholeRow = await operations.create.mock.results[0].value;
+      expect(wholeRow.snapshot.sequenceIds).toBeNull();
+      expect(wholeRow.snapshot.requestedSequenceIds).toEqual(['seq-1', 'seq-2', 'seq-3']);
+      operations.getByRequestKey.mockResolvedValue(wholeRow);
+      await expect(
+        sut.createExport(owner, projectId, { sequenceIds: ['seq-2', 'seq-3', 'seq-1'], requestKey: 'whole' }),
+      ).resolves.toMatchObject({ id: whole.id });
+
+      // Jobs written before this fix lack requestedSequenceIds; their stored revision disambiguates a whole-project choice.
+      const legacySnapshot = { ...wholeRow.snapshot };
+      delete legacySnapshot.requestedSequenceIds;
+      projects.getRevision.mockResolvedValue({ digest: wholeRow.snapshot.digest, envelope: fullEnvelope });
+      operations.getByRequestKey.mockResolvedValue({ ...wholeRow, snapshot: legacySnapshot });
+      await expect(
+        sut.createExport(owner, projectId, { sequenceIds: ['seq-1', 'seq-2', 'seq-3'], requestKey: 'whole' }),
+      ).resolves.toMatchObject({ id: whole.id });
+      await expect(
+        sut.createExport(owner, projectId, { sequenceIds: ['seq-1'], requestKey: 'whole' }),
+      ).rejects.toBeInstanceOf(ConflictException);
+
+      operations.getByRequestKey.mockResolvedValue(undefined);
+      const subset = await sut.createExport(owner, projectId, {
+        sequenceIds: ['seq-2', 'seq-1'],
+        requestKey: 'subset',
+      });
+      const subsetRow = await operations.create.mock.results[1].value;
+      expect(subsetRow.snapshot.sequenceIds).toEqual(['seq-2', 'seq-1']);
+      operations.getByRequestKey.mockResolvedValue(subsetRow);
+      await expect(
+        sut.createExport(owner, projectId, { sequenceIds: ['seq-1', 'seq-2'], requestKey: 'subset' }),
+      ).resolves.toMatchObject({ id: subset.id });
+      expect(operations.create).toHaveBeenCalledTimes(2);
     });
   });
 
@@ -936,6 +997,39 @@ describe(StudioBundleService.name, () => {
           ],
         },
       }) as unknown as StudioBundleUpload;
+
+    it('only replays a request key for the same relink choices and project name', async () => {
+      const item = upload();
+      const standIn = newUuid();
+      const first = operationOf({
+        kind: MediaOperationKind.StudioBundleImport,
+        snapshot: {
+          kind: 'studio-bundle-import',
+          uploadId: item.id,
+          name: 'Trip copy',
+          mapping: { [`library-asset:${assetA}`]: standIn },
+        },
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      } as never);
+      operations.getByRequestKey.mockResolvedValue(first);
+      const request = {
+        uploadId: item.id,
+        name: 'Trip copy',
+        mapping: { [`library-asset:${assetA}`]: standIn },
+        requestKey: 'import-1',
+      };
+
+      await expect(sut.createImport(owner, request)).resolves.toMatchObject({ id: first.id });
+      await expect(sut.createImport(owner, { ...request, name: 'Other trip' })).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+      await expect(sut.createImport(owner, { ...request, mapping: {} })).rejects.toBeInstanceOf(ConflictException);
+      await expect(sut.createImport(owner, { ...request, uploadId: newUuidV7() })).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+      expect(operations.create).not.toHaveBeenCalled();
+    });
 
     it('refuses a stand-in that FL-90 does not authorize for this session', async () => {
       projects.getUpload.mockResolvedValue(upload());

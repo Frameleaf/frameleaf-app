@@ -1386,6 +1386,8 @@ export type StudioBundleExportSnapshot = {
    * revision down to these and the sequences they nest ({@link selectStudioSequences}).
    */
   sequenceIds: string[] | null;
+  /** Canonical submit choice for request-key replay; unlike sequenceIds, preserves an explicit whole-project choice. */
+  requestedSequenceIds?: string[] | null;
   /** The client's idempotency key, so a repeated submit answers with the first job. */
   requestKey: string | null;
 };
