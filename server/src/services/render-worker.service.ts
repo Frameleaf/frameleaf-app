@@ -241,7 +241,7 @@ type StudioGraphSource =
   { ok: true; graph: unknown; projectOwnerId: string } | { ok: false; refused: { key: string; reason: string } };
 
 type ResolvedManifest =
-  | { complete: true; manifest: AuthorizedManifest; studio: StudioAuthorizedManifest | null }
+  | { complete: true; manifest: AuthorizedManifest; studio: StudioAuthorizedManifest | null; graph?: unknown }
   | { complete: false; refused: Array<{ key: string; reason: string }> };
 
 /**
@@ -800,7 +800,14 @@ export class RenderWorkerService {
           leaseMs: RENDER_WORKER_LEASE_MS,
           projectId: operation.projectId,
           revisionId: operation.revisionId,
-          snapshot: asObject(operation.snapshot),
+          // The worker has no project-reader credential. Hand out the exact graph that passed
+          // resource/access resolution for this claim, without copying it into the stored job.
+          snapshot: resolved.studio
+            ? {
+                ...asObject(operation.snapshot),
+                studio: { ...asObject(asObject(operation.snapshot).studio), graph: resolved.graph },
+              }
+            : asObject(operation.snapshot),
           settings: asObject(operation.settings),
           attempt: operation.attempt,
           checkpoints: checkpoints.map((checkpoint) => ({
@@ -1372,6 +1379,7 @@ export class RenderWorkerService {
       return {
         complete: true,
         studio: resolution.manifest,
+        graph: source.graph,
         manifest: {
           operationId: operation.id,
           revisionId: operation.revisionId,
