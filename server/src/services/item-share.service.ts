@@ -1,7 +1,8 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
-import type { ItemShareRow } from 'src/repositories/item-share.repository.js';
+import type { ItemShareRepository, ItemShareRow } from 'src/repositories/item-share.repository.js';
+import type { UserRepository } from 'src/repositories/user.repository.js';
 import { OnEvent } from 'src/decorators.js';
 import { mapAsset } from 'src/dtos/asset-response.dto.js';
 import {
@@ -72,7 +73,17 @@ export class ItemShareService extends BaseService {
     const recipients = await this.requireRecipients(auth, dto.userIds);
 
     const link = await this.shareLink(requestOrigin);
-    const added = await this.itemShareRepository.add(auth.user.id, assetIds, recipients.keys().toArray());
+    const { added, response } = await this.itemShareRepository.withTransaction(async (shares, users) => {
+      const added = await shares.add(auth.user.id, assetIds, recipients.keys().toArray());
+      const response = await this.changeResponse(
+        auth,
+        assetIds,
+        { added: added.length, removed: 0, link },
+        shares,
+        users,
+      );
+      return { added, response };
+    });
 
     const counts = new Map<string, number>();
     for (const row of added) {
@@ -92,12 +103,23 @@ export class ItemShareService extends BaseService {
       }
     }
 
-    return this.changeResponse(auth, assetIds, { added: added.length, removed: 0, link });
+    return response;
   }
 
   async unshare(auth: AuthDto, dto: ItemShareChangeDto, requestOrigin?: string): Promise<ItemShareChangeResponseDto> {
     const assetIds = await this.requireOwnItems(auth, dto.assetIds);
-    const removed = await this.itemShareRepository.remove(auth.user.id, assetIds, dto.userIds);
+    const link = await this.shareLink(requestOrigin);
+    const { removed, response } = await this.itemShareRepository.withTransaction(async (shares, users) => {
+      const removed = await shares.remove(auth.user.id, assetIds, dto.userIds);
+      const response = await this.changeResponse(
+        auth,
+        assetIds,
+        { added: 0, removed: removed.length, link },
+        shares,
+        users,
+      );
+      return { removed, response };
+    });
     // Access is checked live, so this only tells the recipients' open pages to drop what they loaded.
     for (const row of removed) {
       try {
@@ -108,11 +130,7 @@ export class ItemShareService extends BaseService {
         );
       }
     }
-    return this.changeResponse(auth, assetIds, {
-      added: 0,
-      removed: removed.length,
-      link: await this.shareLink(requestOrigin),
-    });
+    return response;
   }
 
   async getShares(auth: AuthDto, dto: ItemShareQueryDto): Promise<ItemShareResponseDto[]> {
@@ -195,10 +213,10 @@ export class ItemShareService extends BaseService {
     return users;
   }
 
-  private async usersById(ids: string[]): Promise<Map<string, UserResponseDto>> {
+  private async usersById(ids: string[], repository = this.userRepository): Promise<Map<string, UserResponseDto>> {
     const users = new Map<string, UserResponseDto>();
     for (const id of ids) {
-      const user = await this.userRepository.get(id, { withDeleted: false });
+      const user = await repository.get(id, { withDeleted: false });
       if (user) {
         users.set(user.id, mapUser(user));
       }
@@ -206,8 +224,8 @@ export class ItemShareService extends BaseService {
     return users;
   }
 
-  private async mapShares(rows: ItemShareRow[]): Promise<ItemShareResponseDto[]> {
-    const users = await this.usersById([...new Set(rows.map(({ sharedWithId }) => sharedWithId))]);
+  private async mapShares(rows: ItemShareRow[], repository = this.userRepository): Promise<ItemShareResponseDto[]> {
+    const users = await this.usersById([...new Set(rows.map(({ sharedWithId }) => sharedWithId))], repository);
     return rows.flatMap((row) => {
       const sharedWith = users.get(row.sharedWithId);
       return sharedWith
@@ -220,8 +238,10 @@ export class ItemShareService extends BaseService {
     auth: AuthDto,
     assetIds: string[],
     change: { added: number; removed: number; link: string | null },
+    repository: ItemShareRepository,
+    users: UserRepository,
   ): Promise<ItemShareChangeResponseDto> {
-    const shares = await this.mapShares(await this.itemShareRepository.getForAssets(auth.user.id, assetIds));
+    const shares = await this.mapShares(await repository.getForAssets(auth.user.id, assetIds), users);
     return { shares, ...change };
   }
 
