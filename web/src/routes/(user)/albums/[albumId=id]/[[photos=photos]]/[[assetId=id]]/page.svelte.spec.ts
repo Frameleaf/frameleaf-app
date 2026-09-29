@@ -48,10 +48,9 @@ it('restores a collection selection after remounting its flat results view (FL-4
   await waitFor(() => expect(librarySession.state.scope.id).toBe(collection.id));
   librarySession.select('photo-1');
   await waitFor(() =>
-    expect(JSON.parse(sessionStorage.getItem(libraryTransientKey('owner')) ?? '{}')).toMatchObject({
-      context: `collection:${collection.id}`,
-      selection: ['photo-1'],
-    }),
+    expect(
+      JSON.parse(sessionStorage.getItem(libraryTransientKey('owner', `collection:${collection.id}`)) ?? '{}'),
+    ).toMatchObject({ context: `collection:${collection.id}`, selection: ['photo-1'] }),
   );
 
   first.unmount();
@@ -67,14 +66,23 @@ it('restores collection selection after the same page visits an ordinary album (
   await waitFor(() => expect(librarySession.state.scope.id).toBe(collection.id));
   librarySession.select('collection-photo');
   await waitFor(() =>
-    expect(JSON.parse(sessionStorage.getItem(libraryTransientKey('owner')) ?? '{}').selection).toEqual([
-      'collection-photo',
-    ]),
+    expect(JSON.parse(sessionStorage.getItem(libraryTransientKey('owner', `collection:${collection.id}`)) ?? '{}').selection).toEqual(
+      ['collection-photo'],
+    ),
   );
 
   await view.rerender({ data: data(ordinary) as never });
   await waitFor(() => expect(librarySession.state.scope.id).toBe(ordinary.id));
+  // The mocked LibraryView does not run its restore/persist effects. Do their real store writes so
+  // ordinary album B replaces the global tab snapshot before returning to collection A.
+  const ordinaryContext = JSON.stringify({ route: '/albums/[albumId]', options: { albumId: ordinary.id } });
+  librarySession.restore(undefined, 'owner', ordinaryContext);
+  librarySession.setScope({ kind: 'album', id: ordinary.id });
   librarySession.select('ordinary-photo');
+  expect(librarySession.persist('owner')).toBe(true);
+  expect(JSON.parse(sessionStorage.getItem(libraryTransientKey('owner')) ?? '{}').selection).toEqual([
+    'ordinary-photo',
+  ]);
   await view.rerender({ data: data(collection) as never });
   await waitFor(() => expect(librarySession.selection).toEqual(['collection-photo']));
 });

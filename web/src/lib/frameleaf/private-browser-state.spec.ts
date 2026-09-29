@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { libraryTransientKey } from './library-session';
 import { clearPrivateBrowserState, isPrivateBrowserKey } from './private-browser-state';
 
 describe('clearPrivateBrowserState (FL-80)', () => {
@@ -11,6 +12,7 @@ describe('clearPrivateBrowserState (FL-80)', () => {
     sessionStorage.setItem('frameleaf:system-settings-draft:v1:user-1', '{}');
     localStorage.setItem('frameleaf:library:v1:user-1', '{"state":"private"}');
     sessionStorage.setItem('frameleaf:library:tab:v1:user-1', '{"selection":["asset-1"]}');
+    sessionStorage.setItem(libraryTransientKey('user-1', 'collection:album-1'), '{"selection":["asset-1"]}');
     sessionStorage.setItem('frameleaf.editor.continuity.asset-1', '{"draft":"private"}');
     sessionStorage.setItem('frameleaf.auth.rememberMe', 'false');
 
@@ -22,6 +24,7 @@ describe('clearPrivateBrowserState (FL-80)', () => {
     expect(sessionStorage.getItem('frameleaf:system-settings-draft:v1:user-1')).toBeNull();
     expect(localStorage.getItem('frameleaf:library:v1:user-1')).toBeNull();
     expect(sessionStorage.getItem('frameleaf:library:tab:v1:user-1')).toBeNull();
+    expect(sessionStorage.getItem(libraryTransientKey('user-1', 'collection:album-1'))).toBeNull();
     expect(sessionStorage.getItem('frameleaf.editor.continuity.asset-1')).toBeNull();
     expect(localStorage.getItem('frameleaf-thumbnail-size')).toBe('200');
     expect(localStorage.getItem('locale')).toBe('en');
