@@ -96,11 +96,10 @@ const VISIBLE_TO_OTHERS = new Set<Item>(['ordinary', 'liveStill', 'liveMotion'])
 const LOCKED = new Set<Item>(['lockedMarked', 'lockedDetected', 'lockedFolder', 'lockedLiveStill', 'lockedLiveMotion']);
 
 /**
- * An item under the owner's Locked tag rule. Per-item shares and Studio publication apply the
- * owner's current rules (FL-198, FL-106); albums, partner sharing and public links apply only the
- * viewer's own rules, so they still reach it. Whether a Locked rule should also withdraw an item
- * from those paths (and their listings and counts) is an open owner decision recorded on FL-137;
- * this row pins today's behaviour so the decision flips it deliberately.
+ * An item under the owner's Locked tag rule. Owner decision, September 29, 2026 ("No, keep explicit
+ * shares"): a Locked rule withdraws the item from per-item shares (FL-198) and Studio publication
+ * (FL-106) only. What the owner explicitly shared (a shared album or space, a partner share, a
+ * public link) keeps showing it. `docs/docs/features/locked.md` states the same rule.
  */
 const OWNER_RULE_REACHES: Record<Actor, boolean> = {
   owner: false,
@@ -318,6 +317,25 @@ describe('cross-surface access matrix (FL-137 QA-101)', () => {
         );
       }),
     );
+  });
+
+  it("keeps explicit album, partner and link shares under the owner's Locked rule, and withdraws per-item shares (owner decision, 2026-09-29)", async () => {
+    const { ctx, access } = setup();
+    const lib = await library(ctx);
+    const ids = new Set([lib.items.lockedRule]);
+    const reaches = async (actor: Actor) =>
+      (await checkAccess(access, { auth: lib.auths[actor], permission: Permission.AssetRead, ids })).size > 0;
+
+    for (const actor of ['editor', 'viewer', 'partner', 'link', 'linkNoDownload', 'ownerUnlocked'] as const) {
+      await expect(reaches(actor)).resolves.toBe(true);
+    }
+    for (const actor of ['recipient', 'owner'] as const) {
+      await expect(reaches(actor)).resolves.toBe(false);
+    }
+
+    // Lifting the rule gives the per-item recipient the item back; nothing was frozen at share time.
+    await setOwnerLockedTagRule(lib.owner.id, []);
+    await expect(reaches('recipient')).resolves.toBe(true);
   });
 
   it('revokes every grant path at once', async () => {

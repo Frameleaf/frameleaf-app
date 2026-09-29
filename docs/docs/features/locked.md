@@ -22,6 +22,12 @@ Stacks and live photos lock and unlock as a whole: locking one photo of a stack 
 - **Shared links**: never.
 - **Server jobs** (thumbnails, machine learning, backups, restorations): always. Background work is never skipped because an item is locked. A bulk change you queue without unlocking skips any item that was locked after you queued it.
 
+### Locked rules and what you shared
+
+A Locked rule (the people, pets and tags you chose in the Locked rules of your security settings) hides matching items from your own sessions until you unlock. It also stops you from sharing them item by item: a matching item cannot be shared with a person, and a person you already shared it with stops seeing it, and cannot preview or export it in their Studio projects, for as long as the rule applies.
+
+A Locked rule does not take back what you shared on purpose (owner decision, September 29, 2026). An item you put in a shared album or space, share with a partner, or include in a shared link stays visible there, even while it matches one of your Locked rules. To stop sharing such an item, remove it from the album or link, stop partner sharing, or lock the item itself: a locked item never reaches anybody else.
+
 ## Revealed for this session
 
 Once you unlock with your PIN, the items you marked, the ones detection locked, the ones moved from the old Locked folder and the ones your Locked rules hide behave like any other item, everywhere, for you:
