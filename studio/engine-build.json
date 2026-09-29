@@ -109,7 +109,12 @@
       "path": "patches/0021-chroma-hard-edge.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "69ec404e5930d5ebdd97bdeb72526a8f6d5f4e7bb34a2dfc71c99f67b4330cc6"
+    },
+    {
+      "path": "patches/0022-expression-dependency-budget.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "35d020c532ccac245a8853ea5a304e694df21236c05dcb7367707e641a8302a9"
     }
   ],
-  "sourceSha256": "37e426d5e2b0d67340a0d127a080d4051e4941afaa773c00f8c66d8615f2c403"
+  "sourceSha256": "e05aabc1fe104bdf070ae6954785733affc075bf7e1551d72a43fb9622ea5b23"
 }
