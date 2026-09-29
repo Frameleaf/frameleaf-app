@@ -27,7 +27,9 @@ test('shares one item with a person and removes it when the owner revokes access
     await ownerPage.goto(`/photos/${shared.id}`);
     const share = ownerPage.getByTestId('asset-viewer-navbar-actions').getByRole('button', { name: 'Share' });
     await share.click();
-    const sheet = ownerPage.getByRole('dialog', { name: 'Share 1 item' });
+    // ShareSheet.svelte titles a single-asset share by its filename, not a generic "1 item"
+    // (subject = assets?.[0]?.originalFileName for a single asset) — match that real title.
+    const sheet = ownerPage.getByRole('dialog', { name: 'Share shared-fl198.png' });
     await expect(sheet.getByRole('radio', { name: /Share with people in this library/ })).toHaveAttribute(
       'aria-checked',
       'true',

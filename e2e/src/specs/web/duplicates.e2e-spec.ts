@@ -223,7 +223,9 @@ test.describe('Duplicate review', () => {
       )
       .toBe(true);
 
-    const playTogether = review.getByRole('button', { name: 'Play together' });
+    // Accessible name is the button's actual copy (frameleaf_duplicates_play_together in i18n),
+    // not the paraphrase this spec previously used — the mismatch made the locator never resolve.
+    const playTogether = review.getByRole('button', { name: 'Play both from the start' });
     await playTogether.focus();
     await page.keyboard.press('Enter');
     await expect
