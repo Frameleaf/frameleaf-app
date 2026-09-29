@@ -1,0 +1,42 @@
+--- a/src/infrastructure/gpu-shared/blend-modes.ts
++++ b/src/infrastructure/gpu-shared/blend-modes.ts
+@@ -89,5 +89,5 @@
+   return select(min(vec3f(1.0), base / max(1.0 - layer, vec3f(0.001))), vec3f(1.0), layer == vec3f(1.0));
+ }
+-fn blendLinearDodge(base: vec3f, layer: vec3f) -> vec3f { return min(base + layer, vec3f(1.0)); }
+-
++fn blendLinearDodge(base: vec3f, layer: vec3f) -> vec3f { return base + layer; }
++
+ fn blendOverlay(base: vec3f, layer: vec3f) -> vec3f {
+--- a/src/infrastructure/gpu-compositor/compositor-pipeline.test.ts
++++ b/src/infrastructure/gpu-compositor/compositor-pipeline.test.ts
+@@ -88,4 +88,28 @@
+     ).toBe(true)
+   })
+-
++
++  it('keeps linear-dodge highlights in float until the explicit canvas conversion', () => {
++    // 0.7 + 0.6 = 1.3; a later subtract of 0.3 must yield 1.0, not 0.7.
++    const { device } = createPipelineHarness()
++    const shaderSources = (
++      device.createShaderModule.mock.calls as unknown as Array<[GPUShaderModuleDescriptor]>
++    ).map(([descriptor]) => descriptor.code)
++    const pipelines = (
++      device.createRenderPipeline.mock.calls as unknown as Array<[GPURenderPipelineDescriptor]>
++    ).map(([descriptor]) => descriptor)
++
++    expect(shaderSources.some((code) =>
++      code.includes('fn blendLinearDodge(base: vec3f, layer: vec3f) -> vec3f { return base + layer; }'),
++    )).toBe(true)
++    const floatPipelines = pipelines.filter((pipeline) =>
++      pipeline.fragment?.entryPoint === 'compositeFragment' ||
++      pipeline.fragment?.entryPoint === 'compositeExternalFragment',
++    )
++    expect(floatPipelines).toHaveLength(2)
++    expect(floatPipelines.every((pipeline) => pipeline.fragment?.targets?.[0]?.format === 'rgba16float')).toBe(true)
++    expect(shaderSources.some((code) =>
++      code.includes('return vec4f(clamp(c.rgb, vec3f(0.0), vec3f(1.0)) * c.a, c.a);'),
++    )).toBe(true)
++  })
++
+   it('binds independent uniforms for masked and unmasked layers encoded in one command buffer', () => {

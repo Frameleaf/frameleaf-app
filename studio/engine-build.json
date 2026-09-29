@@ -64,7 +64,12 @@
       "path": "patches/0012-split-all-unlinked-tracks.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "1cdf2f2f018b3f767c1e31b42122750609c6442394b76f6a8225f8a842d51c65"
+    },
+    {
+      "path": "patches/0013-linear-dodge-float.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "9ad71bba349f591c8da5479c3be172be1fb13a13aac4e958ecb752fa66ad8025"
     }
   ],
-  "sourceSha256": "5f9da22c3dfed53e86948aa6051bf1eb23ff01a1464833f76daf4e0db2f0761e"
+  "sourceSha256": "7bfa7718774b9bde8ebff0d927f4304b1db09235d6ca6b8510a021980c9bfb52"
 }
