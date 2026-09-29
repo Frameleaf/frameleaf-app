@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { browser } from '$app/environment';
   import { goto, invalidate, onNavigate } from '$app/navigation';
   import { navigating } from '$app/state';
   import { scrollMemoryClearer } from '$lib/actions/scroll-memory';
@@ -200,6 +201,32 @@
     if (librarySession.state.scope.kind !== scope.kind || librarySession.state.scope.id !== scope.id) {
       librarySession.setScope(scope);
     }
+  });
+
+  // LibraryView restores ordinary albums. Collections use ResultsView, so restore their tab state
+  // here; the album id and account keep another collection's selection and draft out of this one.
+  let restoredCollection = $state('');
+  $effect(() => {
+    if (!browser || !isCollection) {
+      return;
+    }
+    const userId = authManager.authenticated && !authManager.isSharedLink ? currentUserId : undefined;
+    const context = `collection:${albumId}`;
+    const key = `${userId ?? ''}:${context}`;
+    if (restoredCollection === key) {
+      return;
+    }
+    librarySession.restore(undefined, userId, context);
+    librarySession.setScope({ kind: 'album', id: albumId });
+    restoredCollection = key;
+  });
+
+  $effect(() => {
+    if (!browser || !isCollection || !restoredCollection) {
+      return;
+    }
+    void librarySession.session;
+    librarySession.persist(authManager.authenticated && !authManager.isSharedLink ? currentUserId : undefined);
   });
 
   $effect(() => {
