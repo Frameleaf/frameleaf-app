@@ -44,7 +44,12 @@
       "path": "patches/0008-soft-light-signed-domain.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "d9554dd9844e8ade57fa655f4fc8950681d27b8480f1ff9111da824d2b0ad7aa"
+    },
+    {
+      "path": "patches/0009-lut-cache-size.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "5cb44300e559c29be2e22782b7e42b5a380f057d2f706fa5ced858a25d9fabe0"
     }
   ],
-  "sourceSha256": "ae530a7d7f7a8df0b4c0aaf2ee183220808eda78ee820376f2cf648d9890071a"
+  "sourceSha256": "e422aed72e061bbd6236b260f913ec9ae0fd975d001b544c73d5bf5520f16b4c"
 }
