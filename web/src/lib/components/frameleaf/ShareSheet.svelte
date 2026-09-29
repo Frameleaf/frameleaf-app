@@ -188,22 +188,37 @@
   };
 
   const saveSharing = async () => {
-    const toAdd = without(recipients, initialAllRecipients).filter((id) => !partialRecipients.has(id));
-    const toRemove = without(initialRecipients, recipients);
+    const savedAssetIds = [...assetIds];
+    const selectionKey = savedAssetIds.join(',');
+    const selectionLoadId = loadId;
+    const savedRecipients = new Set(recipients);
+    const savedPartialRecipients = new Set(partialRecipients);
+    const isCurrentSelection = () => open && loadId === selectionLoadId && assetIds.join(',') === selectionKey;
+    const toAdd = without(savedRecipients, initialAllRecipients).filter((id) => !savedPartialRecipients.has(id));
+    const toRemove = without(initialRecipients, savedRecipients);
     saving = true;
     try {
       if (toAdd.length > 0) {
-        await shareItems({ itemShareChangeDto: { assetIds, userIds: toAdd } });
+        await shareItems({ itemShareChangeDto: { assetIds: savedAssetIds, userIds: toAdd } });
+        if (isCurrentSelection()) {
+          initialRecipients = new Set([...initialRecipients, ...toAdd]);
+          initialAllRecipients = new Set([...initialAllRecipients, ...toAdd]);
+        }
       }
       if (toRemove.length > 0) {
-        await unshareItems({ itemShareChangeDto: { assetIds, userIds: toRemove } });
+        await unshareItems({ itemShareChangeDto: { assetIds: savedAssetIds, userIds: toRemove } });
       }
-      initialRecipients = new Set(recipients);
-      initialAllRecipients = new Set(without(recipients, partialRecipients));
+      if (!isCurrentSelection()) {
+        return;
+      }
+      initialRecipients = savedRecipients;
+      initialAllRecipients = new Set(without(savedRecipients, savedPartialRecipients));
       toastManager.primary($t('frameleaf_sharing.sharing_saved'));
       open = false;
     } catch (error) {
-      handleError(error, $t('frameleaf_sharing.sharing_save_failed'));
+      if (isCurrentSelection()) {
+        handleError(error, $t('frameleaf_sharing.sharing_save_failed'));
+      }
     } finally {
       saving = false;
     }
@@ -302,6 +317,7 @@
       <button
         type="button"
         role="radio"
+        disabled={saving}
         data-mode="people"
         aria-checked={mode === 'people'}
         tabindex={mode === 'people' ? 0 : -1}
@@ -315,6 +331,7 @@
       <button
         type="button"
         role="radio"
+        disabled={saving}
         data-mode="link"
         aria-checked={mode === 'link'}
         tabindex={mode === 'link' ? 0 : -1}
@@ -342,6 +359,7 @@
           {@const partial = partialRecipients.has(person.id)}
           <button
             type="button"
+            disabled={saving}
             class="ss-person"
             class:is-selected={selected}
             aria-pressed={partial ? 'mixed' : selected}
