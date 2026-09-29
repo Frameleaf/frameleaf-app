@@ -104,7 +104,12 @@
       "path": "patches/0020-nested-preview-audio-mute.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "1b9d62f5cbcec97c69a118f094716c74c8c0b3d8a4e02bb9817c54ce45d2d5f4"
+    },
+    {
+      "path": "patches/0021-chroma-hard-edge.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "69ec404e5930d5ebdd97bdeb72526a8f6d5f4e7bb34a2dfc71c99f67b4330cc6"
     }
   ],
-  "sourceSha256": "5af17fffb373ab040aecac8431de5e2194aeb5fc08a5a4afc402805264ba9d77"
+  "sourceSha256": "37e426d5e2b0d67340a0d127a080d4051e4941afaa773c00f8c66d8615f2c403"
 }
