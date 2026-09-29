@@ -124,7 +124,12 @@
       "path": "patches/0024-project-master-mute.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "cfb4b7914ab47d57a97332aa0e11f275a59af04eabf5a0968c6f20cb36f2a4b1"
+    },
+    {
+      "path": "patches/0025-relink-workspace-source.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "769b414bfba9c5aa0bcf808a11d48442856a16fbd5578f1815e9f1b91660b47f"
     }
   ],
-  "sourceSha256": "e63990bf8ced2db5679f4fc5f29233c8087fe547855a5b14a760d8cf746006cd"
+  "sourceSha256": "b0175c77bfd300092ee57d631b573bacc1ab56ad976961858546ebab864d7ca1"
 }
