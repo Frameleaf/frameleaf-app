@@ -22,7 +22,7 @@ let port: MessagePort | null = null
 let nextCallId = 1
 // Like the host's settled commands, this lives for the editor document's lifetime. A retry keeps
 // the first intent even if the person changes linked selection before resending the same key.
-const linkedMoves = new Map<string, boolean>()
+const linkedEdits = new Map<string, boolean>()
 const pending = new Map<
   number,
   { resolve: (value: unknown) => void; reject: (error: Error) => void }
@@ -37,11 +37,11 @@ export function call<Name extends StudioFrameServiceName>(
   let serviceArgs: unknown[] = args
   if (name === 'submitCommands') {
     serviceArgs = [(args[0] as StudioCommandEnvelope[]).map((envelope) => {
-      if (envelope.id !== 'clip.move') return envelope
-      const payload = envelope.payload as StudioCommandPayloads['clip.move']
-      const linkedSelectionEnabled = linkedMoves.get(envelope.idempotencyKey)
+      if (envelope.id !== 'clip.move' && envelope.id !== 'clip.split') return envelope
+      const payload = envelope.payload as StudioCommandPayloads['clip.move' | 'clip.split']
+      const linkedSelectionEnabled = linkedEdits.get(envelope.idempotencyKey)
         ?? payload.linkedSelectionEnabled ?? useEditorStore.getState().linkedSelectionEnabled
-      linkedMoves.set(envelope.idempotencyKey, linkedSelectionEnabled)
+      linkedEdits.set(envelope.idempotencyKey, linkedSelectionEnabled)
       return { ...envelope, payload: { ...payload, linkedSelectionEnabled } }
     })]
   }

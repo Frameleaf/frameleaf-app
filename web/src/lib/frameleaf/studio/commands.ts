@@ -246,7 +246,7 @@ export interface StudioCommandPayloads {
   'clip.setTransition': { clipId: string; transition: StudioTransitionIntent | null };
   'clip.slide': { clipId: string; delta: StudioDuration };
   'clip.slip': { clipId: string; delta: StudioDuration };
-  'clip.split': { at: StudioTime; clipIds?: string[] };
+  'clip.split': { at: StudioTime; clipIds?: string[]; linkedSelectionEnabled?: boolean };
   'clip.trimEnd': { clipId: string; end: StudioTime } & StudioRippleOption;
   'clip.trimStart': { clipId: string; start: StudioTime } & StudioRippleOption;
   'clip.ungroup': { groupId: string };
