@@ -18,5 +18,6 @@
   <Config Name="Database user" Target="DB_USERNAME" Default="immich" Description="PostgreSQL user" Type="Variable" Display="always" Required="true" Mask="false">immich</Config>
   <Config Name="Database password" Target="DB_PASSWORD" Default="" Description="Use the same generated secret configured in PostgreSQL" Type="Variable" Display="always" Required="true" Mask="true"></Config>
   <Config Name="Cache host" Target="REDIS_HOSTNAME" Default="frameleaf-valkey" Description="Valkey container name on the frameleaf network" Type="Variable" Display="always" Required="true" Mask="false">frameleaf-valkey</Config>
+  <Config Name="Machine learning" Target="IMMICH_MACHINE_LEARNING_ENABLED" Default="false" Description="Set true after installing frameleaf-ml on the frameleaf network" Type="Variable" Display="always" Required="true" Mask="false">false</Config>
   <Config Name="Machine learning URL" Target="IMMICH_MACHINE_LEARNING_URL" Default="http://frameleaf-ml:3003" Description="Optional ML container on the frameleaf network" Type="Variable" Display="advanced" Required="false" Mask="false">http://frameleaf-ml:3003</Config>
 </Container>
