@@ -1,0 +1,212 @@
+--- a/src/infrastructure/gpu-transitions/transition-pipeline.ts
++++ b/src/infrastructure/gpu-transitions/transition-pipeline.ts
+@@ -8,4 +8,5 @@
+ interface TransitionPipelineRecord {
+   pipeline: GPURenderPipeline
++  floatPipeline: GPURenderPipeline
+   bindGroupLayout: GPUBindGroupLayout
+ }
+@@ -37,5 +38,7 @@
+   private texW = 0
+   private texH = 0
++  private premultiplyPipeline: GPURenderPipeline | null = null
++  private premultipliedInputs: GPUTexture[] = []
+   private initialized = false
+-
++
+   private constructor(device: GPUDevice) {
+@@ -120,7 +123,32 @@
+         },
+         primitive: { topology: 'triangle-list' },
+       })
+-      this.pipelines.set(id, { pipeline, bindGroupLayout })
++      // The transition shaders operate on premultiplied inputs. Preserve their
++      // SDR entry point; only float compositor output crosses to straight alpha.
++      const signature = `@fragment\nfn ${def.entryPoint}(input: VertexOutput) -> @location(0) vec4f`
++      if (!def.shader.includes(signature)) throw new Error(`Unsupported transition entry point: ${id}`)
++      const floatShader = this.device.createShaderModule({
++        label: `transition-${id}-float`,
++        code: `${TRANSITION_COMMON_WGSL}\n${def.shader.replace(signature, `fn ${def.entryPoint}(input: VertexOutput) -> vec4f`)}
++@fragment
++fn straightFragment(input: VertexOutput) -> @location(0) vec4f {
++  let color = ${def.entryPoint}(input);
++  if (color.a <= 0.0) { return vec4f(0.0); }
++  return vec4f(color.rgb / color.a, color.a);
++}`,
++      })
++      const floatPipeline = this.device.createRenderPipeline({
++        label: `transition-${id}-float-pipeline`,
++        layout: this.device.createPipelineLayout({ bindGroupLayouts: [bindGroupLayout] }),
++        vertex: { module: floatShader, entryPoint: 'vertexMain' },
++        fragment: {
++          module: floatShader,
++          entryPoint: 'straightFragment',
++          targets: [{ format: 'rgba16float' }],
++        },
++        primitive: { topology: 'triangle-list' },
++      })
++      this.pipelines.set(id, { pipeline, floatPipeline, bindGroupLayout })
+     } catch (e) {
+       log.warn(`Failed to create pipeline for "${id}"`, e)
+     }
+@@ -268,6 +296,7 @@
+     outputView: GPUTextureView,
+     direction?: string,
+     properties?: Record<string, unknown>,
++    outputFormat: GPUTextureFormat = 'rgba8unorm',
+   ): boolean {
+     const record = this.pipelines.get(transitionId)
+     const def = getGpuTransition(transitionId)
+@@ -300,7 +329,7 @@
+         },
+       ],
+     })
+-    pass.setPipeline(record.pipeline)
++    pass.setPipeline(outputFormat === 'rgba16float' ? record.floatPipeline : record.pipeline)
+     pass.setBindGroup(0, bindGroup)
+     pass.draw(6)
+     pass.end()
+@@ -365,6 +394,7 @@
+    * This still uploads the participant canvases today, but it keeps the
+    * transition output GPU-native so a downstream GPU compositor can consume it
+    * without drawing through an intermediate canvas and uploading again.
++   * rgba16float output is straight alpha; rgba8unorm output is premultiplied SDR.
+    */
+   renderToTexture(
+     transitionId: string,
+@@ -378,5 +408,6 @@
+     properties?: Record<string, unknown>,
+   ): boolean {
+     if (!this.pipelines.has(transitionId) || !getGpuTransition(transitionId)) return false
++    if (outputTexture.format !== 'rgba8unorm' && outputTexture.format !== 'rgba16float') return false
+     if (width < 2 || height < 2) return false
+     if (outputTexture.width !== width || outputTexture.height !== height) return false
+@@ -390,13 +421,16 @@
+       outputTexture.createView(),
+       direction,
+       properties,
++      outputTexture.format,
+     )
+   }
+-
++
+   /**
+    * Render a transition from existing GPU textures into a caller-owned GPU
+    * texture. This is the zero-upload transition path for render graph nodes that
+-   * already keep clip/effect output on the GPU.
++   * already keep clip/effect output on the GPU. Declare straight input for float
++   * compositor/effect participants. Existing callers default to premultiplied.
++   * rgba16float output is straight alpha; rgba8unorm output is premultiplied SDR.
+    */
+   renderTexturesToTexture(
+     transitionId: string,
+@@ -408,10 +442,12 @@
+     height: number,
+     direction?: string,
+     properties?: Record<string, unknown>,
++    inputAlpha: 'straight' | 'premultiplied' = 'premultiplied',
+   ): boolean {
+     const record = this.pipelines.get(transitionId)
+     const def = getGpuTransition(transitionId)
+     if (!record || !def) return false
++    if (outputTexture.format !== 'rgba8unorm' && outputTexture.format !== 'rgba16float') return false
+     if (width < 2 || height < 2) return false
+     if (
+       leftTexture.width !== width ||
+@@ -435,14 +471,17 @@
+     )
+     if (def.uniformSize > 0 && !uniformBuffer) return false
+-
++
++    const commandEncoder = this.device.createCommandEncoder()
++    const inputs = inputAlpha === 'straight'
++      ? this.premultiplyInputs(leftTexture, rightTexture, commandEncoder)
++      : [leftTexture, rightTexture]
+     const bindGroup = this.createBindGroup(
+       record.bindGroupLayout,
+-      leftTexture.createView(),
+-      rightTexture.createView(),
++      inputs[0]!.createView(),
++      inputs[1]!.createView(),
+       uniformBuffer,
+     )
+-
++
+-    const commandEncoder = this.device.createCommandEncoder()
+     const pass = commandEncoder.beginRenderPass({
+       colorAttachments: [
+         {
+@@ -452,7 +491,7 @@
+         },
+       ],
+     })
+-    pass.setPipeline(record.pipeline)
++    pass.setPipeline(outputTexture.format === 'rgba16float' ? record.floatPipeline : record.pipeline)
+     pass.setBindGroup(0, bindGroup)
+     pass.draw(6)
+     pass.end()
+@@ -461,11 +500,62 @@
+     return true
+   }
+-
++
++  // Premultiply before any linear sampling so hidden RGB cannot bleed into edges.
++  private premultiplyInputs(
++    left: GPUTexture,
++    right: GPUTexture,
++    encoder: GPUCommandEncoder,
++  ): GPUTexture[] {
++    if (!this.premultiplyPipeline) {
++      const module = this.device.createShaderModule({
++        label: 'transition-premultiply',
++        code: `${TRANSITION_COMMON_WGSL}
++@group(0) @binding(0) var source: texture_2d<f32>;
++@fragment
++fn premultiplyFragment(input: VertexOutput) -> @location(0) vec4f {
++  let color = textureLoad(source, vec2i(input.position.xy), 0);
++  return vec4f(color.rgb * color.a, color.a);
++}`,
++      })
++      this.premultiplyPipeline = this.device.createRenderPipeline({
++        label: 'transition-premultiply',
++        layout: 'auto',
++        vertex: { module, entryPoint: 'vertexMain' },
++        fragment: { module, entryPoint: 'premultiplyFragment', targets: [{ format: 'rgba16float' }] },
++        primitive: { topology: 'triangle-list' },
++      })
++    }
++    if (this.premultipliedInputs[0]?.width !== left.width || this.premultipliedInputs[0]?.height !== left.height) {
++      for (const texture of this.premultipliedInputs) texture.destroy()
++      this.premultipliedInputs = [left, right].map(() => this.device.createTexture({
++        size: [left.width, left.height],
++        format: 'rgba16float',
++        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
++      }))
++    }
++    for (const [index, texture] of [left, right].entries()) {
++      const pass = encoder.beginRenderPass({
++        colorAttachments: [{ view: this.premultipliedInputs[index]!.createView(), loadOp: 'clear', storeOp: 'store' }],
++      })
++      pass.setPipeline(this.premultiplyPipeline)
++      pass.setBindGroup(0, this.device.createBindGroup({
++        layout: this.premultiplyPipeline.getBindGroupLayout(0),
++        entries: [{ binding: 0, resource: texture.createView() }],
++      }))
++      pass.draw(6)
++      pass.end()
++    }
++    return this.premultipliedInputs
++  }
++
+   has(transitionId: string): boolean {
+     return this.pipelines.has(transitionId)
+   }
+-
++
+   destroy(): void {
++    for (const texture of this.premultipliedInputs) texture.destroy()
++    this.premultipliedInputs = []
++    this.premultiplyPipeline = null
+     this.leftTexture?.destroy()
+     this.rightTexture?.destroy()
+     this.leftTexture = null
