@@ -1,0 +1,362 @@
+{
+ "description": "FL-103 / FL-111 Whisper word-timing evidence. whisper-timing.wav is 7.99 s of synthetic speech (macOS `say`, voice Samantha, rate 170) of `text`; its pauses were measured from the waveform (20 ms RMS below 0.01 for at least 120 ms). Model onnx-community/whisper-tiny_timestamped at the approved revision, the Whisper worker's own options. transformers.js 3.8.1 places every word boundary on the pauses; 4.1.0 places every word about one word late, so the worker stays on 3.8.1 (owner decision 2026-09-29).",
+ "text": "The quick brown fox jumps over the lazy dog. Frameleaf keeps every recording with its project, and the captions follow each word exactly.",
+ "model": "onnx-community/whisper-tiny_timestamped",
+ "revision": "517244293732ee2d58139af5814231b7e6830a0d",
+ "dtype": {
+  "encoder_model": "fp32",
+  "decoder_model_merged": "q4"
+ },
+ "options": {
+  "sampling_rate": 16000,
+  "return_timestamps": "word",
+  "chunk_length_s": 30,
+  "stride_length_s": 5,
+  "batch_size": 1,
+  "force_full_sequences": false,
+  "top_k": 0,
+  "do_sample": false,
+  "task": "transcribe",
+  "language": "en"
+ },
+ "pauses": [
+  [
+   2.44,
+   2.78
+  ],
+  [
+   5.36,
+   5.68
+  ]
+ ],
+ "transformersVersion": "3.8.1",
+ "expected": [
+  {
+   "text": " The",
+   "timestamp": [
+    0,
+    0.18
+   ]
+  },
+  {
+   "text": " quick",
+   "timestamp": [
+    0.18,
+    0.4
+   ]
+  },
+  {
+   "text": " brown",
+   "timestamp": [
+    0.4,
+    0.74
+   ]
+  },
+  {
+   "text": " fox",
+   "timestamp": [
+    0.74,
+    1.06
+   ]
+  },
+  {
+   "text": " jumps",
+   "timestamp": [
+    1.06,
+    1.34
+   ]
+  },
+  {
+   "text": " over",
+   "timestamp": [
+    1.34,
+    1.7
+   ]
+  },
+  {
+   "text": " the",
+   "timestamp": [
+    1.7,
+    1.86
+   ]
+  },
+  {
+   "text": " lazy",
+   "timestamp": [
+    1.86,
+    2.12
+   ]
+  },
+  {
+   "text": " dog,",
+   "timestamp": [
+    2.12,
+    2.5
+   ]
+  },
+  {
+   "text": " framelife",
+   "timestamp": [
+    2.88,
+    3.4
+   ]
+  },
+  {
+   "text": " keeps",
+   "timestamp": [
+    3.4,
+    3.68
+   ]
+  },
+  {
+   "text": " every",
+   "timestamp": [
+    3.68,
+    4.06
+   ]
+  },
+  {
+   "text": " recording",
+   "timestamp": [
+    4.06,
+    4.44
+   ]
+  },
+  {
+   "text": " with",
+   "timestamp": [
+    4.44,
+    4.68
+   ]
+  },
+  {
+   "text": " its",
+   "timestamp": [
+    4.68,
+    4.92
+   ]
+  },
+  {
+   "text": " project,",
+   "timestamp": [
+    4.92,
+    5.5
+   ]
+  },
+  {
+   "text": " and",
+   "timestamp": [
+    5.64,
+    5.88
+   ]
+  },
+  {
+   "text": " the",
+   "timestamp": [
+    5.88,
+    6.04
+   ]
+  },
+  {
+   "text": " captions",
+   "timestamp": [
+    6.04,
+    6.4
+   ]
+  },
+  {
+   "text": " follow",
+   "timestamp": [
+    6.4,
+    6.86
+   ]
+  },
+  {
+   "text": " each",
+   "timestamp": [
+    6.86,
+    7.14
+   ]
+  },
+  {
+   "text": " word",
+   "timestamp": [
+    7.14,
+    7.34
+   ]
+  },
+  {
+   "text": " exactly.",
+   "timestamp": [
+    7.34,
+    7.92
+   ]
+  }
+ ],
+ "rejected": {
+  "transformersVersion": "4.1.0",
+  "observed": [
+   {
+    "text": " the",
+    "timestamp": [
+     0.18,
+     0.4
+    ]
+   },
+   {
+    "text": " quick",
+    "timestamp": [
+     0.4,
+     0.74
+    ]
+   },
+   {
+    "text": " brown",
+    "timestamp": [
+     0.74,
+     1.06
+    ]
+   },
+   {
+    "text": " fox",
+    "timestamp": [
+     1.06,
+     1.36
+    ]
+   },
+   {
+    "text": " jumps",
+    "timestamp": [
+     1.36,
+     1.7
+    ]
+   },
+   {
+    "text": " over",
+    "timestamp": [
+     1.7,
+     1.86
+    ]
+   },
+   {
+    "text": " the",
+    "timestamp": [
+     1.86,
+     2.12
+    ]
+   },
+   {
+    "text": " lazy",
+    "timestamp": [
+     2.12,
+     2.5
+    ]
+   },
+   {
+    "text": " dog,",
+    "timestamp": [
+     2.5,
+     2.9
+    ]
+   },
+   {
+    "text": " framelife",
+    "timestamp": [
+     3.08,
+     3.7
+    ]
+   },
+   {
+    "text": " keeps",
+    "timestamp": [
+     3.7,
+     4.06
+    ]
+   },
+   {
+    "text": " every",
+    "timestamp": [
+     4.06,
+     4.44
+    ]
+   },
+   {
+    "text": " recording",
+    "timestamp": [
+     4.44,
+     4.7
+    ]
+   },
+   {
+    "text": " with",
+    "timestamp": [
+     4.7,
+     4.84
+    ]
+   },
+   {
+    "text": " its",
+    "timestamp": [
+     4.94,
+     4.94
+    ]
+   },
+   {
+    "text": " project,",
+    "timestamp": [
+     5.42,
+     5.7
+    ]
+   },
+   {
+    "text": " and",
+    "timestamp": [
+     5.88,
+     6.04
+    ]
+   },
+   {
+    "text": " the",
+    "timestamp": [
+     6.04,
+     6.4
+    ]
+   },
+   {
+    "text": " captions",
+    "timestamp": [
+     6.4,
+     6.86
+    ]
+   },
+   {
+    "text": " follow",
+    "timestamp": [
+     6.86,
+     7.14
+    ]
+   },
+   {
+    "text": " each",
+    "timestamp": [
+     7.14,
+     7.34
+    ]
+   },
+   {
+    "text": " word",
+    "timestamp": [
+     7.34,
+     7.9
+    ]
+   },
+   {
+    "text": " exactly.",
+    "timestamp": [
+     7.9,
+     7.92
+    ]
+   }
+  ]
+ }
+}

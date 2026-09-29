@@ -144,7 +144,12 @@
       "path": "patches/0028-approved-model-revisions.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "6135f53db8d70a12e206e52bae319e1e7ed89366293315a7bbb1ac065f032d34"
+    },
+    {
+      "path": "patches/0029-bundled-onnx-runtimes.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "fa7b79dcefc3bb94c70430324d126b648f72cb08001f0f9dee6aeb1507358cd2"
     }
   ],
-  "sourceSha256": "9fe1900dfd795ed8f6e64471e7c4ffd6907d3be0643bb6e9502df2cd0799aeaa"
+  "sourceSha256": "8ef4c9fda048ffb83b92c7d779b4dcd3bc7fa1e2c8bd7a1069c2898cb750582f"
 }

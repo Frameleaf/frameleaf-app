@@ -145,6 +145,8 @@ export function ownerApproval(approval, manifest) {
   const byId = new Map((manifest.resources ?? []).map((resource) => [resource.id, resource]));
   const approved = new Map();
   const excluded = new Map();
+  /** A row approved again after it changed carries its own date and record; the rest share the file's. */
+  const rowApprovedOn = new Map();
   for (const entry of approval.resources ?? []) {
     const resource = byId.get(entry?.id);
     if (!resource) {
@@ -155,6 +157,15 @@ export function ownerApproval(approval, manifest) {
     }
     // A row that changed after it was approved is not what the owner approved: it stays blocked.
     approved.set(entry.id, entry.sha256 === approvalRowDigest(resource));
+    if (entry.approvedOn !== undefined || entry.source !== undefined) {
+      if (typeof entry.approvedOn !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(entry.approvedOn)) {
+        failApproval(`${entry.id} approvedOn must be a date (YYYY-MM-DD)`);
+      }
+      if (typeof entry.source !== 'string' || entry.source.trim().length === 0) {
+        failApproval(`${entry.id} must say where its own approval is recorded (source)`);
+      }
+      rowApprovedOn.set(entry.id, entry.approvedOn);
+    }
     if (entry.excludedUses !== undefined) {
       const exclusions = entry.excludedUses;
       if (!exclusions || typeof exclusions !== 'object' || Array.isArray(exclusions)) {
@@ -178,6 +189,7 @@ export function ownerApproval(approval, manifest) {
     uses,
     approved,
     excluded,
+    rowApprovedOn,
   };
 }
 
@@ -200,7 +212,7 @@ export function buildServerMirror(manifestText, approvalText = null) {
       redistribution: decide('redistribution'),
       localRuntime: decide('localRuntime'),
       hostedUse: decide('hostedUse'),
-      approvedOn: approved ? approval.approvedOn : null,
+      approvedOn: approved ? (approval.rowApprovedOn.get(row.id) ?? approval.approvedOn) : null,
       restrictions,
     };
   });

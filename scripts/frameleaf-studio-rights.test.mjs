@@ -80,17 +80,23 @@ test('the owner approved every one of the 210 reviewed resources on 2026-09-25, 
   assert.equal(approval.resources.length, 210);
   const byId = new Map(manifest.resources.map((resource) => [resource.id, resource]));
   for (const entry of approval.resources) {
+    if (entry.id === 'runtime:whisper-transformers') continue;
     assert.equal(entry.sha256, approvalRowDigest(byId.get(entry.id)), entry.id);
   }
   const mirror = await read(SERVER_MIRROR_PATH);
-  assert.equal((mirror.match(/localRuntime: 'allowed'/g) ?? []).length, 210);
+  // runtime:whisper-transformers changed again (Whisper back on transformers.js 3.8.1) and waits for the owner.
+  assert.equal((mirror.match(/localRuntime: 'allowed'/g) ?? []).length, 209);
   // FL-146 comment 34944: MusicGen-small (CC-BY-NC-4.0) is withheld from hosted use only.
-  assert.equal((mirror.match(/hostedUse: 'allowed'/g) ?? []).length, 209);
+  assert.equal((mirror.match(/hostedUse: 'allowed'/g) ?? []).length, 208);
   assert.match(
     mirror,
     /'model:Xenova\/musicgen-small': \{[^}]*localRuntime: 'allowed',\n {4}hostedUse: 'blocked',[^}]*hostedUse:\n {8}'CC-BY-NC-4\.0/s,
   );
-  assert.equal((mirror.match(/approvedOn: '2026-09-25'/g) ?? []).length, 211);
+  // The two runtimes bundled by studio patch 0029 were approved again, at their new rows, on 2026-09-29.
+  const reapproved = approval.resources.filter((entry) => entry.approvedOn === '2026-09-29').map((entry) => entry.id);
+  assert.deepEqual(reapproved.sort(), ['runtime:onnx-cdn', 'runtime:whisper-transformers']);
+  assert.equal((mirror.match(/approvedOn: '2026-09-25'/g) ?? []).length, 209);
+  assert.equal((mirror.match(/approvedOn: '2026-09-29'/g) ?? []).length, 1);
   assert.match(mirror, /STUDIO_DISTRIBUTION_APPROVAL = false;/);
 });
 
@@ -124,6 +130,34 @@ test('an approval covers only the exact row it was given; new, changed and unkno
     () => buildServerMirror(minimal(resources), approval([]).replace('2026-09-25', 'yesterday')),
     /approvedOn must be a date/,
   );
+});
+
+test('a row approved again after it changed carries its own date and record', () => {
+  const resources = [row('runtime:R'), row('runtime:S')];
+  const approval = (entries) =>
+    JSON.stringify({
+      schemaVersion: 1,
+      approvedBy: 'Owner',
+      approvedOn: '2026-09-25',
+      source: 'FL-146',
+      uses: ['redistribution', 'localRuntime', 'hostedUse'],
+      resources: entries,
+    });
+  const text = buildServerMirror(
+    minimal(resources),
+    approval([
+      { id: 'runtime:R', sha256: approvalRowDigest(resources[0]), approvedOn: '2026-09-29', source: 'Owner in chat' },
+      { id: 'runtime:S', sha256: approvalRowDigest(resources[1]) },
+    ]),
+  );
+  assert.match(text, /'runtime:R': \{[^}]*localRuntime: 'allowed',[^}]*approvedOn: '2026-09-29'/s);
+  assert.match(text, /'runtime:S': \{[^}]*localRuntime: 'allowed',[^}]*approvedOn: '2026-09-25'/s);
+  for (const entry of [
+    { id: 'runtime:R', sha256: approvalRowDigest(resources[0]), approvedOn: '2026-09-29' },
+    { id: 'runtime:R', sha256: approvalRowDigest(resources[0]), approvedOn: 'today', source: 'x' },
+  ]) {
+    assert.throws(() => buildServerMirror(minimal(resources), approval([entry])), /runtime:R/);
+  }
 });
 
 test('an approved row may withhold a use, with its reason, and the withheld use stays blocked', () => {

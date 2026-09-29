@@ -563,11 +563,15 @@
     },
     {
       "id": "runtime:onnx-cdn",
-      "sha256": "f83f307d308ee2cfb37c24f9f7ad05943d288e4082e297db9b15d45360658dec"
+      "sha256": "e46c32b80331937527fc42f80fb7add893b00288eca421ec29f384288ba3bae4",
+      "approvedOn": "2026-09-29",
+      "source": "Owner (AJ Taylor) re-approved this row at its bundled, no-CDN locator and file digests (studio patch 0029) on 2026-09-29, in chat with the Frameleaf coordinator session, which relayed it to studio-editing; noted on Jira FL-86 and FL-136."
     },
     {
       "id": "runtime:whisper-transformers",
-      "sha256": "c0f90f856c78bc23f9bdcf6cf8b6457f4f4836c6c042085b83a832a450fcb931"
+      "sha256": "8d6547410454ed0600a13fdf7107a0e27ca5ffdf1818f740c0c0baa73efc840f",
+      "approvedOn": "2026-09-29",
+      "source": "Owner (AJ Taylor) re-approved this row at its bundled, no-CDN locator and file digests (studio patch 0029) on 2026-09-29, in chat with the Frameleaf coordinator session, which relayed it to studio-editing; noted on Jira FL-86 and FL-136."
     },
     {
       "id": "tool:dolby-artistic-trim",

@@ -1,0 +1,350 @@
+Subject: Serve ONNX Runtime and transformers.js from the engine build
+
+Freecut MIT adaptation. Owner decisions 2026-09-29: no runtime CDN, and
+the Whisper worker stays on transformers.js 3.8.1 (4.1.0 places word
+timestamps about a word late). The worker imports the lockfile-pinned
+3.8.1 install instead of esm.sh, and every ONNX Runtime WebAssembly the
+engine loads (onnxruntime-web, transformers.js 4.x, and transformers.js
+3.8.1 for kokoro-js and Whisper) is emitted into the build from the
+pinned packages and served from the engine's own origin instead of
+cdn.jsdelivr.net.
+
+--- /dev/null
++++ b/src/shared/utils/local-ort-assets.ts
+@@ -0,0 +1,41 @@
++/**
++ * Frameleaf: the ONNX Runtime WebAssembly the engine runs, served from the engine's own build
++ * instead of a CDN (owner decision, 2026-09-29). Each file is the one the installed package ships,
++ * so the JavaScript glue and the binary always come from the same pinned version.
++ *
++ * - `ORT_WASM_JSEP` is what `onnxruntime-web` (the default bundle) loads: `ort-runtime.ts`.
++ * - `transformersOrtWasmPaths()` is what `@huggingface/transformers` 4.x chooses for itself
++ *   (asyncify, or the plain build in Safari), for every transformers.js consumer.
++ * - `TRANSFORMERS_3_ORT_WASM` is the build transformers.js 3.8.1 loads: kokoro-js's own runtime and
++ *   the Whisper worker, which stays on 3.8.1 because 4.1.0 places word timestamps late (owner
++ *   decision 2026-09-29; `studio/tools/whisper-timing.test.mjs`).
++ */
++import jsepMjs from 'onnxruntime-web/ort-wasm-simd-threaded.jsep.mjs?url'
++import jsepWasm from 'onnxruntime-web/ort-wasm-simd-threaded.jsep.wasm?url'
++import asyncifyMjs from 'onnxruntime-web/ort-wasm-simd-threaded.asyncify.mjs?url'
++import asyncifyWasm from 'onnxruntime-web/ort-wasm-simd-threaded.asyncify.wasm?url'
++import plainMjs from 'onnxruntime-web/ort-wasm-simd-threaded.mjs?url'
++import plainWasm from 'onnxruntime-web/ort-wasm-simd-threaded.wasm?url'
++import kokoroMjs from '../../../node_modules/kokoro-js/node_modules/@huggingface/transformers/dist/ort-wasm-simd-threaded.jsep.mjs?url'
++import kokoroWasm from '../../../node_modules/kokoro-js/node_modules/@huggingface/transformers/dist/ort-wasm-simd-threaded.jsep.wasm?url'
++
++export interface OrtWasmPaths {
++  mjs: string
++  wasm: string
++}
++
++/** Absolute, so a worker or a blob-URL module resolves it against the page, not itself. */
++const absolute = (url: string) => new URL(url, globalThis.location?.href ?? 'http://localhost/').href
++
++const paths = (mjs: string, wasm: string): OrtWasmPaths => ({ mjs: absolute(mjs), wasm: absolute(wasm) })
++
++export const ORT_WASM_JSEP = (): OrtWasmPaths => paths(jsepMjs, jsepWasm)
++
++/** transformers.js 4.x's own choice (`backends/onnx.js`), with the files served locally. */
++export function transformersOrtWasmPaths(): OrtWasmPaths {
++  const userAgent = globalThis.navigator?.userAgent ?? ''
++  const safari = /Safari\//.test(userAgent) && !/Chrome\/|Chromium\/|Edg\//.test(userAgent)
++  return safari ? paths(plainMjs, plainWasm) : paths(asyncifyMjs, asyncifyWasm)
++}
++
++export const TRANSFORMERS_3_ORT_WASM = (): OrtWasmPaths => paths(kokoroMjs, kokoroWasm)
+--- a/src/shared/utils/ort-runtime.ts
++++ b/src/shared/utils/ort-runtime.ts
+@@ -1,8 +1,9 @@
+ import { requireResource } from '@/shared/utils/resource-admission.mjs'
++import { ORT_WASM_JSEP } from '@/shared/utils/local-ort-assets'
+ /**
+  * Lazy, once-per-realm bootstrap of onnxruntime-web.
+  *
+- * The wasm binaries are pulled from a CDN pinned to the exact dev build in `package.json` — a
++ * The wasm binaries are served from the engine's own build, from the exact dev build in `package.json` — a
+  * mismatch between the JS glue and the wasm is a silent, confusing failure, so the two move
+  * together. `numThreads = 1` because every model we run is already GPU-bound on the WebGPU EP,
+  * and the wasm fallback path is a correctness net rather than a performance one.
+@@ -11,8 +12,6 @@
+  * bundle gets its own module instance and therefore its own single initialization.
+  */
+ 
+-const ORT_WASM_PATH =
+-  'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.26.0-dev.20260410-5e55544225/dist/'
+ 
+ export type OrtModule = typeof import('onnxruntime-web')
+ export type OrtSession = Awaited<ReturnType<OrtModule['InferenceSession']['create']>>
+@@ -23,7 +22,8 @@
+     requireResource('runtime:onnx-cdn')
+   if (!ortPromise) {
+     ortPromise = import('onnxruntime-web').then((module) => {
+-      module.env.wasm.wasmPaths = ORT_WASM_PATH
++      // Frameleaf: served from the engine's own build, never a CDN (`local-ort-assets.ts`).
++      module.env.wasm.wasmPaths = ORT_WASM_JSEP()
+       module.env.wasm.numThreads = 1
+       return module
+     })
+--- a/src/features/media-library/transcription/workers/whisper.worker.ts
++++ b/src/features/media-library/transcription/workers/whisper.worker.ts
+@@ -1,4 +1,5 @@
+ import { approvedRevision, requireResource } from '@/shared/utils/resource-admission.mjs'
++import { TRANSFORMERS_3_ORT_WASM } from '@/shared/utils/local-ort-assets'
+ // Admission precedes all worker work, including reuse of an already-loaded runtime.
+ self.addEventListener('message', (event: MessageEvent) => {
+   if (['dispose', 'cancel', 'abort'].includes(event.data?.type)) return
+@@ -28,8 +29,6 @@
+ 
+ const logger = createLogger('TranscriptionWorker')
+ 
+-const TRANSFORMERS_CDN_URL = 'https://esm.sh/@huggingface/transformers@3.8.1?bundle'
+-const WASM_CDN_URL = 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1/dist/'
+ const WHISPER_CHUNK_SECONDS = 30
+ const WHISPER_STRIDE_SECONDS = 5
+ const WHISPER_TASK = 'transcribe'
+@@ -53,7 +52,7 @@
+     backends: {
+       onnx: {
+         wasm: {
+-          wasmPaths?: string
++          wasmPaths?: string | { mjs: string; wasm: string }
+         }
+       }
+     }
+@@ -64,6 +63,7 @@
+     options: {
+       device: 'webgpu' | 'wasm'
+       dtype: Record<string, string> | string
++      revision?: string
+       progress_callback?: (progress: ProgressInfo) => void
+     },
+   ) => Promise<ASRPipeline>
+@@ -154,13 +154,17 @@
+   reportedEstimatedBytes = 0
+ 
+   try {
++    // Frameleaf: transformers.js 3.8.1, the version Freecut pinned, bundled from the lockfile rather
++    // than imported from a CDN. 4.1.0 places word timestamps about a word late (owner decision
++    // 2026-09-29; `studio/tools/whisper-timing.test.mjs` holds the real-model evidence).
+     const { pipeline, env } = (await import(
+-      /* @vite-ignore */ TRANSFORMERS_CDN_URL
+-    )) as TransformersModule
++      // @ts-expect-error -- the nested dist has no declaration here; `TransformersModule` types it.
++      '../../../../../node_modules/kokoro-js/node_modules/@huggingface/transformers/dist/transformers.web.js'
++    )) as unknown as TransformersModule
+ 
+     env.useBrowserCache = true
+     env.allowLocalModels = false
+-    env.backends.onnx.wasm.wasmPaths = WASM_CDN_URL
++    env.backends.onnx.wasm.wasmPaths = TRANSFORMERS_3_ORT_WASM()
+ 
+     if (asrPipeline && currentModelId !== modelId) {
+       const disposable = asrPipeline as ASRPipeline & { dispose?: () => Promise<void> | void }
+--- a/src/features/media-library/transcription/workers/parakeet.worker.ts
++++ b/src/features/media-library/transcription/workers/parakeet.worker.ts
+@@ -1,4 +1,5 @@
+ import { approvedRevision, requireResource } from '@/shared/utils/resource-admission.mjs'
++import { ORT_WASM_JSEP } from '@/shared/utils/local-ort-assets'
+ // Admission precedes all worker work, including reuse of an already-loaded runtime.
+ self.addEventListener('message', (event: MessageEvent) => {
+   if (['dispose', 'cancel', 'abort'].includes(event.data?.type)) return
+@@ -23,8 +24,6 @@
+ 
+ const logger = createLogger('ParakeetWorker')
+ 
+-const ORT_WASM_PATH =
+-  'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.26.0-dev.20260410-5e55544225/dist/'
+ const HF_REPO = 'Olicorne/parakeet-tdt-0.6b-v3-smoothquant-onnx'
+ // Frameleaf: fetched only from the revision the owner approved, never a moving branch.
+ const hfBase = () => `https://huggingface.co/${HF_REPO}/resolve/${approvedRevision('model:' + HF_REPO)}`
+@@ -137,7 +136,7 @@
+ function getOrt(): Promise<OrtModule> {
+   if (!ortPromise) {
+     ortPromise = import('onnxruntime-web').then((module) => {
+-      module.env.wasm.wasmPaths = ORT_WASM_PATH
++      module.env.wasm.wasmPaths = ORT_WASM_JSEP()
+       module.env.wasm.numThreads = 1
+       return module
+     })
+--- a/src/features/editor/services/supertonic-tts-service.ts
++++ b/src/features/editor/services/supertonic-tts-service.ts
+@@ -1,4 +1,5 @@
+ import { requireResource } from '@/shared/utils/resource-admission.mjs'
++import { ORT_WASM_JSEP } from '@/shared/utils/local-ort-assets'
+ import { createLogger } from '@/shared/logging/logger'
+ import { sanitizeAiOutputFileNameSegment } from '@/shared/utils/ai-output-filename'
+ import {
+@@ -73,8 +74,6 @@
+ const MODEL_BASE_URL = 'https://huggingface.co/spaces/Supertone/supertonic-3/resolve/main/assets'
+ const ONNX_BASE_URL = `${MODEL_BASE_URL}/onnx`
+ const VOICE_STYLE_BASE_URL = `${MODEL_BASE_URL}/voice_styles`
+-const ORT_WASM_PATH =
+-  'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.26.0-dev.20260410-5e55544225/dist/'
+ const DEFAULT_TOTAL_STEPS = 8
+ const MAX_CHARS_PER_SEGMENT = 300
+ const MAX_CJK_CHARS_PER_SEGMENT = 120
+@@ -539,7 +538,7 @@
+   private getOrt(): Promise<OrtModule> {
+     if (!this.ortPromise) {
+       this.ortPromise = import('onnxruntime-web').then((module) => {
+-        module.env.wasm.wasmPaths = ORT_WASM_PATH
++        module.env.wasm.wasmPaths = ORT_WASM_JSEP()
+         module.env.wasm.numThreads = 1
+         return module
+       })
+--- a/src/features/editor/services/kokoro-tts-service.ts
++++ b/src/features/editor/services/kokoro-tts-service.ts
+@@ -1,4 +1,5 @@
+ import { requireResource } from '@/shared/utils/resource-admission.mjs'
++import { TRANSFORMERS_3_ORT_WASM } from '@/shared/utils/local-ort-assets'
+ import { createLogger } from '@/shared/logging/logger'
+ import {
+   localInferenceRuntimeRegistry,
+@@ -327,7 +328,11 @@
+ 
+   private getModule(): Promise<KokoroTtsModule> {
+     if (!this.modulePromise) {
+-      this.modulePromise = import('kokoro-js')
++      this.modulePromise = import('kokoro-js').then((module) => {
++        // Frameleaf: kokoro-js's own ONNX Runtime WebAssembly, from the engine's build, never a CDN.
++        module.env.wasmPaths = TRANSFORMERS_3_ORT_WASM() as unknown as string
++        return module
++      })
+     }
+ 
+     return this.modulePromise
+--- a/src/features/editor/services/musicgen-service.ts
++++ b/src/features/editor/services/musicgen-service.ts
+@@ -1,4 +1,5 @@
+ import { approvedRevision, requireResource } from '@/shared/utils/resource-admission.mjs'
++import { transformersOrtWasmPaths } from '@/shared/utils/local-ort-assets'
+ import {
+   DEFAULT_MUSICGEN_MODEL,
+   getMusicgenMaxNewTokens,
+@@ -99,6 +100,8 @@
+       this.modulePromise = import('@huggingface/transformers').then((module) => {
+         module.env.useBrowserCache = true
+         module.env.allowLocalModels = false
++        // Frameleaf: ONNX Runtime WebAssembly from the engine's own build, never a CDN.
++        module.env.backends.onnx.wasm!.wasmPaths = transformersOrtWasmPaths()
+         return module
+       })
+     }
+--- a/src/features/timeline/utils/filler-audio-confidence.ts
++++ b/src/features/timeline/utils/filler-audio-confidence.ts
+@@ -1,4 +1,5 @@
+ import { approvedRevision, requireResource } from '@/shared/utils/resource-admission.mjs'
++import { transformersOrtWasmPaths } from '@/shared/utils/local-ort-assets'
+ import type {
+   FillerAudioConfidence,
+   FillerRange,
+@@ -37,6 +38,7 @@
+   env: {
+     useBrowserCache: boolean
+     allowLocalModels: boolean
++    backends: { onnx: { wasm?: { wasmPaths?: string | { mjs: string; wasm: string } } } }
+   }
+   pipeline: (
+     task: 'zero-shot-audio-classification',
+@@ -44,6 +46,7 @@
+     options?: {
+       device?: 'webgpu' | 'wasm'
+       dtype?: string
++      revision?: string
+     },
+   ) => Promise<ZeroShotAudioClassifier>
+ }
+@@ -82,6 +85,8 @@
+     const { env, pipeline } = (await import('@huggingface/transformers')) as TransformersModule
+     env.useBrowserCache = true
+     env.allowLocalModels = false
++    // Frameleaf: ONNX Runtime WebAssembly from the engine's own build, never a CDN.
++    env.backends.onnx.wasm!.wasmPaths = transformersOrtWasmPaths()
+ 
+     try {
+       return await pipeline('zero-shot-audio-classification', CLAP_MODEL_ID, {
+--- a/src/infrastructure/analysis/embeddings/clip-worker.ts
++++ b/src/infrastructure/analysis/embeddings/clip-worker.ts
+@@ -1,4 +1,5 @@
+ import { approvedRevision, requireResource } from '@/shared/utils/resource-admission.mjs'
++import { transformersOrtWasmPaths } from '@/shared/utils/local-ort-assets'
+ // Admission precedes all worker work, including reuse of an already-loaded runtime.
+ self.addEventListener('message', (event: MessageEvent) => {
+   if (['dispose', 'cancel', 'abort'].includes(event.data?.type)) return
+@@ -50,6 +51,8 @@
+ 
+ env.useBrowserCache = true
+ env.allowLocalModels = false
++// Frameleaf: ONNX Runtime WebAssembly from the engine's own build, never a CDN.
++env.backends.onnx.wasm!.wasmPaths = transformersOrtWasmPaths()
+ 
+ /* eslint-disable @typescript-eslint/no-explicit-any -- transformers.js
+    tensor types vary by version; the worker stays schema-stable. */
+--- a/src/infrastructure/analysis/embeddings/embeddings-worker.ts
++++ b/src/infrastructure/analysis/embeddings/embeddings-worker.ts
+@@ -1,4 +1,5 @@
+ import { approvedRevision, requireResource } from '@/shared/utils/resource-admission.mjs'
++import { transformersOrtWasmPaths } from '@/shared/utils/local-ort-assets'
+ // Admission precedes all worker work, including reuse of an already-loaded runtime.
+ self.addEventListener('message', (event: MessageEvent) => {
+   if (['dispose', 'cancel', 'abort'].includes(event.data?.type)) return
+@@ -31,6 +32,8 @@
+ 
+ env.useBrowserCache = true
+ env.allowLocalModels = false
++// Frameleaf: ONNX Runtime WebAssembly from the engine's own build, never a CDN.
++env.backends.onnx.wasm!.wasmPaths = transformersOrtWasmPaths()
+ 
+ let extractor: FeatureExtractionPipeline | null = null
+ let loading = false
+--- a/src/infrastructure/analysis/gemma-scene-worker.ts
++++ b/src/infrastructure/analysis/gemma-scene-worker.ts
+@@ -1,4 +1,5 @@
+ import { approvedRevision, requireResource } from '@/shared/utils/resource-admission.mjs'
++import { transformersOrtWasmPaths } from '@/shared/utils/local-ort-assets'
+ // Admission precedes all worker work, including reuse of an already-loaded runtime.
+ self.addEventListener('message', (event: MessageEvent) => {
+   if (['dispose', 'cancel', 'abort'].includes(event.data?.type)) return
+@@ -36,6 +37,8 @@
+ // Configure transformers.js for browser worker context
+ env.useBrowserCache = true
+ env.allowLocalModels = false
++// Frameleaf: ONNX Runtime WebAssembly from the engine's own build, never a CDN.
++env.backends.onnx.wasm!.wasmPaths = transformersOrtWasmPaths()
+ 
+ /* eslint-disable @typescript-eslint/no-explicit-any */
+ let processor: any = null
+--- a/src/infrastructure/analysis/lfm-scene-worker.ts
++++ b/src/infrastructure/analysis/lfm-scene-worker.ts
+@@ -1,4 +1,5 @@
+ import { approvedRevision, requireResource } from '@/shared/utils/resource-admission.mjs'
++import { transformersOrtWasmPaths } from '@/shared/utils/local-ort-assets'
+ // Admission precedes all worker work, including reuse of an already-loaded runtime.
+ self.addEventListener('message', (event: MessageEvent) => {
+   if (['dispose', 'cancel', 'abort'].includes(event.data?.type)) return
+@@ -42,6 +43,8 @@
+ // Configure transformers.js for browser worker context
+ env.useBrowserCache = true
+ env.allowLocalModels = false
++// Frameleaf: ONNX Runtime WebAssembly from the engine's own build, never a CDN.
++env.backends.onnx.wasm!.wasmPaths = transformersOrtWasmPaths()
+ 
+ /* eslint-disable @typescript-eslint/no-explicit-any */
+ let processor: any = null
+--- a/src/infrastructure/llm/gemma-llm-worker.ts
++++ b/src/infrastructure/llm/gemma-llm-worker.ts
+@@ -1,4 +1,5 @@
+ import { approvedRevision, requireResource } from '@/shared/utils/resource-admission.mjs'
++import { transformersOrtWasmPaths } from '@/shared/utils/local-ort-assets'
+ // Admission precedes all worker work, including reuse of an already-loaded runtime.
+ self.addEventListener('message', (event: MessageEvent) => {
+   if (['dispose', 'cancel', 'abort'].includes(event.data?.type)) return
+@@ -35,6 +36,8 @@
+ // the weights serves both features.
+ env.useBrowserCache = true
+ env.allowLocalModels = false
++// Frameleaf: ONNX Runtime WebAssembly from the engine's own build, never a CDN.
++env.backends.onnx.wasm!.wasmPaths = transformersOrtWasmPaths()
+ 
+ // transformers.js model/tokenizer types are complex internals that aren't
+ // exported for external use, so `any` is the pragmatic choice here.

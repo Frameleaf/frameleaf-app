@@ -185,6 +185,45 @@ try {
     console.log(`${entry}: ${results.attempts.length} resource refusals; seven workers twice; MOSS pages/iframe/tokenizer blocked; real local PNG import passed`);
     await context.close();
   }
+  // Owner decision 2026-09-29: every ONNX Runtime WebAssembly the engine loads is served by the
+  // engine itself. Each path is same-origin and answers WebAssembly bytes; nothing reaches a CDN.
+  if (!process.env.STUDIO_TEST_BUILT) {
+    const ortContext = await browser.newContext({ serviceWorkers: 'block' });
+    const ortExternal = [];
+    await ortContext.route('**/*', (route) => {
+      const url = new URL(route.request().url());
+      if (url.origin !== origin && /^https?:$/.test(url.protocol)) {
+        ortExternal.push(url.href);
+        return route.abort();
+      }
+      return route.continue();
+    });
+    const ortPage = await ortContext.newPage();
+    await ortPage.goto(origin + '/headless.html');
+    const ort = await ortPage.evaluate(async () => {
+      const assets = await import('/src/shared/utils/local-ort-assets.ts');
+      const sets = [assets.ORT_WASM_JSEP(), assets.transformersOrtWasmPaths(), assets.TRANSFORMERS_3_ORT_WASM()];
+      const checked = [];
+      for (const set of sets) {
+        for (const [kind, url] of Object.entries(set)) {
+          const response = await fetch(url);
+          const bytes = new Uint8Array(await response.arrayBuffer());
+          checked.push({
+            kind,
+            sameOrigin: new URL(url).origin === location.origin,
+            ok: response.ok,
+            wasm: kind !== 'wasm' || (bytes[0] === 0 && bytes[1] === 0x61 && bytes[2] === 0x73 && bytes[3] === 0x6d),
+          });
+        }
+      }
+      return checked;
+    });
+    assert.equal(ort.length, 6);
+    assert.ok(ort.every((file) => file.sameOrigin && file.ok && file.wasm), JSON.stringify(ort));
+    assert.deepEqual(ortExternal, []);
+    console.log('ONNX Runtime WebAssembly: 3 builds served same-origin; no CDN request');
+    await ortContext.close();
+  }
   // A test-only network substitution supplies one approved fixture with a recorded byte digest.
   // The generated policy records no byte digests, so byte verification fails closed in production.
   if (!process.env.STUDIO_TEST_BUILT) {
