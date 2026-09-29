@@ -353,6 +353,13 @@ export class UserAdminService extends BaseService {
 
     await this.recordAdminEvents(this.getPreferencesEvents(auth, user, previous ?? newPreferences, newPreferences));
 
+    // FL-146 (FL-77): the account's open sessions apply the change now rather than on their next load
+    try {
+      this.websocketRepository.clientSend('on_user_preferences_update', id);
+    } catch (error) {
+      this.logger.warn(`Could not tell ${id}'s open sessions about their changed preferences: ${error}`);
+    }
+
     return mapPreferences(newPreferences, 'admin');
   }
 
