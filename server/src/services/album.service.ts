@@ -518,21 +518,22 @@ export class AlbumService extends BaseService {
     // Putting an item in a rule's smart album by hand is a decision the rule keeps (FL-60).
     await this.classificationRepository.recordAlbumAdditions(id, newAssetIds, auth.user.id);
     if (newAssetIds.length > 0) {
-      await this.albumRepository.update(
-        id,
-        {
+      const shown = await this.shownToMembers(newAssetIds);
+      if (shown.length > 0) {
+        await this.albumRepository.update(
           id,
-          updatedAt: new Date(),
-          albumThumbnailAssetId: album.albumThumbnailAssetId ?? (await this.firstCoverCandidate(auth, newAssetIds)),
-        },
-        auth.user.id,
-      );
+          {
+            id,
+            updatedAt: new Date(),
+            albumThumbnailAssetId: album.albumThumbnailAssetId ?? (await this.firstCoverCandidate(auth, newAssetIds)),
+          },
+          auth.user.id,
+        );
+      }
       // An album whose cover follows the newest item takes the newest of what was just added (FL-83).
       await this.albumRepository.updateNewestCovers([id]);
 
-      const userIds = album.albumUsers.map(({ user }) => user.id);
-      const recipientIds = userIds.filter((userId) => userId !== auth.user.id);
-      await this.eventRepository.emit('AlbumUpdate', { id, userIds, recipientIds });
+      await this.eventRepository.emit('AlbumUpdate', this.albumUpdateEvent(album, auth, shown.length > 0));
       await this.recordSpaceAssets(
         album,
         auth,
@@ -582,19 +583,20 @@ export class AlbumService extends BaseService {
       for (const assetId of notPresentAssetIds) {
         albumAssetValues.push({ albumId, assetId });
       }
-      await this.albumRepository.update(
-        albumId,
-        {
-          id: albumId,
-          updatedAt: new Date(),
-          albumThumbnailAssetId:
-            album.albumThumbnailAssetId ?? (await this.firstCoverCandidate(auth, notPresentAssetIds)),
-        },
-        auth.user.id,
-      );
-      const userIds = album.albumUsers.map(({ user }) => user.id);
-      const recipientIds = userIds.filter((userId) => userId !== auth.user.id);
-      events.push({ id: albumId, userIds, recipientIds });
+      const shown = await this.shownToMembers(notPresentAssetIds);
+      if (shown.length > 0) {
+        await this.albumRepository.update(
+          albumId,
+          {
+            id: albumId,
+            updatedAt: new Date(),
+            albumThumbnailAssetId:
+              album.albumThumbnailAssetId ?? (await this.firstCoverCandidate(auth, notPresentAssetIds)),
+          },
+          auth.user.id,
+        );
+      }
+      events.push(this.albumUpdateEvent(album, auth, shown.length > 0));
       spaceEvents.push({ album, assetIds: notPresentAssetIds });
     }
 
@@ -830,6 +832,31 @@ export class AlbumService extends BaseService {
    * so it needs no elevated session. Each member's view of it is filtered when
    * the feed is read.
    */
+  /**
+   * FL-137: what of these new album items other members can see. Locked media never reaches anyone but
+   * its owner, so an addition of Locked items only must not tell members that anything changed.
+   */
+  private async shownToMembers(assetIds: string[]): Promise<string[]> {
+    const locked = await this.assetRepository.getLockedAssetIds(assetIds);
+    return assetIds.filter((assetId) => !locked.has(assetId));
+  }
+
+  /**
+   * The album refresh and "album updated" notification for an addition. When members can see nothing
+   * of it, only the actor's own sessions refresh and nobody is notified.
+   */
+  private albumUpdateEvent(
+    album: { id: string; albumUsers: Array<{ user: { id: string } }> },
+    auth: AuthDto,
+    visibleToMembers: boolean,
+  ) {
+    if (!visibleToMembers) {
+      return { id: album.id, userIds: [auth.user.id], recipientIds: [] };
+    }
+    const userIds = album.albumUsers.map(({ user }) => user.id);
+    return { id: album.id, userIds, recipientIds: userIds.filter((userId) => userId !== auth.user.id) };
+  }
+
   private async recordSpaceAssets(
     album: MapAlbumDto,
     auth: AuthDto,
