@@ -105,6 +105,18 @@ describe(ItemShareService.name, () => {
       await expect(sut.share(auth, { assetIds: [a], userIds: [jamie.id] })).resolves.toMatchObject({ link: null });
     });
 
+    it('does not persist a share when its link cannot be resolved', async () => {
+      const assetId = newUuid();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([assetId]));
+      vi.spyOn(sut, 'shareLink').mockRejectedValueOnce(new Error('address lookup unavailable'));
+
+      await expect(sut.share(auth, { assetIds: [assetId], userIds: [jamie.id] })).rejects.toThrow(
+        'address lookup unavailable',
+      );
+      expect(mocks.itemShare.add).not.toHaveBeenCalled();
+      expect(mocks.event.emit).not.toHaveBeenCalled();
+    });
+
     it('refuses items that are not the caller’s own, even ones they can see', async () => {
       const [mine, theirs] = [newUuid(), newUuid()];
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([mine]));

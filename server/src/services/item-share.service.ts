@@ -71,8 +71,8 @@ export class ItemShareService extends BaseService {
     const assetIds = await this.requireShareableItems(auth, dto.assetIds);
     const recipients = await this.requireRecipients(auth, dto.userIds);
 
-    const added = await this.itemShareRepository.add(auth.user.id, assetIds, recipients.keys().toArray());
     const link = await this.shareLink(requestOrigin);
+    const added = await this.itemShareRepository.add(auth.user.id, assetIds, recipients.keys().toArray());
 
     const counts = new Map<string, number>();
     for (const row of added) {
