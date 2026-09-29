@@ -694,8 +694,8 @@ const handlers: Record<string, Handler> = {
     if (start >= item.from + item.durationInFrames) invalid('start must be before the clip ends')
     if (payload.ripple === true) rippleTrimItem(item.id, 'start', delta)
     else trimItemStart(item.id, delta)
-    if (requireItem(item.id).durationInFrames === item.durationInFrames)
-      failed('clip.trimStart: the source has no more media there')
+    if (requireItem(item.id).durationInFrames !== item.durationInFrames - delta)
+      failed('clip.trimStart: the requested start exceeds the source or timeline limits')
   },
 
   'clip.trimEnd'(payload, { cadence }) {
@@ -706,8 +706,8 @@ const handlers: Record<string, Handler> = {
     if (end <= item.from) invalid('end must be after the clip starts')
     if (payload.ripple === true) rippleTrimItem(item.id, 'end', delta)
     else trimItemEnd(item.id, delta)
-    if (requireItem(item.id).durationInFrames === item.durationInFrames)
-      failed('clip.trimEnd: the source has no more media there')
+    if (requireItem(item.id).durationInFrames !== item.durationInFrames + delta)
+      failed('clip.trimEnd: the requested end exceeds the source or timeline limits')
   },
 
   'clip.update'(payload) {

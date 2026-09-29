@@ -25,5 +25,7 @@ The owner unparked the engine on 2026-09-25, and the web application now mounts 
   (FL-94), including requests containing both video and audio or repeated IDs. When linked selection
   is disabled, each selected clip is split independently. The adapter regression checks source ranges
   and resulting audio/video pairs. Hosted Actions runs it; full timeline conformance remains unqualified.
+- Canonical trim commands reject partially clamped ranges after converting rational times to frames;
+  a rejected command never stages a new graph. Freecut's interactive trim clamping is unchanged.
 - `server/Dockerfile` builds the adapter in its `studio-engine` stage, which recovers the archive and
   fails if its SHA-256 or any of the 2,646 file hashes differ from `studio/freecut-provenance.json`.
