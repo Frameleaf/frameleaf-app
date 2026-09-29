@@ -84,6 +84,14 @@ export const STOPS_CREATED_CLOUD_JOB: ReadonlySet<MlAdmissionRefusal> = new Set(
   MlAdmissionRefusal.EntitlementMissing,
 ]);
 
+/**
+ * FL-201: whether an admission error lets a created cloud job send its files: false when the refusal
+ * means it may no longer send (`STOPS_CREATED_CLOUD_JOB`) or when the consent version could not be
+ * confirmed (the cloud refused its own status check first).
+ */
+export const consentUnconfirmedOf = (error: unknown): boolean =>
+  error instanceof MlDestinationRefusedError && error.consentUnconfirmed;
+
 /** The refusal an admission error carries, if it is one. */
 export const admissionRefusalOf = (error: unknown): MlAdmissionRefusal | null =>
   error instanceof MlDestinationRefusedError || error instanceof MlDestinationNotFoundError ? error.refusal : null;
@@ -94,6 +102,11 @@ export class MlDestinationRefusedError extends BadRequestException {
     readonly workload: MlWorkload,
     readonly destinationId: string | null,
     detail: string,
+    /**
+     * FL-201: refused before the consent version could be compared (the cloud refused its own status
+     * check). Such a refusal says nothing about whether consent is in force.
+     */
+    readonly consentUnconfirmed = false,
   ) {
     // FL-201: the refusal is also a machine-readable `code` (e.g. consent-version-outdated,
     // consent-missing), so every client can tell a stale or missing consent from other refusals
@@ -478,10 +491,16 @@ export type MlAdmissionInput = {
   fromStoredCheck?: boolean;
 };
 
-export type MlAdmissionVerdict = { admitted: true } | { admitted: false; refusal: MlAdmissionRefusal; detail: string };
+export type MlAdmissionVerdict =
+  { admitted: true } | { admitted: false; refusal: MlAdmissionRefusal; detail: string; consentUnconfirmed?: boolean };
 
 type Refused = Extract<MlAdmissionVerdict, { admitted: false }>;
 const refuse = (refusal: MlAdmissionRefusal, detail: string): Refused => ({ admitted: false, refusal, detail });
+/** FL-201: a refusal returned before the consent version was compared. */
+const refuseUnconfirmed = (refusal: MlAdmissionRefusal, detail: string): Refused => ({
+  ...refuse(refusal, detail),
+  consentUnconfirmed: true,
+});
 
 /**
  * FL-159: the Frameleaf Cloud rules, checked once the destination is enabled, allowed the workload
@@ -501,7 +520,7 @@ const evaluateCloudAdmission = (
   const facts = probe?.cloud ?? null;
   if (!probe || !probe.reachable || !facts) {
     if (facts?.refusal) {
-      return refuse(facts.refusal.refusal, `${destination.name}: ${facts.refusal.detail}`);
+      return refuseUnconfirmed(facts.refusal.refusal, `${destination.name}: ${facts.refusal.detail}`);
     }
     return refuse(
       MlAdmissionRefusal.CloudUnavailable,
@@ -509,7 +528,7 @@ const evaluateCloudAdmission = (
     );
   }
   if (facts.refusal) {
-    return refuse(facts.refusal.refusal, `${destination.name}: ${facts.refusal.detail}`);
+    return refuseUnconfirmed(facts.refusal.refusal, `${destination.name}: ${facts.refusal.detail}`);
   }
   if (!facts.entitled) {
     return refuse(
@@ -797,7 +816,13 @@ export const selectMlDestination = async (
     studioFeature: request.studioFeature,
   });
   if (!verdict.admitted) {
-    throw new MlDestinationRefusedError(verdict.refusal, request.workload, destination.id, verdict.detail);
+    throw new MlDestinationRefusedError(
+      verdict.refusal,
+      request.workload,
+      destination.id,
+      verdict.detail,
+      !!verdict.consentUnconfirmed,
+    );
   }
 
   const startedAt = new Date();

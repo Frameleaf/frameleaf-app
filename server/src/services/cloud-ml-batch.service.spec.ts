@@ -1310,6 +1310,29 @@ describe(CloudMlBatchService.name, () => {
       });
     });
 
+    it('sends no photo when the cloud refused its own status check before consent could be compared (FL-201 review P2)', async () => {
+      mocks.mlDestination.getById.mockResolvedValue({ ...cloud, consentVersion: '2026-09-01.1' });
+      mocks.machineLearning.probe.mockResolvedValue({
+        ...mlProbeStub.frameleafCloud,
+        cloud: {
+          ...facts,
+          consentRequiredVersion: null,
+          refusal: { refusal: MlAdmissionRefusal.WalletInsufficient, detail: 'The AI Wallet is empty' },
+        },
+      });
+
+      await sut.step(submitted({ status: 'admitted', started: false, etag: null }), 'claim-1', now);
+
+      expect(mocks.frameleafCloudMl.uploadInput).not.toHaveBeenCalled();
+      expect(mocks.frameleafCloudMl.cancelJob).not.toHaveBeenCalled();
+      expect(mocks.mediaOperation.fail).toHaveBeenCalledWith(
+        BATCH_ID,
+        'claim-1',
+        expect.objectContaining({ errorCode: 'cloud_description_consent_unconfirmed' }),
+        { retry: true },
+      );
+    });
+
     it('still uploads a created batch whose own hold took the rest of the AI Wallet (FL-201 review P1)', async () => {
       mocks.machineLearning.probe.mockResolvedValue({
         ...mlProbeStub.frameleafCloud,

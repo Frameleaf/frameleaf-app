@@ -153,6 +153,7 @@ import {
   STOPS_CREATED_CLOUD_JOB,
   admissionRefusalOf,
   cloudRouteAllows,
+  consentUnconfirmedOf,
   selectMlDestination,
 } from 'src/utils/ml-destination.js';
 import {
@@ -2883,7 +2884,15 @@ export class CloudMlJobService {
       if (failureOf(error)?.retry) {
         throw error;
       }
-      // any other refusal (wallet, cap, model) is for new work only: this job goes on
+      if (consentUnconfirmedOf(error)) {
+        // the cloud refused its status check before the consent version could be compared: send nothing now
+        throw new CloudMlJobFailure(
+          'cloud_ml_consent_unconfirmed',
+          `The consent in force could not be confirmed (${errorMessage(error)}); nothing was sent, it is tried again`,
+          true,
+        );
+      }
+      // any other refusal (wallet, cap, model), checked after consent, is for new work only: this job goes on
     }
   }
 
