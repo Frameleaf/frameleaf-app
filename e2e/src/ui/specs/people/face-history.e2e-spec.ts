@@ -242,7 +242,9 @@ test.describe('face history', () => {
     const calls = await setup(context);
     await openPersonPage(page);
 
-    await action(page, 'Correction history').click();
+    // FL-146 PD-9: in the person toolbar's … menu, so the toolbar itself matches the prototype
+    await action(page, 'More actions for Ada').click();
+    await page.getByRole('menuitem', { name: 'Correction history' }).click();
     const panel = page.getByRole('dialog', { name: 'Correction history for Ada' });
     const rows = panel.locator('.pd-history-row');
     await expect(rows).toHaveCount(25);
