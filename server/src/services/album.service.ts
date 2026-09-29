@@ -489,19 +489,17 @@ export class AlbumService extends BaseService {
   }
 
   /**
-   * Deleting a collection leaves its albums standing on their own; deleting an
+   * Deleting a collection leaves its albums standing, moved to the collection's
+   * parent (the top level when it has none), in one transaction; deleting an
    * album keeps every original file in the library. Nested legacy albums under
    * a plain album still follow the existing cascade.
    */
   async delete(auth: AuthDto, id: string): Promise<void> {
     await this.requireAccess({ auth, permission: Permission.AlbumDelete, ids: [id] });
     const album = await this.findOrFail(id, auth, { withAssets: false });
-    if (asAlbumKind(album.kind) === AlbumKind.Collection) {
-      for (const childId of await this.albumRepository.getChildIds(id)) {
-        await this.albumRepository.reparent(childId, null);
-      }
-    }
-    await this.albumRepository.delete(id);
+    await (asAlbumKind(album.kind) === AlbumKind.Collection
+      ? this.albumRepository.deleteCollection(id)
+      : this.albumRepository.delete(id));
   }
 
   async addAssets(auth: AuthDto, id: string, dto: BulkIdsDto): Promise<BulkIdResponseDto[]> {
