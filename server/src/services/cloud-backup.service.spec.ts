@@ -456,6 +456,19 @@ describe(CloudBackupService.name, () => {
   });
 
   describe('own-memory key', () => {
+    it.each([
+      ['endpoint', 'https://different-s3.test'],
+      ['bucket', 'different-bucket'],
+    ])('refuses stale safety proof after changed BYO %s with the same target', async (field, value) => {
+      await sut.onKeyShare({ key: key.toString('base64') });
+      const settings = enabledConfig('own-memory');
+      settings.frameleafCloud.cloudBackup.s3 = { ...s3, [field]: value };
+      metadata[SystemMetadataKey.SystemConfig] = settings;
+      await expect(sut.getSafetyAvailability()).resolves.toEqual({ state: 'not-configured', bucket: null });
+      expect(cloudBackup.grant).not.toHaveBeenCalled();
+      expect(store.probe).not.toHaveBeenCalled();
+    });
+
     it('reports unavailable safety states without issuing a remote storage grant', async () => {
       metadata[SystemMetadataKey.SystemConfig] = { frameleafCloud: { cloudBackup: { enabled: false, target: 'off' } } };
       await expect(sut.getSafetyAvailability()).resolves.toEqual({ state: 'off', bucket: null });
