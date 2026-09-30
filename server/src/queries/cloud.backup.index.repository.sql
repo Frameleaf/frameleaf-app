@@ -79,15 +79,70 @@ where
   "id" = $1
 
 -- CloudBackupIndexRepository.finishManifest
-update "cloud_backup_manifest"
-set
-  "status" = $1,
-  "assetCount" = $2,
-  "fileCount" = $3,
-  "bytes" = $4,
-  "finishedAt" = now()
+begin
+select
+  "status"
+from
+  "cloud_backup_manifest"
+where
+  "id" = $1
+for update
+commit
+
+-- CloudBackupIndexRepository.recordObjectVerification
+insert into
+  "cloud_backup_object_verification" (
+    "bucket",
+    "sha256",
+    "operationId",
+    "method",
+    "result"
+  )
+select
+  $1 as "bucket",
+  $2 as "sha256",
+  "id" as "operationId",
+  $3 as "method",
+  $4 as "result"
+from
+  "media_operation"
 where
   "id" = $5
+  and "claimToken" = $6
+  and "kind" = $7
+  and "status" not in ($8, $9, $10)
+  and snapshot ->> 'bucketRef' = $11
+  and snapshot ->> 'task' = $12
+  and COALESCE(snapshot ->> 'depth', 'sample') = $13
+for share
+on conflict ("bucket", "sha256", "operationId") do update
+set
+  "method" = $14,
+  "result" = $15,
+  "checkedAt" = clock_timestamp()
+
+-- CloudBackupIndexRepository.getCompletedObjectVerifications
+select
+  "proof".*
+from
+  "cloud_backup_object_verification" as "proof"
+  inner join "media_operation" as "operation" on "operation"."id" = "proof"."operationId"
+where
+  "proof"."bucket" = $1
+  and "proof"."sha256" in ($2)
+  and "operation"."kind" = $3
+  and "operation"."status" = $4
+  and operation.snapshot ->> 'bucketRef' = $5
+  and operation.snapshot ->> 'task' = $6
+  and operation.result ->> 'task' = $7
+  and operation.result ->> 'done' = $8
+  and operation.result ->> 'depth' = COALESCE(operation.snapshot ->> 'depth', 'sample')
+  and proof.method = CASE
+    WHEN operation.snapshot ->> 'depth' = 'full' THEN 'size-head'
+    ELSE 'sha256-get'
+  END
+order by
+  "proof"."checkedAt" desc
 
 -- CloudBackupIndexRepository.setManifestDatabase
 update "cloud_backup_manifest"
