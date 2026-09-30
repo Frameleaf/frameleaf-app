@@ -15,6 +15,7 @@ export type EdgeContexts = {
 };
 
 type LoadedContexts = { wildcard: SecureContext; custom: { host: string; context: SecureContext } | null };
+type WildcardPem = { cert: string; key: string };
 
 /** The TLS handshake must finish within this long. */
 const HANDSHAKE_TIMEOUT_MS = 10 * 1000;
@@ -33,6 +34,9 @@ const HANDSHAKE_TIMEOUT_MS = 10 * 1000;
 export class EdgeDirectService {
   private server: tls.Server | null = null;
   private contexts: LoadedContexts | null = null;
+  /** Kept alongside `contexts.wildcard` so the listener has a default cert for a ClientHello with
+   * no SNI at all (FL-229) - node:tls only consults `SNICallback` once a default is set. */
+  private wildcardPem: WildcardPem | null = null;
   private enrollment: Pick<FrameleafRemoteEnrollment, 'label' | 'domain'> | null = null;
   private allowWan = false;
   private advertised: string[] = [];
@@ -70,6 +74,11 @@ export class EdgeDirectService {
           }
         : null,
     };
+    this.wildcardPem = { cert: contexts.wildcard.certificate, key: contexts.wildcard.key };
+    // A renewal while already listening: node:tls only reads the constructor's cert/key once, so the
+    // default used for a ClientHello with no SNI needs updating in place too (SNICallback is always
+    // re-consulted per connection, so the per-name contexts need no equivalent call).
+    this.server?.setSecureContext(this.wildcardPem);
     this.enrollment = input.enrollment;
     this.allowWan = input.allowWan;
     this.advertised = input.advertised;
@@ -86,6 +95,10 @@ export class EdgeDirectService {
     }
     const { bind, port } = this.configRepository.getEnv().frameleafCloud.edge;
     const server = tls.createServer({
+      // The default context: what's served for a ClientHello with no SNI at all (FL-229 - an app
+      // connecting by IP literal, with no hostname to send, e.g. under DNS rebinding protection).
+      // node:tls does not invoke SNICallback for that case; only a configured default is used.
+      ...this.wildcardPem,
       handshakeTimeout: HANDSHAKE_TIMEOUT_MS,
       ALPNProtocols: ['http/1.1'],
       minVersion: 'TLSv1.2',

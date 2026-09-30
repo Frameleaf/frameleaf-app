@@ -111,6 +111,15 @@ describe(EdgeDirectService.name, () => {
     expect(result.subject).toBe('photos.example.com');
   });
 
+  it('serves the wildcard certificate to a ClientHello with no SNI at all (FL-229: connecting by IP literal)', async () => {
+    // An empty `servername` is node:tls's own way to omit the SNI extension from the ClientHello -
+    // this is what an app connecting straight to a LAN IP (no hostname to send) looks like on the
+    // wire, e.g. under DNS rebinding protection that refuses to resolve a public name to a private
+    // address.
+    const result = await connect('');
+    expect(result.subject).toBe('u225vlzhsdlhwh4l.frameleaf.net');
+  });
+
   it('closes connections from outside the home in "Relay only" mode', () => {
     const outside = arrive('203.0.113.9', LAN_NAME);
     expect(outside.destroy).toHaveBeenCalled();

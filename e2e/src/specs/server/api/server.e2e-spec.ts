@@ -70,10 +70,21 @@ describe('/server', () => {
   });
 
   describe('GET /server/ping', () => {
-    it('should respond with pong', async () => {
+    it('should respond with pong and this server’s identity (FL-229)', async () => {
       const { status, body } = await request(app).get('/server/ping');
       expect(status).toBe(200);
-      expect(body).toEqual({ res: 'pong' });
+      expect(body).toEqual({
+        res: 'pong',
+        id: expect.any(String),
+        linked: false,
+        name: expect.any(String),
+      });
+    });
+
+    it('returns the same stable id on a later ping (FL-229)', async () => {
+      const first = await request(app).get('/server/ping');
+      const second = await request(app).get('/server/ping');
+      expect(first.body.id).toBe(second.body.id);
     });
   });
 

@@ -1446,6 +1446,8 @@ export type AdminConfigReverseGeocodingDto = {
 export type AdminConfigServerDto = {
     /** External domain */
     externalDomain: string;
+    /** Advertise this server on the local network (DNS-SD `_frameleaf._tcp`) so apps on the same Wi-Fi can find it without typing an address. Turning this off does not require additional sign-in steps or block direct connections - it only stops the broadcast. While on, any device on this network can see that a Frameleaf server exists here and its display name. */
+    lanDiscovery: boolean;
     /** Login page message */
     loginPageMessage: string;
     /** Server name shown in settings; empty uses the host name */
@@ -9027,6 +9029,12 @@ export type ServerMediaTypesResponseDto = {
     video: string[];
 };
 export type ServerPingResponse = {
+    /** This server's identity: the Frameleaf Cloud instance id while linked, else a stable local id */
+    id: string;
+    /** Whether `id` is a Frameleaf Cloud instance id (true) or a local-only id (false) */
+    linked: boolean;
+    /** The server's display name (the admin-set server name, or a default) */
+    name: string;
     res: string;
 };
 export type UsageByUserDto = {
