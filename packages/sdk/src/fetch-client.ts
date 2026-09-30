@@ -11532,6 +11532,19 @@ export type SyncPinnedCollectionsV1 = {
     userId: string;
 };
 export type SyncResetV1 = {};
+export type SyncSharedSpaceAlbumDeleteV1 = {
+    albumId: string;
+    spaceId: string;
+};
+export type SyncSharedSpaceAlbumV1 = {
+    albumId: string;
+    assetCount: number;
+    icon: string | null;
+    linkedAt: string;
+    name: string;
+    spaceId: string;
+    thumbnailAssetId: string | null;
+};
 export type SyncSharedSpaceDeleteV1 = {
     spaceId: string;
 };
@@ -11545,6 +11558,18 @@ export type SyncSharedSpaceMemberV1 = {
     spaceId: string;
     updatedAt: string;
     userId: string;
+};
+export type SyncSharedSpacePersonDeleteV1 = {
+    id: string;
+    spaceId: string;
+};
+export type SyncSharedSpacePersonV1 = {
+    assetCount: number;
+    coverAssetId: string | null;
+    id: string;
+    linkedAt: string;
+    name: string;
+    spaceId: string;
 };
 export type SyncSharedSpaceV1 = {
     createdAt: string;
@@ -23937,6 +23962,10 @@ export enum SyncEntityType {
     SharedSpaceDeleteV1 = "SharedSpaceDeleteV1",
     SharedSpaceMemberV1 = "SharedSpaceMemberV1",
     SharedSpaceMemberDeleteV1 = "SharedSpaceMemberDeleteV1",
+    SharedSpaceAlbumV1 = "SharedSpaceAlbumV1",
+    SharedSpaceAlbumDeleteV1 = "SharedSpaceAlbumDeleteV1",
+    SharedSpacePersonV1 = "SharedSpacePersonV1",
+    SharedSpacePersonDeleteV1 = "SharedSpacePersonDeleteV1",
     PetV1 = "PetV1",
     PetDeleteV1 = "PetDeleteV1",
     PetObservationV1 = "PetObservationV1",
@@ -24020,6 +24049,8 @@ export enum SyncRequestType {
     DuplicateGroupsV1 = "DuplicateGroupsV1",
     SharedSpacesV1 = "SharedSpacesV1",
     SharedSpaceMembersV1 = "SharedSpaceMembersV1",
+    SharedSpaceAlbumsV1 = "SharedSpaceAlbumsV1",
+    SharedSpacePeopleV1 = "SharedSpacePeopleV1",
     PetsV1 = "PetsV1",
     PetObservationsV1 = "PetObservationsV1",
     TagsV1 = "TagsV1",
