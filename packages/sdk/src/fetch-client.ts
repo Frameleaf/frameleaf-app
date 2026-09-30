@@ -11055,6 +11055,28 @@ export type SyncAlbumV2 = {
     /** Updated at */
     updatedAt: string;
 };
+export type SyncAlbumV3 = {
+    /** Created at */
+    createdAt: string;
+    deletedAt: string | null;
+    /** Album description */
+    description: string;
+    icon: string | null;
+    /** Album ID */
+    id: string;
+    /** Is activity enabled */
+    isActivityEnabled: boolean;
+    kind: AlbumKind;
+    /** Album name */
+    name: string;
+    order: AssetOrder;
+    parentId: string | null;
+    sortOrder: number | null;
+    /** Thumbnail asset ID */
+    thumbnailAssetId: string | null;
+    /** Updated at */
+    updatedAt: string;
+};
 export type SyncAssetDeleteV1 = {
     /** Asset ID */
     assetId: string;
@@ -23887,6 +23909,9 @@ export enum SyncEntityType {
     PartnerStackV1 = "PartnerStackV1",
     AlbumV1 = "AlbumV1",
     AlbumV2 = "AlbumV2",
+    AlbumV3 = "AlbumV3",
+    AlbumBootstrapV1 = "AlbumBootstrapV1",
+    AlbumDeleteV2 = "AlbumDeleteV2",
     AlbumDeleteV1 = "AlbumDeleteV1",
     AlbumUserV1 = "AlbumUserV1",
     AlbumUserBackfillV1 = "AlbumUserBackfillV1",
@@ -23929,6 +23954,7 @@ export enum SyncRequestType {
     AssetTagsV1 = "AssetTagsV1",
     AlbumsV1 = "AlbumsV1",
     AlbumsV2 = "AlbumsV2",
+    AlbumsV3 = "AlbumsV3",
     AlbumUsersV1 = "AlbumUsersV1",
     AlbumToAssetsV1 = "AlbumToAssetsV1",
     AlbumAssetsV1 = "AlbumAssetsV1",

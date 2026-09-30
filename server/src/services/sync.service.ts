@@ -26,13 +26,12 @@ import { withoutStoredLockedRuleIds } from 'src/utils/preferences.js';
 import { ClientDisconnectedError, waitForDrain } from 'src/utils/response.js';
 import { SerializeOptions, fromAck, serialize, toAck } from 'src/utils/sync.js';
 
-const parseAssetBootstrapAck = (ack: string) => {
+const parseAssetBootstrapAck = (ack: string, type = SyncEntityType.AssetBootstrapV1) => {
   const parts = ack.split('|');
   const invalid = () => {
     throw new BadRequestException('Invalid asset bootstrap cursor');
   };
-  if (parts.length !== 3 || parts[0] !== SyncEntityType.AssetBootstrapV1 || !z.uuid().safeParse(parts[1]).success)
-    return invalid();
+  if (parts.length !== 3 || parts[0] !== type || !z.uuid().safeParse(parts[1]).success) return invalid();
   if (parts[2] === COMPLETE_ID) return {};
   const encoded = parts[2]!;
   if (encoded.length > 256 || !/^[A-Za-z0-9_-]+$/.test(encoded)) return invalid();
@@ -53,6 +52,15 @@ const parseAssetBootstrapAck = (ack: string) => {
     return { cursor: { timestamp, id } };
   } catch {
     return invalid();
+  }
+};
+
+const validateAlbumProgressAck = (type: SyncEntityType, ack: string) => {
+  if (type !== SyncEntityType.AlbumV3 && type !== SyncEntityType.AlbumDeleteV2) return;
+  const parts = ack.split('|');
+  const length = type === SyncEntityType.AlbumV3 ? 3 : 2;
+  if (parts.length !== length || parts[0] !== type || parts.slice(1).some((id) => !z.uuid().safeParse(id).success)) {
+    throw new BadRequestException('Invalid album sync acknowledgement');
   }
 };
 
@@ -134,6 +142,7 @@ export const SYNC_TYPES_ORDER = [
   SyncRequestType.AlbumAssetsV2,
   SyncRequestType.AlbumsV1,
   SyncRequestType.AlbumsV2,
+  SyncRequestType.AlbumsV3,
   SyncRequestType.AlbumUsersV1,
   SyncRequestType.AlbumToAssetsV1,
   SyncRequestType.AssetExifsV1,
@@ -189,9 +198,11 @@ export class SyncService extends BaseService {
         throw new BadRequestException(`Invalid ack type: ${type}`);
       }
 
-      if (type === SyncEntityType.AssetBootstrapV1) {
-        parseAssetBootstrapAck(ack);
+      if (type === SyncEntityType.AssetBootstrapV1 || type === SyncEntityType.AlbumBootstrapV1) {
+        parseAssetBootstrapAck(ack, type);
       }
+
+      validateAlbumProgressAck(type, ack);
 
       // TODO pick the latest ack for each type, instead of using the last one
       if (
@@ -260,7 +271,9 @@ export class SyncService extends BaseService {
 
     const checkpoints = await this.syncCheckpointRepository.getAll(session.id);
     for (const { type, ack } of checkpoints) {
-      if (type === SyncEntityType.AssetBootstrapV1) parseAssetBootstrapAck(ack);
+      validateAlbumProgressAck(type, ack);
+      if (type === SyncEntityType.AssetBootstrapV1 || type === SyncEntityType.AlbumBootstrapV1)
+        parseAssetBootstrapAck(ack, type);
     }
     const checkpointMap: CheckpointMap = Object.fromEntries(checkpoints.map(({ type, ack }) => [type, fromAck(ack)]));
 
@@ -298,6 +311,7 @@ export class SyncService extends BaseService {
         this.syncPartnerAssetExifsV1(options, response, checkpointMap, session.id),
       [SyncRequestType.AlbumsV1]: () => this.syncAlbumsV1(options, response, checkpointMap),
       [SyncRequestType.AlbumsV2]: () => this.syncAlbumsV2(options, response, checkpointMap),
+      [SyncRequestType.AlbumsV3]: () => this.syncAlbumsV3(options, response, checkpointMap),
       [SyncRequestType.AlbumUsersV1]: () => this.syncAlbumUsersV1(options, response, checkpointMap, session.id),
       [SyncRequestType.AlbumAssetsV2]: () => this.syncAlbumAssetsV2(options, response, checkpointMap, session.id),
       [SyncRequestType.AlbumToAssetsV1]: () => this.syncAlbumToAssetsV1(options, response, checkpointMap, session.id),
@@ -670,6 +684,48 @@ export class SyncService extends BaseService {
       await send(response, {
         type: upsertType,
         ids: [updateId],
+        data: { ...data, description: data.description ?? '' },
+      });
+    }
+  }
+
+  private async syncAlbumsV3(options: SyncQueryOptions, response: Writable, checkpointMap: CheckpointMap) {
+    const bootstrapType = SyncEntityType.AlbumBootstrapV1;
+    const checkpoint = checkpointMap[bootstrapType];
+    const watermark = checkpoint?.updateId ?? options.nowId;
+    const parsed = checkpoint && parseAssetBootstrapAck(toAck(checkpoint), bootstrapType);
+    if (checkpoint?.extraId !== COMPLETE_ID) {
+      for await (const {
+        bootstrapTimestamp,
+        updateId: _eventId,
+        ...data
+      } of this.syncRepository.album.getTreeBootstrap({ ...options, nowId: watermark }, parsed?.cursor)) {
+        const cursor = Buffer.from(JSON.stringify([bootstrapTimestamp, data.id])).toString('base64url');
+        await send(response, {
+          type: SyncEntityType.AlbumV3,
+          ackType: bootstrapType,
+          ids: [watermark, cursor],
+          data: { ...data, description: data.description ?? '' },
+        });
+      }
+      await sendEntityBackfillCompleteAck(response, bootstrapType, watermark);
+    }
+    const floor = { type: bootstrapType, updateId: watermark };
+    const deleteType = SyncEntityType.AlbumDeleteV2;
+    for await (const { id, ...data } of this.syncRepository.album.getDeletes({
+      ...options,
+      ack: checkpointMap[deleteType] ?? floor,
+    })) {
+      await send(response, { type: deleteType, ids: [id], data });
+    }
+    const upsertType = SyncEntityType.AlbumV3;
+    for await (const { updateId, ...data } of this.syncRepository.album.getTreeUpserts({
+      ...options,
+      ack: checkpointMap[upsertType] ?? floor,
+    })) {
+      await send(response, {
+        type: upsertType,
+        ids: [updateId, data.id],
         data: { ...data, description: data.description ?? '' },
       });
     }
