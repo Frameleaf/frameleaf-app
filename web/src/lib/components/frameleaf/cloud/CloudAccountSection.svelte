@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { locale } from '$lib/stores/preferences.store';
   /**
    * Settings → Frameleaf Cloud → Account & link (FL-154, FL-155): the prototype's `AccountLink`
    * (design/frameleaf/template/src/FrameleafCloud.jsx:438-782, effd05ffb7) on real server state.
@@ -76,9 +77,7 @@
   const expired = $derived(status?.state === 'pending' && left === 0);
 
   const formatWhen = (value: string | null | undefined) =>
-    value
-      ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value))
-      : '—';
+    value ? new Intl.DateTimeFormat($locale, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)) : '—';
 
   const act = async (call: () => Promise<unknown>, success = '') => {
     busy = true;

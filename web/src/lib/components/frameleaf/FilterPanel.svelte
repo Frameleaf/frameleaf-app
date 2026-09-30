@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { locale } from '$lib/stores/preferences.store';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import FilterMultiSelect from '$lib/components/frameleaf/FilterMultiSelect.svelte';
   import Picker from '$lib/components/frameleaf/Picker.svelte';
@@ -96,7 +97,7 @@
 
   /** "Paris (12)": a Picker option's count is read with its name, as SegmentedControl documents. */
   const withCount = (label: string, count: number | undefined) =>
-    count === undefined ? label : `${label} (${count.toLocaleString()})`;
+    count === undefined ? label : `${label} (${count.toLocaleString($locale)})`;
 
   let panel = $state<HTMLElement>();
   let heading = $state<HTMLElement>();
@@ -360,7 +361,7 @@
             const count = typeCounts.get(option.value);
             return count === undefined
               ? option
-              : { ...option, label: withCount(option.label, count), hint: count.toLocaleString() };
+              : { ...option, label: withCount(option.label, count), hint: count.toLocaleString($locale) };
           }),
         ]}
         onChange={(value) => setCondition('type', value ? { eq: value } : null)}
@@ -473,7 +474,7 @@
               />
               <span>{$t(choice.labelKey)}</span>
               {#if choice.value && enrichmentCounts[choice.value] !== undefined}
-                <small>{enrichmentCounts[choice.value]?.toLocaleString()}</small>
+                <small>{enrichmentCounts[choice.value]?.toLocaleString($locale)}</small>
               {/if}
             </label>
           {/each}

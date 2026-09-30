@@ -1,10 +1,11 @@
 <script lang="ts">
+  import { locale } from '$lib/stores/preferences.store';
   /** Counts up to `value` with an ease-out; shows the value at once when motion is reduced. */
   import { mediaQueryManager } from '$lib/stores/media-query-manager.svelte';
 
   const {
     value,
-    format = (value: number) => new Intl.NumberFormat().format(Math.round(value)),
+    format = (value: number) => new Intl.NumberFormat($locale).format(Math.round(value)),
     duration = 1400,
     delay = 0,
   }: { value: number; format?: (value: number) => string; duration?: number; delay?: number } = $props();

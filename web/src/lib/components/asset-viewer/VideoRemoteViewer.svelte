@@ -73,7 +73,7 @@
   <span>{$t('connected_to')} {castManager.receiverName}</span>
 </span>
 
-<img src={poster} alt="poster" class="m-4 rounded-xl" />
+<img src={poster} alt="" class="m-4 rounded-xl" />
 
 <div class="flex place-content-center place-items-center">
   {#if castManager.castState === CastState.BUFFERING}

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { locale } from '$lib/stores/preferences.store';
   import { goto } from '$app/navigation';
   import Badge from '$lib/components/frameleaf/Badge.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
@@ -503,7 +504,7 @@
   };
 
   const bytes = (value: number) => formatBytes(value);
-  const counts = (value: number) => value.toLocaleString();
+  const counts = (value: number) => value.toLocaleString($locale);
   const stepDone = (index: number) => !!current && index < TAKEOUT_STAGES.indexOf(serverStage);
 
   const importTone = (state: TakeoutState) => {
@@ -856,7 +857,7 @@
                   </div>
                   <p class="meta">
                     {item.source}{#if item.metadata.takenAt}
-                      · {new Date(item.metadata.takenAt).toLocaleString()}{/if}{#if item.albums.length > 0}
+                      · {new Date(item.metadata.takenAt).toLocaleString($locale)}{/if}{#if item.albums.length > 0}
                       · {item.albums.join(', ')}{/if}
                   </p>
                   {#if item.metadata.description}
@@ -877,7 +878,7 @@
                           {#each item.candidates as candidate (candidate.id)}
                             <option value={candidate.id}>
                               {candidate.path}{candidate.metadata.takenAt
-                                ? ` · ${new Date(candidate.metadata.takenAt).toLocaleString()}`
+                                ? ` · ${new Date(candidate.metadata.takenAt).toLocaleString($locale)}`
                                 : ''}{candidate.metadata.description
                                 ? ` · ${candidate.metadata.description.slice(0, 80)}`
                                 : ''}

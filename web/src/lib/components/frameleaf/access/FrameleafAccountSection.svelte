@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { locale } from '$lib/stores/preferences.store';
   /**
    * Your preferences → Frameleaf account (FL-158): the prototype's `FrameleafAccountLink`
    * (design/frameleaf/template/src/FrameleafCloud.jsx:2889-2980, effd05ffb7). Linking signs in on
@@ -33,7 +34,7 @@
   onMount(load);
 
   const since = (value: string | null) =>
-    value ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(value)) : '';
+    value ? new Intl.DateTimeFormat($locale, { dateStyle: 'medium' }).format(new Date(value)) : '';
 
   const connect = async () => {
     const confirmed = await confirmFrameleaf({

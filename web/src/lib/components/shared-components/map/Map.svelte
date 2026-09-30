@@ -1,4 +1,5 @@
 <script lang="ts" module>
+  import { locale } from '$lib/stores/preferences.store';
   import { setWorkerUrl } from 'maplibre-gl';
   import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
 
@@ -300,7 +301,7 @@
             <div
               class="flex size-10 items-center justify-center rounded-full bg-immich-primary font-mono font-bold text-white opacity-90 shadow-lg transition-all duration-200 hover:bg-immich-dark-primary hover:text-immich-dark-bg"
             >
-              {feature.properties?.point_count?.toLocaleString()}
+              {feature.properties?.point_count?.toLocaleString($locale)}
             </div>
           {/snippet}
         </MarkerLayer>
