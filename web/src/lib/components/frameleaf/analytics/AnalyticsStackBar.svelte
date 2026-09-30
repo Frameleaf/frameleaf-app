@@ -11,6 +11,8 @@
 
   const whole = $derived(rows.reduce((sum, row) => sum + row.count, 0));
   const share = (count: number) => (whole ? (count / whole) * 100 : 0);
+  /** FL-139: a series colour's own label ink (`var(--an-N)` → `var(--an-N-ink)`), for AA contrast. */
+  const ink = (color: string) => (/^var\(--an-\d\)$/.test(color) ? color.replace(')', '-ink)') : '#0b1210');
 </script>
 
 <div class="an-stack" role="img" aria-label={label}>
@@ -19,6 +21,7 @@
       <span
         style:flex={row.count}
         style:background={row.catchAll ? 'var(--an-4)' : colors[index % colors.length]}
+        style:color={ink(row.catchAll ? 'var(--an-4)' : colors[index % colors.length])}
         title="{row.label}: {format(row.count)} ({share(row.count).toFixed(1)}%)"
       >
         {share(row.count) > 8 ? row.label : ''}
@@ -41,7 +44,6 @@
     place-items: center;
     min-width: 0;
     overflow: hidden;
-    color: #0b1210;
     font-size: 11px;
     font-weight: 650;
     white-space: nowrap;
