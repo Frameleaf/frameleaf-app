@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { motionScrollBehavior } from '$lib/frameleaf/motion';
   /**
    * A collapsible group of related controls inside a settings section (FL-71). It replaces the
    * nested SettingAccordion with the same props, and keeps its open state in the `isOpen` query
@@ -45,7 +46,7 @@
     }
     accordionManager.open(key);
     if (autoScrollTo) {
-      setTimeout(() => element?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 200);
+      setTimeout(() => element?.scrollIntoView({ behavior: motionScrollBehavior(), block: 'start' }), 200);
     }
   };
 

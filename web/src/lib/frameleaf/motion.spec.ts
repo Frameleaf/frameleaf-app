@@ -18,6 +18,7 @@ const {
   motionFlip,
   motionFly,
   motionScale,
+  motionScrollBehavior,
   motionSlide,
   prefersReducedMotion,
   withViewTransition,
@@ -30,6 +31,12 @@ describe('Frameleaf motion', () => {
   beforeEach(() => {
     media.reducedMotion = false;
     Reflect.deleteProperty(document, 'startViewTransition');
+  });
+
+  it('scrolls smoothly, and jumps under Reduce Motion (FL-139)', () => {
+    expect(motionScrollBehavior()).toBe('smooth');
+    media.reducedMotion = true;
+    expect(motionScrollBehavior()).toBe('auto');
   });
 
   it('reads Reduce Motion from the shared media query manager', () => {
@@ -173,6 +180,10 @@ describe('Frameleaf motion', () => {
       }
       if (/matchMedia\(\s*['"`]\(prefers-reduced-motion/.test(source)) {
         offenders.push(`${file}: matchMedia reduced motion`);
+      }
+      // FL-139: a smooth programmatic scroll is motion the CSS kill-switch cannot stop
+      if (/behavior:\s*['"]smooth['"]/.test(source)) {
+        offenders.push(`${file}: smooth scroll (use motionScrollBehavior())`);
       }
     }
     expect(offenders).toEqual([]);
