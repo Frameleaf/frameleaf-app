@@ -613,6 +613,10 @@ export class IntegrityService extends BaseService {
     const sha256Hash = createHash('sha256');
     let sizeInBytes = 0;
 
+    let actualSha256: string | null = null;
+    let result: 'passed' | 'mismatched' | 'missing' | 'unreadable';
+    let sha1: Buffer | undefined;
+    let sha256: Buffer | undefined;
     try {
       await pipeline([
         this.storageRepository.createPlainReadStream(originalPath),
@@ -625,42 +629,48 @@ export class IntegrityService extends BaseService {
           },
         }),
       ]);
-
-      const sha1 = sha1Hash.digest();
-      const sha256 = sha256Hash.digest();
-      if (checksum.equals(sha1) || checksum.equals(sha256)) {
-        await this.forkSchemaRepository.recordAssetChecksums({
-          assetId,
-          sha1,
-          sha256,
-          sizeInBytes,
-          path: originalPath,
-          source: 'integrity',
-        });
-
-        if (reportId) {
-          await this.integrityRepository.deleteById(reportId);
-        }
-      } else {
-        throw new Error('File failed checksum');
-      }
+      sha1 = sha1Hash.digest();
+      sha256 = sha256Hash.digest();
+      actualSha256 = sha256.toString('hex');
+      result = checksum.equals(checksumAlgorithm === ChecksumAlgorithm.sha256File ? sha256 : sha1)
+        ? 'passed'
+        : 'mismatched';
     } catch (error) {
-      if ((error as { code?: string }).code === 'ENOENT') {
-        if (reportId) {
-          await this.integrityRepository.deleteById(reportId);
-        }
-
-        // missing file; handled by the missing files job
-        return;
+      result = (error as { code?: string }).code === 'ENOENT' ? 'missing' : 'unreadable';
+      if (result === 'unreadable') {
+        this.logger.warn('Failed to process a file: ' + error);
       }
+    }
 
-      this.logger.warn('Failed to process a file: ' + error);
-      await this.integrityRepository.create({
-        path: originalPath,
-        type: IntegrityReport.ChecksumFail,
+    // Persistence errors are not file failures. Keep successful rechecks separate from the original baseline.
+    const current = await this.integrityRepository.recordVerification({
+      assetId,
+      originalPath,
+      expectedChecksum: checksum,
+      checksumAlgorithm,
+      actualSha256,
+      result,
+    });
+    if (!current) {
+      return;
+    }
+    if (result === 'passed') {
+      await this.forkSchemaRepository.recordAssetChecksums({
         assetId,
+        sha1: sha1!,
+        sha256: sha256!,
+        sizeInBytes,
+        path: originalPath,
+        source: 'integrity',
       });
     }
+    if (result === 'passed' || result === 'missing') {
+      if (reportId) {
+        await this.integrityRepository.deleteById(reportId);
+      }
+      return;
+    }
+    await this.integrityRepository.create({ path: originalPath, type: IntegrityReport.ChecksumFail, assetId });
   }
 
   @OnJob({ name: JobName.IntegrityChecksumFiles, queue: QueueName.IntegrityCheck })

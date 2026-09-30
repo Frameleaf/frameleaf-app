@@ -227,6 +227,7 @@ export class CloudBackupMaintenance {
     bucket: CloudBackupBucket,
     start: CloudBackupVerifyResult,
     checkpoint: CloudBackupCheckpoint<CloudBackupVerifyResult>,
+    claim: { operationId: string; claimToken: string },
   ): Promise<CloudBackupVerifyResult | null> {
     // what every manifest names: object → its size and the manifests naming it, and each named dump
     const named = new Map<string, { size: number; manifests: string[] }>();
@@ -289,6 +290,13 @@ export class CloudBackupMaintenance {
     for (let at = 0; at < pending.length; at += MAINTENANCE_BATCH) {
       for (const sha256 of pending.slice(at, at + MAINTENANCE_BATCH)) {
         const problem = await this.checkObject(bucket, sha256, named.get(sha256)!.size, start.depth);
+        await this.index.recordObjectVerification({
+          bucket: bucket.bucketRef,
+          sha256,
+          ...claim,
+          method: start.depth === 'full' ? 'size-head' : 'sha256-get',
+          result: problem ?? 'passed',
+        });
         if (problem) {
           record(sha256, problem);
         }
