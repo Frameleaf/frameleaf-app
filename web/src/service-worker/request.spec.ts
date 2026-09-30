@@ -67,7 +67,7 @@ describe('service worker asset requests', () => {
       if (request.cache === undefined) {
         Object.defineProperty(request, 'cache', { value: 'default' });
       }
-      let allowed = true;
+      let isAllowed = true;
       let cached: Response | undefined;
       let authorizations = 0;
       // Model a fresh private HTTP-cache entry: default requests reuse it without reaching the server.
@@ -79,7 +79,7 @@ describe('service worker asset requests', () => {
             return cached.clone();
           }
           authorizations++;
-          if (!allowed) {
+          if (!isAllowed) {
             return new Response('denied', { status: 403 });
           }
           cached = new Response('private media', { headers: { 'Cache-Control': 'private, max-age=86400' } });
@@ -88,7 +88,7 @@ describe('service worker asset requests', () => {
       );
       expect(request.cache).toBe('default');
       await expect(text(handleFetch(request))).resolves.toBe('private media');
-      allowed = false;
+      isAllowed = false;
       const denied = await handleFetch(request);
       expect(denied.status).toBe(403);
       expect(authorizations).toBe(2);
