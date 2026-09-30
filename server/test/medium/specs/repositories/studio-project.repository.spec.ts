@@ -286,6 +286,46 @@ describe(StudioProjectRepository.name, () => {
     }, 20_000);
   });
 
+  describe('isLiveSharedSpaceOf (FL-97 owner decision)', () => {
+    it('counts only a live space the user still belongs to that someone else belongs to as well', async () => {
+      const { ctx, sut } = setup();
+      const { user: owner } = await ctx.newUser();
+      const { user: member } = await ctx.newUser();
+      const { user: stranger } = await ctx.newUser();
+
+      const { album: shared } = await ctx.newAlbum({ ownerId: owner.id, kind: AlbumKind.Space });
+      await ctx.newAlbumUser({ albumId: shared.id, userId: member.id, role: AlbumUserRole.Viewer });
+      await expect(sut.isLiveSharedSpaceOf(shared.id, owner.id)).resolves.toBe(true);
+      // a member (not the album owner) counts too
+      await expect(sut.isLiveSharedSpaceOf(shared.id, member.id)).resolves.toBe(true);
+      // someone who is not a member never does
+      await expect(sut.isLiveSharedSpaceOf(shared.id, stranger.id)).resolves.toBe(false);
+
+      // a space nobody else is in is not shared
+      const { album: solo } = await ctx.newAlbum({ ownerId: owner.id, kind: AlbumKind.Space });
+      await expect(sut.isLiveSharedSpaceOf(solo.id, owner.id)).resolves.toBe(false);
+
+      // an ordinary shared album is not a space
+      const { album: album } = await ctx.newAlbum({ ownerId: owner.id });
+      await ctx.newAlbumUser({ albumId: album.id, userId: member.id, role: AlbumUserRole.Viewer });
+      await expect(sut.isLiveSharedSpaceOf(album.id, owner.id)).resolves.toBe(false);
+
+      // a deleted space no longer counts
+      const { album: gone } = await ctx.newAlbum({ ownerId: owner.id, kind: AlbumKind.Space });
+      await ctx.newAlbumUser({ albumId: gone.id, userId: member.id, role: AlbumUserRole.Viewer });
+      await ctx.database.updateTable('album').set({ deletedAt: new Date() }).where('id', '=', gone.id).execute();
+      await expect(sut.isLiveSharedSpaceOf(gone.id, owner.id)).resolves.toBe(false);
+
+      // once the other member leaves, it is no longer shared
+      await ctx.database
+        .deleteFrom('album_user')
+        .where('albumId', '=', shared.id)
+        .where('userId', '=', member.id)
+        .execute();
+      await expect(sut.isLiveSharedSpaceOf(shared.id, owner.id)).resolves.toBe(false);
+    });
+  });
+
   describe('listVisible', () => {
     it('shows a project to its owner and to live members of its shared space, and to nobody else', async () => {
       const { ctx, sut } = setup();
