@@ -7411,6 +7411,10 @@
     {
       "definition": "uuid|not null|immich_uuid_v7()||",
       "identity": "public.pet.updateId"
+    },
+    {
+      "definition": "bigint|nullable|||",
+      "identity": "public.session_tag_sync_state.deliveryOrder"
     }
   ],
   "constraints": [
