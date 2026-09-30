@@ -85714,9 +85714,47 @@
         "properties": {},
         "type": "object"
       },
+      "SyncDuplicateGroupDeleteV1": {
+        "properties": {
+          "groupId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "groupId"
+        ],
+        "type": "object"
+      },
+      "SyncDuplicateGroupV1": {
+        "properties": {
+          "assetIds": {
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            },
+            "minItems": 2,
+            "type": "array"
+          },
+          "groupId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "assetIds",
+          "groupId"
+        ],
+        "type": "object"
+      },
       "SyncEntityType": {
         "description": "Sync entity type",
         "enum": [
+          "DuplicateGroupV1",
+          "DuplicateGroupDeleteV1",
           "SharedSpaceV1",
           "SharedSpaceDeleteV1",
           "SharedSpaceMemberV1",
@@ -86161,6 +86199,7 @@
       "SyncRequestType": {
         "description": "Sync request type",
         "enum": [
+          "DuplicateGroupsV1",
           "SharedSpacesV1",
           "SharedSpaceMembersV1",
           "PetsV1",
