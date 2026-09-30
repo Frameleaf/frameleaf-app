@@ -8,6 +8,9 @@
 //     float-to-integer convention) and HDR10 SEI, and
 //   - verifies the written stream by probing and decoding it back.
 import { spawn, spawnSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
+import { rename, rm } from 'node:fs/promises';
+import { sourceTimeline } from './preflight-validators.mjs';
 
 const PQ_M1 = 2610 / 16384;
 const PQ_M2 = (2523 / 4096) * 128;
@@ -81,10 +84,10 @@ export function toRgb48(frame) {
   return Buffer.from(out.buffer, out.byteOffset, out.byteLength);
 }
 
-export function encoderArgs({ width, height, fps, transfer, light, mastering, output, lossless = false }) {
+export function encoderArgs({ width, height, fps, transfer, light, mastering, output, lossless = false, timeline, audio }) {
   const trc = transfer === 'pq' ? 'smpte2084' : 'arib-std-b67';
   const x265 = [
-    'profile=main10', 'repeat-headers=1', 'colorprim=bt2020', `transfer=${trc}`,
+    'profile=main10', ...(timeline ? ['bframes=0'] : []), 'repeat-headers=1', 'colorprim=bt2020', `transfer=${trc}`,
     'colormatrix=bt2020nc', 'range=limited',
     // Verification masters isolate the colour conversion from compression loss.
     ...(lossless ? ['lossless=1'] : []),
@@ -98,8 +101,15 @@ export function encoderArgs({ width, height, fps, transfer, light, mastering, ou
     '-f', 'rawvideo', '-pix_fmt', 'rgb48le', '-s', `${width}x${height}`, '-r', String(fps),
     '-color_primaries', 'bt2020', '-color_trc', trc, '-colorspace', 'rgb', '-color_range', 'pc',
     '-i', '-',
+    ...(audio ? ['-i', audio.path, '-map', '0:v:0', '-map', `1:a:${audio.stream ?? 0}`, '-c:a', 'copy'] : []),
     // FL-102 convention: explicit matrix, range and error-diffusion dither.
-    '-vf', 'scale=in_range=pc:out_range=tv:out_color_matrix=bt2020:sws_dither=ed,format=yuv420p10le',
+    '-vf', [
+      'scale=in_range=pc:out_range=tv:out_color_matrix=bt2020:sws_dither=ed,format=yuv420p10le',
+      ...(timeline ? [`settb=${timeline.timeBase}`, `setpts=${timeline.pts.reduceRight((expr, pts, i) =>
+        i === timeline.pts.length - 1 ? String(pts) : `if(eq(N,${i}),${pts},${expr})`, '').replaceAll(',', '\\,')}`] : []),
+    ].join(','),
+    ...(timeline ? ['-fps_mode', 'passthrough', '-enc_time_base', timeline.timeBase,
+      '-video_track_timescale', timeline.timeBase.split('/')[1], '-avoid_negative_ts', 'disabled'] : []),
     '-c:v', 'libx265', '-preset', 'medium', ...(lossless ? [] : ['-crf', '12']),
     '-x265-params', x265.join(':'),
     '-tag:v', 'hvc1',
@@ -109,27 +119,55 @@ export function encoderArgs({ width, height, fps, transfer, light, mastering, ou
 }
 
 /** Encodes frames (an array of signal frames) into an MP4 HDR master. */
-export async function encodeHdrMaster({ ffmpeg = 'ffmpeg', frames, fps, transfer, mastering, output, lossless = false }) {
+export async function encodeHdrMaster({ ffmpeg = 'ffmpeg', frames, fps, transfer, mastering, output, lossless = false, timeline, audio, signal }) {
   if (!['pq', 'hlg'].includes(transfer)) throw new Error(`Unsupported HDR transfer ${transfer}`);
   if (frames.length === 0) throw new Error('No frames to encode');
   const { width, height } = frames[0];
   if (frames.some((frame) => frame.width !== width || frame.height !== height)) {
     throw new Error('Every frame must have the same size');
   }
+  if (timeline) {
+    sourceTimeline(timeline.timeBase, timeline.pts.map((pts) => ({ pts })));
+    if (timeline.pts.length !== frames.length) throw new Error('One output PTS is required per rendered frame');
+    // ponytail: setpts lookup is bounded to diagnostic sequences; a streaming timestamped encoder is the worker upgrade.
+    if (frames.length > 256) throw new Error('Timestamped diagnostic masters are limited to 256 frames');
+  }
+  if (audio && (typeof audio.path !== 'string' || !audio.path ||
+    !Number.isSafeInteger(audio.stream ?? 0) || (audio.stream ?? 0) < 0)) {
+    throw new Error('Audio requires a path and a nonnegative stream index');
+  }
+  signal?.throwIfAborted();
   // HDR10 static metadata applies to PQ; HLG masters carry none.
   const light = transfer === 'pq' ? measureContentLight(frames) : null;
   if (light) validateMastering(light, mastering);
-  const args = encoderArgs({ width, height, fps, transfer, light, mastering, output, lossless });
-  await new Promise((resolve, reject) => {
-    const child = spawn(ffmpeg, args, { stdio: ['pipe', 'ignore', 'pipe'] });
-    let stderr = '';
-    child.stderr.on('data', (chunk) => { stderr += chunk; });
-    child.on('error', reject);
-    child.on('close', (code) => (code === 0 ? resolve() : reject(new Error(`ffmpeg exited ${code}: ${stderr.trim()}`))));
-    child.stdin.on('error', () => {});
-    for (const frame of frames) child.stdin.write(toRgb48(frame));
-    child.stdin.end();
-  });
+  // The final path only ever names a complete master. A retry restarts from the
+  // caller's immutable rendered sequence; an interrupted attempt never replaces it.
+  const partial = `${output}.${randomUUID()}.partial.mp4`;
+  const args = encoderArgs({ width, height, fps, transfer, light, mastering, output: partial, lossless, timeline, audio });
+  try {
+    await new Promise((resolve, reject) => {
+      const child = spawn(ffmpeg, args, { stdio: ['pipe', 'ignore', 'pipe'] });
+      let stderr = '';
+      const abort = () => child.kill('SIGKILL');
+      signal?.addEventListener('abort', abort, { once: true });
+      if (signal?.aborted) abort();
+      child.stderr.on('data', (chunk) => { stderr += chunk; });
+      child.on('error', reject);
+      child.on('close', (code) => {
+        signal?.removeEventListener('abort', abort);
+        if (signal?.aborted) reject(signal.reason);
+        else if (code === 0) resolve();
+        else reject(new Error(`ffmpeg exited ${code}: ${stderr.trim()}`));
+      });
+      child.stdin.on('error', () => {});
+      for (const frame of frames) child.stdin.write(toRgb48(frame));
+      child.stdin.end();
+    });
+    signal?.throwIfAborted();
+    await rename(partial, output);
+  } finally {
+    await rm(partial, { force: true });
+  }
   return { light, args };
 }
 
@@ -158,7 +196,7 @@ export function probeMaster(ffprobe, file) {
 export function decodeMaster(ffmpeg, file, width, height) {
   const result = spawnSync(ffmpeg, ['-v', 'error', '-i', file,
     '-vf', 'scale=in_range=tv:out_range=pc:in_color_matrix=bt2020:flags=accurate_rnd+full_chroma_int,format=rgb48le',
-    '-f', 'rawvideo', '-'], { maxBuffer: 1 << 30 });
+    '-fps_mode', 'passthrough', '-f', 'rawvideo', '-'], { maxBuffer: 1 << 30 });
   if (result.status !== 0) throw new Error(`ffmpeg decode failed: ${result.stderr}`);
   const samples = new Uint16Array(result.stdout.buffer, result.stdout.byteOffset, result.stdout.byteLength / 2);
   const frameSize = width * height * 3;
