@@ -266,11 +266,13 @@
       <article>
         <div class="pair-images">
           <img
+            loading="lazy"
             src={getAssetMediaUrl({ id: candidate.photo.id, size: AssetMediaSize.Preview })}
             alt={candidate.photo.originalFileName}
           />
           <span
             ><img
+              loading="lazy"
               src={getAssetMediaUrl({ id: candidate.video.id, size: AssetMediaSize.Preview })}
               alt={candidate.video.originalFileName}
             /><Icon icon={mdiPlayCircleOutline} size="1.5rem" aria-hidden={true} /></span
@@ -318,6 +320,7 @@
     <div class="fl-live-photo-inspect">
       <figure>
         <img
+          loading="lazy"
           src={getAssetMediaUrl({ id: candidate.photo.id, size: AssetMediaSize.Preview })}
           alt={candidate.photo.originalFileName}
         />
