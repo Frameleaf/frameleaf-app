@@ -60,6 +60,33 @@ type VideoFrameBackfillTables = { assetVideoDuplicateFrame: TableVerification };
 export class DuplicateRepository {
   constructor(@InjectKysely() private db: Kysely<DB>) {}
 
+  /** Read-only owner projection using the same eligibility predicates as getAll. */
+  @GenerateSql({ params: [DummyValue.UUID, { excludeNsfw: true }] })
+  getSyncGroups(userId: string, options: DuplicatePrivacyOptions = {}, groupId?: string) {
+    return (
+      this.db
+        .selectFrom('asset')
+        .innerJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
+        .$call((qb) => withDefaultVisibility(qb, options.revealLockedOwnerId))
+        .where('asset.ownerId', '=', asUuid(userId))
+        .where('asset.duplicateId', 'is not', null)
+        .$narrowType<{ duplicateId: NotNull }>()
+        .$if(!!groupId, (qb) => qb.where('asset.duplicateId', '=', asUuid(groupId!)))
+        .where('asset.deletedAt', 'is', null)
+        .where('asset.stackId', 'is', null)
+        .$call((qb) => withHiddenContentFilter(qb, options))
+        .select('asset.duplicateId as groupId')
+        .$narrowType<{ groupId: NotNull }>()
+        .select(sql<string[]>`array_agg(asset.id order by asset.id)`.as('assetIds'))
+        .groupBy('asset.duplicateId')
+        .having((eb) => eb.fn.count('asset.id'), '>', 1)
+        // Keep ordering in PostgreSQL: JS Date would discard sub-millisecond precision.
+        .orderBy(sql`max(asset."localDateTime")`, 'desc')
+        .orderBy('asset.duplicateId', 'desc')
+        .execute()
+    );
+  }
+
   @GenerateSql({ params: [DummyValue.UUID, { excludeNsfw: true }] })
   getAll(userId: string, options: DuplicatePrivacyOptions = {}) {
     return (

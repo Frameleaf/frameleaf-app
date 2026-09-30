@@ -11398,6 +11398,13 @@ export type SyncAuthUserV2 = {
     storageLabel: string | null;
 };
 export type SyncCompleteV1 = {};
+export type SyncDuplicateGroupDeleteV1 = {
+    groupId: string;
+};
+export type SyncDuplicateGroupV1 = {
+    assetIds: string[];
+    groupId: string;
+};
 export type SyncMemoryAssetDeleteV1 = {
     /** Asset ID */
     assetId: string;
@@ -23893,6 +23900,8 @@ export enum StudioRestoredVersionUnavailable {
     HiddenContent = "hidden-content"
 }
 export enum SyncEntityType {
+    DuplicateGroupV1 = "DuplicateGroupV1",
+    DuplicateGroupDeleteV1 = "DuplicateGroupDeleteV1",
     SharedSpaceV1 = "SharedSpaceV1",
     SharedSpaceDeleteV1 = "SharedSpaceDeleteV1",
     SharedSpaceMemberV1 = "SharedSpaceMemberV1",
@@ -23975,6 +23984,7 @@ export enum SyncEntityType {
     SyncCompleteV1 = "SyncCompleteV1"
 }
 export enum SyncRequestType {
+    DuplicateGroupsV1 = "DuplicateGroupsV1",
     SharedSpacesV1 = "SharedSpacesV1",
     SharedSpaceMembersV1 = "SharedSpaceMembersV1",
     PetsV1 = "PetsV1",
