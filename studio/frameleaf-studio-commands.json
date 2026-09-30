@@ -924,7 +924,7 @@
     },
     {
       "capability": null,
-      "description": "Retime or revalue one keyframe from the graph editor or dopesheet.",
+      "description": "Retime or revalue one keyframe from the graph editor or dopesheet, or set its velocity handles and path tangents.",
       "id": "keyframe.update",
       "manifestIds": ["readme.keyframe-animation.1"],
       "mutatesGraph": true,
@@ -933,6 +933,8 @@
         "clipId": "string",
         "keyframeId": "string",
         "property": "string",
+        "spatial": "object?",
+        "temporalEase": "object?",
         "value": "object?"
       },
       "scope": "keyframe",
