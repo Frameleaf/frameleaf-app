@@ -17,6 +17,9 @@ import { getKyselyConfig } from 'src/utils/database.js';
  */
 const configuredEdgeSecret = process.env.FRAMELEAF_EDGE_SECRET;
 
+/** FL-165: how long a restart waits for the edge worker's 5 s teardown before killing it. */
+const EDGE_STOP_MS = 10_000;
+
 /**
  * FL-161 (instance contract "Via-header contract"): the secret the edge worker sends as
  * `X-Frameleaf-Via-Auth`, handed to every worker through the environment. Unless the administrator set
@@ -49,6 +52,11 @@ class Workers {
   /** FL-165: set when this supervisor stops the edge worker itself; any other exit is a failure. */
   edgeStopRequested = false;
   edgeRestartTimer?: NodeJS.Timeout;
+  /**
+   * A restart waits for every worker to end, so an edge worker that never finishes its teardown would
+   * leave the server down (no API, no maintenance worker). It promises 5 s; past this it is killed.
+   */
+  edgeKillTimer?: NodeJS.Timeout;
 
   /**
    * Boot all enabled workers
@@ -182,6 +190,16 @@ class Workers {
         this.stoppingEdge = true;
         this.edgeStopRequested = true;
         void edge.kill('SIGTERM');
+        this.edgeKillTimer = setTimeout(() => {
+          const stuck = this.workers[ImmichWorker.Edge];
+          if (stuck) {
+            console.error(`edge worker did not stop within ${EDGE_STOP_MS / 1000} s; killing it`);
+            void stuck.kill('SIGKILL');
+          }
+        }, EDGE_STOP_MS);
+      }
+      if (name === ImmichWorker.Edge) {
+        clearTimeout(this.edgeKillTimer);
       }
 
       // once all workers shut down, bootstrap again
