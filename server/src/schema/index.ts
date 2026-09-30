@@ -98,6 +98,8 @@ import { PersonAuditTable } from 'src/schema/tables/person-audit.table.js';
 import { PersonGroupAuditTable } from 'src/schema/tables/person-group-audit.table.js';
 import { PersonGroupTable } from 'src/schema/tables/person-group.table.js';
 import { PersonTable } from 'src/schema/tables/person.table.js';
+import { PetAuditTable } from 'src/schema/tables/pet-audit.table.js';
+import { PetObservationAuditTable } from 'src/schema/tables/pet-observation-audit.table.js';
 import { PetCandidateTable, PetDetectionTable, PetObservationTable, PetTable } from 'src/schema/tables/pet.table.js';
 import { DevelopExportTable, DevelopPresetTable } from 'src/schema/tables/photo-tools.table.js';
 import { PhysicalFileTable } from 'src/schema/tables/physical-file.table.js';
@@ -265,6 +267,8 @@ export class ImmichDatabase {
     PhysicalFileTable,
     PersonGroupTable,
     PersonGroupAuditTable,
+    PetAuditTable,
+    PetObservationAuditTable,
     PetTable,
     PetObservationTable,
     PetDetectionTable,
@@ -452,6 +456,8 @@ export interface DB {
   person_group: PersonGroupTable;
   person_group_audit: PersonGroupAuditTable;
 
+  pet_audit: PetAuditTable;
+  pet_observation_audit: PetObservationAuditTable;
   pet: PetTable;
   pet_observation: PetObservationTable;
   pet_detection: PetDetectionTable;

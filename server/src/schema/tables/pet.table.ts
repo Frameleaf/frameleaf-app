@@ -1,4 +1,6 @@
 import {
+  AfterDeleteTrigger,
+  BeforeUpdateTrigger,
   Column,
   CreateDateColumn,
   ForeignKeyColumn,
@@ -9,7 +11,14 @@ import {
   UpdateDateColumn,
 } from '@immich/sql-tools';
 import type { Generated, Timestamp } from '@immich/sql-tools';
+import { UpdateIdColumn } from 'src/decorators.js';
 import { PetObservationSource, PetObservationState, PetSpecies } from 'src/enum.js';
+import {
+  pet_delete_audit,
+  pet_observation_delete_audit,
+  pet_observation_update_id,
+  pet_update_id,
+} from 'src/schema/functions.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
 
@@ -43,12 +52,16 @@ import { UserTable } from 'src/schema/tables/user.table.js';
  * whole-photo reading tagged with the CLIP model and matcher revision. A per-region pet model,
  * if one is ever qualified (FL-145), would bring its own embedding table on the replaceable side.
  *
- * These tables carry no `updateId` and no `updatedAt` trigger: pets are not part of the
- * mobile sync protocol, and `updatedAt` is written explicitly by `PetRepository`.
+ * Durable identity/observation update IDs and delete facts support additive sync.
+ * `updatedAt` stays explicit; replaceable tables remain outside sync.
  */
 @Index({ columns: ['ownerId', 'isHidden'] })
+@AfterDeleteTrigger({ function: pet_delete_audit, referencingOldTableAs: 'old', scope: 'statement' })
+@BeforeUpdateTrigger({ function: pet_update_id, scope: 'row' })
 @Table('pet')
 export class PetTable {
+  @UpdateIdColumn({ index: true })
+  updateId!: Generated<string>;
   @PrimaryGeneratedColumn()
   id!: Generated<string>;
 
@@ -82,8 +95,12 @@ export class PetTable {
 }
 
 @Unique({ columns: ['petId', 'assetId'] })
+@AfterDeleteTrigger({ function: pet_observation_delete_audit, referencingOldTableAs: 'old', scope: 'statement' })
+@BeforeUpdateTrigger({ function: pet_observation_update_id, scope: 'row' })
 @Table('pet_observation')
 export class PetObservationTable {
+  @UpdateIdColumn({ index: true })
+  updateId!: Generated<string>;
   @PrimaryGeneratedColumn()
   id!: Generated<string>;
 

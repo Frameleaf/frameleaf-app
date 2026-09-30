@@ -393,3 +393,34 @@ export const tag_asset_update_id = registerFunction({
   language: 'PLPGSQL',
   body: `BEGIN NEW."updateId" := immich_uuid_v7(); RETURN NEW; END`,
 });
+
+export const pet_delete_audit = registerFunction({
+  name: 'pet_delete_audit',
+  returnType: 'trigger',
+  language: 'PLPGSQL',
+  body: `BEGIN INSERT INTO pet_audit ("petId", "ownerId") SELECT id, "ownerId" FROM OLD; RETURN NULL; END`,
+});
+export const pet_observation_delete_audit = registerFunction({
+  name: 'pet_observation_delete_audit',
+  returnType: 'trigger',
+  language: 'PLPGSQL',
+  body: `BEGIN
+ INSERT INTO pet_observation_audit ("observationId", "petId", "assetId", "ownerId")
+ SELECT deleted.id, deleted."petId", deleted."assetId", coalesce(pet."ownerId", asset."ownerId")
+ FROM OLD AS deleted LEFT JOIN pet ON pet.id = deleted."petId" LEFT JOIN asset ON asset.id = deleted."assetId"
+ WHERE coalesce(pet."ownerId", asset."ownerId") IS NOT NULL
+ AND (pet."ownerId" IS NULL OR asset."ownerId" IS NULL OR pet."ownerId" = asset."ownerId");
+ RETURN NULL; END`,
+});
+export const pet_update_id = registerFunction({
+  name: 'pet_update_id',
+  returnType: 'trigger',
+  language: 'PLPGSQL',
+  body: `BEGIN NEW."updateId" := immich_uuid_v7(); RETURN NEW; END`,
+});
+export const pet_observation_update_id = registerFunction({
+  name: 'pet_observation_update_id',
+  returnType: 'trigger',
+  language: 'PLPGSQL',
+  body: `BEGIN NEW."updateId" := immich_uuid_v7(); RETURN NEW; END`,
+});

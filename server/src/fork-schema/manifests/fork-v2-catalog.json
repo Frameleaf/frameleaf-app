@@ -7322,7 +7322,7 @@
     },
     {
       "definition": "uuid|not null|||",
-      "identity": "public.session_tag_sync_state.tagId"
+      "identity": "public.session_tag_sync_state.entityId"
     },
     {
       "definition": "uuid|not null|immich_uuid_v7()||",
@@ -7363,6 +7363,54 @@
     {
       "definition": "uuid|not null|||",
       "identity": "public.tag_audit.userId"
+    },
+    {
+      "definition": "timestamp with time zone|not null|clock_timestamp()||",
+      "identity": "public.pet_audit.deletedAt"
+    },
+    {
+      "definition": "uuid|not null|immich_uuid_v7()||",
+      "identity": "public.pet_audit.id"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.pet_audit.ownerId"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.pet_audit.petId"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.pet_observation_audit.assetId"
+    },
+    {
+      "definition": "timestamp with time zone|not null|clock_timestamp()||",
+      "identity": "public.pet_observation_audit.deletedAt"
+    },
+    {
+      "definition": "uuid|not null|immich_uuid_v7()||",
+      "identity": "public.pet_observation_audit.id"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.pet_observation_audit.observationId"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.pet_observation_audit.ownerId"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.pet_observation_audit.petId"
+    },
+    {
+      "definition": "uuid|not null|immich_uuid_v7()||",
+      "identity": "public.pet_observation.updateId"
+    },
+    {
+      "definition": "uuid|not null|immich_uuid_v7()||",
+      "identity": "public.pet.updateId"
     }
   ],
   "constraints": [
@@ -9681,6 +9729,14 @@
     {
       "definition": "PRIMARY KEY (id)",
       "identity": "public.tag_audit.tag_audit_pkey"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "public.pet_audit.pet_audit_pkey"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "public.pet_observation_audit.pet_observation_audit_pkey"
     }
   ],
   "enums": [
@@ -10892,6 +10948,22 @@
     {
       "definition": "CREATE OR REPLACE FUNCTION public.tag_delete_audit()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$BEGIN INSERT INTO tag_audit (\"tagId\", \"userId\") SELECT id, \"userId\" FROM OLD; RETURN NULL; END$function$",
       "identity": "public.tag_delete_audit()"
+    },
+    {
+      "definition": "CREATE OR REPLACE FUNCTION public.pet_delete_audit()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$BEGIN INSERT INTO pet_audit (\"petId\", \"ownerId\") SELECT id, \"ownerId\" FROM OLD; RETURN NULL; END$function$",
+      "identity": "public.pet_delete_audit()"
+    },
+    {
+      "definition": "CREATE OR REPLACE FUNCTION public.pet_observation_delete_audit()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\n    BEGIN\n INSERT INTO pet_observation_audit (\"observationId\", \"petId\", \"assetId\", \"ownerId\")\n SELECT deleted.id, deleted.\"petId\", deleted.\"assetId\", coalesce(pet.\"ownerId\", asset.\"ownerId\")\n FROM OLD AS deleted LEFT JOIN pet ON pet.id = deleted.\"petId\" LEFT JOIN asset ON asset.id = deleted.\"assetId\"\n WHERE coalesce(pet.\"ownerId\", asset.\"ownerId\") IS NOT NULL\n AND (pet.\"ownerId\" IS NULL OR asset.\"ownerId\" IS NULL OR pet.\"ownerId\" = asset.\"ownerId\");\n RETURN NULL; END\n  $function$",
+      "identity": "public.pet_observation_delete_audit()"
+    },
+    {
+      "definition": "CREATE OR REPLACE FUNCTION public.pet_observation_update_id()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$BEGIN NEW.\"updateId\" := immich_uuid_v7(); RETURN NEW; END$function$",
+      "identity": "public.pet_observation_update_id()"
+    },
+    {
+      "definition": "CREATE OR REPLACE FUNCTION public.pet_update_id()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$BEGIN NEW.\"updateId\" := immich_uuid_v7(); RETURN NEW; END$function$",
+      "identity": "public.pet_update_id()"
     }
   ],
   "indexes": [
@@ -13626,6 +13698,54 @@
     {
       "definition": "CREATE INDEX \"tag_audit_userId_idx\" ON public.tag_audit USING btree (\"userId\")",
       "identity": "public.tag_audit.tag_audit_userId_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"pet_audit_deletedAt_idx\" ON public.pet_audit USING btree (\"deletedAt\")",
+      "identity": "public.pet_audit.pet_audit_deletedAt_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"pet_audit_ownerId_idx\" ON public.pet_audit USING btree (\"ownerId\")",
+      "identity": "public.pet_audit.pet_audit_ownerId_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"pet_audit_petId_idx\" ON public.pet_audit USING btree (\"petId\")",
+      "identity": "public.pet_audit.pet_audit_petId_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX pet_audit_pkey ON public.pet_audit USING btree (id)",
+      "identity": "public.pet_audit.pet_audit_pkey"
+    },
+    {
+      "definition": "CREATE INDEX \"pet_observation_audit_assetId_idx\" ON public.pet_observation_audit USING btree (\"assetId\")",
+      "identity": "public.pet_observation_audit.pet_observation_audit_assetId_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"pet_observation_audit_deletedAt_idx\" ON public.pet_observation_audit USING btree (\"deletedAt\")",
+      "identity": "public.pet_observation_audit.pet_observation_audit_deletedAt_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"pet_observation_audit_observationId_idx\" ON public.pet_observation_audit USING btree (\"observationId\")",
+      "identity": "public.pet_observation_audit.pet_observation_audit_observationId_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"pet_observation_audit_ownerId_idx\" ON public.pet_observation_audit USING btree (\"ownerId\")",
+      "identity": "public.pet_observation_audit.pet_observation_audit_ownerId_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"pet_observation_audit_petId_idx\" ON public.pet_observation_audit USING btree (\"petId\")",
+      "identity": "public.pet_observation_audit.pet_observation_audit_petId_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX pet_observation_audit_pkey ON public.pet_observation_audit USING btree (id)",
+      "identity": "public.pet_observation_audit.pet_observation_audit_pkey"
+    },
+    {
+      "definition": "CREATE INDEX \"pet_observation_updateId_idx\" ON public.pet_observation USING btree (\"updateId\")",
+      "identity": "public.pet_observation.pet_observation_updateId_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"pet_updateId_idx\" ON public.pet USING btree (\"updateId\")",
+      "identity": "public.pet.pet_updateId_idx"
     }
   ],
   "migrationOverrides": [
@@ -13750,7 +13870,15 @@
     "function_tag_delete_audit",
     "trigger_tag_asset_delete_audit",
     "trigger_tag_asset_update_id",
-    "trigger_tag_delete_audit"
+    "trigger_tag_delete_audit",
+    "function_pet_delete_audit",
+    "function_pet_observation_delete_audit",
+    "function_pet_observation_update_id",
+    "function_pet_update_id",
+    "trigger_pet_delete_audit",
+    "trigger_pet_observation_delete_audit",
+    "trigger_pet_observation_update_id",
+    "trigger_pet_update_id"
   ],
   "schemas": [
     {
@@ -14583,6 +14711,14 @@
     {
       "definition": "table",
       "identity": "public.tag_audit"
+    },
+    {
+      "definition": "table",
+      "identity": "public.pet_audit"
+    },
+    {
+      "definition": "table",
+      "identity": "public.pet_observation_audit"
     }
   ],
   "triggers": [
@@ -14877,6 +15013,22 @@
     {
       "definition": "CREATE TRIGGER tag_asset_update_id BEFORE UPDATE ON tag_asset FOR EACH ROW EXECUTE FUNCTION tag_asset_update_id()",
       "identity": "public.tag_asset.tag_asset_update_id"
+    },
+    {
+      "definition": "CREATE TRIGGER pet_observation_delete_audit AFTER DELETE ON pet_observation REFERENCING OLD TABLE AS old FOR EACH STATEMENT EXECUTE FUNCTION pet_observation_delete_audit()",
+      "identity": "public.pet_observation.pet_observation_delete_audit"
+    },
+    {
+      "definition": "CREATE TRIGGER pet_observation_update_id BEFORE UPDATE ON pet_observation FOR EACH ROW EXECUTE FUNCTION pet_observation_update_id()",
+      "identity": "public.pet_observation.pet_observation_update_id"
+    },
+    {
+      "definition": "CREATE TRIGGER pet_delete_audit AFTER DELETE ON pet REFERENCING OLD TABLE AS old FOR EACH STATEMENT EXECUTE FUNCTION pet_delete_audit()",
+      "identity": "public.pet.pet_delete_audit"
+    },
+    {
+      "definition": "CREATE TRIGGER pet_update_id BEFORE UPDATE ON pet FOR EACH ROW EXECUTE FUNCTION pet_update_id()",
+      "identity": "public.pet.pet_update_id"
     }
   ]
 }

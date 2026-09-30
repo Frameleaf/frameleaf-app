@@ -99,6 +99,7 @@ export const LEGACY_FORK_MIGRATIONS: ReadonlySet<string> = new Set([
   '2100000000710-PartnerShareLocationDefaultOff',
   '2100000000720-SafetyProofFacts',
   '2100000000721-TagSyncEvents',
+  '2100000000722-PetSyncEvents',
 ]);
 
 export const GENERIC_LEGACY_FORK_MIGRATIONS: ReadonlySet<string> = new Set(

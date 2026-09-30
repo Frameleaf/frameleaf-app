@@ -89,16 +89,18 @@ describe('catalog manifests', () => {
     expect(getCatalogTableLocks(originalOfficial)).toEqual(
       [...official.tables, ...forkTables].map(({ identity }) => identity).toSorted(),
     );
-    // 148 public tables (among them the workflow run steps, FL-179, the Frameleaf Cloud model choices,
+    // 150 public tables (among them the workflow run steps, FL-179, the Frameleaf Cloud model choices,
     // FL-186, and the cloud backup index, manifests and manifest entries, FL-160) and the fork tables,
     // among them the supporter keys (FL-156), Frameleaf account links and Sign in with Frameleaf
     // sessions (FL-158), the album covers that follow the newest item (FL-83) and items shared with a
     // person (FL-83 AL-30b), generated Studio resources (FL-111) and Studio project imports (FL-103,
     // FL-105), Studio HDR intermediates (FL-97), and persisted safety proof facts (FL-226),
     // in the integrated catalog.
-    expect(getCatalogTableLocks(fork)).toHaveLength(205);
+    expect(getCatalogTableLocks(fork)).toHaveLength(207);
     expect(getCatalogTableLocks(fork)).toEqual(
       expect.arrayContaining([
+        'public.pet_audit',
+        'public.pet_observation_audit',
         'public.tag_audit',
         'public.tag_asset_audit',
         'public.session_tag_sync_state',
