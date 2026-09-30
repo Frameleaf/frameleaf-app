@@ -218,7 +218,27 @@ async function buildFixture() {
   }
   const keyframe = graph.timeline!.keyframes![0]!.properties[0]!.keyframes[0]!.id
   const spare = graph.timeline!.tracks.find((entry) => entry.name === 'Spare')!.id
+  // FL-100: the fixture grouped into Compose with a published control, and a still photo, each as its
+  // own graph so the other commands act on the plain fixture.
+  const grouped = await applied(graph, [engineEnvelope('clip.group', { clipIds: [title.id], name: 'Lower third' })])
+  const group = itemsOf(grouped).find((item) => item.type === 'composition')!
+  const composition = (grouped.timeline as unknown as { compositions: Array<{ id: string; items: Array<{ id: string }> }> })
+    .compositions.find((entry) => entry.id === (group as unknown as { compositionId: string }).compositionId)!
+  const titleInside = composition.items[0]!.id
+  const published = await applied(grouped, [
+    engineEnvelope('composition.setPublishedControls', {
+      compositionId: composition.id,
+      controls: [{ id: 'headline', name: 'Headline', targetItemId: titleInside, property: 'text.text' }],
+    }),
+  ])
+  const stillGraph = await applied(graph, [
+    engineEnvelope('clip.add', { trackId: spare, assetId: STILL, at: seconds(0), duration: seconds(2) }),
+  ])
+  const still = itemsOf(stillGraph).find((item) => item.type === 'image')!.id
   return {
+    compose: { graph: grouped, published, group: group.id, composition: composition.id, titleInside },
+    stillGraph,
+    still,
     graph,
     left,
     middle,
@@ -295,6 +315,29 @@ const ENGINE_CASES: Record<
           modifier: { id: 'sway-1', type: 'sway', amplitude: 1, frequency: 0.5, phaseFrames: 0, seed: 1 },
         }),
       ]),
+  }),
+  'text.setMotion': (f) => ({
+    payload: {
+      clipId: f.title,
+      motion: { in: { presetId: 'fade-up', durationFrames: 12, staggerFrames: 2, intensity: 1, unit: 'character' } },
+    },
+  }),
+  'clip.group': (f) => ({ payload: { clipIds: [f.title], name: 'Lower third' } }),
+  'clip.ungroup': (f) => ({ payload: { groupId: f.compose.group }, graph: async () => f.compose.graph }),
+  'composition.setPublishedControls': (f) => ({
+    payload: {
+      compositionId: f.compose.composition,
+      controls: [{ id: 'headline', name: 'Headline', targetItemId: f.compose.titleInside, property: 'text.text' }],
+    },
+    graph: async () => f.compose.graph,
+  }),
+  'composition.setControlOverrides': (f) => ({
+    payload: { compositionClipId: f.compose.group, overrides: { headline: 'Chapter two' } },
+    graph: async () => f.compose.published,
+  }),
+  'clip.setKenBurns': (f) => ({
+    payload: { clipId: f.still, kenBurns: { from: { x: 0, y: 0, w: 1, h: 1 }, to: { x: 0.1, y: 0.1, w: 0.8, h: 0.8 } } },
+    graph: async () => f.stillGraph,
   }),
   'keyframe.setEasing': (f) => ({
     payload: {
@@ -773,7 +816,14 @@ describe('FL-112 command and graph matrix, on the real command path', () => {
 
       // Unknown fields survive the edit.
       const edited = live.state.graph as Project & { frameleafFuture?: unknown }
-      const future = itemsOf(edited).find(
+      // Inside a composition too: grouping moves the item, and its unknown fields go with it.
+      const everyItem = [
+        ...itemsOf(edited),
+        ...((edited.timeline as unknown as { compositions?: Array<{ items?: TimelineItem[] }> }).compositions ?? []).flatMap(
+          (composition) => composition.items ?? [],
+        ),
+      ]
+      const future = everyItem.find(
         (item) => (item as unknown as { frameleafFuture?: unknown }).frameleafFuture !== undefined,
       )
       const itemRemoved = id === 'clip.delete' || id === 'composition.add'

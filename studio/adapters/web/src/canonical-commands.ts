@@ -89,7 +89,13 @@ import {
   removePropertyExpression,
   applyMotionModifierToItems,
   bakeMotionToKeyframes,
+  addKeyframes,
 } from '@/features/timeline/stores/timeline-actions'
+import { dissolvePreComp } from '@/features/timeline/stores/actions/composition-actions'
+import { useCompositionsStore } from '@/features/timeline/stores/compositions-store'
+import { sanitizeTextMotion } from '@/shared/projects/migrations/sanitize-text-motion'
+import { sanitizeCompositionControlSchema } from '@/shared/utils/composition-controls'
+import { COMPOSITION_CONTROLS_VERSION } from '@/types/composition-controls'
 import {
   evaluatePropertyExpression,
   isExpressionValueCompatible,
@@ -238,6 +244,12 @@ export const ENGINE_COMMANDS: Readonly<Record<string, readonly string[]>> = {
   'property.setExpression': ['extra.expressions'],
   'property.setModifier': ['readme.keyframe-animation.3'],
   'property.bakeModifier': ['readme.keyframe-animation.3'],
+  'text.setMotion': ['readme.keyframe-animation.4'],
+  'clip.setKenBurns': ['readme.keyframe-animation.6'],
+  'clip.group': ['extra.compose'],
+  'clip.ungroup': ['extra.compose'],
+  'composition.setPublishedControls': ['extra.published-controls'],
+  'composition.setControlOverrides': ['extra.published-controls'],
 }
 
 export const isEngineCommand = (id: string): boolean => Object.hasOwn(ENGINE_COMMANDS, id)
@@ -471,6 +483,33 @@ const modifierField = (value: unknown): MotionModifier => {
     ...(channelGains ? { channelGains } : {}),
   }
 }
+
+const CSS_COLOR = /^(#[0-9a-f]{3,4}|#[0-9a-f]{6}|#[0-9a-f]{8}|(rgb|rgba|hsl|hsla)\([0-9.,%\s/+-]+\))$/i
+
+const KEN_BURNS_PROPERTIES: readonly string[] = ['x', 'y', 'width', 'height']
+interface KenBurnsRect {
+  x: number
+  y: number
+  w: number
+  h: number
+}
+
+/** The prototype's region rule (`normalizeRect`): a square region, 20%-100% of the photo, inside it. */
+const kenBurnsRect = (value: unknown, name: string): KenBurnsRect => {
+  if (!value || typeof value !== 'object') invalid(`kenBurns.${name} must be { x, y, w, h }`)
+  const rect = value as Record<string, unknown>
+  for (const key of ['x', 'y', 'w', 'h']) {
+    if (!finiteIn(rect[key], 0, 1)) invalid(`kenBurns.${name}.${key} must be a number in 0..1`)
+  }
+  const { x, y, w, h } = rect as unknown as KenBurnsRect
+  if (w < 0.2 || h < 0.2) invalid(`kenBurns.${name} must show at least a fifth of the photo`)
+  if (Math.abs(w - h) > 1e-9) invalid(`kenBurns.${name} must keep the frame's shape (w equal to h)`)
+  if (x + w > 1 + 1e-9 || y + h > 1 + 1e-9) invalid(`kenBurns.${name} must lie inside the photo`)
+  return { x, y, w, h }
+}
+
+const keyframesOnItem = (item: TimelineItem) =>
+  useKeyframesStore.getState().keyframesByItemId[item.id]?.properties ?? []
 
 const keyframeCount = (item: TimelineItem): number =>
   (useKeyframesStore.getState().keyframesByItemId[item.id]?.properties ?? []).reduce(
@@ -1535,6 +1574,143 @@ const handlers: Record<string, Handler> = {
     if (bakeMotionToKeyframes(plan) !== 1) failed('property.bakeModifier: nothing was baked')
     const baked = keyframeCount(item)
     if (baked < planned) failed('property.bakeModifier: keyframes cannot be placed inside a transition')
+  },
+
+  /* ---------------- Motion text, Compose and Ken Burns (FL-100) ---------------- */
+
+  'text.setMotion'(payload) {
+    const item = requireItem(stringField(payload, 'clipId'))
+    if (item.type !== 'text') invalid('text.setMotion needs a text clip')
+    if (payload.motion === null) {
+      updateItem(item.id, { textMotion: undefined } as Partial<TimelineItem>)
+      return
+    }
+    const motion = payload.motion as Record<string, unknown> | undefined
+    if (!motion || typeof motion !== 'object' || Array.isArray(motion)) invalid('motion must be an object or null')
+    const slots = Object.keys(motion!)
+    if (slots.length === 0 || slots.some((slot) => !['in', 'out', 'loop'].includes(slot)))
+      invalid('motion takes in, out and loop slots')
+    const spec = sanitizeTextMotion(motion)
+    // Every slot asked for must be a valid preset for that slot; nothing is dropped silently.
+    for (const slot of slots) {
+      if (motion![slot] !== undefined && !(spec as Record<string, unknown> | undefined)?.[slot])
+        invalid(`motion.${slot} is not a valid ${slot} text motion`)
+    }
+    updateItem(item.id, { textMotion: spec } as Partial<TimelineItem>)
+  },
+
+  'clip.group'(payload) {
+    const ids = payload.clipIds
+    if (!Array.isArray(ids) || ids.length === 0 || ids.some((id) => typeof id !== 'string'))
+      invalid('clip.group needs the clips to group (clipIds)')
+    for (const id of ids as string[]) requireItem(id, 'clipIds')
+    const name = optionalString(payload, 'name') ?? 'Group'
+    // A group is a Compose composition: the clips keep their animation inside it, and the group is
+    // one clip on the timeline that can be moved, animated and nested like any other.
+    if (!createPreComp(name, ids as string[], { editorKind: 'composite-2d' }))
+      failed('clip.group: these clips cannot form a group')
+  },
+
+  'clip.ungroup'(payload) {
+    const group = requireItem(stringField(payload, 'groupId'), 'groupId')
+    const composition = group.type === 'composition' ? useCompositionsStore.getState().getComposition(group.compositionId) : undefined
+    if (composition?.editorKind !== 'composite-2d') invalid('groupId is not a group')
+    if (!dissolvePreComp(group.id)) failed('clip.ungroup: the group could not be dissolved here')
+  },
+
+  'composition.setPublishedControls'(payload) {
+    const compositionId = stringField(payload, 'compositionId')
+    const composition = useCompositionsStore.getState().getComposition(compositionId)
+    if (!composition) invalid(`compositionId: "${compositionId}" is not in the project`)
+    if (composition!.editorKind !== 'composite-2d') invalid('only a Compose composition publishes controls')
+    const controls = payload.controls
+    if (!Array.isArray(controls)) invalid('controls must be a list')
+    const requested = (controls as unknown[]).map((control, index) => {
+      if (!control || typeof control !== 'object') invalid(`controls[${index}] must be an object`)
+      const entry = control as Record<string, unknown>
+      const property = entry.property
+      return {
+        id: typeof entry.id === 'string' && entry.id ? entry.id : crypto.randomUUID(),
+        name: entry.name,
+        targetItemId: entry.targetItemId,
+        property,
+        kind: property === 'text.text' ? 'text' : 'color',
+        defaultValue: entry.defaultValue,
+      }
+    })
+    const schema = sanitizeCompositionControlSchema({ version: COMPOSITION_CONTROLS_VERSION, controls: requested }, composition!.items)
+    // Every control asked for must survive: a missing target, an unreadable property or a duplicate
+    // is named, never dropped.
+    if ((schema?.controls.length ?? 0) !== requested.length)
+      invalid('controls: each needs a name, a layer of this composition and a property it can drive, once')
+    useCompositionsStore.getState().updateComposition(compositionId, { compositionControls: schema })
+  },
+
+  'composition.setControlOverrides'(payload) {
+    const instance = requireItem(stringField(payload, 'compositionClipId'), 'compositionClipId')
+    if (instance.type !== 'composition') invalid('compositionClipId is not a composition')
+    const composition = useCompositionsStore.getState().getComposition((instance as { compositionId: string }).compositionId)
+    const controls = composition?.compositionControls?.controls ?? []
+    const overrides = payload.overrides
+    if (!overrides || typeof overrides !== 'object' || Array.isArray(overrides)) invalid('overrides must be an object')
+    for (const [controlId, value] of Object.entries(overrides as Record<string, unknown>)) {
+      const control = controls.find((entry) => entry.id === controlId)
+      if (!control) invalid(`overrides: "${controlId}" is not a published control of this composition`)
+      if (typeof value !== 'string' || value.length > 2000) invalid(`overrides.${controlId} must be text`)
+      if (control!.kind === 'color' && !CSS_COLOR.test((value as string).trim()))
+        invalid(`overrides.${controlId} must be a colour`)
+    }
+    const next = Object.keys(overrides as object).length > 0 ? (overrides as Record<string, string>) : undefined
+    updateItem(instance.id, { compositionControlOverrides: next } as Partial<TimelineItem>)
+  },
+
+  'clip.setKenBurns'(payload) {
+    const item = requireItem(stringField(payload, 'clipId'))
+    if (item.type !== 'image') invalid('Ken Burns moves a still photo')
+    // The move's keyframes are the ones it recorded; replacing or removing it touches only those.
+    const previous = (item as unknown as { frameleafKenBurns?: { keyframeIds?: string[] } }).frameleafKenBurns
+    const ownedIds = new Set(previous?.keyframeIds ?? [])
+    let move: { from: KenBurnsRect; to: KenBurnsRect } | null = null
+    if (payload.kenBurns !== null) {
+      const candidate = payload.kenBurns as { from?: unknown; to?: unknown } | undefined
+      if (!candidate || typeof candidate !== 'object') invalid('kenBurns must be { from, to } or null')
+      move = { from: kenBurnsRect(candidate!.from, 'from'), to: kenBurnsRect(candidate!.to, 'to') }
+      const animatedElsewhere = keyframesOnItem(item).some(
+        (entry) => KEN_BURNS_PROPERTIES.includes(entry.property) && entry.keyframes.some((keyframe) => !ownedIds.has(keyframe.id)),
+      )
+      if (animatedElsewhere) invalid('the clip already animates its position or size; Ken Burns would replace that animation')
+    }
+    for (const entry of keyframesOnItem(item)) {
+      for (const keyframe of entry.keyframes) {
+        if (ownedIds.has(keyframe.id)) removeKeyframe(item.id, entry.property, keyframe.id)
+      }
+    }
+    if (!move) {
+      updateItem(item.id, { frameleafKenBurns: undefined } as unknown as Partial<TimelineItem>)
+      return
+    }
+    const base = resolveTransform(item, projectCanvas, getSourceDimensions(item))
+    const last = Math.max(1, item.durationInFrames - 1)
+    const at = (rect: KenBurnsRect) => {
+      // The visible region fills the frame: the photo scales by 1/w and moves the region's centre to
+      // the frame's centre.
+      const width = base.width / rect.w
+      const height = base.height / rect.h
+      return {
+        width,
+        height,
+        x: base.x + (0.5 - (rect.x + rect.w / 2)) * width,
+        y: base.y + (0.5 - (rect.y + rect.h / 2)) * height,
+      }
+    }
+    const [start, end] = [at(move.from), at(move.to)]
+    const payloads = (['x', 'y', 'width', 'height'] as const).flatMap((property) => [
+      { itemId: item.id, property, frame: 0, value: start[property], easing: 'linear' as const },
+      { itemId: item.id, property, frame: last, value: end[property], easing: 'linear' as const },
+    ])
+    const keyframeIds = addKeyframes(payloads)
+    if (keyframeIds.length !== payloads.length) failed('clip.setKenBurns: keyframes cannot be placed inside a transition')
+    updateItem(item.id, { frameleafKenBurns: { ...move, keyframeIds } } as unknown as Partial<TimelineItem>)
   },
 
   /* ---------------- Linked edit tools (FL-94) ---------------- */
