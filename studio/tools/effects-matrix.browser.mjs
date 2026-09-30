@@ -10,7 +10,10 @@
 //     route (extended range survives, bounded effects stay within [0, 1]);
 //   - keyframed parameters reach the shader (start/end frames equal the static
 //     extremes, the midpoint differs) and a two-effect stack equals applying
-//     the effects one after the other.
+//     the effects one after the other;
+//   - invalid parameters (non-finite, out of range, unknown options, non-boolean
+//     flags, undeclared keys) draw exactly as their declared meaning, and an unknown effect id
+//     passes the input through. EFFECTS_MATRIX_REPORT carries effects[].invalid.
 import assert from 'node:assert/strict';
 import { readFile, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
@@ -197,12 +200,50 @@ try {
         intermediate.destroy();
       }
       entry.stack = { stacked, sequential };
+
+      // Invalid parameters (FL-99): each set draws exactly as its declared meaning, the
+      // test's own restatement of the contract (not the engine's sanitiser): a finite
+      // number outside [min, max] is clamped, a non-finite number, an unknown select
+      // option and a non-boolean flag fall back to the default.
+      const declared = getGpuEffectDefaultParams(definition.id);
+      const invalidSets = {
+        'non-finite-and-unknown': (key, param) => param.type === 'number' ? Number.NaN
+          : param.type === 'select' ? 'not-an-option' : param.type === 'boolean' ? 'yes' : undefined,
+        'below-range': (key, param) => param.type === 'number' && typeof param.min === 'number' ? param.min - 1000 : undefined,
+        'above-range': (key, param) => param.type === 'number' && typeof param.max === 'number' ? param.max + 1000 : undefined,
+        infinite: (key, param) => param.type === 'number' ? Number.POSITIVE_INFINITY : undefined,
+      };
+      entry.invalid = [];
+      for (const [name, pick] of Object.entries(invalidSets)) {
+        const given = { ...declared };
+        const meant = { ...declared };
+        let touched = 0;
+        for (const [key, param] of Object.entries(definition.params)) {
+          const value = pick(key, param);
+          if (value === undefined) continue;
+          touched++;
+          given[key] = value;
+          meant[key] = param.type === 'number' && Number.isFinite(value)
+            ? Math.min(param.max ?? Infinity, Math.max(param.min ?? -Infinity, value)) : param.default;
+        }
+        if (touched === 0) continue;
+        const got = await render(sdrFloatInput, [instance(definition.id, given)]);
+        const want = await render(sdrFloatInput, [instance(definition.id, meant)]);
+        entry.invalid.push({ name, touched, got, want });
+      }
+      // A parameter the effect does not declare is ignored.
+      entry.invalid.push({ name: 'undeclared', touched: 1,
+        got: await render(sdrFloatInput, [instance(definition.id, { ...declared, 'not-a-parameter': Number.NaN })]),
+        want: await render(sdrFloatInput, [instance(definition.id, declared)]) });
       effects.push(entry);
     }
+    // An unknown effect id is skipped: the input passes through unchanged.
+    const unknownEffect = { ...(await render(sdrFloatInput, [instance('gpu-not-an-effect', {})])),
+      input: Array.from(new Float16Array(sdrInput)) };
     pipeline.destroy();
     for (const texture of [...Object.values(inputs), sdrFloatInput]) texture.destroy();
     device.destroy();
-    return { adapter: { vendor: adapter.vendor, architecture: adapter.architecture }, effects };
+    return { adapter: { vendor: adapter.vendor, architecture: adapter.architecture }, effects, unknownEffect };
   }, { W, H, floatInput, sdrInput });
 } finally {
   await browser.close();
@@ -291,9 +332,25 @@ for (const effect of report.effects) {
     check(false, `${effect.id}: stack render failed (${stacked.error ?? sequential.error})`);
   }
 }
+// Invalid parameters and an unknown effect id (FL-99).
+for (const effect of report.effects) {
+  check(effect.invalid.length > 0, `${effect.id}: no invalid-parameter case measured`);
+  for (const { name, got, want } of effect.invalid) {
+    if (got.error || want.error) {
+      check(false, `${effect.id} invalid ${name}: ${got.error ?? want.error}`);
+      continue;
+    }
+    check(got.pixels.every(Number.isFinite), `${effect.id} invalid ${name}: non-finite output`);
+    check(got.pixels.every((v, i) => Object.is(v, want.pixels[i])),
+      `${effect.id} invalid ${name}: does not draw as the declared meaning`);
+  }
+}
+check(!report.unknownEffect.error && report.unknownEffect.pixels.every((v, i) => Object.is(v, report.unknownEffect.input[i])),
+  `unknown effect id did not pass the input through: ${report.unknownEffect.error ?? ''}`);
 if (failures.length) {
   console.error(failures.join('\n'));
   assert.fail(`${failures.length} effects-matrix failures on ${report.adapter.vendor}/${report.adapter.architecture}`);
 }
-console.log(JSON.stringify({ check: 'every GPU effect: parameter extremes, determinism, SDR parity, HDR class, animation, stack order',
-  adapter: report.adapter, effects: report.effects.length, cases: caseCount }));
+console.log(JSON.stringify({ check: 'every GPU effect: parameter extremes, determinism, SDR parity, HDR class, animation, stack order, invalid parameters',
+  adapter: report.adapter, effects: report.effects.length, cases: caseCount,
+  invalid: report.effects.reduce((sum, effect) => sum + effect.invalid.length, 0) }));
