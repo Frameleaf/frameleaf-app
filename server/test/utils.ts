@@ -348,6 +348,7 @@ export const getMocks = () => {
   databaseMock.isSchemaReady.mockResolvedValue(true);
   databaseMock.withAssetMetadataLock.mockImplementation((_assetId, fn) => fn(undefined as never));
   databaseMock.withAssetMetadataLocks.mockImplementation((_assetIds, fn) => fn(undefined as never));
+  databaseMock.withAssetSidecarLock.mockImplementation((_assetId, fn) => fn());
   databaseMock.withUserPreferencesLock.mockImplementation((_userId, fn) => fn(undefined as never));
   databaseMock.applyIsolatedFrameleafMigrations.mockResolvedValue({ applied: [], pending: [], skipped: null });
   databaseMock.getPostgresVersion = vitest.fn().mockResolvedValue('14.10 (Debian 14.10-1.pgdg120+1)');
