@@ -84,6 +84,8 @@ const sendEntityBackfillCompleteAck = async (response: Writable, ackType: SyncEn
 };
 
 export const SYNC_TYPES_ORDER = [
+  SyncRequestType.TagsV1,
+  SyncRequestType.AssetTagsV1,
   SyncRequestType.AuthUsersV1,
   SyncRequestType.AuthUsersV2,
   SyncRequestType.UsersV1,
@@ -144,6 +146,7 @@ export class SyncService extends BaseService {
     for (const ack of dto.acks) {
       const { type } = fromAck(ack);
       if (type === SyncEntityType.SyncResetV1) {
+        await this.syncRepository.tag.reset(sessionId);
         await this.sessionRepository.resetSyncProgress(sessionId);
         return;
       }
@@ -153,10 +156,23 @@ export class SyncService extends BaseService {
       }
 
       // TODO pick the latest ack for each type, instead of using the last one
+      if (
+        [
+          SyncEntityType.TagV1,
+          SyncEntityType.TagDeleteV1,
+          SyncEntityType.AssetTagV1,
+          SyncEntityType.AssetTagDeleteV1,
+        ].includes(type) &&
+        (await this.syncRepository.tag.acknowledge(sessionId, fromAck(ack)))
+      ) {
+        continue;
+      }
       checkpoints[type] = { sessionId, type, ack };
     }
 
-    await this.syncCheckpointRepository.upsertAll(Object.values(checkpoints));
+    if (Object.keys(checkpoints).length > 0) {
+      await this.syncCheckpointRepository.upsertAll(Object.values(checkpoints));
+    }
   }
 
   async deleteAcks(auth: AuthDto, dto: SyncAckDeleteDto) {
@@ -165,6 +181,7 @@ export class SyncService extends BaseService {
       return throwSessionRequired();
     }
 
+    await this.syncRepository.tag.reset(sessionId, dto.types);
     await this.syncCheckpointRepository.deleteAll(sessionId, dto.types);
   }
 
@@ -188,6 +205,7 @@ export class SyncService extends BaseService {
     }
 
     if (dto.reset) {
+      await this.syncRepository.tag.reset(session.id);
       await this.sessionRepository.resetSyncProgress(session.id);
     }
 
@@ -211,6 +229,8 @@ export class SyncService extends BaseService {
     const options: SyncQueryOptions = { nowId, userId: auth.user.id, ...getHiddenContentQueryOptions(auth) };
 
     const handlers: Record<SyncRequestType, () => Promise<void>> = {
+      [SyncRequestType.TagsV1]: () => this.syncTags(auth, response, 'tag'),
+      [SyncRequestType.AssetTagsV1]: () => this.syncTags(auth, response, 'assetTag'),
       // deprecated handlers
       [SyncRequestType.AssetsV1]: () => this.syncAssetsV1(),
       [SyncRequestType.AssetFacesV1]: () => this.syncAssetFacesV1(),
@@ -273,6 +293,7 @@ export class SyncService extends BaseService {
   @OnJob({ name: JobName.AuditTableCleanup, queue: QueueName.BackgroundTask })
   async onAuditTableCleanup() {
     const pruneThreshold = MAX_DAYS + 1;
+    await this.syncRepository.tag.cleanupAuditTables(pruneThreshold);
 
     await this.syncRepository.album.cleanupAuditTable(pruneThreshold);
     await this.syncRepository.albumUser.cleanupAuditTable(pruneThreshold);
@@ -934,6 +955,15 @@ export class SyncService extends BaseService {
     const upserts = this.syncRepository.partnerStack.getUpserts({ ...options, ack: checkpointMap[upsertType] });
     for await (const { updateId, ...data } of upserts) {
       await send(response, { type: upsertType, ids: [updateId], data });
+    }
+  }
+
+  private async syncTags(auth: AuthDto, response: Writable, kind: 'tag' | 'assetTag') {
+    const pending = await this.syncRepository.tag.reconcile(auth, kind);
+    for (const { eventId } of pending) {
+      if (response.destroyed || response.writableEnded) throw new ClientDisconnectedError();
+      const item = await this.syncRepository.tag.prepare(auth, kind, eventId);
+      if (item) await send(response, { type: item.type, ids: [item.eventId], data: item.data as never });
     }
   }
 

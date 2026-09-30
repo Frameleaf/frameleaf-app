@@ -7,6 +7,7 @@ import { EXTERNAL_SCAN_CHECKSUM } from 'src/constants.js';
 import { columns } from 'src/database.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { AlbumUserRole, AssetMetadataKey, ChecksumAlgorithm } from 'src/enum.js';
+import { TagSync } from 'src/repositories/tag-sync.repository.js';
 import { DB } from 'src/schema/index.js';
 import { getHiddenContentFilter, hiddenContentAssetIdExists, withHiddenContentFilter } from 'src/utils/database.js';
 import {
@@ -207,6 +208,7 @@ const syncLocationHidden = (userId: string) => (eb: ExpressionBuilder<DB, 'asset
 
 @Injectable()
 export class SyncRepository {
+  tag: TagSync;
   album: AlbumSync;
   albumAsset: AlbumAssetSync;
   albumAssetExif: AlbumAssetExifSync;
@@ -232,6 +234,7 @@ export class SyncRepository {
   userMetadata: UserMetadataSync;
 
   constructor(@InjectKysely() private db: Kysely<DB>) {
+    this.tag = new TagSync(this.db);
     this.album = new AlbumSync(this.db);
     this.albumAsset = new AlbumAssetSync(this.db);
     this.albumAssetExif = new AlbumAssetExifSync(this.db);

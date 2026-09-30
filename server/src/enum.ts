@@ -2471,6 +2471,8 @@ export enum ExitCode {
 }
 
 export enum SyncRequestType {
+  TagsV1 = 'TagsV1',
+  AssetTagsV1 = 'AssetTagsV1',
   AlbumsV1 = 'AlbumsV1',
   AlbumsV2 = 'AlbumsV2',
   AlbumUsersV1 = 'AlbumUsersV1',
@@ -2514,6 +2516,10 @@ export const SyncRequestTypeSchema = z
   .meta({ id: 'SyncRequestType' });
 
 export enum SyncEntityType {
+  TagV1 = 'TagV1',
+  TagDeleteV1 = 'TagDeleteV1',
+  AssetTagV1 = 'AssetTagV1',
+  AssetTagDeleteV1 = 'AssetTagDeleteV1',
   AuthUserV1 = 'AuthUserV1',
   AuthUserV2 = 'AuthUserV2',
 
