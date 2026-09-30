@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Inject, Injectable } from '@nestjs/common';
 import { Insertable } from 'kysely';
 import { DateTime, Duration } from 'luxon';
 import { Writable } from 'node:stream';
@@ -17,6 +17,7 @@ import { JobName, QueueName, SyncEntityType, SyncRequestType, UserMetadataKey } 
 import { SyncQueryOptions } from 'src/repositories/sync.repository.js';
 import { SessionSyncCheckpointTable } from 'src/schema/tables/sync-checkpoint.table.js';
 import { BaseService } from 'src/services/base.service.js';
+import { PinnedCollectionService } from 'src/services/pinned-collection.service.js';
 import { hexOrBufferToBase64 } from 'src/utils/bytes.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { getLocationHiddenPartnerIds, hideLocation } from 'src/utils/partner-location.js';
@@ -110,6 +111,7 @@ export const SYNC_TYPES_ORDER = [
   SyncRequestType.AssetFacesV2,
   SyncRequestType.AssetFacesV3,
   SyncRequestType.UserMetadataV1,
+  SyncRequestType.PinnedCollectionsV1,
   SyncRequestType.AssetMetadataV1,
   SyncRequestType.AssetEditsV1,
 ];
@@ -120,6 +122,9 @@ const throwSessionRequired = () => {
 
 @Injectable()
 export class SyncService extends BaseService {
+  @Inject(PinnedCollectionService)
+  private pins!: PinnedCollectionService;
+
   getAcks(auth: AuthDto) {
     const sessionId = auth.session?.id;
     if (!sessionId) {
@@ -238,6 +243,16 @@ export class SyncService extends BaseService {
       [SyncRequestType.AssetFacesV2]: () => this.syncAssetFacesV2(options, response, checkpointMap),
       [SyncRequestType.AssetFacesV3]: () => this.syncAssetFacesV3(options, response, checkpointMap),
       [SyncRequestType.UserMetadataV1]: () => this.syncUserMetadataV1(options, response, checkpointMap, auth),
+      // FL-232: each request replaces the entire mirror snapshot, even after an ack. Access can
+      // change without the stored pin revision changing; old hydration must never remain cached.
+      [SyncRequestType.PinnedCollectionsV1]: async () => {
+        const snapshot = await this.pins.get(auth);
+        await send(response, {
+          type: SyncEntityType.PinnedCollectionsV1,
+          ids: [nowId],
+          data: { userId: auth.user.id, ...snapshot },
+        });
+      },
       [SyncRequestType.AssetOcrV1]: () => this.syncAssetOcrV1(options, response, checkpointMap, auth),
     } as const;
 
@@ -985,6 +1000,9 @@ export class SyncService extends BaseService {
     const deletes = this.syncRepository.userMetadata.getDeletes({ ...options, ack: checkpointMap[deleteType] });
 
     for await (const { id, ...data } of deletes) {
+      if (data.key === UserMetadataKey.PinnedCollections) {
+        continue;
+      }
       await send(response, { type: deleteType, ids: [id], data });
     }
 
@@ -993,6 +1011,9 @@ export class SyncService extends BaseService {
     const revealLockedRules = !!auth.session?.hasElevatedPermission;
 
     for await (const { updateId, ...data } of upserts) {
+      if (data.key === UserMetadataKey.PinnedCollections) {
+        continue;
+      }
       const visible =
         data.key === UserMetadataKey.Preferences && !revealLockedRules
           ? { ...data, value: withoutStoredLockedRuleIds(data.value) }

@@ -10705,6 +10705,39 @@ export type OnboardingDto = {
     /** Is user onboarded */
     isOnboarded: boolean;
 };
+export type PinnedCollection = {
+    /** Current access-filtered item count; null when unavailable */
+    count: number | null;
+    /** Whether a semantic saved-search count reached the existing smart-search cap */
+    countCapped: boolean;
+    /** Current readable cover asset; null when unavailable or empty */
+    coverAssetId: string | null;
+    id: string;
+    kind: Kind9;
+    /** Null when unavailable; the inaccessible target identity is not disclosed */
+    targetId: string | null;
+    /** Current access-filtered title; null when unavailable */
+    title: string | null;
+    unavailable: boolean;
+};
+export type PinnedCollectionsResponseDto = {
+    /** Complete replacement snapshot in user order, including unavailable pins */
+    pins: PinnedCollection[];
+    revision: string | null;
+};
+export type PinnedCollectionRef = {
+    /** Opaque pin ID chosen by the client and retained across reorders */
+    id: string;
+    kind: Kind9;
+    /** Target UUID, saved-search name, or built-in ID. Null retains an existing unavailable pin by its opaque ID */
+    targetId: string | null;
+};
+export type PinnedCollectionsUpdateDto = {
+    /** Revision returned by GET; null only when no pin list exists. A stale save returns 409 */
+    expectedRevision: string | null;
+    /** Replace the complete ordered list to add, remove or reorder pins; an empty list clears it */
+    pins: PinnedCollectionRef[];
+};
 export type UserPreferenceHistoryChangeDto = {
     /** The value after, JSON encoded; null when protected */
     after: string | null;
@@ -11378,6 +11411,12 @@ export type SyncPersonV1 = {
     ownerId: string;
     /** Updated at */
     updatedAt: string;
+};
+export type SyncPinnedCollectionsV1 = {
+    /** Complete replacement snapshot in user order, including unavailable pins */
+    pins: PinnedCollection[];
+    revision: string | null;
+    userId: string;
 };
 export type SyncResetV1 = {};
 export type SyncStackDeleteV1 = {
@@ -21229,6 +21268,32 @@ export function setUserOnboarding({ onboardingDto }: {
     })));
 }
 /**
+ * Get my pinned collections
+ */
+export function getMyPinnedCollections(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PinnedCollectionsResponseDto;
+    }>("/users/me/pins", {
+        ...opts
+    }));
+}
+/**
+ * Replace my pinned collections
+ */
+export function setMyPinnedCollections({ pinnedCollectionsUpdateDto }: {
+    pinnedCollectionsUpdateDto: PinnedCollectionsUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PinnedCollectionsResponseDto;
+    }>("/users/me/pins", oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: pinnedCollectionsUpdateDto
+    })));
+}
+/**
  * Get my preferences
  */
 export function getMyPreferences(opts?: Oazapfts.RequestOpts) {
@@ -23673,6 +23738,7 @@ export enum SyncEntityType {
     AssetFaceV3 = "AssetFaceV3",
     AssetFaceDeleteV1 = "AssetFaceDeleteV1",
     UserMetadataV1 = "UserMetadataV1",
+    PinnedCollectionsV1 = "PinnedCollectionsV1",
     UserMetadataDeleteV1 = "UserMetadataDeleteV1",
     SyncAckV1 = "SyncAckV1",
     SyncResetV1 = "SyncResetV1",
@@ -23707,7 +23773,8 @@ export enum SyncRequestType {
     AssetFacesV1 = "AssetFacesV1",
     AssetFacesV2 = "AssetFacesV2",
     AssetFacesV3 = "AssetFacesV3",
-    UserMetadataV1 = "UserMetadataV1"
+    UserMetadataV1 = "UserMetadataV1",
+    PinnedCollectionsV1 = "PinnedCollectionsV1"
 }
 export enum FrameleafSetupFlow {
     New = "new",
@@ -23834,6 +23901,15 @@ export enum TrashItemSort {
     Size = "size",
     Name = "name"
 }
+export enum Kind9 {
+    Album = "album",
+    SmartAlbum = "smart-album",
+    SavedSearch = "saved-search",
+    Person = "person",
+    Pet = "pet",
+    Memory = "memory",
+    Builtin = "builtin"
+}
 export enum WorkflowIssueCode {
     TriggerUnavailable = "trigger_unavailable",
     MethodUnavailable = "method_unavailable",
@@ -23851,6 +23927,7 @@ export enum WorkflowRunErrorCode {
 }
 export enum UserMetadataKey {
     Preferences = "preferences",
+    PinnedCollections = "pinned-collections",
     License = "license",
     Onboarding = "onboarding",
     FrameleafCloudTour = "frameleaf-cloud-tour"

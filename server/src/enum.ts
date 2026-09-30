@@ -616,6 +616,7 @@ export enum SystemMetadataKey {
 
 export enum UserMetadataKey {
   Preferences = 'preferences',
+  PinnedCollections = 'pinned-collections',
   License = 'license',
   Onboarding = 'onboarding',
   /** FL-196: when this administrator ended the linked-server tour, and how. */
@@ -2504,6 +2505,7 @@ export enum SyncRequestType {
   AssetFacesV2 = 'AssetFacesV2',
   AssetFacesV3 = 'AssetFacesV3',
   UserMetadataV1 = 'UserMetadataV1',
+  PinnedCollectionsV1 = 'PinnedCollectionsV1',
 }
 
 export const SyncRequestTypeSchema = z
@@ -2591,6 +2593,7 @@ export enum SyncEntityType {
   AssetFaceDeleteV1 = 'AssetFaceDeleteV1',
 
   UserMetadataV1 = 'UserMetadataV1',
+  PinnedCollectionsV1 = 'PinnedCollectionsV1',
   UserMetadataDeleteV1 = 'UserMetadataDeleteV1',
 
   SyncAckV1 = 'SyncAckV1',
