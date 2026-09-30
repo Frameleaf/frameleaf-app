@@ -754,3 +754,32 @@ test("applyCommandMatrixCoverage propagates the cross-report case-ownership conf
     /case "viewer" reported passed by more than one report/,
   );
 });
+
+test("applyCommandMatrixCoverage leaves a ruled command-axis waiver as it is", async () => {
+  const waiver = { status: "not-applicable", reason: "ruled" };
+  const overlay = {
+    engineRevision: "e",
+    rows: [overlayRow("module.docs", { command: { ...waiver } })],
+  };
+  const catalog = { rows: [fixture("module.docs")] };
+  const report = {
+    commands: [
+      {
+        id: "effect.add",
+        manifestIds: ["module.docs"],
+        cases: [{ case: "access", result: "passed" }],
+      },
+    ],
+  };
+  const summary = await applyCommandMatrixCoverage(
+    overlay,
+    catalog,
+    manifest(),
+    build(),
+    report,
+  );
+  assert.deepEqual(overlay.rows[0].axes.command, waiver);
+  assert.equal(summary.waived, 1);
+  assert.equal(summary.untested, 0);
+  assert.equal(summary.blocked, 0);
+});

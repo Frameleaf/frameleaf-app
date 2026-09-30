@@ -15,6 +15,25 @@ const NON_RENDERING_ROWS = new Set([
   'readme.projects-storage.4', 'readme.projects-storage.5',
   'module.projects', 'module.project-bundle', 'module.workspace-gate',
 ]);
+/**
+ * The command-axis waivers the coordinator ruled on, row by row (FL-112, 2026-09-30). A row here
+ * has no editor command behind it in Frameleaf; its command axis is `not-applicable` with exactly
+ * this reason, and every other axis stays required. No other row, and no other axis outside the
+ * preview/export rule above, can be waived. The reason names what covers the row instead.
+ */
+export const COMMAND_AXIS_WAIVERS = new Map([
+  ['module.docs', "Freecut's in-app help pages: read-only documentation with no project edit behind it. Coordinator ruling on FL-112, 2026-09-30."],
+  ['module.settings', 'Editor preferences and hotkeys: per-device UI state, not the project graph, so no command reaches it. Coordinator ruling on FL-112, 2026-09-30.'],
+  ['extra.portable-headless', "Freecut's headless render contract is the render worker's internals in Frameleaf; its other axes cite the render-worker probes (studio/tools/render-worker-probe.mjs), not a command. Coordinator ruling on FL-112, 2026-09-30."],
+  ['readme.preview-playback.3', 'Scrub overlays, decoder prewarming, adaptive quality and source warming are playback performance; nothing changes the graph. Coordinator ruling on FL-112, 2026-09-30.'],
+  ['readme.preview-playback.5', 'The GPU scopes measure the picture and never edit it (FL-98). Coordinator ruling on FL-112, 2026-09-30.'],
+  ['readme.local-ai-analysis.7', 'Local model cache and unload controls are per-device settings, not the project graph. Coordinator ruling on FL-112, 2026-09-30.'],
+  ['readme.projects-storage.3', 'Frameleaf stores each project as server revisions (FL-89); storing and reopening a project is the graph axis save and reopen cases, measured for every command by studio/adapters/web/test/command-matrix.test.ts, not a command. Coordinator ruling on FL-112, 2026-09-30.'],
+  ['readme.projects-storage.6', "Autosave is the graph axis save and reopen cases (studio/adapters/web/test/command-matrix.test.ts, and the project session's autosave in web/src/lib/frameleaf/studio/project-session.spec.ts); thumbnails, cache mirroring and orphan cleanup are server housekeeping, not commands. Coordinator ruling on FL-112, 2026-09-30."],
+  ['module.workspace-gate', "Replaced by Frameleaf's server project storage (the Studio project API, FL-89: server/src/services/studio-project.service.ts): there is no workspace folder to ask for. Covered by module.projects' command axis and every row's graph axis save and reopen cases. Coordinator ruling on FL-112, 2026-09-30."],
+  ['readme.projects-storage.1', "Workspace folder persistence is replaced by Frameleaf's server project storage (the Studio project API, FL-89: server/src/services/studio-project.service.ts). Covered by every row's graph axis save and reopen cases and server/src/services/studio-project.service.spec.ts. Coordinator ruling on FL-112, 2026-09-30."],
+  ['readme.projects-storage.2', "The workspace switcher is replaced by Frameleaf's server project library (FL-91: the Studio project list and shelves, server/src/services/studio-project.service.ts). Covered by module.projects' command axis and server/src/services/studio-project.service.spec.ts. Coordinator ruling on FL-112, 2026-09-30."],
+]);
 const digest = (bytes) => createHash('sha256').update(bytes).digest('hex');
 const text = (value, label) => assert(typeof value === 'string' && value.trim(), `${label}: required text`);
 const exact = (actual, expected, label) => {
@@ -96,6 +115,13 @@ export async function validateConformance(data, root, { release = false } = {}) 
       const label = `${row.id}/${axis}`;
       assert(['not-tested', 'blocked', 'failed', 'deferred', 'passed', 'not-applicable'].includes(result?.status), `${label}: invalid status`);
       const notApplicable = result.status === 'not-applicable';
+      if (notApplicable && axis === 'command') {
+        // A ruling, not a measurement: the allowlisted reason, word for word, and no run.
+        assert(COMMAND_AXIS_WAIVERS.has(row.id), `${label}: requested feature cannot be waived`);
+        assert.equal(result.reason, COMMAND_AXIS_WAIVERS.get(row.id), `${label}: waiver reason must be the ruling's`);
+        assert(!result.run, `${label}: a waiver carries no run`);
+        continue;
+      }
       if (notApplicable) {
         assert(['preview', 'export'].includes(axis) && NON_RENDERING_ROWS.has(row.id), `${label}: requested feature cannot be waived`);
         text(result.reason, `${label}: semantic non-rendering justification`);
