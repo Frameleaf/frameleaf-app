@@ -1276,6 +1276,12 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
     evidence: 'settingsDraft.draft.server.externalDomain = value.trim()',
   },
   {
+    pattern: 'server.lanDiscovery',
+    kind: 'control',
+    file: 'src/routes/admin/system-settings/ServerSettings.svelte',
+    evidence: 'bind:checked={configToEdit.server.lanDiscovery}',
+  },
+  {
     pattern: 'server.loginPageMessage',
     kind: 'control',
     file: 'src/routes/admin/system-settings/ServerSettings.svelte',

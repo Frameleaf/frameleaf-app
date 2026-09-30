@@ -1171,6 +1171,8 @@
     "send_welcome_email": "Send welcome email",
     "server_external_domain_settings": "External domain",
     "server_external_domain_settings_description": "Domain used for external links",
+    "server_lan_discovery": "Local network discovery",
+    "server_lan_discovery_description": "Let apps on the same Wi-Fi find this server without typing an address. Devices on this network can see the server's display name. Turning this off stops discovery; direct connections and sign-in requirements stay the same.",
     "server_public_users": "Public Users",
     "server_public_users_description": "All users (name and email) are listed when adding a user to shared albums. When disabled, the user list will only be available to admin users.",
     "server_settings": "Server Settings",
