@@ -80,4 +80,24 @@ describe('native upload headers', () => {
     expect(() => parseAssetUploadHeaders({ ...headers, 'upload-draft-interop-version': '12' })).toThrow();
     expect(() => parseAssetUploadHeaders({ ...headers, 'content-encoding': 'gzip' })).toThrow();
   });
+  it('retains only the explicit live-photo deferral declaration in typed JSON metadata', () => {
+    const encode = (publication: string) =>
+      Buffer.from(
+        JSON.stringify({
+          filename: 'image.jpg',
+          fileCreatedAt: '2026-09-30T00:00:00Z',
+          fileModifiedAt: '2026-09-30T00:00:00Z',
+          publication,
+        }),
+      ).toString('base64url');
+    expect(parseAssetUploadHeaders({ ...headers, 'asset-metadata': encode('live-photo') }).metadata).toHaveProperty(
+      'publication',
+      'live-photo',
+    );
+    expect(() => parseAssetUploadHeaders({ ...headers, 'asset-metadata': encode('auto') })).toThrow();
+    const unknown = Buffer.from(
+      JSON.stringify({ ...JSON.parse(Buffer.from(metadata, 'base64url').toString()), unknown: true }),
+    ).toString('base64url');
+    expect(() => parseAssetUploadHeaders({ ...headers, 'asset-metadata': unknown })).toThrow();
+  });
 });

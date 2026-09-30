@@ -40,7 +40,7 @@ export function parseAssetUploadHeaders(headers: IncomingHttpHeaders) {
   if (!encoded || encoded.length > 8192 || !/^[A-Za-z0-9_-]+$/.test(encoded)) {
     throw new BadRequestException('Invalid Asset-Metadata');
   }
-  let metadata: AssetMediaCreateDto;
+  let metadata: AssetMediaCreateDto & { publication?: 'live-photo' };
   try {
     const buffer = Buffer.from(encoded, 'base64url');
     if (buffer.toString('base64url') !== encoded) {
@@ -52,6 +52,7 @@ export function parseAssetUploadHeaders(headers: IncomingHttpHeaders) {
     }
     const decoded: unknown = JSON.parse(text);
     const allowed = new Set([
+      'publication',
       'filename',
       'fileCreatedAt',
       'fileModifiedAt',
@@ -75,7 +76,13 @@ export function parseAssetUploadHeaders(headers: IncomingHttpHeaders) {
       }
       value.metadata = JSON.stringify(value.metadata);
     }
-    metadata = AssetMediaCreateDto.schema.parse(value);
+    if (value.publication !== undefined && value.publication !== 'live-photo') {
+      throw new Error('Unsupported publication');
+    }
+    metadata = {
+      ...AssetMediaCreateDto.schema.parse(value),
+      ...(value.publication === 'live-photo' && { publication: 'live-photo' as const }),
+    };
     if (!metadata.filename) {
       throw new Error('Filename is required');
     }
