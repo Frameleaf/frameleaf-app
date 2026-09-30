@@ -95,7 +95,7 @@ test('denies and records a request to a real external origin instead of forwardi
   }
 });
 
-test('refuses HTTPS tunnelling (CONNECT) outright and records it', async () => {
+test('refuses HTTPS CONNECT to anywhere other than the upstream origin, and records it', async () => {
   const upstream = await startFakeUpstream((req, res) => res.end('upstream'));
   const harness = createHarness({ upstream: upstream.url });
   const harnessOrigin = await harness.listen();
@@ -120,6 +120,44 @@ test('refuses HTTPS tunnelling (CONNECT) outright and records it', async () => {
   } finally {
     await harness.close();
     await upstream.close();
+  }
+});
+
+test('tunnels a CONNECT to the upstream origin itself (Chromium tunnels WebSockets that way)', async () => {
+  const upstream = await startFakeUpstream((req, res) => res.end('upstream'));
+  const upstreamServer = http.createServer((req, res) => res.end('upstream'));
+  upstreamServer.on('upgrade', (req, socket) => {
+    socket.write('HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n');
+    socket.end();
+  });
+  await upstream.close();
+  await new Promise((resolve) => upstreamServer.listen(0, resolve));
+  const upstreamOrigin = `http://127.0.0.1:${upstreamServer.address().port}`;
+  const harness = createHarness({ upstream: upstreamOrigin });
+  const harnessOrigin = await harness.listen();
+  try {
+    const harnessUrl = new URL(harnessOrigin);
+    const upstreamUrl = new URL(upstreamOrigin);
+    const response = await new Promise((resolve, reject) => {
+      const req = http.request({
+        host: harnessUrl.hostname,
+        port: harnessUrl.port,
+        method: 'CONNECT',
+        path: `${upstreamUrl.hostname}:${upstreamUrl.port}`,
+      });
+      req.on('connect', (res, socket) => resolve({ res, socket }));
+      req.on('error', reject);
+      req.end();
+    });
+    assert.equal(response.res.statusCode, 200);
+    response.socket.destroy();
+    assert.deepEqual(
+      harness.observations.map((o) => o.kind),
+      ['tunnelled'],
+    );
+  } finally {
+    await harness.close();
+    await new Promise((resolve) => upstreamServer.close(resolve));
   }
 });
 
