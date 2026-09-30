@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import { once } from 'node:events';
+import { createReadStream } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { createServer, type Server } from 'node:https';
 import type { AddressInfo } from 'node:net';
@@ -9,6 +11,7 @@ export class OwnerBackupOrigin {
   private server: Server | null = null;
   private customerKey: string | null = null;
   readonly objects = new Map<string, Buffer>();
+  readonly files = new Map<string, { path: string; size: number }>();
   readonly seen: Array<{ method: string; key: string; signed: boolean; customerKey: boolean }> = [];
   readonly errors: unknown[] = [];
   beforeRead: { key: string; run: () => Promise<void> } | null = null;
@@ -78,13 +81,14 @@ export class OwnerBackupOrigin {
           res.writeHead(204).end();
           return;
         }
+        const file = this.files.get(objectKey);
         const body = this.objects.get(objectKey);
-        if (!body) {
+        if (!body && !file) {
           res.writeHead(404).end('<Error><Code>NoSuchKey</Code></Error>');
           return;
         }
         if (req.method === 'HEAD') {
-          res.setHeader('content-length', body.length);
+          res.setHeader('content-length', file?.size ?? body!.length);
           res.end();
           return;
         }
@@ -93,12 +97,27 @@ export class OwnerBackupOrigin {
         if (hook) {
           this.beforeRead = null;
         }
+        if (file) {
+          res.setHeader('content-length', file.size);
+          let first = true;
+          for await (const chunk of createReadStream(file.path)) {
+            if (!res.write(chunk)) {
+              await once(res, 'drain');
+            }
+            if (first && hook) {
+              await hook.run();
+            }
+            first = false;
+          }
+          res.end();
+          return;
+        }
         // A real chunk reaches the app before the normal-API/DB fixture interleave. No app response interception.
-        res.write(body.subarray(0, 1));
+        res.write(body!.subarray(0, 1));
         if (hook) {
           await hook.run();
         }
-        res.end(body.subarray(1));
+        res.end(body!.subarray(1));
       } catch (error) {
         this.errors.push(error);
         if (res.headersSent) {
