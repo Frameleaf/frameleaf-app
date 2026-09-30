@@ -86,6 +86,12 @@ function fakeServer({
   thumbnailAfter = 1,
   isAdmin = true,
   echo = true,
+  ping = {
+    res: "pong",
+    id: "c540026e-6d2f-4054-8be2-d3e537445c18",
+    linked: false,
+    name: "Frameleaf server",
+  },
 } = {}) {
   let stored;
   let polls = 0;
@@ -96,7 +102,7 @@ function fakeServer({
     });
   return async (url, init) => {
     const route = url.replace("http://test/api", "");
-    if (route === "/server/ping") return json({ res: "pong" });
+    if (route === "/server/ping") return json(ping);
     if (route === "/server/version") {
       const [major, minor, patch] = version.split(".").map(Number);
       return json({ major, minor, patch });
@@ -158,6 +164,7 @@ test("a working installation passes every check and records its evidence", async
 
 test("each broken installation fails the deployment test", async () => {
   for (const [overrides, message] of [
+    [{ server: { ping: { res: "not-pong" } } }, /did not answer ping/],
     [{ server: { version: "3.1.0" } }, /another version/],
     [{ server: { sourceCommit: "b".repeat(40) } }, /another source commit/],
     [{ server: { isAdmin: false } }, /not an administrator/],
