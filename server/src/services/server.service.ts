@@ -22,6 +22,7 @@ import { DEFAULT_RAW_PROMPT_TEMPLATE } from 'src/services/prompt-assembler.servi
 import { apkLinks } from 'src/utils/app-releases.js';
 import { asHumanReadable } from 'src/utils/bytes.js';
 import { readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
+import { serverIdentity } from 'src/utils/frameleaf-server-identity.js';
 import { entitlementFlags, isLicensed } from 'src/utils/frameleaf-license.js';
 import { type FrameleafVia, isRemoteVia, signInClient } from 'src/utils/frameleaf-sign-in.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
@@ -34,6 +35,8 @@ import {
   isOcrEnabled,
   isSmartSearchEnabled,
 } from 'src/utils/misc.js';
+import { localConnectionCandidates } from 'src/utils/frameleaf-lan-discovery.js';
+import { detectHostAddresses } from 'src/utils/frameleaf-remote-access.js';
 import { remoteAccessPublication } from 'src/utils/public-url.js';
 
 @Injectable()
@@ -127,8 +130,14 @@ export class ServerService extends BaseService {
     return serverInfo;
   }
 
-  ping(): ServerPingResponse {
-    return { res: 'pong' };
+  /**
+   * FL-229 (NAPI-005): identity on every route, unauthenticated, so an app can confirm it reached
+   * the server it expects before signing in - see serverIdentity() for what `id`/`linked` mean.
+   */
+  async ping(): Promise<ServerPingResponse> {
+    const deps = { configRepository: this.configRepository, systemMetadataRepository: this.systemMetadataRepository };
+    const [{ id, linked }, config] = await Promise.all([serverIdentity(deps), this.getConfig({ withCache: true })]);
+    return { res: 'pong', id, linked, name: config.server.name?.trim() || 'Frameleaf server' };
   }
 
   async getFeatures(): Promise<ServerFeaturesDto> {
@@ -239,12 +248,27 @@ export class ServerService extends BaseService {
    * (local, wan, ipv6, the custom hostname, then the relay; the cloud's `connections[]` shape), and the
    * address it publishes. Empty unless the server is linked and remote access is on.
    */
+  /**
+   * FL-229 (NAPI-005): a signed-in caller always gets at least one `local` candidate, even
+   * unlinked or with remote access off - the welcome screen's "Use Home Server on this Wi-Fi"
+   * and the account sheet's Home indicator need a way to reach this server on its own network
+   * regardless of Frameleaf Cloud enrollment. The cloud-reported candidates (a wildcard
+   * certificate over HTTPS) win when they exist; this is only the fallback plain-HTTP address
+   * when nothing better is available yet.
+   */
   async getConnections(): Promise<RemoteConnectionsResponseDto> {
     const config = await this.getConfig({ withCache: false });
-    return remoteAccessPublication(config.frameleafCloud.remoteAccess, {
+    const publication = await remoteAccessPublication(config.frameleafCloud.remoteAccess, {
       configRepository: this.configRepository,
       systemMetadataRepository: this.systemMetadataRepository,
     });
+    if (publication.connections.some((connection) => connection.kind === 'local')) {
+      return publication;
+    }
+    const { port, frameleafCloud } = this.configRepository.getEnv();
+    const { lanAddresses } = detectHostAddresses(frameleafCloud.localUrl);
+    const local = localConnectionCandidates({ port, addresses: lanAddresses });
+    return { ...publication, connections: [...publication.connections, ...local] };
   }
 
   async getStatistics(): Promise<ServerStatsResponseDto> {

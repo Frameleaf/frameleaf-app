@@ -1,5 +1,7 @@
 import { X509Certificate, createHash, createPrivateKey } from 'node:crypto';
+import { existsSync, readFileSync } from 'node:fs';
 import { BlockList, isIP } from 'node:net';
+import { networkInterfaces } from 'node:os';
 import z from 'zod';
 import type {
   FrameleafEdgeCertificate,
@@ -661,6 +663,44 @@ export const hostAddresses = (input: {
     lanAddresses: usable.filter((entry) => entry.family === 'IPv4').map((entry) => entry.address),
     ipv6Addresses: usable.filter((entry) => entry.family === 'IPv6').map((entry) => entry.address.split('%', 1)[0]),
   };
+};
+
+/** Whether this process is running inside a container (Docker/Podman). */
+export const inContainer = (): boolean => existsSync('/.dockerenv') || existsSync('/run/.containerenv');
+
+/** The interfaces the default routes use (Linux `/proc/net/route` and `ipv6_route`). Specs replace it. */
+export const defaultRouteInterfaces = (): string[] => {
+  const names = new Set<string>();
+  try {
+    for (const line of readFileSync('/proc/net/route', 'utf8').split('\n').slice(1)) {
+      const [name, destination] = line.trim().split(/\s+/, 2);
+      if (destination === '00000000' && name) {
+        names.add(name);
+      }
+    }
+    for (const line of readFileSync('/proc/net/ipv6_route', 'utf8').split('\n')) {
+      const fields = line.trim().split(/\s+/);
+      if (fields[0] === '0'.repeat(32) && fields[1] === '00' && fields[9] && fields[9] !== 'lo') {
+        names.add(fields[9]);
+      }
+    }
+  } catch {
+    // not Linux: no LAN names are published unless FRAMELEAF_LOCAL_URL names the address
+  }
+  return [...names];
+};
+
+/**
+ * `hostAddresses` fed from this process's real interfaces - the one call site FL-229's LAN discovery
+ * and the edge worker's own address detection (`EdgeStateService.addresses`) both use, so a change to
+ * what counts as "this server's LAN address" (container detection, virtual-interface filtering,
+ * `FRAMELEAF_LOCAL_URL` override) only has to be made once.
+ */
+export const detectHostAddresses = (localUrl: string | null): { lanAddresses: string[]; ipv6Addresses: string[] } => {
+  const interfaces = Object.entries(networkInterfaces()).flatMap(([name, entries]) =>
+    (entries ?? []).map(({ address, family, internal }) => ({ name, address, family, internal })),
+  );
+  return hostAddresses({ localUrl, inContainer: inContainer(), interfaces, defaultInterfaces: defaultRouteInterfaces() });
 };
 
 // ------------------------------------------------------------------ arrivals

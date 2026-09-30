@@ -1,3 +1,4 @@
+import * as frameleafRemoteAccess from 'src/utils/frameleaf-remote-access.js';
 import type { FrameleafLicense, FrameleafLicenseClaims } from 'src/types.js';
 import { SystemMetadataKey } from 'src/enum.js';
 import { ServerService } from 'src/services/server.service.js';
@@ -69,15 +70,43 @@ describe(ServerService.name, () => {
       mocks.systemMetadata.get.mockImplementation((key) => Promise.resolve((metadata.get(key) ?? null) as never));
     };
 
-    it('publishes nothing while remote access is off or the server is unlinked', async () => {
+    // FL-229: no cloud-reported local candidate exists in either case below, so a signed-in
+    // caller still gets the plain-HTTP fallback for this server's own detected LAN addresses,
+    // rather than an empty list.
+    const local = {
+      kind: 'local',
+      uri: 'http://192.168.1.20:2283',
+      protocol: 'http',
+      address: '192.168.1.20',
+      port: 2283,
+      local: true,
+      relay: false,
+      ipv6: false,
+      custom: false,
+      dnsRebindingProtection: false,
+      httpsRequired: false,
+      verified: false,
+    };
+
+    beforeEach(() => {
+      // detectHostAddresses is called cross-module from server.service.ts, so spying on it here
+      // takes effect (unlike its own internal helpers, which it calls locally and a same-module spy
+      // can't redirect) - stand in for "this host's one LAN interface is 192.168.1.20".
+      vi.spyOn(frameleafRemoteAccess, 'detectHostAddresses').mockReturnValue({
+        lanAddresses: ['192.168.1.20'],
+        ipv6Addresses: [],
+      });
+    });
+
+    it('falls back to this server’s own LAN address while remote access is off or the server is unlinked', async () => {
       setup({ enabled: false });
       await expect(sut.getConnections()).resolves.toEqual({
         instanceId: 'instance-1',
         publicUrl: null,
-        connections: [],
+        connections: [local],
       });
       mocks.systemMetadata.get.mockResolvedValue(null as never);
-      await expect(sut.getConnections()).resolves.toEqual({ instanceId: null, publicUrl: null, connections: [] });
+      await expect(sut.getConnections()).resolves.toEqual({ instanceId: null, publicUrl: null, connections: [local] });
     });
 
     it('publishes the Frameleaf address and the candidates the edge worker reported', async () => {
@@ -110,9 +139,9 @@ describe(ServerService.name, () => {
       });
     });
 
-    it('drops the candidates of an edge worker that stopped reporting', async () => {
+    it('falls back to this server’s own LAN address once the edge worker stops reporting (FL-229)', async () => {
       setup({ enabled: true }, new Date(Date.now() - 5 * 60 * 1000).toISOString());
-      await expect(sut.getConnections()).resolves.toMatchObject({ publicUrl: null, connections: [] });
+      await expect(sut.getConnections()).resolves.toMatchObject({ publicUrl: null, connections: [local] });
     });
   });
 
@@ -305,9 +334,54 @@ describe(ServerService.name, () => {
     });
   });
 
-  describe('ping', () => {
-    it('should respond with pong', () => {
-      expect(sut.ping()).toEqual({ res: 'pong' });
+  describe('ping (FL-229)', () => {
+    const setupPing = (options: {
+      linked?: boolean;
+      instanceId?: string | null;
+      serverName?: string;
+      storedServerId?: { id: string; createdAt: string } | null;
+    }) => {
+      const env = mockEnvData({});
+      mocks.config.getEnv.mockReturnValue({ ...env, frameleafCloud: { ...env.frameleafCloud, url: 'https://api.frameleaf.cloud' } });
+      const metadata = new Map<string, unknown>([
+        [
+          SystemMetadataKey.FrameleafCloudLink,
+          options.linked
+            ? { status: 'linked', cloudUrl: 'https://api.frameleaf.cloud', instanceId: options.instanceId ?? 'instance-1' }
+            : null,
+        ],
+        [SystemMetadataKey.SystemConfig, { server: { name: options.serverName ?? '' } }],
+        [SystemMetadataKey.FrameleafServerId, options.storedServerId ?? null],
+      ]);
+      mocks.systemMetadata.get.mockImplementation((key) => Promise.resolve((metadata.get(key) ?? null) as never));
+    };
+
+    it('returns the Frameleaf Cloud instance id, marked linked, while linked', async () => {
+      setupPing({ linked: true, instanceId: 'instance-1', serverName: 'My Home Server' });
+      await expect(sut.ping()).resolves.toEqual({ res: 'pong', id: 'instance-1', linked: true, name: 'My Home Server' });
+      expect(mocks.systemMetadata.set).not.toHaveBeenCalled();
+    });
+
+    it('creates and persists a stable local id on the first ping while unlinked', async () => {
+      setupPing({ linked: false });
+      const first = await sut.ping();
+      expect(first.linked).toBe(false);
+      expect(first.id).toMatch(/^[0-9a-f-]{36}$/);
+      expect(mocks.systemMetadata.set).toHaveBeenCalledWith(
+        SystemMetadataKey.FrameleafServerId,
+        expect.objectContaining({ id: first.id }),
+      );
+    });
+
+    it('reuses the stored local id on later pings, never regenerating it', async () => {
+      setupPing({ linked: false, storedServerId: { id: 'stored-id-1', createdAt: '2026-01-01T00:00:00.000Z' } });
+      await expect(sut.ping()).resolves.toEqual({ res: 'pong', id: 'stored-id-1', linked: false, name: 'Frameleaf server' });
+      expect(mocks.systemMetadata.set).not.toHaveBeenCalled();
+    });
+
+    it('falls back to a default display name when none is set', async () => {
+      setupPing({ linked: false, storedServerId: { id: 'stored-id-1', createdAt: '2026-01-01T00:00:00.000Z' } });
+      await expect(sut.ping()).resolves.toMatchObject({ name: 'Frameleaf server' });
     });
   });
 

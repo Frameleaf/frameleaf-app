@@ -8,6 +8,13 @@ import { isoDatetimeToDate } from 'src/validation.js';
 const ServerPingResponseSchema = z
   .object({
     res: z.string().meta({ example: 'pong' }),
+    // FL-229 (NAPI-005): `id` is this server's Frameleaf Cloud instance id while linked, or a
+    // locally-generated id that stays stable across restarts otherwise - either way, one value an
+    // app can compare across requests to confirm it reached the same server, on every route
+    // (LAN, direct, relay), without needing to be signed in.
+    id: z.string().describe("This server's identity: the Frameleaf Cloud instance id while linked, else a stable local id").meta({ example: '018f5e7a-6b1e-7f6e-9c2e-1a2b3c4d5e6f' }),
+    linked: z.boolean().describe('Whether `id` is a Frameleaf Cloud instance id (true) or a local-only id (false)'),
+    name: z.string().describe("The server's display name (the admin-set server name, or a default)"),
   })
   .meta({ id: 'ServerPingResponse' });
 

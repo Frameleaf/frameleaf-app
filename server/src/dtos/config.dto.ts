@@ -1152,6 +1152,15 @@ const AdminConfigSchemaWithVisibility = z
           .meta({ visibility: User }),
         loginPageMessage: z.string().describe('Login page message').meta({ visibility: Public }),
         publicUsers: configBool.describe('Public users').meta({ visibility: User }),
+        // FL-229 (NAPI-005, owner decision 2026-09-30): on by default on a fresh install. An app on
+        // the same network finds this server without a second login (the welcome screen's "Use Home
+        // Server on this Wi-Fi"). Turning it off only stops the advertisement - the server still
+        // answers a direct connection, so this is a discoverability setting, not an access control.
+        lanDiscovery: configBool
+          .describe(
+            'Advertise this server on the local network (DNS-SD `_frameleaf._tcp`) so apps on the same Wi-Fi can find it without typing an address. Turning this off does not require additional sign-in steps or block direct connections - it only stops the broadcast. While on, any device on this network can see that a Frameleaf server exists here and its display name.',
+          )
+          .meta({ visibility: Admin }),
       })
       .meta({ id: 'AdminConfigServerDto' }),
     user: z
@@ -1635,6 +1644,7 @@ export const defaults = Object.freeze<SystemConfig>({
     externalDomain: '',
     loginPageMessage: '',
     publicUsers: true,
+    lanDiscovery: true,
   },
   notifications: {
     smtp: {

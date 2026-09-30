@@ -528,6 +528,12 @@ export enum SystemMetadataKey {
   FrameleafCloudLink = 'frameleaf-cloud-link',
   /** FL-159: this server's Ed25519 identity (public part only; the private key is a 0600 file). */
   FrameleafInstance = 'frameleaf-instance',
+  /**
+   * FL-229: a stable id for this server, independent of Frameleaf Cloud linking - generated once,
+   * on the first ping, and kept for the server's life so an app can verify identity on a route
+   * before it is ever linked.
+   */
+  FrameleafServerId = 'frameleaf-server-id',
   /** FL-159: the cached Frameleaf Cloud service discovery document. */
   FrameleafServiceDiscovery = 'frameleaf-service-discovery',
   /** FL-159: the last AI Wallet balance read from Frameleaf Cloud (USD display). */

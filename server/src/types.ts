@@ -1315,6 +1315,7 @@ export interface SystemMetadata extends Record<SystemMetadataKey, Record<string,
   [SystemMetadataKey.MemoriesState]: MemoriesState;
   [SystemMetadataKey.FrameleafCloudLink]: FrameleafCloudLink;
   [SystemMetadataKey.FrameleafInstance]: FrameleafInstanceIdentity;
+  [SystemMetadataKey.FrameleafServerId]: { id: string; createdAt: string };
   [SystemMetadataKey.FrameleafServiceDiscovery]: FrameleafServiceDiscovery;
   [SystemMetadataKey.FrameleafMlWallet]: FrameleafMlWallet;
   [SystemMetadataKey.FrameleafLicense]: FrameleafLicenseStore;
