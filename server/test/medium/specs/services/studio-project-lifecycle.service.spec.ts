@@ -3,6 +3,8 @@ import { Kysely } from 'kysely';
 import { writeFile } from 'node:fs/promises';
 import { AlbumKind, AlbumUserRole } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
+import { AssetRepository } from 'src/repositories/asset.repository.js';
+import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { StudioProjectRepository } from 'src/repositories/studio-project.repository.js';
 import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
@@ -81,9 +83,10 @@ afterAll(async () => {
 
 /** An owner with a saved two-revision project shared with a space, a reviewer in that space, and a stranger. */
 const setup = async () => {
-  const { ctx } = newMediumService(StudioResourceService, {
+  // The resource service is never reached by the lifecycle; the medium context builds a real one.
+  const { sut: resources, ctx } = newMediumService(StudioResourceService, {
     database,
-    real: [AccessRepository],
+    real: [AccessRepository, AssetRepository, CryptoRepository],
     mock: [LoggingRepository],
   });
   const projects = new StudioProjectRepository(database);
@@ -91,7 +94,7 @@ const setup = async () => {
     ctx.getMock(LoggingRepository),
     projects,
     ctx.get(AccessRepository),
-    automock(StudioResourceService, { strict: false }),
+    resources,
     automock(WebsocketRepository, { args: [undefined, ctx.getMock(LoggingRepository)], strict: false }),
   );
   const { user: ownerUser } = await ctx.newUser();
