@@ -68,6 +68,8 @@
   let query = $state('');
   let show = $state<LargeFileShow>('open');
   let selected = $state<string[]>([]);
+  // FL-139: rows look their state up here, not by scanning the selection once per row
+  const selectedSet = $derived(new Set(selected));
   let partnerNames = $state<Record<string, string>>({});
   let notice = $state('');
   let error = $state('');
@@ -128,8 +130,8 @@
     }),
   );
   const editable = $derived(rows.filter((asset) => canTrashLargeFile(asset, context)));
-  const chosen = $derived(editable.filter((asset) => selected.includes(asset.id)));
-  const allChosen = $derived(editable.length > 0 && editable.every((asset) => selected.includes(asset.id)));
+  const chosen = $derived(editable.filter((asset) => selectedSet.has(asset.id)));
+  const allChosen = $derived(editable.length > 0 && editable.every((asset) => selectedSet.has(asset.id)));
   const owners = $derived(largeFileOwners(present, userId));
   const viewBytes = $derived(rows.reduce((sum, asset) => sum + largeFileSize(asset), 0));
 
@@ -198,7 +200,8 @@
       for (const id of ids) {
         trashed.add(id);
       }
-      selected = selected.filter((id) => !ids.includes(id));
+      const gone = new Set(ids);
+      selected = selected.filter((id) => !gone.has(id));
       undoIds = ids;
       void loadActivity();
       notice = $t('frameleaf_large_files_moved', { values: { count } });
@@ -288,7 +291,8 @@
             trashed.add(id);
           }
         }
-        selected = selected.filter((id) => !ids.includes(id));
+        const gone = new Set(ids);
+        selected = selected.filter((id) => !gone.has(id));
         leaveGone(ids, before);
       }),
       websocketEvents.on('on_asset_restore', (ids) => {
@@ -413,7 +417,7 @@
                 type="checkbox"
                 aria-label={$t('frameleaf_large_files_select_item', { values: { name: asset.originalFileName } })}
                 disabled={!canTrashLargeFile(asset, context)}
-                checked={selected.includes(asset.id)}
+                checked={selectedSet.has(asset.id)}
                 onchange={() => toggle(asset.id)}
               />
             </td>
