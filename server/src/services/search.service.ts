@@ -150,7 +150,7 @@ export class SearchService extends BaseService {
 
   async searchMetadata(auth: AuthDto, dto: MetadataSearchDto, withTotal = false): Promise<SearchResponseDto> {
     if (isNewShapeRequest(dto)) {
-      return this.searchMetadataV3(auth, dto);
+      return this.searchMetadataV3(auth, dto, withTotal);
     }
 
     const { suppressedOnly, ...searchDto } = dto;
@@ -511,26 +511,34 @@ export class SearchService extends BaseService {
     }
   }
 
-  private async searchMetadataV3(auth: AuthDto, dto: MetadataSearchDto): Promise<SearchResponseDto> {
+  private async searchMetadataV3(auth: AuthDto, dto: MetadataSearchDto, withTotal = false): Promise<SearchResponseDto> {
     const { filter, scope } = await this.resolveSearchScopeV3(auth, dto);
 
     const { offset } = decodeSearchCursor(dto.cursor);
     const size = dto.size ?? 250;
+    const options = {
+      filter,
+      ...getPrivacyQueryOptions(auth, dto.suppressedOnly),
+      imageEnrichment: dto.imageEnrichment,
+      withExif: dto.withExif,
+      withPeople: dto.withPeople,
+      withStacked: dto.withStacked,
+      order: dto.orderBy,
+    };
     const { hasNextPage, items } = await this.searchRepository.searchMetadataV3(
       { take: size, skip: offset },
-      {
-        filter,
-        ...getPrivacyQueryOptions(auth, dto.suppressedOnly),
-        imageEnrichment: dto.imageEnrichment,
-        withExif: dto.withExif,
-        withPeople: dto.withPeople,
-        withStacked: dto.withStacked,
-        order: dto.orderBy,
-      },
+      options,
       scope,
     );
-
-    return this.mapResponse(items, { auth }, { nextCursor: hasNextPage ? encodeSearchCursor(offset + size) : null });
+    const response = await this.mapResponse(
+      items,
+      { auth },
+      { nextCursor: hasNextPage ? encodeSearchCursor(offset + size) : null },
+    );
+    if (withTotal) {
+      response.assets.total = (await this.searchRepository.searchStatisticsV3(options, scope)).total;
+    }
+    return response;
   }
 
   private async searchStatisticsV3(auth: AuthDto, dto: StatisticsSearchDto): Promise<SearchStatisticsResponseDto> {
