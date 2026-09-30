@@ -12,14 +12,48 @@ import { utils } from 'src/utils.js';
  * - A right-to-left language puts dir="rtl" and its lang on the page, and the shell does not scroll
  *   sideways. In the viewer its arrows point, and its arrow keys move, the way the page reads.
  */
+/**
+ * FL-139: the library, administration and Studio surfaces (story: "RTL and long-string fixtures cover
+ * full library/admin/studio surfaces"). Each is audited with axe, and opened right to left (Arabic)
+ * and with long strings (German) without scrolling sideways.
+ */
 const PAGES = [
+  // library
   { name: 'library', path: '/photos' },
   { name: 'albums', path: '/albums' },
   { name: 'people', path: '/people' },
   { name: 'explore', path: '/explore' },
   { name: 'sharing', path: '/sharing' },
+  { name: 'favorites', path: '/favorites' },
+  { name: 'archive', path: '/archive' },
+  { name: 'trash', path: '/trash' },
+  { name: 'map', path: '/map' },
+  { name: 'tags', path: '/tags' },
+  { name: 'folders', path: '/folders' },
+  { name: 'places', path: '/places' },
+  { name: 'search results', path: '/search?query=%7B%22originalFileName%22%3A%22a%22%7D' },
+  { name: 'shared links', path: '/shared-links' },
+  { name: 'partners', path: '/partners' },
+  { name: 'activity', path: '/activity' },
+  { name: 'utilities', path: '/utilities' },
+  { name: 'duplicates', path: '/utilities/duplicates' },
+  { name: 'large files', path: '/utilities/large-files' },
   { name: 'settings', path: '/user-settings' },
+  // administration
+  { name: 'system settings', path: '/admin/system-settings' },
+  { name: 'user management', path: '/admin/user-management' },
+  { name: 'job queues', path: '/admin/queues' },
+  { name: 'server status', path: '/admin/server-status' },
+  { name: 'external libraries', path: '/admin/library-management' },
+  // Studio
   { name: 'studio projects', path: '/studio/projects' },
+  { name: 'studio editor', path: '/studio' },
+];
+
+/** Right to left, and the long strings of German, over every surface above. */
+const LANGUAGES = [
+  { lang: 'ar', dir: 'rtl', label: 'right to left (Arabic)' },
+  { lang: 'de', dir: 'ltr', label: 'long strings (German)' },
 ];
 
 const audit = async (page: Page, name: string) => {
@@ -120,6 +154,31 @@ test.describe('Accessibility of the key web pages (FL-139)', () => {
     );
     expect(overflow).toBeLessThanOrEqual(1);
   });
+
+  for (const { lang, dir, label } of LANGUAGES) {
+    test(`every surface opens ${label} without scrolling sideways`, async ({ context, page }) => {
+      test.setTimeout(PAGES.length * 15_000);
+      await utils.setAuthCookies(context, admin.accessToken);
+      await page.addInitScript((code) => localStorage.setItem('lang', code), lang);
+      const problems: string[] = [];
+      for (const { name, path } of PAGES) {
+        await page.goto(path);
+        await page.waitForLoadState('networkidle');
+        await expect(page.locator('html'), name).toHaveAttribute('dir', dir);
+        if ((await page.locator('#frameleaf-error-title').count()) > 0) {
+          problems.push(`${name}: error page`);
+          continue;
+        }
+        const overflow = await page.evaluate(
+          () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        );
+        if (overflow > 1) {
+          problems.push(`${name}: scrolls ${overflow}px sideways`);
+        }
+      }
+      expect(problems).toEqual([]);
+    });
+  }
 
   test('a right-to-left viewer points its arrows and its arrow keys the way the page reads', async ({
     context,
