@@ -17,7 +17,9 @@
     returnFocus,
     open = $bindable(false),
     onRequestClose,
+    onkeydown,
     wide = false,
+    compactControls = false,
     children,
     actions,
   }: {
@@ -28,8 +30,12 @@
     open?: boolean;
     /** Lets a caller guard X and Escape before the dialog closes. */
     onRequestClose?: () => void;
+    /** Lets a modal keep its keys from underlying viewer shortcuts. */
+    onkeydown?: (event: KeyboardEvent) => void;
     /** A workflow with side-by-side evidence (FL-59), like the design's wide dialogs. */
     wide?: boolean;
+    /** Opt in to the prototype's compact desktop controls while retaining touch targets. */
+    compactControls?: boolean;
     children: Snippet;
     /**
      * The footer buttons. A form body associates its submit button through the `form`
@@ -70,9 +76,11 @@
   bind:this={dialog}
   class="frameleaf dialog fl-continuous-corners"
   class:wide
+  class:compact-controls={compactControls}
   class:with-actions={!!actions}
   data-theme={appTheme}
   aria-labelledby={titleId}
+  {onkeydown}
   oncancel={(event) => {
     event.preventDefault();
     requestClose();
@@ -116,6 +124,25 @@
   }
   .dialog.wide {
     max-width: min(1120px, calc(100vw - 32px));
+  }
+  .dialog.compact-controls {
+    /* The upstream app root's 0.1px tracking changes the prototype's description wrapping. */
+    letter-spacing: normal;
+  }
+  @media (min-width: 701px) and (pointer: fine) {
+    .dialog.compact-controls :global(button.button) {
+      min-height: 34px;
+    }
+    .dialog.compact-controls .dialog-title :global(button) {
+      min-height: 34px;
+      min-width: 40px;
+    }
+  }
+  @media (pointer: coarse) {
+    .dialog.compact-controls :global(button) {
+      min-height: 48px;
+      min-width: 48px;
+    }
   }
   .dialog::backdrop {
     background: rgb(0 0 0 / 40%);
