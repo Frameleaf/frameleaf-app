@@ -11459,6 +11459,16 @@ export type SyncPersonV1 = {
     /** Updated at */
     updatedAt: string;
 };
+export type SyncPetDeleteV1 = {
+    petId: string;
+};
+export type SyncPetObservationDeleteV1 = {
+    assetId: string;
+    observationId: string;
+    petId: string;
+};
+export type SyncPetObservationV1 = PetObservationResponseDto;
+export type SyncPetV1 = PetResponseDto;
 export type SyncPinnedCollectionsV1 = {
     /** Complete replacement snapshot in user order, including unavailable pins */
     pins: PinnedCollection[];
@@ -23838,6 +23848,10 @@ export enum StudioRestoredVersionUnavailable {
     HiddenContent = "hidden-content"
 }
 export enum SyncEntityType {
+    PetV1 = "PetV1",
+    PetDeleteV1 = "PetDeleteV1",
+    PetObservationV1 = "PetObservationV1",
+    PetObservationDeleteV1 = "PetObservationDeleteV1",
     TagV1 = "TagV1",
     TagDeleteV1 = "TagDeleteV1",
     AssetTagV1 = "AssetTagV1",
@@ -23909,6 +23923,8 @@ export enum SyncEntityType {
     SyncCompleteV1 = "SyncCompleteV1"
 }
 export enum SyncRequestType {
+    PetsV1 = "PetsV1",
+    PetObservationsV1 = "PetObservationsV1",
     TagsV1 = "TagsV1",
     AssetTagsV1 = "AssetTagsV1",
     AlbumsV1 = "AlbumsV1",
