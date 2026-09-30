@@ -2611,7 +2611,7 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): invalid (FL-112)."
+          "reason": "All chromium-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "firefox": {
           "status": "not-tested"
@@ -2656,7 +2656,7 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): invalid (FL-112)."
+          "reason": "All chromium-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "firefox": {
           "status": "not-tested"
@@ -2701,7 +2701,7 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): invalid (FL-112)."
+          "reason": "All chromium-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "firefox": {
           "status": "not-tested"
@@ -2746,7 +2746,7 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): invalid (FL-112)."
+          "reason": "All chromium-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "firefox": {
           "status": "not-tested"
@@ -2791,7 +2791,7 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): invalid (FL-112)."
+          "reason": "All chromium-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "firefox": {
           "status": "not-tested"
@@ -2836,7 +2836,7 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): invalid (FL-112)."
+          "reason": "All chromium-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "firefox": {
           "status": "not-tested"
@@ -2881,7 +2881,7 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): invalid (FL-112)."
+          "reason": "All chromium-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "firefox": {
           "status": "not-tested"
@@ -2926,7 +2926,7 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): invalid (FL-112)."
+          "reason": "All chromium-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "firefox": {
           "status": "not-tested"
@@ -2971,7 +2971,7 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): invalid (FL-112)."
+          "reason": "All chromium-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "firefox": {
           "status": "not-tested"
@@ -3016,7 +3016,7 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): invalid (FL-112)."
+          "reason": "All chromium-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "firefox": {
           "status": "not-tested"
@@ -3061,7 +3061,7 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): invalid (FL-112)."
+          "reason": "All chromium-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "firefox": {
           "status": "not-tested"
@@ -3106,7 +3106,7 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): invalid (FL-112)."
+          "reason": "All chromium-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "firefox": {
           "status": "not-tested"
@@ -3151,7 +3151,7 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): invalid (FL-112)."
+          "reason": "All chromium-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "firefox": {
           "status": "not-tested"
@@ -3196,7 +3196,7 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): invalid (FL-112)."
+          "reason": "All chromium-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "firefox": {
           "status": "not-tested"
@@ -3241,7 +3241,7 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): invalid (FL-112)."
+          "reason": "All chromium-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "firefox": {
           "status": "not-tested"
@@ -3286,7 +3286,7 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): invalid (FL-112)."
+          "reason": "All chromium-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "firefox": {
           "status": "not-tested"
@@ -3331,7 +3331,7 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): invalid (FL-112)."
+          "reason": "All chromium-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "firefox": {
           "status": "not-tested"
@@ -3376,7 +3376,7 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): invalid (FL-112)."
+          "reason": "All chromium-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "firefox": {
           "status": "not-tested"
@@ -3421,7 +3421,7 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): invalid (FL-112)."
+          "reason": "All chromium-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "firefox": {
           "status": "not-tested"
@@ -3466,7 +3466,7 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): invalid (FL-112)."
+          "reason": "All chromium-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "firefox": {
           "status": "not-tested"
@@ -3511,7 +3511,7 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): invalid (FL-112)."
+          "reason": "All chromium-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "firefox": {
           "status": "not-tested"
@@ -3556,7 +3556,7 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): invalid (FL-112)."
+          "reason": "All chromium-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "firefox": {
           "status": "not-tested"
@@ -3601,7 +3601,7 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): invalid (FL-112)."
+          "reason": "All chromium-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "firefox": {
           "status": "not-tested"
@@ -3646,7 +3646,7 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): invalid (FL-112)."
+          "reason": "All chromium-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "firefox": {
           "status": "not-tested"
@@ -3691,7 +3691,7 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): invalid (FL-112)."
+          "reason": "All chromium-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "firefox": {
           "status": "not-tested"
@@ -3736,7 +3736,7 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): invalid (FL-112)."
+          "reason": "All chromium-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "firefox": {
           "status": "not-tested"
@@ -3781,7 +3781,7 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): invalid (FL-112)."
+          "reason": "All chromium-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "firefox": {
           "status": "not-tested"
@@ -3826,7 +3826,7 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): invalid (FL-112)."
+          "reason": "All chromium-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "firefox": {
           "status": "not-tested"
@@ -3871,7 +3871,7 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): invalid (FL-112)."
+          "reason": "All chromium-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "firefox": {
           "status": "not-tested"
@@ -3916,7 +3916,7 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): invalid (FL-112)."
+          "reason": "All chromium-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "firefox": {
           "status": "not-tested"
@@ -3961,7 +3961,7 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): invalid (FL-112)."
+          "reason": "All chromium-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "firefox": {
           "status": "not-tested"
@@ -4006,7 +4006,7 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): invalid (FL-112)."
+          "reason": "All chromium-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "firefox": {
           "status": "not-tested"
@@ -4051,7 +4051,7 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): invalid (FL-112)."
+          "reason": "All chromium-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "firefox": {
           "status": "not-tested"
@@ -4096,7 +4096,7 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): invalid (FL-112)."
+          "reason": "All chromium-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "firefox": {
           "status": "not-tested"
@@ -4141,7 +4141,7 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): invalid (FL-112)."
+          "reason": "All chromium-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "firefox": {
           "status": "not-tested"
@@ -4186,7 +4186,7 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): invalid (FL-112)."
+          "reason": "All chromium-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "firefox": {
           "status": "not-tested"
@@ -4231,7 +4231,7 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): invalid (FL-112)."
+          "reason": "All chromium-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "firefox": {
           "status": "not-tested"
@@ -4276,7 +4276,7 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): invalid (FL-112)."
+          "reason": "All chromium-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "firefox": {
           "status": "not-tested"
@@ -4321,7 +4321,7 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): invalid (FL-112)."
+          "reason": "All chromium-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "firefox": {
           "status": "not-tested"
@@ -4366,7 +4366,7 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): invalid (FL-112)."
+          "reason": "All chromium-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "firefox": {
           "status": "not-tested"
@@ -4411,7 +4411,7 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): invalid (FL-112)."
+          "reason": "All chromium-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "firefox": {
           "status": "not-tested"
@@ -4456,7 +4456,7 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): invalid (FL-112)."
+          "reason": "All chromium-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "firefox": {
           "status": "not-tested"
@@ -4501,7 +4501,7 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): invalid (FL-112)."
+          "reason": "All chromium-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "firefox": {
           "status": "not-tested"
@@ -4546,7 +4546,7 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): invalid (FL-112)."
+          "reason": "All chromium-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "firefox": {
           "status": "not-tested"
@@ -4591,7 +4591,7 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): invalid (FL-112)."
+          "reason": "All chromium-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "firefox": {
           "status": "not-tested"
@@ -4636,7 +4636,7 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): invalid (FL-112)."
+          "reason": "All chromium-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "firefox": {
           "status": "not-tested"
@@ -4681,7 +4681,7 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): invalid (FL-112)."
+          "reason": "All chromium-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "firefox": {
           "status": "not-tested"
@@ -4726,7 +4726,7 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): invalid (FL-112)."
+          "reason": "All chromium-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "firefox": {
           "status": "not-tested"
@@ -4771,7 +4771,7 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): invalid (FL-112)."
+          "reason": "All chromium-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "firefox": {
           "status": "not-tested"
@@ -4816,7 +4816,7 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): invalid (FL-112)."
+          "reason": "All chromium-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "firefox": {
           "status": "not-tested"
@@ -4861,7 +4861,7 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): invalid (FL-112)."
+          "reason": "All chromium-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "firefox": {
           "status": "not-tested"
@@ -4906,7 +4906,7 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): invalid (FL-112)."
+          "reason": "All chromium-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "firefox": {
           "status": "not-tested"
@@ -4951,7 +4951,7 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): invalid (FL-112)."
+          "reason": "All chromium-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "firefox": {
           "status": "not-tested"
@@ -4996,7 +4996,7 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): invalid (FL-112)."
+          "reason": "All chromium-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "firefox": {
           "status": "not-tested"

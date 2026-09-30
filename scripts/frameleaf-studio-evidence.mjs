@@ -63,11 +63,12 @@ const DEFAULT_AXIS = "chromium";
  * here; an axis/family pair absent from this map has no evidence at all yet.
  *
  * chromium:
- * - effect (effects-matrix.browser.mjs): normal (SDR rows), extreme (HDR row and
- *   declared-extended-range assertion), animated (keyframe resolver test, lines ~155-181),
- *   composed (effect+Brightness stack-order test, lines ~184-193). No case feeds a malformed or
- *   out-of-declared-range parameter (every case is a valid default, numeric extreme, enum option
- *   or boolean) - `invalid` is not exercised.
+ * - effect (effects-matrix.browser.mjs): all five. normal (SDR rows), extreme (HDR row and
+ *   declared-extended-range assertion), animated (keyframe resolver test), composed
+ *   (effect+Brightness stack-order test), and invalid (FL-99, studio-color): non-finite, below-
+ *   and above-range numbers, unknown select options, non-boolean flags and undeclared keys each
+ *   draw exactly as their declared meaning (engine patch 0039), and an unknown effect id passes
+ *   the input through. EFFECTS_MATRIX_REPORT carries them as effects[].invalid.
  * - transition (transition-matrix.browser.mjs): normal and extreme (SDR/HDR route boundaries and
  *   parity, per the file's header comment). No animated-parameter, composed/stack, or
  *   invalid-input case is described or found in the file.
@@ -82,7 +83,7 @@ const DEFAULT_AXIS = "chromium";
 export const FAMILY_CASE_COVERAGE = {
   chromium: {
     blend: new Set(["normal", "extreme", "animated", "composed", "invalid"]),
-    effect: new Set(["normal", "extreme", "animated", "composed"]),
+    effect: new Set(["normal", "extreme", "animated", "composed", "invalid"]),
     transition: new Set(["normal", "extreme"]),
   },
 };
