@@ -40,6 +40,8 @@ jobs:
         run: node --test scripts/frameleaf-branding.test.mjs
       - name: Validate the web bundle budget
         run: node --test scripts/frameleaf-web-bundle-budget.test.mjs
+      - name: Validate the Studio authorization report
+        run: node --test scripts/frameleaf-studio-authz-report.test.mjs
       - name: Validate independent Studio conformance evidence
         run: |
           node studio/tools/conformance.mjs

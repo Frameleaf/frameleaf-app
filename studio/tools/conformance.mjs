@@ -10,7 +10,7 @@ export const AXES = ['native', 'chromium', 'firefox', 'safari', 'command', 'grap
 const CATALOG_SHA256 = '2899cef0e847e7e97d7bb57ef086cd78a7c7fd0361730c4605c6dae2c7b56928';
 const OWNERS_SHA256 = 'b47de92810236fe47fcf296614737b79fba949e75bb4de14f46fb4195afda0f7';
 const SHA256 = /^[a-f0-9]{64}$/;
-const NON_RENDERING_ROWS = new Set([
+export const NON_RENDERING_ROWS = new Set([
   'readme.projects-storage.1', 'readme.projects-storage.2', 'readme.projects-storage.3',
   'readme.projects-storage.4', 'readme.projects-storage.5',
   'module.projects', 'module.project-bundle', 'module.workspace-gate',
