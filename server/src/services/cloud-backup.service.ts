@@ -420,6 +420,21 @@ export class CloudBackupService {
     };
   }
 
+  /** Internal availability only: no grants, remote usage calls or admin settings in the public DTO. */
+  async getSafetyAvailability(): Promise<{
+    state: 'off' | 'not-linked' | 'not-configured' | 'paused-key-unloaded' | 'ready';
+    bucket: string | null;
+  }> {
+    const settings = (await this.readSettings()).frameleafCloud.cloudBackup;
+    if (!settings.enabled || settings.target === 'off') return { state: 'off', bucket: null };
+    if (settings.target === 'managed' && !(await readCloudLink(this.gatewayDeps())).linked)
+      return { state: 'not-linked', bucket: null };
+    const metadata = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafCloudBackup);
+    if (!metadata || metadata.target !== settings.target) return { state: 'not-configured', bucket: null };
+    const key = await this.loadKeyOrAsk(metadata).catch(() => null);
+    return { state: key ? 'ready' : 'paused-key-unloaded', bucket: metadata.bucketRef };
+  }
+
   /**
    * FL-164: Frameleaf-managed storage's usage and read-only state, asked for again when the last answer is
    * older than ten minutes. `GET /v1/backup/usage` issues no key, so it never disturbs a running

@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
+import type { IntegrityRepository } from 'src/repositories/integrity.repository.js';
 import type {
   CloudBackupAlbum,
   CloudBackupAssetDetails,
@@ -103,6 +104,68 @@ const FINISHED_OPERATIONS = [
  */
 @Injectable()
 export class CloudBackupIndexRepository {
+  /** One statement keeps current owner/access/hash eligibility and backup facts in the same snapshot. */
+  private safetyQuery(assets: ReturnType<IntegrityRepository['getSafetyQuery']>, bucket: string | null) {
+    return sql<{
+      id: string;
+      sha256: string | null;
+      onServerSince: Date;
+      isOffline: boolean;
+      lastIntegrityAt: Date | null;
+      integrityResult: 'passed' | 'mismatched' | 'missing' | 'unreadable' | null;
+      backedUpSince: Date | null;
+      lastCompletedAt: Date | null;
+      lastVerifiedAt: Date | null;
+    }>`SELECT assets.*, backup."backedUpSince", backup."lastCompletedAt", verification."lastVerifiedAt"
+      FROM (${assets}) assets
+      LEFT JOIN LATERAL (
+        SELECT min(m."finishedAt") AS "backedUpSince", max(m."finishedAt") AS "lastCompletedAt"
+        FROM cloud_backup_manifest_original membership
+        JOIN cloud_backup_manifest m ON m.id = membership."manifestId"
+        JOIN cloud_backup_object object ON object.bucket = m.bucket AND object.sha256 = membership.sha256
+        JOIN media_operation operation ON operation.id = m."operationId"
+        WHERE membership."assetId" = assets.id AND membership.sha256 = assets.sha256
+          AND m.bucket = ${bucket} AND m.status = 'complete' AND m."finishedAt" IS NOT NULL
+          AND operation.kind = 'cloud_backup' AND operation.status = 'completed'
+          AND operation."finishedAt" IS NOT NULL
+          AND operation.result ->> 'phase' = 'done'
+          AND operation.snapshot ->> 'bucketRef' = m.bucket
+      ) backup ON true
+      LEFT JOIN LATERAL (
+        SELECT CASE WHEN proof.result = 'passed' THEN operation."finishedAt" END AS "lastVerifiedAt"
+        FROM cloud_backup_object_verification proof
+        JOIN cloud_backup_object object ON object.bucket = proof.bucket AND object.sha256 = proof.sha256
+        JOIN media_operation operation ON operation.id = proof."operationId"
+        WHERE backup."backedUpSince" IS NOT NULL AND proof.bucket = ${bucket} AND proof.sha256 = assets.sha256
+          AND proof.method = 'sha256-get' AND proof."checkedAt" >= object."uploadedAt"
+          AND operation.kind = 'cloud_backup' AND operation.status = 'completed'
+          AND operation."finishedAt" IS NOT NULL AND operation.snapshot ->> 'bucketRef' = proof.bucket
+          AND operation.snapshot ->> 'task' = 'verify' AND operation.result ->> 'task' = 'verify'
+          AND operation.result ->> 'done' = 'true'
+          AND COALESCE(operation.snapshot ->> 'depth', 'sample') = 'sample'
+          AND operation.result ->> 'depth' = 'sample'
+        ORDER BY proof."checkedAt" DESC LIMIT 1
+      ) verification ON true`;
+  }
+
+  async getSafetyAssets(assets: ReturnType<IntegrityRepository['getSafetyQuery']>, bucket: string | null) {
+    return (await this.safetyQuery(assets, bucket).execute(this.db)).rows;
+  }
+
+  async getSafetySummary(assets: ReturnType<IntegrityRepository['getSafetyQuery']>, bucket: string | null) {
+    const { rows } = await sql<{
+      total: number;
+      onServer: number;
+      backedUp: number;
+      lastCompletedAt: Date | null;
+      lastVerifiedAt: Date | null;
+    }>`SELECT count(*)::int AS total,
+      count(*) FILTER (WHERE NOT "isOffline" AND "integrityResult" IS DISTINCT FROM 'missing')::int AS "onServer",
+      count(*) FILTER (WHERE "backedUpSince" IS NOT NULL)::int AS "backedUp",
+      max("lastCompletedAt") AS "lastCompletedAt", max("lastVerifiedAt") AS "lastVerifiedAt"
+      FROM (${this.safetyQuery(assets, bucket)}) safety`.execute(this.db);
+    return rows[0];
+  }
   constructor(@InjectKysely() private db: Kysely<DB>) {}
 
   /** The hashes of these that are already in the bucket. */

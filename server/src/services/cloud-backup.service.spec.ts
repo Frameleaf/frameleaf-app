@@ -456,6 +456,25 @@ describe(CloudBackupService.name, () => {
   });
 
   describe('own-memory key', () => {
+    it('reports unavailable safety states without issuing a remote storage grant', async () => {
+      metadata[SystemMetadataKey.SystemConfig] = { frameleafCloud: { cloudBackup: { enabled: false, target: 'off' } } };
+      await expect(sut.getSafetyAvailability()).resolves.toEqual({ state: 'off', bucket: null });
+      metadata[SystemMetadataKey.SystemConfig] = {
+        frameleafCloud: { cloudBackup: { enabled: true, target: 'managed' } },
+      };
+      delete metadata[SystemMetadataKey.FrameleafCloudLink];
+      await expect(sut.getSafetyAvailability()).resolves.toEqual({ state: 'not-linked', bucket: null });
+      expect(cloudBackup.grant).not.toHaveBeenCalled();
+      expect(store.probe).not.toHaveBeenCalled();
+    });
+
+    it('reports a unloaded key and recognizes another worker loading it', async () => {
+      await expect(sut.getSafetyAvailability()).resolves.toEqual({ state: 'paused-key-unloaded', bucket: ref });
+      await sut.onKeyShare({ key: key.toString('base64') });
+      await expect(sut.getSafetyAvailability()).resolves.toEqual({ state: 'ready', bucket: ref });
+      expect(cloudBackup.grant).not.toHaveBeenCalled();
+    });
+
     beforeEach(() => {
       metadata[SystemMetadataKey.FrameleafCloudBackup] = claim({ keyMode: 'own-memory' });
       metadata[SystemMetadataKey.SystemConfig] = enabledConfig('own-memory');

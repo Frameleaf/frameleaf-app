@@ -55,6 +55,7 @@ import { PluginController } from 'src/controllers/plugin.controller.js';
 import { PreservationController } from 'src/controllers/preservation.controller.js';
 import { QueueController } from 'src/controllers/queue.controller.js';
 import { RenderWorkerAdminController, RenderWorkerController } from 'src/controllers/render-worker.controller.js';
+import { SafetyController } from 'src/controllers/safety.controller.js';
 import { SearchController } from 'src/controllers/search.controller.js';
 import { ServerController } from 'src/controllers/server.controller.js';
 import { SessionController } from 'src/controllers/session.controller.js';
@@ -84,6 +85,7 @@ import { WorkerInventoryController } from 'src/controllers/worker-inventory.cont
 import { WorkflowController } from 'src/controllers/workflow.controller.js';
 
 export const controllers = [
+  SafetyController,
   CloudAdminController,
   FrameleafAuthController,
   LicenseAdminController,

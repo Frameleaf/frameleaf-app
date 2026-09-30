@@ -3601,6 +3601,44 @@ export type AssetMetadataBulkResponseDto = {
         [key: string]: any;
     };
 };
+export type SafetyLookupDto = {
+    /** SHA-256 hex hashes; inaccessible and foreign assets are omitted, including for administrators */
+    hashes: string[];
+};
+export type AssetSafetyDto = {
+    cloudBackup: {
+        /** Last completed successful GET + SHA-256 run for this current indexed object; HEAD + size never qualifies */
+        lastVerifiedRunAt: string | null;
+        /** Earliest retained complete backup run containing the current original hash */
+        since: string | null;
+        state: State;
+    };
+    id: string;
+    integrityResult: IntegrityResult;
+    lastIntegrityAt: string | null;
+    /** When this current asset was registered on the server; not checksum proof */
+    onServerSince: string;
+    sha256: string;
+};
+export type SafetyLookupResponseDto = {
+    assets: AssetSafetyDto[];
+    cloudAvailability: CloudAvailability;
+};
+export type SafetySummaryDto = {
+    backedUp: number | null;
+    /** Retained completed original membership with current object presence; null if no configured accessible backup target */
+    backedUpPercent: number | null;
+    cloudAvailability: CloudAvailability;
+    /** Latest qualifying completion containing at least one current own accessible asset */
+    lastCompletedRunAt: string | null;
+    /** Latest successful completed GET + SHA-256 run qualifying a current own accessible backed-up asset */
+    lastVerifiedRunAt: string | null;
+    /** Registered assets not marked offline or last checked missing; not a new filesystem verification */
+    onServer: number;
+    onServerPercent: number;
+    /** Current own accessible, non-trashed server library; excludes deleted libraries. Device-only items are not known to the server */
+    total: number;
+};
 export type ExifResponseDto = {
     /** City name */
     city?: string | null;
@@ -13800,6 +13838,32 @@ export function updateBulkAssetMetadata({ assetMetadataBulkUpsertDto }: {
     })));
 }
 /**
+ * Look up own asset safety by SHA-256
+ */
+export function getAssetSafety({ safetyLookupDto }: {
+    safetyLookupDto: SafetyLookupDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: SafetyLookupResponseDto;
+    }>("/assets/safety/lookup", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: safetyLookupDto
+    })));
+}
+/**
+ * Summarize own library safety
+ */
+export function getSafetySummary(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: SafetySummaryDto;
+    }>("/assets/safety/summary", {
+        ...opts
+    }));
+}
+/**
  * Get asset statistics
  */
 export function getAssetStatistics({ isFavorite, isTrashed, visibility }: {
@@ -22656,6 +22720,25 @@ export enum AssetJobName {
     RefreshOcr = "refresh-ocr",
     RegenerateThumbnail = "regenerate-thumbnail",
     TranscodeVideo = "transcode-video"
+}
+export enum State {
+    Unavailable = "unavailable",
+    NotBackedUp = "not-backed-up",
+    Completed = "completed"
+}
+export enum IntegrityResult {
+    Unknown = "unknown",
+    Passed = "passed",
+    Mismatched = "mismatched",
+    Missing = "missing",
+    Unreadable = "unreadable"
+}
+export enum CloudAvailability {
+    Off = "off",
+    NotLinked = "not-linked",
+    NotConfigured = "not-configured",
+    PausedKeyUnloaded = "paused-key-unloaded",
+    Ready = "ready"
 }
 export enum AssetDevelopRevisionKind {
     Recipe = "recipe",
