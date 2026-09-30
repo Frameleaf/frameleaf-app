@@ -41,6 +41,18 @@ export async function createChromiumDriver({ harnessOrigin, args = [], channel, 
     async newPage() {
       const page = await (await browser.newContext(contextOptions)).newPage();
       return {
+        async inFrame(selector, run) {
+          const locator = page.locator(selector);
+          await locator.waitFor();
+          const frame = await (await locator.elementHandle()).contentFrame();
+          if (!frame) throw new Error(`iframe unavailable: ${selector}`);
+          return run({
+            click: (target) => frame.locator(target).click(),
+            evaluate: (fn, arg) => frame.evaluate(fn, arg),
+            waitForFunction: (fn, options) => frame.waitForFunction(fn, undefined, options),
+            shortcut: (key, shift = false) => page.keyboard.press(`${process.platform === 'darwin' ? 'Meta' : 'Control'}+${shift ? 'Shift+' : ''}${key}`),
+          });
+        },
         goto: (url) => page.goto(url),
         evaluate: (fn, arg) => page.evaluate(fn, arg),
         waitForFunction: (fn, options) => page.waitForFunction(fn, undefined, options),
@@ -132,6 +144,14 @@ export async function createWebDriverClassicDriver({ endpoint, harnessOrigin, ca
         method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
       });
       const page = {
+        async inFrame(selector, run) {
+          const id = await element(selector);
+          await call('/frame', { method: 'POST', headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ id: { 'element-6066-11e4-a52e-4f735466cecf': id } }),
+          });
+          try { return await run(page); }
+          finally { await call('/frame/parent', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' }); }
+        },
         screenshot: () => call('/screenshot', { method: 'GET' }),
         shortcut: (key, shift = false) => {
           const modifier = String(session.capabilities?.platformName).toLowerCase().includes('mac') ? '\uE03D' : '\uE009';

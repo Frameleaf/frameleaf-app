@@ -25,6 +25,14 @@ async function startStubDriver() {
         res.end(JSON.stringify({ value: { sessionId: `s${++sessionCounter}`, capabilities: body.capabilities } }));
         return;
       }
+      if (req.method === 'POST' && req.url.endsWith('/element')) {
+        res.end(JSON.stringify({ value: { 'element-6066-11e4-a52e-4f735466cecf': 'native-frame' } }));
+        return;
+      }
+      if (req.method === 'POST' && /\/(frame|frame\/parent|element\/native-frame\/click)$/.test(req.url)) {
+        res.end(JSON.stringify({ value: null }));
+        return;
+      }
       if (req.method === 'POST' && req.url.endsWith('/url')) {
         res.end(JSON.stringify({ value: null }));
         return;
@@ -201,4 +209,42 @@ test('close() deletes the session exactly once even if called twice', async () =
   } finally {
     await stub.close();
   }
+});
+
+for (const fail of [false, true]) {
+  test(`iframe native command restores parent context after ${fail ? 'failure' : 'success'}`, async () => {
+    const stub = await startStubDriver();
+    const driver = await createWebDriverClassicDriver({ endpoint: stub.endpoint, harnessOrigin: 'http://127.0.0.1:5555' });
+    try {
+      const page = await driver.newPage();
+      const run = () => page.inFrame('[data-testid=studio-editor-frame]', async frame => {
+        await frame.click('button[aria-label="Set interpolation to Ease Out"]');
+        if (fail) throw new Error('oracle failed');
+        return frame.evaluate(() => 'native read');
+      });
+      if (fail) await assert.rejects(run, /oracle failed/);
+      else assert.ok(await run());
+      const commands = stub.requests.slice(1).map(r => r.url);
+      assert.deepEqual(commands.slice(0, 4), ['/session/s1/element', '/session/s1/frame', '/session/s1/element', '/session/s1/element/native-frame/click']);
+      assert.equal(commands.at(-1), '/session/s1/frame/parent');
+      assert.deepEqual(stub.requests.find(r => r.url === '/session/s1/frame').body, { id: { 'element-6066-11e4-a52e-4f735466cecf': 'native-frame' } });
+    } finally { await driver.close(); await stub.close(); }
+  });
+}
+
+test('Chromium iframe operations use frame context and real page keyboard', async () => {
+  const calls = [];
+  const frame = { locator: selector => ({ click: async () => calls.push(selector) }), evaluate: async () => 'frame', waitForFunction: async () => {} };
+  const driver = await createChromiumDriver({ harnessOrigin: 'http://127.0.0.1:5555', chromium: {
+    launch: async () => ({ newContext: async () => ({ newPage: async () => ({
+      locator: () => ({ waitFor: async () => {}, elementHandle: async () => ({ contentFrame: async () => frame }) }),
+      keyboard: { press: async value => calls.push(value) },
+    }) }), close: async () => {} }),
+  } });
+  try {
+    const page = await driver.newPage();
+    assert.equal(await page.inFrame('iframe', async f => { await f.click('button'); await f.shortcut('z'); return f.evaluate(() => 'frame'); }), 'frame');
+    assert.equal(calls[0], 'button');
+    assert.match(calls[1], /(?:Meta|Control)\+z/);
+  } finally { await driver.close(); }
 });
