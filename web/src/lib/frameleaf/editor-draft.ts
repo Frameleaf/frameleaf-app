@@ -8,6 +8,7 @@
  * draft can be sent as-is.
  */
 import {
+  AssetDevelopMaskKind,
   AssetDevelopPreset,
   AssetDevelopRevisionStatus,
   type AssetDevelopRecipeDto,
@@ -28,15 +29,22 @@ import { normalizeMasks, type EditorMask } from '$lib/frameleaf/photo-tools';
 
 export const RECIPE_VERSION = 1 as const;
 
-export type EditorRecipe = Required<Omit<AssetDevelopRecipeDto, 'crop' | 'version' | 'masks'>> &
-  DevelopValues & {
-    version: typeof RECIPE_VERSION;
-    crop: { x: number; y: number; w: number; h: number };
-    /** Selective adjustments (FL-64), in the oriented frame like the crop. */
-    masks: EditorMask[];
-    /** Client-only: which aspect chip framed the crop. Not sent to the server. */
-    aspect: AspectId;
-  };
+export type EditorRecipe = DevelopValues & {
+  straighten: number;
+  rotation: number;
+  flipHorizontal: boolean;
+  flipVertical: boolean;
+  preset: AssetDevelopPreset;
+  presetStrength: number;
+  version: number;
+  /** Untouched wire envelope; known UI values are projected separately. Never sent as a key. */
+  opaqueRecipe?: AssetDevelopRecipeDto;
+  crop: { x: number; y: number; w: number; h: number };
+  /** Selective adjustments (FL-64), in the oriented frame like the crop. */
+  masks: EditorMask[];
+  /** Client-only: which aspect chip framed the crop. Not sent to the server. */
+  aspect: AspectId;
+};
 
 export type EditorDraft = {
   recipe: EditorRecipe;
@@ -66,12 +74,27 @@ export const initialRecipe = (): EditorRecipe => ({
 });
 
 /** Every field clamped into the contract, defaults filled; safe for storage and for the wire. */
-export function normalizeRecipe(candidate: unknown): EditorRecipe {
+export function normalizeRecipe(candidate: unknown, fromWire = true): EditorRecipe {
   const value = (candidate && typeof candidate === 'object' ? candidate : {}) as Partial<EditorRecipe>;
   const develop = Object.fromEntries(DEVELOP_KEYS.map((key) => [key, clampParam(key, value[key])])) as DevelopValues;
   const rotation = (Math.round(number(value.rotation, 0, 0, 360) / 90) * 90) % 360;
   return {
-    version: RECIPE_VERSION,
+    version:
+      typeof value.version === 'number' && Number.isSafeInteger(value.version) && value.version > 0
+        ? value.version
+        : RECIPE_VERSION,
+    ...(Object.keys(value).length > 0 && {
+      // Svelte state proxies are not structured-cloneable; this is a JSON wire envelope.
+      // eslint-disable-next-line unicorn/prefer-structured-clone
+      opaqueRecipe: JSON.parse(
+        JSON.stringify(
+          (fromWire ? undefined : value.opaqueRecipe) ??
+            Object.fromEntries(
+              Object.entries(value).filter(([key]) => fromWire || (key !== 'aspect' && key !== 'opaqueRecipe')),
+            ),
+        ),
+      ),
+    }),
     ...develop,
     crop: normalizeRect(value.crop),
     aspect: choice(value.aspect, ASPECT_IDS, isFullRect(value.crop) ? 'Original' : 'Free'),
@@ -87,23 +110,54 @@ export function normalizeRecipe(candidate: unknown): EditorRecipe {
 
 /** The wire shape: the recipe without the client-only aspect. */
 export function toServerRecipe(recipe: EditorRecipe): AssetDevelopRecipeDto {
-  const { aspect: _, ...rest } = normalizeRecipe(recipe);
-  return rest;
+  const { aspect: _, opaqueRecipe, ...rest } = normalizeRecipe(recipe, false);
+  const raw: Partial<AssetDevelopRecipeDto> = opaqueRecipe ?? {};
+  if (rest.version !== RECIPE_VERSION) {
+    const original = normalizeRecipe(raw, true);
+    const changed = Object.fromEntries(
+      Object.entries(rest).filter(
+        ([key, value]) => JSON.stringify(value) !== JSON.stringify(original[key as keyof typeof original]),
+      ),
+    );
+    return { ...raw, ...changed, version: rest.version } as AssetDevelopRecipeDto;
+  }
+  const rawMasks = Array.isArray(raw.masks) ? raw.masks : [];
+  const known = new Map(rest.masks.map((mask) => [mask.id, mask]));
+  const masks = rawMasks.flatMap((item) => {
+    const id = typeof item.id === 'string' ? item.id.trim() : '';
+    const mask = known.get(id);
+    if (!mask) {
+      return Object.values(AssetDevelopMaskKind).includes(item.kind as AssetDevelopMaskKind) ? [] : [item];
+    }
+    known.delete(id);
+    return [{ ...item, ...mask, adjustments: { ...(item.adjustments as object), ...mask.adjustments } }];
+  });
+  return {
+    ...raw,
+    ...rest,
+    crop: { ...(raw.crop && typeof raw.crop === 'object' && raw.crop), ...rest.crop },
+    masks: [...masks, ...known.values()],
+  };
 }
 
-export const sameRecipe = (a: EditorRecipe, b: EditorRecipe) =>
-  JSON.stringify(toServerRecipe(a)) === JSON.stringify(toServerRecipe(b));
+const stableRecipeKeys = (_key: string, value: unknown) =>
+  value && typeof value === 'object' && !Array.isArray(value)
+    ? Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)))
+    : value;
 
-export const createDraft = (recipe?: unknown): EditorDraft => ({
-  recipe: normalizeRecipe(recipe),
+export const sameRecipe = (a: EditorRecipe, b: EditorRecipe) =>
+  JSON.stringify(toServerRecipe(a), stableRecipeKeys) === JSON.stringify(toServerRecipe(b), stableRecipeKeys);
+
+export const createDraft = (recipe?: unknown, fromWire = true): EditorDraft => ({
+  recipe: normalizeRecipe(recipe, fromWire),
   undo: [],
   redo: [],
 });
 
 /** Applies a patch, recording the previous recipe for undo; an unchanged recipe leaves the draft alone. */
 export function changeDraft(draft: EditorDraft, patch: Partial<EditorRecipe>): EditorDraft {
-  const recipe = normalizeRecipe({ ...draft.recipe, ...patch });
-  if (JSON.stringify(recipe) === JSON.stringify(draft.recipe)) {
+  const recipe = normalizeRecipe({ ...draft.recipe, ...patch }, false);
+  if (sameRecipe(recipe, draft.recipe) && recipe.aspect === draft.recipe.aspect) {
     return draft;
   }
   return {
@@ -118,14 +172,15 @@ export function changeDraft(draft: EditorDraft, patch: Partial<EditorRecipe>): E
  * flight were made against the defaults; they are replayed on top of the loaded recipe (one undo
  * step back to it) rather than silently discarded.
  */
-export function rebaseDraft(draft: EditorDraft, loaded: unknown): EditorDraft {
-  const base = createDraft(loaded);
+export function rebaseDraft(draft: EditorDraft, loaded: unknown, fromWire = true): EditorDraft {
+  const base = createDraft(loaded, fromWire);
   if (draft.undo.length === 0 && draft.redo.length === 0) {
     return base;
   }
   const defaults = initialRecipe();
   const edits = Object.fromEntries(
     (Object.keys(draft.recipe) as (keyof EditorRecipe)[])
+      .filter((key) => key !== 'opaqueRecipe')
       .filter((key) => JSON.stringify(draft.recipe[key]) !== JSON.stringify(defaults[key]))
       .map((key) => [key, draft.recipe[key]]),
   ) as Partial<EditorRecipe>;
@@ -138,7 +193,7 @@ const travel = (draft: EditorDraft, source: 'undo' | 'redo'): EditorDraft => {
     return draft;
   }
   return {
-    recipe: normalizeRecipe(draft[source].at(-1)),
+    recipe: normalizeRecipe(draft[source].at(-1), false),
     [source]: draft[source].slice(0, -1),
     [target]: [...draft[target], draft.recipe].slice(-HISTORY_LIMIT),
   } as EditorDraft;

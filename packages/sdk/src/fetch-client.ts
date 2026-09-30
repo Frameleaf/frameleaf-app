@@ -3822,108 +3822,40 @@ export type AssetDevelopCrop = {
     x: number;
     /** Top edge of the crop as a fraction of the oriented frame height */
     y: number;
-};
-export type AssetDevelopMaskAdjustments = {
-    /** Black point inside the mask */
-    blacks?: number;
-    /** Contrast inside the mask */
-    contrast?: number;
-    /** Dehaze inside the mask */
-    dehaze?: number;
-    /** Exposure in EV inside the mask */
-    exposure?: number;
-    /** Highlights inside the mask */
-    highlights?: number;
-    /** Saturation inside the mask */
-    saturation?: number;
-    /** Shadows inside the mask */
-    shadows?: number;
-    /** White balance shift inside the mask */
-    temperature?: number;
-    /** Tint inside the mask */
-    tint?: number;
-    /** Vibrance inside the mask */
-    vibrance?: number;
-    /** White point inside the mask */
-    whites?: number;
-};
-export type AssetDevelopMask = {
-    adjustments?: AssetDevelopMaskAdjustments;
-    /** How much of the adjustment is applied, as a percentage */
-    amount?: number;
-    /** A disabled mask is kept but not rendered */
-    enabled?: boolean;
-    /** Where a linear mask has faded out, across the frame */
-    endX?: number;
-    /** Where a linear mask has faded out, down the frame */
-    endY?: number;
-    /** Softness of a radial edge as a percentage of the radius */
-    feather?: number;
-    /** Client-chosen identifier, unique within the recipe */
-    id: string;
-    /** Apply the adjustment outside the shape instead of inside */
-    invert?: boolean;
-    kind: AssetDevelopMaskKind;
-    /** Optional name shown in the editor */
-    name?: string | null;
-    /** Horizontal radius of a radial mask as a fraction of the frame width */
-    radiusX?: number;
-    /** Vertical radius of a radial mask as a fraction of the frame height */
-    radiusY?: number;
-    /** Centre (radial) or start (linear) across the oriented frame */
-    x: number;
-    /** Centre (radial) or start (linear) down the oriented frame */
-    y: number;
+    [key: string]: any;
 };
 export type AssetDevelopRecipeDto = {
-    /** Black point */
-    blacks?: number;
-    /** Local contrast in the midtones */
-    clarity?: number;
-    /** Contrast around middle grey */
-    contrast?: number;
-    crop?: AssetDevelopCrop;
-    /** Haze removal (positive) or addition (negative) */
-    dehaze?: number;
-    /** Exposure in EV; each whole stop doubles the light */
-    exposure?: number;
-    /** Mirror left to right */
-    flipHorizontal?: boolean;
-    /** Mirror top to bottom */
-    flipVertical?: boolean;
-    /** Film grain amount */
-    grain?: number;
-    /** Highlight recovery (negative) or lift (positive) */
-    highlights?: number;
-    /** Selective adjustments, applied in order after the global develop */
-    masks?: AssetDevelopMask[];
-    /** Luminance noise reduction amount */
-    noiseReduction?: number;
-    preset?: AssetDevelopPreset;
-    /** How much of the preset is applied, as a percentage */
-    presetStrength?: number;
-    /** Quarter-turn rotation in degrees, clockwise */
-    rotation?: number;
-    /** Global saturation */
-    saturation?: number;
-    /** Shadow lift (positive) or deepening (negative) */
-    shadows?: number;
-    /** Detail sharpening amount */
-    sharpen?: number;
-    /** Straighten angle in degrees, applied before the crop */
-    straighten?: number;
-    /** Warm (positive) or cool (negative) white balance shift */
-    temperature?: number;
-    /** Magenta (positive) or green (negative) tint */
-    tint?: number;
-    /** Recipe contract version */
     version: Version;
-    /** Saturation weighted towards muted colours */
-    vibrance?: number;
-    /** Darkened (positive) or lightened (negative) edges */
-    vignette?: number;
-    /** White point */
+    exposure?: number;
+    contrast?: number;
+    highlights?: number;
+    shadows?: number;
     whites?: number;
+    blacks?: number;
+    temperature?: number;
+    tint?: number;
+    vibrance?: number;
+    saturation?: number;
+    clarity?: number;
+    dehaze?: number;
+    vignette?: number;
+    grain?: number;
+    sharpen?: number;
+    noiseReduction?: number;
+    crop?: AssetDevelopCrop;
+    straighten?: number;
+    rotation?: number;
+    flipHorizontal?: boolean;
+    flipVertical?: boolean;
+    preset?: AssetDevelopPreset;
+    presetStrength?: number;
+    masks?: {
+        [key: string]: any;
+    }[];
+    [key: string]: any;
+} | {
+    version: number;
+    [key: string]: any;
 };
 export type AssetDevelopRevisionResponseDto = {
     /** Asset this revision belongs to */
@@ -3986,6 +3918,10 @@ export type AssetDevelopSaveDto = {
     recipe: AssetDevelopRecipeDto;
     /** Queue the edited master render immediately after saving the recipe */
     render?: boolean;
+    /** Explicit complete replacement instead of preserving omitted source fields, including intentional removals */
+    replaceRecipe?: boolean;
+    /** Immutable revision of this owned asset whose omitted fields are preserved; never the implicit current revision */
+    sourceRevisionId?: string;
 };
 export type DevelopExportResponseDto = {
     /** Asset whose original was exported */
@@ -5088,6 +5024,58 @@ export type UserConfigDto = {
     theme: UserConfigThemeDto;
     trash: UserConfigTrashDto;
     user: UserConfigUserDto;
+};
+export type AssetDevelopMaskAdjustments = {
+    /** Black point inside the mask */
+    blacks?: number;
+    /** Contrast inside the mask */
+    contrast?: number;
+    /** Dehaze inside the mask */
+    dehaze?: number;
+    /** Exposure in EV inside the mask */
+    exposure?: number;
+    /** Highlights inside the mask */
+    highlights?: number;
+    /** Saturation inside the mask */
+    saturation?: number;
+    /** Shadows inside the mask */
+    shadows?: number;
+    /** White balance shift inside the mask */
+    temperature?: number;
+    /** Tint inside the mask */
+    tint?: number;
+    /** Vibrance inside the mask */
+    vibrance?: number;
+    /** White point inside the mask */
+    whites?: number;
+};
+export type AssetDevelopMask = {
+    adjustments?: AssetDevelopMaskAdjustments;
+    /** How much of the adjustment is applied, as a percentage */
+    amount?: number;
+    /** A disabled mask is kept but not rendered */
+    enabled?: boolean;
+    /** Where a linear mask has faded out, across the frame */
+    endX?: number;
+    /** Where a linear mask has faded out, down the frame */
+    endY?: number;
+    /** Softness of a radial edge as a percentage of the radius */
+    feather?: number;
+    /** Client-chosen identifier, unique within the recipe */
+    id: string;
+    /** Apply the adjustment outside the shape instead of inside */
+    invert?: boolean;
+    kind: AssetDevelopMaskKind;
+    /** Optional name shown in the editor */
+    name?: string | null;
+    /** Horizontal radius of a radial mask as a fraction of the frame width */
+    radiusX?: number;
+    /** Vertical radius of a radial mask as a fraction of the frame height */
+    radiusY?: number;
+    /** Centre (radial) or start (linear) across the oriented frame */
+    x: number;
+    /** Centre (radial) or start (linear) down the oriented frame */
+    y: number;
 };
 export type DevelopPresetSettingsDto = {
     /** Black point */
@@ -22948,9 +22936,8 @@ export enum AssetDevelopRevisionKind {
     Recipe = "recipe",
     External = "external"
 }
-export enum AssetDevelopMaskKind {
-    Radial = "radial",
-    Linear = "linear"
+export enum Version {
+    $1 = 1
 }
 export enum AssetDevelopPreset {
     Original = "Original",
@@ -22962,9 +22949,6 @@ export enum AssetDevelopPreset {
     Silvertone = "Silvertone",
     Noir = "Noir",
     Fade = "Fade"
-}
-export enum Version {
-    $1 = 1
 }
 export enum AssetDevelopRevisionStatus {
     Saved = "saved",
@@ -23143,6 +23127,10 @@ export enum ClassificationReviewDecision {
 export enum Unit {
     Photo = "photo",
     Minute = "minute"
+}
+export enum AssetDevelopMaskKind {
+    Radial = "radial",
+    Linear = "linear"
 }
 export enum DocumentField {
     Date = "date",

@@ -1,4 +1,4 @@
-import { ConflictException } from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
 import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
@@ -10,6 +10,7 @@ import {
   AssetDevelopMaskKind,
   AssetDevelopRevisionKind,
   AssetDevelopRevisionStatus,
+  AssetDevelopSaveDto,
 } from 'src/dtos/asset-develop.dto.js';
 import { AssetType, AssetVisibility, ChecksumAlgorithm, JobName, JobStatus } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
@@ -134,6 +135,119 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await rm(root, { recursive: true, force: true });
+});
+
+describe('opaque develop recipe preservation (FL-233)', () => {
+  it('keeps a supported maskless version1 actual master/preview within source encoding tolerance', async () => {
+    const { ctx, sut, develop } = setup();
+    const { user } = await ctx.newUser();
+    const { asset, bytes } = await newPhoto(ctx, user.id);
+    const auth = factory.auth({ user });
+    const original = await sharp(bytes).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+    const saved = await sut.save(auth, asset.id, { recipe: { version: 1 }, render: true });
+    await expect(sut.handleRender({ id: saved.id })).resolves.toBe(JobStatus.Success);
+    const stored = await develop.get(saved.id);
+    const preview = await sut.preview(auth, asset.id, { recipe: { version: 1 }, size: 256 });
+    for (const input of [stored!.masterPath!, preview.buffer]) {
+      const output = await sharp(input).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+      expect(output.info.width).toBe(original.info.width);
+      expect(output.info.height).toBe(original.info.height);
+      expect(output.data.length).toBe(original.data.length);
+      expect(
+        Math.max(...output.data.map((value, index) => Math.abs(value - original.data[index]))),
+      ).toBeLessThanOrEqual(5);
+    }
+  });
+
+  it('roundtrips bounded future JSON through actual save/repository/read without rendering', async () => {
+    const { ctx, sut, develop } = setup();
+    const { user } = await ctx.newUser();
+    const { asset } = await newPhoto(ctx, user.id);
+    const recipe = {
+      version: 2,
+      crop: { mesh: [1, 2] },
+      masks: { subject: { descriptor: 'opaque' } },
+      future: { operations: [{ method: 'remove', fill: 'opaque' }] },
+    };
+    const saved = await sut.save(
+      factory.auth({ user }),
+      asset.id,
+      AssetDevelopSaveDto.schema.parse({ recipe, render: false }),
+    );
+    expect(saved.recipe).toEqual(recipe);
+    expect((await develop.get(saved.id))?.recipe).toEqual(recipe);
+    expect((await sut.get(factory.auth({ user }), asset.id)).revisions[0].recipe).toEqual(recipe);
+    await expect(sut.render(factory.auth({ user }), asset.id, saved.id)).rejects.toBeInstanceOf(BadRequestException);
+    await expect(sut.preview(factory.auth({ user }), asset.id, { recipe, size: 256 })).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+  });
+  it('preserves nested omissions only from the explicitly named source; replacement and standalone saves remove intentionally', async () => {
+    const { ctx, sut } = setup();
+    const { user } = await ctx.newUser();
+    const { asset } = await newPhoto(ctx, user.id);
+    const auth = factory.auth({ user });
+    const recipe = {
+      version: 1,
+      future: { fills: ['opaque'] },
+      masks: [{ id: 'a', kind: 'radial', x: 0.5, y: 0.5, future: { bitmap: 'opaque' }, adjustments: { future: 12 } }],
+    };
+    const source = await sut.save(auth, asset.id, { recipe, render: false });
+    const incoming = {
+      version: 1,
+      contrast: 25,
+      masks: [{ id: 'a', kind: 'radial', x: 0.5, y: 0.5, adjustments: { exposure: 1 } }],
+    };
+    const preserved = await sut.save(auth, asset.id, { recipe: incoming, sourceRevisionId: source.id, render: false });
+    expect(preserved.recipe).toMatchObject({
+      future: { fills: ['opaque'] },
+      masks: [{ future: { bitmap: 'opaque' }, adjustments: { future: 12, exposure: 1 } }],
+    });
+    expect(
+      (
+        await sut.save(auth, asset.id, {
+          recipe: incoming,
+          sourceRevisionId: source.id,
+          replaceRecipe: true,
+          render: false,
+        })
+      ).recipe,
+    ).toEqual(incoming);
+    expect((await sut.save(auth, asset.id, { recipe: { version: 1 }, render: false })).recipe).toEqual({ version: 1 });
+    expect((await sut.get(auth, asset.id)).revisions.find((item) => item.id === source.id)?.recipe).toEqual(recipe);
+  });
+  it('rejects cross-asset/other-owner sources and merged unsupported rendering atomically without a new revision', async () => {
+    const { ctx, sut, develop } = setup();
+    const { user } = await ctx.newUser();
+    const { user: other } = await ctx.newUser();
+    const auth = factory.auth({ user });
+    const { asset } = await newPhoto(ctx, user.id);
+    const { asset: separate } = await newPhoto(ctx, user.id);
+    const { asset: foreign } = await newPhoto(ctx, other.id);
+    const source = await sut.save(auth, asset.id, {
+      recipe: { version: 1, future: { operation: 'opaque' } },
+      render: false,
+    });
+    const otherSource = await sut.save(factory.auth({ user: other }), foreign.id, {
+      recipe: { version: 1 },
+      render: false,
+    });
+    await expect(
+      sut.save(auth, separate.id, { recipe: { version: 1 }, sourceRevisionId: source.id, render: false }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      sut.save(auth, asset.id, { recipe: { version: 1 }, sourceRevisionId: otherSource.id, render: false }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    const refused = await sut
+      .save(auth, asset.id, { recipe: { version: 1 }, sourceRevisionId: source.id, render: true })
+      .catch((error: BadRequestException) => error);
+    expect(refused).toBeInstanceOf(BadRequestException);
+    expect((refused as BadRequestException).getResponse()).toMatchObject({ code: 'develop_renderer_unsupported' });
+    expect(await develop.listByAsset(asset.id)).toHaveLength(1);
+    expect(await develop.listByAsset(separate.id)).toHaveLength(0);
+    await sut.revert(auth, asset.id, {});
+    expect((await sut.save(auth, asset.id, { recipe: { version: 1 }, render: false })).recipe).toEqual({ version: 1 });
+  });
 });
 
 describe('photo tools round trip (FL-64)', () => {

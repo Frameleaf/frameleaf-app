@@ -96,6 +96,7 @@ describe('QuickEditor', () => {
 
   beforeEach(() => {
     sessionStorage.clear();
+    vi.mocked(saveAssetDevelop).mockReset();
     vi.mocked(getAssetDevelop).mockResolvedValue({ assetId: photo.id, currentRevisionId: null, revisions: [] });
     vi.mocked(previewAssetDevelop).mockResolvedValue(new Blob(['jpeg']));
     vi.stubGlobal(
@@ -110,6 +111,7 @@ describe('QuickEditor', () => {
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     vi.clearAllMocks();
   });
 
@@ -154,6 +156,130 @@ describe('QuickEditor', () => {
     vi.useRealTimers();
   });
 
+  const sdkError = async (status: number, code?: string) => {
+    const sdk = await vi.importActual<typeof import('@immich/sdk')>('@immich/sdk');
+    try {
+      await sdk.saveAssetDevelop(
+        { id: photo.id, assetDevelopSaveDto: { recipe: { version: 1 }, render: true } },
+        {
+          fetch: async () =>
+            Response.json(
+              { message: 'Refused', code },
+              {
+                status,
+                headers: { 'Content-Type': 'application/json' },
+              },
+            ),
+        },
+      );
+      throw new Error('Expected an SDK HTTP error');
+    } catch (error) {
+      expect(sdk.isHttpError(error)).toBe(true);
+      return error;
+    }
+  };
+
+  it('saves an opaque recipe only after the exact unsupported-render refusal, without queueing or replacing the preview', async () => {
+    const source = revision({ assetId: photo.id, recipe: { version: 2, future: { fill: ['ordered', 7] } } });
+    vi.mocked(getAssetDevelop).mockResolvedValue({
+      assetId: photo.id,
+      currentRevisionId: source.id,
+      revisions: [source],
+    });
+    vi.mocked(saveAssetDevelop)
+      .mockRejectedValueOnce(await sdkError(400, 'develop_renderer_unsupported'))
+      .mockResolvedValueOnce(
+        revision({ status: AssetDevelopRevisionStatus.Saved, hasPreview: false, hasMaster: false }),
+      );
+    const onClose = vi.fn();
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
+      x: 0,
+      y: 0,
+      left: 0,
+      top: 0,
+      right: 600,
+      bottom: 400,
+      width: 600,
+      height: 400,
+      toJSON: () => ({}),
+    });
+    render(QuickEditor, { asset: photo, onClose });
+    await ready();
+    await fireEvent.input(screen.getByRole('slider', { name: 'frameleaf_editor_param_contrast' }), {
+      target: { value: '25' },
+    });
+    await fireEvent.click(screen.getByRole('button', { name: 'undo' }));
+    await fireEvent.keyDown(screen.getByRole('dialog'), { key: 'z', ctrlKey: true, shiftKey: true });
+    const preview = document.querySelector('.ed-stage img')?.getAttribute('src');
+    expect(preview).toBeTruthy();
+    await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_editor_save_version' }));
+    await waitFor(() => expect(saveAssetDevelop).toHaveBeenCalledTimes(2));
+    const [first, second] = vi.mocked(saveAssetDevelop).mock.calls.map(([args]) => args);
+    expect(first.assetDevelopSaveDto).toMatchObject({
+      sourceRevisionId: source.id,
+      replaceRecipe: true,
+      recipe: { version: 2, future: { fill: ['ordered', 7] }, contrast: 25 },
+      render: true,
+    });
+    expect(second).toEqual({ ...first, assetDevelopSaveDto: { ...first.assetDevelopSaveDto, render: false } });
+    expect(toastManager.primary).toHaveBeenCalledWith('frameleaf_editor_version_saved_newer_renderer');
+    expect(toastManager.primary).not.toHaveBeenCalledWith('frameleaf_editor_version_queued');
+    expect(document.querySelector('.ed-stage img')?.getAttribute('src')).toBe(preview);
+    expect(onClose).toHaveBeenCalledWith(false);
+  });
+
+  it.each([
+    [400, undefined],
+    [403, 'develop_renderer_unsupported'],
+    [404, 'develop_renderer_unsupported'],
+    [409, 'develop_renderer_unsupported'],
+    [500, 'develop_renderer_unsupported'],
+  ] as const)('does not retry a different Save refusal (%s, %s)', async (status, code) => {
+    vi.mocked(saveAssetDevelop).mockRejectedValueOnce(await sdkError(status, code));
+    const onClose = vi.fn();
+    render(QuickEditor, { asset: photo, onClose });
+    await ready();
+    await fireEvent.input(screen.getByRole('slider', { name: 'frameleaf_editor_param_contrast' }), {
+      target: { value: '25' },
+    });
+    await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_editor_save_version' }));
+    await waitFor(() => expect(toastManager.danger).toHaveBeenCalled());
+    expect(saveAssetDevelop).toHaveBeenCalledTimes(1);
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('deliberately resets an opaque draft to Original and resumes the normal render save', async () => {
+    const source = revision({ assetId: photo.id, recipe: { version: 2, future: { fill: ['opaque'] } } });
+    vi.mocked(getAssetDevelop).mockResolvedValue({
+      assetId: photo.id,
+      currentRevisionId: source.id,
+      revisions: [source],
+    });
+    vi.mocked(saveAssetDevelop).mockResolvedValueOnce(revision({ status: AssetDevelopRevisionStatus.Queued }));
+    render(QuickEditor, { asset: photo, onClose: vi.fn() });
+    await ready();
+    await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_editor_revert' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_editor_save_version' }));
+    await waitFor(() => expect(saveAssetDevelop).toHaveBeenCalledTimes(1));
+    const sent = vi.mocked(saveAssetDevelop).mock.calls[0][0].assetDevelopSaveDto;
+    expect(sent).toMatchObject({ recipe: { version: 1 }, render: true, replaceRecipe: true });
+    expect(sent.recipe).not.toHaveProperty('future');
+    expect(sent).not.toHaveProperty('sourceRevisionId');
+    expect(toastManager.primary).toHaveBeenCalledWith('frameleaf_editor_version_queued');
+  });
+
+  it('does not retry a Save transport failure', async () => {
+    vi.mocked(saveAssetDevelop).mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    render(QuickEditor, { asset: photo, onClose: vi.fn() });
+    await ready();
+    await fireEvent.input(screen.getByRole('slider', { name: 'frameleaf_editor_param_contrast' }), {
+      target: { value: '25' },
+    });
+    await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_editor_save_version' }));
+    await waitFor(() => expect(toastManager.danger).toHaveBeenCalled());
+    expect(saveAssetDevelop).toHaveBeenCalledTimes(1);
+  });
+
   it('saves the recipe as a new version, announces it and closes the editor', async () => {
     const saved = revision({
       assetId: photo.id,
@@ -176,7 +302,7 @@ describe('QuickEditor', () => {
     await waitFor(() =>
       expect(saveAssetDevelop).toHaveBeenCalledWith({
         id: photo.id,
-        assetDevelopSaveDto: { recipe: expect.objectContaining({ contrast: 25 }), render: true },
+        assetDevelopSaveDto: { recipe: expect.objectContaining({ contrast: 25 }), render: true, replaceRecipe: true },
       }),
     );
     const sent = vi.mocked(saveAssetDevelop).mock.calls[0][0].assetDevelopSaveDto.recipe;
