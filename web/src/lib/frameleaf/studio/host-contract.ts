@@ -279,6 +279,8 @@ export type StudioAdapterString =
   | 'previewUnavailable'
   | 'previewToneMapped'
   | 'previewNoWorker'
+  /** The browser has no WebGPU: the editor's own picture leaves out GPU effects (FL-96, FL-112). */
+  | 'previewWithoutWebGpu'
   /** An edit made on a graph the host has since replaced was not kept (FL-174). */
   | 'editSuperseded'
   /**
