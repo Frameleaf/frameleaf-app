@@ -23,7 +23,7 @@ if [ $result_exit != 0 ]; then
   exit 1
 fi
 
-if [ "$result" != '{"res":"pong"}' ]; then
+if ! node -e 'process.exit(JSON.parse(process.argv[1]).res === "pong" ? 0 : 1)' -- "$result" >/dev/null 2>&1; then
   echo "Fail: didn't reply with pong"
   log_container_verbose "Healthcheck failed: didn't reply with pong"
   exit 1
