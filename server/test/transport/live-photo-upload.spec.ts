@@ -141,7 +141,9 @@ describe('FL-225 normal HTTP atomic Live Photo publication', () => {
     const login = await json('/auth/login', 'POST', undefined, { email, password });
     expect(login.status).toBe(201);
     owner = login.data.accessToken;
-    expect((await json('/auth/session/unlock', 'POST', owner, { password })).status).toBe(204);
+    const pin = { pinCode: '123456' };
+    expect((await json('/auth/pin-code', 'POST', owner, pin)).status).toBe(204);
+    expect((await json('/auth/session/unlock', 'POST', owner, pin)).status).toBe(204);
     const me = await call('/users/me', 'GET', owner);
     expect(me.status).toBe(200);
     ownerId = me.data.id;
