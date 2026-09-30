@@ -211,16 +211,53 @@ write_evidence() {
   echo "Certification evidence ($status): $EVIDENCE_FILE"
 }
 
+# Retries `fork-schema-cutover prepare` while it refuses only because the fork server's own
+# background jobs (queued by the seed's asset creation, e.g. media-health) still hold a live
+# handoff lease - a real, product-correct refusal (assertNoLiveHandoffLeases), not a bug, but one
+# the certification script itself races by calling prepare before those jobs drain. Any other
+# error - or the same refusal still present once every reported lease has had time to lapse -
+# fails hard immediately; this never masks a genuine handoff problem.
+prepare_official_handoff() {
+  local deadline=0
+  while true; do
+    prepare_output="$(admin fork-schema-cutover prepare --batch-size 32)"
+    echo "$prepare_output"
+    if ! grep -q '^Error:' <<<"$prepare_output"; then
+      grep -q 'Verified: yes' <<<"$prepare_output" || { echo 'Official handoff preparation did not verify' >&2; exit 1; }
+      return 0
+    fi
+    if ! grep -q '^Error: Official handoff refused:.*claimed by a worker' <<<"$prepare_output"; then
+      exit 1
+    fi
+    local lapses_at lapses_at_epoch
+    lapses_at="$(grep -oE 'lapses at [0-9T:.Z-]+' <<<"$prepare_output" | cut -d' ' -f3 || true)"
+    # Strip fractional seconds (toISOString() includes milliseconds); GNU and BSD date agree on
+    # whole-second ISO 8601 without them.
+    lapses_at="${lapses_at%.*Z}Z"
+    if [[ -n "$lapses_at" && "$lapses_at" != "Z" ]]; then
+      # A grace period past the reported lapse for the worker to actually notice and release it.
+      lapses_at_epoch="$(date -u -d "$lapses_at" +%s 2>/dev/null || date -u -jf '%Y-%m-%dT%H:%M:%SZ' "$lapses_at" +%s)"
+      deadline="$((lapses_at_epoch + 30))"
+    elif [[ "$deadline" == 0 ]]; then
+      # No lapse time reported: bound the wait ourselves rather than retry forever.
+      deadline="$(($(date -u +%s) + 120))"
+    fi
+    if (($(date -u +%s) >= deadline)); then
+      echo 'Official handoff preparation still refused after its reported lease(s) should have lapsed' >&2
+      exit 1
+    fi
+    echo 'Waiting for the fork server to finish claimed jobs before retrying official handoff preparation...' >&2
+    sleep 2
+  done
+}
+
 # From a verified fork backfill to the official server running on the handed-over database: the
 # destructive storage pass, storage verification, the locked cutover and prepare-official.
 handoff_to_official() {
   local expected_assets="$1" cutover_phase="$2" cutover_spec="$3" interrupt="${4:-false}"
   # Steady-state backfills preserve physical deduplication; convert storage to
   # the destructive official form the cutover evidence requires.
-  prepare_output="$(admin fork-schema-cutover prepare --batch-size 32)"
-  echo "$prepare_output"
-  grep -q '^Error:' <<<"$prepare_output" && exit 1
-  grep -q 'Verified: yes' <<<"$prepare_output" || { echo 'Official handoff preparation did not verify' >&2; exit 1; }
+  prepare_official_handoff
   admin fork-schema-cutover verify-storage start --database-backup-id "$BACKUP_ID" --media-snapshot-id "$SNAPSHOT_ID"
   if [[ "$interrupt" == true ]]; then
     storage_status="$(admin fork-schema-cutover verify-storage resume --database-backup-id "$BACKUP_ID" --media-snapshot-id "$SNAPSHOT_ID" --batch-size 1)"
