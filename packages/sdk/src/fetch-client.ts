@@ -10834,6 +10834,14 @@ export type OwnerBackupHistoryResponseDto = {
     nextOffset: number | null;
     total: number;
 };
+export type OwnerBackupRestoreDto = {
+    assetIds: string[];
+    manifestKey: string;
+};
+export type OwnerBackupRestoreResponseDto = {
+    operationId: string;
+    status: string;
+};
 export type OnboardingResponseDto = {
     /** Is user onboarded */
     isOnboarded: boolean;
@@ -21839,6 +21847,21 @@ export function getOwnBackupThumbnail({ id, limit, manifestKey, offset, query }:
     }))}`, {
         ...opts
     }));
+}
+/**
+ * Restore own items from a chosen kept backup
+ */
+export function restoreOwnBackupItems({ ownerBackupRestoreDto }: {
+    ownerBackupRestoreDto: OwnerBackupRestoreDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: OwnerBackupRestoreResponseDto;
+    }>("/users/me/cloud-backup/restore", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: ownerBackupRestoreDto
+    })));
 }
 /**
  * Remove your supporter key

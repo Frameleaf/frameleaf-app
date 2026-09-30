@@ -291,6 +291,39 @@ describe(MediaOperationService.name, () => {
       expect(repository.getForOwner).toHaveBeenCalledWith(operationStub().id, authStub.user1.user.id);
     });
 
+    it('withholds owner restore paths, initiating session and selected IDs from ordinary job detail', async () => {
+      const operation = operationStub({
+        kind: MediaOperationKind.CloudRestore,
+        assetId: null,
+        snapshot: {
+          version: 1,
+          scope: 'asset',
+          assetIds: ['locked-own-item'],
+          manifestKey: 'm/private-date.json.gz',
+          bucketRef: 'private-bucket',
+          owner: {
+            ownerId: authStub.user1.user.id,
+            sessionId: 'private-session',
+            current: { 'locked-own-item': { originalPath: '/data/library/private-name.jpg' } },
+          },
+        },
+      });
+      vi.mocked(repository.getForOwner).mockResolvedValue(operation);
+      vi.mocked(repository.getCheckpoints).mockResolvedValue([]);
+      const detail = await sut.get(authStub.user1, operation.id);
+      expect(detail.snapshot).toEqual({ version: 1, scope: 'asset', assetCount: 1 });
+    });
+
+    it('preserves the existing admin restore snapshot when owner mode is absent', async () => {
+      const operation = operationStub({
+        kind: MediaOperationKind.CloudRestore,
+        snapshot: { version: 1, scope: 'library', manifestKey: 'kept-admin-manifest' },
+      });
+      vi.mocked(repository.getForOwner).mockResolvedValue(operation);
+      vi.mocked(repository.getCheckpoints).mockResolvedValue([]);
+      expect((await sut.get(authStub.user1, operation.id)).snapshot).toEqual(operation.snapshot);
+    });
+
     it('includes the immutable snapshot and the checkpoints on the detail view', async () => {
       vi.mocked(repository.getForOwner).mockResolvedValue(operationStub());
       vi.mocked(repository.getCheckpoints).mockResolvedValue([
