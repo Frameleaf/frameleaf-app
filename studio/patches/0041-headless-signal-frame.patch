@@ -1,0 +1,215 @@
+--- a/src/headless/main.ts
++++ b/src/headless/main.ts
+@@ -59,6 +59,7 @@
+ } from '@/features/export/deps/timeline-compositions'
+ import { editProject } from './edit'
+ import { seedMediaLibrary } from './seed-media'
++import { renderCompositionSignalFrame } from './signal-frame'
+ import {
+   buildMediaMetadataMap,
+   collectSourceRangeFindings,
+@@ -1008,6 +1009,54 @@
+     format,
+     fileSize: blob.size,
+     fileName,
++    warnings: [...validationWarnings, ...warnings],
++  }
++}
++
++/** A frame of genuine BT.2020 signal; only the existing GPU float route may supply it. */
++interface HeadlessSignalFrameInput extends Pick<
++  HeadlessFrameInput,
++  'project' | 'media' | 'frame' | 'atSeconds' | 'strict'
++> {
++  target: 'pq' | 'hlg'
++  /** Browser-local cancellation; Node drivers also close their page when a lease is lost. */
++  signal?: AbortSignal
++}
++
++async function renderFrameSignal(input: HeadlessSignalFrameInput) {
++  input.signal?.throwIfAborted()
++  if (input.target !== 'pq' && input.target !== 'hlg') throw new Error('Unsupported signal target')
++  const view = extractTimeline(input.project)
++  const gpuAvailable = await detectWebGpuOnce()
++  input.signal?.throwIfAborted()
++  const frame = resolveTargetFrame(view, input)
++  const validationWarnings = [
++    ...projectWarningsToHeadless(view.projectWarnings),
++    ...sourceRangeWarnings(
++      view.items,
++      view.compositions,
++      buildMediaMetadataMap(input.media),
++      view.fps,
++    ),
++    ...transitionWarnings(view.transitions, view.items, { gpuAvailable }),
++    ...transformParentWarnings(view.items),
++  ]
++  reportValidationWarnings(validationWarnings, input.strict, 'signal frame')
++  useCompositionsStore.getState().setCompositions(view.compositions)
++  registerMediaUrls(input.media)
++  seedMediaLibrary(input.media)
++  const composition = { ...buildComposition(view), width: view.width, height: view.height }
++  const warnings = await prepareFonts(composition.tracks)
++  input.signal?.throwIfAborted()
++  await assertGpuForComposition(composition, view.compositions)
++  composition.tracks = await resolveMediaUrls(composition.tracks, { useProxy: false })
++  input.signal?.throwIfAborted()
++  const signal = await renderCompositionSignalFrame(composition, frame, input.target, input.signal)
++  return {
++    ...signal,
++    frame,
++    atSeconds: frame / view.fps,
++    target: input.target,
+     warnings: [...validationWarnings, ...warnings],
+   }
+ }
+@@ -1216,6 +1265,7 @@
+   renderTimeline: typeof renderTimeline
+   renderProject: typeof renderProject
+   renderFrame: typeof renderFrame
++  renderFrameSignal: typeof renderFrameSignal
+   dumpLayout: typeof dumpLayout
+   editProject: typeof editProject
+   normalizeProject: typeof normalizeProjectForHeadless
+@@ -1305,6 +1355,7 @@
+   renderTimeline,
+   renderProject,
+   renderFrame,
++  renderFrameSignal,
+   dumpLayout,
+   editProject,
+   normalizeProject: normalizeProjectForHeadless,
+--- /dev/null
++++ b/src/headless/signal-frame.ts
+@@ -0,0 +1,38 @@
++import type { CompositionInputProps } from '@/types/export'
++import { createCompositionRenderer } from '@/features/export/utils/client-render-engine'
++
++/** Own one real float renderer; no image Blob or 8-bit canvas capture is returned. */
++export async function renderCompositionSignalFrame(
++  composition: CompositionInputProps & { width: number; height: number },
++  frame: number,
++  target: 'pq' | 'hlg',
++  signal?: AbortSignal,
++) {
++  signal?.throwIfAborted()
++  const canvas = new OffscreenCanvas(composition.width, composition.height)
++  const ctx = canvas.getContext('2d')
++  if (!ctx) throw new Error('Signal frame requires a composition context')
++  const renderer = await createCompositionRenderer(composition, canvas, ctx, { mode: 'export' })
++  let disposed = false
++  const dispose = () => {
++    if (disposed) return
++    disposed = true
++    renderer.dispose()
++  }
++  let rejectAbort!: (reason: unknown) => void
++  const aborted = new Promise<never>((_, reject) => {
++    rejectAbort = reject
++  })
++  const onAbort = () => rejectAbort(signal?.reason)
++  signal?.addEventListener('abort', onAbort, { once: true })
++  try {
++    // Creation can finish after cancellation; the acquired renderer still belongs to this call.
++    signal?.throwIfAborted()
++    const result = await Promise.race([renderer.renderFrameSignal(frame, target), aborted])
++    signal?.throwIfAborted()
++    return result
++  } finally {
++    signal?.removeEventListener('abort', onAbort)
++    dispose()
++  }
++}
+--- /dev/null
++++ b/src/headless/signal-frame.test.ts
+@@ -0,0 +1,90 @@
++// @vitest-environment node
++import { afterEach, describe, expect, it, vi } from 'vite-plus/test'
++import { renderCompositionSignalFrame } from './signal-frame'
++
++const boundary = vi.hoisted(() => ({ create: vi.fn() }))
++vi.mock('@/features/export/utils/client-render-engine', () => ({
++  createCompositionRenderer: boundary.create,
++}))
++
++const composition = { width: 16, height: 16, fps: 24, tracks: [] } as never
++const setup = () => {
++  vi.stubGlobal(
++    'OffscreenCanvas',
++    class {
++      getContext() {
++        return {}
++      }
++    },
++  )
++  const signal = { width: 16, height: 16, rgba: new Float32Array([-0.5, 2, 0.333251953125, 0.5]) }
++  const renderer = { renderFrameSignal: vi.fn().mockResolvedValue(signal), dispose: vi.fn() }
++  boundary.create.mockResolvedValue(renderer)
++  return { signal, renderer }
++}
++afterEach(() => {
++  vi.restoreAllMocks()
++  vi.unstubAllGlobals()
++  boundary.create.mockReset()
++})
++
++describe('headless composition signal frame resource boundary', () => {
++  it('returns the genuine float signal unchanged rather than converting through an 8-bit canvas', async () => {
++    const { signal, renderer } = setup()
++    const result = await renderCompositionSignalFrame(composition, 3, 'pq')
++    expect(result).toBe(signal)
++    expect(Array.from(result.rgba)).toEqual([-0.5, 2, 0.333251953125, 0.5])
++    expect(renderer.renderFrameSignal).toHaveBeenCalledWith(3, 'pq')
++    expect(renderer.dispose).toHaveBeenCalledTimes(1)
++  })
++  it('disposes the renderer when the real float route refuses a frame', async () => {
++    const { renderer } = setup()
++    renderer.renderFrameSignal.mockRejectedValue(new Error('float route unavailable'))
++    await expect(renderCompositionSignalFrame(composition, 0, 'hlg')).rejects.toThrow(
++      'float route unavailable',
++    )
++    expect(renderer.dispose).toHaveBeenCalledTimes(1)
++  })
++  it('refuses an already aborted request before acquiring renderer resources', async () => {
++    setup()
++    await expect(
++      renderCompositionSignalFrame(composition, 0, 'pq', AbortSignal.abort()),
++    ).rejects.toThrow()
++    expect(boundary.create).not.toHaveBeenCalled()
++  })
++  it('disposes and rejects when abort happens during GPU readback', async () => {
++    const { renderer, signal } = setup()
++    const controller = new AbortController()
++    renderer.renderFrameSignal.mockImplementation(async () => {
++      controller.abort()
++      return signal
++    })
++    await expect(
++      renderCompositionSignalFrame(composition, 0, 'pq', controller.signal),
++    ).rejects.toThrow()
++    expect(renderer.dispose).toHaveBeenCalledTimes(1)
++  })
++  it('rejects a pending GPU readback promptly on abort and disposes its resources', async () => {
++    const { renderer } = setup()
++    const controller = new AbortController()
++    renderer.renderFrameSignal.mockImplementation(() => new Promise(() => {}))
++    const result = renderCompositionSignalFrame(composition, 0, 'pq', controller.signal)
++    await Promise.resolve()
++    controller.abort()
++    await expect(result).rejects.toThrow()
++    expect(renderer.dispose).toHaveBeenCalledTimes(1)
++  }, 200)
++  it('disposes a renderer acquired after an in-flight factory request was aborted', async () => {
++    const { renderer } = setup()
++    const controller = new AbortController()
++    boundary.create.mockImplementation(async () => {
++      controller.abort()
++      return renderer
++    })
++    await expect(
++      renderCompositionSignalFrame(composition, 0, 'hlg', controller.signal),
++    ).rejects.toThrow()
++    expect(renderer.renderFrameSignal).not.toHaveBeenCalled()
++    expect(renderer.dispose).toHaveBeenCalledTimes(1)
++  })
++})
