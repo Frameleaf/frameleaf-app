@@ -67,6 +67,27 @@ vi.mock('@/infrastructure/storage/handles-db', () => ({
  *   persistence, and reopening it again changes nothing.
  * - `unknown-fields`: fields the engine does not know, on the project and on an item, survive.
  *
+ * The same run measures five FL-112 `authorizationFailure` scenarios per engine command, written to
+ * AUTHORIZATION_FAILURE_REPORT in the same shape:
+ *
+ * - `deleted`: the project is deleted (the server answers 404, and the Studio page takes the
+ *   session's access away) while the engine applies the command. It is refused as `forbidden`,
+ *   nothing is staged or recorded in history, the same envelope gets the same answer, and a next
+ *   command is refused without reaching the engine.
+ * - `unsupported`: this browser cannot start the engine. The command is refused by name, still in
+ *   the vocabulary, and nothing changes; a retry gets the same answer.
+ * - `cancel`: the session closes while the engine works. The result is not kept, so the command is
+ *   refused rather than reported as applied, and the history is untouched.
+ * - `restart`: after a restart (a fresh bridge on the stored revision), the editor replays an
+ *   envelope sent before it. It is refused as `stale-revision` with the current revision, and the
+ *   graph and history are unchanged: nothing applies twice.
+ * - `stale-result`: the engine's result arrives after the graph was replaced. It is refused as
+ *   `stale-revision` without being settled, the newer graph stands, and the same intent sent again
+ *   applies to the newer graph.
+ *
+ * Other catalogue commands answer `unsupported` at the gate: a missing worker capability is refused
+ * as `capability-missing`, a row no story implements as `not-implemented`.
+ *
  * A case is `passed` or `failed` from what was measured, or `not-applicable` with its reason (a
  * command that edits no graph has no lease, revision or undo). Cases this matrix does not measure
  * (bundles, and commands whose handler is a host service rather than the engine) are left out, so
@@ -275,8 +296,23 @@ const capabilities: StudioCapabilities = {
 }
 
 /** One Studio session around a graph, as the Studio page wires it (`+page.svelte`). */
-function session(initial: Project, overrides: Partial<{ hasAccess: boolean; hasLease: boolean }> = {}) {
-  const state = { graph: initial as unknown, revision: 5, ...{ hasAccess: true, hasLease: true }, ...overrides }
+function session(
+  initial: Project,
+  overrides: Partial<{ hasAccess: boolean; hasLease: boolean; revision: number; engineUp: boolean }> = {},
+) {
+  const state = {
+    graph: initial as unknown,
+    revision: 5,
+    hasAccess: true,
+    hasLease: true,
+    // The project session keeps what it is given (`staged`), or not (`ignored`: deleted or closed).
+    keeps: true,
+    engineUp: true,
+    // While set, the engine waits for it before answering.
+    gate: null as Promise<void> | null,
+    engineCalls: 0,
+    ...overrides,
+  }
   const history = createStudioGraphHistory()
   const handlers = createStudioEngineCommandHandlers({
     graph: () => state.graph,
@@ -285,18 +321,22 @@ function session(initial: Project, overrides: Partial<{ hasAccess: boolean; hasL
     restore: async () => false,
     history,
     stage: (graph) => {
+      if (!state.keeps) return 'ignored'
       state.graph = graph
       state.revision += 1
+      return 'staged'
     },
-    engine: async () => ({
+    engine: async () => (state.engineUp ? {
       dispose() {},
       async apply(current, envelopes) {
+        state.engineCalls += 1
+        if (state.gate) await state.gate
         const outcome = await applyCanonicalCommands(current, envelopes, media)
         return outcome.status === 'applied'
           ? { status: 'applied', graph: outcome.project, digest: outcome.digest }
           : outcome
       },
-    }),
+    } : null),
   })
   const bridge = createStudioBridge({
     context: () => ({
@@ -311,7 +351,16 @@ function session(initial: Project, overrides: Partial<{ hasAccess: boolean; hasL
   const submit = async (envelope: StudioCommandEnvelope) => (await bridge.submit([envelope]))[0]!
   const envelope = (id: StudioCommandId, payload: Record<string, unknown>, revision = state.revision) =>
     createStudioCommandEnvelope(id as never, payload as never, revision)
-  return { state, history, submit, envelope }
+  /** Holds the engine until `release()`, so the session can change while the command is in flight. */
+  const hold = () => {
+    let release = () => {}
+    state.gate = new Promise<void>((resolve) => (release = resolve))
+    return () => {
+      state.gate = null
+      release()
+    }
+  }
+  return { state, history, submit, envelope, hold }
 }
 
 /** Rows the Studio page (`routes/(user)/studio/+page.svelte`) serves with a host service. */
@@ -334,6 +383,7 @@ type CaseResult = { case: string; result: 'passed' | 'failed' | 'not-applicable'
 const report: {
   commands: Array<{ id: string; manifestIds: string[]; implementedBy: string; cases: CaseResult[] }>
 } = { commands: [] }
+const authorizationReport: typeof report = { commands: [] }
 
 const check = (name: string, pass: boolean, reason: string): CaseResult =>
   pass ? { case: name, result: 'passed' } : { case: name, result: 'failed', reason }
@@ -389,6 +439,176 @@ async function gateCases(id: StudioCommandId, fixture: Project, payload: Record<
   return cases
 }
 
+/** The five `authorizationFailure` scenarios for one engine command (see the header). */
+async function authorizationFailureCases(
+  id: StudioCommandId,
+  start: Project,
+  payload: Record<string, unknown>,
+  applies: boolean,
+): Promise<CaseResult[]> {
+  const cases: CaseResult[] = []
+  const before = canonicalJson(start)
+
+  // deleted: the project goes while the engine works.
+  {
+    const s = session(start)
+    const release = s.hold()
+    const envelope = s.envelope(id, payload)
+    const pending = s.submit(envelope)
+    await Promise.resolve()
+    s.state.hasAccess = false
+    s.state.keeps = false
+    release()
+    const result = await pending
+    const again = await s.submit(envelope)
+    const calls = s.state.engineCalls
+    const next = await s.submit(s.envelope(id, payload))
+    cases.push(
+      check(
+        'deleted',
+        rejectedAs(result, 'forbidden') &&
+          JSON.stringify(again) === JSON.stringify(result) &&
+          rejectedAs(next, 'forbidden') &&
+          s.state.engineCalls === calls &&
+          canonicalJson(s.state.graph) === before &&
+          s.history.depth.undo === 0,
+        `a command in flight when the project was deleted was not refused cleanly: ${JSON.stringify(result)}`,
+      ),
+    )
+  }
+
+  // unsupported: this browser cannot start the engine.
+  {
+    const s = session(start, { engineUp: false })
+    const envelope = s.envelope(id, payload)
+    const result = await s.submit(envelope)
+    const again = await s.submit(envelope)
+    cases.push(
+      check(
+        'unsupported',
+        rejectedAs(result, 'failed') &&
+          JSON.stringify(again) === JSON.stringify(result) &&
+          (studioCommandIds as readonly string[]).includes(id) &&
+          canonicalJson(s.state.graph) === before &&
+          s.history.depth.undo === 0,
+        `a command with no engine was not refused by name, or something changed: ${JSON.stringify(result)}`,
+      ),
+    )
+  }
+
+  // cancel: the session closes while the engine works.
+  {
+    const s = session(start)
+    const release = s.hold()
+    const pending = s.submit(s.envelope(id, payload))
+    await Promise.resolve()
+    s.state.keeps = false
+    release()
+    const result = await pending
+    cases.push(
+      check(
+        'cancel',
+        result?.status === 'rejected' && canonicalJson(s.state.graph) === before && s.history.depth.undo === 0,
+        `a command whose session closed was reported as ${JSON.stringify(result)}, or the history moved`,
+      ),
+    )
+  }
+
+  if (!applies) {
+    const reason = `${id} did not apply on the fixture, so there is no earlier envelope to replay or result to go stale`
+    cases.push({ case: 'restart', result: 'failed', reason }, { case: 'stale-result', result: 'failed', reason })
+    return cases
+  }
+
+  // restart: an envelope from before the restart, replayed into a fresh bridge on the stored revision.
+  {
+    const first = session(start)
+    const envelope = first.envelope(id, payload)
+    const accepted = await first.submit(envelope)
+    const stored = canonicalJson(first.state.graph)
+    const restarted = session(first.state.graph as Project, { revision: first.state.revision })
+    const replay = await restarted.submit(envelope)
+    cases.push(
+      check(
+        'restart',
+        accepted?.status === 'accepted' &&
+          rejectedAs(replay, 'stale-revision') &&
+          replay?.status === 'rejected' &&
+          replay.revision === restarted.state.revision &&
+          canonicalJson(restarted.state.graph) === stored &&
+          restarted.history.depth.undo === 0 &&
+          restarted.state.engineCalls === 0,
+        `a replay after the restart answered ${JSON.stringify(replay)}, or applied again`,
+      ),
+    )
+  }
+
+  // stale-result: the graph is replaced while the engine works on the older one.
+  {
+    const s = session(start)
+    const release = s.hold()
+    const envelope = s.envelope(id, payload)
+    const pending = s.submit(envelope)
+    await Promise.resolve()
+    // The editor's newer draft: an equal graph, but a different document.
+    const newer = structuredClone(start)
+    s.state.graph = newer
+    release()
+    const result = await pending
+    const retried = await s.submit(envelope)
+    cases.push(
+      check(
+        'stale-result',
+        rejectedAs(result, 'stale-revision') &&
+          s.history.depth.undo === 1 &&
+          retried?.status === 'accepted' &&
+          canonicalJson(s.history.undo(s.state.graph)) === canonicalJson(newer),
+        `a result computed from a replaced graph answered ${JSON.stringify(result)}, or its retry did not apply to the newer graph (${JSON.stringify(retried)})`,
+      ),
+    )
+  }
+  return cases
+}
+
+/**
+ * `unsupported` for a command outside the engine table, measured at the gate: a missing worker is
+ * refused as `capability-missing`; a row no story implements is refused as `not-implemented`.
+ * Host services other than the capability gate are answered by the Studio page, not measured here.
+ */
+async function unsupportedAtGate(
+  id: StudioCommandId,
+  graph: Project,
+  implementedBy: string,
+): Promise<CaseResult | null> {
+  const needs = studioCommandDefinition(id).requiresCapability
+  const s = session(graph)
+  const before = canonicalJson(s.state.graph)
+  if (needs) {
+    const bridge = createStudioBridge({
+      context: () => ({
+        revision: s.state.revision,
+        hasLease: true,
+        hasAccess: true,
+        online: true,
+        capabilities: { ...capabilities, [needs]: false },
+      }),
+    })
+    const [result] = await bridge.submit([s.envelope(id, {})])
+    return check(
+      'unsupported',
+      rejectedAs(result, 'capability-missing') && canonicalJson(s.state.graph) === before,
+      `without ${needs} the command answered ${JSON.stringify(result)}`,
+    )
+  }
+  if (implementedBy !== 'none') return null
+  const result = await s.submit(s.envelope(id, {}))
+  return check(
+    'unsupported',
+    rejectedAs(result, 'not-implemented') && canonicalJson(s.state.graph) === before,
+    `a row no story implements answered ${JSON.stringify(result)}`,
+  )
+}
+
 describe('FL-112 command and graph matrix, on the real command path', () => {
   const workspace = new VirtualWorkspace()
   setWorkspaceRoot(workspace.handle())
@@ -398,6 +618,9 @@ describe('FL-112 command and graph matrix, on the real command path', () => {
     workspace.dispose()
     if (process.env.COMMAND_MATRIX_REPORT) {
       await writeFile(process.env.COMMAND_MATRIX_REPORT, JSON.stringify(report, null, 2))
+    }
+    if (process.env.AUTHORIZATION_FAILURE_REPORT) {
+      await writeFile(process.env.AUTHORIZATION_FAILURE_REPORT, JSON.stringify(authorizationReport, null, 2))
     }
   })
 
@@ -488,6 +711,12 @@ describe('FL-112 command and graph matrix, on the real command path', () => {
     }
 
     report.commands.push({ id, manifestIds: manifestIdsOf(id), implementedBy: 'engine', cases })
+    const failures = await authorizationFailureCases(id, start, payload, appliedOnce)
+    authorizationReport.commands.push({ id, manifestIds: manifestIdsOf(id), implementedBy: 'engine', cases: failures })
+    // music.add never applies (FL-86 rights), so it has nothing to replay or to go stale.
+    expect(failures.filter((entry) => entry.result === 'failed').map((entry) => entry.case)).toEqual(
+      id === 'music.add' ? ['restart', 'stale-result'] : [],
+    )
     const failed = cases.filter((entry) => entry.result === 'failed')
     // music.add is refused on purpose: the music catalogue is rights-blocked (FL-86).
     if (id === 'music.add') {
@@ -506,13 +735,14 @@ describe('FL-112 command and graph matrix, on the real command path', () => {
       // Outside the engine table, the Studio page serves a row with its own service (preview,
       // bundles, restoration) or not at all (a typed extension point it rejects as
       // `not-implemented`); this matrix measures only the shared gate for them.
-      report.commands.push({
-        id,
-        manifestIds: manifestIdsOf(id),
-        implementedBy: HOST_SERVICE_COMMANDS.has(id) ? 'host-service' : 'none',
-        cases,
-      })
+      const implementedBy = HOST_SERVICE_COMMANDS.has(id) ? 'host-service' : 'none'
+      report.commands.push({ id, manifestIds: manifestIdsOf(id), implementedBy, cases })
       expect(cases.filter((entry) => entry.result === 'failed')).toEqual([])
+      const unsupported = await unsupportedAtGate(id, fixture.graph, implementedBy)
+      if (unsupported) {
+        authorizationReport.commands.push({ id, manifestIds: manifestIdsOf(id), implementedBy, cases: [unsupported] })
+        expect(unsupported.result).not.toBe('failed')
+      }
     }
     // history.undo and history.redo are measured by every engine command's undo case.
     for (const id of ['history.undo', 'history.redo'] as const) {
