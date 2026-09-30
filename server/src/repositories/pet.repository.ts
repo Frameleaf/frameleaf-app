@@ -59,9 +59,11 @@ export interface PetWithCounts extends Pet {
  * proposals include their Locked media (FL-34). `withLocked` is for writes that must see every
  * observation (merging), never for a response.
  */
-type PetListOptions = { withHidden: boolean } & HiddenContentQueryOptions & LockedVisibilityOptions;
+type PetListOptions = { withHidden: boolean; forSync?: boolean; id?: string } & HiddenContentQueryOptions &
+  LockedVisibilityOptions;
 
-export type PetLockedOptions = LockedVisibilityOptions & { withLocked?: boolean };
+export type PetLockedOptions = LockedVisibilityOptions &
+  HiddenContentQueryOptions & { withLocked?: boolean; forSync?: boolean; observationId?: string };
 
 export interface PetReviewCandidate {
   id: string;
@@ -112,7 +114,10 @@ export class PetRepository {
    * empty tag does. The count includes the owner's Locked photos only in their elevated session
    * (`lockedOwnerId`, FL-34).
    */
-  getAll(ownerId: string, { withHidden, lockedOwnerId, ...privacy }: PetListOptions): Promise<PetWithCounts[]> {
+  getAll(
+    ownerId: string,
+    { withHidden, lockedOwnerId, forSync, id, ...privacy }: PetListOptions,
+  ): Promise<PetWithCounts[]> {
     const hiddenContent = getHiddenContentFilter(privacy);
     const visiblePhoto = hiddenContent
       ? sql<boolean>`not ${hiddenContentAssetIdExists(sql.ref('pet_observation.assetId'), hiddenContent)}`
@@ -122,12 +127,29 @@ export class PetRepository {
       this.db
         .selectFrom('pet')
         .selectAll('pet')
+        .$if(!!id, (qb) => qb.where('pet.id', '=', id!))
+        .$if(!!forSync, (qb) =>
+          qb.select((eb) =>
+            eb
+              .selectFrom('asset')
+              .select('asset.id')
+              .whereRef('asset.id', '=', 'pet.featuredAssetId')
+              .where('asset.ownerId', '=', ownerId)
+              .where('asset.deletedAt', 'is', null)
+              .where((inner) => inner.not(isLockedAsset(inner)))
+              .$if(!!hiddenContent, (inner) =>
+                inner.where(sql<boolean>`not ${hiddenContentAssetIdExists(sql.ref('asset.id'), hiddenContent!)}`),
+              )
+              .as('featuredAssetId'),
+          ),
+        )
         .select((eb) =>
           eb
             .selectFrom('pet_observation')
             .innerJoin('asset', 'asset.id', 'pet_observation.assetId')
             .whereRef('pet_observation.petId', '=', 'pet.id')
             .where('pet_observation.state', '=', PetObservationState.Confirmed)
+            .$if(!!forSync, (qb) => qb.where('asset.ownerId', '=', ownerId).where('asset.deletedAt', 'is', null))
             .where((eb) => lockedOwnerScope(eb, lockedOwnerId))
             .$if(!!visiblePhoto, (qb) => qb.where(visiblePhoto!))
             .select((inner) => inner.fn.countAll<number>().as('count'))
@@ -147,6 +169,23 @@ export class PetRepository {
                 .whereRef('pet_observation.petId', '=', 'pet.id')
                 .where('pet_observation.state', '=', PetObservationState.Confirmed);
             return eb.or([eb.not(eb.exists(confirmed())), eb.exists(confirmed().where(visiblePhoto!))]);
+          }),
+        )
+        .$if(!!forSync, (qb) =>
+          qb.where((eb) => {
+            const confirmed = () =>
+              eb
+                .selectFrom('pet_observation')
+                .select('pet_observation.id')
+                .whereRef('pet_observation.petId', '=', 'pet.id')
+                .where('pet_observation.state', '=', PetObservationState.Confirmed);
+            const visible = confirmed()
+              .innerJoin('asset', 'asset.id', 'pet_observation.assetId')
+              .where('asset.ownerId', '=', ownerId)
+              .where('asset.deletedAt', 'is', null)
+              .where((inner) => lockedOwnerScope(inner, lockedOwnerId))
+              .$if(!!visiblePhoto, (inner) => inner.where(visiblePhoto!));
+            return eb.or([eb.not(eb.exists(confirmed())), eb.exists(visible)]);
           }),
         )
         // Favorites first and then oldest first, which is a stable order for paging. The
@@ -237,13 +276,28 @@ export class PetRepository {
 
   // ------------------------------------------------------------- durable: observations
 
-  getObservations(ownerId: string, petId: string, options: PetLockedOptions = {}): Promise<PetObservation[]> {
+  getObservations(
+    ownerId: string,
+    petId: string | string[],
+    options: PetLockedOptions = {},
+  ): Promise<PetObservation[]> {
     return this.db
       .selectFrom('pet_observation')
       .innerJoin('pet', 'pet.id', 'pet_observation.petId')
       .innerJoin('asset', 'asset.id', 'pet_observation.assetId')
       .selectAll('pet_observation')
-      .where('pet_observation.petId', '=', petId)
+      .where('pet_observation.petId', Array.isArray(petId) ? 'in' : '=', petId)
+      .$if(!!options.observationId, (qb) => qb.where('pet_observation.id', '=', options.observationId!))
+      .$if(!!options.forSync, (qb) =>
+        qb
+          .where('asset.ownerId', '=', ownerId)
+          .where('asset.deletedAt', 'is', null)
+          .$if(!!getHiddenContentFilter(options), (inner) =>
+            inner.where(
+              sql<boolean>`not ${hiddenContentAssetIdExists(sql.ref('asset.id'), getHiddenContentFilter(options)!)}`,
+            ),
+          ),
+      )
       .where('pet.ownerId', '=', ownerId)
       .$if(!options.withLocked, (qb) => qb.where((eb) => lockedOwnerScope(eb, options.lockedOwnerId)))
       .orderBy('pet_observation.createdAt', 'desc')
