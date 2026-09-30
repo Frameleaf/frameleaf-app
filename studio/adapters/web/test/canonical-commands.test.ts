@@ -661,6 +661,63 @@ describe('canonical commands on the Freecut engine (FL-92)', () => {
     ).toEqual([])
   })
 
+  it('moves, revalues and eases keyframes, and refuses what the curve cannot hold (FL-100)', async () => {
+    const start = await applied(project(), [
+      envelope('clip.add', { trackId: 'v1', assetId: STILL, at: seconds(0), duration: seconds(4) }, 'k1'),
+    ])
+    const [still] = itemsOf(start.project)
+    const keyed = await applied(start.project, [
+      envelope('keyframe.add', { clipId: still!.id, property: 'opacity', at: seconds(1), value: { value: 0.25 } }, 'k2'),
+      envelope('keyframe.add', { clipId: still!.id, property: 'opacity', at: seconds(3), value: { value: 1 } }, 'k3'),
+    ])
+    const frames = (graph: unknown) =>
+      ((graph as { timeline?: { keyframes?: Array<{ properties: Array<{ keyframes: Array<Record<string, unknown>> }> }> } })
+        .timeline?.keyframes?.[0]?.properties[0]?.keyframes ?? [])
+    const [first, second] = frames(keyed.project) as Array<{ id: string }>
+
+    const moved = await applied(keyed.project, [
+      envelope('keyframe.update', { clipId: still!.id, property: 'opacity', keyframeId: first!.id, at: seconds(2), value: { value: 0.5 } }),
+    ])
+    expect(frames(moved.project)).toEqual([
+      expect.objectContaining({ id: first!.id, frame: 60, value: 0.5 }),
+      expect.objectContaining({ id: second!.id, frame: 90, value: 1 }),
+    ])
+
+    const eased = await applied(moved.project, [
+      envelope('keyframe.setEasing', {
+        clipId: still!.id, property: 'opacity', keyframeIds: [first!.id], easing: 'cubic-bezier',
+        bezier: { x1: 0.2, y1: -0.1, x2: 0.3, y2: 1.2 },
+      }),
+      envelope('keyframe.setEasing', {
+        clipId: still!.id, property: 'opacity', keyframeIds: [second!.id], easing: 'spring', spring: { tension: 300 },
+      }),
+    ])
+    expect(frames(eased.project)).toEqual([
+      expect.objectContaining({ easing: 'cubic-bezier', easingConfig: { type: 'cubic-bezier', bezier: { x1: 0.2, y1: -0.1, x2: 0.3, y2: 1.2 } } }),
+      expect.objectContaining({ easing: 'spring', easingConfig: { type: 'spring', spring: { tension: 300, friction: 26, mass: 1 } } }),
+    ])
+    const linear = await applied(eased.project, [
+      envelope('keyframe.setEasing', { clipId: still!.id, property: 'opacity', keyframeIds: [first!.id, second!.id], easing: 'hold' }),
+    ])
+    expect(frames(linear.project).map((keyframe) => [keyframe.easing, keyframe.easingConfig])).toEqual([['hold', undefined], ['hold', undefined]])
+
+    for (const [id, payload] of [
+      ['keyframe.update', { clipId: still!.id, property: 'opacity', keyframeId: 'nope', value: { value: 1 } }],
+      ['keyframe.update', { clipId: still!.id, property: 'opacity', keyframeId: first!.id, at: seconds(3) }],
+      ['keyframe.update', { clipId: still!.id, property: 'opacity', keyframeId: first!.id, at: seconds(9) }],
+      ['keyframe.update', { clipId: still!.id, property: 'opacity', keyframeId: first!.id }],
+      ['keyframe.setEasing', { clipId: still!.id, property: 'opacity', keyframeIds: [first!.id], easing: 'wobble' }],
+      ['keyframe.setEasing', { clipId: still!.id, property: 'opacity', keyframeIds: [first!.id], easing: 'cubic-bezier', bezier: { x1: 1.5, y1: 0, x2: 0.3, y2: 1 } }],
+      ['keyframe.setEasing', { clipId: still!.id, property: 'opacity', keyframeIds: [first!.id], easing: 'spring', spring: { mass: 0 } }],
+      ['keyframe.setEasing', { clipId: still!.id, property: 'opacity', keyframeIds: [first!.id], easing: 'linear', bezier: { x1: 0, y1: 0, x2: 1, y2: 1 } }],
+    ] as const) {
+      await expect(applyCanonicalCommands(moved.project, [envelope(id, payload as never)], media)).resolves.toMatchObject({
+        status: 'rejected',
+        reason: 'invalid',
+      })
+    }
+  })
+
   it('answers music from the rights-blocked catalogue and clip mute honestly', async () => {
     await expect(
       applyCanonicalCommands(

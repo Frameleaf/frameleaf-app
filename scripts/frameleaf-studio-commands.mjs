@@ -879,8 +879,9 @@ export const catalogue = [
       keyframeIds: 'string[]',
       easing: 'string',
       bezier: 'object?',
+      spring: 'object?',
     },
-    description: 'Set easing or an explicit bezier on selected keyframes.',
+    description: 'Set easing, an explicit bezier or spring parameters on selected keyframes.',
   },
   {
     id: 'keyframe.update',

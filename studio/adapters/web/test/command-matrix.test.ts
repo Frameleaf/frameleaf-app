@@ -272,6 +272,39 @@ const ENGINE_CASES: Record<
     payload: { clipId: f.right, property: 'opacity', at: seconds(7), value: { value: 0.5 } },
   }),
   'keyframe.remove': (f) => ({ payload: { clipId: f.left, property: 'opacity', keyframeIds: [f.keyframe] } }),
+  'keyframe.update': (f) => ({
+    payload: { clipId: f.left, property: 'opacity', keyframeId: f.keyframe, at: seconds(2), value: { value: 0.75 } },
+  }),
+  'property.setExpression': (f) => ({
+    payload: { clipId: f.title, property: 'opacity', expression: 'clamp(0.5 + sin(time) * 0.25, 0, 1)' },
+  }),
+  'property.setModifier': (f) => ({
+    payload: {
+      clipId: f.right,
+      property: 'rotation',
+      modifier: { type: 'sway', amplitude: 1, frequency: 0.5, phaseFrames: 0, seed: 1 },
+    },
+  }),
+  'property.bakeModifier': (f) => ({
+    payload: { clipId: f.right, property: 'rotation', modifierId: 'sway-1' },
+    graph: () =>
+      applied(f.graph, [
+        engineEnvelope('property.setModifier', {
+          clipId: f.right,
+          property: 'rotation',
+          modifier: { id: 'sway-1', type: 'sway', amplitude: 1, frequency: 0.5, phaseFrames: 0, seed: 1 },
+        }),
+      ]),
+  }),
+  'keyframe.setEasing': (f) => ({
+    payload: {
+      clipId: f.left,
+      property: 'opacity',
+      keyframeIds: [f.keyframe],
+      easing: 'cubic-bezier',
+      bezier: { x1: 0.2, y1: 0, x2: 0.3, y2: 1.2 },
+    },
+  }),
   'marker.add': () => ({ payload: { at: seconds(5) } }),
   'marker.remove': (f) => ({ payload: { markerId: f.marker } }),
   'marker.update': (f) => ({ payload: { markerId: f.marker, patch: { name: 'Chorus' } } }),
