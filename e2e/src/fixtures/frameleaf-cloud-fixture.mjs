@@ -19,7 +19,8 @@ import { readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 
 const PORT = Number(process.env.FRAMELEAF_CLOUD_FIXTURE_PORT ?? 3010);
-const BASE = (process.env.FRAMELEAF_CLOUD_FIXTURE_URL ?? `http://frameleaf-cloud-fixture:${PORT}`).replace(/\/+$/, '');
+// Port 0 (medium specs) takes a free port; with no URL given, BASE is then the loopback address it bound.
+let BASE = (process.env.FRAMELEAF_CLOUD_FIXTURE_URL ?? `http://frameleaf-cloud-fixture:${PORT}`).replace(/\/+$/, '');
 const INSTANCE_ID = process.env.FRAMELEAF_CLOUD_FIXTURE_INSTANCE_ID ?? '0192f1a4-7c3e-7b21-9d4e-2a6f8c0b1e53';
 
 const fixture = (path) => JSON.parse(readFileSync(new URL(`./frameleaf-cloud/${path}`, import.meta.url), 'utf8'));
@@ -189,7 +190,7 @@ const routes = {
   },
 };
 
-createServer(async (request, response) => {
+const server = createServer(async (request, response) => {
   const url = new URL(request.url ?? '/', BASE);
   const key = `${request.method} ${url.pathname}`;
   if (!url.pathname.startsWith('/__fixture/')) {
@@ -209,4 +210,11 @@ createServer(async (request, response) => {
   }
   console.error(`frameleaf-cloud-fixture: no route for ${key}`);
   send(response, 404, { code: 'not-found', message: 'Not found.', retryable: false, requestId: 'req_e2e_fixture' });
-}).listen(PORT, '0.0.0.0', () => console.log(`frameleaf-cloud-fixture listening on ${BASE}`));
+});
+server.listen(PORT, '0.0.0.0', () => {
+  if (PORT === 0 && !process.env.FRAMELEAF_CLOUD_FIXTURE_URL) {
+    BASE = `http://127.0.0.1:${server.address().port}`;
+  }
+  // The ready line: callers wait for it instead of polling.
+  console.log(`frameleaf-cloud-fixture listening on ${BASE}`);
+});
