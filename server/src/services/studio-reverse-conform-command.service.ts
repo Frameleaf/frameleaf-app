@@ -38,6 +38,8 @@ export class StudioReverseConformCommandService {
     if (envelope.payload.destinationId !== StudioDestination.Local) {
       throw new BadRequestException('Reverse conform supports only the local destination');
     }
+    // FL-280: refuse a caller who is not the owner before resolving any source for them
+    await this.studio.requireOwnedProject(auth, projectId, 'Only the project owner can conform a clip');
     const source = await this.studio.authorizeRevision(auth, {
       projectId,
       revision: envelope.revision,

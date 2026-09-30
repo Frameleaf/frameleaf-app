@@ -528,6 +528,8 @@ export class StudioReverseConformService {
     sourceKey: string,
     backgroundRunner = false,
   ) {
+    // FL-280: refuse a caller who is not the owner before resolving any source for them
+    await this.studio.requireOwnedProject(auth, projectId, 'Only an active project owner may reverse its sources');
     const authorized = await this.studio.authorizeRevision(auth, {
       projectId,
       revision,
