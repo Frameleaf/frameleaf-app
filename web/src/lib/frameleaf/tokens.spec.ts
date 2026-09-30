@@ -317,6 +317,12 @@ describe('Frameleaf theme contract', () => {
     expect(css).toMatch(/@media \(pointer: coarse\)[\S\s]*min-height: 48px/);
   });
 
+  it('stops CSS motion outside .frameleaf roots too (FL-139)', () => {
+    const reduced = appCss.slice(appCss.indexOf('@media (prefers-reduced-motion: reduce)'));
+    expect(reduced).toMatch(/\*,\s*\*::before,\s*\*::after {[^}]*transition-duration: 0\.01ms !important;/);
+    expect(reduced).toMatch(/\*::after {[^}]*animation-duration: 0\.01ms !important;/);
+  });
+
   it('loads the bundled Inter weights through the prototype baseline', () => {
     expect(css.trimStart().startsWith("@import './base.css';")).toBe(true);
     const sources = new Map<string, string>();
