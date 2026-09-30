@@ -227,6 +227,18 @@ export class EdgeProxyService {
       headers: upstreamHeaders(request.headers, arrival, secret),
       agent: this.agent,
     });
+    outgoing.on('information', (answer) => {
+      // The edge HTTP server already sends 100 Continue; 101 uses the upgrade path.
+      if (answer.statusCode < 102 || response.destroyed || response.headersSent) {
+        return;
+      }
+      // Public in Node24.18; the pinned Node type package predates this method.
+      (
+        response as ServerResponse & {
+          writeInformation(statusCode: number, headers: OutgoingHttpHeaders): void;
+        }
+      ).writeInformation(answer.statusCode, downstreamHeaders(answer.headers));
+    });
     outgoing.on('response', (answer) => {
       response.writeHead(answer.statusCode ?? 502, answer.statusMessage, downstreamHeaders(answer.headers));
       answer.pipe(response);
