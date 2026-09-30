@@ -1,7 +1,7 @@
-import * as frameleafRemoteAccess from 'src/utils/frameleaf-remote-access.js';
 import type { FrameleafLicense, FrameleafLicenseClaims } from 'src/types.js';
 import { SystemMetadataKey } from 'src/enum.js';
 import { ServerService } from 'src/services/server.service.js';
+import * as frameleafRemoteAccess from 'src/utils/frameleaf-remote-access.js';
 import { mockEnvData } from 'test/repositories/config.repository.mock.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
@@ -342,23 +342,41 @@ describe(ServerService.name, () => {
       storedServerId?: { id: string; createdAt: string } | null;
     }) => {
       const env = mockEnvData({});
-      mocks.config.getEnv.mockReturnValue({ ...env, frameleafCloud: { ...env.frameleafCloud, url: 'https://api.frameleaf.cloud' } });
+      mocks.config.getEnv.mockReturnValue({
+        ...env,
+        frameleafCloud: { ...env.frameleafCloud, url: 'https://api.frameleaf.cloud' },
+      });
       const metadata = new Map<string, unknown>([
         [
           SystemMetadataKey.FrameleafCloudLink,
           options.linked
-            ? { status: 'linked', cloudUrl: 'https://api.frameleaf.cloud', instanceId: options.instanceId ?? 'instance-1' }
+            ? {
+                status: 'linked',
+                cloudUrl: 'https://api.frameleaf.cloud',
+                instanceId: options.instanceId ?? 'instance-1',
+              }
             : null,
         ],
         [SystemMetadataKey.SystemConfig, { server: { name: options.serverName ?? '' } }],
         [SystemMetadataKey.FrameleafServerId, options.storedServerId ?? null],
       ]);
       mocks.systemMetadata.get.mockImplementation((key) => Promise.resolve((metadata.get(key) ?? null) as never));
+      mocks.systemMetadata.set.mockImplementation((key, value, overwrite = true) => {
+        if (overwrite || !metadata.get(key)) {
+          metadata.set(key, value);
+        }
+        return Promise.resolve();
+      });
     };
 
     it('returns the Frameleaf Cloud instance id, marked linked, while linked', async () => {
       setupPing({ linked: true, instanceId: 'instance-1', serverName: 'My Home Server' });
-      await expect(sut.ping()).resolves.toEqual({ res: 'pong', id: 'instance-1', linked: true, name: 'My Home Server' });
+      await expect(sut.ping()).resolves.toEqual({
+        res: 'pong',
+        id: 'instance-1',
+        linked: true,
+        name: 'My Home Server',
+      });
       expect(mocks.systemMetadata.set).not.toHaveBeenCalled();
     });
 
@@ -370,12 +388,18 @@ describe(ServerService.name, () => {
       expect(mocks.systemMetadata.set).toHaveBeenCalledWith(
         SystemMetadataKey.FrameleafServerId,
         expect.objectContaining({ id: first.id }),
+        false,
       );
     });
 
     it('reuses the stored local id on later pings, never regenerating it', async () => {
       setupPing({ linked: false, storedServerId: { id: 'stored-id-1', createdAt: '2026-01-01T00:00:00.000Z' } });
-      await expect(sut.ping()).resolves.toEqual({ res: 'pong', id: 'stored-id-1', linked: false, name: 'Frameleaf server' });
+      await expect(sut.ping()).resolves.toEqual({
+        res: 'pong',
+        id: 'stored-id-1',
+        linked: false,
+        name: 'Frameleaf server',
+      });
       expect(mocks.systemMetadata.set).not.toHaveBeenCalled();
     });
 
