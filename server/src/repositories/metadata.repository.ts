@@ -246,6 +246,9 @@ export class MetadataRepository {
       await this.exiftool.write(path, tagsToWrite);
     } catch (error) {
       this.logger.warn(`Error writing exif data (${path}): ${error}`);
+      // FL-195: the caller must not treat an unwritten sidecar as written, or it unlocks properties
+      // (coordinates, dates) the next metadata read then overwrites from the file
+      throw error;
     }
   }
 

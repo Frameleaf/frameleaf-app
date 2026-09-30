@@ -1564,6 +1564,19 @@ export class DatabaseRepository extends ForkHandoffRepository {
   }
 
   /**
+   * FL-195: one sidecar write per asset at a time, across workers, in its own lock class (-3). Two
+   * writes of the same sidecar (three quick tag edits queue three) collide in exiftool's temporary
+   * file, and the loser can leave no sidecar behind. The callback runs on other pooled connections;
+   * the sidecar queue's concurrency stays well below the pool size, so a holder always gets one.
+   */
+  async withAssetSidecarLock<R>(assetId: string, callback: () => Promise<R>): Promise<R> {
+    return this.db.transaction().execute(async (trx) => {
+      await sql`SELECT pg_advisory_xact_lock(-3, hashtext(${assetId})::int)`.execute(trx);
+      return callback();
+    });
+  }
+
+  /**
    * FL-67: per-account lock around a read-check-write of the stored preferences, so a revision
    * check and the write it guards are atomic. Two saves from different tabs can no longer both pass
    * the check against the same revision and overwrite each other. Same shape as
