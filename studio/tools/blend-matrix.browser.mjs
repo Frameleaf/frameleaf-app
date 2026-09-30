@@ -7,6 +7,9 @@
 //   the base's out-of-range offset), checked against the same reference.
 // - Every result is finite and re-renders bit-identically; dissolve coverage is
 //   all-or-nothing per pixel.
+// - Per mode through the production renderer (items, keyframes, compositor):
+//   animated opacity, a composed second blend, and invalid opacity and mode ids.
+//   BLEND_MATRIX_REPORT carries them as report.cases [{ mode, case, ... }].
 import assert from 'node:assert/strict';
 import { writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
@@ -121,6 +124,105 @@ try {
   }, { W, H, MODES, base: baseRows.flat(2), sdrBase: sdrBaseRows.flat(2), layer: layerRows.flat(2) });
 } finally {
   await browser.close();
+}
+
+// ─── Per-mode cases through the production renderer (FL-99) ───
+// Each blended layer is a real timeline item over a base item: its opacity is
+// resolved by the production keyframe resolver and composited by the float route.
+//   animated: opacity keyframed 0 → 1; frames 0/5/10 equal the static renders.
+//   composed: a second blend (screen) stacked over the mode's result.
+//   invalid:  opacity -0.5, 1.5 and NaN draw exactly as the clamped 0, 1 and 0;
+//             an unknown mode id draws exactly as normal.
+// No channel sits on a mode's branch point (0.5, or base + layer = 1), where half
+// precision rather than the formula would decide the branch.
+const CASE_COLOURS = { base: [0.6, 0.3, 0.8, 1], layer: [0.7, 0.45, 0.25, 1], second: [0.4, 0.8, 0.55, 1] };
+const caseBrowser = await chromium.launch({ headless: true, args: chromeLaunchArgs() });
+try {
+  const page = await caseBrowser.newPage();
+  page.on('pageerror', (error) => console.error('page error:', error.message));
+  await page.route(origin + '/blend-cases', (route) =>
+    // The renderer imports React modules, which need the dev server's refresh preamble.
+    route.fulfill({ contentType: 'text/html', body: `<title>Blend cases</title>
+<script type="module">
+import RefreshRuntime from '/@react-refresh'
+RefreshRuntime.injectIntoGlobalHook(window)
+window.$RefreshReg$ = () => {}
+window.$RefreshSig$ = () => (type) => type
+window.__vite_plugin_react_preamble_installed__ = true
+</script>` }),
+  );
+  await page.goto(origin + '/blend-cases');
+  await page.waitForFunction(() => window.__vite_plugin_react_preamble_installed__ === true);
+  report.cases = await page.evaluate(async ({ MODES, colours }) => {
+    const { createCompositionRenderer } = await import('/src/features/export/utils/client-render-engine.ts');
+    // Wide, tall columns so each sample is well inside its shapes (no edge coverage).
+    const COLUMNS = ['animated', 'static0', 'static1', 'static05', 'composed', 'under', 'over', 'nan'];
+    const CW = 6;
+    const W = COLUMNS.length * CW;
+    const H = 6;
+    const css = ([r, g, b]) => `rgb(${r * 100}%, ${g * 100}%, ${b * 100}%)`;
+    const shape = (id, column, colour, extra = {}, opacity = 1) => ({
+      id, type: 'shape', trackId: `t-${id}`, from: 0, durationInFrames: 30, label: id,
+      shapeType: 'rectangle', fillColor: css(colour), strokeEnabled: false, strokeWidth: 0,
+      transform: { x: -W / 2 + CW * column + CW / 2, y: 0, width: CW, height: H, rotation: 0, opacity }, ...extra,
+    });
+    const composition = (items, keyframes = []) => ({
+      fps: 30, width: W, height: H, durationInFrames: 30, backgroundColor: '#000000', keyframes,
+      tracks: items.map((item, order) => ({ id: `track-${item.id}`, name: item.id, height: 60, locked: false,
+        visible: true, muted: false, solo: false, order, items: [item] })),
+    });
+    const sample = (rgba, column) => {
+      const i = (Math.floor(H / 2) * W + column * CW + CW / 2) * 4;
+      return Array.from(rgba.slice(i, i + 4));
+    };
+    const renderFrames = async (comp, frames) => {
+      const canvas = new OffscreenCanvas(W, H);
+      const renderer = await createCompositionRenderer(comp, canvas, canvas.getContext('2d'), { mode: 'export' });
+      try {
+        await renderer.preload?.();
+        const out = {};
+        for (const frame of frames) {
+          // An SDR project's explicit output is its working values, clamped: the pinned reference.
+          const { rgba } = await renderer.renderFrameSignal(frame, 'sdr-display');
+          out[frame] = COLUMNS.map((_, column) => sample(rgba, column));
+        }
+        return out;
+      } finally {
+        renderer.dispose();
+      }
+    };
+    const opacityOf = { animated: 1, static0: 0, static1: 1, static05: 0.5, composed: 1, under: -0.5, over: 1.5, nan: NaN };
+    const cases = [];
+    for (const mode of MODES) {
+      // Tracks: lower order draws on top.
+      const items = [
+        shape('second', 4, colours.second, { blendMode: 'screen' }),
+        ...COLUMNS.map((name, column) => shape(`layer-${name}`, column, colours.layer, { blendMode: mode }, opacityOf[name])),
+        ...COLUMNS.map((name, column) => shape(`base-${name}`, column, colours.base)),
+      ];
+      const keyframes = [{ itemId: 'layer-animated', properties: [{ property: 'opacity', keyframes: [
+        { id: 'start', frame: 0, value: 0, easing: 'linear' }, { id: 'end', frame: 10, value: 1, easing: 'linear' }] }] }];
+      const frames = await renderFrames(composition(items, keyframes), [0, 5, 10]);
+      const at = (frame, name) => frames[frame][COLUMNS.indexOf(name)];
+      cases.push({ mode, case: 'animated', property: 'opacity', keyframes: [[0, 0], [10, 1]],
+        frames: { 0: at(0, 'animated'), 5: at(5, 'animated'), 10: at(10, 'animated') },
+        statics: { 0: at(0, 'static0'), 0.5: at(0, 'static05'), 1: at(0, 'static1') } });
+      cases.push({ mode, case: 'composed', second: 'screen', got: at(0, 'composed'), under: at(0, 'static1') });
+      cases.push({ mode, case: 'invalid', opacity: { '-0.5': at(0, 'under'), '1.5': at(0, 'over'), NaN: at(0, 'nan') },
+        clamped: { 0: at(0, 'static0'), 1: at(0, 'static1') },
+        stable: [5, 10].every((frame) => ['under', 'over', 'nan'].every((name) =>
+          at(frame, name).every((v, c) => Object.is(v, at(0, name)[c])))) });
+    }
+    // An unknown mode id draws exactly as normal.
+    const unknown = await renderFrames(composition([
+      shape('unknown', 0, colours.layer, { blendMode: 'not-a-blend-mode' }), shape('normal', 1, colours.layer),
+      ...[0, 1].map((column) => shape(`base-${column}`, column, colours.base)),
+    ]), [0]);
+    cases.push({ mode: '*', case: 'invalid-mode', blendMode: 'not-a-blend-mode', got: unknown[0][0], normal: unknown[0][1] });
+    return cases;
+  }, { MODES, colours: CASE_COLOURS });
+} finally {
+  await caseBrowser.close();
 }
 
 // Raw measurements for conformance evidence, written before any assertion.
@@ -260,9 +362,52 @@ for (const { mode, float, again, floatSdr, sdr, sdrInHdr } of report.results) {
     }
   }
 }
+
+// Per-mode cases through the production renderer.
+const near = (got, want, tolerance = 3e-3) => want.every((v, c) => Math.abs(v - got[c]) <= tolerance);
+const same = (got, want) => want.every((v, c) => Object.is(v, got[c]));
+const layerAt = (opacity) => [...CASE_COLOURS.layer.slice(0, 3), opacity];
+for (const entry of report.cases) {
+  const { mode } = entry;
+  if (entry.case === 'invalid-mode') {
+    check(same(entry.got, entry.normal), `unknown blend mode id did not draw as normal: ${entry.got} != ${entry.normal}`);
+    continue;
+  }
+  const pinned = (base, layerColour) => sourceOver(formulas[mode])(base, layerColour);
+  const full = pinned(CASE_COLOURS.base, layerAt(1));
+  if (entry.case === 'animated') {
+    const { frames, statics } = entry;
+    check(same(frames[0], statics[0]), `${mode} animated: frame 0 != static opacity 0`);
+    check(same(frames[10], statics[1]), `${mode} animated: frame 10 != static opacity 1`);
+    check(same(frames[5], statics[0.5]), `${mode} animated: frame 5 != static opacity 0.5`);
+    check(near(statics[0], CASE_COLOURS.base), `${mode} animated: opacity 0 changed the base: ${statics[0]}`);
+    check(near(statics[1], full), `${mode} animated: opacity 1 ${statics[1]} != ${full}`);
+    // Freecut 4d62e80 passes an item's opacity to the compositor as its texture's
+    // alpha (layer opacity stays 1), and dissolve dithers only the compositor's
+    // opacity: a translucent Dissolve item therefore draws as a smooth mix, which is
+    // the pinned SDR reference (raised on FL-99 as an owner question).
+    const half = pinned(CASE_COLOURS.base, layerAt(0.5));
+    check(near(statics[0.5], half), `${mode} animated: opacity 0.5 ${statics[0.5]} != ${half}`);
+  } else if (entry.case === 'composed') {
+    const want = sourceOver(formulas.screen)(full, CASE_COLOURS.second);
+    check(near(entry.under, full), `${mode} composed: first blend ${entry.under} != ${full}`);
+    check(near(entry.got, want), `${mode} composed: stack ${entry.got} != sequential ${want}`);
+  } else if (entry.case === 'invalid') {
+    check(same(entry.opacity['-0.5'], entry.clamped[0]), `${mode} invalid: opacity -0.5 did not draw as 0 (${entry.opacity['-0.5']})`);
+    check(same(entry.opacity['1.5'], entry.clamped[1]), `${mode} invalid: opacity 1.5 did not draw as 1 (${entry.opacity['1.5']})`);
+    check(same(entry.opacity.NaN, entry.clamped[0]), `${mode} invalid: opacity NaN did not draw as 0 (${entry.opacity.NaN})`);
+    check(entry.stable, `${mode} invalid: an invalid opacity changed between frames`);
+  }
+}
+for (const mode of MODES) {
+  for (const name of ['animated', 'composed', 'invalid']) {
+    check(report.cases.some((entry) => entry.mode === mode && entry.case === name), `${mode}: no ${name} case measured`);
+  }
+}
 if (failures.length) {
   console.error(failures.slice(0, 40).join('\n'));
   assert.fail(`${failures.length} blend-matrix failures on ${report.adapter.vendor}/${report.adapter.architecture}`);
 }
-console.log(JSON.stringify({ check: 'every blend mode: pinned SDR formula on rgba8 and float routes, declared float semantics, determinism',
-  adapter: { vendor: report.adapter.vendor, architecture: report.adapter.architecture }, modes: report.results.length, pixels: W * H }));
+console.log(JSON.stringify({ check: 'every blend mode: pinned SDR formula on rgba8 and float routes, declared float semantics, determinism; animated, composed and invalid cases through the renderer',
+  adapter: { vendor: report.adapter.vendor, architecture: report.adapter.architecture }, modes: report.results.length, pixels: W * H,
+  cases: report.cases.length }));

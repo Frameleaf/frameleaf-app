@@ -71,16 +71,17 @@ const DEFAULT_AXIS = "chromium";
  * - transition (transition-matrix.browser.mjs): normal and extreme (SDR/HDR route boundaries and
  *   parity, per the file's header comment). No animated-parameter, composed/stack, or
  *   invalid-input case is described or found in the file.
- * - blend (blend-matrix.browser.mjs): normal and extreme only, per studio-color's own review on
- *   FL-112 (2026-09-30) - invalid, animated and composed all genuinely apply to blending (opacity
- *   is keyframable and enters every blend formula; stacking two blends is ordinary compositing;
- *   an unknown mode id or out-of-range/non-finite opacity is a real untested input), they are
- *   simply not measured yet. studio-color is extending blend-matrix.browser.mjs to cover all
- *   three, with a per-case `{ mode, case }` section in BLEND_MATRIX_REPORT.
+ * - blend (blend-matrix.browser.mjs): all five. normal and extreme come from the per-mode
+ *   pipeline results (pinned SDR formula on both routes; extended-range base, branch points and
+ *   translucent alpha). animated, composed and invalid come from the per-mode production-renderer
+ *   cases (FL-99, studio-color): opacity keyframed 0 -> 1 through the keyframe resolver; a screen
+ *   blend stacked over the mode; opacity -0.5/1.5/NaN drawn as the clamped 0/1/0 plus an unknown
+ *   mode id drawn as normal. BLEND_MATRIX_REPORT carries them as `report.cases`
+ *   [{ mode, case, ... }].
  */
 export const FAMILY_CASE_COVERAGE = {
   chromium: {
-    blend: new Set(["normal", "extreme"]),
+    blend: new Set(["normal", "extreme", "animated", "composed", "invalid"]),
     effect: new Set(["normal", "extreme", "animated", "composed"]),
     transition: new Set(["normal", "extreme"]),
   },
