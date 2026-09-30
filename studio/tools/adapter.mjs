@@ -15,7 +15,7 @@
  */
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { lstat } from 'node:fs/promises';
+import { lstat, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { packageAttribution } from './attribution.mjs';
@@ -28,6 +28,20 @@ const output = path.join(root, 'web/static/studio-engine');
 
 const present = (location) => lstat(location).then(() => true, () => false);
 
+/** Verify the production entry's emitted layout, not the separately styled browser fixture. */
+export async function verifyEditorStyles(directory) {
+  const html = await readFile(path.join(directory, 'editor.html'), 'utf8');
+  const links = [...html.matchAll(/<link\b[^>]*rel="stylesheet"[^>]*href="(\/studio-engine\/assets\/[^"/]+\.css)"/g)];
+  assert.ok(links.length > 0, 'Production editor has no emitted stylesheet');
+  const css = (await Promise.all(links.map((link) => readFile(
+    path.join(directory, link[1].slice('/studio-engine/'.length)), 'utf8',
+  )))).join('\n');
+  // These engine-owned layout classes collapse the panels when generated source is not scanned.
+  for (const name of ['flex-col', 'h-full', 'min-h-0', 'absolute', 'inset-0', 'overflow-hidden', 'items-center']) {
+    assert.ok(new RegExp(`\\.${name}\\s*\\{`).test(css), `Production editor is missing .${name}`);
+  }
+}
+
 export async function main(args) {
   const [command] = args;
   assert.ok(args.length === 1 && (command === 'build' || command === 'test'), 'Usage: node studio/tools/adapter.mjs build | test');
@@ -37,6 +51,7 @@ export async function main(args) {
   const vpArgs = command === 'build' ? ['build', '--config', config] : ['test', 'run', '--config', config];
   execFileSync(vp, vpArgs, { cwd: workspace, stdio: 'inherit' });
   if (command === 'build') {
+    await verifyEditorStyles(output);
     // The licences travel with the code: every installed package's notice files and the reviewed
     // artifact notices (attribution/), audited against the trusted inputs, next to notices/.
     const audit = await packageAttribution(path.join(root, 'studio'), output, workspace);
