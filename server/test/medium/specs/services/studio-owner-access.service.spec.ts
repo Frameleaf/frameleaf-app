@@ -84,5 +84,11 @@ describe('StudioProjectService.requireOwnedProject (FL-112)', () => {
 
     await expect(attempt(stranger)).rejects.toBeInstanceOf(NotFoundException);
     await expect(attempt(owner, true)).rejects.toBeInstanceOf(NotFoundException);
+
+    // FL-91: an archived project is off the shelf for everybody but its owner, so a reviewer of it
+    // cannot see it any more (404) while the owner still gets through
+    await projects.update(project.id, { archivedAt: new Date() });
+    await expect(attempt(reviewer)).rejects.toBeInstanceOf(NotFoundException);
+    await expect(attempt(owner)).resolves.toMatchObject({ id: project.id });
   });
 });
