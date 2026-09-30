@@ -168,6 +168,19 @@ import {
 } from "./search.mjs";
 import { Editor } from "./Editor";
 import { Studio } from "./Studio";
+import { PhotographyClient } from "./PhotographyClient";
+import { RawLibraryCare } from "./RawLibraryCare";
+import { PhotographyWorkspace } from "./PhotographyWorkspace";
+import { PhotographyEditor } from "./PhotographyEditor";
+import {
+  applyClientFeedback,
+  applyEditorFeedback,
+  createProofGallery,
+  photosForShoot,
+  proofPhotos,
+  readStudioState,
+  saveStudioState,
+} from "./photography-data.mjs";
 import { Processing, ActivityIndicator, useJobSimulation } from "./Activity";
 import { publishJobs } from "./live-jobs.mjs";
 import { loadCloudState, saveCloudState } from "./frameleaf-cloud-data.mjs";
@@ -211,6 +224,11 @@ const AUTH_SCREENS = [
 ];
 const SCREEN_IDS = [
   "studio",
+  "photography",
+  "photography-editor",
+  "photography-client",
+  "photography-site",
+  "raw-support",
   "activity",
   "admin",
   "care",
@@ -292,8 +310,48 @@ export function App() {
     return SCREEN_IDS.includes(value) ? value : "library";
   });
   const [settingsStart, setSettingsStart] = useState("overview");
+  const [photographyContext, setPhotographyContext] = useState(() => {
+    const studio = readStudioState(localStorage);
+    const shoot = studio.shoots[0];
+    return {
+      shoot,
+      photos:
+        screen === "photography-site"
+          ? studio.website.order
+              .map((id) => studio.photos.find((photo) => photo.id === id))
+              .filter(Boolean)
+          : screen === "photography-client"
+            ? proofPhotos(studio, shoot.id)
+            : photosForShoot(studio, shoot.id),
+      gallery: studio.galleries[shoot.id],
+      brand: {
+        ...studio.brand,
+        about: studio.website.about,
+        contact: studio.website.contact,
+      },
+      layout: studio.website.layout,
+      spacing: studio.website.spacing,
+    };
+  });
+  const saveEditorFeedback = (feedback) => {
+    const studio = readStudioState(localStorage);
+    const next = applyEditorFeedback(
+      studio,
+      feedback.shoot?.id,
+      feedback.photos,
+    );
+    if (!saveStudioState(localStorage, next)) {
+      setToast(
+        "This device couldn’t save the shoot changes. Keep the editor open.",
+      );
+      return null;
+    }
+    return next;
+  };
   const [setupFlow, setSetupFlow] = useState(() =>
-    new URL(location.href).searchParams.get("flow") === "existing" ? "existing" : "new",
+    new URL(location.href).searchParams.get("flow") === "existing"
+      ? "existing"
+      : "new",
   );
   const [initialContext] = useState(() =>
     restoredViewContext(saved, readLibraryView(new URL(location.href))),
@@ -446,7 +504,9 @@ export function App() {
   useJobSimulation(setJobs, screen !== "activity");
   useEffect(() => publishJobs(jobs), [jobs]);
   const [destination, setDestination] = useState(
-    saved.destination === "cloud" || saved.destination === "runpod" ? "cloud" : "local",
+    saved.destination === "cloud" || saved.destination === "runpod"
+      ? "cloud"
+      : "local",
   );
   const [presets, setPresets] = useState(saved.presets || []);
   const [name, setName] = useState("Summer favorites");
@@ -1533,6 +1593,8 @@ export function App() {
       { id: "shared-links", title: "Shared links", icon: "mdiLinkVariant" },
       { id: "activity", title: "Activity", icon: "mdiProgressClock" },
       { id: "studio", title: "Studio", icon: "mdiMovieEditOutline" },
+      { id: "photography", title: "Photography", icon: "mdiCameraIris" },
+      { id: "raw-support", title: "RAW support", icon: "mdiCameraOutline" },
       { id: "admin", title: "Settings", icon: "mdiCogOutline" },
     ],
     settingsAreas,
@@ -1627,7 +1689,12 @@ export function App() {
   };
   const enqueue = (kind, extra = {}) => {
     const job = {
-      ...createSimulatedJob(kind, selected, edit, extra.cloud ? "cloud" : (extra.destination ?? destination)),
+      ...createSimulatedJob(
+        kind,
+        selected,
+        edit,
+        extra.cloud ? "cloud" : (extra.destination ?? destination),
+      ),
       ...(extra.cloud ? { cloud: extra.cloud } : {}),
       ...(extra.settings ? { settings: extra.settings } : {}),
     };
@@ -1648,7 +1715,8 @@ export function App() {
   const [buySection, setBuySection] = useState(null);
   const cloudActions = {
     finishJob,
-    onOpenCloudSettings: (section = "cloud-processing") => openSettings("cloud", section),
+    onOpenCloudSettings: (section = "cloud-processing") =>
+      openSettings("cloud", section),
     onAddCredit: () => {
       setPanel(null);
       setBuySection("credit");
@@ -1730,15 +1798,24 @@ export function App() {
         ["completed", "cancelled", "failed"].includes(job.status),
     );
     if (!ended.length) return;
-    for (const job of ended) settledCloudJobs.current.add(`${job.id}:${job.cloud.consentedAt}`);
+    for (const job of ended)
+      settledCloudJobs.current.add(`${job.id}:${job.cloud.consentedAt}`);
     const charges = new Map(ended.map((job) => [job.id, settlementFor(job)]));
     let cloud = loadCloudState();
-    for (const job of ended) cloud = settleWallet(cloud, job.cloud, charges.get(job.id));
+    for (const job of ended)
+      cloud = settleWallet(cloud, job.cloud, charges.get(job.id));
     saveCloudState(cloud);
     setJobs((current) =>
       current.map((job) =>
         charges.has(job.id) && !job.cloud.settled
-          ? { ...job, cloud: { ...job.cloud, settled: true, chargedUsd: charges.get(job.id) } }
+          ? {
+              ...job,
+              cloud: {
+                ...job.cloud,
+                settled: true,
+                chargedUsd: charges.get(job.id),
+              },
+            }
           : job,
       ),
     );
@@ -2257,7 +2334,10 @@ export function App() {
       document.head.append(meta);
     }
     // Setup screens always run dark, whatever the saved theme.
-    const shown = screen === "setup" || screen === "account-setup" ? setupStageTheme() : theme;
+    const shown =
+      screen === "setup" || screen === "account-setup"
+        ? setupStageTheme()
+        : theme;
     meta.content = shown === "light" ? "#f4f6f7" : "#101416";
   }, [theme, screen]);
   // Timeline day headers and the scrubber stick below the frosted toolbar, whatever its height.
@@ -2301,7 +2381,10 @@ export function App() {
   }
   const previewSetup = (which) => {
     const url = new URL(location.href);
-    url.searchParams.set("screen", which === "account" ? "account-setup" : "setup");
+    url.searchParams.set(
+      "screen",
+      which === "account" ? "account-setup" : "setup",
+    );
     if (which === "account") url.searchParams.delete("flow");
     else url.searchParams.set("flow", which);
     history.replaceState({}, "", url);
@@ -2312,7 +2395,11 @@ export function App() {
     login: (
       <Login
         onDone={() => setScreen("library")}
-        via={new URLSearchParams(location.search).get("via") === "relay" ? "relay" : "lan"}
+        via={
+          new URLSearchParams(location.search).get("via") === "relay"
+            ? "relay"
+            : "lan"
+        }
         onRegister={() => previewSetup("new")}
         theme={theme}
         setTheme={setTheme}
@@ -2329,7 +2416,9 @@ export function App() {
         key={setupFlow}
         flow={setupFlow}
         onPreview={previewSetup}
-        onOpenSettings={(area) => (area === "activity" ? setScreen("activity") : openSettings(area))}
+        onOpenSettings={(area) =>
+          area === "activity" ? setScreen("activity") : openSettings(area)
+        }
         onDone={({ theme: next, restore }) => {
           setTheme(next);
           if (restore) openSettings("cloud", "cloud-backup");
@@ -2397,7 +2486,11 @@ export function App() {
     return (
       <div
         className="frameleaf app"
-        data-theme={screen === "setup" || screen === "account-setup" ? setupStageTheme() : theme}
+        data-theme={
+          screen === "setup" || screen === "account-setup"
+            ? setupStageTheme()
+            : theme
+        }
         data-screen={screen}
       >
         {authScreen}
@@ -2500,7 +2593,9 @@ export function App() {
           onAccountSettings={() => openSettings("preferences")}
           // Admins go through first-run setup; everyone else gets the account tool,
           // reopenable here once they've finished it.
-          onAccountSetup={currentUser?.isAdmin ? undefined : () => setScreen("account-setup")}
+          onAccountSetup={
+            currentUser?.isAdmin ? undefined : () => setScreen("account-setup")
+          }
           accountSetupDone={loadAccountTool().completed}
           onAdministration={() => openSettings("overview")}
           onFrameleafCloud={() => openSettings("cloud", "cloud-account")}
@@ -2526,7 +2621,15 @@ export function App() {
         />
       )}
       {/* #7 phones: the main sections sit in a tab bar; the ☰ drawer keeps every other destination. */}
-      {!["studio", "admin", "review"].includes(screen) && (
+      {![
+        "studio",
+        "admin",
+        "review",
+        "photography",
+        "photography-editor",
+        "photography-client",
+        "photography-site",
+      ].includes(screen) && (
         <nav className="fl-tabbar" aria-label="Sections">
           {[
             [
@@ -2574,7 +2677,15 @@ export function App() {
         </nav>
       )}
       <div className="workspace">
-        {screen !== "studio" && screen !== "admin" && screen !== "review" && (
+        {![
+          "studio",
+          "admin",
+          "review",
+          "photography",
+          "photography-editor",
+          "photography-client",
+          "photography-site",
+        ].includes(screen) && (
           <LibraryRail
             collapsed={railCollapsed}
             setCollapsed={setRailCollapsed}
@@ -3620,6 +3731,106 @@ export function App() {
               )}
           </>
         )}
+        {screen === "photography" && (
+          <PhotographyWorkspace
+            initialSection={photographyContext.returnSection}
+            initialShootId={photographyContext.shoot?.id}
+            initialDetail={photographyContext.returnDetail}
+            onBack={() => setScreen("library")}
+            onOpenRaw={() => setScreen("raw-support")}
+            onOpenEditor={(context) => {
+              setPhotographyContext({
+                ...context,
+                returnSection: "shoots",
+                returnDetail: true,
+              });
+              setScreen("photography-editor");
+            }}
+            onPreviewGallery={(context) => {
+              setPhotographyContext({ ...context, returnSection: "galleries" });
+              setScreen("photography-client");
+            }}
+            onPreviewWebsite={(context) => {
+              setPhotographyContext({ ...context, returnSection: "website" });
+              setScreen("photography-site");
+            }}
+            notify={setToast}
+          />
+        )}
+        {screen === "photography-editor" && (
+          <PhotographyEditor
+            photos={photographyContext.photos}
+            shoot={photographyContext.shoot}
+            onSave={(feedback) => !!saveEditorFeedback(feedback)}
+            onBack={(feedback) => {
+              if (saveEditorFeedback(feedback)) {
+                setPhotographyContext({
+                  ...feedback,
+                  returnSection: "shoots",
+                  returnDetail: true,
+                });
+                setScreen("photography");
+              }
+            }}
+            onProof={(feedback) => {
+              const studio = saveEditorFeedback(feedback);
+              if (!studio) return;
+              const id = feedback.shoot?.id;
+              if (id && !studio.galleries[id]) {
+                const next = {
+                  ...studio,
+                  galleries: {
+                    ...studio.galleries,
+                    [id]: createProofGallery(id),
+                  },
+                };
+                if (!saveStudioState(localStorage, next)) {
+                  setToast(
+                    "This device couldn’t save the sample gallery. Keep the editor open.",
+                  );
+                  return;
+                }
+              }
+              setPhotographyContext({
+                ...feedback,
+                returnSection: "galleries",
+              });
+              setScreen("photography");
+            }}
+            notify={setToast}
+          />
+        )}
+        {screen === "raw-support" && (
+          <RawLibraryCare
+            onBack={() => setScreen("library")}
+            onPhotography={() => setScreen("photography")}
+            notify={setToast}
+          />
+        )}
+        {["photography-client", "photography-site"].includes(screen) && (
+          <PhotographyClient
+            context={photographyContext}
+            website={screen === "photography-site"}
+            onBack={() => setScreen("photography")}
+            onFeedback={(feedback) => {
+              const studio = readStudioState(localStorage);
+              const saved = saveStudioState(
+                localStorage,
+                applyClientFeedback(
+                  studio,
+                  photographyContext.gallery?.id,
+                  feedback,
+                ),
+              );
+              if (!saved)
+                setToast(
+                  "This device couldn’t save the sample client feedback.",
+                );
+              return saved;
+            }}
+            notify={setToast}
+          />
+        )}
         {screen === "studio" && (
           <Studio
             assets={accessibleAssets}
@@ -3632,7 +3843,12 @@ export function App() {
             setDestination={setDestination}
             enqueue={(kind, payload = {}) => {
               const job = {
-                ...createSimulatedJob(kind, selected, edit, payload?.cloud ? "cloud" : destination),
+                ...createSimulatedJob(
+                  kind,
+                  selected,
+                  edit,
+                  payload?.cloud ? "cloud" : destination,
+                ),
                 name: payload?.project?.name || selected.name,
                 ...(payload?.preview ? { preview: true } : {}),
                 ...(payload?.estimate ? { estimate: payload.estimate } : {}),
@@ -3712,6 +3928,7 @@ export function App() {
               library.
             </p>
             {[
+              "RAW support & preview repair",
               "Media health",
               "Live Photo pairing",
               "Duplicate review",
@@ -3722,9 +3939,11 @@ export function App() {
                 className="care-row"
                 key={title}
                 onClick={() =>
-                  setToast(
-                    `${title}: no live scan has been run in this prototype.`,
-                  )
+                  title === "RAW support & preview repair"
+                    ? setScreen("raw-support")
+                    : setToast(
+                        `${title}: no live scan has been run in this prototype.`,
+                      )
                 }
               >
                 <Icon name="mdiShieldCheckOutline" />

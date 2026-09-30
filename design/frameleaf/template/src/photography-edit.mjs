@@ -119,7 +119,15 @@ export function readSession(photos, storage, key) {
   try { return recoverSession(photos, storage?.getItem(key)); } catch { return createSession(photos); }
 }
 export function saveSession(storage, key, session) {
-  try { storage?.setItem(key, JSON.stringify(session)); return !!storage; } catch { return false; }
+  if (!storage) return false;
+  try {
+    let saved;
+    try { saved = JSON.parse(storage.getItem?.(key) || "null"); }
+    catch (error) { if (!(error instanceof SyntaxError)) throw error; }
+    const previous = saved?.schema === session.schema && saved.records && typeof saved.records === "object" && !Array.isArray(saved.records) ? saved.records : {};
+    storage.setItem(key, JSON.stringify({ ...session, records: { ...previous, ...session.records } }));
+    return true;
+  } catch { return false; }
 }
 
 export function updatePhoto(session, id, patch, { quiet = false } = {}) {

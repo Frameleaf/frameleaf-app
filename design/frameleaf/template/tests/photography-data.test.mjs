@@ -81,6 +81,13 @@ test("client feedback round trip preserves original and deliverable references",
   assert.equal(next.galleries["portrait-session"].comments.length, 1);
   assert.equal(next.galleries["portrait-session"].submitted, true);
   assert.equal(next.galleries["portrait-session"].approved, false);
+  assert.equal(
+    applyClientFeedback(next, "portrait-session", {
+      clientSelected: [],
+      submitted: false,
+    }),
+    next,
+  );
   assert.equal(applyClientFeedback(state, "unknown", {}), state);
   const delivered = {
     ...next,

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { cancelBatch, createBatch, createSession, normalizeMask, normalizePoint, recoverSession, retryBatch, saveSession, syncEdits, tickBatch, updatePhoto } from "../src/photography-edit.mjs";
+import { cancelBatch, createBatch, createSession, normalizeMask, normalizePoint, recoverSession, retryBatch, saveSession, saveVersion, syncEdits, tickBatch, updatePhoto } from "../src/photography-edit.mjs";
 
 const originals = Object.freeze([
   Object.freeze({ id: "a", image: "/media/portrait.png", name: "IMG_001.CR3", raw: true }),
@@ -23,6 +23,16 @@ const restored = recoverSession(originals, JSON.stringify(session));
 assert.equal(restored.records.a.history.present.exposure, 0.8);
 assert.equal(restored.records.b.history.present.crop.w, 1);
 assert.equal(recoverSession([{ ...originals[0], rating: 5 }], JSON.stringify(session)).records.a.rating, 5, "latest culling rating wins over stale editor storage");
+let persisted = null;
+const storage = { getItem: () => persisted, setItem: (_key, value) => { persisted = value; } };
+const named = saveVersion(session, "a", "Warm portrait");
+assert.equal(saveSession(storage, "shoot", named), true);
+const subset = recoverSession([originals[1]], persisted);
+assert.equal(saveSession(storage, "shoot", updatePhoto(subset, "b", { exposure: -0.5 })), true);
+const reopened = recoverSession(originals, persisted);
+assert.equal(reopened.records.a.history.present.exposure, 0.8, "saving a subset preserves other photographs' adjustments");
+assert.equal(reopened.records.a.versions[0].name, "Warm portrait", "saving a subset preserves named versions");
+assert.equal(reopened.records.b.history.present.exposure, -0.5);
 assert.throws(() => createBatch(originals, ["a"], { format: "JPEG" }), /2–5/);
 let queue = createBatch(originals, ["a", "b"], { format: "JPEG" });
 queue = tickBatch(queue);

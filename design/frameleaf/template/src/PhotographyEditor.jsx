@@ -57,8 +57,10 @@ function MaskDefinitions({ mask, id }) {
       <rect width="100" height="100" fill={base} />
       <g filter={mask.feather ? `url(#${id}-feather)` : undefined}>
         <MaskShape mask={mask} colour={add} />
-        {mask.strokes.map((stroke, index) => <path key={index} d={pointsPath(stroke.points)} fill="none" stroke={stroke.mode === "subtract" ? subtract : add} strokeWidth={stroke.size * 100} strokeLinecap="round" strokeLinejoin="round" />)}
-        {mask.strokes.filter((stroke) => stroke.points.length === 1).map((stroke, index) => <circle key={`dot-${index}`} cx={stroke.points[0].x * 100} cy={stroke.points[0].y * 100} r={stroke.size * 50} fill={stroke.mode === "subtract" ? subtract : add} />)}
+        {mask.strokes.map((stroke, index) => <g key={index}>
+          <path d={pointsPath(stroke.points)} fill="none" stroke={stroke.mode === "subtract" ? subtract : add} strokeWidth={stroke.size * 100} strokeLinecap="round" strokeLinejoin="round" />
+          {stroke.points.length === 1 && <circle cx={stroke.points[0].x * 100} cy={stroke.points[0].y * 100} r={stroke.size * 50} fill={stroke.mode === "subtract" ? subtract : add} />}
+        </g>)}
       </g>
     </mask>
   </>;
@@ -178,13 +180,13 @@ async function downloadJpeg(image, edit, name) {
   return `${canvas.width} × ${canvas.height}`;
 }
 
-export function PhotographyEditor({ photos = [], shoot, onBack, onProof, notify }) {
+export function PhotographyEditor({ photos = [], shoot, onBack, onProof, onSave, notify }) {
   const sources = useMemo(() => normalizePhotos(photos), [photos]);
   const key = photographyStorageKey(shoot);
-  return <PhotographyWorkspace key={`${key}:${sources.map((photo) => photo.id).join(",")}`} photos={sources} shoot={shoot} storageKey={key} onBack={onBack} onProof={onProof} notify={notify} />;
+  return <PhotographyWorkspace key={`${key}:${sources.map((photo) => photo.id).join(",")}`} photos={sources} shoot={shoot} storageKey={key} onBack={onBack} onProof={onProof} onSave={onSave} notify={notify} />;
 }
 
-function PhotographyWorkspace({ photos, shoot, storageKey, onBack, onProof, notify }) {
+function PhotographyWorkspace({ photos, shoot, storageKey, onBack, onProof, onSave, notify }) {
   const [session, setSession] = useState(() => readSession(photos, safeStorage(), storageKey));
   const [tab, setTab] = useState("Develop"), [inspectorOpen, setInspectorOpen] = useState(false);
   const [compare, setCompare] = useState(false), [zoom, setZoom] = useState("fit"), [cropTool, setCropTool] = useState(false);
@@ -193,6 +195,7 @@ function PhotographyWorkspace({ photos, shoot, storageKey, onBack, onProof, noti
   const [brushMode, setBrushMode] = useState("add"), [brushSize, setBrushSize] = useState(0.08);
   const [dragEdit, setDragEdit] = useState(null), [saveStatus, setSaveStatus] = useState("Saved on this browser");
   const [channel, setChannel] = useState("Orange"), [presetName, setPresetName] = useState("");
+  const [versionName, setVersionName] = useState("");
   const [dialog, setDialog] = useState(null), [syncGroups, setSyncGroups] = useState(["tone", "colour", "detail"]);
   const [exportSettings, setExportSettings] = useState({ format: "JPEG", profile: "sRGB", simulateFailure: false });
   const [exportStatus, setExportStatus] = useState(""), [queue, setQueue] = useState(null), [message, setMessage] = useState("");
@@ -214,17 +217,21 @@ function PhotographyWorkspace({ photos, shoot, storageKey, onBack, onProof, noti
   const rate = (id, rating) => setSession((current) => ({ ...current, records: { ...current.records, [id]: { ...current.records[id], rating } } }));
   const toggleSelected = (id) => setSession((current) => ({ ...current, selected: current.selected.includes(id) ? current.selected.filter((item) => item !== id) : [...current.selected, id] }));
   const editMask = (patch) => activeMask && apply({ masks: edit.masks.map((mask) => mask.id === activeMask.id ? { ...mask, ...patch } : mask) });
-  const persist = () => saveSession(safeStorage(), storageKey, sessionRef.current);
-  const returnPhotos = (items) => items.map((item) => ({ ...item, rating: session.records[item.id].rating, edited: isEdited(session.records[item.id].history.present), previewFilter: previewFor(session.records[item.id].history.present).filter }));
-  const returnToProof = () => { persist(); const result = returnPhotos(photos); onProof ? onProof({ shoot, photos: result, selectedIds: session.selected }) : say(`${result.length} photos prepared for proofing.`); };
+  const returnPhotos = (items, current = sessionRef.current) => items.map((item) => ({ ...item, rating: current.records[item.id].rating, edited: isEdited(current.records[item.id].history.present), previewFilter: previewFor(current.records[item.id].history.present).filter }));
+  const persist = () => {
+    if (!saveSession(safeStorage(), storageKey, sessionRef.current)) return false;
+    return !onSave || !!onSave({ shoot, photos: returnPhotos(photos) });
+  };
+  const persistRef = useRef(persist); persistRef.current = persist;
+  const returnToProof = () => { if (!persist()) { say("This device couldn’t save the edits. Keep the editor open."); return; } const result = returnPhotos(photos); onProof ? onProof({ shoot, photos: result, selectedIds: session.selected }) : say(`${result.length} photos prepared for proofing.`); };
 
   useEffect(() => {
     setSaveStatus("Saving…");
-    const timer = setTimeout(() => setSaveStatus(saveSession(safeStorage(), storageKey, session) ? "Saved on this browser" : "In memory · storage unavailable"), 500);
+    const timer = setTimeout(() => setSaveStatus(persistRef.current() ? "Saved on this browser" : "In memory · storage unavailable"), 500);
     return () => clearTimeout(timer);
   }, [session, storageKey]);
   useEffect(() => {
-    const save = () => saveSession(safeStorage(), storageKey, sessionRef.current);
+    const save = () => persistRef.current();
     window.addEventListener("pagehide", save);
     return () => { window.removeEventListener("pagehide", save); save(); };
   }, [storageKey]);
@@ -309,7 +316,7 @@ function PhotographyWorkspace({ photos, shoot, storageKey, onBack, onProof, noti
     if (edit.masks.length >= 20) { say("This prototype supports up to 20 masks per photo."); return; }
     const mask = makeMask(type, edit.masks.length); apply({ masks: [...edit.masks, mask] }); setSelectedMaskId(mask.id); setMaskGesture(["radial", "gradient"].includes(type) ? "place" : "brush"); setTab("Masks"); setCropTool(false); setOverlay(true);
   };
-  const saveCurrentVersion = () => { setSession((current) => saveVersion(current, photo.id)); say("Version saved. Your original stays untouched."); };
+  const saveCurrentVersion = () => { setVersionName(`Version ${record.versions.length + 1}`); setDialog("version"); };
   const currentExport = async () => {
     if (exportBusy.current) return;
     if (exportSettings.format === "TIFF") { setExportStatus(`16-bit TIFF · ${exportSettings.profile} settings simulated. No TIFF file created.`); return; }
@@ -332,7 +339,7 @@ function PhotographyWorkspace({ photos, shoot, storageKey, onBack, onProof, noti
 
   return <main className="pe-workspace" aria-label="Photography editor">
     <header className="pe-header">
-      <Button icon="mdiArrowLeft" onClick={() => { persist(); onBack ? onBack({ shoot, photos: returnPhotos(photos) }) : say("Edits saved on this browser."); }}>Back to shoot</Button>
+      <Button icon="mdiArrowLeft" onClick={() => { if (!persist()) { say("This device couldn’t save the edits. Keep the editor open."); return; } onBack ? onBack({ shoot, photos: returnPhotos(photos) }) : say("Edits saved on this browser."); }}>Back to shoot</Button>
       <div className="pe-heading"><strong>{shoot?.name || "Mountain portraits"}</strong><span>Photography editor</span></div>
       <span className="pe-prototype">Prototype</span><span className="pe-save-status">{saveStatus}</span>
       <Button icon="mdiContentDuplicate" onClick={saveCurrentVersion}>Save version</Button>
@@ -433,6 +440,7 @@ function PhotographyWorkspace({ photos, shoot, storageKey, onBack, onProof, noti
       <div className="pe-inspector-footer"><Icon name="mdiShieldCheckOutline" size={15} /><span>Original kept untouched</span></div>
     </aside>
     {message && <div className="pe-toast" role="status">{message}</div>}
+    {dialog === "version" && <Dialog title="Save named version" close={() => setDialog(null)} actions={<><Button onClick={() => setDialog(null)}>Cancel</Button><Button primary type="submit" form={`${prefix}-save-version`} disabled={!versionName.trim()}>Save version</Button></>}><form id={`${prefix}-save-version`} className="pe-dialog-content" onSubmit={(event) => { event.preventDefault(); if (!versionName.trim()) return; setSession((current) => saveVersion(current, photo.id, versionName)); setDialog(null); say("Version saved. Your original stays untouched."); }}><label className="pe-select">Version name<input required maxLength={60} value={versionName} onChange={(event) => setVersionName(event.target.value)} /></label><p className="pe-muted">Keep a named point to restore, including this photograph’s masks.</p></form></Dialog>}
 
     {dialog === "sync" && <Dialog title={`Sync from ${photo.name}`} close={() => setDialog(null)} actions={<><Button onClick={() => setDialog(null)}>Cancel</Button><Button primary disabled={!syncGroups.length || !targets.length} onClick={() => { setSession((current) => syncEdits(current, photo.id, targets.map((item) => item.id), syncGroups)); setDialog(null); say(`Settings synced to ${targets.length} photos.`); }}>Sync to {targets.length} photos</Button></>}><div className="pe-dialog-content"><p>Apply the checked settings to your selected photos.</p>{[["tone", "Light & curve"], ["colour", "White balance, HSL & preset"], ["detail", "Detail & lens"], ["geometry", "Crop & rotation"], ["masks", "Masks & brush strokes"]].map(([key, label]) => <label className="pe-check" key={key}><input type="checkbox" checked={syncGroups.includes(key)} onChange={(event) => setSyncGroups((current) => event.target.checked ? [...current, key] : current.filter((item) => item !== key))} />{label}</label>)}<p className="pe-muted">{targets.map((item) => item.name).join(", ")}</p></div></Dialog>}
     {dialog === "export" && <Dialog title="Export photos" close={() => setDialog(null)} actions={<><Button onClick={() => setDialog(null)}>Close</Button><Button primary disabled={selected.length < 2 || selected.length > 5 || queue?.status === "running"} onClick={enqueue}>Queue {selected.length} photos</Button></>}><div className="pe-dialog-content"><label className="pe-select">Format<select value={exportSettings.format} onChange={(event) => setExportSettings((current) => ({ ...current, format: event.target.value }))}><option value="JPEG">JPEG · 8-bit</option><option value="TIFF">TIFF · 16-bit</option></select></label><label className="pe-select">Colour profile<select value={exportSettings.profile} onChange={(event) => setExportSettings((current) => ({ ...current, profile: event.target.value }))}>{["sRGB", "Adobe RGB", "Display P3"].map((profile) => <option key={profile}>{profile}</option>)}</select></label><p className="pe-muted">JPEG downloads full-size demo pixels in browser sRGB. TIFF and other profiles are simulated.</p><Button icon="mdiDownloadOutline" onClick={currentExport}>{exportSettings.format === "TIFF" ? "Simulate current TIFF" : "Download current JPEG"}</Button>{exportStatus && <p className="pe-export-status" role="status">{exportStatus}</p>}<hr /><h3>Batch export</h3><p>{selected.length} selected. Choose 2–5 photos in the filmstrip.</p><label className="pe-check"><input type="checkbox" checked={exportSettings.simulateFailure} onChange={(event) => setExportSettings((current) => ({ ...current, simulateFailure: event.target.checked }))} />Simulate one unsupported RAW format</label>{queue && <ExportQueue {...queueActions} />}</div></Dialog>}

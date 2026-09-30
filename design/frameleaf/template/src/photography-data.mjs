@@ -146,6 +146,7 @@ export function createStudioState() {
     galleries: { [shoots[0].id]: gallery },
     website: {
       layout: "editorial",
+      spacing: "comfortable",
       coverId: "portrait-1",
       order: photos.filter((photo) => photo.selected).map((photo) => photo.id),
       about:
@@ -210,6 +211,7 @@ export function applyClientFeedback(state, galleryId, feedback) {
   const [shootId, gallery] = entry;
   if (
     gallery.expired ||
+    gallery.submitted ||
     gallery.delivered ||
     (gallery.expires && gallery.expires < new Date().toISOString().slice(0, 10))
   )
