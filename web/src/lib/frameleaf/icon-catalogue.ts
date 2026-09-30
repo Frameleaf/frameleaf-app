@@ -6,9 +6,15 @@ import { ALBUM_ICONS, DEFAULT_ALBUM_ICON_PATH } from '$lib/utils/album-icons';
  *
  * What is valid, and which icons are suggested first, comes from the server
  * (`GET /albums/icons`) so no client bundles the catalogue to know it. The SVG
- * geometry for rendering is a display asset like a font: it is loaded from the
- * `@mdi/js` package in its own chunk the first time an icon outside the 31
- * legacy keys has to be drawn, never in the main bundle.
+ * geometry for rendering is a display asset like a font: it is fetched as a
+ * static JSON asset (generated at build time by vite.config.ts's
+ * frameleaf-mdi-icon-paths plugin, from the same `@mdi/js` package) the first
+ * time an icon outside the 31 legacy keys has to be drawn, never in the main
+ * bundle. FL-139: this used to be `import('@mdi/js')`, a dynamic import of the
+ * whole npm module - since the app also statically imports named icons from
+ * that same module everywhere, Rollup kept all 7,448 exports in one shared
+ * chunk that loaded eagerly on every route. A static asset isn't part of any
+ * JS module graph, so it can't be pulled into that chunk.
  */
 
 export type IconPaths = Record<string, string>;
@@ -25,8 +31,8 @@ export const loadIconCatalogue = (): Promise<AlbumIconCatalogueResponseDto> => {
 };
 
 export const loadIconPaths = (): Promise<IconPaths> => {
-  pathsPromise ??= import('@mdi/js')
-    .then((module) => module as unknown as IconPaths)
+  pathsPromise ??= fetch('/mdi-icon-paths.json')
+    .then((response) => response.json() as Promise<IconPaths>)
     .catch((error: unknown) => {
       pathsPromise = undefined;
       throw error;
