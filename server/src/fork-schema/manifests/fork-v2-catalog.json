@@ -7275,6 +7275,94 @@
     {
       "definition": "uuid|not null|||",
       "identity": "public.workflow_run_step.workflowId"
+    },
+    {
+      "definition": "boolean|not null|false||",
+      "identity": "public.session_tag_sync_state.acknowledged"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "public.session_tag_sync_state.action"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "public.session_tag_sync_state.assetId"
+    },
+    {
+      "definition": "boolean|not null|false||",
+      "identity": "public.session_tag_sync_state.confirmedVisible"
+    },
+    {
+      "definition": "boolean|not null|false||",
+      "identity": "public.session_tag_sync_state.delivered"
+    },
+    {
+      "definition": "uuid|not null|immich_uuid_v7()||",
+      "identity": "public.session_tag_sync_state.eventId"
+    },
+    {
+      "definition": "character varying|not null|||",
+      "identity": "public.session_tag_sync_state.key"
+    },
+    {
+      "definition": "character varying|not null|||",
+      "identity": "public.session_tag_sync_state.kind"
+    },
+    {
+      "definition": "boolean|not null|false||",
+      "identity": "public.session_tag_sync_state.potentiallyVisible"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.session_tag_sync_state.sessionId"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.session_tag_sync_state.sourceId"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.session_tag_sync_state.tagId"
+    },
+    {
+      "definition": "uuid|not null|immich_uuid_v7()||",
+      "identity": "public.tag_asset.updateId"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.tag_asset_audit.assetId"
+    },
+    {
+      "definition": "timestamp with time zone|not null|clock_timestamp()||",
+      "identity": "public.tag_asset_audit.deletedAt"
+    },
+    {
+      "definition": "uuid|not null|immich_uuid_v7()||",
+      "identity": "public.tag_asset_audit.id"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.tag_asset_audit.tagId"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.tag_asset_audit.userId"
+    },
+    {
+      "definition": "timestamp with time zone|not null|clock_timestamp()||",
+      "identity": "public.tag_audit.deletedAt"
+    },
+    {
+      "definition": "uuid|not null|immich_uuid_v7()||",
+      "identity": "public.tag_audit.id"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.tag_audit.tagId"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.tag_audit.userId"
     }
   ],
   "constraints": [
@@ -9577,6 +9665,22 @@
     {
       "definition": "FOREIGN KEY (\"workflowId\") REFERENCES workflow(id) ON UPDATE CASCADE ON DELETE CASCADE",
       "identity": "public.workflow_run_step.workflow_run_step_workflowId_fkey"
+    },
+    {
+      "definition": "PRIMARY KEY (\"sessionId\", kind, key)",
+      "identity": "public.session_tag_sync_state.session_tag_sync_state_pkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"sessionId\") REFERENCES session(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.session_tag_sync_state.session_tag_sync_state_sessionId_fkey"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "public.tag_asset_audit.tag_asset_audit_pkey"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "public.tag_audit.tag_audit_pkey"
     }
   ],
   "enums": [
@@ -10776,6 +10880,18 @@
     {
       "definition": "CREATE OR REPLACE FUNCTION public.word_similarity(text, text)\n RETURNS real\n LANGUAGE c\n IMMUTABLE PARALLEL SAFE STRICT\nAS '$libdir/pg_trgm', $function$word_similarity$function$",
       "identity": "public.word_similarity(text, text)"
+    },
+    {
+      "definition": "CREATE OR REPLACE FUNCTION public.tag_asset_delete_audit()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\n    BEGIN\n    INSERT INTO tag_asset_audit (\"tagId\", \"assetId\", \"userId\")\n    SELECT deleted.\"tagId\", deleted.\"assetId\", coalesce(tag.\"userId\", asset.\"ownerId\")\n    FROM OLD AS deleted LEFT JOIN tag ON tag.id = deleted.\"tagId\" LEFT JOIN asset ON asset.id = deleted.\"assetId\"\n    WHERE coalesce(tag.\"userId\", asset.\"ownerId\") IS NOT NULL\n      AND (tag.\"userId\" IS NULL OR asset.\"ownerId\" IS NULL OR tag.\"userId\" = asset.\"ownerId\");\n    RETURN NULL; END\n  $function$",
+      "identity": "public.tag_asset_delete_audit()"
+    },
+    {
+      "definition": "CREATE OR REPLACE FUNCTION public.tag_asset_update_id()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$BEGIN NEW.\"updateId\" := immich_uuid_v7(); RETURN NEW; END$function$",
+      "identity": "public.tag_asset_update_id()"
+    },
+    {
+      "definition": "CREATE OR REPLACE FUNCTION public.tag_delete_audit()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$BEGIN INSERT INTO tag_audit (\"tagId\", \"userId\") SELECT id, \"userId\" FROM OLD; RETURN NULL; END$function$",
+      "identity": "public.tag_delete_audit()"
     }
   ],
   "indexes": [
@@ -13462,6 +13578,54 @@
     {
       "definition": "CREATE INDEX \"workflow_run_step_workflowId_idx\" ON public.workflow_run_step USING btree (\"workflowId\")",
       "identity": "public.workflow_run_step.workflow_run_step_workflowId_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"session_tag_sync_state_eventId_idx\" ON public.session_tag_sync_state USING btree (\"eventId\")",
+      "identity": "public.session_tag_sync_state.session_tag_sync_state_eventId_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX session_tag_sync_state_pkey ON public.session_tag_sync_state USING btree (\"sessionId\", kind, key)",
+      "identity": "public.session_tag_sync_state.session_tag_sync_state_pkey"
+    },
+    {
+      "definition": "CREATE INDEX \"tag_asset_updateId_idx\" ON public.tag_asset USING btree (\"updateId\")",
+      "identity": "public.tag_asset.tag_asset_updateId_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"tag_asset_audit_assetId_idx\" ON public.tag_asset_audit USING btree (\"assetId\")",
+      "identity": "public.tag_asset_audit.tag_asset_audit_assetId_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"tag_asset_audit_deletedAt_idx\" ON public.tag_asset_audit USING btree (\"deletedAt\")",
+      "identity": "public.tag_asset_audit.tag_asset_audit_deletedAt_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX tag_asset_audit_pkey ON public.tag_asset_audit USING btree (id)",
+      "identity": "public.tag_asset_audit.tag_asset_audit_pkey"
+    },
+    {
+      "definition": "CREATE INDEX \"tag_asset_audit_tagId_idx\" ON public.tag_asset_audit USING btree (\"tagId\")",
+      "identity": "public.tag_asset_audit.tag_asset_audit_tagId_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"tag_asset_audit_userId_idx\" ON public.tag_asset_audit USING btree (\"userId\")",
+      "identity": "public.tag_asset_audit.tag_asset_audit_userId_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"tag_audit_deletedAt_idx\" ON public.tag_audit USING btree (\"deletedAt\")",
+      "identity": "public.tag_audit.tag_audit_deletedAt_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX tag_audit_pkey ON public.tag_audit USING btree (id)",
+      "identity": "public.tag_audit.tag_audit_pkey"
+    },
+    {
+      "definition": "CREATE INDEX \"tag_audit_tagId_idx\" ON public.tag_audit USING btree (\"tagId\")",
+      "identity": "public.tag_audit.tag_audit_tagId_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"tag_audit_userId_idx\" ON public.tag_audit USING btree (\"userId\")",
+      "identity": "public.tag_audit.tag_audit_userId_idx"
     }
   ],
   "migrationOverrides": [
@@ -13580,7 +13744,13 @@
     "trigger_video_moment_frame_updatedAt",
     "trigger_video_moment_index_updatedAt",
     "trigger_video_moment_updatedAt",
-    "trigger_workflow_updatedAt"
+    "trigger_workflow_updatedAt",
+    "function_tag_asset_delete_audit",
+    "function_tag_asset_update_id",
+    "function_tag_delete_audit",
+    "trigger_tag_asset_delete_audit",
+    "trigger_tag_asset_update_id",
+    "trigger_tag_delete_audit"
   ],
   "schemas": [
     {
@@ -14401,6 +14571,18 @@
     {
       "definition": "table",
       "identity": "public.workflow_step"
+    },
+    {
+      "definition": "table",
+      "identity": "public.session_tag_sync_state"
+    },
+    {
+      "definition": "table",
+      "identity": "public.tag_asset_audit"
+    },
+    {
+      "definition": "table",
+      "identity": "public.tag_audit"
     }
   ],
   "triggers": [
@@ -14683,6 +14865,18 @@
     {
       "definition": "CREATE TRIGGER \"workflow_updatedAt\" BEFORE UPDATE ON workflow FOR EACH ROW EXECUTE FUNCTION updated_at()",
       "identity": "public.workflow.workflow_updatedAt"
+    },
+    {
+      "definition": "CREATE TRIGGER tag_delete_audit AFTER DELETE ON tag REFERENCING OLD TABLE AS old FOR EACH STATEMENT EXECUTE FUNCTION tag_delete_audit()",
+      "identity": "public.tag.tag_delete_audit"
+    },
+    {
+      "definition": "CREATE TRIGGER tag_asset_delete_audit AFTER DELETE ON tag_asset REFERENCING OLD TABLE AS old FOR EACH STATEMENT EXECUTE FUNCTION tag_asset_delete_audit()",
+      "identity": "public.tag_asset.tag_asset_delete_audit"
+    },
+    {
+      "definition": "CREATE TRIGGER tag_asset_update_id BEFORE UPDATE ON tag_asset FOR EACH ROW EXECUTE FUNCTION tag_asset_update_id()",
+      "identity": "public.tag_asset.tag_asset_update_id"
     }
   ]
 }

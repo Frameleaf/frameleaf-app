@@ -480,7 +480,33 @@ class SyncResetV1 extends createZodDto(SyncResetV1Schema) {}
 @ExtraModel()
 class SyncCompleteV1 extends createZodDto(SyncCompleteV1Schema) {}
 
+const SyncTagV1Schema = z
+  .object({
+    id: z.uuid(),
+    userId: z.uuid(),
+    value: z.string(),
+    parentId: z.uuid().nullable(),
+    color: z.string().nullable(),
+    createdAt: isoDatetimeToDate,
+    updatedAt: isoDatetimeToDate,
+  })
+  .meta({ id: 'SyncTagV1' });
+const SyncTagDeleteV1Schema = z.object({ tagId: z.uuid() }).meta({ id: 'SyncTagDeleteV1' });
+const SyncAssetTagV1Schema = z.object({ tagId: z.uuid(), assetId: z.uuid() }).meta({ id: 'SyncAssetTagV1' });
+@ExtraModel()
+class SyncTagV1 extends createZodDto(SyncTagV1Schema) {}
+@ExtraModel()
+class SyncTagDeleteV1 extends createZodDto(SyncTagDeleteV1Schema) {}
+@ExtraModel()
+class SyncAssetTagV1 extends createZodDto(SyncAssetTagV1Schema) {}
+@ExtraModel()
+class SyncAssetTagDeleteV1 extends createZodDto(SyncAssetTagV1Schema.meta({ id: 'SyncAssetTagDeleteV1' })) {}
+
 export type SyncItem = {
+  [SyncEntityType.TagV1]: SyncTagV1;
+  [SyncEntityType.TagDeleteV1]: SyncTagDeleteV1;
+  [SyncEntityType.AssetTagV1]: SyncAssetTagV1;
+  [SyncEntityType.AssetTagDeleteV1]: SyncAssetTagDeleteV1;
   [SyncEntityType.AuthUserV1]: SyncAuthUserV1;
   [SyncEntityType.AuthUserV2]: SyncAuthUserV2;
   [SyncEntityType.UserV1]: SyncUserV1;
@@ -488,6 +514,9 @@ export type SyncItem = {
   [SyncEntityType.PartnerV1]: SyncPartnerV1;
   [SyncEntityType.PartnerDeleteV1]: SyncPartnerDeleteV1;
   [SyncEntityType.AssetV2]: SyncAssetV2;
+  [SyncEntityType.AssetV3]: SyncAssetV2;
+  [SyncEntityType.AssetBootstrapV1]: SyncAssetV2;
+  [SyncEntityType.AssetDeleteV2]: SyncAssetDeleteV1;
   [SyncEntityType.AssetDeleteV1]: SyncAssetDeleteV1;
   [SyncEntityType.AssetMetadataV1]: SyncAssetMetadataV1;
   [SyncEntityType.AssetMetadataDeleteV1]: SyncAssetMetadataDeleteV1;
