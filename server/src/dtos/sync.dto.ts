@@ -531,6 +531,43 @@ class SyncSharedSpaceMemberDeleteV1 extends createZodDto(
   z.object({ spaceId: z.uuid(), userId: z.uuid() }).meta({ id: 'SyncSharedSpaceMemberDeleteV1' }),
 ) {}
 @ExtraModel()
+class SyncSharedSpaceAlbumV1 extends createZodDto(
+  z
+    .object({
+      spaceId: z.uuid(),
+      albumId: z.uuid(),
+      name: z.string(),
+      icon: z.string().nullable(),
+      assetCount: z.number().int().nonnegative(),
+      thumbnailAssetId: z.uuid().nullable(),
+      linkedAt: isoDatetimeToDate,
+    })
+    .describe('Published album reference only; does not grant target AlbumRead access')
+    .meta({ id: 'SyncSharedSpaceAlbumV1' }),
+) {}
+@ExtraModel()
+class SyncSharedSpaceAlbumDeleteV1 extends createZodDto(
+  z.object({ spaceId: z.uuid(), albumId: z.uuid() }).meta({ id: 'SyncSharedSpaceAlbumDeleteV1' }),
+) {}
+@ExtraModel()
+class SyncSharedSpacePersonV1 extends createZodDto(
+  z
+    .object({
+      id: z.uuid(),
+      spaceId: z.uuid(),
+      name: z.string(),
+      coverAssetId: z.uuid().nullable(),
+      assetCount: z.number().int().nonnegative(),
+      linkedAt: isoDatetimeToDate,
+    })
+    .describe('Published link identity only; excludes the underlying private person')
+    .meta({ id: 'SyncSharedSpacePersonV1' }),
+) {}
+@ExtraModel()
+class SyncSharedSpacePersonDeleteV1 extends createZodDto(
+  z.object({ spaceId: z.uuid(), id: z.uuid() }).meta({ id: 'SyncSharedSpacePersonDeleteV1' }),
+) {}
+@ExtraModel()
 class SyncPetDeleteV1 extends createZodDto(z.object({ petId: z.uuid() }).meta({ id: 'SyncPetDeleteV1' })) {}
 @ExtraModel()
 class SyncPetObservationV1 extends createZodDto(PetObservationResponseSchema.meta({ id: 'SyncPetObservationV1' })) {}
@@ -612,6 +649,10 @@ export type SyncItem = {
   [SyncEntityType.AssetTrashStateDeleteV1]: SyncAssetTrashStateDeleteV1;
   [SyncEntityType.DuplicateGroupV1]: SyncDuplicateGroupV1;
   [SyncEntityType.DuplicateGroupDeleteV1]: SyncDuplicateGroupDeleteV1;
+  [SyncEntityType.SharedSpaceAlbumV1]: SyncSharedSpaceAlbumV1;
+  [SyncEntityType.SharedSpaceAlbumDeleteV1]: SyncSharedSpaceAlbumDeleteV1;
+  [SyncEntityType.SharedSpacePersonV1]: SyncSharedSpacePersonV1;
+  [SyncEntityType.SharedSpacePersonDeleteV1]: SyncSharedSpacePersonDeleteV1;
   [SyncEntityType.SharedSpaceV1]: SyncSharedSpaceV1;
   [SyncEntityType.SharedSpaceDeleteV1]: SyncSharedSpaceDeleteV1;
   [SyncEntityType.SharedSpaceMemberV1]: SyncSharedSpaceMemberV1;

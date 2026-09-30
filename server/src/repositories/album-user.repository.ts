@@ -328,10 +328,17 @@ export class AlbumUserRepository {
   /* ------------------------------------------------------------------ */
 
   /** The albums linked into one space, with just enough of each album to name it. */
-  async getLinkedAlbums(spaceId: string): Promise<SharedSpaceAlbumLink[]> {
+  async getLinkedAlbums(spaceId: string, forSync = false): Promise<SharedSpaceAlbumLink[]> {
     return this.db
       .selectFrom('shared_space_album as link')
       .innerJoin('album', 'album.id', 'link.linkedAlbumId')
+      .$if(forSync, (qb) =>
+        qb
+          .innerJoin('album_user as targetOwner', 'targetOwner.albumId', 'album.id')
+          .innerJoin('user as targetUser', 'targetUser.id', 'targetOwner.userId')
+          .where('targetOwner.role', '=', AlbumUserRole.Owner)
+          .where('targetUser.deletedAt', 'is', null),
+      )
       .where('link.albumId', '=', spaceId)
       .where('album.deletedAt', 'is', null)
       .select([
@@ -430,7 +437,7 @@ export class AlbumUserRepository {
    * folder already replaces it (`releaseLockedCoverReferences`); the read still
    * answers no cover rather than a Locked id, whatever wrote the row.
    */
-  async getLinkedPeople(spaceId: string): Promise<SharedSpacePersonLink[]> {
+  async getLinkedPeople(spaceId: string, forSync = false): Promise<SharedSpacePersonLink[]> {
     return this.db
       .selectFrom('shared_space_person as link')
       .innerJoin('person', (join) =>
@@ -440,15 +447,36 @@ export class AlbumUserRepository {
       )
       .leftJoin('asset as cover', (join) => join.onRef('cover.id', '=', 'link.coverAssetId').on(isLocked('cover')))
       .where('link.albumId', '=', spaceId)
+      .$if(forSync, (qb) =>
+        qb
+          .innerJoin('user as publisher', 'publisher.id', 'link.personOwnerId')
+          .where('publisher.deletedAt', 'is', null),
+      )
       .select([
         'link.id as id',
         'link.albumId as albumId',
         'link.personOwnerId as personOwnerId',
         'link.personGroupId as personGroupId',
         'link.name as name',
-        sql<string | null>`case when "cover"."id" is null then "link"."coverAssetId" end`.as('coverAssetId'),
+        ...(forSync
+          ? []
+          : [sql<string | null>`case when "cover"."id" is null then "link"."coverAssetId" end`.as('coverAssetId')]),
         'link.createdAt as createdAt',
       ])
+      .$if(forSync, (qb) =>
+        qb.select((eb) =>
+          eb
+            .selectFrom('asset')
+            .innerJoin('album_asset', 'album_asset.assetId', 'asset.id')
+            .whereRef('asset.id', '=', 'link.coverAssetId')
+            .whereRef('album_asset.albumId', '=', 'link.albumId')
+            .where('asset.deletedAt', 'is', null)
+            .$call(withDefaultVisibility)
+            .$call((query) => withHiddenContentFilter(query, { excludeNsfw: true }))
+            .select('asset.id')
+            .as('coverAssetId'),
+        ),
+      )
       .orderBy('link.name', 'asc')
       .orderBy('link.createdAt', 'asc')
       .execute();
