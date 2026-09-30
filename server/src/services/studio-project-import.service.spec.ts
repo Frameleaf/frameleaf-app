@@ -1,4 +1,10 @@
-import { BadRequestException, ConflictException, NotFoundException, PayloadTooLargeException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  NotFoundException,
+  PayloadTooLargeException,
+} from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -38,7 +44,7 @@ describe(StudioProjectImportService.name, () => {
     listOrphanImportProjects: ReturnType<typeof vi.fn>;
     deleteImports: ReturnType<typeof vi.fn>;
   };
-  let studio: { forgetResolutions: ReturnType<typeof vi.fn> };
+  let studio: { forgetResolutions: ReturnType<typeof vi.fn>; requireOwnedProject: ReturnType<typeof vi.fn> };
   let users: { get: ReturnType<typeof vi.fn> };
   let sut: StudioProjectImportService;
 
@@ -60,7 +66,18 @@ describe(StudioProjectImportService.name, () => {
       listOrphanImportProjects: vi.fn().mockResolvedValue([]),
       deleteImports: vi.fn().mockResolvedValue(undefined),
     };
-    studio = { forgetResolutions: vi.fn() };
+    studio = {
+      forgetResolutions: vi.fn(),
+      // the owner rule of StudioProjectService.requireOwnedProject, for a stranger: 404 as if missing
+      requireOwnedProject: vi.fn(async (actor: AuthDto, id: string) => {
+        const project = (await (projects.getById as (id: string) => Promise<{ ownerId: string } | undefined>)(id)) as
+          { ownerId: string } | undefined;
+        if (!project || project.ownerId !== actor.user.id) {
+          throw new NotFoundException('Studio project not found');
+        }
+        return project;
+      }),
+    };
     users = { get: vi.fn().mockResolvedValue({ quotaSizeInBytes: null, quotaUsageInBytes: 0 }) };
     const storage = new StorageRepository({ setContext: vi.fn() } as never);
     // The kept copy goes into the temp directory instead of the media location.
@@ -141,6 +158,23 @@ describe(StudioProjectImportService.name, () => {
     }
     projects.getById.mockResolvedValue(undefined);
     await expect(sut.list(auth(), PROJECT)).rejects.toBeInstanceOf(NotFoundException);
+    expect(projects.registerImport).not.toHaveBeenCalled();
+  });
+
+  it('answers a reviewer 403 from the shared owner check, and keeps nothing (FL-112)', async () => {
+    studio.requireOwnedProject.mockRejectedValue(
+      new ForbiddenException('Only the owner can import into a Studio project'),
+    );
+    const file = await upload(wav());
+    await expect(sut.upload(auth(STRANGER), PROJECT, IMPORT, file)).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(readFile(file.path)).rejects.toThrow();
+    await expect(sut.list(auth(STRANGER), PROJECT)).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(sut.getFile(auth(STRANGER), PROJECT, IMPORT)).rejects.toBeInstanceOf(ForbiddenException);
+    expect(studio.requireOwnedProject).toHaveBeenCalledWith(
+      expect.anything(),
+      PROJECT,
+      'Only the owner can import into a Studio project',
+    );
     expect(projects.registerImport).not.toHaveBeenCalled();
   });
 
