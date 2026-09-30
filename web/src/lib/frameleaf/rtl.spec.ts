@@ -60,11 +60,13 @@ describe('right-to-left layout (FL-139)', () => {
   it('leaves mirroring arrows to the Icon patch, so none is flipped twice', () => {
     const swapped: string[] = [];
     for (const path of [...files('src/lib'), ...files('src/routes')]) {
-      if (/\.(svelte|ts)$/.test(path) && !path.endsWith('.spec.ts')) {
-        const source = readFileSync(path, 'utf8');
-        if (/rtl\s*\?\s*mdi(?:Arrow|Chevron|Menu)/.test(source)) {
-          swapped.push(path);
-        }
+      if (!/\.(svelte|ts)$/.test(path) || path.endsWith('.spec.ts')) {
+        continue;
+      }
+
+      const source = readFileSync(path, 'utf8');
+      if (/rtl\s*\?\s*mdi(?:Arrow|Chevron|Menu)/.test(source)) {
+        swapped.push(path);
       }
     }
     expect(swapped).toEqual([]);
