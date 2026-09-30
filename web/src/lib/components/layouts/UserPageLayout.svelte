@@ -163,7 +163,7 @@
             <div class="pe-8 outline-none" tabindex="-1" id={headerId}>{title}</div>
           {/if}
           {#if description}
-            <p class="text-sm text-gray-400 dark:text-gray-600">{description}</p>
+            <p class="text-sm text-gray-600 dark:text-gray-400">{description}</p>
           {/if}
         </div>
 
