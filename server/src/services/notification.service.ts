@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { AdminNotice, ArgOf } from 'src/repositories/event.repository.js';
-import type { EmailImageAttachment, JobOf, UserMetadataItem } from 'src/types.js';
+import type { EmailImageAttachment, IEmailJob, JobOf, UserMetadataItem } from 'src/types.js';
 import { JOBS_WITH_SENSITIVE_DATA } from 'src/constants.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import { MapAlbumDto } from 'src/dtos/album.dto.js';
@@ -482,108 +482,142 @@ export class NotificationService extends BaseService {
 
   @OnJob({ name: JobName.NotifyAlbumInvite, queue: QueueName.Notification })
   async handleAlbumInvite({ id, recipientId, senderName }: JobOf<JobName.NotifyAlbumInvite>) {
-    const album = await this.albumRepository.getById(id, { withAssets: false });
-    if (!album) {
+    const context = { albumId: id, recipientId, senderName, kind: 'invite' as const };
+    const current = await this.getCurrentAlbumNotification(context);
+    if (!current) {
       return JobStatus.Skipped;
     }
-
-    const recipient = await this.userRepository.get(recipientId, { withDeleted: false });
-    if (!recipient) {
+    await this.sendAlbumLocalNotification(current.album, recipientId, NotificationType.AlbumInvite, senderName);
+    const mail = await this.prepareAlbumNotificationEmail(context);
+    if (!mail || !(await this.isAlbumEmailCurrent(mail))) {
       return JobStatus.Skipped;
     }
-
-    await this.sendAlbumLocalNotification(album, recipientId, NotificationType.AlbumInvite, senderName);
-
-    const { emailNotifications } = getPreferences(recipient.metadata);
-
-    if (!emailNotifications.enabled || !emailNotifications.albumInvite) {
-      return JobStatus.Skipped;
-    }
-
-    const attachment = await this.getAlbumThumbnailAttachment(album, await this.getEmailHiddenContentFilter(recipient));
-
-    const { server, templates } = await this.getConfig({ withCache: false });
-    const { html, text } = await this.emailRepository.renderEmail({
-      template: EmailTemplate.ALBUM_INVITE,
-      data: {
-        baseUrl: await this.getPublicUrl(server),
-        albumId: album.id,
-        albumName: album.albumName,
-        senderName,
-        recipientName: recipient.name,
-        cid: attachment ? attachment.cid : undefined,
-      },
-      customTemplate: templates.email.albumInviteTemplate,
-    });
-
-    await this.jobRepository.queue({
-      name: JobName.SendMail,
-      data: {
-        to: recipient.email,
-        subject: `You have been added to a shared album - ${album.albumName}`,
-        html,
-        text,
-        imageAttachments: attachment ? [attachment] : undefined,
-      },
-    });
-
+    await this.jobRepository.queue({ name: JobName.SendMail, data: mail });
     return JobStatus.Success;
   }
 
   @OnJob({ name: JobName.NotifyAlbumUpdate, queue: QueueName.Notification })
   async handleAlbumUpdate({ id, recipientId }: JobOf<JobName.NotifyAlbumUpdate>) {
-    const album = await this.albumRepository.getById(id, { withAssets: false });
-
-    if (!album) {
+    const context = { albumId: id, recipientId, kind: 'update' as const };
+    const current = await this.getCurrentAlbumNotification(context);
+    if (!current) {
       return JobStatus.Skipped;
     }
-
-    const recipient = await this.userRepository.get(recipientId, { withDeleted: false });
-    if (!recipient) {
+    await this.sendAlbumLocalNotification(current.album, recipientId, NotificationType.AlbumUpdate);
+    const mail = await this.prepareAlbumNotificationEmail(context);
+    if (!mail || !(await this.isAlbumEmailCurrent(mail))) {
       return JobStatus.Skipped;
     }
-
-    await this.sendAlbumLocalNotification(album, recipientId, NotificationType.AlbumUpdate);
-
-    const attachment = await this.getAlbumThumbnailAttachment(album, await this.getEmailHiddenContentFilter(recipient));
-
-    const { server, templates } = await this.getConfig({ withCache: false });
-
-    const user = await this.userRepository.get(recipientId, { withDeleted: false });
-    if (!user) {
-      return JobStatus.Skipped;
-    }
-
-    const { emailNotifications } = getPreferences(user.metadata);
-
-    if (!emailNotifications.enabled || !emailNotifications.albumUpdate) {
-      return JobStatus.Skipped;
-    }
-
-    const { html, text } = await this.emailRepository.renderEmail({
-      template: EmailTemplate.ALBUM_UPDATE,
-      data: {
-        baseUrl: await this.getPublicUrl(server),
-        albumId: album.id,
-        albumName: album.albumName,
-        recipientName: user.name,
-        cid: attachment ? attachment.cid : undefined,
-      },
-      customTemplate: templates.email.albumUpdateTemplate,
-    });
-
-    await this.jobRepository.queue({
-      name: JobName.SendMail,
-      data: {
-        to: user.email,
-        subject: `New media has been added to an album - ${album.albumName}`,
-        html,
-        text,
-        imageAttachments: attachment ? [attachment] : undefined,
-      },
-    });
-
+    await this.jobRepository.queue({ name: JobName.SendMail, data: mail });
     return JobStatus.Success;
+  }
+
+  private async getCurrentAlbumNotification(context: NonNullable<IEmailJob['albumMailContext']>) {
+    const album = await this.albumRepository.getById(context.albumId, { withAssets: false });
+    if (!album) {
+      return;
+    }
+    const recipient = await this.userRepository.get(context.recipientId, { withDeleted: false });
+    if (!recipient) {
+      return;
+    }
+    const allowed = await this.checkAccess({
+      auth: { user: recipient },
+      permission: Permission.AlbumRead,
+      ids: [album.id],
+    });
+    if (!allowed.has(album.id)) {
+      return;
+    }
+    return { album, recipient };
+  }
+
+  private async prepareAlbumNotificationEmail(
+    context: NonNullable<IEmailJob['albumMailContext']>,
+  ): Promise<IEmailJob | undefined> {
+    const current = await this.getCurrentAlbumNotification(context);
+    if (!current) {
+      return;
+    }
+    const { album, recipient } = current;
+    const invite = context.kind === 'invite';
+    const { emailNotifications } = getPreferences(recipient.metadata);
+    if (!emailNotifications.enabled || !(invite ? emailNotifications.albumInvite : emailNotifications.albumUpdate)) {
+      return;
+    }
+    const attachment = await this.getAlbumThumbnailAttachment(
+      album,
+      await this.getEmailHiddenContentFilter(recipient),
+      recipient,
+    );
+    const { server, templates } = await this.getConfig({ withCache: false });
+    const data = {
+      baseUrl: await this.getPublicUrl(server),
+      albumId: album.id,
+      albumName: album.albumName,
+      recipientName: recipient.name,
+      senderName: context.senderName ?? '',
+      cid: attachment?.cid,
+    };
+    const { html, text } = await this.emailRepository.renderEmail(
+      invite
+        ? { template: EmailTemplate.ALBUM_INVITE, data, customTemplate: templates.email.albumInviteTemplate }
+        : { template: EmailTemplate.ALBUM_UPDATE, data, customTemplate: templates.email.albumUpdateTemplate },
+    );
+    return {
+      albumMailContext: context,
+      to: recipient.email,
+      subject: invite
+        ? `You have been added to a shared album - ${album.albumName}`
+        : `New media has been added to an album - ${album.albumName}`,
+      html,
+      text,
+      imageAttachments: attachment ? [attachment] : undefined,
+    };
+  }
+
+  private async isAlbumEmailCurrent(mail: IEmailJob) {
+    const context = mail.albumMailContext;
+    if (!context) {
+      return false;
+    }
+    const current = await this.getCurrentAlbumNotification(context);
+    if (!current || mail.to !== current.recipient.email) {
+      return false;
+    }
+    const { emailNotifications } = getPreferences(current.recipient.metadata);
+    if (
+      !emailNotifications.enabled ||
+      !(context.kind === 'invite' ? emailNotifications.albumInvite : emailNotifications.albumUpdate)
+    ) {
+      return false;
+    }
+    const attachment = await this.getAlbumThumbnailAttachment(
+      current.album,
+      await this.getEmailHiddenContentFilter(current.recipient),
+      current.recipient,
+    );
+    if (!isEqualObject(mail.imageAttachments ?? [], attachment ? [attachment] : [])) {
+      return false;
+    }
+    // Attachment/configuration reads may yield; close the membership boundary after those awaits.
+    const allowed = await this.checkAccess({
+      auth: { user: current.recipient },
+      permission: Permission.AlbumRead,
+      ids: [current.album.id],
+    });
+    if (!allowed.has(current.album.id)) {
+      return false;
+    }
+    if (attachment && current.album.albumThumbnailAssetId) {
+      const visible = await this.checkAccess({
+        auth: { user: current.recipient },
+        permission: Permission.AssetView,
+        ids: [current.album.albumThumbnailAssetId],
+      });
+      return visible.has(current.album.albumThumbnailAssetId);
+    }
+    return true;
   }
 
   @OnJob({ name: JobName.SendMail, queue: QueueName.Notification })
@@ -593,7 +627,22 @@ export class NotificationService extends BaseService {
       return JobStatus.Skipped;
     }
 
-    const { to, subject, html, text: plain } = data;
+    // Only known legacy album payloads are identifiable without the new durable binding. Unknown
+    // custom legacy mail remains the existing generic path; this does not certify its provenance.
+    if (
+      !data.albumMailContext &&
+      (data.subject.startsWith('You have been added to a shared album - ') ||
+        data.subject.startsWith('New media has been added to an album - ') ||
+        data.imageAttachments?.some(({ cid }) => cid === 'album-thumbnail'))
+    ) {
+      return JobStatus.Skipped;
+    }
+    const mail = data.albumMailContext ? await this.prepareAlbumNotificationEmail(data.albumMailContext) : data;
+    if (!mail || (mail.albumMailContext && !(await this.isAlbumEmailCurrent(mail)))) {
+      return JobStatus.Skipped;
+    }
+    // Current authority was checked immediately before transport; no transaction spans SMTP I/O.
+    const { to, subject, html, text: plain } = mail;
     const response = await this.emailRepository.sendEmail({
       to,
       subject,
@@ -602,7 +651,7 @@ export class NotificationService extends BaseService {
       from: notifications.smtp.from,
       replyTo: notifications.smtp.replyTo || notifications.smtp.from,
       smtp: notifications.smtp.transport,
-      imageAttachments: data.imageAttachments,
+      imageAttachments: mail.imageAttachments,
     });
 
     this.logger.log(`Sent mail with id: ${response.messageId} status: ${response.response}`);
@@ -615,6 +664,7 @@ export class NotificationService extends BaseService {
       albumThumbnailAssetId: string | null;
     },
     hiddenContent: HiddenContentFilter,
+    recipient: AuthDto['user'],
   ): Promise<EmailImageAttachment | undefined> {
     if (!album.albumThumbnailAssetId) {
       return;
@@ -627,6 +677,16 @@ export class NotificationService extends BaseService {
       return;
     }
 
+    // Background delivery never inherits a recipient's PIN elevation. Existing access predicates
+    // exclude actual Locked media while preserving owner rule-only explicit album shares.
+    const allowed = await this.checkAccess({
+      auth: { user: recipient },
+      permission: Permission.AssetView,
+      ids: [album.albumThumbnailAssetId],
+    });
+    if (!allowed.has(album.albumThumbnailAssetId)) {
+      return;
+    }
     const albumThumbnailFiles = await this.assetJobRepository.getAlbumThumbnailFiles(
       album.albumThumbnailAssetId,
       AssetFileType.Thumbnail,
