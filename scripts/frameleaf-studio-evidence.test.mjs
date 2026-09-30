@@ -173,6 +173,69 @@ test("applyFamilyCoverage never downgrades an already-passed row", async () => {
   assert.deepEqual(overlay.rows[0].axes.chromium, passed);
 });
 
+test("applyFamilyCoverage family '*' matches every row regardless of id prefix", async () => {
+  const overlay = {
+    engineRevision: "e",
+    rows: [
+      overlayRow("readme.foo", { graph: { status: "not-tested" } }),
+      overlayRow("module.export", { graph: { status: "not-tested" } }),
+      overlayRow("blend.normal", { graph: { status: "not-tested" } }),
+    ],
+  };
+  const catalog = {
+    rows: [
+      fixture("readme.foo"),
+      fixture("module.export"),
+      fixture("blend.normal"),
+    ],
+  };
+  const summary = await applyFamilyCoverage(
+    overlay,
+    catalog,
+    manifest(),
+    build(),
+    "*",
+    "graph",
+    new Set(["normal", "invalid", "save", "reopen"]),
+  );
+  assert.deepEqual(summary, {
+    family: "*",
+    axis: "graph",
+    rows: 3,
+    blocked: 3,
+    alreadyPassed: 0,
+    fullyCovered: 0,
+    passed: 0,
+  });
+  assert.deepEqual(overlay.rows[0].axes.graph, {
+    status: "blocked",
+    reason: "Missing graph-axis case(s): bundle, unknown-fields (FL-112).",
+  });
+  assert.deepEqual(overlay.rows[1].axes.graph, {
+    status: "blocked",
+    reason: "Missing graph-axis case(s): bundle, unknown-fields (FL-112).",
+  });
+});
+
+test("applyFamilyCoverage with a real family does not touch rows outside it, unlike '*'", async () => {
+  const overlay = {
+    engineRevision: "e",
+    rows: [overlayRow("readme.foo"), overlayRow("blend.normal")],
+  };
+  const catalog = { rows: [fixture("readme.foo"), fixture("blend.normal")] };
+  const summary = await applyFamilyCoverage(
+    overlay,
+    catalog,
+    manifest(),
+    build(),
+    "blend",
+    "chromium",
+    new Set(["normal", "extreme"]),
+  );
+  assert.equal(summary.rows, 1);
+  assert.deepEqual(overlay.rows[0].axes.chromium, { status: "not-tested" });
+});
+
 test("applyFamilyCoverage throws on a row missing from the fixture catalog", async () => {
   const overlay = { engineRevision: "e", rows: [overlayRow("blend.ghost")] };
   const catalog = { rows: [] };

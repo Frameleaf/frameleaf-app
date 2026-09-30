@@ -195,6 +195,13 @@ export async function buildPassedEntry({
  * supplied, lets a fully-covered row actually become `passed` (writing a real artifact under
  * `artifactDir`); without it a fully-covered row is only counted, never written - this is the
  * default for the CI (`chromium`) path today, since no family has full coverage there yet.
+ *
+ * `family: "*"` is the all-rows sentinel: it matches every row in the overlay instead of an
+ * id-prefix family. It exists because `conformance.mjs`'s own schema (the `not-applicable`
+ * waiver is gated to `preview`/`export` on `NON_RENDERING_ROWS` only) means axes like `command`,
+ * `graph`, `timingColor` and `authorizationFailure` apply to all 210 manifest rows, not to one
+ * id-prefix family - so evidence for them is naturally a single shared-layer report that should
+ * route through every row, not a `blend.*`/`effect.*`/`transition.*`-style subset.
  */
 export async function applyFamilyCoverage(
   overlay,
@@ -220,7 +227,7 @@ export async function applyFamilyCoverage(
     passed: 0,
   };
   for (const row of overlay.rows) {
-    if (!row.id.startsWith(`${family}.`)) {
+    if (family !== "*" && !row.id.startsWith(`${family}.`)) {
       continue;
     }
     summary.rows++;
