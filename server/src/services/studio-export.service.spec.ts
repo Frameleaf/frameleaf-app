@@ -287,7 +287,18 @@ describe(StudioExportService.name, () => {
       getById: vi.fn().mockResolvedValue({ id: PROJECT, ownerId: OWNER, name: 'Lake trip', deletedAt: null }),
       getRevision: vi.fn().mockResolvedValue({ revision: 3, digest: 'digest-3', envelope: { graph: { clips: [] } } }),
     };
-    studio = { authorizeRevision: vi.fn() };
+    studio = {
+      authorizeRevision: vi.fn(),
+      // the owner rule of StudioProjectService.requireOwnedProject, for a stranger: 404 as if missing
+      requireOwnedProject: vi.fn(async (actor: AuthDto, id: string) => {
+        const project = (await (projects.getById as (id: string) => Promise<{ ownerId: string } | undefined>)(id)) as
+          { ownerId: string } | undefined;
+        if (!project || project.ownerId !== actor.user.id) {
+          throw new NotFoundException('Studio project not found');
+        }
+        return project;
+      }),
+    };
     resources = {
       resolveProjectResources: vi.fn().mockResolvedValue({
         manifest: { complete: true, refusedCount: 0, entries: [entry()] },
@@ -1394,6 +1405,18 @@ describe(StudioExportService.name, () => {
   });
 
   describe('list', () => {
+    it('answers a reviewer 403 from the shared owner check (FL-112)', async () => {
+      studio.requireOwnedProject.mockRejectedValue(
+        new ForbiddenException('Only the owner can export a Studio project'),
+      );
+      await expect(sut.list(auth(), PROJECT, {})).rejects.toBeInstanceOf(ForbiddenException);
+      expect(studio.requireOwnedProject).toHaveBeenCalledWith(
+        expect.anything(),
+        PROJECT,
+        'Only the owner can export a Studio project',
+      );
+    });
+
     it('leaves Locked results out of an ordinary session’s list and count, and shows them when unlocked', async () => {
       repository.listForProject.mockResolvedValue({
         items: [versionRow({ state: StudioExportVersionState.Published })],

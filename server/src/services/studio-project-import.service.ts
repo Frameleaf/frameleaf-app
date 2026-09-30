@@ -231,15 +231,14 @@ export class StudioProjectImportService {
     }
   }
 
-  /** The owner's own project. A shared link, a reviewer or a stranger all get `404`. */
+  /**
+   * The owner's own project. A shared link or someone who cannot see the project gets `404`, as for
+   * a project that does not exist; a reviewer, who can see it, gets `403` (FL-112 ruling, 2026-09-30).
+   */
   private async requireOwnedProject(auth: AuthDto, projectId: string) {
     if (auth.sharedLink || !isStudioUuid(projectId)) {
       throw new NotFoundException('Studio project not found');
     }
-    const project = await this.projects.getById(projectId);
-    if (!project || project.ownerId !== auth.user.id) {
-      throw new NotFoundException('Studio project not found');
-    }
-    return project;
+    return this.studio.requireOwnedProject(auth, projectId, 'Only the owner can import into a Studio project');
   }
 }

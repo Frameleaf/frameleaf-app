@@ -861,11 +861,20 @@ export class StudioProjectService {
   }
 
   private async requireOwner(auth: AuthDto, id: string): Promise<{ project: StudioProject }> {
+    return { project: await this.requireOwnedProject(auth, id, 'Only the owner can change a Studio project') };
+  }
+
+  /**
+   * FL-112: the one owner check every owner-only Studio route shares (export, import, bundle,
+   * changes). Someone who cannot see the project, a shared link included, is told `404`, exactly as
+   * for a project that does not exist; a reviewer, who can see it, is told `403` with `message`.
+   */
+  async requireOwnedProject(auth: AuthDto, id: string, message: string): Promise<StudioProject> {
     const { project, access } = await this.findAccessible(auth, id);
     if (access !== 'owner') {
-      throw new ForbiddenException('Only the owner can change a Studio project');
+      throw new ForbiddenException(message);
     }
-    return { project };
+    return project;
   }
 
   /** The live `album_user` row, owner role included. Re-read on every call, never cached. */
