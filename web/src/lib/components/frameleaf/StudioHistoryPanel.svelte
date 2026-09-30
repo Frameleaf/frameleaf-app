@@ -257,7 +257,7 @@
     padding: 0.75rem;
     overflow: auto;
     background: var(--fl-panel);
-    border-left: 1px solid var(--fl-border);
+    border-inline-start: 1px solid var(--fl-border);
     color: var(--fl-text);
   }
   header {

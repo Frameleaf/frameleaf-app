@@ -55,7 +55,7 @@
   border-color: var(--ms-white-edge);
 }
 .ms-stop.is-cpu:first-child .ms-band {
-  border-left: 1px solid var(--ms-white-edge);
+  border-inline-start: 1px solid var(--ms-white-edge);
 }
 .ms-stop.is-gpu .ms-band {
   background: var(--ms-green);
@@ -89,7 +89,7 @@
   left: 50%;
   width: 18px;
   height: 18px;
-  margin-left: -9px;
+  margin-left: -9px; /* rtl: physical, centres with left: 50% */
   border-radius: 50%;
   background: var(--fl-panel, #fff);
   border: 2px solid var(--fl-muted);
@@ -146,7 +146,7 @@
   padding: 10px 12px;
   border-radius: var(--fl-radius-control, 8px);
   background: var(--fl-raised);
-  border-left: 4px solid var(--fl-border);
+  border-inline-start: 4px solid var(--fl-border);
   font-size: var(--fl-font-small, 12px);
   line-height: 1.5;
 }
@@ -159,16 +159,16 @@
   color: var(--fl-muted);
 }
 .ms-readout.is-cpu {
-  border-left-color: var(--ms-white-edge);
+  border-inline-start-color: var(--ms-white-edge);
 }
 .ms-readout.is-gpu {
-  border-left-color: var(--ms-green);
+  border-inline-start-color: var(--ms-green);
 }
 .ms-readout.is-gpu > svg {
   color: var(--ms-green);
 }
 .ms-readout.is-cloud {
-  border-left-color: var(--ms-blue);
+  border-inline-start-color: var(--ms-blue);
 }
 .ms-readout.is-cloud > svg {
   color: var(--ms-blue);
@@ -342,7 +342,7 @@
 }
 .hw-fix ol {
   margin: 0;
-  padding-left: 18px;
+  padding-inline-start: 18px;
   font-size: var(--fl-font-small, 12px);
   line-height: 1.6;
 }
@@ -401,12 +401,12 @@
 .hw-bench td {
   padding: 6px 8px;
   border-top: 1px solid var(--fl-border);
-  text-align: left;
+  text-align: start;
   vertical-align: top;
 }
 .hw-bench td:last-child,
 .hw-bench th:last-child {
-  text-align: right;
+  text-align: end;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }

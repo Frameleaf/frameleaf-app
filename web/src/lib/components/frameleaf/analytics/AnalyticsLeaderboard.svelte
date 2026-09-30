@@ -94,7 +94,7 @@
   strong {
     font-variant-numeric: tabular-nums;
     font-weight: 600;
-    text-align: right;
+    text-align: end;
   }
   @container (max-width: 520px) {
     li {

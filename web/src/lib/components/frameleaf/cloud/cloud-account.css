@@ -181,7 +181,7 @@
   padding: 12px 14px;
   border-radius: var(--fl-radius-control);
   background: var(--fl-raised);
-  border-left: 3px solid var(--fl-accent);
+  border-inline-start: 3px solid var(--fl-accent);
   font-size: var(--fl-font-small);
   line-height: 1.55;
   margin-bottom: 14px;
@@ -320,7 +320,7 @@
 .frameleaf-cloud .fc-consequences,
 .fc-consequences {
   margin: 0 0 14px;
-  padding-left: 20px;
+  padding-inline-start: 20px;
   font-size: var(--fl-font-small);
   line-height: 1.6;
 }
@@ -432,7 +432,7 @@
 }
 .frameleaf-cloud .fc-plan-grid ul {
   margin: 0 0 8px;
-  padding-left: 18px;
+  padding-inline-start: 18px;
   color: var(--fl-muted);
   font-size: var(--fl-font-small);
   line-height: 1.6;

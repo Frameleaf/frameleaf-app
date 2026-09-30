@@ -135,7 +135,7 @@
     border-top: 1px solid var(--fl-border);
     font-size: var(--fl-font-small);
     color: var(--fl-text);
-    text-align: left;
+    text-align: start;
   }
   .mt-row:first-child {
     border-top: 0;

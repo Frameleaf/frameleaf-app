@@ -253,6 +253,14 @@
 ::view-transition-new(root) {
   animation-duration: 300ms;
 }
+/*
+ * FL-139: arrows and chevrons that point along the reading direction (marked by the @immich/ui Icon
+ * patch) point the other way in a right-to-left page.
+ */
+[dir='rtl'] svg[data-rtl-mirror] {
+  scale: -1 1;
+}
+
 @media (prefers-reduced-motion: reduce) {
   ::view-transition-group(fl-hero) {
     animation: none;

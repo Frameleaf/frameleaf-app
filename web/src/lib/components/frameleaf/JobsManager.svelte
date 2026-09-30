@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { readingKey } from '$lib/frameleaf/reading-direction';
   import { motionScrollBehavior } from '$lib/frameleaf/motion';
   /**
    * The Job manager (FL-71): the design template's `JobsManager.jsx` (`jobs-manager.css`) in
@@ -719,10 +720,11 @@
   };
   const onTabKey = (event: KeyboardEvent) => {
     const index = JOB_TABS.indexOf(tab);
+    const key = readingKey(event.key);
     const next =
-      event.key === 'ArrowRight'
+      key === 'ArrowRight'
         ? JOB_TABS[(index + 1) % JOB_TABS.length]
-        : event.key === 'ArrowLeft'
+        : key === 'ArrowLeft'
           ? JOB_TABS[(index + JOB_TABS.length - 1) % JOB_TABS.length]
           : event.key === 'Home'
             ? JOB_TABS[0]
@@ -1489,7 +1491,7 @@
     color: var(--fl-muted);
   }
   .jm-metric + .jm-metric {
-    border-left: 1px solid var(--fl-border);
+    border-inline-start: 1px solid var(--fl-border);
   }
   .jm-metric.warning,
   .jm-metric.warning strong {
@@ -1578,7 +1580,7 @@
   .jobs-manager table {
     border-collapse: collapse;
     width: 100%;
-    text-align: left;
+    text-align: start;
     min-width: 640px;
   }
   .jobs-manager th,
@@ -1609,7 +1611,7 @@
   }
   .jm-row-actions {
     white-space: nowrap;
-    text-align: right;
+    text-align: end;
   }
   .jm-icon-button,
   .jm-queue-name,
@@ -1621,7 +1623,7 @@
     color: inherit;
     background: none;
     border: 0;
-    text-align: left;
+    text-align: start;
     padding: 0;
     cursor: pointer;
   }
@@ -1842,7 +1844,7 @@
     color: var(--jm-green);
   }
   .jm-message > :global(:last-child:is(button)) {
-    margin-left: auto;
+    margin-inline-start: auto;
   }
   .jm-message.jm-error {
     color: var(--jm-red);
@@ -1950,7 +1952,7 @@
   .jm-review dd,
   .jm-job-detail dd {
     margin: 0;
-    text-align: right;
+    text-align: end;
     overflow-wrap: anywhere;
     min-width: 0;
   }
@@ -2015,7 +2017,7 @@
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
     .jm-metric:nth-child(3) {
-      border-left: 0;
+      border-inline-start: 0;
       border-top: 1px solid var(--fl-border);
     }
     .jm-metric:nth-child(4) {

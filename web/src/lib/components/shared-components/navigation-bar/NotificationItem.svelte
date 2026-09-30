@@ -149,7 +149,7 @@
     padding: 0.625rem;
     border-radius: var(--fl-radius-control);
     color: inherit;
-    text-align: left;
+    text-align: start;
   }
   .fl-notif-item:hover,
   .fl-notif-item:focus-visible {

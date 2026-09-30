@@ -306,7 +306,7 @@
 
   .fl-segment {
     display: inline-flex;
-    margin-right: 6px;
+    margin-inline-end: 6px;
     padding: 3px;
     border: 1px solid #ffffff14;
     border-radius: var(--fl-radius-control, 9px);

@@ -479,7 +479,7 @@
     flex: 1;
     min-width: 0;
     max-width: 30rem;
-    margin-left: auto;
+    margin-inline-start: auto;
   }
   .fl-topbar-actions {
     display: flex;
@@ -499,7 +499,7 @@
   @media (max-width: 80rem) {
     .fl-topbar-grid {
       gap: 0.75rem;
-      padding-right: 1rem;
+      padding-inline-end: 1rem;
     }
     .fl-primary-nav {
       gap: 0.125rem;
@@ -521,7 +521,7 @@
       margin: 0;
     }
     .fl-topbar-actions {
-      margin-left: auto;
+      margin-inline-start: auto;
     }
   }
   /* Phones: the prototype's fixed two-row grid. */
@@ -555,7 +555,7 @@
     .fl-topbar-search {
       grid-area: search;
       max-width: none;
-      margin-left: 0;
+      margin-inline-start: 0;
     }
     .fl-topbar-actions {
       grid-area: actions;

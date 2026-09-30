@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { isForwardKey } from '$lib/frameleaf/reading-direction';
   import { browser } from '$app/environment';
   import { replaceState } from '$app/navigation';
   import { page } from '$app/state';
@@ -1038,8 +1039,14 @@
   use:shortcuts={[
     { shortcut: { key: 'ArrowUp' }, onShortcut: () => navigateStack('previous') },
     { shortcut: { key: 'ArrowDown' }, onShortcut: () => navigateStack('next') },
-    { shortcut: { key: 'ArrowLeft' }, onShortcut: () => navigateAssetByKey('previous') },
-    { shortcut: { key: 'ArrowRight' }, onShortcut: () => navigateAssetByKey('next') },
+    {
+      shortcut: { key: 'ArrowLeft' },
+      onShortcut: () => navigateAssetByKey(isForwardKey('ArrowLeft') ? 'next' : 'previous'),
+    },
+    {
+      shortcut: { key: 'ArrowRight' },
+      onShortcut: () => navigateAssetByKey(isForwardKey('ArrowRight') ? 'next' : 'previous'),
+    },
   ]}
 />
 
@@ -1322,7 +1329,7 @@
     <div
       transition:motionFly={{ duration: 150 }}
       id="activity-panel"
-      class="row-span-5 row-start-1 w-90 overflow-y-auto transition-all md:w-115 dark:border-l dark:border-s-immich-dark-gray"
+      class="row-span-5 row-start-1 w-90 overflow-y-auto transition-all md:w-115 dark:border-s dark:border-s-immich-dark-gray"
       translate="yes"
     >
       {#if activityPanel}

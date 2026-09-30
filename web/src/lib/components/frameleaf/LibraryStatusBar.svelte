@@ -114,7 +114,7 @@
   }
   .fl-status-counts i {
     margin: 0 12px;
-    border-left: 1px solid var(--fl-material-edge);
+    border-inline-start: 1px solid var(--fl-material-edge);
   }
   .fl-status-saved {
     display: flex;

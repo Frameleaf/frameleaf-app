@@ -181,7 +181,7 @@
     color: var(--fl-text);
     text-decoration: none;
     width: 100%;
-    text-align: left;
+    text-align: start;
     min-height: 56px;
   }
   .help-link:hover {
@@ -231,7 +231,7 @@
   }
   .help-notices td:last-child {
     color: var(--fl-muted);
-    text-align: right;
+    text-align: end;
     white-space: nowrap;
   }
   .help-notices td a {

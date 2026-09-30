@@ -337,11 +337,11 @@
     margin: 0 0 0.625rem;
   }
   .resource-stats div {
-    padding-left: 1.125rem;
-    border-left: 1px solid var(--fl-border);
+    padding-inline-start: 1.125rem;
+    border-inline-start: 1px solid var(--fl-border);
   }
   .resource-stats div:first-child {
-    padding-left: 0;
+    padding-inline-start: 0;
     border: 0;
   }
   .resource-stats dt {

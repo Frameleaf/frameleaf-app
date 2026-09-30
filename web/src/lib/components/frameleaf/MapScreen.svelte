@@ -832,8 +832,8 @@
     font-variant-numeric: tabular-nums;
   }
   .legend-counts {
-    padding-left: 12px;
-    border-left: 1px solid var(--fl-border);
+    padding-inline-start: 12px;
+    border-inline-start: 1px solid var(--fl-border);
   }
   .video-dot {
     position: absolute;
@@ -938,7 +938,7 @@
     background: var(--fl-panel);
     box-shadow: var(--fl-shadow-2);
     color: var(--fl-text);
-    text-align: left;
+    text-align: start;
     pointer-events: none;
   }
   .card img,
@@ -1065,7 +1065,7 @@
     color: var(--fl-text);
     font: inherit;
     font-size: var(--fl-font-small);
-    text-align: left;
+    text-align: start;
     cursor: pointer;
   }
   .track {
@@ -1081,7 +1081,7 @@
     content: '';
     position: absolute;
     top: 3px;
-    left: 3px;
+    inset-inline-start: 3px;
     width: 12px;
     height: 12px;
     border-radius: 50%;
@@ -1094,6 +1094,9 @@
   .switch.on .track::after {
     transform: translateX(14px);
     background: var(--fl-accent-text);
+  }
+  :global([dir='rtl']) .switch.on .track::after {
+    transform: translateX(-14px);
   }
   .counts {
     display: flex;
@@ -1123,7 +1126,7 @@
     flex-shrink: 0;
     width: 300px;
     min-height: 0;
-    border-left: 1px solid var(--fl-border);
+    border-inline-start: 1px solid var(--fl-border);
     background: var(--fl-panel);
   }
   .list header {
@@ -1166,7 +1169,7 @@
     background: none;
     color: inherit;
     font: inherit;
-    text-align: left;
+    text-align: start;
     cursor: pointer;
   }
   .row:hover {
@@ -1263,7 +1266,7 @@
       width: 100%;
       max-height: 45%;
       border-top: 1px solid var(--fl-border);
-      border-left: 0;
+      border-inline-start: 0;
     }
   }
 </style>

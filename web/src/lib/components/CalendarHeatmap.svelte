@@ -61,11 +61,11 @@
           {#if Info.getStartOfWeek({ locale: $locale }) === 7}
             <div></div>
           {/if}
-          <div class="row-span-2 -mt-1"><Text size="tiny" class="mr-0.5 font-mono">{weekdays[0]}</Text></div>
-          <div class="row-span-2 -mt-1"><Text size="tiny" class="mr-0.5 font-mono">{weekdays[1]}</Text></div>
-          <div class="row-span-2 -mt-1"><Text size="tiny" class="mr-0.5 font-mono">{weekdays[2]}</Text></div>
+          <div class="row-span-2 -mt-1"><Text size="tiny" class="me-0.5 font-mono">{weekdays[0]}</Text></div>
+          <div class="row-span-2 -mt-1"><Text size="tiny" class="me-0.5 font-mono">{weekdays[1]}</Text></div>
+          <div class="row-span-2 -mt-1"><Text size="tiny" class="me-0.5 font-mono">{weekdays[2]}</Text></div>
           {#if Info.getStartOfWeek({ locale: $locale }) === 1}
-            <div class="-my-1"><Text size="tiny" class="mr-0.5 font-mono">{weekdays[3]}</Text></div>
+            <div class="-my-1"><Text size="tiny" class="me-0.5 font-mono">{weekdays[3]}</Text></div>
           {/if}
         </div>
 
@@ -92,7 +92,7 @@
       <span class="size-3 rounded-sm bg-immich-primary/70"></span>
       <span class="size-3 rounded-sm bg-immich-primary"></span>
       <span>{$t('more')}</span>
-      <span class="ml-4">{totalLabel(data.totalCount)}</span>
+      <span class="ms-4">{totalLabel(data.totalCount)}</span>
     </div>
   </div>
 </div>

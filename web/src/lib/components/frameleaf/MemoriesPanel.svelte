@@ -583,7 +583,7 @@
     content: '';
     position: absolute;
     top: 3px;
-    left: 3px;
+    inset-inline-start: 3px;
     width: 0.75rem;
     height: 0.75rem;
     background: var(--fl-text);
@@ -596,6 +596,9 @@
   .fm-switch.on .fm-switch-track::after {
     background: var(--fl-accent-text);
     transform: translateX(0.875rem);
+  }
+  :global([dir='rtl']) .fm-switch.on .fm-switch-track::after {
+    transform: translateX(-0.875rem);
   }
   .fm-show-less {
     margin-block-start: 0.5rem;

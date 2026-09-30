@@ -121,7 +121,7 @@
   height: 44px;
   width: auto;
   max-width: none;
-  margin-left: -48px;
+  margin-inline-start: -48px;
 }
 .frs-tagline {
   font-size: 20px;
@@ -194,7 +194,7 @@
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
   width: min(820px, 100%);
-  text-align: left;
+  text-align: start;
 }
 .frs-whatsnew article {
   display: grid;
@@ -268,7 +268,7 @@
   gap: 32px;
   padding: 28px 22px;
   background: linear-gradient(180deg, #0a151d, #060d12);
-  border-right: 1px solid var(--fl-border);
+  border-inline-end: 1px solid var(--fl-border);
 }
 .frs-rail-logo {
   height: 30px;
@@ -317,7 +317,7 @@
   padding: 2px 0;
   color: var(--fl-muted);
   font-size: var(--fl-font-small);
-  text-align: left;
+  text-align: start;
 }
 .frs-rail li > button:disabled {
   cursor: default;
@@ -514,7 +514,7 @@
   color: var(--fl-accent);
 }
 .frs-choice-mark {
-  margin-left: auto;
+  margin-inline-start: auto;
   display: grid;
   place-items: center;
   width: 22px;
@@ -546,16 +546,16 @@
 }
 .frs-ticks li {
   position: relative;
-  padding-left: 22px;
+  padding-inline-start: 22px;
 }
 .frs-ticks li::before {
   content: '';
   position: absolute;
-  left: 2px;
+  inset-inline-start: 2px;
   top: 6px;
   width: 10px;
   height: 6px;
-  border-left: 2px solid var(--fl-teal);
+  border-left: 2px solid var(--fl-teal); /* rtl: physical, draws the tick shape */
   border-bottom: 2px solid var(--fl-teal);
   transform: rotate(-45deg);
 }
@@ -793,7 +793,7 @@
 .frs-storage input {
   width: 100%;
   min-height: 44px;
-  padding-left: 40px;
+  padding-inline-start: 40px;
   border-radius: var(--fl-radius-control);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 15px;
@@ -942,7 +942,7 @@
   color: var(--fl-accent);
 }
 .frs-ok {
-  margin-left: auto;
+  margin-inline-start: auto;
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -971,10 +971,10 @@
   gap: 8px;
 }
 .frs-price {
-  margin-left: auto;
+  margin-inline-start: auto;
   display: grid;
   justify-items: end;
-  text-align: right;
+  text-align: end;
 }
 .frs-price strong {
   font-size: 26px;
@@ -1242,7 +1242,7 @@
 .frs-theme > span {
   color: var(--fl-muted);
   font-size: var(--fl-font-small);
-  margin-right: 6px;
+  margin-inline-end: 6px;
 }
 .frs-theme label {
   display: inline-flex;
@@ -1396,7 +1396,7 @@
   align-content: start;
 }
 .frs-done-chip {
-  margin-left: auto;
+  margin-inline-start: auto;
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -1476,7 +1476,7 @@
     flex-wrap: wrap;
     gap: 16px;
     padding: 16px;
-    border-right: 0;
+    border-inline-end: 0;
     border-bottom: 1px solid var(--fl-border);
   }
   .frs-rail ol {

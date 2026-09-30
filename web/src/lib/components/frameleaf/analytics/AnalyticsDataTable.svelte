@@ -97,13 +97,13 @@
     padding: 10px 0;
     color: var(--fl-muted);
     font-size: 11px;
-    text-align: left;
+    text-align: start;
   }
   th,
   td {
     padding: 9px 10px;
     border-bottom: 1px solid var(--fl-border);
-    text-align: right;
+    text-align: end;
     white-space: nowrap;
   }
   th {
@@ -111,8 +111,8 @@
     font-weight: 450;
   }
   th:first-child {
-    padding-left: 0;
-    text-align: left;
+    padding-inline-start: 0;
+    text-align: start;
   }
   thead th {
     font-weight: 550;

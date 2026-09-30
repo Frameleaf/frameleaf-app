@@ -8,14 +8,13 @@
   import ButtonContextMenu from '$lib/components/shared-components/context-menu/ButtonContextMenu.svelte';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
-  import { languageManager } from '$lib/managers/language-manager.svelte';
   import { getGlobalActions } from '$lib/services/app.service';
   import { getAssetActions } from '$lib/services/asset.service';
   import { getSharedLink, isEnabled, withoutIcons } from '$lib/utils';
   import type { OnUndoDelete } from '$lib/utils/actions';
   import { AssetTypeEnum, type AlbumResponseDto, type AssetResponseDto, type StackResponseDto } from '@immich/sdk';
   import { ActionButton, CommandPaletteDefaultProvider, IconButton, Tooltip, type ActionItem } from '@immich/ui';
-  import { mdiArrowLeft, mdiArrowRight, mdiDotsHorizontal, mdiInformationOutline, mdiVideoOutline } from '@mdi/js';
+  import { mdiArrowLeft, mdiDotsHorizontal, mdiInformationOutline, mdiVideoOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
 
   interface Props {
@@ -54,7 +53,7 @@
 
   const Close: ActionItem = $derived({
     title: $t('frameleaf_viewer_close'),
-    icon: languageManager.rtl ? mdiArrowRight : mdiArrowLeft,
+    icon: mdiArrowLeft,
     $if: () => !!onClose && !assetViewerManager.isFaceEditMode,
     onAction: () => onClose?.(),
     shortcuts: [{ key: 'Escape' }],

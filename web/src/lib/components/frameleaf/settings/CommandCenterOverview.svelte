@@ -482,7 +482,7 @@
     background: var(--fl-accent);
   }
   .time {
-    margin-left: auto;
+    margin-inline-start: auto;
   }
   .metrics {
     display: grid;
@@ -563,7 +563,7 @@
   }
   .service small {
     color: var(--fl-muted);
-    margin-left: auto;
+    margin-inline-start: auto;
   }
   /* command-center.css `.cc-action-row`: icon, title over its detail, chevron. */
   .action > span {
@@ -621,7 +621,7 @@
   }
   table {
     width: 100%;
-    text-align: left;
+    text-align: start;
   }
   button {
     color: var(--fl-accent);
@@ -639,7 +639,7 @@
       flex-wrap: wrap;
     }
     .time {
-      margin-left: 0;
+      margin-inline-start: 0;
     }
     .metrics > a {
       padding: 14px;

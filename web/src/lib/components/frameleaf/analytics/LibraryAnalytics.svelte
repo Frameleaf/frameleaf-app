@@ -603,7 +603,7 @@
     margin: 0 0 3px auto;
     color: var(--fl-muted);
     font-size: 10px;
-    text-align: right;
+    text-align: end;
   }
   .export-status {
     min-height: 18px;
@@ -624,11 +624,11 @@
   }
   .stat-strip > div {
     min-width: 0;
-    padding-right: 12px;
+    padding-inline-end: 12px;
   }
   .stat-strip > div + div {
-    padding-left: 20px;
-    border-left: 1px solid var(--fl-border);
+    padding-inline-start: 20px;
+    border-inline-start: 1px solid var(--fl-border);
   }
   .stat-strip dt {
     color: var(--fl-muted);
@@ -733,7 +733,7 @@
   .growth figcaption small {
     color: var(--fl-muted);
     font-size: 10px;
-    text-align: right;
+    text-align: end;
   }
   .note {
     margin: 8px 0 12px;
@@ -765,13 +765,13 @@
     padding: 10px 0;
     color: var(--fl-muted);
     font-size: 10px;
-    text-align: left;
+    text-align: start;
   }
   th,
   td {
     padding: 9px 10px;
     border-bottom: 1px solid var(--fl-border);
-    text-align: right;
+    text-align: end;
     white-space: nowrap;
   }
   th {
@@ -779,14 +779,14 @@
     font-weight: 450;
   }
   th:first-child {
-    padding-left: 0;
-    text-align: left;
+    padding-inline-start: 0;
+    text-align: start;
   }
   .geek td:last-child {
     min-width: 180px;
-    padding-left: 24px;
+    padding-inline-start: 24px;
     color: var(--fl-muted);
-    text-align: left;
+    text-align: start;
     white-space: normal;
   }
   .library-views .stat-strip,
@@ -818,16 +818,16 @@
   @container (max-width: 850px) {
     .controls p {
       width: 100%;
-      margin-left: 0;
-      text-align: left;
+      margin-inline-start: 0;
+      text-align: start;
     }
     .stat-strip {
       grid-template-columns: repeat(2, minmax(0, 1fr));
       row-gap: 22px;
     }
     .stat-strip > div:nth-child(3) {
-      padding-left: 0;
-      border-left: 0;
+      padding-inline-start: 0;
+      border-inline-start: 0;
     }
     .grid {
       grid-template-columns: minmax(0, 1fr);
@@ -837,7 +837,7 @@
       gap: 6px;
     }
     .growth figcaption small {
-      text-align: left;
+      text-align: start;
     }
   }
   @container (max-width: 480px) {

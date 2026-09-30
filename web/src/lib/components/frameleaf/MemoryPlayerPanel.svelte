@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { isForwardKey } from '$lib/frameleaf/reading-direction';
   /**
    * Frameleaf memory player (FL-62).
    *
@@ -996,9 +997,9 @@
   use:shortcuts={assetViewerManager.isViewing
     ? []
     : [
-        { shortcut: { key: 'ArrowRight' }, onShortcut: goNext },
+        { shortcut: { key: 'ArrowRight' }, onShortcut: () => (isForwardKey('ArrowRight') ? goNext() : goPrevious()) },
         { shortcut: { key: 'd' }, onShortcut: goNext },
-        { shortcut: { key: 'ArrowLeft' }, onShortcut: goPrevious },
+        { shortcut: { key: 'ArrowLeft' }, onShortcut: () => (isForwardKey('ArrowLeft') ? goNext() : goPrevious()) },
         { shortcut: { key: 'a' }, onShortcut: goPrevious },
         { shortcut: { key: 'Escape' }, onShortcut: () => handleEscape() },
       ]}

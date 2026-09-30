@@ -885,7 +885,7 @@
   media-volume-range:focus,
   media-volume-range:focus-within {
     padding: 0 calc(var(--spacing) * 2);
-    margin-left: calc(var(--spacing) * 2);
+    margin-inline-start: calc(var(--spacing) * 2);
     width: 70px;
   }
 </style>

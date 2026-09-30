@@ -1112,7 +1112,7 @@
     align-items: baseline;
     gap: 8px;
     margin: 0 0 10px;
-    padding-left: 4px;
+    padding-inline-start: 4px;
     font-size: 17px;
     font-weight: 600;
   }

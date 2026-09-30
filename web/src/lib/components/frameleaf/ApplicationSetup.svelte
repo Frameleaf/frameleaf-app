@@ -279,7 +279,7 @@
   }
   .policy {
     background: var(--fl-panel);
-    border-left: 2px solid var(--fl-muted);
+    border-inline-start: 2px solid var(--fl-muted);
     padding: 0.8rem 1rem;
     margin: 1rem 0 0;
   }

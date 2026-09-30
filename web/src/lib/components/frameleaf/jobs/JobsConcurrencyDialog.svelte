@@ -222,7 +222,7 @@
   .jm-concurrency-row > span:last-child {
     min-width: 90px;
     max-width: 170px;
-    text-align: right;
+    text-align: end;
   }
   .jm-concurrency-row input {
     width: 90px;

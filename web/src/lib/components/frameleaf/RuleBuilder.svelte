@@ -329,7 +329,7 @@
     cursor: pointer;
   }
   .check.person {
-    padding-left: 6px;
+    padding-inline-start: 6px;
   }
   .check img {
     width: 24px;

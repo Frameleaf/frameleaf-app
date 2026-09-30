@@ -149,7 +149,7 @@
   /* The template's `.mt-consequences` and `.mt-dialog-check` (maintenance.css). */
   .consequences {
     margin: 12px 0;
-    padding-left: 18px;
+    padding-inline-start: 18px;
     list-style: disc;
     color: var(--fl-text);
     font-size: var(--fl-font-small);

@@ -712,7 +712,7 @@
     gap: 12px;
     padding: 12px 14px;
     background: var(--fl-raised);
-    border-left: 3px solid var(--fl-warning);
+    border-inline-start: 3px solid var(--fl-warning);
     border-radius: 0 6px 6px 0;
     font-size: var(--fl-font-small);
     margin-bottom: 16px;

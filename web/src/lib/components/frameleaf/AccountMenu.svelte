@@ -315,7 +315,7 @@
     position: relative;
   }
   .cloud-pill {
-    margin-left: auto;
+    margin-inline-start: auto;
     padding: 2px 8px;
     border-radius: var(--fl-radius-pill);
     background: var(--fl-accent-soft, var(--fl-raised));

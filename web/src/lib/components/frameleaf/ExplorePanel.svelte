@@ -405,7 +405,7 @@
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius-card);
     background: var(--fl-raised);
-    text-align: left;
+    text-align: start;
   }
   .explore-library .el-best {
     color: white;
@@ -467,7 +467,7 @@
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius-card);
     background: var(--fl-panel);
-    text-align: left;
+    text-align: start;
   }
   .el-shortcut > span:nth-child(2) {
     flex: 1;
@@ -499,7 +499,7 @@
     overflow: hidden;
     border-radius: var(--fl-radius-card);
     background: var(--fl-raised);
-    text-align: left;
+    text-align: start;
   }
   .explore-library .el-place {
     color: white;
@@ -537,7 +537,7 @@
     overflow: hidden;
     border-radius: var(--fl-radius-card);
     background: var(--fl-raised);
-    text-align: left;
+    text-align: start;
   }
   .el-memory-row img {
     position: absolute;
@@ -579,7 +579,7 @@
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius-card);
     background: var(--fl-panel);
-    text-align: left;
+    text-align: start;
   }
   .el-things img,
   .el-things .el-cover-empty,
@@ -597,7 +597,7 @@
   .el-things a > :global(svg),
   .el-collections a > :global(svg) {
     flex: 0 0 auto;
-    margin-right: 12px;
+    margin-inline-end: 12px;
     color: var(--fl-muted);
   }
   .el-things strong,
@@ -627,7 +627,7 @@
     padding: 0;
     border: 0;
     background: none;
-    text-align: left;
+    text-align: start;
   }
   .el-recent img {
     display: block;
@@ -671,7 +671,7 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    margin-right: 16px;
+    margin-inline-end: 16px;
     padding: 8px 0;
     font-size: 12px;
   }
@@ -769,7 +769,7 @@
       display: none;
     }
     .el-best-copy {
-      margin-left: 18px;
+      margin-inline-start: 18px;
     }
     .el-more a {
       min-height: 40px;

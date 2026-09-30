@@ -367,7 +367,7 @@
     font-size: var(--fl-font-small);
   }
   th {
-    text-align: left;
+    text-align: start;
     color: var(--fl-muted);
     font-weight: 500;
     padding: 8px 6px;

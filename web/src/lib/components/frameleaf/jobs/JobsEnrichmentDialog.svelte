@@ -220,6 +220,6 @@
     color: var(--fl-muted);
   }
   .jm-message > :global(:last-child) {
-    margin-left: auto;
+    margin-inline-start: auto;
   }
 </style>

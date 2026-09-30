@@ -465,7 +465,7 @@
   border: 0;
   border-radius: var(--fl-radius-control);
   background: var(--fl-raised);
-  text-align: left;
+  text-align: start;
 }
 .fl-discovery .dv-folder-rows button:hover {
   filter: brightness(1.08);
@@ -525,7 +525,7 @@
   gap: 6px;
 }
 .fl-discovery .dv-details-path {
-  margin-left: auto;
+  margin-inline-start: auto;
   font-size: var(--fl-font-micro);
   overflow: hidden;
   text-overflow: ellipsis;

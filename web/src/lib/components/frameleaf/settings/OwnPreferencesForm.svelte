@@ -106,7 +106,7 @@
     justify-content: space-between;
     gap: 10px;
     background: var(--fl-raised);
-    border-left: 2px solid var(--fl-accent);
+    border-inline-start: 2px solid var(--fl-accent);
     padding: 12px;
     line-height: 1.6;
     font-size: var(--fl-font-small);

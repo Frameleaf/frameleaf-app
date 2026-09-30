@@ -534,11 +534,11 @@
     margin: 4px 0 18px;
   }
   .fc-restore-stats div {
-    padding-left: 1.125rem;
-    border-left: 1px solid var(--fl-border);
+    padding-inline-start: 1.125rem;
+    border-inline-start: 1px solid var(--fl-border);
   }
   .fc-restore-stats div:first-child {
-    padding-left: 0;
+    padding-inline-start: 0;
     border: 0;
   }
   .fc-restore-stats dt {

@@ -93,7 +93,7 @@
 <style>
   /* .mv-stars-clear (media-viewer.css:229-240). */
   .fl-stars-clear {
-    margin-left: 6px;
+    margin-inline-start: 6px;
     min-height: 30px;
     padding: 0 10px;
     border: 0;

@@ -827,7 +827,7 @@
     width: 228px;
     padding: 14px 0 0;
     background: var(--fl-panel);
-    border-right: 1px solid var(--fl-border);
+    border-inline-end: 1px solid var(--fl-border);
   }
   .cc-nav-title {
     display: flex;
