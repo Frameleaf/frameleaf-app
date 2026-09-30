@@ -49,7 +49,11 @@ test.describe('Shared editor Save and Cancel reachability (FL-144)', () => {
       for (const width of [1280, 390]) {
         await page.setViewportSize({ width, height: 844 });
         await page.goto(`/photos/${asset.id}`);
-        await page.getByRole('button', { name: 'Edit', exact: true }).click();
+        await page
+          .getByRole('button', { name: /^(Edit|Edit video)$/ })
+          .filter({ visible: true })
+          .first()
+          .click();
         const editor = page.getByRole('dialog', { name: /^Edit / });
         const save = editor.getByRole('button', { name: 'Save version', exact: true });
         const cancel = editor.locator('.ed-top button[title="Cancel and close editor"]');
@@ -94,7 +98,11 @@ test.describe('Shared editor Save and Cancel reachability (FL-144)', () => {
           expect(saved.edits.length).toBeGreaterThan(0);
         }
         const persisted = await read();
-        await page.getByRole('button', { name: 'Edit', exact: true }).click();
+        await page
+          .getByRole('button', { name: /^(Edit|Edit video)$/ })
+          .filter({ visible: true })
+          .first()
+          .click();
         await expect(editor).toBeVisible();
         await insideViewport(save, width, 844);
         await insideViewport(cancel, width, 844);
