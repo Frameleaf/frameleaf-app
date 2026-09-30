@@ -76,6 +76,7 @@ import { PetService } from 'src/services/pet.service.js';
 import { PhotoToolsService } from 'src/services/photo-tools.service.js';
 import { PhysicalDeduplicationPlanService } from 'src/services/physical-deduplication-plan.service.js';
 import { PhysicalDeduplicationService } from 'src/services/physical-deduplication.service.js';
+import { PinnedCollectionService } from 'src/services/pinned-collection.service.js';
 import { PluginService } from 'src/services/plugin.service.js';
 import { PreservationWorkerService } from 'src/services/preservation-worker.service.js';
 import { PreservationService } from 'src/services/preservation.service.js';
@@ -199,6 +200,7 @@ export const services = [
   ClusterGroupService,
   PartnerService,
   PersonService,
+  PinnedCollectionService,
   PetRecognitionService,
   PetService,
   PhysicalDeduplicationPlanService,

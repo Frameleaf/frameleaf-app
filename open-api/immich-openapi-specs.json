@@ -41311,6 +41311,96 @@
         "x-immich-state": "Stable"
       }
     },
+    "/users/me/pins": {
+      "get": {
+        "description": "Complete ordered snapshot of current access-filtered titles, counts and covers. Unavailable pins disclose only their opaque pin ID and kind. Requires a user session.",
+        "operationId": "getMyPinnedCollections",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PinnedCollectionsResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get my pinned collections",
+        "tags": [
+          "Users"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "userPreference.read"
+      },
+      "put": {
+        "description": "Add, remove or reorder by replacing the complete ordered list against expectedRevision. Stale writes return 409. Retain unavailable pins using their opaque ID, kind and null targetId. Requires a user session.",
+        "operationId": "setMyPinnedCollections",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PinnedCollectionsUpdateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PinnedCollectionsResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Replace my pinned collections",
+        "tags": [
+          "Users"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "userPreference.update"
+      }
+    },
     "/users/me/preferences": {
       "get": {
         "description": "Retrieve the preferences for the current user.",
@@ -70359,6 +70449,152 @@
         ],
         "type": "object"
       },
+      "PinnedCollection": {
+        "properties": {
+          "count": {
+            "description": "Current access-filtered item count; null when unavailable",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "countCapped": {
+            "description": "Whether a semantic saved-search count reached the existing smart-search cap",
+            "type": "boolean"
+          },
+          "coverAssetId": {
+            "description": "Current readable cover asset; null when unavailable or empty",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "album",
+              "smart-album",
+              "saved-search",
+              "person",
+              "pet",
+              "memory",
+              "builtin"
+            ],
+            "type": "string"
+          },
+          "targetId": {
+            "description": "Null when unavailable; the inaccessible target identity is not disclosed",
+            "nullable": true,
+            "type": "string"
+          },
+          "title": {
+            "description": "Current access-filtered title; null when unavailable",
+            "nullable": true,
+            "type": "string"
+          },
+          "unavailable": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "count",
+          "countCapped",
+          "coverAssetId",
+          "id",
+          "kind",
+          "targetId",
+          "title",
+          "unavailable"
+        ],
+        "type": "object"
+      },
+      "PinnedCollectionRef": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Opaque pin ID chosen by the client and retained across reorders",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "album",
+              "smart-album",
+              "saved-search",
+              "person",
+              "pet",
+              "memory",
+              "builtin"
+            ],
+            "type": "string"
+          },
+          "targetId": {
+            "description": "Target UUID, saved-search name, or built-in ID. Null retains an existing unavailable pin by its opaque ID",
+            "maxLength": 100,
+            "minLength": 1,
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "targetId"
+        ],
+        "type": "object"
+      },
+      "PinnedCollectionsResponseDto": {
+        "properties": {
+          "pins": {
+            "description": "Complete replacement snapshot in user order, including unavailable pins",
+            "items": {
+              "$ref": "#/components/schemas/PinnedCollection"
+            },
+            "type": "array"
+          },
+          "revision": {
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "pins",
+          "revision"
+        ],
+        "type": "object"
+      },
+      "PinnedCollectionsUpdateDto": {
+        "additionalProperties": false,
+        "properties": {
+          "expectedRevision": {
+            "description": "Revision returned by GET; null only when no pin list exists. A stale save returns 409",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "pins": {
+            "description": "Replace the complete ordered list to add, remove or reorder pins; an empty list clears it",
+            "items": {
+              "$ref": "#/components/schemas/PinnedCollectionRef"
+            },
+            "maxItems": 50,
+            "type": "array"
+          }
+        },
+        "required": [
+          "expectedRevision",
+          "pins"
+        ],
+        "type": "object"
+      },
       "PlacesResponseDto": {
         "properties": {
           "admin1name": {
@@ -84955,6 +85191,7 @@
           "AssetFaceV3",
           "AssetFaceDeleteV1",
           "UserMetadataV1",
+          "PinnedCollectionsV1",
           "UserMetadataDeleteV1",
           "SyncAckV1",
           "SyncResetV1",
@@ -85248,6 +85485,34 @@
         ],
         "type": "object"
       },
+      "SyncPinnedCollectionsV1": {
+        "properties": {
+          "pins": {
+            "description": "Complete replacement snapshot in user order, including unavailable pins",
+            "items": {
+              "$ref": "#/components/schemas/PinnedCollection"
+            },
+            "type": "array"
+          },
+          "revision": {
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "userId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "pins",
+          "revision",
+          "userId"
+        ],
+        "type": "object"
+      },
       "SyncRequestType": {
         "description": "Sync request type",
         "enum": [
@@ -85279,7 +85544,8 @@
           "AssetFacesV1",
           "AssetFacesV2",
           "AssetFacesV3",
-          "UserMetadataV1"
+          "UserMetadataV1",
+          "PinnedCollectionsV1"
         ],
         "type": "string"
       },
@@ -88593,6 +88859,7 @@
         "description": "User metadata key",
         "enum": [
           "preferences",
+          "pinned-collections",
           "license",
           "onboarding",
           "frameleaf-cloud-tour"

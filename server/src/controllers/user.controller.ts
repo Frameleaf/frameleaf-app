@@ -5,6 +5,7 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  Inject,
   Next,
   Param,
   Patch,
@@ -23,6 +24,7 @@ import { CalendarHeatmapDto, CalendarHeatmapResponseDto } from 'src/dtos/calenda
 import { LicenseActivateDto } from 'src/dtos/frameleaf-license.dto.js';
 import { LicenseResponseDto } from 'src/dtos/license.dto.js';
 import { OnboardingDto, OnboardingResponseDto } from 'src/dtos/onboarding.dto.js';
+import { PinnedCollectionsResponseDto, PinnedCollectionsUpdateDto } from 'src/dtos/pinned-collection.dto.js';
 import {
   UserPreferenceHistoryResponseDto,
   UserPreferencesResponseDto,
@@ -36,6 +38,7 @@ import { FileUploadInterceptor } from 'src/middleware/file-upload.interceptor.js
 import { RATE_LIMITS, RateLimited } from 'src/middleware/rate-limit.guard.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { FrameleafLicenseService } from 'src/services/frameleaf-license.service.js';
+import { PinnedCollectionService } from 'src/services/pinned-collection.service.js';
 import { UserService } from 'src/services/user.service.js';
 import { sendFile } from 'src/utils/file.js';
 import { UUIDParamDto } from 'src/validation.js';
@@ -43,6 +46,36 @@ import { UUIDParamDto } from 'src/validation.js';
 @ApiTags(ApiTag.Users)
 @Controller(RouteKey.User)
 export class UserController {
+  @Inject(PinnedCollectionService)
+  private pins!: PinnedCollectionService;
+
+  @Get('me/pins')
+  @Authenticated({ permission: Permission.UserPreferenceRead })
+  @Endpoint({
+    summary: 'Get my pinned collections',
+    description:
+      'Complete ordered snapshot of current access-filtered titles, counts and covers. Unavailable pins disclose only their opaque pin ID and kind. Requires a user session.',
+    history: new HistoryBuilder().added('v3.2.0'),
+  })
+  getMyPinnedCollections(@Auth() auth: AuthDto): Promise<PinnedCollectionsResponseDto> {
+    return this.pins.get(auth);
+  }
+
+  @Put('me/pins')
+  @Authenticated({ permission: Permission.UserPreferenceUpdate })
+  @Endpoint({
+    summary: 'Replace my pinned collections',
+    description:
+      'Add, remove or reorder by replacing the complete ordered list against expectedRevision. Stale writes return 409. Retain unavailable pins using their opaque ID, kind and null targetId. Requires a user session.',
+    history: new HistoryBuilder().added('v3.2.0'),
+  })
+  setMyPinnedCollections(
+    @Auth() auth: AuthDto,
+    @Body() dto: PinnedCollectionsUpdateDto,
+  ): Promise<PinnedCollectionsResponseDto> {
+    return this.pins.set(auth, dto);
+  }
+
   constructor(
     private service: UserService,
     private licenseService: FrameleafLicenseService,

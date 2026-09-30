@@ -148,7 +148,7 @@ export class SearchService extends BaseService {
     ];
   }
 
-  async searchMetadata(auth: AuthDto, dto: MetadataSearchDto): Promise<SearchResponseDto> {
+  async searchMetadata(auth: AuthDto, dto: MetadataSearchDto, withTotal = false): Promise<SearchResponseDto> {
     if (isNewShapeRequest(dto)) {
       return this.searchMetadataV3(auth, dto);
     }
@@ -186,25 +186,28 @@ export class SearchService extends BaseService {
 
     const page = dto.page ?? 1;
     const size = dto.size || 250;
-    const { hasNextPage, items } = await this.searchRepository.searchMetadata(
-      { page, size },
-      {
-        ...searchDto,
-        checksum,
-        ...privacyOptions,
-        visibility: dto.visibility ?? (auth.session?.hasElevatedPermission ? undefined : 'not-locked'),
-        // server derived and set after the request's own fields, so a request can never name another owner
-        lockedOwnerId: getLockedOwnerId(auth),
-        hideLockedMotion: true,
-        userIds,
-        locationHiddenOwnerIds,
-        viewingUserId: auth.user.id,
-        sharedLink: !!auth.sharedLink,
-        orderDirection: dto.order ?? AssetOrder.Desc,
-      },
-    );
-
-    return this.mapResponse(items, { auth }, { nextPage: hasNextPage ? (page + 1).toString() : null });
+    const options: AssetSearchOptions = {
+      ...searchDto,
+      checksum,
+      ...privacyOptions,
+      visibility: dto.visibility ?? (auth.session?.hasElevatedPermission ? undefined : 'not-locked'),
+      // server derived and set after the request's own fields, so a request can never name another owner
+      lockedOwnerId: getLockedOwnerId(auth),
+      hideLockedMotion: true,
+      userIds,
+      locationHiddenOwnerIds,
+      viewingUserId: auth.user.id,
+      sharedLink: !!auth.sharedLink,
+      orderDirection: dto.order ?? AssetOrder.Desc,
+    };
+    const { hasNextPage, items } = await this.searchRepository.searchMetadata({ page, size }, options);
+    const response = await this.mapResponse(items, { auth }, { nextPage: hasNextPage ? (page + 1).toString() : null });
+    // FL-232: an internal count projection reuses the cover's exact authorized legacy predicate.
+    // Public callers retain the existing page-sized total unless they explicitly opt in.
+    if (withTotal) {
+      response.assets.total = (await this.searchRepository.searchStatistics(options)).total;
+    }
+    return response;
   }
 
   async searchStatistics(auth: AuthDto, dto: StatisticsSearchDto): Promise<SearchStatisticsResponseDto> {

@@ -1,6 +1,7 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 import { ExtraModel } from 'src/decorators.js';
+import { PinnedCollectionsResponseSchema } from 'src/dtos/pinned-collection.dto.js';
 import {
   AlbumUserRole,
   AlbumUserRoleSchema,
@@ -398,6 +399,13 @@ const SyncUserMetadataDeleteV1Schema = z
   })
   .meta({ id: 'SyncUserMetadataDeleteV1' });
 
+const SyncPinnedCollectionsV1Schema = PinnedCollectionsResponseSchema.extend({ userId: z.uuidv4() }).meta({
+  id: 'SyncPinnedCollectionsV1',
+});
+
+@ExtraModel()
+class SyncPinnedCollectionsV1 extends createZodDto(SyncPinnedCollectionsV1Schema) {}
+
 const SyncAckV1Schema = z.object({}).meta({ id: 'SyncAckV1' });
 const SyncResetV1Schema = z.object({}).meta({ id: 'SyncResetV1' });
 const SyncCompleteV1Schema = z.object({}).meta({ id: 'SyncCompleteV1' });
@@ -524,6 +532,7 @@ export type SyncItem = {
   [SyncEntityType.AssetFaceV3]: SyncAssetFaceV3;
   [SyncEntityType.AssetFaceDeleteV1]: SyncAssetFaceDeleteV1;
   [SyncEntityType.UserMetadataV1]: SyncUserMetadataV1;
+  [SyncEntityType.PinnedCollectionsV1]: SyncPinnedCollectionsV1;
   [SyncEntityType.UserMetadataDeleteV1]: SyncUserMetadataDeleteV1;
   [SyncEntityType.SyncAckV1]: SyncAckV1;
   [SyncEntityType.SyncCompleteV1]: SyncCompleteV1;

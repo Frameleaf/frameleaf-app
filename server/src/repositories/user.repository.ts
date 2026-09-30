@@ -3,10 +3,11 @@ import { type ExpressionBuilder, type Insertable, type Kysely, type Updateable, 
 import { jsonArrayFrom } from 'kysely/helpers/postgres';
 import { DateTime } from 'luxon';
 import { InjectKysely } from 'nestjs-kysely';
+import type { StoredPinnedCollection } from 'src/dtos/pinned-collection.dto.js';
 import type { UserMetadata, UserMetadataItem } from 'src/types.js';
 import { columns } from 'src/database.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
-import { AssetFileType, AssetStatus, AssetType, AssetVisibility, UserStatus } from 'src/enum.js';
+import { AssetFileType, AssetStatus, AssetType, AssetVisibility, UserMetadataKey, UserStatus } from 'src/enum.js';
 import { canWriteFork } from 'src/repositories/fork-write-guard.js';
 import { UTILITY_ACTIVITY_RETENTION_DAYS } from 'src/repositories/trash.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -87,6 +88,35 @@ export class UserRepository {
       .select(['key', 'value'])
       .where('user_metadata.userId', '=', userId)
       .execute() as Promise<UserMetadataItem[]>;
+  }
+
+  /** FL-232: private, revisioned pin references; hydration always rechecks current access. */
+  getPinnedCollections(userId: string) {
+    return this.db
+      .selectFrom('user_metadata')
+      .select(['value', 'updateId'])
+      .where('userId', '=', userId)
+      .where('key', '=', UserMetadataKey.PinnedCollections)
+      .executeTakeFirst() as Promise<{ value: { pins: StoredPinnedCollection[] }; updateId: string } | undefined>;
+  }
+
+  setPinnedCollections(userId: string, pins: StoredPinnedCollection[], expectedRevision: string | null) {
+    if (expectedRevision !== null) {
+      return this.db
+        .updateTable('user_metadata')
+        .set({ value: { pins } })
+        .where('userId', '=', userId)
+        .where('key', '=', UserMetadataKey.PinnedCollections)
+        .where('updateId', '=', expectedRevision)
+        .returning('updateId')
+        .executeTakeFirst();
+    }
+    return this.db
+      .insertInto('user_metadata')
+      .values({ userId, key: UserMetadataKey.PinnedCollections, value: { pins } })
+      .onConflict((oc) => oc.columns(['userId', 'key']).doNothing())
+      .returning('updateId')
+      .executeTakeFirst();
   }
 
   @GenerateSql()
