@@ -484,6 +484,41 @@ class SyncCompleteV1 extends createZodDto(SyncCompleteV1Schema) {}
 @ExtraModel()
 class SyncPetV1 extends createZodDto(PetResponseSchema.meta({ id: 'SyncPetV1' })) {}
 @ExtraModel()
+class SyncSharedSpaceV1 extends createZodDto(
+  z
+    .object({
+      id: z.uuid(),
+      name: z.string(),
+      description: z.string().nullable(),
+      icon: z.string().nullable(),
+      kind: z.literal('space'),
+      createdAt: isoDatetimeToDate,
+      updatedAt: isoDatetimeToDate,
+    })
+    .meta({ id: 'SyncSharedSpaceV1' }),
+) {}
+@ExtraModel()
+class SyncSharedSpaceDeleteV1 extends createZodDto(
+  z.object({ spaceId: z.uuid() }).meta({ id: 'SyncSharedSpaceDeleteV1' }),
+) {}
+@ExtraModel()
+class SyncSharedSpaceMemberV1 extends createZodDto(
+  z
+    .object({
+      spaceId: z.uuid(),
+      userId: z.uuid(),
+      role: AlbumUserRoleSchema,
+      createdAt: isoDatetimeToDate,
+      updatedAt: isoDatetimeToDate,
+    })
+    .describe('Accepted membership only; pending invitations confer no sync access')
+    .meta({ id: 'SyncSharedSpaceMemberV1' }),
+) {}
+@ExtraModel()
+class SyncSharedSpaceMemberDeleteV1 extends createZodDto(
+  z.object({ spaceId: z.uuid(), userId: z.uuid() }).meta({ id: 'SyncSharedSpaceMemberDeleteV1' }),
+) {}
+@ExtraModel()
 class SyncPetDeleteV1 extends createZodDto(z.object({ petId: z.uuid() }).meta({ id: 'SyncPetDeleteV1' })) {}
 @ExtraModel()
 class SyncPetObservationV1 extends createZodDto(PetObservationResponseSchema.meta({ id: 'SyncPetObservationV1' })) {}
@@ -515,6 +550,10 @@ class SyncAssetTagV1 extends createZodDto(SyncAssetTagV1Schema) {}
 class SyncAssetTagDeleteV1 extends createZodDto(SyncAssetTagV1Schema.meta({ id: 'SyncAssetTagDeleteV1' })) {}
 
 export type SyncItem = {
+  [SyncEntityType.SharedSpaceV1]: SyncSharedSpaceV1;
+  [SyncEntityType.SharedSpaceDeleteV1]: SyncSharedSpaceDeleteV1;
+  [SyncEntityType.SharedSpaceMemberV1]: SyncSharedSpaceMemberV1;
+  [SyncEntityType.SharedSpaceMemberDeleteV1]: SyncSharedSpaceMemberDeleteV1;
   [SyncEntityType.PetV1]: SyncPetV1;
   [SyncEntityType.PetDeleteV1]: SyncPetDeleteV1;
   [SyncEntityType.PetObservationV1]: SyncPetObservationV1;
