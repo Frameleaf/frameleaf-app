@@ -76,13 +76,24 @@ jobs:
           node studio/tools/transition-float.browser.mjs
           node studio/tools/nested-float.browser.mjs
           node studio/tools/chroma-key.browser.mjs
-          node studio/tools/effects-matrix.browser.mjs
-          node studio/tools/blend-matrix.browser.mjs
-          node studio/tools/transition-matrix.browser.mjs
+          EFFECTS_MATRIX_REPORT="$RUNNER_TEMP/effects-matrix-report.json" node studio/tools/effects-matrix.browser.mjs
+          BLEND_MATRIX_REPORT="$RUNNER_TEMP/blend-matrix-report.json" node studio/tools/blend-matrix.browser.mjs
+          TRANSITION_MATRIX_REPORT="$RUNNER_TEMP/transition-matrix-report.json" node studio/tools/transition-matrix.browser.mjs
           node studio/tools/color-output.browser.mjs
           node studio/tools/hdr-signal.browser.mjs
           node studio/tools/hdr-source.browser.mjs
           node studio/tools/hdr-master.browser.mjs
+      # FL-112 (STU-405): record exactly which conformance.json chromium-axis cases this run's own
+      # software-WebGPU browser matrix covers, from the reports the step above just wrote - not from
+      # any developer machine's GPU. Fails the job (via the tracked-file diff) if conformance.json
+      # wasn't regenerated after a coverage change, the same freshness-check shape used for the
+      # OpenAPI client and other generated artifacts in this repo.
+      - name: Record Studio browser-conformance evidence (FL-112)
+        run: |
+          node scripts/frameleaf-studio-evidence.mjs --family effect --report "$RUNNER_TEMP/effects-matrix-report.json" --write
+          node scripts/frameleaf-studio-evidence.mjs --family blend --report "$RUNNER_TEMP/blend-matrix-report.json" --write
+          node scripts/frameleaf-studio-evidence.mjs --family transition --report "$RUNNER_TEMP/transition-matrix-report.json" --write
+          git diff --exit-code -- studio/conformance.json
       - name: Upstream unit and Node headless contracts
         run: |
           npm --prefix studio/engine run test:run
