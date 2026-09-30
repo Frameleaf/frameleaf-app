@@ -45132,6 +45132,10 @@
             "description": "External domain",
             "type": "string"
           },
+          "lanDiscovery": {
+            "description": "Advertise this server on the local network (DNS-SD `_frameleaf._tcp`) so apps on the same Wi-Fi can find it without typing an address. Turning this off does not require additional sign-in steps or block direct connections - it only stops the broadcast. While on, any device on this network can see that a Frameleaf server exists here and its display name.",
+            "type": "boolean"
+          },
           "loginPageMessage": {
             "description": "Login page message",
             "type": "string"
@@ -45148,6 +45152,7 @@
         },
         "required": [
           "externalDomain",
+          "lanDiscovery",
           "loginPageMessage",
           "name",
           "publicUsers"
@@ -77660,12 +77665,28 @@
       },
       "ServerPingResponse": {
         "properties": {
+          "id": {
+            "description": "This server's identity: the Frameleaf Cloud instance id while linked, else a stable local id",
+            "example": "018f5e7a-6b1e-7f6e-9c2e-1a2b3c4d5e6f",
+            "type": "string"
+          },
+          "linked": {
+            "description": "Whether `id` is a Frameleaf Cloud instance id (true) or a local-only id (false)",
+            "type": "boolean"
+          },
+          "name": {
+            "description": "The server's display name (the admin-set server name, or a default)",
+            "type": "string"
+          },
           "res": {
             "example": "pong",
             "type": "string"
           }
         },
         "required": [
+          "id",
+          "linked",
+          "name",
           "res"
         ],
         "type": "object"

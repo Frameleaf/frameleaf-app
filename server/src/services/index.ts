@@ -48,6 +48,7 @@ import { ImageEnrichmentService } from 'src/services/image-enrichment.service.js
 import { IntegrityService } from 'src/services/integrity.service.js';
 import { ItemShareService } from 'src/services/item-share.service.js';
 import { JobService } from 'src/services/job.service.js';
+import { LanDiscoveryService } from 'src/services/lan-discovery.service.js';
 import { LibraryScanService } from 'src/services/library-scan.service.js';
 import { LibraryService } from 'src/services/library.service.js';
 import { LivePhotoService } from 'src/services/live-photo.service.js';
@@ -173,6 +174,7 @@ export const services = [
   IntegrityService,
   HlsService,
   JobService,
+  LanDiscoveryService,
   LibraryScanService,
   LibraryService,
   LivePhotoService,
