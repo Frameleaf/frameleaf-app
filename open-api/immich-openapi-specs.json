@@ -9954,13 +9954,13 @@
         "x-immich-state": "Beta"
       },
       "post": {
-        "description": "IETF resumable upload draft 12 / interop 9 prerequisite. Single asset only; atomic LivePhoto pairs remain unsupported.",
+        "description": "IETF resumable upload draft 12 / interop 9 prerequisite. Single resources publish by default; explicitly declared Live Photo resources stay private until pair commit.",
         "operationId": "createAssetUploadResource",
         "parameters": [
           {
             "name": "Asset-Metadata",
             "in": "header",
-            "description": "Canonical base64url UTF-8 JSON: filename, fileCreatedAt, fileModifiedAt; optional duration, isFavorite, visibility and metadata array. No LivePhoto or sidecar references.",
+            "description": "Canonical base64url UTF-8 JSON: filename, fileCreatedAt, fileModifiedAt; optional duration, isFavorite, visibility, metadata array and publication: live-photo to defer publication until atomic pair commit. No sidecar or pre-existing asset references.",
             "required": true,
             "schema": {
               "type": "string"
@@ -10065,6 +10065,67 @@
           }
         ],
         "summary": "Create resumable asset upload",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Beta"
+          }
+        ],
+        "x-immich-permission": "asset.upload",
+        "x-immich-state": "Beta"
+      }
+    },
+    "/assets/uploads/live-photo/commit": {
+      "post": {
+        "operationId": "commitLivePhotoUpload",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LivePhotoUploadCommitDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LivePhotoUploadResultDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "202": {
+            "description": "Both assets committed atomically; required ingestion remains pending"
+          },
+          "409": {
+            "description": "Incompatible pair, existing unrelated duplicate, or concurrent request"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Commit two verified Live Photo upload resources atomically",
         "tags": [
           "Assets"
         ],
@@ -64046,6 +64107,40 @@
           "photoId",
           "success",
           "videoId"
+        ],
+        "type": "object"
+      },
+      "LivePhotoUploadCommitDto": {
+        "properties": {
+          "stillResourceId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "videoResourceId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stillResourceId",
+          "videoResourceId"
+        ],
+        "type": "object"
+      },
+      "LivePhotoUploadResultDto": {
+        "properties": {
+          "still": {
+            "$ref": "#/components/schemas/AssetUploadResultDto"
+          },
+          "video": {
+            "$ref": "#/components/schemas/AssetUploadResultDto"
+          }
+        },
+        "required": [
+          "still",
+          "video"
         ],
         "type": "object"
       },
