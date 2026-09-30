@@ -463,8 +463,8 @@
           "status": "not-tested"
         },
         "command": {
-          "status": "blocked",
-          "reason": "Missing command-axis case(s): access, idempotence, invalid, lease, normal, revision, undo (FL-112)."
+          "status": "not-applicable",
+          "reason": "Scrub overlays, decoder prewarming, adaptive quality and source warming are playback performance; nothing changes the graph. Coordinator ruling on FL-112, 2026-09-30."
         },
         "graph": {
           "status": "not-tested"
@@ -551,8 +551,8 @@
           "status": "not-tested"
         },
         "command": {
-          "status": "blocked",
-          "reason": "Missing command-axis case(s): access, idempotence, invalid, lease, normal, revision, undo (FL-112)."
+          "status": "not-applicable",
+          "reason": "The GPU scopes measure the picture and never edit it (FL-98). Coordinator ruling on FL-112, 2026-09-30."
         },
         "graph": {
           "status": "not-tested"
@@ -2003,8 +2003,8 @@
           "status": "not-tested"
         },
         "command": {
-          "status": "blocked",
-          "reason": "Missing command-axis case(s): access, idempotence, invalid, lease, normal, revision, undo (FL-112)."
+          "status": "not-applicable",
+          "reason": "Local model cache and unload controls are per-device settings, not the project graph. Coordinator ruling on FL-112, 2026-09-30."
         },
         "graph": {
           "status": "not-tested"
@@ -2047,8 +2047,8 @@
           "status": "not-tested"
         },
         "command": {
-          "status": "blocked",
-          "reason": "Missing command-axis case(s): access, idempotence, invalid, lease, normal, revision, undo (FL-112)."
+          "status": "not-applicable",
+          "reason": "Workspace folder persistence is replaced by Frameleaf's server project storage (the Studio project API, FL-89: server/src/services/studio-project.service.ts). Covered by every row's graph axis save and reopen cases and server/src/services/studio-project.service.spec.ts. Coordinator ruling on FL-112, 2026-09-30."
         },
         "graph": {
           "status": "not-tested"
@@ -2091,8 +2091,8 @@
           "status": "not-tested"
         },
         "command": {
-          "status": "blocked",
-          "reason": "Missing command-axis case(s): access, idempotence, invalid, lease, normal, revision, undo (FL-112)."
+          "status": "not-applicable",
+          "reason": "The workspace switcher is replaced by Frameleaf's server project library (FL-91: the Studio project list and shelves, server/src/services/studio-project.service.ts). Covered by module.projects' command axis and server/src/services/studio-project.service.spec.ts. Coordinator ruling on FL-112, 2026-09-30."
         },
         "graph": {
           "status": "not-tested"
@@ -2135,8 +2135,8 @@
           "status": "not-tested"
         },
         "command": {
-          "status": "blocked",
-          "reason": "Missing command-axis case(s): access, idempotence, invalid, lease, normal, revision, undo (FL-112)."
+          "status": "not-applicable",
+          "reason": "Frameleaf stores each project as server revisions (FL-89); storing and reopening a project is the graph axis save and reopen cases, measured for every command by studio/adapters/web/test/command-matrix.test.ts, not a command. Coordinator ruling on FL-112, 2026-09-30."
         },
         "graph": {
           "status": "not-tested"
@@ -2267,8 +2267,8 @@
           "status": "not-tested"
         },
         "command": {
-          "status": "blocked",
-          "reason": "Missing command-axis case(s): access, idempotence, invalid, lease, normal, revision, undo (FL-112)."
+          "status": "not-applicable",
+          "reason": "Autosave is the graph axis save and reopen cases (studio/adapters/web/test/command-matrix.test.ts, and the project session's autosave in web/src/lib/frameleaf/studio/project-session.spec.ts); thumbnails, cache mirroring and orphan cleanup are server housekeeping, not commands. Coordinator ruling on FL-112, 2026-09-30."
         },
         "graph": {
           "status": "not-tested"
@@ -8703,8 +8703,8 @@
           "status": "not-tested"
         },
         "command": {
-          "status": "blocked",
-          "reason": "Missing command-axis case(s): access, idempotence, invalid, lease, normal, revision, undo (FL-112)."
+          "status": "not-applicable",
+          "reason": "Freecut's headless render contract is the render worker's internals in Frameleaf; its other axes cite the render-worker probes (studio/tools/render-worker-probe.mjs), not a command. Coordinator ruling on FL-112, 2026-09-30."
         },
         "graph": {
           "status": "not-tested"
@@ -8747,8 +8747,8 @@
           "status": "not-tested"
         },
         "command": {
-          "status": "blocked",
-          "reason": "Missing command-axis case(s): access, idempotence, invalid, lease, normal, revision, undo (FL-112)."
+          "status": "not-applicable",
+          "reason": "Freecut's in-app help pages: read-only documentation with no project edit behind it. Coordinator ruling on FL-112, 2026-09-30."
         },
         "graph": {
           "status": "not-tested"
@@ -9231,8 +9231,8 @@
           "status": "not-tested"
         },
         "command": {
-          "status": "blocked",
-          "reason": "Missing command-axis case(s): access, idempotence, invalid, lease, normal, revision, undo (FL-112)."
+          "status": "not-applicable",
+          "reason": "Editor preferences and hotkeys: per-device UI state, not the project graph, so no command reaches it. Coordinator ruling on FL-112, 2026-09-30."
         },
         "graph": {
           "status": "not-tested"
@@ -9319,8 +9319,8 @@
           "status": "not-tested"
         },
         "command": {
-          "status": "blocked",
-          "reason": "Missing command-axis case(s): access, idempotence, invalid, lease, normal, revision, undo (FL-112)."
+          "status": "not-applicable",
+          "reason": "Replaced by Frameleaf's server project storage (the Studio project API, FL-89: server/src/services/studio-project.service.ts): there is no workspace folder to ask for. Covered by module.projects' command axis and every row's graph axis save and reopen cases. Coordinator ruling on FL-112, 2026-09-30."
         },
         "graph": {
           "status": "not-tested"
