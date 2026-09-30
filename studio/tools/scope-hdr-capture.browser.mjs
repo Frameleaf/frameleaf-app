@@ -62,9 +62,7 @@ window.$RefreshSig$ = () => (type) => type
 window.__vite_plugin_react_preamble_installed__ = true
 </script>` }),
   );
-  await page.goto(origin + '/scope-hdr');
-  await page.waitForFunction(() => window.__vite_plugin_react_preamble_installed__ === true);
-  report = await page.evaluate(async ({ SIZE, FPS }) => {
+  const measure = async ({ SIZE, FPS }) => {
     const { registerHdrSourceUrl } = await import('/src/features/export/utils/hdr-video-sources.ts');
     const { createCompositionRenderer } = await import('/src/features/export/utils/client-render-engine.ts');
     const { useMediaLibraryStore } = await import('/src/features/media-library/stores/media-library-store.ts');
@@ -72,15 +70,19 @@ window.__vite_plugin_react_preamble_installed__ = true
     const { usePreviewBridgeStore } = await import('/src/shared/state/preview-bridge/index.ts');
     const { captureScopeSignal, resolveScopeColor } = await import('/src/features/preview/utils/scope-signal.ts');
     const { ColorScopesView } = await import('/src/features/preview/components/color-scopes-view.tsx');
-    // React from the same optimised-dependency URLs the view was served with (one React instance).
-    const reactUrl = performance.getEntriesByType('resource').map((entry) => entry.name)
-      .find((name) => /\/node_modules\/\.vite\/deps\/react\.js\?v=/.test(name));
-    if (!reactUrl) throw new Error('React was not loaded through the optimised dependencies');
-    const version = new URL(reactUrl).searchParams.get('v');
+    // React at the URLs Vite rewrites the app entry's imports to. Each optimised dependency has its
+    // own ?v= hash, so read them rather than build them; the view then shares this React instance.
+    const entry = await (await fetch('/src/main.tsx')).text();
+    const optimised = entry.match(/\/node_modules\/\.vite\/deps\/[\w.-]+\.js\?v=[0-9a-f]+/g) ?? [];
+    const dep = (file) => {
+      const url = optimised.find((candidate) => candidate.includes(`/deps/${file}.js?`));
+      if (!url) throw new Error(`main.tsx does not import ${file} through the optimised dependencies`);
+      return url;
+    };
     // Pre-bundled CommonJS: the module's default export is the package.
     const interop = (module) => (module.default && !module.createElement && !module.createRoot ? module.default : module);
-    const React = interop(await import(reactUrl));
-    const { createRoot } = interop(await import(`/node_modules/.vite/deps/react-dom_client.js?v=${version}`));
+    const React = interop(await import(dep('react')));
+    const { createRoot } = interop(await import(dep('react-dom_client')));
 
     const url = '/scope-fixture/pq.mp4';
     registerHdrSourceUrl('media-pq', url);
@@ -146,7 +148,21 @@ window.__vite_plugin_react_preamble_installed__ = true
       displayTitle: displayed.slice(((8 * SIZE) + SIZE / 2) * 4, ((8 * SIZE) + SIZE / 2) * 4 + 3),
       label,
     };
-  }, { SIZE, FPS });
+  };
+  // A cold dev server re-optimises its dependencies when this page first imports the view, which
+  // gives them a new ?v= hash and fails the imports already in flight. Reload once it has settled.
+  for (let attempt = 1; ; attempt++) {
+    await page.goto(origin + '/scope-hdr');
+    await page.waitForFunction(() => window.__vite_plugin_react_preamble_installed__ === true);
+    try {
+      report = await page.evaluate(measure, { SIZE, FPS });
+      break;
+    } catch (error) {
+      if (attempt >= 3 || !/Failed to fetch dynamically imported module|Outdated Optimize Dep/.test(error.message)) throw error;
+      console.warn(`dev server re-optimised its dependencies; reloading (${error.message.split('\n')[0]})`);
+      await page.waitForTimeout(2000);
+    }
+  }
   if (process.env.SCOPE_HDR_REPORT) await writeFile(process.env.SCOPE_HDR_REPORT, JSON.stringify(report, null, 2));
 
   assert.deepEqual(report.color, { workingRange: 'hdr', sdrMonitoring: 'bt2390' });
