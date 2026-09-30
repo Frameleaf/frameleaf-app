@@ -318,13 +318,12 @@ export const assetViewerUtils = {
     return page.locator('#immich-asset-viewer');
   },
   async waitForViewerLoad(page: Page, asset: TimelineAssetConfig) {
+    // FL-115: the preview's cache key is the thumbhash, plus `-<revision>` once the viewer bumps it
+    // (e.g. when the develop lookup fails), so match on the key's thumbhash prefix.
+    const preview = `/api/assets/${asset.id}/thumbnail?size=preview&c=${asset.thumbhash}`;
     await page
-      .locator(
-        `img[draggable="false"][src="/api/assets/${asset.id}/thumbnail?size=preview&c=${asset.thumbhash}&edited=true"]`,
-      )
-      .or(
-        page.locator(`video[poster="/api/assets/${asset.id}/thumbnail?size=preview&c=${asset.thumbhash}&edited=true"]`),
-      )
+      .locator(`img[draggable="false"][src^="${preview}"]`)
+      .or(page.locator(`video[poster^="${preview}"]`))
       .waitFor();
   },
   /** The asset whose tile holds keyboard focus. */
