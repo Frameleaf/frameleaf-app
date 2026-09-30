@@ -219,6 +219,103 @@ window.__vite_plugin_react_preamble_installed__ = true
       ...[0, 1].map((column) => shape(`base-${column}`, column, colours.base)),
     ]), [0]);
     cases.push({ mode: '*', case: 'invalid-mode', blendMode: 'not-a-blend-mode', got: unknown[0][0], normal: unknown[0][1] });
+
+    // Dissolve dithers opacity (FL-99 owner decision) on the float route (explicit
+    // output) and on the legacy route (the SDR preview/export canvas): coverage density,
+    // all-or-nothing pixels, and the same pattern on every frame at a held opacity.
+    {
+      const OPACITIES = [0.25, 0.5, 0.75];
+      const SIDE = 24;
+      const DW = OPACITIES.length * SIDE;
+      const block = (id, column, colour, extra = {}, opacity = 1) => ({
+        id, type: 'shape', trackId: `t-${id}`, from: 0, durationInFrames: 30, label: id,
+        shapeType: 'rectangle', fillColor: css(colour), strokeEnabled: false, strokeWidth: 0,
+        transform: { x: -DW / 2 + SIDE * column + SIDE / 2, y: 0, width: SIDE, height: SIDE, rotation: 0, opacity }, ...extra,
+      });
+      const items = [
+        ...OPACITIES.map((opacity, column) => block(`dissolve-${column}`, column, colours.layer, { blendMode: 'dissolve' }, opacity)),
+        ...OPACITIES.map((_, column) => block(`base-${column}`, column, colours.base)),
+      ];
+      const comp = { fps: 30, width: DW, height: SIDE, durationInFrames: 30, backgroundColor: '#000000', keyframes: [],
+        tracks: items.map((item, order) => ({ id: `track-${item.id}`, name: item.id, height: 60, locked: false,
+          visible: true, muted: false, solo: false, order, items: [item] })) };
+      const canvas = new OffscreenCanvas(DW, SIDE);
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      const renderer = await createCompositionRenderer(comp, canvas, ctx, { mode: 'export' });
+      const columns = (rgba) => OPACITIES.map((_, column) => {
+        const pixels = [];
+        // Interior only: shape edges are antialiased.
+        for (let y = 2; y < SIDE - 2; y++) {
+          for (let x = column * SIDE + 2; x < (column + 1) * SIDE - 2; x++) {
+            pixels.push(Array.from(rgba.slice((y * DW + x) * 4, (y * DW + x) * 4 + 3)));
+          }
+        }
+        return pixels;
+      });
+      try {
+        await renderer.preload?.();
+        const float = {};
+        const legacy = {};
+        for (const frame of [3, 7]) {
+          float[frame] = columns((await renderer.renderFrameSignal(frame, 'sdr-display')).rgba);
+          await renderer.renderFrame(frame);
+          legacy[frame] = columns(Array.from(ctx.getImageData(0, 0, DW, SIDE).data, (v) => v / 255));
+        }
+        // The Canvas2D compositing fallback (no WebGPU) dithers with the same rule.
+        const { drawDissolved } = await import('/src/shared/graphics/dissolve-dither.ts');
+        const canvas2d = {};
+        for (const frame of [3, 7]) {
+          const target = new OffscreenCanvas(DW, SIDE);
+          const targetCtx = target.getContext('2d', { willReadFrequently: true });
+          const layer = new OffscreenCanvas(DW, SIDE);
+          const layerCtx = layer.getContext('2d');
+          OPACITIES.forEach((opacity, column) => {
+            targetCtx.fillStyle = css(colours.base);
+            targetCtx.fillRect(column * SIDE, 0, SIDE, SIDE);
+            layerCtx.globalAlpha = opacity;
+            layerCtx.fillStyle = css(colours.layer);
+            layerCtx.fillRect(column * SIDE, 0, SIDE, SIDE);
+          });
+          drawDissolved(targetCtx, layer);
+          canvas2d[frame] = columns(Array.from(targetCtx.getImageData(0, 0, DW, SIDE).data, (v) => v / 255));
+        }
+        cases.push({ mode: 'dissolve', case: 'dissolve-dither', opacities: OPACITIES, float, legacy, canvas2d });
+      } finally {
+        renderer.dispose();
+      }
+
+      // Preview equals export (owner decision): a translucent Dissolve item whose content
+      // has its own soft alpha, drawn by the renderer the preview's engine surface uses
+      // and by the export renderer, pixel for pixel. Coverage follows total opacity
+      // (item 0.5 x content 0.6 = 0.3), not the item's opacity alone.
+      const SOFT = { opacity: 0.5, contentAlpha: 0.6 };
+      const softComp = {
+        ...comp,
+        width: SIDE * 4,
+        tracks: [
+          { id: 'track-soft', name: 'soft', height: 60, locked: false, visible: true, muted: false, solo: false, order: 0,
+            items: [{ ...block('soft', 0, colours.layer, { blendMode: 'dissolve',
+              fillColor: `rgba(${colours.layer.slice(0, 3).map((v) => v * 255).join(', ')}, ${SOFT.contentAlpha})` }, SOFT.opacity),
+            transform: { x: 0, y: 0, width: SIDE * 4, height: SIDE, rotation: 0, opacity: SOFT.opacity } }] },
+          { id: 'track-soft-base', name: 'base', height: 60, locked: false, visible: true, muted: false, solo: false, order: 1,
+            items: [{ ...block('soft-base', 0, colours.base), transform: { x: 0, y: 0, width: SIDE * 4, height: SIDE, rotation: 0, opacity: 1 } }] },
+        ],
+      };
+      const surfaces = {};
+      for (const mode of ['preview', 'export']) {
+        const surface = new OffscreenCanvas(SIDE * 4, SIDE);
+        const surfaceCtx = surface.getContext('2d', { willReadFrequently: true });
+        const softRenderer = await createCompositionRenderer(softComp, surface, surfaceCtx, { mode });
+        try {
+          await softRenderer.preload?.();
+          await softRenderer.renderFrame(4);
+          surfaces[mode] = Array.from(surfaceCtx.getImageData(0, 0, SIDE * 4, SIDE).data);
+        } finally {
+          softRenderer.dispose();
+        }
+      }
+      cases.push({ mode: 'dissolve', case: 'dissolve-preview-export', ...SOFT, width: SIDE * 4, height: SIDE, surfaces });
+    }
     return cases;
   }, { MODES, colours: CASE_COLOURS });
 } finally {
@@ -333,10 +430,12 @@ for (const { mode, float, again, floatSdr, sdr, sdrInHdr } of report.results) {
     const gotFloat = texel(float.pixels, i);
     const gotSdr = texel(sdr.pixels, i);
     if (mode === 'dissolve') {
-      // Coverage is all-or-nothing: each pixel is the base or the full normal blend.
+      // Coverage is all-or-nothing (FL-99 owner decision): the pixel's opacity is dithered,
+      // so each pixel is the base or the layer drawn fully opaque.
       for (const [route, got, b] of [['float', gotFloat, texel(report.base16, i)],
         ['float', texel(floatSdr.pixels, i), texel(report.base16, i)], ['sdr', gotSdr, texel(sdrBase, i)]]) {
-        const covered = sourceOver(formulas.normal)(b, texel(route === 'float' ? report.layer16 : layer, i));
+        const layerTexel = texel(route === 'float' ? report.layer16 : layer, i);
+        const covered = sourceOver(formulas.normal)(b, [...layerTexel.slice(0, 3), layerTexel[3] > 0 ? 1 : 0]);
         const same = (x) => x.every((v, c) => Math.abs(v - got[c]) < 2 / 255 + 2e-3);
         check(same(b) || same(covered), `dissolve ${route} pixel ${i}: partial coverage`);
       }
@@ -373,6 +472,49 @@ for (const entry of report.cases) {
     check(same(entry.got, entry.normal), `unknown blend mode id did not draw as normal: ${entry.got} != ${entry.normal}`);
     continue;
   }
+  if (entry.case === 'dissolve-preview-export') {
+    const { preview, export: exported } = entry.surfaces;
+    const differing = preview.filter((v, i) => v !== exported[i]).length;
+    check(differing === 0, `dissolve preview-export: ${differing} channels differ between the preview surface and export`);
+    // Interior pixels (edges are antialiased): all-or-nothing, at the total opacity.
+    const base = CASE_COLOURS.base.slice(0, 3).map((v) => v * 255);
+    const layer = CASE_COLOURS.layer.slice(0, 3).map((v) => v * 255);
+    let covered = 0;
+    let partial = 0;
+    let counted = 0;
+    for (let y = 2; y < entry.height - 2; y++) {
+      for (let x = 2; x < entry.width - 2; x++) {
+        const p = exported.slice((y * entry.width + x) * 4, (y * entry.width + x) * 4 + 3);
+        counted++;
+        if (p.every((v, c) => Math.abs(v - layer[c]) <= 2)) covered++;
+        else if (!p.every((v, c) => Math.abs(v - base[c]) <= 2)) partial++;
+      }
+    }
+    const fraction = covered / counted;
+    check(partial === 0, `dissolve preview-export: ${partial} partially covered pixels`);
+    check(Math.abs(fraction - entry.opacity * entry.contentAlpha) <= 0.08,
+      `dissolve preview-export: coverage ${fraction.toFixed(3)} is not the total opacity ${entry.opacity * entry.contentAlpha}`);
+    continue;
+  }
+  if (entry.case === 'dissolve-dither') {
+    const base = CASE_COLOURS.base.slice(0, 3);
+    const layer = CASE_COLOURS.layer.slice(0, 3);
+    for (const [route, frames, tolerance] of [['float', entry.float, 3e-3], ['legacy', entry.legacy, 1.5 / 255],
+      ['canvas2d', entry.canvas2d, 1.5 / 255]]) {
+      entry.opacities.forEach((opacity, column) => {
+        const pixels = frames[3][column];
+        const isBase = (p) => p.every((v, c) => Math.abs(v - base[c]) <= tolerance);
+        const isLayer = (p) => p.every((v, c) => Math.abs(v - layer[c]) <= tolerance);
+        const partial = pixels.filter((p) => !isBase(p) && !isLayer(p)).length;
+        check(partial === 0, `dissolve ${route} opacity ${opacity}: ${partial} partially covered pixels`);
+        const fraction = pixels.filter(isLayer).length / pixels.length;
+        check(Math.abs(fraction - opacity) <= 0.08, `dissolve ${route} opacity ${opacity}: coverage ${fraction.toFixed(3)}`);
+        check(frames[7][column].every((p, i) => p.every((v, c) => Object.is(v, pixels[i][c]))),
+          `dissolve ${route} opacity ${opacity}: the pattern changed between frames at a held opacity`);
+      });
+    }
+    continue;
+  }
   const pinned = (base, layerColour) => sourceOver(formulas[mode])(base, layerColour);
   const full = pinned(CASE_COLOURS.base, layerAt(1));
   if (entry.case === 'animated') {
@@ -382,12 +524,15 @@ for (const entry of report.cases) {
     check(same(frames[5], statics[0.5]), `${mode} animated: frame 5 != static opacity 0.5`);
     check(near(statics[0], CASE_COLOURS.base), `${mode} animated: opacity 0 changed the base: ${statics[0]}`);
     check(near(statics[1], full), `${mode} animated: opacity 1 ${statics[1]} != ${full}`);
-    // Freecut 4d62e80 passes an item's opacity to the compositor as its texture's
-    // alpha (layer opacity stays 1), and dissolve dithers only the compositor's
-    // opacity: a translucent Dissolve item therefore draws as a smooth mix, which is
-    // the pinned SDR reference (raised on FL-99 as an owner question).
-    const half = pinned(CASE_COLOURS.base, layerAt(0.5));
-    check(near(statics[0.5], half), `${mode} animated: opacity 0.5 ${statics[0.5]} != ${half}`);
+    if (mode === 'dissolve') {
+      // FL-99 owner decision: a translucent Dissolve item dithers its opacity, so the
+      // sample is the base or the full layer (coverage density: the dissolve case).
+      check(near(statics[0.5], CASE_COLOURS.base) || near(statics[0.5], full),
+        `dissolve animated: opacity 0.5 drew a partial mix ${statics[0.5]}`);
+    } else {
+      const half = pinned(CASE_COLOURS.base, layerAt(0.5));
+      check(near(statics[0.5], half), `${mode} animated: opacity 0.5 ${statics[0.5]} != ${half}`);
+    }
   } else if (entry.case === 'composed') {
     const want = sourceOver(formulas.screen)(full, CASE_COLOURS.second);
     check(near(entry.under, full), `${mode} composed: first blend ${entry.under} != ${full}`);
@@ -399,6 +544,8 @@ for (const entry of report.cases) {
     check(entry.stable, `${mode} invalid: an invalid opacity changed between frames`);
   }
 }
+check(report.cases.some((entry) => entry.case === 'dissolve-dither'), 'dissolve: no dithering case measured');
+check(report.cases.some((entry) => entry.case === 'dissolve-preview-export'), 'dissolve: no preview/export case measured');
 for (const mode of MODES) {
   for (const name of ['animated', 'composed', 'invalid']) {
     check(report.cases.some((entry) => entry.mode === mode && entry.case === name), `${mode}: no ${name} case measured`);
@@ -408,6 +555,6 @@ if (failures.length) {
   console.error(failures.slice(0, 40).join('\n'));
   assert.fail(`${failures.length} blend-matrix failures on ${report.adapter.vendor}/${report.adapter.architecture}`);
 }
-console.log(JSON.stringify({ check: 'every blend mode: pinned SDR formula on rgba8 and float routes, declared float semantics, determinism; animated, composed and invalid cases through the renderer',
+console.log(JSON.stringify({ check: 'every blend mode: pinned SDR formula on rgba8 and float routes, declared float semantics, determinism; animated, composed and invalid cases through the renderer; dithered Dissolve on float, legacy and Canvas2D routes',
   adapter: { vendor: report.adapter.vendor, architecture: report.adapter.architecture }, modes: report.results.length, pixels: W * H,
   cases: report.cases.length }));

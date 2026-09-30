@@ -199,7 +199,12 @@
       "path": "patches/0039-effect-parameter-meaning.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "e2d99a8146cb2300089c5a7c0754015b33ab99e869db5e7d3485f86b36627f86"
+    },
+    {
+      "path": "patches/0040-dissolve-dithers-opacity.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "22fd0014c374cafa313321df225e5df6af9ac455b5c18acafb9fb27e679e566b"
     }
   ],
-  "sourceSha256": "5559f323ff0630ad77debed3d43ed56aef892957457eef0be1665254c7b12f4b"
+  "sourceSha256": "12ea12b9057f4acee571a76a60e2e07709bc4e2978bd98171e0b3ccf242504c1"
 }
