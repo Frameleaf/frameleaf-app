@@ -62,7 +62,7 @@
     memoryStoryKind,
     moveMemoryItem,
   } from '$lib/frameleaf/memory-stories';
-  import { prefersReducedMotion } from '$lib/frameleaf/motion';
+  import { motionScrollBehavior, prefersReducedMotion } from '$lib/frameleaf/motion';
   import ResultsAssetViewer from '$lib/components/frameleaf/ResultsAssetViewer.svelte';
   import ResultsView from '$lib/components/frameleaf/ResultsView.svelte';
   import { namedArchiveName } from '$lib/frameleaf/archive-name';
@@ -1088,7 +1088,10 @@
 
     {#if galleryInView}
       <div class="fmp-scroll-up visible">
-        <IconButton label={$t('hide_gallery')} onclick={() => memoryWrapper?.scrollIntoView({ behavior: 'smooth' })}>
+        <IconButton
+          label={$t('hide_gallery')}
+          onclick={() => memoryWrapper?.scrollIntoView({ behavior: motionScrollBehavior() })}
+        >
           <Icon icon={mdiChevronUp} size="20" />
         </IconButton>
       </div>
@@ -1477,7 +1480,10 @@
   <!-- GALLERY VIEWER -->
   <section class="frameleaf fmp-gallery-section" data-theme={appTheme}>
     <div class="fmp-scroll-down" class:visible={!galleryInView}>
-      <IconButton label={$t('show_gallery')} onclick={() => memoryGallery?.scrollIntoView({ behavior: 'smooth' })}>
+      <IconButton
+        label={$t('show_gallery')}
+        onclick={() => memoryGallery?.scrollIntoView({ behavior: motionScrollBehavior() })}
+      >
         <Icon icon={mdiChevronDown} size="20" />
       </IconButton>
     </div>

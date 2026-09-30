@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { motionScrollBehavior } from '$lib/frameleaf/motion';
   /**
    * The Job manager (FL-71): the design template's `JobsManager.jsx` (`jobs-manager.css`) in
    * Compute & jobs → Queues & jobs, on the server's real queues. It replaces Immich's queue cards
@@ -304,7 +305,7 @@
     query = '';
     await goto(name ? Route.viewQueue({ name, tab: next }) : Route.queues(), { keepFocus: true, noScroll: !name });
     if (name) {
-      main?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+      main?.scrollIntoView({ block: 'start', behavior: motionScrollBehavior() });
     }
   };
   let main: HTMLElement | undefined = $state();

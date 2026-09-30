@@ -29,6 +29,12 @@ export const FLIP_TILE_LIMIT = 120;
 
 export const prefersReducedMotion = (): boolean => mediaQueryManager.reducedMotion;
 
+/**
+ * FL-139: the scroll behaviour for scrollIntoView/scrollTo. A smooth scroll is motion the CSS
+ * kill-switch cannot stop (`scroll-behavior` only covers CSS-initiated scrolls), so Reduce Motion jumps.
+ */
+export const motionScrollBehavior = (): ScrollBehavior => (mediaQueryManager.reducedMotion ? 'auto' : 'smooth');
+
 type Transition<P> = (node: Element, params?: P) => TransitionConfig;
 
 const crossfade = (node: Element, delay?: number) => fade(node, { delay, duration: REDUCED_MOTION_FADE_MS });
