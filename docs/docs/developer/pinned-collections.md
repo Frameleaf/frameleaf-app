@@ -18,4 +18,10 @@ Request `PinnedCollectionsV1` through the existing sync endpoint. Each request e
 
 This entity replaces the client's entire pins mirror, including an empty list. An acknowledgement or unchanged pin revision never suppresses current access checks: the next request still replaces hydration after sharing is revoked, a target is deleted or the session loses Locked access. Clients must apply unavailable entries by clearing all previously hydrated fields.
 
-This aggregate snapshot covers pin creation, updates, removal and access loss; it does not introduce per-pin create/update/delete events or an audit table. Other sync entities retain their existing wire shapes. Private pin references stored in account metadata are excluded from `UserMetadataV1`, so older clients do not receive inaccessible target identities or an unknown metadata key. Native clients must explicitly request and implement this replacement entity before using pins sync.
+This aggregate snapshot covers pin creation, updates, removal and access loss. Its wire shape is unchanged. Private pin references stored in account metadata are excluded from `UserMetadataV1`, so older clients do not receive inaccessible target identities or an unknown metadata key. Clients must explicitly request and implement this replacement entity before using pins sync.
+
+## Per-pin events
+
+Clients may instead request the additive `PinnedCollectionEventsV1` stream. `PinnedCollectionV1` upserts carry the currently authorized pin hydration and its `position` in the complete ordered list. Unavailable entries leave position holes. `PinnedCollectionDeleteV1` carries only the opaque `pinId`; it clears that source's available mirror hydration without removing the user's stored pin.
+
+The server rechecks hydration before delivery. Reordering, changes to title/count/cover, access loss and regrant produce events even when the stored list revision is unchanged. Acknowledgements use the exact delivered event ID and entity type; retries and partial resume retain delivery order. Operational hydration failures propagate rather than becoming false revocations. The original replacement request remains available for complete lists, including sanitized unavailable placeholders.
