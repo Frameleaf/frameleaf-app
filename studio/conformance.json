@@ -1124,7 +1124,7 @@
         },
         "command": {
           "status": "blocked",
-          "reason": "Missing command-axis case(s): access, idempotence, invalid, lease, normal, revision, undo (FL-112)."
+          "reason": "Missing command-axis case(s): invalid, normal (FL-112)."
         },
         "graph": {
           "status": "not-tested"
@@ -8836,7 +8836,7 @@
         },
         "command": {
           "status": "blocked",
-          "reason": "Missing command-axis case(s): access, idempotence, invalid, lease, normal, revision, undo (FL-112)."
+          "reason": "Missing command-axis case(s): invalid, normal (FL-112)."
         },
         "graph": {
           "status": "not-tested"
