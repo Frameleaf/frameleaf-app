@@ -266,7 +266,8 @@
 
     // move on at once; the group keeps its loader in the queue until the job has answered for it
     const previous = active?.duplicateId;
-    const ready = groups.filter((group) => actionableOf(group) && !decidedIds.includes(group.duplicateId));
+    const decided = new Set(decidedIds);
+    const ready = groups.filter((group) => actionableOf(group) && !decided.has(group.duplicateId));
     const candidates =
       ready.length > 0 ? groups.filter((group) => actionableOf(group) || group.duplicateId === previous) : groups;
     const order = candidates.map((group) => group.duplicateId);
@@ -275,7 +276,7 @@
       ready[0]?.duplicateId ??
       previous ??
       '';
-    selected = selected.filter((id) => !decidedIds.includes(id));
+    selected = selected.filter((id) => !decided.has(id));
     keeperIds = [];
     focusAfter = true;
     error = '';
