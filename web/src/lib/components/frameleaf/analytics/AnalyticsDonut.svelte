@@ -135,7 +135,7 @@
   strong,
   small {
     font-variant-numeric: tabular-nums;
-    text-align: right;
+    text-align: end;
   }
   small {
     color: var(--fl-muted);

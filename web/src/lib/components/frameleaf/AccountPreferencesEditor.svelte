@@ -551,7 +551,7 @@
     align-items: center;
     gap: 8px;
     background: var(--fl-raised);
-    border-left: 2px solid var(--fl-muted);
+    border-inline-start: 2px solid var(--fl-muted);
     padding: 12px 14px;
     margin-bottom: 18px;
     font-size: 12px;
@@ -723,7 +723,7 @@
   }
   .ap-notification-children {
     margin: 10px 0 0 7px;
-    border-left: 1px solid var(--fl-border);
+    border-inline-start: 1px solid var(--fl-border);
     padding: 0 0 0 20px;
   }
   .ap-private {
@@ -796,7 +796,7 @@
     justify-content: space-between;
     gap: 10px;
     background: var(--fl-raised);
-    border-left: 2px solid var(--fl-accent);
+    border-inline-start: 2px solid var(--fl-accent);
     padding: 12px;
     margin-bottom: 18px;
     line-height: 1.6;

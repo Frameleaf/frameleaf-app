@@ -283,7 +283,7 @@
   background: none;
   padding: 8px 10px;
   color: var(--fl-viewer-text);
-  text-align: left;
+  text-align: start;
   font-size: var(--fl-font-small);
 }
 .fl-editor .ed-menu .ed-menu-popover[hidden] {
@@ -313,7 +313,7 @@
   opacity: 0.4;
 }
 .fl-editor .ed-menu small {
-  margin-left: auto;
+  margin-inline-start: auto;
   color: var(--fl-viewer-muted);
   font-size: var(--fl-font-micro);
   white-space: nowrap;
@@ -454,7 +454,7 @@
   top: 0;
   bottom: 0;
   width: 24px;
-  margin-left: -12px;
+  margin-inline-start: -12px;
   z-index: 3;
   cursor: col-resize;
   touch-action: none;
@@ -601,7 +601,7 @@
   padding: 10px 0;
   background: var(--fl-material);
   backdrop-filter: var(--fl-material-blur);
-  border-left: 1px solid var(--fl-material-edge);
+  border-inline-start: 1px solid var(--fl-material-edge);
   overflow: hidden auto;
 }
 .ed-rail-tool {
@@ -644,7 +644,7 @@
   padding: 14px 16px 28px;
   background: var(--fl-material);
   backdrop-filter: var(--fl-material-blur);
-  border-left: 1px solid var(--fl-material-edge);
+  border-inline-start: 1px solid var(--fl-material-edge);
 }
 /* Groups the video tools so they can be disabled together while the clip loads; adds no box. */
 .ed-panel-controls {
@@ -814,7 +814,7 @@
   font-size: var(--fl-font-small);
   font-variant-numeric: tabular-nums;
   min-width: 48px;
-  text-align: right;
+  text-align: end;
 }
 .ed-slider input[type='range'] {
   --track: color-mix(in srgb, var(--ed-ink) 13%, transparent);
@@ -988,7 +988,7 @@
   color: var(--fl-viewer-text);
   font-size: 13px;
   font-weight: 550;
-  text-align: left;
+  text-align: start;
 }
 .ed-group-toggle svg {
   fill: currentColor;
@@ -1005,7 +1005,7 @@
   height: 6px;
   border-radius: 50%;
   background: var(--ed-text);
-  margin-left: 4px;
+  margin-inline-start: 4px;
 }
 .ed-group-body {
   padding: 2px 0 6px;
@@ -1087,7 +1087,7 @@
   top: 6px;
   bottom: 6px;
   width: 2px;
-  margin-left: -1px;
+  margin-left: -1px; /* rtl: physical, centres with left: 50% */
   background: var(--ed-ink);
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--fl-viewer-canvas) 55%, transparent);
 }
@@ -1182,7 +1182,7 @@
   justify-content: flex-start;
 }
 .ed-open-masks > :last-child {
-  margin-left: auto;
+  margin-inline-start: auto;
 }
 .ed-count {
   min-width: 20px;
@@ -1479,7 +1479,7 @@
     justify-content: flex-start;
     gap: 2px;
     padding: 6px 8px;
-    border-left: 0;
+    border-inline-start: 0;
     border-bottom: 1px solid var(--fl-viewer-border);
     overflow: auto hidden;
   }
@@ -1490,7 +1490,7 @@
   .ed-panel {
     flex: 1;
     min-height: 0;
-    border-left: 0;
+    border-inline-start: 0;
     padding: 12px 14px 20px;
   }
   .fl-editor .ed-menu {
@@ -1576,13 +1576,13 @@
   background: transparent;
   color: #dfe3e8;
   font-size: var(--fl-font-small);
-  text-align: left;
+  text-align: start;
 }
 .ed-mask-pick svg {
   fill: currentColor;
 }
 .ed-mask-pick small {
-  margin-left: auto;
+  margin-inline-start: auto;
   color: var(--fl-viewer-muted);
   font-size: var(--fl-font-micro);
 }
@@ -1815,7 +1815,7 @@
   top: -2px;
   bottom: -2px;
   width: 16px;
-  margin-left: -8px;
+  margin-inline-start: -8px;
   border: 0;
   border-radius: 4px;
   background: #f1f1f2;
@@ -1832,15 +1832,15 @@
   width: 4px;
   height: 16px;
   margin-top: -8px;
-  border-left: 1px solid #0007;
-  border-right: 1px solid #0007;
+  border-inline-start: 1px solid #0007;
+  border-inline-end: 1px solid #0007;
 }
 .ed-playhead {
   position: absolute;
   top: -6px;
   bottom: -6px;
   width: 2px;
-  margin-left: -1px;
+  margin-inline-start: -1px;
   background: #fff;
   box-shadow: 0 0 0 1px #0008;
   pointer-events: none;
@@ -1927,7 +1927,7 @@
   content: '';
   position: absolute;
   top: 2px;
-  left: 2px;
+  inset-inline-start: 2px;
   width: 20px;
   height: 20px;
   border-radius: 50%;
@@ -1941,6 +1941,9 @@
 }
 .ed-switch[aria-checked='true']::after {
   transform: translateX(18px);
+}
+[dir='rtl'] .ed-switch[aria-checked='true']::after {
+  transform: translateX(-18px);
 }
 .ed-card {
   display: grid;

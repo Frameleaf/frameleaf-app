@@ -305,7 +305,7 @@
     display: inline-block;
     width: 14px;
     border-top: 1px dotted var(--fl-muted);
-    margin-right: 6px;
+    margin-inline-end: 6px;
     vertical-align: middle;
   }
 </style>

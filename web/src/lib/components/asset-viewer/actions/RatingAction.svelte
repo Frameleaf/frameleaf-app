@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { readingKey } from '$lib/frameleaf/reading-direction';
   /**
    * The viewer's Rating tool (audit V-3), ported from `MediaViewer.jsx:1076-1125` and `RatingStars`
    * (2053-2085), styled after `.mv-popover`, `.mv-rating-popover` and `.mv-stars`
@@ -120,7 +121,7 @@
     event.stopPropagation();
     const buttons = [...(popover?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? [])];
     const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
-    buttons[(index + (event.key === 'ArrowRight' ? 1 : -1) + buttons.length) % buttons.length]?.focus();
+    buttons[(index + (readingKey(event.key) === 'ArrowRight' ? 1 : -1) + buttons.length) % buttons.length]?.focus();
   };
 
   const onDocumentPointerDown = (event: PointerEvent) => {
@@ -263,7 +264,7 @@
 
   .fl-stars .fl-stars-clear {
     width: auto;
-    margin-left: 6px;
+    margin-inline-start: 6px;
     padding: 0 10px;
     font: inherit;
     font-size: var(--fl-font-small);

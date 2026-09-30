@@ -1,9 +1,8 @@
 <script lang="ts">
   import { Icon } from '@immich/ui';
-  import { mdiChevronLeft, mdiChevronRight } from '@mdi/js';
+  import { mdiChevronLeft } from '@mdi/js';
   import { t } from 'svelte-i18n';
   import NavigationArea from '../NavigationArea.svelte';
-  import { languageManager } from '$lib/managers/language-manager.svelte';
 
   interface Props {
     onPreviousAsset: () => void;
@@ -17,5 +16,5 @@
 </script>
 
 <NavigationArea onClick={onPreviousAsset} label={$t('view_previous_asset')}>
-  <Icon icon={languageManager.rtl ? mdiChevronRight : mdiChevronLeft} size="36" aria-hidden />
+  <Icon icon={mdiChevronLeft} size="36" aria-hidden />
 </NavigationArea>

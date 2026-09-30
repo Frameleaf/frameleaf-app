@@ -384,7 +384,7 @@
     margin-bottom: 1rem;
     padding: 0.5rem 0.75rem;
     border: 1px solid var(--fl-border);
-    border-left: 3px solid var(--fl-teal);
+    border-inline-start: 3px solid var(--fl-teal);
     border-radius: var(--fl-radius-card);
     background: var(--fl-raised);
   }

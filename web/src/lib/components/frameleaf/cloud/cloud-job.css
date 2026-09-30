@@ -62,7 +62,7 @@
   font-size: var(--fl-font-micro, 11px);
 }
 .fcj-price {
-  text-align: right;
+  text-align: end;
   font-variant-numeric: tabular-nums;
   font-weight: 600;
 }
@@ -183,7 +183,7 @@
   }
   .fcj-price {
     grid-column: 2;
-    text-align: left;
+    text-align: start;
   }
 }
 @keyframes fcj-slide {
