@@ -99,12 +99,13 @@ export async function createClaimImageInputs(prepared, isLeaseActive) {
   const folder = await mkdtemp(path.join(tmpdir(), 'frameleaf-claim-images-'));
   const paths = new Map();
   let server;
+  let harness;
   let disposed = false;
   const dispose = async () => {
     if (disposed) return;
     disposed = true;
     paths.clear();
-    try { await server?.close(); } finally { await rm(folder, { recursive: true, force: true }); }
+    try { await harness?.close(); await server?.close(); } finally { await rm(folder, { recursive: true, force: true }); }
   };
   try {
     for (const source of sources) {
@@ -122,6 +123,16 @@ export async function createClaimImageInputs(prepared, isLeaseActive) {
       // This is the existing headless payload fragment. The graph is preserved without migration
       // or guessed settings. Each opaque local URL serves only a verified, grant-bound input.
       input: { project, media: sources.map(({ id, key }) => ({ mediaId: id, url: server.url(key) })), strict: true },
+      // Same-origin media is required by the built harness CSP. Keep private paths inside
+      // this lease-bound adapter and reuse Freecut's existing static/Range server.
+      createHarness: async () => {
+        assert.ok(!harness && !disposed && isLeaseActive(), 'LEASE_LOST');
+        const { createHarnessServer } = await import(pathToFileURL(path.join(engine, 'headless/server.mjs')).href);
+        harness = await createHarnessServer({ distDir: path.join(engine, 'dist'),
+          resolveMedia: (key) => !disposed && isLeaseActive() ? paths.get(key) ?? null : null });
+        return { harnessUrl: harness.harnessUrl,
+          media: sources.map(({ id, key }) => ({ mediaId: id, url: harness.mediaUrl(key) })) };
+      },
       dispose,
     };
   } catch (error) {

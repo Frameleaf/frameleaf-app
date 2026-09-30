@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// One real claim/input preparation attempt. No enrollment, rendering or publication yet.
+// One real claim/input preparation attempt, with an optional explicit qualified executor.
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
@@ -29,15 +29,15 @@ async function boundedBytes(response, maximum) {
 }
 
 /** Requires a session obtained by a separately qualified worker; never manufactures admission. */
-export async function prepareOneClaim({ serverUrl, sessionToken }) {
+export async function prepareOneClaim({ serverUrl, sessionToken, execute }) {
   const server = new URL(serverUrl);
   assert.ok(['https:', 'http:'].includes(server.protocol) && !server.username && !server.password &&
     server.pathname === '/' && !server.search && !server.hash, 'Use the server origin without a path or credentials');
   assert.ok(typeof sessionToken === 'string' && sessionToken.length > 0, 'An admitted worker session is required');
   const headers = { 'x-frameleaf-worker-session': sessionToken, 'Content-Type': 'application/json' };
-  const request = async (pathname, body, timeout = 10_000) => {
+  const request = async (pathname, body, timeout = 10_000, signal) => {
     const response = await fetch(new URL(pathname, server), {
-      method: 'POST', headers, body: JSON.stringify(body), redirect: 'error', signal: AbortSignal.timeout(timeout),
+      method: 'POST', headers, body: JSON.stringify(body), redirect: 'error', signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(timeout)]) : AbortSignal.timeout(timeout),
     });
     if (response.status === 204) return null;
     if (!response.ok) {
@@ -57,7 +57,7 @@ export async function prepareOneClaim({ serverUrl, sessionToken }) {
   let errorCode = 'worker_input_preparation_failed';
   const inputs = new Map();
   const clearInputs = () => { for (const input of inputs.values()) input.bytes.fill(0); inputs.clear(); };
-  const heartbeat = async () => {
+  const sendHeartbeat = async () => {
     ownsLease = false; // A lost acknowledgement is not permission to keep reading or writing.
     const started = performance.now();
     const beat = await request(`${operationPath}/heartbeat`, { ...binding, outputBytes: '0' });
@@ -69,6 +69,7 @@ export async function prepareOneClaim({ serverUrl, sessionToken }) {
     }
     ownsLease = true;
     if (beat.cancelRequested) {
+      await releaseExecutor();
       clearInputs();
       const ack = await request(`${operationPath}/cancel-ack`, { ...binding, released: true });
       assert.equal(ack?.accepted, true, 'CANCEL_ACK_REFUSED');
@@ -77,7 +78,12 @@ export async function prepareOneClaim({ serverUrl, sessionToken }) {
       throw new Error('CANCELLED');
     }
   };
+  let heartbeatPending;
+  const heartbeat = () => heartbeatPending ??= sendHeartbeat().finally(() => { heartbeatPending = undefined; });
   let prepared;
+  let engineInputs;
+  let releaseExecutor = async () => {};
+  const startedAt = performance.now();
   try {
     await heartbeat();
     assert.equal(claim.kind, 'studio-export');
@@ -118,32 +124,59 @@ export async function prepareOneClaim({ serverUrl, sessionToken }) {
       total += bytes.length;
     }
     await heartbeat();
-    const engineInputs = await createClaimImageInputs(prepared, () => ownsLease && performance.now() < deadline);
-    // The real renderer will consume engineInputs.input while this lease is held. For now prove
-    // adaptation is possible, dispose every local source, then fail without generating any output.
-    await engineInputs.dispose();
-    errorCode = 'worker_executor_unavailable';
+    engineInputs = await createClaimImageInputs(prepared, () => ownsLease && performance.now() < deadline);
+    // Preparation-only callers keep the old fail-closed behavior. An explicit executor must
+    // consume the immutable adapter under this lease and return server-accepted completion.
+    if (execute) {
+      errorCode = 'worker_executor_failed';
+      const result = await execute({ claim, prepared, engineInputs, heartbeat, request,
+        isLeaseActive: () => ownsLease && performance.now() < deadline,
+        elapsedMs: () => performance.now() - startedAt,
+        registerRelease: (release) => { releaseExecutor = async () => { await release(); await engineInputs?.dispose(); }; },
+        upload: async (file, metadata, signal) => {
+          await heartbeat();
+          assert.ok(ownsLease && performance.now() < deadline, 'LEASE_LOST');
+          const { createReadStream } = await import('node:fs');
+          const query = new URLSearchParams(metadata);
+          const stream = createReadStream(file);
+          try {
+            const response = await fetch(new URL(`${operationPath}/artifacts/0?${query}`, server), {
+            method: 'PUT', headers: { 'x-frameleaf-worker-session': sessionToken,
+              'x-render-claim-token': claim.claimToken, 'Content-Type': 'application/octet-stream' },
+            body: stream, duplex: 'half', redirect: 'error',
+            signal: AbortSignal.any([signal, AbortSignal.timeout(Math.max(1, Math.floor(deadline - performance.now())))]),
+          });
+            if (!response.ok) { await response.body?.cancel(); throw new Error('ARTIFACT_REFUSED'); }
+            return JSON.parse((await boundedBytes(response, byteLimit)).toString());
+          } finally { stream.destroy(); }
+        },
+      });
+      assert.equal(result?.accepted, true, 'COMPLETION_REFUSED');
+      status = 'completed';
+    } else errorCode = 'worker_executor_unavailable';
   } catch {
     // URLs contain signed grants. Never echo an HTTP error, graph or credential into logs.
     if (!ownsLease && status === 'failed') status = 'lease_lost';
   } finally {
+    await releaseExecutor();
+    await engineInputs?.dispose();
     clearInputs();
     prepared = undefined;
-    if (ownsLease) {
+    if (ownsLease && status !== 'completed') {
       // Recheck cancellation/lease loss before consuming the claim with a failure report.
       try { await heartbeat(); } catch { ownsLease = false; if (status !== 'cancelled') status = 'lease_lost'; }
       if (ownsLease) {
         const result = await request(`${operationPath}/fail`, { ...binding,
           errorCode, error: errorCode === 'worker_executor_unavailable'
             ? 'Authorized inputs prepared; render execution is not implemented.'
-            : 'Input preparation refused; no output produced.',
+            : 'Worker attempt refused; no completion accepted.',
         }, Math.max(1, Math.min(10_000, Math.floor(deadline - performance.now()))));
         assert.equal(result?.accepted, true, 'FAILURE_REPORT_REFUSED');
       }
     }
   }
   return { status, operationId: claim.operationId, errorCode: status === 'failed' ? errorCode : null,
-    published: false };
+    published: status === 'completed' };
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
