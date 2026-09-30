@@ -19,6 +19,8 @@ test('renders a radial exposure mask selectively and preserves it across save, r
   const asset = await utils.createAsset(owner.accessToken, {
     assetData: { filename: 'radial-gray.png', bytes: source },
   });
+  await utils.waitForQueueFinish(owner.accessToken, 'metadataExtraction');
+  await utils.waitForQueueFinish(owner.accessToken, 'thumbnailGeneration');
   await utils.setAuthCookies(context, owner.accessToken);
   const endpoint = `${app}/assets/${asset.id}/develop`;
   const read = async () => {
@@ -71,6 +73,8 @@ test('renders a radial exposure mask selectively and preserves it across save, r
   await editor.getByRole('button', { name: 'Masks', exact: true }).click();
   await editor.getByRole('button', { name: 'Radial', exact: true }).click();
   await expect(editor.getByRole('radio')).toHaveCount(1);
+  const stageImage = editor.locator('.ed-stage img').last();
+  const previousPreviewUrl = await stageImage.getAttribute('src');
   const previewPromise = page.waitForResponse(
     (response) =>
       response.url() === `${endpoint}/preview` &&
@@ -80,8 +84,22 @@ test('renders a radial exposure mask selectively and preserves it across save, r
   await editor.getByRole('slider', { name: 'Exposure', exact: true }).fill('1');
   const preview = await previewPromise;
   expect(preview.status()).toBe(200);
-  await selectivePixels(await preview.body(), 'actual editor preview');
-  await expect(editor.locator('.ed-stage img').last()).toHaveAttribute('src', /^blob:/);
+  await expect(stageImage).toHaveAttribute('src', /^blob:/);
+  await expect(stageImage).not.toHaveAttribute('src', previousPreviewUrl!);
+  await expect
+    .poll(() =>
+      stageImage.evaluate(
+        (image) => (image as HTMLImageElement).complete && (image as HTMLImageElement).naturalWidth > 0,
+      ),
+    )
+    .toBe(true);
+  // Decode the actual displayed, newly completed object URL. Playwright's intercepted
+  // response body can be empty even when the actual server JPEG has arrived in the UI.
+  const displayedBytes = await stageImage.evaluate(async (image) => {
+    const response = await fetch((image as HTMLImageElement).src);
+    return [...new Uint8Array(await response.arrayBuffer())];
+  });
+  await selectivePixels(Buffer.from(displayedBytes), 'actual displayed editor preview');
   await testInfo.attach('desktop-mask-preview', { body: await page.screenshot(), contentType: 'image/png' });
   const unsaved = await read();
   expect(unsaved.revisions).toHaveLength(0);
