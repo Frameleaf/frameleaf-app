@@ -40,7 +40,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): owner, revoked, sensitive, shared, viewer (FL-112)."
+          "reason": "All authorizationFailure-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -85,7 +85,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): owner, revoked, sensitive, shared, viewer (FL-112)."
+          "reason": "All authorizationFailure-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -130,7 +130,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): owner, revoked, sensitive, shared, viewer (FL-112)."
+          "reason": "All authorizationFailure-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -175,7 +175,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): owner, revoked, sensitive, shared, viewer (FL-112)."
+          "reason": "All authorizationFailure-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -220,7 +220,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): owner, revoked, sensitive, shared, viewer (FL-112)."
+          "reason": "All authorizationFailure-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -265,7 +265,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): owner, revoked, sensitive, shared, viewer (FL-112)."
+          "reason": "All authorizationFailure-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -310,7 +310,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): owner, revoked, sensitive, shared, viewer (FL-112)."
+          "reason": "All authorizationFailure-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -355,7 +355,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): owner, revoked, sensitive, shared, viewer (FL-112)."
+          "reason": "All authorizationFailure-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -400,7 +400,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): owner, revoked, sensitive, shared, viewer (FL-112)."
+          "reason": "All authorizationFailure-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -445,7 +445,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, unsupported, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, restart, stale-result, unsupported (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -490,7 +490,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, unsupported, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, restart, stale-result, unsupported (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -535,7 +535,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): owner, revoked, sensitive, shared, viewer (FL-112)."
+          "reason": "All authorizationFailure-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -580,7 +580,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, unsupported, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, restart, stale-result, unsupported (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -625,7 +625,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -670,7 +670,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -715,7 +715,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -760,7 +760,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -805,7 +805,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, unsupported, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, restart, stale-result, unsupported (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -850,7 +850,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): owner, revoked, sensitive, shared, viewer (FL-112)."
+          "reason": "All authorizationFailure-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -895,7 +895,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): owner, revoked, sensitive, shared, viewer (FL-112)."
+          "reason": "All authorizationFailure-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -940,7 +940,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): owner, revoked, sensitive, shared, viewer (FL-112)."
+          "reason": "All authorizationFailure-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -985,7 +985,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): owner, revoked, sensitive, shared, viewer (FL-112)."
+          "reason": "All authorizationFailure-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -1030,7 +1030,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): owner, revoked, sensitive, shared, viewer (FL-112)."
+          "reason": "All authorizationFailure-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -1075,7 +1075,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -1120,7 +1120,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -1165,7 +1165,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, unsupported, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, restart, stale-result, unsupported (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -1210,7 +1210,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): owner, revoked, sensitive, shared, viewer (FL-112)."
+          "reason": "All authorizationFailure-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -1255,7 +1255,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): owner, revoked, sensitive, shared, viewer (FL-112)."
+          "reason": "All authorizationFailure-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -1300,7 +1300,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): owner, revoked, sensitive, shared, viewer (FL-112)."
+          "reason": "All authorizationFailure-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -1345,7 +1345,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): owner, revoked, sensitive, shared, viewer (FL-112)."
+          "reason": "All authorizationFailure-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -1390,7 +1390,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): owner, revoked, sensitive, shared, viewer (FL-112)."
+          "reason": "All authorizationFailure-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -1435,7 +1435,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): owner, revoked, sensitive, shared, viewer (FL-112)."
+          "reason": "All authorizationFailure-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -1480,7 +1480,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): owner, revoked, sensitive, shared, viewer (FL-112)."
+          "reason": "All authorizationFailure-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -1525,7 +1525,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): owner, revoked, sensitive, shared, viewer (FL-112)."
+          "reason": "All authorizationFailure-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -1570,7 +1570,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): owner, revoked, sensitive, shared, viewer (FL-112)."
+          "reason": "All authorizationFailure-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -1615,7 +1615,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -1660,7 +1660,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -1705,7 +1705,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, unsupported, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, restart, stale-result, unsupported (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -1750,7 +1750,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -1795,7 +1795,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -1840,7 +1840,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -1885,7 +1885,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -1930,7 +1930,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): owner, revoked, sensitive, shared, viewer (FL-112)."
+          "reason": "All authorizationFailure-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -1975,7 +1975,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -2020,7 +2020,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -2065,7 +2065,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, unsupported, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, restart, stale-result, unsupported (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -2110,7 +2110,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, unsupported, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, restart, stale-result, unsupported (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -2155,7 +2155,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, unsupported, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, restart, stale-result, unsupported (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -2200,7 +2200,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, unsupported, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, restart, stale-result, unsupported (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -2245,7 +2245,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, unsupported, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, restart, stale-result, unsupported (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -2290,7 +2290,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, unsupported, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, restart, stale-result, unsupported (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -2335,7 +2335,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, unsupported, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, restart, stale-result, unsupported (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -2380,7 +2380,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -2425,7 +2425,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -2470,7 +2470,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -2515,7 +2515,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -2560,7 +2560,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -2605,7 +2605,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -2650,7 +2650,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -2696,7 +2696,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -2742,7 +2742,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -2788,7 +2788,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -2834,7 +2834,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -2880,7 +2880,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -2926,7 +2926,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -2972,7 +2972,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -3018,7 +3018,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -3064,7 +3064,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -3110,7 +3110,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -3156,7 +3156,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -3202,7 +3202,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -3248,7 +3248,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -3294,7 +3294,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -3340,7 +3340,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -3386,7 +3386,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -3432,7 +3432,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -3478,7 +3478,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -3524,7 +3524,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -3570,7 +3570,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -3616,7 +3616,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -3662,7 +3662,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -3708,7 +3708,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -3754,7 +3754,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -3800,7 +3800,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -3846,7 +3846,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -3892,7 +3892,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -3938,7 +3938,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -3984,7 +3984,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -4030,7 +4030,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -4076,7 +4076,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -4122,7 +4122,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -4168,7 +4168,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -4214,7 +4214,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -4260,7 +4260,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -4306,7 +4306,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -4352,7 +4352,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -4398,7 +4398,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -4444,7 +4444,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -4490,7 +4490,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -4536,7 +4536,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -4582,7 +4582,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -4628,7 +4628,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -4674,7 +4674,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -4720,7 +4720,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -4766,7 +4766,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -4812,7 +4812,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -4858,7 +4858,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -4904,7 +4904,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -4950,7 +4950,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -4996,7 +4996,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -5042,7 +5042,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -5088,7 +5088,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -5134,7 +5134,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -5180,7 +5180,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, composed, extreme, owner, revoked, sensitive, shared, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, composed, extreme (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -5226,7 +5226,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, composed, extreme, owner, revoked, sensitive, shared, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, composed, extreme (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -5272,7 +5272,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, composed, extreme, owner, revoked, sensitive, shared, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, composed, extreme (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -5318,7 +5318,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, composed, extreme, owner, revoked, sensitive, shared, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, composed, extreme (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -5364,7 +5364,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, composed, extreme, owner, revoked, sensitive, shared, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, composed, extreme (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -5410,7 +5410,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, composed, extreme, owner, revoked, sensitive, shared, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, composed, extreme (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -5456,7 +5456,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, composed, extreme, owner, revoked, sensitive, shared, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, composed, extreme (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -5502,7 +5502,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, composed, extreme, owner, revoked, sensitive, shared, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, composed, extreme (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -5548,7 +5548,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, composed, extreme, owner, revoked, sensitive, shared, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, composed, extreme (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -5594,7 +5594,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, composed, extreme, owner, revoked, sensitive, shared, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, composed, extreme (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -5640,7 +5640,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, composed, extreme, owner, revoked, sensitive, shared, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, composed, extreme (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -5686,7 +5686,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, composed, extreme, owner, revoked, sensitive, shared, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, composed, extreme (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -5732,7 +5732,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, composed, extreme, owner, revoked, sensitive, shared, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, composed, extreme (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -5778,7 +5778,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, composed, extreme, owner, revoked, sensitive, shared, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, composed, extreme (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -5824,7 +5824,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, composed, extreme, owner, revoked, sensitive, shared, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, composed, extreme (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -5870,7 +5870,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, composed, extreme, owner, revoked, sensitive, shared, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, composed, extreme (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -5916,7 +5916,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, composed, extreme, owner, revoked, sensitive, shared, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, composed, extreme (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -5962,7 +5962,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, composed, extreme, owner, revoked, sensitive, shared, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, composed, extreme (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -6008,7 +6008,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, composed, extreme, owner, revoked, sensitive, shared, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, composed, extreme (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -6054,7 +6054,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, composed, extreme, owner, revoked, sensitive, shared, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, composed, extreme (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -6100,7 +6100,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, composed, extreme, owner, revoked, sensitive, shared, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, composed, extreme (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -6146,7 +6146,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -6192,7 +6192,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -6238,7 +6238,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -6284,7 +6284,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -6330,7 +6330,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -6376,7 +6376,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -6422,7 +6422,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -6468,7 +6468,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -6514,7 +6514,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -6560,7 +6560,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -6606,7 +6606,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -6652,7 +6652,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -6698,7 +6698,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -6744,7 +6744,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -6790,7 +6790,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -6836,7 +6836,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -6882,7 +6882,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -6928,7 +6928,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -6974,7 +6974,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -7020,7 +7020,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -7066,7 +7066,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -7112,7 +7112,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -7158,7 +7158,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -7204,7 +7204,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -7250,7 +7250,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): animated, cancel, composed, deleted, extreme, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -7295,7 +7295,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): owner, revoked, sensitive, shared, viewer (FL-112)."
+          "reason": "All authorizationFailure-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -7340,7 +7340,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): owner, revoked, sensitive, shared, viewer (FL-112)."
+          "reason": "All authorizationFailure-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -7385,7 +7385,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): owner, revoked, sensitive, shared, viewer (FL-112)."
+          "reason": "All authorizationFailure-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -7430,7 +7430,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): owner, revoked, sensitive, shared, viewer (FL-112)."
+          "reason": "All authorizationFailure-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -7475,7 +7475,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): owner, revoked, sensitive, shared, viewer (FL-112)."
+          "reason": "All authorizationFailure-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -7520,7 +7520,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): owner, revoked, sensitive, shared, viewer (FL-112)."
+          "reason": "All authorizationFailure-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -7565,7 +7565,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): owner, revoked, sensitive, shared, viewer (FL-112)."
+          "reason": "All authorizationFailure-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -7610,7 +7610,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): owner, revoked, sensitive, shared, viewer (FL-112)."
+          "reason": "All authorizationFailure-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -7655,7 +7655,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): owner, revoked, sensitive, shared, viewer (FL-112)."
+          "reason": "All authorizationFailure-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -7700,7 +7700,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): owner, revoked, sensitive, shared, viewer (FL-112)."
+          "reason": "All authorizationFailure-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -7745,7 +7745,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): owner, revoked, sensitive, shared, viewer (FL-112)."
+          "reason": "All authorizationFailure-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -7790,7 +7790,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): owner, revoked, sensitive, shared, viewer (FL-112)."
+          "reason": "All authorizationFailure-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -7835,7 +7835,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): owner, revoked, sensitive, shared, viewer (FL-112)."
+          "reason": "All authorizationFailure-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -7880,7 +7880,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): owner, revoked, sensitive, shared, viewer (FL-112)."
+          "reason": "All authorizationFailure-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -7925,7 +7925,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): owner, revoked, sensitive, shared, viewer (FL-112)."
+          "reason": "All authorizationFailure-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -7970,7 +7970,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): owner, revoked, sensitive, shared, viewer (FL-112)."
+          "reason": "All authorizationFailure-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -8015,7 +8015,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): owner, revoked, sensitive, shared, viewer (FL-112)."
+          "reason": "All authorizationFailure-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -8060,7 +8060,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): owner, revoked, sensitive, shared, viewer (FL-112)."
+          "reason": "All authorizationFailure-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -8105,7 +8105,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): owner, revoked, sensitive, shared, viewer (FL-112)."
+          "reason": "All authorizationFailure-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -8150,7 +8150,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): owner, revoked, sensitive, shared, viewer (FL-112)."
+          "reason": "All authorizationFailure-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -8195,7 +8195,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): owner, revoked, sensitive, shared, viewer (FL-112)."
+          "reason": "All authorizationFailure-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -8240,7 +8240,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): owner, revoked, sensitive, shared, viewer (FL-112)."
+          "reason": "All authorizationFailure-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -8285,7 +8285,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): owner, revoked, sensitive, shared, viewer (FL-112)."
+          "reason": "All authorizationFailure-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -8330,7 +8330,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -8375,7 +8375,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, unsupported, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, restart, stale-result, unsupported (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -8420,7 +8420,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -8465,7 +8465,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -8510,7 +8510,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -8555,7 +8555,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -8600,7 +8600,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -8645,7 +8645,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -8690,7 +8690,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -8735,7 +8735,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -8780,7 +8780,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -8825,7 +8825,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -8870,7 +8870,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, restart, stale-result (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -8915,7 +8915,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, unsupported, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, restart, stale-result, unsupported (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -8960,7 +8960,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, unsupported, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, restart, stale-result, unsupported (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -9005,7 +9005,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, unsupported, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, restart, stale-result, unsupported (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -9050,7 +9050,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, unsupported, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, restart, stale-result, unsupported (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -9095,7 +9095,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, unsupported, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, restart, stale-result, unsupported (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -9140,7 +9140,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, unsupported, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, restart, stale-result, unsupported (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -9185,7 +9185,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, unsupported, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, restart, stale-result, unsupported (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -9230,7 +9230,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, unsupported, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, restart, stale-result, unsupported (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -9275,7 +9275,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, unsupported, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, restart, stale-result, unsupported (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -9320,7 +9320,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, unsupported, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, restart, stale-result, unsupported (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -9365,7 +9365,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, unsupported, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, restart, stale-result, unsupported (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -9410,7 +9410,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, unsupported, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, restart, stale-result, unsupported (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -9455,7 +9455,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, unsupported, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, restart, stale-result, unsupported (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -9500,7 +9500,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, unsupported, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, restart, stale-result, unsupported (FL-112)."
         },
         "test": {
           "status": "not-tested"
@@ -9545,7 +9545,7 @@
         },
         "authorizationFailure": {
           "status": "blocked",
-          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, owner, restart, revoked, sensitive, shared, stale-result, unsupported, viewer (FL-112)."
+          "reason": "Missing authorizationFailure-axis case(s): cancel, deleted, invalid, normal, restart, stale-result, unsupported (FL-112)."
         },
         "test": {
           "status": "not-tested"
