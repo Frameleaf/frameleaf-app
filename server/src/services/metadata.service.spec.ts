@@ -448,7 +448,10 @@ describe(MetadataService.name, () => {
     it('should extract tags from TagsList', async () => {
       const asset = AssetFactory.create();
       mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
-      mocks.asset.getForMetadataExtractionTags.mockResolvedValue({ tags: ['Parent'] });
+      mocks.asset.getForMetadataExtractionTags.mockResolvedValue({
+        tags: ['Parent'],
+        updateId: '00000000-0000-0000-0000-000000000001',
+      });
       mockReadTags({ TagsList: ['Parent'] });
       mocks.tag.upsertValue.mockResolvedValue(tagStub.parentUpsert);
 
@@ -460,7 +463,10 @@ describe(MetadataService.name, () => {
     it('should extract hierarchy from TagsList', async () => {
       const asset = AssetFactory.create();
       mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
-      mocks.asset.getForMetadataExtractionTags.mockResolvedValue({ tags: ['Parent/Child'] });
+      mocks.asset.getForMetadataExtractionTags.mockResolvedValue({
+        tags: ['Parent/Child'],
+        updateId: '00000000-0000-0000-0000-000000000001',
+      });
       mockReadTags({ TagsList: ['Parent/Child'] });
       mocks.tag.upsertValue.mockResolvedValueOnce(tagStub.parentUpsert);
       mocks.tag.upsertValue.mockResolvedValueOnce(tagStub.childUpsert);
@@ -482,7 +488,10 @@ describe(MetadataService.name, () => {
     it('should extract tags from Keywords as a string', async () => {
       const asset = AssetFactory.create();
       mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
-      mocks.asset.getForMetadataExtractionTags.mockResolvedValue({ tags: ['Parent'] });
+      mocks.asset.getForMetadataExtractionTags.mockResolvedValue({
+        tags: ['Parent'],
+        updateId: '00000000-0000-0000-0000-000000000001',
+      });
       mockReadTags({ Keywords: 'Parent' });
       mocks.tag.upsertValue.mockResolvedValue(tagStub.parentUpsert);
 
@@ -494,7 +503,10 @@ describe(MetadataService.name, () => {
     it('should extract tags from Keywords as a list', async () => {
       const asset = AssetFactory.create();
       mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
-      mocks.asset.getForMetadataExtractionTags.mockResolvedValue({ tags: ['Parent'] });
+      mocks.asset.getForMetadataExtractionTags.mockResolvedValue({
+        tags: ['Parent'],
+        updateId: '00000000-0000-0000-0000-000000000001',
+      });
       mockReadTags({ Keywords: ['Parent'] });
       mocks.tag.upsertValue.mockResolvedValue(tagStub.parentUpsert);
 
@@ -506,7 +518,10 @@ describe(MetadataService.name, () => {
     it('should extract tags from Keywords as a list with a number', async () => {
       const asset = AssetFactory.create();
       mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
-      mocks.asset.getForMetadataExtractionTags.mockResolvedValue({ tags: ['Parent', '2024'] });
+      mocks.asset.getForMetadataExtractionTags.mockResolvedValue({
+        tags: ['Parent', '2024'],
+        updateId: '00000000-0000-0000-0000-000000000001',
+      });
       mockReadTags({ Keywords: ['Parent', 2024] });
       mocks.tag.upsertValue.mockResolvedValue(tagStub.parentUpsert);
 
@@ -519,7 +534,10 @@ describe(MetadataService.name, () => {
     it('should extract hierarchal tags from Keywords', async () => {
       const asset = AssetFactory.create();
       mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
-      mocks.asset.getForMetadataExtractionTags.mockResolvedValue({ tags: ['Parent/Child'] });
+      mocks.asset.getForMetadataExtractionTags.mockResolvedValue({
+        tags: ['Parent/Child'],
+        updateId: '00000000-0000-0000-0000-000000000001',
+      });
       mockReadTags({ Keywords: 'Parent/Child' });
       mocks.tag.upsertValue.mockResolvedValue(tagStub.parentUpsert);
 
@@ -539,7 +557,10 @@ describe(MetadataService.name, () => {
     it('should ignore Keywords when TagsList is present', async () => {
       const asset = AssetFactory.create();
       mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
-      mocks.asset.getForMetadataExtractionTags.mockResolvedValue({ tags: ['Parent/Child', 'Child'] });
+      mocks.asset.getForMetadataExtractionTags.mockResolvedValue({
+        tags: ['Parent/Child', 'Child'],
+        updateId: '00000000-0000-0000-0000-000000000001',
+      });
       mockReadTags({ Keywords: 'Child', TagsList: ['Parent/Child'] });
       mocks.tag.upsertValue.mockResolvedValue(tagStub.parentUpsert);
 
@@ -560,7 +581,10 @@ describe(MetadataService.name, () => {
     it('should extract hierarchy from HierarchicalSubject', async () => {
       const asset = AssetFactory.create();
       mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
-      mocks.asset.getForMetadataExtractionTags.mockResolvedValue({ tags: ['Parent/Child', 'TagA'] });
+      mocks.asset.getForMetadataExtractionTags.mockResolvedValue({
+        tags: ['Parent/Child', 'TagA'],
+        updateId: '00000000-0000-0000-0000-000000000001',
+      });
       mockReadTags({ HierarchicalSubject: ['Parent|Child', 'TagA'] });
       mocks.tag.upsertValue.mockResolvedValueOnce(tagStub.parentUpsert);
       mocks.tag.upsertValue.mockResolvedValueOnce(tagStub.childUpsert);
@@ -587,7 +611,10 @@ describe(MetadataService.name, () => {
     it('should extract tags from HierarchicalSubject as a list with a number', async () => {
       const asset = AssetFactory.create();
       mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
-      mocks.asset.getForMetadataExtractionTags.mockResolvedValue({ tags: ['Parent', '2024'] });
+      mocks.asset.getForMetadataExtractionTags.mockResolvedValue({
+        tags: ['Parent', '2024'],
+        updateId: '00000000-0000-0000-0000-000000000001',
+      });
       mockReadTags({ HierarchicalSubject: ['Parent', 2024] });
       mocks.tag.upsertValue.mockResolvedValue(tagStub.parentUpsert);
 
@@ -600,7 +627,10 @@ describe(MetadataService.name, () => {
     it('should extract ignore / characters in a HierarchicalSubject tag', async () => {
       const asset = AssetFactory.create();
       mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
-      mocks.asset.getForMetadataExtractionTags.mockResolvedValue({ tags: ['Mom|Dad'] });
+      mocks.asset.getForMetadataExtractionTags.mockResolvedValue({
+        tags: ['Mom|Dad'],
+        updateId: '00000000-0000-0000-0000-000000000001',
+      });
       mockReadTags({ HierarchicalSubject: ['Mom/Dad'] });
       mocks.tag.upsertValue.mockResolvedValueOnce(tagStub.parentUpsert);
 
@@ -616,7 +646,10 @@ describe(MetadataService.name, () => {
     it('should ignore HierarchicalSubject when TagsList is present', async () => {
       const asset = AssetFactory.create();
       mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
-      mocks.asset.getForMetadataExtractionTags.mockResolvedValue({ tags: ['Parent/Child', 'Parent2/Child2'] });
+      mocks.asset.getForMetadataExtractionTags.mockResolvedValue({
+        tags: ['Parent/Child', 'Parent2/Child2'],
+        updateId: '00000000-0000-0000-0000-000000000001',
+      });
       mockReadTags({ HierarchicalSubject: ['Parent2|Child2'], TagsList: ['Parent/Child'] });
       mocks.tag.upsertValue.mockResolvedValue(tagStub.parentUpsert);
 
@@ -638,8 +671,8 @@ describe(MetadataService.name, () => {
       const asset = AssetFactory.create();
       mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
       mocks.asset.getForMetadataExtractionTags
-        .mockResolvedValueOnce({ tags: ['Parent/Child', 'Kept'] })
-        .mockResolvedValueOnce({ tags: ['Kept'] });
+        .mockResolvedValueOnce({ tags: ['Parent/Child', 'Kept'], updateId: '00000000-0000-0000-0000-000000000001' })
+        .mockResolvedValueOnce({ tags: ['Kept'], updateId: '00000000-0000-0000-0000-000000000001' });
       mockReadTags({ TagsList: ['Kept'] });
       mocks.tag.upsertValue.mockResolvedValue(tagStub.parentUpsert);
 
