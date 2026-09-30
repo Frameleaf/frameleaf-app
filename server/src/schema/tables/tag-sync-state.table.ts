@@ -9,7 +9,18 @@ export class TagSyncStateTable {
   @ForeignKeyColumn(() => SessionTable, { onDelete: 'CASCADE', onUpdate: 'CASCADE', primary: true, index: false })
   sessionId!: string;
   @PrimaryColumn({ type: 'character varying' })
-  kind!: 'tag' | 'assetTag' | 'pet' | 'petObservation' | 'space' | 'spaceMember' | 'duplicate' | 'pin' | 'trash';
+  kind!:
+    | 'tag'
+    | 'assetTag'
+    | 'pet'
+    | 'petObservation'
+    | 'space'
+    | 'spaceMember'
+    | 'duplicate'
+    | 'pin'
+    | 'trash'
+    | 'spaceAlbum'
+    | 'spacePerson';
   @PrimaryColumn({ type: 'character varying' })
   key!: string;
   @Column({ type: 'uuid' })
@@ -20,7 +31,7 @@ export class TagSyncStateTable {
   sourceId!: string;
   @UpdateIdColumn({ index: true })
   eventId!: Generated<string>;
-  /** Space identity delivery order is independent of its newest-first source order. */
+  /** Space and published-link delivery order is independent of its newest-first source order. */
   @Column({ type: 'bigint', nullable: true })
   deliveryOrder!: number | null;
   @Column({ type: 'text' })

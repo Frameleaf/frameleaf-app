@@ -128,6 +128,8 @@ export const SYNC_TYPES_ORDER = [
   SyncRequestType.DuplicateGroupsV1,
   SyncRequestType.SharedSpacesV1,
   SyncRequestType.SharedSpaceMembersV1,
+  SyncRequestType.SharedSpaceAlbumsV1,
+  SyncRequestType.SharedSpacePeopleV1,
   SyncRequestType.PetsV1,
   SyncRequestType.PetObservationsV1,
   SyncRequestType.TagsV1,
@@ -222,6 +224,10 @@ export class SyncService extends BaseService {
           SyncEntityType.SharedSpaceDeleteV1,
           SyncEntityType.SharedSpaceMemberV1,
           SyncEntityType.SharedSpaceMemberDeleteV1,
+          SyncEntityType.SharedSpaceAlbumV1,
+          SyncEntityType.SharedSpaceAlbumDeleteV1,
+          SyncEntityType.SharedSpacePersonV1,
+          SyncEntityType.SharedSpacePersonDeleteV1,
           SyncEntityType.PetV1,
           SyncEntityType.PetDeleteV1,
           SyncEntityType.PetObservationV1,
@@ -307,6 +313,8 @@ export class SyncService extends BaseService {
       [SyncRequestType.DuplicateGroupsV1]: () => this.syncTags(auth, response, 'duplicate'),
       [SyncRequestType.SharedSpacesV1]: () => this.syncTags(auth, response, 'space'),
       [SyncRequestType.SharedSpaceMembersV1]: () => this.syncTags(auth, response, 'spaceMember'),
+      [SyncRequestType.SharedSpaceAlbumsV1]: () => this.syncTags(auth, response, 'spaceAlbum'),
+      [SyncRequestType.SharedSpacePeopleV1]: () => this.syncTags(auth, response, 'spacePerson'),
       [SyncRequestType.PetsV1]: () => this.syncTags(auth, response, 'pet'),
       [SyncRequestType.PetObservationsV1]: () => this.syncTags(auth, response, 'petObservation'),
       [SyncRequestType.TagsV1]: () => this.syncTags(auth, response, 'tag'),
@@ -1122,7 +1130,18 @@ export class SyncService extends BaseService {
   private async syncTags(
     auth: AuthDto,
     response: Writable,
-    kind: 'tag' | 'assetTag' | 'pet' | 'petObservation' | 'space' | 'spaceMember' | 'duplicate' | 'pin' | 'trash',
+    kind:
+      | 'tag'
+      | 'assetTag'
+      | 'pet'
+      | 'petObservation'
+      | 'space'
+      | 'spaceMember'
+      | 'duplicate'
+      | 'pin'
+      | 'trash'
+      | 'spaceAlbum'
+      | 'spacePerson',
   ) {
     const readPins = kind === 'pin' ? () => this.pins.get(auth) : undefined;
     const pending = await (readPins

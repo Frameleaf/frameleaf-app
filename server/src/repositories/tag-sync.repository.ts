@@ -7,6 +7,7 @@ import type { PinnedCollectionsResponseDto } from 'src/dtos/pinned-collection.dt
 import type { SyncAck } from 'src/types.js';
 import { mapPet, mapPetObservation } from 'src/dtos/pet.dto.js';
 import { AlbumKind, AlbumUserRole, SyncEntityType } from 'src/enum.js';
+import { AlbumUserRepository } from 'src/repositories/album-user.repository.js';
 import { DuplicateRepository } from 'src/repositories/duplicate.repository.js';
 import { lockPublicForkWrites } from 'src/repositories/fork-write-guard.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -24,9 +25,20 @@ import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { getLockedOwnerId, notLockedOrOwnedBy } from 'src/utils/locked.js';
 import { toAck } from 'src/utils/sync.js';
 
-type Kind = 'tag' | 'assetTag' | 'pet' | 'petObservation' | 'space' | 'spaceMember' | 'duplicate' | 'pin' | 'trash';
+type Kind =
+  | 'tag'
+  | 'assetTag'
+  | 'pet'
+  | 'petObservation'
+  | 'space'
+  | 'spaceMember'
+  | 'duplicate'
+  | 'pin'
+  | 'trash'
+  | 'spaceAlbum'
+  | 'spacePerson';
 type ReadPins = () => Promise<PinnedCollectionsResponseDto>;
-const orderedKinds = new Set<Kind>(['space', 'duplicate', 'pin', 'trash']);
+const orderedKinds = new Set<Kind>(['space', 'duplicate', 'pin', 'trash', 'spaceAlbum', 'spacePerson']);
 type Visible = {
   key: string;
   entityId: string;
@@ -34,10 +46,13 @@ type Visible = {
   sourceId: string;
   data: Record<string, unknown>;
 };
+const sequenced = (kind: Kind) => ['space', 'spaceAlbum', 'spacePerson'].includes(kind);
 const types = {
   pin: { upsert: SyncEntityType.PinnedCollectionV1, delete: SyncEntityType.PinnedCollectionDeleteV1 },
   trash: { upsert: SyncEntityType.AssetTrashStateV1, delete: SyncEntityType.AssetTrashStateDeleteV1 },
   duplicate: { upsert: SyncEntityType.DuplicateGroupV1, delete: SyncEntityType.DuplicateGroupDeleteV1 },
+  spaceAlbum: { upsert: SyncEntityType.SharedSpaceAlbumV1, delete: SyncEntityType.SharedSpaceAlbumDeleteV1 },
+  spacePerson: { upsert: SyncEntityType.SharedSpacePersonV1, delete: SyncEntityType.SharedSpacePersonDeleteV1 },
   space: { upsert: SyncEntityType.SharedSpaceV1, delete: SyncEntityType.SharedSpaceDeleteV1 },
   spaceMember: { upsert: SyncEntityType.SharedSpaceMemberV1, delete: SyncEntityType.SharedSpaceMemberDeleteV1 },
   tag: { upsert: SyncEntityType.TagV1, delete: SyncEntityType.TagDeleteV1 },
@@ -108,7 +123,7 @@ export class TagSync {
         return { key: data.groupId, entityId: data.groupId, assetId: null, sourceId, data: { ...data } };
       });
     }
-    if (kind === 'space' || kind === 'spaceMember') {
+    if (['space', 'spaceMember', 'spaceAlbum', 'spacePerson'].includes(kind)) {
       if (auth.sharedLink) return [];
       const spaces = db
         .selectFrom('album')
@@ -122,6 +137,77 @@ export class TagSync {
         .where('owner.deletedAt', 'is', null)
         .where('reader.deletedAt', 'is', null)
         .where('caller.userId', '=', auth.user.id);
+      if (kind === 'spaceAlbum' || kind === 'spacePerson') {
+        const eligible = await spaces.select('album.id').execute();
+        const links = new AlbumUserRepository(db);
+        const result: Visible[] = [];
+        for (const { id: spaceId } of eligible) {
+          if (kind === 'spaceAlbum') {
+            const rows = (await links.getLinkedAlbums(spaceId, true)).filter(
+              (row) => !key || `${spaceId}:${row.linkedAlbumId}` === key,
+            );
+            const initialIds = new Set(rows.map((row) => row.linkedAlbumId));
+            const current = (await links.getLinkedAlbums(spaceId, true)).filter((row) =>
+              initialIds.has(row.linkedAlbumId),
+            );
+            // The strict count and thumbnail query follows link revalidation; neither uses cached media.
+            const counts = new Map(
+              (
+                await links.getLinkedAlbumCounts(
+                  spaceId,
+                  current.map((row) => row.linkedAlbumId),
+                  { excludeNsfw: true },
+                )
+              ).map((row) => [row.albumId, row]),
+            );
+            for (const row of current) {
+              const count = counts.get(row.linkedAlbumId);
+              const data = {
+                spaceId,
+                albumId: row.linkedAlbumId,
+                name: row.linkedAlbumName,
+                icon: row.linkedAlbumIcon,
+                assetCount: count?.assetCount ?? 0,
+                thumbnailAssetId: count?.thumbnailAssetId ?? null,
+                linkedAt: row.createdAt.toISOString(),
+              };
+              const digest = createHash('sha256').update(JSON.stringify(data)).digest('hex').slice(0, 32);
+              const sourceId = `${digest.slice(0, 8)}-${digest.slice(8, 12)}-${digest.slice(12, 16)}-${digest.slice(16, 20)}-${digest.slice(20)}`;
+              result.push({ key: `${spaceId}:${row.linkedAlbumId}`, entityId: spaceId, assetId: null, sourceId, data });
+            }
+          } else {
+            const rows = (await links.getLinkedPeople(spaceId, true)).filter((row) => !key || row.id === key);
+            const counts = new Map(
+              (
+                await links.getLinkedPersonCounts(
+                  spaceId,
+                  rows.map((row) => row.personGroupId),
+                  { excludeNsfw: true },
+                )
+              ).map((row) => [row.personGroupId, row.assetCount]),
+            );
+            // Counts are a separate query. Recheck the published identity and cover afterwards.
+            const initialIds = new Set(rows.map((row) => row.id));
+            const current = (await links.getLinkedPeople(spaceId, true)).filter((row) => initialIds.has(row.id));
+            for (const row of current) {
+              const data = {
+                id: row.id,
+                spaceId,
+                name: row.name,
+                coverAssetId: row.coverAssetId,
+                assetCount: counts.get(row.personGroupId) ?? 0,
+                linkedAt: row.createdAt.toISOString(),
+              };
+              const digest = createHash('sha256').update(JSON.stringify(data)).digest('hex').slice(0, 32);
+              const sourceId = `${digest.slice(0, 8)}-${digest.slice(8, 12)}-${digest.slice(12, 16)}-${digest.slice(16, 20)}-${digest.slice(20)}`;
+              result.push({ key: row.id, entityId: spaceId, assetId: null, sourceId, data });
+            }
+          }
+        }
+        // Hydration has multiple queries; a previously accepted space is not a cached grant.
+        const authorized = new Set((await spaces.select('album.id').execute()).map((row) => row.id));
+        return result.filter((row) => authorized.has(row.entityId));
+      }
       if (kind === 'space') {
         return spaces
           .$if(!!key, (qb) => qb.where('album.id', '=', key!))
@@ -316,13 +402,17 @@ export class TagSync {
         .where('kind', '=', kind)
         .where('acknowledged', '=', false)
         // Delivery ACKs never confirm unsent rows, so ordering identity independently cannot skip older entries.
-        .$if(kind === 'space', (qb) =>
+        .$if(sequenced(kind), (qb) =>
           qb
             .orderBy(sql`"deliveryOrder" asc nulls last`)
             .orderBy(
-              sql`(select album."createdAt" from album where album.id = session_tag_sync_state."entityId") desc nulls last`,
+              kind === 'spaceAlbum'
+                ? sql`(select link."createdAt" from shared_space_album link where link."albumId"::text || ':' || link."linkedAlbumId"::text = session_tag_sync_state.key) desc nulls last`
+                : kind === 'spacePerson'
+                  ? sql`(select link."createdAt" from shared_space_person link where link.id::text = session_tag_sync_state.key) desc nulls last`
+                  : sql`(select album."createdAt" from album where album.id = session_tag_sync_state."entityId") desc nulls last`,
             )
-            .orderBy('entityId', 'desc'),
+            .orderBy('key', 'desc'),
         )
         .orderBy('eventId', 'asc')
         .execute();
@@ -385,17 +475,21 @@ export class TagSync {
                 ? { assetId: state.entityId }
                 : kind === 'duplicate'
                   ? { groupId: state.entityId }
-                  : kind === 'space'
-                    ? { spaceId: state.entityId }
-                    : kind === 'spaceMember'
-                      ? { spaceId: state.entityId, userId: state.key.split(':', 2)[1] }
-                      : kind === 'tag'
-                        ? { tagId: state.entityId }
-                        : kind === 'assetTag'
-                          ? { tagId: state.entityId, assetId: state.assetId! }
-                          : kind === 'pet'
-                            ? { petId: state.entityId }
-                            : { observationId: state.key, petId: state.entityId, assetId: state.assetId! },
+                  : kind === 'spaceAlbum'
+                    ? { spaceId: state.entityId, albumId: state.key.split(':', 2)[1] }
+                    : kind === 'spacePerson'
+                      ? { spaceId: state.entityId, id: state.key }
+                      : kind === 'space'
+                        ? { spaceId: state.entityId }
+                        : kind === 'spaceMember'
+                          ? { spaceId: state.entityId, userId: state.key.split(':', 2)[1] }
+                          : kind === 'tag'
+                            ? { tagId: state.entityId }
+                            : kind === 'assetTag'
+                              ? { tagId: state.entityId, assetId: state.assetId! }
+                              : kind === 'pet'
+                                ? { petId: state.entityId }
+                                : { observationId: state.key, petId: state.entityId, assetId: state.assetId! },
       };
     });
   }
