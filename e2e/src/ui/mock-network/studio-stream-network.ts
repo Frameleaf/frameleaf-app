@@ -131,7 +131,7 @@ export const setupStudioStreamMocks = async (context: BrowserContext, page: Page
         engineRevision: ENGINE_REVISION,
         sourceSha256: 'e2e',
         features: [],
-        editor: `editor.html?webcodecs=${mock.webCodecs ? '1' : '0'}&webgpu=${mock.webGpu === false ? '0' : '1'}`,
+        editor: `editor.html?webcodecs=${mock.webCodecs ? '1' : '0'}&webgpu=${mock.webGpu ? '1' : '0'}`,
         commands: 'commands.html',
       },
     }),
