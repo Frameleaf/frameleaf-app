@@ -396,6 +396,8 @@ export type EmailImageAttachment = {
 };
 
 export interface IEmailJob {
+  /** Current authority for newly generated album mail; never credentials or stored permissions. */
+  albumMailContext?: { albumId: string; recipientId: string; kind: 'invite' | 'update'; senderName?: string };
   to: string;
   subject: string;
   html: string;
