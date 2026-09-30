@@ -54,8 +54,9 @@ const startFixture = (child: ChildProcess) =>
 
 beforeAll(async () => {
   identityDir = await mkdtemp(join(tmpdir(), 'fl201-identity-'));
-  const env = { ...process.env, FRAMELEAF_CLOUD_FIXTURE_PORT: '0' };
-  delete env.FRAMELEAF_CLOUD_FIXTURE_URL;
+  // Port 0 lets the fixture take any free port; without a URL it reports the address it bound.
+  const { FRAMELEAF_CLOUD_FIXTURE_URL: _unused, ...inherited } = process.env;
+  const env = { ...inherited, FRAMELEAF_CLOUD_FIXTURE_PORT: '0' };
   fixture = spawn(process.execPath, [FIXTURE], { env, stdio: ['ignore', 'pipe', 'pipe'] });
   CLOUD_URL = await startFixture(fixture);
 }, 35_000);
