@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { rovingFocus } from '$lib/frameleaf/roving-focus';
   import AlbumConfirmDialog from '$lib/components/frameleaf/AlbumConfirmDialog.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import SharedLinkForm from '$lib/components/frameleaf/SharedLinkForm.svelte';
@@ -182,7 +183,7 @@
                 disabled={busy}
               />
             </label>
-            <ul class="people" role="listbox" aria-label={$t('frameleaf_album_share_people')}>
+            <ul class="people" role="listbox" use:rovingFocus aria-label={$t('frameleaf_album_share_people')}>
               {#each matches as user (user.id)}
                 <li>
                   <button

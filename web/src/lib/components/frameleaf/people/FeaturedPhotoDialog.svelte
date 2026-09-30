@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { rovingFocus } from '$lib/frameleaf/roving-focus';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import Status from '$lib/components/frameleaf/Status.svelte';
@@ -160,7 +161,7 @@
   {:else if !loading && assets.length === 0}
     <p class="empty">{$t('frameleaf_people_featured_empty')}</p>
   {:else}
-    <div class="grid" role="radiogroup" aria-label={$t('photos')}>
+    <div class="grid" role="radiogroup" use:rovingFocus aria-label={$t('photos')}>
       {#each assets as asset, index (asset.id)}
         {@const box = faceBoxes.get(asset.id)}
         <button
