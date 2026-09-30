@@ -12,7 +12,7 @@ export class AssetUploadResourceTable {
   @ForeignKeyColumn(() => UserTable, { nullable: true, onDelete: 'SET NULL', onUpdate: 'CASCADE' })
   ownerId!: string | null;
   @Column({ type: 'jsonb' })
-  metadata!: AssetMediaCreateDto;
+  metadata!: AssetMediaCreateDto & { publication?: 'live-photo' };
   @Column({ type: 'bytea' })
   expectedChecksum!: Buffer;
   @Column({ type: 'text' })
@@ -26,7 +26,17 @@ export class AssetUploadResourceTable {
   @Column({ type: 'bigint' })
   maxAppendSize!: Int8Writable;
   @Column({ type: 'text', default: 'receiving' })
-  state!: Generated<'receiving' | 'finalizing' | 'verified' | 'published' | 'rejected' | 'cancelled'>;
+  state!: Generated<
+    | 'receiving'
+    | 'pair-receiving'
+    | 'finalizing'
+    | 'pair-finalizing'
+    | 'verified'
+    | 'pair-verified'
+    | 'published'
+    | 'rejected'
+    | 'cancelled'
+  >;
   @Column({ type: 'text', nullable: true })
   finalPath!: string | null;
   @Column({ type: 'bytea', nullable: true })

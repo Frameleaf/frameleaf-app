@@ -3664,6 +3664,14 @@ export type AssetUploadResultDto = {
     sha256: string;
     status: AssetMediaStatus;
 };
+export type LivePhotoUploadCommitDto = {
+    stillResourceId: string;
+    videoResourceId: string;
+};
+export type LivePhotoUploadResultDto = {
+    still: AssetUploadResultDto;
+    video: AssetUploadResultDto;
+};
 export type ExifResponseDto = {
     /** City name */
     city?: string | null;
@@ -14198,6 +14206,25 @@ export function createAssetUploadResource({ assetMetadata, reprDigest, uploadCom
             "Upload-Length": uploadLength
         })
     }));
+}
+/**
+ * Commit two verified Live Photo upload resources atomically
+ */
+export function commitLivePhotoUpload({ livePhotoUploadCommitDto }: {
+    livePhotoUploadCommitDto: LivePhotoUploadCommitDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: LivePhotoUploadResultDto;
+    } | {
+        status: 202;
+    } | {
+        status: 409;
+    }>("/assets/uploads/live-photo/commit", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: livePhotoUploadCommitDto
+    })));
 }
 /**
  * Cancel an unpublished upload
