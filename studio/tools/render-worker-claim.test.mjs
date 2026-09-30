@@ -3,12 +3,12 @@ import { createHash, randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
 import { createRequire } from 'node:module';
 import test from 'node:test';
-import { prepareOneClaim } from './render-worker-claim.mjs';
+const { prepareOneClaim } = await import(process.env.FRAMELEAF_CLAIM_TEST_MODULE ?? './render-worker-claim.mjs');
 
 const sharp = createRequire(new URL('../engine/package.json', import.meta.url))('sharp');
 
 // HTTP contract fixtures, NOT renderer admission or production-server qualification.
-async function fixture(t, { inputStatus = 200, redirect, loseLease = false, checksum, sourceBytes } = {}) {
+async function fixture(t, { inputStatus = 200, redirect, loseLease = false, checksum, sourceBytes, cancelAt } = {}) {
   const operationId = randomUUID();
   const claimToken = randomUUID();
   const sessionToken = randomUUID();
@@ -35,11 +35,13 @@ async function fixture(t, { inputStatus = 200, redirect, loseLease = false, chec
     } else if (request.url.endsWith('/heartbeat')) {
       heartbeats++;
       response.end(JSON.stringify({ leaseExtended: !(loseLease && heartbeats > 1), leaseMs: 90_000,
-        pauseRequested: false, cancelRequested: false, refusal: null }));
+        pauseRequested: false, cancelRequested: heartbeats === cancelAt, refusal: null }));
     } else if (request.url.includes('/inputs/')) {
       response.statusCode = redirect ? 302 : inputStatus;
       if (redirect) response.setHeader('Location', redirect);
       response.end(bytes);
+    } else if (request.url.endsWith('/complete') || request.url.endsWith('/cancel-ack')) {
+      response.end(JSON.stringify({ accepted: true, refusal: null }));
     } else if (request.url.endsWith('/fail')) {
       response.end(JSON.stringify({ accepted: true, refusal: null }));
     } else { response.statusCode = 404; response.end('{}'); }
@@ -47,7 +49,7 @@ async function fixture(t, { inputStatus = 200, redirect, loseLease = false, chec
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   t.after(() => new Promise((resolve) => { server.close(resolve); server.closeAllConnections(); }));
   return { requests, claimToken, sessionToken,
-    run: () => prepareOneClaim({ serverUrl: `http://127.0.0.1:${server.address().port}`, sessionToken }) };
+    run: (execute) => prepareOneClaim({ execute, serverUrl: `http://127.0.0.1:${server.address().port}`, sessionToken }) };
 }
 
 test('downloads only the claim grant, binds all writes, then fails without publishing', async (t) => {
@@ -95,4 +97,39 @@ test('lease loss stops input reads and every subsequent write', async (t) => {
   const f = await fixture(t, { loseLease: true });
   assert.equal((await f.run()).status, 'lease_lost');
   assert.deepEqual(f.requests.map((request) => request.path.split('/').at(-1)), ['claims', 'heartbeat', 'heartbeat']);
+});
+
+// Executor plumbing oracle only: the fake HTTP service is never represented as renderer or
+// production route qualification. Actual GPU/output measurement is retained separately.
+test('explicit executor consumes the immutable prepared source and accepted completion replaces fail', async (t) => {
+  const f = await fixture(t);
+  let consumed = false;
+  const result = await f.run(async ({ engineInputs, claim, request }) => {
+    consumed = true;
+    assert.equal(engineInputs.input.project.timeline.items[0].mediaId, 'fixture');
+    return request(`/api/render-workers/operations/${claim.operationId}/complete`, {
+      claimToken: claim.claimToken, artifactSequence: 0, resultAssetId: null });
+  });
+  assert.equal(consumed, true);
+  assert.equal(result.status, 'completed');
+  assert.equal(result.published, true);
+  assert.equal(f.requests.at(-1).path.split('/').at(-1), 'complete');
+  assert.equal(f.requests.some((entry) => entry.path.endsWith('/fail')), false);
+});
+
+test('cancel closes executor and removes private input serving before release acknowledgement', async (t) => {
+  const f = await fixture(t, { cancelAt: 4 });
+  let released = false;
+  let localUrl;
+  const result = await f.run(async ({ engineInputs, registerRelease, heartbeat }) => {
+    localUrl = engineInputs.input.media[0].url;
+    registerRelease(async () => { released = true; });
+    await heartbeat();
+    assert.fail('cancel must stop the executor');
+  });
+  assert.equal(result.status, 'cancelled');
+  assert.equal(released, true);
+  await assert.rejects(fetch(localUrl));
+  assert.equal(f.requests.at(-1).path.split('/').at(-1), 'cancel-ack');
+  assert.equal(f.requests.at(-1).body.released, true);
 });
