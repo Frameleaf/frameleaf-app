@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { locale } from '$lib/stores/preferences.store';
   /**
    * Settings → Frameleaf Cloud → Plan (FL-157): the prototype's `Plan`
    * (design/frameleaf/template/src/FrameleafCloud.jsx:786-1039, effd05ffb7) on the server's real plan
@@ -71,11 +72,9 @@
   let failure = $state('');
 
   const formatDate = (value: string | null | undefined) =>
-    value ? new Intl.DateTimeFormat(undefined, { dateStyle: 'long' }).format(new Date(value)) : '—';
+    value ? new Intl.DateTimeFormat($locale, { dateStyle: 'long' }).format(new Date(value)) : '—';
   const formatWhen = (value: string | null | undefined) =>
-    value
-      ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value))
-      : '—';
+    value ? new Intl.DateTimeFormat($locale, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)) : '—';
 
   const planTitle = (id: string) =>
     id === 'cloud-annual' ? $t('frameleaf_plan_annual_title') : $t('frameleaf_plan_monthly_title');

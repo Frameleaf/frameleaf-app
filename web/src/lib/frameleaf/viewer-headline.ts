@@ -6,6 +6,8 @@
  * Pure: it reads the metadata the detail panel already receives and renders no markup.
  */
 import { AssetTypeEnum, type AssetResponseDto, type ExifResponseDto } from '@immich/sdk';
+import { get } from 'svelte/store';
+import { locale } from '$lib/stores/preferences.store';
 
 export const formatFileSize = (bytes: number | null | undefined): string | null => {
   if (typeof bytes !== 'number' || !Number.isFinite(bytes) || bytes < 0) {
@@ -51,7 +53,7 @@ const assetDimensions = (asset: AssetResponseDto): { width: number | null; heigh
 export const dimensionsLabel = (asset: AssetResponseDto): string | null => {
   const { width, height } = assetDimensions(asset);
   return typeof width === 'number' && typeof height === 'number' && width > 0 && height > 0
-    ? `${width.toLocaleString()} × ${height.toLocaleString()}`
+    ? `${width.toLocaleString(get(locale))} × ${height.toLocaleString(get(locale))}`
     : null;
 };
 

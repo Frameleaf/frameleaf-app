@@ -12,9 +12,11 @@ import {
   type CloudMlJobEstimateResponseDto,
 } from '@immich/sdk';
 import type { Translations } from 'svelte-i18n';
+import { get } from 'svelte/store';
 import type { ActivityCloudJob, ActivityStage } from '$lib/frameleaf/activity';
 import { formatRatePerMinute, formatUsd } from '$lib/frameleaf/cloud-ml';
 import { pausedRefusalMessage } from '$lib/frameleaf/cloud-paused';
+import { locale } from '$lib/stores/preferences.store';
 
 /** "$1.20–$1.60": the typical to high-end range, start fees included. */
 export const estimateRange = (low: number, high: number) => `${formatUsd(low)}–${formatUsd(high)}`;
@@ -47,8 +49,8 @@ export const upscaleFact = (
   const values = {
     scale: upscale.appliedScale,
     requested: upscale.requestedScale,
-    width: upscale.outputWidth.toLocaleString(),
-    height: upscale.outputHeight.toLocaleString(),
+    width: upscale.outputWidth.toLocaleString(get(locale)),
+    height: upscale.outputHeight.toLocaleString(get(locale)),
   };
   return upscale.lowered
     ? {

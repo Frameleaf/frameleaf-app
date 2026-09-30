@@ -62,7 +62,7 @@
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { Route } from '$lib/route';
   import { handleSystemConfigSave } from '$lib/services/system-config.service';
-  import { lang } from '$lib/stores/preferences.store';
+  import { lang, locale } from '$lib/stores/preferences.store';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
   import { convertBCP47, langs } from '$lib/utils/i18n';
   import {
@@ -453,7 +453,7 @@
   const hours = $derived(reindexHours(items, choices.model, perHour));
   const options = $derived(processingOptions(setup));
   const existing = $derived(setup.flow === 'existing');
-  const formatCount = (value: number) => new Intl.NumberFormat().format(Math.round(value));
+  const formatCount = (value: number) => new Intl.NumberFormat($locale).format(Math.round(value));
   const hardwareName = (entry: HardwareCheckResponseDto['ml'] | undefined) =>
     entry ? [entry.vendor, entry.model].filter(Boolean).join(' ') || entry.backend.toUpperCase() : '';
 
@@ -894,7 +894,7 @@
                     </header>
                     {@render facts([
                       [$t('frameleaf_setup_found_server'), backup.server],
-                      [$t('frameleaf_setup_found_last'), new Date(backup.date).toLocaleString()],
+                      [$t('frameleaf_setup_found_last'), new Date(backup.date).toLocaleString($locale)],
                       [$t('frameleaf_setup_stat_items'), formatCount(backup.items)],
                       [$t('size'), formatTb(backup.bytes)],
                     ])}

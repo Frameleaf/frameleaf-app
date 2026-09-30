@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { locale } from '$lib/stores/preferences.store';
   /**
    * Support Frameleaf (FL-157, CLD-004): the prototype's `Buy` screen
    * (design/frameleaf/template/src/AuthScreens.jsx:1696-2088, effd05ffb7) on real services.
@@ -266,7 +267,9 @@
           <Icon icon={mdiCheckCircleOutline} size="16" />
           <span>
             {$t('frameleaf_buy_plan_active', {
-              values: { date: currentPlan.expiresAt ? new Date(currentPlan.expiresAt).toLocaleDateString() : '—' },
+              values: {
+                date: currentPlan.expiresAt ? new Date(currentPlan.expiresAt).toLocaleDateString($locale) : '—',
+              },
             })}
           </span>
         </p>

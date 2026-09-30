@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { locale } from '$lib/stores/preferences.store';
   import EnrichmentWorkbench from '$lib/components/frameleaf/EnrichmentWorkbench.svelte';
   import SettingGroup from '$lib/components/frameleaf/settings/SettingGroup.svelte';
   import SettingField from '$lib/components/frameleaf/settings/SettingField.svelte';
@@ -234,7 +235,7 @@
           {$t('admin.image_description_pending_banner', {
             values: {
               date: formatTimestamp(savedImageDescription.lastConfigChangeAt),
-              count: descriptionStats?.totalAssets?.toLocaleString() ?? '—',
+              count: descriptionStats?.totalAssets?.toLocaleString($locale) ?? '—',
             },
           })}
         </span>
@@ -394,19 +395,19 @@
               <dt class="text-immich-fg/70 dark:text-immich-dark-fg/70">
                 {$t('admin.image_description_status_eligible_assets')}
               </dt>
-              <dd class="font-medium">{descriptionStats.totalAssets.toLocaleString()}</dd>
+              <dd class="font-medium">{descriptionStats.totalAssets.toLocaleString($locale)}</dd>
             </div>
             <div class="flex justify-between">
               <dt class="text-immich-fg/70 dark:text-immich-dark-fg/70">
                 {$t('admin.image_description_status_with_description')}
               </dt>
-              <dd class="font-medium">{descriptionStats.withDescription.toLocaleString()}</dd>
+              <dd class="font-medium">{descriptionStats.withDescription.toLocaleString($locale)}</dd>
             </div>
             <div class="flex justify-between">
               <dt class="text-immich-fg/70 dark:text-immich-dark-fg/70">
                 {$t('admin.image_description_status_pending')}
               </dt>
-              <dd class="font-medium">{descriptionStats.withoutDescription.toLocaleString()}</dd>
+              <dd class="font-medium">{descriptionStats.withoutDescription.toLocaleString($locale)}</dd>
             </div>
             <hr class="border-primary/20" />
             <div class="flex justify-between">

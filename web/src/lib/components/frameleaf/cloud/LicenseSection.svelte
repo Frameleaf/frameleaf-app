@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { locale } from '$lib/stores/preferences.store';
   /**
    * Settings → Frameleaf Cloud → Licence (FL-156): the prototype's `License`
    * (design/frameleaf/template/src/FrameleafCloud.jsx:1041-1222, effd05ffb7) on the server's real
@@ -65,11 +66,9 @@
   let fileInput = $state<HTMLInputElement>();
 
   const formatDate = (value: string | null | undefined) =>
-    value ? new Intl.DateTimeFormat(undefined, { dateStyle: 'long' }).format(new Date(value)) : '—';
+    value ? new Intl.DateTimeFormat($locale, { dateStyle: 'long' }).format(new Date(value)) : '—';
   const formatWhen = (value: string | null | undefined) =>
-    value
-      ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value))
-      : '—';
+    value ? new Intl.DateTimeFormat($locale, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)) : '—';
 
   const act = async (call: () => Promise<unknown>, success: string) => {
     busy = true;

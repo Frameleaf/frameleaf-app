@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { locale } from '$lib/stores/preferences.store';
   /**
    * iCloud Photos (FL-68), ported from the `ICloudPanel` of the design template's
    * `UtilitiesManager.jsx`: independent connections, a sign-in dialog that asks only for the step the
@@ -521,7 +522,9 @@
         {/if}
         {#if selected.nextRunAt && !isActiveRun(run)}
           <p class="ic-run-note">
-            {$t('frameleaf_icloud_next_run', { values: { date: new Date(selected.nextRunAt).toLocaleString() } })}
+            {$t('frameleaf_icloud_next_run', {
+              values: { date: new Date(selected.nextRunAt).toLocaleString($locale) },
+            })}
           </p>
         {/if}
       </section>

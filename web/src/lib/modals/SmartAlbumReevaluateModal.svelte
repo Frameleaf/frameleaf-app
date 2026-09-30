@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { locale } from '$lib/stores/preferences.store';
   import { handleError } from '$lib/utils/handle-error';
   import {
     getSmartAlbumReevaluateEstimate,
@@ -108,7 +109,7 @@
             <dt class="text-immich-fg/70 dark:text-immich-dark-fg/70">
               {$t('admin.smart_albums_reevaluate_modal_eligible_assets')}
             </dt>
-            <dd class="font-medium">{estimate.totalAssets.toLocaleString()}</dd>
+            <dd class="font-medium">{estimate.totalAssets.toLocaleString($locale)}</dd>
           </div>
         </dl>
         <p class="mt-4 text-sm text-immich-fg/60 dark:text-immich-dark-fg/60">

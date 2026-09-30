@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { locale } from '$lib/stores/preferences.store';
   import { goto } from '$app/navigation';
   import FilterPanel from '$lib/components/frameleaf/FilterPanel.svelte';
   import PersonAvatar from '$lib/components/frameleaf/PersonAvatar.svelte';
@@ -1118,7 +1119,7 @@
                   <span>{entry.item.labelKey ? $t(entry.item.labelKey) : entry.item.label}</span>
                   <code>{entry.item.detail}</code>
                   {#if entry.item.count !== undefined}
-                    <small>{entry.item.count.toLocaleString()}</small>
+                    <small>{entry.item.count.toLocaleString($locale)}</small>
                   {/if}
                   {#if at === active}<kbd aria-hidden="true">⇥</kbd>{/if}
                 </div>

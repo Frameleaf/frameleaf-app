@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { locale } from '$lib/stores/preferences.store';
   /**
    * The Change history area (FL-66, FL-71 CC-10), the design template's `ChangeHistory` in
    * `CommandCenter.jsx:2542-2583`: one timeline, newest first, each entry with its title, time,
@@ -131,7 +132,7 @@
 
   const formatTime = (value: string) => {
     const date = new Date(value);
-    return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+    return Number.isNaN(date.getTime()) ? value : date.toLocaleString($locale);
   };
 </script>
 

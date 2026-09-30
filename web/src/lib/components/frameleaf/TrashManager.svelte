@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { locale } from '$lib/stores/preferences.store';
   /**
    * Your trash (FL-47), ported from the design template's `TrashManager.jsx`.
    *
@@ -404,7 +405,7 @@
 <section class="trash-manager" aria-label={$t('frameleaf_trash_label')}>
   <div class="tm-summary">
     <div>
-      <strong>{available.toLocaleString()}</strong>
+      <strong>{available.toLocaleString($locale)}</strong>
       <span>{$t('frameleaf_trash_summary_items')}</span>
     </div>
     <div>

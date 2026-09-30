@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { locale } from '$lib/stores/preferences.store';
   /**
    * History and review for a Studio project (FL-89, `STU-202`).
    *
@@ -179,7 +180,7 @@
             {/if}
           </div>
           <div class="muted fl-studio-revision-meta">
-            <time datetime={item.createdAt}>{new Date(item.createdAt).toLocaleString()}</time>
+            <time datetime={item.createdAt}>{new Date(item.createdAt).toLocaleString($locale)}</time>
             <span>{$t('frameleaf_studio_history_command_count', { values: { count: summaryCount(item) } })}</span>
             {#if item.restoredFromRevision !== null}
               <span

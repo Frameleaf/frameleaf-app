@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { locale } from '$lib/stores/preferences.store';
   /**
    * Settings › Frameleaf Cloud › Cloud backup (FL-160): the prototype's `Backup`
    * (design/frameleaf/template/src/FrameleafCloud.jsx) on the server's real backup agent. Not set up:
@@ -166,9 +167,7 @@
   });
 
   const formatWhen = (value: string | null | undefined) =>
-    value
-      ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value))
-      : '—';
+    value ? new Intl.DateTimeFormat($locale, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)) : '—';
 
   const act = async (call: () => Promise<CloudBackupStatusResponseDto>, success: string) => {
     busy = true;
