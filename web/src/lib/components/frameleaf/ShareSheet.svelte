@@ -460,6 +460,9 @@
     grid-template-columns: 1fr 1fr;
     gap: 10px;
     margin-bottom: 16px;
+    /* Use the approved bundled fallback on non-Apple hosts: system-ui varies by OS and can
+     * wrap these compact descriptions to three lines before Inter is ever considered. */
+    font-family: -apple-system, BlinkMacSystemFont, Inter, 'Segoe UI', sans-serif;
   }
   .ss-option {
     display: flex;
