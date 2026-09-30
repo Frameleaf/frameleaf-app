@@ -671,8 +671,8 @@ export class AssetRepository {
   }
 
   @GenerateSql({ params: [DummyValue.UUID, ['description']] })
-  unlockProperties(assetId: string, properties: LockableProperty[]) {
-    return this.db
+  unlockProperties(assetId: string, properties: LockableProperty[], kysely: Kysely<DB> = this.db) {
+    return kysely
       .updateTable('asset_exif')
       .where('assetId', '=', assetId)
       .set((eb) => ({
@@ -2701,8 +2701,8 @@ export class AssetRepository {
     return new Set(rows.map(({ id }) => id));
   }
 
-  async upsertFile(file: UpsertAssetFile): Promise<void> {
-    await this.db
+  async upsertFile(file: UpsertAssetFile, kysely: Kysely<DB> = this.db): Promise<void> {
+    await kysely
       .insertInto('asset_file')
       .values(file)
       .onConflict((oc) =>

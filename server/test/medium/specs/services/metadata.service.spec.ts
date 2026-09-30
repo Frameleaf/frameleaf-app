@@ -1,14 +1,20 @@
+import { createPostgres } from '@immich/sql-tools';
 import { Kysely } from 'kysely';
+import { PostgresJSDialect } from 'kysely-postgres-js';
 import { Stats } from 'node:fs';
-import { writeFile } from 'node:fs/promises';
+import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { StorageCore } from 'src/cores/storage.core.js';
+import { JobStatus } from 'src/enum.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
+import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MetadataRepository } from 'src/repositories/metadata.repository.js';
+import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { TagRepository } from 'src/repositories/tag.repository.js';
@@ -224,4 +230,55 @@ describe(MetadataService.name, () => {
         .executeTakeFirstOrThrow(),
     ).resolves.toEqual({ lensModel: '1.8' });
   });
+});
+
+describe('sidecar writes (FL-195)', () => {
+  it('finish with the sidecar queue as wide as the connection pool', async () => {
+    // Each holder of the per-asset sidecar lock runs its queries on the lock's own connection. Had it
+    // needed a second one, two writes on a two-connection pool would wait for each other forever.
+    const suffix = `fl195_${Math.random().toString(36).slice(2, 7)}`;
+    await getKyselyDB(suffix);
+    const url = new URL(process.env.IMMICH_TEST_POSTGRES_URL!);
+    url.pathname = `/immich_${suffix}`;
+    const narrow = new Kysely<DB>({
+      dialect: new PostgresJSDialect({
+        postgres: createPostgres({ maxConnections: 2, connection: { connectionType: 'url', url: url.href } }),
+      }),
+    });
+    try {
+      // the storage core is a singleton; an earlier test's may hold another mock storage repository
+      StorageCore.reset();
+      const { sut, ctx } = newMediumService(MetadataService, {
+        database: narrow,
+        real: [AssetRepository, AssetJobRepository, DatabaseRepository, MetadataRepository, PhysicalFileRepository],
+        mock: [EventRepository, StorageRepository, LoggingRepository],
+      });
+      ctx.getMock(StorageRepository).mkdirSync.mockReturnValue(void 0);
+      const dir = await mkdtemp(join(tmpdir(), 'fl195-sidecar-'));
+      const { user } = await ctx.newUser();
+      const ids: string[] = [];
+      for (let index = 0; index < 3; index++) {
+        const { asset } = await ctx.newAsset({ ownerId: user.id, originalPath: join(dir, `${index}.png`) });
+        await ctx.newExif({
+          assetId: asset.id,
+          latitude: 12,
+          longitude: 12,
+          lockedProperties: ['latitude', 'longitude'],
+        });
+        ids.push(asset.id);
+      }
+
+      // two writes of one asset and one each of two others, on two connections
+      const jobs = Promise.all([ids[0], ids[0], ids[1], ids[2]].map((id) => sut.handleSidecarWrite({ id })));
+      let timer: NodeJS.Timeout | undefined;
+      const stuck = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error('sidecar writes deadlocked')), 20_000);
+      });
+      const results = await Promise.race([jobs, stuck]).finally(() => clearTimeout(timer));
+      // the second write of the same asset finds nothing left locked to write
+      expect(results.toSorted()).toEqual([JobStatus.Skipped, JobStatus.Success, JobStatus.Success, JobStatus.Success]);
+    } finally {
+      await narrow.destroy();
+    }
+  }, 60_000);
 });
