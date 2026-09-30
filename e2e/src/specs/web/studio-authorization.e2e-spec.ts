@@ -1,4 +1,4 @@
-import { AlbumUserRole, LoginResponseDto, createStudioProject, removeUserFromAlbum } from '@immich/sdk';
+import { AlbumKind, AlbumUserRole, LoginResponseDto, createStudioProject, removeUserFromAlbum } from '@immich/sdk';
 import { Browser, Page, expect, test } from '@playwright/test';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -194,8 +194,10 @@ test.describe('Studio authorization gates (FL-112)', () => {
     await utils.waitForQueueFinish(admin.accessToken, 'thumbnailGeneration');
 
     // the shared space: an album holding the plain item, with an editor, a viewer and a member to revoke
+    // a shared space (album kind "space"): a project can only be shared with one of those
     const album = await utils.createAlbum(owner.accessToken, {
       albumName: 'FL-112 space',
+      kind: AlbumKind.Space,
       assetIds: [plain.id],
       albumUsers: [
         { userId: editor.userId, role: AlbumUserRole.Editor },
