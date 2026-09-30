@@ -27,6 +27,12 @@ export async function up(db: Kysely<any>): Promise<void> {
     "checkedAt" timestamp with time zone NOT NULL DEFAULT clock_timestamp(),
     PRIMARY KEY ("bucket", "sha256", "operationId")
   );`.execute(db);
+  await sql`CREATE INDEX "cloud_backup_manifest_original_manifestId_idx" ON "cloud_backup_manifest_original" ("manifestId");`.execute(
+    db,
+  );
+  await sql`CREATE INDEX "cloud_backup_object_verification_operationId_idx" ON "cloud_backup_object_verification" ("operationId");`.execute(
+    db,
+  );
 }
 
 export async function down(db: Kysely<any>): Promise<void> {

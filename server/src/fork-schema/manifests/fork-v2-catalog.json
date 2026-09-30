@@ -2749,6 +2749,34 @@
       "identity": "public.asset_health.updatedAt"
     },
     {
+      "definition": "text|nullable|||",
+      "identity": "public.asset_integrity_verification.actualSha256"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.asset_integrity_verification.assetId"
+    },
+    {
+      "definition": "timestamp with time zone|not null|clock_timestamp()||",
+      "identity": "public.asset_integrity_verification.checkedAt"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "public.asset_integrity_verification.checksumAlgorithm"
+    },
+    {
+      "definition": "bytea|not null|||",
+      "identity": "public.asset_integrity_verification.expectedChecksum"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "public.asset_integrity_verification.originalPath"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "public.asset_integrity_verification.result"
+    },
+    {
       "definition": "uuid|not null|||",
       "identity": "public.asset_job_status.assetId"
     },
@@ -3493,6 +3521,18 @@
       "identity": "public.cloud_backup_manifest.status"
     },
     {
+      "definition": "uuid|not null|||",
+      "identity": "public.cloud_backup_manifest_original.assetId"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.cloud_backup_manifest_original.manifestId"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "public.cloud_backup_manifest_original.sha256"
+    },
+    {
       "definition": "text|not null|||",
       "identity": "public.cloud_backup_object.bucket"
     },
@@ -3515,6 +3555,30 @@
     {
       "definition": "timestamp with time zone|not null|now()||",
       "identity": "public.cloud_backup_object.uploadedAt"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "public.cloud_backup_object_verification.bucket"
+    },
+    {
+      "definition": "timestamp with time zone|not null|clock_timestamp()||",
+      "identity": "public.cloud_backup_object_verification.checkedAt"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "public.cloud_backup_object_verification.method"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.cloud_backup_object_verification.operationId"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "public.cloud_backup_object_verification.result"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "public.cloud_backup_object_verification.sha256"
     },
     {
       "definition": "uuid|not null|||",
@@ -8140,6 +8204,14 @@
     },
     {
       "definition": "FOREIGN KEY (\"assetId\") REFERENCES asset(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.asset_integrity_verification.asset_integrity_verification_assetId_fkey"
+    },
+    {
+      "definition": "PRIMARY KEY (\"assetId\")",
+      "identity": "public.asset_integrity_verification.asset_integrity_verification_pkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"assetId\") REFERENCES asset(id) ON UPDATE CASCADE ON DELETE CASCADE",
       "identity": "public.asset_job_status.asset_job_status_assetId_fkey"
     },
     {
@@ -8303,8 +8375,24 @@
       "identity": "public.cloud_backup_manifest.cloud_backup_manifest_pkey"
     },
     {
+      "definition": "FOREIGN KEY (\"manifestId\") REFERENCES cloud_backup_manifest(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.cloud_backup_manifest_original.cloud_backup_manifest_original_manifestId_fkey"
+    },
+    {
+      "definition": "PRIMARY KEY (\"manifestId\", \"assetId\")",
+      "identity": "public.cloud_backup_manifest_original.cloud_backup_manifest_original_pkey"
+    },
+    {
       "definition": "PRIMARY KEY (bucket, sha256)",
       "identity": "public.cloud_backup_object.cloud_backup_object_pkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"operationId\") REFERENCES media_operation(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.cloud_backup_object_verification.cloud_backup_object_verification_operationId_fkey"
+    },
+    {
+      "definition": "PRIMARY KEY (bucket, sha256, \"operationId\")",
+      "identity": "public.cloud_backup_object_verification.cloud_backup_object_verification_pkey"
     },
     {
       "definition": "FOREIGN KEY (\"clusterGroupId\") REFERENCES cluster_group(id) ON UPDATE CASCADE ON DELETE CASCADE",
@@ -11600,6 +11688,10 @@
       "identity": "public.asset_health.asset_health_runId_idx"
     },
     {
+      "definition": "CREATE UNIQUE INDEX asset_integrity_verification_pkey ON public.asset_integrity_verification USING btree (\"assetId\")",
+      "identity": "public.asset_integrity_verification.asset_integrity_verification_pkey"
+    },
+    {
       "definition": "CREATE UNIQUE INDEX asset_job_status_pkey ON public.asset_job_status USING btree (\"assetId\")",
       "identity": "public.asset_job_status.asset_job_status_pkey"
     },
@@ -11856,8 +11948,24 @@
       "identity": "public.cloud_backup_manifest.cloud_backup_manifest_pkey"
     },
     {
+      "definition": "CREATE INDEX \"cloud_backup_manifest_original_manifestId_idx\" ON public.cloud_backup_manifest_original USING btree (\"manifestId\")",
+      "identity": "public.cloud_backup_manifest_original.cloud_backup_manifest_original_manifestId_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX cloud_backup_manifest_original_pkey ON public.cloud_backup_manifest_original USING btree (\"manifestId\", \"assetId\")",
+      "identity": "public.cloud_backup_manifest_original.cloud_backup_manifest_original_pkey"
+    },
+    {
       "definition": "CREATE UNIQUE INDEX cloud_backup_object_pkey ON public.cloud_backup_object USING btree (bucket, sha256)",
       "identity": "public.cloud_backup_object.cloud_backup_object_pkey"
+    },
+    {
+      "definition": "CREATE INDEX \"cloud_backup_object_verification_operationId_idx\" ON public.cloud_backup_object_verification USING btree (\"operationId\")",
+      "identity": "public.cloud_backup_object_verification.cloud_backup_object_verification_operationId_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX cloud_backup_object_verification_pkey ON public.cloud_backup_object_verification USING btree (bucket, sha256, \"operationId\")",
+      "identity": "public.cloud_backup_object_verification.cloud_backup_object_verification_pkey"
     },
     {
       "definition": "CREATE INDEX \"cluster_group_request_clusterGroupId_idx\" ON public.cluster_group_request USING btree (\"clusterGroupId\")",
@@ -13812,6 +13920,10 @@
     },
     {
       "definition": "table",
+      "identity": "public.asset_integrity_verification"
+    },
+    {
+      "definition": "table",
       "identity": "public.asset_job_status"
     },
     {
@@ -13868,7 +13980,15 @@
     },
     {
       "definition": "table",
+      "identity": "public.cloud_backup_manifest_original"
+    },
+    {
+      "definition": "table",
       "identity": "public.cloud_backup_object"
+    },
+    {
+      "definition": "table",
+      "identity": "public.cloud_backup_object_verification"
     },
     {
       "definition": "table",
