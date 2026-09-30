@@ -127,9 +127,15 @@ export interface StudioEngineCommandOptions {
   assets: () => readonly StudioAssetRef[];
   /**
    * Stage a graph as the next draft, with the command ids for the revision summary and the envelopes
-   * the server checks and counts (FL-92).
+   * the server checks and counts (FL-92). Answers as the project session does: `ignored` or
+   * `superseded` means the draft was not kept (the project was deleted or the session closed while
+   * the engine worked), and the command is then refused rather than reported as applied.
    */
-  stage: (graph: unknown, commandIds: readonly string[], envelopes: readonly StudioCommandEnvelope[]) => void;
+  stage: (
+    graph: unknown,
+    commandIds: readonly string[],
+    envelopes: readonly StudioCommandEnvelope[],
+  ) => 'staged' | 'ignored' | 'superseded' | void;
   /** Append a stored revision as the new head (FL-89 restore). */
   restore: (revision: number) => Promise<boolean>;
   /** The engine's command runtime; started on first use. */
@@ -139,6 +145,10 @@ export interface StudioEngineCommandOptions {
 
 const rejectedBy = (reason: 'invalid' | 'not-implemented' | 'failed' | 'stale-revision', detail: string) =>
   new StudioCommandRejectedError(reason, detail);
+
+const kept = (outcome: 'staged' | 'ignored' | 'superseded' | void) => outcome !== 'ignored' && outcome !== 'superseded';
+
+const notKept = () => rejectedBy('failed', 'The project can no longer be edited here, so the change was not kept');
 
 export const createStudioEngineCommandHandlers = (
   options: StudioEngineCommandOptions,
@@ -161,8 +171,10 @@ export const createStudioEngineCommandHandlers = (
     if (options.graph() !== graph) {
       throw rejectedBy('stale-revision', 'The project changed while the command was applied');
     }
+    if (!kept(options.stage(outcome.graph, [envelope.id], [envelope]))) {
+      throw notKept();
+    }
     options.history.record(graph, outcome.graph);
-    options.stage(outcome.graph, [envelope.id], [envelope]);
     return options.revision();
   };
 
@@ -186,7 +198,15 @@ export const createStudioEngineCommandHandlers = (
       const current = options.graph();
       const target = direction === 'undo' ? options.history.undo(current) : options.history.redo(current);
       if (target !== null && target !== undefined) {
-        options.stage(target, [envelope.id], [envelope]);
+        if (!kept(options.stage(target, [envelope.id], [envelope]))) {
+          // Step the history back so it still describes the graph the session holds.
+          if (direction === 'undo') {
+            options.history.redo(target);
+          } else {
+            options.history.undo(target);
+          }
+          throw notKept();
+        }
         return options.revision();
       }
       if (direction === 'undo' && options.revision() > 1) {

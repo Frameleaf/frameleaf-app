@@ -143,6 +143,76 @@ describe('studio engine commands (FL-92)', () => {
     expect(stage).toHaveBeenCalledWith({ step: 'both' }, ['track.add'], [envelope]);
   });
 
+  describe('a session that can no longer keep the result', () => {
+    const racing = () => {
+      let graph: unknown = { id: 'p', step: 0 };
+      const live = { hasAccess: true, outcome: 'staged' as 'staged' | 'ignored' };
+      let release: () => void = () => {};
+      const gate = new Promise<void>((resolve) => (release = resolve));
+      const staged: unknown[] = [];
+      const history = createStudioGraphHistory();
+      const handlers = createStudioEngineCommandHandlers({
+        graph: () => graph,
+        revision: () => 4,
+        assets: () => [],
+        stage: (next) => {
+          if (live.outcome === 'ignored') {
+            return 'ignored';
+          }
+          staged.push(next);
+          graph = next;
+          return 'staged';
+        },
+        restore: async () => false,
+        engine: async () => ({
+          apply: async (current: unknown) => {
+            await gate;
+            return { status: 'applied' as const, graph: { ...(current as object), step: 1 }, digest: 'd' };
+          },
+          dispose: vi.fn(),
+        }),
+        history,
+      });
+      const bridge = createStudioBridge({ context: () => context({ hasAccess: live.hasAccess }), handlers });
+      return { bridge, live, release, staged, history };
+    };
+
+    it('refuses as forbidden, and keeps no history, when the project is deleted while the engine works', async () => {
+      const { bridge, live, release, staged, history } = racing();
+      const pending = bridge.submit([createStudioCommandEnvelope('marker.add', { at: { num: 1, den: 1 } }, 4)]);
+      // The server answered 404: the session is forbidden, holds no draft and stages nothing.
+      live.hasAccess = false;
+      live.outcome = 'ignored';
+      release();
+      const [result] = await pending;
+      expect(result).toMatchObject({ status: 'rejected', reason: 'forbidden' });
+      expect(staged).toEqual([]);
+      expect(history.depth).toEqual({ undo: 0, redo: 0 });
+    });
+
+    it('refuses a command whose session closed while the engine worked', async () => {
+      const { bridge, live, release, staged, history } = racing();
+      const pending = bridge.submit([createStudioCommandEnvelope('marker.add', { at: { num: 1, den: 1 } }, 4)]);
+      live.outcome = 'ignored';
+      release();
+      const [result] = await pending;
+      expect(result).toMatchObject({ status: 'rejected', reason: 'failed' });
+      expect(staged).toEqual([]);
+      expect(history.depth).toEqual({ undo: 0, redo: 0 });
+    });
+
+    it('leaves the history as it was when an undo is not kept', async () => {
+      const { bridge, live, release, history } = racing();
+      release();
+      await bridge.submit([createStudioCommandEnvelope('marker.add', { at: { num: 1, den: 1 } }, 4)]);
+      expect(history.depth).toEqual({ undo: 1, redo: 0 });
+      live.outcome = 'ignored';
+      const [undone] = await bridge.submit([createStudioCommandEnvelope('history.undo', {}, 4)]);
+      expect(undone).toMatchObject({ status: 'rejected', reason: 'failed' });
+      expect(history.depth).toEqual({ undo: 1, redo: 0 });
+    });
+  });
+
   it('rejects a stale revision before the engine is asked', async () => {
     const { bridge, engine } = setup();
     const [result] = await bridge.submit([createStudioCommandEnvelope('track.add', { kind: 'audio' }, 3)]);
