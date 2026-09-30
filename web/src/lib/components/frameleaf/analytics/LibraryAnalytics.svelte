@@ -380,13 +380,13 @@
           <div>
             <dt>{$t(`frameleaf_analytics_view_${row.view}` as Translations)}</dt>
             <dd>{number(row.total)}</dd>
-            <span>
+            <dd class="note">
               {row.overlaps
                 ? $t('frameleaf_analytics_also_counted')
                 : $t('frameleaf_analytics_photos_videos', {
                     values: { photos: number(row.photos), videos: number(row.videos) },
                   })}
-            </span>
+            </dd>
           </div>
         {/each}
       </dl>
@@ -398,22 +398,23 @@
         <div>
           <dt>{$t('frameleaf_analytics_owned')}</dt>
           <dd>{number(report.albums.owned)}</dd>
-          <span>{$t('frameleaf_analytics_albums_private', { values: { count: number(report.albums.notShared) } })}</span
-          >
+          <dd class="note">
+            {$t('frameleaf_analytics_albums_private', { values: { count: number(report.albums.notShared) } })}
+          </dd>
         </div>
         <div>
           <dt>{$t('frameleaf_analytics_shared')}</dt>
           <dd>{number(report.albums.shared)}</dd>
-          <span
-            >{$t('frameleaf_analytics_albums_also_owned', {
+          <dd class="note">
+            {$t('frameleaf_analytics_albums_also_owned', {
               values: { count: number(report.albums.ownedShared) },
-            })}</span
-          >
+            })}
+          </dd>
         </div>
         <div>
           <dt>{$t('frameleaf_analytics_albums_distinct')}</dt>
           <dd>{number(report.albums.total)}</dd>
-          <span>{$t('frameleaf_analytics_albums_once')}</span>
+          <dd class="note">{$t('frameleaf_analytics_albums_once')}</dd>
         </div>
       </dl>
       {#if report.albums.unlisted > 0}
@@ -495,6 +496,17 @@
     --an-4: color-mix(in srgb, var(--fl-muted) 78%, var(--fl-panel));
     --an-5: var(--fl-warning);
     --an-6: color-mix(in srgb, var(--fl-muted) 45%, var(--fl-panel));
+    /*
+     * FL-139: the text drawn on each series, chosen per theme for WCAG AA (4.5:1 at 11px). The
+     * prototype draws #0b1210 on every series; that keeps where it passes and turns white where the
+     * series is dark (the sixth here, most of them in the light theme).
+     */
+    --an-1-ink: #0b1210;
+    --an-2-ink: #0b1210;
+    --an-3-ink: #0b1210;
+    --an-4-ink: #0b1210;
+    --an-5-ink: #0b1210;
+    --an-6-ink: #ffffff;
     --an-free: color-mix(in srgb, var(--fl-text) 10%, transparent);
     --an-cell: color-mix(in srgb, var(--fl-text) 7%, transparent);
     container-type: inline-size;
@@ -508,6 +520,14 @@
     font-size: 13px;
     line-height: 1.5;
   }
+  :global(.frameleaf[data-theme='light']) .analytics {
+    --an-1-ink: #ffffff;
+    --an-2-ink: #ffffff;
+    --an-3-ink: #ffffff;
+    --an-5-ink: #ffffff;
+    --an-6-ink: #0b1210;
+  }
+
   .analytics[aria-busy='true'] {
     opacity: 0.7;
   }
@@ -634,15 +654,17 @@
     color: var(--fl-muted);
     font-size: 11px;
   }
-  .stat-strip dd {
+  .stat-strip dd:not(.note) {
     margin: 7px 0;
     font-size: clamp(21px, 2.1vw, 30px);
     font-variant-numeric: tabular-nums;
     font-weight: 550;
     letter-spacing: -0.7px;
   }
-  .stat-strip span {
+  /* the note under a figure is part of its description (a <dd>, as a <dl> only holds dt and dd) */
+  .stat-strip dd.note {
     display: block;
+    margin: 0;
     color: var(--fl-muted);
     font-size: 10px;
   }
@@ -853,7 +875,7 @@
       width: 100%;
       min-width: 0;
     }
-    .stat-strip dd {
+    .stat-strip dd:not(.note) {
       font-size: 21px;
       overflow-wrap: anywhere;
     }
