@@ -184,7 +184,12 @@
       "path": "patches/0036-hdr-intermediate-source.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "4dcc8d63e2790d4aa422ee92e0c2bf6a672a1b0d0e192d7bc52548f35fa68db5"
+    },
+    {
+      "path": "patches/0037-renderable-opacity.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "7574ec6fd1c175f9974d6c760b7d20fcdf4aeb4508cf63b8ad839d43b3fcfc4a"
     }
   ],
-  "sourceSha256": "f02633ffe9cebe4579c7d789d09254623cd512af9233315873882efc09620c2c"
+  "sourceSha256": "0e4d217f27254d9085bbf81e416b47f6c17891ed7ff5a12053309032e5539e7a"
 }
