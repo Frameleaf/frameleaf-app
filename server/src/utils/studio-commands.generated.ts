@@ -652,6 +652,7 @@ export const studioCommandMirror = {
       easing: 'string',
       keyframeIds: 'string[]',
       property: 'string',
+      spring: 'object?',
     },
   },
   'keyframe.update': {
