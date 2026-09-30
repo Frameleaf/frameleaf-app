@@ -1,10 +1,16 @@
 import { BadRequestException } from '@nestjs/common';
 import { createHash } from 'node:crypto';
+import { createWriteStream } from 'node:fs';
 import { mkdtemp, readFile, readdir, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import { RenderArtifact, openRenderArtifact, receiveRenderArtifact } from 'src/utils/render-artifact.js';
+
+vi.mock('node:fs', async () => {
+  const fs = await vi.importActual<typeof import('node:fs')>('node:fs');
+  return { ...fs, createWriteStream: vi.fn(fs.createWriteStream) };
+});
 
 describe('server-owned render artifacts', () => {
   let folder: string;
@@ -64,6 +70,25 @@ describe('server-owned render artifacts', () => {
       expect(await readdir(folder)).toEqual([]);
     },
   );
+
+  it('waits for delayed file open/close before cleaning an overlong upload', async () => {
+    const fs = await vi.importActual<typeof import('node:fs')>('node:fs');
+    vi.mocked(createWriteStream).mockImplementationOnce((path, options) =>
+      fs.createWriteStream(path, {
+        ...(typeof options === 'object' && options),
+        fs: {
+          ...fs,
+          open: ((...args: unknown[]) => {
+            setTimeout(() => Reflect.apply(fs.open, fs, args), 25);
+          }) as typeof fs.open,
+        },
+      }),
+    );
+    await expect(upload(Readable.from([bytes, Buffer.from('extra')]))).rejects.toThrow('declared size');
+    // Wait past the controlled open; cleanup must still hold, rather than winning only a readdir race.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(await readdir(folder)).toEqual([]);
+  });
 
   it('removes an uploaded file when the claim loses the durable checkpoint race', async () => {
     await expect(upload(undefined, () => Promise.resolve(false))).resolves.toBe(false);

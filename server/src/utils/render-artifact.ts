@@ -26,6 +26,8 @@ export async function receiveRenderArtifact(
   const outputPath = join(folder, `${randomUUID()}.artifact`);
   const partial = `${outputPath}.partial`;
   let accepted = false;
+  const output = createWriteStream(partial, { flags: 'wx', mode: 0o600, flush: true });
+  const closed = new Promise<void>((resolve) => output.once('close', resolve));
   try {
     const hash = createHash('sha256');
     let bytes = 0;
@@ -47,7 +49,7 @@ export async function receiveRenderArtifact(
           yield buffer;
         }
       },
-      createWriteStream(partial, { flags: 'wx', mode: 0o600, flush: true }),
+      output,
     );
     const checksum = hash.digest();
     if (bytes !== size || !checksum.equals(Buffer.from(expected.checksum, 'hex'))) {
@@ -69,6 +71,10 @@ export async function receiveRenderArtifact(
     accepted = await commit(artifact);
     return accepted;
   } finally {
+    // pipeline may reject before an asynchronous open settles. Close before unlinking so a late
+    // open cannot recreate a partial after cleanup, including when the input disconnects.
+    output.destroy();
+    await closed;
     await rm(partial, { force: true });
     if (!accepted) {
       await rm(outputPath, { force: true });
