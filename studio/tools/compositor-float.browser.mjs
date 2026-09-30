@@ -165,14 +165,17 @@ try {
         }
         readEffect(name, output);
       };
-      const effectInput = effectTexture('rgba16float', [...pixels.slice(0, 12), 1.25, -0.25, 0.0009765625, 0]);
+      // Pixel 1 keeps extended channels (2, -1) with a luma inside pixel sort's declared [0, 1]
+      // band after the vignette, so the sort moves extended values at its declared thresholds.
+      const effectInput = effectTexture('rgba16float',
+        [...pixels.slice(0, 4), 2, 1.8, -1, 1, ...pixels.slice(8, 12), 1.25, -0.25, 0.0009765625, 0]);
       const floatOutput = effectTexture('rgba16float');
       const sdrOutput = effectTexture('rgba8unorm');
       runEffects('identity', effectInput, identityEffects, floatOutput);
       // A visible fragment operation followed by compute scatter proves neither pass was skipped.
       runEffects('active', effectInput, [
         effect('gpu-vignette', { amount: 0.5, size: 0, softness: 0.5 }),
-        effect('gpu-pixel-sort-hq', { low: -100, high: 100, order: 'descending' }),
+        effect('gpu-pixel-sort-hq', { low: 0, high: 1, order: 'descending' }),
       ], floatOutput);
       runEffects('sdrExit', effectInput, identityEffects, sdrOutput);
       runEffects('sdrEntry', sdrOutput, identityEffects, floatOutput);
@@ -300,7 +303,7 @@ try {
       }
     }
   }
-  const effectInput = [-0.5, 2, 0.333251953125, 0.5, 2, 4, -1, 1, 0.25, 0.5, 0.75, 1, 1.25, -0.25, 0.0009765625, 0];
+  const effectInput = [-0.5, 2, 0.333251953125, 0.5, 2, 1.7998046875, -1, 1, 0.25, 0.5, 0.75, 1, 1.25, -0.25, 0.0009765625, 0];
   const quantized = effectInput.map((value) => Math.round(Math.min(1, Math.max(0, value)) * 255));
   const active = [1, 0, 2, 3].flatMap((pixel) =>
     effectInput.slice(pixel * 4, pixel * 4 + 4).map((value, channel) => channel === 3 ? value : value * 0.5),

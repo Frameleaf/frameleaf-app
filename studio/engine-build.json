@@ -194,7 +194,12 @@
       "path": "patches/0038-scopes-measure-what-they-show.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "43923b02c3a55b95b561d805343dc782d7cbab4f15617cebc5dfdd4bbff53951"
+    },
+    {
+      "path": "patches/0039-effect-parameter-meaning.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "e2d99a8146cb2300089c5a7c0754015b33ab99e869db5e7d3485f86b36627f86"
     }
   ],
-  "sourceSha256": "ce389d6b3ba30ef11c68ef4731969b12f1d5678c5b639abc9b1acc0818fcd01a"
+  "sourceSha256": "5559f323ff0630ad77debed3d43ed56aef892957457eef0be1665254c7b12f4b"
 }
