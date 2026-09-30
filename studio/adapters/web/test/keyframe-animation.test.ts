@@ -395,6 +395,24 @@ describe('Compose groups, published controls and instance overrides (FL-100)', (
 })
 
 describe('Ken Burns (FL-100)', () => {
+  it.each(['position', 'scale'] as const)('refuses an existing vector %s animation without changing the graph', async (property) => {
+    const start = await withStill()
+    const clip = itemOf(start)
+    const animated = await applied(start, [
+      envelope('keyframe.add', { clipId: clip.id, property, at: seconds(0), value: { x: 100, y: 100 } }),
+      envelope('keyframe.add', { clipId: clip.id, property, at: seconds(2), value: { x: 150, y: 120 } }),
+    ])
+    const before = JSON.stringify(animated)
+    const outcome = await apply(animated, [
+      envelope('clip.setKenBurns', {
+        clipId: clip.id,
+        kenBurns: { from: { x: 0, y: 0, w: 1, h: 1 }, to: { x: 0.1, y: 0.1, w: 0.8, h: 0.8 } },
+      }),
+    ])
+    expect(outcome).toMatchObject({ status: 'rejected', reason: 'invalid' })
+    expect(JSON.stringify(animated)).toBe(before)
+  })
+
   it('moves a still photo from one region to another, replaces the move, and removes it', async () => {
     const start = await withStill()
     const clip = itemOf(start)
