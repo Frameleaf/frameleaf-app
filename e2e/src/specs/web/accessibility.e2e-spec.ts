@@ -33,7 +33,6 @@ const PAGES = [
   { name: 'places', path: '/places' },
   { name: 'search results', path: '/search?query=%7B%22originalFileName%22%3A%22a%22%7D' },
   { name: 'shared links', path: '/shared-links' },
-  { name: 'partners', path: '/partners' },
   { name: 'activity', path: '/activity' },
   { name: 'utilities', path: '/utilities' },
   { name: 'duplicates', path: '/utilities/duplicates' },
