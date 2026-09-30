@@ -5570,6 +5570,7 @@
   "frameleaf_jobs_name_smart_search_queue_all": "Find items for visual search",
   "frameleaf_jobs_name_storage_template_migration": "Organize storage",
   "frameleaf_jobs_name_storage_template_migration_single": "Organize an item's files",
+  "frameleaf_jobs_name_studio_hdr_proxy_generate": "Prepare an HDR video for Studio",
   "frameleaf_jobs_name_tag_cleanup": "Clean up unused tags",
   "frameleaf_jobs_name_user_delete": "Delete an account",
   "frameleaf_jobs_name_user_delete_check": "Find accounts due for deletion",
