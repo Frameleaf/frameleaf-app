@@ -1,15 +1,16 @@
 // Real Chromium entrypoint checks. Run against the prepared engine's Vite dev server.
 //
 // FL-112: network substitution and blocking route through the shared cross-browser harness
-// (studio/tools/lib/cross-browser-harness.mjs) instead of Playwright's page.route()/context.route()
-// - the harness is what will let this run against Firefox/Safari too, since WebDriver classic has
-// no route()-equivalent. Navigation itself (getByRole, the MOSS iframe's framenavigated handling,
-// the second per-context page) stays on Playwright/Chromium for now; those have no WebDriver
-// equivalent yet either and are tracked separately (studio-editing porting them on top of this).
+// (studio/tools/lib/cross-browser-harness.mjs), and the page is driven only through the shared
+// driver interface (studio/tools/lib/browser-driver.mjs: goto, evaluate, waitForFunction), so the
+// same checks can run under WebDriver classic (Firefox, Safari) as well as Playwright's Chromium.
+// Waiting for a link polls the DOM, the MOSS iframe is reached through its parent's contentWindow,
+// and the MOSS pages are visited in turn on the one page rather than in a second one.
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { createHash } from 'node:crypto';
 import { createHarness } from './lib/cross-browser-harness.mjs';
+import { createChromiumDriver } from './lib/browser-driver.mjs';
 const require = createRequire(new URL('../engine/package.json', import.meta.url));
 const { chromium } = require('playwright');
 const origin = process.env.STUDIO_TEST_ORIGIN || 'http://127.0.0.1:5186';
@@ -47,7 +48,17 @@ const binaryAssetOverride = (resourcePayloads) => ({
 const report = { origin, built: Boolean(process.env.STUDIO_TEST_BUILT), entries: [], ort: null, fixture: null };
 // Playwright's own Chromium: a proxy sees the whole browser, and branded Chrome's background
 // services (time, update, sign-in) reach Google on their own, whatever the page does.
-const browser = await chromium.launch({ headless: true });
+const drivers = [];
+const openPage = async (harnessOrigin, serviceWorkers) => {
+  const driver = await createChromiumDriver({ harnessOrigin, chromium, contextOptions: { serviceWorkers } });
+  drivers.push(driver);
+  return { page: await driver.newPage(), close: () => driver.close() };
+};
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+// A request the harness could not forward (the dev server down, a reset connection) is a broken
+// run, not a pass: say so at its source.
+const assertNoProxyErrors = (harness, label) =>
+  assert.deepEqual(harness.observations.filter((o) => o.kind === 'error'), [], `${label}: harness could not reach the dev server`);
 try {
   for (const entry of ['/', '/headless.html']) {
     const resourcePayloads = [];
@@ -55,22 +66,21 @@ try {
     if (!process.env.STUDIO_TEST_BUILT) overrides.push(policyOverride(blockedPolicy));
     const harness = createHarness({ upstream: origin, overrides });
     const harnessOrigin = await harness.listen();
-    const context = await browser.newContext({
-      serviceWorkers: process.env.STUDIO_TEST_BUILT ? 'allow' : 'block',
-      proxy: { server: harnessOrigin },
-    });
+    const { page, close } = await openPage(harnessOrigin, process.env.STUDIO_TEST_BUILT ? 'allow' : 'block');
     // `external`: every request the harness denied for not matching the Studio origin at all -
     // the harness's own always-on deny-all is what `url.origin !== origin` used to check per-route.
     const external = () => harness.observations.filter((o) => o.kind === 'blocked').map((o) => o.url);
-    const page = await context.newPage();
     const observed = { entry, get external() { return external(); }, resourcePayloads };
     report.entries.push(observed);
     await page.goto(origin + entry);
-    await page.waitForTimeout(1000);
+    await sleep(1000);
     assert.deepEqual(external(), [], `${entry}: implicit external startup request`);
     assert.deepEqual(resourcePayloads, [], `${entry}: implicit resource payload acquisition`);
-    if (entry === '/') await page.getByRole('link', { name: 'Get Started' }).first().waitFor({ timeout: 10000 });
-    else await page.waitForFunction(() => Boolean(window.freecut?.ready));
+    if (entry === '/') {
+      // A link whose accessible name is "Get Started" (its aria-label, or else its text).
+      await page.waitForFunction(() => [...document.querySelectorAll('a[href]')].some((link) =>
+        (link.getAttribute('aria-label') ?? link.textContent ?? '').replace(/\s+/g, ' ').trim() === 'Get Started'), { timeout: 10000 });
+    } else await page.waitForFunction(() => Boolean(window.freecut?.ready));
     if (process.env.STUDIO_TEST_BUILT) {
       if (entry === '/headless.html') {
         const frame = await page.evaluate(async () => { const project = window.freecut.createProject({ name: 'Local empty-frame smoke', width: 320, height: 240 }); project.timeline = { tracks: [], items: [], transitions: [], keyframes: [] }; return window.freecut.renderFrame({ project, frame: 0 }); });
@@ -80,7 +90,8 @@ try {
       assert.deepEqual(external(), []);
       assert.deepEqual(resourcePayloads, []);
       console.log(`${entry}: built page ready; no external acquisition; service workers allowed`);
-      await context.close(); await harness.close(); continue;
+      assertNoProxyErrors(harness, entry);
+      await close(); await harness.close(); continue;
     }
     const results = await page.evaluate(async () => {
       const root = '/src/';
@@ -175,17 +186,33 @@ try {
       return reports;
     });
     assert.ok(workers.every(result => result.blocked), JSON.stringify(workers));
-    const moss = await context.newPage();
-    await moss.goto(origin + '/moss-tts/browser_onnx_host.html');
-    const mossResult = await moss.evaluate(async () => {
+    // The MOSS host page inside the entry page, reached through the iframe's own window.
+    const childBlocked = await page.evaluate(async () => {
+      const frame = document.createElement('iframe');
+      const loaded = new Promise((resolve) => frame.addEventListener('load', resolve, { once: true }));
+      frame.src = '/moss-tts/browser_onnx_host.html';
+      document.body.appendChild(frame);
+      await loaded;
+      const child = frame.contentWindow;
+      const deadline = performance.now() + 30000;
+      while (!child.NanoReaderBrowserModelStore) {
+        if (performance.now() > deadline) throw new Error('MOSS host page never exposed its model store');
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      try { await child.NanoReaderBrowserModelStore.ensureExternalBrowserOnnxModels(); return false; }
+      catch (e) { return String(e).includes('FRAMELEAF_RESOURCE_BLOCKED'); }
+    });
+    // Then the MOSS pages themselves, one after the other on the same page.
+    await page.goto(origin + '/moss-tts/browser_onnx_host.html');
+    const mossResult = await page.evaluate(async () => {
       const run = async fn => { try { await fn(); return false; } catch (e) { return String(e).includes('FRAMELEAF_RESOURCE_BLOCKED'); } };
       const runtime = await import('/moss-tts/browser_onnx_runtime.js');
       return [await run(() => globalThis.NanoReaderBrowserModelStore.ensureExternalBrowserOnnxModels()),
         await run(() => runtime.createBrowserOnnxTtsRuntime()), await run(() => new runtime.BrowserOnnxTtsRuntime())];
     });
     assert.deepEqual(mossResult, [true, true, true]);
-    await moss.goto(origin + '/moss-tts/tokenizer_sandbox.html');
-    const tokenizerBlocked = await moss.evaluate(() => new Promise((resolve, reject) => {
+    await page.goto(origin + '/moss-tts/tokenizer_sandbox.html');
+    const tokenizerBlocked = await page.evaluate(() => new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error('Tokenizer response timeout')), 5000);
       window.addEventListener('message', function receive(event) {
         if (event.data?.type !== 'response') return;
@@ -195,31 +222,22 @@ try {
       window.postMessage({ source: 'nano-reader-tokenizer-sandbox', type: 'request', requestId: 'admission', action: 'loadTokenizer', modelKey: 'nano', tokenizerBase64: 'AAAA' }, '*');
     }));
     assert.equal(tokenizerBlocked, true);
-    await moss.close();
-    const frameReady = page.waitForEvent('framenavigated', frame => frame.url().endsWith('/moss-tts/browser_onnx_host.html'));
-    await page.evaluate(() => { const frame = document.createElement('iframe'); frame.src = '/moss-tts/browser_onnx_host.html'; document.body.appendChild(frame); });
-    const child = await frameReady;
-    await child.waitForFunction(() => Boolean(globalThis.NanoReaderBrowserModelStore));
-    const childBlocked = await child.evaluate(async () => {
-      try { await globalThis.NanoReaderBrowserModelStore.ensureExternalBrowserOnnxModels(); return false; }
-      catch (e) { return String(e).includes('FRAMELEAF_RESOURCE_BLOCKED'); }
-    });
     Object.assign(observed, { attempts: results.attempts, media: results.media, childBlocked });
     assert.equal(childBlocked, true);
     assert.ok(results.attempts.every(result => result.blocked), JSON.stringify(results));
     assert.deepEqual(results.media, { width: 16, height: 16, name: 'local-smoke.png' });
     assert.deepEqual(external(), [], `${entry}: resource attempt reached network`);
     assert.deepEqual(resourcePayloads, [], `${entry}: same-origin payload attempt reached network`);
+    assertNoProxyErrors(harness, entry);
     console.log(`${entry}: ${results.attempts.length} resource refusals; seven workers twice; MOSS pages/iframe/tokenizer blocked; real local PNG import passed`);
-    await context.close(); await harness.close();
+    await close(); await harness.close();
   }
   // Owner decision 2026-09-29: every ONNX Runtime WebAssembly the engine loads is served by the
   // engine itself. Each path is same-origin and answers WebAssembly bytes; nothing reaches a CDN.
   if (!process.env.STUDIO_TEST_BUILT) {
     const ortHarness = createHarness({ upstream: origin });
     const ortHarnessOrigin = await ortHarness.listen();
-    const ortContext = await browser.newContext({ serviceWorkers: 'block', proxy: { server: ortHarnessOrigin } });
-    const ortPage = await ortContext.newPage();
+    const { page: ortPage, close: closeOrt } = await openPage(ortHarnessOrigin, 'block');
     await ortPage.goto(origin + '/headless.html');
     const ort = await ortPage.evaluate(async () => {
       const assets = await import('/src/shared/utils/local-ort-assets.ts');
@@ -244,8 +262,9 @@ try {
     assert.equal(ort.length, 6);
     assert.ok(ort.every((file) => file.sameOrigin && file.ok && file.wasm), JSON.stringify(ort));
     assert.deepEqual(ortExternal, []);
+    assertNoProxyErrors(ortHarness, 'ONNX Runtime');
     console.log('ONNX Runtime WebAssembly: 3 builds served same-origin; no CDN request');
-    await ortContext.close(); await ortHarness.close();
+    await closeOrt(); await ortHarness.close();
   }
   // A test-only network substitution supplies one approved fixture with a recorded byte digest.
   // The generated policy records no byte digests, so byte verification fails closed in production.
@@ -260,8 +279,7 @@ try {
     overrides: [policyOverride({ 'fixture:approved': { localRuntime: 'allowed', approvalSha256: hash, sha256: hash, locator: null, revision: null } })],
   });
   const fixtureHarnessOrigin = await fixtureHarness.listen();
-  const fixtureContext = await browser.newContext({ serviceWorkers: 'block', proxy: { server: fixtureHarnessOrigin } });
-  const fixturePage = await fixtureContext.newPage();
+  const { page: fixturePage, close: closeFixture } = await openPage(fixtureHarnessOrigin, 'block');
   await fixturePage.goto(origin + '/headless.html');
   const fixture = await fixturePage.evaluate(async () => {
     const { verifyResourceBytes } = await import('/src/shared/utils/resource-admission.mjs');
@@ -275,10 +293,11 @@ try {
   });
   report.fixture = fixture;
   assert.deepEqual(fixture, { accepted: [1, 2, 3], tamperDenied: true, aliasDenied: true, userImportDenied: true });
+  assertNoProxyErrors(fixtureHarness, 'approved fixture');
   console.log('Test-only approved fixture: bytes accepted; tamper, blob alias and user-import relabeling rejected');
-  await fixtureContext.close(); await fixtureHarness.close();
+  await closeFixture(); await fixtureHarness.close();
   }
 } finally {
-  await browser.close();
+  await Promise.allSettled(drivers.map((driver) => driver.close()));
   if (process.env.RESOURCE_ADMISSION_REPORT) await writeFile(process.env.RESOURCE_ADMISSION_REPORT, JSON.stringify(report, null, 2));
 }

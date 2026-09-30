@@ -24,7 +24,7 @@ import { createRequire } from 'node:module';
  *   at the vendored engine's own install) - pass it explicitly rather than relying on the default
  *   whenever the caller's own `playwright` doesn't live on this file's resolution path.
  */
-export async function createChromiumDriver({ harnessOrigin, args = [], channel, chromium } = {}) {
+export async function createChromiumDriver({ harnessOrigin, args = [], channel, chromium, contextOptions = {} } = {}) {
   if (!chromium) {
     const require = createRequire(import.meta.url);
     ({ chromium } = require('playwright'));
@@ -36,8 +36,10 @@ export async function createChromiumDriver({ harnessOrigin, args = [], channel, 
     proxy: { server: harnessOrigin },
   });
   return {
+    // `contextOptions` are Playwright browser-context options (e.g. `{ serviceWorkers: 'block' }`);
+    // WebDriver classic has no equivalent, so only this driver takes them.
     async newPage() {
-      const page = await browser.newPage();
+      const page = await (await browser.newContext(contextOptions)).newPage();
       return {
         goto: (url) => page.goto(url),
         evaluate: (fn, arg) => page.evaluate(fn, arg),
