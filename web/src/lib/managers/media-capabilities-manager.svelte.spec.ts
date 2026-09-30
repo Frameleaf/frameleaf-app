@@ -4,6 +4,13 @@
 // decoder (e.g. Playwright's arm64 Linux Chromium), that hid the fact that H.264
 // renditions could not actually be played.
 //
+// `efficientLevels()` also has to fall back correctly once the queries are real: before this
+// fix, H.264 being hardcoded powerEfficient always guaranteed at least one surviving rendition.
+// With real queries, a browser that only decodes in software (no hardware acceleration) reports
+// every codec as supported-but-not-powerEfficient, and previously that meant every level got
+// removed and playback broke. The three tiers below (powerEfficient -> supported -> keep
+// everything) are each covered.
+//
 // `mediaCapabilitiesManager.init()` runs as a module-level side effect, so each
 // test re-imports the module after installing its own `navigator.mediaCapabilities`
 // mock to get a fresh cache built against that mock.
@@ -73,6 +80,48 @@ it('drops H.264 renditions a browser without an H.264 decoder cannot actually pl
   const keep = await mediaCapabilitiesManager.efficientLevels(levels);
 
   expect(keep).toEqual(new Set([1]));
+});
+
+it('falls back to the lowest-bitrate supported level per height when nothing is power-efficient', async () => {
+  // All software-decoded: supported, but not powerEfficient - common without hardware
+  // acceleration (VA-API-less Linux desktops, many VMs, Firefox on some platforms).
+  decodingInfo.mockImplementation(() =>
+    Promise.resolve({ supported: true, powerEfficient: false, smooth: true, keySystemAccess: null }),
+  );
+  stubMediaCapabilities();
+
+  const { mediaCapabilitiesManager } = await import('./media-capabilities-manager.svelte');
+
+  const levels = [
+    { videoCodec: 'avc1.64001e', width: 854, height: 480, bitrate: 2_500_000, frameRate: 60 },
+    { videoCodec: 'hvc1.1.6.L90.B0', width: 854, height: 480, bitrate: 1_200_000, frameRate: 60 },
+  ];
+  const keep = await mediaCapabilitiesManager.efficientLevels(levels);
+
+  // Neither level is powerEfficient, so the fallback tier picks the lowest-bitrate supported
+  // level at this height (index 1) instead of removing every level.
+  expect(keep).toEqual(new Set([1]));
+});
+
+it('keeps every level, rather than removing them all, when nothing is even supported', async () => {
+  // e.g. Playwright's arm64 Linux Chromium build, which has no H.264 decoder at all and nothing
+  // else declared supported either in this scenario.
+  decodingInfo.mockImplementation(() =>
+    Promise.resolve({ supported: false, powerEfficient: false, smooth: false, keySystemAccess: null }),
+  );
+  stubMediaCapabilities();
+
+  const { mediaCapabilitiesManager } = await import('./media-capabilities-manager.svelte');
+
+  const levels = [
+    { videoCodec: 'avc1.64001e', width: 854, height: 480, bitrate: 2_500_000, frameRate: 60 },
+    { videoCodec: 'avc1.64001f', width: 1280, height: 720, bitrate: 5_000_000, frameRate: 60 },
+  ];
+  const keep = await mediaCapabilitiesManager.efficientLevels(levels);
+
+  // Removing every level would leave hls.js nothing to play at all and go silently blank; keeping
+  // them lets a real playback error surface instead (FL-203).
+  expect(keep).toEqual(new Set([0, 1]));
 });
 
 it('falls back to the safe default when the API is unavailable or throws', async () => {
