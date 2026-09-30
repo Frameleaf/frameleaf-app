@@ -48,21 +48,16 @@ test.describe('Shared editor Save and Cancel reachability (FL-144)', () => {
       };
       for (const width of [1280, 390]) {
         await page.setViewportSize({ width, height: 844 });
-        const restoring =
-          width === 390 &&
-          (await page.evaluate((id) => sessionStorage.getItem(`frameleaf.editor.continuity.${id}`) !== null, asset.id));
-        await page.goto(`/photos/${asset.id}`);
-        const editor = page.getByRole('dialog', { name: /^Edit / });
-        if (restoring) {
-          // Observe the existing real continuity record; never inject or clear browser state.
-          await expect(editor).toBeVisible();
-        } else {
-          await page
-            .getByRole('button', { name: /^(Edit|Edit video)$/ })
-            .filter({ visible: true })
-            .first()
-            .click();
+        if (width === 1280) {
+          await page.goto(`/photos/${asset.id}`);
         }
+        // Resize the same normal viewer; full-reload continuity is a separate acceptance seam.
+        await page
+          .getByRole('button', { name: /^(Edit|Edit video)$/ })
+          .filter({ visible: true })
+          .first()
+          .click();
+        const editor = page.getByRole('dialog', { name: /^Edit / });
         const save = editor.getByRole('button', { name: 'Save version', exact: true });
         const cancel = editor.locator('.ed-top button[title="Cancel and close editor"]');
         // Both full hitboxes must already fit; Playwright must not scroll clipped commands into view.
