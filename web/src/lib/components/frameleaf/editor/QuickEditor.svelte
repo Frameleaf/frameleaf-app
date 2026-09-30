@@ -714,8 +714,9 @@
           !isHttpError(error) ||
           error.status !== 400 ||
           (error.data as { code?: unknown } | undefined)?.code !== 'develop_renderer_unsupported'
-        )
-          {throw error;}
+        ) {
+          throw error;
+        }
         // Only this pre-write server refusal permits retry. All other failures remain failures.
         revision = await saveAssetDevelop({
           ...request,
@@ -735,7 +736,9 @@
         ? $t('frameleaf_editor_version_saved_newer_renderer')
         : $t('frameleaf_editor_version_queued', { values: { revision: revision.revision } });
       toastManager.primary(announce);
-      if (!saveOnly) {followAfterClose(revision.id);}
+      if (!saveOnly) {
+        followAfterClose(revision.id);
+      }
       onClose(saveChangedCurrent);
     } catch (error) {
       handleError(error, $t('frameleaf_editor_save_error'));
