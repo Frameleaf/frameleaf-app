@@ -1,3 +1,4 @@
+import { ConflictException, ForbiddenException } from '@nestjs/common';
 import { StudioProjectController } from 'src/controllers/studio-project.controller.js';
 import { MediaOperationDestination, MediaOperationKind, MediaOperationStatus } from 'src/enum.js';
 import { StudioReverseConformCommandService } from 'src/services/studio-reverse-conform-command.service.js';
@@ -54,6 +55,7 @@ const setup = () => {
     },
   };
   const studio = {
+    requireOwnedProject: vi.fn().mockResolvedValue({}),
     authorizeRevision: vi.fn().mockResolvedValue({
       project: { ownerId: owner.user.id, currentRevision: 1 },
       revision: { digest: 'digest' },
@@ -90,6 +92,30 @@ const setup = () => {
 };
 
 describe(StudioReverseConformCommandService.name, () => {
+  it('refuses a reviewer before authorizing the clip revision or acquiring work', async () => {
+    const { sut, studio, producer, resources } = setup();
+    const reviewer = { ...owner, user: { ...owner.user, id: '0195e2a0-0000-7000-8000-000000000099' } };
+    studio.requireOwnedProject.mockRejectedValue(new ForbiddenException('Only the project owner can conform a clip'));
+    await expect(sut.enqueue(reviewer, projectId, 'tab-a', command)).rejects.toBeInstanceOf(ForbiddenException);
+    expect(studio.authorizeRevision).not.toHaveBeenCalled();
+    expect(studio.requireOwnedProject).toHaveBeenCalledWith(
+      reviewer,
+      projectId,
+      'Only the project owner can conform a clip',
+    );
+    expect(studio.acquireLease).not.toHaveBeenCalled();
+    expect(producer.enqueueSource).not.toHaveBeenCalled();
+    expect(resources.resolveProjectResources).not.toHaveBeenCalled();
+  });
+
+  it('preserves apply conflict before any revision resolution for an unfinished owned conform', async () => {
+    const { sut, studio, operation } = setup();
+    operation.status = MediaOperationStatus.Preparing;
+    await expect(sut.apply(owner, projectId, 'tab-a', operationId)).rejects.toBeInstanceOf(ConflictException);
+    expect(studio.requireOwnedProject).not.toHaveBeenCalled();
+    expect(studio.authorizeRevision).not.toHaveBeenCalled();
+  });
+
   it('accepts the canonical local command and binds the stored clip/revision under an acquired edit lease', async () => {
     const { sut, studio, producer } = setup();
     await sut.enqueue(owner, projectId, 'tab-a', command);
