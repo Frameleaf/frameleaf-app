@@ -4,6 +4,7 @@ import { InjectKysely } from 'nestjs-kysely';
 import { isAbsolute } from 'node:path';
 import type { Kysely, RawBuilder, Selectable, Transaction } from 'kysely';
 import type { StudioDeclaredGenerated, StudioDeclaredImport } from 'src/services/studio-resource.service.js';
+import { AlbumKind } from 'src/enum.js';
 import {
   canWriteFork,
   lockForkWrites,
@@ -862,6 +863,25 @@ export class StudioProjectRepository {
         .where('id', '=', id)
         .execute(),
     );
+  }
+
+  /**
+   * FL-97: whether `spaceId` is, right now, a live shared space that `userId` still belongs to and
+   * that someone else belongs to as well. A project's `spaceId` is checked only when it is set, so a
+   * space deleted, left or never shared since does not count.
+   */
+  async isLiveSharedSpaceOf(spaceId: string, userId: string): Promise<boolean> {
+    const { rows } = await sql<{ shared: boolean }>`
+      WITH members AS (
+        -- the owner is an album_user row too (role 'owner')
+        SELECT member."userId" FROM public.album_user member
+        JOIN public.album album ON album.id = member."albumId"
+        WHERE member."albumId" = ${spaceId}::uuid AND album.kind = ${AlbumKind.Space} AND album."deletedAt" IS NULL
+      )
+      SELECT EXISTS (SELECT 1 FROM members WHERE "userId" = ${userId}::uuid)
+        AND EXISTS (SELECT 1 FROM members WHERE "userId" <> ${userId}::uuid) AS shared
+    `.execute(this.db);
+    return rows[0]?.shared ?? false;
   }
 
   async getSpace(spaceId: string): Promise<StudioSpace | undefined> {
