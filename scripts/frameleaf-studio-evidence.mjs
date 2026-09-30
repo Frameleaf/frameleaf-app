@@ -387,16 +387,55 @@ export function commandMatrixCoverage(
  * single static Set can't represent "this row's evidence differs from that row's evidence" the
  * way `FAMILY_CASE_COVERAGE` can for a uniformly-measured family like blend or effect.
  */
+/**
+ * Unions per-row coverage across several independently-produced reports for the SAME axis - e.g.
+ * authorizationFailure's 10 cases split across sharing-privacy's 5 (owner, shared, viewer,
+ * sensitive, revoked) and studio-editing's 5 (deleted, unsupported, cancel, restart, stale-result).
+ * A blind union would be unsafe: if two reports ever both claimed the same case for the same row
+ * passed, the union could hide one of them being wrong. This throws instead of merging silently -
+ * each report owning a disjoint set of case names is a property the generator enforces, not just
+ * a convention the two owners are trusted to keep.
+ */
+export function mergeMatrixCoverage(coverages) {
+  const merged = new Map();
+  for (const coverage of coverages) {
+    for (const [rowId, cases] of coverage) {
+      const existing = merged.get(rowId);
+      if (!existing) {
+        merged.set(rowId, new Set(cases));
+        continue;
+      }
+      for (const name of cases) {
+        if (existing.has(name)) {
+          throw new Error(
+            `${rowId}: case "${name}" reported passed by more than one report - each report must own a disjoint set of cases`,
+          );
+        }
+        existing.add(name);
+      }
+    }
+  }
+  return merged;
+}
+
 export async function applyCommandMatrixCoverage(
   overlay,
   catalog,
   manifest,
   build,
-  report,
-  { meta, artifactDir, rowCommands = ROW_COMMAND_MAPPING } = {},
+  reportOrReports,
+  { meta, artifactDir, rowCommands, axis = "command" } = {},
 ) {
-  const axis = "command";
-  const coverageByRow = commandMatrixCoverage(report, rowCommands);
+  const reports = Array.isArray(reportOrReports)
+    ? reportOrReports
+    : [reportOrReports];
+  // ROW_COMMAND_MAPPING is reviewed specifically for the command axis's own rows (see its own
+  // doc); it's not assumed to apply to any other axis unless the caller explicitly passes one.
+  const resolvedRowCommands =
+    rowCommands ?? (axis === "command" ? ROW_COMMAND_MAPPING : {});
+  const coverageByRow = mergeMatrixCoverage(
+    reports.map((report) => commandMatrixCoverage(report, resolvedRowCommands)),
+  );
   const catalogById = new Map(catalog.rows.map((row) => [row.id, row]));
   const featureById = new Map(
     manifest.features.map((feature) => [feature.id, feature]),
@@ -466,7 +505,7 @@ export async function applyCommandMatrixCoverage(
 }
 
 function parseArguments(argv) {
-  const options = { write: false, axis: DEFAULT_AXIS };
+  const options = { write: false, axis: undefined, commandMatrixReports: [] };
   for (let index = 0; index < argv.length; index++) {
     const arg = argv[index];
     if (arg === "--write") {
@@ -482,7 +521,9 @@ function parseArguments(argv) {
       continue;
     }
     if (arg === "--command-matrix-report") {
-      options.commandMatrixReport = argv[++index];
+      // Repeatable: e.g. authorizationFailure merges sharing-privacy's and studio-editing's
+      // independently-produced reports for the same axis (see mergeMatrixCoverage).
+      options.commandMatrixReports.push(argv[++index]);
       continue;
     }
     if (arg === "--axis") {
@@ -495,18 +536,20 @@ function parseArguments(argv) {
     }
     throw new Error(`Unknown argument: ${arg}`);
   }
-  if (options.commandMatrixReport) {
+  if (options.commandMatrixReports.length > 0) {
     if (options.family)
       throw new Error(
         "--command-matrix-report cannot be combined with --family",
       );
+    options.axis ??= "command";
     return options;
   }
   if (!options.family)
     throw new Error(
       "Usage: --family <blend|effect|transition> [--axis <axis>] [--report <path>] [--meta <path>] [--write]\n" +
-        "   or: --command-matrix-report <path> [--meta <path>] [--write]",
+        "   or: --command-matrix-report <path> [--command-matrix-report <path> ...] [--axis <axis>] [--meta <path>] [--write]",
     );
+  options.axis ??= DEFAULT_AXIS;
   if (!FAMILY_CASE_COVERAGE[options.axis]?.[options.family]) {
     throw new Error(
       `No reviewed case coverage recorded for family "${options.family}" on axis "${options.axis}"`,
@@ -528,19 +571,22 @@ async function main() {
     ? JSON.parse(await readFile(options.meta, "utf8"))
     : undefined;
   let summary;
-  if (options.commandMatrixReport) {
-    const report = JSON.parse(
-      await readFile(options.commandMatrixReport, "utf8"),
+  if (options.commandMatrixReports.length > 0) {
+    const reports = await Promise.all(
+      options.commandMatrixReports.map((reportPath) =>
+        readFile(reportPath, "utf8").then(JSON.parse),
+      ),
     );
     summary = await applyCommandMatrixCoverage(
       overlay,
       catalog,
       manifest,
       build,
-      report,
+      reports,
       {
         meta,
         artifactDir: "studio/rights-evidence/conformance",
+        axis: options.axis,
       },
     );
   } else {
