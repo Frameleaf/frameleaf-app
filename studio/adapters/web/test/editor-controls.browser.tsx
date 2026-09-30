@@ -1,0 +1,208 @@
+/** Production Compose and Animate components, stores and history; no backend substitute. */
+import { createRoot } from "react-dom/client";
+import { flushSync } from "react-dom";
+import { i18n, i18nReady } from "@/i18n";
+import { CompositingTimeline } from "@/features/editor/components/compose-workspace/compositing-timeline";
+import { KeyframeGraphPanel } from "@/features/timeline/components/keyframe-graph-panel";
+import { useUIShortcuts } from "@/features/timeline/hooks/shortcuts/use-ui-shortcuts";
+import { useItemsStore } from "@/features/timeline/stores/items-store";
+import { useCompositionsStore } from "@/features/timeline/stores/compositions-store";
+import { useCompositionNavigationStore } from "@/features/timeline/stores/composition-navigation-store";
+import { useTimelineCommandStore } from "@/features/timeline/stores/timeline-command-store";
+import { useKeyframesStore } from "@/features/timeline/stores/keyframes-store";
+import { useSelectionStore } from "@/shared/state/selection";
+import { useEditorStore } from "@/shared/state/editor";
+import { usePlaybackStore } from "@/shared/state/playback";
+import {
+  makeTimelineTrack,
+  resetTimelineCompositionTestState,
+} from "@/features/timeline/test-helpers";
+import { renderItem } from "@/features/export/utils/canvas-item-renderer/render-item";
+import { getAnimatedTransform } from "@/features/export/utils/canvas-keyframes";
+import {
+  CanvasPool,
+  TextMeasurementCache,
+} from "@/features/export/utils/canvas-pool";
+import { LottieExportProvider } from "@/infrastructure/lottie/lottie-frame-provider";
+import type { TimelineItem } from "@/types/timeline";
+import type { ItemRenderContext } from "@/features/export/utils/canvas-item-renderer/types";
+import "./keyframe-browser.css";
+
+await i18nReady;
+await i18n.changeLanguage("en");
+const root = createRoot(document.getElementById("editor")!);
+const settings = { width: 128, height: 96, fps: 30 };
+const hero: TimelineItem = {
+  id: "hero",
+  type: "shape",
+  trackId: "hero-track",
+  label: "Hero rectangle",
+  from: 0,
+  durationInFrames: 60,
+  shapeType: "rectangle",
+  fillColor: "#ff0000",
+  strokeEnabled: false,
+  transform: { x: 0, y: 0, width: 16, height: 16, rotation: 0, opacity: 1 },
+};
+const controller: TimelineItem = {
+  id: "null",
+  type: "controller",
+  controllerKind: "null",
+  trackId: "null-track",
+  label: "Null Object",
+  from: 0,
+  durationInFrames: 60,
+  transform: { x: 0, y: 0, width: 16, height: 16, rotation: 0, opacity: 1 },
+};
+const group: TimelineItem = {
+  id: "group-instance",
+  type: "composition",
+  compositionId: "group-comp",
+  trackId: "group-track",
+  label: "Compose Group",
+  from: 0,
+  durationInFrames: 60,
+  compositionWidth: 128,
+  compositionHeight: 96,
+  transform: { x: 0, y: 0, width: 128, height: 96, rotation: 0, opacity: 1 },
+};
+
+function mountEditorControls(surface: "compose" | "animate", reset = false) {
+  if (reset) {
+    resetTimelineCompositionTestState();
+    useCompositionNavigationStore.getState().resetToRoot();
+    useEditorStore.getState().setWorkspace("motion");
+    const items = [
+      structuredClone(hero),
+      structuredClone(controller),
+      structuredClone(group),
+    ];
+    const tracks = items.map((item, order) =>
+      makeTimelineTrack({
+        id: item.trackId,
+        name: item.label,
+        kind: "video",
+        order,
+      }),
+    );
+    useCompositionsStore
+      .getState()
+      .addComposition({
+        id: "group-comp",
+        name: "Compose Group",
+        editorKind: "composite-2d",
+        tracks: [],
+        items: [],
+        transitions: [],
+        keyframes: [],
+        ...settings,
+        durationInFrames: 60,
+      });
+    useCompositionsStore
+      .getState()
+      .addComposition({
+        id: "main-comp",
+        name: "Acceptance scene",
+        editorKind: "composite-2d",
+        tracks,
+        items,
+        transitions: [],
+        keyframes: [],
+        ...settings,
+        durationInFrames: 60,
+      });
+    useCompositionNavigationStore.getState().switchToSequence("main-comp");
+    useSelectionStore.getState().selectItems(["hero"]);
+    usePlaybackStore.getState().setCurrentFrame(0);
+    useTimelineCommandStore.getState().clearHistory();
+  }
+  flushSync(() => root.render(<Controls surface={surface} />));
+}
+function Controls({ surface }: { surface: "compose" | "animate" }) {
+  useUIShortcuts({});
+  return surface === "compose" ? (
+    <CompositingTimeline defaults={settings} />
+  ) : (
+    <KeyframeGraphPanel
+      isOpen
+      onClose={() => {}}
+      splitView
+      showCloseButton={false}
+    />
+  );
+}
+const state = () =>
+  structuredClone({
+    items: useItemsStore.getState().items,
+    tracks: useItemsStore.getState().tracks,
+    keys: useKeyframesStore.getState().keyframes,
+    canUndo: useTimelineCommandStore.getState().canUndo,
+    canRedo: useTimelineCommandStore.getState().canRedo,
+    mode: localStorage.getItem("timeline:keyframeEditorMode"),
+  });
+async function renderHero() {
+  const items = useItemsStore.getState().itemById,
+    keys = useKeyframesStore.getState().keyframes;
+  const keyframesMap = new Map(keys.map((entry) => [entry.itemId, entry]));
+  const canvasSettings = {
+    ...settings,
+    getExpressionItem: (id: string) => items[id],
+    getExpressionKeyframes: (id: string) => keyframesMap.get(id),
+  };
+  const canvas = new OffscreenCanvas(settings.width, settings.height),
+    ctx = canvas.getContext("2d")!;
+  const item = items.hero!,
+    pose = getAnimatedTransform(
+      item,
+      keyframesMap.get(item.id),
+      0,
+      canvasSettings,
+    );
+  const rctx: ItemRenderContext = {
+    fps: 30,
+    canvasSettings,
+    canvasPool: new CanvasPool(128, 96, 2),
+    textMeasureCache: new TextMeasurementCache(),
+    renderMode: "export",
+    renderItem,
+    videoExtractors: new Map(),
+    videoElements: new Map(),
+    useMediabunny: new Set(),
+    mediabunnyDisabledItems: new Set(),
+    mediabunnyFailureCountByItem: new Map(),
+    imageElements: new Map(),
+    gifFramesMap: new Map(),
+    lottieProvider: new LottieExportProvider(),
+    keyframesMap,
+    adjustmentLayers: [],
+    subCompRenderData: new Map(),
+  };
+  await renderItem(ctx, item, pose, 0, rctx);
+  const pixels = ctx.getImageData(0, 0, 128, 96).data;
+  const digest = [
+    ...new Uint8Array(await crypto.subtle.digest("SHA-256", pixels)),
+  ]
+    .map((v) => v.toString(16).padStart(2, "0"))
+    .join("");
+  const oracle = new OffscreenCanvas(128, 96),
+    reference = oracle.getContext("2d")!;
+  reference.fillStyle = "#ff0000";
+  reference.fillRect(64 + pose.x - 8, 48 + pose.y - 8, 16, 16);
+  const expected = reference.getImageData(0, 0, 128, 96).data;
+  let maxDelta = 0;
+  for (let i = 0; i < pixels.length; i++)
+    maxDelta = Math.max(maxDelta, Math.abs(pixels[i]! - expected[i]!));
+  return { pose, digest, maxDelta };
+}
+Object.assign(window, {
+  fl100Editor: {
+    mount: mountEditorControls,
+    state,
+    renderHero,
+    moveParent: (id: string, x: number) =>
+      useItemsStore.getState()._updateItemTransform(id, { x }),
+    selectLayers: () =>
+      useSelectionStore.getState().selectItems(["hero", "null"]),
+  },
+});
+mountEditorControls("compose", true);

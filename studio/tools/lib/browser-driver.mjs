@@ -44,6 +44,19 @@ export async function createChromiumDriver({ harnessOrigin, args = [], channel, 
         goto: (url) => page.goto(url),
         evaluate: (fn, arg) => page.evaluate(fn, arg),
         waitForFunction: (fn, options) => page.waitForFunction(fn, undefined, options),
+        click: (selector) => page.locator(selector).click(),
+        fill: (selector, value) => page.locator(selector).fill(value),
+        screenshot: async () => (await page.screenshot()).toString('base64'),
+        async shortcut(key, shift = false) {
+          const modifier = process.platform === 'darwin' ? 'Meta' : 'Control';
+          await page.keyboard.press(`${modifier}+${shift ? 'Shift+' : ''}${key}`);
+        },
+        async drag(from, to) {
+          await page.mouse.move(from.x, from.y);
+          await page.mouse.down();
+          await page.mouse.move(to.x, to.y, { steps: 10 });
+          await page.mouse.up();
+        },
         close: () => page.close(),
       };
     },
@@ -108,7 +121,52 @@ export async function createWebDriverClassicDriver({ endpoint, harnessOrigin, ca
     // One session, one browsing context: newPage() just hands back the same session-bound page,
     // matching the "launch once, script one page" shape every matrix script already uses.
     async newPage() {
+      const element = async (selector) => {
+        const found = await call('/element', {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ using: 'css selector', value: selector }),
+        });
+        return found['element-6066-11e4-a52e-4f735466cecf'];
+      };
+      const elementCommand = async (selector, command, body = {}) => call(`/element/${await element(selector)}/${command}`, {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+      });
       const page = {
+        screenshot: () => call('/screenshot', { method: 'GET' }),
+        shortcut: (key, shift = false) => {
+          const modifier = String(session.capabilities?.platformName).toLowerCase().includes('mac') ? '\uE03D' : '\uE009';
+          return call('/actions', { method: 'POST', headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ actions: [{ type: 'key', id: 'fixture-shortcut', actions: [
+              { type: 'keyDown', value: modifier },
+              ...(shift ? [{ type: 'keyDown', value: '\uE008' }] : []),
+              { type: 'keyDown', value: key }, { type: 'keyUp', value: key },
+              ...(shift ? [{ type: 'keyUp', value: '\uE008' }] : []),
+              { type: 'keyUp', value: modifier },
+            ] }] }),
+          });
+        },
+        drag: (from, to) => call('/actions', { method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ actions: [{ type: 'pointer', id: 'fixture-mouse', parameters: { pointerType: 'mouse' }, actions: [
+            { type: 'pointerMove', origin: 'viewport', x: Math.round(from.x), y: Math.round(from.y), duration: 0 },
+            { type: 'pointerDown', button: 0 },
+            { type: 'pointerMove', origin: 'viewport', x: Math.round(to.x), y: Math.round(to.y), duration: 200 },
+            { type: 'pointerUp', button: 0 },
+          ] }] }),
+        }),
+        click: (selector) => elementCommand(selector, 'click'),
+        async fill(selector, value) {
+          // WebDriver clear does not produce React's native input sequence. Replace the value
+          // with real select-all/delete/type keys so controlled inputs see the user's edit.
+          const modifier = String(session.capabilities?.platformName).toLowerCase().includes('mac') ? '\uE03D' : '\uE009';
+          await elementCommand(selector, 'value', { text: '' });
+          const key = (value) => [{ type: 'keyDown', value }, { type: 'keyUp', value }];
+          await call('/actions', { method: 'POST', headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ actions: [{ type: 'key', id: 'fixture-keyboard', actions: [
+              { type: 'keyDown', value: modifier }, ...key('a'), { type: 'keyUp', value: modifier },
+              ...key('\uE003'), ...[...value].flatMap(key),
+            ] }] }),
+          });
+        },
         goto: (url) =>
           call('/url', {
             method: 'POST',
