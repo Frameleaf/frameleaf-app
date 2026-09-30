@@ -1248,12 +1248,9 @@ export class StudioExportService {
     }
   }
 
-  private async requireOwnedProject(auth: AuthDto, projectId: string) {
-    const project = await this.projects.getById(projectId);
-    if (!project || project.ownerId !== auth.user.id) {
-      throw new NotFoundException('Studio project not found');
-    }
-    return project;
+  /** The owner's own project: `404` for anyone who cannot see it, `403` for a reviewer (FL-112). */
+  private requireOwnedProject(auth: AuthDto, projectId: string) {
+    return this.studio.requireOwnedProject(auth, projectId, 'Only the owner can export a Studio project');
   }
 
   private async findOwned(auth: AuthDto, id: string): Promise<StudioExportVersion> {
