@@ -17,13 +17,14 @@
 //     instead of ever reaching the real dev server - the replacement for `page.route()`'s
 //     `route.fulfill()`.
 //   - everything else is proxied through to `upstream` unchanged.
-// HTTPS (`CONNECT`) is refused outright - nothing this harness fronts needs it, and refusing it is
-// simpler and safer than tunnelling.
+// `CONNECT` is tunnelled only to `upstream` itself (browsers send WebSockets that way) and refused
+// for every other host, so HTTPS anywhere else is denied and recorded like any external request.
 //
 // `observations` replaces Playwright's `route.request()` introspection (which WebDriver has
 // nothing like): every request the harness sees is appended, in order, as
 // `{ method, url, kind: 'override' | 'proxied' | 'blocked' }`.
 import http from 'node:http';
+import net from 'node:net';
 import { once } from 'node:events';
 
 /**
@@ -47,13 +48,28 @@ export function createHarness({ upstream, overrides = [] } = {}) {
       res.end();
     });
   });
-  // Refuse HTTPS tunnelling outright - see module doc.
-  server.on('connect', (req, socket) => {
-    observations.push({ method: 'CONNECT', url: req.url, kind: 'blocked' });
-    socket.end('HTTP/1.1 403 Forbidden\r\n\r\n');
-  });
-
   const isUpstreamRequest = (url) => url.host === upstreamUrl.host;
+
+  // A browser tunnels WebSockets (Vite's HMR client) through its proxy with CONNECT, so a tunnel to
+  // the Studio origin itself is opened; overrides never apply inside it. Any other CONNECT (HTTPS to
+  // anywhere else) is refused - see module doc.
+  server.on('connect', (req, socket, head) => {
+    if (req.url !== upstreamUrl.host) {
+      observations.push({ method: 'CONNECT', url: req.url, kind: 'blocked' });
+      socket.end('HTTP/1.1 403 Forbidden\r\n\r\n');
+      return;
+    }
+    observations.push({ method: 'CONNECT', url: req.url, kind: 'tunnelled' });
+    const upstreamSocket = net.connect(Number(upstreamUrl.port || 80), upstreamUrl.hostname, () => {
+      socket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
+      if (head.length) upstreamSocket.write(head);
+      upstreamSocket.pipe(socket);
+      socket.pipe(upstreamSocket);
+    });
+    const drop = () => { socket.destroy(); upstreamSocket.destroy(); };
+    upstreamSocket.on('error', drop);
+    socket.on('error', drop);
+  });
 
   async function handleRequest(req, res) {
     // A forward proxy receives the absolute URL as the request line; a direct client (as in this

@@ -45,7 +45,9 @@ const binaryAssetOverride = (resourcePayloads) => ({
 // RESOURCE_ADMISSION_REPORT=<path> writes every raw observation as JSON, whether the checks pass
 // or not, for measured-conformance evidence (FL-112).
 const report = { origin, built: Boolean(process.env.STUDIO_TEST_BUILT), entries: [], ort: null, fixture: null };
-const browser = await chromium.launch({ channel: 'chrome', headless: true });
+// Playwright's own Chromium: a proxy sees the whole browser, and branded Chrome's background
+// services (time, update, sign-in) reach Google on their own, whatever the page does.
+const browser = await chromium.launch({ headless: true });
 try {
   for (const entry of ['/', '/headless.html']) {
     const resourcePayloads = [];
