@@ -31,9 +31,11 @@ import {
   createUserAdmin,
   deleteAssets,
   deleteDatabaseBackup,
+  emptyQueue,
   getAssetInfo,
   getConfig,
   getConfigDefaults,
+  getQueues,
   getQueuesLegacy,
   listDatabaseBackups,
   login,
@@ -51,12 +53,13 @@ import {
   updateLibrary,
   updateMyPreferences,
   updatePartner,
+  updateQueue,
   upsertTags,
   validate,
 } from '@immich/sdk';
 import { BrowserContext } from '@playwright/test';
 import { exec, spawn } from 'node:child_process';
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { createWriteStream, existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -241,7 +244,59 @@ export const utils = {
     await activeClient.end();
   },
 
+  /**
+   * Empties every job queue and waits out the running jobs, so no job queued by the previous spec
+   * writes rows for assets the reset is about to delete (asset_exif / asset_file FK violations) or
+   * delays the next spec's jobs. Queues are paused while they drain, so a finishing job cannot start
+   * the follow-up jobs it queues, and resumed afterwards. Calls the queue API with a throwaway
+   * session of any admin still in the database; with no admin there is nothing for a job to touch.
+   * Delayed jobs (retry/notification backoff) stay: the API cannot remove them.
+   */
+  drainQueues: async () => {
+    const db = await utils.connectDatabase();
+    const { rows } = await db.query<{ id: string }>(
+      `SELECT "id" FROM "user" WHERE "isAdmin" AND "deletedAt" IS NULL LIMIT 1`,
+    );
+    if (rows.length === 0) {
+      return;
+    }
+
+    const token = randomBytes(32).toString('hex');
+    const hashed = createHash('sha256').update(token).digest();
+    await db.query(`INSERT INTO "session" ("userId", "token") VALUES ($1, $2)`, [rows[0].id, hashed]);
+
+    const headers = asBearerAuth(token);
+    // BackgroundTask cannot be paused; emptying it each pass is enough
+    const pausable = Object.values(QueueName).filter((name) => name !== QueueName.BackgroundTask);
+    try {
+      await Promise.all(pausable.map((name) => updateQueue({ name, queueUpdateDto: { isPaused: true } }, { headers })));
+
+      // under vitest's 10s hookTimeout, so a stuck queue is named instead of a bare hook timeout
+      const deadline = Date.now() + 8000;
+      while (true) {
+        await Promise.all(
+          Object.values(QueueName).map((name) => emptyQueue({ name, queueDeleteDto: { failed: true } }, { headers })),
+        );
+        const queues = await getQueues({ headers });
+        const busy = queues.filter(({ statistics: s }) => s.active + s.waiting + s.paused > 0);
+        if (busy.length === 0) {
+          break;
+        }
+        if (Date.now() > deadline) {
+          throw new Error(`Job queues did not drain before the reset: ${busy.map(({ name }) => name).join(', ')}`);
+        }
+        await setAsyncTimeout(100);
+      }
+    } finally {
+      await Promise.all(
+        pausable.map((name) => updateQueue({ name, queueUpdateDto: { isPaused: false } }, { headers })),
+      );
+      await db.query(`DELETE FROM "session" WHERE "token" = $1`, [hashed]);
+    }
+  },
+
   resetDatabase: async (tables?: string[]) => {
+    await utils.drainQueues();
     client = await utils.connectDatabase();
 
     const partial = tables !== undefined;
