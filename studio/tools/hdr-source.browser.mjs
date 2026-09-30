@@ -5,6 +5,7 @@
 // clip's PQ/HLG signal survives the whole float route to delivery, highlights
 // included. Without the intermediate the SDR route cannot carry them.
 import assert from 'node:assert/strict';
+import { writeFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -159,6 +160,8 @@ window.__vite_plugin_react_preamble_installed__ = true
     device.destroy();
     return out;
   }, { SIZE, FPS });
+  // Raw measurements for conformance evidence, written before any assertion.
+  if (process.env.HDR_SOURCE_REPORT) await writeFile(process.env.HDR_SOURCE_REPORT, JSON.stringify(result));
 
   let compared = 0;
   for (const [transfer, { uploads, hdr, sdr, sdrWhite }] of Object.entries(result)) {

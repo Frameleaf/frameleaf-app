@@ -2,6 +2,7 @@
 // (src/shared/graphics/color/managed-color.ts) for PQ and HLG BT.2020 delivery,
 // SDR clipping and the explicit BT.2390 monitoring policy, on software WebGPU in CI.
 import assert from 'node:assert/strict';
+import { writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { chromeLaunchArgs } from '../engine/headless/lib/cli.mjs';
 
@@ -72,6 +73,8 @@ try {
     device.destroy();
     return { cases, alpha };
   });
+  // Raw measurements for conformance evidence, written before any assertion.
+  if (process.env.COLOR_OUTPUT_REPORT) await writeFile(process.env.COLOR_OUTPUT_REPORT, JSON.stringify(result));
   let compared = 0;
   for (const [name, { got, want }] of Object.entries(result.cases)) {
     got.forEach((texel, i) => {
