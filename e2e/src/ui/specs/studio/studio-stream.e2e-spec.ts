@@ -25,6 +25,7 @@ const studioPage = `/studio?project=${STUDIO_PROJECT_ID}`;
 const defaults = (overrides: Partial<StudioStreamMock> = {}): StudioStreamMock => ({
   revision: 3,
   webCodecs: true,
+  webGpu: true,
   requests: [],
   sessions: [],
   refuseReconnect: null,
@@ -38,7 +39,7 @@ const status = (page: Page) => page.getByTestId('studio-server-preview-status');
 /** Load Studio. The editor mounts on its own once the capability probe reports a render worker. */
 const open = async (page: Page, mock: StudioStreamMock) => {
   await page.goto(studioPage);
-  if (mock.webCodecs) {
+  if (mock.webCodecs && mock.webGpu) {
     await page.getByTestId('studio-server-preview-show').click();
   }
   await expect(panel(page)).toBeVisible();
@@ -156,6 +157,21 @@ test.describe('Studio streamed playback', () => {
 
     await studioEditor(page).transport(true, 5);
     await expectLive(page);
+  });
+
+  test('opens by itself and names the missing WebGPU', async ({ context, page }) => {
+    mock = defaults({ webGpu: false });
+    await setupStudioStreamMocks(context, page, mock);
+    await open(page, mock);
+    await expect.poll(() => studioEditor(page).serverPreviewOpen()).toBe(true);
+    await expect(page.getByTestId('studio-local-preview-without-webgpu')).toHaveText(
+      "This browser has no WebGPU, so the editor's own picture leaves out GPU effects. The server preview shows the full picture.",
+    );
+
+    // Closing the panel leaves the notice: the editor's own picture is still not the full one.
+    await panel(page).getByRole('button', { name: 'Hide' }).click();
+    await expect(panel(page)).toBeHidden();
+    await expect(page.getByTestId('studio-local-preview-without-webgpu')).toBeVisible();
   });
 
   test('falls back to exact frames in a browser without WebRTC', async ({ context, page }) => {

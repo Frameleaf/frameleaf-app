@@ -493,6 +493,20 @@ describe('Studio server preview panel (FL-96)', () => {
     );
   });
 
+  it('names a missing WebGPU on the stage, whether or not the panel is open', async () => {
+    await mountedWith({ localPreviewWithoutWebGpu: true });
+    expect(screen.getByTestId('studio-local-preview-without-webgpu')).toHaveTextContent(
+      'frameleaf_studio_local_preview_without_webgpu',
+    );
+    await fireEvent.click(screen.getByTestId('studio-server-preview-show'));
+    expect(screen.getByTestId('studio-local-preview-without-webgpu')).toBeInTheDocument();
+  });
+
+  it('says nothing about WebGPU when the editor has it', async () => {
+    await mountedWith({});
+    expect(screen.queryByTestId('studio-local-preview-without-webgpu')).not.toBeInTheDocument();
+  });
+
   it('shows the exact frame while paused and hides the stream picture', async () => {
     await mountedWith({ serverPreviewOpen: true, preview: ready, stream: streamView({ phase: 'paused' }) });
     expect(screen.getByTestId('studio-exact-frame')).toHaveAttribute('src', 'blob:exact');

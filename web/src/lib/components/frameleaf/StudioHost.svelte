@@ -135,6 +135,7 @@
     /** Streamed playback (FL-96), shown with the exact frames in the host's server preview panel. */
     stream = offStudioStreamView(),
     serverPreviewOpen = $bindable(false),
+    localPreviewWithoutWebGpu = false,
     onStreamVideoSize,
     session = null,
     saveStatus = 'saved',
@@ -226,6 +227,11 @@
     stream?: StudioStreamView;
     /** The server preview panel is open; the engine then asks for exact frames on its behalf. */
     serverPreviewOpen?: boolean;
+    /**
+     * The editor reported no WebGPU (FL-96, FL-112): its own picture leaves out GPU effects, and the
+     * notice saying so stays up rather than letting that picture pass for the full one.
+     */
+    localPreviewWithoutWebGpu?: boolean;
     /** The streamed picture's size, so the route can hold the session to its bounds. */
     onStreamVideoSize?: (width: number, height: number) => void;
     /** The project session (FL-89). When present the header offers history and review. */
@@ -331,6 +337,7 @@
       previewUnavailable: $t('frameleaf_studio_preview_unavailable'),
       previewToneMapped: $t('frameleaf_studio_preview_tone_mapped'),
       previewNoWorker: $t('frameleaf_studio_server_preview_no_worker'),
+      previewWithoutWebGpu: $t('frameleaf_studio_local_preview_without_webgpu'),
       editSuperseded: $t('frameleaf_studio_edit_superseded'),
       // The adapter fills these in; the host keeps them as markers.
       importNotKept: $t('frameleaf_studio_import_not_kept', { values: { file: '{file}', reason: '{reason}' } }),
@@ -800,6 +807,13 @@
       </div>
     {/if}
 
+    {#if host.phase === 'ready' && localPreviewWithoutWebGpu}
+      <div class="fl-studio-local-preview" data-testid="studio-local-preview-without-webgpu" role="status">
+        <Icon icon={mdiAlertCircleOutline} size="16" />
+        <span>{$t('frameleaf_studio_local_preview_without_webgpu')}</span>
+      </div>
+    {/if}
+
     {#if historyOpen && session && hasSavedProject}
       <div class="fl-studio-drawer">
         <StudioHistoryPanel
@@ -1046,6 +1060,21 @@
   .fl-studio-preview[data-preview-phase='stale'],
   .fl-studio-preview[data-preview-phase='unavailable'] {
     color: var(--fl-warning);
+  }
+  .fl-studio-local-preview {
+    position: absolute;
+    bottom: 0.5rem;
+    left: 0.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    max-width: min(28rem, calc(100% - 1rem));
+    padding: 0.25rem 0.625rem;
+    font-size: 0.8125rem;
+    color: var(--fl-warning);
+    background: var(--fl-panel);
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius-control);
   }
   .fl-studio-preview-note {
     color: var(--fl-muted);

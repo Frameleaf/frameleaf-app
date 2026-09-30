@@ -55,7 +55,8 @@ export const frameToTime = (frame: number, fps: number): { num: number; den: num
 
 export function RemotePreview({ context, call }: { context: StudioHostContext; call: Call }) {
   const support = useMemo(localPreviewSupport, [])
-  const [ownOpen, setOpen] = useState(!support.webCodecs)
+  // Without WebCodecs there is no local picture; without WebGPU it leaves out GPU effects.
+  const [ownOpen, setOpen] = useState(!support.webCodecs || !support.webGpu)
   const hostPanel = context.serverPreviewOpen !== undefined
   const open = hostPanel ? context.serverPreviewOpen === true : ownOpen
   const frame = usePlaybackStore((playback) => (playback.isPlaying ? null : playback.currentFrame))
@@ -200,6 +201,11 @@ export function RemotePreview({ context, call }: { context: StudioHostContext; c
           {status}
         </p>
       ) : null}
+      {support.webGpu ? null : (
+        <p role="status" style={{ margin: '6px 0 0', color: 'var(--fl-viewer-muted, #a1a1a6)' }}>
+          {strings.previewWithoutWebGpu}
+        </p>
+      )}
     </section>
   )
 }

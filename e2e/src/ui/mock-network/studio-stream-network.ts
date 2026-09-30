@@ -29,6 +29,8 @@ export type StudioStreamMock = {
   revision: number;
   /** What the stand-in editor reports it can decode locally. */
   webCodecs: boolean;
+  /** Whether the stand-in editor reports WebGPU (without it, its own picture leaves out GPU effects). */
+  webGpu: boolean;
   requests: string[];
   sessions: Array<{
     id: string;
@@ -78,7 +80,7 @@ const editorDocument = `<!doctype html><html><body><script>
       port.onmessage = ({ data }) => {
         if (data.type === 'mount') {
           window.__editor.context = data.context;
-          post({ type: 'mounted', support: { webCodecs: params.get('webcodecs') !== '0', webGpu: false } });
+          post({ type: 'mounted', support: { webCodecs: params.get('webcodecs') !== '0', webGpu: params.get('webgpu') !== '0' } });
         } else if (data.type === 'update') {
           window.__editor.context = data.context;
         } else if (data.type === 'dispose') {
@@ -129,7 +131,7 @@ export const setupStudioStreamMocks = async (context: BrowserContext, page: Page
         engineRevision: ENGINE_REVISION,
         sourceSha256: 'e2e',
         features: [],
-        editor: `editor.html?webcodecs=${mock.webCodecs ? '1' : '0'}`,
+        editor: `editor.html?webcodecs=${mock.webCodecs ? '1' : '0'}&webgpu=${mock.webGpu === false ? '0' : '1'}`,
         commands: 'commands.html',
       },
     }),
