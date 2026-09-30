@@ -8075,6 +8075,8 @@ export type RenderWorkerClaimLimitsDto = {
     maxWallClockMs: string | null;
 };
 export type RenderWorkerClaimDto = {
+    /** Server source/revision binding required by whole-export checkpoint plans */
+    artifactInputDigest?: string;
     attempt: number;
     checkpoints: MediaOperationCheckpointDto[];
     /** Required on every write to this operation */
@@ -8093,15 +8095,15 @@ export type RenderWorkerClaimDto = {
         [key: string]: any;
     };
 };
+export type RenderWorkerWriteResultDto = {
+    accepted: boolean;
+    refusal: (RenderWorkerRefusalReason) | null;
+};
 export type RenderWorkerCancelAckDto = {
     /** The claim token this operation was handed out with */
     claimToken: string;
     /** True when remote resources are confirmed gone */
     released: boolean;
-};
-export type RenderWorkerWriteResultDto = {
-    accepted: boolean;
-    refusal: (RenderWorkerRefusalReason) | null;
 };
 export type RenderWorkerCheckpointPlanDto = {
     chunkKey: string;
@@ -8139,9 +8141,11 @@ export type RenderWorkerOutputDto = {
     sizeInBytes: string;
 };
 export type RenderWorkerCompleteDto = {
+    /** Server-verified whole-export checkpoint; required for Studio exports */
+    artifactSequence?: number;
     /** The claim token this operation was handed out with */
     claimToken: string;
-    /** Required for a Studio export */
+    /** Legacy non-export render output */
     output?: RenderWorkerOutputDto;
     /** Must be null for a Studio export: its result is adopted by publication, never named by a worker */
     resultAssetId: string | null;
@@ -18180,6 +18184,59 @@ export function claimRenderOperation({ xFrameleafWorkerSession, renderWorkerClai
             "x-frameleaf-worker-session": xFrameleafWorkerSession
         })
     })));
+}
+/**
+ * Read a verified whole-export artifact under the current claim
+ */
+export function readRenderArtifact({ chunkKey, id, sequence, xFrameleafWorkerSession, xRenderClaimToken }: {
+    chunkKey: string;
+    id: string;
+    sequence: number;
+    xFrameleafWorkerSession: string;
+    xRenderClaimToken: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/render-workers/operations/${encodeURIComponent(id)}/artifacts/${encodeURIComponent(sequence)}${QS.query(QS.explode({
+        chunkKey
+    }))}`, {
+        ...opts,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "x-frameleaf-worker-session": xFrameleafWorkerSession,
+            "x-render-claim-token": xRenderClaimToken
+        })
+    }));
+}
+/**
+ * Upload a whole-export artifact
+ */
+export function uploadRenderArtifact({ checksum, chunkKey, id, sequence, sizeInBytes, xFrameleafWorkerSession, xRenderClaimToken, body }: {
+    checksum: string;
+    chunkKey: string;
+    id: string;
+    sequence: number;
+    sizeInBytes: string;
+    xFrameleafWorkerSession: string;
+    xRenderClaimToken: string;
+    body: Blob;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: RenderWorkerWriteResultDto;
+    }>(`/render-workers/operations/${encodeURIComponent(id)}/artifacts/${encodeURIComponent(sequence)}${QS.query(QS.explode({
+        checksum,
+        chunkKey,
+        sizeInBytes
+    }))}`, {
+        ...opts,
+        method: "PUT",
+        body,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "x-frameleaf-worker-session": xFrameleafWorkerSession,
+            "x-render-claim-token": xRenderClaimToken
+        })
+    }));
 }
 /**
  * Acknowledge a cancellation

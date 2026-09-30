@@ -1,4 +1,9 @@
 import { BadRequestException, ForbiddenException, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { createHash, randomUUID } from 'node:crypto';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { Readable } from 'node:stream';
 import {
   MediaOperationCheckpointState,
   MediaOperationDestination,
@@ -199,6 +204,8 @@ describe(RenderWorkerService.name, () => {
     verifyReadGrant: ReturnType<typeof vi.fn>;
   };
   let studioExports: Record<
+    | 'stagingFolder'
+    | 'verifyRenderSources'
     | 'onRenderClaimed'
     | 'onRenderCompleted'
     | 'onRenderFailed'
@@ -292,6 +299,8 @@ describe(RenderWorkerService.name, () => {
       getRevision: vi.fn().mockResolvedValue(undefined),
     };
     studioExports = {
+      stagingFolder: vi.fn(),
+      verifyRenderSources: vi.fn().mockResolvedValue(undefined),
       onRenderClaimed: vi.fn().mockResolvedValue(undefined),
       onRenderCompleted: vi.fn().mockResolvedValue({ accepted: true }),
       onRenderFailed: vi.fn().mockResolvedValue(undefined),
@@ -1211,7 +1220,24 @@ describe(RenderWorkerService.name, () => {
       );
     });
 
+    it('refuses worker-selected paths as Studio export checkpoint artifacts', async () => {
+      await expect(
+        sut.completeCheckpoint(SESSION_A, claimedByA.id, 0, {
+          claimToken: 'claim-1',
+          chunkKey: 'k',
+          outputPath: '/library/another-owner/original.mov',
+          outputChecksum: 'ab'.repeat(32),
+          sizeInBytes: '42',
+        } as never),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(operations.completeCheckpoint).not.toHaveBeenCalled();
+    });
+
     it('passes checkpoints through under the claim token only', async () => {
+      vi.mocked(workers.getClaimed).mockResolvedValue({
+        ...claimedByA,
+        kind: MediaOperationKind.StudioPreview,
+      } as never);
       await sut.planCheckpoint(SESSION_A, claimedByA.id, {
         claimToken: 'claim-1',
         sequence: 0,
@@ -1230,6 +1256,10 @@ describe(RenderWorkerService.name, () => {
         expect.objectContaining({ sequence: 0, chunkKey: 'k', prerollTicks: '0', requiresSequentialContext: false }),
       );
 
+      vi.mocked(workers.getClaimed).mockResolvedValue({
+        ...claimedByA,
+        kind: MediaOperationKind.StudioPreview,
+      } as never);
       await sut.completeCheckpoint(SESSION_A, claimedByA.id, 0, {
         claimToken: 'claim-1',
         chunkKey: 'k',
@@ -1253,15 +1283,28 @@ describe(RenderWorkerService.name, () => {
       const exportJob = {
         ...claimedByA,
         kind: MediaOperationKind.StudioExport,
-        snapshot: { kind: 'studio-export', timing: { timeBase: '1001/30000' } },
+        claimExpiresAt: new Date(Date.now() + 600_000),
+        snapshot: {
+          ...(studioOperationStub().snapshot as object),
+          kind: 'studio-export',
+          timing: { timeBase: '1001/30000' },
+        },
       };
       vi.mocked(workers.getClaimed).mockResolvedValue(exportJob as never);
+      studioResources.resolveProjectResources.mockResolvedValue({ manifest: studioManifestStub(), refused: [] });
+      const sources = studioManifestStub()
+        .entries.map(({ key, id, checksum }) => ({ key, id, checksum }))
+        // eslint-disable-next-line unicorn/prefer-simple-sort-comparator -- Canonical digest order must not depend on locale.
+        .sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+      const digest = createHash('sha256')
+        .update(JSON.stringify({ revisionId: exportJob.revisionId, sources }))
+        .digest('hex');
       const plan = (timebase: string) =>
         ({
           claimToken: 'claim-1',
           sequence: 0,
           chunkKey: 'k',
-          inputDigest: 'i',
+          inputDigest: digest,
           historyDigest: 'h',
           configDigest: 'c',
           seed: null,
@@ -1284,6 +1327,13 @@ describe(RenderWorkerService.name, () => {
     });
 
     describe('server-validated chunk reuse (FL-104)', () => {
+      // Other render kinds retain the multi-chunk protocol. Exports use the verified artifact tests below.
+      beforeEach(() => {
+        vi.mocked(workers.getClaimed).mockResolvedValue({
+          ...claimedByA,
+          kind: MediaOperationKind.StudioPreview,
+        } as never);
+      });
       const chunk = (sequence: number, overrides: Record<string, unknown> = {}) => ({
         id: `chunk-${sequence}`,
         operationId: claimedByA.id,
@@ -1819,7 +1869,9 @@ describe(RenderWorkerService.name, () => {
   });
 
   describe('Studio export results (FL-106)', () => {
-    const validating = operationStub({
+    const validating = studioOperationStub({
+      settings: { format: 'mp4-hevc-main10' },
+      claimExpiresAt: new Date(Date.now() + 600_000),
       status: MediaOperationStatus.Validating,
       claimToken: 'claim-1',
       claimedBy: workerA.id,
@@ -1831,7 +1883,35 @@ describe(RenderWorkerService.name, () => {
       contentType: 'video/mp4',
     };
 
-    beforeEach(() => {
+    let folder: string;
+    const bytes = Buffer.from('actual server artifact bytes');
+    beforeEach(async () => {
+      folder = await mkdtemp(join(tmpdir(), 'worker-artifact-'));
+      output.path = join(folder, `${randomUUID()}.artifact`);
+      output.checksum = createHash('sha256').update(bytes).digest('hex');
+      output.sizeInBytes = String(bytes.length);
+      await writeFile(output.path, bytes);
+      studioExports.stagingFolder.mockReturnValue(folder);
+      studioResources.resolveProjectResources.mockResolvedValue({ manifest: studioManifestStub(), refused: [] });
+      const sources = studioManifestStub()
+        .entries.map(({ key, id, checksum }) => ({ key, id, checksum }))
+        // eslint-disable-next-line unicorn/prefer-simple-sort-comparator -- Canonical digest order must not depend on locale.
+        .sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+      const inputDigest = createHash('sha256')
+        .update(JSON.stringify({ revisionId: validating.revisionId, sources }))
+        .digest('hex');
+      vi.mocked(operations.getCheckpoints).mockResolvedValue([
+        {
+          inputDigest,
+          sequence: 0,
+          state: MediaOperationCheckpointState.Complete,
+          chunkKey: 'whole',
+          outputPath: output.path,
+          outputChecksum: Buffer.from(output.checksum, 'hex'),
+          sizeInBytes: output.sizeInBytes,
+        },
+      ] as never);
+
       vi.mocked(workers.getClaimed).mockImplementation((id, workerId, claimToken) =>
         Promise.resolve(
           id === validating.id && workerId === workerA.id && claimToken === 'claim-1'
@@ -1839,6 +1919,10 @@ describe(RenderWorkerService.name, () => {
             : undefined,
         ),
       );
+    });
+
+    afterEach(async () => {
+      await rm(folder, { recursive: true, force: true });
     });
 
     it('refuses a worker-supplied result asset: only publication adopts one', async () => {
@@ -1864,7 +1948,7 @@ describe(RenderWorkerService.name, () => {
       const result = await sut.complete(SESSION_A, validating.id, {
         claimToken: 'claim-1',
         resultAssetId: null,
-        output,
+        artifactSequence: 0,
       } as never);
 
       expect(result).toEqual({ accepted: true, refusal: null });
@@ -1872,8 +1956,15 @@ describe(RenderWorkerService.name, () => {
         expect.objectContaining({ id: validating.id }),
         workerA.id,
         expect.objectContaining({ path: output.path, checksum: output.checksum, remoteRef: null }),
+        true,
       );
-      expect(operations.complete).toHaveBeenCalledWith(validating.id, 'claim-1', { resultAssetId: null });
+      expect(operations.complete).toHaveBeenCalledWith(
+        validating.id,
+        'claim-1',
+        { resultAssetId: null },
+        undefined,
+        true,
+      );
     });
 
     it('does not complete the render when its version is no longer waiting for it', async () => {
@@ -1882,12 +1973,135 @@ describe(RenderWorkerService.name, () => {
       const result = await sut.complete(SESSION_A, validating.id, {
         claimToken: 'claim-1',
         resultAssetId: null,
-        output,
+        artifactSequence: 0,
       } as never);
 
       expect(result).toEqual({ accepted: false, refusal: null });
       expect(operations.complete).not.toHaveBeenCalled();
     });
+
+    it('uploads actual bytes and binds durable completion to a pending current checkpoint', async () => {
+      vi.mocked(workers.getClaimed).mockResolvedValue({
+        ...validating,
+        status: MediaOperationStatus.Rendering,
+      } as never);
+      const checkpoint = (await operations.getCheckpoints(validating.id))[0];
+      vi.mocked(operations.getCheckpoints).mockResolvedValue([
+        { ...checkpoint, state: MediaOperationCheckpointState.Pending },
+      ] as never);
+      const result = await sut.uploadArtifact(
+        SESSION_A,
+        validating.id,
+        0,
+        'claim-1',
+        {
+          chunkKey: 'whole',
+          checksum: output.checksum,
+          sizeInBytes: output.sizeInBytes,
+        },
+        Readable.from([bytes]),
+      );
+      expect(result.accepted).toBe(true);
+      expect(operations.completeCheckpoint).toHaveBeenCalledWith(
+        validating.id,
+        'claim-1',
+        expect.objectContaining({
+          sequence: 0,
+          chunkKey: 'whole',
+          outputChecksum: Buffer.from(output.checksum, 'hex'),
+          sizeInBytes: bytes.length,
+        }),
+        true,
+      );
+      const recorded = vi.mocked(operations.completeCheckpoint).mock.calls[0][2];
+      expect(recorded.outputPath).not.toBe(output.path);
+      expect(recorded.outputPath).toMatch(/\/[a-f\d-]{36}\.artifact$/);
+    });
+
+    it('lets a replacement active claim read matching verified bytes and refuses the old claim', async () => {
+      vi.mocked(workers.getClaimed).mockImplementation((_id, workerId, token) =>
+        Promise.resolve(
+          workerId === workerB.id && token === 'claim-2'
+            ? ({ ...validating, claimedBy: workerB.id, claimToken: token } as never)
+            : undefined,
+        ),
+      );
+      await expect(
+        sut.readArtifact(SESSION_A, validating.id, 0, 'claim-1', { chunkKey: 'whole' }),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      const artifact = await sut.readArtifact(SESSION_B, validating.id, 0, 'claim-2', { chunkKey: 'whole' });
+      const chunks = await Array.fromAsync(artifact.stream);
+      expect(Buffer.concat(chunks)).toEqual(bytes);
+      expect(artifact.checksum).toBe(output.checksum);
+    });
+
+    it.each(['expired', 'cancelled', 'paused'] as const)(
+      'refuses %s claim upload/read/completion',
+      async (condition) => {
+        vi.mocked(workers.getClaimed).mockResolvedValue({
+          ...validating,
+          ...(condition === 'expired'
+            ? { claimExpiresAt: new Date(0) }
+            : condition === 'cancelled'
+              ? { cancelRequestedAt: new Date() }
+              : { pauseRequestedAt: new Date() }),
+        } as never);
+        await expect(
+          sut.readArtifact(SESSION_A, validating.id, 0, 'claim-1', { chunkKey: 'whole' }),
+        ).rejects.toBeInstanceOf(NotFoundException);
+        await expect(
+          sut.uploadArtifact(
+            SESSION_A,
+            validating.id,
+            0,
+            'claim-1',
+            { chunkKey: 'whole', checksum: output.checksum, sizeInBytes: output.sizeInBytes },
+            Readable.from([bytes]),
+          ),
+        ).rejects.toBeInstanceOf(NotFoundException);
+        await expect(
+          sut.complete(SESSION_A, validating.id, { claimToken: 'claim-1', artifactSequence: 0, resultAssetId: null }),
+        ).rejects.toBeInstanceOf(NotFoundException);
+        expect(studioExports.onRenderCompleted).not.toHaveBeenCalled();
+        expect(operations.completeCheckpoint).not.toHaveBeenCalled();
+      },
+    );
+
+    it('refuses a changed source checksum even if the whole-export chunk key is unchanged', async () => {
+      const manifest = studioManifestStub();
+      manifest.entries[0].checksum = 'replacement-source';
+      studioResources.resolveProjectResources.mockResolvedValue({ manifest, refused: [] });
+      await expect(
+        sut.readArtifact(SESSION_A, validating.id, 0, 'claim-1', { chunkKey: 'whole' }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      await expect(
+        sut.complete(SESSION_A, validating.id, { claimToken: 'claim-1', artifactSequence: 0, resultAssetId: null }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(studioExports.onRenderCompleted).not.toHaveBeenCalled();
+    });
+
+    it.each(['missing', 'corrupt'] as const)(
+      'refuses %s durable bytes at validation and publication',
+      async (failure) => {
+        if (failure === 'missing') {
+          await rm(output.path);
+        } else {
+          await writeFile(output.path, Buffer.alloc(bytes.length));
+        }
+        await expect(
+          sut.beginValidation(SESSION_A, validating.id, {
+            claimToken: 'claim-1',
+            artifactSequence: 0,
+            resultAssetId: null,
+          }),
+        ).rejects.toBeInstanceOf(BadRequestException);
+        await expect(
+          sut.complete(SESSION_A, validating.id, { claimToken: 'claim-1', artifactSequence: 0, resultAssetId: null }),
+        ).rejects.toBeInstanceOf(BadRequestException);
+        expect(operations.beginValidation).not.toHaveBeenCalled();
+        expect(studioExports.onRenderCompleted).not.toHaveBeenCalled();
+      },
+    );
 
     it('revokes every session of a worker whose GPU was lost, until it re-admits (FL-95)', async () => {
       vi.mocked(workers.revokeSessions).mockResolvedValue(2);

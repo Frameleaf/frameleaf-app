@@ -11,16 +11,20 @@ import {
   Post,
   Put,
   Query,
+  Req,
   Res,
+  StreamableFile,
 } from '@nestjs/common';
-import { ApiHeader, ApiTags } from '@nestjs/swagger';
-import { type NextFunction, type Response } from 'express';
+import { ApiBody, ApiConsumes, ApiHeader, ApiTags } from '@nestjs/swagger';
+import { type NextFunction, type Request, type Response } from 'express';
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
   RenderWorkerAdmissionDto,
+  RenderWorkerArtifactDto,
+  RenderWorkerArtifactReadDto,
   RenderWorkerAuditDto,
   RenderWorkerAuditSearchDto,
   RenderWorkerCancelAckDto,
@@ -478,6 +482,42 @@ export class RenderWorkerController {
     @Param() { id }: UUIDv7ParamDto,
   ): Promise<RenderWorkerWriteResultDto> {
     return this.service.acknowledgeRemoteReference(session, id);
+  }
+
+  @Put('operations/:id/artifacts/:sequence')
+  @WorkerSessionHeader()
+  @ApiHeader({ name: 'x-render-claim-token', required: true })
+  @ApiConsumes('application/octet-stream')
+  @ApiBody({ schema: { type: 'string', format: 'binary' } })
+  @Authenticated({ public: true })
+  @Endpoint({ summary: 'Upload a whole-export artifact', history: history() })
+  async uploadRenderArtifact(
+    @Headers(ImmichHeader.RenderWorkerSession) session: string | undefined,
+    @Headers('x-render-claim-token') claimToken: string | undefined,
+    @Param() { id, sequence }: CheckpointParamDto,
+    @Query() dto: RenderWorkerArtifactDto,
+    @Req() request: Request,
+  ): Promise<RenderWorkerWriteResultDto> {
+    return this.service.uploadArtifact(session, id, sequence, claimToken, dto, request);
+  }
+
+  @Get('operations/:id/artifacts/:sequence')
+  @FileResponse()
+  @WorkerSessionHeader()
+  @ApiHeader({ name: 'x-render-claim-token', required: true })
+  @Authenticated({ public: true })
+  @Endpoint({ summary: 'Read a verified whole-export artifact under the current claim', history: history() })
+  async readRenderArtifact(
+    @Headers(ImmichHeader.RenderWorkerSession) session: string | undefined,
+    @Headers('x-render-claim-token') claimToken: string | undefined,
+    @Param() { id, sequence }: CheckpointParamDto,
+    @Query() dto: RenderWorkerArtifactReadDto,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<StreamableFile> {
+    const artifact = await this.service.readArtifact(session, id, sequence, claimToken, dto);
+    response.setHeader('Cache-Control', 'private, no-store');
+    response.setHeader('Digest', `sha-256=${Buffer.from(artifact.checksum, 'hex').toString('base64')}`);
+    return new StreamableFile(artifact.stream, { type: 'application/octet-stream', length: artifact.size });
   }
 
   @Get('operations/:id/inputs/:grant')

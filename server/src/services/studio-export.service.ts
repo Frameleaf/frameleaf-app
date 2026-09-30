@@ -645,6 +645,15 @@ export class StudioExportService {
     this.storage.mkdirSync(this.stagingFolder(operation));
   }
 
+  /** Bind uploaded/recovered bytes to the same authorized sources recorded for the render. */
+  async verifyRenderSources(operation: MediaOperation, entries: readonly StudioAuthorizedEntry[]): Promise<void> {
+    const version = await this.repository.getByRenderOperation(operation.id);
+    if (!version || version.revisionDigest !== operation.revisionId) {
+      throw new BadRequestException('Export version no longer matches the render');
+    }
+    this.assertSameSources(await this.repository.getSources(version.id), entries);
+  }
+
   /**
    * A render worker reports the file it produced. The path must be inside the render's own
    * directory and name a regular file of the reported size; anything else is refused and the
@@ -655,6 +664,7 @@ export class StudioExportService {
     operation: MediaOperation,
     workerId: string,
     output: { path: string; checksum: string; sizeInBytes: string; contentType: string; remoteRef?: string | null },
+    requireActiveClaim = false,
   ): Promise<{ accepted: boolean }> {
     if (!isStudioExportContentType(output.contentType)) {
       throw new BadRequestException('Unsupported export container');
@@ -706,6 +716,7 @@ export class StudioExportService {
         totalUnits: null,
         maxAttempts: STUDIO_EXPORT_PUBLISH_MAX_ATTEMPTS,
       }),
+      requireActiveClaim,
     );
     if (!staged) {
       return { accepted: false };
