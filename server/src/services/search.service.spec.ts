@@ -271,6 +271,26 @@ describe(SearchService.name, () => {
   });
 
   describe('new shape routing', () => {
+    it('uses identical authorized options and scope for an internal structured total and cover', async () => {
+      const auth = AuthFactory.create();
+      mocks.search.searchMetadataV3.mockResolvedValue({ hasNextPage: false, items: [] });
+      mocks.search.searchStatisticsV3.mockResolvedValue({ total: 0 });
+      const response = await sut.searchMetadata(auth, { filter: {}, withStacked: false, size: 1 }, true);
+      const [, options, scope] = mocks.search.searchMetadataV3.mock.calls[0];
+      expect(options.withStacked).toBe(false);
+      expect(mocks.search.searchStatisticsV3.mock.calls[0][0]).toBe(options);
+      expect(mocks.search.searchStatisticsV3.mock.calls[0][1]).toBe(scope);
+      expect(response.assets).toMatchObject({ total: 0, items: [] });
+    });
+
+    it('retains the public structured page total without requesting an extra count', async () => {
+      const auth = AuthFactory.create();
+      mocks.search.searchMetadataV3.mockResolvedValue({ hasNextPage: false, items: [] });
+      const response = await sut.searchMetadata(auth, { filter: {}, withStacked: false, size: 1 });
+      expect(response.assets.total).toBe(0);
+      expect(mocks.search.searchStatisticsV3).not.toHaveBeenCalled();
+    });
+
     it('should route a filter request to the V3 search and a flat request to the legacy search', async () => {
       const auth = AuthFactory.create();
 

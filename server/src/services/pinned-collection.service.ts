@@ -3,7 +3,7 @@ import z from 'zod';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { StoredPinnedCollection } from 'src/dtos/pinned-collection.dto.js';
 import { PinnedCollectionsResponseDto, PinnedCollectionsUpdateDto } from 'src/dtos/pinned-collection.dto.js';
-import { MetadataSearchDto, SmartSearchDto, StatisticsSearchDto, isNewShapeRequest } from 'src/dtos/search.dto.js';
+import { MetadataSearchDto, SmartSearchDto } from 'src/dtos/search.dto.js';
 import { AssetType, AssetVisibility } from 'src/enum.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { AlbumService } from 'src/services/album.service.js';
@@ -180,7 +180,7 @@ export class PinnedCollectionService {
   private async searchSummary(auth: AuthDto, title: string, query: Record<string, unknown>): Promise<PinSummary> {
     const { page: _page, cursor: _cursor, size: _size, ...body } = query;
     const smart = body.query !== undefined || body.queryAssetId !== undefined;
-    if (!smart && !isNewShapeRequest(body)) {
+    if (!smart) {
       const results = await this.search.searchMetadata(
         auth,
         MetadataSearchDto.schema.parse({ ...body, size: 1 }),
@@ -193,12 +193,8 @@ export class PinnedCollectionService {
         coverAssetId: results.assets.items[0]?.id ?? null,
       };
     }
-    const stats = smart
-      ? await this.search.searchSmartStatistics(auth, SmartSearchDto.schema.parse(body))
-      : await this.search.searchStatistics(auth, StatisticsSearchDto.schema.parse(body));
-    const results = smart
-      ? await this.search.searchSmart(auth, SmartSearchDto.schema.parse({ ...body, size: 1 }))
-      : await this.search.searchMetadata(auth, MetadataSearchDto.schema.parse({ ...body, size: 1 }));
+    const stats = await this.search.searchSmartStatistics(auth, SmartSearchDto.schema.parse(body));
+    const results = await this.search.searchSmart(auth, SmartSearchDto.schema.parse({ ...body, size: 1 }));
     return {
       title,
       count: stats.total,

@@ -84,6 +84,27 @@ const ref = (kind: StoredPinnedCollection['kind'], targetId: string): StoredPinn
 });
 
 describe('FL-232 ordered pins and replacement sync', () => {
+  it('counts only unstacked structured matches and returns zero with no cover when all matches are stacked', async () => {
+    const { ctx, auth, user, users, pins } = await setup();
+    const { asset: first } = await ctx.newAsset({ ownerId: user.id });
+    const { asset: second } = await ctx.newAsset({ ownerId: user.id });
+    const { asset: unstacked } = await ctx.newAsset({ ownerId: user.id });
+    await ctx.newStack({ ownerId: user.id }, [first.id, second.id]);
+    await users.upsertMetadata(user.id, {
+      key: UserMetadataKey.Preferences,
+      value: { savedSearches: [{ name: 'Unstacked', query: { filter: {}, withStacked: false } }] },
+    });
+    const firstSnapshot = await pins.set(auth, {
+      expectedRevision: null,
+      pins: [ref('saved-search', 'Unstacked')],
+    });
+    expect(firstSnapshot.pins[0]).toMatchObject({ count: 1, coverAssetId: unstacked.id, unavailable: false });
+    await ctx.database.deleteFrom('asset').where('id', '=', unstacked.id).execute();
+    const empty = await pins.get(auth);
+    expect(empty.revision).toBe(firstSnapshot.revision);
+    expect(empty.pins[0]).toMatchObject({ count: 0, coverAssetId: null, unavailable: false });
+  });
+
   it('clears Locked hydration on an acknowledged snapshot when the session loses elevation', async () => {
     const { ctx, auth, user, pins } = await setup();
     const { asset } = await ctx.newAsset({ ownerId: user.id, visibility: AssetVisibility.Locked });
