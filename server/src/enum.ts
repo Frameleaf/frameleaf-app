@@ -2471,6 +2471,8 @@ export enum ExitCode {
 }
 
 export enum SyncRequestType {
+  AlbumAssetAccessV1 = 'AlbumAssetAccessV1',
+  PartnerAssetAccessV1 = 'PartnerAssetAccessV1',
   PinnedCollectionEventsV1 = 'PinnedCollectionEventsV1',
   DuplicateGroupsV1 = 'DuplicateGroupsV1',
   SharedSpacesV1 = 'SharedSpacesV1',
@@ -2524,6 +2526,10 @@ export const SyncRequestTypeSchema = z
   .meta({ id: 'SyncRequestType' });
 
 export enum SyncEntityType {
+  AlbumAssetAccessV1 = 'AlbumAssetAccessV1',
+  AlbumAssetAccessDeleteV1 = 'AlbumAssetAccessDeleteV1',
+  PartnerAssetAccessV1 = 'PartnerAssetAccessV1',
+  PartnerAssetAccessDeleteV1 = 'PartnerAssetAccessDeleteV1',
   PinnedCollectionV1 = 'PinnedCollectionV1',
   PinnedCollectionDeleteV1 = 'PinnedCollectionDeleteV1',
   DuplicateGroupV1 = 'DuplicateGroupV1',
