@@ -152,7 +152,7 @@ export type StudioDuration = Rational;
  * these fields `rate`.
  */
 export type StudioRate = Rational;
-/** FL-94: how a rate change treats existing content — same moments in seconds, or same frame numbers. */
+/** How a rate change treats existing content — same moments in seconds, or same frame numbers. */
 export type StudioRetimePolicy = 'keep-time' | 'keep-frames';
 
 /**
