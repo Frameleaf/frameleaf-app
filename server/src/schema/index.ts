@@ -60,6 +60,7 @@ import { AssetMetadataTable } from 'src/schema/tables/asset-metadata.table.js';
 import { AssetOcrAuditTable } from 'src/schema/tables/asset-ocr-audit.table.js';
 import { AssetOcrTable } from 'src/schema/tables/asset-ocr.table.js';
 import { AssetRestorationTable } from 'src/schema/tables/asset-restoration.table.js';
+import { AssetUploadPartTable, AssetUploadResourceTable } from 'src/schema/tables/asset-upload-resource.table.js';
 import { AssetVideoDuplicateFrameTable } from 'src/schema/tables/asset-video-duplicate-frame.table.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
 import { BackupDeviceTable, BackupReconciliationTable } from 'src/schema/tables/backup-device.table.js';
@@ -196,6 +197,8 @@ import { WorkflowTable } from 'src/schema/tables/workflow.table.js';
 @Database({ name: 'immich' })
 export class ImmichDatabase {
   tables = [
+    AssetUploadResourceTable,
+    AssetUploadPartTable,
     BackupDeviceTable,
     AssetBackupDeletionTable,
     BackupReconciliationTable,
@@ -539,6 +542,8 @@ export interface DB {
   tag_audit: TagAuditTable;
   tag_asset_audit: TagAssetAuditTable;
   session_tag_sync_state: TagSyncStateTable;
+  asset_upload_resource: AssetUploadResourceTable;
+  asset_upload_part: AssetUploadPartTable;
   tag_asset: TagAssetTable;
   tag_closure: TagClosureTable;
 

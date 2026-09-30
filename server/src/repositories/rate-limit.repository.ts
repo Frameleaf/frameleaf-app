@@ -31,6 +31,13 @@ end
 return count
 `;
 
+export const RELEASE_UPLOAD_STREAM_SCRIPT = `
+if redis.call('GET', KEYS[1]) == ARGV[1] then
+  return redis.call('DEL', KEYS[1])
+end
+return 0
+`;
+
 @Injectable()
 export class RateLimitRepository implements OnModuleInit, OnModuleDestroy {
   private client?: Redis;
@@ -82,6 +89,19 @@ export class RateLimitRepository implements OnModuleInit, OnModuleDestroy {
    */
   async release(key: string): Promise<void> {
     await this.getClient().eval(RELEASE_SCRIPT, 1, key);
+  }
+
+  /** Native upload admission only; longer than the ten-minute request-body timeout. */
+  async claimUploadStream(resourceId: string, token: string): Promise<boolean> {
+    return (await this.getClient().set(`frameleaf:upload-stream:${resourceId}`, token, 'EX', 900, 'NX')) === 'OK';
+  }
+
+  async isUploadStreamCurrent(resourceId: string, token: string): Promise<boolean> {
+    return (await this.getClient().get(`frameleaf:upload-stream:${resourceId}`)) === token;
+  }
+
+  async releaseUploadStream(resourceId: string, token: string): Promise<void> {
+    await this.getClient().eval(RELEASE_UPLOAD_STREAM_SCRIPT, 1, `frameleaf:upload-stream:${resourceId}`, token);
   }
 
   async onModuleDestroy() {

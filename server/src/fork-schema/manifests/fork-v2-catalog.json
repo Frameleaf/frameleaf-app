@@ -7535,6 +7535,110 @@
     {
       "definition": "boolean|not null|||",
       "identity": "public.asset_backup_deletion.wasLocked"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.asset_upload_part.createdAt"
+    },
+    {
+      "definition": "uuid|not null|uuid_generate_v4()||",
+      "identity": "public.asset_upload_part.id"
+    },
+    {
+      "definition": "bigint|not null|||",
+      "identity": "public.asset_upload_part.offset"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "public.asset_upload_part.path"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.asset_upload_part.resourceId"
+    },
+    {
+      "definition": "bigint|not null|||",
+      "identity": "public.asset_upload_part.size"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "public.asset_upload_resource.contentType"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.asset_upload_resource.createdAt"
+    },
+    {
+      "definition": "bytea|not null|||",
+      "identity": "public.asset_upload_resource.expectedChecksum"
+    },
+    {
+      "definition": "bigint|nullable|||",
+      "identity": "public.asset_upload_resource.expectedSize"
+    },
+    {
+      "definition": "timestamp with time zone|not null|||",
+      "identity": "public.asset_upload_resource.expiresAt"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "public.asset_upload_resource.finalPath"
+    },
+    {
+      "definition": "uuid|not null|uuid_generate_v4()||",
+      "identity": "public.asset_upload_resource.id"
+    },
+    {
+      "definition": "boolean|not null|false||",
+      "identity": "public.asset_upload_resource.ingested"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "public.asset_upload_resource.ingestionLeaseExpiresAt"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "public.asset_upload_resource.ingestionToken"
+    },
+    {
+      "definition": "bytea|nullable|||",
+      "identity": "public.asset_upload_resource.legacyChecksum"
+    },
+    {
+      "definition": "bigint|not null|||",
+      "identity": "public.asset_upload_resource.maxAppendSize"
+    },
+    {
+      "definition": "bigint|not null|||",
+      "identity": "public.asset_upload_resource.maxSize"
+    },
+    {
+      "definition": "jsonb|not null|||",
+      "identity": "public.asset_upload_resource.metadata"
+    },
+    {
+      "definition": "bigint|not null|0||",
+      "identity": "public.asset_upload_resource.offset"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "public.asset_upload_resource.ownerId"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "public.asset_upload_resource.resultAssetId"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "public.asset_upload_resource.resultStatus"
+    },
+    {
+      "definition": "text|not null|'receiving'::text||",
+      "identity": "public.asset_upload_resource.state"
+    },
+    {
+      "definition": "bytea|nullable|||",
+      "identity": "public.asset_upload_resource.verifiedChecksum"
     }
   ],
   "constraints": [
@@ -9889,6 +9993,22 @@
     {
       "definition": "PRIMARY KEY (\"assetId\")",
       "identity": "public.asset_backup_deletion.asset_backup_deletion_pkey"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "public.asset_upload_part.asset_upload_part_pkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"resourceId\") REFERENCES asset_upload_resource(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.asset_upload_part.asset_upload_part_resourceId_fkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE SET NULL",
+      "identity": "public.asset_upload_resource.asset_upload_resource_ownerId_fkey"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "public.asset_upload_resource.asset_upload_resource_pkey"
     }
   ],
   "enums": [
@@ -13938,6 +14058,30 @@
     {
       "definition": "CREATE UNIQUE INDEX asset_backup_deletion_pkey ON public.asset_backup_deletion USING btree (\"assetId\")",
       "identity": "public.asset_backup_deletion.asset_backup_deletion_pkey"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX asset_upload_part_pkey ON public.asset_upload_part USING btree (id)",
+      "identity": "public.asset_upload_part.asset_upload_part_pkey"
+    },
+    {
+      "definition": "CREATE INDEX \"asset_upload_part_resourceId_idx\" ON public.asset_upload_part USING btree (\"resourceId\")",
+      "identity": "public.asset_upload_part.asset_upload_part_resourceId_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX \"asset_upload_part_resourceId_offset_idx\" ON public.asset_upload_part USING btree (\"resourceId\", \"offset\")",
+      "identity": "public.asset_upload_part.asset_upload_part_resourceId_offset_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"asset_upload_resource_expiresAt_idx\" ON public.asset_upload_resource USING btree (\"expiresAt\")",
+      "identity": "public.asset_upload_resource.asset_upload_resource_expiresAt_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"asset_upload_resource_ownerId_idx\" ON public.asset_upload_resource USING btree (\"ownerId\")",
+      "identity": "public.asset_upload_resource.asset_upload_resource_ownerId_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX asset_upload_resource_pkey ON public.asset_upload_resource USING btree (id)",
+      "identity": "public.asset_upload_resource.asset_upload_resource_pkey"
     }
   ],
   "migrationOverrides": [
@@ -14925,6 +15069,14 @@
     {
       "definition": "table",
       "identity": "public.asset_backup_deletion"
+    },
+    {
+      "definition": "table",
+      "identity": "public.asset_upload_part"
+    },
+    {
+      "definition": "table",
+      "identity": "public.asset_upload_resource"
     }
   ],
   "triggers": [

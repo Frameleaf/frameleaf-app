@@ -28,7 +28,6 @@ import { repositories } from 'src/repositories/index.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { ProcessRepository } from 'src/repositories/process.repository.js';
-import { RateLimitRepository } from 'src/repositories/rate-limit.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
@@ -55,7 +54,6 @@ const commonMiddleware = [
 // FL-161: the rate limits run before authentication, so failed sign-ins and bad credentials count too.
 const apiMiddleware = [
   FileUploadInterceptor,
-  RateLimitRepository,
   ...commonMiddleware,
   { provide: APP_GUARD, useClass: RateLimitGuard },
   { provide: APP_GUARD, useClass: AuthGuard },
