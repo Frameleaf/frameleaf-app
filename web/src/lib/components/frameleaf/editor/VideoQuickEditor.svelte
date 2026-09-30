@@ -199,6 +199,9 @@
   let draft = $state<VideoDraft>(createVideoDraft(initialVideoEdit(0)));
   let opened = $state<VideoEdit>(initialVideoEdit(0));
   let draftReady = $state(false);
+  // A parent can destroy this branch before pending reactive values are committed.
+  // Terminal clears must also stop teardown writers synchronously.
+  let closing = false;
   const edit = $derived(draft.edit);
   const values = $derived(Object.fromEntries(DEVELOP_KEYS.map((key) => [key, edit[key]])) as DevelopValues);
   const dirty = $derived(!!source && !sameVideoEdit(edit, opened));
@@ -260,6 +263,7 @@
 
   const saveDraftAt = (playhead: number) => {
     if (
+      closing ||
       !draftReady ||
       privateStateGeneration !== getPrivateBrowserStateGeneration() ||
       !(dirty || draft.undo.length > 0 || draft.redo.length > 0)
@@ -859,6 +863,7 @@
     if (dirty) {
       toastManager.primary($t('frameleaf_editor_edits_discarded'));
     }
+    closing = true;
     draftReady = false;
     clearEditorContinuity(asset.id);
     onClose(saveChangedCurrent);
@@ -971,6 +976,7 @@
     const edits = toVideoEdits(edit, source);
     // Saving the original over the original would only add an empty version.
     if (edits.length === 0 && !asset.isEdited) {
+      closing = true;
       draftReady = false;
       clearEditorContinuity(asset.id);
       onClose(saveChangedCurrent);
@@ -983,6 +989,7 @@
         : editAsset({ id: asset.id, assetEditsCreateDto: { edits } }));
       eventManager.emit('AssetEditsApplied', asset.id);
       opened = edit;
+      closing = true;
       draftReady = false;
       clearEditorContinuity(asset.id);
       toastManager.primary($t('frameleaf_video_editor_saved'));

@@ -9,9 +9,11 @@ import {
 } from '@immich/sdk';
 import { toastManager } from '@immich/ui';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
+import { goto } from '$app/navigation';
 import { readEditorContinuity } from '$lib/frameleaf/editor-continuity';
 import { clearPrivateBrowserState } from '$lib/frameleaf/private-browser-state';
 import type { VideoDraft } from '$lib/frameleaf/video-edit';
+import VideoEditorCloseHost from '@test-data/components/VideoEditorCloseHost.svelte';
 import { assetFactory } from '@test-data/factories/asset-factory';
 import VideoQuickEditor from './VideoQuickEditor.svelte';
 
@@ -19,6 +21,8 @@ import VideoQuickEditor from './VideoQuickEditor.svelte';
  * The video quick editor (FL-113, VE-1 … VE-12), ported from `Editor.jsx`. The test i18n setup
  * renders the literal key, so assertions match on keys.
  */
+vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
+
 vi.mock('@immich/sdk', async () => {
   const sdk = await vi.importActual<typeof import('@immich/sdk')>('@immich/sdk');
   return {
@@ -325,6 +329,57 @@ describe('VideoQuickEditor', () => {
     expect(screen.getByRole('radio', { name: '0.5×' })).toHaveAttribute('aria-checked', 'true');
     await fireEvent.click(screen.getByRole('tab', { name: 'frameleaf_editor_tool_adjust' }));
     expect(screen.getByRole('note')).toHaveTextContent('frameleaf_video_editor_legacy_adjustments');
+  });
+
+  it.each(['cancel', 'save', 'empty-original-save'] as const)(
+    'does not rewrite a cleared draft during batched parent teardown after %s',
+    async (action) => {
+      const asset = video();
+      vi.mocked(getAssetEdits).mockResolvedValue({
+        assetId: asset.id,
+        edits: [],
+        originalVideo,
+      } as never);
+      const writes = vi.spyOn(sessionStorage, 'setItem');
+      const removals = vi.spyOn(sessionStorage, 'removeItem');
+      const onClose = vi.fn();
+      render(VideoEditorCloseHost, { asset, onClose });
+      await waitFor(() => expect(screen.getByRole('button', { name: 'frameleaf_editor_save_version' })).toBeEnabled());
+      await fireEvent.click(screen.getByRole('tab', { name: 'frameleaf_video_editor_tool_speed' }));
+      await fireEvent.click(screen.getByRole('radio', { name: '2×' }));
+      await waitFor(() => expect(readEditorContinuity<VideoDraft>(asset.id)?.draft.edit.speed).toBe(2));
+      if (action === 'empty-original-save') {
+        await fireEvent.click(screen.getByRole('radio', { name: '1×' }));
+        await waitFor(() => expect(readEditorContinuity<VideoDraft>(asset.id)?.draft.undo.length).toBeGreaterThan(0));
+      }
+      writes.mockClear();
+      removals.mockClear();
+      await fireEvent.click(
+        screen.getByRole('button', { name: action === 'cancel' ? 'cancel' : 'frameleaf_editor_save_version' }),
+      );
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+      const key = `frameleaf.editor.continuity.${asset.id}`;
+      expect(removals.mock.calls.filter(([removed]) => removed === key)).toHaveLength(1);
+      expect(writes.mock.calls.filter(([written]) => written === key)).toEqual([]);
+      expect(readEditorContinuity(asset.id)).toBeNull();
+      expect(onClose).toHaveBeenCalledWith(action === 'save');
+      expect(editAsset).toHaveBeenCalledTimes(action === 'save' ? 1 : 0);
+      expect(removeAssetEdits).not.toHaveBeenCalled();
+    },
+  );
+
+  it('preserves the intentional Studio draft through batched parent teardown', async () => {
+    const asset = video();
+    vi.mocked(getAssetEdits).mockResolvedValue({ assetId: asset.id, edits: [], originalVideo } as never);
+    render(VideoEditorCloseHost, { asset, onClose: vi.fn() });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'frameleaf_editor_save_version' })).toBeEnabled());
+    await fireEvent.click(screen.getByRole('tab', { name: 'frameleaf_video_editor_tool_speed' }));
+    await fireEvent.click(screen.getByRole('radio', { name: '0.5×' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_editor_open_in_studio' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(readEditorContinuity<VideoDraft>(asset.id)?.draft.edit.speed).toBe(0.5);
+    expect(editAsset).not.toHaveBeenCalled();
+    expect(goto).toHaveBeenCalledWith(`/studio?assets=${asset.id}&from=${asset.id}&at=0%2F1`);
   });
 
   it('discards an unsaved edit on Cancel and says so', async () => {
