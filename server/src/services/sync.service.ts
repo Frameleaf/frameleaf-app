@@ -6,25 +6,17 @@ import { z } from 'zod';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { SyncAck } from 'src/types.js';
 import { OnJob } from 'src/decorators.js';
-import {
-  SyncAckDeleteDto,
-  SyncAckSetDto,
-  SyncAssetV2,
-  SyncItem,
-  SyncStreamDto,
-  syncAlbumV2ToV1,
-} from 'src/dtos/sync.dto.js';
+import { SyncAckDeleteDto, SyncAckSetDto, SyncItem, SyncStreamDto, syncAlbumV2ToV1 } from 'src/dtos/sync.dto.js';
 import { JobName, QueueName, SyncEntityType, SyncRequestType, UserMetadataKey } from 'src/enum.js';
 import { SyncQueryOptions } from 'src/repositories/sync.repository.js';
 import { SessionSyncCheckpointTable } from 'src/schema/tables/sync-checkpoint.table.js';
 import { BaseService } from 'src/services/base.service.js';
 import { PinnedCollectionService } from 'src/services/pinned-collection.service.js';
-import { hexOrBufferToBase64 } from 'src/utils/bytes.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { getLocationHiddenPartnerIds, hideLocation } from 'src/utils/partner-location.js';
 import { withoutStoredLockedRuleIds } from 'src/utils/preferences.js';
 import { ClientDisconnectedError, waitForDrain } from 'src/utils/response.js';
-import { SerializeOptions, fromAck, serialize, toAck } from 'src/utils/sync.js';
+import { SerializeOptions, fromAck, mapPartnerAsset, mapSyncAssetV2, serialize, toAck } from 'src/utils/sync.js';
 
 const parseAssetBootstrapAck = (ack: string, type = SyncEntityType.AssetBootstrapV1) => {
   const parts = ack.split('|');
@@ -65,38 +57,13 @@ const validateAlbumProgressAck = (type: SyncEntityType, ack: string) => {
 };
 
 type CheckpointMap = Partial<Record<SyncEntityType, SyncAck>>;
-type AssetLike = Omit<SyncAssetV2, 'checksum' | 'thumbhash'> & {
-  checksum: Buffer<ArrayBufferLike>;
-  thumbhash: Buffer<ArrayBufferLike> | null;
-};
-
 const COMPLETE_ID = 'complete';
 const MAX_DAYS = 30;
 const MAX_DURATION = Duration.fromObject({ days: MAX_DAYS });
 
-const mapSyncAssetV2 = ({ checksum, thumbhash, ...data }: AssetLike): SyncAssetV2 => ({
-  ...data,
-  checksum: hexOrBufferToBase64(checksum),
-  thumbhash: thumbhash ? hexOrBufferToBase64(thumbhash) : null,
-});
-
-/**
- * A partner's Locked asset (FL-34) is still streamed, with visibility `locked`, so a device that
- * already holds it hides it; nothing that describes the picture goes with it.
- */
-const withoutLockedDetails = <T extends AssetLike>(asset: T): T => ({
-  ...asset,
-  originalFileName: '',
-  thumbhash: null,
-  livePhotoVideoId: null,
-});
-
 /** Exif for a partner's Locked asset (FL-34): only the asset id, every other field blanked. */
 const withoutLockedExif = <T extends { assetId: string }>(exif: T): T =>
   Object.fromEntries(Object.keys(exif).map((key) => [key, key === 'assetId' ? exif.assetId : null])) as T;
-
-const mapPartnerAsset = ({ isLocked, ...asset }: AssetLike & { isLocked: boolean }) =>
-  mapSyncAssetV2(isLocked ? withoutLockedDetails(asset) : asset);
 
 const isEntityBackfillComplete = (createId: string, checkpoint: SyncAck | undefined): boolean =>
   createId === checkpoint?.updateId && checkpoint.extraId === COMPLETE_ID;
@@ -123,6 +90,8 @@ const sendEntityBackfillCompleteAck = async (response: Writable, ackType: SyncEn
 };
 
 export const SYNC_TYPES_ORDER = [
+  SyncRequestType.AlbumAssetAccessV1,
+  SyncRequestType.PartnerAssetAccessV1,
   SyncRequestType.PinnedCollectionEventsV1,
   SyncRequestType.AssetTrashStatesV1,
   SyncRequestType.DuplicateGroupsV1,
@@ -214,6 +183,10 @@ export class SyncService extends BaseService {
       // TODO pick the latest ack for each type, instead of using the last one
       if (
         [
+          SyncEntityType.AlbumAssetAccessV1,
+          SyncEntityType.AlbumAssetAccessDeleteV1,
+          SyncEntityType.PartnerAssetAccessV1,
+          SyncEntityType.PartnerAssetAccessDeleteV1,
           SyncEntityType.PinnedCollectionV1,
           SyncEntityType.PinnedCollectionDeleteV1,
           SyncEntityType.AssetTrashStateV1,
@@ -308,6 +281,8 @@ export class SyncService extends BaseService {
     const options: SyncQueryOptions = { nowId, userId: auth.user.id, ...getHiddenContentQueryOptions(auth) };
 
     const handlers: Record<SyncRequestType, () => Promise<void>> = {
+      [SyncRequestType.AlbumAssetAccessV1]: () => this.syncTags(auth, response, 'albumAsset'),
+      [SyncRequestType.PartnerAssetAccessV1]: () => this.syncTags(auth, response, 'partnerAsset'),
       [SyncRequestType.PinnedCollectionEventsV1]: () => this.syncTags(auth, response, 'pin'),
       [SyncRequestType.AssetTrashStatesV1]: () => this.syncTags(auth, response, 'trash'),
       [SyncRequestType.DuplicateGroupsV1]: () => this.syncTags(auth, response, 'duplicate'),
@@ -1141,7 +1116,9 @@ export class SyncService extends BaseService {
       | 'pin'
       | 'trash'
       | 'spaceAlbum'
-      | 'spacePerson',
+      | 'spacePerson'
+      | 'albumAsset'
+      | 'partnerAsset',
   ) {
     const readPins = kind === 'pin' ? () => this.pins.get(auth) : undefined;
     const pending = await (readPins

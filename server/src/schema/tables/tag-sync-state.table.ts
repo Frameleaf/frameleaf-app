@@ -20,7 +20,9 @@ export class TagSyncStateTable {
     | 'pin'
     | 'trash'
     | 'spaceAlbum'
-    | 'spacePerson';
+    | 'spacePerson'
+    | 'albumAsset'
+    | 'partnerAsset';
   @PrimaryColumn({ type: 'character varying' })
   key!: string;
   @Column({ type: 'uuid' })
