@@ -174,6 +174,81 @@ describe(EdgeProxyService.name, () => {
       expect(range.headers['content-range']).toBe('bytes 2-4/10');
     });
 
+    it.each(['wan', 'relay'] as const)('forwards informational upload responses on %s arrivals', async (via) => {
+      front.removeAllListeners('connection');
+      front.on('connection', (socket) => sut.accept(socket, { ...arrival, via }));
+      upstream.removeAllListeners('request');
+      upstream.on('request', (_request, response) => {
+        // Node24.18 added this public API; the pinned Node type package predates it.
+        (
+          response as http.ServerResponse & {
+            writeInformation(statusCode: number, headers: http.OutgoingHttpHeaders): void;
+          }
+        ).writeInformation(104, {
+          location: '/api/uploads/owned-resource',
+          'upload-draft-interop-version': '9',
+          'upload-offset': '0',
+          connection: 'keep-alive',
+        });
+        response.writeEarlyHints({ link: '</assets/app.css>; rel=preload; as=style' });
+        response.end('completed');
+      });
+      const information: Array<{ status: number; headers: IncomingHttpHeaders }> = [];
+      const final = await new Promise<{ status: number; body: string }>((resolve, reject) => {
+        const outgoing = http.request({ host: '127.0.0.1', port: frontPort, agent: false, path: '/api/uploads' });
+        outgoing.on('information', (answer) => {
+          information.push({ status: answer.statusCode, headers: answer.headers });
+        });
+        outgoing.on('response', (answer) => {
+          const chunks: Buffer[] = [];
+          answer.on('data', (chunk: Buffer) => {
+            chunks.push(chunk);
+          });
+          answer.on('end', () => resolve({ status: answer.statusCode!, body: Buffer.concat(chunks).toString() }));
+          answer.on('error', reject);
+        });
+        outgoing.on('error', reject);
+        outgoing.end();
+      });
+      expect(final).toEqual({ status: 200, body: 'completed' });
+      expect(information.map(({ status }) => status)).toEqual([104, 103]);
+      expect(information[0].headers).toMatchObject({
+        location: '/api/uploads/owned-resource',
+        'upload-draft-interop-version': '9',
+        'upload-offset': '0',
+        'strict-transport-security': 'max-age=31536000',
+      });
+      expect(information[0].headers.connection).toBeUndefined();
+    });
+
+    it('sends only one 100 Continue before the final upload response', async () => {
+      const information: number[] = [];
+      const result = await new Promise<number>((resolve, reject) => {
+        const outgoing = http.request({
+          host: '127.0.0.1',
+          port: frontPort,
+          agent: false,
+          method: 'POST',
+          path: '/api/assets',
+          headers: { expect: '100-continue' },
+        });
+        outgoing.on('information', (answer) => {
+          information.push(answer.statusCode);
+        });
+        outgoing.once('continue', () => outgoing.end('ordinary upload'));
+        outgoing.on('response', (answer) => {
+          answer.resume();
+          answer.on('end', () => resolve(answer.statusCode!));
+          answer.on('error', reject);
+        });
+        outgoing.on('error', reject);
+        outgoing.flushHeaders();
+      });
+      expect(result).toBe(200);
+      expect(information).toEqual([100]);
+      expect(seen[0].body).toBe('ordinary upload');
+    });
+
     it('forwards a websocket upgrade and splices it', async () => {
       const echoed = await new Promise<string>((resolve, reject) => {
         const outgoing = http.request({
