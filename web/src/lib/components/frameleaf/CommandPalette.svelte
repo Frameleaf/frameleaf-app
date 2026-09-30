@@ -65,7 +65,8 @@
   const listId = $props.id();
   const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');
   const isApple = typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(navigator.userAgent || '');
-  const reducedMotion = prefersReducedMotion();
+  // FL-139: follows the system setting while the palette is open, not only when it first renders
+  const reducedMotion = $derived(prefersReducedMotion());
 
   const searching = $derived(query.trim().length > 0);
 

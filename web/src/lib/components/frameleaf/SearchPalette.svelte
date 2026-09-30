@@ -178,7 +178,8 @@
   const smartEnabled = $derived(featureFlagsManager.value.smartSearch);
   const modes = $derived(PALETTE_MODES.filter((entry) => entry.value !== 'smart' || smartEnabled));
   const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');
-  const reducedMotion = prefersReducedMotion();
+  // FL-139: follows the system setting while the palette is open, not only when it first renders
+  const reducedMotion = $derived(prefersReducedMotion());
   const listId = $props.id();
 
   /* ---------------------------------------------------------------------- */
