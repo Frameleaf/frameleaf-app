@@ -66,6 +66,7 @@ describe(IntegrityService.name, () => {
     const sha1 = createHash('sha1').update(contents).digest();
 
     const streamAsset = (checksum: Buffer, checksumAlgorithm: ChecksumAlgorithm) => {
+      mocks.integrityReport.recordVerification.mockResolvedValue(true);
       mocks.integrityReport.getAssetCount.mockResolvedValue({ count: 1 } as never);
       mocks.systemMetadata.get.mockResolvedValue(null);
       mocks.integrityReport.streamAssetChecksums.mockReturnValue(
@@ -121,6 +122,55 @@ describe(IntegrityService.name, () => {
       await sut.handleChecksumFiles({});
 
       expect(mocks.forkSchema.recordAssetChecksums).not.toHaveBeenCalled();
+      expect(mocks.integrityReport.recordVerification).toHaveBeenCalledWith(
+        expect.objectContaining({ result: 'mismatched', actualSha256: sha256.toString('hex') }),
+      );
+    });
+
+    it.each([
+      ['missing', 'ENOENT'],
+      ['unreadable', 'EACCES'],
+    ])('records an actual %s outcome without inventing a digest', async (result, code) => {
+      streamAsset(sha256, ChecksumAlgorithm.sha256File);
+      mocks.storage.createPlainReadStream.mockImplementation(() => {
+        throw Object.assign(new Error(code), { code });
+      });
+      await sut.handleChecksumFiles({});
+      expect(mocks.integrityReport.recordVerification).toHaveBeenCalledWith(
+        expect.objectContaining({ result, actualSha256: null }),
+      );
+      expect(mocks.forkSchema.recordAssetChecksums).not.toHaveBeenCalled();
+    });
+
+    it('records repeated successful checks independently of the immutable baseline', async () => {
+      streamAsset(sha256, ChecksumAlgorithm.sha256File);
+      await sut.handleChecksumFiles({});
+      streamAsset(sha256, ChecksumAlgorithm.sha256File);
+      await sut.handleChecksumFiles({});
+      expect(mocks.integrityReport.recordVerification).toHaveBeenCalledTimes(2);
+      expect(mocks.integrityReport.recordVerification).toHaveBeenLastCalledWith({
+        assetId: 'asset-1',
+        originalPath: '/data/library/asset-1.jpg',
+        expectedChecksum: sha256,
+        checksumAlgorithm: ChecksumAlgorithm.sha256File,
+        actualSha256: sha256.toString('hex'),
+        result: 'passed',
+      });
+    });
+
+    it('does not publish a stale check into baseline or failure reports', async () => {
+      streamAsset(sha256, ChecksumAlgorithm.sha256File);
+      mocks.integrityReport.recordVerification.mockResolvedValue(false);
+      await sut.handleChecksumFiles({});
+      expect(mocks.forkSchema.recordAssetChecksums).not.toHaveBeenCalled();
+      expect(mocks.integrityReport.create).not.toHaveBeenCalled();
+    });
+
+    it('propagates proof persistence failures without misreporting a file failure', async () => {
+      streamAsset(sha256, ChecksumAlgorithm.sha256File);
+      mocks.integrityReport.recordVerification.mockRejectedValue(new Error('database unavailable'));
+      await expect(sut.handleChecksumFiles({})).rejects.toThrow('database unavailable');
+      expect(mocks.integrityReport.create).not.toHaveBeenCalled();
     });
   });
 

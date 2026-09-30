@@ -8,8 +8,9 @@ import type {
   CloudBackupPerson,
 } from 'src/utils/cloud-backup.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
-import { AssetFileType, AssetStatus, MediaOperationStatus } from 'src/enum.js';
+import { AssetFileType, AssetStatus, MediaOperationKind, MediaOperationStatus } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
+import { CloudBackupVerificationMethod, CloudBackupVerificationResult } from 'src/schema/tables/safety-proof.table.js';
 import { effectiveVisibilityOf, isLocked } from 'src/utils/locked.js';
 
 export type CloudBackupIndexedObject = { sha256: string; size: number; etag: string | null };
@@ -222,10 +223,120 @@ export class CloudBackupIndexRepository {
     id: string,
     values: { status: 'complete' | 'cancelled' | 'failed'; assetCount?: number; fileCount?: number; bytes?: number },
   ): Promise<void> {
+    await this.db.transaction().execute(async (tx) => {
+      const manifest = await tx
+        .selectFrom('cloud_backup_manifest')
+        .select('status')
+        .where('id', '=', id)
+        .forUpdate()
+        .executeTakeFirst();
+      // Completing twice cannot replace durable membership with later checkpoint rows.
+      if (!manifest || manifest.status !== 'running') {
+        return;
+      }
+      if (values.status === 'complete') {
+        await tx
+          .insertInto('cloud_backup_manifest_original')
+          .columns(['manifestId', 'assetId', 'sha256'])
+          .expression(
+            tx
+              .selectFrom('cloud_backup_manifest_entry')
+              .select(['manifestId', sql<string>`"assetId"`.as('assetId'), 'sha256'])
+              .where('manifestId', '=', id)
+              .where('role', '=', 'original')
+              .where('assetId', 'is not', null),
+          )
+          .onConflict((oc) => oc.columns(['manifestId', 'assetId']).doNothing())
+          .execute();
+      }
+      await tx
+        .updateTable('cloud_backup_manifest')
+        .set({ ...values, finishedAt: sql<Date>`now()` })
+        .where('id', '=', id)
+        .execute();
+    });
+  }
+
+  /** Persist the actual check under its current worker claim, never as a completed-run assertion. */
+  @GenerateSql({
+    params: [
+      {
+        bucket: DummyValue.STRING,
+        sha256: DummyValue.STRING,
+        operationId: DummyValue.UUID,
+        claimToken: DummyValue.UUID_1,
+        method: 'sha256-get',
+        result: 'passed',
+      },
+    ],
+  })
+  async recordObjectVerification(input: {
+    bucket: string;
+    sha256: string;
+    operationId: string;
+    claimToken: string;
+    method: CloudBackupVerificationMethod;
+    result: CloudBackupVerificationResult;
+  }): Promise<void> {
+    const { claimToken, ...proof } = input;
     await this.db
-      .updateTable('cloud_backup_manifest')
-      .set({ ...values, finishedAt: sql<Date>`now()` })
-      .where('id', '=', id)
+      .insertInto('cloud_backup_object_verification')
+      .columns(['bucket', 'sha256', 'operationId', 'method', 'result'])
+      .expression(
+        this.db
+          .selectFrom('media_operation')
+          .select([
+            sql<string>`${proof.bucket}`.as('bucket'),
+            sql<string>`${proof.sha256}`.as('sha256'),
+            'id as operationId',
+            sql<CloudBackupVerificationMethod>`${proof.method}`.as('method'),
+            sql<CloudBackupVerificationResult>`${proof.result}`.as('result'),
+          ])
+          .where('id', '=', proof.operationId)
+          .where('claimToken', '=', claimToken)
+          .where('kind', '=', MediaOperationKind.CloudBackup)
+          .where('status', 'not in', FINISHED_OPERATIONS)
+          .where(sql<string>`snapshot ->> 'bucketRef'`, '=', proof.bucket)
+          .where(sql<string>`snapshot ->> 'task'`, '=', 'verify')
+          .where(
+            sql<string>`COALESCE(snapshot ->> 'depth', 'sample')`,
+            '=',
+            proof.method === 'size-head' ? 'full' : 'sample',
+          )
+          .forShare(),
+      )
+      .onConflict((oc) =>
+        oc
+          .columns(['bucket', 'sha256', 'operationId'])
+          .doUpdateSet({ method: proof.method, result: proof.result, checkedAt: sql<Date>`clock_timestamp()` }),
+      )
+      .execute();
+  }
+
+  /** Internal facts only: completion qualifies the run, not current asset access or backup eligibility. */
+  @GenerateSql({ params: [DummyValue.STRING, [DummyValue.STRING]] })
+  getCompletedObjectVerifications(bucket: string, hashes: string[]) {
+    return this.db
+      .selectFrom('cloud_backup_object_verification as proof')
+      .innerJoin('media_operation as operation', 'operation.id', 'proof.operationId')
+      .selectAll('proof')
+      .where('proof.bucket', '=', bucket)
+      .where('proof.sha256', 'in', hashes)
+      .where('operation.kind', '=', MediaOperationKind.CloudBackup)
+      .where('operation.status', '=', MediaOperationStatus.Completed)
+      .where(sql<string>`operation.snapshot ->> 'bucketRef'`, '=', bucket)
+      .where(sql<string>`operation.snapshot ->> 'task'`, '=', 'verify')
+      .where(sql<string>`operation.result ->> 'task'`, '=', 'verify')
+      .where(sql<string>`operation.result ->> 'done'`, '=', 'true')
+      .where(
+        sql<string>`operation.result ->> 'depth'`,
+        '=',
+        sql<string>`COALESCE(operation.snapshot ->> 'depth', 'sample')`,
+      )
+      .where(
+        sql<boolean>`proof.method = CASE WHEN operation.snapshot ->> 'depth' = 'full' THEN 'size-head' ELSE 'sha256-get' END`,
+      )
+      .orderBy('proof.checkedAt', 'desc')
       .execute();
   }
 

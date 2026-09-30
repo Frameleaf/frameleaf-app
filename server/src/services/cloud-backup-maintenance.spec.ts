@@ -95,6 +95,7 @@ describe(CloudBackupMaintenance.name, () => {
       }),
     };
     index = {
+      recordObjectVerification: vi.fn().mockResolvedValue(undefined),
       forget: vi.fn().mockResolvedValue(undefined),
       markManifests: vi.fn().mockResolvedValue(0),
     };
@@ -187,10 +188,21 @@ describe(CloudBackupMaintenance.name, () => {
       const start = emptyVerifyResult('sample', new Date('2026-09-26T04:00:00.000Z'));
       const expected = hashes.filter((sha256) => inVerifySlice(sha256, start.slice));
 
-      const result = await sut.verify(bucket, start, carryOn);
+      const result = await sut.verify(bucket, start, carryOn, { operationId: 'verify-1', claimToken: 'claim-1' });
 
       expect(store.hashObject).toHaveBeenCalledTimes(expected.length);
       expect(store.head).not.toHaveBeenCalled();
+      expect(index.recordObjectVerification).toHaveBeenCalledTimes(expected.length);
+      for (const sha256 of expected) {
+        expect(index.recordObjectVerification).toHaveBeenCalledWith({
+          bucket: bucket.bucketRef,
+          sha256,
+          operationId: 'verify-1',
+          claimToken: 'claim-1',
+          method: 'sha256-get',
+          result: 'passed',
+        });
+      }
       expect(result).toMatchObject({
         done: true,
         total: expected.length,
@@ -209,10 +221,17 @@ describe(CloudBackupMaintenance.name, () => {
         }
       }
 
-      const result = await sut.verify(bucket, emptyVerifyResult('full', new Date()), carryOn);
+      const result = await sut.verify(bucket, emptyVerifyResult('full', new Date()), carryOn, {
+        operationId: 'verify-1',
+        claimToken: 'claim-1',
+      });
 
       // the shared object, one per night, and one dump per night
       expect(store.head).toHaveBeenCalledTimes(3 + 2);
+      expect(index.recordObjectVerification).toHaveBeenCalledTimes(3);
+      expect(index.recordObjectVerification).toHaveBeenCalledWith(
+        expect.objectContaining({ method: 'size-head', result: 'passed' }),
+      );
       expect(result).toMatchObject({ done: true, checked: 5, missing: 0, mismatched: 0, degradedManifests: 0 });
     });
 
@@ -226,9 +245,18 @@ describe(CloudBackupMaintenance.name, () => {
       objects.delete(`o/${hex('shared')}`);
       objects.set(`o/${hex('night-0')}`, Buffer.alloc(3));
 
-      const result = await sut.verify(bucket, emptyVerifyResult('full', new Date()), carryOn);
+      const result = await sut.verify(bucket, emptyVerifyResult('full', new Date()), carryOn, {
+        operationId: 'verify-1',
+        claimToken: 'claim-1',
+      });
 
       expect(result).toMatchObject({ missing: 1, mismatched: 1, degradedManifests: 2 });
+      expect(index.recordObjectVerification).toHaveBeenCalledWith(
+        expect.objectContaining({ sha256: hex('shared'), result: 'missing' }),
+      );
+      expect(index.recordObjectVerification).toHaveBeenCalledWith(
+        expect.objectContaining({ sha256: hex('night-0'), result: 'mismatched' }),
+      );
       expect(index.forget).toHaveBeenCalledWith(bucket.bucketRef, expect.arrayContaining([hex('shared')]));
       expect(index.markManifests).toHaveBeenCalledWith(
         bucket.bucketRef,
@@ -241,7 +269,7 @@ describe(CloudBackupMaintenance.name, () => {
       objects = nightlyBucket(2);
       const start = { ...emptyVerifyResult('full', new Date()), cursor: 'f'.repeat(64) };
 
-      const result = await sut.verify(bucket, start, carryOn);
+      const result = await sut.verify(bucket, start, carryOn, { operationId: 'verify-1', claimToken: 'claim-1' });
 
       // every object hash sorts before the cursor, so only the dumps are left
       expect(store.head).toHaveBeenCalledTimes(2);

@@ -115,6 +115,11 @@ import {
   RenderWorkerSessionTable,
   RenderWorkerTable,
 } from 'src/schema/tables/render-worker.table.js';
+import {
+  AssetIntegrityVerificationTable,
+  CloudBackupManifestOriginalTable,
+  CloudBackupObjectVerificationTable,
+} from 'src/schema/tables/safety-proof.table.js';
 import { SessionTable } from 'src/schema/tables/session.table.js';
 import { SharedLinkAssetTable } from 'src/schema/tables/shared-link-asset.table.js';
 import { SharedLinkTable } from 'src/schema/tables/shared-link.table.js';
@@ -220,6 +225,9 @@ export class ImmichDatabase {
     CloudBackupObjectTable,
     CloudBackupManifestTable,
     CloudBackupManifestEntryTable,
+    CloudBackupManifestOriginalTable,
+    CloudBackupObjectVerificationTable,
+    AssetIntegrityVerificationTable,
     ClusterGroupTable,
     ClusterGroupRequestTable,
     DuplicateDecisionTable,
@@ -402,6 +410,9 @@ export interface DB {
   geodata_places: GeodataPlacesTable;
 
   integrity_report: IntegrityReportTable;
+  asset_integrity_verification: AssetIntegrityVerificationTable;
+  cloud_backup_manifest_original: CloudBackupManifestOriginalTable;
+  cloud_backup_object_verification: CloudBackupObjectVerificationTable;
 
   library: LibraryTable;
 

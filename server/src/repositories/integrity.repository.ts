@@ -6,6 +6,7 @@ import { AssetFileType, IntegrityReport } from 'src/enum.js';
 import { getForkSchemaPhase, readsForkSidecar } from 'src/repositories/fork-derived-results.js';
 import { DB } from 'src/schema/index.js';
 import { IntegrityReportTable } from 'src/schema/tables/integrity-report.table.js';
+import { IntegrityVerificationResult } from 'src/schema/tables/safety-proof.table.js';
 
 export type ReportPaginationOptions = {
   cursor?: string;
@@ -15,6 +16,51 @@ export type ReportPaginationOptions = {
 @Injectable()
 export class IntegrityRepository {
   constructor(@InjectKysely() private db: Kysely<DB>) {}
+
+  /** Guard the attempted identity while publishing; a replaced original cannot inherit this outcome. */
+  @GenerateSql({
+    params: [
+      {
+        assetId: DummyValue.UUID,
+        originalPath: DummyValue.STRING,
+        expectedChecksum: DummyValue.BUFFER,
+        checksumAlgorithm: 'sha256-file',
+        actualSha256: DummyValue.STRING,
+        result: 'passed',
+      },
+    ],
+  })
+  async recordVerification(input: {
+    assetId: string;
+    originalPath: string;
+    expectedChecksum: Buffer;
+    checksumAlgorithm: string | null;
+    actualSha256: string | null;
+    result: IntegrityVerificationResult;
+  }): Promise<boolean> {
+    return this.db.transaction().execute(async (tx) => {
+      const current = await tx
+        .selectFrom('asset')
+        .select(['originalPath', 'checksum', 'checksumAlgorithm'])
+        .where('id', '=', input.assetId)
+        .forShare()
+        .executeTakeFirst();
+      if (
+        !current ||
+        current.originalPath !== input.originalPath ||
+        !current.checksum.equals(input.expectedChecksum) ||
+        current.checksumAlgorithm !== input.checksumAlgorithm
+      ) {
+        return false;
+      }
+      await tx
+        .insertInto('asset_integrity_verification')
+        .values(input)
+        .onConflict((oc) => oc.column('assetId').doUpdateSet({ ...input, checkedAt: sql<Date>`clock_timestamp()` }))
+        .execute();
+      return true;
+    });
+  }
 
   create(dto: Insertable<IntegrityReportTable> | Insertable<IntegrityReportTable>[]) {
     return this.db
