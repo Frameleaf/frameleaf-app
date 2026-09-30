@@ -528,6 +528,7 @@ export class StudioReverseConformService {
     sourceKey: string,
     backgroundRunner = false,
   ) {
+    await this.studio.requireOwnedProject(auth, projectId, 'Only an active project owner may reverse its sources');
     const authorized = await this.studio.authorizeRevision(auth, {
       projectId,
       revision,

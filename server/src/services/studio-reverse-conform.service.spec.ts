@@ -1,3 +1,4 @@
+import { ForbiddenException } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { MediaOperationDestination, MediaOperationKind, MediaOperationStatus } from 'src/enum.js';
@@ -69,6 +70,7 @@ const setup = () => {
     registerGeneratedResource: vi.fn().mockResolvedValue(undefined),
   };
   const studio = {
+    requireOwnedProject: vi.fn().mockResolvedValue({}),
     authorizeRevision: vi.fn().mockResolvedValue({
       project: { ownerId: owner.user.id },
       revision: { id: 'revision-id', digest: 'revision-digest' },
@@ -134,6 +136,25 @@ const setup = () => {
 describe(StudioReverseConformService.name, () => {
   beforeAll(() => StorageCore.setMediaLocation('/data'));
   afterEach(() => vi.useRealTimers());
+
+  it('refuses a reviewer before authorizing or resolving reverse sources', async () => {
+    const { sut, studio, resources, operations } = setup();
+    const reviewer = { ...owner, user: { ...owner.user, id: '0195e2a0-0000-7000-8000-000000000099' } };
+    studio.requireOwnedProject.mockRejectedValue(
+      new ForbiddenException('Only an active project owner may reverse its sources'),
+    );
+    await expect(
+      sut.enqueueSource(reviewer, { projectId, revision: 1, sourceKey, destination: StudioDestination.Local }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(studio.authorizeRevision).not.toHaveBeenCalled();
+    expect(studio.requireOwnedProject).toHaveBeenCalledWith(
+      reviewer,
+      projectId,
+      'Only an active project owner may reverse its sources',
+    );
+    expect(resources.resolveProjectResources).not.toHaveBeenCalled();
+    expect(operations.create).not.toHaveBeenCalled();
+  });
 
   it('stops a claim that completes after shutdown without rendering or publishing it', async () => {
     const { sut, operation, operations, renderer, projects, storage } = setup();
