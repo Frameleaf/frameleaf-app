@@ -298,6 +298,123 @@ export async function applyFamilyCoverage(
   return summary;
 }
 
+/**
+ * Maps each manifest row to the command-axis case names (`access`, `lease`, `revision`,
+ * `idempotence`, `undo`) `studio/adapters/web/test/command-matrix.test.ts`'s own report actually
+ * measured as `passed` for it - never `failed` or `not-applicable` (a command that doesn't mutate
+ * the graph reports `lease`/`revision` as `not-applicable`, which is not the same as proving
+ * them). A row absent from the result had no command in the report claim it at all (e.g. a
+ * `readme.*` row, or one implemented by a host service rather than an engine command handler -
+ * see the test's own `HOST_SERVICE_COMMANDS` exclusion) - that must read as "nothing measured",
+ * not as an empty pass, so `applyCommandMatrixCoverage` treats a missing row exactly like an empty
+ * `Set`, never skips it.
+ */
+export function commandMatrixCoverage(report) {
+  const coverage = new Map();
+  for (const command of report.commands ?? []) {
+    const passed = new Set(
+      command.cases
+        .filter((entry) => entry.result === "passed")
+        .map((entry) => entry.case),
+    );
+    for (const manifestId of command.manifestIds ?? []) {
+      const existing = coverage.get(manifestId);
+      if (existing) {
+        for (const name of passed) existing.add(name);
+      } else {
+        coverage.set(manifestId, new Set(passed));
+      }
+    }
+  }
+  return coverage;
+}
+
+/**
+ * The command axis's own coverage rule, separate from `applyFamilyCoverage`: coverage isn't one
+ * case-set shared by every row in a family, it's per-row, read straight from the report's own
+ * `manifestIds`/`cases` (see `commandMatrixCoverage`) - the same honesty rule as everywhere else
+ * in this file (never trust a claim the report itself doesn't establish), applied here because a
+ * single static Set can't represent "this row's evidence differs from that row's evidence" the
+ * way `FAMILY_CASE_COVERAGE` can for a uniformly-measured family like blend or effect.
+ */
+export async function applyCommandMatrixCoverage(
+  overlay,
+  catalog,
+  manifest,
+  build,
+  report,
+  { meta, artifactDir } = {},
+) {
+  const axis = "command";
+  const coverageByRow = commandMatrixCoverage(report);
+  const catalogById = new Map(catalog.rows.map((row) => [row.id, row]));
+  const featureById = new Map(
+    manifest.features.map((feature) => [feature.id, feature]),
+  );
+  const summary = {
+    axis,
+    rows: 0,
+    untested: 0,
+    blocked: 0,
+    alreadyPassed: 0,
+    fullyCovered: 0,
+    pendingArtifact: 0,
+    passed: 0,
+  };
+  for (const row of overlay.rows) {
+    summary.rows++;
+    const fixture = catalogById.get(row.id);
+    if (!fixture) {
+      throw new Error(`${row.id}: no matching row in ${CATALOG_PATH}`);
+    }
+    const coveredCases = coverageByRow.get(row.id);
+    if (!coveredCases) summary.untested++;
+    const missing = missingCases(fixture, axis, coveredCases ?? new Set());
+    const current = row.axes[axis];
+    if (current.status === "passed") {
+      summary.alreadyPassed++;
+      continue;
+    }
+    if (missing.length === 0) {
+      summary.fullyCovered++;
+      if (!meta) {
+        const entry = pendingArtifactEntry(axis);
+        if (
+          current.status !== entry.status ||
+          current.reason !== entry.reason
+        ) {
+          row.axes[axis] = entry;
+          summary.pendingArtifact++;
+        }
+        continue;
+      }
+      const feature = featureById.get(row.id);
+      if (!feature)
+        throw new Error(`${row.id}: no matching feature in ${MANIFEST_PATH}`);
+      row.axes[axis] = await buildPassedEntry({
+        row,
+        feature,
+        fixture,
+        axis,
+        engineRevision: overlay.engineRevision,
+        build,
+        manifest,
+        meta,
+        artifactPath: path.posix.join(artifactDir, `${row.id}.${axis}.json`),
+      });
+      summary.passed++;
+      continue;
+    }
+    const entry = blockedAxisEntry(axis, missing);
+    if (current.status === entry.status && current.reason === entry.reason) {
+      continue;
+    }
+    row.axes[axis] = entry;
+    summary.blocked++;
+  }
+  return summary;
+}
+
 function parseArguments(argv) {
   const options = { write: false, axis: DEFAULT_AXIS };
   for (let index = 0; index < argv.length; index++) {
@@ -314,6 +431,10 @@ function parseArguments(argv) {
       options.report = argv[++index];
       continue;
     }
+    if (arg === "--command-matrix-report") {
+      options.commandMatrixReport = argv[++index];
+      continue;
+    }
     if (arg === "--axis") {
       options.axis = argv[++index];
       continue;
@@ -324,9 +445,17 @@ function parseArguments(argv) {
     }
     throw new Error(`Unknown argument: ${arg}`);
   }
+  if (options.commandMatrixReport) {
+    if (options.family)
+      throw new Error(
+        "--command-matrix-report cannot be combined with --family",
+      );
+    return options;
+  }
   if (!options.family)
     throw new Error(
-      "Usage: --family <blend|effect|transition> [--axis <axis>] [--report <path>] [--meta <path>] [--write]",
+      "Usage: --family <blend|effect|transition> [--axis <axis>] [--report <path>] [--meta <path>] [--write]\n" +
+        "   or: --command-matrix-report <path> [--meta <path>] [--write]",
     );
   if (!FAMILY_CASE_COVERAGE[options.axis]?.[options.family]) {
     throw new Error(
@@ -345,25 +474,43 @@ async function main() {
     readFile(path.join(ROOT, MANIFEST_PATH), "utf8").then(JSON.parse),
     readFile(path.join(ROOT, BUILD_PATH), "utf8").then(JSON.parse),
   ]);
-  // The report itself isn't consumed beyond confirming it exists and parses when no --meta is
-  // given: without --meta a fully-covered row is only counted, never written (see
-  // applyFamilyCoverage), so there is nothing yet to build a `passed` artifact from.
-  if (options.report) {
-    JSON.parse(await readFile(options.report, "utf8"));
-  }
   const meta = options.meta
     ? JSON.parse(await readFile(options.meta, "utf8"))
     : undefined;
-  const summary = await applyFamilyCoverage(
-    overlay,
-    catalog,
-    manifest,
-    build,
-    options.family,
-    options.axis,
-    FAMILY_CASE_COVERAGE[options.axis][options.family],
-    { meta, artifactDir: "studio/rights-evidence/conformance" },
-  );
+  let summary;
+  if (options.commandMatrixReport) {
+    const report = JSON.parse(
+      await readFile(options.commandMatrixReport, "utf8"),
+    );
+    summary = await applyCommandMatrixCoverage(
+      overlay,
+      catalog,
+      manifest,
+      build,
+      report,
+      {
+        meta,
+        artifactDir: "studio/rights-evidence/conformance",
+      },
+    );
+  } else {
+    // The report itself isn't consumed beyond confirming it exists and parses when no --meta is
+    // given: without --meta a fully-covered row is only counted, never written (see
+    // applyFamilyCoverage), so there is nothing yet to build a `passed` artifact from.
+    if (options.report) {
+      JSON.parse(await readFile(options.report, "utf8"));
+    }
+    summary = await applyFamilyCoverage(
+      overlay,
+      catalog,
+      manifest,
+      build,
+      options.family,
+      options.axis,
+      FAMILY_CASE_COVERAGE[options.axis][options.family],
+      { meta, artifactDir: "studio/rights-evidence/conformance" },
+    );
+  }
   console.log(JSON.stringify(summary));
   if (options.write) {
     await writeFile(overlayFile, `${JSON.stringify(overlay, null, 2)}\n`);
