@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { locale } from '$lib/stores/preferences.store';
   /**
    * Edit in another app (FL-64): the round trip of an original through a RAW developer or any
    * other application, inside the Versions panel.
@@ -125,7 +126,7 @@
           {item.isCurrentOriginal ? $t('frameleaf_editor_roundtrip_matches') : $t('frameleaf_editor_roundtrip_changed')}
         </span>
         <small>
-          {new Date(item.createdAt).toLocaleString()} · {$t('frameleaf_editor_checksum', {
+          {new Date(item.createdAt).toLocaleString($locale)} · {$t('frameleaf_editor_checksum', {
             values: { checksum: shortChecksum(item.sourceChecksum) },
           })}
         </small>
@@ -143,7 +144,7 @@
         <span>{$t('frameleaf_editor_roundtrip_developed_from')}</span>
         <select value={exportId ?? ''} onchange={(event) => (exportId = event.currentTarget.value || null)}>
           {#each usable as item (item.id)}
-            <option value={item.id}>{new Date(item.createdAt).toLocaleString()}</option>
+            <option value={item.id}>{new Date(item.createdAt).toLocaleString($locale)}</option>
           {/each}
         </select>
       </label>

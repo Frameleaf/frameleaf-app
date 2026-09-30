@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { locale } from '$lib/stores/preferences.store';
   import { rovingFocus } from '$lib/frameleaf/roving-focus';
   /**
    * Settings › Frameleaf Cloud › Cloud backup › Restore (FL-164): the prototype's `BackupRestore`
@@ -91,7 +92,7 @@
   const busyBucket = $derived(!!restoring || !!status.activeRun);
   const needsKey = $derived(status.keyMode === CloudBackupKeyMode.OwnMemory && !status.keyLoaded);
   const day = (value: string | null | undefined) =>
-    value ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(value)) : '—';
+    value ? new Intl.DateTimeFormat($locale, { dateStyle: 'medium' }).format(new Date(value)) : '—';
 
   onMount(() => {
     void (async () => {

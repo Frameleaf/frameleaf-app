@@ -225,12 +225,14 @@
     <span class="dot"></span><strong>{$t('frameleaf_cc_library_available')}</strong
     >{#if attentionCount !== undefined}<span
         >{$t('frameleaf_cc_attention_count', { values: { count: attentionCount } })}</span
-      >{/if}<span class="time">{$t('frameleaf_cc_snapshot')} · {new Date(report.generatedAt).toLocaleString()}</span>
+      >{/if}<span class="time"
+      >{$t('frameleaf_cc_snapshot')} · {new Date(report.generatedAt).toLocaleString($locale)}</span
+    >
   </div>
   <div class="metrics">
     <a href={analyticsHref}
       ><span>{report.scopeLabel || $t('frameleaf_analytics_scope_all')}</span><strong
-        >{report.summary.items.toLocaleString()}</strong
+        >{report.summary.items.toLocaleString($locale)}</strong
       ><small>{$t('frameleaf_cc_items')}<Icon icon={mdiChevronRight} size="16" /></small></a
     >
     <a href={href('storage')}

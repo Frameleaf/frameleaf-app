@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { locale } from '$lib/stores/preferences.store';
   /**
    * The video Versions menu (FL-39), ported from the Versions popover in
    * `design/frameleaf/template/src/Editor.jsx`.
@@ -229,7 +230,7 @@
     return `${getBaseUrl()}/assets/${encodeURIComponent(asset.id)}/edit-versions/${encodeURIComponent(versionId)}/download?${search.toString()}`;
   }
 
-  const date = (version: VideoEditVersionResponseDto) => new Date(version.createdAt).toLocaleString();
+  const date = (version: VideoEditVersionResponseDto) => new Date(version.createdAt).toLocaleString($locale);
 
   const note = (version: VideoEditVersionResponseDto) => {
     if (version.isCurrent) {

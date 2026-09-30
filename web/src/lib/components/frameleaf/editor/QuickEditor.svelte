@@ -1,4 +1,5 @@
 <script lang="ts" module>
+  import { locale } from '$lib/stores/preferences.store';
   import type { EditorSettings } from '$lib/frameleaf/editor-draft';
 
   /** Copy settings / Paste settings works across photos for the life of the page. */
@@ -1480,7 +1481,7 @@
                       {revision.isCurrent ? $t('frameleaf_editor_current') : statusLabel(revision)}
                     </span>
                     <small>
-                      {new Date(revision.createdAt).toLocaleString()}{revision.rendererVersion
+                      {new Date(revision.createdAt).toLocaleString($locale)}{revision.rendererVersion
                         ? ` · ${revision.rendererVersion}`
                         : ''}{revision.width && revision.height ? ` · ${revision.width} × ${revision.height}` : ''}
                     </small>

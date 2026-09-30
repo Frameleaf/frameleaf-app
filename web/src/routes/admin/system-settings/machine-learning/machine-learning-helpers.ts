@@ -1,4 +1,6 @@
 import { MachineLearningHardwareAcceleration, type AdminConfigMachineLearningDto } from '@immich/sdk';
+import { get } from 'svelte/store';
+import { locale } from '$lib/stores/preferences.store';
 
 /**
  * Hardware acceleration value map keeping the SDK enum hidden behind a
@@ -122,7 +124,8 @@ export const formatDuration = (seconds: number): string => {
 };
 
 /** Local-format ISO timestamps, with a dash for null/undefined. */
-export const formatTimestamp = (iso: string | null | undefined): string => (iso ? new Date(iso).toLocaleString() : '—');
+export const formatTimestamp = (iso: string | null | undefined): string =>
+  iso ? new Date(iso).toLocaleString(get(locale)) : '—';
 
 /**
  * Caps the matching frames of enhanced video duplicate detection at the frame count. Applied once

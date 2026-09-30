@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { locale } from '$lib/stores/preferences.store';
   import { handleError } from '$lib/utils/handle-error';
   import {
     deferImageDescriptionRequeue,
@@ -93,19 +94,19 @@
             <dt class="text-immich-fg/70 dark:text-immich-dark-fg/70">
               {$t('admin.machine_learning_image_description_requeue_modal_total_assets')}
             </dt>
-            <dd class="font-medium">{estimate.totalAssets.toLocaleString()}</dd>
+            <dd class="font-medium">{estimate.totalAssets.toLocaleString($locale)}</dd>
           </div>
           <div class="flex justify-between">
             <dt class="text-immich-fg/70 dark:text-immich-dark-fg/70">
               {$t('admin.machine_learning_image_description_requeue_modal_with_description')}
             </dt>
-            <dd class="font-medium">{estimate.withDescription.toLocaleString()}</dd>
+            <dd class="font-medium">{estimate.withDescription.toLocaleString($locale)}</dd>
           </div>
           <div class="flex justify-between">
             <dt class="text-immich-fg/70 dark:text-immich-dark-fg/70">
               {$t('admin.machine_learning_image_description_requeue_modal_without_description')}
             </dt>
-            <dd class="font-medium">{estimate.withoutDescription.toLocaleString()}</dd>
+            <dd class="font-medium">{estimate.withoutDescription.toLocaleString($locale)}</dd>
           </div>
           <hr class="border-primary/20" />
           <div class="flex justify-between">
