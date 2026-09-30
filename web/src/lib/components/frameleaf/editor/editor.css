@@ -591,6 +591,9 @@
 }
 
 /* Side: rail + panel ------------------------------------------------ */
+.ed-side {
+  display: contents;
+}
 .ed-rail {
   grid-column: 2;
   grid-row: 2;
