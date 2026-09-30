@@ -1795,9 +1795,10 @@ const handlers: Record<string, Handler> = {
       const candidate = payload.kenBurns as { from?: unknown; to?: unknown } | undefined
       if (!candidate || typeof candidate !== 'object') invalid('kenBurns must be { from, to } or null')
       move = { from: kenBurnsRect(candidate!.from, 'from'), to: kenBurnsRect(candidate!.to, 'to') }
-      const animatedElsewhere = keyframesOnItem(item).some(
-        (entry) => KEN_BURNS_PROPERTIES.includes(entry.property) && entry.keyframes.some((keyframe) => !ownedIds.has(keyframe.id)),
-      )
+      const animatedElsewhere =
+        keyframesOnItem(item).some(
+          (entry) => KEN_BURNS_PROPERTIES.includes(entry.property) && entry.keyframes.some((keyframe) => !ownedIds.has(keyframe.id)),
+        ) || ['position', 'scale'].some((property) => vectorKeyframesOn(item, property).length > 0)
       if (animatedElsewhere) invalid('the clip already animates its position or size; Ken Burns would replace that animation')
     }
     for (const entry of keyframesOnItem(item)) {
