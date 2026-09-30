@@ -2,6 +2,7 @@ import { Kysely } from 'kysely';
 import { IntegrityReport, SystemMetadataKey } from 'src/enum.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { DB } from 'src/schema/index.js';
+import { stableServerId } from 'src/utils/frameleaf-server-identity.js';
 import { getKyselyDB } from 'test/utils.js';
 
 let defaultDatabase: Kysely<DB>;
@@ -13,6 +14,17 @@ beforeAll(async () => {
 const run = (runId: string) => ({ runId, startedAt: '2026-09-24T10:00:00.000Z', batches: null, done: 0 });
 
 describe(SystemMetadataRepository.name, () => {
+  it('preserves one server identity across concurrent first calls and still overwrites by default', async () => {
+    const sut = new SystemMetadataRepository(defaultDatabase);
+    await sut.delete(SystemMetadataKey.FrameleafServerId);
+    const ids = await Promise.all(Array.from({ length: 8 }, () => stableServerId({ systemMetadataRepository: sut })));
+    expect(new Set(ids).size).toBe(1);
+    expect((await sut.get(SystemMetadataKey.FrameleafServerId))!.id).toBe(ids[0]);
+    const replacement = { id: 'replacement', createdAt: new Date().toISOString() };
+    await sut.set(SystemMetadataKey.FrameleafServerId, replacement);
+    expect(await sut.get(SystemMetadataKey.FrameleafServerId)).toEqual(replacement);
+  });
+
   describe('integrity check runs (FL-81)', () => {
     it('counts concurrent batches without losing one, and completes a run once', async () => {
       const sut = new SystemMetadataRepository(defaultDatabase);
