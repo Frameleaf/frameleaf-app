@@ -787,7 +787,11 @@ export const selectMlDestination = async (
     throw new MlDestinationRefusedError(preflight.refusal, request.workload, destination.id, preflight.detail);
   }
 
-  const probe = await machineLearningRepository.probe(endpoint as MlEndpoint, { maxAgeMs: ML_PROBE_FRESHNESS_MS });
+  // Cloud consent can change during an admitted upload; a cached required version cannot authorize
+  // another file, part, retry or start. Local destination health keeps its existing freshness bound.
+  const probe = await machineLearningRepository.probe(endpoint as MlEndpoint, {
+    maxAgeMs: destination.kind === MlDestinationKind.FrameleafCloud ? 0 : ML_PROBE_FRESHNESS_MS,
+  });
   await mlDestinationRepository.recordProbe(destination.id, {
     health: healthFromProbe(probe),
     summary: summarizeProbe(probe),

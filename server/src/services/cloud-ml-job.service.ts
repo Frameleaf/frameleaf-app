@@ -1522,9 +1522,13 @@ export class CloudMlJobService {
     const outcome = await client.upload(job.jobId, run.snapshot.inputs, uploads, {
       given,
       now: run.now,
-      record: (state) => {
+      record: async (state) => {
         run.result = { ...run.result, uploads: structuredClone(state) };
-        return this.save(run);
+        if (!(await this.save(run))) {
+          return false;
+        }
+        await this.readmit(run, client);
+        return true;
       },
     });
     if (outcome === 'stopped') {
@@ -1536,6 +1540,7 @@ export class CloudMlJobService {
     if (outcome === 'uploaded') {
       try {
         // metering can only begin once every input is uploaded and the job is started
+        await this.readmit(run, client);
         const view = await client.start(job.jobId);
         run.result = { ...run.result, job: cloudMlJobRecordOf(view, job, null) };
       } catch (error) {

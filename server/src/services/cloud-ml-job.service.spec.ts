@@ -1120,6 +1120,145 @@ describe(CloudMlJobService.name, () => {
       },
     );
 
+    it.each(['withdrawn', 'version bumped'])(
+      'sends no input when consent is %s after job admission (FL-201)',
+      async (reason) => {
+        mocks.frameleafCloudMl.createJob.mockImplementation(() => {
+          if (reason === 'withdrawn') {
+            mocks.mlDestination.getById.mockResolvedValue({
+              ...cloud,
+              consentAcknowledgedAt: null,
+              consentVersion: null,
+            });
+          } else {
+            mocks.machineLearning.probe.mockResolvedValue({
+              ...mlProbeStub.frameleafCloud,
+              workloads,
+              cloud: { ...facts, consentRequiredVersion: '2026-10-01.1' },
+            });
+          }
+          return Promise.resolve(admitted);
+        });
+        await sut.step(claimed(), 'claim', now);
+        expect(mocks.frameleafCloudMl.createJob).toHaveBeenCalledTimes(1);
+        expect(mocks.frameleafCloudMl.uploadInput).not.toHaveBeenCalled();
+        expect(mocks.frameleafCloudMl.startJob).not.toHaveBeenCalled();
+        expect(mocks.frameleafCloudMl.cancelJob).toHaveBeenCalledWith(expect.anything(), JOB_ID);
+      },
+    );
+
+    it.each(['withdrawn', 'version bumped'])(
+      'stops later active requests when consent is %s (FL-201)',
+      async (reason) => {
+        const requests: number[] = [];
+        mocks.frameleafCloudMl.uploadInput.mockImplementation(async (_gateway, uploadTarget, _file, options) => {
+          for (const part of uploadTarget.multipart?.parts ?? []) {
+            requests.push(part.partNumber);
+            if (reason === 'withdrawn') {
+              mocks.mlDestination.getById.mockResolvedValue({
+                ...cloud,
+                consentAcknowledgedAt: null,
+                consentVersion: null,
+              });
+            } else {
+              mocks.machineLearning.probe.mockResolvedValue({
+                ...mlProbeStub.frameleafCloud,
+                workloads,
+                cloud: { ...facts, consentRequiredVersion: '2026-10-01.1' },
+              });
+            }
+            await options?.onPart?.({ partNumber: part.partNumber, etag: `"e${part.partNumber}"` });
+          }
+        });
+        await sut.step(
+          claimed({
+            phase: CloudMlJobPhase.Uploading,
+            submission: { ...confirmed().submission!, idempotencyKey: OPERATION_ID, attemptedAt: now.toISOString() },
+            job: { ...runningRecord(), status: 'awaiting_upload' },
+          }),
+          'claim',
+          now,
+        );
+        expect(requests).toEqual([1]);
+        expect(mocks.frameleafCloudMl.startJob).not.toHaveBeenCalled();
+        expect(mocks.frameleafCloudMl.cancelJob).toHaveBeenCalledWith(expect.anything(), JOB_ID);
+      },
+    );
+
+    it.each(['withdrawn', 'version bumped'])(
+      'does not retry an active upload when consent is %s (FL-201)',
+      async (reason) => {
+        mocks.frameleafCloudMl.uploadInput.mockImplementation(() => {
+          if (reason === 'withdrawn') {
+            mocks.mlDestination.getById.mockResolvedValue({
+              ...cloud,
+              consentAcknowledgedAt: null,
+              consentVersion: null,
+            });
+          } else {
+            mocks.machineLearning.probe.mockResolvedValue({
+              ...mlProbeStub.frameleafCloud,
+              workloads,
+              cloud: { ...facts, consentRequiredVersion: '2026-10-01.1' },
+            });
+          }
+          return Promise.reject(new CloudTransferError('storage-unreachable', 'connection reset'));
+        });
+        await sut.step(
+          claimed({
+            phase: CloudMlJobPhase.Uploading,
+            submission: { ...confirmed().submission!, idempotencyKey: OPERATION_ID, attemptedAt: now.toISOString() },
+            job: { ...runningRecord(), status: 'awaiting_upload' },
+          }),
+          'claim',
+          now,
+        );
+        expect(mocks.frameleafCloudMl.uploadInput).toHaveBeenCalledTimes(1);
+        expect(mocks.frameleafCloudMl.startJob).not.toHaveBeenCalled();
+        expect(mocks.frameleafCloudMl.cancelJob).toHaveBeenCalledWith(expect.anything(), JOB_ID);
+      },
+    );
+
+    it.each(['withdrawn', 'version bumped'])(
+      'rechecks consent %s after saving the completed upload and before start (FL-201)',
+      async (reason) => {
+        mocks.mediaOperation.setBulkResult.mockImplementation((_id, _claim, update) => {
+          if ((update.result as CloudMlJobResult).uploads.v1?.done) {
+            if (reason === 'withdrawn') {
+              mocks.mlDestination.getById.mockResolvedValue({
+                ...cloud,
+                consentAcknowledgedAt: null,
+                consentVersion: null,
+              });
+            } else {
+              mocks.machineLearning.probe.mockResolvedValue({
+                ...mlProbeStub.frameleafCloud,
+                workloads,
+                cloud: { ...facts, consentRequiredVersion: '2026-10-01.1' },
+              });
+            }
+          }
+          return Promise.resolve({
+            status: MediaOperationStatus.Preparing,
+            cancelRequestedAt: null,
+            pauseRequestedAt: null,
+          });
+        });
+        await sut.step(
+          claimed({
+            phase: CloudMlJobPhase.Uploading,
+            submission: { ...confirmed().submission!, idempotencyKey: OPERATION_ID, attemptedAt: now.toISOString() },
+            job: { ...runningRecord(), status: 'awaiting_upload' },
+          }),
+          'claim',
+          now,
+        );
+        expect(mocks.frameleafCloudMl.uploadInput).toHaveBeenCalledTimes(1);
+        expect(mocks.frameleafCloudMl.startJob).not.toHaveBeenCalled();
+        expect(mocks.frameleafCloudMl.cancelJob).toHaveBeenCalledWith(expect.anything(), JOB_ID);
+      },
+    );
+
     it('waits to be admitted while the region takes no new jobs, then fails with the cloud’s own words (FC-62)', async () => {
       const paused = () =>
         new FrameleafCloudError(

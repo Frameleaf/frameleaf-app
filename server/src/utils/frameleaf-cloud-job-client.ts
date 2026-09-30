@@ -107,8 +107,9 @@ export class FrameleafCloudJobClient {
   /**
    * Upload every input that is not up yet. `given` are the targets an admission answered with (else
    * they are read). A target close to expiring, or one storage refuses as expired, is signed again.
-   * `record` is called with the whole state after every finished part and input, and answers false to
-   * stop between two parts. `closed` means the job no longer takes uploads (it was started already).
+   * `record` checks the caller’s admission and lease before each transfer attempt and records the
+   * whole state after every finished part and input. False stops before another request. `closed`
+   * means the job no longer takes uploads (it was started already).
    */
   async upload(
     jobId: string,
@@ -153,7 +154,14 @@ export class FrameleafCloudJobClient {
       };
       try {
         // the parts are read afresh on every attempt, so a retry never sends a finished part again
-        await this.send(jobId, input, target, () => current.parts, onPart);
+        await this.send(
+          jobId,
+          input,
+          target,
+          () => current.parts,
+          onPart,
+          () => options.record(state),
+        );
       } catch (error) {
         if (error instanceof CloudTransferError && error.failure === 'stopped') {
           return 'stopped';
@@ -177,21 +185,24 @@ export class FrameleafCloudJobClient {
     target: CloudUploadTarget,
     done: () => CloudUploadedPart[],
     onPart: (part: CloudUploadedPart) => Promise<boolean>,
+    record: () => Promise<boolean>,
   ) {
     const signal = this.signal;
+    const transfer = async (upload: CloudUploadTarget) => {
+      if (!(await record())) {
+        throw new CloudTransferError('stopped', 'The caller stopped this upload');
+      }
+      await this.repository.uploadInput(this.gateway, upload, input.path, { done: done(), onPart, signal });
+    };
     try {
-      await this.withRetries(() =>
-        this.repository.uploadInput(this.gateway, target, input.path, { done: done(), onPart, signal }),
-      );
+      await this.withRetries(() => transfer(target));
     } catch (error) {
       if (!(error instanceof CloudTransferError && error.failure === 'target-expired')) {
         throw error;
       }
       // signed again once, for the same multipart upload: the parts already sent stay sent
       const fresh = await this.repository.refreshUpload(this.gateway, jobId, input.inputId);
-      await this.withRetries(() =>
-        this.repository.uploadInput(this.gateway, fresh, input.path, { done: done(), onPart, signal }),
-      );
+      await this.withRetries(() => transfer(fresh));
     }
   }
 
