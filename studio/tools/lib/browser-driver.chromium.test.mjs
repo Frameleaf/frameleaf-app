@@ -7,8 +7,13 @@
 // (proxy-routed override + real-origin module load produces the same bytes as `page.route`), not
 // any particular script's real computation, which studio-color/studio-editing own.
 //
-// Needs a real Chromium binary; skips itself if Playwright can't launch one (this repo vendors
-// Playwright's browsers under e2e/, not at the root).
+// Needs a real Chromium binary; skips itself if Playwright can't launch one. Resolves the same
+// way the real matrix scripts do - rooted at the prepared engine's own install
+// (studio/engine/package.json) - so this actually runs wherever CI's own engine job does; a
+// checkout without a prepared engine (studio/engine isn't vendored until `engine.mjs prepare` +
+// `npm ci` run) skips it instead of failing, matching the module-level tests in
+// browser-driver.test.mjs and cross-browser-harness.test.mjs, which cover the logic without a
+// browser at all (studio-editing, FL-112 review, 2026-09-30).
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import http from 'node:http';
@@ -17,14 +22,13 @@ import test from 'node:test';
 import { createHarness } from './cross-browser-harness.mjs';
 import { createChromiumDriver } from './browser-driver.mjs';
 
-const require = createRequire(new URL('../../../e2e/package.json', import.meta.url));
+const require = createRequire(new URL('../../engine/package.json', import.meta.url));
 
 let chromium;
 try {
-  ({ chromium } = require('@playwright/test'));
+  ({ chromium } = require('playwright'));
 } catch {
-  // Playwright isn't installed from this location in every environment - the module-level tests
-  // in browser-driver.test.mjs and cross-browser-harness.test.mjs cover the logic without it.
+  // studio/engine isn't prepared in this checkout - see the module doc above.
 }
 
 async function startFakeStudioServer() {
