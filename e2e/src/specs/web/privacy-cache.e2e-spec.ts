@@ -11,6 +11,7 @@ import { asBearerAuth, baseUrl, utils } from 'src/utils.js';
 const fetchStatus = (page: Page, url: string) =>
   page.evaluate(async (target) => {
     const response = await fetch(target);
+    await response.arrayBuffer();
     return response.status;
   }, url);
 
