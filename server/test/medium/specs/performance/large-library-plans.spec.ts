@@ -1,7 +1,9 @@
 import { CompiledQuery, Kysely, sql } from 'kysely';
+import { SearchFacetField } from 'src/dtos/search.dto.js';
 import { AssetVisibility } from 'src/enum.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { SearchRepository } from 'src/repositories/search.repository.js';
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
 import { getKyselyConfig } from 'src/utils/database.js';
@@ -16,6 +18,8 @@ import { getActiveForkKyselyDB } from 'test/utils.js';
  * timing is not: opening one month must never read the whole library.
  */
 const LIBRARY_SIZE = 20_000;
+/** The queries one facets request makes. */
+const FACET_QUERIES = 1;
 
 let db: Kysely<DB>;
 let logged: Kysely<DB>;
@@ -57,9 +61,14 @@ const planOfLast = async (run: () => Promise<unknown>) => {
 describe('large-library query plans (FL-139)', () => {
   let ownerId: string;
   let repository: AssetRepository;
+  let search: SearchRepository;
 
   beforeAll(async () => {
-    const { ctx } = newMediumService(BaseService, { database: logged, real: [], mock: [LoggingRepository] });
+    const { ctx } = newMediumService(BaseService, {
+      database: logged,
+      real: [AssetRepository, SearchRepository],
+      mock: [LoggingRepository],
+    });
     const { user } = await ctx.newUser();
     ownerId = user.id;
     // someone else's library too, so a plan cannot win by reading everything
@@ -88,6 +97,7 @@ describe('large-library query plans (FL-139)', () => {
     }
     await sql`ANALYZE`.execute(logged);
     repository = ctx.get(AssetRepository);
+    search = ctx.get(SearchRepository);
   }, 900_000);
 
   it('opens one month without reading the whole library', async () => {
@@ -100,5 +110,43 @@ describe('large-library query plans (FL-139)', () => {
     );
     const scans = plan.filter((node) => node['Relation Name'] === 'asset').map((node) => node['Node Type']);
     expect(scans).not.toContain('Seq Scan');
+  });
+
+  const assetScans = (plan: PlanNode[]) =>
+    plan.filter((node) => node['Relation Name'] === 'asset').map((node) => node['Node Type']);
+
+  it('shows the first page of a library search without reading the whole library', async () => {
+    const plan = await planOfLast(() =>
+      search.searchMetadata({ page: 1, size: 100 }, { userIds: [ownerId], visibility: AssetVisibility.Timeline }),
+    );
+    expect(assetScans(plan)).not.toContain('Seq Scan');
+  });
+
+  // Postgres reads the whole table once a selection is a sizeable share of it, which is right; what
+  // must hold is that a selection a person makes in a large library (1%) is found through the index
+  it('loads a selection of 1% of the library by id without reading the whole library', async () => {
+    const { rows } = await sql<{
+      id: string;
+    }>`SELECT id FROM asset WHERE "ownerId" = ${ownerId} LIMIT ${LIBRARY_SIZE / 100}`.execute(logged);
+    const plan = await planOfLast(() => repository.getByIds(rows.map(({ id }) => id)));
+    expect(assetScans(plan)).not.toContain('Seq Scan');
+  });
+
+  it('counts every facet of the library in one query, whatever its size', async () => {
+    captured.length = 0;
+    await search.searchFacets(
+      { userIds: [ownerId], visibility: AssetVisibility.Timeline },
+      {
+        viewerId: ownerId,
+        facets: Object.values(SearchFacetField),
+        limit: 10,
+        locationHiddenOwnerIds: [],
+        suppressedPersonIds: [],
+        suppressedTagIds: [],
+        covers: true,
+      },
+    );
+    // not one query per facet value or per item: a fixed number however large the library
+    expect(captured.length).toBe(FACET_QUERIES);
   });
 });
