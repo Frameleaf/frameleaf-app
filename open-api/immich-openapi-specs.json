@@ -333,6 +333,71 @@
         "x-immich-state": "Stable"
       }
     },
+    "/admin/backup-devices": {
+      "get": {
+        "description": "Administrative metadata only. No reconciliation digests or foreign asset access. quietForDays is elapsed whole days since reported successful backup, null when never reported.",
+        "operationId": "listAllBackupDevices",
+        "parameters": [
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 200,
+              "default": 100,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "offset",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 0,
+              "maximum": 1000000,
+              "default": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackupDeviceListDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List backup device metadata across users",
+        "tags": [
+          "Users (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "adminUser.read"
+      }
+    },
     "/admin/cloud/backup": {
       "delete": {
         "description": "Stops backing up. The bucket, its backups and the key are kept.",
@@ -41215,6 +41280,368 @@
         "x-immich-state": "Deprecated"
       }
     },
+    "/users/me/backup-devices": {
+      "get": {
+        "operationId": "listBackupDevices",
+        "parameters": [
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 200,
+              "default": 100,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "offset",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 0,
+              "maximum": 1000000,
+              "default": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackupDeviceListDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List own backup devices",
+        "tags": [
+          "Users"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "user.read"
+      },
+      "post": {
+        "description": "Stable deviceKey scoped to the owner. Success time and pending count are device-reported, never checksum verification. Removing a device preserves assets and reconciliation history.",
+        "operationId": "registerBackupDevice",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BackupDeviceWriteDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackupDeviceDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Register or report an own backup device",
+        "tags": [
+          "Users"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "user.update"
+      }
+    },
+    "/users/me/backup-devices/{id}": {
+      "delete": {
+        "operationId": "removeBackupDevice",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Remove an own backup device without deleting assets",
+        "tags": [
+          "Users"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "user.update"
+      }
+    },
+    "/users/me/backup-devices/{id}/reconciliations": {
+      "get": {
+        "description": "Requires elevated unfiltered session; checkedAt identifies actual inventory snapshot. Includes incomplete runs explicitly; admin metadata access never grants foreign hash access.",
+        "operationId": "listBackupReconciliations",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 200,
+              "default": 100,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "offset",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 0,
+              "maximum": 1000000,
+              "default": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReconciliationHistoryDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List own device reconciliation history",
+        "tags": [
+          "Users"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "asset.read"
+      },
+      "post": {
+        "description": "Requires a current elevated session and no active hidden-content filter.256 indexed bucket digests of sorted unique raw SHA256 bytes, maximum2000 hashes per bucket. Differing buckets require complete hash lists. Snapshot database inventory excludes offline/last-checked-missing originals; not a fresh filesystem check.",
+        "operationId": "startBackupReconciliation",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReconciliationStartDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReconciliationResultDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Start own device inventory reconciliation",
+        "tags": [
+          "Users"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "asset.read"
+      }
+    },
+    "/users/me/backup-devices/{id}/reconciliations/{runId}/buckets": {
+      "post": {
+        "description": "Up to2000 distinct SHA256 hashes matching original count/digest and first-byte bucket. Server extras never count as device missing. Changed server inventory refuses continuation; start a new run. Repeated validated bucket requests do not double-count; a concurrent snapshot conflict returns409 and may be retried. No completed audit until every differing bucket is validated.",
+        "operationId": "reconcileBackupBucket",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "runId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReconciliationBucketDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReconciliationResultDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Reconcile one complete differing bucket",
+        "tags": [
+          "Users"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "asset.read"
+      }
+    },
     "/users/me/calendar-heatmap": {
       "get": {
         "description": "Retrieve activity counts for a specified period, in a calendar heatmap format.",
@@ -52398,6 +52825,145 @@
             "$ref": "#/components/schemas/UserAvatarColor"
           }
         },
+        "type": "object"
+      },
+      "BackupDeviceDto": {
+        "properties": {
+          "appVersion": {
+            "type": "string"
+          },
+          "deviceKey": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "lastSuccessfulBackupAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "ownerId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "pendingCount": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "platform": {
+            "type": "string"
+          },
+          "quietForDays": {
+            "description": "Elapsed whole days since reported success; null if never reported",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          },
+          "reportedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "appVersion",
+          "deviceKey",
+          "displayName",
+          "id",
+          "lastSuccessfulBackupAt",
+          "model",
+          "ownerId",
+          "pendingCount",
+          "platform",
+          "quietForDays",
+          "reportedAt"
+        ],
+        "type": "object"
+      },
+      "BackupDeviceListDto": {
+        "properties": {
+          "devices": {
+            "items": {
+              "$ref": "#/components/schemas/BackupDeviceDto"
+            },
+            "type": "array"
+          },
+          "nextOffset": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "devices",
+          "nextOffset"
+        ],
+        "type": "object"
+      },
+      "BackupDeviceWriteDto": {
+        "properties": {
+          "appVersion": {
+            "maxLength": 100,
+            "minLength": 1,
+            "type": "string"
+          },
+          "deviceKey": {
+            "description": "Stable random client device identity, scoped to this owner",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "displayName": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "lastSuccessfulBackupAt": {
+            "description": "Device-reported success; not server verification",
+            "format": "date-time",
+            "nullable": true,
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+            "type": "string"
+          },
+          "model": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "pendingCount": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "platform": {
+            "maxLength": 50,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "appVersion",
+          "deviceKey",
+          "displayName",
+          "lastSuccessfulBackupAt",
+          "model",
+          "pendingCount",
+          "platform"
+        ],
         "type": "object"
       },
       "BackupRestoreVerificationRecordDto": {
@@ -73767,6 +74333,236 @@
             "type": "array"
           }
         },
+        "type": "object"
+      },
+      "ReconciliationBucketDto": {
+        "properties": {
+          "bucket": {
+            "maximum": 255,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "hashes": {
+            "items": {
+              "pattern": "^[a-f\\d]{64}$",
+              "type": "string"
+            },
+            "maxItems": 2000,
+            "type": "array"
+          }
+        },
+        "required": [
+          "bucket",
+          "hashes"
+        ],
+        "type": "object"
+      },
+      "ReconciliationHistoryDto": {
+        "properties": {
+          "nextOffset": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          },
+          "runs": {
+            "items": {
+              "properties": {
+                "checkedAt": {
+                  "description": "Inventory snapshot time, not a promise after commit",
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "completedAt": {
+                  "format": "date-time",
+                  "nullable": true,
+                  "type": "string"
+                },
+                "deviceId": {
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                  "type": "string"
+                },
+                "differingBuckets": {
+                  "items": {
+                    "maximum": 9007199254740991,
+                    "minimum": -9007199254740991,
+                    "type": "integer"
+                  },
+                  "type": "array"
+                },
+                "evidence": {
+                  "description": "Current database inventory, excludes offline/last-checked-missing; not a fresh filesystem integrity check",
+                  "enum": [
+                    "registered-current-originals"
+                  ],
+                  "type": "string"
+                },
+                "id": {
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                  "type": "string"
+                },
+                "itemsChecked": {
+                  "maximum": 9007199254740991,
+                  "minimum": -9007199254740991,
+                  "type": "integer"
+                },
+                "itemsMissing": {
+                  "description": "Provided SHA256 hashes absent from current registered inventory; not a filesystem loss diagnosis",
+                  "maximum": 9007199254740991,
+                  "minimum": -9007199254740991,
+                  "type": "integer"
+                },
+                "pendingBuckets": {
+                  "items": {
+                    "maximum": 9007199254740991,
+                    "minimum": -9007199254740991,
+                    "type": "integer"
+                  },
+                  "type": "array"
+                },
+                "startedAt": {
+                  "format": "date-time",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "deviceId",
+                "startedAt",
+                "checkedAt",
+                "completedAt",
+                "differingBuckets",
+                "pendingBuckets",
+                "itemsChecked",
+                "itemsMissing",
+                "evidence"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "nextOffset",
+          "runs"
+        ],
+        "type": "object"
+      },
+      "ReconciliationResultDto": {
+        "properties": {
+          "checkedAt": {
+            "description": "Inventory snapshot time, not a promise after commit",
+            "format": "date-time",
+            "type": "string"
+          },
+          "completedAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "deviceId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "differingBuckets": {
+            "items": {
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "integer"
+            },
+            "type": "array"
+          },
+          "evidence": {
+            "description": "Current database inventory, excludes offline/last-checked-missing; not a fresh filesystem integrity check",
+            "enum": [
+              "registered-current-originals"
+            ],
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "itemsChecked": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "itemsMissing": {
+            "description": "Provided SHA256 hashes absent from current registered inventory; not a filesystem loss diagnosis",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "missingHashes": {
+            "items": {
+              "pattern": "^[a-f\\d]{64}$",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "pendingBuckets": {
+            "items": {
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "integer"
+            },
+            "type": "array"
+          },
+          "startedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "checkedAt",
+          "completedAt",
+          "deviceId",
+          "differingBuckets",
+          "evidence",
+          "id",
+          "itemsChecked",
+          "itemsMissing",
+          "missingHashes",
+          "pendingBuckets",
+          "startedAt"
+        ],
+        "type": "object"
+      },
+      "ReconciliationStartDto": {
+        "properties": {
+          "buckets": {
+            "description": "First byte buckets in index order. Digest SHA256 of sorted distinct raw32-byte hashes; empty digest SHA256(empty). Maximum2000 hashes per bucket; larger sets refused.",
+            "items": {
+              "properties": {
+                "count": {
+                  "maximum": 2000,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "digest": {
+                  "pattern": "^[a-f\\d]{64}$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "count",
+                "digest"
+              ],
+              "type": "object"
+            },
+            "maxItems": 256,
+            "minItems": 256,
+            "type": "array"
+          }
+        },
+        "required": [
+          "buckets"
+        ],
         "type": "object"
       },
       "ReleaseChannel": {
