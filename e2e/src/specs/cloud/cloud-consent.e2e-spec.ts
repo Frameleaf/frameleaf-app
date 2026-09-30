@@ -11,11 +11,16 @@ import { beforeAll, describe, expect, it } from 'vitest';
 const FIXTURE = 'http://127.0.0.1:3010';
 const CLOUD_URL = 'http://frameleaf-cloud-fixture:3010';
 const INSTANCE_ID = '0192f1a4-7c3e-7b21-9d4e-2a6f8c0b1e53';
-const WORKLOAD = 'restoration-faithful';
+// Version lifecycle is exercised on approved descriptions, never on unapproved restoration.
+const WORKLOAD = 'enrichment';
+const PENDING = ['restoration-faithful', 'restoration-creative', 'upscale', 'interpolation'];
 /** Admission reads the required version from /capabilities, cached for 10 seconds. */
 const PROBE_CACHE_MS = 11_000;
 
-type FixtureState = { requiredVersion: string; recorded: { version: string } | null };
+type FixtureState = {
+  requiredVersion: string;
+  recorded: { version: string } | null;
+};
 
 const fixtureState = async (): Promise<FixtureState> => {
   const response = await fetch(`${FIXTURE}/__fixture/state`);
@@ -57,7 +62,7 @@ describe('Frameleaf Cloud processing consent (FL-201)', () => {
     await utils.resetDatabase();
     admin = await utils.adminSetup();
 
-    // linked to the fake, with cloud processing on and restoration allowed on Frameleaf Cloud
+    // linked to the fake, with Cloud processing on and the explicit request allow-list configured
     const client = await utils.connectDatabase();
     const put = (key: string, value: unknown) =>
       client.query(
@@ -79,7 +84,10 @@ describe('Frameleaf Cloud processing consent (FL-201)', () => {
         cloudMl: {
           ...config.frameleafCloud!.cloudMl,
           enabled: true,
-          routing: { ...config.frameleafCloud!.cloudMl.routing, restoration: 'both' },
+          routing: {
+            ...config.frameleafCloud!.cloudMl.routing,
+            restoration: 'both',
+          },
         },
       },
     });
@@ -90,7 +98,7 @@ describe('Frameleaf Cloud processing consent (FL-201)', () => {
     const { body: destination } = await request(app)
       .post('/admin/cloud/ml/destination')
       .set(auth())
-      .send({ workloads: [WORKLOAD] })
+      .send({ workloads: [WORKLOAD, ...PENDING] })
       .expect(201);
     destinationId = destination.id;
   });
@@ -109,10 +117,27 @@ describe('Frameleaf Cloud processing consent (FL-201)', () => {
     expect(await recorded()).toMatchObject({ version: requiredVersion });
 
     const { body: status } = await request(app).get('/admin/cloud/ml').set(auth()).expect(200);
-    expect(status.consent).toMatchObject({ requiredVersion, acceptedVersion: requiredVersion, outdated: false });
+    expect(status.consent).toMatchObject({
+      requiredVersion,
+      acceptedVersion: requiredVersion,
+      outdated: false,
+    });
     const admitted = await admission();
-    expect(admitted.body).not.toMatchObject({ code: expect.stringMatching(/^consent-/) });
-    expect(admitted.status).toBe(200);
+    // This fixture's catalogue contains restoration only: approved description consent passes,
+    // but no description model is fabricated to make downstream model admission succeed.
+    expect(admitted.body).toMatchObject({ code: 'model-mismatch' });
+    expect(admitted.status).toBe(400);
+  });
+
+  it('keeps all four restoration workloads disclosure-pending after accepting generic terms', async () => {
+    for (const workload of PENDING) {
+      const refused = await request(app)
+        .post(`/ml-destinations/${destinationId}/admission`)
+        .set(auth())
+        .send({ workload });
+      expect(refused.status).toBe(400);
+      expect(refused.body).toMatchObject({ code: 'disclosure-pending' });
+    }
   });
 
   it('revokes consent on this server and with the cloud; every path is refused again', async () => {
@@ -137,15 +162,18 @@ describe('Frameleaf Cloud processing consent (FL-201)', () => {
     expect(refused.status).toBe(400);
     expect(refused.body).toMatchObject({ code: 'consent-version-outdated' });
     const { body: status } = await request(app).get('/admin/cloud/ml').set(auth()).expect(200);
-    expect(status.consent).toMatchObject({ requiredVersion: '2026-10-01.1', outdated: true });
+    expect(status.consent).toMatchObject({
+      requiredVersion: '2026-10-01.1',
+      outdated: true,
+    });
 
-    // accepting the new terms lets work through again
+    // A new generic version restores description consent, never restoration disclosure approval
     const acceptedNew = await accept();
     expect(acceptedNew.status).toBe(200);
     expect(await recorded()).toMatchObject({ version: '2026-10-01.1' });
     await new Promise((resolve) => setTimeout(resolve, PROBE_CACHE_MS));
     const admitted = await admission();
-    expect(admitted.body).not.toMatchObject({ code: expect.stringMatching(/^consent-/) });
-    expect(admitted.status).toBe(200);
+    expect(admitted.body).toMatchObject({ code: 'model-mismatch' });
+    expect(admitted.status).toBe(400);
   });
 });

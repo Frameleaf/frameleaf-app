@@ -430,4 +430,7 @@ export class PetRecognitionService {
 
 /** FL-110 refusals are pet recognition's destination reasons, value for value. */
 export const asUnavailableReason = (refusal: MlAdmissionRefusal): PetRecognitionUnavailableReason =>
-  refusal as unknown as PetRecognitionUnavailableReason;
+  // This refusal is exclusive to Cloud restoration, never an available Pets workload.
+  refusal === MlAdmissionRefusal.DisclosurePending
+    ? PetRecognitionUnavailableReason.WorkloadNotAllowed
+    : (refusal as unknown as PetRecognitionUnavailableReason);

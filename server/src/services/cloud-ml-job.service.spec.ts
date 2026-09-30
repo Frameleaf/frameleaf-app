@@ -28,6 +28,7 @@ import {
   cloudMlJobSpentUsd,
   emptyCloudMlJobResult,
 } from 'src/utils/cloud-ml-job.js';
+import * as cloudDisclosure from 'src/utils/frameleaf-cloud.js';
 import {
   CloudCatalogEntry,
   FrameleafCloudError,
@@ -209,7 +210,7 @@ const wallet = (balanceUsd: number) => ({
   settingsUrl: null,
 });
 
-describe(CloudMlJobService.name, () => {
+describe(`${CloudMlJobService.name} downstream mechanics (workload-policy mocked; not disclosure qualification)`, () => {
   let sut: CloudMlJobService;
   let mocks: ServiceMocks;
   let metadata: Map<string, unknown>;
@@ -288,6 +289,8 @@ describe(CloudMlJobService.name, () => {
   };
 
   beforeEach(() => {
+    vi.restoreAllMocks();
+    vi.spyOn(cloudDisclosure, 'hasPendingCloudDisclosure').mockReturnValue(false);
     mocks = getMocks();
     metadata = new Map();
     rows = new Map();
@@ -489,6 +492,21 @@ describe(CloudMlJobService.name, () => {
   });
 
   describe('estimate', () => {
+    it('refuses restoration with disclosure-pending before preparation or a Cloud estimate (FL-201)', async () => {
+      vi.restoreAllMocks();
+      expect(vi.isMockFunction(cloudDisclosure.hasPendingCloudDisclosure)).toBe(false);
+      const error = await sut.estimate(owner, preview(), now).catch((error_: unknown) => error_);
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect((error as BadRequestException).getResponse()).toMatchObject({ code: 'disclosure-pending' });
+      expect(mocks.media.transcode).not.toHaveBeenCalled();
+      expect(mocks.crypto.hashFileDigests).not.toHaveBeenCalled();
+      expect(mocks.frameleafCloudMl.createEstimate).not.toHaveBeenCalled();
+      expect(mocks.frameleafCloudMl.createJob).not.toHaveBeenCalled();
+      expect(mocks.frameleafCloudMl.uploadInput).not.toHaveBeenCalled();
+      expect(mocks.frameleafCloudMl.startJob).not.toHaveBeenCalled();
+      expect(metadata.has(SystemMetadataKey.FrameleafCloudMlJobEstimates)).toBe(false);
+    });
+
     it('prepares and sends nothing when the consent is older than the version the cloud requires (FL-201)', async () => {
       const stale = { ...cloud, consentVersion: '2026-09-01.1' };
       mocks.mlDestination.getAll.mockResolvedValue([stale]);
@@ -903,6 +921,86 @@ describe(CloudMlJobService.name, () => {
       expect((error as ConflictException).getResponse()).toMatchObject({ code: 'consent-version-outdated' });
       expect(mocks.mediaOperation.create).not.toHaveBeenCalled();
     });
+  });
+
+  describe('FL-201 real pending disclosure at historical job boundaries', () => {
+    // Arrange historical persisted jobs using the explicitly isolated downstream mechanics seam.
+    // The security action itself always runs the original policy and shared admission.
+    it('refuses confirmation of a kept estimate without creating an operation', async () => {
+      const estimate = await sut.estimate(owner, preview({ upscale: 2 }), now);
+      vi.restoreAllMocks();
+      expect(vi.isMockFunction(cloudDisclosure.hasPendingCloudDisclosure)).toBe(false);
+      const error = await sut
+        .create(
+          owner,
+          { estimateId: estimate.estimateId, consentVersion: estimate.consent.version, acknowledgeDataLeaves: true },
+          now,
+        )
+        .catch((error_: unknown) => error_);
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect((error as BadRequestException).getResponse()).toMatchObject({ code: 'disclosure-pending' });
+      expect(mocks.mediaOperation.createWithin).not.toHaveBeenCalled();
+      expect(mocks.frameleafCloudMl.createJob).not.toHaveBeenCalled();
+    });
+
+    it.each(['queued', 'partially uploaded', 'ready to start'])(
+      'stops a historical %s job before new input or start',
+      async (boundary) => {
+        await estimateAndConfirm();
+        vi.restoreAllMocks();
+        expect(vi.isMockFunction(cloudDisclosure.hasPendingCloudDisclosure)).toBe(false);
+        const operation =
+          boundary === 'queued'
+            ? claimed()
+            : claimed({
+                phase: CloudMlJobPhase.Uploading,
+                submission: {
+                  ...confirmed().submission!,
+                  idempotencyKey: OPERATION_ID,
+                  attemptedAt: now.toISOString(),
+                },
+                job: { ...runningRecord(), status: 'awaiting_upload' },
+                uploads: { v1: { done: boundary === 'ready to start', parts: [{ partNumber: 1, etag: '"e1"' }] } },
+              });
+        await sut.step(operation, 'claim', now);
+        expect(mocks.frameleafCloudMl.createJob).not.toHaveBeenCalled();
+        expect(mocks.frameleafCloudMl.uploadInput).not.toHaveBeenCalled();
+        expect(mocks.frameleafCloudMl.startJob).not.toHaveBeenCalled();
+        expect(mocks.mediaOperation.fail).toHaveBeenCalledWith(
+          OPERATION_ID,
+          'claim',
+          expect.objectContaining({ errorCode: 'cloud_ml_disclosure_pending' }),
+          { retry: false },
+        );
+        if (boundary !== 'queued') {
+          expect(mocks.frameleafCloudMl.cancelJob).toHaveBeenCalledWith(expect.anything(), JOB_ID);
+        }
+      },
+    );
+
+    it.each([CloudMlJobPhase.Started, CloudMlJobPhase.Ending])(
+      'drains an already admitted %s lease without new admission or input',
+      async (phase) => {
+        await estimateAndConfirm();
+        vi.restoreAllMocks();
+        expect(vi.isMockFunction(cloudDisclosure.hasPendingCloudDisclosure)).toBe(false);
+        if (phase === CloudMlJobPhase.Ending) {
+          mocks.frameleafCloudMl.getJobView.mockResolvedValue({
+            notModified: false,
+            data: completedWithOutputs(),
+            etag: '"e9"',
+            retryAfterSeconds: null,
+          });
+          rendering();
+        }
+        await sut.step(claimed({ phase, job: runningRecord() }), 'claim', now);
+        expect(mocks.frameleafCloudMl.getJobView).toHaveBeenCalled();
+        expect(mocks.frameleafCloudMl.cancelJob).not.toHaveBeenCalled();
+        expect(mocks.frameleafCloudMl.uploadInput).not.toHaveBeenCalled();
+        expect(mocks.frameleafCloudMl.startJob).not.toHaveBeenCalled();
+        expect(mocks.mediaOperation.fail).not.toHaveBeenCalled();
+      },
+    );
   });
 
   describe('step', () => {

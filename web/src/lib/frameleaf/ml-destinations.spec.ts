@@ -88,6 +88,12 @@ describe('ml-destinations presentation rules (FL-110)', () => {
     expect(ML_WORKLOAD_ORDER.at(-1)).toBe(MlWorkload.StudioRender);
   });
 
+  it('labels the explicit pending disclosure instead of inviting generic re-consent', () => {
+    expect(mlRefusalLabelKey(MlAdmissionRefusal.DisclosurePending)).toBe(
+      'admin.frameleaf_ml_refusal_disclosure_pending',
+    );
+  });
+
   it('has a label key for every workload and refusal', () => {
     for (const workload of Object.values(MlWorkload)) {
       expect(mlWorkloadLabelKey(workload)).toMatch(/^admin\.frameleaf_ml_workload_/);

@@ -18,6 +18,7 @@ import {
 import { AssetRestoration, AssetRestorationRepository } from 'src/repositories/asset-restoration.repository.js';
 import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { AssetRestorationService, parseDurationSeconds } from 'src/services/asset-restoration.service.js';
+import * as cloudDisclosure from 'src/utils/frameleaf-cloud.js';
 import { MlDestinationRefusedError } from 'src/utils/ml-destination.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
@@ -86,6 +87,7 @@ describe(AssetRestorationService.name, () => {
     }) as unknown as AssetRestoration;
 
   beforeEach(() => {
+    vi.restoreAllMocks();
     mocks = getMocks();
     restorations = {
       create: vi
@@ -182,7 +184,8 @@ describe(AssetRestorationService.name, () => {
   });
 
   describe('getOptions', () => {
-    it('offers Frameleaf Cloud for a mode once a model is chosen where the catalogue marks no default (FL-186)', async () => {
+    it('checks downstream Cloud model choice (workload-policy mocked; not disclosure qualification)', async () => {
+      vi.spyOn(cloudDisclosure, 'hasPendingCloudDisclosure').mockReturnValue(false);
       const video = AssetFactory.from({ ownerId: authStub.user1.user.id, type: AssetType.Video, duration: 30 })
         .exif({ exifImageWidth: 1920, exifImageHeight: 1080, orientation: '1', fileSizeInByte: 50_000_000 })
         .build();
@@ -202,10 +205,16 @@ describe(AssetRestorationService.name, () => {
       ]);
       const chosen = await sut.getOptions(authStub.user1, video.id, request);
       expect(chosen.destinations[0]).toMatchObject({ available: true, refusal: null });
+      vi.restoreAllMocks();
     });
 
     it('judges Frameleaf Cloud for a photo as upscaling, the only way it restores photos (FL-162)', async () => {
-      mocks.mlDestination.getAll.mockResolvedValue([mlDestinationStub.frameleafCloudConsented]);
+      mocks.mlDestination.getAll.mockResolvedValue([
+        {
+          ...mlDestinationStub.frameleafCloudConsented,
+          workloads: [...mlDestinationStub.frameleafCloudConsented.workloads, MlWorkload.Upscale],
+        },
+      ]);
       mocks.mlDestination.getSpend.mockResolvedValue(0);
       mocks.mlDestination.getCloudModelChoices.mockResolvedValue([
         { modelGroup: 'restoration-faithful', modelId: 'restore-faithful', updatedAt: new Date() },
@@ -216,9 +225,11 @@ describe(AssetRestorationService.name, () => {
         upscale: 2,
       });
 
-      // the stub's catalogue has no upscaling model, so a photo is refused there however restoration is set
-      expect(options.destinations[0]).toMatchObject({ available: false });
-      expect(options.destinations[0].refusal).not.toBeNull();
+      expect(vi.isMockFunction(cloudDisclosure.hasPendingCloudDisclosure)).toBe(false);
+      expect(options.destinations[0]).toMatchObject({
+        available: false,
+        refusal: MlAdmissionRefusal.DisclosurePending,
+      });
     });
 
     it('lists every destination with the admission verdict from the persisted probe and a per-destination estimate', async () => {

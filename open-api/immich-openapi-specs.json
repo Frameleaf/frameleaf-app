@@ -68283,6 +68283,7 @@
           "workload-not-allowed",
           "workload-not-served",
           "consent-missing",
+          "disclosure-pending",
           "budget-exceeded",
           "endpoint-unresolved",
           "destination-unhealthy",

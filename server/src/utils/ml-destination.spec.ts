@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MlDestinationRepository } from 'src/repositories/ml-destination.repository.js';
 import {
   MlAdmissionRefusal,
@@ -14,9 +14,11 @@ import {
   type MachineLearningRepository,
   type MlEndpointProbe,
 } from 'src/repositories/machine-learning.repository.js';
+import * as cloudDisclosure from 'src/utils/frameleaf-cloud.js';
 import {
   MlDestinationNotFoundError,
   MlDestinationRefusedError,
+  STOPS_CREATED_CLOUD_JOB,
   accelerationOf,
   evaluateAdmission,
   hardwareFromProbe,
@@ -36,6 +38,8 @@ import {
   workloadPolicyProblem,
 } from 'src/utils/ml-destination.js';
 import { mlDestinationStub, mlProbeStub } from 'test/fixtures/ml-destination.stub.js';
+
+beforeEach(() => vi.restoreAllMocks());
 
 const endpoint = { url: 'http://immich-machine-learning:3003' };
 
@@ -170,7 +174,8 @@ describe('evaluateAdmission', () => {
   });
 });
 
-describe('evaluateAdmission for Frameleaf Cloud (FL-159)', () => {
+describe('Frameleaf Cloud downstream model/budget mechanics (workload-policy mocked; not disclosure qualification)', () => {
+  beforeEach(() => vi.spyOn(cloudDisclosure, 'hasPendingCloudDisclosure').mockReturnValue(false));
   const facts = mlProbeStub.frameleafCloud.cloud!;
   const cloud = {
     destination: mlDestinationStub.frameleafCloudConsented,
@@ -478,6 +483,8 @@ describe('selectMlDestination', () => {
   });
 
   it('admits Frameleaf Cloud through its delegated check and records the cloud facts (FL-159)', async () => {
+    // Downstream model/accounting mechanics only, not current workload disclosure qualification.
+    vi.spyOn(cloudDisclosure, 'hasPendingCloudDisclosure').mockReturnValue(false);
     const d = deps({ destination: mlDestinationStub.frameleafCloudConsented, probe: mlProbeStub.frameleafCloud });
     const selection = await selectMlDestination(d, {
       workload: MlWorkload.RestorationFaithful,
@@ -494,6 +501,8 @@ describe('selectMlDestination', () => {
   });
 
   it("names the catalogue's marked default when no model is routed, never a model name (FL-146, FL-183)", async () => {
+    // Downstream model/accounting mechanics only, not current workload disclosure qualification.
+    vi.spyOn(cloudDisclosure, 'hasPendingCloudDisclosure').mockReturnValue(false);
     const d = deps({ destination: mlDestinationStub.frameleafCloudConsented, probe: mlProbeStub.frameleafCloud });
     const cloud = await selectMlDestination(d, {
       workload: MlWorkload.Enrichment,
@@ -526,6 +535,8 @@ describe('selectMlDestination', () => {
   });
 
   it('sends the chosen cloud model whatever the route points at, and reads it per model group (FL-186)', async () => {
+    // Downstream model/accounting mechanics only, not current workload disclosure qualification.
+    vi.spyOn(cloudDisclosure, 'hasPendingCloudDisclosure').mockReturnValue(false);
     // A "Both" workload routed to this server: a job the person sends to the cloud still names the
     // model chosen for its group. The route is never read for the model.
     const d = deps({
@@ -549,6 +560,7 @@ describe('selectMlDestination', () => {
   });
 
   it('uses the Studio AI transcription or speech choice by feature, and refuses a model of the other one (FL-186)', async () => {
+    expect(vi.isMockFunction(cloudDisclosure.hasPendingCloudDisclosure)).toBe(false);
     const workloads = [...mlDestinationStub.frameleafCloudConsented.workloads, MlWorkload.StudioAi];
     const destination = { ...mlDestinationStub.frameleafCloudConsented, workloads };
     const facts = mlProbeStub.frameleafCloud.cloud!;
@@ -844,7 +856,8 @@ describe('worker readiness (FL-72)', () => {
   });
 });
 
-describe('storedAdmission (FL-186)', () => {
+describe('storedAdmission downstream model mechanics (workload-policy mocked; not disclosure qualification)', () => {
+  beforeEach(() => vi.spyOn(cloudDisclosure, 'hasPendingCloudDisclosure').mockReturnValue(false));
   const facts = mlDestinationStub.frameleafCloudConsented.lastProbeCloud!;
   const cloudWith = (
     overrides: Partial<typeof facts>,
@@ -965,5 +978,93 @@ describe('storedAdmission (FL-186)', () => {
     await expect(
       readCloudModelChoices(repository, [mlDestinationStub.local, mlDestinationStub.frameleafCloudConsented]),
     ).resolves.toEqual({ tts: 'studio-voice' });
+  });
+});
+
+describe('FL-201 approved restoration disclosure', () => {
+  it.each([
+    MlWorkload.RestorationFaithful,
+    MlWorkload.RestorationCreative,
+    MlWorkload.Upscale,
+    MlWorkload.Interpolation,
+  ])('refuses %s before any probe despite current generic ML consent', async (workload) => {
+    expect(vi.isMockFunction(cloudDisclosure.hasPendingCloudDisclosure)).toBe(false);
+    const destination = {
+      ...mlDestinationStub.frameleafCloudConsented,
+      consentVersion: '2026-09-26.1',
+      workloads: [workload],
+    };
+    const group = workload;
+    const probe = {
+      ...mlProbeStub.frameleafCloud,
+      workloads: [workload],
+      cloud: {
+        ...mlProbeStub.frameleafCloud.cloud!,
+        consentRequiredVersion: '2026-09-26.1',
+        modelIds: ['fixture-model'],
+        modelGroups: { 'fixture-model': group },
+        defaultModels: { [group]: 'fixture-model' },
+      },
+    };
+    const d = deps({ destination, probe });
+    await expect(selectMlDestination(d, { workload, destinationId: destination.id })).rejects.toMatchObject({
+      refusal: 'disclosure-pending',
+    });
+    expect(d.machineLearningRepository.probe).not.toHaveBeenCalled();
+    expect(d.mlDestinationRepository.recordProbe).not.toHaveBeenCalled();
+  });
+});
+
+describe('FL-201 real disclosure policy and approved workloads', () => {
+  it('does not treat a future generic consent version as restoration disclosure approval', () => {
+    expect(vi.isMockFunction(cloudDisclosure.hasPendingCloudDisclosure)).toBe(false);
+    const destination = { ...mlDestinationStub.frameleafCloudConsented, consentVersion: '2099-01-01.1' };
+    const probe = {
+      ...mlProbeStub.frameleafCloud,
+      cloud: { ...mlProbeStub.frameleafCloud.cloud!, consentRequiredVersion: '2099-01-01.1' },
+    };
+    expect(
+      evaluateAdmission({
+        destination,
+        workload: MlWorkload.RestorationFaithful,
+        endpoint: FRAMELEAF_CLOUD_ENDPOINT,
+        probe,
+        spentUsd: 0,
+      }),
+    ).toMatchObject({ admitted: false, refusal: MlAdmissionRefusal.DisclosurePending });
+    expect(STOPS_CREATED_CLOUD_JOB.has(MlAdmissionRefusal.DisclosurePending)).toBe(true);
+    expect(STOPS_CREATED_CLOUD_JOB.has(MlAdmissionRefusal.WalletInsufficient)).toBe(false);
+  });
+
+  it.each([
+    MlWorkload.RestorationFaithful,
+    MlWorkload.RestorationCreative,
+    MlWorkload.Upscale,
+    MlWorkload.Interpolation,
+  ])('projects %s as unavailable without probing', (workload) => {
+    expect(vi.isMockFunction(cloudDisclosure.hasPendingCloudDisclosure)).toBe(false);
+    const destination = { ...mlDestinationStub.frameleafCloudConsented, workloads: [workload] };
+    expect(storedAdmission({ destination, workload, spentUsd: 0, choices: {} })).toMatchObject({
+      admitted: false,
+      refusal: MlAdmissionRefusal.DisclosurePending,
+    });
+  });
+
+  it('retains real missing, stale and current consent checks for approved description', () => {
+    expect(vi.isMockFunction(cloudDisclosure.hasPendingCloudDisclosure)).toBe(false);
+    const input = {
+      destination: mlDestinationStub.frameleafCloudConsented,
+      workload: MlWorkload.Enrichment,
+      endpoint: FRAMELEAF_CLOUD_ENDPOINT,
+      probe: mlProbeStub.frameleafCloud,
+      spentUsd: 0,
+    };
+    expect(evaluateAdmission(input)).toEqual({ admitted: true });
+    expect(
+      evaluateAdmission({ ...input, destination: { ...input.destination, consentAcknowledgedAt: null } }),
+    ).toMatchObject({ admitted: false, refusal: MlAdmissionRefusal.ConsentMissing });
+    expect(
+      evaluateAdmission({ ...input, destination: { ...input.destination, consentVersion: 'stale' } }),
+    ).toMatchObject({ admitted: false, refusal: MlAdmissionRefusal.ConsentVersionOutdated });
   });
 });

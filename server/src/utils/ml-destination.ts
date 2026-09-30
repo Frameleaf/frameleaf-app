@@ -28,6 +28,7 @@ import {
   type StudioAiCloudFeature,
   cloudModelFor,
   cloudModelGroupFor,
+  hasPendingCloudDisclosure,
   isLocalOnlyModel,
   normalizeCloudProbeFacts,
 } from 'src/utils/frameleaf-cloud.js';
@@ -76,6 +77,7 @@ export const ML_BUDGET_WINDOW_DAYS = 30;
  */
 export const STOPS_CREATED_CLOUD_JOB: ReadonlySet<MlAdmissionRefusal> = new Set([
   MlAdmissionRefusal.ConsentMissing,
+  MlAdmissionRefusal.DisclosurePending,
   MlAdmissionRefusal.ConsentVersionOutdated,
   MlAdmissionRefusal.DestinationMissing,
   MlAdmissionRefusal.DestinationDisabled,
@@ -671,6 +673,15 @@ export const evaluateAdmission = ({
     return refuse(
       MlAdmissionRefusal.ConsentMissing,
       `${destination.name} sends media off this network and has no recorded consent`,
+    );
+  }
+  // FL-201: the shipped 2026-09-26.1 generic ML text does not approve these workloads.
+  // A newer generic version is not legal approval either; only a reviewed workload disclosure
+  // may replace this gate. Local/LAN work and approved Cloud descriptions/transcription are unchanged.
+  if (isCloud && hasPendingCloudDisclosure(workload)) {
+    return refuse(
+      MlAdmissionRefusal.DisclosurePending,
+      `${destination.name}: disclosure pending for ${workload}; nothing is sent until its approved disclosure is available`,
     );
   }
   if (destination.budgetLimitUsd !== null && spentUsd >= destination.budgetLimitUsd) {

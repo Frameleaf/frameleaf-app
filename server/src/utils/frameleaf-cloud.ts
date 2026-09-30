@@ -15,6 +15,15 @@ import { MlAdmissionRefusal, MlWorkload } from 'src/enum.js';
  * against its contract first (`cloudRequestBody`).
  */
 
+/** FL-201: no approved disclosure exists for these Cloud workloads. No generic version grants it. */
+export const hasPendingCloudDisclosure = (workload: MlWorkload): boolean =>
+  [
+    MlWorkload.RestorationFaithful,
+    MlWorkload.RestorationCreative,
+    MlWorkload.Upscale,
+    MlWorkload.Interpolation,
+  ].includes(workload);
+
 /** Longest a cloud response body may be; discovery, capabilities, catalogue and wallet are small. */
 export const FRAMELEAF_CLOUD_MAX_BODY_BYTES = 256 * 1024;
 
