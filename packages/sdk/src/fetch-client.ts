@@ -11199,6 +11199,15 @@ export type SyncAssetTagV1 = {
     tagId: string;
 };
 export type SyncAssetTagDeleteV1 = SyncAssetTagV1;
+export type SyncAssetTrashStateDeleteV1 = {
+    assetId: string;
+};
+export type SyncAssetTrashStateV1 = {
+    assetId: string;
+    deletedAt: string;
+    isOffline: boolean;
+    status: Status4;
+};
 export type SyncAssetV1 = {
     /** Checksum */
     checksum: string;
@@ -23738,6 +23747,8 @@ export enum StudioRestoredVersionUnavailable {
     HiddenContent = "hidden-content"
 }
 export enum SyncEntityType {
+    AssetTrashStateV1 = "AssetTrashStateV1",
+    AssetTrashStateDeleteV1 = "AssetTrashStateDeleteV1",
     DuplicateGroupV1 = "DuplicateGroupV1",
     DuplicateGroupDeleteV1 = "DuplicateGroupDeleteV1",
     SharedSpaceV1 = "SharedSpaceV1",
@@ -23816,6 +23827,7 @@ export enum SyncEntityType {
     SyncCompleteV1 = "SyncCompleteV1"
 }
 export enum SyncRequestType {
+    AssetTrashStatesV1 = "AssetTrashStatesV1",
     DuplicateGroupsV1 = "DuplicateGroupsV1",
     SharedSpacesV1 = "SharedSpacesV1",
     SharedSpaceMembersV1 = "SharedSpaceMembersV1",
@@ -24002,6 +24014,11 @@ export enum WorkflowResult {
 export enum WorkflowRunErrorCode {
     Unsupported = "unsupported",
     StepFailed = "step_failed"
+}
+export enum Status4 {
+    Active = "active",
+    Trashed = "trashed",
+    Deleted = "deleted"
 }
 export enum Kind10 {
     Space = "space"

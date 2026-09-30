@@ -9,6 +9,7 @@ import { DuplicateRepository } from 'src/repositories/duplicate.repository.js';
 import { lockPublicForkWrites } from 'src/repositories/fork-write-guard.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PetRepository } from 'src/repositories/pet.repository.js';
+import { TrashRepository } from 'src/repositories/trash.repository.js';
 import { DB } from 'src/schema/index.js';
 import {
   getHiddenContentFilter,
@@ -21,7 +22,8 @@ import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { getLockedOwnerId, notLockedOrOwnedBy } from 'src/utils/locked.js';
 import { toAck } from 'src/utils/sync.js';
 
-type Kind = 'tag' | 'assetTag' | 'pet' | 'petObservation' | 'space' | 'spaceMember' | 'duplicate';
+type Kind = 'tag' | 'assetTag' | 'pet' | 'petObservation' | 'space' | 'spaceMember' | 'duplicate' | 'trash';
+const orderedKinds = new Set<Kind>(['space', 'duplicate', 'trash']);
 type Visible = {
   key: string;
   entityId: string;
@@ -30,6 +32,7 @@ type Visible = {
   data: Record<string, unknown>;
 };
 const types = {
+  trash: { upsert: SyncEntityType.AssetTrashStateV1, delete: SyncEntityType.AssetTrashStateDeleteV1 },
   duplicate: { upsert: SyncEntityType.DuplicateGroupV1, delete: SyncEntityType.DuplicateGroupDeleteV1 },
   space: { upsert: SyncEntityType.SharedSpaceV1, delete: SyncEntityType.SharedSpaceDeleteV1 },
   spaceMember: { upsert: SyncEntityType.SharedSpaceMemberV1, delete: SyncEntityType.SharedSpaceMemberDeleteV1 },
@@ -53,6 +56,22 @@ export class TagSync {
 
   private async visible(db: Kysely<DB>, kind: Kind, auth: AuthDto, key?: string): Promise<Visible[]> {
     const options = getHiddenContentQueryOptions(auth);
+    if (kind === 'trash') {
+      if (auth.sharedLink) return [];
+      const rows = await new TrashRepository(db).getSyncStates(
+        auth.user.id,
+        {
+          ...getLockedVisibilityOptions(auth),
+          privacy: options,
+        },
+        key,
+      );
+      return rows.map(({ assetId, data }) => {
+        const digest = createHash('sha256').update(JSON.stringify(data)).digest('hex').slice(0, 32);
+        const sourceId = `${digest.slice(0, 8)}-${digest.slice(8, 12)}-${digest.slice(12, 16)}-${digest.slice(16, 20)}-${digest.slice(20)}`;
+        return { key: assetId, entityId: assetId, assetId, sourceId, data: { ...data } };
+      });
+    }
     if (kind === 'duplicate') {
       if (auth.sharedLink) return [];
       const groups = await new DuplicateRepository(db).getSyncGroups(
@@ -224,7 +243,7 @@ export class TagSync {
                 delivered: false,
                 acknowledged: false,
               })
-              .$if(kind === 'space' || kind === 'duplicate', (qb) => qb.set({ deliveryOrder: null }))
+              .$if(orderedKinds.has(kind), (qb) => qb.set({ deliveryOrder: null }))
               .where('sessionId', '=', sessionId)
               .where('kind', '=', kind)
               .where('key', '=', state.key)
@@ -235,7 +254,7 @@ export class TagSync {
             await tx
               .updateTable('session_tag_sync_state')
               .set({ action: 'delete', eventId: sql`immich_uuid_v7()`, delivered: false, acknowledged: false })
-              .$if(kind === 'space' || kind === 'duplicate', (qb) => qb.set({ deliveryOrder: null }))
+              .$if(orderedKinds.has(kind), (qb) => qb.set({ deliveryOrder: null }))
               .where('sessionId', '=', sessionId)
               .where('kind', '=', kind)
               .where('key', '=', state.key)
@@ -284,7 +303,7 @@ export class TagSync {
         )
         .orderBy('eventId', 'asc')
         .execute();
-      if (kind === 'duplicate') {
+      if (kind === 'duplicate' || kind === 'trash') {
         pending.sort((a, b) => {
           if (a.deliveryOrder !== null || b.deliveryOrder !== null)
             return (a.deliveryOrder ?? Infinity) - (b.deliveryOrder ?? Infinity);
@@ -320,7 +339,7 @@ export class TagSync {
       await tx
         .updateTable('session_tag_sync_state')
         .set({ delivered: true, potentiallyVisible: true })
-        .$if((kind === 'space' || kind === 'duplicate') && state.deliveryOrder === null, (qb) =>
+        .$if(orderedKinds.has(kind) && state.deliveryOrder === null, (qb) =>
           qb.set({
             deliveryOrder: sql<number>`(select coalesce(max("deliveryOrder"), 0) + 1 from session_tag_sync_state where "sessionId" = ${sessionId} and kind = ${kind})`,
           }),
@@ -337,19 +356,21 @@ export class TagSync {
         data:
           state.action === 'upsert'
             ? current!.data
-            : kind === 'duplicate'
-              ? { groupId: state.entityId }
-              : kind === 'space'
-                ? { spaceId: state.entityId }
-                : kind === 'spaceMember'
-                  ? { spaceId: state.entityId, userId: state.key.split(':', 2)[1] }
-                  : kind === 'tag'
-                    ? { tagId: state.entityId }
-                    : kind === 'assetTag'
-                      ? { tagId: state.entityId, assetId: state.assetId! }
-                      : kind === 'pet'
-                        ? { petId: state.entityId }
-                        : { observationId: state.key, petId: state.entityId, assetId: state.assetId! },
+            : kind === 'trash'
+              ? { assetId: state.entityId }
+              : kind === 'duplicate'
+                ? { groupId: state.entityId }
+                : kind === 'space'
+                  ? { spaceId: state.entityId }
+                  : kind === 'spaceMember'
+                    ? { spaceId: state.entityId, userId: state.key.split(':', 2)[1] }
+                    : kind === 'tag'
+                      ? { tagId: state.entityId }
+                      : kind === 'assetTag'
+                        ? { tagId: state.entityId, assetId: state.assetId! }
+                        : kind === 'pet'
+                          ? { petId: state.entityId }
+                          : { observationId: state.key, petId: state.entityId, assetId: state.assetId! },
       };
     });
   }
@@ -371,14 +392,14 @@ export class TagSync {
         .where('action', '=', action)
         .where('delivered', '=', true)
         .executeTakeFirst();
-      if (!exact || ((kind === 'space' || kind === 'duplicate') && exact.deliveryOrder === null)) return;
+      if (!exact || (orderedKinds.has(kind) && exact.deliveryOrder === null)) return;
       const pending = tx
         .selectFrom('session_tag_sync_state')
         .select('key')
         .where('sessionId', '=', sessionId)
         .where('kind', '=', kind)
-        .$if(kind === 'space' || kind === 'duplicate', (qb) => qb.where('deliveryOrder', '<=', exact.deliveryOrder!))
-        .$if(kind !== 'space' && kind !== 'duplicate', (qb) => qb.where('eventId', '<=', ack.updateId))
+        .$if(orderedKinds.has(kind), (qb) => qb.where('deliveryOrder', '<=', exact.deliveryOrder!))
+        .$if(!orderedKinds.has(kind), (qb) => qb.where('eventId', '<=', ack.updateId))
         .where('action', '=', action)
         .where('delivered', '=', true);
       if (action === 'delete') {
