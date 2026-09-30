@@ -423,6 +423,26 @@ describe('consent and probe helpers', () => {
 });
 
 describe('selectMlDestination', () => {
+  it('does not reuse a cached Cloud consent version for current admission (FL-201)', async () => {
+    const d = deps({ destination: mlDestinationStub.frameleafCloudConsented, probe: mlProbeStub.frameleafCloud });
+    vi.mocked(d.machineLearningRepository.probe).mockImplementation((_endpoint, options) =>
+      Promise.resolve(
+        options?.maxAgeMs === 0
+          ? {
+              ...mlProbeStub.frameleafCloud,
+              cloud: { ...mlProbeStub.frameleafCloud.cloud!, consentRequiredVersion: '2026-10-01.1' },
+            }
+          : mlProbeStub.frameleafCloud,
+      ),
+    );
+    await expect(
+      selectMlDestination(d, {
+        workload: MlWorkload.Enrichment,
+        destinationId: mlDestinationStub.frameleafCloudConsented.id,
+      }),
+    ).rejects.toMatchObject({ refusal: MlAdmissionRefusal.ConsentVersionOutdated });
+  });
+
   it('refuses Frameleaf Cloud before any check while processing is off or the work stays here (FL-163)', async () => {
     const routing = {
       descriptions: 'both',

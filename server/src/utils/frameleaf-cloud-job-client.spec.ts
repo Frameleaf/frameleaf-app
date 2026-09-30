@@ -92,6 +92,34 @@ describe(FrameleafCloudJobClient.name, () => {
     );
   });
 
+  it.each(['storage-unreachable', 'target-expired'] as const)(
+    'checks the existing record hook before another %s attempt (FL-201)',
+    async (failure) => {
+      const repo = repository();
+      let allowed = true;
+      (repo.uploadInput as Mock<FrameleafCloudMlRepository['uploadInput']>).mockImplementation(() => {
+        allowed = false;
+        return Promise.reject(new CloudTransferError(failure, 'transfer failed'));
+      });
+      const client = new FrameleafCloudJobClient(repo as unknown as FrameleafCloudMlRepository, gateway, {
+        sleep: () => Promise.resolve(),
+      });
+      await expect(client.upload('job-1', [input], {}, { now, record: () => Promise.resolve(allowed) })).resolves.toBe(
+        'stopped',
+      );
+      expect(repo.uploadInput).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('checks the existing record hook before sending the first byte (FL-201)', async () => {
+    const repo = repository();
+    const client = new FrameleafCloudJobClient(repo as unknown as FrameleafCloudMlRepository, gateway);
+    await expect(client.upload('job-1', [input], {}, { now, record: () => Promise.resolve(false) })).resolves.toBe(
+      'stopped',
+    );
+    expect(repo.uploadInput).not.toHaveBeenCalled();
+  });
+
   it('reads a job with its ETag and keeps the next read between one second and the maximum', async () => {
     const repo = repository();
     const client = new FrameleafCloudJobClient(repo as unknown as FrameleafCloudMlRepository, gateway);

@@ -1237,9 +1237,13 @@ export class CloudMlBatchService extends BaseService {
         outcome = await client.upload(job.jobId, files, structuredClone(run.result.uploads), {
           given,
           now: run.now,
-          record: (state) => {
+          record: async (state) => {
             run.result = { ...run.result, uploads: structuredClone(state) };
-            return this.save(run);
+            if (!(await this.save(run))) {
+              return false;
+            }
+            await this.readmitBatch(run, gateway, job.jobId);
+            return true;
           },
         });
       } catch (error) {
@@ -1254,6 +1258,7 @@ export class CloudMlBatchService extends BaseService {
       if (outcome === 'uploaded') {
         try {
           // metering begins only once every photo is uploaded and the job is started
+          await this.readmitBatch(run, gateway, job.jobId);
           await client.start(job.jobId);
         } catch (error) {
           if (cloudErrorCode(error) !== 'inputs-missing') {
