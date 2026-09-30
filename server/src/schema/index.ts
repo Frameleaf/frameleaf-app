@@ -151,8 +151,11 @@ import {
 } from 'src/schema/tables/studio-project.table.js';
 import { SessionSyncCheckpointTable } from 'src/schema/tables/sync-checkpoint.table.js';
 import { SystemMetadataTable } from 'src/schema/tables/system-metadata.table.js';
+import { TagAssetAuditTable } from 'src/schema/tables/tag-asset-audit.table.js';
 import { TagAssetTable } from 'src/schema/tables/tag-asset.table.js';
+import { TagAuditTable } from 'src/schema/tables/tag-audit.table.js';
 import { TagClosureTable } from 'src/schema/tables/tag-closure.table.js';
+import { TagSyncStateTable } from 'src/schema/tables/tag-sync-state.table.js';
 import { TagTable } from 'src/schema/tables/tag.table.js';
 import {
   TakeoutAlbumTable,
@@ -306,6 +309,9 @@ export class ImmichDatabase {
     SessionSyncCheckpointTable,
     SystemMetadataTable,
     TagTable,
+    TagAuditTable,
+    TagAssetAuditTable,
+    TagSyncStateTable,
     TagAssetTable,
     TagClosureTable,
     UserAuditTable,
@@ -516,6 +522,9 @@ export interface DB {
   develop_preset: DevelopPresetTable;
 
   tag: TagTable;
+  tag_audit: TagAuditTable;
+  tag_asset_audit: TagAssetAuditTable;
+  session_tag_sync_state: TagSyncStateTable;
   tag_asset: TagAssetTable;
   tag_closure: TagClosureTable;
 

@@ -1265,6 +1265,165 @@ where
 order by
   "album_user"."updateId" asc
 
+-- SyncRepository.asset.getBootstrap
+select
+  "asset"."id",
+  "asset"."ownerId",
+  "asset"."originalFileName",
+  "asset"."thumbhash",
+  "asset"."fileCreatedAt",
+  "asset"."fileModifiedAt",
+  "asset"."createdAt",
+  "asset"."localDateTime",
+  "asset"."type",
+  "asset"."deletedAt",
+  "asset"."isFavorite",
+  "asset"."duration",
+  "asset"."stackId",
+  "asset"."libraryId",
+  "asset"."width",
+  "asset"."height",
+  "asset"."isEdited",
+  coalesce(
+    (
+      select
+        checksum.sha1
+      from
+        immich_fork.asset_checksum checksum
+      where
+        checksum."assetId" = asset.id
+        and asset."checksumAlgorithm" != 'sha1-path'
+        and checksum.evidence ->> 'source' is distinct from 'external-scan'
+    ),
+    asset.checksum
+  ) as "checksum",
+  case
+    when exists (
+      select
+        1
+      from
+        asset as hidden_content_asset
+      where
+        hidden_content_asset.id = "asset"."livePhotoVideoId"
+        and (
+          case
+            when "hidden_content_asset"."id" is null then false
+            when coalesce(
+              (
+                select
+                  phase
+                from
+                  immich_fork.state
+                where
+                  id = 1
+              ),
+              'inactive'
+            ) in ('legacy', 'dual-write', 'ready') then exists (
+              select
+                1
+              from
+                asset as nsfw_asset
+              where
+                nsfw_asset.id = "hidden_content_asset"."id"
+                and nsfw_asset.is_nsfw = true
+            )
+            when (
+              select
+                phase
+              from
+                immich_fork.state
+              where
+                id = 1
+            ) = 'active' then not exists (
+              select
+                1
+              from
+                immich_fork.asset_privacy as privacy_asset
+              where
+                privacy_asset."assetId" = "hidden_content_asset"."id"
+                and privacy_asset."isNsfw" = false
+            )
+            else false
+          end
+        )
+    ) then null
+    else asset."livePhotoVideoId"
+  end as "livePhotoVideoId",
+  (
+    case
+      when "asset"."visibility" = 'hidden' then "asset"."visibility"
+      when exists (
+        select
+          1
+        from
+          asset_lock
+        where
+          asset_lock."assetId" = "asset"."id"
+      ) then 'locked'::asset_visibility_enum
+      else "asset"."visibility"
+    end
+  ) as "visibility",
+  case
+    when asset."localDateTime" is null then '-infinity'
+    else to_char(
+      asset."localDateTime" at time zone 'UTC',
+      'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'
+    )
+  end as "bootstrapTimestamp"
+from
+  "asset"
+where
+  "asset"."updateId" < $1
+  and "asset"."ownerId" = $2
+  and not (
+    case
+      when "asset"."id" is null then false
+      when coalesce(
+        (
+          select
+            phase
+          from
+            immich_fork.state
+          where
+            id = 1
+        ),
+        'inactive'
+      ) in ('legacy', 'dual-write', 'ready') then exists (
+        select
+          1
+        from
+          asset as nsfw_asset
+        where
+          nsfw_asset.id = "asset"."id"
+          and nsfw_asset.is_nsfw = true
+      )
+      when (
+        select
+          phase
+        from
+          immich_fork.state
+        where
+          id = 1
+      ) = 'active' then not exists (
+        select
+          1
+        from
+          immich_fork.asset_privacy as privacy_asset
+        where
+          privacy_asset."assetId" = "asset"."id"
+          and privacy_asset."isNsfw" = false
+      )
+      else false
+    end
+  )
+  and (
+    coalesce(asset."localDateTime", '-infinity'::timestamptz),
+    asset.id
+  ) < ($3::timestamptz, $4::uuid)
+order by
+  coalesce(asset."localDateTime", '-infinity'::timestamptz) desc,
+  "asset"."id" desc
+
 -- SyncRepository.asset.getDeletes
 select
   "id",

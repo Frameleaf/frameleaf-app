@@ -2471,6 +2471,8 @@ export enum ExitCode {
 }
 
 export enum SyncRequestType {
+  TagsV1 = 'TagsV1',
+  AssetTagsV1 = 'AssetTagsV1',
   AlbumsV1 = 'AlbumsV1',
   AlbumsV2 = 'AlbumsV2',
   AlbumUsersV1 = 'AlbumUsersV1',
@@ -2482,6 +2484,7 @@ export enum SyncRequestType {
   /** @deprecated */
   AssetsV1 = 'AssetsV1',
   AssetsV2 = 'AssetsV2',
+  AssetsV3 = 'AssetsV3',
   AssetExifsV1 = 'AssetExifsV1',
   AssetEditsV1 = 'AssetEditsV1',
   AssetMetadataV1 = 'AssetMetadataV1',
@@ -2514,6 +2517,10 @@ export const SyncRequestTypeSchema = z
   .meta({ id: 'SyncRequestType' });
 
 export enum SyncEntityType {
+  TagV1 = 'TagV1',
+  TagDeleteV1 = 'TagDeleteV1',
+  AssetTagV1 = 'AssetTagV1',
+  AssetTagDeleteV1 = 'AssetTagDeleteV1',
   AuthUserV1 = 'AuthUserV1',
   AuthUserV2 = 'AuthUserV2',
 
@@ -2523,6 +2530,9 @@ export enum SyncEntityType {
   /** @deprecated */
   AssetV1 = 'AssetV1',
   AssetV2 = 'AssetV2',
+  AssetV3 = 'AssetV3',
+  AssetBootstrapV1 = 'AssetBootstrapV1',
+  AssetDeleteV2 = 'AssetDeleteV2',
   AssetDeleteV1 = 'AssetDeleteV1',
   AssetExifV1 = 'AssetExifV1',
   AssetEditV1 = 'AssetEditV1',

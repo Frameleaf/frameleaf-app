@@ -367,3 +367,29 @@ export const album_parent_cycle_check = registerFunction({
       RETURN NEW;
     END`,
 });
+
+export const tag_delete_audit = registerFunction({
+  name: 'tag_delete_audit',
+  returnType: 'TRIGGER',
+  language: 'PLPGSQL',
+  body: `BEGIN INSERT INTO tag_audit ("tagId", "userId") SELECT id, "userId" FROM OLD; RETURN NULL; END`,
+});
+export const tag_asset_delete_audit = registerFunction({
+  name: 'tag_asset_delete_audit',
+  returnType: 'TRIGGER',
+  language: 'PLPGSQL',
+  body: `BEGIN
+    INSERT INTO tag_asset_audit ("tagId", "assetId", "userId")
+    SELECT deleted."tagId", deleted."assetId", coalesce(tag."userId", asset."ownerId")
+    FROM OLD AS deleted LEFT JOIN tag ON tag.id = deleted."tagId" LEFT JOIN asset ON asset.id = deleted."assetId"
+    WHERE coalesce(tag."userId", asset."ownerId") IS NOT NULL
+      AND (tag."userId" IS NULL OR asset."ownerId" IS NULL OR tag."userId" = asset."ownerId");
+    RETURN NULL; END`,
+});
+
+export const tag_asset_update_id = registerFunction({
+  name: 'tag_asset_update_id',
+  returnType: 'TRIGGER',
+  language: 'PLPGSQL',
+  body: `BEGIN NEW."updateId" := immich_uuid_v7(); RETURN NEW; END`,
+});

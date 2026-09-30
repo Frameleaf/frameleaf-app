@@ -70,6 +70,7 @@ describe(classifyMigration, () => {
     expect(classifyMigration('2100000000700-AddAssetLockInherited')).toBe('legacy-fork');
     expect(classifyMigration('2100000000710-PartnerShareLocationDefaultOff')).toBe('legacy-fork');
     expect(classifyMigration('2100000000720-SafetyProofFacts')).toBe('legacy-fork');
+    expect(classifyMigration('2100000000721-TagSyncEvents')).toBe('legacy-fork');
   });
 
   it('classifies migrations from a certified upstream tag', () => {

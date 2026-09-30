@@ -1,6 +1,6 @@
 import { Writable } from 'node:stream';
 import { SyncEntityType } from 'src/enum.js';
-import { send } from 'src/services/sync.service.js';
+import { SyncService, send } from 'src/services/sync.service.js';
 import { ClientDisconnectedError } from 'src/utils/response.js';
 import { serialize } from 'src/utils/sync.js';
 
@@ -108,4 +108,19 @@ describe('send', () => {
 
     await expect(sendPromise).rejects.toBe(error);
   });
+});
+
+it('rejects a bootstrap year-zero cursor before it can reach PostgreSQL', async () => {
+  const upsertAll = vi.fn();
+  const cursor = Buffer.from(
+    JSON.stringify(['0000-01-01T00:00:00.000001Z', '00000000-0000-4000-8000-000000000000']),
+  ).toString('base64url');
+  await expect(
+    SyncService.prototype.setAcks.call(
+      { syncCheckpointRepository: { upsertAll } } as never,
+      { session: { id: 'session' } } as never,
+      { acks: [`${SyncEntityType.AssetBootstrapV1}|00000000-0000-4000-8000-000000000000|${cursor}`] },
+    ),
+  ).rejects.toThrow('Invalid asset bootstrap cursor');
+  expect(upsertAll).not.toHaveBeenCalled();
 });
