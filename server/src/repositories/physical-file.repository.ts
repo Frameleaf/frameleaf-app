@@ -729,7 +729,7 @@ export class PhysicalFileRepository {
   }
 
   async ensureOriginalPhysicalFile(assetId: string): Promise<PhysicalFile | undefined> {
-    return this.db.transaction().execute(async (trx) => {
+    const execute = async (trx: Transaction<DB>) => {
       await lockPublicForkWrites(trx, PHYSICAL_FILE_HANDOFF_REFUSAL);
       const asset = await trx
         .selectFrom('asset')
@@ -788,7 +788,8 @@ export class PhysicalFileRepository {
         .execute();
 
       return physicalFile;
-    });
+    };
+    return this.db.isTransaction ? execute(this.db as Transaction<DB>) : this.db.transaction().execute(execute);
   }
 
   // Aliases an asset onto a file another asset already owns, so it takes the
@@ -1056,6 +1057,46 @@ export class PhysicalFileRepository {
       await this.lockPath(trx, path);
       return callback(trx);
     });
+  }
+
+  /** Owner restore runs after remote staging, under the existing reference-writer path lock. */
+  async withOwnerRestorePath<T>(
+    path: string,
+    assetId: string,
+    ownerId: string,
+    callback: () => Promise<T>,
+  ): Promise<T> {
+    const execute = async (trx: Transaction<DB>) => {
+      await lockPublicForkWrites(trx, PHYSICAL_FILE_HANDOFF_REFUSAL);
+      const key = createHash('sha1').update(path).digest().readBigInt64BE(0);
+      const lock = await sql<{
+        locked: boolean;
+      }>`SELECT pg_try_advisory_xact_lock(${key.toString()}::bigint) AS locked`.execute(trx);
+      if (!lock.rows[0]?.locked) throw new Error('Owner restore destination is changing');
+      const physical = await trx.selectFrom('physical_file').select('id').where('path', '=', path).executeTakeFirst();
+      const references = await this.countPathReferencesIn(trx, path, physical?.id);
+      const own = await trx
+        .selectFrom('asset')
+        .select('id')
+        .where('id', '=', assetId)
+        .where('ownerId', '=', ownerId)
+        .where('originalPath', '=', path)
+        .executeTakeFirst();
+      const ownFiles = await trx
+        .selectFrom('asset_file')
+        .innerJoin('asset', 'asset.id', 'asset_file.assetId')
+        .select('asset_file.assetId')
+        .where('asset_file.assetId', '=', assetId)
+        .where('asset.ownerId', '=', ownerId)
+        .where('asset_file.path', '=', path)
+        .where('asset_file.type', '=', AssetFileType.Sidecar)
+        .execute();
+      // Any other original, derivative, history or orphan reference refuses publication, even same-owner.
+      if (references > (own ? 1 : 0) + ownFiles.length || (physical && !own))
+        throw new Error('Owner restore destination unavailable');
+      return callback();
+    };
+    return this.db.isTransaction ? execute(this.db as Transaction<DB>) : this.db.transaction().execute(execute);
   }
 
   /**

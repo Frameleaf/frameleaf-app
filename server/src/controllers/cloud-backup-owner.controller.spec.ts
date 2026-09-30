@@ -6,6 +6,37 @@ import { authStub } from 'test/fixtures/auth.stub.js';
 
 const reflector = new Reflector();
 describe('owner backup route scopes', () => {
+  it('requires write permission, keeps non-refreshing elevation, and reauthenticates owner restore with the same permission', async () => {
+    expect(
+      getAuthenticatedOptions(reflector, CloudBackupOwnerController.prototype.restoreOwnBackupItems),
+    ).toMatchObject({ permission: Permission.AssetUpdate, refreshElevation: false });
+    const authenticate = vi.fn().mockResolvedValue(authStub.user1);
+    const service = {
+      startOwnerRestore: vi.fn(async (_auth, _dto, refresh: () => Promise<unknown>) => {
+        await refresh();
+        return { operationId: 'own', status: 'queued' };
+      }),
+    };
+    const controller = new CloudBackupOwnerController(service as never, { authenticate } as never);
+    await expect(
+      controller.restoreOwnBackupItems(authStub.user1, { manifestKey: 'm/own', assetIds: ['own'] }, {
+        headers: {},
+        query: {},
+        path: '/users/me/cloud-backup/restore',
+      } as never),
+    ).resolves.toEqual({ operationId: 'own', status: 'queued' });
+    expect(authenticate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          permission: Permission.AssetUpdate,
+          adminRoute: false,
+          sharedLinkRoute: false,
+          refreshElevation: false,
+        }),
+      }),
+    );
+  });
+
   it('uses media-view permission for binary thumbnails, not metadata-only read', () => {
     expect(
       getAuthenticatedOptions(reflector, CloudBackupOwnerController.prototype.getOwnBackupThumbnail),

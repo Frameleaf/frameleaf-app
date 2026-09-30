@@ -1,4 +1,7 @@
 import { Injectable } from '@nestjs/common';
+import type { Transaction } from 'kysely';
+import type { JobRepository } from 'src/repositories/job.repository.js';
+import type { DB } from 'src/schema/index.js';
 import type {
   CloudBackupAlbum,
   CloudBackupAssetDetails,
@@ -17,10 +20,25 @@ import {
   JobName,
   SourceType,
 } from 'src/enum.js';
+import { AlbumRepository } from 'src/repositories/album.repository.js';
+import { AssetEditRepository } from 'src/repositories/asset-edit.repository.js';
+import { AssetRepository } from 'src/repositories/asset.repository.js';
+import { PersonRepository } from 'src/repositories/person.repository.js';
+import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
+import { StackRepository } from 'src/repositories/stack.repository.js';
+import { TagRepository } from 'src/repositories/tag.repository.js';
+import { UserRepository } from 'src/repositories/user.repository.js';
+
 import { BaseService } from 'src/services/base.service.js';
 import { DetailChanges, EMPTY_DETAILS, RestoreDetailsMode, detailChanges } from 'src/utils/cloud-backup-details.js';
 import { updateLockedColumns } from 'src/utils/database.js';
 import { upsertTags } from 'src/utils/tag.js';
+
+export type OwnerRestoreDetailsContext = {
+  db: Transaction<DB>;
+  ownerId: string;
+  jobs: Array<Parameters<JobRepository['queue']>[0]>;
+};
 
 /** A deleted item as the manifest records it, and where its restored files now are. */
 export type CloudBackupRecreate = {
@@ -54,36 +72,67 @@ export type CloudBackupRecreateOutcome =
  */
 @Injectable()
 export class CloudBackupDetailsService extends BaseService {
+  private restoreRepositories(context?: OwnerRestoreDetailsContext) {
+    const db = context?.db;
+    return {
+      asset: db ? new AssetRepository(db) : this.assetRepository,
+      album: db ? new AlbumRepository(db) : this.albumRepository,
+      assetEdit: db ? new AssetEditRepository(db) : this.assetEditRepository,
+      person: db ? new PersonRepository(db) : this.personRepository,
+      physicalFile: db ? new PhysicalFileRepository(db) : this.physicalFileRepository,
+      stack: db ? new StackRepository(db) : this.stackRepository,
+      tag: db ? new TagRepository(db, this.logger) : this.tagRepository,
+      user: db ? new UserRepository(db) : this.userRepository,
+    };
+  }
+
+  private async restoreJob(
+    context: OwnerRestoreDetailsContext | undefined,
+    job: Parameters<JobRepository['queue']>[0],
+  ) {
+    if (context) context.jobs.push(job);
+    else await this.jobRepository.queue(job);
+  }
+
   /** Put `backup`'s details back on an item still in the library. Answers whether anything changed. */
-  async putBack(input: {
-    assetId: string;
-    ownerId: string;
-    type: string;
-    current: CloudBackupAssetDetails;
-    backup: CloudBackupAssetDetails;
-    mode: RestoreDetailsMode;
-    people: Record<string, CloudBackupPerson>;
-  }): Promise<boolean> {
+  async putBack(
+    input: {
+      assetId: string;
+      ownerId: string;
+      type: string;
+      current: CloudBackupAssetDetails;
+      backup: CloudBackupAssetDetails;
+      mode: RestoreDetailsMode;
+      people: Record<string, CloudBackupPerson>;
+    },
+    context?: OwnerRestoreDetailsContext,
+  ): Promise<boolean> {
+    if (context && input.ownerId !== context.ownerId) throw new Error('Owner restore details unavailable');
     const changes = detailChanges(input.current, input.backup, input.mode);
-    await this.apply(input.assetId, input.ownerId, input.type, changes, input.people);
+    await this.apply(input.assetId, input.ownerId, input.type, changes, input.people, context);
     return Object.keys(changes).length > 0;
   }
 
   /** Make a deleted item again from its manifest record, with its details, once its files are in place. */
-  async recreate(input: CloudBackupRecreate): Promise<CloudBackupRecreateOutcome> {
-    const owner = await this.userRepository.get(input.ownerId, {});
+  async recreate(
+    input: CloudBackupRecreate,
+    context?: OwnerRestoreDetailsContext,
+  ): Promise<CloudBackupRecreateOutcome> {
+    const repositories = this.restoreRepositories(context);
+    if (context && input.ownerId !== context.ownerId) throw new Error('Owner restore details unavailable');
+    const owner = await repositories.user.get(input.ownerId, {});
     if (!owner) {
       return { status: 'no-owner' };
     }
     const checksum = Buffer.from(input.sha256, 'hex');
-    const existing = await this.assetRepository.getUploadAssetIdByChecksum(input.ownerId, checksum);
+    const existing = await repositories.asset.getUploadAssetIdByChecksum(input.ownerId, checksum);
     if (existing) {
       return { status: 'duplicate', assetId: existing };
     }
 
     const details = input.details ?? EMPTY_DETAILS;
     const locked = details.visibility === 'locked';
-    await this.assetRepository.create(
+    await repositories.asset.create(
       {
         id: input.assetId,
         ownerId: input.ownerId,
@@ -103,19 +152,19 @@ export class CloudBackupDetailsService extends BaseService {
       locked ? { reason: AssetLockReason.Marked, lockedBy: input.ownerId } : undefined,
     );
     if (input.sidecarPath) {
-      await this.assetRepository.upsertFile({
+      await repositories.asset.upsertFile({
         assetId: input.assetId,
         path: input.sidecarPath,
         type: AssetFileType.Sidecar,
       });
     }
-    await this.assetRepository.upsertExif({
+    await repositories.asset.upsertExif({
       exif: { assetId: input.assetId, fileSizeInByte: input.size },
       lockedPropertiesBehavior: 'override',
     });
     const { physicalDeduplication } = await this.getConfig({ withCache: true });
     if (physicalDeduplication.enabled && input.ownerId === physicalDeduplication.masterUserId) {
-      await this.physicalFileRepository.ensureOriginalPhysicalFile(input.assetId);
+      await repositories.physicalFile.ensureOriginalPhysicalFile(input.assetId);
     }
 
     // everything but what the record already set: favourite and visibility went in with it
@@ -124,9 +173,9 @@ export class CloudBackupDetailsService extends BaseService {
       details,
       'replace',
     );
-    await this.apply(input.assetId, input.ownerId, input.record.type, changes, input.people);
+    await this.apply(input.assetId, input.ownerId, input.record.type, changes, input.people, context);
     // the file's own metadata, thumbnails and previews, as after an upload; locked details stay as restored
-    await this.jobRepository.queue({ name: JobName.AssetExtractMetadata, data: { id: input.assetId } });
+    await this.restoreJob(context, { name: JobName.AssetExtractMetadata, data: { id: input.assetId } });
     return { status: 'created', assetId: input.assetId };
   }
 
@@ -135,27 +184,53 @@ export class CloudBackupDetailsService extends BaseService {
    * `memberIds`; or, when it is still there, add back the members it lost. Answers `null` when the album
    * is gone and its owner is too.
    */
-  async restoreAlbum(input: {
-    albumId: string;
-    album: CloudBackupAlbum | undefined;
-    memberIds: string[];
-  }): Promise<'created' | 'updated' | null> {
-    const existing = await this.albumRepository.getById(input.albumId, { withAssets: false });
+  async restoreAlbum(
+    input: {
+      albumId: string;
+      album: CloudBackupAlbum | undefined;
+      memberIds: string[];
+    },
+    context?: OwnerRestoreDetailsContext,
+  ): Promise<'created' | 'updated' | null> {
+    const repositories = this.restoreRepositories(context);
+    let ownedAlbum = true;
+    if (context) {
+      const row = await context.db
+        .selectFrom('album')
+        .select(['id', 'deletedAt'])
+        .where('id', '=', input.albumId)
+        .forUpdate()
+        .noWait()
+        .executeTakeFirst();
+      const owner = await context.db
+        .selectFrom('album_user')
+        .select('userId')
+        .where('albumId', '=', input.albumId)
+        .where('userId', '=', context.ownerId)
+        .where('role', '=', AlbumUserRole.Owner)
+        .forShare()
+        .noWait()
+        .executeTakeFirst();
+      ownedAlbum = !row || (!!owner && !row.deletedAt);
+    }
+    const existing = await repositories.album.getById(input.albumId, { withAssets: false });
+    if (context && (!ownedAlbum || (!existing && input.album?.ownerId !== context.ownerId)))
+      throw new Error('Owner restore album unavailable');
     if (existing) {
-      await this.albumRepository.addAssetIds(input.albumId, input.memberIds);
+      await repositories.album.addAssetIds(input.albumId, input.memberIds);
       return 'updated';
     }
     const { album } = input;
-    if (!album || !(await this.userRepository.get(album.ownerId, {}))) {
+    if (!album || !(await repositories.user.get(album.ownerId, {}))) {
       return null;
     }
     const shared = [];
-    for (const user of album.sharedUsers) {
-      if (await this.userRepository.get(user.userId, {})) {
+    for (const user of context ? [] : album.sharedUsers) {
+      if (await repositories.user.get(user.userId, {})) {
         shared.push({ userId: user.userId, role: user.role as AlbumUserRole });
       }
     }
-    await this.albumRepository.create(
+    await repositories.album.create(
       {
         id: input.albumId,
         albumName: album.name,
@@ -175,7 +250,13 @@ export class CloudBackupDetailsService extends BaseService {
    * Stacks that are gone, made again once the restore has put back at least two of their items (the
    * primary first). An item whose stack still exists joined it when its details went back.
    */
-  async restoreStacks(members: Array<{ assetId: string; ownerId: string; stack: CloudBackupAssetDetails['stack'] }>) {
+  async restoreStacks(
+    members: Array<{ assetId: string; ownerId: string; stack: CloudBackupAssetDetails['stack'] }>,
+    context?: OwnerRestoreDetailsContext,
+  ) {
+    const repositories = this.restoreRepositories(context);
+    if (context && members.some((item) => item.ownerId !== context.ownerId))
+      throw new Error('Owner restore stack unavailable');
     const byStack = new Map<string, Array<{ assetId: string; ownerId: string; isPrimary: boolean }>>();
     for (const { assetId, ownerId, stack } of members) {
       if (stack) {
@@ -183,11 +264,11 @@ export class CloudBackupDetailsService extends BaseService {
       }
     }
     for (const [id, items] of byStack) {
-      if (items.length < 2 || (await this.stackRepository.getById(id))) {
+      if (items.length < 2 || (await repositories.stack.getById(id))) {
         continue;
       }
       const ordered = items.toSorted((a, b) => Number(b.isPrimary) - Number(a.isPrimary));
-      await this.stackRepository.create(
+      await repositories.stack.create(
         { id, ownerId: ordered[0].ownerId },
         ordered.map(({ assetId }) => assetId),
       );
@@ -200,17 +281,40 @@ export class CloudBackupDetailsService extends BaseService {
     type: string,
     changes: DetailChanges,
     people: Record<string, CloudBackupPerson>,
+    context?: OwnerRestoreDetailsContext,
   ) {
+    const repositories = this.restoreRepositories(context);
+    if (context) {
+      const asset = await context.db
+        .selectFrom('asset')
+        .select('id')
+        .where('id', '=', assetId)
+        .where('ownerId', '=', context.ownerId)
+        .forUpdate()
+        .noWait()
+        .executeTakeFirst();
+      if (!asset || ownerId !== context.ownerId) throw new Error('Owner restore details unavailable');
+      if (changes.stack) {
+        const stack = await context.db
+          .selectFrom('stack')
+          .select('ownerId')
+          .where('id', '=', changes.stack.id)
+          .forUpdate()
+          .noWait()
+          .executeTakeFirst();
+        if (stack && stack.ownerId !== context.ownerId) throw new Error('Owner restore stack unavailable');
+      }
+    }
     const { isFavorite, visibility, exif, clearLocation, tags, albums, faces, stack, edits } = changes;
 
     if (visibility === 'locked') {
-      await this.assetRepository.lock([assetId], AssetLockReason.Marked, ownerId);
+      await repositories.asset.lock([assetId], AssetLockReason.Marked, ownerId);
     } else if (visibility) {
-      await this.assetRepository.unlock([assetId]);
+      await repositories.asset.unlock([assetId]);
     }
-    const stackId = stack && (await this.stackRepository.getById(stack.id)) ? stack.id : undefined;
+    const stackId = stack && (await repositories.stack.getById(stack.id)) ? stack.id : undefined;
     if (isFavorite !== undefined || (visibility && visibility !== 'locked') || stackId) {
-      await this.assetRepository.update({
+      await repositories.asset.update({
         id: assetId,
         ...(isFavorite !== undefined && { isFavorite }),
         ...(visibility && visibility !== 'locked' && { visibility: visibility as AssetVisibility }),
@@ -220,37 +324,56 @@ export class CloudBackupDetailsService extends BaseService {
 
     let sidecar = false;
     if (clearLocation) {
-      await this.assetRepository.clearLocation([assetId]);
+      await repositories.asset.clearLocation([assetId]);
       sidecar = true;
     }
     if (exif && Object.keys(exif).length > 0) {
-      await this.assetRepository.upsertExif({
+      await repositories.asset.upsertExif({
         exif: updateLockedColumns({ assetId, ...exif }),
         lockedPropertiesBehavior: 'append',
       });
       sidecar = true;
     }
     if (sidecar) {
-      await this.jobRepository.queue({ name: JobName.SidecarWrite, data: { id: assetId } });
+      await this.restoreJob(context, { name: JobName.SidecarWrite, data: { id: assetId } });
     }
 
     if (tags) {
-      const tagIds = (await upsertTags(this.tagRepository, { userId: ownerId, tags: tags.values })).map(({ id }) => id);
+      const tagIds = (await upsertTags(repositories.tag, { userId: ownerId, tags: tags.values })).map(({ id }) => id);
       await (tags.exact
-        ? this.tagRepository.replaceAssetTags(assetId, tagIds)
-        : this.tagRepository.upsertAssetIds(tagIds.map((tagId) => ({ tagId, assetId }))));
+        ? repositories.tag.replaceAssetTags(assetId, tagIds)
+        : repositories.tag.upsertAssetIds(tagIds.map((tagId) => ({ tagId, assetId }))));
     }
 
     for (const albumId of albums ?? []) {
-      if (await this.albumRepository.getById(albumId, { withAssets: false })) {
-        await this.albumRepository.addAssetIds(albumId, [assetId]);
+      if (context) {
+        const album = await context.db
+          .selectFrom('album')
+          .select(['id', 'deletedAt'])
+          .where('id', '=', albumId)
+          .forUpdate()
+          .noWait()
+          .executeTakeFirst();
+        const owner = await context.db
+          .selectFrom('album_user')
+          .select('userId')
+          .where('albumId', '=', albumId)
+          .where('userId', '=', context.ownerId)
+          .where('role', '=', AlbumUserRole.Owner)
+          .forShare()
+          .noWait()
+          .executeTakeFirst();
+        if (album && (!owner || album.deletedAt)) throw new Error('Owner restore album unavailable');
+      }
+      if (await repositories.album.getById(albumId, { withAssets: false })) {
+        await repositories.album.addAssetIds(albumId, [assetId]);
       }
     }
 
     for (const face of faces ?? []) {
-      await this.personRepository.createAssetFace({
+      await repositories.person.createAssetFace({
         assetId,
-        personGroupId: face.personId ? await this.personFor(ownerId, face.personId, people) : null,
+        personGroupId: face.personId ? await this.personFor(ownerId, face.personId, people, context) : null,
         boundingBoxX1: face.box[0],
         boundingBoxY1: face.box[1],
         boundingBoxX2: face.box[2],
@@ -264,8 +387,8 @@ export class CloudBackupDetailsService extends BaseService {
 
     // a video's edits are versioned renders: only a photo's edits are put back
     if (edits && type === AssetType.Image) {
-      await this.assetEditRepository.replaceAll(assetId, edits as unknown as AssetEditActionItem[]);
-      await this.jobRepository.queue({ name: JobName.AssetEditThumbnailGeneration, data: { id: assetId } });
+      await repositories.assetEdit.replaceAll(assetId, edits as unknown as AssetEditActionItem[]);
+      await this.restoreJob(context, { name: JobName.AssetEditThumbnailGeneration, data: { id: assetId } });
     }
   }
 
@@ -277,17 +400,37 @@ export class CloudBackupDetailsService extends BaseService {
     ownerId: string,
     personId: string,
     people: Record<string, CloudBackupPerson>,
+    context?: OwnerRestoreDetailsContext,
   ): Promise<string | null> {
-    if (await this.personRepository.getByGroupId({ ownerId, personGroupId: personId })) {
+    const repositories = this.restoreRepositories(context);
+    if (context) {
+      await context.db
+        .selectFrom('person_group')
+        .select('id')
+        .where('id', '=', personId)
+        .forUpdate()
+        .noWait()
+        .execute();
+      const persons = await context.db
+        .selectFrom('person')
+        .select('ownerId')
+        .where('personGroupId', '=', personId)
+        .forUpdate()
+        .noWait()
+        .execute();
+      if (persons.some((person) => person.ownerId !== ownerId)) throw new Error('Owner restore person unavailable');
+    }
+    if (await repositories.person.getByGroupId({ ownerId, personGroupId: personId })) {
       return personId;
     }
     const person = people[personId];
-    const owner = await this.userRepository.get(ownerId, {});
+    const owner = await repositories.user.get(ownerId, {});
     if (!person || person.ownerId !== ownerId || !owner) {
+      if (context) throw new Error('Owner restore person unavailable');
       return null;
     }
-    const [group] = await this.personRepository.createGroups([{ id: personId, clusterGroupId: owner.clusterGroupId }]);
-    await this.personRepository.create({
+    const [group] = await repositories.person.createGroups([{ id: personId, clusterGroupId: owner.clusterGroupId }]);
+    await repositories.person.create({
       ownerId,
       personGroupId: group?.id ?? personId,
       name: person.name,

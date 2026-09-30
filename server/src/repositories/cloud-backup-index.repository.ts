@@ -1,8 +1,9 @@
 import { Injectable } from '@nestjs/common';
-import { Kysely, sql } from 'kysely';
+import { Kysely, Transaction, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { IntegrityRepository } from 'src/repositories/integrity.repository.js';
+import type { SystemMetadata } from 'src/types.js';
 import type { OwnerBackupState } from 'src/utils/cloud-backup-owner.js';
 import type {
   CloudBackupAlbum,
@@ -11,9 +12,11 @@ import type {
   CloudBackupPerson,
 } from 'src/utils/cloud-backup.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
-import { AssetFileType, AssetStatus, MediaOperationKind, MediaOperationStatus } from 'src/enum.js';
+import { defaults } from 'src/dtos/config.dto.js';
+import { AssetFileType, AssetStatus, MediaOperationKind, MediaOperationStatus, SystemMetadataKey } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
 import { CloudBackupVerificationMethod, CloudBackupVerificationResult } from 'src/schema/tables/safety-proof.table.js';
+import { bucketRef } from 'src/utils/cloud-backup.js';
 import { isMotionOfLockedStill, withHiddenContentFilter } from 'src/utils/database.js';
 import { effectiveVisibilityOf, isLocked, isNotLocked } from 'src/utils/locked.js';
 
@@ -585,54 +588,217 @@ export class CloudBackupIndexRepository {
   /** Presence and caller privacy from one snapshot, including non-active rows that cannot be treated as absent. */
   async getOwnerHistoryState(auth: AuthDto, assetIds: string[]): Promise<Map<string, OwnerBackupState>> {
     if (assetIds.length === 0) return new Map();
-    return this.db
-      .transaction()
-      .setIsolationLevel('repeatable read')
-      .execute(async (trx) => {
-        const rows = await trx
-          .selectFrom('asset')
-          .select(['id', 'ownerId', 'status', 'deletedAt'])
-          .where('id', '=', sql<string>`any(${assetIds}::uuid[])`)
-          .execute();
-        const allowed = await trx
-          .selectFrom('asset')
-          .leftJoin('library', 'library.id', 'asset.libraryId')
-          .select('asset.id')
-          .where('asset.id', '=', sql<string>`any(${assetIds}::uuid[])`)
-          .where('asset.ownerId', '=', auth.user.id)
-          .where((eb) =>
-            eb.or([
-              eb('asset.libraryId', 'is', null),
-              eb.and([eb('library.ownerId', '=', auth.user.id), eb('library.deletedAt', 'is', null)]),
-            ]),
-          )
-          .$if(!auth.session?.hasElevatedPermission, (qb) =>
-            qb.where(isNotLocked('asset')).where((eb) => eb.not(isMotionOfLockedStill(eb))),
-          )
-          .$call((qb) =>
-            withHiddenContentFilter(qb, { hiddenContent: auth.hiddenContent, excludeNsfw: auth.hideNsfwAssets }),
-          )
-          .execute();
-        const visible = new Set(allowed.map(({ id }) => id));
-        const deleted = await trx
-          .selectFrom('asset_backup_deletion')
-          .selectAll()
-          .where('ownerId', '=', auth.user.id)
-          .where('assetId', '=', sql<string>`any(${assetIds}::uuid[])`)
-          .execute();
-        const result = new Map<string, OwnerBackupState>(
-          rows.map((row) => [
-            row.id,
-            { ...row, deletedAt: row.deletedAt ? new Date(row.deletedAt) : null, allowed: visible.has(row.id) },
+    const execute = async (trx: Kysely<DB>) => {
+      const rows = await trx
+        .selectFrom('asset')
+        .select(['id', 'ownerId', 'status', 'deletedAt'])
+        .where('id', '=', sql<string>`any(${assetIds}::uuid[])`)
+        .execute();
+      const allowed = await trx
+        .selectFrom('asset')
+        .leftJoin('library', 'library.id', 'asset.libraryId')
+        .select('asset.id')
+        .where('asset.id', '=', sql<string>`any(${assetIds}::uuid[])`)
+        .where('asset.ownerId', '=', auth.user.id)
+        .where((eb) =>
+          eb.or([
+            eb('asset.libraryId', 'is', null),
+            eb.and([eb('library.ownerId', '=', auth.user.id), eb('library.deletedAt', 'is', null)]),
           ]),
-        );
-        for (const row of deleted)
-          result.set(row.assetId, {
-            ...result.get(row.assetId),
-            deletion: { ...row, deletedAt: new Date(row.deletedAt) },
-          });
-        return result;
-      });
+        )
+        .$if(!auth.session?.hasElevatedPermission, (qb) =>
+          qb.where(isNotLocked('asset')).where((eb) => eb.not(isMotionOfLockedStill(eb))),
+        )
+        .$call((qb) =>
+          withHiddenContentFilter(qb, { hiddenContent: auth.hiddenContent, excludeNsfw: auth.hideNsfwAssets }),
+        )
+        .execute();
+      const visible = new Set(allowed.map(({ id }) => id));
+      const deleted = await trx
+        .selectFrom('asset_backup_deletion')
+        .selectAll()
+        .where('ownerId', '=', auth.user.id)
+        .where('assetId', '=', sql<string>`any(${assetIds}::uuid[])`)
+        .execute();
+      const result = new Map<string, OwnerBackupState>(
+        rows.map((row) => [
+          row.id,
+          { ...row, deletedAt: row.deletedAt ? new Date(row.deletedAt) : null, allowed: visible.has(row.id) },
+        ]),
+      );
+      for (const row of deleted)
+        result.set(row.assetId, {
+          ...result.get(row.assetId),
+          deletion: { ...row, deletedAt: new Date(row.deletedAt) },
+        });
+      return result;
+    };
+    return this.db.isTransaction
+      ? execute(this.db)
+      : this.db.transaction().setIsolationLevel('repeatable read').execute(execute);
+  }
+
+  async getOwnerRestoreIdentities(ids: string[]) {
+    const rows = await this.db
+      .selectFrom('asset')
+      .select(['id', 'ownerId', 'originalPath', 'checksum', 'checksumAlgorithm', 'isExternal'])
+      .where('id', '=', sql<string>`any(${ids}::uuid[])`)
+      .execute();
+    return Object.fromEntries(
+      rows.map(({ id, checksum, ...rest }) => [id, { ...rest, checksum: checksum.toString('hex') }]),
+    );
+  }
+
+  async getOwnerRestoreAuth(owner: {
+    ownerId: string;
+    sessionId: string;
+  }): Promise<{ auth: AuthDto; storageLabel: string | null }> {
+    const row = await this.db
+      .selectFrom('user')
+      .innerJoin('session', 'session.userId', 'user.id')
+      .select([
+        'user.id',
+        'user.name',
+        'user.email',
+        'user.isAdmin',
+        'user.quotaUsageInBytes',
+        'user.quotaSizeInBytes',
+        'user.storageLabel',
+      ])
+      .where('user.id', '=', owner.ownerId)
+      .where('user.deletedAt', 'is', null)
+      .where('session.id', '=', owner.sessionId)
+      .where('session.pinExpiresAt', '>', sql<Date>`clock_timestamp()`)
+      .where((eb) =>
+        eb.or([eb('session.expiresAt', 'is', null), eb('session.expiresAt', '>', sql<Date>`clock_timestamp()`)]),
+      )
+      .executeTakeFirst();
+    if (!row) throw new Error('Owner restore authorization unavailable');
+    // Matches normal AuthService elevated semantics: current suppression rules do not hide revealed content.
+    return {
+      auth: { user: row, session: { id: owner.sessionId, hasElevatedPermission: true } },
+      storageLabel: row.storageLabel,
+    };
+  }
+
+  async withOwnerRestore<T>(
+    owner: { ownerId: string; sessionId: string },
+    identity: { bucketRef: string; keyFingerprint: string; manifestKey: string },
+    assetId: string,
+    lease: { operationId: string; claimToken: string },
+    callback: (trx: Transaction<DB>) => Promise<T>,
+  ): Promise<T> {
+    return this.db.transaction().execute(async (trx) => {
+      const operation = await trx
+        .selectFrom('media_operation')
+        .select('id')
+        .where('id', '=', lease.operationId)
+        .where('kind', '=', MediaOperationKind.CloudRestore)
+        .where('ownerId', '=', owner.ownerId)
+        .where('claimToken', '=', lease.claimToken)
+        .where('status', '=', MediaOperationStatus.Rendering)
+        .where('claimExpiresAt', '>', sql<Date>`clock_timestamp()`)
+        .where('cancelRequestedAt', 'is', null)
+        .where('pauseRequestedAt', 'is', null)
+        .forShare()
+        .noWait()
+        .executeTakeFirst();
+      if (!operation) throw new Error('Owner restore claim unavailable');
+      const session = await trx
+        .selectFrom('session')
+        .select('id')
+        .where('id', '=', owner.sessionId)
+        .where('userId', '=', owner.ownerId)
+        .where('pinExpiresAt', '>', sql<Date>`clock_timestamp()`)
+        .where((eb) => eb.or([eb('expiresAt', 'is', null), eb('expiresAt', '>', sql<Date>`clock_timestamp()`)]))
+        .forShare()
+        .noWait()
+        .executeTakeFirst();
+      const user = await trx
+        .selectFrom('user')
+        .select('id')
+        .where('id', '=', owner.ownerId)
+        .where('deletedAt', 'is', null)
+        .forShare()
+        .noWait()
+        .executeTakeFirst();
+      if (!session || !user) throw new Error('Owner restore authorization unavailable');
+      await trx
+        .selectFrom('user_metadata')
+        .select('key')
+        .where('userId', '=', owner.ownerId)
+        .forShare()
+        .noWait()
+        .execute();
+      const kept = await trx
+        .selectFrom('cloud_backup_manifest')
+        .select('id')
+        .where('bucket', '=', identity.bucketRef)
+        .where('key', '=', identity.manifestKey)
+        .where('status', 'in', ['complete', 'degraded'])
+        .forShare()
+        .noWait()
+        .executeTakeFirst();
+      const metadata = await trx
+        .selectFrom('system_metadata')
+        .select('value')
+        .where('key', '=', SystemMetadataKey.FrameleafCloudBackup)
+        .forShare()
+        .noWait()
+        .executeTakeFirst();
+      const claim = metadata?.value as { bucketRef?: string; keyFingerprint?: string; target?: string } | undefined;
+      const storedConfig = await trx
+        .selectFrom('system_metadata')
+        .select('value')
+        .where('key', '=', SystemMetadataKey.SystemConfig)
+        .forShare()
+        .noWait()
+        .executeTakeFirst();
+      const partial = (storedConfig?.value as SystemMetadata[SystemMetadataKey.SystemConfig] | undefined)
+        ?.frameleafCloud?.cloudBackup;
+      const fallback = defaults.frameleafCloud.cloudBackup;
+      const target = partial?.target ?? fallback.target;
+      if (
+        !storedConfig ||
+        !(partial?.enabled ?? fallback.enabled) ||
+        target === 'off' ||
+        target !== claim?.target ||
+        (target === 'byo-s3' &&
+          bucketRef(partial?.s3?.endpoint ?? fallback.s3.endpoint, partial?.s3?.bucket ?? fallback.s3.bucket) !==
+            identity.bucketRef)
+      )
+        throw new Error('Owner restore configuration unavailable');
+      if (!kept || claim?.bucketRef !== identity.bucketRef || claim.keyFingerprint !== identity.keyFingerprint)
+        throw new Error('Owner restore backup unavailable');
+      // Lock the current item and its immediate authority rows, never across remote I/O.
+      const asset = await trx
+        .selectFrom('asset')
+        .select(['ownerId', 'libraryId'])
+        .where('id', '=', assetId)
+        .forUpdate()
+        .noWait()
+        .executeTakeFirst();
+      if (asset && asset.ownerId !== owner.ownerId) throw new Error('Owner restore item unavailable');
+      if (asset?.libraryId) {
+        const library = await trx
+          .selectFrom('library')
+          .select(['ownerId', 'deletedAt'])
+          .where('id', '=', asset.libraryId)
+          .forShare()
+          .noWait()
+          .executeTakeFirst();
+        if (!library || library.ownerId !== owner.ownerId || library.deletedAt)
+          throw new Error('Owner restore library unavailable');
+      }
+      await trx
+        .selectFrom('asset_backup_deletion')
+        .select('assetId')
+        .where('assetId', '=', assetId)
+        .forUpdate()
+        .noWait()
+        .execute();
+      return callback(trx);
+    });
   }
 
   /** FL-164: the names of these accounts, for the restore list's owner column. */
