@@ -8,6 +8,7 @@
 // - Every result is finite and re-renders bit-identically; dissolve coverage is
 //   all-or-nothing per pixel.
 import assert from 'node:assert/strict';
+import { writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { chromeLaunchArgs } from '../engine/headless/lib/cli.mjs';
 
@@ -121,6 +122,9 @@ try {
 } finally {
   await browser.close();
 }
+
+// Raw measurements for conformance evidence, written before any assertion.
+if (process.env.BLEND_MATRIX_REPORT) await writeFile(process.env.BLEND_MATRIX_REPORT, JSON.stringify(report));
 
 // ─── Pinned reference: Freecut 4d62e80 blend-modes.ts, per component ───
 const clamp01 = (v) => Math.min(1, Math.max(0, v));
