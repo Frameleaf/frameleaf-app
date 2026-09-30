@@ -266,6 +266,8 @@ export class StudioBundleService {
       }
     }
 
+    // FL-280: refuse a caller who is not the owner before resolving any source for them
+    await this.studio.requireOwnedProject(auth, projectId, 'Only the owner can export a Studio project');
     const authorized = await this.studio.authorizeRevision(auth, { projectId, destination: StudioDestination.Local });
     if (authorized.access !== 'owner') {
       throw new ForbiddenException('Only the owner can export a Studio project');

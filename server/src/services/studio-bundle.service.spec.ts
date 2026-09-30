@@ -164,7 +164,11 @@ describe(StudioBundleService.name, () => {
   let projects: Record<string, ReturnType<typeof vi.fn>>;
   let assets: { getByIds: ReturnType<typeof vi.fn>; getByChecksums: ReturnType<typeof vi.fn> };
   let resources: { resolveProjectResources: ReturnType<typeof vi.fn> };
-  let studio: { authorizeRevision: ReturnType<typeof vi.fn>; hiddenOwnedItems: ReturnType<typeof vi.fn> };
+  let studio: {
+    authorizeRevision: ReturnType<typeof vi.fn>;
+    hiddenOwnedItems: ReturnType<typeof vi.fn>;
+    requireOwnedProject: ReturnType<typeof vi.fn>;
+  };
   let users: { get: ReturnType<typeof vi.fn> };
   /** Asset ids FL-90 authorizes for the acting account, and the file behind each. */
   let allowed: Map<string, { path: string; ownerId: string }>;
@@ -287,7 +291,12 @@ describe(StudioBundleService.name, () => {
     };
     assets = { getByIds: vi.fn().mockResolvedValue([]), getByChecksums: vi.fn().mockResolvedValue([]) };
     resources = { resolveProjectResources: resolveLikeFl90() };
-    studio = { authorizeRevision: vi.fn(), hiddenOwnedItems: vi.fn().mockResolvedValue(new Set()) };
+    studio = {
+      authorizeRevision: vi.fn(),
+      hiddenOwnedItems: vi.fn().mockResolvedValue(new Set()),
+      // the owner passes the shared owner check unless a test says otherwise
+      requireOwnedProject: vi.fn().mockResolvedValue({}),
+    };
     users = { get: vi.fn().mockResolvedValue({ ...owner.user }) };
 
     sut = new StudioBundleService(
@@ -387,6 +396,14 @@ describe(StudioBundleService.name, () => {
         BadRequestException,
       );
       expect(operations.create).toHaveBeenCalledTimes(2);
+    });
+
+    it('refuses a reviewer before resolving any source for them (FL-280)', async () => {
+      studio.requireOwnedProject.mockRejectedValue(
+        new ForbiddenException('Only the owner can export a Studio project'),
+      );
+      await expect(sut.createExport(owner, newUuidV7(), {})).rejects.toBeInstanceOf(ForbiddenException);
+      expect(studio.authorizeRevision).not.toHaveBeenCalled();
     });
 
     it('refuses a reviewer and answers a repeated submit with the first job', async () => {

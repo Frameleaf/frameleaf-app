@@ -290,6 +290,8 @@ export class StudioExportService {
         });
       }
     }
+    // FL-280: refuse a caller who is not the owner before resolving any source for them
+    await this.requireOwnedProject(auth, projectId);
     const authorized = await this.studio.authorizeRevision(auth, {
       projectId,
       destination,
