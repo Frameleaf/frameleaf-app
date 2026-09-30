@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { locale } from '$lib/stores/preferences.store';
   import { readingKey } from '$lib/frameleaf/reading-direction';
   /**
    * FL-196: the linked-server tour sheet, the owner-approved prototype's `CloudTour`
@@ -201,7 +202,7 @@
             $t('frameleaf_plan_status_grace', {
               values: {
                 date: value.graceUntil
-                  ? new Intl.DateTimeFormat(undefined, { dateStyle: 'long' }).format(new Date(value.graceUntil))
+                  ? new Intl.DateTimeFormat($locale, { dateStyle: 'long' }).format(new Date(value.graceUntil))
                   : '—',
               },
             }),

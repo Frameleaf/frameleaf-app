@@ -147,7 +147,7 @@
           <button
             type="button"
             disabled={bar.count === 0}
-            title="{barLabel(bar)}: {bar.count.toLocaleString()}"
+            title="{barLabel(bar)}: {bar.count.toLocaleString($locale ?? undefined)}"
             aria-label={$t('frameleaf_search_bar_label', {
               values: { label: barLabel(bar), count: bar.count },
             })}
@@ -175,7 +175,7 @@
             onclick={() => onPickPerson(item.value, item.person?.name)}
           >
             <PersonAvatar person={item.person} size={28} />
-            <small>{item.count.toLocaleString()}</small>
+            <small>{item.count.toLocaleString($locale ?? undefined)}</small>
           </button>
         {/each}
       </div>
@@ -195,7 +195,7 @@
                 onclick={() => onAddToken(group.token(item.value))}
               >
                 {group.label(item.value)}
-                <small>{item.count.toLocaleString()}</small>
+                <small>{item.count.toLocaleString($locale ?? undefined)}</small>
               </button>
             {/each}
           </div>
@@ -213,7 +213,7 @@
             <Icon icon={ENRICHMENT_ICONS[item.icon]} size="14" aria-hidden={true} />
             {$t(item.labelKey)}
             {#if enrichmentCounts[item.value] !== undefined}
-              <small>{enrichmentCounts[item.value]?.toLocaleString()}</small>
+              <small>{enrichmentCounts[item.value]?.toLocaleString($locale ?? undefined)}</small>
             {/if}
           </button>
         {/each}
@@ -229,7 +229,7 @@
         {#each facets[SearchFacetField.City] ?? [] as item (item.value)}
           <button type="button" onclick={() => onAddToken(operatorToken('place', item.value))}>
             {item.value}
-            <small>{item.count.toLocaleString()}</small>
+            <small>{item.count.toLocaleString($locale ?? undefined)}</small>
           </button>
         {/each}
       </div>

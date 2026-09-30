@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { locale } from '$lib/stores/preferences.store';
   import PersonAvatar from '$lib/components/frameleaf/PersonAvatar.svelte';
   import {
     moveSetGroup,
@@ -143,7 +144,7 @@
         {/if}
         <span>{option.label}</span>
         {#if option.count !== undefined}
-          <small class="count">{option.count.toLocaleString()}</small>
+          <small class="count">{option.count.toLocaleString($locale)}</small>
         {/if}
       </label>
     {/each}

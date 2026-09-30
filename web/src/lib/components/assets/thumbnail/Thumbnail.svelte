@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from 'svelte-i18n';
   import { ProjectionType } from '$lib/constants';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
@@ -376,7 +377,7 @@
           href={currentUrlReplaceAssetId(asset.id)}
           onclick={(evt) => evt.preventDefault()}
           tabindex={-1}
-          aria-label="Thumbnail URL"
+          aria-label={$t('frameleaf_thumbnail_open', { values: { name: asset.originalFileName } })}
         >
         </a>
       {/if}
@@ -425,7 +426,7 @@
         class="absolute inset-e-1 bottom-1 z-2 rounded-full bg-black/25 p-1.5 transition-colors hover:bg-black/50 focus:outline-none"
         in:motionFade={{ duration: 100 }}
         tabindex={-1}
-        aria-label="Preview asset"
+        aria-label={$t('frameleaf_thumbnail_preview', { values: { name: asset.originalFileName } })}
       >
         <Icon icon={mdiMagnifyPlusOutline} size="20" class="text-white" />
       </button>

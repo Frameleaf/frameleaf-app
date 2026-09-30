@@ -20,7 +20,7 @@
   } from '$lib/frameleaf/map-markers';
   import { mapDateWindow, MAP_DATE_PRESETS, type MapArea } from '$lib/frameleaf/map-settings';
   import { serverConfigManager } from '$lib/managers/server-config-manager.svelte';
-  import { mapSettings, type MapSettings } from '$lib/stores/preferences.store';
+  import { mapSettings, type MapSettings, locale } from '$lib/stores/preferences.store';
   import { getAssetMediaUrl } from '$lib/utils';
   import { handleError } from '$lib/utils/handle-error';
   import {
@@ -450,7 +450,7 @@
               role="img"
               aria-label={$t('frameleaf_map_cluster_label', { values: { count } })}
             >
-              {count.toLocaleString()}
+              {count.toLocaleString($locale)}
               {#if hoveredCluster?.properties?.cluster_id === feature.properties?.cluster_id}
                 <span class="card" aria-hidden="true">
                   <span class="card-empty"><Icon icon={mdiImageOutline} size="20" /></span>
@@ -646,7 +646,7 @@
             >
               <span class="track" aria-hidden="true"></span>
               <span
-                >{option.label}{#if count !== undefined}&nbsp;<small>{count.toLocaleString()}</small>{/if}</span
+                >{option.label}{#if count !== undefined}&nbsp;<small>{count.toLocaleString($locale)}</small>{/if}</span
               >
             </button>
           {/each}
