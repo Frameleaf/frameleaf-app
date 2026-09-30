@@ -370,8 +370,8 @@ describe.runIf(phase === 'chain-official')(`${lane}: official leg`, () => {
     // official server never reads immich_fork); the return must archive it, not keep serving it.
     await withDatabase((client) =>
       client.query(
-        `INSERT INTO immich_fork.studio_hdr_intermediate ("assetId", "ownerId", "sourceFingerprint", status, path)
-         VALUES ($1, $2, '\\x00'::bytea, 'ready', $3)`,
+        String.raw`INSERT INTO immich_fork.studio_hdr_intermediate ("assetId", "ownerId", "sourceFingerprint", status, path)
+         VALUES ($1, $2, '\x00'::bytea, 'ready', $3)`,
         [state.hdrOrphanAssetId, state.copyOwner.userId, HDR_ORPHAN_PATH],
       ),
     );
