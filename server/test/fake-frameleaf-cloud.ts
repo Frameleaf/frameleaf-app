@@ -173,7 +173,18 @@ const proofProblem = (proof: string, method: string, expectedHtu: string, seen: 
  * `tokens` shares another fake's token store, as an ML region accepts the tokens the cloud's token
  * endpoint issued on its own origin.
  */
-export const startFakeCloud = async ({ tokens }: { tokens?: Set<string> } = {}): Promise<FakeCloud> => {
+export const startFakeCloud = async ({
+  tokens,
+  listenHost = '127.0.0.1',
+  listenPort = 0,
+  advertisedHost = '127.0.0.1',
+}: {
+  tokens?: Set<string>;
+  /** Explicit test-only listener/address for a caller in an isolated container. */
+  listenHost?: string;
+  listenPort?: number;
+  advertisedHost?: string;
+} = {}): Promise<FakeCloud> => {
   const mintedTokens = tokens ?? new Set<string>();
   const fake = {
     requests: [],
@@ -291,9 +302,9 @@ export const startFakeCloud = async ({ tokens }: { tokens?: Set<string> } = {}):
     }
     return send({ status: 404, body: { code: 'not-found', message: 'not found' } });
   });
-  server.listen(0, '127.0.0.1');
+  server.listen(listenPort, listenHost);
   await once(server, 'listening');
-  fake.url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  fake.url = `http://${advertisedHost}:${(server.address() as AddressInfo).port}`;
   fake.close = () => new Promise((resolve) => server.close(() => resolve()));
   return fake;
 };
