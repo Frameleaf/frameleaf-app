@@ -1566,13 +1566,14 @@ export class DatabaseRepository extends ForkHandoffRepository {
   /**
    * FL-195: one sidecar write per asset at a time, across workers, in its own lock class (-3). Two
    * writes of the same sidecar (three quick tag edits queue three) collide in exiftool's temporary
-   * file, and the loser can leave no sidecar behind. The callback runs on other pooled connections;
-   * the sidecar queue's concurrency stays well below the pool size, so a holder always gets one.
+   * file, and the loser can leave no sidecar behind. Like `withAssetMetadataLock`, callers must run
+   * their queries through the transaction passed in: a holder that also needed a second pooled
+   * connection could deadlock once the sidecar queue's concurrency reached the pool size.
    */
-  async withAssetSidecarLock<R>(assetId: string, callback: () => Promise<R>): Promise<R> {
+  async withAssetSidecarLock<R>(assetId: string, callback: (kysely: Kysely<DB>) => Promise<R>): Promise<R> {
     return this.db.transaction().execute(async (trx) => {
       await sql`SELECT pg_advisory_xact_lock(-3, hashtext(${assetId})::int)`.execute(trx);
-      return callback();
+      return callback(trx);
     });
   }
 

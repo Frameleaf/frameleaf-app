@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ContainerDirectoryItem, ExifDateTime, Tags } from 'exiftool-vendored';
-import { Insertable } from 'kysely';
+import { Insertable, Kysely } from 'kysely';
 import { isUndefined, omitBy, pick } from 'lodash-es';
 import { DateTime, Duration } from 'luxon';
 import { Stats } from 'node:fs';
@@ -27,6 +27,7 @@ import {
 } from 'src/enum.js';
 import { ReverseGeocodeResult } from 'src/repositories/map.repository.js';
 import { ImmichTags } from 'src/repositories/metadata.repository.js';
+import { DB } from 'src/schema/index.js';
 import { AssetExifTable } from 'src/schema/tables/asset-exif.table.js';
 import { AssetFaceTable } from 'src/schema/tables/asset-face.table.js';
 import { BaseService } from 'src/services/base.service.js';
@@ -481,23 +482,24 @@ export class MetadataService extends BaseService {
 
   @OnJob({ name: JobName.SidecarWrite, queue: QueueName.Sidecar })
   async handleSidecarWrite(job: JobOf<JobName.SidecarWrite>): Promise<JobStatus> {
-    return this.databaseRepository.withAssetSidecarLock(job.id, () => this.writeSidecar(job));
+    return this.databaseRepository.withAssetSidecarLock(job.id, (kysely) => this.writeSidecar(job, kysely));
   }
 
-  private async writeSidecar(job: JobOf<JobName.SidecarWrite>): Promise<JobStatus> {
+  /** Every query here runs on the sidecar lock's own connection; see `withAssetSidecarLock`. */
+  private async writeSidecar(job: JobOf<JobName.SidecarWrite>, kysely: Kysely<DB>): Promise<JobStatus> {
     const { id } = job;
-    const asset = await this.assetJobRepository.getForSidecarWriteJob(id);
+    const asset = await this.assetJobRepository.getForSidecarWriteJob(id, kysely);
     if (!asset) {
       return JobStatus.Failed;
     }
 
-    const lockedProperties = await this.assetJobRepository.getLockedPropertiesForMetadataExtraction(id);
+    const lockedProperties = await this.assetJobRepository.getLockedPropertiesForMetadataExtraction(id, kysely);
 
     const { sidecarFile } = getAssetFiles(asset.files);
     const sidecarPath =
-      sidecarFile?.path && (await this.canUseExistingSidecarPath(asset, sidecarFile.path))
+      sidecarFile?.path && (await this.canUseExistingSidecarPath(asset, sidecarFile.path, kysely))
         ? sidecarFile.path
-        : await this.getSidecarWritePath(asset);
+        : await this.getSidecarWritePath(asset, kysely);
 
     const { description, dateTimeOriginal, latitude, longitude, rating, tags, timeZone } = pick(
       {
@@ -533,7 +535,7 @@ export class MetadataService extends BaseService {
     await this.metadataRepository.writeTags(sidecarPath, exif);
 
     if (!sidecarFile || sidecarFile.path !== sidecarPath) {
-      await this.assetRepository.upsertFile({ assetId: id, type: AssetFileType.Sidecar, path: sidecarPath });
+      await this.assetRepository.upsertFile({ assetId: id, type: AssetFileType.Sidecar, path: sidecarPath }, kysely);
     }
 
     // FL-36 (V-24): the sidecar has no place names, so a typed city, state or country stays locked.
@@ -552,22 +554,30 @@ export class MetadataService extends BaseService {
     await this.assetRepository.unlockProperties(
       asset.id,
       lockedProperties.filter((property) => !keptLocked.has(property)),
+      kysely,
     );
 
     return JobStatus.Success;
   }
 
-  private async getSidecarWritePath(asset: {
-    id: string;
-    ownerId: string;
-    originalPath: string;
-    physicalOriginalFileId?: string | null;
-  }) {
+  private async getSidecarWritePath(
+    asset: {
+      id: string;
+      ownerId: string;
+      originalPath: string;
+      physicalOriginalFileId?: string | null;
+    },
+    kysely?: Kysely<DB>,
+  ) {
     if (!asset.physicalOriginalFileId) {
       return `${asset.originalPath}.xmp`;
     }
 
-    const isCanonical = await this.physicalFileRepository.isOriginalCanonical(asset.id, asset.physicalOriginalFileId);
+    const isCanonical = await this.physicalFileRepository.isOriginalCanonical(
+      asset.id,
+      asset.physicalOriginalFileId,
+      kysely,
+    );
     if (isCanonical) {
       return `${asset.originalPath}.xmp`;
     }
@@ -578,12 +588,13 @@ export class MetadataService extends BaseService {
   private async canUseExistingSidecarPath(
     asset: { id: string; originalPath: string; physicalOriginalFileId?: string | null },
     path: string,
+    kysely?: Kysely<DB>,
   ) {
     if (!asset.physicalOriginalFileId) {
       return true;
     }
 
-    if (await this.physicalFileRepository.isOriginalCanonical(asset.id, asset.physicalOriginalFileId)) {
+    if (await this.physicalFileRepository.isOriginalCanonical(asset.id, asset.physicalOriginalFileId, kysely)) {
       return true;
     }
 

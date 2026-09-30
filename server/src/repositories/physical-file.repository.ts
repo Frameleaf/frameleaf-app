@@ -217,8 +217,8 @@ export class PhysicalFileRepository {
     return rows as unknown as PhysicalDeduplicationEvidenceRow[];
   }
 
-  getPhysicalFile(id: string): Promise<PhysicalFile | undefined> {
-    return this.db.selectFrom('physical_file').selectAll().where('id', '=', asUuid(id)).executeTakeFirst();
+  getPhysicalFile(id: string, kysely: Kysely<DB> = this.db): Promise<PhysicalFile | undefined> {
+    return kysely.selectFrom('physical_file').selectAll().where('id', '=', asUuid(id)).executeTakeFirst();
   }
 
   getOriginalPhysicalFile(assetId: string): Promise<PhysicalFile | undefined> {
@@ -804,8 +804,8 @@ export class PhysicalFileRepository {
     );
   }
 
-  async isOriginalCanonical(assetId: string, physicalFileId: string): Promise<boolean> {
-    const physicalFile = await this.getPhysicalFile(physicalFileId);
+  async isOriginalCanonical(assetId: string, physicalFileId: string, kysely: Kysely<DB> = this.db): Promise<boolean> {
+    const physicalFile = await this.getPhysicalFile(physicalFileId, kysely);
     return physicalFile?.canonicalAssetId === assetId;
   }
 

@@ -2154,26 +2154,25 @@ describe(MetadataService.name, () => {
         GPSLatitude: gps,
         GPSLongitude: gps,
       });
-      expect(mocks.asset.unlockProperties).toHaveBeenCalledWith(asset.id, [
-        'description',
-        'latitude',
-        'longitude',
-        'dateTimeOriginal',
-        'timeZone',
-      ]);
+      expect(mocks.asset.unlockProperties).toHaveBeenCalledWith(
+        asset.id,
+        ['description', 'latitude', 'longitude', 'dateTimeOriginal', 'timeZone'],
+        undefined,
+      );
     });
 
-    it('writes one sidecar per asset at a time (FL-195)', async () => {
+    it('writes one sidecar per asset at a time, on the lock connection (FL-195)', async () => {
       const asset = AssetFactory.from()
         .file({ type: AssetFileType.Sidecar })
         .exif({ latitude: 12, longitude: 12 })
         .build();
       mocks.assetJob.getLockedPropertiesForMetadataExtraction.mockResolvedValue(['latitude', 'longitude']);
       mocks.assetJob.getForSidecarWriteJob.mockResolvedValue(getForSidecarWrite(asset));
+      const trx = { lockConnection: true } as never;
       let locked = false;
       mocks.database.withAssetSidecarLock.mockImplementation(async (_id, fn) => {
         locked = true;
-        const result = await fn();
+        const result = await fn(trx);
         locked = false;
         return result;
       });
@@ -2184,6 +2183,10 @@ describe(MetadataService.name, () => {
       await expect(sut.handleSidecarWrite({ id: asset.id })).resolves.toBe(JobStatus.Success);
       expect(mocks.database.withAssetSidecarLock).toHaveBeenCalledWith(asset.id, expect.any(Function));
       expect(mocks.metadata.writeTags).toHaveBeenCalled();
+      // a second pooled connection per holder could deadlock the pool (see withAssetSidecarLock)
+      expect(mocks.assetJob.getForSidecarWriteJob).toHaveBeenCalledWith(asset.id, trx);
+      expect(mocks.assetJob.getLockedPropertiesForMetadataExtraction).toHaveBeenCalledWith(asset.id, trx);
+      expect(mocks.asset.unlockProperties).toHaveBeenCalledWith(asset.id, ['latitude', 'longitude'], trx);
     });
 
     it('keeps the properties locked when the sidecar could not be written (FL-195)', async () => {
@@ -2213,7 +2216,7 @@ describe(MetadataService.name, () => {
         expect.objectContaining({ TagsList: ['Parent/Child', 'Trip'] }),
       );
       // a sidecar written behind later tag edits must not become the tags' source
-      expect(mocks.asset.unlockProperties).toHaveBeenCalledWith(asset.id, ['rating']);
+      expect(mocks.asset.unlockProperties).toHaveBeenCalledWith(asset.id, ['rating'], undefined);
     });
 
     it('writes a removed location as no coordinates and keeps it locked (FL-51)', async () => {
@@ -2231,7 +2234,7 @@ describe(MetadataService.name, () => {
         asset.files[0].path,
         expect.objectContaining({ GPSLatitude: null, GPSLongitude: null }),
       );
-      expect(mocks.asset.unlockProperties).toHaveBeenCalledWith(asset.id, ['rating']);
+      expect(mocks.asset.unlockProperties).toHaveBeenCalledWith(asset.id, ['rating'], undefined);
     });
 
     it('keeps a removed location and a typed place name locked together (FL-51, FL-36)', async () => {
@@ -2250,7 +2253,7 @@ describe(MetadataService.name, () => {
 
       await expect(sut.handleSidecarWrite({ id: asset.id })).resolves.toBe(JobStatus.Success);
 
-      expect(mocks.asset.unlockProperties).toHaveBeenCalledWith(asset.id, ['rating']);
+      expect(mocks.asset.unlockProperties).toHaveBeenCalledWith(asset.id, ['rating'], undefined);
     });
 
     it('should write rating', async () => {
@@ -2261,7 +2264,7 @@ describe(MetadataService.name, () => {
       mocks.assetJob.getForSidecarWriteJob.mockResolvedValue(getForSidecarWrite(asset));
       await expect(sut.handleSidecarWrite({ id: asset.id })).resolves.toBe(JobStatus.Success);
       expect(mocks.metadata.writeTags).toHaveBeenCalledWith(asset.files[0].path, { Rating: 4 });
-      expect(mocks.asset.unlockProperties).toHaveBeenCalledWith(asset.id, ['rating']);
+      expect(mocks.asset.unlockProperties).toHaveBeenCalledWith(asset.id, ['rating'], undefined);
     });
 
     it('keeps a typed place name locked after writing the sidecar (FL-36, V-24)', async () => {
@@ -2272,7 +2275,7 @@ describe(MetadataService.name, () => {
       mocks.assetJob.getForSidecarWriteJob.mockResolvedValue(getForSidecarWrite(asset));
       await expect(sut.handleSidecarWrite({ id: asset.id })).resolves.toBe(JobStatus.Success);
       expect(mocks.metadata.writeTags).toHaveBeenCalledWith(asset.files[0].path, { Rating: 2 });
-      expect(mocks.asset.unlockProperties).toHaveBeenCalledWith(asset.id, ['rating']);
+      expect(mocks.asset.unlockProperties).toHaveBeenCalledWith(asset.id, ['rating'], undefined);
     });
 
     it('should write null rating as 0', async () => {
@@ -2283,7 +2286,7 @@ describe(MetadataService.name, () => {
       mocks.assetJob.getForSidecarWriteJob.mockResolvedValue(getForSidecarWrite(asset));
       await expect(sut.handleSidecarWrite({ id: asset.id })).resolves.toBe(JobStatus.Success);
       expect(mocks.metadata.writeTags).toHaveBeenCalledWith(asset.files[0].path, { Rating: 0 });
-      expect(mocks.asset.unlockProperties).toHaveBeenCalledWith(asset.id, ['rating']);
+      expect(mocks.asset.unlockProperties).toHaveBeenCalledWith(asset.id, ['rating'], undefined);
     });
 
     it('should write non-canonical physical asset sidecars to an owner-scoped path', async () => {
@@ -2305,11 +2308,14 @@ describe(MetadataService.name, () => {
       await expect(sut.handleSidecarWrite({ id: asset.id })).resolves.toBe(JobStatus.Success);
 
       expect(mocks.metadata.writeTags).toHaveBeenCalledWith(sidecarPath, { Rating: 4 });
-      expect(mocks.asset.upsertFile).toHaveBeenCalledWith({
-        assetId: asset.id,
-        type: AssetFileType.Sidecar,
-        path: sidecarPath,
-      });
+      expect(mocks.asset.upsertFile).toHaveBeenCalledWith(
+        {
+          assetId: asset.id,
+          type: AssetFileType.Sidecar,
+          path: sidecarPath,
+        },
+        undefined,
+      );
     });
   });
 
