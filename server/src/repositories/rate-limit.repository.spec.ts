@@ -1,4 +1,8 @@
-import { RELEASE_SCRIPT, RateLimitRepository } from 'src/repositories/rate-limit.repository.js';
+import {
+  RELEASE_SCRIPT,
+  RELEASE_UPLOAD_STREAM_SCRIPT,
+  RateLimitRepository,
+} from 'src/repositories/rate-limit.repository.js';
 import { newConfigRepositoryMock } from 'test/repositories/config.repository.mock.js';
 
 const redis = vi.hoisted(() => {
@@ -15,6 +19,8 @@ const redis = vi.hoisted(() => {
       multi: vi.fn(() => multi),
       expire: vi.fn(),
       eval: vi.fn(),
+      set: vi.fn(),
+      get: vi.fn(),
       on: vi.fn(),
       quit: vi.fn(),
       disconnect: vi.fn(),
@@ -56,6 +62,26 @@ describe(RateLimitRepository.name, () => {
     ]);
     await sut.hit('frameleaf:rate-limit:login:ip:198.51.100.7', 600);
     expect(redis.created).toHaveBeenCalledTimes(1);
+  });
+
+  it('admits one namespaced upload token atomically and gives it longer than the body timeout', async () => {
+    redis.client.set.mockResolvedValueOnce('OK').mockResolvedValueOnce(null);
+    await expect(sut.claimUploadStream('resource', 'first-token')).resolves.toBe(true);
+    await expect(sut.claimUploadStream('resource', 'second-token')).resolves.toBe(false);
+    expect(redis.client.set).toHaveBeenCalledWith('frameleaf:upload-stream:resource', 'first-token', 'EX', 900, 'NX');
+  });
+
+  it('does not mistake a replacement token for current admission and releases with exact token comparison', async () => {
+    redis.client.get.mockResolvedValue('replacement');
+    await expect(sut.isUploadStreamCurrent('resource', 'old-token')).resolves.toBe(false);
+    await sut.releaseUploadStream('resource', 'old-token');
+    expect(redis.client.eval).toHaveBeenCalledWith(
+      RELEASE_UPLOAD_STREAM_SCRIPT,
+      1,
+      'frameleaf:upload-stream:resource',
+      'old-token',
+    );
+    expect(RELEASE_UPLOAD_STREAM_SCRIPT).toContain("redis.call('GET', KEYS[1]) == ARGV[1]");
   });
 
   it('gives an attempt back with one atomic script that never recreates or leaves a spent counter', async () => {

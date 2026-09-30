@@ -8,6 +8,7 @@ import {
   SelectQueryBuilder,
   Selectable,
   ShallowDehydrateObject,
+  Transaction,
   UpdateResult,
   sql,
 } from 'kysely';
@@ -847,8 +848,12 @@ export class AssetRepository {
    * Creates an asset. With `lock` (FL-34, an upload into the Locked view) its lock record is written
    * in the same transaction, so the asset is never listed unlocked, not even for a moment.
    */
-  async create(asset: Insertable<AssetTable>, lock?: { reason: AssetLockReason; lockedBy: string | null }) {
-    return this.db.transaction().execute(async (tx) => {
+  async create(
+    asset: Insertable<AssetTable>,
+    lock?: { reason: AssetLockReason; lockedBy: string | null },
+    kysely?: Transaction<DB>,
+  ) {
+    const execute = async (tx: Kysely<DB>) => {
       const result = await tx.insertInto('asset').values(asset).returningAll().executeTakeFirstOrThrow();
       await this.forkPrivacy.mirrorFromLegacy(result.id, tx);
       await this.forkEnrichment.initialize([result.id], tx);
@@ -856,7 +861,8 @@ export class AssetRepository {
         await this.lockIn(tx, [result.id], lock.reason, lock.lockedBy);
       }
       return result;
-    });
+    };
+    return kysely ? execute(kysely) : this.db.transaction().execute(execute);
   }
 
   @ChunkedArray({ chunkSize: 4000 })

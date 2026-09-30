@@ -8,6 +8,7 @@ import { AssetDevelopService } from 'src/services/asset-develop.service.js';
 import { AssetFileService } from 'src/services/asset-file.service.js';
 import { AssetMediaService } from 'src/services/asset-media.service.js';
 import { AssetRestorationService } from 'src/services/asset-restoration.service.js';
+import { AssetUploadResourceService } from 'src/services/asset-upload-resource.service.js';
 import { AssetService } from 'src/services/asset.service.js';
 import { AuthAdminService } from 'src/services/auth-admin.service.js';
 import { AuthService } from 'src/services/auth.service.js';
@@ -127,6 +128,7 @@ import { WorkflowService } from 'src/services/workflow.service.js';
 import { ZeroShotTaggingService } from 'src/services/zero-shot-tagging.service.js';
 
 export const services = [
+  AssetUploadResourceService,
   BackupDeviceService,
   SafetyService,
   CloudMlService,

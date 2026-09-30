@@ -142,6 +142,159 @@ export class AssetMediaService extends BaseService {
     await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: [uploadPath] } });
   }
 
+  /** Upload policy and asset values shared by multipart and verified resumable publication. */
+  async prepareUploadAsset(auth: AuthDto, dto: AssetMediaCreateDto, file: UploadFile) {
+    await this.requireAccess({
+      auth,
+      permission: Permission.AssetUpload,
+      // do not need an id here, but the interface requires it
+      ids: [auth.user.id],
+    });
+
+    this.requireQuota(auth, file.size);
+
+    if (dto.livePhotoVideoId) {
+      await onBeforeLink(
+        { asset: this.assetRepository, event: this.eventRepository },
+        { userId: auth.user.id, livePhotoVideoId: dto.livePhotoVideoId },
+      );
+    }
+
+    const physicalDeduplication = await this.getPhysicalDeduplicationCandidate(auth.user.id, file);
+    return {
+      asset: {
+        ownerId: auth.user.id,
+        libraryId: null,
+
+        checksum: file.checksum,
+        checksumAlgorithm: ChecksumAlgorithm.sha256File,
+        originalPath: file.originalPath,
+
+        fileCreatedAt: dto.fileCreatedAt,
+        fileModifiedAt: dto.fileModifiedAt,
+        localDateTime: dto.fileCreatedAt,
+
+        type: mimeTypes.assetType(file.originalPath),
+        isFavorite: dto.isFavorite,
+        duration: dto.duration || null,
+        // `locked` is a lock record, never a stored visibility (FL-34): an upload into the Locked view
+        // is stored on the timeline and locked in the same transaction, so nothing lists it unlocked
+        visibility:
+          dto.visibility && dto.visibility !== AssetVisibility.Locked ? dto.visibility : AssetVisibility.Timeline,
+        livePhotoVideoId: dto.livePhotoVideoId,
+        originalFileName: dto.filename || file.originalName,
+      },
+      lock:
+        dto.visibility === AssetVisibility.Locked
+          ? { reason: AssetLockReason.Marked, lockedBy: auth.user.id }
+          : undefined,
+      physicalDeduplication,
+    };
+  }
+
+  /** Post-publication ingestion is retried against the recorded asset, never another creation. */
+  async finishUploadAsset(
+    auth: AuthDto,
+    dto: AssetMediaCreateDto,
+    file: UploadFile,
+    asset: Asset,
+    physicalDeduplication: Awaited<ReturnType<AssetMediaService['getPhysicalDeduplicationCandidate']>>,
+    sidecarFile?: UploadFile,
+    options: {
+      preparedFile?: boolean;
+      quotaCharged?: boolean;
+      ingestion?: { resourceId: string; token: string; ownerId: string };
+      checkIngestion?: () => Promise<void>;
+    } = {},
+  ) {
+    let expectedPhysical:
+      | {
+          masterOwnerId: string;
+          checksum: Buffer;
+          size: number;
+          ingestion: { resourceId: string; token: string; ownerId: string };
+        }
+      | undefined;
+    await options.checkIngestion?.();
+    if (options.quotaCharged) {
+      const { physicalDeduplication: policy } = await this.getConfig({ withCache: false });
+      physicalDeduplication = await this.getPhysicalDeduplicationCandidate(auth.user.id, file, policy);
+      if (physicalDeduplication && policy.masterUserId) {
+        if (!options.ingestion) {
+          throw new BadRequestException('Durable ingestion claim is required');
+        }
+        expectedPhysical = {
+          masterOwnerId: policy.masterUserId,
+          checksum: file.checksum,
+          size: file.size,
+          ingestion: options.ingestion,
+        };
+      }
+    }
+    if (!options.quotaCharged && dto.metadata?.length) {
+      await this.assetRepository.upsertMetadata(asset.id, dto.metadata);
+    }
+
+    if (sidecarFile) {
+      await this.assetRepository.upsertFile({
+        assetId: asset.id,
+        path: sidecarFile.originalPath,
+        type: AssetFileType.Sidecar,
+      });
+      await this.storageRepository.utimes(sidecarFile.originalPath, new Date(), new Date(dto.fileModifiedAt));
+    }
+    if (!options.preparedFile) {
+      await this.storageRepository.utimes(file.originalPath, new Date(), new Date(dto.fileModifiedAt));
+    }
+    if (!options.quotaCharged) {
+      await this.assetRepository.upsertExif({
+        exif: { assetId: asset.id, fileSizeInByte: file.size },
+        lockedPropertiesBehavior: 'override',
+      });
+    }
+
+    if (physicalDeduplication) {
+      if (expectedPhysical) {
+        await this.physicalFileRepository.linkAssetToOriginalPhysicalFile(
+          asset.id,
+          physicalDeduplication,
+          expectedPhysical,
+        );
+      } else {
+        await this.physicalFileRepository.linkAssetToOriginalPhysicalFile(asset.id, physicalDeduplication);
+      }
+      await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: [file.originalPath] } });
+      asset.originalPath = physicalDeduplication.path;
+      asset.physicalOriginalFileId = physicalDeduplication.id;
+    } else {
+      const masterPhysicalFile = await this.ensureMasterPhysicalOriginal(auth.user.id, asset.id);
+      if (masterPhysicalFile) {
+        asset.physicalOriginalFileId = masterPhysicalFile.id;
+      }
+    }
+
+    if (!options.quotaCharged && file.legacyChecksum) {
+      await this.forkSchemaRepository.recordAssetChecksums({
+        assetId: asset.id,
+        sha1: file.legacyChecksum,
+        sha256: file.checksum,
+        sizeInBytes: file.size,
+        path: asset.originalPath,
+        source: 'upload',
+      });
+    }
+
+    await options.checkIngestion?.();
+    await this.jobRepository.queue({ name: JobName.AssetExtractMetadata, data: { id: asset.id, source: 'upload' } });
+
+    if (auth.sharedLink) {
+      await this.addToSharedLink(auth.sharedLink, asset.id);
+    }
+
+    await options.checkIngestion?.();
+    await this.eventRepository.emit('AssetCreate', { asset, file: options.quotaCharged ? undefined : file });
+  }
+
   async uploadAsset(
     auth: AuthDto,
     dto: AssetMediaCreateDto,
@@ -150,99 +303,9 @@ export class AssetMediaService extends BaseService {
   ): Promise<AssetMediaResponseDto> {
     let asset: Asset | undefined;
     try {
-      await this.requireAccess({
-        auth,
-        permission: Permission.AssetUpload,
-        // do not need an id here, but the interface requires it
-        ids: [auth.user.id],
-      });
-
-      this.requireQuota(auth, file.size);
-
-      if (dto.livePhotoVideoId) {
-        await onBeforeLink(
-          { asset: this.assetRepository, event: this.eventRepository },
-          { userId: auth.user.id, livePhotoVideoId: dto.livePhotoVideoId },
-        );
-      }
-
-      const physicalDeduplication = await this.getPhysicalDeduplicationCandidate(auth.user.id, file);
-      asset = await this.assetRepository.create(
-        {
-          ownerId: auth.user.id,
-          libraryId: null,
-
-          checksum: file.checksum,
-          checksumAlgorithm: ChecksumAlgorithm.sha256File,
-          originalPath: file.originalPath,
-
-          fileCreatedAt: dto.fileCreatedAt,
-          fileModifiedAt: dto.fileModifiedAt,
-          localDateTime: dto.fileCreatedAt,
-
-          type: mimeTypes.assetType(file.originalPath),
-          isFavorite: dto.isFavorite,
-          duration: dto.duration || null,
-          // `locked` is a lock record, never a stored visibility (FL-34): an upload into the Locked view
-          // is stored on the timeline and locked in the same transaction, so nothing lists it unlocked
-          visibility:
-            dto.visibility && dto.visibility !== AssetVisibility.Locked ? dto.visibility : AssetVisibility.Timeline,
-          livePhotoVideoId: dto.livePhotoVideoId,
-          originalFileName: dto.filename || file.originalName,
-        },
-        dto.visibility === AssetVisibility.Locked
-          ? { reason: AssetLockReason.Marked, lockedBy: auth.user.id }
-          : undefined,
-      );
-
-      if (dto.metadata?.length) {
-        await this.assetRepository.upsertMetadata(asset.id, dto.metadata);
-      }
-
-      if (sidecarFile) {
-        await this.assetRepository.upsertFile({
-          assetId: asset.id,
-          path: sidecarFile.originalPath,
-          type: AssetFileType.Sidecar,
-        });
-        await this.storageRepository.utimes(sidecarFile.originalPath, new Date(), new Date(dto.fileModifiedAt));
-      }
-      await this.storageRepository.utimes(file.originalPath, new Date(), new Date(dto.fileModifiedAt));
-      await this.assetRepository.upsertExif({
-        exif: { assetId: asset.id, fileSizeInByte: file.size },
-        lockedPropertiesBehavior: 'override',
-      });
-
-      if (physicalDeduplication) {
-        await this.physicalFileRepository.linkAssetToOriginalPhysicalFile(asset.id, physicalDeduplication);
-        await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: [file.originalPath] } });
-        asset.originalPath = physicalDeduplication.path;
-        asset.physicalOriginalFileId = physicalDeduplication.id;
-      } else {
-        const masterPhysicalFile = await this.ensureMasterPhysicalOriginal(auth.user.id, asset.id);
-        if (masterPhysicalFile) {
-          asset.physicalOriginalFileId = masterPhysicalFile.id;
-        }
-      }
-
-      if (file.legacyChecksum) {
-        await this.forkSchemaRepository.recordAssetChecksums({
-          assetId: asset.id,
-          sha1: file.legacyChecksum,
-          sha256: file.checksum,
-          sizeInBytes: file.size,
-          path: asset.originalPath,
-          source: 'upload',
-        });
-      }
-
-      await this.jobRepository.queue({ name: JobName.AssetExtractMetadata, data: { id: asset.id, source: 'upload' } });
-
-      if (auth.sharedLink) {
-        await this.addToSharedLink(auth.sharedLink, asset.id);
-      }
-
-      await this.eventRepository.emit('AssetCreate', { asset, file });
+      const prepared = await this.prepareUploadAsset(auth, dto, file);
+      asset = await this.assetRepository.create(prepared.asset, prepared.lock);
+      await this.finishUploadAsset(auth, dto, file, asset, prepared.physicalDeduplication, sidecarFile);
 
       return { id: asset.id, status: AssetMediaStatus.CREATED };
     } catch (error: any) {
@@ -608,8 +671,12 @@ export class AssetMediaService extends BaseService {
     return Object.keys(options).length > 0 ? options : undefined;
   }
 
-  private async getPhysicalDeduplicationCandidate(ownerId: string, file: UploadFile) {
-    const { physicalDeduplication } = await this.getConfig({ withCache: true });
+  private async getPhysicalDeduplicationCandidate(
+    ownerId: string,
+    file: UploadFile,
+    policy?: { enabled: boolean; masterUserId: string | null },
+  ) {
+    const physicalDeduplication = policy ?? (await this.getConfig({ withCache: true })).physicalDeduplication;
     if (
       !physicalDeduplication.enabled ||
       !physicalDeduplication.masterUserId ||

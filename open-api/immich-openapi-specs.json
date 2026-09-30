@@ -9916,6 +9916,467 @@
         "x-immich-permission": "asset.update"
       }
     },
+    "/assets/uploads": {
+      "options": {
+        "operationId": "getAssetUploadResourceLimits",
+        "parameters": [],
+        "responses": {
+          "204": {
+            "description": "Resumable upload limits"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get resumable asset upload limits",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Beta"
+          }
+        ],
+        "x-immich-permission": "asset.upload",
+        "x-immich-state": "Beta"
+      },
+      "post": {
+        "description": "IETF resumable upload draft 12 / interop 9 prerequisite. Single asset only; atomic LivePhoto pairs remain unsupported.",
+        "operationId": "createAssetUploadResource",
+        "parameters": [
+          {
+            "name": "Asset-Metadata",
+            "in": "header",
+            "description": "Canonical base64url UTF-8 JSON: filename, fileCreatedAt, fileModifiedAt; optional duration, isFavorite, visibility and metadata array. No LivePhoto or sidecar references.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Repr-Digest",
+            "in": "header",
+            "description": "RFC 9530 single sha-256=:base64: digest of the entire file, required before any publication",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Upload-Complete",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "?0",
+                "?1"
+              ]
+            }
+          },
+          {
+            "name": "Upload-Draft-Interop-Version",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "9"
+              ]
+            }
+          },
+          {
+            "name": "Upload-Length",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483648
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "audio/*": {
+              "schema": {
+                "format": "binary",
+                "type": "string"
+              }
+            },
+            "image/*": {
+              "schema": {
+                "format": "binary",
+                "type": "string"
+              }
+            },
+            "video/*": {
+              "schema": {
+                "format": "binary",
+                "type": "string"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "104": {
+            "description": "Committed private upload resource exists; Location identifies resumable state"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetUploadResultDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "201": {
+            "description": "Private upload resource created, incomplete bytes are never an asset"
+          },
+          "202": {
+            "description": "Complete bytes verified; ingestion remains pending"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Create resumable asset upload",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Beta"
+          }
+        ],
+        "x-immich-permission": "asset.upload",
+        "x-immich-state": "Beta"
+      }
+    },
+    "/assets/uploads/{id}": {
+      "delete": {
+        "operationId": "cancelAssetUploadResource",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Upload cancelled"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Cancel an unpublished upload",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Beta"
+          }
+        ],
+        "x-immich-permission": "asset.upload",
+        "x-immich-state": "Beta"
+      },
+      "head": {
+        "operationId": "getAssetUploadResourceOffset",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Durable acknowledged offset; completion only after final processing",
+            "headers": {
+              "Upload-Complete": {
+                "schema": {
+                  "enum": [
+                    "?0",
+                    "?1"
+                  ],
+                  "type": "string"
+                }
+              },
+              "Upload-Offset": {
+                "schema": {
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get durable upload offset",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Beta"
+          }
+        ],
+        "x-immich-permission": "asset.upload",
+        "x-immich-state": "Beta"
+      },
+      "patch": {
+        "operationId": "appendAssetUploadResource",
+        "parameters": [
+          {
+            "name": "Upload-Complete",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "?0",
+                "?1"
+              ]
+            }
+          },
+          {
+            "name": "Upload-Draft-Interop-Version",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "9"
+              ]
+            }
+          },
+          {
+            "name": "Upload-Offset",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/partial-upload": {
+              "schema": {
+                "format": "binary",
+                "type": "string"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetUploadResultDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "202": {
+            "description": "Same upload is pending final ingestion; retry empty completion at the durable offset"
+          },
+          "204": {
+            "description": "Immutable append durably acknowledged",
+            "headers": {
+              "Upload-Complete": {
+                "schema": {
+                  "enum": [
+                    "?0",
+                    "?1"
+                  ],
+                  "type": "string"
+                }
+              },
+              "Upload-Offset": {
+                "schema": {
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Offset or state conflict; HEAD returns the durable acknowledged offset"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Append immutable upload bytes",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Beta"
+          }
+        ],
+        "x-immich-permission": "asset.upload",
+        "x-immich-state": "Beta"
+      }
+    },
+    "/assets/uploads/{id}/result": {
+      "get": {
+        "operationId": "getAssetUploadResourceResult",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetUploadResultDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "202": {
+            "description": "Ingestion pending; retry this same resource"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Recover a completed upload result",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Beta"
+          }
+        ],
+        "x-immich-permission": "asset.upload",
+        "x-immich-state": "Beta"
+      }
+    },
     "/assets/{id}": {
       "get": {
         "description": "Retrieve detailed information about a specific asset.",
@@ -52966,6 +53427,30 @@
           "reject"
         ],
         "type": "string"
+      },
+      "AssetUploadResultDto": {
+        "properties": {
+          "id": {
+            "description": "Created or duplicate asset ID; nil UUID if current privacy suppresses it",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "sha256": {
+            "description": "Verified SHA-256 of the complete uploaded representation",
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/AssetMediaStatus"
+          }
+        },
+        "required": [
+          "id",
+          "sha256",
+          "status"
+        ],
+        "type": "object"
       },
       "AssetVisibility": {
         "description": "Asset visibility",
