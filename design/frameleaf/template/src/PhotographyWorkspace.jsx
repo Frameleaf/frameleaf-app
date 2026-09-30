@@ -90,6 +90,9 @@ export function PhotographyWorkspace({
   onOpenRaw,
   onBack,
   notify,
+  initialSection = "shoots",
+  initialShootId,
+  initialDetail = false,
 }) {
   const [state, setState] = useState(() => {
     try {
@@ -114,9 +117,15 @@ export function PhotographyWorkspace({
       return {};
     }
   });
-  const [section, setSection] = useState("shoots");
-  const [shootId, setShootId] = useState(state.shoots[0].id);
-  const [detail, setDetail] = useState(false);
+  const [section, setSection] = useState(
+    sections.some(([id]) => id === initialSection) ? initialSection : "shoots",
+  );
+  const [shootId, setShootId] = useState(
+    state.shoots.some((shoot) => shoot.id === initialShootId)
+      ? initialShootId
+      : state.shoots[0].id,
+  );
+  const [detail, setDetail] = useState(initialDetail);
   const [tab, setTab] = useState("All");
   const [selected, setSelected] = useState([]);
   const [search, setSearch] = useState("");
@@ -144,6 +153,7 @@ export function PhotographyWorkspace({
         return record
           ? {
               ...photo,
+              previewFilter: previewFor(record.history.present).filter,
               edited:
                 photo.edited ||
                 JSON.stringify(record.history.present) !==
@@ -564,6 +574,7 @@ export function PhotographyWorkspace({
                       contact: website.contact,
                     },
                     layout: website.layout,
+                    spacing: website.spacing,
                   })
                 }
               >
@@ -1434,6 +1445,12 @@ export function PhotographyWorkspace({
                     background: brand.background,
                     color: brand.textColor,
                     "--phw-brand-color": brand.color,
+                    "--phw-site-gap":
+                      website.spacing === "compact"
+                        ? "8px"
+                        : website.spacing === "airy"
+                          ? "24px"
+                          : "14px",
                   }}
                 >
                   <header>
@@ -1556,6 +1573,18 @@ export function PhotographyWorkspace({
                       <option value="editorial">Editorial serif</option>
                       <option value="modern">Modern sans</option>
                       <option value="classic">Classic serif</option>
+                    </select>
+                  </Field>
+                  <Field label="Image spacing">
+                    <select
+                      value={website.spacing}
+                      onChange={(event) =>
+                        changeWebsite({ spacing: event.target.value })
+                      }
+                    >
+                      <option value="compact">Compact</option>
+                      <option value="comfortable">Comfortable</option>
+                      <option value="airy">Airy</option>
                     </select>
                   </Field>
                   <Field label="Accent colour">
@@ -1814,14 +1843,14 @@ export function PhotographyWorkspace({
                   <Icon name="mdiCloudOutline" size={26} />
                   <strong>Cloud Pro</strong>
                   <span>
-                    A managed home for your public work.
+                    Managed connections to your studio.
                     <br />
                     One studio, one domain, one server.
                   </span>
                   <small>
                     {publishing.billing === "monthly"
-                      ? "$29.99 / month"
-                      : "$299.90 / year"}
+                      ? "US$29.99 / month · proposed"
+                      : "US$299.90 / year · proposed"}
                   </small>
                   <Icon
                     name={
@@ -1843,7 +1872,7 @@ export function PhotographyWorkspace({
                       </h2>
                       <p>
                         {publishing.mode === "cloud"
-                          ? "A single managed server for this studio."
+                          ? "Your Frameleaf instance hosts the photographs. Cloud manages the connection."
                           : "Connect your own server when you are ready to share."}
                       </p>
                     </div>
@@ -1881,38 +1910,50 @@ export function PhotographyWorkspace({
                           }
                         >
                           <option value="monthly">
-                            Monthly · $29.99 / month
+                            Monthly · US$29.99 / month
                           </option>
                           <option value="yearly">
-                            Yearly · $299.90 / year
+                            Yearly · US$299.90 / year
                           </option>
                         </select>
                       </Field>
                       <dl className="phw-stats">
                         <div>
-                          <dt>Storage included</dt>
+                          <dt>Monthly relay allowance</dt>
                           <dd>500 GB</dd>
                         </div>
                         <div>
-                          <dt>Connection</dt>
+                          <dt>Relay speed limit</dt>
                           <dd>50 Mbps</dd>
                         </div>
                         <div>
-                          <dt>Monthly bandwidth</dt>
+                          <dt>Encrypted backup</dt>
                           <dd>1 TB</dd>
                         </div>
                         <div>
-                          <dt>Domains / servers</dt>
+                          <dt>Domains / instances</dt>
                           <dd>1 / 1</dd>
                         </div>
                       </dl>
+                      <p className="phw-small">
+                        Proposed pilot package. Includes existing Cloud
+                        services, managed domain setup, certificates, connection
+                        monitoring and priority support. Direct traffic is
+                        unmetered by Cloud.
+                      </p>
+                      <p className="phw-small">
+                        Relay usage warns at 80% and slows after 500 GB. No
+                        automatic transfer overage charges. Replaces your base
+                        Cloud plan; existing supporter discounts do not apply to
+                        this Pro package.
+                      </p>
                       <Toggle
                         label="Encrypted backup"
                         checked={publishing.backup}
                         onChange={(value) =>
                           changePublishing({ backup: value })
                         }
-                        hint="Optional. Choose what to back up before enabling."
+                        hint="Separate opt-in service. Choose files first; encryption keys remain with your studio."
                       />
                     </>
                   )}
@@ -1968,16 +2009,31 @@ export function PhotographyWorkspace({
                   <Icon name="mdiShieldCheckOutline" size={30} />
                   <h2>Made for a local workflow</h2>
                   <p>
-                    Your studio tools work on every plan. Managed publishing is
-                    an optional place to host your public portfolio and client
-                    galleries.
+                    Your studio tools work on every plan. Your Frameleaf
+                    instance serves the website and galleries; Cloud Pro manages
+                    domains and connectivity, with direct access and encrypted
+                    relay fallback.
                   </p>
                   <ul>
-                    <li>Original RAW files stay on your device.</li>
+                    <li>
+                      Originals, edits and client feedback stay on your
+                      instance.
+                    </li>
+                    <li>
+                      Cloud cannot read gallery photographs or private TLS keys.
+                    </li>
+                    <li>
+                      Your server must stay online. Cloud keeps no hosted copy.
+                    </li>
                     <li>Proof downloads start off; watermarks start on.</li>
                     <li>You choose which photographs become public.</li>
                     <li>Encrypted backup is opt-in.</li>
                   </ul>
+                  <p>
+                    Cancelling Pro ends the additional managed services after
+                    the paid period. Local editing, exports and independently
+                    configured publishing remain usable.
+                  </p>
                   <Button
                     icon="mdiCameraOutline"
                     onClick={() => setSection("shoots")}
