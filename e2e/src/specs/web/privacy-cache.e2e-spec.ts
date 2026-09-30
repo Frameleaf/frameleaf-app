@@ -69,7 +69,8 @@ test('revocation, Locking and a new sign-in are never answered from the browser 
     await controlled(page);
     await expect(page.getByRole('region', { name: 'Shared with you' }).getByRole('listitem')).toHaveCount(2);
     for (const id of [revoked.id, locked.id]) {
-      expect(await fetchStatus(page, thumbnail(id))).toBe(200);
+      // Upload processing is asynchronous; only mutate access after the generated media is warm.
+      await expect.poll(() => fetchStatus(page, thumbnail(id)), { timeout: 30_000 }).toBe(200);
       expect(await fetchStatus(page, original(id))).toBe(200);
     }
 
