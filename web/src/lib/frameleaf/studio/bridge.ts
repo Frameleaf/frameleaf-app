@@ -159,7 +159,8 @@ export const createStudioBridge = ({ context, handlers = {} }: StudioBridgeOptio
         if (error.reason === 'stale-revision') {
           return studioCommandRejection(envelope.idempotencyKey, 'stale-revision', context().revision);
         }
-        return reject(error.reason);
+        // The session may have lost the project while the handler worked; that is the true reason.
+        return reject(context().hasAccess ? error.reason : 'forbidden');
       }
       // Not settled: a transport failure leaves the outcome unknown, and the editor may
       // legitimately retry the same key.
