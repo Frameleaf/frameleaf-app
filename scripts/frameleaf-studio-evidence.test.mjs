@@ -9,6 +9,7 @@ import {
   blockedAxisEntry,
   buildPassedEntry,
   commandMatrixCoverage,
+  mergeMatrixCoverage,
   missingCases,
 } from "./frameleaf-studio-evidence.mjs";
 
@@ -601,4 +602,155 @@ test("applyFamilyCoverage writes a real schema-shaped artifact and marks the row
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+test("mergeMatrixCoverage unions per-row coverage across reports that own disjoint cases", () => {
+  const shared = commandMatrixCoverage({
+    commands: [
+      {
+        id: "access.project-source-render",
+        manifestIds: ["command.timeline-trim"],
+        cases: [
+          { case: "owner", result: "passed" },
+          { case: "shared", result: "passed" },
+        ],
+      },
+    ],
+  });
+  const engine = commandMatrixCoverage({
+    commands: [
+      {
+        id: "timeline.trim",
+        manifestIds: ["command.timeline-trim"],
+        cases: [{ case: "deleted", result: "passed" }],
+      },
+    ],
+  });
+  const merged = mergeMatrixCoverage([shared, engine]);
+  assert.deepEqual(
+    merged.get("command.timeline-trim"),
+    new Set(["owner", "shared", "deleted"]),
+  );
+});
+
+test("mergeMatrixCoverage throws when two reports both claim the same case for the same row", () => {
+  const first = commandMatrixCoverage({
+    commands: [
+      {
+        id: "a",
+        manifestIds: ["command.timeline-trim"],
+        cases: [{ case: "viewer", result: "passed" }],
+      },
+    ],
+  });
+  const second = commandMatrixCoverage({
+    commands: [
+      {
+        id: "b",
+        manifestIds: ["command.timeline-trim"],
+        cases: [{ case: "viewer", result: "passed" }],
+      },
+    ],
+  });
+  assert.throws(
+    () => mergeMatrixCoverage([first, second]),
+    /case "viewer" reported passed by more than one report/,
+  );
+});
+
+test("applyCommandMatrixCoverage takes the axis as a parameter, not hardcoded to 'command'", async () => {
+  const overlay = {
+    engineRevision: "e",
+    rows: [
+      overlayRow("command.timeline-trim", {
+        authorizationFailure: { status: "not-tested" },
+      }),
+    ],
+  };
+  const catalog = { rows: [fixture("command.timeline-trim")] };
+  const sharedAccessReport = {
+    commands: [
+      {
+        id: "access.project-source-render",
+        manifestIds: ["command.timeline-trim"],
+        cases: ["owner", "shared", "viewer", "sensitive", "revoked"].map(
+          (name) => ({ case: name, result: "passed" }),
+        ),
+      },
+    ],
+  };
+  const engineFailureReport = {
+    commands: [
+      {
+        id: "timeline.trim",
+        manifestIds: ["command.timeline-trim"],
+        cases: [
+          "deleted",
+          "unsupported",
+          "cancel",
+          "restart",
+          "stale-result",
+        ].map((name) => ({ case: name, result: "passed" })),
+      },
+    ],
+  };
+  const summary = await applyCommandMatrixCoverage(
+    overlay,
+    catalog,
+    manifest(),
+    build(),
+    [sharedAccessReport, engineFailureReport],
+    { axis: "authorizationFailure" },
+  );
+  assert.equal(summary.axis, "authorizationFailure");
+  assert.equal(summary.untested, 0);
+  // All 10 authorizationFailure-specific cases are covered by the union of both reports; the
+  // row's own base cases (normal/invalid) are genuinely unmeasured by either, so still missing.
+  assert.deepEqual(overlay.rows[0].axes.authorizationFailure, {
+    status: "blocked",
+    reason:
+      "Missing authorizationFailure-axis case(s): invalid, normal (FL-112).",
+  });
+});
+
+test("applyCommandMatrixCoverage propagates the cross-report case-ownership conflict as an error", async () => {
+  const overlay = {
+    engineRevision: "e",
+    rows: [
+      overlayRow("command.timeline-trim", {
+        authorizationFailure: { status: "not-tested" },
+      }),
+    ],
+  };
+  const catalog = { rows: [fixture("command.timeline-trim")] };
+  const reportA = {
+    commands: [
+      {
+        id: "a",
+        manifestIds: ["command.timeline-trim"],
+        cases: [{ case: "viewer", result: "passed" }],
+      },
+    ],
+  };
+  const reportB = {
+    commands: [
+      {
+        id: "b",
+        manifestIds: ["command.timeline-trim"],
+        cases: [{ case: "viewer", result: "passed" }],
+      },
+    ],
+  };
+  await assert.rejects(
+    () =>
+      applyCommandMatrixCoverage(
+        overlay,
+        catalog,
+        manifest(),
+        build(),
+        [reportA, reportB],
+        { axis: "authorizationFailure" },
+      ),
+    /case "viewer" reported passed by more than one report/,
+  );
 });
