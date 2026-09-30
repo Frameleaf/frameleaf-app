@@ -6,7 +6,7 @@ import {
   type AssetDevelopMaskAdjustments,
   AssetDevelopMaskKind,
   AssetDevelopPreset,
-  type AssetDevelopRecipe,
+  type KnownAssetDevelopRecipe as AssetDevelopRecipe,
 } from 'src/dtos/asset-develop.dto.js';
 
 /**

@@ -639,7 +639,7 @@ export const rotateAspect = (aspect: AspectId): AspectId =>
 /** The recipe fields the server renders as tone; geometry is applied on the stage while editing. */
 export const toneOnlyRecipe = (recipe: AssetDevelopRecipeDto): AssetDevelopRecipeDto => ({
   ...recipe,
-  crop: { ...FULL_RECT },
+  crop: { ...(recipe.crop && typeof recipe.crop === 'object' && recipe.crop), ...FULL_RECT },
   straighten: 0,
   rotation: 0,
   flipHorizontal: false,
@@ -650,15 +650,23 @@ export const toneOnlyRecipe = (recipe: AssetDevelopRecipeDto): AssetDevelopRecip
 export const toneKey = (recipe: AssetDevelopRecipeDto): string => {
   const tone = toneOnlyRecipe(recipe);
   // Masks are sent in the source frame, so their preview also depends on the turns and flips (FL-64).
-  const masks = recipe.masks?.length
-    ? [recipe.masks, recipe.rotation ?? 0, !!recipe.flipHorizontal, !!recipe.flipVertical]
-    : [];
-  return JSON.stringify([
-    ...DEVELOP_KEYS.map((key) => tone[key] ?? 0),
-    tone.preset ?? AssetDevelopPreset.Original,
-    tone.presetStrength ?? 100,
-    ...masks,
-  ]);
+  const masks =
+    Array.isArray(recipe.masks) && recipe.masks.length > 0
+      ? [recipe.masks, recipe.rotation ?? 0, !!recipe.flipHorizontal, !!recipe.flipVertical]
+      : [];
+  return JSON.stringify(
+    [
+      ...DEVELOP_KEYS.map((key) => tone[key] ?? 0),
+      tone.preset ?? AssetDevelopPreset.Original,
+      tone.presetStrength ?? 100,
+      ...masks,
+      tone,
+    ],
+    (_key, value) =>
+      value && typeof value === 'object' && !Array.isArray(value)
+        ? Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)))
+        : value,
+  );
 };
 
 export const formatParam = (spec: DevelopParamSpec, value: number) => {

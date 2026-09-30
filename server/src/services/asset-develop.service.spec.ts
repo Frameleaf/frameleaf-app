@@ -149,6 +149,70 @@ describe(AssetDevelopService.name, () => {
     mocks.mediaOperation.listActiveEditsOfRevision.mockResolvedValue([]);
   });
 
+  it('preserves raw recipe through save and readback rather than projecting the renderer (FL-233)', async () => {
+    const recipe = { ...defaultDevelopRecipe(), future: { operations: [{ method: 'remove', fill: 'opaque' }] } };
+    developRepository.create.mockImplementation((input) => Promise.resolve(revisionStub({ recipe: input.recipe })));
+    const saved = await sut.save(authStub.user1, asset.id, { recipe, render: false });
+    expect(saved.recipe).toEqual(recipe);
+    expect(developRepository.create.mock.calls[0][0].recipe).toEqual(recipe);
+    developRepository.listByAsset.mockResolvedValue([revisionStub({ recipe })]);
+    expect((await sut.get(authStub.user1, asset.id)).revisions[0].recipe).toEqual(recipe);
+  });
+
+  it.each([
+    { version: 2, future: { operation: 'remove' } },
+    { ...defaultDevelopRecipe(), future: { operation: 'remove' } },
+  ])('refuses unsupported immediate save render and preview without touching media: %j', async (recipe) => {
+    await expect(sut.save(authStub.user1, asset.id, { recipe, render: true })).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(developRepository.create).not.toHaveBeenCalled();
+    await expect(sut.preview(authStub.user1, asset.id, { recipe, size: 256 })).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(mocks.media.decodeImage).not.toHaveBeenCalled();
+  });
+
+  it('returns a machine-readable unsupported render refusal before the first save mutation', async () => {
+    const error = await sut
+      .save(authStub.user1, asset.id, { recipe: { version: 2 }, render: true })
+      .catch((error: BadRequestException) => error);
+    expect(error).toBeInstanceOf(BadRequestException);
+    expect((error as BadRequestException).getResponse()).toMatchObject({ code: 'develop_renderer_unsupported' });
+    expect(developRepository.create).not.toHaveBeenCalled();
+    expect(developRepository.setCurrent).not.toHaveBeenCalled();
+    expect(mocks.job.queue).not.toHaveBeenCalled();
+  });
+
+  it('refuses explicitly queueing an unsupported saved revision', async () => {
+    developRepository.get.mockResolvedValue(revisionStub({ assetId: asset.id, recipe: { version: 2 } }));
+    await expect(sut.render(authStub.user1, asset.id, 'revision')).rejects.toBeInstanceOf(BadRequestException);
+    expect(developRepository.update).not.toHaveBeenCalled();
+    expect(mocks.job.queue).not.toHaveBeenCalled();
+  });
+
+  it.each([AssetDevelopRevisionStatus.Queued, AssetDevelopRevisionStatus.Rendering])(
+    'refuses unsupported explicit render even when already %s',
+    async (status) => {
+      developRepository.get.mockResolvedValue(revisionStub({ assetId: asset.id, recipe: { version: 2 }, status }));
+      await expect(sut.render(authStub.user1, asset.id, 'revision')).rejects.toBeInstanceOf(BadRequestException);
+      expect(developRepository.update).not.toHaveBeenCalled();
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+    },
+  );
+
+  it('does not requeue unsupported untracked revisions at bootstrap', async () => {
+    developRepository.listUnfinished.mockResolvedValue([
+      revisionStub({ recipe: { version: 2 }, status: AssetDevelopRevisionStatus.Queued }),
+    ]);
+    await sut.onBootstrap();
+    expect(mocks.job.queueAll).not.toHaveBeenCalled();
+    expect(developRepository.update).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ status: AssetDevelopRevisionStatus.Failed }),
+    );
+  });
+
   describe('access', () => {
     it('refuses every operation on an asset the user cannot edit', async () => {
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set());
@@ -166,12 +230,12 @@ describe(AssetDevelopService.name, () => {
   });
 
   describe('save', () => {
-    it('stores a normalized recipe as the next revision and queues the render', async () => {
+    it('stores a valid recipe as the next revision and queues the render', async () => {
       const created = revisionStub({ assetId: asset.id, status: AssetDevelopRevisionStatus.Saved });
       developRepository.create.mockResolvedValue(created);
 
       const response = await sut.save(authStub.user1, asset.id, {
-        recipe: { ...defaultDevelopRecipe(), exposure: 9, preset: AssetDevelopPreset.Warm },
+        recipe: { ...defaultDevelopRecipe(), exposure: 2, preset: AssetDevelopPreset.Warm },
         label: 'Warm sunset',
         render: true,
       });
@@ -313,6 +377,24 @@ describe(AssetDevelopService.name, () => {
       expect(result.buffer.toString()).toBe('jpeg-bytes');
       expect(result.contentType).toBe('image/jpeg');
     });
+  });
+
+  it('fails recovered unsupported queued recipes permanently without decode/publication/retry', async () => {
+    const revision = revisionStub({
+      assetId: asset.id,
+      recipe: { version: 2 },
+      status: AssetDevelopRevisionStatus.Queued,
+    });
+    developRepository.get.mockResolvedValue(revision);
+    developRepository.beginAttempt.mockResolvedValue({ ...revision, status: AssetDevelopRevisionStatus.Rendering });
+    await expect(sut.handleRender({ id: revision.id })).resolves.toBe(JobStatus.Failed);
+    expect(mocks.media.decodeImage).not.toHaveBeenCalled();
+    expect(developRepository.setCurrent).not.toHaveBeenCalled();
+    expect(mocks.job.queue).not.toHaveBeenCalled();
+    expect(developRepository.update).toHaveBeenCalledWith(
+      revision.id,
+      expect.objectContaining({ status: AssetDevelopRevisionStatus.Failed }),
+    );
   });
 
   describe('handleRender', () => {

@@ -4713,6 +4713,7 @@
   "frameleaf_editor_version_queued": "Version {revision} saved. Rendering the edited master…",
   "frameleaf_editor_version_rendered": "Version {revision} rendered",
   "frameleaf_editor_version_retrying": "Retrying automatically after: {error}",
+  "frameleaf_editor_version_saved_newer_renderer": "Edits saved. This recipe requires a newer renderer; the current preview is unchanged.",
   "frameleaf_editor_versions_error": "Unable to load the saved versions",
   "frameleaf_editor_versions_help": "Every saved version keeps its recipe and its rendered files. Make one current to show it; revert to the original at any time. Nothing here changes the original file.",
   "frameleaf_editor_with_people": "with {names}",
