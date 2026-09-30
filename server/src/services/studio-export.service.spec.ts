@@ -387,6 +387,14 @@ describe(StudioExportService.name, () => {
       resolution: '1080p',
     } as never;
 
+    it('refuses a reviewer an export before resolving any source for them (FL-280)', async () => {
+      studio.requireOwnedProject.mockRejectedValue(
+        new ForbiddenException('Only the owner can export a Studio project'),
+      );
+      await expect(sut.create(auth(), PROJECT, dto)).rejects.toBeInstanceOf(ForbiddenException);
+      expect(studio.authorizeRevision).not.toHaveBeenCalled();
+    });
+
     it('renders only at home: a Frameleaf Cloud destination is refused before anything is resolved', async () => {
       await expect(
         sut.create(auth(), PROJECT, {
