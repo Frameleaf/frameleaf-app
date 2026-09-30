@@ -896,8 +896,11 @@ export const catalogue = [
       keyframeId: 'string',
       at: 'time?',
       value: 'object?',
+      temporalEase: 'object?',
+      spatial: 'object?',
     },
-    description: 'Retime or revalue one keyframe from the graph editor or dopesheet.',
+    description:
+      'Retime or revalue one keyframe from the graph editor or dopesheet, or set its velocity handles and path tangents.',
   },
   {
     id: 'lottie.update',

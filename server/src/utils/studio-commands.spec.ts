@@ -106,6 +106,18 @@ describe('validateStudioCommandEnvelope', () => {
     // A float is what FL-93 removed from this contract: 1001/30000 has no float spelling,
     // so a client that sends 0.03336666 is refused rather than quietly resampled.
     expect(validateStudioCommandPayload('clip.split', { at: 3.5 })).toMatchObject({ valid: false });
+    // Null clears an optional field (unparent, remove an expression); a required field cannot be null.
+    expect(validateStudioCommandPayload('clip.setTransformParent', { clipId: 'a', parentId: null })).toEqual({
+      valid: true,
+    });
+    expect(
+      validateStudioCommandPayload('property.setExpression', { clipId: 'a', property: 'opacity', expression: null }),
+    ).toEqual({
+      valid: true,
+    });
+    expect(validateStudioCommandPayload('clip.setTransformParent', { clipId: null, parentId: 'b' })).toMatchObject({
+      valid: false,
+    });
     expect(validateStudioCommandPayload('clip.split', { at: { num: 7, den: 2 } })).toEqual({ valid: true });
     // Unreduced and zero-denominator pairs break the invariants the arithmetic relies on.
     expect(validateStudioCommandPayload('clip.split', { at: { num: 14, den: 4 } })).toMatchObject({ valid: false });
