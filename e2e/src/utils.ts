@@ -1058,6 +1058,24 @@ export const utils = {
     return !jobCounts.active && !jobCounts.waiting;
   },
 
+  /**
+   * Waits until no queue has a waiting or running job, e.g. before a spec deletes assets or users
+   * whose upload jobs (metadata, thumbnails, video encoding) would otherwise write rows for them.
+   */
+  waitForAllQueuesFinish: async (accessToken: string) => {
+    const deadline = Date.now() + (process.env.CI ? 60_000 : 10_000);
+    while (true) {
+      const queues = await getQueuesLegacy({ headers: asBearerAuth(accessToken) });
+      if (Object.values(queues).every(({ jobCounts }) => !jobCounts.active && !jobCounts.waiting)) {
+        return;
+      }
+      if (Date.now() > deadline) {
+        throw new Error('Timed out waiting for all queues to empty');
+      }
+      await setAsyncTimeout(200);
+    }
+  },
+
   waitForQueueFinish: (accessToken: string, queue: keyof QueuesResponseLegacyDto, ms?: number) => {
     // eslint-disable-next-line no-async-promise-executor
     return new Promise<void>(async (resolve, reject) => {
