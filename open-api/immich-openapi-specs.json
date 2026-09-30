@@ -49786,6 +49786,7 @@
         "type": "object"
       },
       "AssetDevelopCrop": {
+        "additionalProperties": {},
         "properties": {
           "h": {
             "description": "Crop height as a fraction of the frame",
@@ -50122,202 +50123,168 @@
         "type": "object"
       },
       "AssetDevelopRecipeDto": {
-        "properties": {
-          "blacks": {
-            "default": 0,
-            "description": "Black point",
-            "format": "double",
-            "maximum": 100,
-            "minimum": -100,
-            "type": "number"
-          },
-          "clarity": {
-            "default": 0,
-            "description": "Local contrast in the midtones",
-            "format": "double",
-            "maximum": 100,
-            "minimum": -100,
-            "type": "number"
-          },
-          "contrast": {
-            "default": 0,
-            "description": "Contrast around middle grey",
-            "format": "double",
-            "maximum": 100,
-            "minimum": -100,
-            "type": "number"
-          },
-          "crop": {
-            "$ref": "#/components/schemas/AssetDevelopCrop",
-            "default": {
-              "h": 1,
-              "w": 1,
-              "x": 0,
-              "y": 0
-            }
-          },
-          "dehaze": {
-            "default": 0,
-            "description": "Haze removal (positive) or addition (negative)",
-            "format": "double",
-            "maximum": 100,
-            "minimum": -100,
-            "type": "number"
-          },
-          "exposure": {
-            "default": 0,
-            "description": "Exposure in EV; each whole stop doubles the light",
-            "format": "double",
-            "maximum": 2,
-            "minimum": -2,
-            "type": "number"
-          },
-          "flipHorizontal": {
-            "default": false,
-            "description": "Mirror left to right",
-            "type": "boolean"
-          },
-          "flipVertical": {
-            "default": false,
-            "description": "Mirror top to bottom",
-            "type": "boolean"
-          },
-          "grain": {
-            "default": 0,
-            "description": "Film grain amount",
-            "format": "double",
-            "maximum": 100,
-            "minimum": 0,
-            "type": "number"
-          },
-          "highlights": {
-            "default": 0,
-            "description": "Highlight recovery (negative) or lift (positive)",
-            "format": "double",
-            "maximum": 100,
-            "minimum": -100,
-            "type": "number"
-          },
-          "masks": {
-            "default": [],
-            "description": "Selective adjustments, applied in order after the global develop",
-            "items": {
-              "$ref": "#/components/schemas/AssetDevelopMask"
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "version": {
+                "type": "number",
+                "enum": [
+                  1
+                ]
+              },
+              "exposure": {
+                "type": "number",
+                "minimum": -2,
+                "maximum": 2,
+                "format": "double"
+              },
+              "contrast": {
+                "type": "number",
+                "minimum": -100,
+                "maximum": 100,
+                "format": "double"
+              },
+              "highlights": {
+                "type": "number",
+                "minimum": -100,
+                "maximum": 100,
+                "format": "double"
+              },
+              "shadows": {
+                "type": "number",
+                "minimum": -100,
+                "maximum": 100,
+                "format": "double"
+              },
+              "whites": {
+                "type": "number",
+                "minimum": -100,
+                "maximum": 100,
+                "format": "double"
+              },
+              "blacks": {
+                "type": "number",
+                "minimum": -100,
+                "maximum": 100,
+                "format": "double"
+              },
+              "temperature": {
+                "type": "number",
+                "minimum": -100,
+                "maximum": 100,
+                "format": "double"
+              },
+              "tint": {
+                "type": "number",
+                "minimum": -100,
+                "maximum": 100,
+                "format": "double"
+              },
+              "vibrance": {
+                "type": "number",
+                "minimum": -100,
+                "maximum": 100,
+                "format": "double"
+              },
+              "saturation": {
+                "type": "number",
+                "minimum": -100,
+                "maximum": 100,
+                "format": "double"
+              },
+              "clarity": {
+                "type": "number",
+                "minimum": -100,
+                "maximum": 100,
+                "format": "double"
+              },
+              "dehaze": {
+                "type": "number",
+                "minimum": -100,
+                "maximum": 100,
+                "format": "double"
+              },
+              "vignette": {
+                "type": "number",
+                "minimum": -100,
+                "maximum": 100,
+                "format": "double"
+              },
+              "grain": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 100,
+                "format": "double"
+              },
+              "sharpen": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 100,
+                "format": "double"
+              },
+              "noiseReduction": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 100,
+                "format": "double"
+              },
+              "crop": {
+                "$ref": "#/components/schemas/AssetDevelopCrop"
+              },
+              "straighten": {
+                "type": "number",
+                "minimum": -45,
+                "maximum": 45,
+                "format": "double"
+              },
+              "rotation": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 270
+              },
+              "flipHorizontal": {
+                "type": "boolean"
+              },
+              "flipVertical": {
+                "type": "boolean"
+              },
+              "preset": {
+                "$ref": "#/components/schemas/AssetDevelopPreset"
+              },
+              "presetStrength": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 100
+              },
+              "masks": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": {}
+                }
+              }
             },
-            "maxItems": 8,
-            "type": "array"
-          },
-          "noiseReduction": {
-            "default": 0,
-            "description": "Luminance noise reduction amount",
-            "format": "double",
-            "maximum": 100,
-            "minimum": 0,
-            "type": "number"
-          },
-          "preset": {
-            "$ref": "#/components/schemas/AssetDevelopPreset",
-            "default": "Original"
-          },
-          "presetStrength": {
-            "default": 100,
-            "description": "How much of the preset is applied, as a percentage",
-            "maximum": 100,
-            "minimum": 0,
-            "type": "integer"
-          },
-          "rotation": {
-            "default": 0,
-            "description": "Quarter-turn rotation in degrees, clockwise",
-            "maximum": 270,
-            "minimum": 0,
-            "type": "integer"
-          },
-          "saturation": {
-            "default": 0,
-            "description": "Global saturation",
-            "format": "double",
-            "maximum": 100,
-            "minimum": -100,
-            "type": "number"
-          },
-          "shadows": {
-            "default": 0,
-            "description": "Shadow lift (positive) or deepening (negative)",
-            "format": "double",
-            "maximum": 100,
-            "minimum": -100,
-            "type": "number"
-          },
-          "sharpen": {
-            "default": 0,
-            "description": "Detail sharpening amount",
-            "format": "double",
-            "maximum": 100,
-            "minimum": 0,
-            "type": "number"
-          },
-          "straighten": {
-            "default": 0,
-            "description": "Straighten angle in degrees, applied before the crop",
-            "format": "double",
-            "maximum": 45,
-            "minimum": -45,
-            "type": "number"
-          },
-          "temperature": {
-            "default": 0,
-            "description": "Warm (positive) or cool (negative) white balance shift",
-            "format": "double",
-            "maximum": 100,
-            "minimum": -100,
-            "type": "number"
-          },
-          "tint": {
-            "default": 0,
-            "description": "Magenta (positive) or green (negative) tint",
-            "format": "double",
-            "maximum": 100,
-            "minimum": -100,
-            "type": "number"
-          },
-          "version": {
-            "description": "Recipe contract version",
-            "enum": [
-              1
+            "required": [
+              "version"
             ],
-            "format": "double",
-            "type": "number"
+            "additionalProperties": {}
           },
-          "vibrance": {
-            "default": 0,
-            "description": "Saturation weighted towards muted colours",
-            "format": "double",
-            "maximum": 100,
-            "minimum": -100,
-            "type": "number"
-          },
-          "vignette": {
-            "default": 0,
-            "description": "Darkened (positive) or lightened (negative) edges",
-            "format": "double",
-            "maximum": 100,
-            "minimum": -100,
-            "type": "number"
-          },
-          "whites": {
-            "default": 0,
-            "description": "White point",
-            "format": "double",
-            "maximum": 100,
-            "minimum": -100,
-            "type": "number"
+          {
+            "type": "object",
+            "properties": {
+              "version": {
+                "type": "integer",
+                "minimum": 2,
+                "maximum": 2147483647
+              }
+            },
+            "required": [
+              "version"
+            ],
+            "additionalProperties": {}
           }
-        },
-        "required": [
-          "version"
-        ],
-        "type": "object"
+        ]
       },
       "AssetDevelopResponseDto": {
         "properties": {
@@ -50549,6 +50516,16 @@
             "default": true,
             "description": "Queue the edited master render immediately after saving the recipe",
             "type": "boolean"
+          },
+          "replaceRecipe": {
+            "description": "Explicit complete replacement instead of preserving omitted source fields, including intentional removals",
+            "type": "boolean"
+          },
+          "sourceRevisionId": {
+            "description": "Immutable revision of this owned asset whose omitted fields are preserved; never the implicit current revision",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
           }
         },
         "required": [

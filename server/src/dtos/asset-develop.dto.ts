@@ -181,7 +181,7 @@ export const AssetDevelopMaskSchema = z
   })
   .meta({ id: 'AssetDevelopMask' });
 
-export const AssetDevelopRecipeSchema = z
+export const KnownAssetDevelopRecipeSchema = z
   .object({
     version: z.literal(ASSET_DEVELOP_RECIPE_VERSION).meta({ format: 'double' }).describe('Recipe contract version'),
     exposure: z
@@ -236,7 +236,84 @@ export const AssetDevelopRecipeSchema = z
       })
       .describe('Selective adjustments, applied in order after the global develop'),
   })
+  .meta({ id: 'KnownAssetDevelopRecipe' });
+
+/** Stored/wire envelope. Opaque JSON is retained; it is never a render instruction. */
+const VersionOneEnvelopeSchema = z
+  .object({
+    ...Object.fromEntries(
+      Object.entries(KnownAssetDevelopRecipeSchema.shape).map(([key, schema]) => [
+        key,
+        (schema instanceof z.ZodDefault ? schema.unwrap() : schema).optional(),
+      ]),
+    ),
+    version: z.literal(ASSET_DEVELOP_RECIPE_VERSION),
+    crop: AssetDevelopCropSchema.loose().meta({ id: 'AssetDevelopCrop' }).optional(),
+    masks: z.array(z.record(z.string(), z.unknown())).optional(),
+  })
+  .loose()
+  .superRefine((value, ctx) => {
+    const masks = value.masks;
+    const known = KnownAssetDevelopRecipeSchema.safeParse({
+      ...value,
+      masks: Array.isArray(masks)
+        ? masks.filter(
+            (mask) =>
+              mask &&
+              typeof mask === 'object' &&
+              Object.values(AssetDevelopMaskKind).includes(mask.kind as AssetDevelopMaskKind),
+          )
+        : masks,
+    });
+    if (!known.success)
+      for (const issue of known.error.issues)
+        ctx.addIssue({ code: 'custom', message: issue.message, path: issue.path });
+  });
+
+export const AssetDevelopRecipeSchema = z
+  .preprocess(
+    (value, ctx) => {
+      const error = recipeJsonError(value);
+      if (error) ctx.addIssue({ code: 'custom', message: error });
+      return value;
+    },
+    z.union([VersionOneEnvelopeSchema, z.object({ version: z.int().min(2).max(2_147_483_647) }).loose()]),
+  )
+  .pipe(z.object({ version: z.int().min(1).max(2_147_483_647) }).loose())
+  .nonoptional()
   .meta({ id: 'AssetDevelopRecipeDto' });
+
+/** Shared envelope budget: 64 KiB UTF-8, depth16, 4096 values, 128 keys/object. */
+export function recipeJsonError(value: unknown): string | undefined {
+  let count = 0;
+  let bytes = 0;
+  const visit = (item: unknown, depth: number): boolean => {
+    if (++count > 4096 || depth > 16) return false;
+    if (item === null || typeof item === 'boolean' || typeof item === 'string') {
+      if (typeof item === 'string' && item.length > 65_536) return false;
+      bytes += new TextEncoder().encode(JSON.stringify(item)).length;
+      return bytes <= 65_536;
+    }
+    if (typeof item === 'number') return Number.isFinite(item);
+    if (Array.isArray(item)) return item.length <= 4096 && item.every((entry) => visit(entry, depth + 1));
+    if (typeof item !== 'object' || Object.getPrototypeOf(item) !== Object.prototype) return false;
+    const entries = Object.entries(item);
+    return (
+      entries.length <= 128 &&
+      entries.every(
+        ([key, entry]) =>
+          (bytes += new TextEncoder().encode(key).length) <= 65_536 &&
+          key.length <= 128 &&
+          !['__proto__', 'prototype', 'constructor'].includes(key) &&
+          visit(entry, depth + 1),
+      )
+    );
+  };
+  if (!visit(value, 0)) return 'Recipe must be bounded plain JSON without unsafe keys';
+  if (new TextEncoder().encode(JSON.stringify(value)).length > 65_536) return 'Recipe exceeds 64 KiB';
+}
+
+export type KnownAssetDevelopRecipe = z.infer<typeof KnownAssetDevelopRecipeSchema>;
 
 export type AssetDevelopRecipe = z.infer<typeof AssetDevelopRecipeSchema>;
 export type AssetDevelopCrop = z.infer<typeof AssetDevelopCropSchema>;
@@ -246,6 +323,18 @@ export type AssetDevelopMaskAdjustments = z.infer<typeof AssetDevelopMaskAdjustm
 const AssetDevelopSaveSchema = z
   .object({
     recipe: AssetDevelopRecipeSchema,
+    sourceRevisionId: z
+      .uuidv4()
+      .optional()
+      .describe(
+        'Immutable revision of this owned asset whose omitted fields are preserved; never the implicit current revision',
+      ),
+    replaceRecipe: z
+      .boolean()
+      .optional()
+      .describe(
+        'Explicit complete replacement instead of preserving omitted source fields, including intentional removals',
+      ),
     label: z.string().trim().min(1).max(120).optional().describe('Optional name for the saved version'),
     render: z.boolean().default(true).describe('Queue the edited master render immediately after saving the recipe'),
   })

@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import {
@@ -9,6 +9,7 @@ import {
 import { canWriteFork } from 'src/repositories/fork-write-guard.js';
 import { lockFilePath } from 'src/repositories/physical-file.repository.js';
 import { DB } from 'src/schema/index.js';
+import { developEnvelope, preserveDevelopEnvelope, renderDevelopProjection } from 'src/utils/develop-envelope.js';
 
 export type AssetDevelopRevision = {
   id: string;
@@ -95,6 +96,9 @@ export class AssetDevelopRepository {
     ownerId: string;
     recipe: AssetDevelopRecipe;
     recipeVersion: number;
+    sourceRevisionId?: string;
+    replaceRecipe?: boolean;
+    requireRenderable?: boolean;
     label: string | null;
     status: AssetDevelopRevisionStatus;
     kind?: AssetDevelopRevisionKind;
@@ -111,6 +115,16 @@ export class AssetDevelopRepository {
       await sql`SELECT pg_advisory_xact_lock(hashtextextended(${`asset_develop_revision:${input.assetId}`}, 0))`.execute(
         trx,
       );
+      let recipe = developEnvelope(input.recipe);
+      if (input.sourceRevisionId) {
+        const source =
+          await sql<AssetDevelopRevision>`SELECT revision.* FROM ${TABLE} revision JOIN public.asset asset ON asset.id = revision."assetId" WHERE revision.id = ${input.sourceRevisionId}::uuid AND revision."assetId" = ${input.assetId}::uuid AND revision."ownerId" = ${input.ownerId}::uuid AND asset."ownerId" = ${input.ownerId}::uuid AND asset."deletedAt" IS NULL FOR SHARE OF revision, asset`.execute(
+            trx,
+          );
+        if (!source.rows[0]) throw new BadRequestException('Develop source revision is not available for this asset');
+        if (!input.replaceRecipe) recipe = preserveDevelopEnvelope(source.rows[0].recipe, recipe);
+      }
+      if (input.requireRenderable) renderDevelopProjection(recipe);
       const { rows } = await sql<AssetDevelopRevision>`
         INSERT INTO ${TABLE} (
           "assetId", "ownerId", revision, "recipeVersion", recipe, label, status,
@@ -120,8 +134,8 @@ export class AssetDevelopRepository {
           ${input.assetId}::uuid,
           ${input.ownerId}::uuid,
           (SELECT COALESCE(MAX(revision), 0) + 1 FROM ${TABLE} WHERE "assetId" = ${input.assetId}::uuid),
-          ${input.recipeVersion},
-          ${JSON.stringify(input.recipe)}::text::jsonb,
+          ${recipe.version},
+          ${JSON.stringify(recipe)}::text::jsonb,
           ${input.label},
           ${input.status},
           ${input.kind ?? AssetDevelopRevisionKind.Recipe},
@@ -139,9 +153,9 @@ export class AssetDevelopRepository {
   }
 
   /** Revisions whose render the queue may have lost (a restart, a flushed queue): queued or rendering. */
-  async listUnfinished(): Promise<Pick<AssetDevelopRevision, 'id' | 'status' | 'updatedAt'>[]> {
-    const { rows } = await sql<Pick<AssetDevelopRevision, 'id' | 'status' | 'updatedAt'>>`
-      SELECT id, status, "updatedAt" FROM ${TABLE}
+  async listUnfinished(): Promise<Pick<AssetDevelopRevision, 'id' | 'status' | 'updatedAt' | 'recipe' | 'kind'>[]> {
+    const { rows } = await sql<Pick<AssetDevelopRevision, 'id' | 'status' | 'updatedAt' | 'recipe' | 'kind'>>`
+      SELECT id, status, "updatedAt", recipe, kind FROM ${TABLE}
       WHERE status IN (${AssetDevelopRevisionStatus.Queued}, ${AssetDevelopRevisionStatus.Rendering})
       ORDER BY "updatedAt"
     `.execute(this.db);
