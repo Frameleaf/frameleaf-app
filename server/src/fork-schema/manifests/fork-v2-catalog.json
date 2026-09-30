@@ -7415,6 +7415,86 @@
     {
       "definition": "bigint|nullable|||",
       "identity": "public.session_tag_sync_state.deliveryOrder"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "public.backup_device.appVersion"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "public.backup_device.deletedAt"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.backup_device.deviceKey"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "public.backup_device.displayName"
+    },
+    {
+      "definition": "uuid|not null|uuid_generate_v4()||",
+      "identity": "public.backup_device.id"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "public.backup_device.lastSuccessfulBackupAt"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "public.backup_device.model"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.backup_device.ownerId"
+    },
+    {
+      "definition": "integer|not null|||",
+      "identity": "public.backup_device.pendingCount"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "public.backup_device.platform"
+    },
+    {
+      "definition": "timestamp with time zone|not null|clock_timestamp()||",
+      "identity": "public.backup_device.reportedAt"
+    },
+    {
+      "definition": "timestamp with time zone|not null|||",
+      "identity": "public.backup_reconciliation.checkedAt"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "public.backup_reconciliation.completedAt"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.backup_reconciliation.deviceId"
+    },
+    {
+      "definition": "uuid|not null|uuid_generate_v4()||",
+      "identity": "public.backup_reconciliation.id"
+    },
+    {
+      "definition": "integer|not null|||",
+      "identity": "public.backup_reconciliation.itemsChecked"
+    },
+    {
+      "definition": "integer|not null|||",
+      "identity": "public.backup_reconciliation.itemsMissing"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.backup_reconciliation.ownerId"
+    },
+    {
+      "definition": "jsonb|not null|||",
+      "identity": "public.backup_reconciliation.progress"
+    },
+    {
+      "definition": "timestamp with time zone|not null|clock_timestamp()||",
+      "identity": "public.backup_reconciliation.startedAt"
     }
   ],
   "constraints": [
@@ -9741,6 +9821,30 @@
     {
       "definition": "PRIMARY KEY (id)",
       "identity": "public.pet_observation_audit.pet_observation_audit_pkey"
+    },
+    {
+      "definition": "UNIQUE (\"ownerId\", \"deviceKey\")",
+      "identity": "public.backup_device.backup_device_ownerId_deviceKey_uq"
+    },
+    {
+      "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.backup_device.backup_device_ownerId_fkey"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "public.backup_device.backup_device_pkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"deviceId\") REFERENCES backup_device(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.backup_reconciliation.backup_reconciliation_deviceId_fkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.backup_reconciliation.backup_reconciliation_ownerId_fkey"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "public.backup_reconciliation.backup_reconciliation_pkey"
     }
   ],
   "enums": [
@@ -13750,6 +13854,30 @@
     {
       "definition": "CREATE INDEX \"pet_updateId_idx\" ON public.pet USING btree (\"updateId\")",
       "identity": "public.pet.pet_updateId_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX \"backup_device_ownerId_deviceKey_uq\" ON public.backup_device USING btree (\"ownerId\", \"deviceKey\")",
+      "identity": "public.backup_device.backup_device_ownerId_deviceKey_uq"
+    },
+    {
+      "definition": "CREATE INDEX \"backup_device_ownerId_idx\" ON public.backup_device USING btree (\"ownerId\")",
+      "identity": "public.backup_device.backup_device_ownerId_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX backup_device_pkey ON public.backup_device USING btree (id)",
+      "identity": "public.backup_device.backup_device_pkey"
+    },
+    {
+      "definition": "CREATE INDEX \"backup_reconciliation_deviceId_idx\" ON public.backup_reconciliation USING btree (\"deviceId\")",
+      "identity": "public.backup_reconciliation.backup_reconciliation_deviceId_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"backup_reconciliation_ownerId_idx\" ON public.backup_reconciliation USING btree (\"ownerId\")",
+      "identity": "public.backup_reconciliation.backup_reconciliation_ownerId_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX backup_reconciliation_pkey ON public.backup_reconciliation USING btree (id)",
+      "identity": "public.backup_reconciliation.backup_reconciliation_pkey"
     }
   ],
   "migrationOverrides": [
@@ -14723,6 +14851,14 @@
     {
       "definition": "table",
       "identity": "public.pet_observation_audit"
+    },
+    {
+      "definition": "table",
+      "identity": "public.backup_device"
+    },
+    {
+      "definition": "table",
+      "identity": "public.backup_reconciliation"
     }
   ],
   "triggers": [

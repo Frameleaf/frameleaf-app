@@ -61,6 +61,7 @@ import { AssetOcrTable } from 'src/schema/tables/asset-ocr.table.js';
 import { AssetRestorationTable } from 'src/schema/tables/asset-restoration.table.js';
 import { AssetVideoDuplicateFrameTable } from 'src/schema/tables/asset-video-duplicate-frame.table.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
+import { BackupDeviceTable, BackupReconciliationTable } from 'src/schema/tables/backup-device.table.js';
 import { ClassificationMatchTable } from 'src/schema/tables/classification-match.table.js';
 import { ClassificationRuleTable } from 'src/schema/tables/classification-rule.table.js';
 import {
@@ -194,6 +195,8 @@ import { WorkflowTable } from 'src/schema/tables/workflow.table.js';
 @Database({ name: 'immich' })
 export class ImmichDatabase {
   tables = [
+    BackupDeviceTable,
+    BackupReconciliationTable,
     ActivityTable,
     AdminAuditEventTable,
     AlbumAssetTable,
@@ -372,6 +375,8 @@ export interface Migrations {
 }
 
 export interface DB {
+  backup_device: BackupDeviceTable;
+  backup_reconciliation: BackupReconciliationTable;
   kysely_migrations: { timestamp: string; name: string };
 
   activity: ActivityTable;

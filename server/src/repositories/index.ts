@@ -13,6 +13,7 @@ import { AssetFileRepository } from 'src/repositories/asset-file.repository.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
 import { AssetRestorationRepository } from 'src/repositories/asset-restoration.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
+import { BackupDeviceRepository } from 'src/repositories/backup-device.repository.js';
 import { BestPhotosRepository } from 'src/repositories/best-photos.repository.js';
 import { ClassificationRepository } from 'src/repositories/classification.repository.js';
 import { CloudBackupIndexRepository } from 'src/repositories/cloud-backup-index.repository.js';
@@ -107,6 +108,7 @@ import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
 import { WorkflowRepository } from 'src/repositories/workflow.repository.js';
 
 export const repositories = [
+  BackupDeviceRepository,
   ICloudMetadataRepository,
   ICloudRelationsRepository,
   ICloudAlbumRepository,

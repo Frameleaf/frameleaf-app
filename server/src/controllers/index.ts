@@ -11,6 +11,7 @@ import { AssetRestorationController } from 'src/controllers/asset-restoration.co
 import { AssetController } from 'src/controllers/asset.controller.js';
 import { AuthAdminController } from 'src/controllers/auth-admin.controller.js';
 import { AuthController } from 'src/controllers/auth.controller.js';
+import { BackupDeviceAdminController, BackupDeviceController } from 'src/controllers/backup-device.controller.js';
 import { BestPhotosController } from 'src/controllers/best-photos.controller.js';
 import { ClassificationController } from 'src/controllers/classification.controller.js';
 import { CloudAdminController } from 'src/controllers/cloud-admin.controller.js';
@@ -85,6 +86,8 @@ import { WorkerInventoryController } from 'src/controllers/worker-inventory.cont
 import { WorkflowController } from 'src/controllers/workflow.controller.js';
 
 export const controllers = [
+  BackupDeviceAdminController,
+  BackupDeviceController,
   SafetyController,
   CloudAdminController,
   FrameleafAuthController,
