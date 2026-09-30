@@ -1,7 +1,15 @@
 // Real Chromium entrypoint checks. Run against the prepared engine's Vite dev server.
+//
+// FL-112: network substitution and blocking route through the shared cross-browser harness
+// (studio/tools/lib/cross-browser-harness.mjs) instead of Playwright's page.route()/context.route()
+// - the harness is what will let this run against Firefox/Safari too, since WebDriver classic has
+// no route()-equivalent. Navigation itself (getByRole, the MOSS iframe's framenavigated handling,
+// the second per-context page) stays on Playwright/Chromium for now; those have no WebDriver
+// equivalent yet either and are tracked separately (studio-editing porting them on top of this).
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { createHash } from 'node:crypto';
+import { createHarness } from './lib/cross-browser-harness.mjs';
 const require = createRequire(new URL('../engine/package.json', import.meta.url));
 const { chromium } = require('playwright');
 const origin = process.env.STUDIO_TEST_ORIGIN || 'http://127.0.0.1:5186';
@@ -11,11 +19,28 @@ import { readFile, writeFile } from 'node:fs/promises';
 // reviewed identity is blocked, as a checkout without an approval would generate.
 const generated = JSON.parse(await readFile(new URL('../engine/src/shared/utils/resource-policy.json', import.meta.url), 'utf8'));
 const blockedPolicy = Object.fromEntries(Object.entries(generated).map(([id, entry]) => [id, { ...entry, localRuntime: 'blocked', approvalSha256: null }]));
-const substitutePolicy = (context, policy) => context.route('**/resource-policy.json*', (route) => {
-  const raw = new URL(route.request().url()).pathname.includes('/moss-tts/') && !new URL(route.request().url()).searchParams.has('import');
-  return route.fulfill(raw
-    ? { contentType: 'application/json', body: JSON.stringify(policy) }
-    : { contentType: 'text/javascript', body: `export default ${JSON.stringify(policy)}` });
+// Answers both forms `resource-policy.json` is ever fetched as (matching the pre-harness
+// `substitutePolicy` exactly): raw JSON for the MOSS iframe's plain fetch, a JS module export for
+// everywhere else (Vite's `?import` module form).
+const policyOverride = (policy) => ({
+  test: (url) => url.pathname.includes('resource-policy.json'),
+  respond: (url) => {
+    const raw = url.pathname.includes('/moss-tts/') && !url.searchParams.has('import');
+    return raw
+      ? { contentType: 'application/json', body: JSON.stringify(policy) }
+      : { contentType: 'text/javascript', body: `export default ${JSON.stringify(policy)}` };
+  },
+});
+// Vite's `?import&url` form returns a URL string, not resource bytes - never treat it as a binary
+// payload attempt. The harness has no Playwright `resourceType()` to check instead, per
+// studio-editing's review: exempting on both query params present is enough.
+const isViteUrlImport = (url) => url.searchParams.has('import') && url.searchParams.has('url');
+const binaryAssetOverride = (resourcePayloads) => ({
+  test: (url) => !isViteUrlImport(url) && /\.(onnx|bin|woff2?|ttf|otf)$/i.test(url.pathname),
+  respond: (url) => {
+    resourcePayloads.push(url.href);
+    return { status: 403, body: 'blocked by resource-admission harness (binary asset payload)' };
+  },
 });
 // RESOURCE_ADMISSION_REPORT=<path> writes every raw observation as JSON, whether the checks pass
 // or not, for measured-conformance evidence (FL-112).
@@ -23,30 +48,24 @@ const report = { origin, built: Boolean(process.env.STUDIO_TEST_BUILT), entries:
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
 try {
   for (const entry of ['/', '/headless.html']) {
-    const context = await browser.newContext({ serviceWorkers: process.env.STUDIO_TEST_BUILT ? 'allow' : 'block' });
-    const external = [];
     const resourcePayloads = [];
-    await context.route('**/*', (route) => {
-      const url = new URL(route.request().url());
-      // Vite's ?import&url script returns a URL string, not resource bytes.
-      const urlModule = route.request().resourceType() === 'script' && url.searchParams.has('import') && url.searchParams.has('url');
-      if (!urlModule && /\.(onnx|bin|woff2?|ttf|otf)$/i.test(url.pathname)) {
-        resourcePayloads.push(url.href); return route.abort();
-      }
-      if (url.origin !== origin && /^https?:$/.test(url.protocol)) {
-        external.push(route.request().url());
-        return route.abort(); // Never acquire real external payloads during a regression.
-      }
-      return route.continue();
+    const overrides = [binaryAssetOverride(resourcePayloads)];
+    if (!process.env.STUDIO_TEST_BUILT) overrides.push(policyOverride(blockedPolicy));
+    const harness = createHarness({ upstream: origin, overrides });
+    const harnessOrigin = await harness.listen();
+    const context = await browser.newContext({
+      serviceWorkers: process.env.STUDIO_TEST_BUILT ? 'allow' : 'block',
+      proxy: { server: harnessOrigin },
     });
-    // Registered after the catch-all: Playwright runs the newest matching route first.
-    if (!process.env.STUDIO_TEST_BUILT) await substitutePolicy(context, blockedPolicy);
+    // `external`: every request the harness denied for not matching the Studio origin at all -
+    // the harness's own always-on deny-all is what `url.origin !== origin` used to check per-route.
+    const external = () => harness.observations.filter((o) => o.kind === 'blocked').map((o) => o.url);
     const page = await context.newPage();
-    const observed = { entry, external, resourcePayloads };
+    const observed = { entry, get external() { return external(); }, resourcePayloads };
     report.entries.push(observed);
     await page.goto(origin + entry);
     await page.waitForTimeout(1000);
-    assert.deepEqual(external, [], `${entry}: implicit external startup request`);
+    assert.deepEqual(external(), [], `${entry}: implicit external startup request`);
     assert.deepEqual(resourcePayloads, [], `${entry}: implicit resource payload acquisition`);
     if (entry === '/') await page.getByRole('link', { name: 'Get Started' }).first().waitFor({ timeout: 10000 });
     else await page.waitForFunction(() => Boolean(window.freecut?.ready));
@@ -56,10 +75,10 @@ try {
         observed.headlessFrame = frame;
         assert.equal(frame.ok, true); assert.ok(frame.fileSize > 0);
       }
-      assert.deepEqual(external, []);
+      assert.deepEqual(external(), []);
       assert.deepEqual(resourcePayloads, []);
       console.log(`${entry}: built page ready; no external acquisition; service workers allowed`);
-      await context.close(); continue;
+      await context.close(); await harness.close(); continue;
     }
     const results = await page.evaluate(async () => {
       const root = '/src/';
@@ -187,24 +206,17 @@ try {
     assert.equal(childBlocked, true);
     assert.ok(results.attempts.every(result => result.blocked), JSON.stringify(results));
     assert.deepEqual(results.media, { width: 16, height: 16, name: 'local-smoke.png' });
-    assert.deepEqual(external, [], `${entry}: resource attempt reached network`);
+    assert.deepEqual(external(), [], `${entry}: resource attempt reached network`);
     assert.deepEqual(resourcePayloads, [], `${entry}: same-origin payload attempt reached network`);
     console.log(`${entry}: ${results.attempts.length} resource refusals; seven workers twice; MOSS pages/iframe/tokenizer blocked; real local PNG import passed`);
-    await context.close();
+    await context.close(); await harness.close();
   }
   // Owner decision 2026-09-29: every ONNX Runtime WebAssembly the engine loads is served by the
   // engine itself. Each path is same-origin and answers WebAssembly bytes; nothing reaches a CDN.
   if (!process.env.STUDIO_TEST_BUILT) {
-    const ortContext = await browser.newContext({ serviceWorkers: 'block' });
-    const ortExternal = [];
-    await ortContext.route('**/*', (route) => {
-      const url = new URL(route.request().url());
-      if (url.origin !== origin && /^https?:$/.test(url.protocol)) {
-        ortExternal.push(url.href);
-        return route.abort();
-      }
-      return route.continue();
-    });
+    const ortHarness = createHarness({ upstream: origin });
+    const ortHarnessOrigin = await ortHarness.listen();
+    const ortContext = await browser.newContext({ serviceWorkers: 'block', proxy: { server: ortHarnessOrigin } });
     const ortPage = await ortContext.newPage();
     await ortPage.goto(origin + '/headless.html');
     const ort = await ortPage.evaluate(async () => {
@@ -225,19 +237,28 @@ try {
       }
       return checked;
     });
+    const ortExternal = ortHarness.observations.filter((o) => o.kind === 'blocked').map((o) => o.url);
     report.ort = { files: ort, external: ortExternal };
     assert.equal(ort.length, 6);
     assert.ok(ort.every((file) => file.sameOrigin && file.ok && file.wasm), JSON.stringify(ort));
     assert.deepEqual(ortExternal, []);
     console.log('ONNX Runtime WebAssembly: 3 builds served same-origin; no CDN request');
-    await ortContext.close();
+    await ortContext.close(); await ortHarness.close();
   }
   // A test-only network substitution supplies one approved fixture with a recorded byte digest.
   // The generated policy records no byte digests, so byte verification fails closed in production.
   if (!process.env.STUDIO_TEST_BUILT) {
-  const fixtureContext = await browser.newContext({ serviceWorkers: 'block' });
   const hash = createHash('sha256').update(new Uint8Array([1, 2, 3])).digest('hex');
-  await substitutePolicy(fixtureContext, { 'fixture:approved': { localRuntime: 'allowed', approvalSha256: hash, sha256: hash, locator: null, revision: null } });
+  // No blocking override here, per studio-editing's review - this pass only ever substitutes the
+  // policy; nothing else runs during it. The harness's always-on deny-all for non-upstream hosts
+  // still applies underneath (there's no way to disable it - it's the harness's whole point), but
+  // that's strictly narrower than "no blocking at all" and nothing in this pass hits it.
+  const fixtureHarness = createHarness({
+    upstream: origin,
+    overrides: [policyOverride({ 'fixture:approved': { localRuntime: 'allowed', approvalSha256: hash, sha256: hash, locator: null, revision: null } })],
+  });
+  const fixtureHarnessOrigin = await fixtureHarness.listen();
+  const fixtureContext = await browser.newContext({ serviceWorkers: 'block', proxy: { server: fixtureHarnessOrigin } });
   const fixturePage = await fixtureContext.newPage();
   await fixturePage.goto(origin + '/headless.html');
   const fixture = await fixturePage.evaluate(async () => {
@@ -253,7 +274,7 @@ try {
   report.fixture = fixture;
   assert.deepEqual(fixture, { accepted: [1, 2, 3], tamperDenied: true, aliasDenied: true, userImportDenied: true });
   console.log('Test-only approved fixture: bytes accepted; tamper, blob alias and user-import relabeling rejected');
-  await fixtureContext.close();
+  await fixtureContext.close(); await fixtureHarness.close();
   }
 } finally {
   await browser.close();

@@ -1,0 +1,143 @@
+import assert from 'node:assert/strict';
+import http from 'node:http';
+import { once } from 'node:events';
+import test from 'node:test';
+import { createHarness } from './cross-browser-harness.mjs';
+
+async function startFakeUpstream(handler) {
+  const server = http.createServer(handler);
+  server.listen(0);
+  await once(server, 'listening');
+  return { url: `http://127.0.0.1:${server.address().port}`, close: () => new Promise((r) => server.close(r)) };
+}
+
+// A minimal proxy-aware GET: sends the absolute URL as the request line, the way a browser
+// configured with an HTTP proxy does - not the plain-path form a direct client would send.
+function proxiedGet(harnessOrigin, absoluteUrl) {
+  return new Promise((resolve, reject) => {
+    const harness = new URL(harnessOrigin);
+    const req = http.request(
+      { host: harness.hostname, port: harness.port, method: 'GET', path: absoluteUrl },
+      (res) => {
+        const chunks = [];
+        res.on('data', (chunk) => chunks.push(chunk));
+        res.on('end', () => resolve({ status: res.statusCode, body: Buffer.concat(chunks).toString('utf8') }));
+      },
+    );
+    req.on('error', reject);
+    req.end();
+  });
+}
+
+test('proxies an upstream request through unchanged when nothing overrides it', async () => {
+  const upstream = await startFakeUpstream((req, res) => res.end(`hello ${req.url}`));
+  const harness = createHarness({ upstream: upstream.url });
+  const harnessOrigin = await harness.listen();
+  try {
+    const { status, body } = await proxiedGet(harnessOrigin, `${upstream.url}/src/module.ts`);
+    assert.equal(status, 200);
+    assert.equal(body, 'hello /src/module.ts');
+    assert.deepEqual(
+      harness.observations.map((o) => o.kind),
+      ['proxied'],
+    );
+  } finally {
+    await harness.close();
+    await upstream.close();
+  }
+});
+
+test('serves an override instead of ever reaching upstream', async () => {
+  let upstreamHit = false;
+  const upstream = await startFakeUpstream((req, res) => {
+    upstreamHit = true;
+    res.end('should not see this');
+  });
+  const harness = createHarness({
+    upstream: upstream.url,
+    overrides: [
+      {
+        test: (url) => url.pathname === '/effects-matrix',
+        respond: () => ({ contentType: 'text/html', body: '<title>Effects matrix</title>' }),
+      },
+    ],
+  });
+  const harnessOrigin = await harness.listen();
+  try {
+    const { status, body } = await proxiedGet(harnessOrigin, `${upstream.url}/effects-matrix`);
+    assert.equal(status, 200);
+    assert.equal(body, '<title>Effects matrix</title>');
+    assert.equal(upstreamHit, false);
+    assert.deepEqual(
+      harness.observations.map((o) => o.kind),
+      ['override'],
+    );
+  } finally {
+    await harness.close();
+    await upstream.close();
+  }
+});
+
+test('denies and records a request to a real external origin instead of forwarding it', async () => {
+  const upstream = await startFakeUpstream((req, res) => res.end('upstream'));
+  const harness = createHarness({ upstream: upstream.url });
+  const harnessOrigin = await harness.listen();
+  try {
+    const { status, body } = await proxiedGet(harnessOrigin, 'http://fonts.example.com/font.woff2');
+    assert.equal(status, 403);
+    assert.match(body, /deny-all/);
+    assert.deepEqual(harness.observations, [
+      { method: 'GET', url: 'http://fonts.example.com/font.woff2', kind: 'blocked' },
+    ]);
+  } finally {
+    await harness.close();
+    await upstream.close();
+  }
+});
+
+test('refuses HTTPS tunnelling (CONNECT) outright and records it', async () => {
+  const upstream = await startFakeUpstream((req, res) => res.end('upstream'));
+  const harness = createHarness({ upstream: upstream.url });
+  const harnessOrigin = await harness.listen();
+  try {
+    const harnessUrl = new URL(harnessOrigin);
+    const response = await new Promise((resolve, reject) => {
+      const req = http.request({
+        host: harnessUrl.hostname,
+        port: harnessUrl.port,
+        method: 'CONNECT',
+        path: 'fonts.example.com:443',
+      });
+      req.on('connect', (res) => resolve(res));
+      req.on('error', reject);
+      req.end();
+    });
+    assert.equal(response.statusCode, 403);
+    assert.deepEqual(
+      harness.observations.map((o) => o.kind),
+      ['blocked'],
+    );
+  } finally {
+    await harness.close();
+    await upstream.close();
+  }
+});
+
+test('checks overrides in order and only ever uses the first match', async () => {
+  const upstream = await startFakeUpstream((req, res) => res.end('upstream'));
+  const harness = createHarness({
+    upstream: upstream.url,
+    overrides: [
+      { test: () => true, respond: () => ({ body: 'first' }) },
+      { test: () => true, respond: () => ({ body: 'second' }) },
+    ],
+  });
+  const harnessOrigin = await harness.listen();
+  try {
+    const { body } = await proxiedGet(harnessOrigin, `${upstream.url}/anything`);
+    assert.equal(body, 'first');
+  } finally {
+    await harness.close();
+    await upstream.close();
+  }
+});
