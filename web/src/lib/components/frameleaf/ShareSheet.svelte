@@ -301,7 +301,13 @@
   };
 </script>
 
-<Dialog title={$t('frameleaf_sharing.share_subject', { values: { subject } })} closeLabel={$t('close')} bind:open>
+<Dialog
+  title={$t('frameleaf_sharing.share_subject', { values: { subject } })}
+  closeLabel={$t('close')}
+  compactControls
+  onkeydown={(event) => event.stopPropagation()}
+  bind:open
+>
   <div class="ss-strip">
     <AssetCollage ids={assetIds} class="ss-collage" />
     <span>{countLine}</span>
@@ -324,7 +330,7 @@
         class="ss-option"
         onclick={() => (mode = 'people')}
       >
-        <Icon icon={mdiAccountMultipleOutline} size="20" aria-hidden={true} />
+        <Icon icon={mdiAccountMultipleOutline} size="18" aria-hidden={true} />
         <strong>{$t('frameleaf_sharing.people_option_title')}</strong>
         <small>{$t('frameleaf_sharing.people_option_description')}</small>
       </button>
@@ -338,7 +344,7 @@
         class="ss-option"
         onclick={() => (mode = 'link')}
       >
-        <Icon icon={mdiLinkVariant} size="20" aria-hidden={true} />
+        <Icon icon={mdiLinkVariant} size="18" aria-hidden={true} />
         <strong>{$t('frameleaf_sharing.link_option_title')}</strong>
         <small>{$t('frameleaf_sharing.link_option_description')}</small>
       </button>
