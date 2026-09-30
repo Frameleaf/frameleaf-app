@@ -343,6 +343,61 @@ export const ROW_COMMAND_MAPPING = {
   // command matrix doesn't yet exercise a colour-typed invalid case (malformed hex/alpha) - until
   // it does, this row's `invalid` case stays honestly missing even with this mapping in place.
   "readme.effects-masks-compositing.8": ["effect.update", "clip.update"],
+  // studio-editing, 2026-09-30. Each row below names the catalogue commands whose graph edits are
+  // the row's behaviour in Frameleaf. Rows with no command behind them are not here: they went to
+  // the coordinator for a per-row call (module.docs, module.settings, module.workspace-gate,
+  // extra.portable-headless, readme.preview-playback.3/5, readme.local-ai-analysis.7,
+  // readme.projects-storage.1/2/3/4/6).
+  //
+  // FL-94: the timeline module is the timeline's own edits: clips, tracks and markers.
+  "module.timeline": [
+    "clip.add", "clip.delete", "clip.insert", "clip.join", "clip.move", "clip.overwrite",
+    "clip.push", "clip.reorder", "clip.roll", "clip.setLink", "clip.setSpeed", "clip.slide",
+    "clip.slip", "clip.split", "clip.trimEnd", "clip.trimStart", "marker.add", "marker.remove",
+    "marker.update", "track.add", "track.closeGap", "track.remove", "track.reorder", "track.set",
+  ],
+  // FL-98: the preview module edits the graph only through its gizmos (transform, parenting,
+  // crop, mask); its frames come from preview.request/release, which the matrix measures at the
+  // gate only, as host services.
+  "module.preview": [
+    "clip.setTransform", "clip.setTransformParent", "clip.setCrop", "clip.setMask",
+    "preview.request", "preview.release",
+  ],
+  // FL-98: frame-accurate playback is the exact frame at a rational time, asked for by
+  // preview.request (FL-93/FL-96).
+  "readme.preview-playback.2": ["preview.request"],
+  // FL-98: the bento layout (bento-layout.ts) arranges the selected items by writing their
+  // transforms.
+  "extra.bento": ["clip.setTransform"],
+  // FL-100: keyframes and the property modifiers and expressions the keyframe editor drives.
+  "module.keyframes": [
+    "keyframe.add", "keyframe.remove", "keyframe.setEasing", "keyframe.update",
+    "property.bakeModifier", "property.setExpression", "property.setModifier",
+  ],
+  // FL-103: pitch, EQ, fades and volume are clip and track audio; transition audio is the
+  // transition itself.
+  "readme.audio.4": ["clip.setAudio", "track.setAudio", "clip.setTransition"],
+  // FL-105: export in Frameleaf is the export job and the project bundle.
+  "module.export": ["job.enqueueExport", "project.exportBundle"],
+  // FL-105: the Lottie browser places a Lottie item and edits it.
+  "module.lottie-browser": ["clip.add", "lottie.update"],
+  // FL-105: the media library's import, relink and removal.
+  "module.media-library": ["media.import", "media.relink", "media.remove"],
+  // FL-105: ProRes sources are imported and previewed like any other source.
+  "readme.media-import.3": ["media.import", "preview.request"],
+  // FL-111: the scene browser shows detected scenes and inserts the chosen one.
+  "module.scene-browser": ["job.enqueueSceneDetection", "clip.insert"],
+  // FL-91: bundles export and import a whole project.
+  "module.project-bundle": ["project.exportBundle", "project.importBundle"],
+  // FL-91: what a project holds in the editor: its name, settings, template and sequences.
+  "module.projects": [
+    "project.rename", "project.setSettings", "project.applyTemplate", "sequence.add",
+    "sequence.duplicate", "sequence.remove", "sequence.setActive", "sequence.setFields",
+    "sequence.setSettings",
+  ],
+  // FL-88: the editor is the mount every command reaches the graph through; its own commands are
+  // undo and redo.
+  "module.editor": ["history.undo", "history.redo"],
 };
 
 export function commandMatrixCoverage(
