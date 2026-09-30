@@ -34,20 +34,40 @@ class MediaCapabilitiesManager {
 
   async efficientLevels(levels: Level[]) {
     const decodingInfo = await Promise.all(levels.map((level) => this.decodingInfo(level)));
-    const lowestBitrateByHeight = new Map<number, number>();
-    for (let i = 0; i < levels.length; i++) {
-      if (!decodingInfo[i].powerEfficient) {
-        continue;
-      }
 
-      const { bitrate, height } = levels[i];
-      const cur = lowestBitrateByHeight.get(height);
-      if (cur === undefined || bitrate < levels[cur].bitrate) {
-        lowestBitrateByHeight.set(height, i);
+    const lowestBitratePerHeight = (isEligible: (info: MediaCapabilitiesDecodingInfo) => boolean) => {
+      const lowestBitrateByHeight = new Map<number, number>();
+      for (let i = 0; i < levels.length; i++) {
+        if (!isEligible(decodingInfo[i])) {
+          continue;
+        }
+
+        const { bitrate, height } = levels[i];
+        const cur = lowestBitrateByHeight.get(height);
+        if (cur === undefined || bitrate < levels[cur].bitrate) {
+          lowestBitrateByHeight.set(height, i);
+        }
       }
+      return new Set(lowestBitrateByHeight.values());
+    };
+
+    const powerEfficient = lowestBitratePerHeight((info) => info.powerEfficient);
+    if (powerEfficient.size > 0) {
+      return powerEfficient;
     }
 
-    return new Set(lowestBitrateByHeight.values());
+    // Nothing reports as power-efficient (e.g. software decoding, common without VA-API/hardware
+    // acceleration) - fall back to whatever is at least decodable, rather than treating "not
+    // power-efficient" as "not playable" (FL-203).
+    const supported = lowestBitratePerHeight((info) => info.supported);
+    if (supported.size > 0) {
+      return supported;
+    }
+
+    // Nothing is even reported as supported: keep every level rather than removing them all, so
+    // hls.js/the browser still has something to try and can surface a real playback error instead
+    // of silently going blank (FL-203).
+    return new Set(levels.map((_, index) => index));
   }
 
   decodingInfo(level: Level) {
