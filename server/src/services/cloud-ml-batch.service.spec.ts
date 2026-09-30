@@ -1384,6 +1384,33 @@ describe(CloudMlBatchService.name, () => {
       },
     );
 
+    it.each(['withdrawn', 'version bumped'])(
+      'stops between active files when consent is %s (FL-201)',
+      async (reason) => {
+        const requests: string[] = [];
+        mocks.frameleafCloudMl.uploadInput.mockImplementation((_gateway, target) => {
+          requests.push(target.inputId);
+          if (reason === 'withdrawn') {
+            mocks.mlDestination.getById.mockResolvedValue({
+              ...cloud,
+              consentAcknowledgedAt: null,
+              consentVersion: null,
+            });
+          } else {
+            mocks.machineLearning.probe.mockResolvedValue({
+              ...mlProbeStub.frameleafCloud,
+              cloud: { ...facts, consentRequiredVersion: '2026-10-01.1' },
+            });
+          }
+          return Promise.resolve();
+        });
+        await sut.step(submitted({ status: 'admitted', started: false, etag: null }), 'claim-1', now);
+        expect(requests).toEqual(['p1']);
+        expect(mocks.frameleafCloudMl.startJob).not.toHaveBeenCalled();
+        expect(mocks.frameleafCloudMl.cancelJob).toHaveBeenCalledWith(expect.anything(), admitted.jobId);
+      },
+    );
+
     it('never uploads a photo that was Locked after the batch was sent', async () => {
       mocks.mediaOperation.getLockedAssetIds.mockResolvedValue(new Set(['a-2']));
 
