@@ -24,10 +24,8 @@ describe('Icon accessibility', () => {
   it('marks the icons that point along the reading direction', () => {
     for (const icon of [mdiChevronLeft, mdiChevronRight]) {
       const svg = render(Icon, { icon }).container.querySelector('svg')!;
-      expect(svg.hasAttribute('data-rtl-mirror')).toBe(true);
+      expect(svg.dataset.rtlMirror).toBeDefined();
     }
-    expect(render(Icon, { icon: mdiHeart }).container.querySelector('svg')!.hasAttribute('data-rtl-mirror')).toBe(
-      false,
-    );
+    expect(render(Icon, { icon: mdiHeart }).container.querySelector('svg')!.dataset.rtlMirror).toBeUndefined();
   });
 });
