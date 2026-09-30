@@ -12,6 +12,7 @@ import { useTimelineCommandStore } from "@/features/timeline/stores/timeline-com
 import { useKeyframesStore } from "@/features/timeline/stores/keyframes-store";
 import { useSelectionStore } from "@/shared/state/selection";
 import { useEditorStore } from "@/shared/state/editor";
+import { buildTimelineFromStores } from "@/features/timeline/stores/timeline-persistence";
 import { usePlaybackStore } from "@/shared/state/playback";
 import {
   makeTimelineTrack,
@@ -210,6 +211,28 @@ Object.assign(window, {
     mount: mountEditorControls,
     state,
     renderHero,
+    timeline: () => structuredClone(buildTimelineFromStores()),
+    // Arrangement only; runners never use this to mutate a keyframe after native input.
+    setPlayhead: (frame: number) =>
+      usePlaybackStore.getState().setCurrentFrame(frame),
+    prepareAutoKey: () => {
+      const keys = useKeyframesStore.getState().keyframes;
+      useKeyframesStore.getState().setKeyframes(
+        keys.map((entry) => ({
+          ...entry,
+          properties: [
+            {
+              property: "opacity",
+              keyframes: [
+                { id: "opacity-k0", frame: 0, value: 1, easing: "linear" },
+              ],
+            },
+          ],
+        })),
+      );
+      usePlaybackStore.getState().setCurrentFrame(15);
+      useTimelineCommandStore.getState().clearHistory();
+    },
     // Fixture setup only. Subsequent interpolation and undo/redo use native production controls.
     seedEasing: () => {
       mountEditorControls("compose", true);
