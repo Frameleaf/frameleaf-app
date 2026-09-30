@@ -1,9 +1,9 @@
 import { vi } from 'vitest';
 import { SystemMetadataKey } from 'src/enum.js';
 import { LanDiscoveryService } from 'src/services/lan-discovery.service.js';
+import * as frameleafRemoteAccess from 'src/utils/frameleaf-remote-access.js';
 import { mockEnvData } from 'test/repositories/config.repository.mock.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
-import * as frameleafRemoteAccess from 'src/utils/frameleaf-remote-access.js';
 
 const publish = vi.fn();
 const stop = vi.fn();

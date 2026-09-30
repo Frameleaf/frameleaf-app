@@ -22,8 +22,10 @@ import { DEFAULT_RAW_PROMPT_TEMPLATE } from 'src/services/prompt-assembler.servi
 import { apkLinks } from 'src/utils/app-releases.js';
 import { asHumanReadable } from 'src/utils/bytes.js';
 import { readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
-import { serverIdentity } from 'src/utils/frameleaf-server-identity.js';
+import { localConnectionCandidates } from 'src/utils/frameleaf-lan-discovery.js';
 import { entitlementFlags, isLicensed } from 'src/utils/frameleaf-license.js';
+import { detectHostAddresses } from 'src/utils/frameleaf-remote-access.js';
+import { serverIdentity } from 'src/utils/frameleaf-server-identity.js';
 import { type FrameleafVia, isRemoteVia, signInClient } from 'src/utils/frameleaf-sign-in.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import {
@@ -35,8 +37,6 @@ import {
   isOcrEnabled,
   isSmartSearchEnabled,
 } from 'src/utils/misc.js';
-import { localConnectionCandidates } from 'src/utils/frameleaf-lan-discovery.js';
-import { detectHostAddresses } from 'src/utils/frameleaf-remote-access.js';
 import { remoteAccessPublication } from 'src/utils/public-url.js';
 
 @Injectable()
