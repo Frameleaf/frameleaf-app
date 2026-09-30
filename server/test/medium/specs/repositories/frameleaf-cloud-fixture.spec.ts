@@ -19,31 +19,46 @@ import { mockEnvData } from 'test/repositories/config.repository.mock.js';
  * contract fixtures drift from what the client accepts, this fails before any e2e run.
  */
 const FIXTURE = fileURLToPath(new URL('../../../../../e2e/src/fixtures/frameleaf-cloud-fixture.mjs', import.meta.url));
-const PORT = 38_000 + Math.floor(Math.random() * 1000);
-const CLOUD_URL = `http://127.0.0.1:${PORT}`;
 const INSTANCE_ID = '0192f1a4-7c3e-7b21-9d4e-2a6f8c0b1e53';
 
 let fixture: ChildProcess;
 let identityDir: string;
+let CLOUD_URL: string;
+
+/** Waits for the fixture's ready line; fails at once, with its stderr, if it exits first. */
+const startFixture = (child: ChildProcess) =>
+  new Promise<string>((resolve, reject) => {
+    let stdout = '';
+    let stderr = '';
+    const fail = (reason: string) =>
+      reject(new Error(`the Frameleaf Cloud fixture did not start: ${reason}\nstdout: ${stdout}\nstderr: ${stderr}`));
+    const timer = setTimeout(() => fail('no ready line within 30 s'), 30_000);
+    child.stderr?.on('data', (chunk) => (stderr += chunk));
+    child.stdout?.on('data', (chunk) => {
+      stdout += chunk;
+      const ready = /listening on (http:\/\/\S+)/.exec(stdout);
+      if (ready) {
+        clearTimeout(timer);
+        resolve(ready[1]);
+      }
+    });
+    child.once('error', (error) => {
+      clearTimeout(timer);
+      fail(String(error));
+    });
+    child.once('exit', (code, signal) => {
+      clearTimeout(timer);
+      fail(`exited with code ${code} (signal ${signal})`);
+    });
+  });
 
 beforeAll(async () => {
   identityDir = await mkdtemp(join(tmpdir(), 'fl201-identity-'));
-  fixture = spawn(process.execPath, [FIXTURE], {
-    env: { ...process.env, FRAMELEAF_CLOUD_FIXTURE_PORT: String(PORT), FRAMELEAF_CLOUD_FIXTURE_URL: CLOUD_URL },
-    stdio: 'ignore',
-  });
-  for (let attempt = 0; attempt < 50; attempt++) {
-    try {
-      if ((await fetch(`${CLOUD_URL}/ping`)).ok) {
-        return;
-      }
-    } catch {
-      // not listening yet
-    }
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-  throw new Error('the Frameleaf Cloud fixture did not start');
-});
+  const env = { ...process.env, FRAMELEAF_CLOUD_FIXTURE_PORT: '0' };
+  delete env.FRAMELEAF_CLOUD_FIXTURE_URL;
+  fixture = spawn(process.execPath, [FIXTURE], { env, stdio: ['ignore', 'pipe', 'pipe'] });
+  CLOUD_URL = await startFixture(fixture);
+}, 35_000);
 
 afterAll(async () => {
   fixture?.kill();
