@@ -601,7 +601,7 @@
     font-weight: 500;
   }
   .cc-history time {
-    margin-left: auto;
+    margin-inline-start: auto;
     color: var(--fl-muted);
     font-size: 11px;
   }
@@ -675,7 +675,7 @@
     border-block: 1px solid var(--fl-border);
   }
   .lf-stats strong {
-    margin-right: 7px;
+    margin-inline-end: 7px;
     font-size: 24px;
     font-weight: 550;
     color: var(--fl-text);
@@ -686,7 +686,7 @@
     gap: 12px;
     padding: 12px 14px;
     background: var(--fl-panel);
-    border-left: 2px solid var(--fl-accent);
+    border-inline-start: 2px solid var(--fl-accent);
   }
   .lf-message > span {
     flex: 1;
@@ -703,7 +703,7 @@
   table {
     width: 100%;
     border-collapse: collapse;
-    text-align: left;
+    text-align: start;
   }
   th {
     padding: 13px;

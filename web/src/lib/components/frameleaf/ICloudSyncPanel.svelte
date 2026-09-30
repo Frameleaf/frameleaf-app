@@ -902,7 +902,7 @@
     margin: 0 0 12px;
     padding: 12px 14px;
     background: var(--fl-panel);
-    border-left: 2px solid var(--fl-accent);
+    border-inline-start: 2px solid var(--fl-accent);
   }
   .ic-message > span {
     flex: 1;
@@ -1084,7 +1084,7 @@
     line-height: 1.7;
     color: var(--fl-muted);
     background: var(--fl-canvas);
-    border-left: 2px solid var(--fl-muted);
+    border-inline-start: 2px solid var(--fl-muted);
   }
   .ic-dialog {
     display: flex;

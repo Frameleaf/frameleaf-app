@@ -168,7 +168,7 @@
   padding: 12px 14px;
   border-radius: var(--fl-radius-control);
   background: var(--fl-raised);
-  border-left: 3px solid var(--fl-accent);
+  border-inline-start: 3px solid var(--fl-accent);
   font-size: var(--fl-font-small);
   line-height: 1.55;
   margin-bottom: 14px;
@@ -316,7 +316,7 @@
 }
 .fc-consequences {
   margin: 0 0 14px;
-  padding-left: 20px;
+  padding-inline-start: 20px;
   font-size: var(--fl-font-small);
   line-height: 1.6;
 }
@@ -488,7 +488,7 @@
 }
 .fc-table th,
 .fc-table td {
-  text-align: left;
+  text-align: start;
   padding: 10px 8px;
   border-top: 1px solid var(--fl-border);
   vertical-align: top;
@@ -531,7 +531,7 @@
 }
 .fc-plan-grid ul {
   margin: 0 0 8px;
-  padding-left: 18px;
+  padding-inline-start: 18px;
   color: var(--fl-muted);
   font-size: var(--fl-font-small);
   line-height: 1.6;

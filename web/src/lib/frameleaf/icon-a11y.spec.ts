@@ -1,5 +1,5 @@
 import { Icon } from '@immich/ui';
-import { mdiHeart } from '@mdi/js';
+import { mdiChevronLeft, mdiChevronRight, mdiHeart } from '@mdi/js';
 import { render } from '@testing-library/svelte';
 
 // FL-139: the @immich/ui patch (packages/patches/@immich__ui@0.86.0.patch) hides unnamed icons from
@@ -18,5 +18,16 @@ describe('Icon accessibility', () => {
     expect(titled.hasAttribute('aria-hidden')).toBe(false);
     const labelled = render(Icon, { icon: mdiHeart, 'aria-label': 'Favorite' }).container.querySelector('svg')!;
     expect(labelled.getAttribute('role')).toBe('img');
+  });
+
+  // FL-139: arrows and chevrons point along the reading direction; app.css mirrors marked ones in RTL
+  it('marks the icons that point along the reading direction', () => {
+    for (const icon of [mdiChevronLeft, mdiChevronRight]) {
+      const svg = render(Icon, { icon }).container.querySelector('svg')!;
+      expect(svg.hasAttribute('data-rtl-mirror')).toBe(true);
+    }
+    expect(render(Icon, { icon: mdiHeart }).container.querySelector('svg')!.hasAttribute('data-rtl-mirror')).toBe(
+      false,
+    );
   });
 });

@@ -609,7 +609,7 @@
   }
   .sl-search input {
     width: 100%;
-    padding-left: 34px;
+    padding-inline-start: 34px;
     min-height: 34px;
     background: var(--fl-raised);
     color: var(--fl-text);

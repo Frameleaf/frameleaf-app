@@ -96,7 +96,7 @@
     border-radius: var(--fl-radius-control);
     color: var(--fl-muted);
     font-size: var(--fl-font-small);
-    text-align: left;
+    text-align: start;
   }
   .mt-upload span {
     flex: 1;

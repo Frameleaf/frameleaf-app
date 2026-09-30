@@ -1,4 +1,5 @@
 <script lang="ts" generics="T extends DiscoveryTreeNode">
+  import { readingKey } from '$lib/frameleaf/reading-direction';
   /**
    * The Tags and Folders tree (FL-46), a port of the prototype's `TagRow` / `FolderRow` and their
    * `dv-tree` markup (`design/frameleaf/template/src/Tags.jsx:25-87, 326-345`, `Folders.jsx:26-87,
@@ -84,7 +85,7 @@
   const handleKeydown = (event: KeyboardEvent, node: T) => {
     event.stopPropagation();
     const isOpen = expanded.has(node.id);
-    const action = treeKeyAction(event.key, {
+    const action = treeKeyAction(readingKey(event.key), {
       visible: visible.map((row) => row.id),
       focusedId: node.id,
       hasChildren: node.children.length > 0,

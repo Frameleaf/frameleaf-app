@@ -479,7 +479,7 @@
     font-size: var(--fl-font-size);
   }
   .pd-fact-link {
-    margin-left: -6px;
+    margin-inline-start: -6px;
     padding: 2px 6px;
     color: var(--fl-muted);
     background: none;

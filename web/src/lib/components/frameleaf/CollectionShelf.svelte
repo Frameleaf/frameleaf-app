@@ -275,7 +275,7 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    margin-left: auto;
+    margin-inline-start: auto;
     flex-shrink: 0;
   }
   .new {
@@ -301,8 +301,8 @@
     }
     .side {
       flex-basis: 100%;
-      margin-left: 0;
-      padding-left: 38px;
+      margin-inline-start: 0;
+      padding-inline-start: 38px;
     }
     .toggle {
       min-height: 44px;

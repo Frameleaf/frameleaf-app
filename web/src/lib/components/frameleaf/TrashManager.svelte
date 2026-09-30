@@ -769,7 +769,7 @@
     display: flex;
     align-items: center;
     gap: 10px;
-    margin-right: auto;
+    margin-inline-end: auto;
     font-size: var(--fl-font-small);
   }
   .tm-grid {
@@ -890,7 +890,7 @@
     padding: 9px 12px;
     font-size: var(--fl-font-small);
     background: var(--fl-panel);
-    border-left: 2px solid var(--fl-accent);
+    border-inline-start: 2px solid var(--fl-accent);
   }
   .tm-notice span {
     flex: 1;
@@ -901,7 +901,7 @@
     gap: 10px;
     padding: 12px;
     background: var(--fl-panel);
-    border-left: 2px solid var(--fl-danger);
+    border-inline-start: 2px solid var(--fl-danger);
   }
   .tm-danger :global(button) {
     color: var(--fl-danger);

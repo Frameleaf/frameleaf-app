@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { isForwardKey } from '$lib/frameleaf/reading-direction';
   /**
    * Slideshow controls (FL-36, V-18). The slideshow plays inside the viewer (MediaViewer.jsx:254-263);
    * full screen is the viewer footer's control, never forced. Play, pause and the settings live in the
@@ -22,7 +23,6 @@
   import ProgressBar from '$lib/components/shared-components/progress-bar/ProgressBar.svelte';
   import { ProgressBarStatus } from '$lib/constants';
   import { bindMediaSession, MEDIA_SESSION_ARTIST } from '$lib/frameleaf/media-session';
-  import { languageManager } from '$lib/managers/language-manager.svelte';
   import { locale } from '$lib/stores/preferences.store';
   import { SlideshowNavigation, SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
   import { getAssetMediaUrl } from '$lib/utils';
@@ -276,8 +276,8 @@
     }
     const bindings: ShortcutOptions[] = [
       { shortcut: { key: 'Escape' }, onShortcut: onClose },
-      { shortcut: { key: 'ArrowLeft' }, onShortcut: onPrevious },
-      { shortcut: { key: 'ArrowRight' }, onShortcut: onNext },
+      { shortcut: { key: 'ArrowLeft' }, onShortcut: () => (isForwardKey('ArrowLeft') ? onNext() : onPrevious()) },
+      { shortcut: { key: 'ArrowRight' }, onShortcut: () => (isForwardKey('ArrowRight') ? onNext() : onPrevious()) },
       { shortcut: { key: 's' }, onShortcut: togglePause, preventDefault: true },
     ];
 
@@ -339,10 +339,10 @@
     <Icon icon={mdiClose} size="1.25rem" />
   </IconButton>
   <IconButton label={$t('previous')} onclick={onPrevious}>
-    <Icon icon={languageManager.rtl ? mdiChevronRight : mdiChevronLeft} size="1.25rem" />
+    <Icon icon={mdiChevronLeft} size="1.25rem" />
   </IconButton>
   <IconButton label={$t('next')} onclick={onNext}>
-    <Icon icon={languageManager.rtl ? mdiChevronLeft : mdiChevronRight} size="1.25rem" />
+    <Icon icon={mdiChevronRight} size="1.25rem" />
   </IconButton>
 </div>
 

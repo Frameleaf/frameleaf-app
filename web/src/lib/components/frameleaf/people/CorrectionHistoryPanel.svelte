@@ -287,7 +287,7 @@
     width: min(420px, 100vw);
     color: var(--fl-text);
     background: var(--fl-panel);
-    border-left: 1px solid var(--fl-border);
+    border-left: 1px solid var(--fl-border); /* rtl: physical, the panel stays on the right edge */
     box-shadow: var(--fl-shadow-2);
     animation: pd-history-in var(--fl-motion-slow) var(--fl-ease);
   }
@@ -423,7 +423,7 @@
       width: 100%;
       max-height: 82dvh;
       border-top: 1px solid var(--fl-border);
-      border-left: 0;
+      border-left: 0; /* rtl: physical, the panel stays on the right edge */
       border-radius: var(--fl-radius-card) var(--fl-radius-card) 0 0;
     }
   }

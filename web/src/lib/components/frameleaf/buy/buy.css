@@ -235,7 +235,7 @@
   background: var(--fl-raised);
   border: 1px solid var(--fl-border);
   color: var(--fl-text);
-  text-align: left;
+  text-align: start;
 }
 .buy-screen .buy-packs button:hover:not(:disabled) {
   border-color: var(--fl-accent);

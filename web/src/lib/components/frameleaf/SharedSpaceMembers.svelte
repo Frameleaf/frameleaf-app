@@ -601,7 +601,7 @@
     color: var(--fl-text);
     font: inherit;
     font-weight: 400;
-    text-align: left;
+    text-align: start;
     cursor: pointer;
   }
   .cl-people button:hover {

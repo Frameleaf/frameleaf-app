@@ -54,7 +54,7 @@
   data-theme={appTheme}
   class:shadow-2xl={isExpanded}
   class:dark:border-e-immich-dark-gray={isExpanded}
-  class:border-r={isExpanded}
+  class:border-e={isExpanded}
   class:w-[min(100vw,16rem)]={sidebarStore.isOpen}
   class:is-collapsed={isCollapsed}
   class:transition-none={sidebarStore.isResizing}
