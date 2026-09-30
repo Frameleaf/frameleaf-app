@@ -212,10 +212,8 @@ describe('FL-226 persisted proof prerequisites', () => {
       const { rows } = await sql<{ id: string }>`INSERT INTO media_operation
         ("ownerId", kind, destination, label, snapshot, settings, status, "claimToken", result)
         VALUES (${user.id}::uuid, 'cloud_backup', 'local', 'Verify',
-          ${JSON.stringify({ bucketRef: bucket, task: 'verify', depth })}::jsonb, '{}'::jsonb,
-          'rendering', ${claimToken}::uuid, ${JSON.stringify({ task: 'verify', done: true, depth })}::jsonb) RETURNING id`.execute(
-        db,
-      );
+          ${{ bucketRef: bucket, task: 'verify', depth }}::jsonb, '{}'::jsonb,
+          'rendering', ${claimToken}::uuid, ${{ task: 'verify', done: true, depth }}::jsonb) RETURNING id`.execute(db);
       const operationId = rows[0].id;
       const proof = { bucket, sha256: hash, operationId, claimToken, method, result: 'passed' as const };
       await backup.recordObjectVerification({ ...proof, claimToken: randomUUID() });
