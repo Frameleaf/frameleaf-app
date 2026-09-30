@@ -56,6 +56,18 @@ test('renders a radial exposure mask selectively and preserves it across save, r
   await expect(page.getByTestId('preview').filter({ visible: true })).toHaveAttribute('src', /.+/);
   await page.getByRole('button', { name: 'Edit', exact: true }).click();
   const editor = page.getByRole('dialog', { name: /^Edit / });
+  // Normal clicks also guard the shared desktop wrapper: every tool keeps a full inspector.
+  for (const tool of ['Crop', 'Presets', 'Enhance', 'Adjust']) {
+    await editor.getByRole('tab', { name: tool, exact: true }).click();
+    const panel = editor.getByRole('tabpanel');
+    await expect(panel).toBeVisible();
+    await expect
+      .poll(async () => {
+        const box = await panel.boundingBox();
+        return box?.width ?? 0;
+      })
+      .toBeGreaterThanOrEqual(280);
+  }
   await editor.getByRole('button', { name: 'Masks', exact: true }).click();
   await editor.getByRole('button', { name: 'Radial', exact: true }).click();
   await expect(editor.getByRole('radio')).toHaveCount(1);
@@ -70,6 +82,7 @@ test('renders a radial exposure mask selectively and preserves it across save, r
   expect(preview.status()).toBe(200);
   await selectivePixels(await preview.body(), 'actual editor preview');
   await expect(editor.locator('.ed-stage img').last()).toHaveAttribute('src', /^blob:/);
+  await testInfo.attach('desktop-mask-preview', { body: await page.screenshot(), contentType: 'image/png' });
   const unsaved = await read();
   expect(unsaved.revisions).toHaveLength(0);
   const savedPromise = page.waitForResponse(
@@ -134,6 +147,27 @@ test('renders a radial exposure mask selectively and preserves it across save, r
   await expect(editor.locator('.rc-stage img').first()).toBeVisible();
   await expect(editor.locator('.rc-stage img').last()).toBeVisible();
   await expect(editor.locator('.rc-stage img').last()).toHaveAttribute('src', new RegExp(saved.id));
+  await testInfo.attach('desktop-rendition-comparison', { body: await page.screenshot(), contentType: 'image/png' });
+  // The existing <=900px bottom sheet must still use flex, with reachable normal controls.
+  await page.setViewportSize({ width: 390, height: 844 });
+  for (const tool of ['Crop', 'Presets', 'Enhance', 'Adjust']) {
+    await editor.getByRole('tab', { name: tool, exact: true }).click();
+    const panel = editor.getByRole('tabpanel');
+    await expect(panel).toBeVisible();
+    await expect
+      .poll(async () => {
+        const box = await panel.boundingBox();
+        return box?.width ?? 0;
+      })
+      .toBeGreaterThanOrEqual(360);
+  }
+  await editor.getByRole('button', { name: /^Masks/ }).click();
+  await editor.getByRole('button', { name: 'Linear', exact: true }).click();
+  await expect(editor.getByRole('radio')).toHaveCount(2);
+  await testInfo.attach('mobile-mask-controls', { body: await page.screenshot(), contentType: 'image/png' });
+  const afterMobileDraft = await read();
+  expect(afterMobileDraft.revisions).toHaveLength(1);
+  expect(afterMobileDraft.revisions[0].recipe.masks).toEqual(saved.recipe.masks);
   await testInfo.attach('independent-selective-pixel-measurements', {
     body: JSON.stringify(measurements, null, 2),
     contentType: 'application/json',
