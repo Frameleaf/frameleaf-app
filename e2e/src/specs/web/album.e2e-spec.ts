@@ -2,12 +2,14 @@ import {
   AlbumKind,
   AlbumUserRole,
   AssetOrder,
-  LoginResponseDto,
   getAlbumInfo,
   getAlbumTree,
+  getAllAlbums,
   getAssetDevelop,
   getFaces,
+  getFaceSource,
   login,
+  LoginResponseDto,
   moveAlbumToCollection,
   setUserOnboarding,
   updateAlbumInfo,
@@ -151,8 +153,10 @@ test.describe('Album', () => {
   });
 
   test('restores the album journey through filters, layouts, quick edit and reconnect (FL-40)', async ({
+    browser,
     context,
     page,
+    request,
   }) => {
     test.slow();
     const owner = await utils.userSetup(admin.accessToken, {
@@ -161,6 +165,13 @@ test.describe('Album', () => {
       password: 'password',
     });
     await setUserOnboarding({ onboardingDto: { isOnboarded: true } }, { headers: asBearerAuth(owner.accessToken) });
+    const member = await utils.userSetup(admin.accessToken, {
+      name: 'Journey Viewer',
+      email: 'fl40-journey-viewer@example.com',
+      password: 'password',
+    });
+    await setUserOnboarding({ onboardingDto: { isOnboarded: true } }, { headers: asBearerAuth(member.accessToken) });
+    const memberPerson = await utils.createPerson(member.accessToken, { name: 'Viewer-owned person' });
     await utils.setAuthCookies(context, owner.accessToken);
     const photo = await utils.createAsset(owner.accessToken, {
       assetData: {
@@ -180,9 +191,17 @@ test.describe('Album', () => {
     const album = await utils.createAlbum(owner.accessToken, {
       albumName: 'Album continuity',
       assetIds: [photo.id, otherPhoto.id, video.id],
+      albumUsers: [{ userId: member.userId, role: AlbumUserRole.Viewer }],
     });
     await utils.waitForQueueFinish(admin.accessToken, 'metadataExtraction');
     await utils.waitForQueueFinish(admin.accessToken, 'thumbnailGeneration');
+    const membershipBefore = await getAlbumInfo({ id: album.id }, { headers: asBearerAuth(owner.accessToken) });
+    const originalMemberships = await Promise.all(
+      [photo, otherPhoto, video].map(async ({ id }) => {
+        const albums = await getAllAlbums({ assetId: id }, { headers: asBearerAuth(owner.accessToken) });
+        return albums.map((album) => album.id).toSorted((a, b) => a.localeCompare(b));
+      }),
+    );
 
     await page.goto(`/albums/${album.id}`);
     const photoTile = page.locator(`[data-asset-id="${photo.id}"]`);
@@ -218,6 +237,54 @@ test.describe('Album', () => {
     await expect(page.getByRole('combobox', { name: 'Sort assets' })).toHaveValue('filename');
     await expect(photoTile.getByRole('checkbox')).toBeChecked();
     await expect(tiles).toHaveCount(2);
+
+    // The Work inspector opens the selected item without toggling its selection.
+    const inspector = page.getByTestId('frameleaf-work-inspector');
+    await expect(inspector.getByRole('heading', { name: 'alpha.png', exact: true })).toBeVisible();
+    await inspector.getByRole('button', { name: 'Open in the viewer', exact: true }).click();
+    await expect(page.locator('#immich-asset-viewer')).toHaveAttribute('data-asset-id', photo.id);
+    await page.keyboard.press('i');
+    const info = page.locator('#detail-panel');
+    await expect(info).toBeVisible();
+    await info.getByRole('button', { name: 'Add person' }).click();
+    const faceDialog = page.getByRole('dialog', { name: 'Tag people' });
+    await expect(faceDialog.getByRole('button', { name: 'Add face' })).toBeEnabled();
+    // Draw a real region through the measured image rather than adding the default box.
+    await expect(faceDialog.getByRole('button', { name: 'Draw face', exact: true })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    const image = faceDialog.locator('.ft-stage img');
+    const bounds = await image.evaluate((element: HTMLImageElement) => {
+      const rect = element.getBoundingClientRect();
+      const scale = Math.min(rect.width / element.naturalWidth, rect.height / element.naturalHeight);
+      const width = element.naturalWidth * scale;
+      const height = element.naturalHeight * scale;
+      return { x: rect.x + (rect.width - width) / 2, y: rect.y + (rect.height - height) / 2, width, height };
+    });
+    expect(bounds.width).toBeGreaterThan(0);
+    expect(bounds.height).toBeGreaterThan(0);
+    await page.mouse.move(bounds.x + bounds.width * 0.25, bounds.y + bounds.height * 0.25);
+    await page.mouse.down();
+    await page.mouse.move(bounds.x + bounds.width * 0.45, bounds.y + bounds.height * 0.45, { steps: 5 });
+    await page.mouse.up();
+    await expect(faceDialog.getByRole('group', { name: 'Faces in this image' }).getByRole('button')).toHaveCount(1);
+    await faceDialog.getByRole('button', { name: 'Create person' }).click();
+    await faceDialog.getByRole('textbox', { name: "New person's name" }).fill('Journey face');
+    await faceDialog.getByRole('button', { name: 'Create and assign' }).click();
+    await faceDialog.getByRole('button', { name: 'Save face tags' }).click();
+    await expect(faceDialog).toBeHidden();
+    await expect
+      .poll(async () => {
+        const faces = await getFaces({ id: photo.id }, { headers: asBearerAuth(owner.accessToken) });
+        return faces[0]?.person?.name;
+      })
+      .toBe('Journey face');
+    await expect(info).toContainText('Journey face');
+    await page.goBack();
+    await expect(page.locator('#immich-asset-viewer')).toHaveCount(0);
+    await expect(photoTile.getByRole('checkbox')).toBeChecked();
+    await expect(selection).toContainText('1 selected');
 
     // The real selection action opens the selected photo in the viewer and editor without clearing it.
     const developLoaded = page.waitForResponse(
@@ -258,25 +325,6 @@ test.describe('Album', () => {
     await editor.getByRole('button', { name: 'Cancel', exact: true }).click();
     await expect(editor).toHaveCount(0);
     await expect(page.locator('#immich-asset-viewer')).toHaveAttribute('data-asset-id', photo.id);
-    await page.keyboard.press('i');
-    const info = page.locator('#detail-panel');
-    await expect(info).toBeVisible();
-    await info.getByRole('button', { name: 'Add person' }).click();
-    const faceDialog = page.getByRole('dialog', { name: 'Tag people' });
-    await expect(faceDialog.getByRole('button', { name: 'Add face' })).toBeEnabled();
-    await faceDialog.getByRole('button', { name: 'Add face' }).click();
-    await faceDialog.getByRole('button', { name: 'Create person' }).click();
-    await faceDialog.getByRole('textbox', { name: "New person's name" }).fill('Journey face');
-    await faceDialog.getByRole('button', { name: 'Create and assign' }).click();
-    await faceDialog.getByRole('button', { name: 'Save face tags' }).click();
-    await expect(faceDialog).toBeHidden();
-    await expect
-      .poll(async () => {
-        const faces = await getFaces({ id: photo.id }, { headers: asBearerAuth(owner.accessToken) });
-        return faces[0]?.person?.name;
-      })
-      .toBe('Journey face');
-    await expect(info).toContainText('Journey face');
     await page.goBack();
     await expect(page.locator('#immich-asset-viewer')).toHaveCount(0);
     await expect(photoTile.getByRole('checkbox')).toBeChecked();
@@ -285,6 +333,56 @@ test.describe('Album', () => {
     await expect(tiles).toHaveCount(2);
     await expect(tiles.first()).toHaveAttribute('data-asset-id', photo.id);
     await expect.poll(() => page.evaluate((key) => sessionStorage.getItem(key), draftKey)).toBeNull();
+
+    const facesBefore = await getFaces({ id: photo.id }, { headers: asBearerAuth(owner.accessToken) });
+    expect(facesBefore).toHaveLength(1);
+    const face = facesBefore[0];
+    expect((face.boundingBoxX2 - face.boundingBoxX1) / face.imageWidth).toBeCloseTo(0.2, 2);
+    expect((face.boundingBoxY2 - face.boundingBoxY1) / face.imageHeight).toBeCloseTo(0.2, 2);
+    expect(face.boundingBoxX1 / face.imageWidth).toBeCloseTo(0.25, 2);
+    expect(face.boundingBoxY1 / face.imageHeight).toBeCloseTo(0.25, 2);
+    const source = await getFaceSource({ id: photo.id }, { headers: asBearerAuth(owner.accessToken) });
+    const faceWrite = {
+      assetId: photo.id,
+      personId: memberPerson.id,
+      expectedSourceRevision: source.revision,
+      imageWidth: face.imageWidth,
+      imageHeight: face.imageHeight,
+      x: 10,
+      y: 10,
+      width: 30,
+      height: 30,
+    };
+    const memberContext = await browser.newContext();
+    try {
+      await utils.setAuthCookies(memberContext, member.accessToken);
+      const memberPage = await memberContext.newPage();
+      await memberPage.goto(`/albums/${album.id}/photos/${photo.id}`);
+      await expect(memberPage.locator('#immich-asset-viewer')).toHaveAttribute('data-asset-id', photo.id);
+      await memberPage.keyboard.press('i');
+      await expect(memberPage.locator('#detail-panel')).toBeVisible();
+      await expect(memberPage.getByRole('button', { name: 'Add person' })).toHaveCount(0);
+      const denied = await memberPage.request.post('/api/faces', {
+        headers: asBearerAuth(member.accessToken),
+        data: faceWrite,
+      });
+      expect(denied.status()).toBe(400);
+    } finally {
+      await memberContext.close();
+    }
+    const anonymous = await request.post('/api/faces', { data: faceWrite });
+    expect(anonymous.status()).toBe(401);
+    expect(await getFaces({ id: photo.id }, { headers: asBearerAuth(owner.accessToken) })).toEqual(facesBefore);
+    const membershipAfter = await getAlbumInfo({ id: album.id }, { headers: asBearerAuth(owner.accessToken) });
+    const finalMemberships = await Promise.all(
+      [photo, otherPhoto, video].map(async ({ id }) => {
+        const albums = await getAllAlbums({ assetId: id }, { headers: asBearerAuth(owner.accessToken) });
+        return albums.map((album) => album.id).toSorted((a, b) => a.localeCompare(b));
+      }),
+    );
+    expect(finalMemberships).toEqual(originalMemberships);
+    expect(membershipAfter.albumUsers).toEqual(membershipBefore.albumUsers);
+    expect(membershipAfter.assetCount).toBe(3);
 
     // Leave a real draft before signing out; neither it nor the album selection may reach the next session.
     const albumUrl = page.url();
