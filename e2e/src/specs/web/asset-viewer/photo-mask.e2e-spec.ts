@@ -150,6 +150,8 @@ test('renders a radial exposure mask selectively and preserves it across save, r
   await page.getByRole('button', { name: 'Edit', exact: true }).click();
   await editor.getByRole('button', { name: /^Masks/ }).click();
   await expect(editor.getByRole('radio')).toHaveCount(1);
+  await editor.getByRole('radio').click();
+  await expect(editor.getByRole('radio')).toHaveAttribute('aria-checked', 'true');
   await expect(editor.getByRole('slider', { name: 'Exposure', exact: true })).toHaveValue('1');
   const persisted = await read();
   expect(persisted.revisions).toHaveLength(1);
