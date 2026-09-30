@@ -140,7 +140,7 @@ const state = () =>
     canRedo: useTimelineCommandStore.getState().canRedo,
     mode: localStorage.getItem("timeline:keyframeEditorMode"),
   });
-async function renderHero() {
+async function renderHero(frame = 0, expectedX?: number) {
   const items = useItemsStore.getState().itemById,
     keys = useKeyframesStore.getState().keyframes;
   const keyframesMap = new Map(keys.map((entry) => [entry.itemId, entry]));
@@ -155,7 +155,7 @@ async function renderHero() {
     pose = getAnimatedTransform(
       item,
       keyframesMap.get(item.id),
-      0,
+      frame,
       canvasSettings,
     );
   const rctx: ItemRenderContext = {
@@ -177,7 +177,7 @@ async function renderHero() {
     adjustmentLayers: [],
     subCompRenderData: new Map(),
   };
-  await renderItem(ctx, item, pose, 0, rctx);
+  await renderItem(ctx, item, pose, frame, rctx);
   const pixels = ctx.getImageData(0, 0, 128, 96).data;
   const digest = [
     ...new Uint8Array(await crypto.subtle.digest("SHA-256", pixels)),
@@ -187,18 +187,60 @@ async function renderHero() {
   const oracle = new OffscreenCanvas(128, 96),
     reference = oracle.getContext("2d")!;
   reference.fillStyle = "#ff0000";
-  reference.fillRect(64 + pose.x - 8, 48 + pose.y - 8, 16, 16);
+  reference.fillRect(
+    64 + (expectedX ?? pose.x) - 8,
+    48 + (expectedX === undefined ? pose.y : 0) - 8,
+    16,
+    16,
+  );
   const expected = reference.getImageData(0, 0, 128, 96).data;
   let maxDelta = 0;
   for (let i = 0; i < pixels.length; i++)
     maxDelta = Math.max(maxDelta, Math.abs(pixels[i]! - expected[i]!));
-  return { pose, digest, maxDelta };
+  const blob = await canvas.convertToBlob({ type: "image/png" });
+  const png = await new Promise<string>((resolve) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.readAsDataURL(blob);
+  });
+  return { pose, digest, maxDelta, png };
 }
 Object.assign(window, {
   fl100Editor: {
     mount: mountEditorControls,
     state,
     renderHero,
+    // Fixture setup only. Subsequent interpolation and undo/redo use native production controls.
+    seedEasing: () => {
+      mountEditorControls("compose", true);
+      useKeyframesStore.getState().setKeyframes([
+        {
+          itemId: "hero",
+          animationVersion: 2,
+          properties: [],
+          vectorProperties: [
+            {
+              property: "position",
+              keyframes: [
+                {
+                  id: "k0",
+                  frame: 0,
+                  value: { x: -24, y: 0 },
+                  easing: "linear",
+                },
+                {
+                  id: "k30",
+                  frame: 30,
+                  value: { x: 24, y: 0 },
+                  easing: "linear",
+                },
+              ],
+            },
+          ],
+        },
+      ]);
+      mountEditorControls("animate");
+    },
     moveParent: (id: string, x: number) =>
       useItemsStore.getState()._updateItemTransform(id, { x }),
     selectLayers: () =>
