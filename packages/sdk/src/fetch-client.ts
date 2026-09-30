@@ -10990,6 +10990,54 @@ export type WorkflowShareResponseDto = {
 };
 export type LicenseResponseDto = UserLicense;
 export type SyncAckV1 = {};
+export type SyncAlbumAssetAccessDeleteV1 = {
+    albumId: string;
+    assetId: string;
+};
+export type SyncAssetV2 = {
+    /** Checksum */
+    checksum: string;
+    /** Uploaded to Frameleaf at */
+    createdAt: string | null;
+    /** Deleted at */
+    deletedAt: string | null;
+    /** Duration */
+    duration: number | null;
+    /** File created at */
+    fileCreatedAt: string | null;
+    /** File modified at */
+    fileModifiedAt: string | null;
+    /** Asset height */
+    height: number | null;
+    /** Asset ID */
+    id: string;
+    /** Is edited */
+    isEdited: boolean;
+    /** Is favorite */
+    isFavorite: boolean;
+    /** Library ID */
+    libraryId: string | null;
+    /** Live photo video ID */
+    livePhotoVideoId: string | null;
+    /** Local date time */
+    localDateTime: string | null;
+    /** Original file name */
+    originalFileName: string;
+    /** Owner ID */
+    ownerId: string;
+    /** Stack ID */
+    stackId: string | null;
+    /** Thumbhash */
+    thumbhash: string | null;
+    "type": AssetTypeEnum;
+    visibility: AssetVisibility;
+    /** Asset width */
+    width: number | null;
+};
+export type SyncAlbumAssetAccessV1 = {
+    albumId: string;
+    asset: SyncAssetV2;
+};
 export type SyncAlbumDeleteV1 = {
     /** Album ID */
     albumId: string;
@@ -11303,46 +11351,6 @@ export type SyncAssetV1 = {
     /** Asset width */
     width: number | null;
 };
-export type SyncAssetV2 = {
-    /** Checksum */
-    checksum: string;
-    /** Uploaded to Frameleaf at */
-    createdAt: string | null;
-    /** Deleted at */
-    deletedAt: string | null;
-    /** Duration */
-    duration: number | null;
-    /** File created at */
-    fileCreatedAt: string | null;
-    /** File modified at */
-    fileModifiedAt: string | null;
-    /** Asset height */
-    height: number | null;
-    /** Asset ID */
-    id: string;
-    /** Is edited */
-    isEdited: boolean;
-    /** Is favorite */
-    isFavorite: boolean;
-    /** Library ID */
-    libraryId: string | null;
-    /** Live photo video ID */
-    livePhotoVideoId: string | null;
-    /** Local date time */
-    localDateTime: string | null;
-    /** Original file name */
-    originalFileName: string;
-    /** Owner ID */
-    ownerId: string;
-    /** Stack ID */
-    stackId: string | null;
-    /** Thumbhash */
-    thumbhash: string | null;
-    "type": AssetTypeEnum;
-    visibility: AssetVisibility;
-    /** Asset width */
-    width: number | null;
-};
 export type SyncAuthUserV1 = {
     avatarColor?: (UserAvatarColor) | null;
     /** User deleted at */
@@ -11447,6 +11455,14 @@ export type SyncMemoryV1 = {
     "type": MemoryType;
     /** Updated at */
     updatedAt: string;
+};
+export type SyncPartnerAssetAccessDeleteV1 = {
+    assetId: string;
+    sharedById: string;
+};
+export type SyncPartnerAssetAccessV1 = {
+    asset: SyncAssetV2;
+    sharedById: string;
 };
 export type SyncPartnerDeleteV1 = {
     /** Shared by ID */
@@ -23918,6 +23934,10 @@ export enum StudioRestoredVersionUnavailable {
     HiddenContent = "hidden-content"
 }
 export enum SyncEntityType {
+    AlbumAssetAccessV1 = "AlbumAssetAccessV1",
+    AlbumAssetAccessDeleteV1 = "AlbumAssetAccessDeleteV1",
+    PartnerAssetAccessV1 = "PartnerAssetAccessV1",
+    PartnerAssetAccessDeleteV1 = "PartnerAssetAccessDeleteV1",
     PinnedCollectionV1 = "PinnedCollectionV1",
     PinnedCollectionDeleteV1 = "PinnedCollectionDeleteV1",
     DuplicateGroupV1 = "DuplicateGroupV1",
@@ -24004,6 +24024,8 @@ export enum SyncEntityType {
     SyncCompleteV1 = "SyncCompleteV1"
 }
 export enum SyncRequestType {
+    AlbumAssetAccessV1 = "AlbumAssetAccessV1",
+    PartnerAssetAccessV1 = "PartnerAssetAccessV1",
     PinnedCollectionEventsV1 = "PinnedCollectionEventsV1",
     DuplicateGroupsV1 = "DuplicateGroupsV1",
     SharedSpacesV1 = "SharedSpacesV1",

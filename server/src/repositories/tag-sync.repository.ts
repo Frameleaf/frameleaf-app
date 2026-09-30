@@ -23,8 +23,24 @@ import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { getLockedOwnerId, notLockedOrOwnedBy } from 'src/utils/locked.js';
 import { toAck } from 'src/utils/sync.js';
 
-type Kind = 'tag' | 'assetTag' | 'pet' | 'petObservation' | 'space' | 'spaceMember' | 'duplicate' | 'pin';
+type Kind =
+  | 'tag'
+  | 'assetTag'
+  | 'pet'
+  | 'petObservation'
+  | 'space'
+  | 'spaceMember'
+  | 'duplicate'
+  | 'pin'
+  | 'albumAsset'
+  | 'partnerAsset';
 type ReadPins = () => Promise<PinnedCollectionsResponseDto>;
+export type SharedAssetReader = (
+  db: Kysely<DB>,
+  auth: AuthDto,
+  kind: 'albumAsset' | 'partnerAsset',
+  key?: string,
+) => Promise<Visible[]>;
 type Visible = {
   key: string;
   entityId: string;
@@ -33,6 +49,8 @@ type Visible = {
   data: Record<string, unknown>;
 };
 const types = {
+  albumAsset: { upsert: SyncEntityType.AlbumAssetAccessV1, delete: SyncEntityType.AlbumAssetAccessDeleteV1 },
+  partnerAsset: { upsert: SyncEntityType.PartnerAssetAccessV1, delete: SyncEntityType.PartnerAssetAccessDeleteV1 },
   pin: { upsert: SyncEntityType.PinnedCollectionV1, delete: SyncEntityType.PinnedCollectionDeleteV1 },
   duplicate: { upsert: SyncEntityType.DuplicateGroupV1, delete: SyncEntityType.DuplicateGroupDeleteV1 },
   space: { upsert: SyncEntityType.SharedSpaceV1, delete: SyncEntityType.SharedSpaceDeleteV1 },
@@ -45,7 +63,10 @@ const types = {
 
 /** Only additive ledger types have delivery IDs. Existing sync cursors are untouched. */
 export class TagSync {
-  constructor(private db: Kysely<DB>) {}
+  constructor(
+    private db: Kysely<DB>,
+    private readSharedAssets?: SharedAssetReader,
+  ) {}
 
   private async locked<T>(sessionId: string, run: (tx: Transaction<DB>) => Promise<T>): Promise<T> {
     return this.db.transaction().execute(async (tx) => {
@@ -63,6 +84,19 @@ export class TagSync {
     readPins?: ReadPins,
   ): Promise<Visible[]> {
     const options = getHiddenContentQueryOptions(auth);
+    if (kind === 'albumAsset' || kind === 'partnerAsset') {
+      if (auth.sharedLink) return [];
+      if (!this.readSharedAssets) throw new Error('Shared asset sync requires current authorized projection');
+      const rows = await this.readSharedAssets(db, auth, kind, key);
+      return rows.map((row) => {
+        const digest = createHash('sha256').update(JSON.stringify(row.data)).digest('hex').slice(0, 32);
+        return {
+          ...row,
+          sourceId: `${digest.slice(0, 8)}-${digest.slice(8, 12)}-${digest.slice(12, 16)}-${digest.slice(16, 20)}-${digest.slice(20)}`,
+        };
+      });
+    }
+
     if (kind === 'pin') {
       if (auth.sharedLink) throw new ForbiddenException('Pinned collections require a user session');
       if (!readPins) throw new Error('Pin sync requires current authorized hydration');
@@ -247,7 +281,9 @@ export class TagSync {
                 delivered: false,
                 acknowledged: false,
               })
-              .$if(['space', 'duplicate', 'pin'].includes(kind), (qb) => qb.set({ deliveryOrder: null }))
+              .$if(['space', 'duplicate', 'pin', 'albumAsset', 'partnerAsset'].includes(kind), (qb) =>
+                qb.set({ deliveryOrder: null }),
+              )
               .where('sessionId', '=', sessionId)
               .where('kind', '=', kind)
               .where('key', '=', state.key)
@@ -258,7 +294,9 @@ export class TagSync {
             await tx
               .updateTable('session_tag_sync_state')
               .set({ action: 'delete', eventId: sql`immich_uuid_v7()`, delivered: false, acknowledged: false })
-              .$if(['space', 'duplicate', 'pin'].includes(kind), (qb) => qb.set({ deliveryOrder: null }))
+              .$if(['space', 'duplicate', 'pin', 'albumAsset', 'partnerAsset'].includes(kind), (qb) =>
+                qb.set({ deliveryOrder: null }),
+              )
               .where('sessionId', '=', sessionId)
               .where('kind', '=', kind)
               .where('key', '=', state.key)
@@ -307,7 +345,7 @@ export class TagSync {
         )
         .orderBy('eventId', 'asc')
         .execute();
-      if (kind === 'duplicate' || kind === 'pin') {
+      if (['duplicate', 'pin', 'albumAsset', 'partnerAsset'].includes(kind)) {
         pending.sort((a, b) => {
           if (a.deliveryOrder !== null || b.deliveryOrder !== null)
             return (a.deliveryOrder ?? Infinity) - (b.deliveryOrder ?? Infinity);
@@ -343,10 +381,12 @@ export class TagSync {
       await tx
         .updateTable('session_tag_sync_state')
         .set({ delivered: true, potentiallyVisible: true })
-        .$if(['space', 'duplicate', 'pin'].includes(kind) && state.deliveryOrder === null, (qb) =>
-          qb.set({
-            deliveryOrder: sql<number>`(select coalesce(max("deliveryOrder"), 0) + 1 from session_tag_sync_state where "sessionId" = ${sessionId} and kind = ${kind})`,
-          }),
+        .$if(
+          ['space', 'duplicate', 'pin', 'albumAsset', 'partnerAsset'].includes(kind) && state.deliveryOrder === null,
+          (qb) =>
+            qb.set({
+              deliveryOrder: sql<number>`(select coalesce(max("deliveryOrder"), 0) + 1 from session_tag_sync_state where "sessionId" = ${sessionId} and kind = ${kind})`,
+            }),
         )
         .where('sessionId', '=', sessionId)
         .where('kind', '=', kind)
@@ -360,21 +400,25 @@ export class TagSync {
         data:
           state.action === 'upsert'
             ? current!.data
-            : kind === 'pin'
-              ? { pinId: state.entityId }
-              : kind === 'duplicate'
-                ? { groupId: state.entityId }
-                : kind === 'space'
-                  ? { spaceId: state.entityId }
-                  : kind === 'spaceMember'
-                    ? { spaceId: state.entityId, userId: state.key.split(':', 2)[1] }
-                    : kind === 'tag'
-                      ? { tagId: state.entityId }
-                      : kind === 'assetTag'
-                        ? { tagId: state.entityId, assetId: state.assetId! }
-                        : kind === 'pet'
-                          ? { petId: state.entityId }
-                          : { observationId: state.key, petId: state.entityId, assetId: state.assetId! },
+            : kind === 'albumAsset'
+              ? { albumId: state.entityId, assetId: state.assetId! }
+              : kind === 'partnerAsset'
+                ? { sharedById: state.entityId, assetId: state.assetId! }
+                : kind === 'pin'
+                  ? { pinId: state.entityId }
+                  : kind === 'duplicate'
+                    ? { groupId: state.entityId }
+                    : kind === 'space'
+                      ? { spaceId: state.entityId }
+                      : kind === 'spaceMember'
+                        ? { spaceId: state.entityId, userId: state.key.split(':', 2)[1] }
+                        : kind === 'tag'
+                          ? { tagId: state.entityId }
+                          : kind === 'assetTag'
+                            ? { tagId: state.entityId, assetId: state.assetId! }
+                            : kind === 'pet'
+                              ? { petId: state.entityId }
+                              : { observationId: state.key, petId: state.entityId, assetId: state.assetId! },
       };
     });
   }
@@ -396,16 +440,22 @@ export class TagSync {
         .where('action', '=', action)
         .where('delivered', '=', true)
         .executeTakeFirst();
-      if (!exact || (['space', 'duplicate', 'pin'].includes(kind) && exact.deliveryOrder === null)) return;
+      if (
+        !exact ||
+        (['space', 'duplicate', 'pin', 'albumAsset', 'partnerAsset'].includes(kind) && exact.deliveryOrder === null)
+      )
+        return;
       const pending = tx
         .selectFrom('session_tag_sync_state')
         .select('key')
         .where('sessionId', '=', sessionId)
         .where('kind', '=', kind)
-        .$if(['space', 'duplicate', 'pin'].includes(kind), (qb) =>
+        .$if(['space', 'duplicate', 'pin', 'albumAsset', 'partnerAsset'].includes(kind), (qb) =>
           qb.where('deliveryOrder', '<=', exact.deliveryOrder!),
         )
-        .$if(!['space', 'duplicate', 'pin'].includes(kind), (qb) => qb.where('eventId', '<=', ack.updateId))
+        .$if(!['space', 'duplicate', 'pin', 'albumAsset', 'partnerAsset'].includes(kind), (qb) =>
+          qb.where('eventId', '<=', ack.updateId),
+        )
         .where('action', '=', action)
         .where('delivered', '=', true);
       if (action === 'delete') {

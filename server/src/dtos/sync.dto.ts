@@ -593,7 +593,37 @@ class SyncPinnedCollectionDeleteV1 extends createZodDto(
   }),
 ) {}
 
+/** Each grant replaces the source-scoped asset; unrelated grants are retained. */
+@ExtraModel()
+class SyncAlbumAssetAccessV1 extends createZodDto(
+  z.object({ albumId: z.uuid(), asset: SyncAssetV2Schema }).meta({ id: 'SyncAlbumAssetAccessV1' }),
+) {}
+@ExtraModel()
+class SyncPartnerAssetAccessV1 extends createZodDto(
+  z.object({ sharedById: z.uuid(), asset: SyncAssetV2Schema }).meta({ id: 'SyncPartnerAssetAccessV1' }),
+) {}
+@ExtraModel()
+class SyncAlbumAssetAccessDeleteV1 extends createZodDto(
+  z.object({ albumId: z.uuid(), assetId: z.uuid() }).meta({
+    id: 'SyncAlbumAssetAccessDeleteV1',
+    description:
+      'Drop this album-source asset and its descriptive mirror data, preserving independently authorized sources.',
+  }),
+) {}
+@ExtraModel()
+class SyncPartnerAssetAccessDeleteV1 extends createZodDto(
+  z.object({ sharedById: z.uuid(), assetId: z.uuid() }).meta({
+    id: 'SyncPartnerAssetAccessDeleteV1',
+    description:
+      'Drop this partner-source asset and its descriptive mirror data, preserving independently authorized sources.',
+  }),
+) {}
+
 export type SyncItem = {
+  [SyncEntityType.AlbumAssetAccessV1]: SyncAlbumAssetAccessV1;
+  [SyncEntityType.AlbumAssetAccessDeleteV1]: SyncAlbumAssetAccessDeleteV1;
+  [SyncEntityType.PartnerAssetAccessV1]: SyncPartnerAssetAccessV1;
+  [SyncEntityType.PartnerAssetAccessDeleteV1]: SyncPartnerAssetAccessDeleteV1;
   [SyncEntityType.PinnedCollectionV1]: SyncPinnedCollectionV1;
   [SyncEntityType.PinnedCollectionDeleteV1]: SyncPinnedCollectionDeleteV1;
   [SyncEntityType.DuplicateGroupV1]: SyncDuplicateGroupV1;
