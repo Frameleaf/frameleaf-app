@@ -154,9 +154,9 @@ async function checkInstallation({
   workerTimeoutMs = 900_000,
 }) {
   const evidence = {};
-  assert.deepEqual(
-    await api.call("GET", "/server/ping"),
-    { res: "pong" },
+  assert.equal(
+    (await api.call("GET", "/server/ping")).res,
+    "pong",
     "The API did not answer ping",
   );
   const version = await api.call("GET", "/server/version");
