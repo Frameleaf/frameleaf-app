@@ -1009,6 +1009,7 @@ export class MediaOperationRepository {
     claimToken: string,
     result: { resultAssetId: string | null; progress?: number; result?: Record<string, unknown> },
     executor?: Kysely<DB>,
+    requireActiveClaim = false,
   ): Promise<boolean> {
     // FL-44: a caller's transaction took the handoff guard already (publishValidated); alone, this
     // write takes it itself.
@@ -1031,6 +1032,12 @@ export class MediaOperationRepository {
         .where('id', '=', id)
         .where('claimToken', '=', claimToken)
         .where('status', '=', MediaOperationStatus.Validating)
+        .$if(requireActiveClaim, (qb) =>
+          qb
+            .where('claimExpiresAt', '>', sql<Date>`clock_timestamp()`)
+            .where('cancelRequestedAt', 'is', null)
+            .where('pauseRequestedAt', 'is', null),
+        )
         .$if(result.resultAssetId !== null, (qb) =>
           qb.where((eb) =>
             eb.exists(
@@ -1113,7 +1120,7 @@ export class MediaOperationRepository {
   }
 
   /** Move a claimed job to `validating`. The last gate before anything is published. */
-  async beginValidation(id: string, claimToken: string): Promise<boolean> {
+  async beginValidation(id: string, claimToken: string, requireActiveClaim = false): Promise<boolean> {
     const row = await this.write((db) =>
       db
         .updateTable('media_operation')
@@ -1121,6 +1128,12 @@ export class MediaOperationRepository {
         .where('id', '=', id)
         .where('claimToken', '=', claimToken)
         .where('status', 'in', [MediaOperationStatus.Preparing, MediaOperationStatus.Rendering])
+        .$if(requireActiveClaim, (qb) =>
+          qb
+            .where('claimExpiresAt', '>', sql<Date>`clock_timestamp()`)
+            .where('cancelRequestedAt', 'is', null)
+            .where('pauseRequestedAt', 'is', null),
+        )
         .returning(['id', 'ownerId'])
         .executeTakeFirst(),
     );
@@ -2146,10 +2159,11 @@ export class MediaOperationRepository {
     operationId: string,
     claimToken: string,
     chunk: { sequence: number; chunkKey: string; outputPath: string; outputChecksum: Buffer; sizeInBytes: number },
+    verifiedArtifact = false,
   ): Promise<boolean> {
     return this.db.transaction().execute(async (trx) => {
       await lockPublicForkWrites(trx, MEDIA_OPERATION_HANDOFF_REFUSAL);
-      if (!(await this.lockClaim(trx, operationId, claimToken))) {
+      if (!(await this.lockClaim(trx, operationId, claimToken, verifiedArtifact))) {
         return false;
       }
 
@@ -2166,6 +2180,7 @@ export class MediaOperationRepository {
         .where('sequence', '=', chunk.sequence)
         .where('chunkKey', '=', chunk.chunkKey)
         .where('claimToken', '=', claimToken)
+        .$if(verifiedArtifact, (qb) => qb.where('state', '=', MediaOperationCheckpointState.Pending))
         .executeTakeFirst();
 
       return Number(result.numUpdatedRows) === 1;
@@ -2190,12 +2205,23 @@ export class MediaOperationRepository {
    * row and waits for the lock, so what the caller writes next is written under a claim that cannot
    * change underneath it.
    */
-  private async lockClaim(trx: Kysely<DB>, operationId: string, claimToken: string): Promise<boolean> {
+  private async lockClaim(
+    trx: Kysely<DB>,
+    operationId: string,
+    claimToken: string,
+    requireActive = false,
+  ): Promise<boolean> {
     const row = await trx
       .selectFrom('media_operation')
       .select('id')
       .where('id', '=', operationId)
       .where('claimToken', '=', claimToken)
+      .$if(requireActive, (qb) =>
+        qb
+          .where('claimExpiresAt', '>', sql<Date>`clock_timestamp()`)
+          .where('cancelRequestedAt', 'is', null)
+          .where('pauseRequestedAt', 'is', null),
+      )
       .where('status', 'in', [...CLAIMED_MEDIA_OPERATION_STATUSES])
       .forShare()
       .executeTakeFirst();

@@ -61,7 +61,52 @@ The server service regression asserts that the authorized stored revision is han
 mutating the job; existing access-revocation coverage still refuses to read or claim that graph.
 
 Remaining work: video/audio probing and metadata, generated media, nested compositions and
-the other resource adapters; real render execution and output/checkpoint limits; map the server staging directory into the
-worker, verify encoded output and perform validation/completion. Hardware and codec/container
+the other resource adapters; real render execution and output/checkpoint limits; use the server-owned artifact transport below for encoded output and validation/completion. Hardware and codec/container
 measurements, admission, real-server hosted claim/render evidence and FL-144 editor/lost-ack
 browser acceptance remain open. No capability flags are set by this slice.
+
+
+## Whole-export artifact transport (FL-107 prerequisite)
+
+The server owns staging. A worker does not mount a writable server directory or send a filesystem
+path for a Studio export. This protocol does not add an executor or admit unsupported graphs.
+The existing input preparation command continues to report `worker_executor_unavailable`.
+
+An export claim includes `artifactInputDigest`: a server SHA-256 binding of its immutable revision
+and currently authorized resource identities/checksums. Plan exactly one checkpoint, sequence `0`,
+using that digest as `inputDigest`, plus the existing chunk key, effect/config/history digests,
+seed, declared timebase and whole-export tick range. Reuse still requires the entire existing
+checkpoint plan to match. A completed artifact is also opened as a regular file and rehashed;
+missing/corrupted bytes or changed sources refuse recovery. Old path-reported checkpoints cannot
+be trusted merely because they have a completed state.
+
+Upload the actual encoded bytes with
+`PUT /render-workers/operations/{id}/artifacts/0` and `application/octet-stream`.
+Keep the worker session in the existing `x-frameleaf-worker-session` header and the current claim
+in `x-render-claim-token`; neither credential belongs in the URL. Query metadata is `chunkKey`,
+`checksum` (SHA-256 hex), and `sizeInBytes` (positive decimal safe integer). The server streams with
+backpressure, enforces the declared exact byte count and existing operation output/wall-clock
+limits, and uses an exclusive private generated partial filename. It flushes and atomically
+renames the file, independently validates actual bytes, then conditionally completes the pending
+checkpoint under the active lease. Rejected/disconnected uploads and losing concurrent uploads
+remove their own partial/final file. A server crash cannot leave a checkpoint pointing at a partial
+file; orphaned staging files remain subject to the existing staging lifecycle.
+
+A replacement active claim can use
+`GET /render-workers/operations/{id}/artifacts/0?chunkKey={key}` with the same two headers.
+The matching completed checkpoint must retain the current source binding. The server verifies
+size/SHA-256 and streams from the verified descriptor, with private/no-store caching and a
+`Digest: sha-256=...` response header. It returns no server path. Expired, paused, cancelled,
+replaced or revoked claims are refused; long transfers recheck access as they stream.
+
+After the bytes are accepted, request validation and completion using the existing endpoints and
+`{ claimToken, artifactSequence: 0, resultAssetId: null }`. Studio exports reject legacy `output`
+path reports. Validation and staging reverify the actual artifact and current sources; durable
+transitions guard expiry/pause/cancel as well as the claim token. Container type comes from the
+server-selected export format. Existing publication still verifies encoded media, ownership,
+privacy and source provenance before adopting a result. Preview and other operation kinds retain
+their established output protocol. No engine patch or capability flag is changed.
+
+This is transport/recovery infrastructure. Edited float PQ/HLG rendering, native Main10 encoding,
+independently measured output PTS, multichannel order/layout, complete HDR metadata, real executor
+restart, reference-monitor and deployment/hardware qualification still need genuine evidence.

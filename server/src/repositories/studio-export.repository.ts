@@ -433,10 +433,11 @@ export class StudioExportRepository {
       remoteRef: string | null;
     },
     publish: (version: StudioExportVersion) => MediaOperationCreate,
+    requireActiveClaim = false,
   ): Promise<{ version: StudioExportVersion; operation: MediaOperation } | undefined> {
     return this.db.transaction().execute(async (tx) => {
       await lockPublicForkWrites(tx, STUDIO_EXPORT_HANDOFF_REFUSAL);
-      if (!claimToken || !(await this.lockClaim(tx, renderOperationId, claimToken))) {
+      if (!claimToken || !(await this.lockClaim(tx, renderOperationId, claimToken, requireActiveClaim))) {
         return;
       }
       const version = (await tx
@@ -517,13 +518,24 @@ export class StudioExportRepository {
   }
 
   /** Serialize publication and staging against cancellation and claim recovery (FL-43). */
-  private async lockClaim(tx: Kysely<DB>, operationId: string, claimToken: string): Promise<boolean> {
+  private async lockClaim(
+    tx: Kysely<DB>,
+    operationId: string,
+    claimToken: string,
+    requireActiveClaim = false,
+  ): Promise<boolean> {
     const held = await tx
       .selectFrom('media_operation')
       .select('id')
       .where('id', '=', operationId)
       .where('claimToken', '=', claimToken)
       .where('status', '=', MediaOperationStatus.Validating)
+      .$if(requireActiveClaim, (qb) =>
+        qb
+          .where('claimExpiresAt', '>', sql<Date>`clock_timestamp()`)
+          .where('cancelRequestedAt', 'is', null)
+          .where('pauseRequestedAt', 'is', null),
+      )
       .forUpdate()
       .executeTakeFirst();
     return !!held;

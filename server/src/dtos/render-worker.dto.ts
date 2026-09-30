@@ -226,6 +226,11 @@ const RenderWorkerClaimSchema = z
     settings: JsonObjectSchema,
     attempt: z.int(),
     checkpoints: z.array(MediaOperationCheckpointDto.schema),
+    artifactInputDigest: z
+      .string()
+      .regex(/^[a-f\d]{64}$/)
+      .optional()
+      .describe('Server source/revision binding required by whole-export checkpoint plans'),
     inputs: z.array(RenderWorkerInputGrantSchema),
     limits: RenderWorkerClaimLimitsSchema,
   })
@@ -279,6 +284,18 @@ const RenderWorkerCheckpointPlanSchema = z
   })
   .meta({ id: 'RenderWorkerCheckpointPlanDto' });
 
+const RenderWorkerArtifactSchema = z
+  .object({
+    chunkKey: z.string().min(1).max(256),
+    checksum: z.string().regex(/^[\da-f]{64}$/i, 'SHA-256 hex digest'),
+    sizeInBytes: BigIntString,
+  })
+  .meta({ id: 'RenderWorkerArtifactDto' });
+
+const RenderWorkerArtifactReadSchema = RenderWorkerArtifactSchema.pick({ chunkKey: true }).meta({
+  id: 'RenderWorkerArtifactReadDto',
+});
+
 const RenderWorkerCheckpointCompleteSchema = z
   .object({
     claimToken: ClaimTokenSchema,
@@ -319,7 +336,13 @@ const RenderWorkerCompleteSchema = z
       .uuidv4()
       .nullable()
       .describe('Must be null for a Studio export: its result is adopted by publication, never named by a worker'),
-    output: RenderWorkerOutputSchema.optional().describe('Required for a Studio export'),
+    output: RenderWorkerOutputSchema.optional().describe('Legacy non-export render output'),
+    artifactSequence: z
+      .int()
+      .min(0)
+      .max(0)
+      .optional()
+      .describe('Server-verified whole-export checkpoint; required for Studio exports'),
   })
   .meta({ id: 'RenderWorkerCompleteDto' });
 
@@ -398,3 +421,7 @@ const RenderWorkerCompatibilityResponseSchema = z
   .meta({ id: 'RenderWorkerCompatibilityResponseDto' });
 
 export class RenderWorkerCompatibilityResponseDto extends createZodDto(RenderWorkerCompatibilityResponseSchema) {}
+
+export class RenderWorkerArtifactDto extends createZodDto(RenderWorkerArtifactSchema) {}
+
+export class RenderWorkerArtifactReadDto extends createZodDto(RenderWorkerArtifactReadSchema) {}
