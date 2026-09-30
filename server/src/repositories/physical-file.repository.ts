@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { ConflictException, Injectable } from '@nestjs/common';
 import { Kysely, Selectable, Transaction, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { createHash, randomUUID } from 'node:crypto';
@@ -794,14 +794,77 @@ export class PhysicalFileRepository {
   // Aliases an asset onto a file another asset already owns, so it takes the
   // path lock: without it this can add a reference to a path a concurrent
   // FileDelete job has already counted as unreferenced.
-  async linkAssetToOriginalPhysicalFile(assetId: string, physicalFile: Pick<PhysicalFile, 'id' | 'path'>) {
-    await this.withPathLock(physicalFile.path, (trx) =>
-      trx
+  async linkAssetToOriginalPhysicalFile(
+    assetId: string,
+    physicalFile: Pick<PhysicalFile, 'id' | 'path'>,
+    expected?: {
+      masterOwnerId: string;
+      checksum: Buffer;
+      size: number;
+      ingestion: { resourceId: string; token: string; ownerId: string };
+    },
+  ) {
+    await this.withPathLock(physicalFile.path, async (trx) => {
+      if (expected) {
+        const claim = await trx
+          .selectFrom('asset_upload_resource')
+          .innerJoin('user as uploadOwner', 'uploadOwner.id', 'asset_upload_resource.ownerId')
+          .select('asset_upload_resource.id')
+          .where('asset_upload_resource.id', '=', expected.ingestion.resourceId)
+          .where('asset_upload_resource.ownerId', '=', expected.ingestion.ownerId)
+          .where('resultAssetId', '=', assetId)
+          .where('verifiedChecksum', '=', expected.checksum)
+          .where('ingestionToken', '=', expected.ingestion.token)
+          .where('ingestionLeaseExpiresAt', '>', sql<Date>`clock_timestamp()`)
+          .where('state', '=', 'published')
+          .where('ingested', '=', false)
+          .where('uploadOwner.deletedAt', 'is', null)
+          .forShare()
+          .executeTakeFirst();
+        if (!claim) {
+          throw new ConflictException('Upload ingestion claim expired');
+        }
+        const current = await trx
+          .selectFrom('physical_file')
+          .innerJoin('asset', 'asset.id', 'physical_file.canonicalAssetId')
+          .innerJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
+          .innerJoin('user as masterOwner', 'masterOwner.id', 'asset.ownerId')
+          .select('physical_file.id')
+          .where('physical_file.id', '=', physicalFile.id)
+          .where('physical_file.path', '=', physicalFile.path)
+          .where('physical_file.checksum', '=', expected.checksum)
+          .where('physical_file.sizeInBytes', '=', expected.size)
+          .where('asset.ownerId', '=', expected.masterOwnerId)
+          .where('asset.libraryId', 'is', null)
+          .where('asset.isExternal', '=', false)
+          .where('asset.isOffline', '=', false)
+          .where('asset.deletedAt', 'is', null)
+          .where('asset.status', '=', AssetStatus.Active)
+          .where('asset.checksum', '=', expected.checksum)
+          .where('asset_exif.fileSizeInByte', '=', expected.size)
+          .where('asset.originalPath', '=', physicalFile.path)
+          .where('masterOwner.deletedAt', 'is', null)
+          .forShare()
+          .executeTakeFirst();
+        if (!current) {
+          throw new ConflictException('Physical upload target changed');
+        }
+      }
+      const linked = await trx
         .updateTable('asset')
         .set({ physicalOriginalFileId: physicalFile.id, originalPath: physicalFile.path })
         .where('id', '=', asUuid(assetId))
-        .execute(),
-    );
+        .$if(!!expected, (qb) =>
+          qb
+            .where('ownerId', '=', expected!.ingestion.ownerId)
+            .where('checksum', '=', expected!.checksum)
+            .where('deletedAt', 'is', null),
+        )
+        .executeTakeFirst();
+      if (expected && linked.numUpdatedRows !== 1n) {
+        throw new ConflictException('Upload destination changed');
+      }
+    });
   }
 
   async isOriginalCanonical(assetId: string, physicalFileId: string, kysely: Kysely<DB> = this.db): Promise<boolean> {

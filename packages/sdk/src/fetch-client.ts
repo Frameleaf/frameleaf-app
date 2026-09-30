@@ -3657,6 +3657,13 @@ export type SafetySummaryDto = {
     /** Current own accessible, non-trashed server library; excludes deleted libraries. Device-only items are not known to the server */
     total: number;
 };
+export type AssetUploadResultDto = {
+    /** Created or duplicate asset ID; nil UUID if current privacy suppresses it */
+    id: string;
+    /** Verified SHA-256 of the complete uploaded representation */
+    sha256: string;
+    status: AssetMediaStatus;
+};
 export type ExifResponseDto = {
     /** City name */
     city?: string | null;
@@ -14149,6 +14156,115 @@ export function unlockAssets({ bulkIdsDto }: {
         method: "POST",
         body: bulkIdsDto
     })));
+}
+/**
+ * Get resumable asset upload limits
+ */
+export function getAssetUploadResourceLimits(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText("/assets/uploads", {
+        ...opts,
+        method: "OPTIONS"
+    }));
+}
+/**
+ * Create resumable asset upload
+ */
+export function createAssetUploadResource({ assetMetadata, reprDigest, uploadComplete, uploadDraftInteropVersion, uploadLength, body }: {
+    assetMetadata: string;
+    reprDigest: string;
+    uploadComplete: "?0" | "?1";
+    uploadDraftInteropVersion: "9";
+    uploadLength?: number;
+    body: Blob;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 104;
+    } | {
+        status: 200;
+        data: AssetUploadResultDto;
+    } | {
+        status: 201;
+    } | {
+        status: 202;
+    }>("/assets/uploads", {
+        ...opts,
+        method: "POST",
+        body,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "Asset-Metadata": assetMetadata,
+            "Repr-Digest": reprDigest,
+            "Upload-Complete": uploadComplete,
+            "Upload-Draft-Interop-Version": uploadDraftInteropVersion,
+            "Upload-Length": uploadLength
+        })
+    }));
+}
+/**
+ * Cancel an unpublished upload
+ */
+export function cancelAssetUploadResource({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/assets/uploads/${encodeURIComponent(id)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Get durable upload offset
+ */
+export function getAssetUploadResourceOffset({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/assets/uploads/${encodeURIComponent(id)}`, {
+        ...opts,
+        method: "HEAD"
+    }));
+}
+/**
+ * Append immutable upload bytes
+ */
+export function appendAssetUploadResource({ uploadComplete, uploadDraftInteropVersion, uploadOffset, id, body }: {
+    uploadComplete: "?0" | "?1";
+    uploadDraftInteropVersion: "9";
+    uploadOffset: number;
+    id: string;
+    body: Blob;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AssetUploadResultDto;
+    } | {
+        status: 202;
+    } | {
+        status: 204;
+    } | {
+        status: 409;
+    }>(`/assets/uploads/${encodeURIComponent(id)}`, {
+        ...opts,
+        method: "PATCH",
+        body,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "Upload-Complete": uploadComplete,
+            "Upload-Draft-Interop-Version": uploadDraftInteropVersion,
+            "Upload-Offset": uploadOffset
+        })
+    }));
+}
+/**
+ * Recover a completed upload result
+ */
+export function getAssetUploadResourceResult({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AssetUploadResultDto;
+    } | {
+        status: 202;
+    }>(`/assets/uploads/${encodeURIComponent(id)}/result`, {
+        ...opts
+    }));
 }
 /**
  * Retrieve an asset

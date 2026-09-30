@@ -8,6 +8,7 @@ import { AssetDevelopController } from 'src/controllers/asset-develop.controller
 import { AssetFilesController } from 'src/controllers/asset-file.controller.js';
 import { AssetMediaController } from 'src/controllers/asset-media.controller.js';
 import { AssetRestorationController } from 'src/controllers/asset-restoration.controller.js';
+import { AssetUploadResourceController } from 'src/controllers/asset-upload-resource.controller.js';
 import { AssetController } from 'src/controllers/asset.controller.js';
 import { AuthAdminController } from 'src/controllers/auth-admin.controller.js';
 import { AuthController } from 'src/controllers/auth.controller.js';
@@ -87,6 +88,7 @@ import { WorkerInventoryController } from 'src/controllers/worker-inventory.cont
 import { WorkflowController } from 'src/controllers/workflow.controller.js';
 
 export const controllers = [
+  AssetUploadResourceController,
   BackupDeviceAdminController,
   BackupDeviceController,
   SafetyController,
