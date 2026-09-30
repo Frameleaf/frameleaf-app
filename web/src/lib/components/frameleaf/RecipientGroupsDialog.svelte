@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { rovingFocus } from '$lib/frameleaf/roving-focus';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import Status from '$lib/components/frameleaf/Status.svelte';
@@ -142,6 +143,7 @@
         <ul
           class="cl-people"
           role="listbox"
+          use:rovingFocus
           aria-multiselectable="true"
           aria-label={$t('frameleaf_recipient_groups_people')}
         >

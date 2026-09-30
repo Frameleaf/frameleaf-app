@@ -1,4 +1,5 @@
 <script lang="ts" module>
+  import { rovingFocus } from '$lib/frameleaf/roving-focus';
   /** What the panel asks the stage to show: two real files, before and after. */
   export type RestorationCompareRequest = {
     before: string;
@@ -666,7 +667,7 @@
   <p class="rs-lead">{$t('frameleaf_restoration_lead')}</p>
 
   <h3>{$t('frameleaf_restoration_mode')}</h3>
-  <div class="ed-row" role="radiogroup" aria-label={$t('frameleaf_restoration_mode')}>
+  <div class="ed-row" role="radiogroup" use:rovingFocus aria-label={$t('frameleaf_restoration_mode')}>
     {#each RESTORATION_MODES as candidate (candidate)}
       <button
         type="button"
@@ -682,7 +683,7 @@
   <p class="rs-help">{$t(restorationModeHelpKey(mode))}</p>
 
   <h3>{$t('frameleaf_restoration_upscale')}</h3>
-  <div class="ed-row" role="radiogroup" aria-label={$t('frameleaf_restoration_upscale')}>
+  <div class="ed-row" role="radiogroup" use:rovingFocus aria-label={$t('frameleaf_restoration_upscale')}>
     {#each RESTORATION_UPSCALES as factor (factor)}
       <button
         type="button"
@@ -712,7 +713,7 @@
   </label>
 
   <h3>{$t('frameleaf_restoration_preview_area')}</h3>
-  <div class="ed-row" role="radiogroup" aria-label={$t('frameleaf_restoration_preview_area')}>
+  <div class="ed-row" role="radiogroup" use:rovingFocus aria-label={$t('frameleaf_restoration_preview_area')}>
     <button
       type="button"
       role="radio"
@@ -895,7 +896,12 @@
     -->
     <h3>{$t('frameleaf_restoration_mode_smooth_motion')}</h3>
     <p class="rs-help">{$t('frameleaf_restoration_mode_smooth_motion_help')}</p>
-    <div class="ed-row" role="radiogroup" aria-label={$t('frameleaf_restoration_smooth_motion_factor_label')}>
+    <div
+      class="ed-row"
+      role="radiogroup"
+      use:rovingFocus
+      aria-label={$t('frameleaf_restoration_smooth_motion_factor_label')}
+    >
       {#each SMOOTH_MOTION_FACTORS as factor (factor)}
         <button
           type="button"

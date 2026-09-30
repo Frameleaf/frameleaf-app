@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { rovingFocus } from '$lib/frameleaf/roving-focus';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import Status from '$lib/components/frameleaf/Status.svelte';
   import { handleUpdateAlbumInfo } from '$lib/services/album.service';
@@ -104,7 +105,7 @@
     {:else if assets.length === 0}
       <Status message={$t('frameleaf_album_cover_empty')} />
     {:else}
-      <div class="grid" role="radiogroup" aria-label={$t('frameleaf_album_cover_title')}>
+      <div class="grid" role="radiogroup" use:rovingFocus aria-label={$t('frameleaf_album_cover_title')}>
         {#each assets as asset (asset.id)}
           <button
             type="button"

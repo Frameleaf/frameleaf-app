@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { rovingFocus } from '$lib/frameleaf/roving-focus';
   /**
    * Compute & jobs → Where each job runs (FL-159, handoff §3.2; prototype WorkloadRouting.jsx): for
    * every kind of work that uses the ML service, this server, Frameleaf Cloud or both. "Both" means
@@ -167,6 +168,7 @@
         <div
           class="fc-segmented"
           role="radiogroup"
+          use:rovingFocus
           aria-label={$t('admin.frameleaf_routing_where_label', { values: { name: $t(workloadNameKey(row.id)) } })}
         >
           {#each routingModes as mode (mode.id)}
