@@ -63,6 +63,10 @@ describe('service worker asset requests', () => {
   it.each(['thumbnail', 'original'])('reauthorizes a cached %s after revocation or Lock', async (media) => {
     for (const change of ['revoked', 'Locked']) {
       const request = new Request(`https://frameleaf.test/api/assets/${change}/${media}`);
+      // happy-dom omits Request.cache; supply the browser property in this HTTP-cache model.
+      if (request.cache === undefined) {
+        Object.defineProperty(request, 'cache', { value: 'default' });
+      }
       let allowed = true;
       let cached: Response | undefined;
       let authorizations = 0;
@@ -94,6 +98,10 @@ describe('service worker asset requests', () => {
 
   it('preserves a caller that forbids storing the response', async () => {
     const request = new Request(url('no-store'), { cache: 'no-store' });
+    // happy-dom omits Request.cache, including an explicitly supplied cache policy.
+    if (request.cache === undefined) {
+      Object.defineProperty(request, 'cache', { value: 'no-store' });
+    }
     const response = handleFetch(request);
     expect(vi.mocked(fetch).mock.calls[0][1]?.cache).toBe('no-store');
     resolvers[0](new Response('private media'));
