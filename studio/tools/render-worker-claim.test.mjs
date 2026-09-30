@@ -22,7 +22,11 @@ async function fixture(t, { inputStatus = 200, redirect, loseLease = false, chec
       body: body ? JSON.parse(body) : undefined });
     response.setHeader('Content-Type', 'application/json');
     if (request.url === '/api/render-workers/claims') {
-      response.end(JSON.stringify({ operationId, claimToken, kind: 'studio-export', projectId: randomUUID(),
+      // Actual production DTO uses MediaOperationKind.StudioExport's underscore wire value.
+      if (body && JSON.parse(body).kinds.some((kind) => kind !== 'studio_export')) {
+        response.statusCode = 400; response.end('{}'); return;
+      }
+      response.end(JSON.stringify({ operationId, claimToken, kind: 'studio_export', projectId: randomUUID(),
         revisionId: 'immutable-revision-7', snapshot: { studio: { stored: true, revision: 7, graph: {
           metadata: { width: 32, height: 32, fps: 24 },
           timeline: { tracks: [], items: [{ type: 'image', mediaId: 'fixture' }] },

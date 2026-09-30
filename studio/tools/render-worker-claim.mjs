@@ -46,7 +46,7 @@ export async function prepareOneClaim({ serverUrl, sessionToken, execute }) {
     }
     return JSON.parse((await boundedBytes(response, byteLimit)).toString('utf8'));
   };
-  const claim = await request('/api/render-workers/claims', { kinds: ['studio-export'] });
+  const claim = await request('/api/render-workers/claims', { kinds: ['studio_export'] });
   if (!claim) return { status: 'idle' };
   assert.ok(uuid.test(claim.operationId) && uuid.test(claim.claimToken), 'INVALID_CLAIM_BINDING');
   const operationPath = `/api/render-workers/operations/${claim.operationId}`;
@@ -86,7 +86,7 @@ export async function prepareOneClaim({ serverUrl, sessionToken, execute }) {
   const startedAt = performance.now();
   try {
     await heartbeat();
-    assert.equal(claim.kind, 'studio-export');
+    assert.equal(claim.kind, 'studio_export');
     assert.ok(claim.projectId && claim.revisionId && claim.snapshot?.studio?.graph &&
       Number.isSafeInteger(claim.snapshot.studio.revision) && Array.isArray(claim.inputs), 'IMMUTABLE_GRAPH_UNAVAILABLE');
     // Snapshot/settings are never fetched from a mutable project head or interpreted as local paths.
