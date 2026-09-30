@@ -197,11 +197,22 @@ test.describe('Timeline', () => {
       expect(Math.abs(after[id].width - place.width), id).toBeLessThanOrEqual(1);
     }
 
-    // Once that stretch is off screen the rows run on: the month above ends in a full row.
-    await timelineUtils.locator(page).evaluate((scroller) => scroller.scrollTo({ top: 0 }));
-    await expect.poll(() => timelineUtils.locator(page).evaluate((scroller) => scroller.scrollTop)).toBe(0);
-    await scrubberUtils.clickMonth(page, target);
-    await thumbnailUtils.expectTimelineHasOnScreenAssets(page);
+    // Once that stretch is off screen the rows run on: the month above ends in a full row. Scroll on
+    // until the month on screen has gone above the viewport (the scroll lets the held rows join),
+    // then come back. Leaving the neighbourhood (to the top, then the scrubber) would load the month
+    // above late again, and whether it joins would depend on the runner's speed.
+    const lastTarget = assetsInMonth(target).at(-1)!;
+    const targetAboveViewport = () =>
+      timelineUtils.locator(page).evaluate((scroller, id) => {
+        const tile = scroller.querySelector(`[data-asset-id="${CSS.escape(id)}"]`);
+        return !!tile && tile.getBoundingClientRect().bottom < scroller.getBoundingClientRect().top;
+      }, lastTarget.id);
+    for (let step = 0; step < 60 && !(await targetAboveViewport()); step++) {
+      await timelineUtils.locator(page).evaluate((scroller) => scroller.scrollBy(0, 300));
+      await page.waitForTimeout(100);
+    }
+    expect(await targetAboveViewport()).toBe(true);
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
     for (let step = 0; step < 60 && (await thumbnailUtils.withAssetId(page, lastAbove.id).count()) === 0; step++) {
       await timelineUtils.locator(page).evaluate((scroller) => scroller.scrollBy(0, -200));
       await page.waitForTimeout(100);
