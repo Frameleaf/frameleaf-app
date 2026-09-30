@@ -2163,6 +2163,41 @@ describe(MetadataService.name, () => {
       ]);
     });
 
+    it('writes one sidecar per asset at a time (FL-195)', async () => {
+      const asset = AssetFactory.from()
+        .file({ type: AssetFileType.Sidecar })
+        .exif({ latitude: 12, longitude: 12 })
+        .build();
+      mocks.assetJob.getLockedPropertiesForMetadataExtraction.mockResolvedValue(['latitude', 'longitude']);
+      mocks.assetJob.getForSidecarWriteJob.mockResolvedValue(getForSidecarWrite(asset));
+      let locked = false;
+      mocks.database.withAssetSidecarLock.mockImplementation(async (_id, fn) => {
+        locked = true;
+        const result = await fn();
+        locked = false;
+        return result;
+      });
+      mocks.metadata.writeTags.mockImplementation(() => {
+        expect(locked).toBe(true);
+        return Promise.resolve();
+      });
+      await expect(sut.handleSidecarWrite({ id: asset.id })).resolves.toBe(JobStatus.Success);
+      expect(mocks.database.withAssetSidecarLock).toHaveBeenCalledWith(asset.id, expect.any(Function));
+      expect(mocks.metadata.writeTags).toHaveBeenCalled();
+    });
+
+    it('keeps the properties locked when the sidecar could not be written (FL-195)', async () => {
+      const asset = AssetFactory.from()
+        .file({ type: AssetFileType.Sidecar })
+        .exif({ latitude: 12, longitude: 12 })
+        .build();
+      mocks.assetJob.getLockedPropertiesForMetadataExtraction.mockResolvedValue(['latitude', 'longitude']);
+      mocks.assetJob.getForSidecarWriteJob.mockResolvedValue(getForSidecarWrite(asset));
+      mocks.metadata.writeTags.mockRejectedValue(new Error('File already exists: IMG.xmp_exiftool'));
+      await expect(sut.handleSidecarWrite({ id: asset.id })).rejects.toThrow('File already exists');
+      expect(mocks.asset.unlockProperties).not.toHaveBeenCalled();
+    });
+
     it('writes the tags set in Frameleaf and keeps them locked', async () => {
       const asset = AssetFactory.from()
         .file({ type: AssetFileType.Sidecar })
