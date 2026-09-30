@@ -20,6 +20,8 @@
   let latitude = $state<number>();
   let longitude = $state<number>();
   let selected = $state<string[]>([]);
+  // FL-139: rows look their state up here, not by scanning the selection once per row
+  const selectedSet = $derived(new Set(selected));
   let query = $state('');
   let account = $state('all');
   let show = $state('open');
@@ -57,8 +59,7 @@
   const owned = (asset: AssetResponseDto) => asset.ownerId === authManager.user.id;
   const actionable = $derived(
     rows.filter(
-      (asset) =>
-        selected.includes(asset.id) && owned(asset) && durableBulkTracker.stateOf(asset.id)?.state !== 'pending',
+      (asset) => selectedSet.has(asset.id) && owned(asset) && durableBulkTracker.stateOf(asset.id)?.state !== 'pending',
     ),
   );
   const markers = $derived(
@@ -194,7 +195,8 @@
         const refreshed = await Promise.all(result.succeeded.map((id) => getAssetInfo({ ...authManager.params, id })));
         const byId = new Map(refreshed.map((asset) => [asset.id, asset]));
         assets = assets.map((asset) => byId.get(asset.id) ?? asset);
-        selected = selected.filter((id) => !result.succeeded.includes(id));
+        const succeeded = new Set(result.succeeded);
+        selected = selected.filter((id) => !succeeded.has(id));
       } else {
         selected = [];
       }
@@ -309,6 +311,7 @@
       <article>
         <div class="image">
           <img
+            loading="lazy"
             src={getAssetMediaUrl({ id: asset.id, size: AssetMediaSize.Preview })}
             alt={asset.originalFileName}
           />{#if job}<TileJobState {job} label={$t('frameleaf_bulk_tile_processing')} />{/if}
@@ -316,7 +319,7 @@
         <label
           ><input
             type="checkbox"
-            checked={selected.includes(asset.id)}
+            checked={selectedSet.has(asset.id)}
             disabled={!owned(asset) || job?.state === 'pending'}
             onchange={() => toggle(asset)}
           />{asset.originalFileName}</label

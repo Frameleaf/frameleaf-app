@@ -99,6 +99,31 @@
   let loadedMarkers = $state<MapMarkerResponseDto[]>([]);
   let loaded = $state(false);
   let inView = $state<MapMarkerResponseDto[]>([]);
+  /**
+   * FL-139: the in-view list draws its rows a page at a time as it is scrolled, so a zoomed-out map of
+   * a large library does not build a row for every item it shows. The count and the viewer's order
+   * still cover them all.
+   */
+  const LIST_PAGE = 120;
+  let listShown = $state(LIST_PAGE);
+  let listEnd = $state<HTMLElement>();
+  const listRows = $derived(inView.slice(0, listShown));
+  $effect(() => {
+    const target = listEnd;
+    if (!target || typeof IntersectionObserver !== 'function') {
+      return;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          listShown += LIST_PAGE;
+        }
+      },
+      { rootMargin: '400px 0px' },
+    );
+    observer.observe(target);
+    return () => observer.disconnect();
+  });
   let zoom = $state(2);
   let changed = $state(false);
   let settingsOpen = $state(false);
@@ -257,6 +282,7 @@
     const bounds = map.getBounds();
     const all = bounds.getEast() - bounds.getWest() >= 360;
     inView = all ? markers : markers.filter(({ lon, lat }) => bounds.contains([lon, lat]));
+    listShown = LIST_PAGE;
     zoom = map.getZoom();
   };
 
@@ -684,7 +710,7 @@
       </header>
       {#if inView.length > 0}
         <ul>
-          {#each inView as marker (marker.id)}
+          {#each listRows as marker (marker.id)}
             {@const detail = markerDetail(marker)}
             {@const place = detail.name ?? (detail.place || $t('frameleaf_map_item'))}
             {@const line = markerRowLine(detail, $t('frameleaf_map_video'))}
@@ -716,6 +742,9 @@
               </button>
             </li>
           {/each}
+          {#if listShown < inView.length}
+            <li class="list-more" aria-hidden="true" bind:this={listEnd}></li>
+          {/if}
         </ul>
       {:else}
         <p class="list-empty" role="status">{$t('frameleaf_map_list_empty')}</p>

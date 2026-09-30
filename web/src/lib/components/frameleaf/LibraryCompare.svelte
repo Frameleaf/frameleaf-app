@@ -161,6 +161,7 @@
             }}
           >
             <img
+              loading="lazy"
               src={getAssetMediaUrl({ id, size: AssetMediaSize.Preview, cacheKey: asset?.thumbhash })}
               alt={asset?.originalFileName ?? ''}
               style={zoomStyle}

@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import MapScreen from '$lib/components/frameleaf/MapScreen.svelte';
+import { mapSettings } from '$lib/stores/preferences.store';
 import { getMapLibreStubProps, resetMapLibreStub, setMapLibreStubMap } from '@test-data/frameleaf/map-libre-stub';
 import en from '../../../../../i18n/en.json';
 
@@ -112,5 +113,44 @@ describe('MapScreen (FL-193)', () => {
     onmoveend?.({});
 
     await waitFor(() => expect(screen.getByText('1 item in view')).toBeInTheDocument());
+  });
+
+  it('draws the In view list a page at a time for a large library (FL-139)', async () => {
+    let reachEnd: ((entries: { isIntersecting: boolean }[]) => void) | undefined;
+    vi.stubGlobal(
+      'IntersectionObserver',
+      vi.fn(function (callback: typeof reachEnd) {
+        reachEnd = callback;
+        return { observe: vi.fn(), disconnect: vi.fn(), unobserve: vi.fn(), takeRecords: vi.fn() };
+      }),
+    );
+    sdkMock.getMapMarkers.mockResolvedValue(
+      Array.from({ length: 300 }, (_, index) => ({
+        id: `a0000000-0000-4000-8000-${String(index).padStart(12, '0')}`,
+        lat: 10,
+        lon: 0,
+        city: 'Here',
+        state: null,
+        country: null,
+      })),
+    );
+    setMapLibreStubMap({
+      getBounds: () => ({ getWest: () => -10, getEast: () => 10, contains: () => true }),
+      getZoom: () => 3,
+      fitBounds: vi.fn(),
+      setStyle: vi.fn(),
+    });
+    mapSettings.update((settings) => ({ ...settings, showAssetPanel: true }));
+    const { container } = render(MapScreen, { title: 'Map', onOpenAsset: vi.fn() });
+    getMapLibreStubProps().onmoveend?.({});
+    const rows = () => container.querySelectorAll('button.row').length;
+
+    await waitFor(() => expect(screen.getByText('300 items in view')).toBeInTheDocument());
+    expect(rows()).toBe(120);
+
+    reachEnd?.([{ isIntersecting: true }]);
+    await waitFor(() => expect(rows()).toBe(240));
+    vi.unstubAllGlobals();
+    mapSettings.update((settings) => ({ ...settings, showAssetPanel: false }));
   });
 });
