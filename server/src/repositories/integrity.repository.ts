@@ -1,12 +1,16 @@
 import { Injectable } from '@nestjs/common';
 import { type Insertable, type Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
+import { EXTERNAL_SCAN_CHECKSUM } from 'src/constants.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
-import { AssetFileType, IntegrityReport } from 'src/enum.js';
+import { AuthDto } from 'src/dtos/auth.dto.js';
+import { AssetFileType, AssetStatus, ChecksumAlgorithm, IntegrityReport } from 'src/enum.js';
 import { getForkSchemaPhase, readsForkSidecar } from 'src/repositories/fork-derived-results.js';
 import { DB } from 'src/schema/index.js';
 import { IntegrityReportTable } from 'src/schema/tables/integrity-report.table.js';
 import { IntegrityVerificationResult } from 'src/schema/tables/safety-proof.table.js';
+import { isMotionOfLockedStill, withHiddenContentFilter } from 'src/utils/database.js';
+import { isNotLocked } from 'src/utils/locked.js';
 
 export type ReportPaginationOptions = {
   cursor?: string;
@@ -16,6 +20,55 @@ export type ReportPaginationOptions = {
 @Injectable()
 export class IntegrityRepository {
   constructor(@InjectKysely() private db: Kysely<DB>) {}
+
+  /** Current own library only, using the owner-access lock and hidden-content predicates. */
+  getSafetyQuery(auth: AuthDto, hashes?: string[]) {
+    const privacy = auth.hiddenContent ?? auth.hideNsfwAssets;
+    const sha256 = sql<string | null>`CASE
+      WHEN asset."checksumAlgorithm" = ${ChecksumAlgorithm.sha256File} THEN encode(asset.checksum, 'hex')
+      WHEN asset."checksumAlgorithm" = ${ChecksumAlgorithm.sha1File} THEN (
+        SELECT encode(c.sha256, 'hex') FROM immich_fork.asset_checksum c
+        WHERE c."assetId" = asset.id AND c.sha1 = asset.checksum
+          AND asset."originalPath" = ANY(c."verifiedPaths")
+      )
+      WHEN asset."checksumAlgorithm" = ${ChecksumAlgorithm.sha1Path} THEN (
+        SELECT encode(c.sha256, 'hex') FROM immich_fork.asset_checksum c
+        WHERE c."assetId" = asset.id AND asset."originalPath" = ANY(c."verifiedPaths")
+          AND c.evidence ->> 'source' IN (${EXTERNAL_SCAN_CHECKSUM}, 'recovery')
+      ) ELSE NULL END`;
+    return this.db
+      .selectFrom('asset')
+      .leftJoin('library', 'library.id', 'asset.libraryId')
+      .leftJoin('asset_integrity_verification as integrity', (join) =>
+        join
+          .onRef('integrity.assetId', '=', 'asset.id')
+          .onRef('integrity.originalPath', '=', 'asset.originalPath')
+          .onRef('integrity.expectedChecksum', '=', 'asset.checksum')
+          .on(sql<boolean>`integrity."checksumAlgorithm" IS NOT DISTINCT FROM asset."checksumAlgorithm"::text`),
+      )
+      .where('asset.ownerId', '=', auth.user.id)
+      .where('asset.deletedAt', 'is', null)
+      .where('asset.status', '=', AssetStatus.Active)
+      .where('library.deletedAt', 'is', null)
+      .$if(!auth.session?.hasElevatedPermission, (qb) =>
+        qb.where(isNotLocked('asset')).where((eb) => eb.not(isMotionOfLockedStill(eb))),
+      )
+      .$call((qb) =>
+        withHiddenContentFilter(
+          qb,
+          typeof privacy === 'object' ? { hiddenContent: privacy } : privacy ? { excludeNsfw: true } : {},
+        ),
+      )
+      .$if(hashes !== undefined, (qb) => qb.where(sha256, 'in', hashes!))
+      .select([
+        'asset.id',
+        'asset.createdAt as onServerSince',
+        'asset.isOffline',
+        'integrity.checkedAt as lastIntegrityAt',
+        'integrity.result as integrityResult',
+        sha256.as('sha256'),
+      ]);
+  }
 
   /** Guard the attempted identity while publishing; a replaced original cannot inherit this outcome. */
   @GenerateSql({

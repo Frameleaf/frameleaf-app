@@ -84,6 +84,7 @@ import { QueueService } from 'src/services/queue.service.js';
 import { RenderWorkerService } from 'src/services/render-worker.service.js';
 import { RestorationWorkerService } from 'src/services/restoration-worker.service.js';
 import { RunningJobService } from 'src/services/running-job.service.js';
+import { SafetyService } from 'src/services/safety.service.js';
 import { SearchService } from 'src/services/search.service.js';
 import { ServerService } from 'src/services/server.service.js';
 import { SessionService } from 'src/services/session.service.js';
@@ -125,6 +126,7 @@ import { WorkflowService } from 'src/services/workflow.service.js';
 import { ZeroShotTaggingService } from 'src/services/zero-shot-tagging.service.js';
 
 export const services = [
+  SafetyService,
   CloudMlService,
   CloudBackupDetailsService,
   CloudBackupService,

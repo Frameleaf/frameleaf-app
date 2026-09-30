@@ -9638,6 +9638,98 @@
         "x-immich-state": "Beta"
       }
     },
+    "/assets/safety/lookup": {
+      "post": {
+        "description": "Up to 2000 hashes. Current own accessible assets only, including for admins; shared and partner assets omitted. Completed membership and GET + SHA-256 verification are separate facts. No bucket credentials/settings.",
+        "operationId": "getAssetSafety",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SafetyLookupDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SafetyLookupResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Look up own asset safety by SHA-256",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "asset.read"
+      }
+    },
+    "/assets/safety/summary": {
+      "get": {
+        "description": "Same current owner/access scope as lookup. Percentages use only this accessible server library, not unknown device-only items. Backup counts are null when unavailable; HEAD size is not SHA-256 verification.",
+        "operationId": "getSafetySummary",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SafetySummaryDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Summarize own library safety",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "asset.read"
+      }
+    },
     "/assets/statistics": {
       "get": {
         "description": "Retrieve various statistics about the assets owned by the authenticated user.",
@@ -51895,6 +51987,77 @@
         ],
         "type": "string"
       },
+      "AssetSafetyDto": {
+        "properties": {
+          "cloudBackup": {
+            "properties": {
+              "lastVerifiedRunAt": {
+                "description": "Last completed successful GET + SHA-256 run for this current indexed object; HEAD + size never qualifies",
+                "format": "date-time",
+                "nullable": true,
+                "type": "string"
+              },
+              "since": {
+                "description": "Earliest retained complete backup run containing the current original hash",
+                "format": "date-time",
+                "nullable": true,
+                "type": "string"
+              },
+              "state": {
+                "enum": [
+                  "unavailable",
+                  "not-backed-up",
+                  "completed"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "state",
+              "since",
+              "lastVerifiedRunAt"
+            ],
+            "type": "object"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "integrityResult": {
+            "enum": [
+              "unknown",
+              "passed",
+              "mismatched",
+              "missing",
+              "unreadable"
+            ],
+            "type": "string"
+          },
+          "lastIntegrityAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "onServerSince": {
+            "description": "When this current asset was registered on the server; not checksum proof",
+            "format": "date-time",
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "cloudBackup",
+          "id",
+          "integrityResult",
+          "lastIntegrityAt",
+          "onServerSince",
+          "sha256"
+        ],
+        "type": "object"
+      },
       "AssetStackResponseDto": {
         "properties": {
           "assetCount": {
@@ -75434,6 +75597,118 @@
           "memoryExports",
           "operations",
           "queues"
+        ],
+        "type": "object"
+      },
+      "SafetyLookupDto": {
+        "properties": {
+          "hashes": {
+            "description": "SHA-256 hex hashes; inaccessible and foreign assets are omitted, including for administrators",
+            "items": {
+              "pattern": "^[\\dA-Fa-f]{64}$",
+              "type": "string"
+            },
+            "maxItems": 2000,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "hashes"
+        ],
+        "type": "object"
+      },
+      "SafetyLookupResponseDto": {
+        "properties": {
+          "assets": {
+            "items": {
+              "$ref": "#/components/schemas/AssetSafetyDto"
+            },
+            "type": "array"
+          },
+          "cloudAvailability": {
+            "enum": [
+              "off",
+              "not-linked",
+              "not-configured",
+              "paused-key-unloaded",
+              "ready"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "assets",
+          "cloudAvailability"
+        ],
+        "type": "object"
+      },
+      "SafetySummaryDto": {
+        "properties": {
+          "backedUp": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "backedUpPercent": {
+            "description": "Retained completed original membership with current object presence; null if no configured accessible backup target",
+            "format": "double",
+            "maximum": 100,
+            "minimum": 0,
+            "nullable": true,
+            "type": "number"
+          },
+          "cloudAvailability": {
+            "enum": [
+              "off",
+              "not-linked",
+              "not-configured",
+              "paused-key-unloaded",
+              "ready"
+            ],
+            "type": "string"
+          },
+          "lastCompletedRunAt": {
+            "description": "Latest qualifying completion containing at least one current own accessible asset",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "lastVerifiedRunAt": {
+            "description": "Latest successful completed GET + SHA-256 run qualifying a current own accessible backed-up asset",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "onServer": {
+            "description": "Registered assets not marked offline or last checked missing; not a new filesystem verification",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "onServerPercent": {
+            "format": "double",
+            "maximum": 100,
+            "minimum": 0,
+            "type": "number"
+          },
+          "total": {
+            "description": "Current own accessible, non-trashed server library; excludes deleted libraries. Device-only items are not known to the server",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "backedUp",
+          "backedUpPercent",
+          "cloudAvailability",
+          "lastCompletedRunAt",
+          "lastVerifiedRunAt",
+          "onServer",
+          "onServerPercent",
+          "total"
         ],
         "type": "object"
       },
