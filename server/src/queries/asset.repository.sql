@@ -1257,7 +1257,8 @@ where
 
 -- AssetRepository.getForMetadataExtractionTags
 select
-  "asset_exif"."tags"
+  "asset_exif"."tags",
+  "asset_exif"."updateId"
 from
   "asset_exif"
 where

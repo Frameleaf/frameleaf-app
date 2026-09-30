@@ -227,19 +227,18 @@ export class MetadataService extends BaseService {
 
   @OnJob({ name: JobName.AssetExtractMetadata, queue: QueueName.MetadataExtraction })
   async handleMetadataExtraction(data: JobOf<JobName.AssetExtractMetadata>) {
-    const [{ metadata, reverseGeocoding }, asset] = await Promise.all([
+    // Snapshot before fetching the file list too: a sidecar created after that fetch must not
+    // leave us applying the original file's older values against a newer EXIF revision (FL-202).
+    // A tag added after this snapshot is never taken for one the file dropped.
+    const [{ metadata, reverseGeocoding }, previous] = await Promise.all([
       this.getConfig({ withCache: true }),
-      this.assetJobRepository.getForMetadataExtraction(data.id),
+      this.assetRepository.getForMetadataExtractionTags(data.id),
     ]);
+    const asset = await this.assetJobRepository.getForMetadataExtraction(data.id);
 
     if (!asset) {
       return;
     }
-
-    // The tags the last extraction (or a tag edit) left on the asset, read before the file is: a tag
-    // added after this point is never taken for one the file dropped, even when the file (a sidecar
-    // written earlier) does not list it yet.
-    const previous = await this.assetRepository.getForMetadataExtractionTags(asset.id);
     const [exifResult, stats] = await Promise.all([
       this.getExifTags(asset),
       this.storageRepository.stat(asset.originalPath),
@@ -390,6 +389,9 @@ export class MetadataService extends BaseService {
           video: videoData,
           keyframes: keyframeData,
           lockedPropertiesBehavior: 'skip',
+          // FL-202: a write can lock AND unlock a property while the file is being read. The
+          // revision check is atomic with this save, so even that interleaving keeps newer values.
+          expectedUpdateId: previous?.updateId ?? null,
         });
         await this.applyTagList(asset, previous?.tags ?? []);
       },
