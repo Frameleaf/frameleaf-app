@@ -747,10 +747,10 @@
     font-size: var(--fl-font-small);
     line-height: 1.6;
     background: var(--fl-raised);
-    border-left: 2px solid var(--fl-accent);
+    border-inline-start: 2px solid var(--fl-accent);
   }
   .note {
-    border-left-color: var(--fl-warning);
+    border-inline-start-color: var(--fl-warning);
   }
   .hint {
     margin: 0.25rem 0 0;

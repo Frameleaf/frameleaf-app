@@ -124,7 +124,7 @@
     background: transparent;
     color: var(--fl-text);
     font: inherit;
-    text-align: left;
+    text-align: start;
     cursor: pointer;
   }
 

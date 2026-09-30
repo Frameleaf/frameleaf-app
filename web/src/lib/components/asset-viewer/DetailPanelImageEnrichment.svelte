@@ -608,7 +608,7 @@
     flex-shrink: 0;
     align-items: center;
     gap: 4px;
-    margin-left: auto;
+    margin-inline-start: auto;
   }
 
   .fl-enrich-actions button {

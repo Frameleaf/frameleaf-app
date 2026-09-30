@@ -426,7 +426,7 @@
     padding: 26px 14px 12px;
     background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--fl-panel) 92%, transparent) 55%);
     color: var(--fl-text);
-    text-align: left;
+    text-align: start;
   }
   .dv-state-label:hover strong {
     text-decoration: underline;

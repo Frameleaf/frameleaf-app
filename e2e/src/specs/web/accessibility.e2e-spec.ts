@@ -10,7 +10,7 @@ import { utils } from 'src/utils.js';
  * - Under prefers-reduced-motion no Web Animation runs when a menu or dialog opens: Svelte transitions
  *   use element.animate(), which the CSS kill-switch cannot stop, so this checks the JS gating.
  * - A right-to-left language puts dir="rtl" and its lang on the page, and the shell does not scroll
- *   sideways.
+ *   sideways. In the viewer its arrows point, and its arrow keys move, the way the page reads.
  */
 const PAGES = [
   { name: 'library', path: '/photos' },
@@ -119,5 +119,43 @@ test.describe('Accessibility of the key web pages (FL-139)', () => {
       () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
     );
     expect(overflow).toBeLessThanOrEqual(1);
+  });
+
+  test('a right-to-left viewer points its arrows and its arrow keys the way the page reads', async ({
+    context,
+    page,
+  }) => {
+    await utils.setAuthCookies(context, admin.accessToken);
+    await page.addInitScript(() => localStorage.setItem('lang', 'ar'));
+    const assets = await Promise.all([0, 1].map(() => utils.createAsset(admin.accessToken)));
+    const ids = assets.map(({ id }) => id);
+    // the Arabic labels of the viewer's next button (i18n/ar.json view_next_asset)
+    const next = page.getByRole('button', { name: 'عرض المحتوى التالي' });
+    const viewer = page.locator('#immich-asset-viewer');
+
+    // start from an item that has a next one, whatever order the timeline puts them in
+    let start = '';
+    for (const id of ids) {
+      await page.goto(`/photos/${id}`);
+      await expect(viewer).toHaveAttribute('data-asset-id', id);
+      if (await next.isVisible()) {
+        start = id;
+        break;
+      }
+    }
+    expect(start, 'an item with a next one').not.toBe('');
+
+    // the "next" chevron is mirrored, so it points left, the way an Arabic page reads
+    await expect(next.locator('svg')).toHaveCSS('scale', '-1 1');
+
+    await next.click();
+    await expect(viewer).not.toHaveAttribute('data-asset-id', start);
+    const following = await viewer.getAttribute('data-asset-id');
+
+    // and ← goes forward to the same item
+    await page.goto(`/photos/${start}`);
+    await expect(viewer).toHaveAttribute('data-asset-id', start);
+    await page.keyboard.press('ArrowLeft');
+    await expect(viewer).toHaveAttribute('data-asset-id', following!);
   });
 });

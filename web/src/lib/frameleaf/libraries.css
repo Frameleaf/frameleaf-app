@@ -140,7 +140,7 @@
   border-collapse: collapse;
   min-width: 660px;
   width: 100%;
-  text-align: left;
+  text-align: start;
   font-size: 12px;
 }
 
@@ -188,7 +188,7 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  text-align: left;
+  text-align: start;
   padding: 0;
   cursor: pointer;
   font: inherit;
@@ -302,13 +302,13 @@
 }
 
 .fl-libraries .resource-stats div {
-  border-left: 1px solid var(--fl-border);
-  padding-left: 18px;
+  border-inline-start: 1px solid var(--fl-border);
+  padding-inline-start: 18px;
 }
 
 .fl-libraries .resource-stats div:first-child {
   border: 0;
-  padding-left: 0;
+  padding-inline-start: 0;
 }
 
 .fl-libraries .resource-stats dt {
@@ -480,7 +480,7 @@
 
 .fl-libraries .resource-notice {
   background: var(--fl-raised);
-  border-left: 2px solid var(--fl-muted);
+  border-inline-start: 2px solid var(--fl-muted);
   padding: 12px 14px;
   font-size: 12px;
   line-height: 1.6;
@@ -571,7 +571,7 @@
   }
   .fl-libraries .resource-stats div:nth-child(3) {
     border: 0;
-    padding-left: 0;
+    padding-inline-start: 0;
   }
   .fl-libraries .resource-two-column {
     grid-template-columns: 1fr;
@@ -633,7 +633,7 @@
 }
 .fl-libraries .resource-consequences {
   margin: 12px 0;
-  padding-left: 18px;
+  padding-inline-start: 18px;
   font-size: 12px;
   line-height: 1.7;
   color: var(--fl-muted);

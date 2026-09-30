@@ -1062,7 +1062,7 @@
     padding: 12px 16px;
   }
   .ft-toolbar > span {
-    margin-left: auto;
+    margin-inline-start: auto;
     font-size: 11px;
     color: var(--fl-muted);
   }
@@ -1135,7 +1135,7 @@
     background: #11161bea;
     color: #fff;
     border-radius: 3px;
-    text-align: left;
+    text-align: start;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -1171,7 +1171,7 @@
     min-height: 50px;
   }
   .ft-sidebar {
-    border-left: 1px solid var(--fl-border);
+    border-inline-start: 1px solid var(--fl-border);
     padding: 16px;
     overflow: auto;
   }
@@ -1259,7 +1259,7 @@
     display: flex;
     align-items: center;
     gap: 9px;
-    text-align: left;
+    text-align: start;
     background: transparent;
     border-color: transparent;
     padding: 6px;
@@ -1299,7 +1299,7 @@
     flex-shrink: 0;
   }
   .ft-footer > span {
-    margin-right: auto;
+    margin-inline-end: auto;
     font-size: 11px;
     color: var(--fl-muted);
   }
@@ -1344,7 +1344,7 @@
       height: clamp(320px, 50dvh, 480px);
     }
     .ft-sidebar {
-      border-left: 0;
+      border-inline-start: 0;
       border-top: 1px solid var(--fl-border);
       overflow: visible;
     }

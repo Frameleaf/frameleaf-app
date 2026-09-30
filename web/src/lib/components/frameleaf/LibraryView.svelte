@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { isForwardKey } from '$lib/frameleaf/reading-direction';
   /**
    * The library page: Timeline, Browse and Work bound to one live session (FL-33).
    *
@@ -1129,7 +1130,9 @@
     if (index === -1) {
       next = tiles[0];
     } else if (id === 'navigate-previous' || id === 'navigate-next') {
-      next = tiles[Math.min(tiles.length - 1, Math.max(0, index + (id === 'navigate-next' ? 1 : -1)))];
+      // ← and → move by reading order: the grid runs right to left in an RTL page
+      const step = isForwardKey(id === 'navigate-next' ? 'ArrowRight' : 'ArrowLeft') ? 1 : -1;
+      next = tiles[Math.min(tiles.length - 1, Math.max(0, index + step))];
     } else {
       const current = tiles[index].getBoundingClientRect();
       const down = id === 'focus-down';

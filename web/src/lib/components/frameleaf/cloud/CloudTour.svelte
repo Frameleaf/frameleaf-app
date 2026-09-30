@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { readingKey } from '$lib/frameleaf/reading-direction';
   /**
    * FL-196: the linked-server tour sheet, the owner-approved prototype's `CloudTour`
    * (design/frameleaf/template/src/CloudTour.jsx, c4a009f8b5). Six steps over Settings → Frameleaf
@@ -172,10 +173,11 @@
     if ((event.target as Element | null)?.closest?.('input, select, textarea')) {
       return;
     }
-    if (event.key === 'ArrowRight') {
+    const key = readingKey(event.key);
+    if (key === 'ArrowRight') {
       event.preventDefault();
       go(index + 1);
-    } else if (event.key === 'ArrowLeft') {
+    } else if (key === 'ArrowLeft') {
       event.preventDefault();
       go(index - 1);
     }

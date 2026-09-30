@@ -1269,8 +1269,8 @@
     font-size: var(--fl-font-small);
   }
   .locked {
-    padding-left: 0.5rem;
-    border-left: 2px solid var(--fl-border);
+    padding-inline-start: 0.5rem;
+    border-inline-start: 2px solid var(--fl-border);
   }
   .job-head,
   .item-head,
