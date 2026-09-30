@@ -1,4 +1,5 @@
 <script lang="ts" module>
+  import { rovingFocus } from '$lib/frameleaf/roving-focus';
   export type StudioExportChoice = {
     format: StudioExportFormat;
     color: StudioExportColor;
@@ -242,7 +243,7 @@
     <!-- FL-162: Smooth motion is its own job on the exported video; the export itself renders at home. -->
     <fieldset class="smooth" data-testid="studio-export-smooth-motion">
       <legend>{$t('frameleaf_studio_export_smooth_motion')}</legend>
-      <div class="segmented" role="radiogroup" aria-label={$t('frameleaf_studio_export_smooth_motion')}>
+      <div class="segmented" role="radiogroup" use:rovingFocus aria-label={$t('frameleaf_studio_export_smooth_motion')}>
         <button type="button" role="radio" aria-checked={smoothFactor === null} onclick={() => (smoothFactor = null)}>
           {$t('frameleaf_studio_export_smooth_motion_off')}
         </button>

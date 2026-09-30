@@ -1,4 +1,5 @@
 <script lang="ts" module>
+  import { rovingFocus } from '$lib/frameleaf/roving-focus';
   import { setWorkerUrl } from 'maplibre-gl';
   import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
 
@@ -590,7 +591,7 @@
         </header>
         <fieldset>
           <legend>{$t('frameleaf_map_date_range')}</legend>
-          <div class="presets" role="radiogroup" aria-label={$t('frameleaf_map_date_range')}>
+          <div class="presets" role="radiogroup" use:rovingFocus aria-label={$t('frameleaf_map_date_range')}>
             {#each MAP_DATE_PRESETS as preset (preset)}
               <button
                 type="button"

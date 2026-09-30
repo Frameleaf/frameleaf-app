@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { rovingFocus } from '$lib/frameleaf/roving-focus';
   /**
    * Settings › Frameleaf Cloud › Cloud backup › Restore (FL-164): the prototype's `BackupRestore`
    * (design/frameleaf/template/src/FrameleafCloud.jsx). The kept backups with the newest one, its paired
@@ -255,7 +256,12 @@
         {/if}
       </label>
 
-      <div class="fc-segmented fc-restore-modes" role="radiogroup" aria-label={$t('frameleaf_cloud_restore_what')}>
+      <div
+        class="fc-segmented fc-restore-modes"
+        role="radiogroup"
+        use:rovingFocus
+        aria-label={$t('frameleaf_cloud_restore_what')}
+      >
         {#each MODES as [id, labelKey] (id)}
           <button
             type="button"
@@ -276,7 +282,7 @@
             value={query}
             oninput={(event) => (query = event.currentTarget.value)}
           />
-          <div class="fc-segmented" role="radiogroup" aria-label={$t('frameleaf_cloud_restore_show')}>
+          <div class="fc-segmented" role="radiogroup" use:rovingFocus aria-label={$t('frameleaf_cloud_restore_show')}>
             {#each FILTERS as [id, labelKey] (id)}
               <button
                 type="button"

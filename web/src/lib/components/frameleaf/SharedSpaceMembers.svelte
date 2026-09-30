@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { rovingFocus } from '$lib/frameleaf/roving-focus';
   import AlbumConfirmDialog from '$lib/components/frameleaf/AlbumConfirmDialog.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
@@ -330,7 +331,7 @@
         <span>{$t('frameleaf_spaces_invite_someone')}</span>
         <input data-initial-focus type="search" bind:value={query} placeholder={$t('frameleaf_spaces_invite_search')} />
       </label>
-      <ul class="cl-people" role="listbox" aria-label={$t('frameleaf_spaces_people_to_invite')}>
+      <ul class="cl-people" role="listbox" use:rovingFocus aria-label={$t('frameleaf_spaces_people_to_invite')}>
         {#each matches as user (user.id)}
           <li>
             <button
