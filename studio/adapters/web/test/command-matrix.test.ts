@@ -73,7 +73,8 @@ vi.mock('@/infrastructure/storage/handles-db', () => ({
  *   malformed envelope naming them is refused as `invalid` before any gate.
  *
  * The same run measures five FL-112 `authorizationFailure` scenarios per engine command, written to
- * AUTHORIZATION_FAILURE_REPORT in the same shape:
+ * AUTHORIZATION_FAILURE_REPORT in the same shape, alongside the normal/invalid outcomes
+ * already measured above (including failures, never inferred from the authorization cases):
  *
  * - `deleted`: the project is deleted (the server answers 404, and the Studio page takes the
  *   session's access away) while the engine applies the command. It is refused as `forbidden`,
@@ -866,7 +867,21 @@ describe('FL-112 command and graph matrix, on the real command path', () => {
 
     report.commands.push({ id, manifestIds: manifestIdsOf(id), implementedBy: 'engine', cases })
     const failures = await authorizationFailureCases(id, start, payload, appliedOnce)
-    authorizationReport.commands.push({ id, manifestIds: manifestIdsOf(id), implementedBy: 'engine', cases: failures })
+    authorizationReport.commands.push({
+      id,
+      manifestIds: manifestIdsOf(id),
+      implementedBy: 'engine',
+      cases: [
+        ...cases.filter((entry) => entry.case === 'normal' || entry.case === 'invalid'),
+        ...failures,
+      ],
+    })
+    // The authorization axis also requires the canonical inputs measured by this same run.
+    for (const input of cases.filter(
+      (entry) => entry.case === 'normal' || entry.case === 'invalid',
+    )) {
+      expect(authorizationReport.commands.at(-1)?.cases).toContainEqual(input)
+    }
     // music.add never applies (FL-86 rights), so it has nothing to replay or to go stale.
     expect(failures.filter((entry) => entry.result === 'failed').map((entry) => entry.case)).toEqual(
       id === 'music.add' ? ['restart', 'stale-result'] : [],
