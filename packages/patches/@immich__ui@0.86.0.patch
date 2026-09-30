@@ -1,3 +1,28 @@
+diff --git a/dist/components/Icon/Icon.svelte b/dist/components/Icon/Icon.svelte
+index 2a530dbdc37c795b652eb84f88b030ba72dcc158..255787aebd7f1119a42321a18e4845d9e1d07cb5 100644
+--- a/dist/components/Icon/Icon.svelte
++++ b/dist/components/Icon/Icon.svelte
+@@ -23,6 +23,10 @@
+     ...restProps
+   }: IconProps & HTMLAttributes<EventTarget> = $props();
+ 
++  // Frameleaf FL-139: an icon with no accessible name is decoration, so hide it instead of
++  // announcing an unnamed image (axe svg-img-alt).
++  const decorative = $derived(role === 'img' && !title && !restProps['aria-label'] && !restProps['aria-labelledby']);
++
+   const indicator = $derived.by(() => {
+     const [_, yStart, xEnd, yEnd] = viewBox.split(' ', 4);
+     if (yStart && xEnd && yEnd) {
+@@ -45,7 +49,8 @@
+   class={cleanClass(className, flipped && '-scale-x-100', flopped && 'rotate-180', spin && 'animate-spin')}
+   stroke={strokeColor}
+   stroke-width={strokeWidth}
+-  {role}
++  role={decorative ? undefined : role}
++  aria-hidden={decorative ? 'true' : undefined}
+   {...restProps}
+ >
+   {#if title}
 diff --git a/dist/components/Modal/Modal.svelte b/dist/components/Modal/Modal.svelte
 index fb67d736f2b81e188738264c75d10d57ea4aaadd..7f7c724dc0fd15c364f119f94a96f9b423a8be80 100644
 --- a/dist/components/Modal/Modal.svelte
