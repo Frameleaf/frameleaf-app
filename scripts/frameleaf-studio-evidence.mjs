@@ -113,6 +113,21 @@ export function blockedAxisEntry(axis, missing) {
 }
 
 /**
+ * The entry a fully-covered row gets when no `--meta` was given to actually write a `passed`
+ * artifact (the CI path today). Distinct from `blockedAxisEntry`'s "cases are missing" reason -
+ * this row has everything it needs, it just hasn't been measured into an artifact yet. Without
+ * this, a row whose case coverage went from partial to full would keep its old, now-false
+ * "missing case(s)" reason forever, since nothing else ever revisits it (found by studio-color on
+ * FL-112, 2026-09-30).
+ */
+export function pendingArtifactEntry(axis) {
+  return {
+    status: "blocked",
+    reason: `All ${axis}-axis cases covered; awaiting the CI measured-conformance artifact (FL-112).`,
+  };
+}
+
+/**
  * Builds a schema-compliant `measured-conformance` artifact and the `passed` axis entry pointing
  * at it, hashing every file itself so nothing here can be silently stale. `meta` fields the
  * generator cannot derive from the repo alone (see the module doc) must all be supplied; anything
@@ -224,6 +239,7 @@ export async function applyFamilyCoverage(
     blocked: 0,
     alreadyPassed: 0,
     fullyCovered: 0,
+    pendingArtifact: 0,
     passed: 0,
   };
   for (const row of overlay.rows) {
@@ -244,6 +260,14 @@ export async function applyFamilyCoverage(
     if (missing.length === 0) {
       summary.fullyCovered++;
       if (!meta) {
+        const entry = pendingArtifactEntry(axis);
+        if (
+          current.status !== entry.status ||
+          current.reason !== entry.reason
+        ) {
+          row.axes[axis] = entry;
+          summary.pendingArtifact++;
+        }
         continue;
       }
       const feature = featureById.get(row.id);

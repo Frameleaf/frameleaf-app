@@ -90,6 +90,7 @@ test("applyFamilyCoverage blocks every row of the family with partial coverage, 
     blocked: 2,
     alreadyPassed: 0,
     fullyCovered: 0,
+    pendingArtifact: 0,
     passed: 0,
   });
   assert.deepEqual(overlay.rows[0].axes.chromium, {
@@ -120,7 +121,7 @@ test("applyFamilyCoverage never touches a different axis on the same row", async
   assert.equal(overlay.rows[0].axes.chromium.status, "blocked");
 });
 
-test("applyFamilyCoverage counts, but does not touch, a fully-covered row when no meta is given", async () => {
+test("applyFamilyCoverage marks a fully-covered row's axis pending-artifact when no meta is given", async () => {
   const overlay = { engineRevision: "e", rows: [overlayRow("blend.normal")] };
   const catalog = { rows: [fixture("blend.normal")] };
   const all = new Set(["normal", "invalid", "animated", "extreme", "composed"]);
@@ -140,9 +141,67 @@ test("applyFamilyCoverage counts, but does not touch, a fully-covered row when n
     blocked: 0,
     alreadyPassed: 0,
     fullyCovered: 1,
+    pendingArtifact: 1,
     passed: 0,
   });
-  assert.deepEqual(overlay.rows[0].axes.chromium, { status: "not-tested" });
+  assert.deepEqual(overlay.rows[0].axes.chromium, {
+    status: "blocked",
+    reason:
+      "All chromium-axis cases covered; awaiting the CI measured-conformance artifact (FL-112).",
+  });
+});
+
+test("applyFamilyCoverage replaces a now-false 'missing case(s)' reason once coverage becomes complete", async () => {
+  const stale = {
+    status: "blocked",
+    reason: "Missing chromium-axis case(s): invalid (FL-112).",
+  };
+  const overlay = {
+    engineRevision: "e",
+    rows: [overlayRow("blend.normal", { chromium: stale })],
+  };
+  const catalog = { rows: [fixture("blend.normal")] };
+  const all = new Set(["normal", "invalid", "animated", "extreme", "composed"]);
+  const summary = await applyFamilyCoverage(
+    overlay,
+    catalog,
+    manifest(),
+    build(),
+    "blend",
+    "chromium",
+    all,
+  );
+  assert.equal(summary.pendingArtifact, 1);
+  assert.deepEqual(overlay.rows[0].axes.chromium, {
+    status: "blocked",
+    reason:
+      "All chromium-axis cases covered; awaiting the CI measured-conformance artifact (FL-112).",
+  });
+});
+
+test("applyFamilyCoverage is idempotent once a row is already marked pending-artifact", async () => {
+  const pending = {
+    status: "blocked",
+    reason:
+      "All chromium-axis cases covered; awaiting the CI measured-conformance artifact (FL-112).",
+  };
+  const overlay = {
+    engineRevision: "e",
+    rows: [overlayRow("blend.normal", { chromium: pending })],
+  };
+  const catalog = { rows: [fixture("blend.normal")] };
+  const all = new Set(["normal", "invalid", "animated", "extreme", "composed"]);
+  const summary = await applyFamilyCoverage(
+    overlay,
+    catalog,
+    manifest(),
+    build(),
+    "blend",
+    "chromium",
+    all,
+  );
+  assert.equal(summary.pendingArtifact, 0);
+  assert.deepEqual(overlay.rows[0].axes.chromium, pending);
 });
 
 test("applyFamilyCoverage never downgrades an already-passed row", async () => {
@@ -168,6 +227,7 @@ test("applyFamilyCoverage never downgrades an already-passed row", async () => {
     blocked: 0,
     alreadyPassed: 1,
     fullyCovered: 0,
+    pendingArtifact: 0,
     passed: 0,
   });
   assert.deepEqual(overlay.rows[0].axes.chromium, passed);
@@ -205,6 +265,7 @@ test("applyFamilyCoverage family '*' matches every row regardless of id prefix",
     blocked: 3,
     alreadyPassed: 0,
     fullyCovered: 0,
+    pendingArtifact: 0,
     passed: 0,
   });
   assert.deepEqual(overlay.rows[0].axes.graph, {
@@ -324,6 +385,7 @@ test("applyFamilyCoverage writes a real schema-shaped artifact and marks the row
       blocked: 0,
       alreadyPassed: 0,
       fullyCovered: 1,
+      pendingArtifact: 0,
       passed: 1,
     });
     const entry = overlay.rows[0].axes.safari;
