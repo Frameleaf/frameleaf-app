@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { rovingFocus } from '$lib/frameleaf/roving-focus';
   /**
    * The looks row of the Presets panel (FL-113). Each thumbnail previews the look with the CSS
    * approximation over the asset's thumbnail; the chosen preset is rendered for real by the
@@ -23,7 +24,7 @@
   } = $props();
 </script>
 
-<div class="ed-presets" role="radiogroup" aria-label={$t('frameleaf_editor_presets_label')}>
+<div class="ed-presets" role="radiogroup" use:rovingFocus aria-label={$t('frameleaf_editor_presets_label')}>
   {#each presetsFor(kind) as item (item.id)}
     {@const look = cssFilterFor({ ...values, preset: item.id, presetStrength: 100 })}
     <button

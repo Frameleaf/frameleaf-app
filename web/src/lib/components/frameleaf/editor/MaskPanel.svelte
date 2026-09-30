@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { readingKey } from '$lib/frameleaf/reading-direction';
   /**
    * The Masks panel of the quick editor (FL-64): selective adjustments. Add a radial or linear
    * mask, place it with the handles on the photo, and move the tone and colour controls that
@@ -61,8 +62,9 @@
   };
   const listKey = (event: KeyboardEvent) => {
     const index = masks.findIndex((mask) => mask.id === selectedId);
-    const forward = event.key === 'ArrowDown' || event.key === 'ArrowRight';
-    const back = event.key === 'ArrowUp' || event.key === 'ArrowLeft';
+    const key = readingKey(event.key);
+    const forward = key === 'ArrowDown' || key === 'ArrowRight';
+    const back = key === 'ArrowUp' || key === 'ArrowLeft';
     const next = forward ? index + 1 : back ? index - 1 : null;
     if (next === null || masks.length === 0) {
       return;

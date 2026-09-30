@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { rovingFocus } from '$lib/frameleaf/roving-focus';
   /**
    * The Svelte lifecycle wrapper for the vendored React editor (FL-88, `STU-201`).
    *
@@ -618,7 +619,7 @@
 
     {#if host.phase === 'ready'}
       <!-- Basic and Advanced change the engine's layout, so the choice is offered only while it runs. -->
-      <div class="fl-studio-mode" role="radiogroup" aria-label={$t('frameleaf_studio_mode_label')}>
+      <div class="fl-studio-mode" role="radiogroup" use:rovingFocus aria-label={$t('frameleaf_studio_mode_label')}>
         {#each modes as item (item.value)}
           <button
             type="button"
