@@ -1,7 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { IntegrityRepository } from 'src/repositories/integrity.repository.js';
+import type { OwnerBackupState } from 'src/utils/cloud-backup-owner.js';
 import type {
   CloudBackupAlbum,
   CloudBackupAssetDetails,
@@ -12,7 +14,8 @@ import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { AssetFileType, AssetStatus, MediaOperationKind, MediaOperationStatus } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
 import { CloudBackupVerificationMethod, CloudBackupVerificationResult } from 'src/schema/tables/safety-proof.table.js';
-import { effectiveVisibilityOf, isLocked } from 'src/utils/locked.js';
+import { isMotionOfLockedStill, withHiddenContentFilter } from 'src/utils/database.js';
+import { effectiveVisibilityOf, isLocked, isNotLocked } from 'src/utils/locked.js';
 
 export type CloudBackupIndexedObject = { sha256: string; size: number; etag: string | null };
 
@@ -577,6 +580,59 @@ export class CloudBackupIndexRepository {
         },
       ]),
     );
+  }
+
+  /** Presence and caller privacy from one snapshot, including non-active rows that cannot be treated as absent. */
+  async getOwnerHistoryState(auth: AuthDto, assetIds: string[]): Promise<Map<string, OwnerBackupState>> {
+    if (assetIds.length === 0) return new Map();
+    return this.db
+      .transaction()
+      .setIsolationLevel('repeatable read')
+      .execute(async (trx) => {
+        const rows = await trx
+          .selectFrom('asset')
+          .select(['id', 'ownerId', 'status', 'deletedAt'])
+          .where('id', '=', sql<string>`any(${assetIds}::uuid[])`)
+          .execute();
+        const allowed = await trx
+          .selectFrom('asset')
+          .leftJoin('library', 'library.id', 'asset.libraryId')
+          .select('asset.id')
+          .where('asset.id', '=', sql<string>`any(${assetIds}::uuid[])`)
+          .where('asset.ownerId', '=', auth.user.id)
+          .where((eb) =>
+            eb.or([
+              eb('asset.libraryId', 'is', null),
+              eb.and([eb('library.ownerId', '=', auth.user.id), eb('library.deletedAt', 'is', null)]),
+            ]),
+          )
+          .$if(!auth.session?.hasElevatedPermission, (qb) =>
+            qb.where(isNotLocked('asset')).where((eb) => eb.not(isMotionOfLockedStill(eb))),
+          )
+          .$call((qb) =>
+            withHiddenContentFilter(qb, { hiddenContent: auth.hiddenContent, excludeNsfw: auth.hideNsfwAssets }),
+          )
+          .execute();
+        const visible = new Set(allowed.map(({ id }) => id));
+        const deleted = await trx
+          .selectFrom('asset_backup_deletion')
+          .selectAll()
+          .where('ownerId', '=', auth.user.id)
+          .where('assetId', '=', sql<string>`any(${assetIds}::uuid[])`)
+          .execute();
+        const result = new Map<string, OwnerBackupState>(
+          rows.map((row) => [
+            row.id,
+            { ...row, deletedAt: row.deletedAt ? new Date(row.deletedAt) : null, allowed: visible.has(row.id) },
+          ]),
+        );
+        for (const row of deleted)
+          result.set(row.assetId, {
+            ...result.get(row.assetId),
+            deletion: { ...row, deletedAt: new Date(row.deletedAt) },
+          });
+        return result;
+      });
   }
 
   /** FL-164: the names of these accounts, for the restore list's owner column. */

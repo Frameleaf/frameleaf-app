@@ -22,6 +22,7 @@ import {
   CLOUD_BACKUP_VERIFY_CRON,
   CloudBackupService,
 } from 'src/services/cloud-backup.service.js';
+import { EMPTY_DETAILS } from 'src/utils/cloud-backup-details.js';
 import { unwrapBucketKey } from 'src/utils/cloud-backup-escrow.js';
 import { backupKeyFile, bucketRef, keyFingerprint } from 'src/utils/cloud-backup.js';
 import { keyEscrowBlobSchema } from 'src/utils/frameleaf-cloud-backup.js';
@@ -266,6 +267,7 @@ describe(CloudBackupService.name, () => {
       listKeptManifests: vi.fn().mockResolvedValue([]),
       markManifests: vi.fn().mockResolvedValue(0),
       forget: vi.fn().mockResolvedValue(undefined),
+      getOwnerHistoryState: vi.fn().mockResolvedValue(new Map()),
       getLibraryState: vi.fn().mockResolvedValue(new Map()),
       getOwnerNames: vi.fn().mockResolvedValue(new Map()),
       endAbandonedManifests: vi.fn().mockResolvedValue(0),
@@ -1610,6 +1612,114 @@ describe(CloudBackupService.name, () => {
     });
   });
 
+  describe('FL234 owner history and thumbnails', () => {
+    const manifestKey = 'm/20260926T030000Z.json.gz';
+    const thumb = Buffer.from([255, 216, 255]);
+    const thumbHash = createHash('sha256').update(thumb).digest('hex');
+    const owner = authStub.user1.user.id;
+    const dto = { manifestKey, limit: 10, offset: 0 };
+    const kept = { key: manifestKey, status: 'complete', createdAt: new Date(), finishedAt: new Date() };
+    const captured = () =>
+      new Map([
+        [
+          'asset-1',
+          {
+            deletion: {
+              ownerId: owner,
+              deletedAt: new Date(),
+              visibility: 'timeline',
+              wasLocked: false,
+              checksum: Buffer.from(SHA_A, 'hex'),
+              checksumAlgorithm: 'sha256',
+              evidenceVersion: 1,
+              modernPrivacyEvidenceUnavailable: true,
+            },
+          },
+        ],
+      ]);
+    const entry = (id: string) => ({
+      owner: id,
+      type: 'IMAGE',
+      originalFileName: id === owner ? 'Own.jpg' : 'Secret.jpg',
+      fileCreatedAt: '2026-09-01T00:00:00Z',
+      fileModifiedAt: '2026-09-01T00:00:00Z',
+      localDateTime: '2026-09-01T00:00:00Z',
+      duration: null,
+      details: EMPTY_DETAILS,
+      files: [
+        { role: 'original', path: '/private/path', sha256: SHA_A, size: 100, mtime: null },
+        { role: 'thumbnail', path: '/private/thumb', sha256: thumbHash, size: thumb.length, mtime: null },
+      ],
+    });
+    const refresh = () => vi.fn().mockResolvedValue(authStub.user1);
+    beforeEach(() => {
+      metadata[SystemMetadataKey.FrameleafCloudBackup] = claim();
+      metadata[SystemMetadataKey.SystemConfig] = enabledConfig();
+      keys.read.mockResolvedValue(keyFileOf());
+      index.listKeptManifests.mockResolvedValue([kept]);
+      index.getOwnerHistoryState.mockResolvedValue(captured());
+      store.get = vi.fn().mockResolvedValue(
+        gzipSync(
+          JSON.stringify({
+            format: 'frameleaf-backup-manifest',
+            version: 2,
+            instanceId: 'instance-1',
+            createdAt: '2026-09-26T03:00:00Z',
+            database: null,
+            assets: { 'asset-1': entry(owner), 'foreign-1': entry('foreign') },
+            profiles: {},
+            albums: {},
+            people: {},
+          }),
+        ),
+      );
+      store.getPreview = vi.fn().mockResolvedValue(thumb);
+    });
+    it('projects only own history and owner-scoped discovery with no paths/global owners', async () => {
+      const result = await sut.listOwnerHistory(authStub.user1, dto, refresh());
+      expect(result.total).toBe(1);
+      expect(JSON.stringify(result)).not.toMatch(/Secret|private|foreign|ownerName|bucket/);
+      expect(index.getOwnerNames).not.toHaveBeenCalled();
+      expect(await sut.listOwnerBackups(authStub.user1, { limit: 1, offset: 0 }, refresh())).toMatchObject({
+        backups: [{ manifestKey }],
+        nextOffset: null,
+      });
+    });
+    it('refuses revoked normal auth, shared links, changed owner, relock and pruned cached manifest', async () => {
+      const revoked = refresh().mockRejectedValueOnce(new Error('revoked'));
+      await expect(sut.listOwnerHistory(authStub.user1, dto, revoked)).rejects.toThrow('revoked');
+      await expect(
+        sut.listOwnerHistory(authStub.user1, dto, vi.fn().mockResolvedValue(authStub.adminSharedLink)),
+      ).rejects.toThrow('Owner backup access');
+      index.getOwnerHistoryState.mockResolvedValue(new Map([['asset-1', { ownerId: 'foreign', allowed: false }]]));
+      expect((await sut.listOwnerHistory(authStub.user1, dto, refresh())).total).toBe(0);
+      index.listKeptManifests.mockResolvedValue([]);
+      await expect(sut.listOwnerHistory(authStub.user1, dto, refresh())).rejects.toThrow('not one of the kept backups');
+    });
+    it('rechecks privacy after thumbnail I/O and never returns stale authorized bytes', async () => {
+      store.getPreview = vi.fn<() => Promise<Buffer>>(() => {
+        index.getOwnerHistoryState.mockResolvedValue(new Map([['asset-1', { ownerId: owner, allowed: false }]]));
+        return Promise.resolve(thumb);
+      });
+      await expect(sut.readOwnerThumbnail(authStub.user1, 'asset-1', manifestKey, refresh())).rejects.toThrow(
+        'Backup preview unavailable',
+      );
+      expect(store.getPreview).toHaveBeenCalledWith(expect.anything(), `o/${thumbHash}`, key, thumbHash, thumb.length);
+    });
+    it('does not read foreign/missing thumbnails or disclose provider errors and requires a loaded key', async () => {
+      await expect(sut.readOwnerThumbnail(authStub.user1, 'foreign-1', manifestKey, refresh())).rejects.toThrow(
+        'Backup preview unavailable',
+      );
+      expect(store.getPreview).not.toHaveBeenCalled();
+      store.getPreview.mockRejectedValueOnce(new Error('/private/provider-key'));
+      await expect(sut.readOwnerThumbnail(authStub.user1, 'asset-1', manifestKey, refresh())).rejects.toThrow(
+        'Backup preview unavailable',
+      );
+      keys.read.mockResolvedValue(null);
+      await expect(sut.listOwnerHistory(authStub.user1, dto, refresh())).rejects.toThrow('backup key file is missing');
+    });
+  });
+
   describe('restore (FL-164)', () => {
     const manifestKey = 'm/20260926T030000Z.json.gz';
     const kept = {
@@ -1758,6 +1868,12 @@ describe(CloudBackupService.name, () => {
       expect(store.get).toHaveBeenCalledWith(expect.anything(), manifestKey, key);
       expect(result).toMatchObject({ manifestKey, files: 1, databaseRestored: false });
       expect(lines.join('\n')).not.toContain(key.toString('base64'));
+    });
+
+    it('refuses a cached manifest after it stops being kept', async () => {
+      await sut.listManifestItems({ manifestKey });
+      index.listKeptManifests.mockResolvedValue([]);
+      await expect(sut.listManifestItems({ manifestKey })).rejects.toThrow('not one of the kept backups');
     });
 
     it('lists the items a backup holds with whether each is still in the library', async () => {

@@ -41722,6 +41722,247 @@
         "x-immich-state": "Stable"
       }
     },
+    "/users/me/cloud-backup/backups": {
+      "get": {
+        "description": "Owner-only discovery. Foreign/private/unknown history is excluded before paging; no global counts. Search across all backups is not provided by this endpoint.",
+        "operationId": "listOwnKeptBackups",
+        "parameters": [
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "offset",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 0,
+              "maximum": 1000000,
+              "default": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OwnerBackupsResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List own kept backups with accessible deleted history",
+        "tags": [
+          "Frameleaf Cloud backup (admin)"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "asset.read"
+      }
+    },
+    "/users/me/cloud-backup/history": {
+      "get": {
+        "description": "Caller-owned trashed/deleted entries from a chosen kept manifest. Unknown physical deletion dates are explicit; file modification and backup dates are never deletion dates. Historical missing owner/privacy evidence is excluded. Does not restore items.",
+        "operationId": "getOwnBackupHistory",
+        "parameters": [
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "manifestKey",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "maxLength": 300,
+              "pattern": "^m\\/\\d{8}T\\d{6}Z\\.json\\.gz$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "offset",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 0,
+              "maximum": 1000000,
+              "default": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "query",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "maxLength": 200,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OwnerBackupHistoryResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Search own deleted history in one kept backup",
+        "tags": [
+          "Frameleaf Cloud backup (admin)"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "asset.read"
+      }
+    },
+    "/users/me/cloud-backup/history/{id}/thumbnail": {
+      "get": {
+        "description": "Only recorded thumbnail objects, actual SHA256 and size verified, maximum8MiB. Normal credentials/privacy and kept membership are rechecked after remote reads.",
+        "operationId": "getOwnBackupThumbnail",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "manifestKey",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "maxLength": 300,
+              "pattern": "^m\\/\\d{8}T\\d{6}Z\\.json\\.gz$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "offset",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 0,
+              "maximum": 1000000,
+              "default": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "query",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "maxLength": 200,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Read an authorized kept backup thumbnail",
+        "tags": [
+          "Frameleaf Cloud backup (admin)"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "asset.view"
+      }
+    },
     "/users/me/license": {
       "delete": {
         "description": "Remove your supporter key from this server. The key stays yours to activate again.",
@@ -68684,6 +68925,139 @@
         },
         "required": [
           "isOnboarded"
+        ],
+        "type": "object"
+      },
+      "OwnerBackupDeletionDateState": {
+        "enum": [
+          "available",
+          "unavailable"
+        ],
+        "type": "string"
+      },
+      "OwnerBackupHistoryResponseDto": {
+        "properties": {
+          "items": {
+            "items": {
+              "properties": {
+                "assetId": {
+                  "type": "string"
+                },
+                "backupDate": {
+                  "type": "string"
+                },
+                "deletionDate": {
+                  "properties": {
+                    "at": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "state": {
+                      "$ref": "#/components/schemas/OwnerBackupDeletionDateState"
+                    }
+                  },
+                  "required": [
+                    "state",
+                    "at"
+                  ],
+                  "type": "object"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "state": {
+                  "$ref": "#/components/schemas/OwnerBackupItemState"
+                },
+                "thumbnailAvailable": {
+                  "description": "An eligible recorded thumbnail; remote availability/integrity is checked when read",
+                  "type": "boolean"
+                },
+                "trashDate": {
+                  "description": "Known current trash timestamp; distinct from physical deletion",
+                  "nullable": true,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "assetId",
+                "name",
+                "backupDate",
+                "state",
+                "trashDate",
+                "deletionDate",
+                "thumbnailAvailable"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "nextOffset": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          },
+          "total": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "nextOffset",
+          "total"
+        ],
+        "type": "object"
+      },
+      "OwnerBackupItemState": {
+        "enum": [
+          "trashed",
+          "deleted"
+        ],
+        "type": "string"
+      },
+      "OwnerBackupKeptStatus": {
+        "enum": [
+          "complete",
+          "degraded"
+        ],
+        "type": "string"
+      },
+      "OwnerBackupsResponseDto": {
+        "properties": {
+          "backups": {
+            "items": {
+              "properties": {
+                "backupDate": {
+                  "type": "string"
+                },
+                "manifestKey": {
+                  "type": "string"
+                },
+                "status": {
+                  "$ref": "#/components/schemas/OwnerBackupKeptStatus"
+                }
+              },
+              "required": [
+                "manifestKey",
+                "backupDate",
+                "status"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "nextOffset": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "backups",
+          "nextOffset"
         ],
         "type": "object"
       },

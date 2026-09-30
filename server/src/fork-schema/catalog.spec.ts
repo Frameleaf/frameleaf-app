@@ -96,7 +96,7 @@ describe('catalog manifests', () => {
     // person (FL-83 AL-30b), generated Studio resources (FL-111) and Studio project imports (FL-103,
     // FL-105), Studio HDR intermediates (FL-97), and persisted safety proof facts (FL-226),
     // in the integrated catalog.
-    expect(getCatalogTableLocks(fork)).toHaveLength(209);
+    expect(getCatalogTableLocks(fork)).toHaveLength(210);
     expect(getCatalogTableLocks(fork)).toEqual(
       expect.arrayContaining([
         'public.pet_audit',
@@ -105,6 +105,7 @@ describe('catalog manifests', () => {
         'public.tag_asset_audit',
         'public.session_tag_sync_state',
         'public.asset_integrity_verification',
+        'public.asset_backup_deletion',
         'public.backup_device',
         'public.backup_reconciliation',
         'public.cloud_backup_manifest_original',

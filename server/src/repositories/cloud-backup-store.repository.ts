@@ -313,6 +313,38 @@ export class CloudBackupStoreRepository {
     return body;
   }
 
+  /** Bounded authenticated previews: verify actual bytes before any are returned to the caller. */
+  async getPreview(
+    connection: CloudBackupConnection,
+    key: string,
+    bucketKey: Buffer,
+    sha256: string,
+    expectedSize: number,
+  ): Promise<Buffer> {
+    if (!Number.isSafeInteger(expectedSize) || expectedSize < 1 || expectedSize > 8 * 1024 * 1024)
+      throw new CloudBackupStoreError('Backup preview exceeds its limit', null, 'PreviewLimit');
+    const response = await this.send(connection, { method: 'GET', key, headers: sseCustomerHeaders(bucketKey) });
+    const body = response.body
+      ? Readable.fromWeb(response.body as unknown as NodeReadableStream<Uint8Array>)
+      : Readable.from([]);
+    const chunks: Buffer[] = [];
+    let size = 0;
+    const digest = createHash('sha256');
+    for await (const value of body) {
+      const chunk = Buffer.from(value);
+      size += chunk.length;
+      if (size > expectedSize) {
+        body.destroy();
+        throw new CloudBackupStoreError('Backup preview size mismatch', null, 'PreviewLimit');
+      }
+      digest.update(chunk);
+      chunks.push(chunk);
+    }
+    if (size !== expectedSize || digest.digest('hex') !== sha256)
+      throw new CloudBackupStoreError('Backup preview integrity check failed', null, 'ChecksumMismatch');
+    return Buffer.concat(chunks, size);
+  }
+
   /**
    * FL-164: an object streamed to `destination`, hashed as it arrives. It is written to a partial file
    * beside the destination and moved into place only when it hashes to `expectedSha256` (every `o/<sha256>`

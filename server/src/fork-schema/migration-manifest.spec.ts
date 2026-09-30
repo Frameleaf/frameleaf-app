@@ -73,6 +73,7 @@ describe(classifyMigration, () => {
     expect(classifyMigration('2100000000721-TagSyncEvents')).toBe('legacy-fork');
     expect(classifyMigration('2100000000722-PetSyncEvents')).toBe('legacy-fork');
     expect(classifyMigration('2100000000723-SharedSpaceDeliveryOrder')).toBe('legacy-fork');
+    expect(classifyMigration('2100000000725-OwnerBackupDeletionFacts')).toBe('legacy-fork');
   });
 
   it('classifies migrations from a certified upstream tag', () => {

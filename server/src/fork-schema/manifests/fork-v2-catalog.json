@@ -7495,6 +7495,46 @@
     {
       "definition": "timestamp with time zone|not null|clock_timestamp()||",
       "identity": "public.backup_reconciliation.startedAt"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.asset_backup_deletion.assetId"
+    },
+    {
+      "definition": "bytea|nullable|||",
+      "identity": "public.asset_backup_deletion.checksum"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "public.asset_backup_deletion.checksumAlgorithm"
+    },
+    {
+      "definition": "timestamp with time zone|not null|||",
+      "identity": "public.asset_backup_deletion.deletedAt"
+    },
+    {
+      "definition": "integer|not null|||",
+      "identity": "public.asset_backup_deletion.evidenceVersion"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "public.asset_backup_deletion.livePhotoVideoId"
+    },
+    {
+      "definition": "boolean|not null|||",
+      "identity": "public.asset_backup_deletion.modernPrivacyEvidenceUnavailable"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.asset_backup_deletion.ownerId"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "public.asset_backup_deletion.visibility"
+    },
+    {
+      "definition": "boolean|not null|||",
+      "identity": "public.asset_backup_deletion.wasLocked"
     }
   ],
   "constraints": [
@@ -9845,6 +9885,10 @@
     {
       "definition": "PRIMARY KEY (id)",
       "identity": "public.backup_reconciliation.backup_reconciliation_pkey"
+    },
+    {
+      "definition": "PRIMARY KEY (\"assetId\")",
+      "identity": "public.asset_backup_deletion.asset_backup_deletion_pkey"
     }
   ],
   "enums": [
@@ -11072,6 +11116,10 @@
     {
       "definition": "CREATE OR REPLACE FUNCTION public.pet_update_id()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$BEGIN NEW.\"updateId\" := immich_uuid_v7(); RETURN NEW; END$function$",
       "identity": "public.pet_update_id()"
+    },
+    {
+      "definition": "CREATE OR REPLACE FUNCTION public.asset_backup_deletion_capture()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n  INSERT INTO asset_backup_deletion (\"assetId\", \"ownerId\", \"deletedAt\", visibility, \"wasLocked\", checksum, \"checksumAlgorithm\", \"livePhotoVideoId\", \"evidenceVersion\", \"modernPrivacyEvidenceUnavailable\")\n  VALUES (OLD.id, OLD.\"ownerId\", clock_timestamp(), OLD.visibility::text,\n    EXISTS (SELECT 1 FROM asset_lock WHERE \"assetId\" = OLD.id)\n    OR (OLD.visibility::text = 'hidden' AND (\n      EXISTS (SELECT 1 FROM asset AS parent JOIN asset_lock ON asset_lock.\"assetId\" = parent.id\n        WHERE parent.\"livePhotoVideoId\" = OLD.id AND parent.\"ownerId\" = OLD.\"ownerId\")\n      OR EXISTS (SELECT 1 FROM asset_backup_deletion AS parent\n        WHERE parent.\"livePhotoVideoId\" = OLD.id AND parent.\"ownerId\" = OLD.\"ownerId\" AND parent.\"wasLocked\")\n    )),\n    OLD.checksum, OLD.\"checksumAlgorithm\"::text, OLD.\"livePhotoVideoId\", 1, true)\n  ON CONFLICT (\"assetId\") DO UPDATE SET\n    \"ownerId\" = EXCLUDED.\"ownerId\", \"deletedAt\" = EXCLUDED.\"deletedAt\", visibility = EXCLUDED.visibility,\n    \"wasLocked\" = EXCLUDED.\"wasLocked\", checksum = EXCLUDED.checksum, \"checksumAlgorithm\" = EXCLUDED.\"checksumAlgorithm\",\n    \"livePhotoVideoId\" = EXCLUDED.\"livePhotoVideoId\", \"evidenceVersion\" = EXCLUDED.\"evidenceVersion\",\n    \"modernPrivacyEvidenceUnavailable\" = EXCLUDED.\"modernPrivacyEvidenceUnavailable\";\n  RETURN OLD;\nEND$function$",
+      "identity": "public.asset_backup_deletion_capture()"
     }
   ],
   "indexes": [
@@ -13878,6 +13926,18 @@
     {
       "definition": "CREATE UNIQUE INDEX backup_reconciliation_pkey ON public.backup_reconciliation USING btree (id)",
       "identity": "public.backup_reconciliation.backup_reconciliation_pkey"
+    },
+    {
+      "definition": "CREATE INDEX \"asset_backup_deletion_livePhotoVideoId_idx\" ON public.asset_backup_deletion USING btree (\"livePhotoVideoId\")",
+      "identity": "public.asset_backup_deletion.asset_backup_deletion_livePhotoVideoId_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"asset_backup_deletion_ownerId_idx\" ON public.asset_backup_deletion USING btree (\"ownerId\")",
+      "identity": "public.asset_backup_deletion.asset_backup_deletion_ownerId_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX asset_backup_deletion_pkey ON public.asset_backup_deletion USING btree (\"assetId\")",
+      "identity": "public.asset_backup_deletion.asset_backup_deletion_pkey"
     }
   ],
   "migrationOverrides": [
@@ -14010,7 +14070,9 @@
     "trigger_pet_delete_audit",
     "trigger_pet_observation_delete_audit",
     "trigger_pet_observation_update_id",
-    "trigger_pet_update_id"
+    "trigger_pet_update_id",
+    "function_asset_backup_deletion_capture",
+    "trigger_asset_backup_deletion_capture_trigger"
   ],
   "schemas": [
     {
@@ -14859,6 +14921,10 @@
     {
       "definition": "table",
       "identity": "public.backup_reconciliation"
+    },
+    {
+      "definition": "table",
+      "identity": "public.asset_backup_deletion"
     }
   ],
   "triggers": [
@@ -15169,6 +15235,10 @@
     {
       "definition": "CREATE TRIGGER pet_update_id BEFORE UPDATE ON pet FOR EACH ROW EXECUTE FUNCTION pet_update_id()",
       "identity": "public.pet.pet_update_id"
+    },
+    {
+      "definition": "CREATE TRIGGER asset_backup_deletion_capture_trigger BEFORE DELETE ON asset FOR EACH ROW EXECUTE FUNCTION asset_backup_deletion_capture()",
+      "identity": "public.asset.asset_backup_deletion_capture_trigger"
     }
   ]
 }

@@ -232,6 +232,26 @@ describe(CloudBackupStoreRepository.name, () => {
     expect(headers).not.toHaveProperty('host');
   });
 
+  it('bounds preview actual bytes and verifies both size and SHA before returning data', async () => {
+    const bytes = Buffer.from('preview');
+    const hash = sha256(bytes);
+    await sut.put(connection, `o/${hash}`, bytes, bucketKey);
+    await expect(sut.getPreview(connection, `o/${hash}`, bucketKey, hash, bytes.length)).resolves.toEqual(bytes);
+    await expect(sut.getPreview(connection, `o/${hash}`, bucketKey, hash, bytes.length - 1)).rejects.toThrow(
+      'size mismatch',
+    );
+    await expect(sut.getPreview(connection, `o/${hash}`, bucketKey, hash, bytes.length + 1)).rejects.toThrow(
+      'integrity check',
+    );
+    await expect(sut.getPreview(connection, `o/${hash}`, bucketKey, 'a'.repeat(64), bytes.length)).rejects.toThrow(
+      'integrity check',
+    );
+    await expect(sut.getPreview(connection, `o/${hash}`, bucketKey, hash, 8 * 1024 * 1024 + 1)).rejects.toThrow(
+      'limit',
+    );
+    s3.expectSseCOnEveryObjectCall();
+  });
+
   it('sends the SSE-C headers on PUT, GET and HEAD and verifies a download against its SHA-256', async () => {
     const body = Buffer.from('a photo');
     const { encrypted } = await sut.put(connection, `o/${sha256(body)}`, body, bucketKey);
