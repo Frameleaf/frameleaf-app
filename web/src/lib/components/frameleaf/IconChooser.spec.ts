@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { init, register, waitLocale } from 'svelte-i18n';
-import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { resetIconCatalogueCache } from '$lib/frameleaf/icon-catalogue';
 import IconChooser from './IconChooser.svelte';
@@ -26,10 +26,26 @@ describe('IconChooser', () => {
     await waitLocale('en-US');
   });
 
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
     resetIconCatalogueCache();
     sdkMock.getAlbumIconCatalogue.mockResolvedValue(catalogue);
+    // FL-139: loadIconPaths() now fetches the build-generated static/mdi-icon-paths.json instead
+    // of dynamically importing @mdi/js - stub that one fetch with the real package's own data, so
+    // rendered icon geometry in this test still matches production exactly.
+    const mdiPaths = (await import('@mdi/js')) as unknown as Record<string, string>;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string) =>
+        url === '/mdi-icon-paths.json'
+          ? Promise.resolve({ json: () => Promise.resolve(mdiPaths) } as Response)
+          : Promise.reject(new Error(`unexpected fetch: ${url}`)),
+      ),
+    );
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   it('loads the catalogue from the server and shows the suggested set before every icon', async () => {
