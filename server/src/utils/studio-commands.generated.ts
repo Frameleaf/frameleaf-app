@@ -665,6 +665,8 @@ export const studioCommandMirror = {
       clipId: 'string',
       keyframeId: 'string',
       property: 'string',
+      spatial: 'object?',
+      temporalEase: 'object?',
       value: 'object?',
     },
   },

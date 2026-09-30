@@ -33,6 +33,7 @@ import {
   type EasingConfig,
   type EasingType,
   type Keyframe,
+  type VectorKeyframe,
 } from '@/types/keyframe'
 import type { TransformProperties } from '@/types/transform'
 import type { TransitionPresentation } from '@/types/transition'
@@ -90,6 +91,9 @@ import {
   applyMotionModifierToItems,
   bakeMotionToKeyframes,
   addKeyframes,
+  upsertVectorKeyframe,
+  updateVectorKeyframe,
+  removeVectorKeyframe,
 } from '@/features/timeline/stores/timeline-actions'
 import { dissolvePreComp } from '@/features/timeline/stores/actions/composition-actions'
 import { useCompositionsStore } from '@/features/timeline/stores/compositions-store'
@@ -510,6 +514,89 @@ const kenBurnsRect = (value: unknown, name: string): KenBurnsRect => {
 
 const keyframesOnItem = (item: TimelineItem) =>
   useKeyframesStore.getState().keyframesByItemId[item.id]?.properties ?? []
+
+const vectorField = (value: unknown, name: string): { x: number; y: number } => {
+  const vector = value as { x?: unknown; y?: unknown } | null
+  if (!vector || typeof vector !== 'object' || !finiteIn(vector.x, -1e9, 1e9) || !finiteIn(vector.y, -1e9, 1e9))
+    invalid(`${name} must be { x, y } numbers`)
+  return { x: vector!.x as number, y: vector!.y as number }
+}
+
+const vectorKeyframesOn = (item: TimelineItem, property: string): VectorKeyframe[] =>
+  useKeyframesStore
+    .getState()
+    .keyframesByItemId[item.id]?.vectorProperties?.find((entry) => entry.property === property)?.keyframes ?? []
+
+const requireVectorKeyframe = (item: TimelineItem, property: string, keyframeId: string): VectorKeyframe => {
+  const keyframe = vectorKeyframesOn(item, property).find((entry) => entry.id === keyframeId)
+  if (!keyframe) invalid(`keyframeId: "${keyframeId}" is not on ${property}`)
+  return keyframe!
+}
+
+const easeHandle = (value: unknown, name: string) => {
+  const handle = value as { speed?: unknown; influence?: unknown } | null
+  if (!handle || typeof handle !== 'object') invalid(`${name} must be { speed, influence }`)
+  if (!finiteIn(handle!.speed, -1e9, 1e9)) invalid(`${name}.speed must be a number`)
+  // Influence is a share of the neighbouring segment: 0.1% to 100%, as in the graph editor.
+  if (!finiteIn(handle!.influence, 0.1, 100)) invalid(`${name}.influence must be a percentage in 0.1..100`)
+  return { speed: handle!.speed as number, influence: handle!.influence as number }
+}
+
+/** Frame, value, easing handles and (Position only) path tangents of one vector keyframe. */
+const updateVectorKeyframeFrom = (
+  item: TimelineItem,
+  property: string,
+  payload: Record<string, unknown>,
+  cadence: Rational,
+) => {
+  const keyframe = requireVectorKeyframe(item, property, stringField(payload, 'keyframeId'))
+  const updates: Partial<Omit<VectorKeyframe, 'id'>> = {}
+  if (payload.at !== undefined) {
+    const at = timeField(payload, 'at', cadence)
+    if (at < item.from || at >= item.from + item.durationInFrames) invalid('at must fall inside the clip')
+    updates.frame = at - item.from
+    if (vectorKeyframesOn(item, property).some((other) => other.id !== keyframe.id && other.frame === updates.frame))
+      invalid(`at: ${property} already has a keyframe there`)
+  }
+  if (payload.value !== undefined) updates.value = vectorField(payload.value, 'value')
+  if (payload.temporalEase !== undefined) {
+    const ease = payload.temporalEase as { in?: unknown; out?: unknown } | null
+    if (ease === null) updates.temporalEase = undefined
+    else {
+      if (typeof ease !== 'object' || (ease.in === undefined && ease.out === undefined))
+        invalid('temporalEase must be { in?, out? } or null')
+      updates.temporalEase = {
+        ...(ease!.in !== undefined ? { in: easeHandle(ease!.in, 'temporalEase.in') } : {}),
+        ...(ease!.out !== undefined ? { out: easeHandle(ease!.out, 'temporalEase.out') } : {}),
+      }
+    }
+  }
+  if (payload.spatial !== undefined) {
+    if (property !== 'position') invalid('only position keyframes have path tangents')
+    const spatial = payload.spatial as { inTangent?: unknown; outTangent?: unknown; continuous?: unknown } | null
+    if (spatial === null) updates.spatial = undefined
+    else {
+      if (typeof spatial !== 'object') invalid('spatial must be { inTangent, outTangent, continuous? } or null')
+      if (spatial!.continuous !== undefined && typeof spatial!.continuous !== 'boolean') invalid('spatial.continuous must be a boolean')
+      const continuous = spatial!.continuous === true
+      let inTangent = spatial!.inTangent === undefined ? undefined : vectorField(spatial!.inTangent, 'spatial.inTangent')
+      let outTangent = spatial!.outTangent === undefined ? undefined : vectorField(spatial!.outTangent, 'spatial.outTangent')
+      // Mirrored tangents: one handle given, the other is its reflection through the vertex.
+      if (continuous && inTangent && !outTangent) outTangent = { x: -inTangent.x, y: -inTangent.y }
+      if (continuous && outTangent && !inTangent) inTangent = { x: -outTangent.x, y: -outTangent.y }
+      if (!inTangent || !outTangent) invalid('spatial needs both tangents unless they are continuous')
+      if (continuous && (Math.abs(inTangent!.x + outTangent!.x) > 1e-9 || Math.abs(inTangent!.y + outTangent!.y) > 1e-9))
+        invalid('continuous tangents must mirror each other')
+      updates.spatial = { inTangent: inTangent!, outTangent: outTangent!, ...(continuous ? { continuous } : {}) }
+    }
+  }
+  if (Object.keys(updates).length === 0)
+    invalid('keyframe.update needs at, value, temporalEase or spatial')
+  updateVectorKeyframe(item.id, property as never, keyframe.id, updates)
+  const after = vectorKeyframesOn(item, property).find((entry) => entry.id === keyframe.id)
+  if (!after || (updates.frame !== undefined && after.frame !== updates.frame))
+    failed('keyframe.update: keyframes cannot be moved inside a transition')
+}
 
 const keyframeCount = (item: TimelineItem): number =>
   (useKeyframesStore.getState().keyframesByItemId[item.id]?.properties ?? []).reduce(
@@ -1406,6 +1493,19 @@ const handlers: Record<string, Handler> = {
   'keyframe.add'(payload, { cadence }) {
     const item = requireItem(stringField(payload, 'clipId'))
     const property = stringField(payload, 'property') as AnimatableProperty
+    if (isVectorProperty(property)) {
+      const at = timeField(payload, 'at', cadence)
+      if (at < item.from || at >= item.from + item.durationInFrames) invalid('at must fall inside the clip')
+      const easing = optionalString(payload, 'easing') as EasingType | undefined
+      if (easing !== undefined && !EASINGS.includes(easing)) invalid(`easing must be one of ${EASINGS.join(', ')}`)
+      const id = upsertVectorKeyframe(item.id, property as never, {
+        frame: at - item.from,
+        value: vectorField(payload.value, 'value'),
+        ...(easing ? { easing } : {}),
+      })
+      if (!id) failed('keyframe.add: keyframes cannot be placed inside a transition')
+      return
+    }
     const at = timeField(payload, 'at', cadence)
     const value = (payload.value as { value?: unknown } | undefined)?.value
     if (typeof value !== 'number' || !Number.isFinite(value))
@@ -1425,6 +1525,11 @@ const handlers: Record<string, Handler> = {
     const ids = payload.keyframeIds
     if (!Array.isArray(ids) || ids.length === 0 || ids.some((id) => typeof id !== 'string'))
       invalid('keyframeIds is required')
+    if (isVectorProperty(property)) {
+      for (const id of ids as string[]) requireVectorKeyframe(item, property, id)
+      for (const id of ids as string[]) removeVectorKeyframe(item.id, property as never, id)
+      return
+    }
     const existing =
       useKeyframesStore
         .getState()
@@ -1440,6 +1545,12 @@ const handlers: Record<string, Handler> = {
   'keyframe.update'(payload, { cadence }) {
     const item = requireItem(stringField(payload, 'clipId'))
     const property = stringField(payload, 'property') as AnimatableProperty
+    if (isVectorProperty(property)) {
+      updateVectorKeyframeFrom(item, property, payload, cadence)
+      return
+    }
+    if (payload.temporalEase !== undefined || payload.spatial !== undefined)
+      invalid(`${property} keyframes take no velocity or path handles; position, scale and anchor do`)
     const keyframe = requireKeyframe(item, property, stringField(payload, 'keyframeId'))
     const updates: Partial<Omit<Keyframe, 'id'>> = {}
     if (payload.at !== undefined) {
@@ -1468,7 +1579,11 @@ const handlers: Record<string, Handler> = {
     const ids = payload.keyframeIds
     if (!Array.isArray(ids) || ids.length === 0 || ids.some((id) => typeof id !== 'string'))
       invalid('keyframeIds is required')
-    for (const id of ids as string[]) requireKeyframe(item, property, id)
+    const vector = isVectorProperty(property)
+    for (const id of ids as string[]) {
+      if (vector) requireVectorKeyframe(item, property, id)
+      else requireKeyframe(item, property, id)
+    }
     const easing = stringField(payload, 'easing') as EasingType
     if (!EASINGS.includes(easing)) invalid(`easing must be one of ${EASINGS.join(', ')}`)
     let easingConfig: EasingConfig | undefined
@@ -1492,6 +1607,11 @@ const handlers: Record<string, Handler> = {
       easingConfig = { type: easing, spring }
     } else if (payload.bezier !== undefined || payload.spring !== undefined) {
       invalid(`${easing} takes no bezier or spring parameters`)
+    }
+    if (vector) {
+      for (const keyframeId of ids as string[])
+        updateVectorKeyframe(item.id, property as never, keyframeId, { easing, easingConfig })
+      return
     }
     updateKeyframes(
       (ids as string[]).map((keyframeId) => ({

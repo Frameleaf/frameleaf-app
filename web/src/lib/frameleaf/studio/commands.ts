@@ -364,6 +364,10 @@ export interface StudioCommandPayloads {
     keyframeId: string;
     at?: StudioTime;
     value?: StudioOpaqueValue;
+    /** Position, scale and anchor keyframes: incoming/outgoing velocity handles, or null to clear. */
+    temporalEase?: StudioOpaqueValue | null;
+    /** Position keyframes: path tangents `{ inTangent, outTangent, continuous? }`, or null to clear. */
+    spatial?: StudioOpaqueValue | null;
   };
   'lottie.update': {
     clipId: string;
