@@ -14,8 +14,8 @@ type PendingRequest = {
    * FL-137: the response has arrived. Its entry stays only so a late cancel can still stop the body
    * download; it is never handed to a new request, which goes back to the server, so the service
    * worker never answers a revoked share, a newly Locked item or another person signed in on this
-   * browser. (The browser's own HTTP cache still holds what was already received, for as long as the
-   * server's Cache-Control allows; signing in or out clears it with Clear-Site-Data.)
+   * browser. HTTP-cache entries are revalidated against current access; signing in or out also
+   * clears them with Clear-Site-Data.
    */
   settled?: boolean;
   /**
@@ -63,8 +63,13 @@ export const handleFetch = async (request: URL | Request): Promise<Response> => 
   }
   pendingRequests.set(requestKey, pendingRequest);
 
+  // Revalidate even fresh HTTP-cache entries so a revoked grant or actual Lock cannot reuse bytes
+  // without current authorization. Keep a caller's stricter no-store policy.
   // NOTE: fetch returns after headers received, not the body
-  const promise = fetch(request, { signal: pendingRequest.controller.signal })
+  const promise = fetch(request, {
+    signal: pendingRequest.controller.signal,
+    cache: request instanceof Request && request.cache === 'no-store' ? 'no-store' : 'no-cache',
+  })
     // eslint-disable-next-line unicorn/prefer-await
     .catch((error: unknown) => {
       const standardError = error instanceof Error ? error : new Error(String(error));

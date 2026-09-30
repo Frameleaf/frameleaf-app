@@ -60,6 +60,46 @@ describe('service worker asset requests', () => {
     await expect(response.text()).resolves.toBe('denied');
   });
 
+  it.each(['thumbnail', 'original'])('reauthorizes a cached %s after revocation or Lock', async (media) => {
+    for (const change of ['revoked', 'Locked']) {
+      const request = new Request(`https://frameleaf.test/api/assets/${change}/${media}`);
+      let allowed = true;
+      let cached: Response | undefined;
+      let authorizations = 0;
+      // Model a fresh private HTTP-cache entry: default requests reuse it without reaching the server.
+      // Revalidation must reach current authorization even when the body and URL have not changed.
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (_input: unknown, init?: RequestInit) => {
+          if (cached && !['no-cache', 'no-store', 'reload'].includes(init?.cache ?? request.cache)) {
+            return cached.clone();
+          }
+          authorizations++;
+          if (!allowed) {
+            return new Response('denied', { status: 403 });
+          }
+          cached = new Response('private media', { headers: { 'Cache-Control': 'private, max-age=86400' } });
+          return cached.clone();
+        }),
+      );
+      expect(request.cache).toBe('default');
+      await expect(text(handleFetch(request))).resolves.toBe('private media');
+      allowed = false;
+      const denied = await handleFetch(request);
+      expect(denied.status).toBe(403);
+      expect(authorizations).toBe(2);
+      await expect(denied.text()).resolves.toBe('denied');
+    }
+  });
+
+  it('preserves a caller that forbids storing the response', async () => {
+    const request = new Request(url('no-store'), { cache: 'no-store' });
+    const response = handleFetch(request);
+    expect(vi.mocked(fetch).mock.calls[0][1]?.cache).toBe('no-store');
+    resolvers[0](new Response('private media'));
+    await expect(text(response)).resolves.toBe('private media');
+  });
+
   it('keeps the newer request when the earlier entry expires', async () => {
     const first = handleFetch(url('c'));
     resolvers[0](new Response('old'));

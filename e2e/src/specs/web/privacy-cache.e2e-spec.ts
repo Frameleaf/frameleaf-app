@@ -8,14 +8,11 @@ import { asBearerAuth, baseUrl, utils } from 'src/utils.js';
  * another person signs in on the same browser, the same URL must go back to the server and be refused.
  */
 /** Fetches from inside the page, so the service worker and the browser's HTTP cache both apply. */
-const fetchStatus = (page: Page, url: string, cache: RequestCache = 'default') =>
-  page.evaluate(
-    async ([target, mode]) => {
-      const response = await fetch(target, { cache: mode });
-      return response.status;
-    },
-    [url, cache] as const,
-  );
+const fetchStatus = (page: Page, url: string) =>
+  page.evaluate(async (target) => {
+    const response = await fetch(target);
+    return response.status;
+  }, url);
 
 const thumbnail = (id: string) => `/api/assets/${id}/thumbnail`;
 const original = (id: string) => `/api/assets/${id}/original`;
@@ -76,16 +73,15 @@ test('revocation, Locking and a new sign-in are never answered from the browser 
     }
 
     // The owner stops sharing one item and Locks the other. The server now refuses both, and the
-    // service worker must not answer from the earlier response. (The browser's own HTTP cache keeps
-    // what the recipient already received; that is bypassed here to test the worker alone.)
+    // service worker must revalidate normal requests, including fresh browser HTTP-cache entries.
     await unshareItems(
       { itemShareChangeDto: { assetIds: [revoked.id], userIds: [recipient.userId] } },
       { headers: asBearerAuth(owner.accessToken) },
     );
     await lockAssets({ bulkIdsDto: { ids: [locked.id] } }, { headers: asBearerAuth(owner.accessToken) });
     for (const id of [revoked.id, locked.id]) {
-      expect(await fetchStatus(page, thumbnail(id), 'no-store')).not.toBe(200);
-      expect(await fetchStatus(page, original(id), 'no-store')).not.toBe(200);
+      expect(await fetchStatus(page, thumbnail(id))).not.toBe(200);
+      expect(await fetchStatus(page, original(id))).not.toBe(200);
     }
 
     // The recipient gets the first item back and loads it into the browser cache; then someone else
