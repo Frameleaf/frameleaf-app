@@ -1,9 +1,13 @@
 import { Kysely, Transaction, sql } from 'kysely';
 import { chunk } from 'lodash-es';
+import { createHash } from 'node:crypto';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { SyncAck } from 'src/types.js';
+import { mapPet, mapPetObservation } from 'src/dtos/pet.dto.js';
 import { SyncEntityType } from 'src/enum.js';
 import { lockPublicForkWrites } from 'src/repositories/fork-write-guard.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { PetRepository } from 'src/repositories/pet.repository.js';
 import { DB } from 'src/schema/index.js';
 import {
   getHiddenContentFilter,
@@ -12,17 +16,26 @@ import {
   withHiddenContentFilter,
 } from 'src/utils/database.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { getLockedOwnerId, notLockedOrOwnedBy } from 'src/utils/locked.js';
 import { toAck } from 'src/utils/sync.js';
 
-type Kind = 'tag' | 'assetTag';
-type Visible = { key: string; tagId: string; assetId: string | null; sourceId: string; data: Record<string, unknown> };
+type Kind = 'tag' | 'assetTag' | 'pet' | 'petObservation';
+type Visible = {
+  key: string;
+  entityId: string;
+  assetId: string | null;
+  sourceId: string;
+  data: Record<string, unknown>;
+};
 const types = {
   tag: { upsert: SyncEntityType.TagV1, delete: SyncEntityType.TagDeleteV1 },
   assetTag: { upsert: SyncEntityType.AssetTagV1, delete: SyncEntityType.AssetTagDeleteV1 },
+  pet: { upsert: SyncEntityType.PetV1, delete: SyncEntityType.PetDeleteV1 },
+  petObservation: { upsert: SyncEntityType.PetObservationV1, delete: SyncEntityType.PetObservationDeleteV1 },
 } as const;
 
-/** Only the additive tag types have delivery IDs. Existing sync cursors are untouched. */
+/** Only the additive tag/pet types have delivery IDs. Existing sync cursors are untouched. */
 export class TagSync {
   constructor(private db: Kysely<DB>) {}
 
@@ -34,8 +47,44 @@ export class TagSync {
     });
   }
 
-  private visible(db: Kysely<DB>, kind: Kind, auth: AuthDto, key?: string): Promise<Visible[]> {
+  private async visible(db: Kysely<DB>, kind: Kind, auth: AuthDto, key?: string): Promise<Visible[]> {
     const options = getHiddenContentQueryOptions(auth);
+    if (kind === 'pet' || kind === 'petObservation') {
+      const pets = new PetRepository(db, LoggingRepository.create());
+      const visiblePets = await pets.getAll(auth.user.id, {
+        withHidden: false,
+        forSync: true,
+        id: kind === 'pet' ? key : undefined,
+        ...options,
+        ...getLockedVisibilityOptions(auth),
+      });
+      if (kind === 'pet')
+        return visiblePets.map((pet) => {
+          const data = mapPet(pet);
+          const digest = createHash('sha256').update(JSON.stringify(data)).digest('hex').slice(0, 32);
+          const sourceId = `${digest.slice(0, 8)}-${digest.slice(8, 12)}-${digest.slice(12, 16)}-${digest.slice(16, 20)}-${digest.slice(20)}`;
+          return { key: pet.id, entityId: pet.id, assetId: null, sourceId, data: { ...data } };
+        });
+      if (visiblePets.length === 0) return [];
+      const observations = await pets.getObservations(
+        auth.user.id,
+        visiblePets.map((pet) => pet.id),
+        {
+          forSync: true,
+          observationId: key,
+          ...options,
+          ...getLockedVisibilityOptions(auth),
+        },
+      );
+      return observations.map((row) => ({
+        key: row.id,
+        entityId: row.petId,
+        assetId: row.assetId,
+        sourceId: row.updateId,
+        data: { ...mapPetObservation(row) },
+      }));
+    }
+
     const suppressed = options.hiddenContent?.tagIds ?? [];
     const tagVisible = sql<boolean>`(${tagHasVisibleAssetOrNoAssets(sql.ref('tag.id'), getHiddenContentFilter(options), { hideLocked: !getLockedOwnerId(auth) })}) and not ${tagIsSuppressed(sql.ref('tag.id'), suppressed)}`;
     if (kind === 'tag') {
@@ -44,7 +93,7 @@ export class TagSync {
         .where('tag.userId', '=', auth.user.id)
         .$if(!!key, (qb) => qb.where('tag.id', '=', key!))
         .where(tagVisible)
-        .select(['tag.id as key', 'tag.id as tagId', 'tag.updateId as sourceId'])
+        .select(['tag.id as key', 'tag.id as entityId', 'tag.updateId as sourceId'])
         .select([
           sql<null>`null`.as('assetId'),
           sql<
@@ -68,7 +117,7 @@ export class TagSync {
       .where(tagVisible)
       .where(notLockedOrOwnedBy(getLockedOwnerId(auth)))
       .$call((qb) => withHiddenContentFilter(qb, options))
-      .select(['tag_asset.tagId', 'tag_asset.assetId', 'tag_asset.updateId as sourceId'])
+      .select(['tag_asset.tagId as entityId', 'tag_asset.assetId', 'tag_asset.updateId as sourceId'])
       .select([
         sql<string>`tag_asset."tagId"::text || ':' || tag_asset."assetId"::text`.as('key'),
         sql<Record<string, unknown>>`jsonb_build_object('tagId', tag_asset."tagId", 'assetId', tag_asset."assetId")`.as(
@@ -135,7 +184,7 @@ export class TagSync {
               sessionId,
               kind,
               key: current.key,
-              tagId: current.tagId,
+              entityId: current.entityId,
               assetId: current.assetId,
               sourceId: current.sourceId,
               action: 'upsert' as const,
@@ -184,8 +233,12 @@ export class TagSync {
           state.action === 'upsert'
             ? current!.data
             : kind === 'tag'
-              ? { tagId: state.tagId }
-              : { tagId: state.tagId, assetId: state.assetId! },
+              ? { tagId: state.entityId }
+              : kind === 'assetTag'
+                ? { tagId: state.entityId, assetId: state.assetId! }
+                : kind === 'pet'
+                  ? { petId: state.entityId }
+                  : { observationId: state.key, petId: state.entityId, assetId: state.assetId! },
       };
     });
   }
@@ -257,6 +310,19 @@ export class TagSync {
         .deleteFrom('tag_asset_audit')
         .where('deletedAt', '<', sql<Date>`now() - ${days} * interval '1 day'`)
         .execute();
+      const { rows: petTables } = await sql<{
+        table: string | null;
+      }>`select to_regclass('public.pet_audit')::text as table`.execute(tx);
+      if (petTables[0]?.table) {
+        await tx
+          .deleteFrom('pet_audit')
+          .where('deletedAt', '<', sql<Date>`now() - ${days} * interval '1 day'`)
+          .execute();
+        await tx
+          .deleteFrom('pet_observation_audit')
+          .where('deletedAt', '<', sql<Date>`now() - ${days} * interval '1 day'`)
+          .execute();
+      }
     });
   }
 

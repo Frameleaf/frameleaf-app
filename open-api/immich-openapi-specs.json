@@ -85156,6 +85156,10 @@
       "SyncEntityType": {
         "description": "Sync entity type",
         "enum": [
+          "PetV1",
+          "PetDeleteV1",
+          "PetObservationV1",
+          "PetObservationDeleteV1",
           "TagV1",
           "TagDeleteV1",
           "AssetTagV1",
@@ -85511,6 +85515,50 @@
         ],
         "type": "object"
       },
+      "SyncPetDeleteV1": {
+        "properties": {
+          "petId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "petId"
+        ],
+        "type": "object"
+      },
+      "SyncPetObservationDeleteV1": {
+        "properties": {
+          "assetId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "observationId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "petId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "assetId",
+          "observationId",
+          "petId"
+        ],
+        "type": "object"
+      },
+      "SyncPetObservationV1": {
+        "$ref": "#/components/schemas/PetObservationResponseDto"
+      },
+      "SyncPetV1": {
+        "$ref": "#/components/schemas/PetResponseDto"
+      },
       "SyncPinnedCollectionsV1": {
         "properties": {
           "pins": {
@@ -85542,6 +85590,8 @@
       "SyncRequestType": {
         "description": "Sync request type",
         "enum": [
+          "PetsV1",
+          "PetObservationsV1",
           "TagsV1",
           "AssetTagsV1",
           "AlbumsV1",

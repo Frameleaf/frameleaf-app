@@ -1,6 +1,7 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 import { ExtraModel } from 'src/decorators.js';
+import { PetObservationResponseSchema, PetResponseSchema } from 'src/dtos/pet.dto.js';
 import { PinnedCollectionsResponseSchema } from 'src/dtos/pinned-collection.dto.js';
 import {
   AlbumUserRole,
@@ -480,6 +481,17 @@ class SyncResetV1 extends createZodDto(SyncResetV1Schema) {}
 @ExtraModel()
 class SyncCompleteV1 extends createZodDto(SyncCompleteV1Schema) {}
 
+@ExtraModel()
+class SyncPetV1 extends createZodDto(PetResponseSchema.meta({ id: 'SyncPetV1' })) {}
+@ExtraModel()
+class SyncPetDeleteV1 extends createZodDto(z.object({ petId: z.uuid() }).meta({ id: 'SyncPetDeleteV1' })) {}
+@ExtraModel()
+class SyncPetObservationV1 extends createZodDto(PetObservationResponseSchema.meta({ id: 'SyncPetObservationV1' })) {}
+@ExtraModel()
+class SyncPetObservationDeleteV1 extends createZodDto(
+  z.object({ observationId: z.uuid(), petId: z.uuid(), assetId: z.uuid() }).meta({ id: 'SyncPetObservationDeleteV1' }),
+) {}
+
 const SyncTagV1Schema = z
   .object({
     id: z.uuid(),
@@ -503,6 +515,10 @@ class SyncAssetTagV1 extends createZodDto(SyncAssetTagV1Schema) {}
 class SyncAssetTagDeleteV1 extends createZodDto(SyncAssetTagV1Schema.meta({ id: 'SyncAssetTagDeleteV1' })) {}
 
 export type SyncItem = {
+  [SyncEntityType.PetV1]: SyncPetV1;
+  [SyncEntityType.PetDeleteV1]: SyncPetDeleteV1;
+  [SyncEntityType.PetObservationV1]: SyncPetObservationV1;
+  [SyncEntityType.PetObservationDeleteV1]: SyncPetObservationDeleteV1;
   [SyncEntityType.TagV1]: SyncTagV1;
   [SyncEntityType.TagDeleteV1]: SyncTagDeleteV1;
   [SyncEntityType.AssetTagV1]: SyncAssetTagV1;
