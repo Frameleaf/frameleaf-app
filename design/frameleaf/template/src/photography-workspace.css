@@ -129,6 +129,11 @@
   padding: 3px 0;
   font-size: 11px;
 }
+.frameleaf:is([data-screen="photography"], [data-screen="photography-editor"])
+  > .topbar
+  > .mobile-menu {
+  display: none;
+}
 .phw-workspace {
   flex: 1;
   min-width: 0;
@@ -1025,7 +1030,7 @@
 .phw-site-strip {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
+  gap: var(--phw-site-gap, 10px);
   margin: 0 22px;
 }
 .phw-site-strip img {
@@ -1705,7 +1710,7 @@
   }
   .phw-site-strip {
     margin: 0 15px;
-    gap: 7px;
+    gap: var(--phw-site-gap, 7px);
   }
   .phw-site-about {
     padding: 20px 15px;
