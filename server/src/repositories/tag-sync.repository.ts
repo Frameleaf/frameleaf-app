@@ -41,6 +41,11 @@ type Kind =
   | 'partnerAsset';
 type ReadPins = () => Promise<PinnedCollectionsResponseDto>;
 const orderedKinds = new Set<Kind>([
+  'tag',
+  'assetTag',
+  'pet',
+  'petObservation',
+  'spaceMember',
   'space',
   'duplicate',
   'pin',
@@ -63,7 +68,8 @@ type Visible = {
   sourceId: string;
   data: Record<string, unknown>;
 };
-const sequenced = (kind: Kind) => ['space', 'spaceAlbum', 'spacePerson'].includes(kind);
+const sequenced = (kind: Kind) =>
+  ['space', 'spaceAlbum', 'spacePerson', 'tag', 'assetTag', 'pet', 'petObservation', 'spaceMember'].includes(kind);
 const types = {
   albumAsset: { upsert: SyncEntityType.AlbumAssetAccessV1, delete: SyncEntityType.AlbumAssetAccessDeleteV1 },
   partnerAsset: { upsert: SyncEntityType.PartnerAssetAccessV1, delete: SyncEntityType.PartnerAssetAccessDeleteV1 },
@@ -445,7 +451,18 @@ export class TagSync {
                 ? sql`(select link."createdAt" from shared_space_album link where link."albumId"::text || ':' || link."linkedAlbumId"::text = session_tag_sync_state.key) desc nulls last`
                 : kind === 'spacePerson'
                   ? sql`(select link."createdAt" from shared_space_person link where link.id::text = session_tag_sync_state.key) desc nulls last`
-                  : sql`(select album."createdAt" from album where album.id = session_tag_sync_state."entityId") desc nulls last`,
+                  : kind === 'tag'
+                    ? sql`(select tag."createdAt" from tag where tag.id = session_tag_sync_state."entityId") desc nulls last`
+                    : kind === 'assetTag'
+                      ? // Associations have no creation timestamp; their persisted v7 source ID is chronological.
+                        sql`(select tag_asset."updateId" from tag_asset where tag_asset."tagId" = session_tag_sync_state."entityId" and tag_asset."assetId" = session_tag_sync_state."assetId") desc nulls last`
+                      : kind === 'pet'
+                        ? sql`(select pet."createdAt" from pet where pet.id = session_tag_sync_state."entityId") desc nulls last`
+                        : kind === 'petObservation'
+                          ? sql`(select pet_observation."createdAt" from pet_observation where pet_observation.id = session_tag_sync_state.key::uuid) desc nulls last`
+                          : kind === 'spaceMember'
+                            ? sql`(select album_user."createdAt" from album_user where album_user."albumId" = session_tag_sync_state."entityId" and album_user."userId" = split_part(session_tag_sync_state.key, ':', 2)::uuid) desc nulls last`
+                            : sql`(select album."createdAt" from album where album.id = session_tag_sync_state."entityId") desc nulls last`,
             )
             .orderBy('key', 'desc'),
         )
