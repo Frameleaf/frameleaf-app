@@ -66,6 +66,11 @@ vi.mock('@/infrastructure/storage/handles-db', () => ({
  * - `save` and `reopen`: the edited graph is stored and reopened through Freecut's own
  *   persistence, and reopening it again changes nothing.
  * - `unknown-fields`: fields the engine does not know, on the project and on an item, survive.
+ * - `normal`: the canonical payload applies and changes the graph.
+ * - `invalid`: the same payload made impossible (ids that name nothing, times with no exact
+ *   reading, NaN numbers, wrong-typed names) is refused as `invalid`, the refusal is settled, and
+ *   nothing changes. Commands outside the engine table are measured at the envelope instead: a
+ *   malformed envelope naming them is refused as `invalid` before any gate.
  *
  * The same run measures five FL-112 `authorizationFailure` scenarios per engine command, written to
  * AUTHORIZATION_FAILURE_REPORT in the same shape:
@@ -439,6 +444,72 @@ async function gateCases(id: StudioCommandId, fixture: Project, payload: Record<
   return cases
 }
 
+/**
+ * The canonical payload with what it points at made impossible: every id names nothing in the
+ * graph, every time has no exact reading, every count and name is the wrong type. An engine
+ * command must refuse it by name (`invalid`) rather than guess.
+ */
+const invalidPayload = (value: unknown): unknown => {
+  if (Array.isArray(value)) return value.map(invalidPayload)
+  if (!value || typeof value !== 'object') return value
+  const entries = Object.entries(value as Record<string, unknown>)
+  if (entries.length === 2 && 'num' in (value as object) && 'den' in (value as object)) return { num: 1, den: 0 }
+  return Object.fromEntries(
+    entries.map(([key, field]) => {
+      if (typeof field === 'string' && /id$|Id$|Ids$/.test(key)) return [key, `missing-${key}`]
+      if (Array.isArray(field) && /Ids$/.test(key)) return [key, field.map(() => `missing-${key}`)]
+      if (typeof field === 'number') return [key, Number.NaN]
+      if (typeof field === 'string' && (key === 'kind' || key === 'text' || key === 'name' || key === 'effect'))
+        return [key, { not: 'a string' }]
+      return [key, invalidPayload(field)]
+    }),
+  )
+}
+
+/**
+ * `normal` and `invalid` input for one engine command. `normal`: the canonical payload applies and
+ * changes the graph. `invalid`: the impossible payload is refused as `invalid`, the refusal is
+ * settled (a retry answers the same without reaching the engine), and nothing changes.
+ */
+async function inputCases(id: StudioCommandId, start: Project, payload: Record<string, unknown>): Promise<CaseResult[]> {
+  const before = canonicalJson(start)
+  const s = session(start)
+  const applied = await s.submit(s.envelope(id, payload))
+  const normal = check(
+    'normal',
+    applied?.status === 'accepted' && canonicalJson(s.state.graph) !== before,
+    `the canonical payload answered ${JSON.stringify(applied)}, or changed nothing`,
+  )
+  const t = session(start)
+  const envelope = t.envelope(id, invalidPayload(payload) as Record<string, unknown>)
+  const refused = await t.submit(envelope)
+  const calls = t.state.engineCalls
+  const again = await t.submit(envelope)
+  const invalid = check(
+    'invalid',
+    rejectedAs(refused, 'invalid') &&
+      JSON.stringify(again) === JSON.stringify(refused) &&
+      t.state.engineCalls === calls &&
+      canonicalJson(t.state.graph) === before &&
+      t.history.depth.undo === 0,
+    `an impossible payload ${JSON.stringify(envelope.payload)} answered ${JSON.stringify(refused)}, or something changed`,
+  )
+  return [normal, invalid]
+}
+
+/** `invalid` at the envelope, for a command outside the engine table: a payload that is not an object. */
+async function malformedEnvelope(id: StudioCommandId, graph: Project): Promise<CaseResult> {
+  const s = session(graph)
+  const before = canonicalJson(s.state.graph)
+  const malformed = { ...s.envelope(id, {}), payload: 'not a payload' } as unknown as StudioCommandEnvelope
+  const result = await s.submit(malformed)
+  return check(
+    'invalid',
+    rejectedAs(result, 'invalid') && canonicalJson(s.state.graph) === before,
+    `a malformed ${id} envelope answered ${JSON.stringify(result)}`,
+  )
+}
+
 /** The five `authorizationFailure` scenarios for one engine command (see the header). */
 async function authorizationFailureCases(
   id: StudioCommandId,
@@ -628,7 +699,7 @@ describe('FL-112 command and graph matrix, on the real command path', () => {
     const fixture = await buildFixture()
     const { payload, graph } = ENGINE_CASES[id](fixture)
     const start = graph ? await graph() : fixture.graph
-    const cases = await gateCases(id, start, payload)
+    const cases = [...(await gateCases(id, start, payload)), ...(await inputCases(id, start, payload))]
 
     // Idempotence: the same envelope twice answers the same and applies once.
     const live = session(start)
@@ -720,7 +791,10 @@ describe('FL-112 command and graph matrix, on the real command path', () => {
     const failed = cases.filter((entry) => entry.result === 'failed')
     // music.add is refused on purpose: the music catalogue is rights-blocked (FL-86).
     if (id === 'music.add') {
-      expect(failed.map((entry) => entry.case).sort()).toEqual(['idempotence', 'reopen', 'save', 'undo', 'unknown-fields'].sort())
+      // Refused before its payload is read, so an impossible payload is refused as `failed` too.
+      expect(failed.map((entry) => entry.case).sort()).toEqual(
+        ['idempotence', 'invalid', 'normal', 'reopen', 'save', 'undo', 'unknown-fields'].sort(),
+      )
     } else {
       expect(failed).toEqual([])
     }
@@ -736,6 +810,7 @@ describe('FL-112 command and graph matrix, on the real command path', () => {
       // bundles, restoration) or not at all (a typed extension point it rejects as
       // `not-implemented`); this matrix measures only the shared gate for them.
       const implementedBy = HOST_SERVICE_COMMANDS.has(id) ? 'host-service' : 'none'
+      cases.push(await malformedEnvelope(id, fixture.graph))
       report.commands.push({ id, manifestIds: manifestIdsOf(id), implementedBy, cases })
       expect(cases.filter((entry) => entry.result === 'failed')).toEqual([])
       const unsupported = await unsupportedAtGate(id, fixture.graph, implementedBy)
