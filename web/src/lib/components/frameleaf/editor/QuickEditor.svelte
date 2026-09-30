@@ -110,6 +110,7 @@
     AssetMediaSize,
     cancelAssetDevelopRender,
     getAssetDevelop,
+    isHttpError,
     renderAssetDevelopRevision,
     revertAssetDevelop,
     saveAssetDevelop,
@@ -223,6 +224,7 @@
 
   /* Server state --------------------------------------------------------- */
   let develop = $state<AssetDevelopResponseDto | null>(null);
+  let sourceRevisionId = $state<string | undefined>();
   let developError = $state<string | null>(null);
   let saving = $state(false);
   let stopFollowing: (() => void) | undefined;
@@ -265,8 +267,9 @@
     }
     try {
       develop = await getAssetDevelop({ id: asset.id });
+      sourceRevisionId = develop.currentRevisionId ?? undefined;
       const start = openingRecipe(develop);
-      draft = rebaseDraft(draft, start);
+      draft = rebaseDraft(draft, start, false);
       opened = start;
       // FL-113: back from Studio (or a reload) with the draft the person left, when it was built on
       // the version the editor has now (App.jsx keeps one edit across the editor and Studio).
@@ -275,7 +278,7 @@
         continuityBase({ ownerId: asset.ownerId, edit: start }),
       );
       if (resumed.status === 'resumed') {
-        draft = { ...resumed.draft, recipe: normalizeRecipe(resumed.draft.recipe) };
+        draft = { ...resumed.draft, recipe: normalizeRecipe(resumed.draft.recipe, false) };
         // A draft left on the earlier Restore tool resumes on Enhance, where restoration now lives.
         const resumedTool = resumed.tool === 'restore' ? 'enhance' : resumed.tool;
         if (tools.some((item) => item.id === resumedTool) || resumedTool === 'versions' || resumedTool === 'masks') {
@@ -670,7 +673,10 @@
     onClose(saveChangedCurrent);
     void goto(Route.studio({ assetIds: [asset.id], returnTo: asset.id }));
   };
-  const revertDraft = () => change(initialRecipe());
+  const revertDraft = () => {
+    sourceRevisionId = undefined;
+    change({ ...initialRecipe(), opaqueRecipe: undefined });
+  };
   const copySettings = () => {
     settingsClipboard = pickSettings(recipe);
     toastManager.primary($t('frameleaf_editor_settings_copied'));
@@ -688,21 +694,51 @@
     }
     saving = true;
     try {
-      const revision = await saveAssetDevelop({
+      // The editor sends its complete lossless snapshot. Replacement makes deliberate mask
+      // removal and Original reset explicit; the named source is independently owner-checked.
+      const request = {
         id: asset.id,
-        assetDevelopSaveDto: { recipe: toServerRecipe(recipe), render: true },
-      });
+        assetDevelopSaveDto: {
+          recipe: toServerRecipe(recipe),
+          render: true,
+          replaceRecipe: true,
+          ...(sourceRevisionId && { sourceRevisionId }),
+        },
+      };
+      let saveOnly = false;
+      let revision: AssetDevelopRevisionResponseDto;
+      try {
+        revision = await saveAssetDevelop(request);
+      } catch (error) {
+        if (
+          !isHttpError(error) ||
+          error.status !== 400 ||
+          (error.data as { code?: unknown } | undefined)?.code !== 'develop_renderer_unsupported'
+        ) {
+          throw error;
+        }
+        // Only this pre-write server refusal permits retry. All other failures remain failures.
+        revision = await saveAssetDevelop({
+          ...request,
+          assetDevelopSaveDto: { ...request.assetDevelopSaveDto, render: false },
+        });
+        saveOnly = true;
+      }
       develop = {
         assetId: asset.id,
         currentRevisionId: develop?.currentRevisionId ?? null,
         revisions: [revision, ...(develop?.revisions ?? []).filter((item) => item.id !== revision.id)],
       };
-      opened = normalizeRecipe(recipe);
+      opened = normalizeRecipe(recipe, false);
       draftReady = false;
       clearEditorContinuity(asset.id);
-      announce = $t('frameleaf_editor_version_queued', { values: { revision: revision.revision } });
+      announce = saveOnly
+        ? $t('frameleaf_editor_version_saved_newer_renderer')
+        : $t('frameleaf_editor_version_queued', { values: { revision: revision.revision } });
       toastManager.primary(announce);
-      followAfterClose(revision.id);
+      if (!saveOnly) {
+        followAfterClose(revision.id);
+      }
       onClose(saveChangedCurrent);
     } catch (error) {
       handleError(error, $t('frameleaf_editor_save_error'));
@@ -791,7 +827,8 @@
     }
   };
   const loadRevision = (revision: AssetDevelopRevisionResponseDto | null) => {
-    change(revision ? normalizeRecipe(revision.recipe) : initialRecipe());
+    sourceRevisionId = revision?.id;
+    change(revision ? normalizeRecipe(revision.recipe) : { ...initialRecipe(), opaqueRecipe: undefined });
     if (tool === 'versions') {
       tool = 'adjust';
     }

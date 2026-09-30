@@ -132,3 +132,73 @@ describe('rebaseDraft', () => {
     expect(draft.undo[0].contrast).toBe(40);
   });
 });
+
+it('carries future recipe and nested opaque data through edits and undo/redo (FL-233)', () => {
+  const recipe = {
+    version: 2,
+    contrast: 12,
+    future: { operations: [{ method: 'remove', fill: 'opaque' }] },
+    crop: { x: 0, y: 0, w: 1, h: 1, future: 'retained' },
+  };
+  const draft = changeDraft(createDraft(recipe), { contrast: 25 });
+  const result = toServerRecipe(redoDraft(undoDraft(draft)).recipe);
+  expect(result).toMatchObject({ ...recipe, contrast: 25 });
+});
+
+it('keeps unknown properties nested in masks and adjustments through known edits/history/save', () => {
+  const recipe = {
+    version: 1,
+    masks: [
+      {
+        id: 'a',
+        kind: 'radial',
+        x: 0.5,
+        y: 0.5,
+        future: { bitmap: 'opaque' },
+        adjustments: { exposure: 0, future: 12 },
+      },
+      { id: 'future', kind: 'subject', bitmap: { hash: 'abc' } },
+    ],
+  };
+  const draft = changeDraft(createDraft(recipe), { contrast: 25 });
+  const saved = toServerRecipe(redoDraft(undoDraft(draft)).recipe);
+  expect(saved.masks).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        id: 'a',
+        future: { bitmap: 'opaque' },
+        adjustments: expect.objectContaining({ future: 12 }),
+      }),
+      recipe.masks[1],
+    ]),
+  );
+});
+it('does not replace untouched future meanings with the current UI projection defaults', () => {
+  const recipe = {
+    version: 2,
+    contrast: { curve: [0, 1] },
+    crop: { mesh: [1, 2] },
+    future: { operations: ['opaque'] },
+  };
+  expect(toServerRecipe(createDraft(recipe).recipe)).toEqual(recipe);
+  expect(toServerRecipe(createDraft().recipe)).not.toHaveProperty('future');
+});
+
+it('preserves wire keys that collide with client-only bookkeeping through load/history/save', () => {
+  const recipe = { version: 1, aspect: { future: 'wire data' }, opaqueRecipe: { version: 88, future: 'wire data' } };
+  const edited = changeDraft(createDraft(recipe), { contrast: 12 });
+  expect(toServerRecipe(redoDraft(undoDraft(edited)).recipe)).toMatchObject(recipe);
+});
+
+it('replays early known edits on loaded opaque data instead of replacing the loaded envelope', () => {
+  const early = changeDraft(createDraft(), { contrast: 25 });
+  const loaded = { version: 1, future: { fill: 'opaque' } };
+  expect(toServerRecipe(rebaseDraft(early, loaded).recipe)).toMatchObject({ ...loaded, contrast: 25 });
+});
+
+it('explicit new-original reset removes inherited opaque data and undo restores it', () => {
+  const loaded = createDraft({ version: 1, future: { fill: 'opaque' } });
+  const reset = changeDraft(loaded, { ...initialRecipe(), opaqueRecipe: undefined });
+  expect(toServerRecipe(reset.recipe)).not.toHaveProperty('future');
+  expect(toServerRecipe(undoDraft(reset).recipe)).toHaveProperty('future');
+});

@@ -11,7 +11,6 @@ import {
   ASSET_DEVELOP_RECIPE_VERSION,
   AssetDevelopFileKind,
   AssetDevelopPreviewDto,
-  type AssetDevelopRecipe,
   AssetDevelopResponseDto,
   AssetDevelopRevertDto,
   AssetDevelopRevisionKind,
@@ -50,6 +49,7 @@ import { SystemMetadataRepository } from 'src/repositories/system-metadata.repos
 import { requireAccess } from 'src/utils/access.js';
 import { getConfig } from 'src/utils/config.js';
 import { asDateTimeString } from 'src/utils/date.js';
+import { developEnvelope, renderDevelopProjection } from 'src/utils/develop-envelope.js';
 import {
   DEVELOP_RENDERER_VERSION,
   applyDevelopMasks,
@@ -57,7 +57,6 @@ import {
   defaultDevelopRecipe,
   effectiveDevelop,
   maskMappingFor,
-  normalizeDevelopRecipe,
   planDevelopDetail,
   planDevelopGeometry,
 } from 'src/utils/develop-recipe.js';
@@ -140,12 +139,16 @@ export class AssetDevelopService {
   async save(auth: AuthDto, assetId: string, dto: AssetDevelopSaveDto): Promise<AssetDevelopRevisionResponseDto> {
     await requireAccess(this.accessRepository, { auth, permission: Permission.AssetEditCreate, ids: [assetId] });
     const asset = await this.requireEditableStill(assetId);
-    const recipe = normalizeDevelopRecipe(dto.recipe);
+    const recipe = developEnvelope(dto.recipe);
+    if (dto.render && !dto.sourceRevisionId) renderDevelopProjection(recipe);
     const revision = await this.assetDevelopRepository.create({
       assetId,
       ownerId: asset.ownerId,
       recipe,
-      recipeVersion: ASSET_DEVELOP_RECIPE_VERSION,
+      recipeVersion: recipe.version,
+      sourceRevisionId: dto.sourceRevisionId,
+      replaceRecipe: dto.replaceRecipe,
+      requireRenderable: dto.render,
       label: dto.label ?? null,
       status: AssetDevelopRevisionStatus.Saved,
     });
@@ -159,6 +162,7 @@ export class AssetDevelopService {
     await requireAccess(this.accessRepository, { auth, permission: Permission.AssetEditCreate, ids: [assetId] });
     const asset = await this.requireEditableStill(assetId);
     const revision = await this.requireRevision(assetId, revisionId);
+    if (revision.kind === AssetDevelopRevisionKind.Recipe) renderDevelopProjection(revision.recipe);
     if (
       revision.status === AssetDevelopRevisionStatus.Queued ||
       revision.status === AssetDevelopRevisionStatus.Rendering
@@ -222,7 +226,7 @@ export class AssetDevelopService {
       throw new BadRequestException('Only images have develop previews');
     }
     const { image } = await this.getConfig();
-    const recipe = normalizeDevelopRecipe(dto.recipe);
+    const recipe = renderDevelopProjection(dto.recipe);
     // Decode at roughly preview scale so an interactive request never touches the full frame.
     const decoded = await this.decodeSource(source, image, dto.size * 2);
     const rendered = await this.renderRecipe(decoded, recipe, 0);
@@ -361,9 +365,9 @@ export class AssetDevelopService {
         return JobStatus.Skipped;
       }
       const message = (error instanceof Error ? error.message : String(error)).slice(0, 500);
-      const permanent = error instanceof DevelopSourceChanged;
+      const permanent = error instanceof DevelopSourceChanged || error instanceof BadRequestException;
       if (run) {
-        return this.failTracked(run, revision, message, permanent);
+        return this.failTracked(run, revision, message, permanent, error instanceof DevelopSourceChanged);
       }
       if (!permanent && revision.attempts <= MEDIA_OPERATION_AUTO_RETRIES) {
         this.logger.warn(`Develop render of revision ${id} failed, retrying once: ${message}`);
@@ -399,9 +403,10 @@ export class AssetDevelopService {
     revision: AssetDevelopRevision,
     message: string,
     permanent: boolean,
+    sourceChanged: boolean,
   ): Promise<JobStatus> {
     const id = revision.id;
-    const outcome = await run.fail(message, permanent ? 'source_changed' : 'edit_render_failed', {
+    const outcome = await run.fail(message, sourceChanged ? 'source_changed' : 'edit_render_failed', {
       retry: !permanent,
     });
     if (outcome === 'retrying') {
@@ -451,7 +456,23 @@ export class AssetDevelopService {
     const unfinished = await this.assetDevelopRepository.listUnfinished();
     const claimable = unfinished.filter((revision) => this.isClaimable(revision));
     const tracked = await this.mediaOperationRepository.getTrackedRevisionIds(claimable.map(({ id }) => id));
-    const lost = claimable.filter(({ id }) => !tracked.has(id));
+    const lost = [];
+    for (const revision of claimable) {
+      if (tracked.has(revision.id)) continue;
+      if (revision.kind === AssetDevelopRevisionKind.Recipe) {
+        try {
+          renderDevelopProjection(revision.recipe);
+        } catch (error) {
+          if (!(error instanceof BadRequestException)) throw error;
+          await this.assetDevelopRepository.update(revision.id, {
+            status: AssetDevelopRevisionStatus.Failed,
+            error: error.message,
+          });
+          continue;
+        }
+      }
+      lost.push(revision);
+    }
     if (lost.length === 0) {
       return;
     }
@@ -613,6 +634,7 @@ export class AssetDevelopService {
   }
 
   private async queueRender(revision: AssetDevelopRevision, label: string): Promise<AssetDevelopRevisionResponseDto> {
+    if (revision.kind === AssetDevelopRevisionKind.Recipe) renderDevelopProjection(revision.recipe);
     // A person asking for a render starts afresh: it gets its own automatic retry.
     const queued = await this.assetDevelopRepository.update(revision.id, {
       status: AssetDevelopRevisionStatus.Queued,
@@ -706,7 +728,11 @@ export class AssetDevelopService {
     return { data, info: info as RawImageInfo, colorspace };
   }
 
-  private async renderRecipe(decoded: { data: Buffer; info: RawImageInfo }, recipe: AssetDevelopRecipe, seed: number) {
+  private async renderRecipe(
+    decoded: { data: Buffer; info: RawImageInfo },
+    recipe: ReturnType<typeof renderDevelopProjection>,
+    seed: number,
+  ) {
     const geometry = planDevelopGeometry(recipe, decoded.info.width, decoded.info.height);
     const shaped = await this.mediaRepository.renderDevelopGeometry(decoded.data, decoded.info, geometry);
     const { params, look } = effectiveDevelop(recipe);
@@ -750,7 +776,7 @@ export class AssetDevelopService {
     tmp: { master: string; preview: string },
     image: SystemConfig['image'],
   ) {
-    const recipe = normalizeDevelopRecipe(revision.recipe);
+    const recipe = renderDevelopProjection(revision.recipe);
     const decoded = await this.decodeSource(source, image);
     await this.progress(revision.id, 25);
 
@@ -931,7 +957,7 @@ export class AssetDevelopService {
       status: revision.status,
       progress: revision.progress,
       error: revision.error,
-      recipe: normalizeDevelopRecipe(revision.recipe),
+      recipe: developEnvelope(revision.recipe),
       kind: revision.kind ?? AssetDevelopRevisionKind.Recipe,
       sourceChecksum: revision.sourceChecksum ? revision.sourceChecksum.toString('hex') : null,
       renditionChecksum: revision.renditionChecksum ? revision.renditionChecksum.toString('hex') : null,

@@ -161,10 +161,20 @@ export function masksToSource(
  */
 export const tonePreviewRecipe = (recipe: AssetDevelopRecipeDto): AssetDevelopRecipeDto => ({
   ...toneOnlyRecipe(recipe),
-  masks: masksToSource(normalizeMasks(recipe.masks), {
-    rotation: recipe.rotation ?? 0,
-    flipHorizontal: !!recipe.flipHorizontal,
-    flipVertical: !!recipe.flipVertical,
+  masks: (Array.isArray(recipe.masks) ? recipe.masks : []).map((raw: Record<string, unknown>) => {
+    const known = normalizeMasks([raw]);
+    if (known.length === 0) {
+      return raw;
+    }
+    return {
+      ...raw,
+      ...masksToSource(known, {
+        rotation: typeof recipe.rotation === 'number' ? recipe.rotation : 0,
+        flipHorizontal: !!recipe.flipHorizontal,
+        flipVertical: !!recipe.flipVertical,
+      })[0],
+      adjustments: { ...(raw.adjustments as object), ...known[0].adjustments },
+    };
   }),
 });
 

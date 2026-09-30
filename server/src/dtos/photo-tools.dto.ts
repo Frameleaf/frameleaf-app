@@ -1,6 +1,6 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
-import { AssetDevelopRecipeSchema } from 'src/dtos/asset-develop.dto.js';
+import { KnownAssetDevelopRecipeSchema } from 'src/dtos/asset-develop.dto.js';
 import { ApiCustomExtension } from 'src/enum.js';
 
 /**
@@ -16,7 +16,7 @@ export const DEVELOP_PRESET_MAX = 200;
  * masks. Geometry (crop, straighten, turns, flips) is never part of a preset, exactly like Copy
  * and Paste adjustments, so applying one never reframes a photo.
  */
-export const DevelopPresetSettingsSchema = AssetDevelopRecipeSchema.pick({
+export const DevelopPresetSettingsSchema = KnownAssetDevelopRecipeSchema.pick({
   exposure: true,
   contrast: true,
   highlights: true,
