@@ -60,7 +60,7 @@ export class AssetEditRepository {
     edits: AssetEditActionItem[],
     purpose: 'save' | 'revert' = 'save',
   ): Promise<AssetEditActionItemResponseDto[]> {
-    return this.db.transaction().execute(async (trx) => {
+    const execute = async (trx: Transaction<DB>) => {
       // Only video edits are versioned; a photo edit never waits on the fork schema's write phase.
       const target = await trx.selectFrom('asset').select('type').where('id', '=', assetId).executeTakeFirst();
       if (target?.type === AssetType.Video) {
@@ -77,7 +77,8 @@ export class AssetEditRepository {
       }
 
       return [];
-    });
+    };
+    return this.db.isTransaction ? execute(this.db as Transaction<DB>) : this.db.transaction().execute(execute);
   }
 
   private async lockVersionWrites(db: Kysely<DB>) {

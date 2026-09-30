@@ -343,7 +343,7 @@ export class TagRepository {
   @GenerateSql({ params: [DummyValue.UUID, [DummyValue.UUID]] })
   @Chunked({ paramIndex: 1 })
   replaceAssetTags(assetId: string, tagIds: string[]) {
-    return this.db.transaction().execute(async (tx) => {
+    const execute = async (tx: Kysely<DB>) => {
       await tx.deleteFrom('tag_asset').where('assetId', '=', assetId).execute();
 
       if (tagIds.length === 0) {
@@ -356,7 +356,8 @@ export class TagRepository {
         .onConflict((oc) => oc.doNothing())
         .returningAll()
         .execute();
-    });
+    };
+    return this.db.isTransaction ? execute(this.db) : this.db.transaction().execute(execute);
   }
 
   async deleteEmptyTags() {

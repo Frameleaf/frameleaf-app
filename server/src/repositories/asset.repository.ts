@@ -862,7 +862,7 @@ export class AssetRepository {
       }
       return result;
     };
-    return kysely ? execute(kysely) : this.db.transaction().execute(execute);
+    return kysely ? execute(kysely) : this.inTransaction(execute);
   }
 
   @ChunkedArray({ chunkSize: 4000 })

@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { CronTime } from 'cron';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { basename, join } from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -19,6 +19,7 @@ import type {
   OwnerBackupsResponseDto,
 } from 'src/dtos/cloud-backup-owner.dto.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
+import type { OwnerRestoreDetailsContext } from 'src/services/cloud-backup-details.service.js';
 import type {
   CloudBackupKeyMode,
   FrameleafCloudBackup,
@@ -50,6 +51,8 @@ import {
 } from 'src/dtos/cloud-backup.dto.js';
 import { SystemConfig } from 'src/dtos/config.dto.js';
 import {
+  AssetStatus,
+  ChecksumAlgorithm,
   DatabaseLock,
   ImmichWorker,
   JobName,
@@ -64,6 +67,7 @@ import {
   StorageFolder,
   SystemMetadataKey,
 } from 'src/enum.js';
+import { AssetRepository } from 'src/repositories/asset.repository.js';
 import {
   CloudBackupAsset,
   CloudBackupEntry,
@@ -98,6 +102,7 @@ import {
   MediaOperationRepository,
   type MediaOperationWriteState,
 } from 'src/repositories/media-operation.repository.js';
+import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
@@ -123,6 +128,11 @@ import {
 } from 'src/services/cloud-backup-restore.js';
 import { DatabaseBackupService } from 'src/services/database-backup.service.js';
 import { escrowPassphraseProblem, unwrapBucketKey, wrapBucketKey } from 'src/utils/cloud-backup-escrow.js';
+import {
+  assertOwnerRestoreFile,
+  assertOwnerRestorePath,
+  captureOwnerRestoreFile,
+} from 'src/utils/cloud-backup-owner-path.js';
 import { ownerBackupHistoryPage, ownerThumbnail } from 'src/utils/cloud-backup-owner.js';
 import { manifestTime, readManifest, verificationDue } from 'src/utils/cloud-backup-retention.js';
 import {
@@ -166,6 +176,7 @@ import {
 } from 'src/utils/frameleaf-cloud-gateway.js';
 import { FrameleafCloudError, errorEnvelopeSchema, pausedException } from 'src/utils/frameleaf-cloud.js';
 import { handlePromiseError } from 'src/utils/misc.js';
+import { canonicalJson } from 'src/utils/object.js';
 
 const KIND = MediaOperationKind.CloudBackup;
 /** FL-164: a restore uses the bucket too, so it never runs beside a backup operation, nor they beside it. */
@@ -2166,8 +2177,12 @@ export class CloudBackupService {
   /** A verification, a clean-up or a restore failed: after its automatic retry, the administrators hear why. */
   private async failTask(operation: MediaOperation, claimToken: string, error: unknown, what: string) {
     // a file system error names its path: shown to administrators, it names it below the media folder only
-    const message = maskMediaPath(errorMessage(error));
-    this.logger.error(`${what} ${operation.id} failed: ${message}`);
+    const diagnostic = maskMediaPath(errorMessage(error));
+    this.logger.error(`${what} ${operation.id} failed: ${diagnostic}`);
+    const message =
+      operation.kind === RESTORE_KIND && (operation.snapshot as CloudBackupRestoreSnapshot).owner
+        ? 'The owner backup restore stopped. Already restored work is retained; check access and backup availability.'
+        : diagnostic;
     const outcome = await this.operations.fail(operation.id, claimToken, {
       error: message,
       errorCode: operation.kind === RESTORE_KIND ? 'cloud_restore_failed' : `cloud_backup_${taskOf(operation)}_failed`,
@@ -2340,6 +2355,10 @@ export class CloudBackupService {
         return;
       }
       const manifest = readManifest(await this.store.get(opened.connection, snapshot.manifestKey, opened.bucketKey));
+      if (snapshot.owner) {
+        const { auth } = await this.index.getOwnerRestoreAuth(snapshot.owner);
+        await this.checkOwnerRestoreItems(auth, manifest, snapshot, true);
+      }
       const inPlace = IN_PLACE_SCOPES.has(snapshot.scope);
       const library = inPlace
         ? await this.libraryState(snapshot.assetIds ?? Object.keys(manifest.assets))
@@ -2356,6 +2375,10 @@ export class CloudBackupService {
         mediaLocation,
         currentOriginals,
       });
+      if (snapshot.owner) {
+        plan.files = plan.files.filter((file) => file.role === 'original' || file.role === 'sidecar');
+        if (plan.files.some((file) => !file.inPlace)) throw new Error('Owner restore destination unavailable');
+      }
       if (snapshot.assetIds && plan.files.length === 0 && snapshot.scope !== 'album') {
         throw new Error('This backup does not hold the chosen items.');
       }
@@ -2374,7 +2397,17 @@ export class CloudBackupService {
           stop = await this.checkpointTask(operation, claimToken, current, restoreUnits(current));
           return stop === 'continue';
         },
-        library: (current) => this.restoreLibrary(manifest, snapshot, plan.files, library, current),
+        ...(snapshot.owner && {
+          publish: (
+            file: CloudBackupRestoreFile,
+            _staged: string,
+            publish: () => Promise<'written' | 'skipped' | 'replaced'>,
+          ) => this.withOwnerRestoreFile(operation, claimToken, manifest, snapshot, file, publish),
+        }),
+        library: (current) =>
+          snapshot.owner
+            ? this.restoreOwnerLibrary(operation, claimToken, manifest, snapshot, plan.files, current)
+            : this.restoreLibrary(manifest, snapshot, plan.files, library, current),
       });
       if (done) {
         result = done;
@@ -2392,6 +2425,21 @@ export class CloudBackupService {
         await this.jobRepository.queueAll(
           regenerate.map((assetId) => ({ name: JobName.AssetGenerateThumbnails, data: { id: assetId } })),
         );
+      }
+      if (snapshot.owner) {
+        await this.ownerBackupClaim();
+        for (const id of snapshot.assetIds ?? [])
+          await this.index.withOwnerRestore(
+            snapshot.owner,
+            snapshot,
+            id,
+            { operationId: operation.id, claimToken },
+            async (trx) => {
+              const index = new CloudBackupIndexRepository(trx);
+              const { auth } = await index.getOwnerRestoreAuth(snapshot.owner!);
+              await this.checkOwnerRestoreItems(auth, manifest, snapshot, true, index, [id]);
+            },
+          );
       }
       await this.recordRestore(operation, snapshot, done, 'completed');
       await this.completeTask(operation, claimToken);
@@ -2509,6 +2557,7 @@ export class CloudBackupService {
     status: FrameleafCloudBackupRestore['status'],
     error?: string,
   ) {
+    if (snapshot.owner) return; // Owner jobs never replace global admin restore status/history.
     await this.updateMetadata((current) => ({
       ...current,
       lastRestore: {
@@ -2790,6 +2839,305 @@ export class CloudBackupService {
           compareCodeUnits(a.name.toLowerCase(), b.name.toLowerCase()) || compareCodeUnits(a.albumId, b.albumId),
       ),
     };
+  }
+
+  private ownerRestoreHash(asset: CloudBackupManifest['assets'][string], manifest: CloudBackupManifest): string {
+    // Bind selected related metadata without hashing every unrelated backup item at each write.
+    return createHash('sha256')
+      .update(
+        canonicalJson({
+          asset,
+          albums: (asset.details?.albums ?? []).map(({ id }) => manifest.albums[id] ?? null),
+          people: (asset.details?.faces ?? []).map(({ personId }) =>
+            personId ? (manifest.people[personId] ?? null) : null,
+          ),
+        }),
+      )
+      .digest('hex');
+  }
+
+  private async checkOwnerRestoreItems(
+    auth: AuthDto,
+    manifest: CloudBackupManifest,
+    snapshot: CloudBackupRestoreSnapshot,
+    resumed: boolean,
+    index = this.index,
+    ids = snapshot.assetIds ?? [],
+  ) {
+    const owner = snapshot.owner;
+    if (!owner || auth.user.id !== owner.ownerId || !auth.session?.hasElevatedPermission || manifest.version !== 2)
+      throw new ForbiddenException('Owner restore unavailable');
+    const states = await index.getOwnerHistoryState(auth, ids);
+    const library = await index.getAssetDetails(ids);
+    for (const id of ids) {
+      const asset = manifest.assets[id];
+      if (
+        !asset ||
+        asset.owner !== auth.user.id ||
+        !readRecord(asset) ||
+        !asset.details ||
+        owner.assetHashes[id] !== this.ownerRestoreHash(asset, manifest)
+      )
+        throw new NotFoundException('Backup item unavailable');
+      const original = asset.files.find((file) => file.role === 'original');
+      if (
+        !original ||
+        !/^[a-f\d]{64}$/.test(original.sha256) ||
+        !Number.isSafeInteger(original.size) ||
+        original.size === 0
+      )
+        throw new NotFoundException('Backup item unavailable');
+      const state = states.get(id);
+      const current = library.get(id);
+      const identities = await index.getOwnerRestoreIdentities([id]);
+      const identity = identities[id];
+      // Current external originals need a separate atomic staging/aside counterpart.
+      // Missing records are confined to live owner-managed roots at publication; a historical path is never authority.
+      if (identity?.isExternal) throw new NotFoundException('Owner restore external destination unavailable');
+      const before = owner.current[id];
+      if (
+        identity &&
+        (identity.ownerId !== owner.ownerId ||
+          (before
+            ? identity.originalPath !== before.originalPath ||
+              (identity.checksum !== before.checksum && identity.checksum !== original.sha256)
+            : !resumed || identity.originalPath !== original.path || identity.checksum !== original.sha256))
+      )
+        throw new NotFoundException('Backup item unavailable');
+      if (!identity && before) throw new NotFoundException('Backup item unavailable');
+      const restored =
+        resumed &&
+        state?.ownerId === auth.user.id &&
+        state.allowed &&
+        state.status === AssetStatus.Active &&
+        current?.record &&
+        identity?.checksumAlgorithm === 'sha256' &&
+        identity.checksum === original.sha256;
+      if (
+        !restored &&
+        ownerBackupHistoryPage(auth, { ...manifest, assets: { [id]: asset } }, states, { offset: 0, limit: 1 })
+          .total !== 1
+      )
+        throw new NotFoundException('Backup item unavailable');
+    }
+  }
+
+  async startOwnerRestore(
+    auth: AuthDto,
+    dto: { manifestKey: string; assetIds: string[] },
+    refresh: () => Promise<AuthDto>,
+  ) {
+    if (dto.assetIds.length === 0 || dto.assetIds.length > 100 || new Set(dto.assetIds).size !== dto.assetIds.length)
+      throw new BadRequestException('Choose 1 to 100 distinct backup items');
+    const current = await this.ownerBackupAuth(auth.user.id, refresh);
+    if (!current.session?.hasElevatedPermission || current.apiKey)
+      throw new ForbiddenException('Unlock with your PIN to restore backup items');
+    const metadata = await this.ownerBackupClaim();
+    const manifest = await this.readManifestForRequest(metadata, dto.manifestKey);
+    const snapshot: CloudBackupRestoreSnapshot = {
+      version: 1,
+      bucketRef: metadata.bucketRef,
+      keyFingerprint: metadata.keyFingerprint,
+      manifestKey: dto.manifestKey,
+      scope: 'asset',
+      assetIds: dto.assetIds,
+      details: 'replace',
+      owner: {
+        ownerId: current.user.id,
+        sessionId: current.session.id,
+        current: await this.index.getOwnerRestoreIdentities(dto.assetIds),
+        assetHashes: Object.fromEntries(
+          dto.assetIds.map((id) => [
+            id,
+            manifest.assets[id] ? this.ownerRestoreHash(manifest.assets[id], manifest) : '',
+          ]),
+        ),
+      },
+    };
+    await this.checkOwnerRestoreItems(await this.ownerBackupAuth(auth.user.id, refresh), manifest, snapshot, false);
+    const latest = await this.ownerBackupClaim();
+    if (latest.bucketRef !== snapshot.bucketRef || latest.keyFingerprint !== snapshot.keyFingerprint)
+      throw new ConflictException('Cloud backup changed during the request');
+    if ((await this.index.listKeptManifests(snapshot.bucketRef)).every((row) => row.key !== snapshot.manifestKey))
+      throw new NotFoundException('Backup unavailable');
+    const outcome = await this.operations.createExclusive(
+      {
+        ownerId: auth.user.id,
+        kind: RESTORE_KIND,
+        destination: MediaOperationDestination.Local,
+        destinationDetail: null,
+        label: 'Restore own backup items',
+        assetId: null,
+        resultAssetId: null,
+        retryOfId: null,
+        projectId: null,
+        revisionId: null,
+        snapshot: snapshot as unknown as Record<string, unknown>,
+        settings: {},
+        estimate: null,
+        result: emptyRestoreResult() as unknown as Record<string, unknown>,
+        totalUnits: null,
+      },
+      DatabaseLock.FrameleafCloudBackup,
+      { alsoKinds: [KIND] },
+    );
+    if (!('created' in outcome)) throw new ConflictException('Another backup operation is running');
+    return { operationId: outcome.created.id, status: outcome.created.status };
+  }
+
+  /** Same short current-authority guard for read preflight and final file publication. */
+  private async withOwnerRestoreFile(
+    operation: MediaOperation,
+    claimToken: string,
+    manifest: CloudBackupManifest,
+    snapshot: CloudBackupRestoreSnapshot,
+    file: CloudBackupRestoreFile,
+    publish: () => Promise<'written' | 'skipped' | 'replaced'>,
+  ) {
+    if (!file.assetId) throw new Error('Owner restore item unavailable');
+    await this.ownerBackupClaim();
+    return this.index.withOwnerRestore(
+      snapshot.owner!,
+      snapshot,
+      file.assetId,
+      { operationId: operation.id, claimToken },
+      async (trx) => {
+        const scoped = new CloudBackupIndexRepository(trx);
+        const { auth, storageLabel } = await scoped.getOwnerRestoreAuth(snapshot.owner!);
+        await this.checkOwnerRestoreItems(auth, manifest, snapshot, true, scoped, [file.assetId!]);
+        const current = await trx
+          .selectFrom('asset')
+          .select(['originalPath', 'isExternal', 'libraryId', 'ownerId'])
+          .where('id', '=', file.assetId!)
+          .executeTakeFirst();
+        const roots = [
+          StorageCore.getFolderLocation(StorageFolder.Upload, auth.user.id),
+          StorageCore.getLibraryFolder({ id: auth.user.id, storageLabel }),
+        ];
+        if (file.role === 'original' && current && current.originalPath !== file.target)
+          throw new Error('Owner restore destination changed');
+        await assertOwnerRestorePath(roots, file.target);
+        return new PhysicalFileRepository(trx).withOwnerRestorePath(
+          file.target,
+          file.assetId!,
+          auth.user.id,
+          async () => {
+            await assertOwnerRestorePath(roots, file.target);
+            return publish();
+          },
+        );
+      },
+    );
+  }
+
+  private async restoreOwnerLibrary(
+    operation: MediaOperation,
+    claimToken: string,
+    manifest: CloudBackupManifest,
+    snapshot: CloudBackupRestoreSnapshot,
+    files: CloudBackupRestoreFile[],
+    result: CloudBackupRestoreResult,
+  ): Promise<CloudBackupRestoreResult> {
+    const owner = snapshot.owner!;
+    let { recreated, detailsRestored } = result;
+    for (const assetId of snapshot.assetIds ?? []) {
+      const jobs: OwnerRestoreDetailsContext['jobs'] = [];
+      const originalFile = files.find((file) => file.assetId === assetId && file.role === 'original' && file.inPlace);
+      if (!originalFile) throw new Error('Owner restore original unavailable');
+      await this.withOwnerRestoreFile(operation, claimToken, manifest, snapshot, originalFile, () =>
+        Promise.resolve('skipped'),
+      );
+      const evidence = await captureOwnerRestoreFile(originalFile.target, async (target) =>
+        (await this.cryptoRepository.hashFile(target, 'sha256')).toString('hex'),
+      );
+      if (evidence.sha256 !== originalFile.sha256) throw new Error('Owner restore original changed');
+      await this.ownerBackupClaim();
+      const outcome = await this.index.withOwnerRestore(
+        owner,
+        snapshot,
+        assetId,
+        { operationId: operation.id, claimToken },
+        async (trx) => {
+          const index = new CloudBackupIndexRepository(trx);
+          const { auth, storageLabel } = await index.getOwnerRestoreAuth(owner);
+          await this.checkOwnerRestoreItems(auth, manifest, snapshot, true, index, [assetId]);
+          const roots = [
+            StorageCore.getFolderLocation(StorageFolder.Upload, auth.user.id),
+            StorageCore.getLibraryFolder({ id: auth.user.id, storageLabel }),
+          ];
+          await assertOwnerRestorePath(roots, originalFile.target);
+          await assertOwnerRestoreFile(originalFile.target, evidence.identity);
+          return new PhysicalFileRepository(trx).withOwnerRestorePath(
+            originalFile.target,
+            assetId,
+            owner.ownerId,
+            async () => {
+              await assertOwnerRestoreFile(originalFile.target, evidence.identity);
+              const current = (await index.getAssetDetails([assetId])).get(assetId);
+              const context: OwnerRestoreDetailsContext = { db: trx, ownerId: owner.ownerId, jobs };
+              const asset = manifest.assets[assetId];
+              for (const { id: albumId } of asset.details!.albums) {
+                await this.details.restoreAlbum({ albumId, album: manifest.albums[albumId], memberIds: [] }, context);
+              }
+              if (current) {
+                const changed = await this.details.putBack(
+                  {
+                    assetId,
+                    ownerId: owner.ownerId,
+                    type: current.record.type,
+                    current: current.details,
+                    backup: asset.details!,
+                    mode: 'replace',
+                    people: manifest.people,
+                  },
+                  context,
+                );
+                await assertOwnerRestoreFile(originalFile.target, evidence.identity);
+                await new AssetRepository(trx).update({
+                  id: assetId,
+                  status: AssetStatus.Active,
+                  deletedAt: null,
+                  checksum: Buffer.from(originalFile.sha256, 'hex'),
+                  checksumAlgorithm: ChecksumAlgorithm.sha256File,
+                });
+                await assertOwnerRestoreFile(originalFile.target, evidence.identity);
+                return { recreated: 0, detailsRestored: changed ? 1 : 0 };
+              }
+              const original = files.find(
+                (file) => file.assetId === assetId && file.role === 'original' && file.inPlace,
+              );
+              if (!original) throw new Error('Owner restore destination unavailable');
+              const record = readRecord(asset)!;
+              const sidecar = files.find((file) => file.assetId === assetId && file.role === 'sidecar' && file.inPlace);
+              const made = await this.details.recreate(
+                {
+                  assetId,
+                  ownerId: owner.ownerId,
+                  record,
+                  details: asset.details,
+                  sha256: original.sha256,
+                  size: original.size,
+                  originalPath: original.target,
+                  sidecarPath: sidecar?.target ?? null,
+                  people: manifest.people,
+                },
+                context,
+              );
+              if (made.status !== 'created') throw new Error('Owner restore item could not be recreated');
+              await assertOwnerRestoreFile(originalFile.target, evidence.identity);
+              return { recreated: made.status === 'created' ? 1 : 0, detailsRestored: 0 };
+            },
+          );
+        },
+      );
+      recreated += outcome.recreated;
+      detailsRestored += outcome.detailsRestored;
+      result = { ...result, recreated, detailsRestored };
+      if ((await this.checkpointTask(operation, claimToken, result, restoreUnits(result))) !== 'continue')
+        throw new Error('Owner restore interrupted');
+      await this.jobRepository.queueAll(jobs);
+    }
+    return { ...result, recreated, detailsRestored };
   }
 
   /**

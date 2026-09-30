@@ -402,7 +402,7 @@ export class AlbumRepository {
     const userIds = albumUsers.map((u) => u.userId);
     const roles = albumUsers.map((u) => u.role);
 
-    return this.db.transaction().execute(async (tx) => {
+    const execute = async (tx: Kysely<DB>) => {
       const result = await tx
         .with('album', (db) => db.insertInto('album').values(album).returningAll())
         .with('album_user', (db) =>
@@ -458,7 +458,8 @@ export class AlbumRepository {
       await this.forkMetadata.mirrorFromLegacy([result.id], tx);
 
       return result;
-    });
+    };
+    return this.db.isTransaction ? execute(this.db) : this.db.transaction().execute(execute);
   }
 
   update(id: string, album: Updateable<AlbumTable>, authUserId: string) {

@@ -147,6 +147,10 @@ const mapBulkSummary = (operation: MediaOperation): MediaOperationDto['bulk'] =>
  */
 const mapSnapshot = (operation: MediaOperation): Record<string, unknown> => {
   const snapshot = asObject(operation.snapshot);
+  if (operation.kind === MediaOperationKind.CloudRestore && snapshot.owner) {
+    // Owner execution authority is private: current paths, session and selected ids stay on the row.
+    return { version: 1, scope: 'asset', assetCount: Array.isArray(snapshot.assetIds) ? snapshot.assetIds.length : 0 };
+  }
   if (operation.kind === MediaOperationKind.EnrichmentPlan) {
     // FL-59: the per-asset view is the enrichment plan endpoint's, which withholds Locked ids.
     const { assetIds, requestKey: _requestKey, ...rest } = snapshot;

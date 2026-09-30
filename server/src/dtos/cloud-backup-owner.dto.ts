@@ -51,3 +51,24 @@ export class OwnerBackupsResponseDto extends createZodDto(
     })
     .meta({ id: 'OwnerBackupsResponseDto' }),
 ) {}
+
+export class OwnerBackupRestoreDto extends createZodDto(
+  z
+    .object({
+      manifestKey: OwnerBackupHistorySchema.shape.manifestKey,
+      assetIds: z
+        .array(z.uuid())
+        .min(1)
+        .max(100)
+        .refine((ids) => new Set(ids).size === ids.length, 'Choose unique items'),
+    })
+    .meta({ id: 'OwnerBackupRestoreDto' }),
+) {}
+export class OwnerBackupRestoreResponseDto extends createZodDto(
+  z
+    .object({
+      operationId: z.uuid(),
+      status: z.string(),
+    })
+    .meta({ id: 'OwnerBackupRestoreResponseDto' }),
+) {}

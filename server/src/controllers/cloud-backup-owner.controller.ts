@@ -1,4 +1,4 @@
-import { Controller, Get, Header, Param, Query, Req, StreamableFile } from '@nestjs/common';
+import { Body, Controller, Get, Header, Param, Post, Query, Req, StreamableFile } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
@@ -7,6 +7,8 @@ import {
   OwnerBackupHistoryDto,
   OwnerBackupHistoryResponseDto,
   OwnerBackupPageDto,
+  OwnerBackupRestoreDto,
+  OwnerBackupRestoreResponseDto,
   OwnerBackupsResponseDto,
 } from 'src/dtos/cloud-backup-owner.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
@@ -38,6 +40,22 @@ export class CloudBackupOwnerController {
         },
       });
   }
+  @Post('restore')
+  @Authenticated({ permission: Permission.AssetUpdate, refreshElevation: false })
+  @Endpoint({
+    summary: 'Restore own items from a chosen kept backup',
+    description:
+      '1–100 unique own items; a current PIN-elevated session is required throughout execution. SHA256 verified staging, guarded owner destinations and details; unknown historical evidence refuses. Returns only the operation identity, never admin-global backup status.',
+    history: new HistoryBuilder().added('v3'),
+  })
+  restoreOwnBackupItems(
+    @Auth() auth: AuthDto,
+    @Body() dto: OwnerBackupRestoreDto,
+    @Req() request: Request,
+  ): Promise<OwnerBackupRestoreResponseDto> {
+    return this.service.startOwnerRestore(auth, dto, this.refresh(request, Permission.AssetUpdate));
+  }
+
   @Get('backups')
   @Header('Cache-Control', 'private, no-store')
   @Authenticated({ permission: Permission.AssetRead, refreshElevation: false })

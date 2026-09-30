@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import type { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import type { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -5,6 +6,7 @@ import type { StorageRepository } from 'src/repositories/storage.repository.js';
 import type { RestoreDetailsMode } from 'src/utils/cloud-backup-details.js';
 import { CloudBackupStoreError, CloudBackupStoreRepository } from 'src/repositories/cloud-backup-store.repository.js';
 import { CloudBackupBucket, CloudBackupCheckpoint } from 'src/services/cloud-backup-maintenance.js';
+import { assertOwnerRestoreFile, captureOwnerRestoreFile } from 'src/utils/cloud-backup-owner-path.js';
 import { CloudBackupManifest, objectKey } from 'src/utils/cloud-backup.js';
 import { compareCodeUnits } from 'src/utils/compare.js';
 import { isValidDatabaseBackupName } from 'src/utils/database-backups.js';
@@ -25,8 +27,25 @@ import { isValidDatabaseBackupName } from 'src/utils/database-backups.js';
  */
 export type CloudBackupRestoreScope = 'files' | 'asset' | 'album' | 'database' | 'library';
 
+/** Called for a no-op read preflight, then for publication; each guard releases before whole-file I/O. */
+export type OwnerRestorePublisher = (
+  file: CloudBackupRestoreFile,
+  staged: string,
+  publish: () => Promise<'written' | 'skipped' | 'replaced'>,
+) => Promise<'written' | 'skipped' | 'replaced'>;
+
 export type CloudBackupRestoreSnapshot = {
   version: 1;
+  /** Absent on admin operations. Credentials are never persisted. */
+  owner?: {
+    ownerId: string;
+    sessionId: string;
+    assetHashes: Record<string, string>;
+    current: Record<
+      string,
+      { ownerId: string; originalPath: string; checksum: string; checksumAlgorithm: string; isExternal: boolean }
+    >;
+  };
   bucketRef: string;
   keyFingerprint: string;
   manifestKey: string;
@@ -223,6 +242,8 @@ export class CloudBackupRestorer {
     checkpoint: CloudBackupCheckpoint<CloudBackupRestoreResult>;
     /** After the files: puts items, details and albums back (`asset` and `album`). Safe to run again. */
     library?: (result: CloudBackupRestoreResult) => Promise<CloudBackupRestoreResult>;
+    /** Owner-only mode: stage and verify before invoking a current authorization/target guard. */
+    publish?: OwnerRestorePublisher;
   }): Promise<CloudBackupRestoreResult | null> {
     const { bucket, manifest, scope, files, checkpoint } = options;
     const database = scope === 'database' || scope === 'library' ? manifest.database : null;
@@ -258,8 +279,9 @@ export class CloudBackupRestorer {
                 ? [...result.restoredAssetIds, file.assetId]
                 : result.restoredAssetIds,
           };
+          if (options.publish && !(await checkpoint(result))) return null;
         }
-        if (!(await checkpoint(result))) {
+        if (!options.publish && !(await checkpoint(result))) {
           return null;
         }
       }
@@ -314,8 +336,51 @@ export class CloudBackupRestorer {
     bucket: CloudBackupBucket,
     key: string,
     file: CloudBackupRestoreFile,
-    options: { mediaLocation: string; operationId: string },
+    options: { mediaLocation: string; operationId: string; publish?: OwnerRestorePublisher },
   ): Promise<'written' | 'skipped' | 'replaced'> {
+    if (options.publish) {
+      const staged = join(options.mediaLocation, RESTORE_FOLDER, options.operationId, 'staging', randomUUID());
+      this.storage.mkdirSync(dirname(staged));
+      try {
+        const downloaded = await this.store.download(bucket.connection, key, bucket.bucketKey, staged, file.sha256);
+        if (downloaded.size !== file.size || downloaded.sha256 !== file.sha256) {
+          throw new Error('Owner restore staging size or checksum mismatch');
+        }
+        // Preflight is not a file outcome and must never enter checkpoint/result accounting.
+        await options.publish(file, staged, () => Promise.resolve('skipped'));
+        const evidence = await captureOwnerRestoreFile(file.target, async (target) =>
+          (await this.crypto.hashFile(target, 'sha256')).toString('hex'),
+        );
+        const stagedEvidence = await captureOwnerRestoreFile(staged, async (target) =>
+          (await this.crypto.hashFile(target, 'sha256')).toString('hex'),
+        );
+        if (stagedEvidence.sha256 !== file.sha256 || stagedEvidence.size !== BigInt(file.size))
+          throw new Error('Owner restore staging size or checksum mismatch');
+        return await options.publish(file, staged, async () => {
+          await assertOwnerRestoreFile(staged, stagedEvidence.identity);
+          await assertOwnerRestoreFile(file.target, evidence.identity);
+          const present = evidence.sha256;
+          if (present === file.sha256) return 'skipped';
+          if (present !== null) {
+            // Each owner replacement keeps its own aside copy, including a replay of the same operation.
+            await this.moveAside(
+              file.target,
+              options.mediaLocation,
+              join(options.operationId, file.assetId ?? 'item', randomUUID()),
+            );
+          }
+          this.storage.mkdirSync(dirname(file.target));
+          await assertOwnerRestoreFile(file.target, null);
+          await assertOwnerRestoreFile(staged, stagedEvidence.identity);
+          await this.storage.rename(staged, file.target);
+          await assertOwnerRestoreFile(file.target, stagedEvidence.identity, true);
+          return present === null ? 'written' : 'replaced';
+        });
+      } finally {
+        // A refused guard must never leave verified bytes at the public/current destination.
+        if (await this.storage.checkFileExists(staged)) await this.storage.unlink(staged);
+      }
+    }
     const present = await this.sha256Of(file.target);
     if (present === file.sha256) {
       return 'skipped';

@@ -1,7 +1,12 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { createHash } from 'node:crypto';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { gunzipSync, gzipSync } from 'node:zlib';
 import type { CloudBackupEntry } from 'src/repositories/cloud-backup-index.repository.js';
+import type { CloudBackupRestoreSnapshot } from 'src/services/cloud-backup-restore.js';
+import type { CloudBackupManifest } from 'src/utils/cloud-backup.js';
 import type { ConfigHistory } from 'src/utils/config-history.js';
 import {
   DatabaseLock,
@@ -17,6 +22,7 @@ import {
   CloudBackupStoreError,
 } from 'src/repositories/cloud-backup-store.repository.js';
 import { MediaOperation } from 'src/repositories/media-operation.repository.js';
+import { emptyRestoreResult } from 'src/services/cloud-backup-restore.js';
 import {
   CLOUD_BACKUP_SCHEDULE_CRON,
   CLOUD_BACKUP_VERIFY_CRON,
@@ -267,6 +273,7 @@ describe(CloudBackupService.name, () => {
       listKeptManifests: vi.fn().mockResolvedValue([]),
       markManifests: vi.fn().mockResolvedValue(0),
       forget: vi.fn().mockResolvedValue(undefined),
+      getOwnerRestoreIdentities: vi.fn().mockResolvedValue({}),
       getOwnerHistoryState: vi.fn().mockResolvedValue(new Map()),
       getLibraryState: vi.fn().mockResolvedValue(new Map()),
       getOwnerNames: vi.fn().mockResolvedValue(new Map()),
@@ -1675,6 +1682,155 @@ describe(CloudBackupService.name, () => {
       );
       store.getPreview = vi.fn().mockResolvedValue(thumb);
     });
+    it('refuses forbidden metadata target before reading its original bytes', async () => {
+      const folder = await mkdtemp(join(tmpdir(), 'owner-metadata-'));
+      const target = join(folder, 'original.jpg');
+      try {
+        await writeFile(target, 'a');
+        mocks.crypto.hashFile.mockResolvedValue(Buffer.from(SHA_A, 'hex'));
+        index.withOwnerRestore = vi.fn().mockRejectedValue(new Error('current target forbidden'));
+        await expect(
+          sut['restoreOwnerLibrary'](
+            operationOf() as MediaOperation,
+            'claim',
+            {} as CloudBackupManifest,
+            { owner: { ownerId: owner, sessionId: 'session' }, assetIds: ['asset-1'] } as CloudBackupRestoreSnapshot,
+            [{ assetId: 'asset-1', role: 'original', inPlace: true, target, sha256: SHA_A } as never],
+            emptyRestoreResult(),
+          ),
+        ).rejects.toThrow('current target forbidden');
+        expect(index.withOwnerRestore).toHaveBeenCalledOnce();
+        expect(mocks.crypto.hashFile).not.toHaveBeenCalled();
+      } finally {
+        await rm(folder, { recursive: true, force: true });
+      }
+    });
+
+    it('keeps a failed owner restore filename out of the public durable operation error', async () => {
+      operations.fail.mockResolvedValue('failed');
+      const operation = {
+        id: 'owner-operation',
+        kind: MediaOperationKind.CloudRestore,
+        snapshot: { owner: { ownerId: owner } },
+      } as unknown as MediaOperation;
+      await sut['failTask'](
+        operation,
+        'claim',
+        new Error('write failed /data/library/Locked-secret-name.jpg'),
+        'Restore from cloud backup',
+      );
+      expect(operations.fail).toHaveBeenCalledWith(
+        'owner-operation',
+        'claim',
+        expect.objectContaining({
+          error:
+            'The owner backup restore stopped. Already restored work is retained; check access and backup availability.',
+          errorCode: 'cloud_restore_failed',
+        }),
+      );
+    });
+
+    it('queues only own bounded restore with a credentials-free immutable snapshot and allowlisted response', async () => {
+      const elevated = { ...authStub.user1, session: { id: 'owner-session', hasElevatedPermission: true } };
+      index.getOwnerRestoreIdentities.mockResolvedValue({});
+      index.getAssetDetails.mockResolvedValue(new Map());
+      const response = await sut.startOwnerRestore(
+        elevated,
+        { manifestKey, assetIds: ['asset-1'] },
+        vi.fn().mockResolvedValue(elevated),
+      );
+      expect(Object.keys(response).sort()).toEqual(['operationId', 'status']);
+      expect(operations.createExclusive).toHaveBeenCalledWith(
+        expect.objectContaining({
+          ownerId: owner,
+          settings: {},
+          snapshot: expect.objectContaining({
+            scope: 'asset',
+            assetIds: ['asset-1'],
+            owner: expect.objectContaining({ ownerId: owner, sessionId: 'owner-session' }),
+          }),
+        }),
+        DatabaseLock.FrameleafCloudBackup,
+        { alsoKinds: [MediaOperationKind.CloudBackup] },
+      );
+      expect(JSON.stringify(operations.createExclusive.mock.calls[0][0].snapshot)).not.toMatch(
+        /token|password|bucketKey/i,
+      );
+    });
+    it('refuses related album metadata changed after the immutable owner restore was submitted', async () => {
+      const elevated = { ...authStub.user1, session: { id: 'owner-session', hasElevatedPermission: true } };
+      index.getOwnerRestoreIdentities.mockResolvedValue({});
+      index.getAssetDetails.mockResolvedValue(new Map());
+      const backedUp = JSON.parse(
+        gunzipSync(await (store.get as () => Promise<Buffer>)()).toString(),
+      ) as CloudBackupManifest;
+      backedUp.assets['asset-1'].details!.albums = [{ id: 'own-album', name: 'Original name' }];
+      backedUp.albums['own-album'] = {
+        name: 'Original name',
+        description: '',
+        ownerId: owner,
+        coverAssetId: null,
+        order: 'asc',
+        sharedUsers: [],
+      };
+      store.get.mockResolvedValue(gzipSync(JSON.stringify(backedUp)));
+      await sut.startOwnerRestore(
+        elevated,
+        { manifestKey, assetIds: ['asset-1'] },
+        vi.fn().mockResolvedValue(elevated),
+      );
+      const snapshot = operations.createExclusive.mock.calls[0][0].snapshot as unknown as CloudBackupRestoreSnapshot;
+      backedUp.albums['own-album'].name = 'Changed after submission';
+      await expect(sut['checkOwnerRestoreItems'](elevated, backedUp, snapshot, true)).rejects.toThrow(
+        'Backup item unavailable',
+      );
+    });
+
+    it('refuses current external originals before creating an apparently supported owner restore', async () => {
+      const elevated = { ...authStub.user1, session: { id: 'owner-session', hasElevatedPermission: true } };
+      index.getOwnerRestoreIdentities.mockResolvedValue({
+        'asset-1': {
+          ownerId: owner,
+          originalPath: '/external/Own.jpg',
+          checksum: SHA_A,
+          checksumAlgorithm: 'sha256',
+          isExternal: true,
+        },
+      });
+      index.getAssetDetails.mockResolvedValue(new Map());
+      await expect(
+        sut.startOwnerRestore(elevated, { manifestKey, assetIds: ['asset-1'] }, vi.fn().mockResolvedValue(elevated)),
+      ).rejects.toThrow('external destination');
+      expect(operations.createExclusive).not.toHaveBeenCalled();
+    });
+
+    it('refuses duplicate and oversized owner selections before reading private backup metadata', async () => {
+      for (const assetIds of [['asset-1', 'asset-1'], Array.from({ length: 101 }, (_, index) => `asset-${index}`)]) {
+        await expect(sut.startOwnerRestore(authStub.user1, { manifestKey, assetIds }, refresh())).rejects.toThrow(
+          'distinct',
+        );
+      }
+      expect(store.get).not.toHaveBeenCalled();
+      expect(operations.createExclusive).not.toHaveBeenCalled();
+    });
+
+    it('refuses foreign selection, relocked session and unloaded key before queueing owner restore', async () => {
+      const elevated = { ...authStub.user1, session: { id: 'owner-session', hasElevatedPermission: true } };
+      index.getOwnerRestoreIdentities.mockResolvedValue({});
+      index.getAssetDetails.mockResolvedValue(new Map());
+      await expect(
+        sut.startOwnerRestore(elevated, { manifestKey, assetIds: ['foreign-1'] }, vi.fn().mockResolvedValue(elevated)),
+      ).rejects.toThrow('Backup item unavailable');
+      await expect(sut.startOwnerRestore(elevated, { manifestKey, assetIds: ['asset-1'] }, refresh())).rejects.toThrow(
+        'PIN',
+      );
+      keys.read.mockResolvedValue(null);
+      await expect(
+        sut.startOwnerRestore(elevated, { manifestKey, assetIds: ['asset-1'] }, vi.fn().mockResolvedValue(elevated)),
+      ).rejects.toThrow('backup key file is missing');
+      expect(operations.createExclusive).not.toHaveBeenCalled();
+    });
+
     it('projects only own history and owner-scoped discovery with no paths/global owners', async () => {
       const result = await sut.listOwnerHistory(authStub.user1, dto, refresh());
       expect(result.total).toBe(1);

@@ -42424,6 +42424,57 @@
         "x-immich-permission": "asset.view"
       }
     },
+    "/users/me/cloud-backup/restore": {
+      "post": {
+        "description": "1–100 unique own items; a current PIN-elevated session is required throughout execution. SHA256 verified staging, guarded owner destinations and details; unknown historical evidence refuses. Returns only the operation identity, never admin-global backup status.",
+        "operationId": "restoreOwnBackupItems",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OwnerBackupRestoreDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OwnerBackupRestoreResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Restore own items from a chosen kept backup",
+        "tags": [
+          "Frameleaf Cloud backup (admin)"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "asset.update"
+      }
+    },
     "/users/me/license": {
       "delete": {
         "description": "Remove your supporter key from this server. The key stays yours to activate again.",
@@ -69508,6 +69559,47 @@
           "degraded"
         ],
         "type": "string"
+      },
+      "OwnerBackupRestoreDto": {
+        "properties": {
+          "assetIds": {
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "type": "array"
+          },
+          "manifestKey": {
+            "maxLength": 300,
+            "pattern": "^m\\/\\d{8}T\\d{6}Z\\.json\\.gz$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "assetIds",
+          "manifestKey"
+        ],
+        "type": "object"
+      },
+      "OwnerBackupRestoreResponseDto": {
+        "properties": {
+          "operationId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "operationId",
+          "status"
+        ],
+        "type": "object"
       },
       "OwnerBackupsResponseDto": {
         "properties": {
