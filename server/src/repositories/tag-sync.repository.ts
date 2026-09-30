@@ -1,7 +1,9 @@
+import { ForbiddenException } from '@nestjs/common';
 import { Kysely, Transaction, sql } from 'kysely';
 import { chunk } from 'lodash-es';
 import { createHash } from 'node:crypto';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { PinnedCollectionsResponseDto } from 'src/dtos/pinned-collection.dto.js';
 import type { SyncAck } from 'src/types.js';
 import { mapPet, mapPetObservation } from 'src/dtos/pet.dto.js';
 import { AlbumKind, AlbumUserRole, SyncEntityType } from 'src/enum.js';
@@ -21,7 +23,8 @@ import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { getLockedOwnerId, notLockedOrOwnedBy } from 'src/utils/locked.js';
 import { toAck } from 'src/utils/sync.js';
 
-type Kind = 'tag' | 'assetTag' | 'pet' | 'petObservation' | 'space' | 'spaceMember' | 'duplicate';
+type Kind = 'tag' | 'assetTag' | 'pet' | 'petObservation' | 'space' | 'spaceMember' | 'duplicate' | 'pin';
+type ReadPins = () => Promise<PinnedCollectionsResponseDto>;
 type Visible = {
   key: string;
   entityId: string;
@@ -30,6 +33,7 @@ type Visible = {
   data: Record<string, unknown>;
 };
 const types = {
+  pin: { upsert: SyncEntityType.PinnedCollectionV1, delete: SyncEntityType.PinnedCollectionDeleteV1 },
   duplicate: { upsert: SyncEntityType.DuplicateGroupV1, delete: SyncEntityType.DuplicateGroupDeleteV1 },
   space: { upsert: SyncEntityType.SharedSpaceV1, delete: SyncEntityType.SharedSpaceDeleteV1 },
   spaceMember: { upsert: SyncEntityType.SharedSpaceMemberV1, delete: SyncEntityType.SharedSpaceMemberDeleteV1 },
@@ -51,8 +55,27 @@ export class TagSync {
     });
   }
 
-  private async visible(db: Kysely<DB>, kind: Kind, auth: AuthDto, key?: string): Promise<Visible[]> {
+  private async visible(
+    db: Kysely<DB>,
+    kind: Kind,
+    auth: AuthDto,
+    key?: string,
+    readPins?: ReadPins,
+  ): Promise<Visible[]> {
     const options = getHiddenContentQueryOptions(auth);
+    if (kind === 'pin') {
+      if (auth.sharedLink) throw new ForbiddenException('Pinned collections require a user session');
+      if (!readPins) throw new Error('Pin sync requires current authorized hydration');
+      const { pins } = await readPins();
+      return pins.flatMap((pin, position) => {
+        if (pin.unavailable || pin.targetId === null || (key && pin.id !== key)) return [];
+        const { id, kind, targetId, title, count, countCapped, coverAssetId } = pin;
+        const data = { id, kind, targetId, title, count, countCapped, coverAssetId, unavailable: false, position };
+        const digest = createHash('sha256').update(JSON.stringify(data)).digest('hex').slice(0, 32);
+        const sourceId = `${digest.slice(0, 8)}-${digest.slice(8, 12)}-${digest.slice(12, 16)}-${digest.slice(16, 20)}-${digest.slice(20)}`;
+        return [{ key: id, entityId: id, assetId: null, sourceId, data }];
+      });
+    }
     if (kind === 'duplicate') {
       if (auth.sharedLink) return [];
       const groups = await new DuplicateRepository(db).getSyncGroups(
@@ -191,10 +214,10 @@ export class TagSync {
       .execute();
   }
 
-  async reconcile(auth: AuthDto, kind: Kind) {
+  async reconcile(auth: AuthDto, kind: Kind, readPins?: ReadPins) {
     const sessionId = auth.session!.id;
     return this.locked(sessionId, async (tx) => {
-      const visibleRows = await this.visible(tx, kind, auth);
+      const visibleRows = await this.visible(tx, kind, auth, undefined, readPins);
       const rank = new Map(visibleRows.map((row, index) => [row.key, index]));
       const visible = new Map(visibleRows.map((row) => [row.key, row]));
       const stored = await tx
@@ -224,7 +247,7 @@ export class TagSync {
                 delivered: false,
                 acknowledged: false,
               })
-              .$if(kind === 'space' || kind === 'duplicate', (qb) => qb.set({ deliveryOrder: null }))
+              .$if(['space', 'duplicate', 'pin'].includes(kind), (qb) => qb.set({ deliveryOrder: null }))
               .where('sessionId', '=', sessionId)
               .where('kind', '=', kind)
               .where('key', '=', state.key)
@@ -235,7 +258,7 @@ export class TagSync {
             await tx
               .updateTable('session_tag_sync_state')
               .set({ action: 'delete', eventId: sql`immich_uuid_v7()`, delivered: false, acknowledged: false })
-              .$if(kind === 'space' || kind === 'duplicate', (qb) => qb.set({ deliveryOrder: null }))
+              .$if(['space', 'duplicate', 'pin'].includes(kind), (qb) => qb.set({ deliveryOrder: null }))
               .where('sessionId', '=', sessionId)
               .where('kind', '=', kind)
               .where('key', '=', state.key)
@@ -284,7 +307,7 @@ export class TagSync {
         )
         .orderBy('eventId', 'asc')
         .execute();
-      if (kind === 'duplicate') {
+      if (kind === 'duplicate' || kind === 'pin') {
         pending.sort((a, b) => {
           if (a.deliveryOrder !== null || b.deliveryOrder !== null)
             return (a.deliveryOrder ?? Infinity) - (b.deliveryOrder ?? Infinity);
@@ -295,7 +318,7 @@ export class TagSync {
     });
   }
 
-  async prepare(auth: AuthDto, kind: Kind, eventId: string) {
+  async prepare(auth: AuthDto, kind: Kind, eventId: string, readPins?: ReadPins) {
     const sessionId = auth.session!.id;
     return this.locked(sessionId, async (tx) => {
       const state = await tx
@@ -307,7 +330,7 @@ export class TagSync {
         .where('acknowledged', '=', false)
         .executeTakeFirst();
       if (!state) return;
-      const current = (await this.visible(tx, kind, auth, state.key)).find((row) => row.key === state.key);
+      const current = (await this.visible(tx, kind, auth, state.key, readPins)).find((row) => row.key === state.key);
       if ((state.action === 'upsert' && !current) || (state.action === 'delete' && current)) return;
       // A source changing after reconciliation needs a new generation before any payload is sent.
       if (
@@ -320,7 +343,7 @@ export class TagSync {
       await tx
         .updateTable('session_tag_sync_state')
         .set({ delivered: true, potentiallyVisible: true })
-        .$if((kind === 'space' || kind === 'duplicate') && state.deliveryOrder === null, (qb) =>
+        .$if(['space', 'duplicate', 'pin'].includes(kind) && state.deliveryOrder === null, (qb) =>
           qb.set({
             deliveryOrder: sql<number>`(select coalesce(max("deliveryOrder"), 0) + 1 from session_tag_sync_state where "sessionId" = ${sessionId} and kind = ${kind})`,
           }),
@@ -337,19 +360,21 @@ export class TagSync {
         data:
           state.action === 'upsert'
             ? current!.data
-            : kind === 'duplicate'
-              ? { groupId: state.entityId }
-              : kind === 'space'
-                ? { spaceId: state.entityId }
-                : kind === 'spaceMember'
-                  ? { spaceId: state.entityId, userId: state.key.split(':', 2)[1] }
-                  : kind === 'tag'
-                    ? { tagId: state.entityId }
-                    : kind === 'assetTag'
-                      ? { tagId: state.entityId, assetId: state.assetId! }
-                      : kind === 'pet'
-                        ? { petId: state.entityId }
-                        : { observationId: state.key, petId: state.entityId, assetId: state.assetId! },
+            : kind === 'pin'
+              ? { pinId: state.entityId }
+              : kind === 'duplicate'
+                ? { groupId: state.entityId }
+                : kind === 'space'
+                  ? { spaceId: state.entityId }
+                  : kind === 'spaceMember'
+                    ? { spaceId: state.entityId, userId: state.key.split(':', 2)[1] }
+                    : kind === 'tag'
+                      ? { tagId: state.entityId }
+                      : kind === 'assetTag'
+                        ? { tagId: state.entityId, assetId: state.assetId! }
+                        : kind === 'pet'
+                          ? { petId: state.entityId }
+                          : { observationId: state.key, petId: state.entityId, assetId: state.assetId! },
       };
     });
   }
@@ -371,14 +396,16 @@ export class TagSync {
         .where('action', '=', action)
         .where('delivered', '=', true)
         .executeTakeFirst();
-      if (!exact || ((kind === 'space' || kind === 'duplicate') && exact.deliveryOrder === null)) return;
+      if (!exact || (['space', 'duplicate', 'pin'].includes(kind) && exact.deliveryOrder === null)) return;
       const pending = tx
         .selectFrom('session_tag_sync_state')
         .select('key')
         .where('sessionId', '=', sessionId)
         .where('kind', '=', kind)
-        .$if(kind === 'space' || kind === 'duplicate', (qb) => qb.where('deliveryOrder', '<=', exact.deliveryOrder!))
-        .$if(kind !== 'space' && kind !== 'duplicate', (qb) => qb.where('eventId', '<=', ack.updateId))
+        .$if(['space', 'duplicate', 'pin'].includes(kind), (qb) =>
+          qb.where('deliveryOrder', '<=', exact.deliveryOrder!),
+        )
+        .$if(!['space', 'duplicate', 'pin'].includes(kind), (qb) => qb.where('eventId', '<=', ack.updateId))
         .where('action', '=', action)
         .where('delivered', '=', true);
       if (action === 'delete') {
