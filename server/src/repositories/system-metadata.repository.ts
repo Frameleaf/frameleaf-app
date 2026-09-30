@@ -28,11 +28,14 @@ export class SystemMetadataRepository {
     return metadata.value as SystemMetadata[T];
   }
 
-  async set<T extends keyof SystemMetadata>(key: T, value: SystemMetadata[T]): Promise<void> {
+  async set<T extends keyof SystemMetadata>(key: T, value: SystemMetadata[T], overwrite = true): Promise<void> {
     await this.db
       .insertInto('system_metadata')
       .values({ key, value } as Upsert)
-      .onConflict((oc) => oc.columns(['key']).doUpdateSet({ value } as Upsert))
+      .onConflict((oc) => {
+        const conflict = oc.columns(['key']);
+        return overwrite ? conflict.doUpdateSet({ value } as Upsert) : conflict.doNothing();
+      })
       .execute();
   }
 

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
-import { SystemMetadataKey } from 'src/enum.js';
 import type { ConfigRepository } from 'src/repositories/config.repository.js';
 import type { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
+import { SystemMetadataKey } from 'src/enum.js';
 import { readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
 
 type IdentityDeps = { configRepository: ConfigRepository; systemMetadataRepository: SystemMetadataRepository };
@@ -17,8 +17,9 @@ export const stableServerId = async (deps: Pick<IdentityDeps, 'systemMetadataRep
     return stored.id;
   }
   const record = { id: randomUUID(), createdAt: new Date().toISOString() };
-  await deps.systemMetadataRepository.set(SystemMetadataKey.FrameleafServerId, record);
-  return record.id;
+  // Concurrent first pings must return the winning persisted identity, never their own losing UUID.
+  await deps.systemMetadataRepository.set(SystemMetadataKey.FrameleafServerId, record, false);
+  return (await deps.systemMetadataRepository.get(SystemMetadataKey.FrameleafServerId))!.id;
 };
 
 /**
