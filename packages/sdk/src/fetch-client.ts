@@ -11498,6 +11498,24 @@ export type SyncPetObservationDeleteV1 = {
 };
 export type SyncPetObservationV1 = PetObservationResponseDto;
 export type SyncPetV1 = PetResponseDto;
+export type SyncPinnedCollectionDeleteV1 = {
+    pinId: string;
+};
+export type SyncPinnedCollectionV1 = {
+    /** Current access-filtered item count; null when unavailable */
+    count: number | null;
+    /** Whether a semantic saved-search count reached the existing smart-search cap */
+    countCapped: boolean;
+    /** Current readable cover asset; null when unavailable or empty */
+    coverAssetId: string | null;
+    id: string;
+    kind: Kind9;
+    position: number;
+    targetId: string;
+    /** Current access-filtered title; null when unavailable */
+    title: string | null;
+    unavailable: false;
+};
 export type SyncPinnedCollectionsV1 = {
     /** Complete replacement snapshot in user order, including unavailable pins */
     pins: PinnedCollection[];
@@ -23900,6 +23918,8 @@ export enum StudioRestoredVersionUnavailable {
     HiddenContent = "hidden-content"
 }
 export enum SyncEntityType {
+    PinnedCollectionV1 = "PinnedCollectionV1",
+    PinnedCollectionDeleteV1 = "PinnedCollectionDeleteV1",
     DuplicateGroupV1 = "DuplicateGroupV1",
     DuplicateGroupDeleteV1 = "DuplicateGroupDeleteV1",
     SharedSpaceV1 = "SharedSpaceV1",
@@ -23984,6 +24004,7 @@ export enum SyncEntityType {
     SyncCompleteV1 = "SyncCompleteV1"
 }
 export enum SyncRequestType {
+    PinnedCollectionEventsV1 = "PinnedCollectionEventsV1",
     DuplicateGroupsV1 = "DuplicateGroupsV1",
     SharedSpacesV1 = "SharedSpacesV1",
     SharedSpaceMembersV1 = "SharedSpaceMembersV1",
