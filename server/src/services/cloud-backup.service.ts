@@ -431,6 +431,8 @@ export class CloudBackupService {
       return { state: 'not-linked', bucket: null };
     const metadata = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafCloudBackup);
     if (!metadata || metadata.target !== settings.target) return { state: 'not-configured', bucket: null };
+    if (settings.target === 'byo-s3' && bucketRef(settings.s3.endpoint, settings.s3.bucket) !== metadata.bucketRef)
+      return { state: 'not-configured', bucket: null };
     const key = await this.loadKeyOrAsk(metadata).catch(() => null);
     return { state: key ? 'ready' : 'paused-key-unloaded', bucket: metadata.bucketRef };
   }
