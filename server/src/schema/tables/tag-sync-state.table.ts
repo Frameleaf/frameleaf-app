@@ -9,7 +9,7 @@ export class TagSyncStateTable {
   @ForeignKeyColumn(() => SessionTable, { onDelete: 'CASCADE', onUpdate: 'CASCADE', primary: true, index: false })
   sessionId!: string;
   @PrimaryColumn({ type: 'character varying' })
-  kind!: 'tag' | 'assetTag' | 'pet' | 'petObservation' | 'space' | 'spaceMember';
+  kind!: 'tag' | 'assetTag' | 'pet' | 'petObservation' | 'space' | 'spaceMember' | 'duplicate';
   @PrimaryColumn({ type: 'character varying' })
   key!: string;
   @Column({ type: 'uuid' })
