@@ -50,8 +50,8 @@ export class AssetJobRepository {
   }
 
   @GenerateSql({ params: [DummyValue.UUID] })
-  getForSidecarWriteJob(id: string) {
-    return this.db
+  getForSidecarWriteJob(id: string, kysely: Kysely<DB> = this.db) {
+    return kysely
       .selectFrom('asset')
       .where('asset.id', '=', asUuid(id))
       .select(['id', 'ownerId', 'originalPath', 'physicalOriginalFileId'])
@@ -183,8 +183,8 @@ export class AssetJobRepository {
   }
 
   @GenerateSql({ params: [DummyValue.UUID] })
-  async getLockedPropertiesForMetadataExtraction(assetId: string) {
-    return this.db
+  async getLockedPropertiesForMetadataExtraction(assetId: string, kysely: Kysely<DB> = this.db) {
+    return kysely
       .selectFrom('asset_exif')
       .select('asset_exif.lockedProperties')
       .where('asset_exif.assetId', '=', assetId)
