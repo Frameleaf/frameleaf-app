@@ -5,6 +5,7 @@
 // measured HDR10 metadata, and is decoded back independently. Requires FFmpeg
 // with libx265 (installed in the engine workflow).
 import assert from 'node:assert/strict';
+import { writeFile } from 'node:fs/promises';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
@@ -94,6 +95,12 @@ window.__vite_plugin_react_preamble_installed__ = true
   await browser.close();
 }
 
+// Raw measurements for conformance evidence: the rendered frames before any assertion, then
+// the encoded masters' probe and light metadata once they are checked.
+const writeReport = (masters) =>
+  process.env.HDR_MASTER_REPORT && writeFile(process.env.HDR_MASTER_REPORT, JSON.stringify({ rendered, masters }));
+await writeReport(null);
+
 const points = { clip: [8, 8], exposed: [20, 8], dodge: [28, 8] };
 const dir = mkdtempSync(path.join(tmpdir(), 'fl-hdr-master-e2e-'));
 try {
@@ -137,6 +144,7 @@ try {
     });
     summary[transfer] = { light, probe: { profile: probe.profile, transfer: probe.transfer, frames: probe.frames } };
   }
+  await writeReport(summary);
   console.log(JSON.stringify({ check: 'edited HDR sequence through float route, explicit output and HEVC Main10 master', ...summary }));
 } finally {
   rmSync(dir, { recursive: true, force: true });

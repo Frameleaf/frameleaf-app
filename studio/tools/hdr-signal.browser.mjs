@@ -4,6 +4,7 @@
 // reference for an HDR project, and an SDR project must deliver Freecut's
 // clamped results mapped to reference white.
 import assert from 'node:assert/strict';
+import { writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { chromeLaunchArgs } from '../engine/headless/lib/cli.mjs';
 
@@ -105,6 +106,8 @@ window.__vite_plugin_react_preamble_installed__ = true
       color.workingToSdrDisplay(w, color.resolveColorManagement(undefined, 'hdr')).map((v) => v * 255));
     return { hdr, sdr, want, fromSources, preview, toneMapped };
   });
+  // Raw measurements for conformance evidence, written before any assertion.
+  if (process.env.HDR_SIGNAL_REPORT) await writeFile(process.env.HDR_SIGNAL_REPORT, JSON.stringify(result));
   for (const project of ['hdr', 'sdr']) {
     for (const target of ['pq', 'hlg']) {
       const got = result[project][target];
