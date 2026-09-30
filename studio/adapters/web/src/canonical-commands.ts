@@ -25,7 +25,15 @@
 import type { Project } from '@/types/project'
 import type { TimelineItem, TextItem } from '@/types/timeline'
 import type { MediaMetadata } from '@/types/storage'
-import type { AnimatableProperty, EasingType } from '@/types/keyframe'
+import {
+  DEFAULT_SPRING_PARAMS,
+  isDirectLinkableProperty,
+  isVectorAnimatableProperty as isVectorProperty,
+  type AnimatableProperty,
+  type EasingConfig,
+  type EasingType,
+  type Keyframe,
+} from '@/types/keyframe'
 import type { TransformProperties } from '@/types/transform'
 import type { TransitionPresentation } from '@/types/transition'
 import { migrateProject } from '@/shared/projects/migrations'
@@ -74,8 +82,21 @@ import {
   trimItemStart,
   updateItem,
   updateItemTransform,
+  updateKeyframe,
+  updateKeyframes,
   updateTransition,
+  setPropertyExpression,
+  removePropertyExpression,
+  applyMotionModifierToItems,
+  bakeMotionToKeyframes,
 } from '@/features/timeline/stores/timeline-actions'
+import {
+  evaluatePropertyExpression,
+  isExpressionValueCompatible,
+} from '@/features/keyframes/utils/property-expression'
+import { buildBakeMotionPlan } from '@/features/keyframes/utils/bake-motion'
+import { getActiveMotionModifierChannels } from '@/features/keyframes/utils/motion-modifier-eval'
+import type { MotionModifier, MotionModifierType } from '@/types/motion'
 import {
   joinItems,
   rateStretchItem,
@@ -211,6 +232,12 @@ export const ENGINE_COMMANDS: Readonly<Record<string, readonly string[]>> = {
   // FL-94: canvas and rate changes, with an explicit timing policy once a timeline has content.
   'project.applyTemplate': ['readme.timeline-editing.8'],
   'sequence.setSettings': ['readme.timeline-editing.8'],
+  // FL-100: keyframe animation.
+  'keyframe.update': ['readme.keyframe-animation.1'],
+  'keyframe.setEasing': ['readme.keyframe-animation.2'],
+  'property.setExpression': ['extra.expressions'],
+  'property.setModifier': ['readme.keyframe-animation.3'],
+  'property.bakeModifier': ['readme.keyframe-animation.3'],
 }
 
 export const isEngineCommand = (id: string): boolean => Object.hasOwn(ENGINE_COMMANDS, id)
@@ -399,6 +426,69 @@ const requireItem = (id: string, field = 'clipId'): TimelineItem => {
   const item = useItemsStore.getState().itemById[id]
   if (!item) invalid(`${field}: clip "${id}" does not exist`)
   return item as TimelineItem
+}
+
+const RUNTIME_ONLY_EXPRESSION_ERRORS = /^(Division by zero|Expression produced a non-finite value|Property reference is unavailable|Expression dependency limit exceeded)/
+
+
+const MODIFIER_TYPES: readonly MotionModifierType[] = ['float-drift', 'breath-pulse', 'micro-shake', 'sway', 'spin']
+
+const finiteIn = (value: unknown, min: number, max: number): value is number =>
+  typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max
+
+/** A procedural modifier from a payload, with every field inside the range the evaluator reads. */
+const modifierField = (value: unknown): MotionModifier => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) invalid('modifier must be an object or null')
+  const candidate = value as Record<string, unknown>
+  const type = candidate.type as MotionModifierType
+  if (!MODIFIER_TYPES.includes(type)) invalid(`modifier.type must be one of ${MODIFIER_TYPES.join(', ')}`)
+  if (!finiteIn(candidate.amplitude, 0, 2)) invalid('modifier.amplitude must be a number in 0..2')
+  if (!finiteIn(candidate.frequency, 0.01, 30)) invalid('modifier.frequency must be a number of Hz in 0.01..30')
+  const phaseFrames = candidate.phaseFrames ?? 0
+  if (!finiteIn(phaseFrames, 0, 1_000_000)) invalid('modifier.phaseFrames must be a whole, non-negative number')
+  const seed = candidate.seed ?? 1
+  if (!finiteIn(seed, -1_000_000, 1_000_000)) invalid('modifier.seed must be a number')
+  if (candidate.enabled !== undefined && typeof candidate.enabled !== 'boolean') invalid('modifier.enabled must be a boolean')
+  let channelGains: MotionModifier['channelGains']
+  if (candidate.channelGains !== undefined) {
+    if (!candidate.channelGains || typeof candidate.channelGains !== 'object') invalid('modifier.channelGains must be an object')
+    channelGains = {}
+    for (const [channel, gain] of Object.entries(candidate.channelGains as Record<string, unknown>)) {
+      if (!['x', 'y', 'width', 'height', 'rotation', 'opacity'].includes(channel)) invalid(`modifier.channelGains: unknown channel ${channel}`)
+      if (!finiteIn(gain, 0, 2)) invalid(`modifier.channelGains.${channel} must be a number in 0..2`)
+      ;(channelGains as Record<string, number>)[channel] = gain as number
+    }
+  }
+  return {
+    version: 2,
+    id: typeof candidate.id === 'string' && candidate.id ? candidate.id : crypto.randomUUID(),
+    type,
+    enabled: candidate.enabled !== false,
+    amplitude: candidate.amplitude as number,
+    frequency: candidate.frequency as number,
+    phaseFrames: Math.round(phaseFrames as number),
+    seed: seed as number,
+    ...(channelGains ? { channelGains } : {}),
+  }
+}
+
+const keyframeCount = (item: TimelineItem): number =>
+  (useKeyframesStore.getState().keyframesByItemId[item.id]?.properties ?? []).reduce(
+    (sum, entry) => sum + entry.keyframes.length,
+    0,
+  )
+
+const EASINGS: readonly EasingType[] = ['linear', 'ease-in', 'ease-out', 'ease-in-out', 'hold', 'cubic-bezier', 'spring']
+
+const keyframesOn = (item: TimelineItem, property: AnimatableProperty): Keyframe[] =>
+  useKeyframesStore
+    .getState()
+    .keyframesByItemId[item.id]?.properties.find((entry) => entry.property === property)?.keyframes ?? []
+
+const requireKeyframe = (item: TimelineItem, property: AnimatableProperty, keyframeId: string): Keyframe => {
+  const keyframe = keyframesOn(item, property).find((entry) => entry.id === keyframeId)
+  if (!keyframe) invalid(`keyframeId: "${keyframeId}" is not on ${property}`)
+  return keyframe!
 }
 
 const requireTrack = (id: string, field = 'trackId') => {
@@ -1306,6 +1396,145 @@ const handlers: Record<string, Handler> = {
         invalid(`keyframeIds: "${id}" is not on ${property}`)
     }
     for (const id of ids as string[]) removeKeyframe(item.id, property, id)
+  },
+
+  'keyframe.update'(payload, { cadence }) {
+    const item = requireItem(stringField(payload, 'clipId'))
+    const property = stringField(payload, 'property') as AnimatableProperty
+    const keyframe = requireKeyframe(item, property, stringField(payload, 'keyframeId'))
+    const updates: Partial<Omit<Keyframe, 'id'>> = {}
+    if (payload.at !== undefined) {
+      const at = timeField(payload, 'at', cadence)
+      if (at < item.from || at >= item.from + item.durationInFrames) invalid('at must fall inside the clip')
+      updates.frame = at - item.from
+      const taken = keyframesOn(item, property).some((other) => other.id !== keyframe.id && other.frame === updates.frame)
+      if (taken) invalid(`at: ${property} already has a keyframe there`)
+    }
+    if (payload.value !== undefined) {
+      const value = (payload.value as { value?: unknown } | null)?.value
+      if (typeof value !== 'number' || !Number.isFinite(value)) invalid('value must be { value: number }')
+      updates.value = value as number
+    }
+    if (Object.keys(updates).length === 0) invalid('keyframe.update needs at or value')
+    updateKeyframe(item.id, property, keyframe.id, updates)
+    const after = keyframesOn(item, property).find((entry) => entry.id === keyframe.id)
+    if (!after || (updates.frame !== undefined && after.frame !== updates.frame)) {
+      failed('keyframe.update: keyframes cannot be moved inside a transition')
+    }
+  },
+
+  'keyframe.setEasing'(payload) {
+    const item = requireItem(stringField(payload, 'clipId'))
+    const property = stringField(payload, 'property') as AnimatableProperty
+    const ids = payload.keyframeIds
+    if (!Array.isArray(ids) || ids.length === 0 || ids.some((id) => typeof id !== 'string'))
+      invalid('keyframeIds is required')
+    for (const id of ids as string[]) requireKeyframe(item, property, id)
+    const easing = stringField(payload, 'easing') as EasingType
+    if (!EASINGS.includes(easing)) invalid(`easing must be one of ${EASINGS.join(', ')}`)
+    let easingConfig: EasingConfig | undefined
+    if (easing === 'cubic-bezier') {
+      const bezier = payload.bezier as Record<string, unknown> | undefined
+      const points = ['x1', 'y1', 'x2', 'y2'].map((key) => bezier?.[key])
+      if (!points.every((value) => typeof value === 'number' && Number.isFinite(value)))
+        invalid('bezier must be { x1, y1, x2, y2 } numbers for cubic-bezier')
+      const [x1, y1, x2, y2] = points as number[]
+      // The time axis of a curve cannot run backwards; the value axis may overshoot.
+      if (x1! < 0 || x1! > 1 || x2! < 0 || x2! > 1) invalid('bezier x1 and x2 must lie in 0..1')
+      easingConfig = { type: easing, bezier: { x1: x1!, y1: y1!, x2: x2!, y2: y2! } }
+    } else if (easing === 'spring') {
+      const spring = { ...DEFAULT_SPRING_PARAMS, ...((payload.spring as object | undefined) ?? {}) }
+      const ranges = { tension: [0, 500], friction: [0, 100], mass: [0.1, 10] } as const
+      for (const [key, [min, max]] of Object.entries(ranges)) {
+        const value = (spring as Record<string, unknown>)[key]
+        if (typeof value !== 'number' || !Number.isFinite(value) || value < min || value > max)
+          invalid(`spring.${key} must be a number in ${min}..${max}`)
+      }
+      easingConfig = { type: easing, spring }
+    } else if (payload.bezier !== undefined || payload.spring !== undefined) {
+      invalid(`${easing} takes no bezier or spring parameters`)
+    }
+    updateKeyframes(
+      (ids as string[]).map((keyframeId) => ({
+        itemId: item.id,
+        property,
+        keyframeId,
+        updates: { easing, easingConfig },
+      })),
+    )
+  },
+
+  /* ---------------- Expressions and procedural motion (FL-100) ---------------- */
+
+  'property.setExpression'(payload) {
+    const item = requireItem(stringField(payload, 'clipId'))
+    const property = stringField(payload, 'property')
+    if (!isDirectLinkableProperty(property)) invalid(`property "${property}" cannot carry an expression`)
+    const source = payload.expression
+    if (source === null) {
+      removePropertyExpression(item.id, property as never)
+      return
+    }
+    if (typeof source !== 'string' || !source.trim()) invalid('expression must be a string or null')
+    // Checked by the engine's own evaluator: its grammar has no statements, loops, calls into the
+    // page or I/O, so a check run is a parse. References resolve to a value of the right kind here;
+    // at render they resolve to the referenced layer, and an unresolvable one keeps the keyframed
+    // value with the error reported in the inspector.
+    const sample = isVectorProperty(property) ? { x: 1, y: 1 } : 1
+    const check = evaluatePropertyExpression(source as string, {
+      preValue: sample,
+      globalFrame: 0,
+      fps: projectCanvas.fps,
+      resolveProperty: (_id, referenced) => (isVectorProperty(referenced) ? { x: 1, y: 1 } : 1),
+    })
+    if (check.error && !RUNTIME_ONLY_EXPRESSION_ERRORS.test(check.error)) invalid(`expression: ${check.error}`)
+    if (!check.error && !isExpressionValueCompatible(property as never, check.value))
+      invalid(`expression gives a ${typeof check.value === 'number' ? 'number' : 'vector'}; ${property} needs the other`)
+    setPropertyExpression(item.id, { type: 'expression', targetProperty: property as never, source: source as string, enabled: true })
+  },
+
+  'property.setModifier'(payload) {
+    const item = requireItem(stringField(payload, 'clipId'))
+    const property = stringField(payload, 'property')
+    if (payload.modifier === null) {
+      const driving = (item.motionModifiers ?? []).filter((modifier) =>
+        getActiveMotionModifierChannels(modifier).includes(property as never),
+      )
+      if (driving.length === 0) invalid(`no modifier drives ${property}`)
+      updateItem(item.id, {
+        motionModifiers: (item.motionModifiers ?? []).filter((modifier) => !driving.includes(modifier)),
+      } as Partial<TimelineItem>)
+      return
+    }
+    const modifier = modifierField(payload.modifier)
+    if (!getActiveMotionModifierChannels(modifier).includes(property as never))
+      invalid(`a ${modifier.type} modifier does not drive ${property}`)
+    if (applyMotionModifierToItems([{ itemId: item.id, modifier }]) !== 1) failed('property.setModifier: the clip did not take the modifier')
+  },
+
+  'property.bakeModifier'(payload) {
+    const item = requireItem(stringField(payload, 'clipId'))
+    const property = stringField(payload, 'property')
+    const modifierId = stringField(payload, 'modifierId')
+    const modifier = (item.motionModifiers ?? []).find((entry) => entry.id === modifierId)
+    if (!modifier) invalid(`modifierId: "${modifierId}" is not on this clip`)
+    if (!modifier!.enabled) invalid('a disabled modifier contributes nothing to bake')
+    if (!getActiveMotionModifierChannels(modifier!).includes(property as never))
+      invalid(`a ${modifier!.type} modifier does not drive ${property}`)
+    // Procedural motion composes (keyframes, then animation layers, then every modifier), so it is
+    // baked together, as the editor's own Bake does: the keyframes then reproduce the pose.
+    const plan = buildBakeMotionPlan({
+      items: [item],
+      keyframesByItemId: useKeyframesStore.getState().keyframesByItemId,
+      fps: projectCanvas.fps,
+      frameWidth: projectCanvas.width,
+      frameHeight: projectCanvas.height,
+      resolveBase: (entry) => resolveTransform(entry, projectCanvas, getSourceDimensions(entry)),
+    })
+    const planned = plan.reduce((sum, entry) => sum + entry.keyframes.length, 0)
+    if (bakeMotionToKeyframes(plan) !== 1) failed('property.bakeModifier: nothing was baked')
+    const baked = keyframeCount(item)
+    if (baked < planned) failed('property.bakeModifier: keyframes cannot be placed inside a transition')
   },
 
   /* ---------------- Linked edit tools (FL-94) ---------------- */

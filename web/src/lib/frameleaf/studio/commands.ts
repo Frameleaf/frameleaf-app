@@ -355,6 +355,8 @@ export interface StudioCommandPayloads {
     keyframeIds: string[];
     easing: string;
     bezier?: StudioOpaqueValue;
+    /** Spring physics for `spring` easing (`tension`, `friction`, `mass`); defaults fill the rest. */
+    spring?: StudioOpaqueValue;
   };
   'keyframe.update': {
     clipId: string;

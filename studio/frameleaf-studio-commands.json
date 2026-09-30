@@ -907,7 +907,7 @@
     },
     {
       "capability": null,
-      "description": "Set easing or an explicit bezier on selected keyframes.",
+      "description": "Set easing, an explicit bezier or spring parameters on selected keyframes.",
       "id": "keyframe.setEasing",
       "manifestIds": ["readme.keyframe-animation.2"],
       "mutatesGraph": true,
@@ -916,7 +916,8 @@
         "clipId": "string",
         "easing": "string",
         "keyframeIds": "string[]",
-        "property": "string"
+        "property": "string",
+        "spring": "object?"
       },
       "scope": "keyframe",
       "undoable": true
