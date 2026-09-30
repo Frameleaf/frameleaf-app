@@ -183,6 +183,36 @@ describe('diffStudioGraphs', () => {
     expect(diffStudioGraphs(deep(1), deep(2))).toMatchObject({ changed: 1, paths: ['/a/b/c/d'] });
   });
 
+  it('reviews an imported expression as data and never runs it (FL-100)', () => {
+    const marker = '__frameleafExpressionRan';
+    const hostile = `globalThis.${marker} = true`;
+    const before = { timeline: { keyframes: [{ itemId: 'c1', expressions: [] }] } };
+    const after = {
+      timeline: {
+        keyframes: [
+          {
+            itemId: 'c1',
+            expressions: [{ type: 'expression', targetProperty: 'opacity', source: hostile, enabled: true }],
+          },
+        ],
+      },
+    };
+    for (const envelope of [before, after]) {
+      expect(
+        checkStudioEnvelope({
+          schemaVersion: STUDIO_ENVELOPE_SCHEMA_VERSION,
+          engine: STUDIO_ENGINE,
+          engineRevision: 'rev',
+          graph: envelope,
+        }),
+      ).toMatchObject({ ok: true });
+    }
+    const diff = diffStudioGraphs(before, after);
+    expect(diff.paths).toEqual(['/timeline/keyframes/0/expressions']);
+    expect(JSON.stringify(diff)).not.toContain(marker);
+    expect((globalThis as Record<string, unknown>)[marker]).toBeUndefined();
+  });
+
   it('caps the path list and says so', () => {
     const before: Record<string, number> = {};
     const after: Record<string, number> = {};
