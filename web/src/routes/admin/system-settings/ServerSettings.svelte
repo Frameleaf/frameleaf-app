@@ -43,6 +43,14 @@
         bind:checked={configToEdit.server.publicUsers}
       />
 
+      <SettingToggle
+        title={$t('admin.server_lan_discovery')}
+        subtitle={$t('admin.server_lan_discovery_description')}
+        {disabled}
+        bind:checked={configToEdit.server.lanDiscovery}
+        isEdited={configToEdit.server.lanDiscovery !== config.server.lanDiscovery}
+      />
+
       <SettingActions keys={['server']} {disabled} />
     </form>
   </div>
