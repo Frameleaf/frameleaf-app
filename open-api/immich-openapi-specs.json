@@ -84334,6 +84334,43 @@
         "properties": {},
         "type": "object"
       },
+      "SyncAlbumAssetAccessDeleteV1": {
+        "description": "Drop this album-source asset and its descriptive mirror data, preserving independently authorized sources.",
+        "properties": {
+          "albumId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "assetId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "albumId",
+          "assetId"
+        ],
+        "type": "object"
+      },
+      "SyncAlbumAssetAccessV1": {
+        "properties": {
+          "albumId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "asset": {
+            "$ref": "#/components/schemas/SyncAssetV2"
+          }
+        },
+        "required": [
+          "albumId",
+          "asset"
+        ],
+        "type": "object"
+      },
       "SyncAlbumDeleteV1": {
         "properties": {
           "albumId": {
@@ -85753,6 +85790,10 @@
       "SyncEntityType": {
         "description": "Sync entity type",
         "enum": [
+          "AlbumAssetAccessV1",
+          "AlbumAssetAccessDeleteV1",
+          "PartnerAssetAccessV1",
+          "PartnerAssetAccessDeleteV1",
           "PinnedCollectionV1",
           "PinnedCollectionDeleteV1",
           "DuplicateGroupV1",
@@ -85989,6 +86030,43 @@
           "showAt",
           "type",
           "updatedAt"
+        ],
+        "type": "object"
+      },
+      "SyncPartnerAssetAccessDeleteV1": {
+        "description": "Drop this partner-source asset and its descriptive mirror data, preserving independently authorized sources.",
+        "properties": {
+          "assetId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "sharedById": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "assetId",
+          "sharedById"
+        ],
+        "type": "object"
+      },
+      "SyncPartnerAssetAccessV1": {
+        "properties": {
+          "asset": {
+            "$ref": "#/components/schemas/SyncAssetV2"
+          },
+          "sharedById": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "asset",
+          "sharedById"
         ],
         "type": "object"
       },
@@ -86286,6 +86364,8 @@
       "SyncRequestType": {
         "description": "Sync request type",
         "enum": [
+          "AlbumAssetAccessV1",
+          "PartnerAssetAccessV1",
           "PinnedCollectionEventsV1",
           "DuplicateGroupsV1",
           "SharedSpacesV1",
