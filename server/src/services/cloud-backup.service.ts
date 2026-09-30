@@ -2174,6 +2174,7 @@ export class CloudBackupService {
             total: current.total,
             progress: current.total > 0 ? (current.checked / current.total) * 100 : 0,
           })) === 'continue',
+        { operationId: operation.id, claimToken },
       );
       if (!result) {
         return;

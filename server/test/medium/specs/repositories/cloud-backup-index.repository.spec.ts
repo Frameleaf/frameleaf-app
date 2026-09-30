@@ -8,6 +8,7 @@ import { CloudBackupIndexRepository } from 'src/repositories/cloud-backup-index.
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
 import * as cloudBackupMigration from 'src/schema/migrations/2100000000670-AddCloudBackupTables.js';
+import * as safetyProofMigration from 'src/schema/migrations/2100000000720-SafetyProofFacts.js';
 import { BaseService } from 'src/services/base.service.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { getKyselyDB } from 'test/utils.js';
@@ -57,9 +58,12 @@ describe(CloudBackupIndexRepository.name, () => {
     expect(expected.tables).toHaveLength(3);
     expect(await evidence()).toEqual(expected);
 
+    // The later proof tables depend on the manifest table. Revert them before the earlier migration.
+    await safetyProofMigration.down(defaultDatabase);
     await cloudBackupMigration.down(defaultDatabase);
     expect((await evidence()).tables).toEqual([]);
     await cloudBackupMigration.up(defaultDatabase);
+    await safetyProofMigration.up(defaultDatabase);
     expect(await evidence()).toEqual(expected);
   });
 
