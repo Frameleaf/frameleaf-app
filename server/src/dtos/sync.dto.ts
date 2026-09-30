@@ -488,6 +488,9 @@ export type SyncItem = {
   [SyncEntityType.PartnerV1]: SyncPartnerV1;
   [SyncEntityType.PartnerDeleteV1]: SyncPartnerDeleteV1;
   [SyncEntityType.AssetV2]: SyncAssetV2;
+  [SyncEntityType.AssetV3]: SyncAssetV2;
+  [SyncEntityType.AssetBootstrapV1]: SyncAssetV2;
+  [SyncEntityType.AssetDeleteV2]: SyncAssetDeleteV1;
   [SyncEntityType.AssetDeleteV1]: SyncAssetDeleteV1;
   [SyncEntityType.AssetMetadataV1]: SyncAssetMetadataV1;
   [SyncEntityType.AssetMetadataDeleteV1]: SyncAssetMetadataDeleteV1;

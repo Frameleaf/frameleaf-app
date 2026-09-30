@@ -2482,6 +2482,7 @@ export enum SyncRequestType {
   /** @deprecated */
   AssetsV1 = 'AssetsV1',
   AssetsV2 = 'AssetsV2',
+  AssetsV3 = 'AssetsV3',
   AssetExifsV1 = 'AssetExifsV1',
   AssetEditsV1 = 'AssetEditsV1',
   AssetMetadataV1 = 'AssetMetadataV1',
@@ -2523,6 +2524,9 @@ export enum SyncEntityType {
   /** @deprecated */
   AssetV1 = 'AssetV1',
   AssetV2 = 'AssetV2',
+  AssetV3 = 'AssetV3',
+  AssetBootstrapV1 = 'AssetBootstrapV1',
+  AssetDeleteV2 = 'AssetDeleteV2',
   AssetDeleteV1 = 'AssetDeleteV1',
   AssetExifV1 = 'AssetExifV1',
   AssetEditV1 = 'AssetEditV1',

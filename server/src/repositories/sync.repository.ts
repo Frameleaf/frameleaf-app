@@ -574,6 +574,36 @@ class AlbumUserSync extends BaseSync {
 }
 
 class AssetSync extends BaseSync {
+  /** Initial own-assets snapshot only: incremental delivery keeps its updateId ordering. */
+  @GenerateSql({
+    params: [dummyQueryOptions, { timestamp: '2026-01-01T00:00:00.000001Z', id: DummyValue.UUID }],
+    stream: true,
+  })
+  getBootstrap(options: SyncQueryOptions, cursor?: { timestamp: string; id: string }) {
+    const date = sql<string>`coalesce(asset."localDateTime", '-infinity'::timestamptz)`;
+    return (
+      this.db
+        .selectFrom('asset')
+        .select(syncAsset(options))
+        // Preserve PostgreSQL microseconds; driver Date conversion loses cursor precision.
+        .select(
+          sql<string>`case when asset."localDateTime" is null then '-infinity'
+        else to_char(asset."localDateTime" at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') end`.as(
+            'bootstrapTimestamp',
+          ),
+        )
+        .where('asset.updateId', '<', options.nowId)
+        .where('asset.ownerId', '=', options.userId)
+        .$call((qb) => withHiddenContentFilter(qb, options))
+        .$if(!!cursor, (qb) =>
+          qb.where(sql<boolean>`(${date}, asset.id) < (${cursor!.timestamp}::timestamptz, ${cursor!.id}::uuid)`),
+        )
+        .orderBy(date, 'desc')
+        .orderBy('asset.id', 'desc')
+        .stream()
+    );
+  }
+
   @GenerateSql({ params: [dummyQueryOptions], stream: true })
   getDeletes(options: SyncQueryOptions) {
     return this.auditQuery('asset_audit', options)

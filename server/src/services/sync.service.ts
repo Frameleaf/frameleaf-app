@@ -2,6 +2,7 @@ import { BadRequestException, ForbiddenException, Inject, Injectable } from '@ne
 import { Insertable } from 'kysely';
 import { DateTime, Duration } from 'luxon';
 import { Writable } from 'node:stream';
+import { z } from 'zod';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { SyncAck } from 'src/types.js';
 import { OnJob } from 'src/decorators.js';
@@ -24,6 +25,36 @@ import { getLocationHiddenPartnerIds, hideLocation } from 'src/utils/partner-loc
 import { withoutStoredLockedRuleIds } from 'src/utils/preferences.js';
 import { ClientDisconnectedError, waitForDrain } from 'src/utils/response.js';
 import { SerializeOptions, fromAck, serialize, toAck } from 'src/utils/sync.js';
+
+const parseAssetBootstrapAck = (ack: string) => {
+  const parts = ack.split('|');
+  const invalid = () => {
+    throw new BadRequestException('Invalid asset bootstrap cursor');
+  };
+  if (parts.length !== 3 || parts[0] !== SyncEntityType.AssetBootstrapV1 || !z.uuid().safeParse(parts[1]).success)
+    return invalid();
+  if (parts[2] === COMPLETE_ID) return {};
+  const encoded = parts[2]!;
+  if (encoded.length > 256 || !/^[A-Za-z0-9_-]+$/.test(encoded)) return invalid();
+  try {
+    const text = Buffer.from(encoded, 'base64url').toString('utf8');
+    if (Buffer.from(text).toString('base64url') !== encoded) return invalid();
+    const value: unknown = JSON.parse(text);
+    const result = z.tuple([z.string(), z.uuid()]).safeParse(value);
+    if (!result.success) return invalid();
+    const [timestamp, id] = result.data;
+    if (
+      timestamp !== '-infinity' &&
+      (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/.test(timestamp) ||
+        Number(timestamp.slice(0, 4)) === 0 ||
+        !DateTime.fromISO(timestamp, { zone: 'utc' }).isValid)
+    )
+      return invalid();
+    return { cursor: { timestamp, id } };
+  } catch {
+    return invalid();
+  }
+};
 
 type CheckpointMap = Partial<Record<SyncEntityType, SyncAck>>;
 type AssetLike = Omit<SyncAssetV2, 'checksum' | 'thumbhash'> & {
@@ -90,6 +121,7 @@ export const SYNC_TYPES_ORDER = [
   SyncRequestType.PartnersV1,
   SyncRequestType.AssetsV1,
   SyncRequestType.AssetsV2,
+  SyncRequestType.AssetsV3,
   SyncRequestType.StacksV1,
   SyncRequestType.PartnerAssetsV1,
   SyncRequestType.PartnerAssetsV2,
@@ -152,6 +184,10 @@ export class SyncService extends BaseService {
         throw new BadRequestException(`Invalid ack type: ${type}`);
       }
 
+      if (type === SyncEntityType.AssetBootstrapV1) {
+        parseAssetBootstrapAck(ack);
+      }
+
       // TODO pick the latest ack for each type, instead of using the last one
       checkpoints[type] = { sessionId, type, ack };
     }
@@ -199,6 +235,9 @@ export class SyncService extends BaseService {
     }
 
     const checkpoints = await this.syncCheckpointRepository.getAll(session.id);
+    for (const { type, ack } of checkpoints) {
+      if (type === SyncEntityType.AssetBootstrapV1) parseAssetBootstrapAck(ack);
+    }
     const checkpointMap: CheckpointMap = Object.fromEntries(checkpoints.map(({ type, ack }) => [type, fromAck(ack)]));
 
     if (this.needsFullSync(checkpointMap)) {
@@ -222,6 +261,7 @@ export class SyncService extends BaseService {
       [SyncRequestType.UsersV1]: () => this.syncUsersV1(options, response, checkpointMap),
       [SyncRequestType.PartnersV1]: () => this.syncPartnersV1(options, response, checkpointMap),
       [SyncRequestType.AssetsV2]: () => this.syncAssetsV2(options, response, checkpointMap),
+      [SyncRequestType.AssetsV3]: () => this.syncAssetsV3(options, response, checkpointMap),
       [SyncRequestType.AssetExifsV1]: () => this.syncAssetExifsV1(options, response, checkpointMap),
       [SyncRequestType.AssetEditsV1]: () => this.syncAssetEditsV1(options, response, checkpointMap),
       [SyncRequestType.PartnerAssetsV2]: () => this.syncPartnerAssetsV2(options, response, checkpointMap, session.id),
@@ -373,6 +413,43 @@ export class SyncService extends BaseService {
     const upsertType = SyncEntityType.AssetV2;
     const upserts = this.syncRepository.asset.getUpserts({ ...options, ack: checkpointMap[upsertType] });
     for await (const { updateId, ...data } of upserts) {
+      await send(response, { type: upsertType, ids: [updateId], data: mapSyncAssetV2(data) });
+    }
+  }
+
+  private async syncAssetsV3(options: SyncQueryOptions, response: Writable, checkpointMap: CheckpointMap) {
+    const bootstrapType = SyncEntityType.AssetBootstrapV1;
+    const checkpoint = checkpointMap[bootstrapType];
+    const parsed = checkpoint && parseAssetBootstrapAck(toAck(checkpoint));
+    const watermark = checkpoint?.updateId ?? options.nowId;
+    if (checkpoint?.extraId !== COMPLETE_ID) {
+      const assets = this.syncRepository.asset.getBootstrap({ ...options, nowId: watermark }, parsed?.cursor);
+      for await (const { bootstrapTimestamp, ...data } of assets) {
+        const cursor = Buffer.from(JSON.stringify([bootstrapTimestamp, data.id])).toString('base64url');
+        await send(response, {
+          type: SyncEntityType.AssetV3,
+          ackType: bootstrapType,
+          ids: [watermark, cursor],
+          data: mapSyncAssetV2(data),
+        });
+      }
+      await sendEntityBackfillCompleteAck(response, bootstrapType, watermark);
+    }
+
+    // The bootstrap floor is a fallback, never a separately emitted delta ack.
+    const floor = { type: bootstrapType, updateId: watermark };
+    const deleteType = SyncEntityType.AssetDeleteV2;
+    for await (const { id, ...data } of this.syncRepository.asset.getDeletes({
+      ...options,
+      ack: checkpointMap[deleteType] ?? floor,
+    })) {
+      await send(response, { type: deleteType, ids: [id], data });
+    }
+    const upsertType = SyncEntityType.AssetV3;
+    for await (const { updateId, ...data } of this.syncRepository.asset.getUpserts({
+      ...options,
+      ack: checkpointMap[upsertType] ?? floor,
+    })) {
       await send(response, { type: upsertType, ids: [updateId], data: mapSyncAssetV2(data) });
     }
   }
