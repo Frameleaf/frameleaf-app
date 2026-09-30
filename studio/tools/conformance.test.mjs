@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
-import { AXES, fixtureIds, loadConformance, validateConformance } from './conformance.mjs';
+import { AXES, COMMAND_AXIS_WAIVERS, fixtureIds, loadConformance, validateConformance } from './conformance.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const original = await loadConformance(root);
@@ -18,6 +18,37 @@ test('all immutable IDs have owners and separate unmeasured axes; release stays 
   assert.equal(summary.releaseQualified, false);
   assert.equal(new Set(original.catalog.rows.flatMap(fixtureIds)).size, summary.fixtureCases);
   await assert.rejects(validateConformance(original, root, { release: true }), /release blocked/);
+});
+
+test('the command axis is waived for exactly the eleven rows the coordinator ruled on, with the ruling\'s reason', async () => {
+  assert.deepEqual([...COMMAND_AXIS_WAIVERS.keys()].sort(), [
+    'extra.portable-headless', 'module.docs', 'module.settings', 'module.workspace-gate',
+    'readme.local-ai-analysis.7', 'readme.preview-playback.3', 'readme.preview-playback.5',
+    'readme.projects-storage.1', 'readme.projects-storage.2', 'readme.projects-storage.3', 'readme.projects-storage.6',
+  ]);
+  // Ruled against: soft-delete, restore and trash change state and must be measured.
+  assert.equal(COMMAND_AXIS_WAIVERS.has('readme.projects-storage.4'), false);
+  const waived = original.overlay.rows.filter((row) => row.axes.command.status === 'not-applicable').map((row) => row.id);
+  assert.deepEqual(waived.sort(), [...COMMAND_AXIS_WAIVERS.keys()].sort());
+  for (const [id, reason] of COMMAND_AXIS_WAIVERS) {
+    const row = original.overlay.rows.find((entry) => entry.id === id);
+    assert.equal(row.axes.command.reason, reason);
+    for (const axis of AXES.filter((axis) => axis !== 'command')) assert.notEqual(row.axes[axis].status, 'not-applicable', `${id}/${axis}`);
+  }
+  for (const mutate of [
+    // An unlisted row.
+    (data) => { data.overlay.rows.find((row) => row.id === 'readme.projects-storage.4').axes.command = { status: 'not-applicable', reason: 'no command' }; },
+    // A listed row with its own wording.
+    (data) => { data.overlay.rows.find((row) => row.id === 'module.docs').axes.command.reason = 'docs'; },
+    // A listed row's waiver pretending to be a measurement.
+    (data) => { data.overlay.rows.find((row) => row.id === 'module.docs').axes.command.run = { path: 'x', sha256: '0'.repeat(64) }; },
+    // A listed row waived on another axis.
+    (data) => { data.overlay.rows.find((row) => row.id === 'module.docs').axes.graph = { status: 'not-applicable', reason: COMMAND_AXIS_WAIVERS.get('module.docs') }; },
+  ]) {
+    const data = structuredClone(original);
+    mutate(data);
+    await assert.rejects(validateConformance(data, root));
+  }
 });
 
 test('missing, duplicate, unknown, unowned and inferred rows fail', async () => {

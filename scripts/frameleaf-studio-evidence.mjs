@@ -255,6 +255,11 @@ export async function applyFamilyCoverage(
     }
     const missing = missingCases(fixture, axis, coveredCases);
     const current = row.axes[axis];
+    // A ruled waiver (conformance.mjs COMMAND_AXIS_WAIVERS) is not evidence to overwrite.
+    if (current.status === "not-applicable") {
+      summary.waived = (summary.waived ?? 0) + 1;
+      continue;
+    }
     if (current.status === "passed") {
       summary.alreadyPassed++;
       continue;
@@ -351,17 +356,41 @@ export const ROW_COMMAND_MAPPING = {
   //
   // FL-94: the timeline module is the timeline's own edits: clips, tracks and markers.
   "module.timeline": [
-    "clip.add", "clip.delete", "clip.insert", "clip.join", "clip.move", "clip.overwrite",
-    "clip.push", "clip.reorder", "clip.roll", "clip.setLink", "clip.setSpeed", "clip.slide",
-    "clip.slip", "clip.split", "clip.trimEnd", "clip.trimStart", "marker.add", "marker.remove",
-    "marker.update", "track.add", "track.closeGap", "track.remove", "track.reorder", "track.set",
+    "clip.add",
+    "clip.delete",
+    "clip.insert",
+    "clip.join",
+    "clip.move",
+    "clip.overwrite",
+    "clip.push",
+    "clip.reorder",
+    "clip.roll",
+    "clip.setLink",
+    "clip.setSpeed",
+    "clip.slide",
+    "clip.slip",
+    "clip.split",
+    "clip.trimEnd",
+    "clip.trimStart",
+    "marker.add",
+    "marker.remove",
+    "marker.update",
+    "track.add",
+    "track.closeGap",
+    "track.remove",
+    "track.reorder",
+    "track.set",
   ],
   // FL-98: the preview module edits the graph only through its gizmos (transform, parenting,
   // crop, mask); its frames come from preview.request/release, which the matrix measures at the
   // gate only, as host services.
   "module.preview": [
-    "clip.setTransform", "clip.setTransformParent", "clip.setCrop", "clip.setMask",
-    "preview.request", "preview.release",
+    "clip.setTransform",
+    "clip.setTransformParent",
+    "clip.setCrop",
+    "clip.setMask",
+    "preview.request",
+    "preview.release",
   ],
   // FL-98: frame-accurate playback is the exact frame at a rational time, asked for by
   // preview.request (FL-93/FL-96).
@@ -371,8 +400,13 @@ export const ROW_COMMAND_MAPPING = {
   "extra.bento": ["clip.setTransform"],
   // FL-100: keyframes and the property modifiers and expressions the keyframe editor drives.
   "module.keyframes": [
-    "keyframe.add", "keyframe.remove", "keyframe.setEasing", "keyframe.update",
-    "property.bakeModifier", "property.setExpression", "property.setModifier",
+    "keyframe.add",
+    "keyframe.remove",
+    "keyframe.setEasing",
+    "keyframe.update",
+    "property.bakeModifier",
+    "property.setExpression",
+    "property.setModifier",
   ],
   // FL-103: pitch, EQ, fades and volume are clip and track audio; transition audio is the
   // transition itself.
@@ -391,8 +425,14 @@ export const ROW_COMMAND_MAPPING = {
   "module.project-bundle": ["project.exportBundle", "project.importBundle"],
   // FL-91: what a project holds in the editor: its name, settings, template and sequences.
   "module.projects": [
-    "project.rename", "project.setSettings", "project.applyTemplate", "sequence.add",
-    "sequence.duplicate", "sequence.remove", "sequence.setActive", "sequence.setFields",
+    "project.rename",
+    "project.setSettings",
+    "project.applyTemplate",
+    "sequence.add",
+    "sequence.duplicate",
+    "sequence.remove",
+    "sequence.setActive",
+    "sequence.setFields",
     "sequence.setSettings",
   ],
   // FL-88: the editor is the mount every command reaches the graph through; its own commands are
@@ -511,10 +551,15 @@ export async function applyCommandMatrixCoverage(
     if (!fixture) {
       throw new Error(`${row.id}: no matching row in ${CATALOG_PATH}`);
     }
+    const current = row.axes[axis];
+    // A ruled waiver (conformance.mjs COMMAND_AXIS_WAIVERS) is not evidence to overwrite.
+    if (current.status === "not-applicable") {
+      summary.waived = (summary.waived ?? 0) + 1;
+      continue;
+    }
     const coveredCases = coverageByRow.get(row.id);
     if (!coveredCases) summary.untested++;
     const missing = missingCases(fixture, axis, coveredCases ?? new Set());
-    const current = row.axes[axis];
     if (current.status === "passed") {
       summary.alreadyPassed++;
       continue;
