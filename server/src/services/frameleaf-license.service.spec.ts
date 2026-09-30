@@ -438,43 +438,53 @@ describe(FrameleafLicenseService.name, () => {
     });
 
     it('schedules the next refresh after discovery’s entitlementRefreshSec and refreshes early when it shrinks (FC-62)', async () => {
-      const discovery = cloud.discovery;
-      let entitlementRefreshSec = 7200;
-      cloud.discovery = () => ({ ...discovery(), intervals: { heartbeatSec: 300, entitlementRefreshSec } });
-      link();
-      serveToken();
-      cloud.on('POST /api/v1/licenses/refresh', () => ({
-        status: 200,
-        body: { certificates: [certificate({ jti: 'jti-2' })] },
-      }));
-      await sut.refreshNow();
-      const plan = store()!.plan!;
-      const due = Date.parse(plan.nextRefreshAt!) - Date.parse(plan.refreshedAt!);
-      expect(due).toBeGreaterThanOrEqual(7200 * 1000);
-      expect(due).toBeLessThan(7920 * 1000);
+      // Refresh stamps milliseconds but schedules in whole seconds. Fix this case's clock and
+      // minimum jitter so the existing bounds exercise the exact interval deterministically.
+      const now = Math.floor(Date.now() / 1000) * 1000;
+      const clock = vi.spyOn(Date, 'now').mockReturnValue(now);
+      const jitter = vi.spyOn(Math, 'random').mockReturnValue(0);
+      try {
+        const discovery = cloud.discovery;
+        let entitlementRefreshSec = 7200;
+        cloud.discovery = () => ({ ...discovery(), intervals: { heartbeatSec: 300, entitlementRefreshSec } });
+        link();
+        serveToken();
+        cloud.on('POST /api/v1/licenses/refresh', () => ({
+          status: 200,
+          body: { certificates: [certificate({ jti: 'jti-2' })] },
+        }));
+        await sut.refreshNow();
+        const plan = store()!.plan!;
+        const due = Date.parse(plan.nextRefreshAt!) - Date.parse(plan.refreshedAt!);
+        expect(due).toBeGreaterThanOrEqual(7200 * 1000);
+        expect(due).toBeLessThan(7920 * 1000);
 
-      // not due yet: the hourly tick asks nothing
-      const refreshes = () => cloud.requests.filter(({ path }) => path === '/api/v1/licenses/refresh').length;
-      await sut.handleRefresh();
-      expect(refreshes()).toBe(1);
+        // not due yet: the hourly tick asks nothing
+        const refreshes = () => cloud.requests.filter(({ path }) => path === '/api/v1/licenses/refresh').length;
+        await sut.handleRefresh();
+        expect(refreshes()).toBe(1);
 
-      // staff shorten the interval below the certificate's age: the next tick refreshes
-      entitlementRefreshSec = 3600;
-      (sut as unknown as { frameleafCloudRepository: { forget(): void } }).frameleafCloudRepository.forget();
-      metadata.set(SystemMetadataKey.FrameleafLicense, {
-        ...store()!,
-        plan: {
-          ...plan,
-          claims: { ...plan.claims, iat: plan.claims.iat - 5000 },
-          refreshedAt: new Date(Date.now() - 5000 * 1000).toISOString(),
-        },
-      });
-      // the discovery copy this process holds is read when the tick runs
-      await (
-        sut as unknown as { frameleafCloudRepository: { discovery(url: string): Promise<unknown> } }
-      ).frameleafCloudRepository.discovery(cloud.url);
-      await sut.handleRefresh();
-      expect(refreshes()).toBe(2);
+        // staff shorten the interval below the certificate's age: the next tick refreshes
+        entitlementRefreshSec = 3600;
+        (sut as unknown as { frameleafCloudRepository: { forget(): void } }).frameleafCloudRepository.forget();
+        metadata.set(SystemMetadataKey.FrameleafLicense, {
+          ...store()!,
+          plan: {
+            ...plan,
+            claims: { ...plan.claims, iat: plan.claims.iat - 5000 },
+            refreshedAt: new Date(Date.now() - 5000 * 1000).toISOString(),
+          },
+        });
+        // the discovery copy this process holds is read when the tick runs
+        await (
+          sut as unknown as { frameleafCloudRepository: { discovery(url: string): Promise<unknown> } }
+        ).frameleafCloudRepository.discovery(cloud.url);
+        await sut.handleRefresh();
+        expect(refreshes()).toBe(2);
+      } finally {
+        jitter.mockRestore();
+        clock.mockRestore();
+      }
     });
 
     describe('the answer replaces every certificate held (FL-185)', () => {
