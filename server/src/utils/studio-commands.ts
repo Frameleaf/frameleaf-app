@@ -122,6 +122,10 @@ export const validateStudioCommandPayload = (
     const optional = declaration.endsWith('?');
     const type = optional ? declaration.slice(0, -1) : declaration;
     const present = Object.hasOwn(payload, name) && payload[name] !== undefined;
+    // An optional field given as null clears what it names: no parent, no expression (FL-100).
+    if (optional && present && payload[name] === null) {
+      continue;
+    }
     if (!present) {
       if (!optional) {
         return { valid: false, detail: `${id}: missing required field ${name}` };

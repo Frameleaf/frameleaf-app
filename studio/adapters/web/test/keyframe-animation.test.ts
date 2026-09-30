@@ -439,3 +439,70 @@ describe('Ken Burns (FL-100)', () => {
     }
   })
 })
+
+describe('vector keyframes, velocity handles and path tangents (FL-100)', () => {
+  const lane = (graph: Project, itemId: string, property: string) =>
+    (keyframesOf(graph, itemId) as unknown as { vectorProperties?: Array<{ property: string; keyframes: Array<Record<string, unknown>> }> })
+      ?.vectorProperties?.find((entry) => entry.property === property)?.keyframes ?? []
+
+  it('keys position, sets mirrored tangents and velocity handles, clears them, and round-trips them as data', async () => {
+    const start = await withStill()
+    const clip = itemOf(start)
+    const keyed = await applied(start, [
+      envelope('keyframe.add', { clipId: clip.id, property: 'position', at: seconds(0), value: { x: 0, y: 0 } }),
+      envelope('keyframe.add', { clipId: clip.id, property: 'position', at: seconds(2), value: { x: 200, y: -50 }, easing: 'ease-out' }),
+    ])
+    const [first, second] = lane(keyed, clip.id, 'position') as Array<{ id: string }>
+    expect(lane(keyed, clip.id, 'position')).toEqual([
+      expect.objectContaining({ frame: 0, value: { x: 0, y: 0 } }),
+      expect.objectContaining({ frame: 60, value: { x: 200, y: -50 }, easing: 'ease-out' }),
+    ])
+
+    const shaped = await applied(keyed, [
+      envelope('keyframe.update', {
+        clipId: clip.id,
+        property: 'position',
+        keyframeId: first!.id,
+        spatial: { outTangent: { x: 40, y: 10 }, continuous: true },
+        temporalEase: { out: { speed: 120, influence: 33.3 } },
+      }),
+      envelope('keyframe.update', { clipId: clip.id, property: 'position', keyframeId: second!.id, at: seconds(3), value: { x: 180, y: -40 } }),
+    ])
+    expect(lane(shaped, clip.id, 'position')).toEqual([
+      expect.objectContaining({
+        id: first!.id,
+        spatial: { inTangent: { x: -40, y: -10 }, outTangent: { x: 40, y: 10 }, continuous: true },
+        temporalEase: { out: { speed: 120, influence: 33.3 } },
+      }),
+      expect.objectContaining({ id: second!.id, frame: 90, value: { x: 180, y: -40 } }),
+    ])
+    // The stored graph is data: parse it back and nothing about the handles is lost or flattened.
+    expect(lane(JSON.parse(JSON.stringify(shaped)), clip.id, 'position')).toEqual(lane(shaped, clip.id, 'position'))
+
+    const cleared = await applied(shaped, [
+      envelope('keyframe.update', { clipId: clip.id, property: 'position', keyframeId: first!.id, spatial: null, temporalEase: null }),
+      envelope('keyframe.setEasing', { clipId: clip.id, property: 'position', keyframeIds: [second!.id], easing: 'hold' }),
+    ])
+    const [plain, held] = lane(cleared, clip.id, 'position')
+    expect(plain!.spatial).toBeUndefined()
+    expect(plain!.temporalEase).toBeUndefined()
+    expect(held).toMatchObject({ easing: 'hold' })
+
+    const removed = await applied(cleared, [
+      envelope('keyframe.remove', { clipId: clip.id, property: 'position', keyframeIds: [first!.id] }),
+    ])
+    expect(lane(removed, clip.id, 'position').map((keyframe) => keyframe.id)).toEqual([second!.id])
+
+    for (const [id, payload] of [
+      ['keyframe.add', { clipId: clip.id, property: 'position', at: seconds(1), value: { value: 3 } }],
+      ['keyframe.update', { clipId: clip.id, property: 'position', keyframeId: first!.id, spatial: { outTangent: { x: 1, y: 1 }, inTangent: { x: 1, y: 1 }, continuous: true } }],
+      ['keyframe.update', { clipId: clip.id, property: 'position', keyframeId: first!.id, spatial: { outTangent: { x: 1, y: 1 } } }],
+      ['keyframe.update', { clipId: clip.id, property: 'position', keyframeId: first!.id, temporalEase: { out: { speed: 1, influence: 0 } } }],
+      ['keyframe.update', { clipId: clip.id, property: 'position', keyframeId: first!.id, at: seconds(3) }],
+      ['keyframe.update', { clipId: clip.id, property: 'scale', keyframeId: first!.id, value: { x: 1, y: 1 } }],
+      ['keyframe.update', { clipId: clip.id, property: 'opacity', keyframeId: first!.id, temporalEase: { out: { speed: 1, influence: 50 } } }],
+    ] as const) {
+      await expect(apply(shaped, [envelope(id, payload as never)])).resolves.toMatchObject({ status: 'rejected', reason: 'invalid' })
+    }
+  })
+})
