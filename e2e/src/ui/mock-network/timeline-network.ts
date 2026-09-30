@@ -1,6 +1,6 @@
 import { AssetResponseDto, AssetVisibility } from '@immich/sdk';
 import { BrowserContext, Page, Request, Route } from '@playwright/test';
-import { basename } from 'node:path';
+import { basename, dirname } from 'node:path';
 import {
   Changes,
   getAlbum,
@@ -147,6 +147,17 @@ export const setupTimelineMockApiRoutes = async (
 
   await context.route('**/api/assets/*/ocr', async (route) => {
     return route.fulfill({ status: 200, contentType: 'application/json', json: [] });
+  });
+
+  // FL-115: the viewer asks which develop version a photo shows. A failed lookup gives its preview a
+  // fresh cache key (`c=<thumbhash>-1`) and sends zoom to `size=fullsize`, so answer as the server
+  // does for an unedited photo.
+  await context.route('**/api/assets/*/develop', async (route, request) => {
+    if (request.method() !== 'GET') {
+      return route.fallback();
+    }
+    const assetId = basename(dirname(new URL(request.url()).pathname));
+    return route.fulfill({ status: 200, json: { assetId, currentRevisionId: null, revisions: [] } });
   });
 
   await context.route('**/api/assets/*/thumbnail?size=*', async (route, request) => {
