@@ -158,7 +158,8 @@ test("server E2E diagnostics preserve the failure state before maintenance", () 
   );
   assert.equal(
     steps.find((step) => step.name === "Capture Docker logs").run,
-    "docker compose logs --no-color > docker-compose-logs.txt",
+    // FL-201: the logs include the fake Frameleaf Cloud service the consent specs run against.
+    "docker compose -f docker-compose.yml -f docker-compose.frameleaf-cloud-fixture.yml logs --no-color > docker-compose-logs.txt",
   );
   const artifact = steps.find((step) => step.name === "Archive Docker logs");
   assert.equal(artifact.if, "always()");
