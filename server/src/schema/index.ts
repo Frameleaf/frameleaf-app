@@ -39,6 +39,7 @@ import { AlbumTable } from 'src/schema/tables/album.table.js';
 import { ApiKeyTable } from 'src/schema/tables/api-key.table.js';
 import { AssetAuditTable } from 'src/schema/tables/asset-audit.table.js';
 import { AssetAudioTable, AssetKeyframeTable, AssetVideoTable } from 'src/schema/tables/asset-av.table.js';
+import { AssetBackupDeletionTable } from 'src/schema/tables/asset-backup-deletion.table.js';
 import { AssetBestPhotoScoreTable } from 'src/schema/tables/asset-best-photo-score.table.js';
 import { AssetDocumentEditTable } from 'src/schema/tables/asset-document-edit.table.js';
 import { AssetEditAuditTable } from 'src/schema/tables/asset-edit-audit.table.js';
@@ -196,6 +197,7 @@ import { WorkflowTable } from 'src/schema/tables/workflow.table.js';
 export class ImmichDatabase {
   tables = [
     BackupDeviceTable,
+    AssetBackupDeletionTable,
     BackupReconciliationTable,
     ActivityTable,
     AdminAuditEventTable,
@@ -376,6 +378,7 @@ export interface Migrations {
 
 export interface DB {
   backup_device: BackupDeviceTable;
+  asset_backup_deletion: AssetBackupDeletionTable;
   backup_reconciliation: BackupReconciliationTable;
   kysely_migrations: { timestamp: string; name: string };
 
