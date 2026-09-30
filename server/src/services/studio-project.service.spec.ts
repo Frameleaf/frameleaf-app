@@ -147,6 +147,7 @@ describe(StudioProjectService.name, () => {
       clearLease: vi.fn(),
       createWithRevision: vi.fn(),
       getSpace: vi.fn(),
+      isLiveSharedSpaceOf: vi.fn().mockResolvedValue(false),
       acquireLease: vi.fn(),
       releaseLease: vi.fn().mockResolvedValue(true),
       appendRevision: vi.fn(),
@@ -1017,7 +1018,40 @@ describe(StudioProjectService.name, () => {
       expect(seen.resources?.hdrSources).toEqual([hdr]);
       expect(seen.resources?.hdrProxySources).toEqual([hdr]);
       expect(resources.hdrLibraryAssets).toHaveBeenCalledWith([hdr, sdr]);
-      expect(resources.studioHdrProxies).toHaveBeenCalledWith([hdr]);
+      expect(resources.studioHdrProxies).toHaveBeenCalledWith([hdr], {
+        ownerId: project.ownerId,
+        sharedSpace: false,
+      });
+    });
+
+    it('treats a project as shared-space only while its space is live, shared and still the owner’s (FL-97)', async () => {
+      const hdr = newUuid();
+      const resolved = manifest(true);
+      resources.resolveProjectResources.mockResolvedValue({
+        ...resolved,
+        manifest: {
+          ...resolved.manifest,
+          entries: [{ key: `library-asset:${hdr}`, kind: StudioResourceKind.LibraryAsset, id: hdr }],
+        },
+      });
+      resources.hdrLibraryAssets.mockResolvedValue([hdr]);
+      project = projectStub({ spaceId: newUuid() });
+
+      // a solo, deleted or left space: personal rules
+      repository.isLiveSharedSpaceOf.mockResolvedValue(false);
+      await sut.get(owner, project.id);
+      expect(repository.isLiveSharedSpaceOf).toHaveBeenCalledWith(project.spaceId, project.ownerId);
+      expect(resources.studioHdrProxies).toHaveBeenLastCalledWith([hdr], {
+        ownerId: project.ownerId,
+        sharedSpace: false,
+      });
+
+      repository.isLiveSharedSpaceOf.mockResolvedValue(true);
+      await sut.get(owner, project.id);
+      expect(resources.studioHdrProxies).toHaveBeenLastCalledWith([hdr], {
+        ownerId: project.ownerId,
+        sharedSpace: true,
+      });
     });
 
     it('duplicates the head byte for byte into a new project of the owner, unshared', async () => {

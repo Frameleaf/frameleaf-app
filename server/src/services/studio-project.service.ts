@@ -1101,7 +1101,7 @@ export class StudioProjectService {
           : [],
       hiddenSources: access === 'owner' ? await this.hiddenSources(auth, resolution.refused) : [],
       // FL-97: only authorized entries, so nothing is said about a source the account cannot read.
-      ...(await this.hdrResources(resolution.manifest.entries)),
+      ...(await this.hdrResources(project, resolution.manifest.entries)),
       checkedAt: resolution.manifest.issuedAt,
     };
     return { withheld: access === 'reviewer' && !resolution.manifest.complete, resources };
@@ -1112,11 +1112,20 @@ export class StudioProjectService {
    * HDR now (their Studio HDR intermediate exists; the rest are queued). Only authorized entries are
    * considered, so nothing is said about a source the account cannot read.
    */
-  private async hdrResources(entries: readonly StudioAuthorizedEntry[]) {
+  private async hdrResources(project: StudioProject, entries: readonly StudioAuthorizedEntry[]) {
     const hdrSources = await this.resources.hdrLibraryAssets(
       entries.filter((entry) => entry.kind === StudioResourceKind.LibraryAsset).map((entry) => entry.id),
     );
-    return { hdrSources, hdrProxySources: await this.resources.studioHdrProxies(hdrSources) };
+    // Owner decision (2026-09-29): a shared-space project counts only while its space is live, shared
+    // with someone else, and still the project owner's.
+    const sharedSpace =
+      hdrSources.length > 0 && !!project.spaceId
+        ? await this.repository.isLiveSharedSpaceOf(project.spaceId, project.ownerId)
+        : false;
+    return {
+      hdrSources,
+      hdrProxySources: await this.resources.studioHdrProxies(hdrSources, { ownerId: project.ownerId, sharedSpace }),
+    };
   }
 
   /**

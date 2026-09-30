@@ -1442,8 +1442,15 @@ export class StudioResourceService extends BaseService {
    * - never one refused as ineligible for this very original (a new original is tried again);
    * - one whose transcode failed only after a day, so a failing clip is not re-encoded on every read;
    * - a ready one whose file went missing, again.
+   *
+   * Owner decision (FL-97, 2026-09-29): only for the asset owner's own projects and for shared-space
+   * projects. A personal project that places someone else's HDR clip (a partner's, an album's) reads
+   * that clip's SDR playback stream: nothing is made, queued or offered for it.
    */
-  async studioHdrProxies(hdrIds: readonly string[]): Promise<string[]> {
+  async studioHdrProxies(
+    hdrIds: readonly string[],
+    project: { ownerId: string; sharedSpace: boolean },
+  ): Promise<string[]> {
     const candidates = [...new Set(hdrIds.filter((id) => isStudioUuid(id)))];
     if (candidates.length === 0 || !(await this.assetRepository.canRecordStudioHdrIntermediates())) {
       return [];
@@ -1452,8 +1459,8 @@ export class StudioResourceService extends BaseService {
     const retryFailedBefore = Date.now() - STUDIO_HDR_RETRY_FAILED_MS;
     const ready: string[] = [];
     const queue: string[] = [];
-    for (const { assetId, edited, current, status, path, createdAt } of states) {
-      if (edited) {
+    for (const { assetId, ownerId, edited, current, status, path, createdAt } of states) {
+      if (edited || (!project.sharedSpace && ownerId !== project.ownerId)) {
         continue;
       }
       if (current && status === 'ready' && path) {

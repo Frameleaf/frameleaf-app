@@ -104,6 +104,8 @@ export type AssetStats = Record<AssetType, number>;
 export type StudioHdrIntermediateStatus = 'ready' | 'ineligible' | 'failed';
 export type StudioHdrIntermediateState = {
   assetId: string;
+  /** The asset's owner: a personal project gets intermediates only of its owner's own assets. */
+  ownerId: string;
   edited: boolean;
   current: boolean;
   status: StudioHdrIntermediateStatus | null;
@@ -2888,7 +2890,7 @@ export class AssetRepository {
       return [];
     }
     const { rows } = await sql<StudioHdrIntermediateState>`
-      SELECT a.id AS "assetId",
+      SELECT a.id AS "assetId", a."ownerId",
         EXISTS (
           SELECT 1 FROM public.asset_file f
           WHERE f."assetId" = a.id AND f.type = ${AssetFileType.EncodedVideo} AND f."isEdited"

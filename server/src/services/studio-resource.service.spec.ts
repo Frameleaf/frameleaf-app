@@ -553,12 +553,16 @@ describe(StudioResourceService.name, () => {
       expect(mocks.asset.getVideoStreamsForDecode).not.toHaveBeenCalled();
     });
 
+    const projectOwner = newUuid();
+    const personal = { ownerId: projectOwner, sharedSpace: false };
+
     it('names the HDR sources whose current intermediate is on disk and queues only what needs making', async () => {
       const [ready, none, lost, stale, edited, ineligible, failedToday, failedLongAgo] = Array.from({ length: 8 }, () =>
         newUuid(),
       );
       const state = (assetId: string, overrides: Record<string, unknown> = {}) => ({
         assetId,
+        ownerId: projectOwner,
         edited: false,
         current: true,
         status: 'ready',
@@ -578,7 +582,7 @@ describe(StudioResourceService.name, () => {
       ] as never);
       mocks.storage.checkFileExists.mockImplementation((path: string) => Promise.resolve(path !== `/${lost}.mp4`));
 
-      await expect(sut.studioHdrProxies([ready, none, lost, ready, 'not-a-uuid'])).resolves.toEqual([ready]);
+      await expect(sut.studioHdrProxies([ready, none, lost, ready, 'not-a-uuid'], personal)).resolves.toEqual([ready]);
       expect(mocks.asset.getStudioHdrIntermediateStates).toHaveBeenCalledWith([ready, none, lost]);
       expect(mocks.job.queueAll).toHaveBeenCalledWith(
         [none, lost, stale, failedLongAgo].map((id) => ({ name: JobName.StudioHdrProxyGenerate, data: { id } })),
@@ -586,10 +590,52 @@ describe(StudioResourceService.name, () => {
       expect(mocks.asset.touchStudioHdrIntermediates).toHaveBeenCalledWith([ready]);
     });
 
+    // Owner decision (FL-97, 2026-09-29)
+    describe("only for the asset owner's own projects and shared-space projects", () => {
+      const partner = newUuid();
+      const [own, partners, partnersMissing] = [newUuid(), newUuid(), newUuid()];
+      const states = () =>
+        [
+          { assetId: own, ownerId: projectOwner, missing: false },
+          { assetId: partners, ownerId: partner, missing: false },
+          { assetId: partnersMissing, ownerId: partner, missing: true },
+        ].map(({ assetId, ownerId, missing }) => ({
+          assetId,
+          ownerId,
+          edited: false,
+          current: !missing,
+          status: missing ? null : 'ready',
+          path: missing ? null : `/${assetId}.mp4`,
+          createdAt: missing ? null : new Date(),
+        }));
+
+      it("never makes, queues or offers one for someone else's clip in a personal project", async () => {
+        mocks.asset.getStudioHdrIntermediateStates.mockResolvedValue(states() as never);
+        mocks.storage.checkFileExists.mockResolvedValue(true);
+
+        // An existing intermediate (made for the partner's own project) is not offered either.
+        await expect(sut.studioHdrProxies([own, partners, partnersMissing], personal)).resolves.toEqual([own]);
+        expect(mocks.job.queueAll).not.toHaveBeenCalled();
+        expect(mocks.asset.touchStudioHdrIntermediates).toHaveBeenCalledWith([own]);
+      });
+
+      it("makes and offers them for every placed owner's clip in a shared-space project", async () => {
+        mocks.asset.getStudioHdrIntermediateStates.mockResolvedValue(states() as never);
+        mocks.storage.checkFileExists.mockResolvedValue(true);
+
+        await expect(
+          sut.studioHdrProxies([own, partners, partnersMissing], { ownerId: projectOwner, sharedSpace: true }),
+        ).resolves.toEqual([own, partners].toSorted());
+        expect(mocks.job.queueAll).toHaveBeenCalledWith([
+          { name: JobName.StudioHdrProxyGenerate, data: { id: partnersMissing } },
+        ]);
+      });
+    });
+
     it('queues nothing when nothing is HDR or the fork schema cannot record intermediates', async () => {
-      await expect(sut.studioHdrProxies([])).resolves.toEqual([]);
+      await expect(sut.studioHdrProxies([], personal)).resolves.toEqual([]);
       mocks.asset.canRecordStudioHdrIntermediates.mockResolvedValue(false);
-      await expect(sut.studioHdrProxies([newUuid()])).resolves.toEqual([]);
+      await expect(sut.studioHdrProxies([newUuid()], personal)).resolves.toEqual([]);
       expect(mocks.asset.getStudioHdrIntermediateStates).not.toHaveBeenCalled();
       expect(mocks.job.queueAll).not.toHaveBeenCalled();
     });
